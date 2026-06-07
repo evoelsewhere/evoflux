@@ -1,0 +1,51 @@
+{
+  "name": "evoflux",
+  "version": "1.0.0",
+  "description": "AI Automation Workflow for SDLC",
+  "main": "./out/main/index.js",
+  "author": "Evoflux Team",
+  "license": "MIT",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "lint": "eslint src electron --ext .ts,.tsx",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^5.5.2",
+    "@electron-toolkit/utils": "^4.0.0",
+    "@monaco-editor/react": "^4.6.0",
+    "@tanstack/react-query": "^5.62.0",
+    "antd": "^5.22.0",
+    "electron-store": "^8.2.0",
+    "nanoid": "^3.3.8",
+    "openai": "^4.73.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0",
+    "reactflow": "^11.11.4",
+    "zustand": "^5.0.2"
+  },
+  "devDependencies": {
+    "@types/dagre": "^0.7.54",
+    "@types/node": "^22.10.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@typescript-eslint/eslint-plugin": "^8.16.0",
+    "@typescript-eslint/parser": "^8.16.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "dagre": "^0.8.5",
+    "electron": "^33.2.1",
+    "electron-vite": "^2.3.0",
+    "eslint": "^9.15.0",
+    "pdf-parse": "^2.4.5",
+    "pdfjs-dist": "^6.0.227",
+    "prettier": "^3.4.1",
+    "typescript": "^5.7.2",
+    "vite": "^5.4.11",
+    "vitest": "^4.1.8"
+  }
+}

@@ -1,0 +1,16 @@
+node_modules
+out
+dist
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+.DS_Store
+Thumbs.db
+*.log
+.env
+.env.*
+!.env.example
+coverage
+*.tsbuildinfo
+.kilo/

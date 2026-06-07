@@ -1,0 +1,51 @@
+/// <reference types="vite/client" />
+
+declare module '*.png' { const src: string; export default src }
+declare module '*.svg' { const src: string; export default src }
+
+interface Window {
+  api: {
+    settings: {
+      save: (settings: Record<string, unknown>) => Promise<{ success: boolean }>
+      load: () => Promise<{ providers: unknown[]; appearance: unknown | null }>
+    }
+    ai: {
+      chat: (messages: Array<{ role: string; content: string }>, options?: { model?: string; provider?: string; providerConfig?: { apiKey?: string; baseUrl?: string } }) => Promise<string>
+      streamChat: (messages: Array<{ role: string; content: string }>, options?: { model?: string; provider?: string; providerConfig?: { apiKey?: string; baseUrl?: string } }) => Promise<string>
+      listModels: (provider?: string) => Promise<string[]>
+      testConnection: (provider: string, providerConfig?: { apiKey?: string; baseUrl?: string }) => Promise<boolean>
+      saveModelConfig: (provider: string, model: string, config: unknown) => Promise<{ success: boolean }>
+      getModelConfig: (provider: string, model: string) => Promise<Record<string, unknown> | null>
+      listModelConfigs: () => Promise<Array<{ provider: string; model: string; config: Record<string, unknown> }>>
+    }
+    workflow: {
+      save: (workflow: unknown) => Promise<unknown>
+      load: (id: string) => Promise<unknown>
+      list: () => Promise<unknown[]>
+      delete: (id: string) => Promise<boolean>
+      run: (dsl: unknown, options?: { inputs?: Record<string, unknown>; maxSteps?: number; maxTimeMs?: number }) => Promise<{ success: boolean; results?: unknown[]; error?: string }>
+      stop: (runId?: string) => Promise<boolean>
+      onEvent: (callback: (event: unknown) => void) => () => void
+    }
+    sandbox: {
+      create: (config: unknown) => Promise<{ success: boolean; id?: string; rootPath?: string; error?: string }>
+      destroy: (workflowId: string, runId?: string) => Promise<{ success: boolean; error?: string }>
+      exec: (workflowId: string, command: string, options?: unknown) => Promise<{ success: boolean; stdout?: string; stderr?: string; exitCode?: number; error?: string }>
+      execCode: (workflowId: string, language: string, code: string) => Promise<{ success: boolean; stdout?: string; stderr?: string; exitCode?: number; error?: string }>
+      readFile: (workflowId: string, filePath: string) => Promise<{ success: boolean; content?: string; error?: string }>
+      writeFile: (workflowId: string, filePath: string, content: string) => Promise<{ success: boolean; error?: string }>
+    }
+    dsl: {
+      export: (dsl: unknown) => Promise<{ success: boolean; path?: string; error?: string }>
+      import: () => Promise<{ success: boolean; dsl?: unknown; error?: string }>
+    }
+    memory: {
+      search: (workflowId: string, query: string, options?: { k?: number; layer?: string }) => Promise<{ success: boolean; results?: unknown[]; error?: string }>
+      addSemantic: (workflowId: string, content: string, type: string, metadata?: unknown) => Promise<{ success: boolean; id?: string; error?: string }>
+      recordOutcome: (workflowId: string, outcome: string, feedback: string) => Promise<{ success: boolean; id?: string; error?: string }>
+      stats: (workflowId: string) => Promise<{ success: boolean; stats?: unknown; error?: string }>
+      consolidate: (workflowId: string) => Promise<{ success: boolean; result?: unknown; error?: string }>
+    }
+    onStreamChunk: (callback: (chunk: string) => void) => () => void
+  }
+}

@@ -1,0 +1,207 @@
+{
+  "name": "AI Code Review Pipeline",
+  "description": "Test workflow: trigger → LLM analyze → condition → code/format → output",
+  "nodes": [
+    {
+      "id": "start-1",
+      "type": "default",
+      "position": { "x": 300, "y": 40 },
+      "data": {
+        "label": "Start",
+        "type": "manual-trigger",
+        "icon": "play-circle",
+        "category": "trigger",
+        "config": {
+          "variables": [
+            { "name": "code_input", "type": "string", "description": "Code to review" },
+            { "name": "language", "type": "string", "description": "Programming language" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "llm-analyze",
+      "type": "default",
+      "position": { "x": 300, "y": 180 },
+      "data": {
+        "label": "Analyze Code",
+        "type": "llm",
+        "icon": "robot",
+        "category": "ai",
+        "config": {
+          "provider": "openai",
+          "model": "gpt-4o",
+          "system_prompt": "You are a senior code reviewer. Analyze code for bugs, security issues, and improvements.",
+          "prompt": "Review this {{language}} code:\n\n{{code_input}}\n\nReturn JSON: {\"score\": 1-10, \"issues\": [...], \"suggestion\": \"...\"}",
+          "temperature": 0.3,
+          "max_tokens": 2048
+        }
+      }
+    },
+    {
+      "id": "param-extract",
+      "type": "default",
+      "position": { "x": 300, "y": 340 },
+      "data": {
+        "label": "Extract Score",
+        "type": "parameter-extractor",
+        "icon": "scan",
+        "category": "ai",
+        "config": {
+          "model": "gpt-4o-mini",
+          "input_text": "{{llm-analyze.output}}",
+          "parameters": [
+            { "name": "score", "type": "number", "description": "Code quality score 1-10" },
+            { "name": "issues", "type": "array", "description": "List of issues found" },
+            { "name": "suggestion", "type": "string", "description": "Improvement suggestion" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "condition-1",
+      "type": "default",
+      "position": { "x": 300, "y": 500 },
+      "data": {
+        "label": "Score >= 7?",
+        "type": "condition",
+        "icon": "branches",
+        "category": "logic",
+        "config": {
+          "expression": "score >= 7",
+          "trueLabel": "Good",
+          "falseLabel": "Needs Fix"
+        }
+      }
+    },
+    {
+      "id": "template-pass",
+      "type": "default",
+      "position": { "x": 140, "y": 660 },
+      "data": {
+        "label": "Format Success",
+        "type": "template",
+        "icon": "file-text",
+        "category": "logic",
+        "config": {
+          "template": "✅ Code Review PASSED (Score: {{#param-extract.score#}}/10)\n\nSuggestion: {{#param-extract.suggestion#}}"
+        }
+      }
+    },
+    {
+      "id": "code-fix",
+      "type": "default",
+      "position": { "x": 460, "y": 660 },
+      "data": {
+        "label": "Generate Fix",
+        "type": "llm",
+        "icon": "robot",
+        "category": "ai",
+        "config": {
+          "provider": "openai",
+          "model": "gpt-4o",
+          "system_prompt": "You are a code fixer. Given code and issues, output the corrected code only.",
+          "prompt": "Fix this code:\n\n{{code_input}}\n\nIssues found:\n{{param-extract.issues}}\n\nReturn ONLY the fixed code.",
+          "temperature": 0.2,
+          "max_tokens": 4096
+        }
+      }
+    },
+    {
+      "id": "template-fail",
+      "type": "default",
+      "position": { "x": 460, "y": 820 },
+      "data": {
+        "label": "Format Report",
+        "type": "template",
+        "icon": "file-text",
+        "category": "logic",
+        "config": {
+          "template": "❌ Code Review FAILED (Score: {{#param-extract.score#}}/10)\n\nIssues:\n{{#param-extract.issues#}}\n\nFixed Code:\n{{#code-fix.output#}}"
+        }
+      }
+    },
+    {
+      "id": "end-1",
+      "type": "default",
+      "position": { "x": 300, "y": 960 },
+      "data": {
+        "label": "End",
+        "type": "comment",
+        "icon": "stop-circle",
+        "category": "other",
+        "config": {}
+      }
+    },
+    {
+      "id": "comment-1",
+      "type": "comment",
+      "position": { "x": 560, "y": 40 },
+      "data": {
+        "label": "Note",
+        "type": "comment",
+        "text": "AI Code Review Pipeline\n\nFlow: Start → LLM Analyze → Extract Score → Condition\n  ├─ Score >= 7 → Format Success → End\n  └─ Score < 7 → Generate Fix → Format Report → End"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-start-llm",
+      "source": "start-1",
+      "target": "llm-analyze",
+      "type": "custom",
+      "animated": true
+    },
+    {
+      "id": "e-llm-param",
+      "source": "llm-analyze",
+      "target": "param-extract",
+      "type": "custom",
+      "animated": true
+    },
+    {
+      "id": "e-param-cond",
+      "source": "param-extract",
+      "target": "condition-1",
+      "type": "custom",
+      "animated": true
+    },
+    {
+      "id": "e-cond-pass",
+      "source": "condition-1",
+      "sourceHandle": "true",
+      "target": "template-pass",
+      "type": "custom",
+      "animated": true
+    },
+    {
+      "id": "e-cond-fail",
+      "source": "condition-1",
+      "sourceHandle": "false",
+      "target": "code-fix",
+      "type": "custom",
+      "animated": true
+    },
+    {
+      "id": "e-pass-end",
+      "source": "template-pass",
+      "target": "end-1",
+      "type": "custom",
+      "animated": true
+    },
+    {
+      "id": "e-fix-report",
+      "source": "code-fix",
+      "target": "template-fail",
+      "type": "custom",
+      "animated": true
+    },
+    {
+      "id": "e-report-end",
+      "source": "template-fail",
+      "target": "end-1",
+      "type": "custom",
+      "animated": true
+    }
+  ]
+}
