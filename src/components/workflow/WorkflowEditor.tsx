@@ -19,7 +19,9 @@ import Sidebar from '../layout/Sidebar'
 import NodePopup from './NodePopup'
 import RunPanel, { type RunEvent } from './RunPanel'
 import RunInputDialog from './RunInputDialog'
+import AssistantPanel from './AssistantPanel'
 import CodeEditor from '../common/CodeEditor'
+import type { WorkflowToolContext } from '../../assistant/tools'
 import type { NodeDefinition } from './registry'
 import type { NodeData } from '../../types/workflow'
 import type { Node, Edge } from 'reactflow'
@@ -40,7 +42,7 @@ function EditorCanvas() {
     setSelectedNodeId, workflowName, setWorkflowName,
     workflowDescription, isRunning, setIsRunning,
     undo, redo, canUndo, canRedo,
-    removeNode, selectedNodeId, loadWorkflow
+    removeNode, updateNodeData, selectedNodeId, loadWorkflow
   } = useWorkflowStore()
 
   const [nodes, setNodes, onNodesChange] = useNodesState([DEFAULT_START])
@@ -48,6 +50,7 @@ function EditorCanvas() {
   const [showCode, setShowCode] = useState(false)
   const [showRun, setShowRun] = useState(false)
   const [showInput, setShowInput] = useState(false)
+  const [showAssistant, setShowAssistant] = useState(false)
   const [runEvents, setRunEvents] = useState<RunEvent[]>([])
   const [nodeStatuses, setNodeStatuses] = useState<Record<string, 'idle' | 'running' | 'completed' | 'error'>>({})
   const [nodeOutputs, setNodeOutputs] = useState<Record<string, unknown>>({})
@@ -301,12 +304,31 @@ function EditorCanvas() {
         </div>
       </div>
 
-      <Sidebar editorMode workflowName={workflowName} isRunning={isRunning} showCode={showCode} canUndo={canUndo} canRedo={canRedo}
-        onSave={handleSave} onRun={handleRun} onStop={handleStop} onToggleCode={() => setShowCode(!showCode)}
+      <Sidebar editorMode workflowName={workflowName} isRunning={isRunning} showCode={showCode} showAssistant={showAssistant} canUndo={canUndo} canRedo={canRedo}
+        onSave={handleSave} onRun={handleRun} onStop={handleStop} onToggleCode={() => setShowCode(!showCode)} onToggleAssistant={() => setShowAssistant(!showAssistant)}
         onUndo={canUndo ? handleUndo : undefined} onRedo={canRedo ? handleRedo : undefined} onAutoLayout={handleLayout} onBack={() => navigate('/workflows')}
         onAddNode={addNode} />
 
       <RunInputDialog open={showInput} nodes={nodes} onRun={handleRunWithInputs} onCancel={() => setShowInput(false)} />
+
+      {showAssistant && (
+        <AssistantPanel nodes={nodes} edges={edges} onClose={() => setShowAssistant(false)} onNodesChanged={() => { const s = useWorkflowStore.getState(); setNodes(s.nodes); setEdges(s.edges) }}
+          toolContext={{
+            getNodes: () => nodes, getEdges: () => edges,
+            addNode: (type, label, category, icon, config, position) => {
+              const nid = `${type}-${nanoid(6)}`
+              const n = { id: nid, type: 'default', position: position || { x: 200 + Math.random() * 300, y: 80 + Math.random() * 300 }, data: { label, type, icon, category, config } }
+              const ns = [...nodes, n as typeof nodes[0]]; setNodes(ns); setStoreNodes(ns)
+              return nid
+            },
+            updateNode: (nodeId, patch) => { updateNodeData(nodeId, patch); const s = useWorkflowStore.getState(); setNodes(s.nodes) },
+            deleteNode: (nodeId) => { removeNode(nodeId); const s = useWorkflowStore.getState(); setNodes(s.nodes); setEdges(s.edges) },
+            addEdge: (source, target, sourceHandle) => { const newEdge = { id: `e-${source}-${target}-${nanoid(4)}`, source, target, sourceHandle, type: 'custom', animated: true }; const es = [...edges, newEdge]; setEdges(es); setStoreEdges(es) },
+            deleteEdge: (edgeId) => { const e = edges.filter(x => x.id !== edgeId); setEdges(e); setStoreEdges(e) },
+            autoLayout: () => { const l = autoLayout(nodes, edges); setNodes(l); setStoreNodes(l) },
+            pushHistory: () => { useWorkflowStore.getState().pushHistory() }
+          } as WorkflowToolContext} />
+      )}
 
       {showCode && (
         <div style={{ width: 360, borderLeft: '1px solid var(--border-primary)' }}>

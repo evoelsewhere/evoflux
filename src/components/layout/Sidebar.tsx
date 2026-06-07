@@ -53,7 +53,8 @@ const icons = {
   redo: (c: string) => <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M11.5 6H5.5C3.4 6 2 7.9 2 10C2 12.1 3.4 14 5.5 14H8" stroke={c} strokeWidth="1.3" strokeLinecap="round"/><path d="M9 4L11.5 6L9 8" stroke={c} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>,
   layout: (c: string) => <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="1.5" y="1.5" width="5" height="5" rx="1" stroke={c} strokeWidth="1.2"/><rect x="8.5" y="1.5" width="5" height="5" rx="1" stroke={c} strokeWidth="1.2"/><rect x="1.5" y="8.5" width="5" height="5" rx="1" stroke={c} strokeWidth="1.2"/><rect x="8.5" y="8.5" width="5" height="5" rx="1" stroke={c} strokeWidth="1.2"/></svg>,
   back: (c: string) => <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 2L4 7L9 12" stroke={c} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
-  nodes: (c: string) => <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3V13M3 8H13" stroke={c} strokeWidth="1.5" strokeLinecap="round"/><rect x="1" y="1" width="4" height="4" rx="1" stroke={c} strokeWidth="1.2"/><rect x="11" y="1" width="4" height="4" rx="1" stroke={c} strokeWidth="1.2"/><rect x="1" y="11" width="4" height="4" rx="1" stroke={c} strokeWidth="1.2"/><rect x="11" y="11" width="4" height="4" rx="1" stroke={c} strokeWidth="1.2"/></svg>
+  nodes: (c: string) => <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3V13M3 8H13" stroke={c} strokeWidth="1.5" strokeLinecap="round"/><rect x="1" y="1" width="4" height="4" rx="1" stroke={c} strokeWidth="1.2"/><rect x="11" y="1" width="4" height="4" rx="1" stroke={c} strokeWidth="1.2"/><rect x="1" y="11" width="4" height="4" rx="1" stroke={c} strokeWidth="1.2"/><rect x="11" y="11" width="4" height="4" rx="1" stroke={c} strokeWidth="1.2"/></svg>,
+  chat: (c: string) => <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 3C2 2.4 2.4 2 3 2H13C13.6 2 14 2.4 14 3V10C14 10.6 13.6 11 13 11H5L2 14V3Z" stroke={c} strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/><path d="M5 5H11M5 8H8" stroke={c} strokeWidth="1" strokeLinecap="round" /></svg>
 }
 
 type DockAction = {
@@ -72,12 +73,14 @@ interface SidebarProps {
   workflowName?: string
   isRunning?: boolean
   showCode?: boolean
+  showAssistant?: boolean
   canUndo?: boolean
   canRedo?: boolean
   onSave?: () => void
   onRun?: () => void
   onStop?: () => void
   onToggleCode?: () => void
+  onToggleAssistant?: () => void
   onUndo?: () => void
   onRedo?: () => void
   onAutoLayout?: () => void
@@ -126,6 +129,7 @@ export default function Sidebar(props: SidebarProps) {
 
   const editorActions: DockAction[] = props.editorMode ? [
     { id: 'nodes', icon: icons.nodes, label: 'Add Node', onClick: () => { setShowNodes(!showNodes); setNodeSearch('') }, active: showNodes, accent: showNodes, separatorBefore: true },
+    { id: 'chat', icon: icons.chat, label: 'Assistant', onClick: props.onToggleAssistant, active: props.showAssistant, accent: props.showAssistant },
     { id: 'back', icon: icons.back, label: 'Back', onClick: props.onBack },
     { id: 'save', icon: icons.save, label: 'Save', onClick: props.onSave },
     { id: 'undo', icon: icons.undo, label: 'Undo', onClick: props.onUndo, active: props.canUndo },
