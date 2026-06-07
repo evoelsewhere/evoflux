@@ -45,7 +45,10 @@ export const NODE_CATEGORIES: NodeCategory[] = [
       { type: 'loop', label: 'Loop', icon: 'sync', category: 'logic', description: 'While loop' },
       { type: 'variable-aggregator', label: 'Variable Aggregator', icon: 'merge-cells', category: 'logic', description: 'Merge outputs' },
       { type: 'variable-assigner', label: 'Variable Assigner', icon: 'edit', category: 'logic', description: 'Set variable' },
-      { type: 'template', label: 'Template', icon: 'file-text', category: 'logic', description: 'String template' }
+      { type: 'template', label: 'Template', icon: 'file-text', category: 'logic', description: 'String template' },
+      { type: 'text-transform', label: 'Text Transform', icon: 'edit', category: 'logic', description: 'String operations' },
+      { type: 'data-transform', label: 'Data Transform', icon: 'swap', category: 'logic', description: 'JSON extract/map/filter' },
+      { type: 'delay', label: 'Delay', icon: 'clock-circle', category: 'logic', description: 'Pause execution' }
     ]
   },
   {
@@ -59,7 +62,8 @@ export const NODE_CATEGORIES: NodeCategory[] = [
       { type: 'file-reader', label: 'File Reader', icon: 'file-text', category: 'tools', description: 'Read file content' },
       { type: 'context-loader', label: 'Context Loader', icon: 'database', category: 'tools', description: 'Load directory as context' },
       { type: 'file-write', label: 'File Write', icon: 'file-text', category: 'tools', description: 'Write content to file' },
-      { type: 'web-search', label: 'Web Search', icon: 'search', category: 'tools', description: 'Search the web (DuckDuckGo)' }
+      { type: 'web-search', label: 'Web Search', icon: 'search', category: 'tools', description: 'Search the web (DuckDuckGo)' },
+      { type: 'text-splitter', label: 'Text Splitter', icon: 'scissor', category: 'tools', description: 'Chunk text for RAG' }
     ]
   },
   {

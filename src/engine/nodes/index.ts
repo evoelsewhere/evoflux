@@ -24,6 +24,10 @@ import { ManualTriggerNode, WebhookTriggerNode, ScheduleTriggerNode } from './tr
 import { FileWriteNode } from './file-write'
 import { SubWorkflowNode } from './sub-workflow'
 import { WebSearchNode } from './web-search'
+import { TextSplitterNode } from './text-splitter'
+import { TextTransformNode } from './text-transform'
+import { DelayNode } from './delay'
+import { DataTransformNode } from './data-transform'
 
 const registry = new Map<string, new () => BaseNode>([
   ['start', StartNode as unknown as new () => BaseNode],
@@ -51,7 +55,11 @@ const registry = new Map<string, new () => BaseNode>([
   ['schedule-trigger', ScheduleTriggerNode as unknown as new () => BaseNode],
   ['file-write', FileWriteNode as unknown as new () => BaseNode],
   ['sub-workflow', SubWorkflowNode as unknown as new () => BaseNode],
-  ['web-search', WebSearchNode as unknown as new () => BaseNode]
+  ['web-search', WebSearchNode as unknown as new () => BaseNode],
+  ['text-splitter', TextSplitterNode as unknown as new () => BaseNode],
+  ['text-transform', TextTransformNode as unknown as new () => BaseNode],
+  ['delay', DelayNode as unknown as new () => BaseNode],
+  ['data-transform', DataTransformNode as unknown as new () => BaseNode]
 ])
 
 const originalCreate = NodeFactory.create

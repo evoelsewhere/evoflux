@@ -487,6 +487,68 @@ export default function NodeConfigForms({ config, nodeType, handleChange, provid
         </Section>
       )}
 
+      {nodeType === 'text-splitter' && (
+        <Section title="Text Splitter">
+          <Field label="Strategy">
+            <Select size="small" value={String(config.strategy || 'recursive')} onChange={(v) => handleChange('strategy', v)}
+              options={[{ label: 'Recursive (recommended)', value: 'recursive' }, { label: 'Character', value: 'character' }, { label: 'Sentence', value: 'sentence' }, { label: 'Paragraph', value: 'paragraph' }]} style={{ width: '100%' }} />
+          </Field>
+          <Field label={`Chunk Size: ${String(config.chunk_size ?? 1000)}`}>
+            <Slider min={100} max={8000} step={100} value={Number(config.chunk_size ?? 1000)} onChange={(v) => handleChange('chunk_size', v)} />
+          </Field>
+          <Field label={`Overlap: ${String(config.chunk_overlap ?? 200)}`}>
+            <Slider min={0} max={1000} step={50} value={Number(config.chunk_overlap ?? 200)} onChange={(v) => handleChange('chunk_overlap', v)} />
+          </Field>
+        </Section>
+      )}
+
+      {nodeType === 'text-transform' && (
+        <Section title="Text Transform">
+          <Field label="Operations">
+            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 6 }}>
+              Operations are applied in order. Use config JSON for advanced ops.
+            </div>
+            <Select size="small" value={String((config.operations as Array<{ type: string }>)?.[0]?.type || 'trim')} onChange={(v) => handleChange('operations', [{ type: v }])}
+              options={[
+                { label: 'Trim', value: 'trim' }, { label: 'Uppercase', value: 'uppercase' }, { label: 'Lowercase', value: 'lowercase' },
+                { label: 'Strip HTML Tags', value: 'strip_tags' }, { label: 'Extract URLs', value: 'extract_urls' }, { label: 'Extract Emails', value: 'extract_emails' },
+                { label: 'Decode Entities', value: 'decode_entities' },
+              ]} style={{ width: '100%' }} />
+          </Field>
+        </Section>
+      )}
+
+      {nodeType === 'delay' && (
+        <Section title="Delay">
+          <Field label="Duration (seconds)">
+            <Slider min={0.5} max={60} step={0.5} value={Number(config.duration_seconds ?? 1)} onChange={(v) => handleChange('duration_seconds', v)} />
+          </Field>
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+            Passes input through unchanged after the delay.
+          </div>
+        </Section>
+      )}
+
+      {nodeType === 'data-transform' && (
+        <Section title="Data Transform">
+          <Field label="Operation">
+            <Select size="small" value={String((config.operations as Array<{ type: string }>)?.[0]?.type || 'extract')} onChange={(v) => handleChange('operations', [{ type: v, path: '', field: '' }])}
+              options={[
+                { label: 'Extract by Path', value: 'extract' }, { label: 'Map (pluck field)', value: 'map' }, { label: 'Filter', value: 'filter' },
+                { label: 'Merge Objects', value: 'merge' }, { label: 'Get Keys', value: 'keys' }, { label: 'Get Values', value: 'values' },
+                { label: 'Length', value: 'length' }, { label: 'Flatten', value: 'flatten' }, { label: 'Unique', value: 'unique' },
+                { label: 'Sort', value: 'sort' }, { label: 'Stringify JSON', value: 'stringify' }, { label: 'Parse JSON', value: 'parse' },
+              ]} style={{ width: '100%' }} />
+          </Field>
+          <Field label="Path / Field">
+            <Input size="small" value={String((config.operations as Array<{ path?: string }>)?.[0]?.path || '')} onChange={(e) => {
+              const ops = (config.operations as Array<Record<string, unknown>>) || [{}]
+              handleChange('operations', [{ ...ops[0], path: e.target.value }])
+            }} placeholder="e.g. data.users.0.name" style={inputStyle} />
+          </Field>
+        </Section>
+      )}
+
       {nodeType === 'comment' && (
         <Section title="Comment">
           <Field label="Text">

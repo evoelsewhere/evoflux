@@ -32,7 +32,9 @@ const ICON_MAP: Record<string, (sz: number, c: string) => React.ReactNode> = {
   'apartment': (s, c) => <NodeSubWorkflowIcon size={s} color={c} />,
   'team': (s, c) => <NodeTeamIcon size={s} color={c} />,
   'unknown': (s, c) => <NodeToolIcon size={s} color={c} />,
-  'search': (s, c) => <SearchCodeIcon size={s} color={c} />
+  'search': (s, c) => <SearchCodeIcon size={s} color={c} />,
+  'scissor': (s, c) => <NodeTemplateIcon size={s} color={c} />,
+  'swap': (s, c) => <NodeMergeIcon size={s} color={c} />
 }
 
 const CAT_COLORS: Record<string, string> = {
