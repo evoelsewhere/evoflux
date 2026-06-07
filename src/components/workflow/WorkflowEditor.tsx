@@ -51,6 +51,7 @@ function EditorCanvas() {
   const [showRun, setShowRun] = useState(false)
   const [showInput, setShowInput] = useState(false)
   const [showAssistant, setShowAssistant] = useState(false)
+  const [layoutDirection, setLayoutDirection] = useState<'TB' | 'LR'>('TB')
   const [runEvents, setRunEvents] = useState<RunEvent[]>([])
   const [nodeStatuses, setNodeStatuses] = useState<Record<string, 'idle' | 'running' | 'completed' | 'error'>>({})
   const [nodeOutputs, setNodeOutputs] = useState<Record<string, unknown>>({})
@@ -221,7 +222,8 @@ function EditorCanvas() {
   }, [screenToFlowPosition, addNode])
 
   const handleSave = useCallback(async () => { await doSave(nodes, edges, workflowName, workflowDescription, id); message.success('Saved') }, [id, nodes, edges, workflowName, workflowDescription, doSave])
-  const handleLayout = useCallback(() => { const l = autoLayout(nodes, edges); setNodes(l); setStoreNodes(l) }, [nodes, edges, setNodes, setStoreNodes])
+  const handleLayout = useCallback(() => { const l = autoLayout(nodes, edges, layoutDirection); setNodes(l); setStoreNodes(l) }, [nodes, edges, layoutDirection, setNodes, setStoreNodes])
+  const handleToggleLayout = useCallback(() => { const next = layoutDirection === 'TB' ? 'LR' : 'TB'; setLayoutDirection(next); const l = autoLayout(nodes, edges, next); setNodes(l); setStoreNodes(l) }, [layoutDirection, nodes, edges, setNodes, setStoreNodes])
   const handleUndo = useCallback(() => { if (canUndo) { undo(); const s = useWorkflowStore.getState(); setNodes(s.nodes); setEdges(s.edges); doSave(s.nodes, s.edges, s.workflowName, s.workflowDescription, id) } }, [canUndo, undo, id, doSave])
   const handleRedo = useCallback(() => { if (canRedo) { redo(); const s = useWorkflowStore.getState(); setNodes(s.nodes); setEdges(s.edges); doSave(s.nodes, s.edges, s.workflowName, s.workflowDescription, id) } }, [canRedo, redo, id, doSave])
 
@@ -304,8 +306,8 @@ function EditorCanvas() {
         </div>
       </div>
 
-      <Sidebar editorMode workflowName={workflowName} isRunning={isRunning} showCode={showCode} showAssistant={showAssistant} canUndo={canUndo} canRedo={canRedo}
-        onSave={handleSave} onRun={handleRun} onStop={handleStop} onToggleCode={() => setShowCode(!showCode)} onToggleAssistant={() => setShowAssistant(!showAssistant)}
+      <Sidebar editorMode workflowName={workflowName} isRunning={isRunning} showCode={showCode} showAssistant={showAssistant} layoutDirection={layoutDirection} canUndo={canUndo} canRedo={canRedo}
+        onSave={handleSave} onRun={handleRun} onStop={handleStop} onToggleCode={() => setShowCode(!showCode)} onToggleAssistant={() => setShowAssistant(!showAssistant)} onToggleLayout={handleToggleLayout}
         onUndo={canUndo ? handleUndo : undefined} onRedo={canRedo ? handleRedo : undefined} onAutoLayout={handleLayout} onBack={() => navigate('/workflows')}
         onAddNode={addNode} />
 

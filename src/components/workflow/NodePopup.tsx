@@ -75,13 +75,20 @@ export default function NodePopup({ node, onClose, onDelete }: NodePopupProps) {
       while (node && node !== document.body) {
         if (node.classList && (
           node.classList.contains('ant-select-dropdown') ||
+          node.classList.contains('ant-select-item') ||
+          node.classList.contains('ant-select-item-option') ||
+          node.classList.contains('ant-select-selection-item') ||
+          node.classList.contains('ant-select-selection-search') ||
+          node.classList.contains('ant-select-clear') ||
           node.classList.contains('ant-popover') ||
           node.classList.contains('ant-dropdown') ||
           node.classList.contains('ant-modal') ||
           node.classList.contains('ant-slider') ||
-          node.classList.contains('ant-select-item') ||
+          node.classList.contains('ant-slider-handle') ||
           node.classList.contains('monaco-editor') ||
-          node.classList.contains('context-view')
+          node.classList.contains('context-view') ||
+          node.classList.contains('rc-virtual-list') ||
+          node.classList.contains('rc-virtual-list-holder')
         )) return
         node = node.parentElement
       }

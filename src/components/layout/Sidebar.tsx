@@ -52,6 +52,7 @@ const icons = {
   undo: (c: string) => <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M3.5 6H9.5C11.6 6 13 7.9 13 10C13 12.1 11.6 14 9.5 14H7" stroke={c} strokeWidth="1.3" strokeLinecap="round"/><path d="M6 4L3.5 6L6 8" stroke={c} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>,
   redo: (c: string) => <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M11.5 6H5.5C3.4 6 2 7.9 2 10C2 12.1 3.4 14 5.5 14H8" stroke={c} strokeWidth="1.3" strokeLinecap="round"/><path d="M9 4L11.5 6L9 8" stroke={c} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>,
   layout: (c: string) => <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="1.5" y="1.5" width="5" height="5" rx="1" stroke={c} strokeWidth="1.2"/><rect x="8.5" y="1.5" width="5" height="5" rx="1" stroke={c} strokeWidth="1.2"/><rect x="1.5" y="8.5" width="5" height="5" rx="1" stroke={c} strokeWidth="1.2"/><rect x="8.5" y="8.5" width="5" height="5" rx="1" stroke={c} strokeWidth="1.2"/></svg>,
+  layoutH: (c: string) => <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="1" y="3" width="4" height="9" rx="1" stroke={c} strokeWidth="1.2"/><rect x="6.5" y="3" width="4" height="9" rx="1" stroke={c} strokeWidth="1.2"/><path d="M5 7.5H6.5" stroke={c} strokeWidth="1" strokeLinecap="round"/></svg>,
   back: (c: string) => <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 2L4 7L9 12" stroke={c} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
   nodes: (c: string) => <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3V13M3 8H13" stroke={c} strokeWidth="1.5" strokeLinecap="round"/><rect x="1" y="1" width="4" height="4" rx="1" stroke={c} strokeWidth="1.2"/><rect x="11" y="1" width="4" height="4" rx="1" stroke={c} strokeWidth="1.2"/><rect x="1" y="11" width="4" height="4" rx="1" stroke={c} strokeWidth="1.2"/><rect x="11" y="11" width="4" height="4" rx="1" stroke={c} strokeWidth="1.2"/></svg>,
   chat: (c: string) => <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 3C2 2.4 2.4 2 3 2H13C13.6 2 14 2.4 14 3V10C14 10.6 13.6 11 13 11H5L2 14V3Z" stroke={c} strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/><path d="M5 5H11M5 8H8" stroke={c} strokeWidth="1" strokeLinecap="round" /></svg>
@@ -74,6 +75,7 @@ interface SidebarProps {
   isRunning?: boolean
   showCode?: boolean
   showAssistant?: boolean
+  layoutDirection?: 'TB' | 'LR'
   canUndo?: boolean
   canRedo?: boolean
   onSave?: () => void
@@ -81,6 +83,7 @@ interface SidebarProps {
   onStop?: () => void
   onToggleCode?: () => void
   onToggleAssistant?: () => void
+  onToggleLayout?: () => void
   onUndo?: () => void
   onRedo?: () => void
   onAutoLayout?: () => void
@@ -134,7 +137,7 @@ export default function Sidebar(props: SidebarProps) {
     { id: 'save', icon: icons.save, label: 'Save', onClick: props.onSave },
     { id: 'undo', icon: icons.undo, label: 'Undo', onClick: props.onUndo, active: props.canUndo },
     { id: 'redo', icon: icons.redo, label: 'Redo', onClick: props.onRedo, active: props.canRedo },
-    { id: 'layout', icon: icons.layout, label: 'Auto Layout', onClick: props.onAutoLayout },
+    { id: 'layout', icon: props.layoutDirection === 'LR' ? icons.layoutH : icons.layout, label: props.layoutDirection === 'LR' ? 'Horizontal' : 'Vertical', onClick: props.onToggleLayout },
     { id: 'code', icon: icons.code, label: 'Code', onClick: props.onToggleCode, active: props.showCode, accent: props.showCode, separatorBefore: true },
     { id: props.isRunning ? 'stop' : 'run', icon: props.isRunning ? icons.stop : icons.play, label: props.isRunning ? 'Stop' : 'Run', onClick: props.isRunning ? props.onStop : props.onRun, danger: props.isRunning, accent: !props.isRunning }
   ] : []
