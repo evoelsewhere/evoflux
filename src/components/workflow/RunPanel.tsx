@@ -101,14 +101,14 @@ function RunPanelInner({ events, nodes, nodeStatuses, nodeOutputs, isRunning, el
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
           {isRunning && (
-            <button onClick={onStop} style={{
+            <button onClick={onStop} aria-label="Stop workflow execution" style={{
               padding: '4px 12px', fontSize: 11, borderRadius: 5, cursor: 'pointer',
               background: '#f8717120', border: '1px solid #f8717140', color: '#f87171', fontWeight: 500
             }}>
               Stop
             </button>
           )}
-          <button onClick={onClose} style={{
+          <button onClick={onClose} aria-label="Close run panel" style={{
             width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
             background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)',
             borderRadius: 4, fontSize: 14, lineHeight: 1
@@ -141,7 +141,11 @@ function RunPanelInner({ events, nodes, nodeStatuses, nodeOutputs, isRunning, el
           return (
             <div key={node.id}>
               <div
+                role="button"
+                tabIndex={0}
+                aria-label={`${node.data.label}: ${cfg.label}`}
                 onClick={() => { setSelectedNodeId(isSelected ? null : node.id); onNodeClick(node.id) }}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedNodeId(isSelected ? null : node.id); onNodeClick(node.id) } }}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 8,
                   padding: '6px 8px', borderRadius: 6, cursor: 'pointer',
@@ -181,7 +185,7 @@ function RunPanelInner({ events, nodes, nodeStatuses, nodeOutputs, isRunning, el
 
       {/* Event log toggle */}
       <div style={{ borderTop: '1px solid var(--border-primary)', flexShrink: 0 }}>
-        <button onClick={() => setShowLog(!showLog)} style={{
+        <button onClick={() => setShowLog(!showLog)} aria-expanded={showLog} aria-label="Toggle event log" style={{
           width: '100%', padding: '6px 14px', background: 'transparent', border: 'none',
           cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           fontSize: 10, color: 'var(--text-tertiary)', fontWeight: 500

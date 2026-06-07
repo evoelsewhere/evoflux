@@ -184,13 +184,13 @@ function AssistantPanelInner({ nodes, edges, toolContext, onClose, onNodesChange
             {isThinking && <Spin size="small" style={{ marginLeft: 4 }} />}
           </div>
           <div style={{ display: 'flex', gap: 4 }}>
-            <button onClick={clearMessages} title="Clear chat"
+            <button onClick={clearMessages} aria-label="Clear chat" title="Clear chat"
               style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', borderRadius: 6, transition: 'background 0.1s' }}
               onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
               {clearIcon('var(--text-tertiary)')}
             </button>
-            <button onClick={onClose} title="Close"
+            <button onClick={onClose} aria-label="Close assistant" title="Close"
               style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', borderRadius: 6, transition: 'background 0.1s' }}
               onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
@@ -227,7 +227,7 @@ function AssistantPanelInner({ nodes, edges, toolContext, onClose, onNodesChange
               placeholder={isThinking ? 'Thinking...' : 'Ask me to create or modify a workflow...'}
               disabled={isThinking} autoSize={{ minRows: 1, maxRows: 4 }}
               style={{ fontSize: 12, background: 'var(--bg-input)', borderColor: 'var(--border-primary)', borderRadius: 10, flex: 1 }} />
-            <button onClick={handleSend} disabled={!input.trim() || isThinking}
+            <button onClick={handleSend} disabled={!input.trim() || isThinking} aria-label="Send message"
               style={{
                 width: 34, height: 34, borderRadius: 10, flexShrink: 0,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',

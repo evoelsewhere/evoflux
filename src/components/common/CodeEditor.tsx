@@ -89,7 +89,7 @@ export default function CodeEditor({ nodes, edges, onApply }: CodeEditorProps) {
         <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Workflow JSON</span>
         <div style={{ display: 'flex', gap: 6 }}>
           {dirty && (
-            <button onClick={handleReset} style={{
+            <button onClick={handleReset} aria-label="Reset changes" style={{
               padding: '3px 10px', fontSize: 11, borderRadius: 5, cursor: 'pointer',
               background: 'transparent', border: '1px solid var(--border-secondary)',
               color: 'var(--text-secondary)', fontWeight: 500, transition: 'all 0.1s'
@@ -98,7 +98,7 @@ export default function CodeEditor({ nodes, edges, onApply }: CodeEditorProps) {
               Reset
             </button>
           )}
-          <button onClick={handleApply} style={{
+          <button onClick={handleApply} aria-label="Apply changes" style={{
             padding: '3px 10px', fontSize: 11, borderRadius: 5, cursor: 'pointer',
             background: dirty ? 'var(--accent)' : 'var(--bg-hover)',
             border: 'none', color: dirty ? '#fff' : 'var(--text-tertiary)',

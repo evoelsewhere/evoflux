@@ -67,6 +67,7 @@ export default function RunMonitor({ events, isRunning, onClose }: RunMonitorPro
         </div>
         <button
           onClick={onClose}
+          aria-label="Close run monitor"
           style={{
             background: 'transparent', border: 'none', cursor: 'pointer',
             color: 'var(--text-tertiary)', fontSize: 16, lineHeight: 1
