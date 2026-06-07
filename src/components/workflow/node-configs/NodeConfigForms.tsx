@@ -285,15 +285,37 @@ export default function NodeConfigForms({ config, nodeType, handleChange, provid
 
       {nodeType === 'knowledge-retrieval' && (
         <Section title="Knowledge Retrieval">
-          <Field label={`Top K: ${String(config.top_k ?? 5)}`}>
-            <Slider min={1} max={20} value={Number(config.top_k ?? 5)} onChange={(v) => handleChange('top_k', v)} />
+          <Field label="Mode">
+            <Select size="small" value={String(config.mode || 'search')} onChange={(v) => handleChange('mode', v)}
+              options={[{ label: 'Search Memory', value: 'search' }, { label: 'Ingest Knowledge', value: 'ingest' }]} style={{ width: '100%' }} />
           </Field>
-          <Field label="Layer">
-            <Select size="small" value={String(config.layer || 'all')} onChange={(v) => handleChange('layer', v)}
-              options={[{ label: 'All', value: 'all' }, { label: 'Semantic', value: 'semantic' }, { label: 'Episodic', value: 'episodic' }, { label: 'Procedural', value: 'procedural' }]} style={{ width: '100%' }} />
-          </Field>
-          <Field label="Query">
-            <TextArea rows={2} value={String(config.query || '')} onChange={(e) => handleChange('query', e.target.value)} placeholder="Search query..." style={inputStyle} />
+          {config.mode !== 'ingest' && (
+            <>
+              <Field label={`Top K: ${String(config.top_k ?? 5)}`}>
+                <Slider min={1} max={20} value={Number(config.top_k ?? 5)} onChange={(v) => handleChange('top_k', v)} />
+              </Field>
+              <Field label="Layer">
+                <Select size="small" value={String(config.layer || 'all')} onChange={(v) => handleChange('layer', v)}
+                  options={[{ label: 'All', value: 'all' }, { label: 'Semantic', value: 'semantic' }, { label: 'Episodic', value: 'episodic' }, { label: 'Procedural', value: 'procedural' }]} style={{ width: '100%' }} />
+              </Field>
+              <Field label="Query">
+                <TextArea rows={2} value={String(config.query || '')} onChange={(e) => handleChange('query', e.target.value)} placeholder="Search query..." style={inputStyle} />
+              </Field>
+            </>
+          )}
+          {config.mode === 'ingest' && (
+            <>
+              <Field label="Content Type">
+                <Select size="small" value={String(config.content_type || 'document')} onChange={(v) => handleChange('content_type', v)}
+                  options={[{ label: 'Document', value: 'document' }, { label: 'Fact', value: 'fact' }, { label: 'Code Snippet', value: 'code_snippet' }, { label: 'API Doc', value: 'api_doc' }, { label: 'Error Pattern', value: 'error_pattern' }]} style={{ width: '100%' }} />
+              </Field>
+              <Field label="Content">
+                <TextArea rows={4} value={String(config.content || '')} onChange={(e) => handleChange('content', e.target.value)} placeholder="Knowledge to ingest into memory..." style={inputStyle} />
+              </Field>
+            </>
+          )}
+          <Field label="Workflow ID (optional)">
+            <Input size="small" value={String(config.workflow_id || '')} onChange={(e) => handleChange('workflow_id', e.target.value)} placeholder="Default: current workflow" style={inputStyle} />
           </Field>
         </Section>
       )}
