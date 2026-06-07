@@ -25,9 +25,12 @@
     "@tanstack/react-query": "^5.62.0",
     "antd": "^5.22.0",
     "better-sqlite3": "^12.10.0",
+    "dagre": "^0.8.5",
     "electron-store": "^8.2.0",
     "nanoid": "^3.3.8",
     "openai": "^4.73.0",
+    "pdf-parse": "^2.4.5",
+    "pdfjs-dist": "^6.0.227",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0",
@@ -44,13 +47,10 @@
     "@typescript-eslint/eslint-plugin": "^8.16.0",
     "@typescript-eslint/parser": "^8.16.0",
     "@vitejs/plugin-react": "^4.3.4",
-    "dagre": "^0.8.5",
     "electron": "^33.2.1",
     "electron-builder": "^26.0.12",
     "electron-vite": "^2.3.0",
     "eslint": "^9.15.0",
-    "pdf-parse": "^2.4.5",
-    "pdfjs-dist": "^6.0.227",
     "prettier": "^3.4.1",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.60.1",
@@ -74,7 +74,8 @@
     "extraResources": [],
     "asar": true,
     "asarUnpack": [
-      "node_modules/better-sqlite3/**/*"
+      "node_modules/better-sqlite3/**/*",
+      "node_modules/sharp/**/*"
     ],
     "mac": {
       "target": [
