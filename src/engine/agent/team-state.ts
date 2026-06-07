@@ -1,5 +1,3 @@
-import type { AgentDefinition } from './agent-definition'
-
 export type MessageType = 'task' | 'result' | 'question' | 'delegation' | 'feedback' | 'plan'
 
 export interface AgentMessage {

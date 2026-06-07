@@ -2,10 +2,10 @@ import { memo } from 'react'
 import { Handle, Position, type NodeProps } from 'reactflow'
 import {
   NodeStartIcon, NodeEndIcon, NodeLLMIcon, NodeCodeIcon,
-  NodeConditionIcon, NodeHTTPIcon, NodeTemplateIcon, NodeLoopIcon,
-  NodeMergeIcon, NodeDatabaseIcon, NodeAgentIcon, NodeTeamIcon,
+  NodeConditionIcon, NodeTemplateIcon, NodeLoopIcon,
+  NodeMergeIcon, NodeDatabaseIcon, NodeTeamIcon,
   NodeFolderIcon, NodeClockIcon, NodeGlobeIcon, NodeToolIcon,
-  NodeExtractIcon, NodeTagIcon, NodeEditIcon, NodeCommentIcon,
+  NodeExtractIcon, NodeTagIcon, NodeEditIcon,
   NodeSubWorkflowIcon
 } from '../../../common/NodeIcons'
 

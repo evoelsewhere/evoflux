@@ -1,4 +1,4 @@
-import type { MemoryGraph, MemoryContext, SemanticUnit, EpisodeUnit, ProcedureUnit } from './memory-graph'
+import type { MemoryGraph, MemoryContext } from './memory-graph'
 import { SemanticLayer } from './semantic'
 import { EpisodicLayer } from './episodic'
 import { ProceduralLayer } from './procedural'

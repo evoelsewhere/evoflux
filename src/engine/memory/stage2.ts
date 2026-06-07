@@ -1,6 +1,5 @@
 import type { MemoryGraph, MemoryEdge } from './memory-graph'
 import { SemanticLayer } from './semantic'
-import { cosineSimilarity } from './embedding'
 
 export interface RefinementResult {
   edgesAdded: number

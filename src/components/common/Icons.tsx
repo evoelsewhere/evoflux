@@ -6,7 +6,6 @@ interface IconProps {
   style?: React.CSSProperties
 }
 
-const defaultProps: IconProps = { size: 20, color: 'currentColor' }
 
 export function SearchCodeIcon({ size = 20, color = 'currentColor', style }: IconProps) {
   return (

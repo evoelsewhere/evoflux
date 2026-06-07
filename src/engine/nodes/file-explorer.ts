@@ -1,6 +1,6 @@
 import { BaseNode, type NodeMetadata, type NodeOutput, type NodeRunContext } from '../node-factory'
 import type { VariablePool } from '../variable-pool'
-import { detectFileType, getFileName, getExtension, type FileTypeInfo } from '../file-reader/file-detector'
+import { detectFileType, getExtension } from '../file-reader/file-detector'
 import { NodeExecutionError } from '../errors'
 
 interface FileExplorerConfig {

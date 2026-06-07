@@ -1,6 +1,6 @@
 import { nanoid } from 'nanoid'
 import { getDatabase } from './database'
-import { vectorToBuffer, bufferToVector, cosineSimilarity, EMBEDDING_DIMENSION } from '../memory/embedding'
+import { vectorToBuffer, bufferToVector, cosineSimilarity } from '../memory/embedding'
 
 // Semantic
 export function saveSemantic(workflowId: string, id: string, type: string, content: string, embedding?: Float32Array, metadata?: Record<string, unknown>): void {

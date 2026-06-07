@@ -12,7 +12,6 @@ export function autoLayout<T>(
   const dagreGraph = new dagre.graphlib.Graph()
   dagreGraph.setDefaultEdgeLabel(() => ({}))
 
-  const isHorizontal = direction === 'LR'
   dagreGraph.setGraph({
     rankdir: direction,
     nodesep: 60,

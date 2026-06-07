@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, type ReactNode } from 'react'
 import { ConfigProvider, theme as antTheme } from 'antd'
-import { useSettingsStore, ACCENT_PRESETS, FONT_SIZE_MAP, FONT_FAMILY_MAP, type AppearanceSettings } from '../../stores/settingsStore'
+import { useSettingsStore, FONT_SIZE_MAP, FONT_FAMILY_MAP, type AppearanceSettings } from '../../stores/settingsStore'
 
 type ThemeMode = 'dark' | 'light'
 

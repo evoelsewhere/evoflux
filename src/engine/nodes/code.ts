@@ -1,7 +1,7 @@
 import { BaseNode, type NodeMetadata, type NodeOutput, type NodeRunContext } from '../node-factory'
 import type { VariablePool } from '../variable-pool'
 import { NodeExecutionError } from '../errors'
-import { createSandbox, type Sandbox } from '../sandbox/sandbox'
+import { createSandbox } from '../sandbox/sandbox'
 
 interface CodeConfig {
   language?: 'python' | 'javascript'

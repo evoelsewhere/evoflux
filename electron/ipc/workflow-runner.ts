@@ -1,5 +1,4 @@
 import { ipcMain, BrowserWindow } from 'electron'
-import { Graph } from '../../src/engine/graph'
 import { GraphEngine } from '../../src/engine/graph-engine'
 import { VariablePool } from '../../src/engine/variable-pool'
 import { UILayer } from '../../src/engine/layers'

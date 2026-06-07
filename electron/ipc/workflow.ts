@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron'
-import { saveWorkflow, getWorkflow, listWorkflows, deleteWorkflow, createRun, updateRunStatus, listRuns, createNodeRun, updateNodeRunStatus } from '../../src/engine/db/repos'
+import { saveWorkflow, getWorkflow, listWorkflows, deleteWorkflow, listRuns } from '../../src/engine/db/repos'
 
 export function registerWorkflowHandlers(): void {
   ipcMain.on('workflow:saveSync', (event, workflow) => {

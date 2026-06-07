@@ -60,7 +60,6 @@ export default function Dashboard() {
   const totalNodes = workflows.reduce((sum, w) => sum + ((w.nodes as unknown[])?.length || 0), 0)
   const totalEdges = workflows.reduce((sum, w) => sum + ((w.edges as unknown[])?.length || 0), 0)
   const activeProviders = providers.filter(p => p.apiKey || p.type === 'ollama' || p.type === 'claude-cli' || p.type === 'copilot-cli').length
-  const lastUpdated = workflows.length > 0 ? workflows[0] : null
 
   const statCard = (label: string, value: string | number, icon: React.ReactNode, color: string) => (
     <div style={{

@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { Input, Tree } from 'antd'
-import { SearchOutlined, RightOutlined } from '@ant-design/icons'
+import { SearchOutlined } from '@ant-design/icons'
 import type { Node } from 'reactflow'
 
 interface VariableSelectorProps {

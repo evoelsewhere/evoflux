@@ -6,7 +6,7 @@ import {
   NodeExtractIcon, NodeTagIcon, NodeDatabaseIcon, NodeConditionIcon,
   NodeLoopIcon, NodeMergeIcon, NodeEditIcon, NodeTemplateIcon,
   NodeCodeIcon, NodeToolIcon, NodeFolderIcon,
-  NodeAgentIcon, NodeTeamIcon, NodeSubWorkflowIcon
+  NodeTeamIcon, NodeSubWorkflowIcon
 } from '../common/NodeIcons'
 
 const ICON_MAP: Record<string, (sz: number, c: string) => React.ReactNode> = {

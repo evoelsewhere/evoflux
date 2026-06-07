@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route } from 'react-router-dom'
 import AppLayout, { EditorLayout } from './components/layout/AppLayout'
 import Dashboard from './components/dashboard/Dashboard'
 import WorkflowEditor from './components/workflow/WorkflowEditor'

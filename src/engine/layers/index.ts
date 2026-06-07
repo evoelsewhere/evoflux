@@ -1,4 +1,4 @@
-import type { GraphEngineLayer, EngineEvent } from '../layers'
+import type { GraphEngineLayer } from '../layers'
 import type { GraphNode } from '../graph'
 import type { NodeOutput } from '../node-factory'
 import { createRun, updateRunStatus, createNodeRun, updateNodeRunStatus } from '../db/run-repo'

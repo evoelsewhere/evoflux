@@ -1,4 +1,4 @@
-import type { MemoryGraph, EpisodeUnit, ProcedureUnit } from './memory-graph'
+import type { MemoryGraph, EpisodeUnit } from './memory-graph'
 import { ProceduralLayer } from './procedural'
 
 export interface ConsolidationResult {

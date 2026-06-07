@@ -1,6 +1,6 @@
 import { BaseNode, type NodeMetadata, type NodeOutput, type NodeRunContext } from '../node-factory'
 import type { VariablePool } from '../variable-pool'
-import { detectFileType, getFileName, getExtension } from '../file-reader/file-detector'
+import { detectFileType, getExtension } from '../file-reader/file-detector'
 import { parseMarkdownToText } from '../file-reader/markdown-parser'
 import { convertFile } from '../file-reader/markitdown'
 import { buildTree, treeToString } from '../file-reader/directory-tree'

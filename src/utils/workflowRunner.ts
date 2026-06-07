@@ -1,5 +1,5 @@
 import type { Node, Edge } from 'reactflow'
-import type { NodeData, AITaskConfig } from '../types/workflow'
+import type { NodeData } from '../types/workflow'
 
 interface ExecutionResult {
   nodeId: string

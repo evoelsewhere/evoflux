@@ -1,8 +1,8 @@
 import { BaseNode, type NodeMetadata, type NodeOutput, type NodeRunContext } from '../node-factory'
 import type { VariablePool } from '../variable-pool'
 import { NodeExecutionError, AgentError } from '../errors'
-import { parseAgentOutput, buildAgentSystemPrompt, buildToolResultPrompt, type ParsedAction } from '../agent/parser'
-import { getTool, getAllTools, checkPermission, type AgentTool, type ToolPermission, type ToolContext } from '../agent/tools'
+import { parseAgentOutput, buildAgentSystemPrompt, buildToolResultPrompt } from '../agent/parser'
+import { getTool, checkPermission, type AgentTool, type ToolPermission, type ToolContext } from '../agent/tools'
 import { registerBuiltinTools } from '../agent/builtin-tools'
 
 let toolsRegistered = false
@@ -184,7 +184,7 @@ export class ReActAgentNode extends BaseNode<ReActAgentConfig> {
   private async executeHandler(
     tool: AgentTool,
     args: Record<string, unknown>,
-    context: ToolContext
+    _context: ToolContext
   ): Promise<string> {
     switch (tool.handler) {
       case 'file_read': {

@@ -1,4 +1,4 @@
-import type { AgentTool, ToolPermission } from './tools'
+import type { AgentTool } from './tools'
 
 export interface AgentDefinition {
   id: string
