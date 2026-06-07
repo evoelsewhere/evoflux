@@ -6,7 +6,7 @@
   "author": "Evoflux Team",
   "license": "MIT",
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "env -u ELECTRON_RUN_AS_NODE electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "lint": "eslint src electron --ext .ts,.tsx",
