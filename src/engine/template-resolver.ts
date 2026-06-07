@@ -25,6 +25,8 @@ export function resolveValue(value: unknown, pool: VariablePool): unknown {
     return value.map(item => resolveValue(item, pool))
   }
   if (value !== null && typeof value === 'object') {
+    if (value instanceof Date || value instanceof RegExp) return value
+    if (value instanceof Map || value instanceof Set) return value
     const result: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
       result[k] = resolveValue(v, pool)

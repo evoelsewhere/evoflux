@@ -27,8 +27,8 @@ export class GraphError extends WorkflowError {
 export class CycleDetectedError extends GraphError {
   readonly cycle: string[]
 
-  constructor(cycle: string[]) {
-    super(`Cycle detected: ${cycle.join(' → ')}`)
+  constructor(cycle: string[], options?: ErrorOptions) {
+    super(`Cycle detected: ${cycle.join(' → ')}`, options)
     this.name = 'CycleDetectedError'
     this.cycle = cycle
   }

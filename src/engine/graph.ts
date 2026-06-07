@@ -73,6 +73,12 @@ export class Graph<T = unknown> {
     if (!this.nodes.has(edge.target)) {
       throw new GraphError(`Target node '${edge.target}' not found`)
     }
+    if (edge.source === edge.target) {
+      throw new GraphError(`Self-loop not allowed on node '${edge.source}'`)
+    }
+    if (this.edgesList.some(e => e.id === edge.id)) {
+      throw new GraphError(`Edge '${edge.id}' already exists`)
+    }
 
     this.outgoing.get(edge.source)!.add(edge.target)
     this.incoming.get(edge.target)!.add(edge.source)

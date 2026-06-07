@@ -31,31 +31,31 @@ export class LayerManager {
 
   async emitGraphStart(): Promise<void> {
     for (const layer of this.layers) {
-      await layer.onGraphStart?.()
+      try { await layer.onGraphStart?.() } catch (e) { console.warn(`[Layer:${layer.name}] onGraphStart error:`, e) }
     }
   }
 
   async emitGraphEnd(result: { completed: number; failed: number }): Promise<void> {
     for (const layer of this.layers) {
-      await layer.onGraphEnd?.(result)
+      try { await layer.onGraphEnd?.(result) } catch (e) { console.warn(`[Layer:${layer.name}] onGraphEnd error:`, e) }
     }
   }
 
   async emitNodeStart(node: GraphNode): Promise<void> {
     for (const layer of this.layers) {
-      await layer.onNodeStart?.(node)
+      try { await layer.onNodeStart?.(node) } catch (e) { console.warn(`[Layer:${layer.name}] onNodeStart error:`, e) }
     }
   }
 
   async emitNodeEnd(node: GraphNode, output: NodeOutput): Promise<void> {
     for (const layer of this.layers) {
-      await layer.onNodeEnd?.(node, output)
+      try { await layer.onNodeEnd?.(node, output) } catch (e) { console.warn(`[Layer:${layer.name}] onNodeEnd error:`, e) }
     }
   }
 
   async emitNodeError(node: GraphNode, error: Error): Promise<void> {
     for (const layer of this.layers) {
-      await layer.onNodeError?.(node, error)
+      try { await layer.onNodeError?.(node, error) } catch (e) { console.warn(`[Layer:${layer.name}] onNodeError error:`, e) }
     }
   }
 }
