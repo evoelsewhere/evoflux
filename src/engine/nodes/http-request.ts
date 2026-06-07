@@ -4,7 +4,7 @@ import { NodeExecutionError } from '../errors'
 
 interface HTTPConfig {
   url?: string
-  method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'HEAD'
   headers?: Record<string, string>
   body?: unknown
   timeout_ms?: number
@@ -57,7 +57,7 @@ export class HTTPRequestNode extends BaseNode<HTTPConfig> {
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json', ...headers },
-        body: body ? (typeof body === 'string' ? body : JSON.stringify(body)) : undefined,
+        body: body && method !== 'GET' && method !== 'HEAD' ? (typeof body === 'string' ? body : JSON.stringify(body)) : undefined,
         signal: controller.signal
       })
 

@@ -12,6 +12,7 @@ interface ContextLoaderConfig {
   exclude_patterns?: string[]
   max_files?: number
   max_total_chars?: number
+  max_depth?: number
   include_tree?: boolean
   include_file_content?: boolean
   tree_only?: boolean
@@ -52,8 +53,9 @@ export class ContextLoaderNode extends BaseNode<ContextLoaderConfig> {
       defaultConfig: {
         file_types: DEFAULT_FILE_TYPES,
         exclude_patterns: DEFAULT_EXCLUDE,
-        max_files: 50,
-        max_total_chars: 100000,
+      max_files: 50,
+      max_total_chars: 100000,
+      max_depth: 8,
         include_tree: true,
         include_file_content: true,
         tree_only: false,
@@ -82,6 +84,7 @@ export class ContextLoaderNode extends BaseNode<ContextLoaderConfig> {
     const excludePatterns = cfg.exclude_patterns || DEFAULT_EXCLUDE
     const maxFiles = cfg.max_files || 50
     const maxTotalChars = cfg.max_total_chars || 100000
+    const maxDepth = cfg.max_depth || 8
     const includeTree = cfg.include_tree !== false
     const includeContent = cfg.include_file_content !== false
     const treeOnly = cfg.tree_only || false
@@ -95,7 +98,7 @@ export class ContextLoaderNode extends BaseNode<ContextLoaderConfig> {
         rootPath,
         (p) => { try { return readdirSync(p) } catch { return [] } },
         (p) => { try { return statSync(p).isDirectory() } catch { return false } },
-        { excludePatterns, maxDepth: 8, maxEntries: 500, showFiles: !treeOnly }
+        { excludePatterns, maxDepth, maxEntries: 500, showFiles: !treeOnly }
       )
       if (tree) treeStr = treeToString(tree)
     }
@@ -109,7 +112,7 @@ export class ContextLoaderNode extends BaseNode<ContextLoaderConfig> {
     let skipped = 0
 
     async function scan(dirPath: string, depth: number): Promise<void> {
-      if (depth > 8 || files.length >= maxFiles) return
+      if (depth > maxDepth || files.length >= maxFiles) return
 
       let entries: string[]
       try {

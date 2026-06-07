@@ -42,7 +42,7 @@ export class KnowledgeRetrievalNode extends BaseNode<KnowledgeRetrievalConfig> {
     inputs: Record<string, unknown>,
     config: unknown,
     _pool: VariablePool,
-    context: NodeRunContext
+    _context: NodeRunContext
   ): Promise<NodeOutput> {
     const cfg = config as KnowledgeRetrievalConfig
     const query = String(inputs.query || cfg.query || '')
@@ -53,7 +53,7 @@ export class KnowledgeRetrievalNode extends BaseNode<KnowledgeRetrievalConfig> {
       return { results: '', count: 0 }
     }
 
-    const memory = getOrCreateMemory(context.nodeId)
+    const memory = getOrCreateMemory('default')
     const parts: string[] = []
 
     if (layer === 'all' || layer === 'semantic') {
