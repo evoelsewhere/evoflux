@@ -2,6 +2,7 @@ import { BaseNode, type NodeMetadata, type NodeOutput, type NodeRunContext } fro
 import type { VariablePool } from '../variable-pool'
 import { NodeExecutionError } from '../errors'
 import { createSandbox } from '../sandbox/sandbox'
+import { nanoid } from 'nanoid'
 
 interface FileWriteConfig {
   path?: string
@@ -44,9 +45,13 @@ export class FileWriteNode extends BaseNode<FileWriteConfig> {
     if (!filePath) throw new NodeExecutionError(context.nodeId, this.type, 'File path is required')
 
     try {
-      const sandbox = await createSandbox({ workflowId: context.nodeId, runId: `fw-${context.nodeId}` })
-      await sandbox.writeFile(filePath, content)
-      return { path: filePath, bytes: content.length }
+      const sandbox = await createSandbox({ workflowId: `wf-${context.nodeId}`, runId: `run-${nanoid(8)}` })
+      try {
+        await sandbox.writeFile(filePath, content)
+        return { path: filePath, bytes: content.length }
+      } finally {
+        await sandbox.destroy().catch(() => {})
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'File write failed'
       throw new NodeExecutionError(context.nodeId, this.type, message, { cause: error })

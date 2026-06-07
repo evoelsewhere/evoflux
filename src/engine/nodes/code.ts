@@ -2,6 +2,7 @@ import { BaseNode, type NodeMetadata, type NodeOutput, type NodeRunContext } fro
 import type { VariablePool } from '../variable-pool'
 import { NodeExecutionError } from '../errors'
 import { createSandbox } from '../sandbox/sandbox'
+import { nanoid } from 'nanoid'
 
 interface CodeConfig {
   language?: 'python' | 'javascript'
@@ -60,12 +61,15 @@ export class CodeNode extends BaseNode<CodeConfig> {
     }
 
     try {
-      const sandbox = await createSandbox({ workflowId: context.nodeId, runId: `code-${context.nodeId}` })
-      const result = await sandbox.execCode(language, code, input || undefined)
-
-      return {
-        output: result.stdout,
-        error: result.stderr || ''
+      const sandbox = await createSandbox({ workflowId: `wf-${context.nodeId}`, runId: `run-${nanoid(8)}` })
+      try {
+        const result = await sandbox.execCode(language, code, input || undefined)
+        return {
+          output: result.stdout,
+          error: result.stderr || ''
+        }
+      } finally {
+        await sandbox.destroy().catch(() => {})
       }
     } catch (error) {
       // Fallback to inline execution for JavaScript

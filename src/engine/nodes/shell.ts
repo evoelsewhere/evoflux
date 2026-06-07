@@ -2,6 +2,7 @@ import { BaseNode, type NodeMetadata, type NodeOutput, type NodeRunContext } fro
 import type { VariablePool } from '../variable-pool'
 import { NodeExecutionError } from '../errors'
 import { createSandbox } from '../sandbox/sandbox'
+import { nanoid } from 'nanoid'
 
 interface ShellConfig {
   command?: string
@@ -42,12 +43,16 @@ export class ShellNode extends BaseNode<ShellConfig> {
     if (!command) throw new NodeExecutionError(context.nodeId, this.type, 'Command is required')
 
     try {
-      const sandbox = await createSandbox({ workflowId: context.nodeId, runId: `shell-${context.nodeId}` })
-      const result = await sandbox.exec(command, {
-        timeoutMs: cfg.timeout_ms || 30000,
-        cwd: cfg.cwd
-      })
-      return { stdout: result.stdout, stderr: result.stderr, exit_code: result.exitCode }
+      const sandbox = await createSandbox({ workflowId: `wf-${context.nodeId}`, runId: `run-${nanoid(8)}` })
+      try {
+        const result = await sandbox.exec(command, {
+          timeoutMs: cfg.timeout_ms || 30000,
+          cwd: cfg.cwd
+        })
+        return { stdout: result.stdout, stderr: result.stderr, exit_code: result.exitCode }
+      } finally {
+        await sandbox.destroy().catch(() => {})
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Shell execution failed'
       throw new NodeExecutionError(context.nodeId, this.type, message, { cause: error })
