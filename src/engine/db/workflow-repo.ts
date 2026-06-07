@@ -48,7 +48,3 @@ export function deleteWorkflow(id: string): boolean {
   const result = db.prepare('DELETE FROM workflows WHERE id = ?').run(id)
   return result.changes > 0
 }
-
-export function parseWorkflowDSL(record: WorkflowDSL): WorkflowDSL {
-  return record
-}

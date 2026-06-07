@@ -1,6 +1,7 @@
 import type { GraphEngineLayer } from '../layers'
 import type { GraphNode } from '../graph'
 import type { NodeOutput } from '../node-factory'
+import { ExecutionLimitError } from '../errors'
 import { createRun, updateRunStatus, createNodeRun, updateNodeRunStatus } from '../db/run-repo'
 
 export class PersistenceLayer implements GraphEngineLayer {
@@ -14,6 +15,7 @@ export class PersistenceLayer implements GraphEngineLayer {
   }
 
   onGraphStart(): void {
+    this.nodeRunIds.clear()
     try {
       const run = createRun(this.workflowId)
       this.runId = run.id
@@ -86,11 +88,11 @@ export class ExecutionLimitsLayer implements GraphEngineLayer {
     this.stepCount++
 
     if (this.stepCount > this.maxSteps) {
-      throw new Error(`Execution limit exceeded: ${this.maxSteps} steps`)
+      throw new ExecutionLimitError(`Execution limit exceeded: ${this.maxSteps} steps`)
     }
 
     if (Date.now() - this.startTime > this.maxTimeMs) {
-      throw new Error(`Execution timeout: exceeded ${this.maxTimeMs}ms`)
+      throw new ExecutionLimitError(`Execution timeout: exceeded ${this.maxTimeMs}ms`)
     }
   }
 }

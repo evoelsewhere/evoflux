@@ -33,7 +33,9 @@ export class Segment {
   private static resolveType(value: unknown): SegmentType {
     if (value === null || value === undefined) return 'null'
     if (Array.isArray(value)) return 'array'
-    return typeof value as SegmentType
+    const t = typeof value
+    if (t === 'function') return 'object'
+    return t as SegmentType
   }
 }
 
