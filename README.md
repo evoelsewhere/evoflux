@@ -231,76 +231,356 @@ dist/
 
 ### System Architecture
 
-<p align="center">
-  <img src="docs/diagrams/system-architecture.puml" alt="System Architecture">
-</p>
+```mermaid
+graph TB
+    subgraph main["Electron Main Process"]
+        ipc["IPC Handlers<br/>workflow · ai · sandbox · memory · dsl"]
+        engine["Graph Engine<br/>Topological Sort · Parallel Execution"]
+        db[("SQLite<br/>~/.evoflux/evoflux.db")]
+    end
 
-> View PlantUML source: [docs/diagrams/system-architecture.puml](docs/diagrams/system-architecture.puml)
+    subgraph preload["Preload (contextBridge)"]
+        bridge["window.api<br/>{ workflow, ai, sandbox, memory, settings }"]
+    end
+
+    subgraph renderer["Renderer Process (React + Vite)"]
+        subgraph canvas["Canvas"]
+            rf["ReactFlow<br/>Nodes + Edges"]
+            popup["Node Popup<br/>Settings Editor"]
+            run["Run Panel<br/>Execution Monitor"]
+        end
+
+        subgraph ai["AI System"]
+            assistant["AI Assistant<br/>ReAct Engine"]
+            tools["10 Workflow Tools"]
+            providers["Provider Manager"]
+        end
+
+        subgraph stores["State (Zustand)"]
+            ws["workflowStore"]
+            ps["providerStore"]
+            ss["settingsStore"]
+            as["assistantStore"]
+        end
+
+        subgraph ui["UI"]
+            dash["Dashboard"]
+            settings["Settings Page"]
+            dock["Floating Dock"]
+        end
+    end
+
+    ipc --> db
+    engine --> db
+    ipc <--> bridge
+    bridge <--> stores
+    stores <--> canvas
+    assistant --> tools
+    tools --> stores
+    providers --> ipc
+    ui --> stores
+
+    style main fill:#0f172a,stroke:#1e40af,color:#ededed
+    style preload fill:#1c1917,stroke:#3f3f46,color:#ededed
+    style renderer fill:#1e1028,stroke:#7e22ce,color:#ededed
+    style canvas fill:#131c1c,stroke:#115e59,color:#ededed
+    style ai fill:#0f1a14,stroke:#065f46,color:#ededed
+    style stores fill:#1c1917,stroke:#92400e,color:#ededed
+    style ui fill:#18181b,stroke:#3f3f46,color:#ededed
+    style db fill:#171717,stroke:#0070f3,color:#ededed
+```
 
 ### Data Flow
 
-<p align="center">
-  <img src="docs/diagrams/data-flow.puml" alt="Data Flow">
-</p>
+```mermaid
+sequenceDiagram
+    actor User
+    participant Editor as WorkflowEditor
+    participant Store as Zustand Store
+    participant IPC as IPC Bridge
+    participant Main as Main Process
+    participant DB as SQLite
 
-> View PlantUML source: [docs/diagrams/data-flow.puml](docs/diagrams/data-flow.puml)
+    rect rgb(15, 23, 42)
+    Note over User,DB: Edit Workflow
+    User->>Editor: Drag node / Edit config
+    Editor->>Store: setNodes() / updateNodeData()
+    Store->>Store: pushHistory() (undo)
+    Editor->>Editor: auto-save (500ms debounce)
+    Editor->>IPC: window.api.workflow.save()
+    IPC->>Main: ipcRenderer.invoke
+    Main->>DB: saveWorkflow() INSERT OR REPLACE
+    DB-->>Main: OK
+    end
+
+    rect rgb(28, 25, 23)
+    Note over User,DB: Close App
+    User->>Editor: Close window
+    Editor->>IPC: window.api.workflow.saveSync()
+    IPC->>Main: ipcRenderer.sendSync
+    Main->>DB: saveWorkflow() [synchronous]
+    Editor->>Editor: Process exits safely
+    end
+
+    rect rgb(30, 16, 40)
+    Note over User,DB: Open Workflow
+    User->>Editor: Navigate to /workflows/:id
+    Editor->>IPC: window.api.workflow.load(id)
+    IPC->>Main: ipcRenderer.invoke
+    Main->>DB: getWorkflow(id)
+    DB-->>Main: { nodes_json, edges_json }
+    IPC-->>Editor: workflow data
+    Editor->>Store: loadWorkflow() + setNodes()
+    end
+
+    rect rgb(19, 28, 28)
+    Note over User,DB: Run Workflow
+    User->>Editor: Click Run
+    Editor->>IPC: workflow.run(dsl, { inputs })
+    Main->>Main: GraphEngine.execute()
+    loop Each node
+        Main-->>IPC: emit(node:start)
+        Main-->>IPC: emit(node:complete)
+    end
+    Main-->>IPC: emit(graph:complete)
+    end
+```
 
 ### Component Diagram
 
-<p align="center">
-  <img src="docs/diagrams/components.puml" alt="Components">
-</p>
+```mermaid
+graph TB
+    subgraph routes["Routes"]
+        dash["Dashboard /"]
+        editor["WorkflowEditor /workflows/:id"]
+        settings["SettingsPage /settings"]
+    end
 
-> View PlantUML source: [docs/diagrams/components.puml](docs/diagrams/components.puml)
+    subgraph editorComp["WorkflowEditor"]
+        canvas["ReactFlow Canvas"]
+        basenode["BaseNode (universal)"]
+        popup["NodePopup"]
+        runpanel["RunPanel"]
+        assist["AssistantPanel"]
+        code["CodeEditor"]
+    end
+
+    subgraph layout["Layout"]
+        dock["Floating Dock"]
+        blocks["BlockSelector"]
+    end
+
+    subgraph nodeTypes["21 Node Types"]
+        triggers["manual-trigger · webhook · schedule"]
+        aiN["llm · parameter-extractor · question-classifier · knowledge-retrieval"]
+        logicN["condition · iteration · loop · template · variable-*"]
+        toolN["code · shell · http-request · file-* · context-loader"]
+        agentN["react-agent · agent-orchestrator · sub-workflow"]
+    end
+
+    subgraph aiSys["AI Assistant"]
+        eng["engine.ts (ReAct)"]
+        to["tools.ts (10 tools)"]
+    end
+
+    subgraph stores["Zustand"]
+        ws["workflowStore"]
+        ps["providerStore"]
+        ss["settingsStore"]
+    end
+
+    dash --> editor
+    editor --> canvas
+    canvas --> basenode
+    basenode --> popup
+    canvas --> runpanel
+    canvas --> assist
+    assist --> eng
+    eng --> to
+    to --> ws
+
+    style routes fill:#0f172a,stroke:#1e40af,color:#ededed
+    style editorComp fill:#1e1028,stroke:#7e22ce,color:#ededed
+    style layout fill:#1c1917,stroke:#3f3f46,color:#ededed
+    style nodeTypes fill:#0f1a14,stroke:#065f46,color:#ededed
+    style aiSys fill:#131c1c,stroke:#115e59,color:#ededed
+    style stores fill:#1c1917,stroke:#92400e,color:#ededed
+```
 
 ### Database Schema
 
-<p align="center">
-  <img src="docs/diagrams/database-schema.puml" alt="Database Schema">
-</p>
+```mermaid
+erDiagram
+    workflows ||--o{ runs : "1:N"
+    runs ||--o{ node_runs : "1:N"
+    workflows ||--o{ memory_semantic : "1:N"
+    workflows ||--o{ memory_episodic : "1:N"
+    workflows ||--o{ memory_procedural : "1:N"
+    workflows ||--o{ memory_edges : "1:N"
+    workflows ||--o{ env_variables : "1:N"
+    runs ||--o{ memory_episodic : "1:N"
 
-> View PlantUML source: [docs/diagrams/database-schema.puml](docs/diagrams/database-schema.puml)
+    workflows {
+        text id PK
+        text name
+        text description
+        text nodes_json
+        text edges_json
+    }
+
+    runs {
+        text id PK
+        text workflow_id FK
+        text status
+        text input_json
+        text output_json
+    }
+
+    node_runs {
+        text id PK
+        text run_id FK
+        text node_id
+        text status
+        text output_json
+        text error
+    }
+
+    providers {
+        text id PK
+        text name
+        text type
+        text api_key
+        text base_url
+        text default_model
+    }
+
+    memory_semantic {
+        text id PK
+        text workflow_id FK
+        text content
+        text type
+    }
+
+    memory_episodic {
+        text id PK
+        text workflow_id FK
+        text trajectory_json
+        text outcome
+    }
+
+    memory_procedural {
+        text id PK
+        text workflow_id FK
+        text pattern
+        real success_rate
+    }
+```
 
 ### Workflow Execution
 
-<p align="center">
-  <img src="docs/diagrams/workflow-execution.puml" alt="Workflow Execution">
-</p>
+```mermaid
+sequenceDiagram
+    actor User
+    participant Editor as WorkflowEditor
+    participant Panel as RunPanel
+    participant IPC as IPC
+    participant Engine as GraphEngine
+    participant DB as SQLite
 
-> View PlantUML source: [docs/diagrams/workflow-execution.puml](docs/diagrams/workflow-execution.puml)
+    User->>Editor: Click Run
+    Editor->>Editor: Show RunInputDialog (if variables)
+    User->>Editor: Fill inputs → Run
+    Editor->>IPC: workflow.run(dsl, { inputs })
+    activate Engine
+    Engine->>Engine: Topological sort
+    Engine->>DB: createRun()
+
+    loop Each node
+        Engine-->>IPC: node:start
+        IPC-->>Editor: updateStatus(running)
+        Note over Engine: Execute (LLM/Code/Shell/Agent)
+        Engine-->>IPC: node:complete
+        IPC-->>Editor: updateStatus(completed)
+    end
+
+    Engine->>DB: updateRunStatus(complete)
+    Engine-->>IPC: graph:complete
+    Editor->>Editor: setIsRunning(false)
+    deactivate Engine
+```
 
 ### AI Assistant
 
-<p align="center">
-  <img src="docs/diagrams/ai-assistant.puml" alt="AI Assistant">
-</p>
+```mermaid
+sequenceDiagram
+    actor User
+    participant Panel as AssistantPanel
+    participant Engine as ReAct Engine
+    participant Tools as Workflow Tools
+    participant Provider as AI Provider
+    participant Store as Zustand Store
 
-> View PlantUML source: [docs/diagrams/ai-assistant.puml](docs/diagrams/ai-assistant.puml)
+    User->>Panel: Type message
+    Panel->>Engine: runAssistant(options)
+
+    loop ReAct Loop (max 20 iterations)
+        Engine->>Provider: ai.chat(messages)
+        Provider-->>Engine: LLM output
+
+        alt tool_call
+            Engine->>Tools: Execute create_node / connect_nodes / ...
+            Tools->>Store: addNode() / addEdge()
+            Store-->>Tools: OK
+            Tools-->>Engine: Result
+        else finish
+            Engine->>Panel: onFinish(answer)
+        end
+    end
+```
 
 ### Provider System
 
-<p align="center">
-  <img src="docs/diagrams/provider-system.puml" alt="Provider System">
-</p>
+```mermaid
+graph LR
+    subgraph UI["Settings UI"]
+        pl["Provider List"]
+        tc["Test Connection"]
+    end
 
-> View PlantUML source: [docs/diagrams/provider-system.puml](docs/diagrams/provider-system.puml)
+    subgraph store["Provider Store"]
+        ps["providers[]"]
+    end
 
-### Rendering PlantUML
+    subgraph db["SQLite"]
+        pt["providers table"]
+    end
 
-To render diagrams locally:
+    subgraph clients["AI Clients"]
+        openai["OpenAI"]
+        anthropic["Anthropic"]
+        ollama["Ollama"]
+        oacompat["OpenAI-Compatible"]
+        claudecli["Claude CLI"]
+        copilotcli["Copilot CLI"]
+    end
 
-```bash
-# Install PlantUML
-brew install plantuml       # macOS
-choco install plantuml      # Windows
+    subgraph nodes["Nodes"]
+        llm["LLM Node"]
+        react["ReAct Agent"]
+        assist["Assistant"]
+    end
 
-# Render all diagrams
-plantuml docs/diagrams/*.puml
+    pl --> ps --> pt
+    tc --> openai & anthropic & ollama
+    llm & react & assist --> pt
+    pt --> openai & anthropic & ollama & oacompat & claudecli & copilotcli
 
-# Or use the PlantUML extension in VS Code
+    style UI fill:#0f172a,stroke:#1e40af,color:#ededed
+    style store fill:#1c1917,stroke:#92400e,color:#ededed
+    style db fill:#171717,stroke:#0070f3,color:#ededed
+    style clients fill:#1e1028,stroke:#7e22ce,color:#ededed
+    style nodes fill:#0f1a14,stroke:#065f46,color:#ededed
 ```
-
-Or view online: [plantuml.com/plantuml](https://www.plantuml.com/plantuml) — paste the `.puml` source.
 
 ### Project Structure
 ```
