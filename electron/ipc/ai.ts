@@ -283,21 +283,20 @@ function listModelConfigs(): Array<{ provider: string; model: string; config: Re
 
 // ============ IPC Handlers ============
 
+import { setSetting, getAllSettings, saveProvider as dbSaveProvider, listProviders as dbListProviders, deleteProvider as dbDeleteProvider, clearDefaultProviders } from '../../src/engine/db/repos'
+
 export function registerAIHandlers(): void {
   ipcMain.handle('settings:save', async (_event, settings) => {
     if (settings && typeof settings === 'object') {
       for (const [key, value] of Object.entries(settings)) {
-        store.set(`settings.${key}`, value)
+        setSetting(key, value)
       }
     }
     return { success: true }
   })
 
   ipcMain.handle('settings:load', async () => {
-    return {
-      providers: store.get('settings.providers') || [],
-      appearance: store.get('settings.appearance') || null
-    }
+    return getAllSettings()
   })
 
   ipcMain.handle('ai:chat', async (_event, messages, options) => {
