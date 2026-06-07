@@ -1,9 +1,43 @@
-import { useState } from 'react'
-import { Layout, Tooltip } from 'antd'
+import { useState, useRef, useEffect } from 'react'
+import { Input } from 'antd'
 import { useTheme } from '../common/ThemeProvider'
 import { useNavigate, useLocation } from 'react-router-dom'
+import { NODE_CATEGORIES, searchNodes, type NodeDefinition } from '../workflow/registry'
+import {
+  NodeStartIcon, NodeGlobeIcon, NodeClockIcon, NodeLLMIcon,
+  NodeExtractIcon, NodeTagIcon, NodeDatabaseIcon, NodeConditionIcon,
+  NodeLoopIcon, NodeMergeIcon, NodeEditIcon, NodeTemplateIcon,
+  NodeCodeIcon, NodeToolIcon, NodeFolderIcon,
+  NodeAgentIcon, NodeTeamIcon, NodeSubWorkflowIcon
+} from '../common/NodeIcons'
 
-const { Sider } = Layout
+const NODE_ICON_MAP: Record<string, (sz: number, c: string) => React.ReactNode> = {
+  'play-circle': (s, c) => <NodeStartIcon size={s} color={c} />,
+  'global': (s, c) => <NodeGlobeIcon size={s} color={c} />,
+  'clock-circle': (s, c) => <NodeClockIcon size={s} color={c} />,
+  'robot': (s, c) => <NodeLLMIcon size={s} color={c} />,
+  'scan': (s, c) => <NodeExtractIcon size={s} color={c} />,
+  'tags': (s, c) => <NodeTagIcon size={s} color={c} />,
+  'database': (s, c) => <NodeDatabaseIcon size={s} color={c} />,
+  'branches': (s, c) => <NodeConditionIcon size={s} color={c} />,
+  'reload': (s, c) => <NodeLoopIcon size={s} color={c} />,
+  'sync': (s, c) => <NodeLoopIcon size={s} color={c} />,
+  'merge-cells': (s, c) => <NodeMergeIcon size={s} color={c} />,
+  'edit': (s, c) => <NodeEditIcon size={s} color={c} />,
+  'file-text': (s, c) => <NodeTemplateIcon size={s} color={c} />,
+  'code-sandbox': (s, c) => <NodeCodeIcon size={s} color={c} />,
+  'code': (s, c) => <NodeCodeIcon size={s} color={c} />,
+  'folder-open': (s, c) => <NodeFolderIcon size={s} color={c} />,
+  'more': (s, c) => <NodeToolIcon size={s} color={c} />,
+  'setting': (s, c) => <NodeToolIcon size={s} color={c} />,
+  'apartment': (s, c) => <NodeSubWorkflowIcon size={s} color={c} />,
+  'team': (s, c) => <NodeTeamIcon size={s} color={c} />,
+  'unknown': (s, c) => <NodeToolIcon size={s} color={c} />
+}
+
+const CAT_COLORS: Record<string, string> = {
+  trigger: '#34d399', ai: '#60a5fa', logic: '#fbbf24', tools: '#2dd4bf', agent: '#c084fc', other: '#a1a1aa'
+}
 
 const icons = {
   home: (c: string) => <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8L8 2L14 8" stroke={c} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><path d="M3.5 7V13.5H6.5V10H9.5V13.5H12.5V7" stroke={c} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>,
@@ -18,10 +52,11 @@ const icons = {
   undo: (c: string) => <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M3.5 6H9.5C11.6 6 13 7.9 13 10C13 12.1 11.6 14 9.5 14H7" stroke={c} strokeWidth="1.3" strokeLinecap="round"/><path d="M6 4L3.5 6L6 8" stroke={c} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>,
   redo: (c: string) => <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M11.5 6H5.5C3.4 6 2 7.9 2 10C2 12.1 3.4 14 5.5 14H8" stroke={c} strokeWidth="1.3" strokeLinecap="round"/><path d="M9 4L11.5 6L9 8" stroke={c} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>,
   layout: (c: string) => <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="1.5" y="1.5" width="5" height="5" rx="1" stroke={c} strokeWidth="1.2"/><rect x="8.5" y="1.5" width="5" height="5" rx="1" stroke={c} strokeWidth="1.2"/><rect x="1.5" y="8.5" width="5" height="5" rx="1" stroke={c} strokeWidth="1.2"/><rect x="8.5" y="8.5" width="5" height="5" rx="1" stroke={c} strokeWidth="1.2"/></svg>,
-  back: (c: string) => <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 2L4 7L9 12" stroke={c} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+  back: (c: string) => <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 2L4 7L9 12" stroke={c} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+  nodes: (c: string) => <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3V13M3 8H13" stroke={c} strokeWidth="1.5" strokeLinecap="round"/><rect x="1" y="1" width="4" height="4" rx="1" stroke={c} strokeWidth="1.2"/><rect x="11" y="1" width="4" height="4" rx="1" stroke={c} strokeWidth="1.2"/><rect x="1" y="11" width="4" height="4" rx="1" stroke={c} strokeWidth="1.2"/><rect x="11" y="11" width="4" height="4" rx="1" stroke={c} strokeWidth="1.2"/></svg>
 }
 
-type SidebarAction = {
+type DockAction = {
   id: string
   icon: (c: string) => React.ReactNode
   label: string
@@ -29,6 +64,7 @@ type SidebarAction = {
   active?: boolean
   danger?: boolean
   accent?: boolean
+  separatorBefore?: boolean
 }
 
 interface SidebarProps {
@@ -46,117 +82,167 @@ interface SidebarProps {
   onRedo?: () => void
   onAutoLayout?: () => void
   onBack?: () => void
+  onAddNode?: (type: string, definition: NodeDefinition) => void
 }
-
-const BT = 'var(--text-secondary)'
-const BT_H = 'var(--text-primary)'
 
 export default function Sidebar(props: SidebarProps) {
   const navigate = useNavigate()
   const location = useLocation()
   const { mode, toggleTheme } = useTheme()
+  const [hoveredId, setHoveredId] = useState<string | null>(null)
+  const [showNodes, setShowNodes] = useState(false)
+  const [nodeSearch, setNodeSearch] = useState('')
+  const nodesRef = useRef<HTMLDivElement>(null)
 
   const isActive = (key: string) => {
     if (key === '/') return location.pathname === '/' || location.pathname === '/workflows'
     return location.pathname.startsWith(key)
   }
 
-  const navItems = [
-    { key: '/', icon: icons.home, label: 'Dashboard' },
-    { key: '/workflows', icon: icons.workflow, label: 'Workflows' }
+  useEffect(() => {
+    if (!showNodes) return
+    const handler = (e: MouseEvent) => {
+      if (nodesRef.current && !nodesRef.current.contains(e.target as HTMLElement)) setShowNodes(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showNodes])
+
+  const categories = nodeSearch
+    ? [{ name: 'Search Results', icon: 'more', nodes: searchNodes(nodeSearch) }]
+    : NODE_CATEGORIES
+
+  const onDragStart = (e: React.DragEvent, nodeType: string, def: NodeDefinition) => {
+    e.dataTransfer.setData('application/reactflow-type', nodeType)
+    e.dataTransfer.setData('application/reactflow-def', JSON.stringify(def))
+    e.dataTransfer.effectAllowed = 'move'
+    setShowNodes(false)
+  }
+
+  const navItems: DockAction[] = [
+    { id: 'home', icon: icons.home, label: 'Dashboard', onClick: () => navigate('/'), active: isActive('/') },
+    { id: 'workflows', icon: icons.workflow, label: 'Workflows', onClick: () => navigate('/workflows'), active: isActive('/workflows') }
   ]
 
-  const editorActions: SidebarAction[] = props.editorMode ? [
+  const editorActions: DockAction[] = props.editorMode ? [
+    { id: 'nodes', icon: icons.nodes, label: 'Add Node', onClick: () => { setShowNodes(!showNodes); setNodeSearch('') }, active: showNodes, accent: showNodes, separatorBefore: true },
     { id: 'back', icon: icons.back, label: 'Back', onClick: props.onBack },
-    { id: 'save', icon: icons.save, label: 'Save (Ctrl+S)', onClick: props.onSave },
-    { id: 'sep1', icon: () => null, label: '' },
-    { id: 'undo', icon: icons.undo, label: 'Undo (Ctrl+Z)', onClick: props.onUndo, active: props.canUndo },
-    { id: 'redo', icon: icons.redo, label: 'Redo (Ctrl+Y)', onClick: props.onRedo, active: props.canRedo },
+    { id: 'save', icon: icons.save, label: 'Save', onClick: props.onSave },
+    { id: 'undo', icon: icons.undo, label: 'Undo', onClick: props.onUndo, active: props.canUndo },
+    { id: 'redo', icon: icons.redo, label: 'Redo', onClick: props.onRedo, active: props.canRedo },
     { id: 'layout', icon: icons.layout, label: 'Auto Layout', onClick: props.onAutoLayout },
-    { id: 'sep2', icon: () => null, label: '' },
-    { id: 'code', icon: icons.code, label: 'Code View', onClick: props.onToggleCode, active: props.showCode, accent: props.showCode },
+    { id: 'code', icon: icons.code, label: 'Code', onClick: props.onToggleCode, active: props.showCode, accent: props.showCode, separatorBefore: true },
     { id: props.isRunning ? 'stop' : 'run', icon: props.isRunning ? icons.stop : icons.play, label: props.isRunning ? 'Stop' : 'Run', onClick: props.isRunning ? props.onStop : props.onRun, danger: props.isRunning, accent: !props.isRunning }
   ] : []
 
-  const btnBase = (active: boolean, accent?: boolean): React.CSSProperties => ({
-    width: 34, height: 34,
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    background: accent ? 'var(--accent-muted)' : active ? 'var(--bg-hover)' : 'transparent',
-    border: accent ? '1px solid var(--border-secondary)' : 'none',
-    borderRadius: 6, cursor: 'pointer',
-    color: active ? 'var(--text-primary)' : 'var(--text-tertiary)',
-    transition: 'all 0.12s', position: 'relative' as const
+  const bottomItems: DockAction[] = [
+    { id: 'theme', icon: mode === 'dark' ? icons.sun : icons.moon, label: mode === 'dark' ? 'Light' : 'Dark', onClick: toggleTheme, separatorBefore: true },
+    { id: 'settings', icon: icons.settings, label: 'Settings', onClick: () => navigate('/settings'), active: isActive('/settings') }
+  ]
+
+  const allItems = [...navItems, ...editorActions, ...bottomItems]
+
+  const renderDockItem = (item: DockAction) => {
+    const isHovered = hoveredId === item.id
+    const iconColor = item.danger ? 'var(--error)' : item.accent ? 'var(--accent)' : item.active ? 'var(--text-primary)' : 'var(--text-tertiary)'
+    const showLabel = isHovered
+
+    return (
+      <div key={item.id} style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        {showLabel && (
+          <div style={{
+            position: 'absolute', bottom: '100%', marginBottom: 6,
+            padding: '3px 8px', borderRadius: 6,
+            background: 'var(--bg-elevated)', border: '1px solid var(--border-primary)',
+            fontSize: 10, fontWeight: 500, color: 'var(--text-primary)',
+            whiteSpace: 'nowrap', boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            pointerEvents: 'none', zIndex: 10
+          }}>
+            {item.label}
+          </div>
+        )}
+        <button
+          onClick={item.onClick}
+          onMouseEnter={() => setHoveredId(item.id)}
+          onMouseLeave={() => setHoveredId(null)}
+          style={{
+            width: 36, height: 36,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: item.accent ? 'var(--accent-muted)' : isHovered ? 'var(--bg-hover)' : 'transparent',
+            border: item.accent ? '1px solid var(--accent)' : '1px solid transparent',
+            borderRadius: 10, cursor: 'pointer',
+            color: iconColor,
+            transition: 'all 0.15s ease',
+            transform: isHovered ? 'translateY(-2px) scale(1.1)' : 'translateY(0) scale(1)'
+          }}>
+          {item.icon(iconColor)}
+        </button>
+      </div>
+    )
+  }
+
+  const renderSeparator = (key: string) => (
+    <div key={key} style={{ width: 1, height: 24, background: 'var(--border-primary)', margin: '0 4px', alignSelf: 'center' }} />
+  )
+
+  const items: React.ReactNode[] = []
+  allItems.forEach((item, i) => {
+    if (item.separatorBefore) items.push(renderSeparator(`sep-${i}`))
+    items.push(renderDockItem(item))
   })
 
   return (
-    <Sider width={52} style={{
-      background: 'var(--bg-secondary)', borderRight: '1px solid var(--border-primary)',
-      display: 'flex', flexDirection: 'column',
-      justifyContent: 'space-between', height: '100vh', overflow: 'hidden'
-    }}>
-      <div>
+    <div ref={nodesRef}>
+      {showNodes && props.onAddNode && (
         <div style={{
-          height: 48, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          borderBottom: '1px solid var(--border-primary)', cursor: 'pointer'
-        }} onClick={() => navigate('/')}>
-          <div style={{
-            width: 26, height: 26, borderRadius: 6,
-            background: 'linear-gradient(135deg, #6366f1, #a855f7)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 12, fontWeight: 700, color: '#fff'
-          }}>E</div>
+          position: 'fixed', bottom: 64, left: '50%', transform: 'translateX(-50%)',
+          width: 280, maxHeight: 440,
+          background: 'var(--bg-elevated)', border: '1px solid var(--border-primary)',
+          borderRadius: 12, boxShadow: '0 12px 40px rgba(0,0,0,0.5)',
+          display: 'flex', flexDirection: 'column', overflow: 'hidden', zIndex: 210
+        }}>
+          <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border-primary)' }}>
+            <Input placeholder="Search nodes..." value={nodeSearch} onChange={(e) => setNodeSearch(e.target.value)} size="small" allowClear autoFocus style={{ fontSize: 12 }} />
+          </div>
+          <div style={{ flex: 1, overflow: 'auto', padding: '4px 0' }}>
+            {categories.map((cat) => (
+              <div key={cat.name} style={{ marginBottom: 2 }}>
+                <div style={{ padding: '5px 10px', fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{cat.name}</div>
+                {cat.nodes.map((node) => {
+                  const color = CAT_COLORS[node.category] || '#888'
+                  const iconFn = NODE_ICON_MAP[node.icon] || NODE_ICON_MAP['unknown']
+                  return (
+                    <button key={node.type} draggable onDragStart={(e) => onDragStart(e, node.type, node)} onClick={() => { props.onAddNode!(node.type, node); setShowNodes(false) }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '6px 10px', background: 'transparent', border: 'none', cursor: 'grab', textAlign: 'left', transition: 'background 0.1s' }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-hover)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+                      <span style={{ display: 'flex', width: 16, justifyContent: 'center' }}>{iconFn(12, color)}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-primary)' }}>{node.label}</div>
+                        <div style={{ fontSize: 9, color: 'var(--text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{node.description}</div>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            ))}
+          </div>
         </div>
+      )}
 
-        <div style={{ padding: '6px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-          {navItems.map((item) => {
-            const active = isActive(item.key)
-            return (
-              <Tooltip key={item.key} title={item.label} placement="right">
-                <button onClick={() => navigate(item.key)} style={btnBase(active)}
-                  onMouseEnter={(e) => { if (!active) { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = BT_H } }}
-                  onMouseLeave={(e) => { if (!active) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = BT } }}>
-                  {active && <div style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', width: 2, height: 14, background: 'var(--accent)', borderRadius: 1 }} />}
-                  {item.icon(active ? 'var(--text-primary)' : 'var(--text-tertiary)')}
-                </button>
-              </Tooltip>
-            )
-          })}
-
-          {editorActions.length > 0 && <div style={{ width: 24, height: 1, background: 'var(--border-primary)', margin: '6px 0' }} />}
-
-          {editorActions.map((action) => {
-            if (action.id.startsWith('sep')) return <div key={action.id} style={{ width: 24, height: 1, background: 'var(--border-primary)', margin: '4px 0' }} />
-            const iconColor = action.danger ? 'var(--error)' : action.accent ? 'var(--accent)' : action.active ? 'var(--text-primary)' : 'var(--text-tertiary)'
-            return (
-              <Tooltip key={action.id} title={action.label} placement="right">
-                <button onClick={action.onClick} disabled={!action.onClick}
-                  style={{ ...btnBase(!!action.active, action.accent), color: action.danger ? 'var(--error)' : undefined }}
-                  onMouseEnter={(e) => { if (!action.active && !action.accent) { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = BT_H } }}
-                  onMouseLeave={(e) => { if (!action.active && !action.accent) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = BT } }}>
-                  {action.icon(iconColor)}
-                </button>
-              </Tooltip>
-            )
-          })}
-        </div>
+      <div style={{
+        position: 'fixed', bottom: 12, left: '50%', transform: 'translateX(-50%)',
+        display: 'flex', alignItems: 'center', gap: 4,
+        padding: '6px 10px',
+        background: 'var(--bg-secondary)',
+        border: '1px solid var(--border-primary)',
+        borderRadius: 16,
+        boxShadow: '0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.05) inset',
+        backdropFilter: 'blur(20px)',
+        zIndex: 200
+      }}>
+        {items}
       </div>
-
-      <div style={{ padding: '6px 0 10px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-        <Tooltip title={mode === 'dark' ? 'Light mode' : 'Dark mode'} placement="right">
-          <button onClick={toggleTheme} style={btnBase(false)}
-            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = BT_H }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = BT }}>
-            {mode === 'dark' ? icons.sun('var(--text-tertiary)') : icons.moon('var(--text-tertiary)')}
-          </button>
-        </Tooltip>
-        <Tooltip title="Settings" placement="right">
-          <button onClick={() => navigate('/settings')} style={btnBase(isActive('/settings'))}
-            onMouseEnter={(e) => { if (!isActive('/settings')) { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = BT_H } }}
-            onMouseLeave={(e) => { if (!isActive('/settings')) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = BT } }}>
-            {icons.settings(isActive('/settings') ? 'var(--text-primary)' : 'var(--text-tertiary)')}
-          </button>
-        </Tooltip>
-      </div>
-    </Sider>
+    </div>
   )
 }

@@ -15,7 +15,6 @@ import { autoLayout } from '../../utils/layout'
 import BaseNode from './nodes/_base/BaseNode'
 import CommentNode from './nodes/CommentNode'
 import CustomEdge from './edges/CustomEdge'
-import BlockSelector from './BlockSelector'
 import Sidebar from '../layout/Sidebar'
 import NodePopup from './NodePopup'
 import RunPanel, { type RunEvent } from './RunPanel'
@@ -246,12 +245,6 @@ function EditorCanvas() {
 
   return (
     <div style={{ display: 'flex', height: '100vh' }}>
-      <Sidebar editorMode workflowName={workflowName} isRunning={isRunning} showCode={showCode} canUndo={canUndo} canRedo={canRedo}
-        onSave={handleSave} onRun={handleRun} onStop={handleStop} onToggleCode={() => setShowCode(!showCode)}
-        onUndo={canUndo ? handleUndo : undefined} onRedo={canRedo ? handleRedo : undefined} onAutoLayout={handleLayout} onBack={() => navigate('/workflows')} />
-
-      <BlockSelector onAddNode={addNode} />
-
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <div style={{ height: 36, display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', borderBottom: '1px solid var(--border-primary)', background: 'var(--bg-secondary)', flexShrink: 0 }}>
           <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Workflow</span>
@@ -307,6 +300,11 @@ function EditorCanvas() {
           )}
         </div>
       </div>
+
+      <Sidebar editorMode workflowName={workflowName} isRunning={isRunning} showCode={showCode} canUndo={canUndo} canRedo={canRedo}
+        onSave={handleSave} onRun={handleRun} onStop={handleStop} onToggleCode={() => setShowCode(!showCode)}
+        onUndo={canUndo ? handleUndo : undefined} onRedo={canRedo ? handleRedo : undefined} onAutoLayout={handleLayout} onBack={() => navigate('/workflows')}
+        onAddNode={addNode} />
 
       <RunInputDialog open={showInput} nodes={nodes} onRun={handleRunWithInputs} onCancel={() => setShowInput(false)} />
 
