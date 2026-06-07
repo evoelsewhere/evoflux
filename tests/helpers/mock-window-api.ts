@@ -21,20 +21,26 @@ export function setupWindowAPI(): MockWindowAPI {
     run: vi.fn().mockResolvedValue({ success: true, results: [] }),
   }
 
-  Object.defineProperty(globalThis, 'window', {
-    value: {
-      api: {
-        ai: { chat: chatMock },
-        workflow: workflowMock,
-      },
+  const win = {
+    api: {
+      ai: { chat: chatMock },
+      workflow: workflowMock,
     },
-    writable: true,
-  })
+  }
+
+  // Use Object.assign to set window without defineProperty non-configurable issue
+  if (typeof globalThis.window === 'undefined') {
+    Object.defineProperty(globalThis, 'window', { value: win, writable: true, configurable: true })
+  } else {
+    Object.assign(globalThis.window, win)
+  }
 
   return { chatMock, workflowMock }
 }
 
 export function teardownWindowAPI(): void {
-  // @ts-expect-error — cleanup test environment
-  delete globalThis.window
+  if (globalThis.window && 'api' in globalThis.window) {
+    // @ts-expect-error — cleanup test environment
+    globalThis.window.api = undefined
+  }
 }
