@@ -58,7 +58,8 @@ export const NODE_CATEGORIES: NodeCategory[] = [
       { type: 'file-explorer', label: 'File Explorer', icon: 'folder-open', category: 'tools', description: 'Browse local files' },
       { type: 'file-reader', label: 'File Reader', icon: 'file-text', category: 'tools', description: 'Read file content' },
       { type: 'context-loader', label: 'Context Loader', icon: 'database', category: 'tools', description: 'Load directory as context' },
-      { type: 'file-write', label: 'File Write', icon: 'file-text', category: 'tools', description: 'Write content to file' }
+      { type: 'file-write', label: 'File Write', icon: 'file-text', category: 'tools', description: 'Write content to file' },
+      { type: 'web-search', label: 'Web Search', icon: 'search', category: 'tools', description: 'Search the web (DuckDuckGo)' }
     ]
   },
   {

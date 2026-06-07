@@ -23,6 +23,7 @@ import { ShellNode } from './shell'
 import { ManualTriggerNode, WebhookTriggerNode, ScheduleTriggerNode } from './triggers'
 import { FileWriteNode } from './file-write'
 import { SubWorkflowNode } from './sub-workflow'
+import { WebSearchNode } from './web-search'
 
 const registry = new Map<string, new () => BaseNode>([
   ['start', StartNode as unknown as new () => BaseNode],
@@ -49,7 +50,8 @@ const registry = new Map<string, new () => BaseNode>([
   ['webhook-trigger', WebhookTriggerNode as unknown as new () => BaseNode],
   ['schedule-trigger', ScheduleTriggerNode as unknown as new () => BaseNode],
   ['file-write', FileWriteNode as unknown as new () => BaseNode],
-  ['sub-workflow', SubWorkflowNode as unknown as new () => BaseNode]
+  ['sub-workflow', SubWorkflowNode as unknown as new () => BaseNode],
+  ['web-search', WebSearchNode as unknown as new () => BaseNode]
 ])
 
 const originalCreate = NodeFactory.create

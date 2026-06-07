@@ -8,6 +8,7 @@ import {
   NodeCodeIcon, NodeToolIcon, NodeFolderIcon,
   NodeTeamIcon, NodeSubWorkflowIcon
 } from '../common/NodeIcons'
+import { SearchCodeIcon } from '../common/Icons'
 
 const ICON_MAP: Record<string, (sz: number, c: string) => React.ReactNode> = {
   'play-circle': (s, c) => <NodeStartIcon size={s} color={c} />,
@@ -30,7 +31,8 @@ const ICON_MAP: Record<string, (sz: number, c: string) => React.ReactNode> = {
   'setting': (s, c) => <NodeToolIcon size={s} color={c} />,
   'apartment': (s, c) => <NodeSubWorkflowIcon size={s} color={c} />,
   'team': (s, c) => <NodeTeamIcon size={s} color={c} />,
-  'unknown': (s, c) => <NodeToolIcon size={s} color={c} />
+  'unknown': (s, c) => <NodeToolIcon size={s} color={c} />,
+  'search': (s, c) => <SearchCodeIcon size={s} color={c} />
 }
 
 const CAT_COLORS: Record<string, string> = {

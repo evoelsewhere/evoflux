@@ -463,6 +463,30 @@ export default function NodeConfigForms({ config, nodeType, handleChange, provid
         </Section>
       )}
 
+      {nodeType === 'web-search' && (
+        <Section title="Web Search">
+          <Field label="Query">
+            <TextArea rows={2} value={String(config.query || '')} onChange={(e) => handleChange('query', e.target.value)} placeholder="Search the web..." style={inputStyle} />
+          </Field>
+          <Field label={`Max Results: ${String(config.max_results ?? 10)}`}>
+            <Slider min={1} max={20} value={Number(config.max_results ?? 10)} onChange={(v) => handleChange('max_results', v)} />
+          </Field>
+          <Field label="Language">
+            <Select size="small" value={String(config.language || 'en')} onChange={(v) => handleChange('language', v)}
+              options={[{ label: 'English', value: 'en' }, { label: 'Vietnamese', value: 'vi' }, { label: 'Chinese', value: 'zh' }, { label: 'Japanese', value: 'ja' }, { label: 'Korean', value: 'ko' }, { label: 'French', value: 'fr' }, { label: 'German', value: 'de' }]} style={{ width: '100%' }} />
+          </Field>
+          <Field label="Fetch Page Content">
+            <Select size="small" value={String(config.fetch_content ?? false)} onChange={(v) => handleChange('fetch_content', v === 'true')}
+              options={[{ label: 'No (titles + snippets only)', value: 'false' }, { label: 'Yes (fetch full page text)', value: 'true' }]} style={{ width: '100%' }} />
+          </Field>
+          {String(config.fetch_content) === 'true' && (
+            <Field label={`Max Content Pages: ${String(config.max_content_pages ?? 3)}`}>
+              <Slider min={1} max={10} value={Number(config.max_content_pages ?? 3)} onChange={(v) => handleChange('max_content_pages', v)} />
+            </Field>
+          )}
+        </Section>
+      )}
+
       {nodeType === 'comment' && (
         <Section title="Comment">
           <Field label="Text">
