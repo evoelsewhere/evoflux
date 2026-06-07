@@ -18,6 +18,6 @@
       "@electron/*": ["./electron/*"]
     }
   },
-  "include": ["src/**/*", "electron/**/*", "electron-env.d.ts"],
+  "include": ["src/**/*", "electron/**/*", "tests/**/*", "electron-env.d.ts"],
   "exclude": ["node_modules", "out", "dist"]
 }
