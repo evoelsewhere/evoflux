@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="build/icon.png" width="128" height="128" alt="Evoflux Logo">
+  <img src="docs/assets/logo.png" width="128" height="128" alt="Evoflux Logo">
 </p>
 
 <h1 align="center">Evoflux</h1>
