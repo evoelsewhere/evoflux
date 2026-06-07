@@ -71,7 +71,7 @@ function extractToolCall(output: string): { name: string; args: Record<string, u
     }
   }
 
-  const actionMatch = output.match(/(?:Action|Tool)[:\s]*["']?(\w+)["']?\s*(?:Arguments?|Input|Args)[:\s]*(\{[\s\S]*?\})/is)
+  const actionMatch = output.match(/(?:Action|Tool)[:\s]*["']?(\w+)["']?\s*(?:Arguments?|Input|Args)[:\s]*(\{[\s\S]*\})/is)
   if (actionMatch) {
     try {
       return { name: actionMatch[1], args: JSON.parse(actionMatch[2]) }
@@ -80,7 +80,7 @@ function extractToolCall(output: string): { name: string; args: Record<string, u
     }
   }
 
-  const simpleMatch = output.match(/(?:use|call|invoke|execute)\s+(?:tool\s+)?["']?(\w+)["']?\s*(?:with|:)\s*(\{[\s\S]*?\})/is)
+  const simpleMatch = output.match(/(?:use|call|invoke|execute)\s+(?:tool\s+)?["']?(\w+)["']?\s*(?:with|:)\s*(\{[\s\S]*\})/is)
   if (simpleMatch) {
     try {
       return { name: simpleMatch[1], args: JSON.parse(simpleMatch[2]) }

@@ -142,7 +142,7 @@ export class Sandbox {
 
       const { stdout, stderr } = await execFileAsync(shell, shellArgs, {
         cwd: options.cwd || this.rootPath,
-        env: { ...process.env, ...this.env, ...options.env },
+        env: { PATH: process.env.PATH, HOME: process.env.HOME, ...this.env, ...options.env },
         timeout: timeoutMs,
         maxBuffer
       })
@@ -254,7 +254,8 @@ export class Sandbox {
   private resolvePath(filePath: string): string {
     const path = require('path')
     const resolved = path.resolve(this.rootPath, filePath)
-    if (!resolved.startsWith(this.rootPath)) {
+    // Prevent path traversal — resolved path must be within rootPath
+    if (!resolved.startsWith(this.rootPath + path.sep) && resolved !== this.rootPath) {
       throw new Error(`Path traversal detected: ${filePath}`)
     }
     return resolved

@@ -73,9 +73,9 @@ export class StageTwoRefinement {
   }
 
   private async reshapeContent(feedback: string): Promise<number> {
-    const feedbackWords = feedback.toLowerCase().split(/\s+/)
-    const needsMoreDetail = feedbackWords.some(w => ['brief', 'short', 'missing', 'incomplete', 'more detail'].includes(w))
-    const needsCompression = feedbackWords.some(w => ['verbose', 'long', 'redundant', 'too much', 'summarize'].includes(w))
+    const feedbackLower = feedback.toLowerCase()
+    const needsMoreDetail = /too\s+(brief|short|concise)|missing|incomplete|more\s+detail|needs?\s+expansion/i.test(feedbackLower)
+    const needsCompression = /too\s+(verbose|long|wordy)|redundant|too\s+much|summarize|condense/i.test(feedbackLower)
 
     if (!needsMoreDetail && !needsCompression) return 0
 

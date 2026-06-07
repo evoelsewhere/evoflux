@@ -6,10 +6,17 @@ type EmbedderFn = (input: string, options: { pooling: string; normalize: boolean
 let embedder: EmbedderFn | null = null
 
 function createFallbackEmbedder(): EmbedderFn {
-  return async (_input: string) => {
+  console.warn('[Embedding] @xenova/transformers not available. Using hash-based deterministic fallback (not suitable for production).')
+  return async (input: string) => {
+    // Deterministic hash-based pseudo-embedding — same input always produces same vector
     const arr = new Float32Array(DIMENSION)
+    let hash = 0
+    for (let i = 0; i < input.length; i++) {
+      hash = ((hash << 5) - hash + input.charCodeAt(i)) | 0
+    }
     for (let i = 0; i < DIMENSION; i++) {
-      arr[i] = Math.random() * 2 - 1
+      hash = ((hash << 5) - hash + i) | 0
+      arr[i] = (hash % 1000) / 1000
     }
     let norm = 0
     for (let i = 0; i < DIMENSION; i++) norm += arr[i] * arr[i]

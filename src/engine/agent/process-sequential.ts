@@ -84,7 +84,7 @@ export async function runSequential(
 
     if (!finalOutput) finalOutput = 'Agent did not produce a final answer.'
 
-    const result: TaskResult = { agentId: agent.id, output: finalOutput, success: true, iterations }
+    const result: TaskResult = { agentId: agent.id, output: finalOutput, success: !!finalOutput && finalOutput !== 'Agent did not produce a final answer.', iterations }
     addTaskResult(state, result)
     setAgentOutput(state, agent.id, finalOutput)
     addMessage(state, { from: agent.id, to: 'orchestrator', type: 'result', content: finalOutput })
