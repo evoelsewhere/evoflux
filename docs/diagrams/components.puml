@@ -1,0 +1,108 @@
+@startuml component-diagram
+!theme plain
+skin backgroundColor #0a0a0a
+skin defaultFontColor #ededed
+skin defaultFontSize 12
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+
+skinparam package {
+  BackgroundColor #111111
+  BorderColor #333333
+  FontColor #ededed
+  RoundCorner 12
+}
+
+skinparam component {
+  BackgroundColor #171717
+  BorderColor #333333
+  FontColor #ededed
+  RoundCorner 8
+}
+
+skinparam arrow {
+  Color #0070f3
+  FontColor #888888
+}
+
+title **Evoflux — Component Diagram (Renderer)**\n
+
+package "Routes" {
+  [Dashboard\n/] as dash
+  [WorkflowEditor\n/workflows/:id] as editor
+  [SettingsPage\n/settings] as settings
+}
+
+package "WorkflowEditor Components" #0f172a {
+  [ReactFlow Canvas] as canvas
+  [BaseNode\nUniversal node renderer] as basenode
+  [CommentNode] as comment
+  [NodePopup\nPer-node settings] as popup
+  [RunPanel\nExecution monitor] as runpanel
+  [RunInputDialog\nInput variables] as rundialog
+  [AssistantPanel\nAI chat popup] as assist
+  [CodeEditor\nJSON editor] as code
+}
+
+package "Layout" #1c1917 {
+  [Sidebar\nFloating dock] as dock
+  [BlockSelector\nNode library popover] as blocks
+}
+
+package "Nodes (BaseNode renders by data.type)" #1e1028 {
+  [Trigger Nodes\nmanual-trigger, webhook, schedule] as triggers
+  [AI Nodes\nllm, parameter-extractor,\nquestion-classifier, knowledge-retrieval] as ai_nodes
+  [Logic Nodes\ncondition, iteration, loop,\ntemplate, variable-*] as logic_nodes
+  [Tool Nodes\ncode, shell, http-request,\nfile-*, context-loader] as tool_nodes
+  [Agent Nodes\nreact-agent,\nagent-orchestrator, sub-workflow] as agent_nodes
+}
+
+package "AI Assistant" #131c1c {
+  [engine.ts\nReAct loop] as engine
+  [tools.ts\n10 workflow tools] as tools
+  [prompt.ts\nSystem prompt] as prompt
+}
+
+package "Stores (Zustand)" #1e1028 {
+  [workflowStore\nnodes, edges, history] as ws
+  [providerStore\nAI providers] as ps
+  [settingsStore\nappearance, config] as ss
+  [assistantStore\nchat messages] as as
+}
+
+' Route connections
+dash --> editor : click workflow
+dash --> settings : click settings
+editor --> canvas
+editor --> dock
+editor --> blocks
+
+' Canvas connections
+canvas --> basenode : nodeTypes.default
+canvas --> comment : nodeTypes.comment
+basenode --> popup : onNodeClick
+canvas --> runpanel : showRun
+canvas --> rundialog : showInput
+canvas --> assist : showAssistant
+canvas --> code : showCode
+
+' Node type rendering
+basenode ..> triggers : data.type
+basenode ..> ai_nodes : data.type
+basenode ..> logic_nodes : data.type
+basenode ..> tool_nodes : data.type
+basenode ..> agent_nodes : data.type
+
+' Assistant
+assist --> engine : runAssistant()
+engine --> tools : execute tool
+tools --> ws : addNode / connectEdge
+
+' Store connections
+editor --> ws : read/write
+editor --> ps : provider selection
+editor --> ss : theme
+assist --> as : chat state
+assist --> ps : provider/model
+
+@enduml

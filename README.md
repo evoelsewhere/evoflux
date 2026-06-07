@@ -229,35 +229,78 @@ dist/
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Electron Main Process                                       │
-│  ├── IPC Handlers (workflow, ai, sandbox, memory, dsl)       │
-│  ├── SQLite Database (~/.evoflux/evoflux.db)                 │
-│  └── Graph Engine (topological sort, parallel execution)     │
-├─────────────────────────────────────────────────────────────┤
-│  Preload (contextBridge)                                     │
-│  └── window.api = { workflow, ai, sandbox, memory, settings }│
-├─────────────────────────────────────────────────────────────┤
-│  Renderer (React + Vite)                                     │
-│  ├── ReactFlow Canvas (nodes, edges, drag-and-drop)          │
-│  ├── Zustand Stores (workflow, provider, settings, assistant)│
-│  ├── AI Assistant (ReAct engine + 10 workflow tools)          │
-│  ├── Node Popup (per-node settings editor)                   │
-│  ├── Run Panel (real-time execution monitor)                 │
-│  └── Floating Dock (macOS-style navigation)                  │
-└─────────────────────────────────────────────────────────────┘
-```
+### System Architecture
+
+<p align="center">
+  <img src="docs/diagrams/system-architecture.puml" alt="System Architecture">
+</p>
+
+> View PlantUML source: [docs/diagrams/system-architecture.puml](docs/diagrams/system-architecture.puml)
 
 ### Data Flow
+
+<p align="center">
+  <img src="docs/diagrams/data-flow.puml" alt="Data Flow">
+</p>
+
+> View PlantUML source: [docs/diagrams/data-flow.puml](docs/diagrams/data-flow.puml)
+
+### Component Diagram
+
+<p align="center">
+  <img src="docs/diagrams/components.puml" alt="Components">
+</p>
+
+> View PlantUML source: [docs/diagrams/components.puml](docs/diagrams/components.puml)
+
+### Database Schema
+
+<p align="center">
+  <img src="docs/diagrams/database-schema.puml" alt="Database Schema">
+</p>
+
+> View PlantUML source: [docs/diagrams/database-schema.puml](docs/diagrams/database-schema.puml)
+
+### Workflow Execution
+
+<p align="center">
+  <img src="docs/diagrams/workflow-execution.puml" alt="Workflow Execution">
+</p>
+
+> View PlantUML source: [docs/diagrams/workflow-execution.puml](docs/diagrams/workflow-execution.puml)
+
+### AI Assistant
+
+<p align="center">
+  <img src="docs/diagrams/ai-assistant.puml" alt="AI Assistant">
+</p>
+
+> View PlantUML source: [docs/diagrams/ai-assistant.puml](docs/diagrams/ai-assistant.puml)
+
+### Provider System
+
+<p align="center">
+  <img src="docs/diagrams/provider-system.puml" alt="Provider System">
+</p>
+
+> View PlantUML source: [docs/diagrams/provider-system.puml](docs/diagrams/provider-system.puml)
+
+### Rendering PlantUML
+
+To render diagrams locally:
+
+```bash
+# Install PlantUML
+brew install plantuml       # macOS
+choco install plantuml      # Windows
+
+# Render all diagrams
+plantuml docs/diagrams/*.puml
+
+# Or use the PlantUML extension in VS Code
 ```
-Renderer State (zustand)
-    │
-    ├── onChange → window.api.workflow.save() → SQLite
-    ├── onChange → window.api.settings.save() → SQLite
-    │
-    └── startup → window.api.workflow.load() → SQLite → zustand
-```
+
+Or view online: [plantuml.com/plantuml](https://www.plantuml.com/plantuml) — paste the `.puml` source.
 
 ### Project Structure
 ```

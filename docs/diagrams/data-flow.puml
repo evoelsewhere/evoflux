@@ -1,0 +1,75 @@
+@startuml data-flow
+!theme plain
+skin backgroundColor #0a0a0a
+skin defaultFontColor #ededed
+skin defaultFontSize 13
+skinparam sequenceArrowColor #0070f3
+skinparam sequenceLifeLineBorderColor #333333
+skinparam sequenceParticipantBackgroundColor #171717
+skinparam sequenceParticipantBorderColor #333333
+skinparam sequenceParticipantFontColor #ededed
+skinparam sequenceGroupBackgroundColor #111111
+skinparam sequenceGroupBorderColor #333333
+skinparam sequenceDividerBorderColor #333333
+
+title **Evoflux — Data Flow**\n
+
+participant "User" as user #0f172a
+participant "WorkflowEditor" as editor #1e1028
+participant "Zustand Store" as store #1c1917
+participant "IPC Bridge" as ipc #131c1c
+participant "Main Process" as main #0f172a
+database "SQLite" as db #171717
+
+== Edit Workflow ==
+user -> editor : Drag node / Edit config
+editor -> store : setNodes() / updateNodeData()
+activate store
+store -> store : pushHistory() (undo)
+deactivate store
+editor -> editor : auto-save (500ms debounce)
+editor -> ipc : window.api.workflow.save()
+ipc -> main : ipcRenderer.invoke
+main -> db : saveWorkflow() INSERT OR REPLACE
+db --> main : OK
+main --> ipc : { success: true }
+ipc --> editor : saved
+
+== Close App ==
+user -> editor : Close window
+editor -> ipc : window.api.workflow.saveSync()
+ipc -> main : ipcRenderer.sendSync
+main -> db : saveWorkflow() [synchronous]
+db --> main : OK
+main --> ipc : { success: true }
+editor -> editor : Process exits
+
+== Open Workflow ==
+user -> editor : Navigate to /workflows/:id
+editor -> ipc : window.api.workflow.load(id)
+ipc -> main : ipcRenderer.invoke
+main -> db : getWorkflow(id)
+db --> main : { nodes_json, edges_json }
+main --> ipc : { nodes, edges, name }
+ipc --> editor : workflow data
+editor -> store : loadWorkflow() + setNodes()
+editor -> editor : fitView()
+
+== Run Workflow ==
+user -> editor : Click Run
+editor -> editor : Show RunInputDialog
+user -> editor : Fill input variables
+editor -> ipc : window.api.workflow.run(dsl, { inputs })
+ipc -> main : ipcRenderer.invoke
+main -> main : GraphEngine.execute()
+main --> ipc : workflow:event (node:start)
+ipc --> editor : onEvent callback
+editor -> editor : updateNodeStatus('running')
+main -> db : createRun() + createNodeRun()
+main --> ipc : workflow:event (node:complete)
+ipc --> editor : onEvent callback
+editor -> editor : updateNodeStatus('completed')
+main --> ipc : workflow:event (graph:complete)
+editor -> editor : setIsRunning(false)
+
+@enduml

@@ -1,0 +1,93 @@
+@startuml provider-system
+!theme plain
+skin backgroundColor #0a0a0a
+skin defaultFontColor #ededed
+skin defaultFontSize 12
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+
+skinparam package {
+  BackgroundColor #111111
+  BorderColor #333333
+  FontColor #ededed
+  RoundCorner 12
+}
+
+skinparam component {
+  BackgroundColor #171717
+  BorderColor #333333
+  FontColor #ededed
+  RoundCorner 8
+}
+
+skinparam arrow {
+  Color #0070f3
+  FontColor #888888
+}
+
+title **Evoflux — Provider System**\n
+
+package "Settings Page" {
+  [Provider List\nAdd / Edit / Delete] as pl
+  [Test Connection] as tc
+}
+
+package "Provider Store (Zustand)" as ps {
+  [providers : ProviderInstance[]\n{id, name, type, apiKey,\nbaseUrl, defaultModel, models, isDefault}] as pstate
+}
+
+package "SQLite" as db {
+  [providers table] as ptable
+}
+
+package "IPC Layer" {
+  [settings:save] as save
+  [settings:load] as load
+  [ai:chat] as chat
+  [ai:test-connection] as test
+}
+
+package "AI Clients" {
+  [OpenAI SDK] as openai
+  [Anthropic\nDirect HTTP] as anthropic
+  [Ollama\nREST API] as ollama
+  [Claude CLI\nsubprocess] as claudecli
+  [Copilot CLI\nsubprocess] as copilotcli
+}
+
+package "Node Config" {
+  [LLM Node\nprovider: id] as llm
+  [ReAct Agent\nprovider: id] as react
+  [Assistant\nprovider: id] as assist
+}
+
+' Flow
+pl --> pstate : updateProvider()
+pstate --> save : syncToMain()
+save --> ptable : INSERT OR REPLACE
+load --> ptable : SELECT
+load --> pstate : hydrate on startup
+
+tc --> test : IPC
+test --> openai : models.list()
+test --> anthropic : POST /v1/messages
+test --> ollama : GET /api/tags
+
+llm --> chat : provider ID
+react --> chat : provider ID
+assist --> chat : provider ID
+
+chat --> ptable : Resolve provider by ID
+chat --> openai : type=openai
+chat --> anthropic : type=anthropic
+chat --> ollama : type=ollama
+chat --> claudecli : type=claude-cli
+chat --> copilotcli : type=copilot-cli
+
+note bottom of pstate
+  Multiple providers of same type allowed
+  e.g., 3 OpenAI keys with different models
+  Each node selects by provider ID
+end note
+
+@enduml
