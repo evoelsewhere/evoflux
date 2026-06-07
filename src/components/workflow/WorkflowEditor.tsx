@@ -314,18 +314,40 @@ function EditorCanvas() {
       {showAssistant && (
         <AssistantPanel nodes={nodes} edges={edges} onClose={() => setShowAssistant(false)} onNodesChanged={() => { const s = useWorkflowStore.getState(); setNodes(s.nodes); setEdges(s.edges) }}
           toolContext={{
-            getNodes: () => nodes, getEdges: () => edges,
+            getNodes: () => useWorkflowStore.getState().nodes,
+            getEdges: () => useWorkflowStore.getState().edges,
             addNode: (type, label, category, icon, config, position) => {
               const nid = `${type}-${nanoid(6)}`
-              const n = { id: nid, type: 'default', position: position || { x: 200 + Math.random() * 300, y: 80 + Math.random() * 300 }, data: { label, type, icon, category, config } }
-              const ns = [...nodes, n as typeof nodes[0]]; setNodes(ns); setStoreNodes(ns)
+              const pos = position || { x: 200 + Math.random() * 300, y: 80 + Math.random() * 300 }
+              const n = { id: nid, type: 'default', position: pos, data: { label, type, icon, category, config } }
+              const storeNodes = useWorkflowStore.getState().nodes
+              const ns = [...storeNodes, n as typeof storeNodes[0]]
+              setStoreNodes(ns); setNodes(ns)
               return nid
             },
-            updateNode: (nodeId, patch) => { updateNodeData(nodeId, patch); const s = useWorkflowStore.getState(); setNodes(s.nodes) },
-            deleteNode: (nodeId) => { removeNode(nodeId); const s = useWorkflowStore.getState(); setNodes(s.nodes); setEdges(s.edges) },
-            addEdge: (source, target, sourceHandle) => { const newEdge = { id: `e-${source}-${target}-${nanoid(4)}`, source, target, sourceHandle, type: 'custom', animated: true }; const es = [...edges, newEdge]; setEdges(es); setStoreEdges(es) },
-            deleteEdge: (edgeId) => { const e = edges.filter(x => x.id !== edgeId); setEdges(e); setStoreEdges(e) },
-            autoLayout: () => { const l = autoLayout(nodes, edges); setNodes(l); setStoreNodes(l) },
+            updateNode: (nodeId, patch) => {
+              updateNodeData(nodeId, patch)
+              const s = useWorkflowStore.getState(); setNodes([...s.nodes])
+            },
+            deleteNode: (nodeId) => {
+              removeNode(nodeId)
+              const s = useWorkflowStore.getState(); setNodes([...s.nodes]); setEdges([...s.edges])
+            },
+            addEdge: (source, target, sourceHandle) => {
+              const storeEdges = useWorkflowStore.getState().edges
+              const newEdge = { id: `e-${source}-${target}-${nanoid(4)}`, source, target, sourceHandle, type: 'custom', animated: true }
+              const es = [...storeEdges, newEdge]
+              setStoreEdges(es); setEdges(es)
+            },
+            deleteEdge: (edgeId) => {
+              const storeEdges = useWorkflowStore.getState().edges
+              const es = storeEdges.filter(x => x.id !== edgeId)
+              setStoreEdges(es); setEdges(es)
+            },
+            autoLayout: () => {
+              const s = useWorkflowStore.getState()
+              const l = autoLayout(s.nodes, s.edges); setStoreNodes(l); setNodes(l)
+            },
             pushHistory: () => { useWorkflowStore.getState().pushHistory() }
           } as WorkflowToolContext} />
       )}
