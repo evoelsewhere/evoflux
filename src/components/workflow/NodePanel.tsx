@@ -12,8 +12,11 @@ function TrashIcon() {
 }
 
 export default function NodePanel() {
-  const { nodes, selectedNodeId, updateNodeData, removeNode } = useWorkflowStore()
-  const { aiProvider } = useSettingsStore()
+  const nodes = useWorkflowStore(s => s.nodes)
+  const selectedNodeId = useWorkflowStore(s => s.selectedNodeId)
+  const updateNodeData = useWorkflowStore(s => s.updateNodeData)
+  const removeNode = useWorkflowStore(s => s.removeNode)
+  const aiProvider = useSettingsStore(s => s.aiProvider)
   const { mode } = useTheme()
   const selectedNode = nodes.find((n) => n.id === selectedNodeId)
 

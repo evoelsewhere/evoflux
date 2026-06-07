@@ -3,27 +3,33 @@ import { useWorkflowStore } from '../stores/workflowStore'
 import type { WorkflowData } from '../types/workflow'
 
 export function useWorkflow() {
-  const store = useWorkflowStore()
+  const workflowId = useWorkflowStore(s => s.workflowId)
+  const workflowName = useWorkflowStore(s => s.workflowName)
+  const workflowDescription = useWorkflowStore(s => s.workflowDescription)
+  const nodes = useWorkflowStore(s => s.nodes)
+  const edges = useWorkflowStore(s => s.edges)
+  const setWorkflowId = useWorkflowStore(s => s.setWorkflowId)
+  const loadWorkflow = useWorkflowStore(s => s.loadWorkflow)
 
   const saveWorkflow = useCallback(async () => {
     const workflow = {
-      id: store.workflowId || undefined,
-      name: store.workflowName,
-      description: store.workflowDescription,
-      nodes: store.nodes,
-      edges: store.edges
+      id: workflowId || undefined,
+      name: workflowName,
+      description: workflowDescription,
+      nodes,
+      edges
     }
 
     const saved = (await window.api.workflow.save(workflow)) as WorkflowData
-    store.setWorkflowId(saved.id)
+    setWorkflowId(saved.id)
     return saved
-  }, [store])
+  }, [workflowId, workflowName, workflowDescription, nodes, edges, setWorkflowId])
 
-  const loadWorkflow = useCallback(
+  const loadWorkflowById = useCallback(
     async (id: string) => {
       const workflow = (await window.api.workflow.load(id)) as WorkflowData | null
       if (workflow) {
-        store.loadWorkflow(
+        loadWorkflow(
           workflow.id,
           workflow.name,
           workflow.description,
@@ -33,7 +39,7 @@ export function useWorkflow() {
       }
       return workflow
     },
-    [store]
+    [loadWorkflow]
   )
 
   const listWorkflows = useCallback(async () => {
@@ -46,7 +52,7 @@ export function useWorkflow() {
 
   return {
     saveWorkflow,
-    loadWorkflow,
+    loadWorkflow: loadWorkflowById,
     listWorkflows,
     deleteWorkflow
   }

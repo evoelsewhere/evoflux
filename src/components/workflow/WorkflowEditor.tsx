@@ -21,6 +21,7 @@ import RunPanel, { type RunEvent } from './RunPanel'
 import RunInputDialog from './RunInputDialog'
 import AssistantPanel from './AssistantPanel'
 import CodeEditor from '../common/CodeEditor'
+import ErrorBoundary from '../common/ErrorBoundary'
 import type { WorkflowToolContext } from '../../assistant/tools'
 import type { NodeDefinition } from './registry'
 import type { NodeData } from '../../types/workflow'
@@ -37,13 +38,22 @@ const DEFAULT_START: Node<NodeData> = {
 
 function EditorCanvas() {
   const { screenToFlowPosition, fitView } = useReactFlow()
-  const {
-    setNodes: setStoreNodes, setEdges: setStoreEdges,
-    setSelectedNodeId, workflowName, setWorkflowName,
-    workflowDescription, isRunning, setIsRunning,
-    undo, redo, canUndo, canRedo,
-    removeNode, updateNodeData, selectedNodeId, loadWorkflow
-  } = useWorkflowStore()
+  const setStoreNodes = useWorkflowStore(s => s.setNodes)
+  const setStoreEdges = useWorkflowStore(s => s.setEdges)
+  const setSelectedNodeId = useWorkflowStore(s => s.setSelectedNodeId)
+  const workflowName = useWorkflowStore(s => s.workflowName)
+  const setWorkflowName = useWorkflowStore(s => s.setWorkflowName)
+  const workflowDescription = useWorkflowStore(s => s.workflowDescription)
+  const isRunning = useWorkflowStore(s => s.isRunning)
+  const setIsRunning = useWorkflowStore(s => s.setIsRunning)
+  const undo = useWorkflowStore(s => s.undo)
+  const redo = useWorkflowStore(s => s.redo)
+  const canUndo = useWorkflowStore(s => s.canUndo)
+  const canRedo = useWorkflowStore(s => s.canRedo)
+  const removeNode = useWorkflowStore(s => s.removeNode)
+  const updateNodeData = useWorkflowStore(s => s.updateNodeData)
+  const selectedNodeId = useWorkflowStore(s => s.selectedNodeId)
+  const loadWorkflow = useWorkflowStore(s => s.loadWorkflow)
 
   const [nodes, setNodes, onNodesChange] = useNodesState([DEFAULT_START])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
@@ -308,7 +318,7 @@ function EditorCanvas() {
                 maskColor="rgba(0,0,0,0.6)" style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', borderRadius: 8 }}
               />
             </ReactFlow>
-            {popupNode && <NodePopup node={popupNode} onClose={() => setPopupNode(null)} onDelete={handleDeleteNode} />}
+            {popupNode && <ErrorBoundary><NodePopup node={popupNode} onClose={() => setPopupNode(null)} onDelete={handleDeleteNode} /></ErrorBoundary>}
           </div>
 
           {showRun && (
@@ -328,7 +338,7 @@ function EditorCanvas() {
       <RunInputDialog open={showInput} nodes={nodes} onRun={handleRunWithInputs} onCancel={() => setShowInput(false)} />
 
       {showAssistant && (
-        <AssistantPanel nodes={nodes} edges={edges} onClose={() => setShowAssistant(false)} onNodesChanged={() => { const s = useWorkflowStore.getState(); setNodes(s.nodes); setEdges(s.edges) }}
+        <ErrorBoundary><AssistantPanel nodes={nodes} edges={edges} onClose={() => setShowAssistant(false)} onNodesChanged={() => { const s = useWorkflowStore.getState(); setNodes(s.nodes); setEdges(s.edges) }}
           toolContext={{
             getNodes: () => useWorkflowStore.getState().nodes,
             getEdges: () => useWorkflowStore.getState().edges,
@@ -365,7 +375,7 @@ function EditorCanvas() {
               const l = autoLayout(s.nodes, s.edges); setStoreNodes(l); setNodes(l)
             },
             pushHistory: () => { useWorkflowStore.getState().pushHistory() }
-          } as WorkflowToolContext} />
+          } as WorkflowToolContext} /></ErrorBoundary>
       )}
 
       {showCode && (

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, memo } from 'react'
 import { Input, Select, Slider } from 'antd'
 import Editor from '@monaco-editor/react'
 import { useWorkflowStore } from '../../stores/workflowStore'
@@ -23,7 +23,7 @@ function TrashIcon() {
   return <svg width={12} height={12} viewBox="0 0 12 12" fill="none"><path d="M2 3H10M4.5 3V2C4.5 1.4 4.9 1 5.5 1H6.5C7.1 1 7.5 1.4 7.5 2V3M9.5 3V10C9.5 10.6 9.1 11 8.5 11H3.5C2.9 11 2.5 10.6 2.5 10V3" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" /><path d="M5 5.5V8.5M7 5.5V8.5" stroke="currentColor" strokeWidth="1" strokeLinecap="round" /></svg>
 }
 
-export default function NodePopup({ node, onClose, onDelete }: NodePopupProps) {
+function NodePopupInner({ node, onClose, onDelete }: NodePopupProps) {
   const ref = useRef<HTMLDivElement>(null)
   const { updateNodeData } = useWorkflowStore()
   const { providers, getDefaultProvider } = useProviderStore()
@@ -680,3 +680,5 @@ function AgentListEditor({ config, onChange }: { config: Record<string, unknown>
     </div>
   )
 }
+
+export default memo(NodePopupInner)

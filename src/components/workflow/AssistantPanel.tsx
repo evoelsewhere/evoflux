@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, memo } from 'react'
 import { Input, Select, Spin } from 'antd'
 import { useAssistantStore, type ChatMessage } from '../../stores/assistantStore'
 import { useProviderStore, PROVIDER_LABELS } from '../../stores/providerStore'
@@ -67,10 +67,10 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
             {msg.toolName && `[${msg.toolName}] `}
           </span>
           {msg.content}
-        </div>
       </div>
-    )
-  }
+    </div>
+  )
+}
 
   return (
     <div style={{
@@ -97,12 +97,20 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
   )
 }
 
-export default function AssistantPanel({ nodes, edges, toolContext, onClose, onNodesChanged }: AssistantPanelProps) {
+function AssistantPanelInner({ nodes, edges, toolContext, onClose, onNodesChanged }: AssistantPanelProps) {
   const [input, setInput] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
-  const { messages, isThinking, currentStep, selectedProviderId, selectedModel, addMessage, setSelectedProvider, setSelectedModel, clearMessages } = useAssistantStore()
-  const { providers } = useProviderStore()
+  const messages = useAssistantStore(s => s.messages)
+  const isThinking = useAssistantStore(s => s.isThinking)
+  const currentStep = useAssistantStore(s => s.currentStep)
+  const selectedProviderId = useAssistantStore(s => s.selectedProviderId)
+  const selectedModel = useAssistantStore(s => s.selectedModel)
+  const addMessage = useAssistantStore(s => s.addMessage)
+  const setSelectedProvider = useAssistantStore(s => s.setSelectedProvider)
+  const setSelectedModel = useAssistantStore(s => s.setSelectedModel)
+  const clearMessages = useAssistantStore(s => s.clearMessages)
+  const providers = useProviderStore(s => s.providers)
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
@@ -235,3 +243,5 @@ export default function AssistantPanel({ nodes, edges, toolContext, onClose, onN
     </div>
   )
 }
+
+export default memo(AssistantPanelInner)

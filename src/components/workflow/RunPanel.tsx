@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, memo } from 'react'
 import { Spin } from 'antd'
 import type { NodeData } from '../../types/workflow'
 import type { Node } from 'reactflow'
@@ -55,7 +55,7 @@ function OutputPreview({ output }: { output: unknown }) {
   )
 }
 
-export default function RunPanel({ events, nodes, nodeStatuses, nodeOutputs, isRunning, elapsed, onStop, onClose, onNodeClick }: RunPanelProps) {
+function RunPanelInner({ events, nodes, nodeStatuses, nodeOutputs, isRunning, elapsed, onStop, onClose, onNodeClick }: RunPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [showLog, setShowLog] = useState(false)
@@ -205,3 +205,5 @@ export default function RunPanel({ events, nodes, nodeStatuses, nodeOutputs, isR
     </div>
   )
 }
+
+export default memo(RunPanelInner)
