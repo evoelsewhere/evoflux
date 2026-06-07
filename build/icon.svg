@@ -35,12 +35,13 @@
       <feGaussianBlur stdDeviation="20" result="blur"/>
       <feComposite in="SourceGraphic" in2="blur" operator="over"/>
     </filter>
-    <clipPath id="round">
-      <rect width="512" height="512" rx="108" ry="108"/>
+  <clipPath id="round">
+    <rect width="512" height="512" rx="108" ry="108"/>
     </clipPath>
   </defs>
 
-  <rect width="512" height="512" rx="108" ry="108" fill="url(#bg)"/>
+  <g clip-path="url(#round)">
+  <rect width="512" height="512" fill="url(#bg)"/>
 
   <g clip-path="url(#round)" opacity="0.03">
     <line x1="0" y1="170" x2="512" y2="170" stroke="#fff" stroke-width="1"/>
@@ -146,5 +147,6 @@
     <circle cx="231" cy="402" r="6" fill="#71717a"/>
     <rect x="244" y="395" width="48" height="4" rx="2" fill="#a1a1aa" opacity="0.5"/>
     <rect x="244" y="403" width="32" height="3" rx="1.5" fill="#a1a1aa" opacity="0.25"/>
+  </g>
   </g>
 </svg>
