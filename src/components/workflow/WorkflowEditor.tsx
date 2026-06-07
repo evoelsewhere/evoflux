@@ -1,4 +1,4 @@
-import { useCallback, useState, useRef, useEffect } from 'react'
+import { useCallback, useState, useRef, useEffect, useMemo } from 'react'
 import ReactFlow, {
   addEdge, Background, Controls, MiniMap,
   BackgroundVariant, ReactFlowProvider,
@@ -90,6 +90,26 @@ function EditorCanvas() {
   latestDesc.current = workflowDescription
   latestId.current = id
 
+  const edgesWithStatus = useMemo(() => {
+    const hasStatuses = Object.keys(nodeStatuses).length > 0
+    if (!hasStatuses) return edges
+    return edges.map(edge => {
+      const sourceStatus = nodeStatuses[edge.source] || 'idle'
+      const targetStatus = nodeStatuses[edge.target] || 'idle'
+      let edgeStatus: 'idle' | 'active' | 'completed' | 'error' = 'idle'
+      if (targetStatus === 'error' || sourceStatus === 'error') {
+        edgeStatus = 'error'
+      } else if (sourceStatus === 'completed' && targetStatus === 'running') {
+        edgeStatus = 'active'
+      } else if (sourceStatus === 'completed' && targetStatus === 'completed') {
+        edgeStatus = 'completed'
+      } else if (sourceStatus === 'running') {
+        edgeStatus = 'active'
+      }
+      return { ...edge, data: { ...edge.data, status: edgeStatus } }
+    })
+  }, [edges, nodeStatuses])
+
   const doSave = useCallback(async (ns: Node<NodeData>[], es: Edge[], wfName: string, wfDesc: string, wfId?: string) => {
     setStoreNodes(ns); setStoreEdges(es)
     try { await window.api.workflow.save({ id: wfId, name: wfName, description: wfDesc, nodes: ns, edges: es }) } catch { /* save failed, will retry */ }
@@ -154,6 +174,7 @@ function EditorCanvas() {
   const handleRunWithInputs = useCallback(async (inputs: Record<string, unknown>) => {
     setShowInput(false); setShowRun(true); setRunEvents([]); setIsRunning(true)
     setNodeStatuses({}); setNodeOutputs({}); setElapsed(0)
+    setNodes(prev => prev.map(n => ({ ...n, data: { ...n.data, status: 'idle' as const, error: undefined } })))
     runStartRef.current = Date.now()
 
     elapsedTimer.current = setInterval(() => { setElapsed(Date.now() - runStartRef.current) }, 100)
@@ -297,7 +318,7 @@ function EditorCanvas() {
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
           <div ref={wrapperRef} style={{ flex: 1, position: 'relative' }} onDragOver={onDragOver} onDrop={onDrop}>
             <ReactFlow
-              nodes={nodes} edges={edges}
+              nodes={nodes} edges={edgesWithStatus}
               onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
               onConnect={onConnect} onNodeClick={onNodeClick} onPaneClick={onPaneClick}
               nodeTypes={nodeTypes} edgeTypes={edgeTypes} proOptions={proOptions}

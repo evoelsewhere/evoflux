@@ -413,6 +413,71 @@ body {
   50% { opacity: 0.4; }
 }
 
+@keyframes node-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes node-glow-running {
+  0%, 100% { box-shadow: 0 0 8px rgba(96, 165, 250, 0.3), 0 0 16px rgba(96, 165, 250, 0.1); }
+  50% { box-shadow: 0 0 14px rgba(96, 165, 250, 0.5), 0 0 28px rgba(96, 165, 250, 0.2); }
+}
+
+@keyframes node-glow-success {
+  0% { box-shadow: 0 0 12px rgba(52, 211, 153, 0.4), 0 0 24px rgba(52, 211, 153, 0.15); }
+  100% { box-shadow: 0 0 4px rgba(52, 211, 153, 0.1); }
+}
+
+@keyframes node-glow-error {
+  0% { box-shadow: 0 0 12px rgba(248, 113, 113, 0.4), 0 0 24px rgba(248, 113, 113, 0.15); }
+  100% { box-shadow: 0 0 4px rgba(248, 113, 113, 0.1); }
+}
+
+@keyframes node-border-running {
+  0%, 100% { border-color: rgba(96, 165, 250, 0.5); }
+  50% { border-color: rgba(96, 165, 250, 0.9); }
+}
+
+@keyframes edge-flow {
+  0% { stroke-dashoffset: 24; }
+  100% { stroke-dashoffset: 0; }
+}
+
+@keyframes edge-flow-reverse {
+  0% { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: 24; }
+}
+
+@keyframes status-pop {
+  0% { transform: scale(0); opacity: 0; }
+  60% { transform: scale(1.2); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.edge-animated-flow {
+  stroke-dasharray: 8 4;
+  animation: edge-flow 0.8s linear infinite;
+}
+
+.edge-animated-running {
+  stroke-dasharray: 12 6;
+  animation: edge-flow 0.6s linear infinite;
+}
+
+.edge-animated-completed {
+  stroke-dasharray: none;
+}
+
+.edge-animated-error {
+  stroke-dasharray: 6 4;
+  animation: edge-flow 1.2s linear infinite;
+}
+
 .react-flow__node.selected .react-flow__handle {
   transform: scale(1.2);
 }

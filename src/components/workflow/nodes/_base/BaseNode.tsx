@@ -111,15 +111,70 @@ function getSubtitle(data: BaseNodeData): string | null {
   }
 }
 
+function StatusSpinner({ color }: { color: string }) {
+  return (
+    <div style={{
+      width: 14, height: 14, position: 'relative', flexShrink: 0
+    }}>
+      <svg width="14" height="14" viewBox="0 0 14 14" style={{ animation: 'node-spin 1s linear infinite' }}>
+        <circle cx="7" cy="7" r="5.5" fill="none" stroke={color + '30'} strokeWidth="2" />
+        <path
+          d="M 7 1.5 A 5.5 5.5 0 0 1 12.5 7"
+          fill="none" stroke={color} strokeWidth="2" strokeLinecap="round"
+        />
+      </svg>
+    </div>
+  )
+}
+
+function StatusIcon({ status, color }: { status: 'completed' | 'error'; color: string }) {
+  if (status === 'completed') {
+    return (
+      <div style={{
+        width: 14, height: 14, borderRadius: '50%',
+        background: color + '20', border: `1.5px solid ${color}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        animation: 'status-pop 0.3s ease-out', flexShrink: 0
+      }}>
+        <svg width="8" height="8" viewBox="0 0 10 10" fill="none">
+          <path d="M2 5.5L4 7.5L8 3" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </div>
+    )
+  }
+  return (
+    <div style={{
+      width: 14, height: 14, borderRadius: '50%',
+      background: color + '20', border: `1.5px solid ${color}`,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      animation: 'status-pop 0.3s ease-out', flexShrink: 0
+    }}>
+      <svg width="8" height="8" viewBox="0 0 10 10" fill="none">
+        <path d="M3 3L7 7M7 3L3 7" stroke={color} strokeWidth="1.8" strokeLinecap="round" />
+      </svg>
+    </div>
+  )
+}
+
 function BaseNodeComponent({ data, selected }: NodeProps<BaseNodeData>) {
   const cat = CAT[data.category || 'tools'] || CAT.tools
   const iconFn = ICONS[data.icon || ''] || ICONS['unknown']
   const isCondition = data.type === 'condition'
+  const status = data.status || 'idle'
 
-  const statusColor = data.status === 'running' ? '#60a5fa'
-    : data.status === 'completed' ? '#34d399'
-    : data.status === 'error' ? '#f87171'
+  const statusColor = status === 'running' ? '#60a5fa'
+    : status === 'completed' ? '#34d399'
+    : status === 'error' ? '#f87171'
     : undefined
+
+  const borderColor = statusColor || (selected ? cat.accent + '66' : cat.bar)
+
+  const glowAnimation = status === 'running' ? 'node-glow-running 2s ease-in-out infinite'
+    : status === 'completed' ? 'node-glow-success 1.5s ease-out forwards'
+    : status === 'error' ? 'node-glow-error 1.5s ease-out forwards'
+    : undefined
+
+  const borderAnimation = status === 'running' ? 'node-border-running 2s ease-in-out infinite' : undefined
 
   const subtitle = getSubtitle(data)
 
@@ -132,20 +187,32 @@ function BaseNodeComponent({ data, selected }: NodeProps<BaseNodeData>) {
           width: 8, height: 8,
           background: statusColor || cat.accent,
           border: `2px solid ${cat.bar}`,
-          top: -4, zIndex: 10
+          top: -4, zIndex: 10,
+          transition: 'all 0.2s ease'
         }}
       />
 
       <div style={{
         background: selected ? cat.bgSel : cat.bg,
-        border: `1px solid ${statusColor || (selected ? cat.accent + '66' : cat.bar)}`,
+        border: `1.5px solid ${borderColor}`,
         borderRadius: 8,
         minWidth: 150,
         maxWidth: 200,
         boxShadow: selected ? `0 0 12px ${cat.accent}20` : 'none',
-        transition: 'all 0.12s ease',
-        overflow: 'hidden'
+        transition: 'all 0.2s ease',
+        overflow: 'hidden',
+        animation: [glowAnimation, borderAnimation].filter(Boolean).join(', ') || undefined,
+        position: 'relative'
       }}>
+        {status === 'running' && (
+          <div style={{
+            position: 'absolute', top: 0, left: 0, right: 0, height: 2,
+            background: `linear-gradient(90deg, transparent, ${statusColor}, transparent)`,
+            backgroundSize: '200% 100%',
+            animation: 'shimmer 1.5s ease-in-out infinite'
+          }} />
+        )}
+
         <div style={{
           display: 'flex', alignItems: 'center', gap: 6,
           padding: '6px 10px',
@@ -160,23 +227,35 @@ function BaseNodeComponent({ data, selected }: NodeProps<BaseNodeData>) {
           }}>
             {data.label}
           </span>
-          {statusColor && (
-            <div style={{
-              width: 5, height: 5, borderRadius: '50%',
-              background: statusColor,
-              boxShadow: `0 0 6px ${statusColor}`,
-              animation: data.status === 'running' ? 'pulse 1.5s infinite' : 'none'
-            }} />
-          )}
+          {status === 'running' && <StatusSpinner color={statusColor!} />}
+          {status === 'completed' && <StatusIcon status="completed" color={statusColor!} />}
+          {status === 'error' && <StatusIcon status="error" color={statusColor!} />}
         </div>
 
         <div style={{ padding: '5px 10px', minHeight: 16 }}>
-          {subtitle && (
+          {status === 'running' && (
+            <div style={{
+              color: '#60a5fa', fontSize: 9, fontWeight: 500,
+              display: 'flex', alignItems: 'center', gap: 4
+            }}>
+              <span style={{
+                width: 4, height: 4, borderRadius: '50%', background: '#60a5fa',
+                animation: 'pulse 1s infinite'
+              }} />
+              Running...
+            </div>
+          )}
+          {status === 'completed' && (
+            <div style={{ color: '#34d399aa', fontSize: 9, fontWeight: 500 }}>
+              Completed
+            </div>
+          )}
+          {subtitle && status !== 'running' && (
             <div style={{ color: cat.text + '55', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {subtitle}
             </div>
           )}
-          {data.status === 'error' && data.error && (
+          {status === 'error' && data.error && (
             <div style={{
               marginTop: 2, padding: '2px 5px',
               background: '#f8717120', borderRadius: 3,
@@ -210,7 +289,8 @@ function BaseNodeComponent({ data, selected }: NodeProps<BaseNodeData>) {
               width: 8, height: 8,
               background: statusColor || '#34d399',
               border: '2px solid #065f46',
-              bottom: -4, left: '30%', zIndex: 10
+              bottom: -4, left: '30%', zIndex: 10,
+              transition: 'all 0.2s ease'
             }}
           />
           <Handle
@@ -221,7 +301,8 @@ function BaseNodeComponent({ data, selected }: NodeProps<BaseNodeData>) {
               width: 8, height: 8,
               background: statusColor || '#f87171',
               border: '2px solid #991b1b',
-              bottom: -4, left: '70%', zIndex: 10
+              bottom: -4, left: '70%', zIndex: 10,
+              transition: 'all 0.2s ease'
             }}
           />
         </>
@@ -233,7 +314,8 @@ function BaseNodeComponent({ data, selected }: NodeProps<BaseNodeData>) {
             width: 8, height: 8,
             background: statusColor || cat.accent,
             border: `2px solid ${cat.bar}`,
-            bottom: -4, zIndex: 10
+            bottom: -4, zIndex: 10,
+            transition: 'all 0.2s ease'
           }}
         />
       )}
