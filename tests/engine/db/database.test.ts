@@ -42,7 +42,7 @@ describe('WorkflowRepository', () => {
   it('should update workflow', () => {
     const saved = saveWorkflow(dsl('Original'))
     const updated = dsl('Updated')
-    updated.metadata.template = saved.id
+    ;(updated.metadata as Record<string, unknown>).template = saved.id
     saveWorkflow(updated)
     expect(getWorkflow(saved.id)!.name).toBe('Updated')
   })

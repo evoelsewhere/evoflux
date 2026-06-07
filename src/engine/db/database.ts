@@ -26,7 +26,7 @@ export function openDatabase(dbPath: string): DatabaseAdapter {
     db.exec(SCHEMA_SQL)
     runMigrations(db)
     dbInstance = db
-    console.log(`[DB] SQLite opened: ${dbPath}`)
+    console.warn(`[DB] SQLite opened: ${dbPath}`)
     return db
   } catch (error) {
     console.warn('[DB] better-sqlite3 failed, using in-memory adapter:', error)
@@ -52,7 +52,7 @@ function runMigrations(db: DatabaseAdapter): void {
       } else {
         db.prepare('UPDATE schema_version SET version = ?').run(SCHEMA_VERSION)
       }
-      console.log(`[DB] Migrated to schema version ${SCHEMA_VERSION}`)
+      console.warn(`[DB] Migrated to schema version ${SCHEMA_VERSION}`)
     }
   } catch {
     db.prepare('INSERT OR IGNORE INTO schema_version (version) VALUES (?)').run(SCHEMA_VERSION)
@@ -73,15 +73,22 @@ function matchWhere(whereClause: string, row: Record<string, unknown>, params: u
   let idx = 0
   const resolved = whereClause.replace(/\?/g, () => {
     const v = params[idx++]
-    return typeof v === 'string' ? `'${v}'` : String(v ?? 'null')
+    if (v === null || v === undefined) return 'NULL'
+    if (typeof v === 'string') return v // Compare raw string, not quoted
+    return String(v)
   })
 
   const conditions = resolved.split(/\s+AND\s+/i)
   for (const cond of conditions) {
-    const m = cond.match(/(\w+)\s*=\s*'?(.+?)'?\s*$/)
+    const m = cond.match(/(\w+)\s*=\s*(.+?)$/)
     if (m) {
       const [, col, val] = m
-      if (String(row[col]) !== val) return false
+      const cleanVal = val.replace(/^'|'$/g, '')
+      if (cleanVal === 'NULL') {
+        if (row[col] !== null && row[col] !== undefined) return false
+      } else if (String(row[col]) !== cleanVal) {
+        return false
+      }
     }
   }
   return true
