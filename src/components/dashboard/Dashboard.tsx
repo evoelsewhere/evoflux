@@ -124,6 +124,7 @@ export default function Dashboard() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
             <button
               onClick={handleCreate}
+              aria-label="Create new workflow"
               style={{
                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                 minHeight: 140, background: 'transparent', border: '1.5px dashed var(--border-secondary)',
@@ -142,7 +143,11 @@ export default function Dashboard() {
               return (
                 <div
                   key={wf.id}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Open workflow: ${wf.name}`}
                   onClick={() => navigate(`/workflows/${wf.id}`)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/workflows/${wf.id}`) } }}
                   style={{
                     padding: 16, background: 'var(--bg-elevated)', border: '1px solid var(--border-primary)',
                     borderRadius: 10, cursor: 'pointer', transition: 'all 0.15s',

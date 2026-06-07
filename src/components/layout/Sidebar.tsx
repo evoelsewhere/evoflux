@@ -172,6 +172,7 @@ export default function Sidebar(props: SidebarProps) {
           onClick={item.onClick}
           onMouseEnter={() => setHoveredId(item.id)}
           onMouseLeave={() => setHoveredId(null)}
+          aria-label={item.label}
           style={{
             width: 36, height: 36,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
