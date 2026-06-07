@@ -1,10 +1,33 @@
 export const SCHEMA_SQL = `
-CREATE TABLE IF NOT EXISTS workflow (
+CREATE TABLE IF NOT EXISTS schema_version (
+  version INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS providers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL,
+  api_key TEXT DEFAULT '',
+  base_url TEXT DEFAULT '',
+  default_model TEXT DEFAULT '',
+  models_json TEXT DEFAULT '[]',
+  is_default INTEGER DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS workflows (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   description TEXT DEFAULT '',
-  dsl_json TEXT NOT NULL,
-  config_json TEXT,
+  nodes_json TEXT NOT NULL DEFAULT '[]',
+  edges_json TEXT NOT NULL DEFAULT '[]',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -17,7 +40,7 @@ CREATE TABLE IF NOT EXISTS runs (
   output_json TEXT,
   started_at INTEGER NOT NULL,
   finished_at INTEGER,
-  FOREIGN KEY (workflow_id) REFERENCES workflow(id) ON DELETE CASCADE
+  FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS node_runs (
@@ -101,4 +124,26 @@ CREATE INDEX IF NOT EXISTS idx_edges_target ON memory_edges(target_id);
 CREATE INDEX IF NOT EXISTS idx_env_workflow ON env_variables(workflow_id);
 `
 
-export const SCHEMA_VERSION = 1
+export const SCHEMA_VERSION = 2
+
+export const MIGRATIONS: Record<number, string> = {
+  2: `
+    CREATE TABLE IF NOT EXISTS providers (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL,
+      api_key TEXT DEFAULT '',
+      base_url TEXT DEFAULT '',
+      default_model TEXT DEFAULT '',
+      models_json TEXT DEFAULT '[]',
+      is_default INTEGER DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `
+}

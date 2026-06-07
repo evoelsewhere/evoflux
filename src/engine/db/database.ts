@@ -1,4 +1,4 @@
-import { SCHEMA_SQL } from './schema'
+import { SCHEMA_SQL, SCHEMA_VERSION, MIGRATIONS } from './schema'
 
 export interface DatabaseAdapter {
   exec(sql: string): void
@@ -25,12 +25,38 @@ export function openDatabase(dbPath: string): DatabaseAdapter {
     db.pragma('journal_mode = WAL')
     db.pragma('foreign_keys = ON')
     db.exec(SCHEMA_SQL)
+    runMigrations(db)
     dbInstance = db
+    console.log(`[DB] SQLite opened: ${dbPath}`)
     return db
-  } catch {
+  } catch (error) {
+    console.warn('[DB] better-sqlite3 failed, using in-memory adapter:', error)
     dbInstance = createInMemoryAdapter()
     dbInstance.exec(SCHEMA_SQL)
     return dbInstance
+  }
+}
+
+function runMigrations(db: DatabaseAdapter): void {
+  try {
+    const row = db.prepare('SELECT version FROM schema_version LIMIT 1').get()
+    const currentVersion = row ? Number(row.version) : 0
+
+    if (currentVersion < SCHEMA_VERSION) {
+      for (let v = currentVersion + 1; v <= SCHEMA_VERSION; v++) {
+        if (MIGRATIONS[v]) {
+          db.exec(MIGRATIONS[v])
+        }
+      }
+      if (currentVersion === 0) {
+        db.prepare('INSERT INTO schema_version (version) VALUES (?)').run(SCHEMA_VERSION)
+      } else {
+        db.prepare('UPDATE schema_version SET version = ?').run(SCHEMA_VERSION)
+      }
+      console.log(`[DB] Migrated to schema version ${SCHEMA_VERSION}`)
+    }
+  } catch {
+    db.prepare('INSERT OR IGNORE INTO schema_version (version) VALUES (?)').run(SCHEMA_VERSION)
   }
 }
 
@@ -82,7 +108,6 @@ function createInMemoryAdapter(): DatabaseAdapter {
     prepare(sql: string) {
       return {
         run(...params: unknown[]) {
-          // INSERT OR REPLACE
           const insertMatch = sql.match(/INSERT OR REPLACE INTO (\w+)\s*\(([^)]+)\)\s*VALUES/i)
           if (insertMatch) {
             const [, table, colsStr] = insertMatch
@@ -91,12 +116,11 @@ function createInMemoryAdapter(): DatabaseAdapter {
             const cols = colsStr.split(',').map(c => c.trim())
             const row: Record<string, unknown> = {}
             cols.forEach((col, i) => { row[col] = params[i] })
-            t.set(String(row.id), row)
+            t.set(String(row.id || row.key), row)
             return { changes: 1 }
           }
 
-          // INSERT INTO
-          const insertMatch2 = sql.match(/INSERT INTO (\w+)\s*\(([^)]+)\)\s*VALUES/i)
+          const insertMatch2 = sql.match(/INSERT (?:OR IGNORE )?INTO (\w+)\s*\(([^)]+)\)\s*VALUES/i)
           if (insertMatch2) {
             const [, table, colsStr] = insertMatch2
             const t = tables.get(table)
@@ -104,17 +128,17 @@ function createInMemoryAdapter(): DatabaseAdapter {
             const cols = colsStr.split(',').map(c => c.trim())
             const row: Record<string, unknown> = {}
             cols.forEach((col, i) => { row[col] = params[i] })
-            t.set(String(row.id), row)
+            const key = String(row.id || row.key || '')
+            if (sql.includes('OR IGNORE') && t.has(key)) return { changes: 0 }
+            t.set(key, row)
             return { changes: 1 }
           }
 
-          // UPDATE
           const updateMatch = sql.match(/UPDATE (\w+)\s+SET\s+(.+?)(?:\s+WHERE\s+(.+))?$/i)
           if (updateMatch) {
             const [, table, setClause, whereClause] = updateMatch
             const t = tables.get(table)
             if (!t) return { changes: 0 }
-
             let setIdx = 0
             const setParts = setClause.split(',').map(s => s.trim())
             const assignments: Array<[string, unknown]> = []
@@ -122,10 +146,7 @@ function createInMemoryAdapter(): DatabaseAdapter {
               const m = part.match(/(\w+)\s*=\s*\?/)
               if (m) assignments.push([m[1], params[setIdx++]])
             }
-
-            // Remaining params go to WHERE
             const whereParams = params.slice(setIdx)
-
             let changes = 0
             for (const [id, row] of t) {
               if (whereClause ? matchWhere(whereClause, row, whereParams) : true) {
@@ -137,7 +158,6 @@ function createInMemoryAdapter(): DatabaseAdapter {
             return { changes }
           }
 
-          // DELETE
           const deleteMatch = sql.match(/DELETE FROM (\w+)(?:\s+WHERE\s+(.+))?$/i)
           if (deleteMatch) {
             const [, table, whereClause] = deleteMatch
@@ -160,10 +180,9 @@ function createInMemoryAdapter(): DatabaseAdapter {
         get(...params: unknown[]) {
           const selectMatch = sql.match(/SELECT (.+?) FROM (\w+)(?:\s+WHERE\s+(.+))?$/i)
           if (!selectMatch) return undefined
-          const [, _cols, table, whereClause] = selectMatch
+          const [, , table, whereClause] = selectMatch
           const t = tables.get(table)
           if (!t) return undefined
-
           for (const [, row] of t) {
             if (matchWhere(whereClause || '', row, params)) return { ...row }
           }
@@ -173,10 +192,9 @@ function createInMemoryAdapter(): DatabaseAdapter {
         all(...params: unknown[]) {
           const selectMatch = sql.match(/SELECT (.+?) FROM (\w+)(?:\s+WHERE\s+(.+?))?(?:\s+ORDER BY\s+(.+?))?(?:\s+LIMIT\s+(\d+))?$/i)
           if (!selectMatch) return []
-          const [, _cols, table, whereClause] = selectMatch
+          const [, , table, whereClause] = selectMatch
           const t = tables.get(table)
           if (!t) return []
-
           const results: Record<string, unknown>[] = []
           for (const [, row] of t) {
             if (matchWhere(whereClause || '', row, params)) results.push({ ...row })
@@ -191,4 +209,4 @@ function createInMemoryAdapter(): DatabaseAdapter {
   }
 }
 
-export function getSchemaVersion(): number { return 1 }
+export function getSchemaVersion(): number { return SCHEMA_VERSION }
