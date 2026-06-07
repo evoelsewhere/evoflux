@@ -60,7 +60,7 @@ export class Sandbox {
     await fs.mkdir(path.join(baseDir, 'output'), { recursive: true })
     await fs.mkdir(path.join(baseDir, 'temp'), { recursive: true })
 
-    // @ts-ignore - assign after construction
+    // @ts-expect-error - assign after construction
     this.rootPath = baseDir
   }
 

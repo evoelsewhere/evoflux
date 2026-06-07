@@ -82,7 +82,7 @@ function EditorCanvas() {
 
   const doSave = useCallback(async (ns: Node<NodeData>[], es: Edge[], wfName: string, wfDesc: string, wfId?: string) => {
     setStoreNodes(ns); setStoreEdges(es)
-    try { await window.api.workflow.save({ id: wfId, name: wfName, description: wfDesc, nodes: ns, edges: es }) } catch {}
+    try { await window.api.workflow.save({ id: wfId, name: wfName, description: wfDesc, nodes: ns, edges: es }) } catch { /* save failed, will retry */ }
   }, [setStoreNodes, setStoreEdges])
 
   const doSaveSync = useCallback(() => {
@@ -93,7 +93,7 @@ function EditorCanvas() {
     const wfId = latestId.current
     if (!wfId || ns.length === 0) return
     setStoreNodes(ns); setStoreEdges(es)
-    try { window.api.workflow.saveSync({ id: wfId, name: wfName, description: wfDesc, nodes: ns, edges: es }) } catch {}
+    try { window.api.workflow.saveSync({ id: wfId, name: wfName, description: wfDesc, nodes: ns, edges: es }) } catch { /* sync save failed */ }
   }, [setStoreNodes, setStoreEdges])
 
   useEffect(() => {

@@ -121,5 +121,5 @@ export async function initSettingsStore() {
     if (data.aiProvider) patch.aiProvider = data.aiProvider as AIProvider
     if (data.selectedModel) patch.selectedModel = data.selectedModel as string
     if (Object.keys(patch).length > 0) useSettingsStore.setState(patch)
-  } catch {}
+  } catch { /* IPC not available */ }
 }

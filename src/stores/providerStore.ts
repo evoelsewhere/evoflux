@@ -72,7 +72,7 @@ interface ProviderStore {
 function syncToMain(providers: ProviderInstance[]) {
   try {
     window.api?.settings?.save({ providers })
-  } catch {}
+  } catch { /* IPC not available */ }
 }
 
 export const useProviderStore = create<ProviderStore>()((set, get) => ({

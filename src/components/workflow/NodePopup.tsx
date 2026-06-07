@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { Input, Select, Slider } from 'antd'
 import Editor from '@monaco-editor/react'
 import { useWorkflowStore } from '../../stores/workflowStore'
-import { useProviderStore, PROVIDER_LABELS, type ProviderInstance } from '../../stores/providerStore'
+import { useProviderStore, PROVIDER_LABELS } from '../../stores/providerStore'
 import { getNodeDefinition } from './registry'
 import { useTheme } from '../common/ThemeProvider'
 import type { NodeData } from '../../types/workflow'
@@ -484,7 +484,7 @@ export default function NodePopup({ node, onClose, onDelete }: NodePopupProps) {
             <Field label="Variables (JSON)">
               <Editor height="100px" language="json"
                 value={JSON.stringify(config.variables || [], null, 2)}
-                onChange={(v) => { try { handleChange('variables', JSON.parse(v || '[]')) } catch {} }}
+                onChange={(v) => { try { handleChange('variables', JSON.parse(v || '[]')) } catch { /* ignore invalid JSON */ } }}
                 theme={mode === 'dark' ? 'vs-dark' : 'vs'}
                 options={{ minimap: { enabled: false }, fontSize: 11, lineNumbers: 'off', scrollBeyondLastLine: false, padding: { top: 4, bottom: 4 } }} />
             </Field>
@@ -533,13 +533,9 @@ export default function NodePopup({ node, onClose, onDelete }: NodePopupProps) {
             <Field label="Variables (JSON array of node refs)">
               <Editor height="100px" language="json"
                 value={JSON.stringify(config.variables || [], null, 2)}
-                onChange={(v) => { try { handleChange('variables', JSON.parse(v || '[]')) } catch {} }}
+                onChange={(v) => { try { handleChange('variables', JSON.parse(v || '[]')) } catch { /* ignore invalid JSON */ } }}
                 theme={mode === 'dark' ? 'vs-dark' : 'vs'}
                 options={{ minimap: { enabled: false }, fontSize: 11, lineNumbers: 'off', scrollBeyondLastLine: false, padding: { top: 4, bottom: 4 } }} />
-            </Field>
-            <Field label="Mode">
-              <Select size="small" value={String(config.mode || 'concat')} onChange={(v) => handleChange('mode', v)}
-                options={[{ label: 'Concat', value: 'concat' }, { label: 'First', value: 'first' }, { label: 'Array', value: 'array' }]} style={{ width: '100%' }} />
             </Field>
           </Section>
         )}
@@ -577,7 +573,7 @@ export default function NodePopup({ node, onClose, onDelete }: NodePopupProps) {
             <Field label="Parameters (JSON array)">
               <Editor height="120px" language="json"
                 value={JSON.stringify(config.parameters || [], null, 2)}
-                onChange={(v) => { try { handleChange('parameters', JSON.parse(v || '[]')) } catch {} }}
+                onChange={(v) => { try { handleChange('parameters', JSON.parse(v || '[]')) } catch { /* ignore invalid JSON */ } }}
                 theme={mode === 'dark' ? 'vs-dark' : 'vs'}
                 options={{ minimap: { enabled: false }, fontSize: 11, lineNumbers: 'off', scrollBeyondLastLine: false, padding: { top: 4, bottom: 4 } }} />
             </Field>
@@ -610,7 +606,7 @@ export default function NodePopup({ node, onClose, onDelete }: NodePopupProps) {
             <Field label="Input Mapping (JSON)">
               <Editor height="80px" language="json"
                 value={JSON.stringify(config.inputs || {}, null, 2)}
-                onChange={(v) => { try { handleChange('inputs', JSON.parse(v || '{}')) } catch {} }}
+                onChange={(v) => { try { handleChange('inputs', JSON.parse(v || '{}')) } catch { /* ignore invalid JSON */ } }}
                 theme={mode === 'dark' ? 'vs-dark' : 'vs'}
                 options={{ minimap: { enabled: false }, fontSize: 11, lineNumbers: 'off', scrollBeyondLastLine: false, padding: { top: 4, bottom: 4 } }} />
             </Field>

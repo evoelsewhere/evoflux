@@ -70,7 +70,7 @@ export default function WorkflowList() {
         }))
         try {
           await window.api.workflow.save({ id: wfId, name: json.name || file.name.replace('.json', ''), nodes, edges })
-        } catch {}
+        } catch { /* import save failed */ }
         navigate(`/workflows/${wfId}`)
         message.success(`Imported: ${json.name || file.name}`)
       } catch (err) {

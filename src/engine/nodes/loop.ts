@@ -43,7 +43,7 @@ export class LoopNode extends BaseNode<LoopConfig> {
     }
 
     let iterations = 0
-    let currentValue = inputs.value
+    const currentValue = inputs.value
 
     while (iterations < maxIterations) {
       let result = false

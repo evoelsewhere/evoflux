@@ -31,7 +31,7 @@ export interface NodeRunContext {
   signal?: AbortSignal
 }
 
-export abstract class BaseNode<TConfig = unknown> {
+export abstract class BaseNode<_TConfig = unknown> {
   abstract readonly type: string
 
   abstract getMetadata(): NodeMetadata
