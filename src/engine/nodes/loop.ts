@@ -4,6 +4,7 @@ import { NodeExecutionError } from '../errors'
 
 interface LoopConfig {
   condition?: string
+  transform?: string
   max_iterations?: number
 }
 
@@ -24,7 +25,7 @@ export class LoopNode extends BaseNode<LoopConfig> {
         { name: 'output', label: 'Final Output', type: 'string', required: false },
         { name: 'iterations', label: 'Iterations', type: 'number', required: false }
       ],
-      defaultConfig: { condition: '', max_iterations: 100 }
+      defaultConfig: { condition: '', transform: '', max_iterations: 100 }
     }
   }
 
@@ -37,13 +38,14 @@ export class LoopNode extends BaseNode<LoopConfig> {
     const cfg = config as LoopConfig
     const maxIterations = cfg.max_iterations || 100
     const condition = cfg.condition || ''
+    const transform = cfg.transform || ''
 
     if (!condition) {
       return { output: inputs.value, iterations: 0 }
     }
 
     let iterations = 0
-    const currentValue = inputs.value
+    let currentValue = inputs.value
 
     while (iterations < maxIterations) {
       let result = false
@@ -56,6 +58,17 @@ export class LoopNode extends BaseNode<LoopConfig> {
       }
 
       if (!result) break
+
+      if (transform) {
+        try {
+          const fn = new Function('value', 'iteration', `return ${transform}`)
+          currentValue = fn(currentValue, iterations)
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Transform evaluation failed'
+          throw new NodeExecutionError(context.nodeId, this.type, `Invalid transform: ${message}`, { cause: error })
+        }
+      }
+
       iterations++
     }
 

@@ -1,6 +1,7 @@
 import { BaseNode, type NodeMetadata, type NodeOutput, type NodeRunContext } from '../node-factory'
 import type { VariablePool } from '../variable-pool'
 import { NodeExecutionError } from '../errors'
+import { resolveTemplate } from '../template-resolver'
 
 interface IterationConfig {
   array_input?: string
@@ -62,19 +63,21 @@ export class IterationNode extends BaseNode<IterationConfig> {
     const limit = Math.min(array.length, maxIterations)
     const results: unknown[] = []
 
+    const handler = String(inputs.item_handler || '')
+
     for (let i = 0; i < limit; i++) {
       const item = array[i]
       pool.set([context.nodeId, 'current_item'], item)
       pool.set([context.nodeId, 'index'], i)
+      pool.set([context.nodeId, '_item'], item)
+      pool.set([context.nodeId, '_index'], i)
 
-      // If there's a handler prompt, resolve it with current item context
-      const handler = String(inputs.item_handler || '')
       if (handler) {
-        pool.set([context.nodeId, '_item'], item)
-        pool.set([context.nodeId, '_index'], i)
+        const resolved = resolveTemplate(handler, pool)
+        results.push(resolved)
+      } else {
+        results.push(item)
       }
-
-      results.push(item)
     }
 
     return {
