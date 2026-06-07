@@ -19,7 +19,6 @@ export function openDatabase(dbPath: string): DatabaseAdapter {
   if (dbInstance) return dbInstance
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const Database = require('better-sqlite3')
     const db = new Database(dbPath) as DatabaseAdapter
     db.pragma('journal_mode = WAL')
@@ -67,11 +66,6 @@ export function getDatabase(): DatabaseAdapter {
 
 export function closeDatabase(): void {
   if (dbInstance) { dbInstance.close(); dbInstance = null }
-}
-
-function bindParams(sql: string, params: unknown[]): string {
-  let idx = 0
-  return sql.replace(/\?/g, () => String(params[idx++] ?? null))
 }
 
 function matchWhere(whereClause: string, row: Record<string, unknown>, params: unknown[]): boolean {

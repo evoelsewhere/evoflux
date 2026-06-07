@@ -203,48 +203,6 @@ async function listModels(provider: ProviderType): Promise<string[]> {
   }
 }
 
-async function testConnection(provider: ProviderType): Promise<boolean> {
-  try {
-    switch (provider) {
-      case 'openai': {
-        const client = getOpenAIClient()
-        await client.models.list()
-        return true
-      }
-      case 'anthropic': {
-        const config = getProviderConfig('anthropic')
-        if (!config.apiKey) return false
-        const res = await fetch(`${config.baseUrl}/v1/messages`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-api-key': config.apiKey, 'anthropic-version': '2023-06-01' },
-          body: JSON.stringify({ model: config.defaultModel, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] })
-        })
-        return res.ok || res.status === 400 // 400 means API key is valid but request was minimal
-      }
-      case 'ollama': {
-        const config = getProviderConfig('ollama')
-        const res = await fetch(`${config.baseUrl}/api/tags`)
-        return res.ok
-      }
-      case 'claude-cli': {
-        const { stdout } = await execFileAsync('claude', ['--version'], { timeout: 5000 })
-        return stdout.length > 0
-      }
-      case 'copilot-cli': {
-        const { stdout } = await execFileAsync('gh', ['copilot', '--version'], { timeout: 5000 })
-        return stdout.length > 0
-      }
-      case 'openai-compatible': {
-        const config = getProviderConfig('openai-compatible')
-        if (!config.apiKey || !config.baseUrl) return false
-        const res = await fetch(`${config.baseUrl}/models`, { headers: { 'Authorization': `Bearer ${config.apiKey}` } })
-        return res.ok
-      }
-      default: return false
-    }
-  } catch { return false }
-}
-
 // ============ SQLite Model Config ============
 
 function saveModelConfig(provider: ProviderType, model: string, config: Record<string, unknown>): void {
