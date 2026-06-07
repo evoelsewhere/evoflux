@@ -1,5 +1,4 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
 import { nanoid } from 'nanoid'
 
 export type ProviderType = 'openai' | 'anthropic' | 'ollama' | 'openai-compatible' | 'claude-cli' | 'copilot-cli'
@@ -76,97 +75,87 @@ function syncToMain(providers: ProviderInstance[]) {
   } catch {}
 }
 
-export const useProviderStore = create<ProviderStore>()(
-  persist(
-    (set, get) => ({
-      providers: [],
-      hydrated: false,
+export const useProviderStore = create<ProviderStore>()((set, get) => ({
+  providers: [],
+  hydrated: false,
 
-      addProvider: (type, name) => {
-        const tmpl = PROVIDER_TEMPLATES[type]
-        const id = `prov-${nanoid(8)}`
-        const p: ProviderInstance = {
-          ...tmpl,
-          id,
-          name: name || `${PROVIDER_LABELS[type]} ${get().providers.filter(x => x.type === type).length + 1}`,
-          isDefault: get().providers.length === 0
-        }
-        set((s) => {
-          const next = [...s.providers, p]
-          syncToMain(next)
-          return { providers: next }
-        })
-        return id
-      },
-
-      updateProvider: (id, patch) => {
-        set((s) => {
-          const next = s.providers.map(p => p.id === id ? { ...p, ...patch } : p)
-          syncToMain(next)
-          return { providers: next }
-        })
-      },
-
-      removeProvider: (id) => {
-        set((s) => {
-          let next = s.providers.filter(p => p.id !== id)
-          if (next.length > 0 && !next.some(p => p.isDefault)) {
-            next = next.map((p, i) => i === 0 ? { ...p, isDefault: true } : p)
-          }
-          syncToMain(next)
-          return { providers: next }
-        })
-      },
-
-      getProvider: (id) => get().providers.find(p => p.id === id),
-
-      getDefaultProvider: () => get().providers.find(p => p.isDefault) || get().providers[0],
-
-      setDefault: (id) => {
-        set((s) => {
-          const next = s.providers.map(p => ({ ...p, isDefault: p.id === id }))
-          syncToMain(next)
-          return { providers: next }
-        })
-      },
-
-      syncAllToMain: () => syncToMain(get().providers),
-
-      loadFromMain: async () => {
-        try {
-          const data = await window.api?.settings?.load()
-          if (data?.providers && Array.isArray(data.providers) && data.providers.length > 0) {
-            const remote = data.providers as ProviderInstance[]
-            const local = get().providers
-            if (local.length === 0) {
-              set({ providers: remote, hydrated: true })
-            } else {
-              const localIds = new Set(local.map(p => p.id))
-              const merged = [...local]
-              for (const rp of remote) {
-                if (!localIds.has(rp.id)) merged.push(rp)
-              }
-              set({ providers: merged, hydrated: true })
-              syncToMain(merged)
-            }
-          } else {
-            set({ hydrated: true })
-            if (get().providers.length > 0) syncToMain(get().providers)
-          }
-        } catch {
-          set({ hydrated: true })
-        }
-      }
-    }),
-    {
-      name: 'evoflux-providers',
-      merge: (persisted, current) => {
-        const p = persisted as Partial<ProviderStore>
-        return { ...current, ...p, hydrated: false }
-      }
+  addProvider: (type, name) => {
+    const tmpl = PROVIDER_TEMPLATES[type]
+    const id = `prov-${nanoid(8)}`
+    const p: ProviderInstance = {
+      ...tmpl,
+      id,
+      name: name || `${PROVIDER_LABELS[type]} ${get().providers.filter(x => x.type === type).length + 1}`,
+      isDefault: get().providers.length === 0
     }
-  )
-)
+    set((s) => {
+      const next = [...s.providers, p]
+      syncToMain(next)
+      return { providers: next }
+    })
+    return id
+  },
+
+  updateProvider: (id, patch) => {
+    set((s) => {
+      const next = s.providers.map(p => p.id === id ? { ...p, ...patch } : p)
+      syncToMain(next)
+      return { providers: next }
+    })
+  },
+
+  removeProvider: (id) => {
+    set((s) => {
+      let next = s.providers.filter(p => p.id !== id)
+      if (next.length > 0 && !next.some(p => p.isDefault)) {
+        next = next.map((p, i) => i === 0 ? { ...p, isDefault: true } : p)
+      }
+      syncToMain(next)
+      return { providers: next }
+    })
+  },
+
+  getProvider: (id) => get().providers.find(p => p.id === id),
+
+  getDefaultProvider: () => get().providers.find(p => p.isDefault) || get().providers[0],
+
+  setDefault: (id) => {
+    set((s) => {
+      const next = s.providers.map(p => ({ ...p, isDefault: p.id === id }))
+      syncToMain(next)
+      return { providers: next }
+    })
+  },
+
+  syncAllToMain: () => syncToMain(get().providers),
+
+  loadFromMain: async () => {
+    try {
+      const data = await window.api?.settings?.load() as Record<string, unknown> | null
+      if (!data) { set({ hydrated: true }); return }
+      const remote = data.providers as ProviderInstance[] | undefined
+      if (remote && Array.isArray(remote) && remote.length > 0) {
+        const local = get().providers
+        if (local.length === 0) {
+          set({ providers: remote, hydrated: true })
+        } else {
+          const localIds = new Set(local.map(p => p.id))
+          const merged = [...local]
+          for (const rp of remote) {
+            if (!localIds.has(rp.id)) merged.push(rp)
+          }
+          set({ providers: merged, hydrated: true })
+          syncToMain(merged)
+        }
+      } else {
+        set({ hydrated: true })
+        if (get().providers.length > 0) syncToMain(get().providers)
+      }
+    } catch {
+      set({ hydrated: true })
+    }
+  }
+}))
 
 export async function initProviderStore() {
   await useProviderStore.getState().loadFromMain()

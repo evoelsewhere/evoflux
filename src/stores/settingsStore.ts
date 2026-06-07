@@ -1,5 +1,4 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
 
 export type AIProvider = 'openai' | 'ollama' | 'anthropic' | 'claude-cli' | 'copilot-cli'
 export type FontSize = 'small' | 'medium' | 'large'
@@ -42,6 +41,18 @@ export const FONT_FAMILY_MAP: Record<FontFamily, { css: string; label: string }>
   mono: { css: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace", label: 'Monospace' }
 }
 
+const DEFAULT_APPEARANCE: AppearanceSettings = {
+  theme: 'dark',
+  accentColor: '#0070f3',
+  fontSize: 'medium',
+  fontFamily: 'inter',
+  compactMode: false,
+  canvasDotSize: 1,
+  canvasDotColor: '',
+  nodeBorderRadius: 8,
+  sidebarWidth: 200
+}
+
 interface SettingsState {
   aiProvider: AIProvider
   openaiApiKey: string
@@ -74,70 +85,41 @@ function syncToMain(state: Partial<SettingsState>) {
   } catch { /* main process not available */ }
 }
 
-const DEFAULT_APPEARANCE: AppearanceSettings = {
-  theme: 'dark',
-  accentColor: '#0070f3',
-  fontSize: 'medium',
-  fontFamily: 'inter',
-  compactMode: false,
-  canvasDotSize: 1,
-  canvasDotColor: '',
-  nodeBorderRadius: 8,
-  sidebarWidth: 200
-}
+export const useSettingsStore = create<SettingsState>()((set, get) => ({
+  aiProvider: 'openai',
+  openaiApiKey: '',
+  ollamaUrl: 'http://localhost:11434',
+  anthropicApiKey: '',
+  anthropicBaseUrl: 'https://api.anthropic.com',
+  selectedModel: 'gpt-4o-mini',
+  appearance: DEFAULT_APPEARANCE,
 
-export const useSettingsStore = create<SettingsState>()(
-  persist(
-    (set, get) => ({
-      aiProvider: 'openai',
-      openaiApiKey: '',
-      ollamaUrl: 'http://localhost:11434',
-      anthropicApiKey: '',
-      anthropicBaseUrl: 'https://api.anthropic.com',
-      selectedModel: 'gpt-4o-mini',
-      appearance: DEFAULT_APPEARANCE,
-
-      setAiProvider: (provider) => { set({ aiProvider: provider }); syncToMain(get()) },
-      setOpenaiApiKey: (key) => { set({ openaiApiKey: key }); syncToMain(get()) },
-      setOllamaUrl: (url) => { set({ ollamaUrl: url }); syncToMain(get()) },
-      setAnthropicApiKey: (key) => { set({ anthropicApiKey: key }); syncToMain(get()) },
-      setAnthropicBaseUrl: (url) => { set({ anthropicBaseUrl: url }); syncToMain(get()) },
-      setSelectedModel: (model) => { set({ selectedModel: model }); syncToMain(get()) },
-      updateAppearance: (patch) => {
-        set((s) => ({ appearance: { ...s.appearance, ...patch } }))
-        syncToMain(get())
-      }
-    }),
-    {
-      name: 'evoflux-settings',
-      merge: (persisted, current) => {
-        const p = persisted as Partial<SettingsState>
-        return {
-          ...current,
-          ...p,
-          appearance: { ...DEFAULT_APPEARANCE, ...p?.appearance }
-        }
-      }
-    }
-  )
-)
+  setAiProvider: (provider) => { set({ aiProvider: provider }); syncToMain(get()) },
+  setOpenaiApiKey: (key) => { set({ openaiApiKey: key }); syncToMain(get()) },
+  setOllamaUrl: (url) => { set({ ollamaUrl: url }); syncToMain(get()) },
+  setAnthropicApiKey: (key) => { set({ anthropicApiKey: key }); syncToMain(get()) },
+  setAnthropicBaseUrl: (url) => { set({ anthropicBaseUrl: url }); syncToMain(get()) },
+  setSelectedModel: (model) => { set({ selectedModel: model }); syncToMain(get()) },
+  updateAppearance: (patch) => {
+    set((s) => ({ appearance: { ...s.appearance, ...patch } }))
+    syncToMain(get())
+  }
+}))
 
 export async function initSettingsStore() {
   try {
-    const data = await window.api?.settings?.load()
+    const data = await window.api?.settings?.load() as Record<string, unknown> | null
     if (!data) return
-    const s = useSettingsStore.getState()
     const patch: Partial<SettingsState> = {}
     if (data.appearance && typeof data.appearance === 'object') {
       patch.appearance = { ...DEFAULT_APPEARANCE, ...(data.appearance as Partial<AppearanceSettings>) }
     }
-    const remote = data as Record<string, unknown>
-    if (!s.openaiApiKey && remote.openaiApiKey) patch.openaiApiKey = remote.openaiApiKey as string
-    if (!s.anthropicApiKey && remote.anthropicApiKey) patch.anthropicApiKey = remote.anthropicApiKey as string
-    if (!s.anthropicBaseUrl && remote.anthropicBaseUrl !== 'https://api.anthropic.com') patch.anthropicBaseUrl = remote.anthropicBaseUrl as string
-    if (!s.ollamaUrl && remote.ollamaUrl) patch.ollamaUrl = remote.ollamaUrl as string
-    if (Object.keys(patch).length > 0) {
-      useSettingsStore.setState(patch)
-    }
+    if (data.openaiApiKey) patch.openaiApiKey = data.openaiApiKey as string
+    if (data.anthropicApiKey) patch.anthropicApiKey = data.anthropicApiKey as string
+    if (data.anthropicBaseUrl) patch.anthropicBaseUrl = data.anthropicBaseUrl as string
+    if (data.ollamaUrl) patch.ollamaUrl = data.ollamaUrl as string
+    if (data.aiProvider) patch.aiProvider = data.aiProvider as AIProvider
+    if (data.selectedModel) patch.selectedModel = data.selectedModel as string
+    if (Object.keys(patch).length > 0) useSettingsStore.setState(patch)
   } catch {}
 }

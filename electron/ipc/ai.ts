@@ -1,12 +1,11 @@
 import { ipcMain } from 'electron'
 import OpenAI from 'openai'
-import Store from 'electron-store'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { getDatabase } from '../../src/engine/db/database'
+import { setSetting, getAllSettings, getSettingsJson } from '../../src/engine/db/repos'
 
 const execFileAsync = promisify(execFile)
-const store = new Store()
 
 // ============ Provider Registry ============
 
@@ -33,20 +32,20 @@ function getProviderConfig(provider: ProviderType): ProviderConfig {
     case 'openai':
       return {
         type: 'openai',
-        apiKey: store.get('settings.openaiApiKey') as string,
+        apiKey: (getSettingsJson('openaiApiKey') as string) || '',
         defaultModel: 'gpt-4o-mini'
       }
     case 'ollama':
       return {
         type: 'ollama',
-        baseUrl: (store.get('settings.ollamaUrl') as string) || 'http://localhost:11434',
+        baseUrl: (getSettingsJson('ollamaUrl') as string) || 'http://localhost:11434',
         defaultModel: 'llama3.2'
       }
     case 'anthropic':
       return {
         type: 'anthropic',
-        apiKey: store.get('settings.anthropicApiKey') as string,
-        baseUrl: (store.get('settings.anthropicBaseUrl') as string) || 'https://api.anthropic.com',
+        apiKey: (getSettingsJson('anthropicApiKey') as string) || '',
+        baseUrl: (getSettingsJson('anthropicBaseUrl') as string) || 'https://api.anthropic.com',
         defaultModel: 'claude-sonnet-4-20250514'
       }
     case 'claude-cli':
@@ -283,8 +282,6 @@ function listModelConfigs(): Array<{ provider: string; model: string; config: Re
 
 // ============ IPC Handlers ============
 
-import { setSetting, getAllSettings, saveProvider as dbSaveProvider, listProviders as dbListProviders, deleteProvider as dbDeleteProvider, clearDefaultProviders } from '../../src/engine/db/repos'
-
 export function registerAIHandlers(): void {
   ipcMain.handle('settings:save', async (_event, settings) => {
     if (settings && typeof settings === 'object') {
@@ -300,7 +297,7 @@ export function registerAIHandlers(): void {
   })
 
   ipcMain.handle('ai:chat', async (_event, messages, options) => {
-    const provider = (options?.provider || store.get('settings.aiProvider') || 'openai') as ProviderType
+    const provider = (options?.provider || getSettingsJson('aiProvider') || 'openai') as ProviderType
     const model = options?.model || ''
     const config = resolveConfig(provider, options?.providerConfig)
     try {
@@ -328,7 +325,7 @@ export function registerAIHandlers(): void {
   })
 
   ipcMain.handle('ai:stream-chat', async (event, messages, options) => {
-    const provider = (options?.provider || store.get('settings.aiProvider') || 'openai') as ProviderType
+    const provider = (options?.provider || getSettingsJson('aiProvider') || 'openai') as ProviderType
     const model = options?.model || ''
 
     try {
@@ -381,7 +378,7 @@ export function registerAIHandlers(): void {
   })
 
   ipcMain.handle('ai:list-models', async (_event, provider) => {
-    const p = (provider || store.get('settings.aiProvider') || 'openai') as ProviderType
+    const p = (provider || getSettingsJson('aiProvider') || 'openai') as ProviderType
     return await listModels(p)
   })
 
