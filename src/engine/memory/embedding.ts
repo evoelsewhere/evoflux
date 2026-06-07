@@ -24,7 +24,6 @@ function createFallbackEmbedder(): EmbedderFn {
 async function getEmbedder(): Promise<EmbedderFn> {
   if (!embedder) {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const mod = require('@xenova/transformers')
       const pipelineFn = mod.pipeline as (task: string, model: string) => Promise<unknown>
       embedder = (await pipelineFn('feature-extraction', MODEL)) as EmbedderFn
