@@ -20,6 +20,7 @@ interface Window {
     }
     workflow: {
       save: (workflow: unknown) => Promise<unknown>
+      saveSync: (workflow: unknown) => { success: boolean; id: string }
       load: (id: string) => Promise<unknown>
       list: () => Promise<unknown[]>
       delete: (id: string) => Promise<boolean>

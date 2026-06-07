@@ -21,6 +21,7 @@ const api = {
   },
   workflow: {
     save: (workflow: unknown) => ipcRenderer.invoke('workflow:save', workflow),
+    saveSync: (workflow: unknown) => ipcRenderer.sendSync('workflow:saveSync', workflow),
     load: (id: string) => ipcRenderer.invoke('workflow:load', id),
     list: () => ipcRenderer.invoke('workflow:list'),
     delete: (id: string) => ipcRenderer.invoke('workflow:delete', id),

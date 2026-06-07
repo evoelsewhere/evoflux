@@ -2,6 +2,17 @@ import { ipcMain } from 'electron'
 import { saveWorkflow, getWorkflow, listWorkflows, deleteWorkflow, createRun, updateRunStatus, listRuns, createNodeRun, updateNodeRunStatus } from '../../src/engine/db/repos'
 
 export function registerWorkflowHandlers(): void {
+  ipcMain.on('workflow:saveSync', (event, workflow) => {
+    const saved = saveWorkflow({
+      id: workflow.id,
+      name: workflow.name || 'Untitled Workflow',
+      description: workflow.description || '',
+      nodes: workflow.nodes || [],
+      edges: workflow.edges || []
+    })
+    event.returnValue = { success: true, id: saved.id }
+  })
+
   ipcMain.handle('workflow:save', async (_event, workflow) => {
     const saved = saveWorkflow({
       id: workflow.id,

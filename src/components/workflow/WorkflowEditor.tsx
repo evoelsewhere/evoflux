@@ -85,6 +85,17 @@ function EditorCanvas() {
     try { await window.api.workflow.save({ id: wfId, name: wfName, description: wfDesc, nodes: ns, edges: es }) } catch {}
   }, [setStoreNodes, setStoreEdges])
 
+  const doSaveSync = useCallback(() => {
+    const ns = latestNodes.current
+    const es = latestEdges.current
+    const wfName = latestName.current
+    const wfDesc = latestDesc.current
+    const wfId = latestId.current
+    if (!wfId || ns.length === 0) return
+    setStoreNodes(ns); setStoreEdges(es)
+    try { window.api.workflow.saveSync({ id: wfId, name: wfName, description: wfDesc, nodes: ns, edges: es }) } catch {}
+  }, [setStoreNodes, setStoreEdges])
+
   useEffect(() => {
     if (!id) { setLoading(false); return }
     let cancelled = false
@@ -110,12 +121,15 @@ function EditorCanvas() {
   useEffect(() => {
     if (nodes.length === 0 || loading) return
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
-    autoSaveTimer.current = setTimeout(() => { doSave(nodes, edges, workflowName, workflowDescription, id) }, 2000)
+    autoSaveTimer.current = setTimeout(() => { doSave(nodes, edges, workflowName, workflowDescription, id) }, 500)
     return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current) }
   }, [nodes, edges, workflowName, loading])
 
   useEffect(() => {
+    const handleBeforeUnload = () => { doSaveSync() }
+    window.addEventListener('beforeunload', handleBeforeUnload)
     return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
       doSave(latestNodes.current, latestEdges.current, latestName.current, latestDesc.current, latestId.current)
     }
