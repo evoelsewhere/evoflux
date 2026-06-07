@@ -5,17 +5,22 @@ export interface MockFetchResponse {
   status: number
   text: () => Promise<string>
   json: () => Promise<unknown>
-  headers: Map<string, string>
+  headers: { forEach: (cb: (value: string, key: string) => void) => void }
 }
 
 export function createFetchResponse(body: unknown, status = 200): MockFetchResponse {
   const bodyStr = typeof body === 'string' ? body : JSON.stringify(body)
+  const headerEntries: [string, string][] = [['content-type', typeof body === 'string' ? 'text/plain' : 'application/json']]
   return {
     ok: status >= 200 && status < 300,
     status,
     text: () => Promise.resolve(bodyStr),
     json: () => Promise.resolve(body),
-    headers: new Map([['content-type', 'application/json']]),
+    headers: {
+      forEach: (cb: (value: string, key: string) => void) => {
+        for (const [key, value] of headerEntries) cb(value, key)
+      }
+    },
   }
 }
 
@@ -24,6 +29,7 @@ export function setupFetchMock(): ReturnType<typeof vi.fn> {
   Object.defineProperty(globalThis, 'fetch', {
     value: fetchMock,
     writable: true,
+    configurable: true,
   })
   return fetchMock
 }
