@@ -1,0 +1,150 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0a0a0a"/>
+      <stop offset="100%" style="stop-color:#111111"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0070f3"/>
+      <stop offset="100%" style="stop-color:#00d4ff"/>
+    </linearGradient>
+    <linearGradient id="green" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#34d399"/>
+      <stop offset="100%" style="stop-color:#059669"/>
+    </linearGradient>
+    <linearGradient id="purple" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#c084fc"/>
+      <stop offset="100%" style="stop-color:#a855f7"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#60a5fa"/>
+      <stop offset="100%" style="stop-color:#3b82f6"/>
+    </linearGradient>
+    <linearGradient id="teal" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#2dd4bf"/>
+      <stop offset="100%" style="stop-color:#0d9488"/>
+    </linearGradient>
+    <linearGradient id="amber" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#fbbf24"/>
+      <stop offset="100%" style="stop-color:#d97706"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000" flood-opacity="0.5"/>
+    </filter>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="20" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+    <clipPath id="round">
+      <rect width="512" height="512" rx="108" ry="108"/>
+    </clipPath>
+  </defs>
+
+  <rect width="512" height="512" rx="108" ry="108" fill="url(#bg)"/>
+
+  <g clip-path="url(#round)" opacity="0.03">
+    <line x1="0" y1="170" x2="512" y2="170" stroke="#fff" stroke-width="1"/>
+    <line x1="0" y1="340" x2="512" y2="340" stroke="#fff" stroke-width="1"/>
+    <line x1="170" y1="0" x2="170" y2="512" stroke="#fff" stroke-width="1"/>
+    <line x1="340" y1="0" x2="340" y2="512" stroke="#fff" stroke-width="1"/>
+  </g>
+
+  <!-- Center glow -->
+  <circle cx="256" cy="256" r="120" fill="url(#accent)" opacity="0.08"/>
+
+  <!-- Connection lines -->
+  <g stroke="#0070f3" stroke-width="2.5" opacity="0.4" stroke-linecap="round">
+    <line x1="256" y1="155" x2="170" y2="225"/>
+    <line x1="256" y1="155" x2="342" y2="225"/>
+    <line x1="170" y1="280" x2="170" y2="350"/>
+    <line x1="342" y1="280" x2="342" y2="350"/>
+    <line x1="170" y1="350" x2="256" y2="400"/>
+    <line x1="342" y1="350" x2="256" y2="400"/>
+  </g>
+
+  <!-- Flow dots -->
+  <g fill="#0070f3">
+    <circle cx="213" cy="190" r="3" opacity="0.6">
+      <animate attributeName="opacity" values="0.2;0.8;0.2" dur="2.5s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="299" cy="190" r="3" opacity="0.6">
+      <animate attributeName="opacity" values="0.2;0.8;0.2" dur="2.5s" repeatCount="indefinite" begin="0.4s"/>
+    </circle>
+    <circle cx="170" cy="315" r="3" opacity="0.6">
+      <animate attributeName="opacity" values="0.2;0.8;0.2" dur="2.5s" repeatCount="indefinite" begin="0.8s"/>
+    </circle>
+    <circle cx="342" cy="315" r="3" opacity="0.6">
+      <animate attributeName="opacity" values="0.2;0.8;0.2" dur="2.5s" repeatCount="indefinite" begin="1.2s"/>
+    </circle>
+    <circle cx="213" cy="375" r="3" opacity="0.6">
+      <animate attributeName="opacity" values="0.2;0.8;0.2" dur="2.5s" repeatCount="indefinite" begin="1.6s"/>
+    </circle>
+    <circle cx="299" cy="375" r="3" opacity="0.6">
+      <animate attributeName="opacity" values="0.2;0.8;0.2" dur="2.5s" repeatCount="indefinite" begin="2s"/>
+    </circle>
+  </g>
+
+  <!-- Handle dots -->
+  <g>
+    <circle cx="256" cy="135" r="5" fill="#34d399"/>
+    <circle cx="148" cy="225" r="5" fill="#60a5fa"/>
+    <circle cx="364" cy="225" r="5" fill="#c084fc"/>
+    <circle cx="148" cy="350" r="5" fill="#2dd4bf"/>
+    <circle cx="364" cy="350" r="5" fill="#fbbf24"/>
+    <circle cx="256" cy="420" r="5" fill="#a1a1aa"/>
+  </g>
+
+  <!-- Node 1: Trigger (top center) -->
+  <g filter="url(#shadow)">
+    <rect x="206" y="100" width="100" height="44" rx="12" fill="#0f1a14" stroke="#065f46" stroke-width="1.5"/>
+    <circle cx="231" cy="122" r="6" fill="url(#green)"/>
+    <rect x="244" y="115" width="48" height="4" rx="2" fill="#34d399" opacity="0.5"/>
+    <rect x="244" y="123" width="32" height="3" rx="1.5" fill="#34d399" opacity="0.25"/>
+  </g>
+
+  <!-- Node 2: LLM (left) -->
+  <g filter="url(#shadow)">
+    <rect x="110" y="200" width="120" height="56" rx="14" fill="#0f172a" stroke="#1e40af" stroke-width="1.5"/>
+    <circle cx="142" cy="228" r="9" fill="none" stroke="url(#blue)" stroke-width="1.5"/>
+    <circle cx="139" cy="225" r="2.5" fill="url(#blue)"/>
+    <circle cx="145" cy="225" r="2.5" fill="url(#blue)"/>
+    <path d="M137 232C139 234 145 234 147 232" stroke="url(#blue)" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+    <rect x="160" y="220" width="56" height="4" rx="2" fill="#60a5fa" opacity="0.5"/>
+    <rect x="160" y="228" width="38" height="3" rx="1.5" fill="#60a5fa" opacity="0.25"/>
+  </g>
+
+  <!-- Node 3: Agent (right) -->
+  <g filter="url(#shadow)">
+    <rect x="282" y="200" width="120" height="56" rx="14" fill="#1e1028" stroke="#7e22ce" stroke-width="1.5"/>
+    <circle cx="314" cy="228" r="9" fill="none" stroke="url(#purple)" stroke-width="1.5"/>
+    <path d="M310 226L314 230L318 226" stroke="url(#purple)" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="332" y="220" width="56" height="4" rx="2" fill="#c084fc" opacity="0.5"/>
+    <rect x="332" y="228" width="38" height="3" rx="1.5" fill="#c084fc" opacity="0.25"/>
+  </g>
+
+  <!-- Node 4: Tools (left bottom) -->
+  <g filter="url(#shadow)">
+    <rect x="110" y="325" width="120" height="56" rx="14" fill="#131c1c" stroke="#115e59" stroke-width="1.5"/>
+    <rect x="136" y="343" width="20" height="20" rx="4" fill="none" stroke="url(#teal)" stroke-width="1.5"/>
+    <rect x="142" y="349" width="8" height="8" rx="2" fill="url(#teal)" opacity="0.3"/>
+    <rect x="166" y="345" width="50" height="4" rx="2" fill="#2dd4bf" opacity="0.5"/>
+    <rect x="166" y="353" width="34" height="3" rx="1.5" fill="#2dd4bf" opacity="0.25"/>
+  </g>
+
+  <!-- Node 5: Logic (right bottom) -->
+  <g filter="url(#shadow)">
+    <rect x="282" y="325" width="120" height="56" rx="14" fill="#1c1917" stroke="#92400e" stroke-width="1.5"/>
+    <path d="M308 343L322 357L336 343" stroke="url(#amber)" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="322" y1="348" x2="322" y2="365" stroke="url(#amber)" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+    <rect x="344" y="345" width="44" height="4" rx="2" fill="#fbbf24" opacity="0.5"/>
+    <rect x="344" y="353" width="30" height="3" rx="1.5" fill="#fbbf24" opacity="0.25"/>
+  </g>
+
+  <!-- Node 6: Output (bottom center) -->
+  <g filter="url(#shadow)">
+    <rect x="206" y="380" width="100" height="44" rx="12" fill="#18181b" stroke="#3f3f46" stroke-width="1.5"/>
+    <circle cx="231" cy="402" r="6" fill="#71717a"/>
+    <rect x="244" y="395" width="48" height="4" rx="2" fill="#a1a1aa" opacity="0.5"/>
+    <rect x="244" y="403" width="32" height="3" rx="1.5" fill="#a1a1aa" opacity="0.25"/>
+  </g>
+</svg>
