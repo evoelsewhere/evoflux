@@ -13,7 +13,7 @@
     "build:win": "npm run build && electron-builder --win",
     "build:all": "npm run build && electron-builder --mac --win",
     "preview": "electron-vite preview",
-    "lint": "eslint src electron --ext .ts,.tsx",
+    "lint": "eslint src electron",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -32,6 +32,7 @@
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0",
     "reactflow": "^11.11.4",
+    "sharp": "^0.34.5",
     "zustand": "^5.0.2"
   },
   "devDependencies": {
@@ -52,6 +53,7 @@
     "pdfjs-dist": "^6.0.227",
     "prettier": "^3.4.1",
     "typescript": "^5.7.2",
+    "typescript-eslint": "^8.60.1",
     "vite": "^5.4.11",
     "vitest": "^4.1.8"
   },
@@ -78,11 +80,17 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         },
         {
           "target": "zip",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ],
       "icon": "build/icon.icns",
@@ -98,15 +106,25 @@
         "height": 380
       },
       "contents": [
-        { "x": 140, "y": 200 },
-        { "x": 400, "y": 200, "type": "link", "path": "/Applications" }
+        {
+          "x": 140,
+          "y": 200
+        },
+        {
+          "x": 400,
+          "y": 200,
+          "type": "link",
+          "path": "/Applications"
+        }
       ]
     },
     "win": {
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "build/icon.ico"
@@ -122,7 +140,9 @@
       "shortcutName": "Evoflux"
     },
     "linux": {
-      "target": ["AppImage"],
+      "target": [
+        "AppImage"
+      ],
       "icon": "build/icon.png",
       "category": "Development"
     }
