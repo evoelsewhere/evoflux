@@ -69,7 +69,11 @@ function EditorCanvas() {
   const [popupNode, setPopupNode] = useState<Node<NodeData> | null>(null)
   const [popupEdge, setPopupEdge] = useState<Edge | null>(null)
   const [loading, setLoading] = useState(true)
+  const [showSearch, setShowSearch] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [showVarViewer, setShowVarViewer] = useState(false)
   const [monH, setMonH] = useState(300)
+  const clipboardRef = useRef<{ nodes: Node<NodeData>[]; edges: Edge[] } | null>(null)
 
   const navigate = useNavigate()
   const { id } = useParams()
@@ -164,6 +168,46 @@ function EditorCanvas() {
     setEdges(prev => prev.filter(e => e.source !== nodeId && e.target !== nodeId))
     setSelectedNodeId(prev => prev === nodeId ? null : prev)
     setPopupNode(null)
+  }, [setNodes, setEdges, pushHistory])
+
+  const handleDeleteSelected = useCallback(() => {
+    const selected = nodes.filter(n => n.selected)
+    if (selected.length === 0) return
+    pushHistory()
+    const ids = new Set(selected.map(n => n.id))
+    setNodes(prev => prev.filter(n => !ids.has(n.id)))
+    setEdges(prev => prev.filter(e => !ids.has(e.source) && !ids.has(e.target)))
+    setPopupNode(null)
+  }, [nodes, setNodes, setEdges, pushHistory])
+
+  const handleCopy = useCallback(() => {
+    const selected = nodes.filter(n => n.selected || n.id === selectedNodeId)
+    if (selected.length === 0) return
+    const ids = new Set(selected.map(n => n.id))
+    const relatedEdges = edges.filter(e => ids.has(e.source) && ids.has(e.target))
+    clipboardRef.current = { nodes: selected, edges: relatedEdges }
+    message.success(`Copied ${selected.length} node${selected.length > 1 ? 's' : ''}`)
+  }, [nodes, edges, selectedNodeId])
+
+  const handlePaste = useCallback(() => {
+    const clip = clipboardRef.current
+    if (!clip || clip.nodes.length === 0) return
+    pushHistory()
+    const idMap = new Map<string, string>()
+    const offset = 40
+    const newNodes = clip.nodes.map(n => {
+      const newId = `${n.data.type}-${nanoid(6)}`
+      idMap.set(n.id, newId)
+      return { ...n, id: newId, position: { x: n.position.x + offset, y: n.position.y + offset }, selected: false }
+    })
+    const newEdges = clip.edges.map(e => ({
+      ...e, id: `e-${idMap.get(e.source)}-${idMap.get(e.target)}-${nanoid(4)}`,
+      source: idMap.get(e.source)!, target: idMap.get(e.target)!
+    }))
+    setNodes(prev => [...prev, ...newNodes as Node<NodeData>[]])
+    setEdges(prev => [...prev, ...newEdges])
+    clipboardRef.current = { nodes: newNodes as Node<NodeData>[], edges: newEdges }
+    message.success(`Pasted ${newNodes.length} node${newNodes.length > 1 ? 's' : ''}`)
   }, [setNodes, setEdges, pushHistory])
 
   const handleUndo = useCallback(() => {
@@ -292,8 +336,33 @@ function EditorCanvas() {
     const defStr = e.dataTransfer.getData('application/reactflow-def')
     if (!type || !defStr) return
     const def = JSON.parse(defStr) as NodeDefinition
-    addNode(type, def, screenToFlowPosition({ x: e.clientX, y: e.clientY }))
-  }, [screenToFlowPosition, addNode])
+    const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY })
+
+    const insertedNode = { id: `${type}-${nanoid(6)}`, type: type === 'comment' ? 'comment' : 'default', position: pos, data: type === 'comment' ? { label: 'Comment', type: 'comment', text: 'Double-click to edit...', direction: layoutDirection } : { label: def.label, type, icon: def.icon, category: def.category, config: {}, direction: layoutDirection } }
+
+    const nearbyEdge = edges.find(edge => {
+      const src = nodes.find(n => n.id === edge.source)
+      const tgt = nodes.find(n => n.id === edge.target)
+      if (!src || !tgt) return false
+      const midX = (src.position.x + tgt.position.x) / 2
+      const midY = (src.position.y + tgt.position.y) / 2
+      const dx = pos.x - midX; const dy = pos.y - midY
+      return Math.sqrt(dx * dx + dy * dy) < 120
+    })
+
+    if (nearbyEdge) {
+      pushHistory()
+      setNodes(prev => [...prev, insertedNode as Node<NodeData>])
+      setEdges(prev => [
+        ...prev.filter(e => e.id !== nearbyEdge.id),
+        { id: `e-${nearbyEdge.source}-${insertedNode.id}-${nanoid(4)}`, source: nearbyEdge.source, target: insertedNode.id, type: 'custom', animated: true, sourceHandle: nearbyEdge.sourceHandle },
+        { id: `e-${insertedNode.id}-${nearbyEdge.target}-${nanoid(4)}`, source: insertedNode.id, target: nearbyEdge.target, type: 'custom', animated: true, targetHandle: nearbyEdge.targetHandle }
+      ])
+      message.success('Auto-connected between nodes')
+    } else {
+      addNode(type, def, pos)
+    }
+  }, [screenToFlowPosition, addNode, edges, nodes, layoutDirection, setNodes, setEdges, pushHistory])
 
   const handleSave = useCallback(async () => { await doSave(nodes, edges, workflowName, workflowDescription, id); message.success('Saved') }, [id, nodes, edges, workflowName, workflowDescription, doSave])
   const handleBack = useCallback(() => { doSaveSync(); navigate('/workflows') }, [doSaveSync, navigate])
@@ -301,15 +370,53 @@ function EditorCanvas() {
   const handleLayout = useCallback(() => { const l = applyDirection(autoLayout(nodes, edges, layoutDirection), layoutDirection); setNodes(l) }, [nodes, edges, layoutDirection, setNodes, applyDirection])
   const handleToggleLayout = useCallback(() => { const next = layoutDirection === 'TB' ? 'LR' : 'TB'; setLayoutDirection(next); setNodes(applyDirection(autoLayout(nodes, edges, next), next)) }, [layoutDirection, nodes, edges, setNodes, applyDirection])
 
+  const handleExportImage = useCallback(async () => {
+    const rfEl = document.querySelector('.react-flow') as HTMLElement | null
+    if (!rfEl) return
+    try {
+      const svgEl = rfEl.querySelector('svg') as SVGSVGElement | null
+      if (!svgEl) { message.error('No canvas found'); return }
+      const svgData = new XMLSerializer().serializeToString(svgEl)
+      const canvas = document.createElement('canvas')
+      const rect = rfEl.getBoundingClientRect()
+      canvas.width = rect.width * 2; canvas.height = rect.height * 2
+      const ctx = canvas.getContext('2d')!
+      ctx.scale(2, 2)
+      ctx.fillStyle = '#000000'
+      ctx.fillRect(0, 0, rect.width, rect.height)
+      const img = new Image()
+      img.onload = () => {
+        ctx.drawImage(img, 0, 0, rect.width, rect.height)
+        const link = document.createElement('a')
+        link.download = `${workflowName || 'workflow'}.png`
+        link.href = canvas.toDataURL('image/png')
+        link.click()
+        message.success('Exported as PNG')
+      }
+      img.onerror = () => message.error('Export failed')
+      img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)))
+    } catch { message.error('Export failed') }
+  }, [workflowName])
+
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); handleSave() }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); handleUndo() }
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); handleRedo() }
-      if (e.key === 'Delete' && selectedNodeId) { e.preventDefault(); handleDeleteNode(selectedNodeId) }
+      const mod = e.ctrlKey || e.metaKey
+      if (mod && e.key === 's') { e.preventDefault(); handleSave() }
+      if (mod && e.key === 'z' && !e.shiftKey) { e.preventDefault(); handleUndo() }
+      if (mod && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); handleRedo() }
+      if (mod && e.key === 'c') { e.preventDefault(); handleCopy() }
+      if (mod && e.key === 'v') { e.preventDefault(); handlePaste() }
+      if (mod && e.key === 'f') { e.preventDefault(); setShowSearch(true) }
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return
+        e.preventDefault()
+        const selected = nodes.filter(n => n.selected)
+        if (selected.length > 1) handleDeleteSelected()
+        else if (selectedNodeId) handleDeleteNode(selectedNodeId)
+      }
     }
     window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h)
-  }, [handleSave, handleUndo, handleRedo, selectedNodeId, handleDeleteNode])
+  }, [handleSave, handleUndo, handleRedo, selectedNodeId, handleDeleteNode, handleDeleteSelected, handleCopy, handlePaste, nodes])
 
   if (loading) {
     return <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-primary)' }}><Spin size="large" /></div>
@@ -363,6 +470,82 @@ function EditorCanvas() {
             </ReactFlow>
             {popupNode && <ErrorBoundary><NodePopup node={popupNode} onClose={() => setPopupNode(null)} onDelete={handleDeleteNode} onUpdateNodeData={updateNodeData} /></ErrorBoundary>}
             {popupEdge && <ErrorBoundary><EdgePopup edge={popupEdge} onClose={() => setPopupEdge(null)} onUpdate={handleEdgeUpdate} onDelete={handleEdgeDelete} /></ErrorBoundary>}
+
+            {showSearch && (
+              <div style={{
+                position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)',
+                display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px',
+                background: 'var(--bg-elevated)', border: '1px solid var(--border-primary)',
+                borderRadius: 8, boxShadow: '0 8px 32px rgba(0,0,0,0.4)', zIndex: 500, minWidth: 280
+              }}>
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="6" cy="6" r="4.5" stroke="var(--text-tertiary)" strokeWidth="1.3" /><path d="M9.5 9.5L13 13" stroke="var(--text-tertiary)" strokeWidth="1.3" strokeLinecap="round" /></svg>
+                <input
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value)
+                    const q = e.target.value.toLowerCase()
+                    if (q) {
+                      const match = nodes.find(n => n.data.label?.toLowerCase().includes(q) || n.data.type?.toLowerCase().includes(q))
+                      if (match) { setSelectedNodeId(match.id); setNodes(prev => prev.map(n => ({ ...n, selected: n.id === match.id }))) }
+                    }
+                  }}
+                  onKeyDown={(e) => { if (e.key === 'Escape') { setShowSearch(false); setSearchQuery('') } }}
+                  placeholder="Search nodes..."
+                  autoFocus
+                  style={{ background: 'transparent', border: 'none', outline: 'none', color: 'var(--text-primary)', fontSize: 12, flex: 1 }}
+                />
+                {searchQuery && (
+                  <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+                    {nodes.filter(n => n.data.label?.toLowerCase().includes(searchQuery.toLowerCase()) || n.data.type?.toLowerCase().includes(searchQuery.toLowerCase())).length} found
+                  </span>
+                )}
+                <button onClick={() => { setShowSearch(false); setSearchQuery('') }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', fontSize: 14, padding: 0 }}>×</button>
+              </div>
+            )}
+
+            {Object.keys(nodeOutputs).length > 0 && showVarViewer && (
+              <div style={{
+                position: 'absolute', top: 8, right: 8, width: 260, maxHeight: 300,
+                background: 'var(--bg-elevated)', border: '1px solid var(--border-primary)',
+                borderRadius: 8, boxShadow: '0 8px 32px rgba(0,0,0,0.4)', zIndex: 500,
+                display: 'flex', flexDirection: 'column', overflow: 'hidden'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', borderBottom: '1px solid var(--border-primary)' }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)' }}>Variables</span>
+                  <button onClick={() => setShowVarViewer(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', fontSize: 14, padding: 0 }}>×</button>
+                </div>
+                <div style={{ overflow: 'auto', padding: 8 }}>
+                  {Object.entries(nodeOutputs).map(([nodeId, output]) => {
+                    const node = nodes.find(n => n.id === nodeId)
+                    return (
+                      <div key={nodeId} style={{ marginBottom: 6 }}>
+                        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--accent)', marginBottom: 2 }}>{node?.data.label || nodeId}</div>
+                        <pre style={{ fontSize: 10, color: 'var(--text-secondary)', margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 60, overflow: 'auto', background: 'var(--bg-input)', padding: 4, borderRadius: 4 }}>
+                          {typeof output === 'string' ? output.substring(0, 200) : JSON.stringify(output, null, 1)?.substring(0, 200)}
+                        </pre>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {nodes.some(n => n.data.status === 'error') && (
+              <div style={{
+                position: 'absolute', bottom: 8, left: '50%', transform: 'translateX(-50%)',
+                display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+                background: '#f8717120', border: '1px solid #f8717140',
+                borderRadius: 8, zIndex: 500, cursor: 'pointer'
+              }} onClick={() => {
+                const errNode = nodes.find(n => n.data.status === 'error')
+                if (errNode) { setSelectedNodeId(errNode.id); setPopupNode(errNode) }
+              }}>
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="6" stroke="#f87171" strokeWidth="1.3" /><path d="M7 4V8M7 10V10.5" stroke="#f87171" strokeWidth="1.3" strokeLinecap="round" /></svg>
+                <span style={{ fontSize: 11, color: '#f87171', fontWeight: 500 }}>
+                  {nodes.filter(n => n.data.status === 'error').length} node{nodes.filter(n => n.data.status === 'error').length > 1 ? 's' : ''} with errors — click to inspect
+                </span>
+              </div>
+            )}
           </div>
 
           {showRun && (
