@@ -231,7 +231,12 @@ function EditorCanvas() {
     eventCleanupRef.current = cleanup
 
     try {
-      const dsl = { name: workflowName, nodes: nodes.map(n => ({ id: n.id, type: n.data.type, label: n.data.label, position: n.position, config: n.data.config })), edges: edges.map(e => ({ id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle, condition: e.data?.condition, isBackEdge: e.data?.isBackEdge, maxIterations: e.data?.maxIterations })) }
+      const dsl = {
+        graph: {
+          nodes: nodes.map(n => ({ id: n.id, type: n.data.type, data: n.data, position: n.position })),
+          edges: edges.map(e => ({ id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle, targetHandle: e.targetHandle, condition: e.data?.condition, isBackEdge: e.data?.isBackEdge, maxIterations: e.data?.maxIterations }))
+        }
+      }
       await window.api.workflow.run(dsl, { inputs, maxSteps: 1000, maxTimeMs: 600000 })
     } catch (err) {
       setRunEvents(prev => [...prev, { type: 'graph:error', timestamp: Date.now(), error: err instanceof Error ? err : new Error(String(err)) }])

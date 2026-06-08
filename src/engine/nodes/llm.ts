@@ -4,7 +4,7 @@ import { NodeExecutionError } from '../errors'
 
 interface LLMConfig {
   model?: string
-  provider?: 'openai' | 'ollama'
+  provider?: string
   system_prompt?: string
   prompt?: string
   temperature?: number
@@ -67,10 +67,19 @@ export class LLMNode extends BaseNode<LLMConfig> {
     messages.push({ role: 'user', content: prompt })
 
     try {
-      const result = await window.api.ai.chat(messages, {
-        model: cfg.model,
-        provider: cfg.provider
-      })
+      const globalChat = (globalThis as any).__evolux_ai_chat as
+        | ((messages: Array<{ role: string; content: string }>, options?: { model?: string; provider?: string }) => Promise<string>)
+        | undefined
+
+      let result: string
+      if (globalChat) {
+        result = await globalChat(messages, { model: cfg.model, provider: cfg.provider })
+      } else if (typeof window !== 'undefined' && window.api?.ai?.chat) {
+        result = await window.api.ai.chat(messages, { model: cfg.model, provider: cfg.provider })
+      } else {
+        throw new Error('No AI provider available. Configure a provider in Settings.')
+      }
+
       return { output: result, usage: {} }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'LLM call failed'
