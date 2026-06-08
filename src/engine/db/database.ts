@@ -1,4 +1,6 @@
 import { SCHEMA_SQL, SCHEMA_VERSION, MIGRATIONS } from './schema'
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
+import { dirname } from 'path'
 
 export interface DatabaseAdapter {
   exec(sql: string): void
@@ -14,26 +16,145 @@ export interface PreparedStatement {
 }
 
 let dbInstance: DatabaseAdapter | null = null
+let dbFilePath: string | null = null
+let saveTimer: ReturnType<typeof setTimeout> | null = null
 
-export function openDatabase(dbPath: string): DatabaseAdapter {
+function scheduleSave() {
+  if (!dbFilePath || !dbInstance) return
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => { saveToFile() }, 200)
+}
+
+function saveToFile() {
+  if (!dbFilePath || !dbInstance) return
+  try {
+    const data = (dbInstance as any)._export()
+    const dir = dirname(dbFilePath)
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+    writeFileSync(dbFilePath, Buffer.from(data))
+  } catch (e) {
+    console.warn('[DB] Failed to save:', e)
+  }
+}
+
+export async function openDatabase(path: string): Promise<DatabaseAdapter> {
   if (dbInstance) return dbInstance
 
+  dbFilePath = path
+
   try {
-    const Database = require('better-sqlite3')
-    const db = new Database(dbPath) as DatabaseAdapter
-    db.pragma('journal_mode = WAL')
-    db.pragma('foreign_keys = ON')
-    db.exec(SCHEMA_SQL)
-    runMigrations(db)
-    dbInstance = db
-    console.warn(`[DB] SQLite opened: ${dbPath}`)
-    return db
+    const initSqlJs = require('sql.js')
+    const SQL = await initSqlJs()
+
+    let db: any
+    if (existsSync(path)) {
+      const fileBuffer = readFileSync(path)
+      db = new SQL.Database(fileBuffer)
+      console.warn(`[DB] sql.js loaded from file: ${path}`)
+    } else {
+      db = new SQL.Database()
+      console.warn(`[DB] sql.js created new database: ${path}`)
+    }
+
+    db._filePath = path
+
+    const adapter = createSqlJsAdapter(db, SQL)
+    adapter.exec(SCHEMA_SQL)
+    runMigrations(adapter)
+
+    dbInstance = adapter
+    saveToFile()
+    return adapter
   } catch (error) {
-    console.warn('[DB] better-sqlite3 failed, using in-memory adapter:', error)
+    console.warn('[DB] sql.js failed, using in-memory adapter:', error)
     dbInstance = createInMemoryAdapter()
     dbInstance.exec(SCHEMA_SQL)
     return dbInstance
   }
+}
+
+function createSqlJsAdapter(db: any, SQL: any): DatabaseAdapter {
+  const getChanges = () => {
+    try { return db.getRowsModified?.() || 0 } catch { return 0 }
+  }
+
+  return {
+    exec(sql: string) {
+      db.run(sql)
+    },
+
+    prepare(sql: string) {
+      return {
+        run(...params: unknown[]) {
+          try {
+            db.run(sql, params as any[])
+            return { changes: getChanges() }
+          } catch (e) {
+            console.warn('[DB] run error:', (e as Error).message?.substring(0, 100), sql.substring(0, 80))
+            return { changes: 0 }
+          }
+        },
+
+        get(...params: unknown[]) {
+          try {
+            const stmt = db.prepare(sql)
+            stmt.bind(params as any[])
+            if (stmt.step()) {
+              const row = stmt.getAsObject()
+              stmt.free()
+              return row as Record<string, unknown>
+            }
+            stmt.free()
+            return undefined
+          } catch (e) {
+            console.warn('[DB] get error:', (e as Error).message?.substring(0, 100), sql.substring(0, 80))
+            return undefined
+          }
+        },
+
+        all(...params: unknown[]) {
+          try {
+            const results: Record<string, unknown>[] = []
+            const stmt = db.prepare(sql)
+            stmt.bind(params as any[])
+            while (stmt.step()) {
+              results.push(stmt.getAsObject() as Record<string, unknown>)
+            }
+            stmt.free()
+            return results
+          } catch (e) {
+            console.warn('[DB] all error:', (e as Error).message?.substring(0, 100), sql.substring(0, 80))
+            return []
+          }
+        }
+      }
+    },
+
+    close() {
+      saveToFile()
+      db.close()
+    },
+
+    pragma(key: string, value?: string) {
+      try {
+        if (value) db.run(`PRAGMA ${key} = ${value}`)
+        else {
+          const stmt = db.prepare(`PRAGMA ${key}`)
+          if (stmt.step()) {
+            const result = stmt.getAsObject()
+            stmt.free()
+            return result
+          }
+          stmt.free()
+        }
+      } catch { /* pragma not supported */ }
+      return undefined
+    },
+
+    _export() {
+      return db.export()
+    }
+  } as DatabaseAdapter & { _export(): Uint8Array }
 }
 
 function runMigrations(db: DatabaseAdapter): void {
@@ -53,6 +174,7 @@ function runMigrations(db: DatabaseAdapter): void {
         db.prepare('UPDATE schema_version SET version = ?').run(SCHEMA_VERSION)
       }
       console.warn(`[DB] Migrated to schema version ${SCHEMA_VERSION}`)
+      scheduleSave()
     }
   } catch {
     db.prepare('INSERT OR IGNORE INTO schema_version (version) VALUES (?)').run(SCHEMA_VERSION)
@@ -65,8 +187,20 @@ export function getDatabase(): DatabaseAdapter {
 }
 
 export function closeDatabase(): void {
-  if (dbInstance) { dbInstance.close(); dbInstance = null }
+  if (dbInstance) {
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null }
+    saveToFile()
+    dbInstance.close()
+    dbInstance = null
+    dbFilePath = null
+  }
 }
+
+export function flushDatabase(): void {
+  saveToFile()
+}
+
+export function getSchemaVersion(): number { return SCHEMA_VERSION }
 
 function matchWhere(whereClause: string, row: Record<string, unknown>, params: unknown[]): boolean {
   if (!whereClause) return true
@@ -74,7 +208,7 @@ function matchWhere(whereClause: string, row: Record<string, unknown>, params: u
   const resolved = whereClause.replace(/\?/g, () => {
     const v = params[idx++]
     if (v === null || v === undefined) return 'NULL'
-    if (typeof v === 'string') return v // Compare raw string, not quoted
+    if (typeof v === 'string') return v
     return String(v)
   })
 
@@ -209,5 +343,3 @@ function createInMemoryAdapter(): DatabaseAdapter {
     pragma() { return undefined }
   }
 }
-
-export function getSchemaVersion(): number { return SCHEMA_VERSION }

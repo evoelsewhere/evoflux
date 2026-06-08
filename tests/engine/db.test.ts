@@ -15,7 +15,7 @@ let dbDir: string
 describe('Database', () => {
   beforeAll(async () => {
     dbDir = await mkdtemp(join(tmpdir(), 'evolux-db-test-'))
-    openDatabase(join(dbDir, 'test.db'))
+    await openDatabase(join(dbDir, 'test.db'))
   })
 
   afterAll(async () => {

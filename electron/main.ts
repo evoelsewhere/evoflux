@@ -6,7 +6,7 @@ import { registerWorkflowRunnerHandlers, setMainWindow } from './ipc/workflow-ru
 import { registerSandboxHandlers } from './ipc/sandbox'
 import { registerDSLHandlers } from './ipc/dsl'
 import { registerMemoryHandlers } from './ipc/memory'
-import { openDatabase, closeDatabase } from '../src/engine/db/database'
+import { openDatabase, closeDatabase, flushDatabase } from '../src/engine/db/database'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -35,6 +35,7 @@ function createWindow(): void {
   })
 
   mainWindow.on('close', () => {
+    flushDatabase()
     mainWindow?.webContents.send('workflow:event', { type: 'app:closing', timestamp: Date.now() })
   })
 
@@ -50,9 +51,9 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   const dbPath = join(app.getPath('userData'), 'evoflux.db')
-  openDatabase(dbPath)
+  await openDatabase(dbPath)
 
   createWindow()
 
