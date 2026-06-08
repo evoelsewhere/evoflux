@@ -165,7 +165,7 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
       error: { bg: '#f8717120', fg: '#f87171' }
     }
     const c = colors[status] || colors.pending
-    return <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: c.bg, color: c.fg, fontWeight: 600 }}>{status}</span>
+    return <span style={{ fontSize: 12, padding: '1px 5px', borderRadius: 3, background: c.bg, color: c.fg, fontWeight: 600 }}>{status}</span>
   }
 
   const buildTree = () => {
@@ -195,25 +195,25 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
         </button>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>{kb.name}</div>
-          {kb.description && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>{kb.description}</div>}
+          {kb.description && <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 1 }}>{kb.description}</div>}
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{stats.totalDocs} docs</span>
-          <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{stats.totalChunks} chunks</span>
-          <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{formatSize(stats.totalSize)}</span>
-          <span style={{ fontSize: 10, color: stats.indexedPercent === 100 ? '#34d399' : '#fbbf24', fontWeight: 600 }}>{stats.indexedPercent}%</span>
+          <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{stats.totalDocs} docs</span>
+          <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{stats.totalChunks} chunks</span>
+          <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{formatSize(stats.totalSize)}</span>
+          <span style={{ fontSize: 12, color: stats.indexedPercent === 100 ? '#34d399' : '#fbbf24', fontWeight: 600 }}>{stats.indexedPercent}%</span>
         </div>
       </div>
 
       {/* Content */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         {/* Left: Sources */}
-        <div style={{ width: 220, borderRight: '1px solid var(--border-primary)', display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0 }}>
+        <div style={{ width: 280, borderRight: '1px solid var(--border-primary)', display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0 }}>
           <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border-primary)', display: 'flex', gap: 4 }}>
-            <button onClick={handleAddFolder} disabled={indexing} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '5px 0', fontSize: 11, fontWeight: 500, borderRadius: 5, background: 'var(--accent-muted)', border: '1px solid var(--accent)30', color: 'var(--accent)', cursor: 'pointer', opacity: indexing ? 0.5 : 1 }}>
+            <button onClick={handleAddFolder} disabled={indexing} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '5px 0', fontSize: 12, fontWeight: 500, borderRadius: 5, background: 'var(--accent-muted)', border: '1px solid var(--accent)30', color: 'var(--accent)', cursor: 'pointer', opacity: indexing ? 0.5 : 1 }}>
               {icons.folder} Folder
             </button>
-            <button onClick={handleAddFiles} disabled={indexing} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '5px 0', fontSize: 11, fontWeight: 500, borderRadius: 5, background: 'var(--bg-hover)', border: '1px solid var(--border-primary)', color: 'var(--text-secondary)', cursor: 'pointer', opacity: indexing ? 0.5 : 1 }}>
+            <button onClick={handleAddFiles} disabled={indexing} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '5px 0', fontSize: 12, fontWeight: 500, borderRadius: 5, background: 'var(--bg-hover)', border: '1px solid var(--border-primary)', color: 'var(--text-secondary)', cursor: 'pointer', opacity: indexing ? 0.5 : 1 }}>
               {icons.file} Files
             </button>
           </div>
@@ -221,19 +221,19 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
           <div style={{ flex: 1, overflow: 'auto', padding: 6 }}>
             {indexing && (
               <div style={{ padding: '8px 10px', marginBottom: 4 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#60a5fa', marginBottom: indexProgress ? 6 : 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#60a5fa', marginBottom: indexProgress ? 6 : 0 }}>
                   <Spin size="small" /> Indexing...
                 </div>
                 {indexProgress && (
                   <>
-                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={indexProgress.fileName}>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={indexProgress.fileName}>
                       {indexProgress.fileName.split('/').pop()}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <div style={{ flex: 1, height: 4, background: 'var(--bg-primary)', borderRadius: 2, overflow: 'hidden' }}>
                         <div style={{ height: '100%', width: `${(indexProgress.current / indexProgress.total) * 100}%`, background: '#60a5fa', borderRadius: 2, transition: 'width 0.2s' }} />
                       </div>
-                      <span style={{ fontSize: 9, color: 'var(--text-tertiary)', flexShrink: 0 }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-tertiary)', flexShrink: 0 }}>
                         {indexProgress.current}/{indexProgress.total}
                       </span>
                     </div>
@@ -245,7 +245,7 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
               <div key={src.id}>
                 <div
                   onClick={() => setExpandedSources(prev => { const s = new Set(prev); s.has(src.id) ? s.delete(src.id) : s.add(src.id); return s })}
-                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', borderRadius: 5, cursor: 'pointer', transition: 'background 0.1s', fontSize: 11, color: 'var(--text-primary)' }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', borderRadius: 5, cursor: 'pointer', transition: 'background 0.1s', fontSize: 12, color: 'var(--text-primary)' }}
                   onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
@@ -257,15 +257,15 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
 
                 {expandedSources.has(src.id) && (
                   <div style={{ paddingLeft: 20 }}>
-                    {src.git_branch && <div style={{ fontSize: 9, color: 'var(--text-tertiary)', padding: '2px 8px' }}>branch: {src.git_branch}</div>}
-                    <div style={{ fontSize: 9, color: 'var(--text-tertiary)', padding: '2px 8px' }}>{src.file_count} files</div>
-                    <button onClick={() => handleRemoveSource(src.id)} style={{ fontSize: 9, color: 'var(--error)', background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px 8px' }}>Remove</button>
+                    {src.git_branch && <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: '2px 8px' }}>branch: {src.git_branch}</div>}
+                    <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: '2px 8px' }}>{src.file_count} files</div>
+                    <button onClick={() => handleRemoveSource(src.id)} style={{ fontSize: 12, color: 'var(--error)', background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px 8px' }}>Remove</button>
                   </div>
                 )}
               </div>
             ))}
             {sources.length === 0 && !indexing && (
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', padding: '20px 10px', textAlign: 'center' }}>No sources added</div>
+              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: '20px 10px', textAlign: 'center' }}>No sources added</div>
             )}
 
             {/* Git changes panel */}
@@ -283,7 +283,7 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
           <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--border-primary)', flexShrink: 0 }}>
             {(['tree', 'docs', 'search', 'settings'] as const).map(tab => (
               <button key={tab} onClick={() => setActiveTab(tab)} style={{
-                padding: '8px 14px', fontSize: 11, fontWeight: 500, background: 'transparent',
+                padding: '8px 14px', fontSize: 12, fontWeight: 500, background: 'transparent',
                 border: 'none', borderBottom: activeTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
                 color: activeTab === tab ? 'var(--accent)' : 'var(--text-tertiary)', cursor: 'pointer', transition: 'all 0.15s',
                 textTransform: 'capitalize'
@@ -307,14 +307,14 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
                     <div key={dir} style={{ marginBottom: 4 }}>
                       <div
                         onClick={() => setExpandedFolders(prev => { const s = new Set(prev); s.has(dir) ? s.delete(dir) : s.add(dir); return s })}
-                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 6px', borderRadius: 4, cursor: 'pointer', fontSize: 11, color: 'var(--text-secondary)', fontWeight: 500 }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 6px', borderRadius: 4, cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)', fontWeight: 500 }}
                         onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
                         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                       >
                         <span style={{ transform: expandedFolders.has(dir) ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'flex' }}>{icons.chevRight}</span>
                         <span style={{ color: 'var(--accent)', display: 'flex' }}>{icons.folder}</span>
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dir.split('/').pop() || '/'}</span>
-                        <span style={{ fontSize: 9, color: 'var(--text-tertiary)', marginLeft: 'auto' }}>{docs.length}</span>
+                        <span style={{ fontSize: 12, color: 'var(--text-tertiary)', marginLeft: 'auto' }}>{docs.length}</span>
                       </div>
 
                       {expandedFolders.has(dir) && docs.map(doc => (
@@ -322,7 +322,7 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
                           key={doc.id}
                           onClick={() => loadChunks(doc.id)}
                           style={{
-                            display: 'flex', alignItems: 'center', gap: 5, padding: '4px 6px 4px 24', borderRadius: 4, cursor: 'pointer', fontSize: 10,
+                            display: 'flex', alignItems: 'center', gap: 5, padding: '4px 6px 4px 24', borderRadius: 4, cursor: 'pointer', fontSize: 12,
                             color: selectedDoc === doc.id ? 'var(--accent)' : 'var(--text-tertiary)',
                             background: selectedDoc === doc.id ? 'var(--accent-muted)' : 'transparent'
                           }}
@@ -344,7 +344,7 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
             {/* Docs tab */}
             {activeTab === 'docs' && (
               <div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 60px 70px 50px 60px', gap: 4, padding: '6px 8px', fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', borderBottom: '1px solid var(--border-primary)', marginBottom: 4 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 60px 70px 50px 60px', gap: 4, padding: '6px 8px', fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)', borderBottom: '1px solid var(--border-primary)', marginBottom: 4 }}>
                   <span>Name</span><span>Ext</span><span>Size</span><span>Chunks</span><span>Status</span>
                 </div>
                 {documents.map(doc => (
@@ -352,7 +352,7 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
                     key={doc.id}
                     onClick={() => loadChunks(doc.id)}
                     style={{
-                      display: 'grid', gridTemplateColumns: '1fr 60px 70px 50px 60px', gap: 4, padding: '6px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 10,
+                      display: 'grid', gridTemplateColumns: '1fr 60px 70px 50px 60px', gap: 4, padding: '6px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 12,
                       color: selectedDoc === doc.id ? 'var(--accent)' : 'var(--text-primary)',
                       background: selectedDoc === doc.id ? 'var(--accent-muted)' : 'transparent'
                     }}
@@ -383,17 +383,17 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
                     placeholder="Search knowledge base..."
                     style={{ flex: 1, padding: '7px 10px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 6, color: 'var(--text-primary)', outline: 'none' }}
                   />
-                  <button onClick={handleSearch} disabled={searching} style={{ padding: '7px 14px', fontSize: 11, fontWeight: 600, borderRadius: 6, background: 'var(--accent)', border: 'none', color: '#fff', cursor: 'pointer', opacity: searching ? 0.5 : 1 }}>
+                  <button onClick={handleSearch} disabled={searching} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, borderRadius: 6, background: 'var(--accent)', border: 'none', color: '#fff', cursor: 'pointer', opacity: searching ? 0.5 : 1 }}>
                     {searching ? '...' : 'Search'}
                   </button>
                 </div>
                 {searchResults.map(r => (
                   <div key={r.chunk_id} style={{ padding: '10px 12px', marginBottom: 6, background: 'var(--bg-card)', border: '1px solid var(--border-primary)', borderRadius: 6 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)' }}>{r.doc_name}</span>
-                      <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{(r.hybrid_score * 100).toFixed(0)}%</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)' }}>{r.doc_name}</span>
+                      <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{(r.hybrid_score * 100).toFixed(0)}%</span>
                     </div>
-                    <pre style={{ fontSize: 10, color: 'var(--text-secondary)', margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 100, overflow: 'auto' }}>
+                    <pre style={{ fontSize: 12, color: 'var(--text-secondary)', margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 100, overflow: 'auto' }}>
                       {r.content.substring(0, 300)}{r.content.length > 300 ? '...' : ''}
                     </pre>
                   </div>
@@ -406,10 +406,10 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
 
             {/* Settings tab */}
             {activeTab === 'settings' && (
-              <div style={{ maxWidth: 400 }}>
+              <div style={{ maxWidth: 560 }}>
                 {/* Stats */}
                 <div style={{ marginBottom: 16, padding: 10, background: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-primary)' }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>Index Statistics</div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>Index Statistics</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
                     {[
                       { label: 'Documents', value: stats.totalDocs },
@@ -418,17 +418,17 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
                       { label: 'Total Size', value: formatSize(stats.totalSize) }
                     ].map(s => (
                       <div key={s.label} style={{ padding: '6px 8px', background: 'var(--bg-primary)', borderRadius: 4 }}>
-                        <div style={{ fontSize: 9, color: 'var(--text-tertiary)', marginBottom: 2 }}>{s.label}</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 2 }}>{s.label}</div>
                         <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{s.value}</div>
                       </div>
                     ))}
                   </div>
                   <div style={{ marginTop: 8 }}>
-                    <div style={{ fontSize: 9, color: 'var(--text-tertiary)', marginBottom: 3 }}>Index Progress</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 3 }}>Index Progress</div>
                     <div style={{ height: 6, background: 'var(--bg-primary)', borderRadius: 3, overflow: 'hidden' }}>
                       <div style={{ height: '100%', width: `${stats.indexedPercent}%`, background: stats.indexedPercent === 100 ? '#34d399' : 'var(--accent)', borderRadius: 3, transition: 'width 0.3s' }} />
                     </div>
-                    <div style={{ fontSize: 9, color: 'var(--text-tertiary)', marginTop: 2 }}>{stats.indexedPercent}%</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>{stats.indexedPercent}%</div>
                   </div>
                 </div>
 
@@ -443,7 +443,7 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
                   const val = (config[key] as number) ?? def
                   return (
                     <div key={key} style={{ marginBottom: 12 }}>
-                      <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>{label}</div>
+                      <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>{label}</div>
                       <input
                         type="number"
                         value={val}
@@ -459,20 +459,20 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
 
                 {/* Backup/Restore */}
                 <div style={{ marginTop: 16, padding: 10, background: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-primary)' }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>Backup & Restore</div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>Backup & Restore</div>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button onClick={async () => {
                       const r = await window.api.kb.export(kbId) as { success: boolean; path?: string; error?: string }
                       if (r.success) message.success(`Exported to ${r.path}`)
                       else if (r.error) message.error(r.error)
-                    }} style={{ padding: '5px 12px', fontSize: 11, borderRadius: 5, background: 'var(--accent-muted)', border: '1px solid var(--accent)30', color: 'var(--accent)', cursor: 'pointer' }}>
+                    }} style={{ padding: '5px 12px', fontSize: 12, borderRadius: 5, background: 'var(--accent-muted)', border: '1px solid var(--accent)30', color: 'var(--accent)', cursor: 'pointer' }}>
                       Export .kb
                     </button>
                     <button onClick={async () => {
                       const r = await window.api.kb.import() as { success: boolean; kbId?: string; error?: string }
                       if (r.success) message.success('Imported successfully')
                       else if (r.error) message.error(r.error)
-                    }} style={{ padding: '5px 12px', fontSize: 11, borderRadius: 5, background: 'var(--bg-hover)', border: '1px solid var(--border-primary)', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                    }} style={{ padding: '5px 12px', fontSize: 12, borderRadius: 5, background: 'var(--bg-hover)', border: '1px solid var(--border-primary)', color: 'var(--text-secondary)', cursor: 'pointer' }}>
                       Import .kb
                     </button>
                   </div>
@@ -484,7 +484,7 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
           {/* Chunks preview panel */}
           {selectedDoc && chunks.length > 0 && (
             <div style={{ height: 200, borderTop: '1px solid var(--border-primary)', overflow: 'auto', padding: 10, flexShrink: 0 }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>
                 Chunks ({chunks.length})
               </div>
               {chunks.map(ch => {
@@ -493,14 +493,14 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
                 return (
                   <div key={ch.id} style={{ padding: '6px 8px', marginBottom: 4, background: 'var(--bg-card)', borderRadius: 4, border: '1px solid var(--border-primary)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                      <span style={{ fontSize: 9, fontWeight: 600, color: 'var(--accent)' }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)' }}>
                         #{ch.chunk_index} {(meta.heading as string) ? `· ${meta.heading}` : ''}
                       </span>
-                      <span style={{ fontSize: 9, color: 'var(--text-tertiary)' }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
                         L{(meta.lineStart as number) || 0}-{(meta.lineEnd as number) || 0}
                       </span>
                     </div>
-                    <pre style={{ fontSize: 9, color: 'var(--text-secondary)', margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 50, overflow: 'hidden' }}>
+                    <pre style={{ fontSize: 12, color: 'var(--text-secondary)', margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 50, overflow: 'hidden' }}>
                       {ch.content.substring(0, 200)}
                     </pre>
                   </div>

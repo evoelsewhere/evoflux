@@ -109,21 +109,21 @@ export default function KBList({ onSelect }: KBListProps) {
                 <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {kb.name}
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
                   {kb.description || `${stats.totalDocs} docs · ${stats.totalChunks} chunks · ${formatSize(stats.totalSize)}`}
                 </div>
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, color: 'var(--text-tertiary)' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 11, color: 'var(--text-tertiary)' }}>
                   {icons.doc} {stats.totalDocs}
                 </span>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, color: 'var(--text-tertiary)' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 11, color: 'var(--text-tertiary)' }}>
                   {icons.chunk} {stats.totalChunks}
                 </span>
               </div>
 
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', flexShrink: 0, minWidth: 70, textAlign: 'right' }}>
+              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', flexShrink: 0, minWidth: 80, textAlign: 'right' }}>
                 {new Date(kb.updated_at).toLocaleDateString()}
               </div>
 
