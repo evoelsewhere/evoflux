@@ -82,7 +82,7 @@ function NodePopupInner({ node, onClose, onDelete, onUpdateNodeData }: NodePopup
         minWidth: 380, minHeight: 300,
         background: 'var(--bg-elevated)',
         border: '1px solid var(--border-primary)',
-        borderRadius: 14,
+        borderRadius: 10,
         boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
         position: 'relative'
@@ -106,7 +106,7 @@ function NodePopupInner({ node, onClose, onDelete, onUpdateNodeData }: NodePopup
 
         <div style={{
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          padding: '12px 16px', borderBottom: '1px solid var(--border-primary)', flexShrink: 0
+          padding: '8px 12px', borderBottom: '1px solid var(--border-primary)', flexShrink: 0
         }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
@@ -119,18 +119,18 @@ function NodePopupInner({ node, onClose, onDelete, onUpdateNodeData }: NodePopup
           <div style={{ display: 'flex', gap: 4, marginLeft: 8 }}>
             {onDelete && (
               <button onClick={handleDelete} aria-label="Delete node" title="Delete node" style={{
-                width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
                 background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)',
-                borderRadius: 6, transition: 'all 0.12s'
+                borderRadius: 4, transition: 'all 0.12s'
               }} onMouseEnter={e => { e.currentTarget.style.color = 'var(--error)'; e.currentTarget.style.background = 'var(--error-muted)' }}
                  onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.background = 'transparent' }}>
-                <svg width={13} height={13} viewBox="0 0 12 12" fill="none"><path d="M2 3H10M4.5 3V2C4.5 1.4 4.9 1 5.5 1H6.5C7.1 1 7.5 1.4 7.5 2V3M9.5 3V10C9.5 10.6 9.1 11 8.5 11H3.5C2.9 11 2.5 10.6 2.5 10V3" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" /><path d="M5 5.5V8.5M7 5.5V8.5" stroke="currentColor" strokeWidth="1" strokeLinecap="round" /></svg>
+                <svg width={12} height={12} viewBox="0 0 12 12" fill="none"><path d="M2 3H10M4.5 3V2C4.5 1.4 4.9 1 5.5 1H6.5C7.1 1 7.5 1.4 7.5 2V3M9.5 3V10C9.5 10.6 9.1 11 8.5 11H3.5C2.9 11 2.5 10.6 2.5 10V3" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" /><path d="M5 5.5V8.5M7 5.5V8.5" stroke="currentColor" strokeWidth="1" strokeLinecap="round" /></svg>
               </button>
             )}
             <button onClick={handleCancel} aria-label="Close" style={{
-              width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
               background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)',
-              borderRadius: 6, fontSize: 18, lineHeight: 1, transition: 'background 0.12s'
+              borderRadius: 4, fontSize: 16, lineHeight: 1, transition: 'background 0.12s'
             }} onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
               ×
@@ -138,21 +138,21 @@ function NodePopupInner({ node, onClose, onDelete, onUpdateNodeData }: NodePopup
           </div>
         </div>
 
-        <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ color: 'var(--text-secondary)', fontSize: 12, fontWeight: 500, marginBottom: 4 }}>Label</div>
+        <div style={{ flex: 1, overflow: 'auto', padding: 10 }}>
+          <div style={{ marginBottom: 8 }}>
+            <div style={{ color: 'var(--text-secondary)', fontSize: 11, fontWeight: 500, marginBottom: 3 }}>Label</div>
             <Input value={label} onChange={(e) => setLabel(e.target.value)}
               style={{ background: 'var(--bg-input)', borderColor: 'var(--border-primary)', fontSize: 12 }} size="small" />
           </div>
 
           {nodeType !== 'comment' && (
-            <div style={{ marginBottom: 12, display: 'flex', gap: 8 }}>
+            <div style={{ marginBottom: 8, display: 'flex', gap: 6 }}>
               <div style={{ flex: 1 }}>
-                <div style={{ color: 'var(--text-secondary)', fontSize: 12, fontWeight: 500, marginBottom: 4 }}>Type</div>
+                <div style={{ color: 'var(--text-secondary)', fontSize: 11, fontWeight: 500, marginBottom: 3 }}>Type</div>
                 <Input value={nodeType} disabled style={{ background: 'var(--bg-input)', borderColor: 'var(--border-primary)', fontSize: 12, color: 'var(--text-tertiary)' }} size="small" />
               </div>
               <div style={{ flex: 1 }}>
-                <div style={{ color: 'var(--text-secondary)', fontSize: 12, fontWeight: 500, marginBottom: 4 }}>Category</div>
+                <div style={{ color: 'var(--text-secondary)', fontSize: 11, fontWeight: 500, marginBottom: 3 }}>Category</div>
                 <Input value={data.category || ''} disabled style={{ background: 'var(--bg-input)', borderColor: 'var(--border-primary)', fontSize: 12, color: 'var(--text-tertiary)' }} size="small" />
               </div>
             </div>
@@ -168,11 +168,11 @@ function NodePopupInner({ node, onClose, onDelete, onUpdateNodeData }: NodePopup
         </div>
 
         <div style={{
-          display: 'flex', justifyContent: 'flex-end', gap: 8,
-          padding: '12px 16px', borderTop: '1px solid var(--border-primary)', flexShrink: 0
+          display: 'flex', justifyContent: 'flex-end', gap: 6,
+          padding: '8px 12px', borderTop: '1px solid var(--border-primary)', flexShrink: 0
         }}>
           <button onClick={handleCancel} style={{
-            padding: '6px 16px', fontSize: 12, fontWeight: 500, borderRadius: 7,
+            padding: '4px 12px', fontSize: 11, fontWeight: 500, borderRadius: 5,
             background: 'var(--bg-hover)', border: '1px solid var(--border-primary)',
             color: 'var(--text-secondary)', cursor: 'pointer', transition: 'all 0.12s'
           }} onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-input)'}
@@ -180,7 +180,7 @@ function NodePopupInner({ node, onClose, onDelete, onUpdateNodeData }: NodePopup
             Cancel
           </button>
           <button onClick={handleSave} style={{
-            padding: '6px 16px', fontSize: 12, fontWeight: 600, borderRadius: 7,
+            padding: '4px 12px', fontSize: 11, fontWeight: 600, borderRadius: 5,
             background: 'var(--accent)', border: '1px solid var(--accent)',
             color: '#fff', cursor: 'pointer', transition: 'all 0.12s'
           }} onMouseEnter={e => e.currentTarget.style.opacity = '0.9'}
