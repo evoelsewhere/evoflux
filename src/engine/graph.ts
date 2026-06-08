@@ -14,6 +14,9 @@ export interface GraphEdge {
   sourceHandle?: string
   targetHandle?: string
   label?: string
+  condition?: string
+  isBackEdge?: boolean
+  maxIterations?: number
 }
 
 export interface GraphNodeInput {
@@ -30,6 +33,16 @@ export interface GraphEdgeInput {
   sourceHandle?: string
   targetHandle?: string
   label?: string
+  condition?: string
+  isBackEdge?: boolean
+  maxIterations?: number
+}
+
+export interface ExecutionPlan {
+  type: 'dag' | 'cyclic'
+  order: string[]
+  backEdges: GraphEdge[]
+  cycleGroups: Map<string, string[]>
 }
 
 export class Graph<T = unknown> {
@@ -106,12 +119,30 @@ export class Graph<T = unknown> {
     return [...this.edgesList]
   }
 
+  getEdge(edgeId: string): GraphEdge | undefined {
+    return this.edgesList.find(e => e.id === edgeId)
+  }
+
+  updateEdge(edgeId: string, patch: Partial<GraphEdge>): void {
+    const idx = this.edgesList.findIndex(e => e.id === edgeId)
+    if (idx === -1) return
+    this.edgesList[idx] = { ...this.edgesList[idx], ...patch }
+  }
+
   getOutgoing(nodeId: string): string[] {
     return Array.from(this.outgoing.get(nodeId) || [])
   }
 
   getIncoming(nodeId: string): string[] {
     return Array.from(this.incoming.get(nodeId) || [])
+  }
+
+  getOutgoingEdges(nodeId: string): GraphEdge[] {
+    return this.edgesList.filter(e => e.source === nodeId)
+  }
+
+  getIncomingEdges(nodeId: string): GraphEdge[] {
+    return this.edgesList.filter(e => e.target === nodeId)
   }
 
   getRoots(): string[] {
@@ -136,6 +167,162 @@ export class Graph<T = unknown> {
 
   hasNode(nodeId: string): boolean {
     return this.nodes.has(nodeId)
+  }
+
+  hasCycles(): boolean {
+    try {
+      this.topologicalSort()
+      return false
+    } catch (e) {
+      return e instanceof CycleDetectedError
+    }
+  }
+
+  findBackEdges(): GraphEdge[] {
+    const backEdges: GraphEdge[] = []
+    const color = new Map<string, 'white' | 'gray' | 'black'>()
+    const edgeMap = new Map<string, GraphEdge[]>()
+
+    for (const nodeId of this.nodes.keys()) {
+      color.set(nodeId, 'white')
+    }
+
+    for (const edge of this.edgesList) {
+      if (!edgeMap.has(edge.source)) edgeMap.set(edge.source, [])
+      edgeMap.get(edge.source)!.push(edge)
+    }
+
+    const dfs = (nodeId: string): void => {
+      color.set(nodeId, 'gray')
+
+      for (const edge of edgeMap.get(nodeId) || []) {
+        const targetColor = color.get(edge.target)
+        if (targetColor === 'gray') {
+          backEdges.push(edge)
+        } else if (targetColor === 'white') {
+          dfs(edge.target)
+        }
+      }
+
+      color.set(nodeId, 'black')
+    }
+
+    for (const nodeId of this.nodes.keys()) {
+      if (color.get(nodeId) === 'white') {
+        dfs(nodeId)
+      }
+    }
+
+    return backEdges
+  }
+
+  findCycleContaining(nodeId: string): string[] | null {
+    const color = new Map<string, 'white' | 'gray' | 'black'>()
+    const parent = new Map<string, string | null>()
+
+    for (const nid of this.nodes.keys()) {
+      color.set(nid, 'white')
+    }
+
+    let cycle: string[] | null = null
+
+    const dfs = (current: string, target: string): boolean => {
+      color.set(current, 'gray')
+
+      for (const neighbor of this.outgoing.get(current) || []) {
+        if (neighbor === target && color.get(neighbor) === 'gray') {
+          const path = [target, current]
+          let node = current
+          while (parent.get(node) && parent.get(node) !== target) {
+            node = parent.get(node)!
+            path.push(node)
+          }
+          cycle = path.reverse()
+          return true
+        }
+        if (color.get(neighbor) === 'white') {
+          parent.set(neighbor, current)
+          if (dfs(neighbor, target)) return true
+        }
+      }
+
+      color.set(current, 'black')
+      return false
+    }
+
+    parent.set(nodeId, null)
+    dfs(nodeId, nodeId)
+    return cycle
+  }
+
+  getExecutionPlan(): ExecutionPlan {
+    const backEdges = this.findBackEdges()
+    const backEdgeIds = new Set(backEdges.map(e => e.id))
+
+    const cycleGroups = new Map<string, string[]>()
+    for (const edge of backEdges) {
+      const cycle = this.findCycleContaining(edge.target)
+      if (cycle) {
+        for (const nodeId of cycle) {
+          if (!cycleGroups.has(nodeId)) {
+            cycleGroups.set(nodeId, cycle)
+          }
+        }
+      }
+    }
+
+    if (backEdges.length === 0) {
+      return {
+        type: 'dag',
+        order: this.topologicalSort(),
+        backEdges: [],
+        cycleGroups
+      }
+    }
+
+    const virtualEdges = this.edgesList.filter(e => !backEdgeIds.has(e.id))
+    const inDegree = new Map<string, number>()
+    const adjacency = new Map<string, string[]>()
+
+    for (const nodeId of this.nodes.keys()) {
+      inDegree.set(nodeId, 0)
+      adjacency.set(nodeId, [])
+    }
+
+    for (const edge of virtualEdges) {
+      adjacency.get(edge.source)!.push(edge.target)
+      inDegree.set(edge.target, (inDegree.get(edge.target) || 0) + 1)
+    }
+
+    const queue: string[] = []
+    for (const [nodeId, degree] of inDegree) {
+      if (degree === 0) queue.push(nodeId)
+    }
+
+    const order: string[] = []
+    while (queue.length > 0) {
+      const current = queue.shift()!
+      order.push(current)
+
+      for (const neighbor of adjacency.get(current) || []) {
+        const newDegree = (inDegree.get(neighbor) || 1) - 1
+        inDegree.set(neighbor, newDegree)
+        if (newDegree === 0) queue.push(neighbor)
+      }
+    }
+
+    for (const nodeId of this.nodes.keys()) {
+      if (!order.includes(nodeId)) {
+        order.push(nodeId)
+      }
+    }
+
+    return {
+      type: 'cyclic',
+      order,
+      backEdges,
+      cycleGroups
+    }
   }
 
   topologicalSort(): string[] {

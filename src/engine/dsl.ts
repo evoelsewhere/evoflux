@@ -14,6 +14,9 @@ export interface DSLEdge {
   sourceHandle?: string
   targetHandle?: string
   label?: string
+  condition?: string
+  isBackEdge?: boolean
+  maxIterations?: number
 }
 
 export interface WorkflowDSL {
@@ -72,7 +75,10 @@ export function serializeGraph(graph: Graph, name: string, description: string):
         target: e.target,
         sourceHandle: e.sourceHandle,
         targetHandle: e.targetHandle,
-        label: e.label
+        label: e.label,
+        condition: e.condition,
+        isBackEdge: e.isBackEdge,
+        maxIterations: e.maxIterations
       }))
     },
     config: {},
@@ -104,7 +110,10 @@ export function deserializeGraph(dsl: WorkflowDSL): Graph {
       target: edge.target,
       sourceHandle: edge.sourceHandle,
       targetHandle: edge.targetHandle,
-      label: edge.label
+      label: edge.label,
+      condition: edge.condition,
+      isBackEdge: edge.isBackEdge,
+      maxIterations: edge.maxIterations
     })
   }
 
