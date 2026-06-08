@@ -8,12 +8,14 @@ type ElectronFixtures = {
 
 export const test = base.extend<ElectronFixtures>({
   electronApp: async ({}, use) => {
+    const electronPath = require('electron') as string
+    const env = { ...process.env }
+    delete env.ELECTRON_RUN_AS_NODE
+
     const app = await electron.launch({
+      executablePath: electronPath,
       args: [resolve(__dirname, '../out/main/index.js')],
-      env: {
-        ...process.env,
-        NODE_ENV: 'test'
-      }
+      env
     })
     await use(app)
     await app.close()
@@ -22,6 +24,7 @@ export const test = base.extend<ElectronFixtures>({
   window: async ({ electronApp }, use) => {
     const win = await electronApp.firstWindow()
     await win.waitForLoadState('domcontentloaded')
+    await win.waitForTimeout(2000)
     await use(win)
   }
 })
