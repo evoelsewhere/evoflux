@@ -1,4 +1,4 @@
-import { useState, useCallback, memo, useRef, useEffect } from 'react'
+import { useState, useCallback, memo, useRef } from 'react'
 import { Input } from 'antd'
 import { useProviderStore, PROVIDER_LABELS } from '../../stores/providerStore'
 import { getNodeDefinition } from './registry'
@@ -26,8 +26,6 @@ function NodePopupInner({ node, onClose, onDelete, onUpdateNodeData }: NodePopup
 
   const [label, setLabel] = useState(data.label)
   const [config, setConfig] = useState<Record<string, unknown>>((data.config || {}) as Record<string, unknown>)
-  const [popupWidth, setPopupWidth] = useState(Math.round(window.innerWidth * 0.7))
-  const [popupHeight, setPopupHeight] = useState(Math.round(window.innerHeight * 0.75))
 
   const handleConfigChange = useCallback((field: string, value: unknown) => {
     setConfig(prev => ({ ...prev, [field]: value }))
@@ -50,23 +48,6 @@ function NodePopupInner({ node, onClose, onDelete, onUpdateNodeData }: NodePopup
     if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); handleSave() }
   }, [handleCancel, handleSave])
 
-  const startResize = useCallback((e: React.MouseEvent, dir: 'right' | 'bottom' | 'corner') => {
-    e.preventDefault()
-    const startX = e.clientX; const startY = e.clientY
-    const startW = popupWidth; const startH = popupHeight
-    const minW = 380; const minH = 300
-    const maxW = window.innerWidth - 40
-    const maxH = window.innerHeight - 40
-
-    const onMove = (ev: MouseEvent) => {
-      if (dir === 'right' || dir === 'corner') setPopupWidth(Math.min(maxW, Math.max(minW, startW + ev.clientX - startX)))
-      if (dir === 'bottom' || dir === 'corner') setPopupHeight(Math.min(maxH, Math.max(minH, startH + ev.clientY - startY)))
-    }
-    const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-  }, [popupWidth, popupHeight])
-
   return (
     <div
       style={{
@@ -78,45 +59,27 @@ function NodePopupInner({ node, onClose, onDelete, onUpdateNodeData }: NodePopup
       onKeyDown={handleKeyDown}
     >
       <div ref={containerRef} style={{
-        width: popupWidth, height: popupHeight,
-        minWidth: 380, minHeight: 300,
+        width: 'fit-content', minWidth: 340, maxWidth: 'min(720px, calc(100vw - 40px))',
+        maxHeight: 'calc(100vh - 60px)',
         background: 'var(--bg-elevated)',
         border: '1px solid var(--border-primary)',
         borderRadius: 10,
         boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
-        display: 'flex', flexDirection: 'column', overflow: 'hidden',
-        position: 'relative'
+        display: 'flex', flexDirection: 'column', overflow: 'hidden'
       }}>
-        <div onMouseDown={e => startResize(e, 'right')} style={{
-          position: 'absolute', top: 0, right: -3, width: 6, height: '100%',
-          cursor: 'ew-resize', zIndex: 10
-        }} />
-        <div onMouseDown={e => startResize(e, 'bottom')} style={{
-          position: 'absolute', bottom: -3, left: 0, width: '100%', height: 6,
-          cursor: 'ns-resize', zIndex: 10
-        }} />
-        <div onMouseDown={e => startResize(e, 'corner')} style={{
-          position: 'absolute', bottom: -3, right: -3, width: 14, height: 14,
-          cursor: 'nwse-resize', zIndex: 11
-        }}>
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ opacity: 0.3 }}>
-            <path d="M10 12L12 10M6 12L12 6M2 12L12 2" stroke="var(--text-tertiary)" strokeWidth="1.2" strokeLinecap="round" />
-          </svg>
-        </div>
-
         <div style={{
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           padding: '8px 12px', borderBottom: '1px solid var(--border-primary)', flexShrink: 0
         }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
               {definition?.label || data.label}
             </div>
             {definition && (
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{definition.description}</div>
+              <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 1 }}>{definition.description}</div>
             )}
           </div>
-          <div style={{ display: 'flex', gap: 4, marginLeft: 8 }}>
+          <div style={{ display: 'flex', gap: 3, marginLeft: 8 }}>
             {onDelete && (
               <button onClick={handleDelete} aria-label="Delete node" title="Delete node" style={{
                 width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',

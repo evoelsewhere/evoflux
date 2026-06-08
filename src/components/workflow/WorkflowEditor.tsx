@@ -261,7 +261,10 @@ function EditorCanvas() {
   }, [monH])
 
   const onConnect = useCallback((p: Connection) => setEdges(es => addEdge({ ...p, type: 'custom', animated: true }, es)), [setEdges])
-  const onNodeClick = useCallback((_: React.MouseEvent, n: Node) => { setSelectedNodeId(n.id); setPopupNode(n as Node<NodeData>); setPopupEdge(null) }, [])
+  const onNodeClick = useCallback((_: React.MouseEvent, n: Node) => {
+    if (n.type === 'comment') return
+    setSelectedNodeId(n.id); setPopupNode(n as Node<NodeData>); setPopupEdge(null)
+  }, [])
   const onEdgeClick = useCallback((_: React.MouseEvent, e: Edge) => { setPopupEdge(e); setPopupNode(null) }, [])
   const onPaneClick = useCallback(() => { setSelectedNodeId(null); setPopupNode(null); setPopupEdge(null) }, [])
 
