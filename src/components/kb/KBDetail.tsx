@@ -40,6 +40,7 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
   const [searchResults, setSearchResults] = useState<Array<{ content: string; doc_name: string; hybrid_score: number; chunk_id: string }>>([])
   const [searching, setSearching] = useState(false)
   const [indexing, setIndexing] = useState(false)
+  const [indexProgress, setIndexProgress] = useState<{ fileName: string; current: number; total: number } | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -61,13 +62,21 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
 
   useEffect(() => {
     const cleanup = window.api.kb.onProgress((ev: unknown) => {
-      const event = ev as { type: string; fileName?: string }
-      if (event.type === 'kb:progress') {
-        // Progress updates handled by indexing state
+      const event = ev as { type: string; fileName?: string; fileIndex?: number; totalFiles?: number; status?: string }
+      if (event.type === 'kb:progress' || event.type === 'kb:sync') {
+        if (event.status === 'complete' || event.status === 'nochange') {
+          setIndexing(false)
+          setIndexProgress(null)
+          load()
+        } else if (event.status === 'error') {
+          // Keep indexing state, error is shown in message
+        } else if (event.fileName && event.fileIndex !== undefined && event.totalFiles) {
+          setIndexProgress({ fileName: event.fileName, current: event.fileIndex + 1, total: event.totalFiles })
+        }
       }
     })
     return cleanup
-  }, [])
+  }, [load])
 
   const loadChunks = async (docId: string) => {
     setSelectedDoc(docId)
@@ -211,8 +220,25 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
 
           <div style={{ flex: 1, overflow: 'auto', padding: 6 }}>
             {indexing && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 10px', fontSize: 11, color: '#60a5fa', marginBottom: 4 }}>
-                <Spin size="small" /> Indexing...
+              <div style={{ padding: '8px 10px', marginBottom: 4 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#60a5fa', marginBottom: indexProgress ? 6 : 0 }}>
+                  <Spin size="small" /> Indexing...
+                </div>
+                {indexProgress && (
+                  <>
+                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={indexProgress.fileName}>
+                      {indexProgress.fileName.split('/').pop()}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <div style={{ flex: 1, height: 4, background: 'var(--bg-primary)', borderRadius: 2, overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${(indexProgress.current / indexProgress.total) * 100}%`, background: '#60a5fa', borderRadius: 2, transition: 'width 0.2s' }} />
+                      </div>
+                      <span style={{ fontSize: 9, color: 'var(--text-tertiary)', flexShrink: 0 }}>
+                        {indexProgress.current}/{indexProgress.total}
+                      </span>
+                    </div>
+                  </>
+                )}
               </div>
             )}
             {sources.map(src => (
