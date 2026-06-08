@@ -121,10 +121,77 @@ CREATE INDEX IF NOT EXISTS idx_episodic_workflow ON memory_episodic(workflow_id)
 CREATE INDEX IF NOT EXISTS idx_procedural_workflow ON memory_procedural(workflow_id);
 CREATE INDEX IF NOT EXISTS idx_edges_source ON memory_edges(source_id);
 CREATE INDEX IF NOT EXISTS idx_edges_target ON memory_edges(target_id);
+CREATE TABLE IF NOT EXISTS knowledge_bases (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  config_json TEXT DEFAULT '{}',
+  stats_json TEXT DEFAULT '{}',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS kb_sources (
+  id TEXT PRIMARY KEY,
+  kb_id TEXT NOT NULL,
+  path TEXT NOT NULL,
+  type TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  file_count INTEGER DEFAULT 0,
+  error TEXT,
+  git_repo_path TEXT,
+  git_branch TEXT,
+  git_commit_hash TEXT,
+  git_synced_at INTEGER,
+  auto_sync INTEGER DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS kb_documents (
+  id TEXT PRIMARY KEY,
+  kb_id TEXT NOT NULL,
+  source_id TEXT,
+  path TEXT NOT NULL,
+  name TEXT NOT NULL,
+  extension TEXT,
+  size INTEGER,
+  content_preview TEXT,
+  chunk_count INTEGER DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'pending',
+  error TEXT,
+  git_status TEXT DEFAULT 'clean',
+  indexed_content_hash TEXT,
+  current_content_hash TEXT,
+  git_diff_preview TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE,
+  FOREIGN KEY (source_id) REFERENCES kb_sources(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS kb_chunks (
+  id TEXT PRIMARY KEY,
+  doc_id TEXT NOT NULL,
+  kb_id TEXT NOT NULL,
+  chunk_index INTEGER,
+  content TEXT NOT NULL,
+  embedding BLOB,
+  metadata_json TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (doc_id) REFERENCES kb_documents(id) ON DELETE CASCADE,
+  FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_kb_sources_kb ON kb_sources(kb_id);
+CREATE INDEX IF NOT EXISTS idx_kb_documents_kb ON kb_documents(kb_id);
+CREATE INDEX IF NOT EXISTS idx_kb_documents_source ON kb_documents(source_id);
+CREATE INDEX IF NOT EXISTS idx_kb_chunks_kb ON kb_chunks(kb_id);
+CREATE INDEX IF NOT EXISTS idx_kb_chunks_doc ON kb_chunks(doc_id);
+
 CREATE INDEX IF NOT EXISTS idx_env_workflow ON env_variables(workflow_id);
 `
 
-export const SCHEMA_VERSION = 2
+export const SCHEMA_VERSION = 3
 
 export const MIGRATIONS: Record<number, string> = {
   2: `
@@ -145,5 +212,89 @@ export const MIGRATIONS: Record<number, string> = {
       value TEXT NOT NULL,
       updated_at INTEGER NOT NULL
     );
+  `,
+  3: `
+    CREATE TABLE IF NOT EXISTS knowledge_bases (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      config_json TEXT DEFAULT '{}',
+      stats_json TEXT DEFAULT '{}',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS kb_sources (
+      id TEXT PRIMARY KEY,
+      kb_id TEXT NOT NULL,
+      path TEXT NOT NULL,
+      type TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      file_count INTEGER DEFAULT 0,
+      error TEXT,
+      git_repo_path TEXT,
+      git_branch TEXT,
+      git_commit_hash TEXT,
+      git_synced_at INTEGER,
+      auto_sync INTEGER DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS kb_documents (
+      id TEXT PRIMARY KEY,
+      kb_id TEXT NOT NULL,
+      source_id TEXT,
+      path TEXT NOT NULL,
+      name TEXT NOT NULL,
+      extension TEXT,
+      size INTEGER,
+      content_preview TEXT,
+      chunk_count INTEGER DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'pending',
+      error TEXT,
+      git_status TEXT DEFAULT 'clean',
+      indexed_content_hash TEXT,
+      current_content_hash TEXT,
+      git_diff_preview TEXT,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE,
+      FOREIGN KEY (source_id) REFERENCES kb_sources(id) ON DELETE SET NULL
+    );
+    CREATE TABLE IF NOT EXISTS kb_chunks (
+      id TEXT PRIMARY KEY,
+      doc_id TEXT NOT NULL,
+      kb_id TEXT NOT NULL,
+      chunk_index INTEGER,
+      content TEXT NOT NULL,
+      embedding BLOB,
+      metadata_json TEXT,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (doc_id) REFERENCES kb_documents(id) ON DELETE CASCADE,
+      FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_kb_sources_kb ON kb_sources(kb_id);
+    CREATE INDEX IF NOT EXISTS idx_kb_documents_kb ON kb_documents(kb_id);
+    CREATE INDEX IF NOT EXISTS idx_kb_documents_source ON kb_documents(source_id);
+    CREATE INDEX IF NOT EXISTS idx_kb_chunks_kb ON kb_chunks(kb_id);
+CREATE INDEX IF NOT EXISTS idx_kb_chunks_doc ON kb_chunks(doc_id);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS kb_chunks_fts USING fts5(
+  content,
+  content='kb_chunks',
+  content_rowid='rowid',
+  tokenize='porter unicode61'
+);
+
+CREATE TRIGGER IF NOT EXISTS kb_chunks_fts_ai AFTER INSERT ON kb_chunks BEGIN
+  INSERT INTO kb_chunks_fts(rowid, content) VALUES (new.rowid, new.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS kb_chunks_fts_ad AFTER DELETE ON kb_chunks BEGIN
+  INSERT INTO kb_chunks_fts(kb_chunks_fts, rowid, content) VALUES('delete', old.rowid, old.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS kb_chunks_fts_au AFTER UPDATE ON kb_chunks BEGIN
+  INSERT INTO kb_chunks_fts(kb_chunks_fts, rowid, content) VALUES('delete', old.rowid, old.content);
+  INSERT INTO kb_chunks_fts(rowid, content) VALUES (new.rowid, new.content);
+END;
   `
 }
