@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, useCallback, memo } from 'react'
 import { Input } from 'antd'
-import { useWorkflowStore } from '../../stores/workflowStore'
 import { useProviderStore, PROVIDER_LABELS } from '../../stores/providerStore'
 import { getNodeDefinition } from './registry'
 import NodeConfigForms from './node-configs/NodeConfigForms'
@@ -11,21 +10,20 @@ interface NodePopupProps {
   node: Node<NodeData>
   onClose: () => void
   onDelete?: (nodeId: string) => void
+  onUpdateNodeData: (nodeId: string, data: Partial<NodeData>) => void
 }
 
 function TrashIcon() {
   return <svg width={12} height={12} viewBox="0 0 12 12" fill="none"><path d="M2 3H10M4.5 3V2C4.5 1.4 4.9 1 5.5 1H6.5C7.1 1 7.5 1.4 7.5 2V3M9.5 3V10C9.5 10.6 9.1 11 8.5 11H3.5C2.9 11 2.5 10.6 2.5 10V3" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" /><path d="M5 5.5V8.5M7 5.5V8.5" stroke="currentColor" strokeWidth="1" strokeLinecap="round" /></svg>
 }
 
-function NodePopupInner({ node, onClose, onDelete }: NodePopupProps) {
+function NodePopupInner({ node, onClose, onDelete, onUpdateNodeData }: NodePopupProps) {
   const ref = useRef<HTMLDivElement>(null)
-  const updateNodeData = useWorkflowStore(s => s.updateNodeData)
   const providers = useProviderStore(s => s.providers)
   const getDefaultProvider = useProviderStore(s => s.getDefaultProvider)
   const [pos, setPos] = useState({ x: 0, y: 0 })
 
-  const liveNode = useWorkflowStore(s => s.nodes.find(n => n.id === node.id))
-  const data = liveNode?.data || node.data
+  const { data } = node
   const nodeType = data.type || 'default'
   const definition = getNodeDefinition(nodeType)
   const config = (data.config || {}) as Record<string, unknown>
@@ -33,13 +31,12 @@ function NodePopupInner({ node, onClose, onDelete }: NodePopupProps) {
   const providerOptions = providers.map(p => ({ label: `${p.name} (${PROVIDER_LABELS[p.type]})`, value: p.id }))
 
   const handleChange = useCallback((field: string, value: unknown) => {
-    const currentConfig = (useWorkflowStore.getState().nodes.find(n => n.id === node.id)?.data?.config || {}) as Record<string, unknown>
-    updateNodeData(node.id, { config: { ...currentConfig, [field]: value } })
-  }, [node.id, updateNodeData])
+    onUpdateNodeData(node.id, { config: { ...config, [field]: value } })
+  }, [node.id, config, onUpdateNodeData])
 
   const handleLabelChange = useCallback((label: string) => {
-    updateNodeData(node.id, { label })
-  }, [node.id, updateNodeData])
+    onUpdateNodeData(node.id, { label })
+  }, [node.id, onUpdateNodeData])
 
   const handleDelete = useCallback(() => {
     if (onDelete) onDelete(node.id)

@@ -10,7 +10,6 @@ import 'reactflow/dist/style.css'
 import { Input, message, Spin } from 'antd'
 import { useNavigate, useParams } from 'react-router-dom'
 import { nanoid } from 'nanoid'
-import { useWorkflowStore } from '../../stores/workflowStore'
 import { autoLayout } from '../../utils/layout'
 import BaseNode from './nodes/_base/BaseNode'
 import CommentNode from './nodes/CommentNode'
@@ -37,29 +36,24 @@ const DEFAULT_START: Node<NodeData> = {
   data: { label: 'Start', type: 'manual-trigger', icon: 'play-circle', category: 'trigger', config: { variables: [] } }
 }
 
+interface HistoryEntry { nodes: Node<NodeData>[]; edges: Edge[] }
+const MAX_HISTORY = 50
+
 function EditorCanvas() {
   const { screenToFlowPosition, fitView } = useReactFlow()
-  const setStoreNodes = useWorkflowStore(s => s.setNodes)
-  const setStoreEdges = useWorkflowStore(s => s.setEdges)
-  const setSelectedNodeId = useWorkflowStore(s => s.setSelectedNodeId)
-  const workflowName = useWorkflowStore(s => s.workflowName)
-  const setWorkflowName = useWorkflowStore(s => s.setWorkflowName)
-  const workflowDescription = useWorkflowStore(s => s.workflowDescription)
-  const isRunning = useWorkflowStore(s => s.isRunning)
-  const setIsRunning = useWorkflowStore(s => s.setIsRunning)
-  const undo = useWorkflowStore(s => s.undo)
-  const redo = useWorkflowStore(s => s.redo)
-  const canUndo = useWorkflowStore(s => s.canUndo)
-  const canRedo = useWorkflowStore(s => s.canRedo)
-  const removeNode = useWorkflowStore(s => s.removeNode)
-  const updateNodeData = useWorkflowStore(s => s.updateNodeData)
-  const selectedNodeId = useWorkflowStore(s => s.selectedNodeId)
-  const loadWorkflow = useWorkflowStore(s => s.loadWorkflow)
 
   const [nodes, setNodes, onNodesChange] = useNodesState([DEFAULT_START])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
-  const storeNodes = useWorkflowStore(s => s.nodes)
-  const storeEdges = useWorkflowStore(s => s.edges)
+  const [workflowName, setWorkflowName] = useState('Untitled Workflow')
+  const [workflowDescription] = useState('')
+  const [isRunning, setIsRunning] = useState(false)
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+
+  const [history, setHistory] = useState<HistoryEntry[]>([])
+  const [historyIndex, setHistoryIndex] = useState(-1)
+  const canUndo = historyIndex > 0
+  const canRedo = historyIndex < history.length - 1
+
   const [showCode, setShowCode] = useState(false)
   const [showRun, setShowRun] = useState(false)
   const [showInput, setShowInput] = useState(false)
@@ -75,6 +69,7 @@ function EditorCanvas() {
   const [popupNode, setPopupNode] = useState<Node<NodeData> | null>(null)
   const [popupEdge, setPopupEdge] = useState<Edge | null>(null)
   const [loading, setLoading] = useState(true)
+  const [monH, setMonH] = useState(300)
 
   const navigate = useNavigate()
   const { id } = useParams()
@@ -88,7 +83,6 @@ function EditorCanvas() {
   const latestName = useRef(workflowName)
   const latestDesc = useRef(workflowDescription)
   const latestId = useRef(id)
-  const [monH, setMonH] = useState(300)
 
   latestNodes.current = nodes
   latestEdges.current = edges
@@ -96,62 +90,21 @@ function EditorCanvas() {
   latestDesc.current = workflowDescription
   latestId.current = id
 
-  const storeVersion = useWorkflowStore(s => s.historyIndex)
-  const prevStoreVersion = useRef(storeVersion)
-  useEffect(() => {
-    if (loading) return
-    if (storeVersion <= prevStoreVersion.current) {
-      prevStoreVersion.current = storeVersion
-      return
-    }
-    prevStoreVersion.current = storeVersion
-    const s = useWorkflowStore.getState()
-    if (s.nodes.length > 0) setNodes(s.nodes)
-    setEdges(s.edges)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storeVersion])
-
-  const edgesWithStatus = useMemo(() => {
-    const hasNodeStatuses = Object.keys(nodeStatuses).length > 0
-    const hasEdgeStatuses = Object.keys(edgeStatuses).length > 0
-    if (!hasNodeStatuses && !hasEdgeStatuses) return edges
-    return edges.map(edge => {
-      const explicitEdgeStatus = edgeStatuses[edge.id]
-      let edgeStatus: 'idle' | 'active' | 'completed' | 'error' = explicitEdgeStatus || 'idle'
-
-      if (!explicitEdgeStatus && hasNodeStatuses) {
-        const sourceStatus = nodeStatuses[edge.source] || 'idle'
-        const targetStatus = nodeStatuses[edge.target] || 'idle'
-        if (targetStatus === 'error' || sourceStatus === 'error') {
-          edgeStatus = 'error'
-        } else if (sourceStatus === 'completed' && targetStatus === 'running') {
-          edgeStatus = 'active'
-        } else if (sourceStatus === 'completed' && targetStatus === 'completed') {
-          edgeStatus = 'completed'
-        } else if (sourceStatus === 'running') {
-          edgeStatus = 'active'
-        }
-      }
-
-      const iteration = edgeIterations[edge.id]
-      return {
-        ...edge,
-        data: {
-          ...edge.data,
-          status: edgeStatus,
-          isBackEdge: edge.data?.isBackEdge || false,
-          condition: edge.data?.condition,
-          maxIterations: edge.data?.maxIterations,
-          iteration
-        }
-      }
+  const pushHistory = useCallback(() => {
+    setHistory(prev => {
+      const idx = historyIndex
+      const entry: HistoryEntry = { nodes: [...nodes], edges: [...edges] }
+      const newHist = prev.slice(0, idx + 1)
+      newHist.push(entry)
+      if (newHist.length > MAX_HISTORY) newHist.shift()
+      setHistoryIndex(newHist.length - 1)
+      return newHist
     })
-  }, [edges, nodeStatuses, edgeStatuses, edgeIterations])
+  }, [nodes, edges, historyIndex])
 
   const doSave = useCallback(async (ns: Node<NodeData>[], es: Edge[], wfName: string, wfDesc: string, wfId?: string) => {
-    setStoreNodes(ns); setStoreEdges(es)
-    try { await window.api.workflow.save({ id: wfId, name: wfName, description: wfDesc, nodes: ns, edges: es }) } catch { /* save failed, will retry */ }
-  }, [setStoreNodes, setStoreEdges])
+    try { await window.api.workflow.save({ id: wfId, name: wfName, description: wfDesc, nodes: ns, edges: es }) } catch { /* retry on next change */ }
+  }, [])
 
   const doSaveSync = useCallback(() => {
     const ns = latestNodes.current
@@ -160,9 +113,8 @@ function EditorCanvas() {
     const wfDesc = latestDesc.current
     const wfId = latestId.current
     if (!wfId || ns.length === 0) return
-    setStoreNodes(ns); setStoreEdges(es)
-    try { window.api.workflow.saveSync({ id: wfId, name: wfName, description: wfDesc, nodes: ns, edges: es }) } catch { /* sync save failed */ }
-  }, [setStoreNodes, setStoreEdges])
+    try { window.api.workflow.saveSync({ id: wfId, name: wfName, description: wfDesc, nodes: ns, edges: es }) } catch { /* */ }
+  }, [])
 
   useEffect(() => {
     if (!id) { setLoading(false); return }
@@ -172,8 +124,10 @@ function EditorCanvas() {
         const wf = await window.api.workflow.load(id) as { id: string; name: string; description: string; nodes: Node<NodeData>[]; edges: Edge[] } | null
         if (cancelled) return
         if (wf && wf.nodes && wf.nodes.length > 0) {
-          loadWorkflow(wf.id, wf.name, wf.description || '', wf.nodes, wf.edges)
-          setNodes(wf.nodes); setEdges(wf.edges)
+          setNodes(wf.nodes); setEdges(wf.edges || [])
+          setWorkflowName(wf.name)
+          setHistory([{ nodes: wf.nodes, edges: wf.edges || [] }])
+          setHistoryIndex(0)
           setTimeout(() => fitView({ padding: 0.2, duration: 300 }), 100)
         } else {
           setNodes([DEFAULT_START]); setEdges([])
@@ -203,6 +157,55 @@ function EditorCanvas() {
     }
   }, [id, doSaveSync])
 
+  const updateNodeData = useCallback((nodeId: string, data: Partial<NodeData>) => {
+    pushHistory()
+    setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, data: { ...n.data, ...data } } : n))
+  }, [setNodes, pushHistory])
+
+  const handleDeleteNode = useCallback((nodeId: string) => {
+    pushHistory()
+    setNodes(prev => prev.filter(n => n.id !== nodeId))
+    setEdges(prev => prev.filter(e => e.source !== nodeId && e.target !== nodeId))
+    setSelectedNodeId(prev => prev === nodeId ? null : prev)
+    setPopupNode(null)
+  }, [setNodes, setEdges, pushHistory])
+
+  const handleUndo = useCallback(() => {
+    if (!canUndo) return
+    const newIndex = historyIndex - 1
+    const entry = history[newIndex]
+    setNodes([...entry.nodes]); setEdges([...entry.edges])
+    setHistoryIndex(newIndex)
+  }, [canUndo, historyIndex, history, setNodes, setEdges])
+
+  const handleRedo = useCallback(() => {
+    if (!canRedo) return
+    const newIndex = historyIndex + 1
+    const entry = history[newIndex]
+    setNodes([...entry.nodes]); setEdges([...entry.edges])
+    setHistoryIndex(newIndex)
+  }, [canRedo, historyIndex, history, setNodes, setEdges])
+
+  const edgesWithStatus = useMemo(() => {
+    const hasNodeStatuses = Object.keys(nodeStatuses).length > 0
+    const hasEdgeStatuses = Object.keys(edgeStatuses).length > 0
+    if (!hasNodeStatuses && !hasEdgeStatuses) return edges
+    return edges.map(edge => {
+      const explicitEdgeStatus = edgeStatuses[edge.id]
+      let edgeStatus: 'idle' | 'active' | 'completed' | 'error' = explicitEdgeStatus || 'idle'
+      if (!explicitEdgeStatus && hasNodeStatuses) {
+        const sourceStatus = nodeStatuses[edge.source] || 'idle'
+        const targetStatus = nodeStatuses[edge.target] || 'idle'
+        if (targetStatus === 'error' || sourceStatus === 'error') edgeStatus = 'error'
+        else if (sourceStatus === 'completed' && targetStatus === 'running') edgeStatus = 'active'
+        else if (sourceStatus === 'completed' && targetStatus === 'completed') edgeStatus = 'completed'
+        else if (sourceStatus === 'running') edgeStatus = 'active'
+      }
+      const iteration = edgeIterations[edge.id]
+      return { ...edge, data: { ...edge.data, status: edgeStatus, isBackEdge: edge.data?.isBackEdge || false, condition: edge.data?.condition, maxIterations: edge.data?.maxIterations, iteration } }
+    })
+  }, [edges, nodeStatuses, edgeStatuses, edgeIterations])
+
   const updateNodeStatus = useCallback((nodeId: string, status: 'idle' | 'running' | 'completed' | 'error', output?: unknown) => {
     setNodeStatuses(prev => ({ ...prev, [nodeId]: status }))
     if (output !== undefined) setNodeOutputs(prev => ({ ...prev, [nodeId]: output }))
@@ -214,32 +217,20 @@ function EditorCanvas() {
     setNodeStatuses({}); setNodeOutputs({}); setEdgeStatuses({}); setEdgeIterations({}); setElapsed(0)
     setNodes(prev => prev.map(n => ({ ...n, data: { ...n.data, status: 'idle' as const, error: undefined } })))
     runStartRef.current = Date.now()
-
     elapsedTimer.current = setInterval(() => { setElapsed(Date.now() - runStartRef.current) }, 100)
 
     const cleanup = window.api.workflow.onEvent((event: unknown) => {
       const ev = event as RunEvent
       setRunEvents(prev => [...prev, ev])
-
-      if (ev.type === 'node:start' && ev.nodeId) {
-        updateNodeStatus(ev.nodeId, 'running')
-      } else if (ev.type === 'node:complete' && ev.nodeId) {
-        updateNodeStatus(ev.nodeId, 'completed', ev.output)
-      } else if (ev.type === 'node:error' && ev.nodeId) {
-        updateNodeStatus(ev.nodeId, 'error', ev.error)
-      } else if (ev.type === 'edge:activate' && ev.edgeId) {
+      if (ev.type === 'node:start' && ev.nodeId) updateNodeStatus(ev.nodeId, 'running')
+      else if (ev.type === 'node:complete' && ev.nodeId) updateNodeStatus(ev.nodeId, 'completed', ev.output)
+      else if (ev.type === 'node:error' && ev.nodeId) updateNodeStatus(ev.nodeId, 'error', ev.error)
+      else if (ev.type === 'edge:activate' && ev.edgeId) {
         setEdgeStatuses(prev => ({ ...prev, [ev.edgeId!]: 'active' }))
         if (ev.iteration) setEdgeIterations(prev => ({ ...prev, [ev.edgeId!]: ev.iteration! }))
-      } else if (ev.type === 'edge:skip' && ev.edgeId) {
-        setEdgeStatuses(prev => ({ ...prev, [ev.edgeId!]: 'idle' }))
-      } else if (ev.type === 'graph:complete') {
-        setIsRunning(false)
-        if (elapsedTimer.current) clearInterval(elapsedTimer.current)
-        setElapsed(Date.now() - runStartRef.current)
-      } else if (ev.type === 'graph:aborted' || ev.type === 'graph:error') {
-        setIsRunning(false)
-        if (elapsedTimer.current) clearInterval(elapsedTimer.current)
-      }
+      } else if (ev.type === 'edge:skip' && ev.edgeId) setEdgeStatuses(prev => ({ ...prev, [ev.edgeId!]: 'idle' }))
+      else if (ev.type === 'graph:complete') { setIsRunning(false); if (elapsedTimer.current) clearInterval(elapsedTimer.current); setElapsed(Date.now() - runStartRef.current) }
+      else if (ev.type === 'graph:aborted' || ev.type === 'graph:error') { setIsRunning(false); if (elapsedTimer.current) clearInterval(elapsedTimer.current) }
     })
     eventCleanupRef.current = cleanup
 
@@ -254,65 +245,41 @@ function EditorCanvas() {
     }
   }, [nodes, edges, workflowName, setIsRunning, updateNodeStatus])
 
-  const hasInputVariables = nodes.some(n => {
-    const vars = n.data.config?.variables
-    return n.data.type === 'manual-trigger' && Array.isArray(vars) && vars.length > 0
-  })
+  const hasInputVariables = nodes.some(n => n.data.type === 'manual-trigger' && Array.isArray(n.data.config?.variables) && (n.data.config?.variables as unknown[])?.length > 0)
+  const handleRun = useCallback(() => { if (hasInputVariables) setShowInput(true); else handleRunWithInputs({}) }, [hasInputVariables, handleRunWithInputs])
+  const handleStop = useCallback(() => { window.api.workflow.stop(); setIsRunning(false); if (elapsedTimer.current) clearInterval(elapsedTimer.current); setRunEvents(prev => [...prev, { type: 'graph:aborted', timestamp: Date.now() }]) }, [])
 
-  const handleRun = useCallback(() => {
-    if (hasInputVariables) { setShowInput(true) }
-    else { handleRunWithInputs({}) }
-  }, [hasInputVariables, handleRunWithInputs])
-
-  const handleStop = useCallback(() => {
-    window.api.workflow.stop()
-    setIsRunning(false)
-    if (elapsedTimer.current) clearInterval(elapsedTimer.current)
-    setRunEvents(prev => [...prev, { type: 'graph:aborted', timestamp: Date.now() }])
-  }, [setIsRunning])
-
-  useEffect(() => {
-    return () => {
-      if (elapsedTimer.current) clearInterval(elapsedTimer.current)
-      if (eventCleanupRef.current) eventCleanupRef.current()
-    }
-  }, [])
+  useEffect(() => { return () => { if (elapsedTimer.current) clearInterval(elapsedTimer.current); if (eventCleanupRef.current) eventCleanupRef.current() } }, [])
 
   const resizeMon = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
-    const startY = e.clientY
-    const startH = monH
+    const startY = e.clientY; const startH = monH
     const onMove = (ev: MouseEvent) => { setMonH(Math.min(500, Math.max(200, startH + startY - ev.clientY))) }
     const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
     window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp)
   }, [monH])
 
-  const onConnect = useCallback((p: Connection) => { const e = addEdge({ ...p, type: 'custom', animated: true }, edges); setEdges(e); setStoreEdges(e) }, [edges, setEdges, setStoreEdges])
-  const onNodeClick = useCallback((_: React.MouseEvent, n: Node) => { setSelectedNodeId(n.id); setPopupNode(n as Node<NodeData>); setPopupEdge(null) }, [setSelectedNodeId])
+  const onConnect = useCallback((p: Connection) => setEdges(es => addEdge({ ...p, type: 'custom', animated: true }, es)), [setEdges])
+  const onNodeClick = useCallback((_: React.MouseEvent, n: Node) => { setSelectedNodeId(n.id); setPopupNode(n as Node<NodeData>); setPopupEdge(null) }, [])
   const onEdgeClick = useCallback((_: React.MouseEvent, e: Edge) => { setPopupEdge(e); setPopupNode(null) }, [])
-  const onPaneClick = useCallback(() => { setSelectedNodeId(null); setPopupNode(null); setPopupEdge(null) }, [setSelectedNodeId])
+  const onPaneClick = useCallback(() => { setSelectedNodeId(null); setPopupNode(null); setPopupEdge(null) }, [])
 
   const handleEdgeUpdate = useCallback((edgeId: string, data: Record<string, unknown>) => {
-    const newEdges = edges.map(e => {
-      if (e.id !== edgeId) return e
-      return { ...e, data: { ...e.data, ...data }, label: data.label !== undefined ? String(data.label) : e.label } as Edge
-    })
-    setEdges(newEdges); setStoreEdges(newEdges)
-  }, [edges, setEdges, setStoreEdges])
+    setEdges(prev => prev.map(e => e.id === edgeId ? { ...e, data: { ...e.data, ...data }, label: data.label !== undefined ? String(data.label) : e.label } as Edge : e))
+  }, [setEdges])
 
   const handleEdgeDelete = useCallback((edgeId: string) => {
-    const newEdges = edges.filter(e => e.id !== edgeId)
-    setEdges(newEdges); setStoreEdges(newEdges)
+    setEdges(prev => prev.filter(e => e.id !== edgeId))
     setPopupEdge(null)
-  }, [edges, setEdges, setStoreEdges])
+  }, [setEdges])
 
   const addNode = useCallback((type: string, def: NodeDefinition, position?: { x: number; y: number }) => {
     const nid = `${type}-${nanoid(6)}`
     const data = type === 'comment' ? { label: 'Comment', type: 'comment', text: 'Double-click to edit...' } : { label: def.label, type, icon: def.icon, category: def.category, config: {} }
     const pos = position || { x: 200 + Math.random() * 300, y: 80 + Math.random() * 300 }
     const n = { id: nid, type: type === 'comment' ? 'comment' : 'default', position: pos, data }
-    const ns = [...nodes, n as typeof nodes[0]]; setNodes(ns); setStoreNodes(ns)
-  }, [nodes, setNodes, setStoreNodes])
+    setNodes(prev => [...prev, n as Node<NodeData>])
+  }, [setNodes])
 
   const onDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }, [])
   const onDrop = useCallback((e: React.DragEvent) => {
@@ -325,17 +292,8 @@ function EditorCanvas() {
   }, [screenToFlowPosition, addNode])
 
   const handleSave = useCallback(async () => { await doSave(nodes, edges, workflowName, workflowDescription, id); message.success('Saved') }, [id, nodes, edges, workflowName, workflowDescription, doSave])
-  const handleLayout = useCallback(() => { const l = autoLayout(nodes, edges, layoutDirection); setNodes(l); setStoreNodes(l) }, [nodes, edges, layoutDirection, setNodes, setStoreNodes])
-  const handleToggleLayout = useCallback(() => { const next = layoutDirection === 'TB' ? 'LR' : 'TB'; setLayoutDirection(next); const l = autoLayout(nodes, edges, next); setNodes(l); setStoreNodes(l) }, [layoutDirection, nodes, edges, setNodes, setStoreNodes])
-  const handleUndo = useCallback(() => { if (canUndo) { undo(); const s = useWorkflowStore.getState(); setNodes(s.nodes); setEdges(s.edges); doSave(s.nodes, s.edges, s.workflowName, s.workflowDescription, id) } }, [canUndo, undo, id, doSave])
-  const handleRedo = useCallback(() => { if (canRedo) { redo(); const s = useWorkflowStore.getState(); setNodes(s.nodes); setEdges(s.edges); doSave(s.nodes, s.edges, s.workflowName, s.workflowDescription, id) } }, [canRedo, redo, id, doSave])
-
-  const handleDeleteNode = useCallback((nodeId: string) => {
-    removeNode(nodeId)
-    const s = useWorkflowStore.getState()
-    setNodes(s.nodes); setEdges(s.edges)
-    setPopupNode(null)
-  }, [removeNode, setNodes, setEdges])
+  const handleLayout = useCallback(() => { const l = autoLayout(nodes, edges, layoutDirection); setNodes(l) }, [nodes, edges, layoutDirection, setNodes])
+  const handleToggleLayout = useCallback(() => { const next = layoutDirection === 'TB' ? 'LR' : 'TB'; setLayoutDirection(next); setNodes(autoLayout(nodes, edges, next)) }, [layoutDirection, nodes, edges, setNodes])
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -397,7 +355,7 @@ function EditorCanvas() {
                 maskColor="rgba(0,0,0,0.6)" style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', borderRadius: 8 }}
               />
             </ReactFlow>
-            {popupNode && <ErrorBoundary><NodePopup node={popupNode} onClose={() => setPopupNode(null)} onDelete={handleDeleteNode} /></ErrorBoundary>}
+            {popupNode && <ErrorBoundary><NodePopup node={popupNode} onClose={() => setPopupNode(null)} onDelete={handleDeleteNode} onUpdateNodeData={updateNodeData} /></ErrorBoundary>}
             {popupEdge && <ErrorBoundary><EdgePopup edge={popupEdge} onClose={() => setPopupEdge(null)} onUpdate={handleEdgeUpdate} onDelete={handleEdgeDelete} /></ErrorBoundary>}
           </div>
 
@@ -418,49 +376,31 @@ function EditorCanvas() {
       <RunInputDialog open={showInput} nodes={nodes} onRun={handleRunWithInputs} onCancel={() => setShowInput(false)} />
 
       {showAssistant && (
-        <ErrorBoundary><AssistantPanel nodes={nodes} edges={edges} onClose={() => setShowAssistant(false)} onNodesChanged={() => { const s = useWorkflowStore.getState(); setNodes(s.nodes); setEdges(s.edges) }}
+        <ErrorBoundary><AssistantPanel nodes={nodes} edges={edges} onClose={() => setShowAssistant(false)} onNodesChanged={() => {}}
           toolContext={{
-            getNodes: () => useWorkflowStore.getState().nodes,
-            getEdges: () => useWorkflowStore.getState().edges,
+            getNodes: () => nodes,
+            getEdges: () => edges,
             addNode: (type, label, category, icon, config, position) => {
               const nid = `${type}-${nanoid(6)}`
               const pos = position || { x: 200 + Math.random() * 300, y: 80 + Math.random() * 300 }
               const n = { id: nid, type: 'default', position: pos, data: { label, type, icon, category, config } }
-              const storeNodes = useWorkflowStore.getState().nodes
-              const ns = [...storeNodes, n as typeof storeNodes[0]]
-              setStoreNodes(ns); setNodes(ns)
+              setNodes(prev => [...prev, n as Node<NodeData>])
               return nid
             },
-            updateNode: (nodeId, patch) => {
-              updateNodeData(nodeId, patch)
-              const s = useWorkflowStore.getState(); setNodes([...s.nodes])
-            },
-            deleteNode: (nodeId) => {
-              removeNode(nodeId)
-              const s = useWorkflowStore.getState(); setNodes([...s.nodes]); setEdges([...s.edges])
-            },
+            updateNode: (nodeId, patch) => { updateNodeData(nodeId, patch) },
+            deleteNode: (nodeId) => { handleDeleteNode(nodeId) },
             addEdge: (source, target, sourceHandle) => {
-              const storeEdges = useWorkflowStore.getState().edges
-              const newEdge = { id: `e-${source}-${target}-${nanoid(4)}`, source, target, sourceHandle, type: 'custom', animated: true }
-              const es = [...storeEdges, newEdge]
-              setStoreEdges(es); setEdges(es)
+              setEdges(prev => [...prev, { id: `e-${source}-${target}-${nanoid(4)}`, source, target, sourceHandle, type: 'custom', animated: true }])
             },
-            deleteEdge: (edgeId) => {
-              const storeEdges = useWorkflowStore.getState().edges
-              const es = storeEdges.filter(x => x.id !== edgeId)
-              setStoreEdges(es); setEdges(es)
-            },
-            autoLayout: () => {
-              const s = useWorkflowStore.getState()
-              const l = autoLayout(s.nodes, s.edges); setStoreNodes(l); setNodes(l)
-            },
-            pushHistory: () => { useWorkflowStore.getState().pushHistory() }
+            deleteEdge: (edgeId) => { setEdges(prev => prev.filter(e => e.id !== edgeId)) },
+            autoLayout: () => { setNodes(autoLayout(nodes, edges)) },
+            pushHistory: () => { pushHistory() }
           } as WorkflowToolContext} /></ErrorBoundary>
       )}
 
       {showCode && (
         <div style={{ width: 360, borderLeft: '1px solid var(--border-primary)' }}>
-          <CodeEditor nodes={nodes} edges={edges} onApply={(n, e) => { setNodes(n); setEdges(e); setStoreNodes(n); setStoreEdges(e) }} />
+          <CodeEditor nodes={nodes} edges={edges} onApply={(n, e) => { setNodes(n); setEdges(e) }} />
         </div>
       )}
     </div>
