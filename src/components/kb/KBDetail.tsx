@@ -43,6 +43,8 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
   const [searchResults, setSearchResults] = useState<Array<{ content: string; doc_name: string; hybrid_score: number; chunk_id: string }>>([])
   const [searching, setSearching] = useState(false)
   const [indexing, setIndexing] = useState(false)
+  const [editingName, setEditingName] = useState(false)
+  const [editName, setEditName] = useState('')
   const [indexProgress, setIndexProgress] = useState<{ fileName: string; current: number; total: number } | null>(null)
 
   const load = useCallback(async () => {
@@ -187,10 +189,24 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
     const root: TreeNode[] = []
     const dirMap = new Map<string, TreeNode>()
 
+    const sourceRoots = sources.map(s => s.path).sort((a, b) => b.length - a.length)
+
+    const getRelativePath = (fullPath: string): string => {
+      for (const root of sourceRoots) {
+        if (fullPath.startsWith(root)) {
+          const rel = fullPath.substring(root.length)
+          return rel.startsWith('/') ? rel.substring(1) : rel
+        }
+      }
+      const parts = fullPath.split('/')
+      return parts.length > 1 ? parts.slice(-2).join('/') : fullPath
+    }
+
     const sortedDocs = [...documents].sort((a, b) => a.path.localeCompare(b.path))
 
     for (const doc of sortedDocs) {
-      const parts = doc.path.split('/')
+      const relPath = getRelativePath(doc.path)
+      const parts = relPath.split('/')
       let currentPath = ''
       let parentChildren = root
 
@@ -204,7 +220,7 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
         parentChildren = dirMap.get(currentPath)!.children
       }
 
-      parentChildren.push({ name: parts[parts.length - 1], path: doc.path, children: [], doc, depth: parts.length - 1 })
+      parentChildren.push({ name: parts[parts.length - 1], path: relPath, children: [], doc, depth: parts.length - 1 })
     }
 
     return root
@@ -270,9 +286,37 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
           onMouseLeave={e => e.currentTarget.style.color = 'var(--text-tertiary)'}>
           {icons.back}
         </button>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>{kb.name}</div>
-          {kb.description && <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 1 }}>{kb.description}</div>}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {editingName ? (
+            <input
+              value={editName}
+              onChange={e => setEditName(e.target.value)}
+              onBlur={async () => {
+                setEditingName(false)
+                if (editName.trim() && editName !== kb.name) {
+                  await window.api.kb.update(kbId, { name: editName.trim() })
+                  setKb(prev => prev ? { ...prev, name: editName.trim() } : prev)
+                }
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') { (e.target as HTMLInputElement).blur() }
+                if (e.key === 'Escape') { setEditName(kb.name); setEditingName(false) }
+              }}
+              autoFocus
+              style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', background: 'var(--bg-input)', border: '1px solid var(--accent)', borderRadius: 4, padding: '2px 6px', outline: 'none', width: '100%', maxWidth: 300 }}
+            />
+          ) : (
+            <div
+              onClick={() => { setEditName(kb.name); setEditingName(true) }}
+              style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', cursor: 'text', padding: '2px 0', borderRadius: 4, transition: 'background 0.1s' }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+              title="Click to rename"
+            >
+              {kb.name}
+            </div>
+          )}
+          {kb.description && !editingName && <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>{kb.description}</div>}
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{stats.totalDocs} docs</span>
