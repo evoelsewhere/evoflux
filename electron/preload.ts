@@ -60,6 +60,31 @@ const api = {
     stats: (workflowId: string) => ipcRenderer.invoke('memory:stats', workflowId),
     consolidate: (workflowId: string) => ipcRenderer.invoke('memory:consolidate', workflowId)
   },
+  kb: {
+    create: (name: string, description?: string, config?: Record<string, unknown>) =>
+      ipcRenderer.invoke('kb:create', name, description, config),
+    list: () => ipcRenderer.invoke('kb:list'),
+    get: (id: string) => ipcRenderer.invoke('kb:get', id),
+    update: (id: string, patch: { name?: string; description?: string; config?: Record<string, unknown> }) =>
+      ipcRenderer.invoke('kb:update', id, patch),
+    delete: (id: string) => ipcRenderer.invoke('kb:delete', id),
+    selectFolder: () => ipcRenderer.invoke('kb:selectFolder'),
+    selectFiles: () => ipcRenderer.invoke('kb:selectFiles'),
+    addFolder: (kbId: string) => ipcRenderer.invoke('kb:addFolder', kbId),
+    addFiles: (kbId: string) => ipcRenderer.invoke('kb:addFiles', kbId),
+    removeSource: (sourceId: string) => ipcRenderer.invoke('kb:removeSource', sourceId),
+    listSources: (kbId: string) => ipcRenderer.invoke('kb:listSources', kbId),
+    listDocuments: (kbId: string) => ipcRenderer.invoke('kb:listDocuments', kbId),
+    listChunks: (docId: string) => ipcRenderer.invoke('kb:listChunks', docId),
+    getStats: (kbId: string) => ipcRenderer.invoke('kb:getStats', kbId),
+    search: (kbId: string, query: string, options?: { limit?: number; vectorWeight?: number; bm25Weight?: number }) =>
+      ipcRenderer.invoke('kb:search', kbId, query, options),
+    onProgress: (callback: (event: unknown) => void) => {
+      const handler = (_event: unknown, data: unknown) => callback(data)
+      ipcRenderer.on('kb:event', handler)
+      return () => ipcRenderer.removeListener('kb:event', handler)
+    }
+  },
   onStreamChunk: (callback: (chunk: string) => void) => {
     const handler = (_event: unknown, chunk: string) => callback(chunk)
     ipcRenderer.on('ai:stream-chunk', handler)

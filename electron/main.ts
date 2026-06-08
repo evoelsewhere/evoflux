@@ -6,6 +6,7 @@ import { registerWorkflowRunnerHandlers, setMainWindow } from './ipc/workflow-ru
 import { registerSandboxHandlers } from './ipc/sandbox'
 import { registerDSLHandlers } from './ipc/dsl'
 import { registerMemoryHandlers } from './ipc/memory'
+import { registerKBHandlers } from './ipc/knowledge-base'
 import { openDatabase, closeDatabase, flushDatabase } from '../src/engine/db/database'
 
 let mainWindow: BrowserWindow | null = null
@@ -66,6 +67,7 @@ app.whenReady().then(async () => {
   registerSandboxHandlers()
   registerDSLHandlers()
   registerMemoryHandlers()
+  registerKBHandlers()
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

@@ -47,6 +47,7 @@ reg('txt', 'docs')
 reg('log', 'docs')
 reg('diff', 'docs')
 reg('patch', 'docs')
+reg('adoc', 'docs')
 
 // Data
 for (const ext of ['csv', 'tsv']) {
