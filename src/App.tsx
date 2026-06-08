@@ -2,7 +2,6 @@ import { Routes, Route } from 'react-router-dom'
 import AppLayout, { EditorLayout } from './components/layout/AppLayout'
 import Dashboard from './components/dashboard/Dashboard'
 import WorkflowEditor from './components/workflow/WorkflowEditor'
-import SettingsPage from './components/settings/SettingsPage'
 import ErrorBoundary from './components/common/ErrorBoundary'
 
 export default function App() {
@@ -13,7 +12,6 @@ export default function App() {
         <Route element={<AppLayout />}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/workflows" element={<Dashboard />} />
-          <Route path="/settings" element={<SettingsPage />} />
         </Route>
 
         {/* Workflow editor — own sidebar, no nav sidebar */}

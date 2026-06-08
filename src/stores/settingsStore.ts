@@ -61,6 +61,7 @@ interface SettingsState {
   anthropicBaseUrl: string
   selectedModel: string
   appearance: AppearanceSettings
+  showSettings: boolean
 
   setAiProvider: (provider: AIProvider) => void
   setOpenaiApiKey: (key: string) => void
@@ -69,6 +70,8 @@ interface SettingsState {
   setAnthropicBaseUrl: (url: string) => void
   setSelectedModel: (model: string) => void
   updateAppearance: (patch: Partial<AppearanceSettings>) => void
+  setShowSettings: (show: boolean) => void
+  toggleSettings: () => void
 }
 
 function syncToMain(state: Partial<SettingsState>) {
@@ -93,6 +96,7 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
   anthropicBaseUrl: 'https://api.anthropic.com',
   selectedModel: 'gpt-4o-mini',
   appearance: DEFAULT_APPEARANCE,
+  showSettings: false,
 
   setAiProvider: (provider) => { set({ aiProvider: provider }); syncToMain(get()) },
   setOpenaiApiKey: (key) => { set({ openaiApiKey: key }); syncToMain(get()) },
@@ -103,7 +107,9 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
   updateAppearance: (patch) => {
     set((s) => ({ appearance: { ...s.appearance, ...patch } }))
     syncToMain(get())
-  }
+  },
+  setShowSettings: (show) => set({ showSettings: show }),
+  toggleSettings: () => set((s) => ({ showSettings: !s.showSettings }))
 }))
 
 export async function initSettingsStore() {

@@ -1,6 +1,7 @@
 import { Layout } from 'antd'
 import { Outlet } from 'react-router-dom'
 import Sidebar from './Sidebar'
+import SettingsPopup from '../settings/SettingsPopup'
 
 const { Content } = Layout
 
@@ -11,10 +12,16 @@ export default function AppLayout() {
       <Content style={{ margin: 0, overflow: 'hidden', background: 'var(--bg-primary)' }}>
         <Outlet />
       </Content>
+      <SettingsPopup />
     </Layout>
   )
 }
 
 export function EditorLayout() {
-  return <Outlet />
+  return (
+    <>
+      <Outlet />
+      <SettingsPopup />
+    </>
+  )
 }

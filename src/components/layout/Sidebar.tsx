@@ -3,6 +3,7 @@ import { Input } from 'antd'
 import { useTheme } from '../common/ThemeProvider'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { NODE_CATEGORIES, searchNodes, type NodeDefinition } from '../workflow/registry'
+import { useSettingsStore } from '../../stores/settingsStore'
 import {
   NodeStartIcon, NodeGlobeIcon, NodeClockIcon, NodeLLMIcon,
   NodeExtractIcon, NodeTagIcon, NodeDatabaseIcon, NodeConditionIcon,
@@ -95,6 +96,7 @@ export default function Sidebar(props: SidebarProps) {
   const navigate = useNavigate()
   const location = useLocation()
   const { mode, toggleTheme } = useTheme()
+  const toggleSettings = useSettingsStore(s => s.toggleSettings)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [showNodes, setShowNodes] = useState(false)
   const [nodeSearch, setNodeSearch] = useState('')
@@ -144,7 +146,7 @@ export default function Sidebar(props: SidebarProps) {
 
   const bottomItems: DockAction[] = [
     { id: 'theme', icon: mode === 'dark' ? icons.sun : icons.moon, label: mode === 'dark' ? 'Light' : 'Dark', onClick: toggleTheme, separatorBefore: true },
-    { id: 'settings', icon: icons.settings, label: 'Settings', onClick: () => navigate('/settings'), active: isActive('/settings') }
+    { id: 'settings', icon: icons.settings, label: 'Settings', onClick: toggleSettings }
   ]
 
   const allItems = [...navItems, ...editorActions, ...bottomItems]
