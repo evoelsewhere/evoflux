@@ -271,11 +271,11 @@ function EditorCanvas() {
 
   const addNode = useCallback((type: string, def: NodeDefinition, position?: { x: number; y: number }) => {
     const nid = `${type}-${nanoid(6)}`
-    const data = type === 'comment' ? { label: 'Comment', type: 'comment', text: 'Double-click to edit...' } : { label: def.label, type, icon: def.icon, category: def.category, config: {} }
+    const data = type === 'comment' ? { label: 'Comment', type: 'comment', text: 'Double-click to edit...', direction: layoutDirection } : { label: def.label, type, icon: def.icon, category: def.category, config: {}, direction: layoutDirection }
     const pos = position || { x: 200 + Math.random() * 300, y: 80 + Math.random() * 300 }
     const n = { id: nid, type: type === 'comment' ? 'comment' : 'default', position: pos, data }
     setNodes(prev => [...prev, n as Node<NodeData>])
-  }, [setNodes])
+  }, [setNodes, layoutDirection])
 
   const onDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }, [])
   const onDrop = useCallback((e: React.DragEvent) => {
@@ -289,8 +289,9 @@ function EditorCanvas() {
 
   const handleSave = useCallback(async () => { await doSave(nodes, edges, workflowName, workflowDescription, id); message.success('Saved') }, [id, nodes, edges, workflowName, workflowDescription, doSave])
   const handleBack = useCallback(() => { doSaveSync(); navigate('/workflows') }, [doSaveSync, navigate])
-  const handleLayout = useCallback(() => { const l = autoLayout(nodes, edges, layoutDirection); setNodes(l) }, [nodes, edges, layoutDirection, setNodes])
-  const handleToggleLayout = useCallback(() => { const next = layoutDirection === 'TB' ? 'LR' : 'TB'; setLayoutDirection(next); setNodes(autoLayout(nodes, edges, next)) }, [layoutDirection, nodes, edges, setNodes])
+  const applyDirection = useCallback((ns: Node<NodeData>[], dir: 'TB' | 'LR') => ns.map(n => ({ ...n, data: { ...n.data, direction: dir } })), [])
+  const handleLayout = useCallback(() => { const l = applyDirection(autoLayout(nodes, edges, layoutDirection), layoutDirection); setNodes(l) }, [nodes, edges, layoutDirection, setNodes, applyDirection])
+  const handleToggleLayout = useCallback(() => { const next = layoutDirection === 'TB' ? 'LR' : 'TB'; setLayoutDirection(next); setNodes(applyDirection(autoLayout(nodes, edges, next), next)) }, [layoutDirection, nodes, edges, setNodes, applyDirection])
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {

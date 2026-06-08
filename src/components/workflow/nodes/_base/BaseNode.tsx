@@ -54,6 +54,7 @@ interface BaseNodeData {
   status?: 'idle' | 'running' | 'completed' | 'error'
   error?: string
   text?: string
+  direction?: 'TB' | 'LR'
 }
 
 function getSubtitle(data: BaseNodeData): string | null {
@@ -167,6 +168,11 @@ function BaseNodeComponent({ data, selected }: NodeProps<BaseNodeData>) {
   const iconFn = ICONS[data.icon || ''] || ICONS['unknown']
   const isCondition = data.type === 'condition'
   const status = data.status || 'idle'
+  const dir = data.direction || 'TB'
+  const isLR = dir === 'LR'
+
+  const targetPos = isLR ? Position.Left : Position.Top
+  const sourcePos = isLR ? Position.Right : Position.Bottom
 
   const statusColor = status === 'running' ? '#60a5fa'
     : status === 'completed' ? '#34d399'
@@ -188,12 +194,13 @@ function BaseNodeComponent({ data, selected }: NodeProps<BaseNodeData>) {
     <>
       <Handle
         type="target"
-        position={Position.Top}
+        position={targetPos}
         style={{
           width: 8, height: 8,
           background: statusColor || cat.accent,
           border: `2px solid ${cat.bar}`,
-          top: -4, zIndex: 10,
+          ...(isLR ? { left: -4 } : { top: -4 }),
+          zIndex: 10,
           transition: 'all 0.2s ease'
         }}
       />
@@ -289,25 +296,27 @@ function BaseNodeComponent({ data, selected }: NodeProps<BaseNodeData>) {
         <>
           <Handle
             type="source"
-            position={Position.Bottom}
+            position={sourcePos}
             id="true"
             style={{
               width: 8, height: 8,
               background: statusColor || '#34d399',
               border: '2px solid #065f46',
-              bottom: -4, left: '30%', zIndex: 10,
+              ...(isLR ? { right: -4, top: '30%' } : { bottom: -4, left: '30%' }),
+              zIndex: 10,
               transition: 'all 0.2s ease'
             }}
           />
           <Handle
             type="source"
-            position={Position.Bottom}
+            position={sourcePos}
             id="false"
             style={{
               width: 8, height: 8,
               background: statusColor || '#f87171',
               border: '2px solid #991b1b',
-              bottom: -4, left: '70%', zIndex: 10,
+              ...(isLR ? { right: -4, top: '70%' } : { bottom: -4, left: '70%' }),
+              zIndex: 10,
               transition: 'all 0.2s ease'
             }}
           />
@@ -315,12 +324,13 @@ function BaseNodeComponent({ data, selected }: NodeProps<BaseNodeData>) {
       ) : (
         <Handle
           type="source"
-          position={Position.Bottom}
+          position={sourcePos}
           style={{
             width: 8, height: 8,
             background: statusColor || cat.accent,
             border: `2px solid ${cat.bar}`,
-            bottom: -4, zIndex: 10,
+            ...(isLR ? { right: -4 } : { bottom: -4 }),
+            zIndex: 10,
             transition: 'all 0.2s ease'
           }}
         />
