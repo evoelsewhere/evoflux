@@ -3,6 +3,8 @@ import { Button, Input, Spin, message, Modal } from 'antd'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { nanoid } from 'nanoid'
 import { useProviderStore } from '../../stores/providerStore'
+import KBList from '../kb/KBList'
+import KBDetail from '../kb/KBDetail'
 
 const icons = {
   plus: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3V13M3 8H13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>,
@@ -32,6 +34,8 @@ export default function Dashboard() {
   const [search, setSearch] = useState('')
   const [showTemplates, setShowTemplates] = useState(false)
   const { providers } = useProviderStore()
+  const [activeTab, setActiveTab] = useState<'workflows' | 'kb'>('workflows')
+  const [selectedKB, setSelectedKB] = useState<string | null>(null)
 
   useEffect(() => { loadWorkflows() }, [location.pathname])
 
@@ -70,20 +74,45 @@ export default function Dashboard() {
     <div style={{ height: '100vh', overflow: 'auto', background: 'var(--bg-primary)' }}>
       <div className="titlebar-drag" style={{ height: 38 }} />
       <div style={{ maxWidth: 960, margin: '0 auto', padding: '12px 32px 40px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 36 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 24 }}>
           <div>
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Evoflux</div>
-            <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.03em', lineHeight: 1.1 }}>Workflows</h1>
-            <p style={{ color: 'var(--text-tertiary)', fontSize: 13, margin: '6px 0 0 0' }}>
-              {workflows.length} workflow{workflows.length !== 1 ? 's' : ''} &middot; {totalNodes} nodes &middot; {totalEdges} edges
-            </p>
+            <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end' }}>
+              <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.03em', lineHeight: 1.1 }}>
+                {selectedKB ? 'Knowledge Base' : activeTab === 'kb' ? 'Knowledge Bases' : 'Workflows'}
+              </h1>
+            </div>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <Button icon={icons.import} onClick={handleImport} style={{ height: 34, fontSize: 12 }}>Import</Button>
-            <Button onClick={() => setShowTemplates(true)} style={{ height: 34, fontSize: 12 }}>Templates</Button>
-            <Button type="primary" icon={icons.plus} onClick={handleCreate} style={{ height: 34, fontSize: 12, fontWeight: 600 }}>New Workflow</Button>
-          </div>
+          {!selectedKB && activeTab === 'workflows' && (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Button icon={icons.import} onClick={handleImport} style={{ height: 34, fontSize: 12 }}>Import</Button>
+              <Button onClick={() => setShowTemplates(true)} style={{ height: 34, fontSize: 12 }}>Templates</Button>
+              <Button type="primary" icon={icons.plus} onClick={handleCreate} style={{ height: 34, fontSize: 12, fontWeight: 600 }}>New Workflow</Button>
+            </div>
+          )}
         </div>
+
+        {/* Tab bar */}
+        {!selectedKB && (
+          <div style={{ display: 'flex', gap: 0, marginBottom: 20, borderBottom: '1px solid var(--border-primary)' }}>
+            {(['workflows', 'kb'] as const).map(tab => (
+              <button key={tab} onClick={() => setActiveTab(tab)} style={{
+                padding: '8px 16px', fontSize: 12, fontWeight: activeTab === tab ? 600 : 500,
+                background: 'transparent', border: 'none',
+                borderBottom: activeTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
+                color: activeTab === tab ? 'var(--accent)' : 'var(--text-tertiary)',
+                cursor: 'pointer', transition: 'all 0.15s',
+                textTransform: 'capitalize'
+              }}>
+                {tab === 'kb' ? 'Knowledge Base' : 'Workflows'}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Workflows tab */}
+        {activeTab === 'workflows' && !selectedKB && (
+          <>
 
         <Input
           placeholder="Search workflows..."
@@ -192,6 +221,18 @@ export default function Dashboard() {
               )
             })}
           </div>
+        )}
+          </>
+        )}
+
+        {/* Knowledge Base tab */}
+        {activeTab === 'kb' && !selectedKB && (
+          <KBList onSelect={setSelectedKB} />
+        )}
+
+        {/* KB Detail */}
+        {selectedKB && (
+          <KBDetail kbId={selectedKB} onBack={() => setSelectedKB(null)} />
         )}
       </div>
 

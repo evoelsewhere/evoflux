@@ -47,6 +47,24 @@ interface Window {
       stats: (workflowId: string) => Promise<{ success: boolean; stats?: unknown; error?: string }>
       consolidate: (workflowId: string) => Promise<{ success: boolean; result?: unknown; error?: string }>
     }
+    kb: {
+      create: (name: string, description?: string, config?: Record<string, unknown>) => Promise<unknown>
+      list: () => Promise<unknown[]>
+      get: (id: string) => Promise<unknown>
+      update: (id: string, patch: { name?: string; description?: string; config?: Record<string, unknown> }) => Promise<unknown>
+      delete: (id: string) => Promise<{ success: boolean }>
+      selectFolder: () => Promise<string | null>
+      selectFiles: () => Promise<string[] | null>
+      addFolder: (kbId: string) => Promise<unknown>
+      addFiles: (kbId: string) => Promise<unknown>
+      removeSource: (sourceId: string) => Promise<{ success: boolean }>
+      listSources: (kbId: string) => Promise<unknown[]>
+      listDocuments: (kbId: string) => Promise<unknown[]>
+      listChunks: (docId: string) => Promise<unknown[]>
+      getStats: (kbId: string) => Promise<unknown>
+      search: (kbId: string, query: string, options?: { limit?: number; vectorWeight?: number; bm25Weight?: number }) => Promise<unknown>
+      onProgress: (callback: (event: unknown) => void) => () => void
+    }
     onStreamChunk: (callback: (chunk: string) => void) => () => void
   }
 }
