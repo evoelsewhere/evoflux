@@ -71,9 +71,9 @@ export default function Dashboard() {
   const totalEdges = workflows.reduce((sum, w) => sum + ((w.edges as unknown[])?.length || 0), 0)
 
   return (
-    <div style={{ height: '100vh', overflow: 'auto', background: 'var(--bg-primary)' }}>
-      <div className="titlebar-drag" style={{ height: 38 }} />
-      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '16px 40px 40px' }}>
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)', overflow: 'hidden' }}>
+      <div className="titlebar-drag" style={{ height: 38, flexShrink: 0 }} />
+      <div style={{ flex: 1, maxWidth: selectedKB ? '100%' : 1200, margin: '0 auto', padding: selectedKB ? '0' : '16px 40px 40px', width: '100%', display: 'flex', flexDirection: 'column', overflow: selectedKB ? 'hidden' : 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 24 }}>
           <div>
             <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Evoflux</div>
@@ -232,7 +232,9 @@ export default function Dashboard() {
 
         {/* KB Detail */}
         {selectedKB && (
-          <KBDetail kbId={selectedKB} onBack={() => setSelectedKB(null)} />
+          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <KBDetail kbId={selectedKB} onBack={() => setSelectedKB(null)} />
+          </div>
         )}
       </div>
 
