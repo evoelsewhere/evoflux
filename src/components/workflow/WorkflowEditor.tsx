@@ -40,7 +40,7 @@ interface HistoryEntry { nodes: Node<NodeData>[]; edges: Edge[] }
 const MAX_HISTORY = 50
 
 function EditorCanvas() {
-  const { screenToFlowPosition, fitView } = useReactFlow()
+  const { screenToFlowPosition, fitView, getNodes, getEdges } = useReactFlow()
 
   const [nodes, setNodes, onNodesChange] = useNodesState([DEFAULT_START])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
@@ -78,14 +78,10 @@ function EditorCanvas() {
   const elapsedTimer = useRef<ReturnType<typeof setInterval> | null>(null)
   const runStartRef = useRef<number>(0)
   const eventCleanupRef = useRef<(() => void) | null>(null)
-  const latestNodes = useRef<Node<NodeData>[]>([])
-  const latestEdges = useRef<Edge[]>([])
   const latestName = useRef(workflowName)
   const latestDesc = useRef(workflowDescription)
   const latestId = useRef(id)
 
-  latestNodes.current = nodes
-  latestEdges.current = edges
   latestName.current = workflowName
   latestDesc.current = workflowDescription
   latestId.current = id
@@ -107,14 +103,14 @@ function EditorCanvas() {
   }, [])
 
   const doSaveSync = useCallback(() => {
-    const ns = latestNodes.current
-    const es = latestEdges.current
+    const ns = getNodes() as Node<NodeData>[]
+    const es = getEdges()
     const wfName = latestName.current
     const wfDesc = latestDesc.current
     const wfId = latestId.current
     if (!wfId || ns.length === 0) return
     try { window.api.workflow.saveSync({ id: wfId, name: wfName, description: wfDesc, nodes: ns, edges: es }) } catch { /* */ }
-  }, [])
+  }, [getNodes, getEdges])
 
   useEffect(() => {
     if (!id) { setLoading(false); return }
