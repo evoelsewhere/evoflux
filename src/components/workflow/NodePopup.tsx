@@ -1,4 +1,4 @@
-import { useState, useCallback, memo, useRef } from 'react'
+import { useState, useCallback, memo, useRef, useEffect } from 'react'
 import { Input } from 'antd'
 import { useProviderStore, PROVIDER_LABELS } from '../../stores/providerStore'
 import { getNodeDefinition } from './registry'
@@ -17,6 +17,7 @@ function NodePopupInner({ node, onClose, onDelete, onUpdateNodeData }: NodePopup
   const providers = useProviderStore(s => s.providers)
   const getDefaultProvider = useProviderStore(s => s.getDefaultProvider)
   const containerRef = useRef<HTMLDivElement>(null)
+  const measureRef = useRef<HTMLDivElement>(null)
 
   const { data } = node
   const nodeType = data.type || 'default'
@@ -26,6 +27,17 @@ function NodePopupInner({ node, onClose, onDelete, onUpdateNodeData }: NodePopup
 
   const [label, setLabel] = useState(data.label)
   const [config, setConfig] = useState<Record<string, unknown>>((data.config || {}) as Record<string, unknown>)
+  const [popupW, setPopupW] = useState(0)
+  const [popupH, setPopupH] = useState(0)
+  const [userResized, setUserResized] = useState(false)
+
+  useEffect(() => {
+    if (!userResized && measureRef.current) {
+      const rect = measureRef.current.getBoundingClientRect()
+      setPopupW(Math.ceil(rect.width))
+      setPopupH(Math.ceil(rect.height))
+    }
+  }, [label, config, userResized, nodeType])
 
   const handleConfigChange = useCallback((field: string, value: unknown) => {
     setConfig(prev => ({ ...prev, [field]: value }))
@@ -48,6 +60,27 @@ function NodePopupInner({ node, onClose, onDelete, onUpdateNodeData }: NodePopup
     if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); handleSave() }
   }, [handleCancel, handleSave])
 
+  const startResize = useCallback((e: React.MouseEvent, dir: 'right' | 'bottom' | 'corner') => {
+    e.preventDefault()
+    setUserResized(true)
+    const startX = e.clientX; const startY = e.clientY
+    const startW = popupW || 400; const startH = popupH || 400
+    const minW = 340; const minH = 260
+    const maxW = window.innerWidth - 40
+    const maxH = window.innerHeight - 40
+
+    const onMove = (ev: MouseEvent) => {
+      if (dir === 'right' || dir === 'corner') setPopupW(Math.min(maxW, Math.max(minW, startW + ev.clientX - startX)))
+      if (dir === 'bottom' || dir === 'corner') setPopupH(Math.min(maxH, Math.max(minH, startH + ev.clientY - startY)))
+    }
+    const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [popupW, popupH])
+
+  const w = userResized ? popupW : undefined
+  const h = userResized ? popupH : undefined
+
   return (
     <div
       style={{
@@ -58,15 +91,55 @@ function NodePopupInner({ node, onClose, onDelete, onUpdateNodeData }: NodePopup
       onMouseDown={(e) => { if (e.target === e.currentTarget) handleCancel() }}
       onKeyDown={handleKeyDown}
     >
-      <div ref={containerRef} style={{
+      <div ref={measureRef} style={{
+        position: 'absolute', visibility: 'hidden', pointerEvents: 'none',
         width: 'fit-content', minWidth: 340, maxWidth: 'min(720px, calc(100vw - 40px))',
+        display: 'flex', flexDirection: 'column'
+      }}>
+        <div style={{ padding: '8px 12px' }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>{definition?.label || data.label}</div>
+          {definition && <div style={{ fontSize: 10 }}>{definition.description}</div>}
+        </div>
+        <div style={{ padding: 10 }}>
+          <div style={{ marginBottom: 8 }}><div style={{ height: 14, marginBottom: 3 }} /><div style={{ height: 28 }} /></div>
+          <NodeConfigForms config={config} nodeType={nodeType} handleChange={() => {}} providerOptions={providerOptions} defaultProviderId={defaultProv?.id} />
+        </div>
+        <div style={{ padding: '8px 12px', display: 'flex', gap: 6 }}>
+          <div style={{ width: 60, height: 26 }} />
+          <div style={{ width: 50, height: 26 }} />
+        </div>
+      </div>
+
+      <div ref={containerRef} style={{
+        width: w, height: h,
+        minWidth: 340, minHeight: 260,
+        maxWidth: 'min(720px, calc(100vw - 40px))',
         maxHeight: 'calc(100vh - 60px)',
         background: 'var(--bg-elevated)',
         border: '1px solid var(--border-primary)',
         borderRadius: 10,
         boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
-        display: 'flex', flexDirection: 'column', overflow: 'hidden'
+        display: 'flex', flexDirection: 'column', overflow: 'hidden',
+        position: 'relative',
+        ...(!userResized ? { width: popupW || 'fit-content', height: popupH || 'auto' } : {})
       }}>
+        <div onMouseDown={e => startResize(e, 'right')} style={{
+          position: 'absolute', top: 0, right: -3, width: 6, height: '100%',
+          cursor: 'ew-resize', zIndex: 10
+        }} />
+        <div onMouseDown={e => startResize(e, 'bottom')} style={{
+          position: 'absolute', bottom: -3, left: 0, width: '100%', height: 6,
+          cursor: 'ns-resize', zIndex: 10
+        }} />
+        <div onMouseDown={e => startResize(e, 'corner')} style={{
+          position: 'absolute', bottom: -2, right: -2, width: 16, height: 16,
+          cursor: 'nwse-resize', zIndex: 11, display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', padding: 2
+        }}>
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ opacity: 0.35 }}>
+            <path d="M8 2L2 8M8 5L5 8M8 8L8 8" stroke="var(--text-tertiary)" strokeWidth="1.2" strokeLinecap="round" />
+          </svg>
+        </div>
+
         <div style={{
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           padding: '8px 12px', borderBottom: '1px solid var(--border-primary)', flexShrink: 0
