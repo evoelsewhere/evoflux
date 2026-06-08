@@ -16,7 +16,9 @@
     "lint": "eslint src electron",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:e2e": "npm run build && npx playwright test",
+    "test:e2e:headed": "npm run build && npx playwright test --headed"
   },
   "dependencies": {
     "@ant-design/icons": "^5.5.2",
@@ -39,6 +41,7 @@
     "zustand": "^5.0.2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/dagre": "^0.7.54",
     "@types/node": "^22.10.0",
