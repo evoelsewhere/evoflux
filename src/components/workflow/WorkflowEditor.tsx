@@ -58,6 +58,8 @@ function EditorCanvas() {
 
   const [nodes, setNodes, onNodesChange] = useNodesState([DEFAULT_START])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
+  const storeNodes = useWorkflowStore(s => s.nodes)
+  const storeEdges = useWorkflowStore(s => s.edges)
   const [showCode, setShowCode] = useState(false)
   const [showRun, setShowRun] = useState(false)
   const [showInput, setShowInput] = useState(false)
@@ -93,6 +95,21 @@ function EditorCanvas() {
   latestName.current = workflowName
   latestDesc.current = workflowDescription
   latestId.current = id
+
+  const storeVersion = useWorkflowStore(s => s.historyIndex)
+  const prevStoreVersion = useRef(storeVersion)
+  useEffect(() => {
+    if (loading) return
+    if (storeVersion <= prevStoreVersion.current) {
+      prevStoreVersion.current = storeVersion
+      return
+    }
+    prevStoreVersion.current = storeVersion
+    const s = useWorkflowStore.getState()
+    if (s.nodes.length > 0) setNodes(s.nodes)
+    setEdges(s.edges)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeVersion])
 
   const edgesWithStatus = useMemo(() => {
     const hasNodeStatuses = Object.keys(nodeStatuses).length > 0

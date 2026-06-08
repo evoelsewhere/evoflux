@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Button, Input, Tag, Spin, message, Modal } from 'antd'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { nanoid } from 'nanoid'
 import { useProviderStore } from '../../stores/providerStore'
 import { useSettingsStore } from '../../stores/settingsStore'
@@ -27,6 +27,7 @@ const TEMPLATES = [
 
 export default function Dashboard() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [workflows, setWorkflows] = useState<WorkflowSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -34,7 +35,7 @@ export default function Dashboard() {
   const { providers } = useProviderStore()
   const toggleSettings = useSettingsStore(s => s.toggleSettings)
 
-  useEffect(() => { loadWorkflows() }, [])
+  useEffect(() => { loadWorkflows() }, [location.pathname])
 
   const loadWorkflows = async () => {
     try { setWorkflows((await window.api.workflow.list()) as WorkflowSummary[]) }
