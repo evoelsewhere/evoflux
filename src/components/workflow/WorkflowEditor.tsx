@@ -103,7 +103,7 @@ function EditorCanvas() {
   }, [nodes, edges, historyIndex])
 
   const doSave = useCallback(async (ns: Node<NodeData>[], es: Edge[], wfName: string, wfDesc: string, wfId?: string) => {
-    try { await window.api.workflow.save({ id: wfId, name: wfName, description: wfDesc, nodes: ns, edges: es }) } catch { /* retry on next change */ }
+    try { await window.api.workflow.save({ id: wfId, name: wfName, description: wfDesc, nodes: ns, edges: es }) } catch { /* */ }
   }, [])
 
   const doSaveSync = useCallback(() => {
@@ -292,6 +292,7 @@ function EditorCanvas() {
   }, [screenToFlowPosition, addNode])
 
   const handleSave = useCallback(async () => { await doSave(nodes, edges, workflowName, workflowDescription, id); message.success('Saved') }, [id, nodes, edges, workflowName, workflowDescription, doSave])
+  const handleBack = useCallback(() => { doSaveSync(); navigate('/workflows') }, [doSaveSync, navigate])
   const handleLayout = useCallback(() => { const l = autoLayout(nodes, edges, layoutDirection); setNodes(l) }, [nodes, edges, layoutDirection, setNodes])
   const handleToggleLayout = useCallback(() => { const next = layoutDirection === 'TB' ? 'LR' : 'TB'; setLayoutDirection(next); setNodes(autoLayout(nodes, edges, next)) }, [layoutDirection, nodes, edges, setNodes])
 
@@ -370,7 +371,7 @@ function EditorCanvas() {
 
       <Sidebar editorMode workflowName={workflowName} isRunning={isRunning} showCode={showCode} showAssistant={showAssistant} layoutDirection={layoutDirection} canUndo={canUndo} canRedo={canRedo}
         onSave={handleSave} onRun={handleRun} onStop={handleStop} onToggleCode={() => setShowCode(!showCode)} onToggleAssistant={() => setShowAssistant(!showAssistant)} onToggleLayout={handleToggleLayout}
-        onUndo={canUndo ? handleUndo : undefined} onRedo={canRedo ? handleRedo : undefined} onAutoLayout={handleLayout} onBack={() => navigate('/workflows')}
+        onUndo={canUndo ? handleUndo : undefined} onRedo={canRedo ? handleRedo : undefined} onAutoLayout={handleLayout} onBack={handleBack}
         onAddNode={addNode} />
 
       <RunInputDialog open={showInput} nodes={nodes} onRun={handleRunWithInputs} onCancel={() => setShowInput(false)} />

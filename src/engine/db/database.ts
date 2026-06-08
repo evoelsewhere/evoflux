@@ -88,7 +88,9 @@ function createSqlJsAdapter(db: any, SQL: any): DatabaseAdapter {
         run(...params: unknown[]) {
           try {
             db.run(sql, params as any[])
-            return { changes: getChanges() }
+            const changes = getChanges()
+            scheduleSave()
+            return { changes }
           } catch (e) {
             console.warn('[DB] run error:', (e as Error).message?.substring(0, 100), sql.substring(0, 80))
             return { changes: 0 }
