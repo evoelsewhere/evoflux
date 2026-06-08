@@ -74,40 +74,43 @@ export default function Dashboard() {
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)', overflow: 'hidden' }}>
       <div className="titlebar-drag" style={{ height: 38, flexShrink: 0 }} />
       <div style={{ flex: 1, maxWidth: selectedKB ? '100%' : 1200, margin: '0 auto', padding: selectedKB ? '0' : '16px 40px 40px', width: '100%', display: 'flex', flexDirection: 'column', overflow: selectedKB ? 'hidden' : 'auto' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 24 }}>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Evoflux</div>
-            <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end' }}>
-              <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.03em', lineHeight: 1.1 }}>
-                {selectedKB ? 'Knowledge Base' : activeTab === 'kb' ? 'Knowledge Bases' : 'Workflows'}
-              </h1>
-            </div>
-          </div>
-          {!selectedKB && activeTab === 'workflows' && (
-            <div style={{ display: 'flex', gap: 8 }}>
-              <Button icon={icons.import} onClick={handleImport} style={{ height: 36, fontSize: 13 }}>Import</Button>
-              <Button onClick={() => setShowTemplates(true)} style={{ height: 36, fontSize: 13 }}>Templates</Button>
-              <Button type="primary" icon={icons.plus} onClick={handleCreate} style={{ height: 36, fontSize: 13, fontWeight: 600 }}>New Workflow</Button>
-            </div>
-          )}
-        </div>
-
-        {/* Tab bar */}
         {!selectedKB && (
-          <div style={{ display: 'flex', gap: 0, marginBottom: 20, borderBottom: '1px solid var(--border-primary)' }}>
-            {(['workflows', 'kb'] as const).map(tab => (
-              <button key={tab} onClick={() => setActiveTab(tab)} style={{
-                padding: '10px 18px', fontSize: 13, fontWeight: activeTab === tab ? 600 : 500,
-                background: 'transparent', border: 'none',
-                borderBottom: activeTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
-                color: activeTab === tab ? 'var(--accent)' : 'var(--text-tertiary)',
-                cursor: 'pointer', transition: 'all 0.15s',
-                textTransform: 'capitalize'
-              }}>
-                {tab === 'kb' ? 'Knowledge Base' : 'Workflows'}
-              </button>
-            ))}
-          </div>
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 24 }}>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Evoflux</div>
+                <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end' }}>
+                  <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.03em', lineHeight: 1.1 }}>
+                    {activeTab === 'kb' ? 'Knowledge Bases' : 'Workflows'}
+                  </h1>
+                </div>
+              </div>
+              {activeTab === 'workflows' && (
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Button icon={icons.import} onClick={handleImport} style={{ height: 36, fontSize: 13 }}>Import</Button>
+                  <Button onClick={() => setShowTemplates(true)} style={{ height: 36, fontSize: 13 }}>Templates</Button>
+                  <Button type="primary" icon={icons.plus} onClick={handleCreate} style={{ height: 36, fontSize: 13, fontWeight: 600 }}>New Workflow</Button>
+                </div>
+              )}
+            </div>
+
+            {!selectedKB && (
+              <div style={{ display: 'flex', gap: 0, marginBottom: 20, borderBottom: '1px solid var(--border-primary)' }}>
+                {(['workflows', 'kb'] as const).map(tab => (
+                  <button key={tab} onClick={() => setActiveTab(tab)} style={{
+                    padding: '10px 18px', fontSize: 13, fontWeight: activeTab === tab ? 600 : 500,
+                    background: 'transparent', border: 'none',
+                    borderBottom: activeTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
+                    color: activeTab === tab ? 'var(--accent)' : 'var(--text-tertiary)',
+                    cursor: 'pointer', transition: 'all 0.15s',
+                    textTransform: 'capitalize'
+                  }}>
+                    {tab === 'kb' ? 'Knowledge Base' : 'Workflows'}
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
         )}
 
         {/* Workflows tab */}
