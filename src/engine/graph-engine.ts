@@ -12,6 +12,7 @@ export interface GraphEngineConfig {
   maxSteps?: number
   maxTimeMs?: number
   maxParallel?: number
+  maxNodeIterations?: number
 }
 
 export interface RunOptions {
@@ -27,6 +28,7 @@ export class GraphEngine {
   private maxSteps: number
   private maxTimeMs: number
   private maxParallel: number
+  private maxNodeIterations: number
 
   constructor(config: GraphEngineConfig) {
     this.graph = config.graph
@@ -35,10 +37,16 @@ export class GraphEngine {
     this.maxSteps = config.maxSteps ?? 1000
     this.maxTimeMs = config.maxTimeMs ?? 600000
     this.maxParallel = config.maxParallel ?? 5
+    this.maxNodeIterations = config.maxNodeIterations ?? 100
 
     for (const layer of config.layers || []) {
       this.layers.add(layer)
     }
+  }
+
+  shouldUseRouting(): boolean {
+    if (this.graph.hasCycles()) return true
+    return this.graph.getEdges().some(e => !!e.condition)
   }
 
   async *runSequential(options: RunOptions = {}): AsyncGenerator<EngineEvent> {
@@ -187,6 +195,126 @@ export class GraphEngine {
     }
   }
 
+  async *runWithRouting(options: RunOptions = {}): AsyncGenerator<EngineEvent> {
+    const startTime = Date.now()
+    let steps = 0
+    let completed = 0
+    let failed = 0
+
+    const nodeExecCount = new Map<string, number>()
+    const edgeActivationCount = new Map<string, number>()
+
+    const executionPlan = this.graph.getExecutionPlan()
+    const backEdgeIds = new Set(executionPlan.backEdges.map(e => e.id))
+
+    const roots = this.graph.getRoots()
+    if (roots.length === 0) {
+      throw new ExecutionLimitError('Graph has no root nodes (all nodes have incoming edges)')
+    }
+
+    const queue: string[] = [...roots]
+    const enqueued = new Set<string>(roots)
+
+    yield { type: 'graph:start', timestamp: Date.now() }
+    await this.layers.emitGraphStart()
+
+    try {
+      while (queue.length > 0) {
+        if (options.signal?.aborted) {
+          yield { type: 'graph:aborted', timestamp: Date.now() }
+          return
+        }
+
+        if (Date.now() - startTime > this.maxTimeMs) {
+          throw new ExecutionLimitError(`Execution timeout: exceeded ${this.maxTimeMs}ms`)
+        }
+
+        if (++steps > this.maxSteps) {
+          throw new ExecutionLimitError(`Execution limit: exceeded ${this.maxSteps} steps`)
+        }
+
+        const nodeId = queue.shift()!
+        const node = this.graph.getNode(nodeId)
+        if (!node) continue
+
+        const iteration = (nodeExecCount.get(nodeId) || 0) + 1
+        nodeExecCount.set(nodeId, iteration)
+
+        yield { type: 'node:start', nodeId, iteration, timestamp: Date.now() }
+        await this.layers.emitNodeStart(node, iteration)
+
+        try {
+          const output = await this.executeNode(node, this.variablePool, options.signal)
+          this.variablePool.set([nodeId, '__output__'], output)
+
+          completed++
+          yield { type: 'node:complete', nodeId, output, iteration, timestamp: Date.now() }
+          await this.layers.emitNodeEnd(node, output, iteration)
+
+          const outEdges = this.graph.getOutgoingEdges(nodeId)
+          for (const edge of outEdges) {
+            const edgeActivation = (edgeActivationCount.get(edge.id) || 0) + 1
+
+            if (edge.condition) {
+              const condResult = this.evaluateCondition(edge.condition, output, this.variablePool, iteration)
+              if (!condResult) {
+                yield { type: 'edge:skip', edgeId: edge.id, nodeId, timestamp: Date.now() }
+                await this.layers.emitEdgeSkip(edge.id, edge.source, edge.target)
+                continue
+              }
+            }
+
+            const isBackEdge = backEdgeIds.has(edge.id) || edge.isBackEdge
+            if (isBackEdge) {
+              const maxIter = edge.maxIterations || this.maxNodeIterations
+              const targetExecCount = nodeExecCount.get(edge.target) || 0
+              if (targetExecCount >= maxIter) {
+                yield { type: 'edge:skip', edgeId: edge.id, nodeId, timestamp: Date.now() }
+                await this.layers.emitEdgeSkip(edge.id, edge.source, edge.target)
+                continue
+              }
+            }
+
+            edgeActivationCount.set(edge.id, edgeActivation)
+            yield { type: 'edge:activate', edgeId: edge.id, nodeId, timestamp: Date.now() }
+            await this.layers.emitEdgeActivate(edge.id, edge.source, edge.target)
+
+            if (!enqueued.has(edge.target)) {
+              enqueued.add(edge.target)
+              queue.push(edge.target)
+            } else if (isBackEdge) {
+              queue.push(edge.target)
+            }
+          }
+        } catch (error) {
+          failed++
+          const err = error instanceof Error ? error : new Error(String(error))
+          yield { type: 'node:error', nodeId, error: err, iteration, timestamp: Date.now() }
+          await this.layers.emitNodeError(node, err)
+          throw error
+        }
+      }
+
+      yield { type: 'graph:complete', timestamp: Date.now() }
+    } finally {
+      await this.layers.emitGraphEnd({ completed, failed })
+    }
+  }
+
+  private evaluateCondition(
+    condition: string,
+    output: NodeOutput,
+    pool: VariablePool,
+    iteration: number
+  ): boolean {
+    try {
+      const fn = new Function('output', 'pool', 'iteration', `return ${condition}`)
+      return Boolean(fn(output, pool, iteration))
+    } catch {
+      return true
+    }
+  }
+
   private async executeNode(
     node: GraphNode,
     pool: VariablePool,
@@ -197,7 +325,6 @@ export class GraphEngine {
 
     const inputs: Record<string, unknown> = {}
 
-    // Wire inputs from incoming edges — read source node's __output__ and map via sourceHandle
     for (const edge of this.graph.getEdges()) {
       if (edge.target === node.id) {
         const sourceOutput = pool.get([edge.source, '__output__'])
@@ -210,7 +337,6 @@ export class GraphEngine {
       }
     }
 
-    // Also read any values already in the pool for this node (e.g. from StartNode config)
     for (const port of metadata.inputs) {
       const value = pool.get([node.id, port.name])
       if (value !== undefined) {

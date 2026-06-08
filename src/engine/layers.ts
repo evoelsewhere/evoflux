@@ -4,8 +4,10 @@ import type { NodeOutput } from './node-factory'
 export interface EngineEvent {
   type: string
   nodeId?: string
+  edgeId?: string
   output?: NodeOutput
   error?: Error
+  iteration?: number
   timestamp: number
 }
 
@@ -13,9 +15,11 @@ export interface GraphEngineLayer {
   name: string
   onGraphStart?(): void | Promise<void>
   onGraphEnd?(result: { completed: number; failed: number }): void | Promise<void>
-  onNodeStart?(node: GraphNode): void | Promise<void>
-  onNodeEnd?(node: GraphNode, output: NodeOutput): void | Promise<void>
+  onNodeStart?(node: GraphNode, iteration?: number): void | Promise<void>
+  onNodeEnd?(node: GraphNode, output: NodeOutput, iteration?: number): void | Promise<void>
   onNodeError?(node: GraphNode, error: Error): void | Promise<void>
+  onEdgeActivate?(edgeId: string, source: string, target: string): void | Promise<void>
+  onEdgeSkip?(edgeId: string, source: string, target: string): void | Promise<void>
 }
 
 export class LayerManager {
@@ -41,21 +45,33 @@ export class LayerManager {
     }
   }
 
-  async emitNodeStart(node: GraphNode): Promise<void> {
+  async emitNodeStart(node: GraphNode, iteration?: number): Promise<void> {
     for (const layer of this.layers) {
-      try { await layer.onNodeStart?.(node) } catch (e) { console.warn(`[Layer:${layer.name}] onNodeStart error:`, e) }
+      try { await layer.onNodeStart?.(node, iteration) } catch (e) { console.warn(`[Layer:${layer.name}] onNodeStart error:`, e) }
     }
   }
 
-  async emitNodeEnd(node: GraphNode, output: NodeOutput): Promise<void> {
+  async emitNodeEnd(node: GraphNode, output: NodeOutput, iteration?: number): Promise<void> {
     for (const layer of this.layers) {
-      try { await layer.onNodeEnd?.(node, output) } catch (e) { console.warn(`[Layer:${layer.name}] onNodeEnd error:`, e) }
+      try { await layer.onNodeEnd?.(node, output, iteration) } catch (e) { console.warn(`[Layer:${layer.name}] onNodeEnd error:`, e) }
     }
   }
 
   async emitNodeError(node: GraphNode, error: Error): Promise<void> {
     for (const layer of this.layers) {
       try { await layer.onNodeError?.(node, error) } catch (e) { console.warn(`[Layer:${layer.name}] onNodeError error:`, e) }
+    }
+  }
+
+  async emitEdgeActivate(edgeId: string, source: string, target: string): Promise<void> {
+    for (const layer of this.layers) {
+      try { await layer.onEdgeActivate?.(edgeId, source, target) } catch (e) { console.warn(`[Layer:${layer.name}] onEdgeActivate error:`, e) }
+    }
+  }
+
+  async emitEdgeSkip(edgeId: string, source: string, target: string): Promise<void> {
+    for (const layer of this.layers) {
+      try { await layer.onEdgeSkip?.(edgeId, source, target) } catch (e) { console.warn(`[Layer:${layer.name}] onEdgeSkip error:`, e) }
     }
   }
 }
@@ -76,15 +92,23 @@ export class UILayer implements GraphEngineLayer {
     this.emit({ type: 'graph:end', timestamp: Date.now(), ...result })
   }
 
-  onNodeStart(node: GraphNode): void {
-    this.emit({ type: 'node:start', nodeId: node.id, timestamp: Date.now() })
+  onNodeStart(node: GraphNode, iteration?: number): void {
+    this.emit({ type: 'node:start', nodeId: node.id, iteration, timestamp: Date.now() })
   }
 
-  onNodeEnd(node: GraphNode, output: NodeOutput): void {
-    this.emit({ type: 'node:complete', nodeId: node.id, output, timestamp: Date.now() })
+  onNodeEnd(node: GraphNode, output: NodeOutput, iteration?: number): void {
+    this.emit({ type: 'node:complete', nodeId: node.id, output, iteration, timestamp: Date.now() })
   }
 
   onNodeError(node: GraphNode, error: Error): void {
     this.emit({ type: 'node:error', nodeId: node.id, error, timestamp: Date.now() })
+  }
+
+  onEdgeActivate(edgeId: string, source: string, target: string): void {
+    this.emit({ type: 'edge:activate', edgeId, nodeId: source, timestamp: Date.now() })
+  }
+
+  onEdgeSkip(edgeId: string, source: string, target: string): void {
+    this.emit({ type: 'edge:skip', edgeId, nodeId: source, timestamp: Date.now() })
   }
 }

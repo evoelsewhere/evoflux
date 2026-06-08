@@ -35,13 +35,22 @@ export function registerWorkflowRunnerHandlers(): void {
         variablePool: pool,
         layers: [uiLayer],
         maxSteps: options?.maxSteps || 1000,
-        maxTimeMs: options?.maxTimeMs || 600000
+        maxTimeMs: options?.maxTimeMs || 600000,
+        maxNodeIterations: options?.maxNodeIterations || 100
       })
 
       const results: unknown[] = []
-      for await (const event of engine.runSequential()) {
-        results.push(event)
-        sendEvent(event)
+
+      if (engine.shouldUseRouting()) {
+        for await (const event of engine.runWithRouting()) {
+          results.push(event)
+          sendEvent(event)
+        }
+      } else {
+        for await (const event of engine.runSequential()) {
+          results.push(event)
+          sendEvent(event)
+        }
       }
 
       return { success: true, results }
