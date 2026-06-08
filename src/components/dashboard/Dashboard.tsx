@@ -68,7 +68,8 @@ export default function Dashboard() {
 
   return (
     <div style={{ height: '100vh', overflow: 'auto', background: 'var(--bg-primary)' }}>
-      <div style={{ maxWidth: 960, margin: '0 auto', padding: '40px 32px' }}>
+      <div className="titlebar-drag" style={{ height: 38 }} />
+      <div style={{ maxWidth: 960, margin: '0 auto', padding: '12px 32px 40px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 36 }}>
           <div>
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Evoflux</div>

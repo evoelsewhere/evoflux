@@ -312,13 +312,13 @@ function EditorCanvas() {
   return (
     <div style={{ display: 'flex', height: '100vh' }}>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-        <div style={{ height: 36, display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', borderBottom: '1px solid var(--border-primary)', background: 'var(--bg-secondary)', flexShrink: 0 }}>
+        <div className="titlebar-drag" style={{ height: 36, display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px 0 72px', borderBottom: '1px solid var(--border-primary)', background: 'var(--bg-secondary)', flexShrink: 0 }}>
           <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Workflow</span>
           <div style={{ width: 1, height: 14, background: 'var(--border-primary)' }} />
           {editingName ? (
-            <Input size="small" value={workflowName} onChange={(e) => setWorkflowName(e.target.value)} onBlur={() => setEditingName(false)} onPressEnter={() => setEditingName(false)} autoFocus style={{ width: 200, height: 24, fontSize: 12, fontWeight: 600, background: 'var(--bg-input)', borderColor: 'var(--border-secondary)' }} />
+            <Input size="small" value={workflowName} onChange={(e) => setWorkflowName(e.target.value)} onBlur={() => setEditingName(false)} onPressEnter={() => setEditingName(false)} autoFocus style={{ width: 200, height: 24, fontSize: 12, fontWeight: 600, background: 'var(--bg-input)', borderColor: 'var(--border-secondary)', WebkitAppRegion: 'no-drag' } as React.CSSProperties} />
           ) : (
-            <span onClick={() => setEditingName(true)} style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer', padding: '1px 4px', borderRadius: 3, transition: 'background 0.1s' }}
+            <span onClick={() => setEditingName(true)} style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer', padding: '1px 4px', borderRadius: 3, transition: 'background 0.1s', WebkitAppRegion: 'no-drag' } as React.CSSProperties}
               onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-hover)'} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
               {workflowName}
             </span>
