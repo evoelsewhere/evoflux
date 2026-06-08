@@ -104,11 +104,11 @@ export class UILayer implements GraphEngineLayer {
     this.emit({ type: 'node:error', nodeId: node.id, error, timestamp: Date.now() })
   }
 
-  onEdgeActivate(edgeId: string, source: string, target: string): void {
+  onEdgeActivate(edgeId: string, source: string, _target: string): void {
     this.emit({ type: 'edge:activate', edgeId, nodeId: source, timestamp: Date.now() })
   }
 
-  onEdgeSkip(edgeId: string, source: string, target: string): void {
+  onEdgeSkip(edgeId: string, source: string, _target: string): void {
     this.emit({ type: 'edge:skip', edgeId, nodeId: source, timestamp: Date.now() })
   }
 }
