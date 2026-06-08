@@ -104,6 +104,12 @@ function getSubtitle(data: BaseNodeData): string | null {
       return cfg.variable_name ? `${cfg.variable_name} = ${String(cfg.value || '').substring(0, 20)}` : null
     case 'manual-trigger':
       return cfg.variables ? `${(cfg.variables as unknown[])?.length || 0} vars` : null
+    case 'goto':
+      return 'Pass-through → back-edge'
+    case 'retry':
+      return cfg.validation ? `validate: ${String(cfg.validation).substring(0, 30)}` : cfg.max_retries ? `max: ${cfg.max_retries} retries` : null
+    case 'router':
+      return cfg.routes ? `${(cfg.routes as unknown[])?.length || 0} routes` : null
     case 'comment':
       return data.text ? String(data.text).substring(0, 50) : null
     default:

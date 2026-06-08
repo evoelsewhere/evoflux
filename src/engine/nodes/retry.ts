@@ -6,6 +6,7 @@ interface RetryConfig {
   max_retries?: number
   delay_ms?: number
   backoff_multiplier?: number
+  validation?: string
 }
 
 export class RetryNode extends BaseNode<RetryConfig> {
@@ -17,16 +18,17 @@ export class RetryNode extends BaseNode<RetryConfig> {
       label: 'Retry',
       icon: 'reload',
       category: 'logic',
-      description: 'Retry a failed operation with exponential backoff.',
+      description: 'Retry gate: validates input and outputs to retry or success handle. Connect retry handle to a back-edge.',
       inputs: [
-        { name: 'input', label: 'Input', type: 'string', required: false }
+        { name: 'input', label: 'Input', type: 'string', required: true }
       ],
       outputs: [
-        { name: 'output', label: 'Output', type: 'string', required: false },
-        { name: 'attempts', label: 'Attempts', type: 'number', required: false },
-        { name: 'success', label: 'Success', type: 'boolean', required: false }
+        { name: 'success', label: 'Success', type: 'string', required: false },
+        { name: 'retry', label: 'Retry', type: 'string', required: false },
+        { name: 'error', label: 'Error', type: 'string', required: false },
+        { name: 'attempts', label: 'Attempts', type: 'number', required: false }
       ],
-      defaultConfig: { max_retries: 3, delay_ms: 1000, backoff_multiplier: 2 }
+      defaultConfig: { max_retries: 3, delay_ms: 1000, backoff_multiplier: 2, validation: '' }
     }
   }
 
@@ -40,43 +42,60 @@ export class RetryNode extends BaseNode<RetryConfig> {
     const maxRetries = cfg.max_retries ?? 3
     const delayMs = cfg.delay_ms ?? 1000
     const backoffMultiplier = cfg.backoff_multiplier ?? 2
+    const validation = cfg.validation || ''
 
-    const incomingEdges = pool.get([context.nodeId, '__retry_edges__']) as string[] | undefined
-    if (!incomingEdges || incomingEdges.length === 0) {
-      return { output: inputs.input ?? '', attempts: 0, success: true }
-    }
+    const attempts = (pool.get([context.nodeId, '__attempts__']) as number || 0) + 1
+    pool.set([context.nodeId, '__attempts__'], attempts)
 
-    let lastError: Error | null = null
-    let attempts = 0
+    const input = inputs.input
 
-    for (let i = 0; i <= maxRetries; i++) {
-      attempts = i + 1
+    let isValid = true
 
-      if (i > 0) {
-        const delay = delayMs * Math.pow(backoffMultiplier, i - 1)
-        await new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(resolve, delay)
-          context.signal?.addEventListener('abort', () => {
-            clearTimeout(timer)
-            reject(new Error('Retry aborted'))
-          }, { once: true })
-        })
-      }
-
+    if (validation) {
       try {
-        const output = inputs.input ?? ''
-        return { output: String(output), attempts, success: true }
+        const fn = new Function('input', 'value', 'attempts', `return ${validation}`)
+        isValid = Boolean(fn(input, input, attempts))
       } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error))
-        if (i === maxRetries) break
+        const message = error instanceof Error ? error.message : 'Validation expression failed'
+        throw new NodeExecutionError(context.nodeId, this.type, `Invalid validation expression: ${message}`, { cause: error })
       }
     }
 
-    throw new NodeExecutionError(
-      context.nodeId,
-      this.type,
-      `Failed after ${attempts} attempts: ${lastError?.message || 'Unknown error'}`,
-      { cause: lastError }
-    )
+    if (isValid) {
+      pool.set([context.nodeId, '__attempts__'], 0)
+      return {
+        success: String(input),
+        retry: '',
+        error: '',
+        attempts
+      }
+    }
+
+    if (attempts >= maxRetries) {
+      pool.set([context.nodeId, '__attempts__'], 0)
+      return {
+        success: '',
+        retry: '',
+        error: `Failed after ${attempts} attempts: validation failed`,
+        attempts
+      }
+    }
+
+    if (delayMs > 0) {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(resolve, Math.min(delayMs * Math.pow(backoffMultiplier, attempts - 1), 30000))
+        context.signal?.addEventListener('abort', () => {
+          clearTimeout(timer)
+          reject(new Error('Retry aborted'))
+        }, { once: true })
+      })
+    }
+
+    return {
+      success: '',
+      retry: String(input),
+      error: '',
+      attempts
+    }
   }
 }

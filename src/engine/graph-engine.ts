@@ -282,7 +282,7 @@ export class GraphEngine {
             if (!enqueued.has(edge.target)) {
               enqueued.add(edge.target)
               queue.push(edge.target)
-            } else if (isBackEdge) {
+            } else if (isBackEdge && nodeExecCount.has(edge.target)) {
               queue.push(edge.target)
             }
           }
@@ -310,7 +310,9 @@ export class GraphEngine {
     try {
       const fn = new Function('output', 'pool', 'iteration', `return ${condition}`)
       return Boolean(fn(output, pool, iteration))
-    } catch {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.warn(`[GraphEngine] Edge condition error "${condition}": ${message}`)
       return true
     }
   }

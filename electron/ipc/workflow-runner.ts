@@ -44,12 +44,10 @@ export function registerWorkflowRunnerHandlers(): void {
       if (engine.shouldUseRouting()) {
         for await (const event of engine.runWithRouting()) {
           results.push(event)
-          sendEvent(event)
         }
       } else {
         for await (const event of engine.runSequential()) {
           results.push(event)
-          sendEvent(event)
         }
       }
 

@@ -1,12 +1,7 @@
 import { BaseNode, type NodeMetadata, type NodeOutput, type NodeRunContext } from '../node-factory'
 import type { VariablePool } from '../variable-pool'
 
-interface GotoConfig {
-  target_label?: string
-  max_iterations?: number
-}
-
-export class GotoNode extends BaseNode<GotoConfig> {
+export class GotoNode extends BaseNode {
   readonly type = 'goto'
 
   getMetadata(): NodeMetadata {
@@ -15,14 +10,14 @@ export class GotoNode extends BaseNode<GotoConfig> {
       label: 'Goto',
       icon: 'sync',
       category: 'logic',
-      description: 'Jump back to a previous node. Creates a loop when connected to an earlier node.',
+      description: 'Pass-through node. Connect its output to an earlier node via a back-edge to create a loop.',
       inputs: [
         { name: 'input', label: 'Input', type: 'string', required: false }
       ],
       outputs: [
         { name: 'output', label: 'Output', type: 'string', required: false }
       ],
-      defaultConfig: { max_iterations: 100 }
+      defaultConfig: {}
     }
   }
 

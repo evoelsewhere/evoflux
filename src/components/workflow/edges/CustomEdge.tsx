@@ -41,20 +41,19 @@ function CustomEdge({
   const iteration = data?.iteration
   const maxIterations = data?.maxIterations
 
-  const isReverseFlow = isBackEdge && sourceY > targetY
+  const isReverseFlow = isBackEdge && sourceY >= targetY
 
   const [edgePath, labelX, labelY] = useMemo(() => {
-    if (isBackEdge && isReverseFlow) {
+    if (isBackEdge) {
       return getBackEdgePath({
-        sourceX, sourceY, targetX, targetY,
-        sourcePosition, targetPosition
+        sourceX, sourceY, targetX, targetY
       })
     }
     return getBezierPath({
       sourceX, sourceY, sourcePosition,
       targetX, targetY, targetPosition
     })
-  }, [isBackEdge, isReverseFlow, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition])
+  }, [isBackEdge, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition])
 
   const { stroke, strokeWidth, className, glowFilter } = useMemo(() => {
     if (isBackEdge && status === 'idle') {

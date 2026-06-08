@@ -53,24 +53,39 @@ function EdgePopupInner({ edge, onClose, onUpdate, onDelete }: EdgePopupProps) {
     return () => document.removeEventListener('mousedown', handler)
   }, [onClose])
 
-  const handleSave = useCallback(() => {
+  const pushUpdate = useCallback((updates: Record<string, unknown>) => {
     onUpdate(edge.id, {
-      condition: condition || undefined,
-      isBackEdge,
-      maxIterations: isBackEdge ? maxIterations : undefined,
-      label: label || undefined
+      condition: updates.condition !== undefined ? updates.condition : (condition || undefined),
+      isBackEdge: updates.isBackEdge !== undefined ? updates.isBackEdge : isBackEdge,
+      maxIterations: updates.maxIterations !== undefined ? updates.maxIterations : (isBackEdge ? maxIterations : undefined),
+      label: updates.label !== undefined ? updates.label : (label || undefined)
     })
-    onClose()
-  }, [edge.id, condition, isBackEdge, maxIterations, label, onUpdate, onClose])
+  }, [edge.id, condition, isBackEdge, maxIterations, label, onUpdate])
+
+  const handleConditionChange = useCallback((val: string) => {
+    setCondition(val)
+    pushUpdate({ condition: val || undefined })
+  }, [pushUpdate])
+
+  const handleBackEdgeChange = useCallback((val: boolean) => {
+    setIsBackEdge(val)
+    pushUpdate({ isBackEdge: val, maxIterations: val ? maxIterations : undefined })
+  }, [pushUpdate, maxIterations])
+
+  const handleMaxIterChange = useCallback((val: number | null) => {
+    const v = val || 100
+    setMaxIterations(v)
+    pushUpdate({ maxIterations: v })
+  }, [pushUpdate])
+
+  const handleLabelChange = useCallback((val: string) => {
+    setLabel(val)
+    pushUpdate({ label: val || undefined })
+  }, [pushUpdate])
 
   const handleDelete = useCallback(() => {
     onDelete(edge.id)
-    onClose()
-  }, [edge.id, onDelete, onClose])
-
-  useEffect(() => {
-    handleSave()
-  }, [isBackEdge, condition, maxIterations, label])
+  }, [edge.id, onDelete])
 
   return (
     <div ref={ref} style={{
@@ -112,7 +127,7 @@ function EdgePopupInner({ edge, onClose, onUpdate, onDelete }: EdgePopupProps) {
           <div style={{ color: 'var(--text-secondary)', fontSize: 12, fontWeight: 500, marginBottom: 4 }}>Label</div>
           <Input
             value={label}
-            onChange={e => setLabel(e.target.value)}
+            onChange={e => handleLabelChange(e.target.value)}
             placeholder="Edge label (optional)"
             size="small"
             style={{ background: 'var(--bg-input)', borderColor: 'var(--border-primary)', fontSize: 12 }}
@@ -125,7 +140,7 @@ function EdgePopupInner({ edge, onClose, onUpdate, onDelete }: EdgePopupProps) {
           </div>
           <Input
             value={condition}
-            onChange={e => setCondition(e.target.value)}
+            onChange={e => handleConditionChange(e.target.value)}
             placeholder="e.g. output.result === true"
             size="small"
             style={{ background: 'var(--bg-input)', borderColor: 'var(--border-primary)', fontSize: 12, fontFamily: 'monospace' }}
@@ -143,7 +158,7 @@ function EdgePopupInner({ edge, onClose, onUpdate, onDelete }: EdgePopupProps) {
           <Switch
             size="small"
             checked={isBackEdge}
-            onChange={setIsBackEdge}
+            onChange={handleBackEdgeChange}
           />
         </div>
 
@@ -154,7 +169,7 @@ function EdgePopupInner({ edge, onClose, onUpdate, onDelete }: EdgePopupProps) {
             </div>
             <InputNumber
               value={maxIterations}
-              onChange={v => setMaxIterations(v || 100)}
+              onChange={handleMaxIterChange}
               min={1}
               max={10000}
               size="small"

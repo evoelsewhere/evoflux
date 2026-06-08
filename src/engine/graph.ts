@@ -102,9 +102,13 @@ export class Graph<T = unknown> {
     const edge = this.edgesList.find(e => e.id === edgeId)
     if (!edge) return
 
-    this.outgoing.get(edge.source)?.delete(edge.target)
-    this.incoming.get(edge.target)?.delete(edge.source)
     this.edgesList = this.edgesList.filter(e => e.id !== edgeId)
+
+    const hasOtherEdgeSameDir = this.edgesList.some(e => e.source === edge.source && e.target === edge.target)
+    if (!hasOtherEdgeSameDir) {
+      this.outgoing.get(edge.source)?.delete(edge.target)
+      this.incoming.get(edge.target)?.delete(edge.source)
+    }
   }
 
   getNode(nodeId: string): GraphNode<T> | undefined {
@@ -170,12 +174,23 @@ export class Graph<T = unknown> {
   }
 
   hasCycles(): boolean {
-    try {
-      this.topologicalSort()
+    const color = new Map<string, 'white' | 'gray' | 'black'>()
+    for (const nodeId of this.nodes.keys()) color.set(nodeId, 'white')
+
+    const dfs = (nodeId: string): boolean => {
+      color.set(nodeId, 'gray')
+      for (const neighbor of this.outgoing.get(nodeId) || []) {
+        if (color.get(neighbor) === 'gray') return true
+        if (color.get(neighbor) === 'white' && dfs(neighbor)) return true
+      }
+      color.set(nodeId, 'black')
       return false
-    } catch (e) {
-      return e instanceof CycleDetectedError
     }
+
+    for (const nodeId of this.nodes.keys()) {
+      if (color.get(nodeId) === 'white' && dfs(nodeId)) return true
+    }
+    return false
   }
 
   findBackEdges(): GraphEdge[] {
