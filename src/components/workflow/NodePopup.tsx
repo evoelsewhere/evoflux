@@ -24,7 +24,8 @@ function NodePopupInner({ node, onClose, onDelete }: NodePopupProps) {
   const getDefaultProvider = useProviderStore(s => s.getDefaultProvider)
   const [pos, setPos] = useState({ x: 0, y: 0 })
 
-  const { data } = node
+  const liveNode = useWorkflowStore(s => s.nodes.find(n => n.id === node.id))
+  const data = liveNode?.data || node.data
   const nodeType = data.type || 'default'
   const definition = getNodeDefinition(nodeType)
   const config = (data.config || {}) as Record<string, unknown>
@@ -32,8 +33,9 @@ function NodePopupInner({ node, onClose, onDelete }: NodePopupProps) {
   const providerOptions = providers.map(p => ({ label: `${p.name} (${PROVIDER_LABELS[p.type]})`, value: p.id }))
 
   const handleChange = useCallback((field: string, value: unknown) => {
-    updateNodeData(node.id, { config: { ...config, [field]: value } })
-  }, [node.id, config, updateNodeData])
+    const currentConfig = (useWorkflowStore.getState().nodes.find(n => n.id === node.id)?.data?.config || {}) as Record<string, unknown>
+    updateNodeData(node.id, { config: { ...currentConfig, [field]: value } })
+  }, [node.id, updateNodeData])
 
   const handleLabelChange = useCallback((label: string) => {
     updateNodeData(node.id, { label })
