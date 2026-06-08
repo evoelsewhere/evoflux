@@ -9,15 +9,18 @@ import {
   searchProceduralByVector,
   incrementSemanticAccess
 } from '../db/memory-repo'
+import { hybridSearch } from '../kb/hybrid-search'
 
 interface KnowledgeRetrievalConfig {
   query?: string
   top_k?: number
   layer?: 'semantic' | 'episodic' | 'procedural' | 'all'
   workflow_id?: string
-  mode?: 'search' | 'ingest'
+  mode?: 'search' | 'ingest' | 'kb_search'
   content?: string
   content_type?: 'fact' | 'document' | 'code_snippet' | 'api_doc' | 'error_pattern'
+  knowledge_base_id?: string
+  min_similarity?: number
 }
 
 export class KnowledgeRetrievalNode extends BaseNode<KnowledgeRetrievalConfig> {
@@ -29,7 +32,7 @@ export class KnowledgeRetrievalNode extends BaseNode<KnowledgeRetrievalConfig> {
       label: 'Knowledge Retrieval',
       icon: 'database',
       category: 'ai',
-      description: 'RAG from workflow memory (FluxMem 3-layer graph) or ingest new knowledge.',
+      description: 'RAG from workflow memory or Knowledge Base.',
       inputs: [
         { name: 'query', label: 'Query', type: 'string', required: false },
         { name: 'content', label: 'Content to Ingest', type: 'string', required: false },
@@ -54,9 +57,8 @@ export class KnowledgeRetrievalNode extends BaseNode<KnowledgeRetrievalConfig> {
     const mode = cfg.mode || 'search'
     const workflowId = String(inputs.workflow_id || cfg.workflow_id || 'default')
 
-    if (mode === 'ingest') {
-      return this.ingest(inputs, cfg, workflowId, context)
-    }
+    if (mode === 'ingest') return this.ingest(inputs, cfg, workflowId, context)
+    if (mode === 'kb_search') return this.kbSearch(inputs, cfg, context)
     return this.search(inputs, cfg, workflowId, context)
   }
 
@@ -67,14 +69,11 @@ export class KnowledgeRetrievalNode extends BaseNode<KnowledgeRetrievalConfig> {
     context: NodeRunContext
   ): Promise<NodeOutput> {
     const content = String(inputs.content || cfg.content || '')
-    if (!content) {
-      throw new NodeExecutionError(context.nodeId, this.type, 'Content is required for ingest mode')
-    }
+    if (!content) throw new NodeExecutionError(context.nodeId, this.type, 'Content is required for ingest mode')
 
     const contentType = cfg.content_type || 'document'
     const embedding = await embed(content, 'passage')
     const id = `mem-${Date.now()}`
-
     saveSemantic(workflowId, id, contentType, content, embedding)
 
     return {
@@ -92,13 +91,10 @@ export class KnowledgeRetrievalNode extends BaseNode<KnowledgeRetrievalConfig> {
     _context: NodeRunContext
   ): Promise<NodeOutput> {
     const query = String(inputs.query || cfg.query || '')
-    if (!query) {
-      return { results: [], formatted: '', count: 0 }
-    }
+    if (!query) return { results: [], formatted: '', count: 0 }
 
     const topK = cfg.top_k || 5
     const layer = cfg.layer || 'all'
-
     const queryEmbedding = await embed(query, 'query')
 
     const allResults: Array<{ layer: string; id: string; content: string; score: number; metadata?: Record<string, unknown> }> = []
@@ -114,24 +110,14 @@ export class KnowledgeRetrievalNode extends BaseNode<KnowledgeRetrievalConfig> {
     if (layer === 'all' || layer === 'episodic') {
       const episodicResults = searchEpisodicByVector(workflowId, queryEmbedding, topK)
       for (const r of episodicResults) {
-        allResults.push({
-          layer: 'episodic', id: r.id,
-          content: `[${r.outcome}] ${r.task_description}`,
-          score: r.score,
-          metadata: { outcome: r.outcome }
-        })
+        allResults.push({ layer: 'episodic', id: r.id, content: `[${r.outcome}] ${r.task_description}`, score: r.score, metadata: { outcome: r.outcome } })
       }
     }
 
     if (layer === 'all' || layer === 'procedural') {
       const proceduralResults = searchProceduralByVector(workflowId, queryEmbedding, topK)
       for (const r of proceduralResults) {
-        allResults.push({
-          layer: 'procedural', id: r.id,
-          content: `${r.name}: ${r.pattern}`,
-          score: r.score,
-          metadata: { name: r.name }
-        })
+        allResults.push({ layer: 'procedural', id: r.id, content: `${r.name}: ${r.pattern}`, score: r.score, metadata: { name: r.name } })
       }
     }
 
@@ -141,15 +127,49 @@ export class KnowledgeRetrievalNode extends BaseNode<KnowledgeRetrievalConfig> {
     const parts: string[] = []
     if (topResults.length > 0) {
       parts.push(`## Memory Search Results (query: "${query}")`)
-      for (const r of topResults) {
-        parts.push(`- [${r.layer}] ${r.content} (score: ${r.score.toFixed(3)})`)
+      for (const r of topResults) parts.push(`- [${r.layer}] ${r.content} (score: ${r.score.toFixed(3)})`)
+    }
+
+    return { results: topResults, formatted: parts.join('\n'), count: topResults.length }
+  }
+
+  private async kbSearch(
+    inputs: Record<string, unknown>,
+    cfg: KnowledgeRetrievalConfig,
+    context: NodeRunContext
+  ): Promise<NodeOutput> {
+    const query = String(inputs.query || cfg.query || '')
+    if (!query) return { results: [], formatted: '', count: 0 }
+
+    const kbId = cfg.knowledge_base_id
+    if (!kbId) throw new NodeExecutionError(context.nodeId, this.type, 'knowledge_base_id is required for kb_search mode')
+
+    const topK = cfg.top_k || 5
+    const minSimilarity = cfg.min_similarity || 0
+
+    const searchResults = await hybridSearch(kbId, query, { limit: topK, minScore: minSimilarity })
+
+    const results = searchResults.map(r => ({
+      id: r.chunk_id,
+      content: r.content,
+      score: r.hybrid_score,
+      doc_name: r.doc_name,
+      doc_path: r.doc_path,
+      metadata: r.metadata_json ? JSON.parse(r.metadata_json) : undefined
+    }))
+
+    const parts: string[] = []
+    if (results.length > 0) {
+      parts.push(`## Knowledge Base Search Results (query: "${query}")`)
+      for (const r of results) {
+        const meta = r.metadata
+        const heading = meta?.heading ? ` [${meta.heading}]` : ''
+        parts.push(`### ${r.doc_name}${heading} (score: ${r.score.toFixed(3)})`)
+        parts.push(r.content.substring(0, 500))
+        parts.push('')
       }
     }
 
-    return {
-      results: topResults,
-      formatted: parts.join('\n'),
-      count: topResults.length
-    }
+    return { results, formatted: parts.join('\n'), count: results.length }
   }
 }

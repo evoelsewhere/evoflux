@@ -121,6 +121,25 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
     finally { setSearching(false) }
   }
 
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+        e.preventDefault()
+        setActiveTab('search')
+        setTimeout(() => {
+          const input = document.querySelector('input[placeholder="Search knowledge base..."]') as HTMLInputElement
+          input?.focus()
+        }, 100)
+      }
+      if (e.key === 'Escape' && selectedDoc) {
+        setSelectedDoc(null)
+        setChunks([])
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [selectedDoc])
+
   const formatSize = (bytes: number | null) => {
     if (!bytes) return '—'
     if (bytes < 1024) return `${bytes} B`

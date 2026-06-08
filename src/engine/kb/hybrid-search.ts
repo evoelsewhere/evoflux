@@ -8,6 +8,10 @@ export interface HybridSearchOptions {
   minScore?: number
   vectorOnly?: boolean
   bm25Only?: boolean
+  filters?: {
+    extensions?: string[]
+    pathGlob?: string
+  }
 }
 
 export async function hybridSearch(
@@ -33,10 +37,10 @@ export async function hybridSearch(
     (async () => {
       try {
         const queryEmbedding = await embed(query, 'query')
-        return searchChunksByVector(kbId, Array.from(queryEmbedding), limit * 2)
+        return applyFilters(searchChunksByVector(kbId, Array.from(queryEmbedding), limit * 2), options?.filters)
       } catch { return [] }
     })(),
-    Promise.resolve(searchChunksByBM25(kbId, query, limit * 2))
+    Promise.resolve(applyFilters(searchChunksByBM25(kbId, query, limit * 2), options?.filters))
   ])
 
   return reciprocalRankFusion(vectorResults, bm25Results, {
@@ -52,6 +56,22 @@ interface FusionOptions {
   vectorWeight: number
   bm25Weight: number
   minScore: number
+}
+
+function applyFilters(results: SearchResult[], filters?: { extensions?: string[]; pathGlob?: string }): SearchResult[] {
+  if (!filters) return results
+  return results.filter(r => {
+    if (filters.extensions && filters.extensions.length > 0) {
+      const ext = r.doc_extension?.toLowerCase()
+      if (!ext || !filters.extensions.map(e => e.toLowerCase()).includes(ext)) return false
+    }
+    if (filters.pathGlob) {
+      const pattern = filters.pathGlob.replace(/\*/g, '.*').replace(/\?/g, '.')
+      const regex = new RegExp(`^${pattern}$`, 'i')
+      if (!regex.test(r.doc_path)) return false
+    }
+    return true
+  })
 }
 
 function reciprocalRankFusion(

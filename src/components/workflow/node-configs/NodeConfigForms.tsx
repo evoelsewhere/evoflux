@@ -287,17 +287,29 @@ export default function NodeConfigForms({ config, nodeType, handleChange, provid
         <Section title="Knowledge Retrieval">
           <Field label="Mode">
             <Select size="small" value={String(config.mode || 'search')} onChange={(v) => handleChange('mode', v)}
-              options={[{ label: 'Search Memory', value: 'search' }, { label: 'Ingest Knowledge', value: 'ingest' }]} style={{ width: '100%' }} />
+              options={[{ label: 'Search Memory', value: 'search' }, { label: 'Search Knowledge Base', value: 'kb_search' }, { label: 'Ingest Knowledge', value: 'ingest' }]} style={{ width: '100%' }} />
           </Field>
+          {config.mode === 'kb_search' && (
+            <>
+              <Field label="Knowledge Base ID">
+                <Input size="small" value={String(config.knowledge_base_id || '')} onChange={(e) => handleChange('knowledge_base_id', e.target.value)} placeholder="kb-xxxxxxxxxx" style={inputStyle} />
+              </Field>
+              <Field label="Min Similarity">
+                <Slider min={0} max={1} step={0.05} value={Number(config.min_similarity ?? 0)} onChange={(v) => handleChange('min_similarity', v)} />
+              </Field>
+            </>
+          )}
           {config.mode !== 'ingest' && (
             <>
               <Field label={`Top K: ${String(config.top_k ?? 5)}`}>
                 <Slider min={1} max={20} value={Number(config.top_k ?? 5)} onChange={(v) => handleChange('top_k', v)} />
               </Field>
-              <Field label="Layer">
-                <Select size="small" value={String(config.layer || 'all')} onChange={(v) => handleChange('layer', v)}
-                  options={[{ label: 'All', value: 'all' }, { label: 'Semantic', value: 'semantic' }, { label: 'Episodic', value: 'episodic' }, { label: 'Procedural', value: 'procedural' }]} style={{ width: '100%' }} />
-              </Field>
+              {config.mode !== 'kb_search' && (
+                <Field label="Layer">
+                  <Select size="small" value={String(config.layer || 'all')} onChange={(v) => handleChange('layer', v)}
+                    options={[{ label: 'All', value: 'all' }, { label: 'Semantic', value: 'semantic' }, { label: 'Episodic', value: 'episodic' }, { label: 'Procedural', value: 'procedural' }]} style={{ width: '100%' }} />
+                </Field>
+              )}
               <Field label="Query">
                 <TextArea rows={2} value={String(config.query || '')} onChange={(e) => handleChange('query', e.target.value)} placeholder="Search query..." style={inputStyle} />
               </Field>
@@ -314,9 +326,11 @@ export default function NodeConfigForms({ config, nodeType, handleChange, provid
               </Field>
             </>
           )}
-          <Field label="Workflow ID (optional)">
-            <Input size="small" value={String(config.workflow_id || '')} onChange={(e) => handleChange('workflow_id', e.target.value)} placeholder="Default: current workflow" style={inputStyle} />
-          </Field>
+          {config.mode !== 'kb_search' && (
+            <Field label="Workflow ID (optional)">
+              <Input size="small" value={String(config.workflow_id || '')} onChange={(e) => handleChange('workflow_id', e.target.value)} placeholder="Default: current workflow" style={inputStyle} />
+            </Field>
+          )}
         </Section>
       )}
 
