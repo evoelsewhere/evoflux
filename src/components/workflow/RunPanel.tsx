@@ -6,10 +6,12 @@ import type { Node } from 'reactflow'
 export interface RunEvent {
   type: string
   nodeId?: string
+  edgeId?: string
   timestamp: number
   content?: string
   output?: Record<string, unknown>
   error?: Error | string
+  iteration?: number
 }
 
 interface RunPanelProps {

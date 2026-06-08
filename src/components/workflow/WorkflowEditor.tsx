@@ -17,6 +17,7 @@ import CommentNode from './nodes/CommentNode'
 import CustomEdge from './edges/CustomEdge'
 import Sidebar from '../layout/Sidebar'
 import NodePopup from './NodePopup'
+import EdgePopup from './EdgePopup'
 import RunPanel, { type RunEvent } from './RunPanel'
 import RunInputDialog from './RunInputDialog'
 import AssistantPanel from './AssistantPanel'
@@ -64,10 +65,13 @@ function EditorCanvas() {
   const [layoutDirection, setLayoutDirection] = useState<'TB' | 'LR'>('TB')
   const [runEvents, setRunEvents] = useState<RunEvent[]>([])
   const [nodeStatuses, setNodeStatuses] = useState<Record<string, 'idle' | 'running' | 'completed' | 'error'>>({})
+  const [edgeStatuses, setEdgeStatuses] = useState<Record<string, 'idle' | 'active' | 'completed' | 'error'>>({})
+  const [edgeIterations, setEdgeIterations] = useState<Record<string, number>>({})
   const [nodeOutputs, setNodeOutputs] = useState<Record<string, unknown>>({})
   const [elapsed, setElapsed] = useState(0)
   const [editingName, setEditingName] = useState(false)
   const [popupNode, setPopupNode] = useState<Node<NodeData> | null>(null)
+  const [popupEdge, setPopupEdge] = useState<Edge | null>(null)
   const [loading, setLoading] = useState(true)
 
   const navigate = useNavigate()
@@ -91,24 +95,41 @@ function EditorCanvas() {
   latestId.current = id
 
   const edgesWithStatus = useMemo(() => {
-    const hasStatuses = Object.keys(nodeStatuses).length > 0
-    if (!hasStatuses) return edges
+    const hasNodeStatuses = Object.keys(nodeStatuses).length > 0
+    const hasEdgeStatuses = Object.keys(edgeStatuses).length > 0
+    if (!hasNodeStatuses && !hasEdgeStatuses) return edges
     return edges.map(edge => {
-      const sourceStatus = nodeStatuses[edge.source] || 'idle'
-      const targetStatus = nodeStatuses[edge.target] || 'idle'
-      let edgeStatus: 'idle' | 'active' | 'completed' | 'error' = 'idle'
-      if (targetStatus === 'error' || sourceStatus === 'error') {
-        edgeStatus = 'error'
-      } else if (sourceStatus === 'completed' && targetStatus === 'running') {
-        edgeStatus = 'active'
-      } else if (sourceStatus === 'completed' && targetStatus === 'completed') {
-        edgeStatus = 'completed'
-      } else if (sourceStatus === 'running') {
-        edgeStatus = 'active'
+      const explicitEdgeStatus = edgeStatuses[edge.id]
+      let edgeStatus: 'idle' | 'active' | 'completed' | 'error' = explicitEdgeStatus || 'idle'
+
+      if (!explicitEdgeStatus && hasNodeStatuses) {
+        const sourceStatus = nodeStatuses[edge.source] || 'idle'
+        const targetStatus = nodeStatuses[edge.target] || 'idle'
+        if (targetStatus === 'error' || sourceStatus === 'error') {
+          edgeStatus = 'error'
+        } else if (sourceStatus === 'completed' && targetStatus === 'running') {
+          edgeStatus = 'active'
+        } else if (sourceStatus === 'completed' && targetStatus === 'completed') {
+          edgeStatus = 'completed'
+        } else if (sourceStatus === 'running') {
+          edgeStatus = 'active'
+        }
       }
-      return { ...edge, data: { ...edge.data, status: edgeStatus } }
+
+      const iteration = edgeIterations[edge.id]
+      return {
+        ...edge,
+        data: {
+          ...edge.data,
+          status: edgeStatus,
+          isBackEdge: edge.data?.isBackEdge || false,
+          condition: edge.data?.condition,
+          maxIterations: edge.data?.maxIterations,
+          iteration
+        }
+      }
     })
-  }, [edges, nodeStatuses])
+  }, [edges, nodeStatuses, edgeStatuses, edgeIterations])
 
   const doSave = useCallback(async (ns: Node<NodeData>[], es: Edge[], wfName: string, wfDesc: string, wfId?: string) => {
     setStoreNodes(ns); setStoreEdges(es)
@@ -173,7 +194,7 @@ function EditorCanvas() {
 
   const handleRunWithInputs = useCallback(async (inputs: Record<string, unknown>) => {
     setShowInput(false); setShowRun(true); setRunEvents([]); setIsRunning(true)
-    setNodeStatuses({}); setNodeOutputs({}); setElapsed(0)
+    setNodeStatuses({}); setNodeOutputs({}); setEdgeStatuses({}); setEdgeIterations({}); setElapsed(0)
     setNodes(prev => prev.map(n => ({ ...n, data: { ...n.data, status: 'idle' as const, error: undefined } })))
     runStartRef.current = Date.now()
 
@@ -189,6 +210,11 @@ function EditorCanvas() {
         updateNodeStatus(ev.nodeId, 'completed', ev.output)
       } else if (ev.type === 'node:error' && ev.nodeId) {
         updateNodeStatus(ev.nodeId, 'error', ev.error)
+      } else if (ev.type === 'edge:activate' && ev.edgeId) {
+        setEdgeStatuses(prev => ({ ...prev, [ev.edgeId!]: 'active' }))
+        if (ev.iteration) setEdgeIterations(prev => ({ ...prev, [ev.edgeId!]: ev.iteration! }))
+      } else if (ev.type === 'edge:skip' && ev.edgeId) {
+        setEdgeStatuses(prev => ({ ...prev, [ev.edgeId!]: 'idle' }))
       } else if (ev.type === 'graph:complete') {
         setIsRunning(false)
         if (elapsedTimer.current) clearInterval(elapsedTimer.current)
@@ -201,7 +227,7 @@ function EditorCanvas() {
     eventCleanupRef.current = cleanup
 
     try {
-      const dsl = { name: workflowName, nodes: nodes.map(n => ({ id: n.id, type: n.data.type, label: n.data.label, position: n.position, config: n.data.config })), edges: edges.map(e => ({ id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle })) }
+      const dsl = { name: workflowName, nodes: nodes.map(n => ({ id: n.id, type: n.data.type, label: n.data.label, position: n.position, config: n.data.config })), edges: edges.map(e => ({ id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle, condition: e.data?.condition, isBackEdge: e.data?.isBackEdge, maxIterations: e.data?.maxIterations })) }
       await window.api.workflow.run(dsl, { inputs, maxSteps: 1000, maxTimeMs: 600000 })
     } catch (err) {
       setRunEvents(prev => [...prev, { type: 'graph:error', timestamp: Date.now(), error: err instanceof Error ? err : new Error(String(err)) }])
@@ -245,8 +271,23 @@ function EditorCanvas() {
   }, [monH])
 
   const onConnect = useCallback((p: Connection) => { const e = addEdge({ ...p, type: 'custom', animated: true }, edges); setEdges(e); setStoreEdges(e) }, [edges, setEdges, setStoreEdges])
-  const onNodeClick = useCallback((_: React.MouseEvent, n: Node) => { setSelectedNodeId(n.id); setPopupNode(n as Node<NodeData>) }, [setSelectedNodeId])
-  const onPaneClick = useCallback(() => { setSelectedNodeId(null); setPopupNode(null) }, [setSelectedNodeId])
+  const onNodeClick = useCallback((_: React.MouseEvent, n: Node) => { setSelectedNodeId(n.id); setPopupNode(n as Node<NodeData>); setPopupEdge(null) }, [setSelectedNodeId])
+  const onEdgeClick = useCallback((_: React.MouseEvent, e: Edge) => { setPopupEdge(e); setPopupNode(null) }, [])
+  const onPaneClick = useCallback(() => { setSelectedNodeId(null); setPopupNode(null); setPopupEdge(null) }, [setSelectedNodeId])
+
+  const handleEdgeUpdate = useCallback((edgeId: string, data: Record<string, unknown>) => {
+    const newEdges = edges.map(e => {
+      if (e.id !== edgeId) return e
+      return { ...e, data: { ...e.data, ...data }, label: data.label !== undefined ? String(data.label) : e.label } as Edge
+    })
+    setEdges(newEdges); setStoreEdges(newEdges)
+  }, [edges, setEdges, setStoreEdges])
+
+  const handleEdgeDelete = useCallback((edgeId: string) => {
+    const newEdges = edges.filter(e => e.id !== edgeId)
+    setEdges(newEdges); setStoreEdges(newEdges)
+    setPopupEdge(null)
+  }, [edges, setEdges, setStoreEdges])
 
   const addNode = useCallback((type: string, def: NodeDefinition, position?: { x: number; y: number }) => {
     const nid = `${type}-${nanoid(6)}`
@@ -320,7 +361,7 @@ function EditorCanvas() {
             <ReactFlow
               nodes={nodes} edges={edgesWithStatus}
               onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
-              onConnect={onConnect} onNodeClick={onNodeClick} onPaneClick={onPaneClick}
+              onConnect={onConnect} onNodeClick={onNodeClick} onEdgeClick={onEdgeClick} onPaneClick={onPaneClick}
               nodeTypes={nodeTypes} edgeTypes={edgeTypes} proOptions={proOptions}
               multiSelectionKeyCode="Shift" selectionOnDrag panOnDrag={[1, 2]} panOnScroll zoomOnScroll={false} zoomOnPinch zoomOnDoubleClick={false}
               minZoom={0.15} maxZoom={3} fitView fitViewOptions={{ padding: 0.2 }}
@@ -340,6 +381,7 @@ function EditorCanvas() {
               />
             </ReactFlow>
             {popupNode && <ErrorBoundary><NodePopup node={popupNode} onClose={() => setPopupNode(null)} onDelete={handleDeleteNode} /></ErrorBoundary>}
+            {popupEdge && <ErrorBoundary><EdgePopup edge={popupEdge} onClose={() => setPopupEdge(null)} onUpdate={handleEdgeUpdate} onDelete={handleEdgeDelete} /></ErrorBoundary>}
           </div>
 
           {showRun && (

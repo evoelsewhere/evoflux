@@ -478,6 +478,19 @@ body {
   animation: edge-flow 1.2s linear infinite;
 }
 
+.edge-animated-back {
+  stroke-dasharray: 8 5;
+  animation: edge-flow-reverse 1s linear infinite;
+}
+
+.react-flow__edge:hover .react-flow__edge-path {
+  stroke-width: 2.5;
+}
+
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke-width: 3;
+}
+
 .react-flow__node.selected .react-flow__handle {
   transform: scale(1.2);
 }
