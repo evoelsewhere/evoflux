@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { Button, Input, Select, Slider, message, Popconfirm, Switch } from 'antd'
 import { PlusOutlined, DeleteOutlined, StarOutlined, StarFilled, CheckCircleOutlined, CloseCircleOutlined, EditOutlined } from '@ant-design/icons'
 import { useProviderStore, PROVIDER_LABELS, PROVIDER_TEMPLATES, type ProviderType, type ProviderInstance } from '../../stores/providerStore'
@@ -15,6 +15,7 @@ export default function SettingsPopup() {
   const [testResult, setTestResult] = useState<Record<string, boolean>>({})
   const [addType, setAddType] = useState<ProviderType>('openai')
   const [activeTab, setActiveTab] = useState<'providers' | 'appearance' | 'about'>('providers')
+  const containerRef = useRef<HTMLDivElement>(null)
 
   if (!showSettings) return null
 
@@ -50,7 +51,7 @@ export default function SettingsPopup() {
       }}
       onMouseDown={(e) => { if (e.target === e.currentTarget) setShowSettings(false) }}
     >
-      <div style={{
+      <div ref={containerRef} style={{
         width: 640, maxHeight: 'calc(100vh - 80px)',
         background: 'var(--bg-elevated)',
         border: '1px solid var(--border-primary)',
@@ -95,6 +96,7 @@ export default function SettingsPopup() {
                 <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>AI Providers</h2>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <Select value={addType} onChange={setAddType} size="small" style={{ width: 160 }}
+                    getPopupContainer={() => containerRef.current!}
                     options={PROVIDER_TYPES.map(t => ({ label: PROVIDER_LABELS[t], value: t }))} />
                   <Button type="primary" icon={<PlusOutlined />} size="small" onClick={handleAdd}>Add</Button>
                 </div>
@@ -154,7 +156,8 @@ export default function SettingsPopup() {
                           style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', borderRadius: 4 }}>
                           <EditOutlined style={{ fontSize: 12 }} />
                         </button>
-                        <Popconfirm title={`Delete ${p.name}?`} onConfirm={() => removeProvider(p.id)} okText="Delete" cancelText="Cancel" okButtonProps={{ danger: true }}>
+                        <Popconfirm title={`Delete ${p.name}?`} onConfirm={() => removeProvider(p.id)} okText="Delete" cancelText="Cancel" okButtonProps={{ danger: true }}
+                          getPopupContainer={() => containerRef.current!}>
                           <button onClick={(e) => e.stopPropagation()}
                             style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--error)', borderRadius: 4 }}>
                             <DeleteOutlined style={{ fontSize: 12 }} />
@@ -239,6 +242,7 @@ export default function SettingsPopup() {
                   <div style={{ flex: 1 }}>
                     <label style={labelStyle}>Theme</label>
                     <Select value={appearance.theme} onChange={(v) => updateAppearance({ theme: v })}
+                      getPopupContainer={() => containerRef.current!}
                       options={[{ label: 'Dark', value: 'dark' }, { label: 'Light', value: 'light' }]} style={{ width: '100%' }} size="small" />
                   </div>
                   <div style={{ flex: 1 }}>
@@ -274,11 +278,13 @@ export default function SettingsPopup() {
                   <div style={{ flex: 1 }}>
                     <label style={labelStyle}>Font Size</label>
                     <Select value={appearance.fontSize} onChange={(v) => updateAppearance({ fontSize: v as FontSize })} style={{ width: '100%' }} size="small"
+                      getPopupContainer={() => containerRef.current!}
                       options={Object.entries(FONT_SIZE_MAP).map(([k, v]) => ({ label: v.label, value: k }))} />
                   </div>
                   <div style={{ flex: 1 }}>
                     <label style={labelStyle}>Font Family</label>
                     <Select value={appearance.fontFamily} onChange={(v) => updateAppearance({ fontFamily: v as FontFamily })} style={{ width: '100%' }} size="small"
+                      getPopupContainer={() => containerRef.current!}
                       options={Object.entries(FONT_FAMILY_MAP).map(([k, v]) => ({ label: v.label, value: k }))} />
                   </div>
                 </div>
