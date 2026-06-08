@@ -48,14 +48,18 @@ export async function embed(text: string, mode: 'query' | 'passage' = 'passage')
   return output.data
 }
 
-export async function embedBatch(texts: string[], mode: 'query' | 'passage' = 'passage'): Promise<Float32Array[]> {
+export async function embedBatch(texts: string[], mode: 'query' | 'passage' = 'passage', onProgress?: (current: number, total: number) => void): Promise<Float32Array[]> {
   const pipe = await getEmbedder()
   const results: Float32Array[] = []
-  for (const text of texts) {
-    const input = mode === 'query' ? `query: ${text}` : `passage: ${text}`
+
+  for (let i = 0; i < texts.length; i++) {
+    const input = mode === 'query' ? `query: ${texts[i]}` : `passage: ${texts[i]}`
     const output = await pipe(input, { pooling: 'mean', normalize: true })
     results.push(output.data)
+    if (onProgress && (i + 1) % 10 === 0) onProgress(i + 1, texts.length)
   }
+
+  onProgress?.(texts.length, texts.length)
   return results
 }
 

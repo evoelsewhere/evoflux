@@ -84,6 +84,8 @@ const api = {
     getFileDiff: (sourceId: string, filePath: string) => ipcRenderer.invoke('kb:getFileDiff', sourceId, filePath),
     syncSource: (kbId: string, sourceId: string) => ipcRenderer.invoke('kb:syncSource', kbId, sourceId),
     setAutoSync: (sourceId: string, enabled: boolean) => ipcRenderer.invoke('kb:setAutoSync', sourceId, enabled),
+    export: (kbId: string) => ipcRenderer.invoke('kb:export', kbId),
+    import: () => ipcRenderer.invoke('kb:import'),
     onProgress: (callback: (event: unknown) => void) => {
       const handler = (_event: unknown, data: unknown) => callback(data)
       ipcRenderer.on('kb:event', handler)

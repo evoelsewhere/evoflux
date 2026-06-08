@@ -3,7 +3,7 @@ import {
   createKB, getKB, listKBs, updateKB, deleteKB,
   listSources, removeSource, updateSource, getSource,
   listDocuments, listChunks, getKBStats,
-  searchChunksByVector
+  searchChunksByVector, exportKB, importKB
 } from '../../src/engine/db/kb-repo'
 import { hybridSearch } from '../../src/engine/kb/hybrid-search'
 import { indexFolder, indexFiles, syncSource } from '../../src/engine/kb/pipeline'
@@ -177,5 +177,42 @@ export function registerKBHandlers(): void {
   ipcMain.handle('kb:setAutoSync', async (_event, sourceId, enabled) => {
     updateSource(sourceId, { auto_sync: enabled ? 1 : 0 })
     return { success: true }
+  })
+
+  ipcMain.handle('kb:export', async (_event, kbId) => {
+    try {
+      const backup = exportKB(kbId)
+      const result = await dialog.showSaveDialog({
+        title: 'Export Knowledge Base',
+        defaultPath: `${backup.kb.name.replace(/[^a-z0-9]/gi, '_')}.kb.json`,
+        filters: [{ name: 'Knowledge Base', extensions: ['kb.json'] }]
+      })
+      if (result.canceled || !result.filePath) return { success: false }
+
+      const { writeFile } = await import('fs/promises')
+      await writeFile(result.filePath, JSON.stringify(backup, null, 2), 'utf-8')
+      return { success: true, path: result.filePath }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  ipcMain.handle('kb:import', async () => {
+    try {
+      const result = await dialog.showOpenDialog({
+        title: 'Import Knowledge Base',
+        filters: [{ name: 'Knowledge Base', extensions: ['kb.json'] }],
+        properties: ['openFile']
+      })
+      if (result.canceled || result.filePaths.length === 0) return { success: false }
+
+      const { readFile } = await import('fs/promises')
+      const content = await readFile(result.filePaths[0], 'utf-8')
+      const backup = JSON.parse(content)
+      const newKbId = importKB(backup)
+      return { success: true, kbId: newKbId }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
+    }
   })
 }

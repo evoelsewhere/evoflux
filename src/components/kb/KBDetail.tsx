@@ -381,6 +381,32 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
             {/* Settings tab */}
             {activeTab === 'settings' && (
               <div style={{ maxWidth: 400 }}>
+                {/* Stats */}
+                <div style={{ marginBottom: 16, padding: 10, background: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-primary)' }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>Index Statistics</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                    {[
+                      { label: 'Documents', value: stats.totalDocs },
+                      { label: 'Indexed', value: stats.indexedDocs },
+                      { label: 'Chunks', value: stats.totalChunks },
+                      { label: 'Total Size', value: formatSize(stats.totalSize) }
+                    ].map(s => (
+                      <div key={s.label} style={{ padding: '6px 8px', background: 'var(--bg-primary)', borderRadius: 4 }}>
+                        <div style={{ fontSize: 9, color: 'var(--text-tertiary)', marginBottom: 2 }}>{s.label}</div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{s.value}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ fontSize: 9, color: 'var(--text-tertiary)', marginBottom: 3 }}>Index Progress</div>
+                    <div style={{ height: 6, background: 'var(--bg-primary)', borderRadius: 3, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${stats.indexedPercent}%`, background: stats.indexedPercent === 100 ? '#34d399' : 'var(--accent)', borderRadius: 3, transition: 'width 0.3s' }} />
+                    </div>
+                    <div style={{ fontSize: 9, color: 'var(--text-tertiary)', marginTop: 2 }}>{stats.indexedPercent}%</div>
+                  </div>
+                </div>
+
+                {/* Chunk settings */}
                 {[
                   { label: 'Chunk Size', key: 'chunkSize', default: 1000 },
                   { label: 'Chunk Overlap', key: 'chunkOverlap', default: 200 },
@@ -404,6 +430,27 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
                     </div>
                   )
                 })}
+
+                {/* Backup/Restore */}
+                <div style={{ marginTop: 16, padding: 10, background: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-primary)' }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>Backup & Restore</div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={async () => {
+                      const r = await window.api.kb.export(kbId) as { success: boolean; path?: string; error?: string }
+                      if (r.success) message.success(`Exported to ${r.path}`)
+                      else if (r.error) message.error(r.error)
+                    }} style={{ padding: '5px 12px', fontSize: 11, borderRadius: 5, background: 'var(--accent-muted)', border: '1px solid var(--accent)30', color: 'var(--accent)', cursor: 'pointer' }}>
+                      Export .kb
+                    </button>
+                    <button onClick={async () => {
+                      const r = await window.api.kb.import() as { success: boolean; kbId?: string; error?: string }
+                      if (r.success) message.success('Imported successfully')
+                      else if (r.error) message.error(r.error)
+                    }} style={{ padding: '5px 12px', fontSize: 11, borderRadius: 5, background: 'var(--bg-hover)', border: '1px solid var(--border-primary)', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                      Import .kb
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </div>

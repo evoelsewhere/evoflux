@@ -1,4 +1,4 @@
-import { searchChunksByVector, searchChunksByBM25, type SearchResult } from '../db/kb-repo'
+import { searchChunksByVector, searchChunksByBM25, type SearchResult, type VectorSearchOptions } from '../db/kb-repo'
 import { embed } from '../memory/embedding'
 
 export interface HybridSearchOptions {
@@ -37,7 +37,13 @@ export async function hybridSearch(
     (async () => {
       try {
         const queryEmbedding = await embed(query, 'query')
-        return applyFilters(searchChunksByVector(kbId, Array.from(queryEmbedding), limit * 2), options?.filters)
+        const vectorOpts: VectorSearchOptions = {
+          limit: limit * 2,
+          extensions: options?.filters?.extensions,
+          pathGlob: options?.filters?.pathGlob,
+          minScore: 0
+        }
+        return searchChunksByVector(kbId, Array.from(queryEmbedding), vectorOpts)
       } catch { return [] }
     })(),
     Promise.resolve(applyFilters(searchChunksByBM25(kbId, query, limit * 2), options?.filters))

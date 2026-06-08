@@ -68,6 +68,8 @@ interface Window {
       getFileDiff: (sourceId: string, filePath: string) => Promise<string>
       syncSource: (kbId: string, sourceId: string) => Promise<unknown>
       setAutoSync: (sourceId: string, enabled: boolean) => Promise<{ success: boolean }>
+      export: (kbId: string) => Promise<{ success: boolean; path?: string; error?: string }>
+      import: () => Promise<{ success: boolean; kbId?: string; error?: string }>
       onProgress: (callback: (event: unknown) => void) => () => void
     }
     onStreamChunk: (callback: (chunk: string) => void) => () => void

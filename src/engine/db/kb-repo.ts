@@ -242,39 +242,85 @@ export function removeChunksByKB(kbId: string): void {
 
 // ==================== Vector Search ====================
 
-export function searchChunksByVector(kbId: string, queryEmbedding: number[], limit: number = 10): SearchResult[] {
+export interface VectorSearchOptions {
+  limit?: number
+  extensions?: string[]
+  pathGlob?: string
+  minScore?: number
+}
+
+export function searchChunksByVector(kbId: string, queryEmbedding: number[], options?: VectorSearchOptions | number): SearchResult[] {
+  const limit = typeof options === 'number' ? options : options?.limit ?? 10
+  const filters = typeof options === 'number' ? undefined : options
   const db = getDatabase()
-  type JoinedChunk = KBChunkRow & { doc_name: string; doc_path: string; doc_extension: string | null }
-  const rows = db.prepare(`
+
+  let sql = `
     SELECT c.id as chunk_id, c.doc_id, c.kb_id, c.content, c.metadata_json, c.embedding,
            d.name as doc_name, d.path as doc_path, d.extension as doc_extension
     FROM kb_chunks c
     JOIN kb_documents d ON c.doc_id = d.id
     WHERE c.kb_id = ? AND c.embedding IS NOT NULL
-  `).all(kbId) as unknown as JoinedChunk[]
+  `
+  const params: unknown[] = [kbId]
 
-  const queryVec = new Float32Array(queryEmbedding)
-  const results: SearchResult[] = []
-  for (const row of rows) {
-    const chunkVec = bufferToVector(row.embedding! as unknown as Buffer)
-    const score = cosineSimilarity(queryVec, chunkVec)
-    results.push({
-      chunk_id: (row as unknown as { chunk_id: string }).chunk_id,
-      doc_id: row.doc_id,
-      kb_id: row.kb_id,
-      content: row.content,
-      metadata_json: row.metadata_json,
-      vector_score: score,
-      bm25_score: 0,
-      hybrid_score: score,
-      doc_name: row.doc_name,
-      doc_path: row.doc_path,
-      doc_extension: row.doc_extension
-    })
+  if (filters?.extensions && filters.extensions.length > 0) {
+    const placeholders = filters.extensions.map(() => '?').join(',')
+    sql += ` AND d.extension IN (${placeholders})`
+    params.push(...filters.extensions)
   }
 
-  results.sort((a, b) => b.vector_score - a.vector_score)
-  return results.slice(0, limit)
+  const rows = db.prepare(sql).all(...params) as unknown as Array<KBChunkRow & { chunk_id: string; doc_name: string; doc_path: string; doc_extension: string | null }>
+
+  const queryVec = new Float32Array(queryEmbedding)
+  const queryNorm = vecNorm(queryVec)
+  const minScore = filters?.minScore ?? 0
+
+  const scored: Array<{ row: typeof rows[0]; score: number }> = []
+
+  for (const row of rows) {
+    if (filters?.pathGlob) {
+      const pattern = filters.pathGlob.replace(/\*/g, '.*').replace(/\?/g, '.')
+      if (!new RegExp(`^${pattern}$`, 'i').test(row.doc_path)) continue
+    }
+
+    const chunkVec = bufferToVector(row.embedding! as unknown as Buffer)
+    const score = cosineSimilarityFast(queryVec, queryNorm, chunkVec)
+    if (score >= minScore) scored.push({ row, score })
+  }
+
+  scored.sort((a, b) => b.score - a.score)
+
+  return scored.slice(0, limit).map(({ row, score }) => ({
+    chunk_id: row.chunk_id,
+    doc_id: row.doc_id,
+    kb_id: row.kb_id,
+    content: row.content,
+    metadata_json: row.metadata_json,
+    vector_score: score,
+    bm25_score: 0,
+    hybrid_score: score,
+    doc_name: row.doc_name,
+    doc_path: row.doc_path,
+    doc_extension: row.doc_extension
+  }))
+}
+
+function vecNorm(v: Float32Array): number {
+  let sum = 0
+  for (let i = 0; i < v.length; i++) sum += v[i] * v[i]
+  return Math.sqrt(sum)
+}
+
+function cosineSimilarityFast(a: Float32Array, aNorm: number, b: Float32Array): number {
+  let dot = 0
+  let bNorm = 0
+  const len = Math.min(a.length, b.length)
+  for (let i = 0; i < len; i++) {
+    dot += a[i] * b[i]
+    bNorm += b[i] * b[i]
+  }
+  const denom = aNorm * Math.sqrt(bNorm)
+  return denom === 0 ? 0 : dot / denom
 }
 
 // ==================== BM25 Search (FTS5) ====================
@@ -346,4 +392,73 @@ export function updateKBStats(kbId: string): void {
   const stats = getKBStats(kbId)
   getDatabase().prepare('UPDATE knowledge_bases SET stats_json = ?, updated_at = ? WHERE id = ?')
     .run(JSON.stringify(stats), now(), kbId)
+}
+
+// ==================== Backup/Restore ====================
+
+export interface KBBackup {
+  version: 1
+  exported_at: number
+  kb: KBRow
+  sources: KBSourceRow[]
+  documents: KBDocumentRow[]
+  chunks: Array<Omit<KBChunkRow, 'embedding'> & { embedding: number[] | null }>
+}
+
+export function exportKB(kbId: string): KBBackup {
+  const kb = getKB(kbId)
+  if (!kb) throw new Error('KB not found')
+
+  const sources = listSources(kbId)
+  const documents = listDocuments(kbId)
+  const chunks = listChunksByKB(kbId)
+
+  return {
+    version: 1,
+    exported_at: now(),
+    kb,
+    sources,
+    documents,
+    chunks: chunks.map(c => ({
+      ...c,
+      embedding: c.embedding ? Array.from(bufferToVector(c.embedding as unknown as Buffer)) : null
+    }))
+  }
+}
+
+export function importKB(backup: KBBackup): string {
+  const db = getDatabase()
+  const ts = now()
+  const newKbId = `kb-${nanoid(10)}`
+
+  db.prepare('INSERT INTO knowledge_bases (id, name, description, config_json, stats_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(newKbId, backup.kb.name, backup.kb.description, backup.kb.config_json, backup.kb.stats_json, ts, ts)
+
+  const sourceIdMap = new Map<string, string>()
+  for (const src of backup.sources) {
+    const newId = `src-${nanoid(10)}`
+    sourceIdMap.set(src.id, newId)
+    db.prepare('INSERT INTO kb_sources (id, kb_id, path, type, status, file_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(newId, newKbId, src.path, src.type, src.status, src.file_count, ts)
+  }
+
+  const docIdMap = new Map<string, string>()
+  for (const doc of backup.documents) {
+    const newId = `doc-${nanoid(10)}`
+    docIdMap.set(doc.id, newId)
+    const newSourceId = doc.source_id ? sourceIdMap.get(doc.source_id) || null : null
+    db.prepare('INSERT INTO kb_documents (id, kb_id, source_id, path, name, extension, size, content_preview, chunk_count, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(newId, newKbId, newSourceId, doc.path, doc.name, doc.extension, doc.size, doc.content_preview, doc.chunk_count, doc.status, ts)
+  }
+
+  for (const chunk of backup.chunks) {
+    const newId = `chk-${nanoid(10)}`
+    const newDocId = docIdMap.get(chunk.doc_id)
+    if (!newDocId) continue
+    const embBuf = chunk.embedding ? vectorToBuffer(new Float32Array(chunk.embedding)) : null
+    db.prepare('INSERT INTO kb_chunks (id, doc_id, kb_id, chunk_index, content, embedding, metadata_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(newId, newDocId, newKbId, chunk.chunk_index, chunk.content, embBuf, chunk.metadata_json, ts)
+  }
+
+  return newKbId
 }
