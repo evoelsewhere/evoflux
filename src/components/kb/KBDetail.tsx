@@ -36,6 +36,9 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
   const [selectedDoc, setSelectedDoc] = useState<string | null>(null)
   const [chunks, setChunks] = useState<KBChunk[]>([])
+  const [detailDoc, setDetailDoc] = useState<KBDocument | null>(null)
+  const [detailChunks, setDetailChunks] = useState<KBChunk[]>([])
+  const [detailLoading, setDetailLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<Array<{ content: string; doc_name: string; hybrid_score: number; chunk_id: string }>>([])
   const [searching, setSearching] = useState(false)
@@ -84,6 +87,16 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
       const ch = await window.api.kb.listChunks(docId) as KBChunk[]
       setChunks(ch)
     } catch { message.error('Failed to load chunks') }
+  }
+
+  const openDocDetail = async (doc: KBDocument) => {
+    setDetailDoc(doc)
+    setDetailLoading(true)
+    try {
+      const ch = await window.api.kb.listChunks(doc.id) as KBChunk[]
+      setDetailChunks(ch)
+    } catch { setDetailChunks([]) }
+    finally { setDetailLoading(false) }
   }
 
   const handleAddFolder = async () => {
@@ -168,21 +181,85 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
     return <span style={{ fontSize: 12, padding: '1px 5px', borderRadius: 3, background: c.bg, color: c.fg, fontWeight: 600 }}>{status}</span>
   }
 
-  const buildTree = () => {
-    const tree: Record<string, KBDocument[]> = {}
-    for (const doc of documents) {
+  interface TreeNode { name: string; path: string; children: TreeNode[]; doc?: KBDocument; depth: number }
+
+  const buildTree = (): TreeNode[] => {
+    const root: TreeNode[] = []
+    const dirMap = new Map<string, TreeNode>()
+
+    const sortedDocs = [...documents].sort((a, b) => a.path.localeCompare(b.path))
+
+    for (const doc of sortedDocs) {
       const parts = doc.path.split('/')
-      const dir = parts.length > 1 ? parts.slice(0, -1).join('/') : '/'
-      if (!tree[dir]) tree[dir] = []
-      tree[dir].push(doc)
+      let currentPath = ''
+      let parentChildren = root
+
+      for (let i = 0; i < parts.length - 1; i++) {
+        currentPath = currentPath ? currentPath + '/' + parts[i] : parts[i]
+        if (!dirMap.has(currentPath)) {
+          const dirNode: TreeNode = { name: parts[i], path: currentPath, children: [], depth: i }
+          dirMap.set(currentPath, dirNode)
+          parentChildren.push(dirNode)
+        }
+        parentChildren = dirMap.get(currentPath)!.children
+      }
+
+      parentChildren.push({ name: parts[parts.length - 1], path: doc.path, children: [], doc, depth: parts.length - 1 })
     }
-    return tree
+
+    return root
   }
 
   if (loading) return <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 80 }}><Spin /></div>
   if (!kb) return <div style={{ color: 'var(--text-tertiary)', padding: 40, textAlign: 'center' }}>Knowledge base not found</div>
 
   const tree = buildTree()
+
+  function TreeNodeComponent({ node, expandedFolders, setExpandedFolders, onFileClick, selectedDoc, depth = 0 }: { node: TreeNode; expandedFolders: Set<string>; setExpandedFolders: React.Dispatch<React.SetStateAction<Set<string>>>; onFileClick: (doc: KBDocument) => void; selectedDoc: string | null; depth?: number }) {
+    const isDir = node.children.length > 0 && !node.doc
+    const isExpanded = expandedFolders.has(node.path)
+    const indent = depth * 20
+
+    if (isDir) {
+      return (
+        <div>
+          <div
+            onClick={() => setExpandedFolders(prev => { const s = new Set(prev); s.has(node.path) ? s.delete(node.path) : s.add(node.path); return s })}
+            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 6px', paddingLeft: 8 + indent, borderRadius: 4, cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)', fontWeight: 500 }}
+            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+          >
+            <span style={{ transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'flex', flexShrink: 0 }}>{icons.chevRight}</span>
+            <span style={{ color: 'var(--accent)', display: 'flex', flexShrink: 0 }}>{icons.folder}</span>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{node.name}</span>
+            <span style={{ fontSize: 10, color: 'var(--text-tertiary)', marginLeft: 'auto', flexShrink: 0 }}>{node.children.length}</span>
+          </div>
+          {isExpanded && node.children.map(child => (
+            <TreeNodeComponent key={child.path} node={child} expandedFolders={expandedFolders} setExpandedFolders={setExpandedFolders} onFileClick={onFileClick} selectedDoc={selectedDoc} depth={depth + 1} />
+          ))}
+        </div>
+      )
+    }
+
+    const doc = node.doc!
+    return (
+      <div
+        onClick={() => onFileClick(doc)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 5, padding: '4px 6px', paddingLeft: 8 + indent + 16, borderRadius: 4, cursor: 'pointer', fontSize: 11,
+          color: selectedDoc === doc.id ? 'var(--accent)' : 'var(--text-tertiary)',
+          background: selectedDoc === doc.id ? 'var(--accent-muted)' : 'transparent'
+        }}
+        onMouseEnter={e => { if (selectedDoc !== doc.id) e.currentTarget.style.background = 'var(--bg-hover)' }}
+        onMouseLeave={e => { if (selectedDoc !== doc.id) e.currentTarget.style.background = 'transparent' }}
+      >
+        <span style={{ display: 'flex', flexShrink: 0 }}>{icons.file}</span>
+        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{node.name}</span>
+        <span style={{ fontSize: 9, flexShrink: 0 }}>{doc.chunk_count}c</span>
+        {statusBadge(doc.status)}
+      </div>
+    )
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -298,45 +375,12 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
             {/* Tree tab */}
             {activeTab === 'tree' && (
               <div>
-                {Object.entries(tree).length === 0 ? (
+                {documents.length === 0 ? (
                   <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: '40px 0', textAlign: 'center' }}>
                     No documents indexed yet. Add a folder or files to get started.
                   </div>
                 ) : (
-                  Object.entries(tree).map(([dir, docs]) => (
-                    <div key={dir} style={{ marginBottom: 4 }}>
-                      <div
-                        onClick={() => setExpandedFolders(prev => { const s = new Set(prev); s.has(dir) ? s.delete(dir) : s.add(dir); return s })}
-                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 6px', borderRadius: 4, cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)', fontWeight: 500 }}
-                        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
-                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                      >
-                        <span style={{ transform: expandedFolders.has(dir) ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'flex' }}>{icons.chevRight}</span>
-                        <span style={{ color: 'var(--accent)', display: 'flex' }}>{icons.folder}</span>
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dir.split('/').pop() || '/'}</span>
-                        <span style={{ fontSize: 12, color: 'var(--text-tertiary)', marginLeft: 'auto' }}>{docs.length}</span>
-                      </div>
-
-                      {expandedFolders.has(dir) && docs.map(doc => (
-                        <div
-                          key={doc.id}
-                          onClick={() => loadChunks(doc.id)}
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: 5, padding: '4px 6px 4px 24', borderRadius: 4, cursor: 'pointer', fontSize: 12,
-                            color: selectedDoc === doc.id ? 'var(--accent)' : 'var(--text-tertiary)',
-                            background: selectedDoc === doc.id ? 'var(--accent-muted)' : 'transparent'
-                          }}
-                          onMouseEnter={e => { if (selectedDoc !== doc.id) e.currentTarget.style.background = 'var(--bg-hover)' }}
-                          onMouseLeave={e => { if (selectedDoc !== doc.id) e.currentTarget.style.background = 'transparent' }}
-                        >
-                          <span style={{ display: 'flex' }}>{icons.file}</span>
-                          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.name}</span>
-                          <span style={{ fontSize: 9 }}>{doc.chunk_count}c</span>
-                          {statusBadge(doc.status)}
-                        </div>
-                      ))}
-                    </div>
-                  ))
+                  buildTree().map(node => <TreeNodeComponent key={node.path} node={node} expandedFolders={expandedFolders} setExpandedFolders={setExpandedFolders} onFileClick={openDocDetail} selectedDoc={selectedDoc} />)
                 )}
               </div>
             )}
@@ -507,9 +551,89 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
                 )
               })}
             </div>
-          )}
+           )}
         </div>
       </div>
+
+      {/* File Detail Popup */}
+      {detailDoc && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 1000,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(3px)'
+          }}
+          onMouseDown={e => { if (e.target === e.currentTarget) setDetailDoc(null) }}
+        >
+          <div style={{
+            width: '70vw', maxHeight: '80vh',
+            background: 'var(--bg-elevated)', border: '1px solid var(--border-primary)',
+            borderRadius: 10, boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+            display: 'flex', flexDirection: 'column', overflow: 'hidden'
+          }}>
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 16px', borderBottom: '1px solid var(--border-primary)', flexShrink: 0 }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{detailDoc.name}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{detailDoc.path}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{detailDoc.extension || '—'}</span>
+                <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{formatSize(detailDoc.size)}</span>
+                <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{detailDoc.chunk_count} chunks</span>
+                {statusBadge(detailDoc.status)}
+                <button onClick={() => setDetailDoc(null)} style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', borderRadius: 6, fontSize: 18 }}>
+                  ×
+                </button>
+              </div>
+            </div>
+
+            {/* Content preview */}
+            {detailDoc.content_preview && (
+              <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-primary)', flexShrink: 0, maxHeight: 120, overflow: 'auto' }}>
+                <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', marginBottom: 4 }}>Content Preview</div>
+                <pre style={{ fontSize: 11, color: 'var(--text-secondary)', margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'inherit' }}>
+                  {detailDoc.content_preview}
+                </pre>
+              </div>
+            )}
+
+            {/* Chunks */}
+            <div style={{ flex: 1, overflow: 'auto', padding: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>
+                Chunks ({detailChunks.length})
+              </div>
+              {detailLoading ? (
+                <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}><Spin /></div>
+              ) : detailChunks.length === 0 ? (
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: '20px 0', textAlign: 'center' }}>No chunks</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {detailChunks.map(ch => {
+                    let meta: Record<string, unknown> = {}
+                    try { meta = JSON.parse(ch.metadata_json || '{}') } catch {}
+                    return (
+                      <div key={ch.id} style={{ padding: '8px 10px', background: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-primary)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                          <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--accent)' }}>
+                            Chunk #{ch.chunk_index} {(meta.heading as string) ? `· ${meta.heading}` : ''}
+                          </span>
+                          <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+                            L{(meta.lineStart as number) || 0}–{(meta.lineEnd as number) || 0}
+                          </span>
+                        </div>
+                        <pre style={{ fontSize: 11, color: 'var(--text-secondary)', margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 120, overflow: 'auto', fontFamily: 'inherit' }}>
+                          {ch.content}
+                        </pre>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
