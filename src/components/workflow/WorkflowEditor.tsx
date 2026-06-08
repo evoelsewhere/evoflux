@@ -363,7 +363,7 @@ function EditorCanvas() {
               onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
               onConnect={onConnect} onNodeClick={onNodeClick} onEdgeClick={onEdgeClick} onPaneClick={onPaneClick}
               nodeTypes={nodeTypes} edgeTypes={edgeTypes} proOptions={proOptions}
-              multiSelectionKeyCode="Shift" selectionOnDrag panOnDrag={[1, 2]} panOnScroll zoomOnScroll={false} zoomOnPinch zoomOnDoubleClick={false}
+              multiSelectionKeyCode="Shift" panOnDrag={[0, 1, 2]} panOnScroll zoomOnScroll={false} zoomOnPinch zoomOnDoubleClick={false}
               minZoom={0.15} maxZoom={3} fitView fitViewOptions={{ padding: 0.2 }}
               style={{ background: 'var(--bg-primary)' }} defaultEdgeOptions={{ type: 'custom', animated: true }}
             >

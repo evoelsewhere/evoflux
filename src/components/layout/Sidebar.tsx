@@ -124,7 +124,7 @@ export default function Sidebar(props: SidebarProps) {
     e.dataTransfer.setData('application/reactflow-type', nodeType)
     e.dataTransfer.setData('application/reactflow-def', JSON.stringify(def))
     e.dataTransfer.effectAllowed = 'move'
-    setShowNodes(false)
+    setTimeout(() => setShowNodes(false), 100)
   }
 
   const navItems: DockAction[] = [
