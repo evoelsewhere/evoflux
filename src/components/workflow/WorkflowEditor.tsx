@@ -532,7 +532,7 @@ function EditorCanvas() {
 
             {nodes.some(n => n.data.status === 'error') && (
               <div style={{
-                position: 'absolute', bottom: 56, left: '50%', transform: 'translateX(-50%)',
+                position: 'absolute', top: 8, right: 8,
                 display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
                 background: '#f8717120', border: '1px solid #f8717140',
                 borderRadius: 8, zIndex: 500, cursor: 'pointer'
