@@ -3,6 +3,7 @@ import { Button, Input, Tag, Spin, message, Modal } from 'antd'
 import { useNavigate } from 'react-router-dom'
 import { nanoid } from 'nanoid'
 import { useProviderStore } from '../../stores/providerStore'
+import { useSettingsStore } from '../../stores/settingsStore'
 
 const icons = {
   plus: <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2V12M2 7H12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>,
@@ -31,6 +32,7 @@ export default function Dashboard() {
   const [search, setSearch] = useState('')
   const [showTemplates, setShowTemplates] = useState(false)
   const { providers } = useProviderStore()
+  const toggleSettings = useSettingsStore(s => s.toggleSettings)
 
   useEffect(() => { loadWorkflows() }, [])
 
@@ -103,7 +105,7 @@ export default function Dashboard() {
 
         <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
           <Input placeholder="Search workflows..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ flex: 1, height: 38, fontSize: 13 }} allowClear />
-          <Button icon={icons.settings} onClick={() => navigate('/settings')} style={{ height: 38, fontSize: 12 }}>Settings</Button>
+            <Button icon={icons.settings} onClick={toggleSettings} style={{ height: 38, fontSize: 12 }}>Settings</Button>
         </div>
 
         {loading ? (

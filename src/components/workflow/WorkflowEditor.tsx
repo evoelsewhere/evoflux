@@ -182,9 +182,9 @@ function EditorCanvas() {
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload)
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
-      doSave(latestNodes.current, latestEdges.current, latestName.current, latestDesc.current, latestId.current)
+      doSaveSync()
     }
-  }, [id])
+  }, [id, doSaveSync])
 
   const updateNodeStatus = useCallback((nodeId: string, status: 'idle' | 'running' | 'completed' | 'error', output?: unknown) => {
     setNodeStatuses(prev => ({ ...prev, [nodeId]: status }))

@@ -6,7 +6,7 @@ import { registerWorkflowRunnerHandlers, setMainWindow } from './ipc/workflow-ru
 import { registerSandboxHandlers } from './ipc/sandbox'
 import { registerDSLHandlers } from './ipc/dsl'
 import { registerMemoryHandlers } from './ipc/memory'
-import { openDatabase } from '../src/engine/db/database'
+import { openDatabase, closeDatabase } from '../src/engine/db/database'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -32,6 +32,10 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show()
+  })
+
+  mainWindow.on('close', () => {
+    mainWindow?.webContents.send('workflow:event', { type: 'app:closing', timestamp: Date.now() })
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -65,6 +69,7 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
+  closeDatabase()
   if (process.platform !== 'darwin') {
     app.quit()
   }
