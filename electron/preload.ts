@@ -79,6 +79,11 @@ const api = {
     getStats: (kbId: string) => ipcRenderer.invoke('kb:getStats', kbId),
     search: (kbId: string, query: string, options?: { limit?: number; vectorWeight?: number; bm25Weight?: number }) =>
       ipcRenderer.invoke('kb:search', kbId, query, options),
+    detectGit: (path: string) => ipcRenderer.invoke('kb:detectGit', path),
+    getGitStatus: (sourceId: string) => ipcRenderer.invoke('kb:getGitStatus', sourceId),
+    getFileDiff: (sourceId: string, filePath: string) => ipcRenderer.invoke('kb:getFileDiff', sourceId, filePath),
+    syncSource: (kbId: string, sourceId: string) => ipcRenderer.invoke('kb:syncSource', kbId, sourceId),
+    setAutoSync: (sourceId: string, enabled: boolean) => ipcRenderer.invoke('kb:setAutoSync', sourceId, enabled),
     onProgress: (callback: (event: unknown) => void) => {
       const handler = (_event: unknown, data: unknown) => callback(data)
       ipcRenderer.on('kb:event', handler)

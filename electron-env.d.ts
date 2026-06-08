@@ -63,6 +63,11 @@ interface Window {
       listChunks: (docId: string) => Promise<unknown[]>
       getStats: (kbId: string) => Promise<unknown>
       search: (kbId: string, query: string, options?: { limit?: number; vectorWeight?: number; bm25Weight?: number }) => Promise<unknown>
+      detectGit: (path: string) => Promise<unknown>
+      getGitStatus: (sourceId: string) => Promise<unknown>
+      getFileDiff: (sourceId: string, filePath: string) => Promise<string>
+      syncSource: (kbId: string, sourceId: string) => Promise<unknown>
+      setAutoSync: (sourceId: string, enabled: boolean) => Promise<{ success: boolean }>
       onProgress: (callback: (event: unknown) => void) => () => void
     }
     onStreamChunk: (callback: (chunk: string) => void) => () => void

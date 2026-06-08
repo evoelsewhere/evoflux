@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Spin, message } from 'antd'
+import KBGitChanges from './KBGitChanges'
 
 const icons = {
   back: <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 2L4 7L9 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>,
@@ -14,7 +15,7 @@ const icons = {
 }
 
 interface KB { id: string; name: string; description: string; config_json: string; stats_json: string }
-interface KBSource { id: string; path: string; type: string; status: string; file_count: number; error: string | null; git_branch: string | null }
+interface KBSource { id: string; path: string; type: string; status: string; file_count: number; error: string | null; git_branch: string | null; git_repo_path: string | null }
 interface KBDocument { id: string; path: string; name: string; extension: string | null; size: number | null; chunk_count: number; status: string; content_preview: string | null }
 interface KBChunk { id: string; chunk_index: number; content: string; metadata_json: string | null }
 interface KBStats { totalDocs: number; indexedDocs: number; totalChunks: number; totalSize: number; indexedPercent: number }
@@ -221,6 +222,13 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
             {sources.length === 0 && !indexing && (
               <div style={{ fontSize: 11, color: 'var(--text-tertiary)', padding: '20px 10px', textAlign: 'center' }}>No sources added</div>
             )}
+
+            {/* Git changes panel */}
+            {sources.filter(s => s.git_repo_path).map(src => (
+              <div key={`git-${src.id}`} style={{ borderTop: '1px solid var(--border-primary)', marginTop: 4 }}>
+                <KBGitChanges kbId={kbId} sourceId={src.id} onSyncComplete={load} />
+              </div>
+            ))}
           </div>
         </div>
 

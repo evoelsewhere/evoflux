@@ -1,12 +1,13 @@
 import { ipcMain, BrowserWindow, dialog } from 'electron'
 import {
   createKB, getKB, listKBs, updateKB, deleteKB,
-  listSources, removeSource, updateSource,
+  listSources, removeSource, updateSource, getSource,
   listDocuments, listChunks, getKBStats,
   searchChunksByVector
 } from '../../src/engine/db/kb-repo'
 import { hybridSearch } from '../../src/engine/kb/hybrid-search'
-import { indexFolder, indexFiles } from '../../src/engine/kb/pipeline'
+import { indexFolder, indexFiles, syncSource } from '../../src/engine/kb/pipeline'
+import { detectGitRepo, getChangedFiles, getFileDiff, watchGitRepo } from '../../src/engine/kb/git-ops'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -135,5 +136,46 @@ export function registerKBHandlers(): void {
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error) }
     }
+  })
+
+  ipcMain.handle('kb:detectGit', async (_event, path) => {
+    return detectGitRepo(path)
+  })
+
+  ipcMain.handle('kb:getGitStatus', async (_event, sourceId) => {
+    const source = getSource(sourceId)
+    if (!source) return { error: 'Source not found' }
+    try {
+      const changed = await getChangedFiles(source.path, source.git_commit_hash || undefined)
+      return { changes: changed, commitHash: source.git_commit_hash, branch: source.git_branch }
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  ipcMain.handle('kb:getFileDiff', async (_event, sourceId, filePath) => {
+    const source = getSource(sourceId)
+    if (!source) return { error: 'Source not found' }
+    try {
+      return await getFileDiff(source.path, filePath, source.git_commit_hash || undefined)
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  ipcMain.handle('kb:syncSource', async (_event, kbId, sourceId) => {
+    try {
+      const result = await syncSource(kbId, sourceId, undefined, (progress) => {
+        sendKBEvent({ ...progress, type: 'kb:sync', timestamp: Date.now() })
+      })
+      return result
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  ipcMain.handle('kb:setAutoSync', async (_event, sourceId, enabled) => {
+    updateSource(sourceId, { auto_sync: enabled ? 1 : 0 })
+    return { success: true }
   })
 }
