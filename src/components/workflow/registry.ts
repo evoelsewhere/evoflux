@@ -48,7 +48,10 @@ export const NODE_CATEGORIES: NodeCategory[] = [
       { type: 'template', label: 'Template', icon: 'file-text', category: 'logic', description: 'String template' },
       { type: 'text-transform', label: 'Text Transform', icon: 'edit', category: 'logic', description: 'String operations' },
       { type: 'data-transform', label: 'Data Transform', icon: 'swap', category: 'logic', description: 'JSON extract/map/filter' },
-      { type: 'delay', label: 'Delay', icon: 'clock-circle', category: 'logic', description: 'Pause execution' }
+      { type: 'delay', label: 'Delay', icon: 'clock-circle', category: 'logic', description: 'Pause execution' },
+      { type: 'goto', label: 'Goto', icon: 'sync', category: 'logic', description: 'Jump back to a previous node' },
+      { type: 'retry', label: 'Retry', icon: 'reload', category: 'logic', description: 'Retry on failure with backoff' },
+      { type: 'router', label: 'Router', icon: 'branches', category: 'logic', description: 'Multi-way conditional routing' }
     ]
   },
   {

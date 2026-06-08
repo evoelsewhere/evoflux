@@ -28,6 +28,9 @@ import { TextSplitterNode } from './text-splitter'
 import { TextTransformNode } from './text-transform'
 import { DelayNode } from './delay'
 import { DataTransformNode } from './data-transform'
+import { GotoNode } from './goto'
+import { RetryNode } from './retry'
+import { RouterNode } from './router'
 
 const registry = new Map<string, new () => BaseNode>([
   ['start', StartNode as unknown as new () => BaseNode],
@@ -59,7 +62,10 @@ const registry = new Map<string, new () => BaseNode>([
   ['text-splitter', TextSplitterNode as unknown as new () => BaseNode],
   ['text-transform', TextTransformNode as unknown as new () => BaseNode],
   ['delay', DelayNode as unknown as new () => BaseNode],
-  ['data-transform', DataTransformNode as unknown as new () => BaseNode]
+  ['data-transform', DataTransformNode as unknown as new () => BaseNode],
+  ['goto', GotoNode as unknown as new () => BaseNode],
+  ['retry', RetryNode as unknown as new () => BaseNode],
+  ['router', RouterNode as unknown as new () => BaseNode]
 ])
 
 const originalCreate = NodeFactory.create
