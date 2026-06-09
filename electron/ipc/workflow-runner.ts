@@ -5,7 +5,7 @@ import { UILayer } from '../../src/engine/layers'
 import { deserializeGraph } from '../../src/engine/dsl'
 import '../../src/engine/nodes/index'
 import OpenAI from 'openai'
-import { getSettingsJson } from '../../src/engine/db/repos'
+import { getSettingsJson, getProvider } from '../../src/engine/db/repos'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -28,7 +28,6 @@ function resolveProvider(providerOrId: string): { type: ProviderType; apiKey: st
     return { type: providerOrId as ProviderType, apiKey: config.apiKey || '', baseUrl: config.baseUrl || '', defaultModel: config.defaultModel || '' }
   }
 
-  const { getProvider } = require('../../src/engine/db/repos')
   const provider = getProvider(providerOrId)
   if (provider) {
     return {
