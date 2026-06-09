@@ -104,8 +104,10 @@ export function deleteEntitiesByKB(kbId: string): void {
 }
 
 export function countEntities(kbId: string): number {
-  const row = getDatabase().prepare('SELECT COUNT(*) as cnt FROM wiki_entities WHERE kb_id = ?').get(kbId) as { cnt: number }
-  return row.cnt
+  try {
+    const row = getDatabase().prepare('SELECT COUNT(*) as cnt FROM wiki_entities WHERE kb_id = ?').get(kbId) as { cnt: number } | undefined
+    return row?.cnt ?? 0
+  } catch { return 0 }
 }
 
 // ==================== Entity-Chunks ====================
@@ -166,8 +168,10 @@ export function deleteRelationshipsByKB(kbId: string): void {
 }
 
 export function countRelationships(kbId: string): number {
-  const row = getDatabase().prepare('SELECT COUNT(*) as cnt FROM wiki_relationships WHERE kb_id = ?').get(kbId) as { cnt: number }
-  return row.cnt
+  try {
+    const row = getDatabase().prepare('SELECT COUNT(*) as cnt FROM wiki_relationships WHERE kb_id = ?').get(kbId) as { cnt: number } | undefined
+    return row?.cnt ?? 0
+  } catch { return 0 }
 }
 
 // ==================== Pages ====================
@@ -287,9 +291,13 @@ export function deleteWikiByKB(kbId: string): void {
 // ==================== Stats ====================
 
 export function getWikiStats(kbId: string): { entities: number; relationships: number; pages: number; built: boolean } {
-  const entities = countEntities(kbId)
-  const relationships = countRelationships(kbId)
-  const pages = getDatabase().prepare('SELECT COUNT(*) as cnt FROM wiki_pages WHERE kb_id = ?').get(kbId) as { cnt: number }
-  const progress = getLatestBuildProgress(kbId)
-  return { entities, relationships, pages: pages.cnt, built: progress?.status === 'completed' }
+  try {
+    const entities = countEntities(kbId)
+    const relationships = countRelationships(kbId)
+    const pages = getDatabase().prepare('SELECT COUNT(*) as cnt FROM wiki_pages WHERE kb_id = ?').get(kbId) as { cnt: number } | undefined
+    const progress = getLatestBuildProgress(kbId)
+    return { entities, relationships, pages: pages?.cnt ?? 0, built: progress?.status === 'completed' }
+  } catch {
+    return { entities: 0, relationships: 0, pages: 0, built: false }
+  }
 }
