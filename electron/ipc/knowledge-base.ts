@@ -225,7 +225,6 @@ export function registerKBHandlers(): void {
   // ==================== Wiki ====================
 
   ipcMain.handle('wiki:build', async (_event, kbId, options) => {
-    console.warn(`[Wiki] Build requested for KB ${kbId}`, options)
     try {
       const kb = getKB(kbId)
       if (!kb) return { error: 'KB not found' }
@@ -236,19 +235,14 @@ export function registerKBHandlers(): void {
 
       const providerId = options?.providerId || wikiConfig.providerId
       const model = options?.model || wikiConfig.model
-      console.warn(`[Wiki] Provider: ${providerId}, Model: ${model}`)
       if (!providerId) return { error: 'No provider configured for wiki. Set provider in KB Settings > Wiki Graph.' }
 
       const aiChat = (globalThis as any).__evolux_ai_chat
-      console.warn(`[Wiki] aiChat available: ${!!aiChat}`)
       if (!aiChat) return { error: 'AI chat not available' }
 
-      console.warn(`[Wiki] Starting buildWiki...`)
       const result = await buildWiki(kbId, { providerId, model: model as string }, aiChat, (progress) => {
-        console.warn(`[Wiki] Progress:`, progress.type, progress)
         sendKBEvent({ ...progress, type: 'wiki:progress', timestamp: Date.now() })
       })
-      console.warn(`[Wiki] Build complete:`, result)
 
       return { success: true, ...result }
     } catch (error) {

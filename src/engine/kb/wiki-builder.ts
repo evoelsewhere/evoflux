@@ -25,7 +25,11 @@ export interface WikiProgress {
   error?: string
 }
 
-const BATCH_SIZE = 10
+const BATCH_SIZE = 50
+const PARALLEL_WORKERS = 3
+
+type ExtractedEntity = { name: string; type: string; summary: string; aliases?: string[]; importance?: number }
+type ExtractedRelationship = { source: string; target: string; type: string; label: string; weight?: number }
 
 const EXTRACT_SYSTEM_PROMPT = `You are a knowledge extraction engine. Extract structured information from documents.
 
@@ -99,13 +103,9 @@ export async function buildWiki(
 ): Promise<{ entities: number; relationships: number; pages: number }> {
   const batchSize = options.batchSize || BATCH_SIZE
 
-  console.warn(`[Wiki] Starting build for KB ${kbId}, provider=${options.providerId}, model=${options.model}`)
-
   deleteWikiByKB(kbId)
 
   const allChunks = listChunksByKB(kbId)
-  console.warn(`[Wiki] Found ${allChunks.length} chunks`)
-
   if (allChunks.length === 0) {
     onProgress?.({ type: 'complete', entities: 0, relationships: 0 })
     return { entities: 0, relationships: 0, pages: 0 }
@@ -116,8 +116,6 @@ export async function buildWiki(
     batches.push(allChunks.slice(i, i + batchSize))
   }
 
-  console.warn(`[Wiki] Split into ${batches.length} batches of ${batchSize}`)
-
   const progressId = createBuildProgress(kbId, batches.length)
   onProgress?.({ type: 'start', total: batches.length })
 
@@ -126,34 +124,49 @@ export async function buildWiki(
   let failedBatches = 0
   let errorLog: Array<{ batch: number; error: string }> = []
 
-  for (let i = 0; i < batches.length; i++) {
-    const batch = batches[i]
+  async function processBatch(batchIdx: number): Promise<{ entities: ExtractedEntity[]; relationships: ExtractedRelationship[]; batchIds: string[] } | null> {
+    const batch = batches[batchIdx]
     const batchIds = batch.map(c => c.id)
 
     const alreadyLinked = getLinkedChunkIds(batchIds)
     if (alreadyLinked.length === batchIds.length) {
-      onProgress?.({ type: 'batch', batch: i, total: batches.length, saved: false })
-      continue
+      onProgress?.({ type: 'batch', batch: batchIdx, total: batches.length, saved: false })
+      return null
     }
 
     try {
       const content = batch.map(c => c.content).join('\n---\n')
-      console.warn(`[Wiki] Batch ${i}/${batches.length}: calling LLM with ${content.length} chars`)
       const response = await aiChat([
         { role: 'system', content: EXTRACT_SYSTEM_PROMPT },
         { role: 'user', content: extractUserPrompt(content) }
       ], { model: options.model, provider: options.providerId })
-      console.warn(`[Wiki] Batch ${i}: LLM response ${response.length} chars`)
 
       const parsed = parseExtractResult(response)
-      console.warn(`[Wiki] Batch ${i}: extracted ${parsed.entities.length} entities, ${parsed.relationships.length} relationships`)
+      onProgress?.({ type: 'batch', batch: batchIdx, total: batches.length, entities: parsed.entities.length, relationships: parsed.relationships.length, saved: true })
+      return { ...parsed, batchIds }
+    } catch (error) {
+      failedBatches++
+      errorLog.push({ batch: batchIdx, error: error instanceof Error ? error.message : String(error) })
+      updateBuildProgress(progressId, { failed_batches: failedBatches, error_log: JSON.stringify(errorLog) })
+      onProgress?.({ type: 'error', batch: batchIdx, error: error instanceof Error ? error.message : String(error) })
+      return null
+    }
+  }
 
-      for (const entity of parsed.entities) {
+  for (let i = 0; i < batches.length; i += PARALLEL_WORKERS) {
+    const chunk = batches.slice(i, i + PARALLEL_WORKERS)
+    const indices = chunk.map((_, j) => i + j)
+    const results = await Promise.all(indices.map(idx => processBatch(idx)))
+
+    for (const result of results) {
+      if (!result) continue
+
+      for (const entity of result.entities) {
         const existingFromMap = entityMap.get(entity.name.toLowerCase())
         const existingFromDB = getEntityByName(kbId, entity.name)
         const existingEntityId = existingFromMap?.entityId || existingFromDB?.id
         if (existingEntityId) {
-          mergeEntityChunks(existingEntityId, batchIds, i)
+          mergeEntityChunks(existingEntityId, result.batchIds, i)
           entityMap.set(entity.name.toLowerCase(), { entityId: existingEntityId, name: entity.name, type: entity.type, summary: entity.summary })
         } else {
           const entityId = `ent-${nanoid(10)}`
@@ -162,7 +175,7 @@ export async function buildWiki(
             insertEntity({
               id: entityId, kb_id: kbId, name: entity.name, type: entity.type,
               summary: entity.summary, description: null,
-              chunk_ids: JSON.stringify(batchIds),
+              chunk_ids: JSON.stringify(result.batchIds),
               embedding: Buffer.from(embedding.buffer),
               metadata_json: JSON.stringify({ aliases: entity.aliases || [], importance: entity.importance || 0.5 })
             })
@@ -170,41 +183,34 @@ export async function buildWiki(
             insertEntity({
               id: entityId, kb_id: kbId, name: entity.name, type: entity.type,
               summary: entity.summary, description: null,
-              chunk_ids: JSON.stringify(batchIds),
+              chunk_ids: JSON.stringify(result.batchIds),
               embedding: null,
               metadata_json: JSON.stringify({ aliases: entity.aliases || [], importance: entity.importance || 0.5 })
             })
           }
-          linkEntityChunks(entityId, batchIds, i)
+          linkEntityChunks(entityId, result.batchIds, i)
           entityMap.set(entity.name.toLowerCase(), { entityId, name: entity.name, type: entity.type, summary: entity.summary })
         }
       }
 
-      for (const rel of parsed.relationships) {
+      for (const rel of result.relationships) {
         const srcEntity = entityMap.get(rel.source.toLowerCase())
         const tgtEntity = entityMap.get(rel.target.toLowerCase())
         if (srcEntity && tgtEntity) {
           allRelationships.push({
             source: srcEntity.entityId, target: tgtEntity.entityId,
             type: rel.type, label: rel.label, weight: rel.weight || 0.5,
-            chunkIds: batchIds
+            chunkIds: result.batchIds
           })
         }
       }
-
-      updateBuildProgress(progressId, {
-        completed_batches: i + 1,
-        total_entities: entityMap.size,
-        total_relationships: allRelationships.length
-      })
-
-      onProgress?.({ type: 'batch', batch: i, total: batches.length, entities: parsed.entities.length, relationships: parsed.relationships.length, saved: true })
-    } catch (error) {
-      failedBatches++
-      errorLog.push({ batch: i, error: error instanceof Error ? error.message : String(error) })
-      updateBuildProgress(progressId, { failed_batches: failedBatches, error_log: JSON.stringify(errorLog) })
-      onProgress?.({ type: 'error', batch: i, error: error instanceof Error ? error.message : String(error) })
     }
+
+    updateBuildProgress(progressId, {
+      completed_batches: Math.min(i + PARALLEL_WORKERS, batches.length),
+      total_entities: entityMap.size,
+      total_relationships: allRelationships.length
+    })
   }
 
   const uniqueRelationships = dedupRelationships(allRelationships)
