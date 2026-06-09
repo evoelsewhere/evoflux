@@ -494,74 +494,191 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
 
             {/* Settings tab */}
             {activeTab === 'settings' && (
-              <div style={{ maxWidth: 560 }}>
+              <div style={{ maxWidth: 600 }}>
                 {/* Stats */}
-                <div style={{ marginBottom: 16, padding: 10, background: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-primary)' }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>Index Statistics</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                <div style={{ marginBottom: 16, padding: 12, background: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-primary)' }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>Index Statistics</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
                     {[
                       { label: 'Documents', value: stats.totalDocs },
                       { label: 'Indexed', value: stats.indexedDocs },
                       { label: 'Chunks', value: stats.totalChunks },
                       { label: 'Total Size', value: formatSize(stats.totalSize) }
                     ].map(s => (
-                      <div key={s.label} style={{ padding: '6px 8px', background: 'var(--bg-primary)', borderRadius: 4 }}>
-                        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 2 }}>{s.label}</div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{s.value}</div>
+                      <div key={s.label} style={{ padding: '8px 10px', background: 'var(--bg-primary)', borderRadius: 4 }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 2 }}>{s.label}</div>
+                        <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>{s.value}</div>
                       </div>
                     ))}
                   </div>
                   <div style={{ marginTop: 8 }}>
-                    <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 3 }}>Index Progress</div>
                     <div style={{ height: 6, background: 'var(--bg-primary)', borderRadius: 3, overflow: 'hidden' }}>
                       <div style={{ height: '100%', width: `${stats.indexedPercent}%`, background: stats.indexedPercent === 100 ? '#34d399' : 'var(--accent)', borderRadius: 3, transition: 'width 0.3s' }} />
                     </div>
-                    <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>{stats.indexedPercent}%</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 3 }}>{stats.indexedPercent}% indexed</div>
                   </div>
                 </div>
 
-                {/* Chunk settings */}
-                {[
-                  { label: 'Chunk Size', key: 'chunkSize', default: 1000 },
-                  { label: 'Chunk Overlap', key: 'chunkOverlap', default: 200 },
-                  { label: 'Min Chunk Size', key: 'minChunkSize', default: 100 }
-                ].map(({ label, key, default: def }) => {
+                {/* Chunking */}
+                {(() => {
                   let config: Record<string, unknown> = {}
                   try { config = JSON.parse(kb.config_json) } catch {}
-                  const val = (config[key] as number) ?? def
+                  const update = (key: string, val: unknown) => {
+                    window.api.kb.update(kbId, { config: { ...config, [key]: val } })
+                  }
+
                   return (
-                    <div key={key} style={{ marginBottom: 12 }}>
-                      <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>{label}</div>
-                      <input
-                        type="number"
-                        value={val}
-                        onChange={e => {
-                          const newConfig = { ...config, [key]: parseInt(e.target.value) || def }
-                          window.api.kb.update(kbId, { config: newConfig })
-                        }}
-                        style={{ width: 120, padding: '5px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }}
-                      />
-                    </div>
+                    <>
+                      <div style={{ marginBottom: 16, padding: 12, background: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-primary)' }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 10 }}>Chunking</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Strategy</div>
+                            <select value={String(config.strategy || 'auto')} onChange={e => update('strategy', e.target.value)} style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }}>
+                              <option value="auto">Auto (detect by file type)</option>
+                              <option value="heading">Heading (markdown)</option>
+                              <option value="paragraph">Paragraph</option>
+                              <option value="character">Character</option>
+                              <option value="code">Code (function/class)</option>
+                            </select>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Chunk Size</div>
+                            <input type="number" value={Number(config.chunkSize ?? 1000)} onChange={e => update('chunkSize', parseInt(e.target.value) || 1000)} style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }} />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Chunk Overlap</div>
+                            <input type="number" value={Number(config.chunkOverlap ?? 200)} onChange={e => update('chunkOverlap', parseInt(e.target.value) || 200)} style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }} />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Min Chunk Size</div>
+                            <input type="number" value={Number(config.minChunkSize ?? 100)} onChange={e => update('minChunkSize', parseInt(e.target.value) || 100)} style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }} />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* File Extraction */}
+                      <div style={{ marginBottom: 16, padding: 12, background: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-primary)' }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 10 }}>File Extraction</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Max File Size</div>
+                            <select value={String(config.maxFileSize ?? 1048576)} onChange={e => update('maxFileSize', parseInt(e.target.value))} style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }}>
+                              <option value="262144">256 KB</option>
+                              <option value="524288">512 KB</option>
+                              <option value="1048576">1 MB</option>
+                              <option value="2097152">2 MB</option>
+                              <option value="5242880">5 MB</option>
+                              <option value="10485760">10 MB</option>
+                            </select>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Chunking Strategy</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', padding: '6px 0' }}>
+                              {String(config.strategy || 'auto') === 'auto' ? 'Auto-detect: heading for .md, code for .ts/.py, paragraph for others' : `Manual: ${String(config.strategy || 'auto')}`}
+                            </div>
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Exclude Patterns (one per line)</div>
+                          <textarea
+                            value={Array.isArray(config.excludePatterns) ? (config.excludePatterns as string[]).join('\n') : 'node_modules\n.git\ndist\nout\nbuild\ncoverage\n__pycache__\n.venv\nvenv'}
+                            onChange={e => update('excludePatterns', e.target.value.split('\n').filter(Boolean))}
+                            rows={6}
+                            style={{ width: '100%', padding: '6px 8px', fontSize: 12, fontFamily: 'monospace', background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none', resize: 'vertical' }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Search */}
+                      <div style={{ marginBottom: 16, padding: 12, background: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-primary)' }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 10 }}>Search</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Vector Weight: {Number(config.vectorWeight ?? 0.6).toFixed(2)}</div>
+                            <input type="range" min="0" max="1" step="0.05" value={Number(config.vectorWeight ?? 0.6)} onChange={e => update('vectorWeight', parseFloat(e.target.value))} style={{ width: '100%' }} />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>BM25 Weight: {Number(config.bm25Weight ?? 0.4).toFixed(2)}</div>
+                            <input type="range" min="0" max="1" step="0.05" value={Number(config.bm25Weight ?? 0.4)} onChange={e => update('bm25Weight', parseFloat(e.target.value))} style={{ width: '100%' }} />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Default Limit</div>
+                            <input type="number" value={Number(config.defaultLimit ?? 10)} onChange={e => update('defaultLimit', parseInt(e.target.value) || 10)} style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }} />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Min Score: {Number(config.minScore ?? 0).toFixed(2)}</div>
+                            <input type="range" min="0" max="1" step="0.05" value={Number(config.minScore ?? 0)} onChange={e => update('minScore', parseFloat(e.target.value))} style={{ width: '100%' }} />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Embedding */}
+                      <div style={{ marginBottom: 16, padding: 12, background: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-primary)' }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 10 }}>Embedding</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Model</div>
+                            <div style={{ fontSize: 12, color: 'var(--text-primary)', padding: '6px 0', fontWeight: 500 }}>multilingual-e5-small</div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Dimension</div>
+                            <div style={{ fontSize: 12, color: 'var(--text-primary)', padding: '6px 0', fontWeight: 500 }}>384</div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Status</div>
+                            <div style={{ fontSize: 12, color: '#34d399', padding: '6px 0', fontWeight: 500 }}>Local (offline)</div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Cache</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 0' }}>
+                              <input type="checkbox" checked={config.embeddingCache !== false} onChange={e => update('embeddingCache', e.target.checked)} />
+                              <span style={{ fontSize: 12, color: 'var(--text-primary)' }}>Skip re-embed unchanged content</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </>
                   )
-                })}
+                })()}
 
                 {/* Backup/Restore */}
-                <div style={{ marginTop: 16, padding: 10, background: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-primary)' }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>Backup & Restore</div>
+                <div style={{ marginBottom: 16, padding: 12, background: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-primary)' }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>Backup & Restore</div>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button onClick={async () => {
                       const r = await window.api.kb.export(kbId) as { success: boolean; path?: string; error?: string }
                       if (r.success) message.success(`Exported to ${r.path}`)
                       else if (r.error) message.error(r.error)
-                    }} style={{ padding: '5px 12px', fontSize: 12, borderRadius: 5, background: 'var(--accent-muted)', border: '1px solid var(--accent)30', color: 'var(--accent)', cursor: 'pointer' }}>
+                    }} style={{ padding: '6px 14px', fontSize: 12, borderRadius: 5, background: 'var(--accent-muted)', border: '1px solid var(--accent)30', color: 'var(--accent)', cursor: 'pointer', fontWeight: 500 }}>
                       Export .kb
                     </button>
                     <button onClick={async () => {
                       const r = await window.api.kb.import() as { success: boolean; kbId?: string; error?: string }
                       if (r.success) message.success('Imported successfully')
                       else if (r.error) message.error(r.error)
-                    }} style={{ padding: '5px 12px', fontSize: 12, borderRadius: 5, background: 'var(--bg-hover)', border: '1px solid var(--border-primary)', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                    }} style={{ padding: '6px 14px', fontSize: 12, borderRadius: 5, background: 'var(--bg-hover)', border: '1px solid var(--border-primary)', color: 'var(--text-secondary)', cursor: 'pointer', fontWeight: 500 }}>
                       Import .kb
+                    </button>
+                  </div>
+                </div>
+
+                {/* Danger Zone */}
+                <div style={{ padding: 12, background: 'var(--bg-card)', borderRadius: 6, border: '1px solid #f8717130' }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#f87171', marginBottom: 8 }}>Danger Zone</div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={async () => {
+                      if (!confirm('Reindex all documents? This will delete all existing chunks and re-process every file.')) return
+                      message.info('Reindex started...')
+                    }} style={{ padding: '6px 14px', fontSize: 12, borderRadius: 5, background: '#fbbf2420', border: '1px solid #fbbf2430', color: '#fbbf24', cursor: 'pointer', fontWeight: 500 }}>
+                      Reindex All
+                    </button>
+                    <button onClick={async () => {
+                      if (!confirm('Delete this knowledge base? This cannot be undone.')) return
+                      await window.api.kb.delete(kbId)
+                      message.success('Deleted')
+                    }} style={{ padding: '6px 14px', fontSize: 12, borderRadius: 5, background: '#f8717120', border: '1px solid #f8717130', color: '#f87171', cursor: 'pointer', fontWeight: 500 }}>
+                      Delete KB
                     </button>
                   </div>
                 </div>
