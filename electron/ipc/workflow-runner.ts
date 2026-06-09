@@ -57,21 +57,22 @@ function resolveProvider(providerOrId: string): { type: ProviderType; apiKey: st
 }
 
 function getProviderConfig(provider: ProviderType) {
+  const savedModel = String(getSettingsJson('selectedModel') || '')
   switch (provider) {
     case 'openai':
-      return { apiKey: (getSettingsJson('openaiApiKey') as string) || '', defaultModel: 'gpt-4o-mini' }
+      return { apiKey: (getSettingsJson('openaiApiKey') as string) || '', defaultModel: savedModel || 'gpt-4o-mini' }
     case 'ollama':
-      return { baseUrl: (getSettingsJson('ollamaUrl') as string) || 'http://localhost:11434', defaultModel: 'llama3.2' }
+      return { baseUrl: (getSettingsJson('ollamaUrl') as string) || 'http://localhost:11434', defaultModel: savedModel || 'llama3.2' }
     case 'anthropic':
       return {
         apiKey: (getSettingsJson('anthropicApiKey') as string) || '',
         baseUrl: (getSettingsJson('anthropicBaseUrl') as string) || 'https://api.anthropic.com',
-        defaultModel: 'claude-sonnet-4-20250514'
+        defaultModel: savedModel || 'claude-sonnet-4-20250514'
       }
     case 'openai-compatible':
-      return { apiKey: '', baseUrl: '', defaultModel: '' }
+      return { apiKey: '', baseUrl: '', defaultModel: savedModel || '' }
     default:
-      return { defaultModel: '' }
+      return { defaultModel: savedModel || '' }
   }
 }
 
