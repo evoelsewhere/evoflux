@@ -99,9 +99,13 @@ export async function buildWiki(
 ): Promise<{ entities: number; relationships: number; pages: number }> {
   const batchSize = options.batchSize || BATCH_SIZE
 
+  console.warn(`[Wiki] Starting build for KB ${kbId}, provider=${options.providerId}, model=${options.model}`)
+
   deleteWikiByKB(kbId)
 
   const allChunks = listChunksByKB(kbId)
+  console.warn(`[Wiki] Found ${allChunks.length} chunks`)
+
   if (allChunks.length === 0) {
     onProgress?.({ type: 'complete', entities: 0, relationships: 0 })
     return { entities: 0, relationships: 0, pages: 0 }
@@ -111,6 +115,8 @@ export async function buildWiki(
   for (let i = 0; i < allChunks.length; i += batchSize) {
     batches.push(allChunks.slice(i, i + batchSize))
   }
+
+  console.warn(`[Wiki] Split into ${batches.length} batches of ${batchSize}`)
 
   const progressId = createBuildProgress(kbId, batches.length)
   onProgress?.({ type: 'start', total: batches.length })
@@ -132,12 +138,15 @@ export async function buildWiki(
 
     try {
       const content = batch.map(c => c.content).join('\n---\n')
+      console.warn(`[Wiki] Batch ${i}/${batches.length}: calling LLM with ${content.length} chars`)
       const response = await aiChat([
         { role: 'system', content: EXTRACT_SYSTEM_PROMPT },
         { role: 'user', content: extractUserPrompt(content) }
       ], { model: options.model, provider: options.providerId })
+      console.warn(`[Wiki] Batch ${i}: LLM response ${response.length} chars`)
 
       const parsed = parseExtractResult(response)
+      console.warn(`[Wiki] Batch ${i}: extracted ${parsed.entities.length} entities, ${parsed.relationships.length} relationships`)
 
       for (const entity of parsed.entities) {
         const existingFromMap = entityMap.get(entity.name.toLowerCase())

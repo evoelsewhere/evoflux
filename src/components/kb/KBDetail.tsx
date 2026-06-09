@@ -497,28 +497,6 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
           </div>
 
           <div style={{ flex: 1, overflow: 'auto', padding: 6 }}>
-            {indexing && (
-              <div style={{ padding: '8px 10px', marginBottom: 4 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#60a5fa', marginBottom: indexProgress ? 6 : 0 }}>
-                  <Spin size="small" /> Indexing...
-                </div>
-                {indexProgress && (
-                  <>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={indexProgress.fileName}>
-                      {indexProgress.fileName.split('/').pop()}
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <div style={{ flex: 1, height: 4, background: 'var(--bg-primary)', borderRadius: 2, overflow: 'hidden' }}>
-                        <div style={{ height: '100%', width: `${(indexProgress.current / indexProgress.total) * 100}%`, background: '#60a5fa', borderRadius: 2, transition: 'width 0.2s' }} />
-                      </div>
-                      <span style={{ fontSize: 12, color: 'var(--text-tertiary)', flexShrink: 0 }}>
-                        {indexProgress.current}/{indexProgress.total}
-                      </span>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
             {sources.map(src => (
               <div key={src.id}>
                 <div
@@ -570,6 +548,60 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
               </button>
             ))}
           </div>
+
+          {/* Wiki build progress — persistent across all tabs */}
+          {wikiBuilding && wikiProgress && (
+            <div style={{
+              padding: '8px 14px', flexShrink: 0,
+              background: 'var(--accent-muted)',
+              borderBottom: '1px solid var(--accent)30',
+              display: 'flex', alignItems: 'center', gap: 12
+            }}>
+              <div style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid var(--accent)', borderTopColor: 'transparent', animation: 'node-spin 1s linear infinite', flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)' }}>Building Wiki</span>
+                  {wikiProgress.total > 0 && (
+                    <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+                      Batch {wikiProgress.batch}/{wikiProgress.total} ({Math.round((wikiProgress.batch / wikiProgress.total) * 100)}%)
+                    </span>
+                  )}
+                  <span style={{ fontSize: 10, color: 'var(--text-tertiary)', marginLeft: 'auto' }}>
+                    {wikiProgress.entities} entities · {wikiProgress.relationships} relations
+                  </span>
+                </div>
+                {wikiProgress.total > 0 && (
+                  <div style={{ height: 3, background: 'var(--bg-primary)', borderRadius: 2, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${(wikiProgress.batch / wikiProgress.total) * 100}%`, background: 'var(--accent)', borderRadius: 2, transition: 'width 0.3s' }} />
+                  </div>
+                )}
+              </div>
+              {wikiProgress.saved !== undefined && (
+                <span style={{ fontSize: 10, color: wikiProgress.saved ? '#34d399' : 'var(--text-tertiary)', flexShrink: 0 }}>
+                  {wikiProgress.saved ? '✓' : '⏭'}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Indexing progress — persistent across all tabs */}
+          {indexing && indexProgress && (
+            <div style={{
+              padding: '6px 14px', flexShrink: 0,
+              background: '#60a5fa10',
+              borderBottom: '1px solid #60a5fa20',
+              display: 'flex', alignItems: 'center', gap: 10
+            }}>
+              <div style={{ width: 10, height: 10, borderRadius: '50%', border: '2px solid #60a5fa', borderTopColor: 'transparent', animation: 'node-spin 1s linear infinite', flexShrink: 0 }} />
+              <span style={{ fontSize: 11, color: '#60a5fa', fontWeight: 500 }}>Indexing</span>
+              <span style={{ fontSize: 10, color: 'var(--text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                {indexProgress.fileName.split('/').pop()}
+              </span>
+              <span style={{ fontSize: 10, color: 'var(--text-tertiary)', flexShrink: 0 }}>
+                {indexProgress.current}/{indexProgress.total}
+              </span>
+            </div>
+          )}
 
           {/* Tab content */}
           <div style={{ flex: 1, overflow: 'auto', padding: 12 }}>
