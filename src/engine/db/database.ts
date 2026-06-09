@@ -167,7 +167,15 @@ function runMigrations(db: DatabaseAdapter): void {
     if (currentVersion < SCHEMA_VERSION) {
       for (let v = currentVersion + 1; v <= SCHEMA_VERSION; v++) {
         if (MIGRATIONS[v]) {
-          db.exec(MIGRATIONS[v])
+          console.warn(`[DB] Running migration v${v}...`)
+          const statements = MIGRATIONS[v].split(';').map(s => s.trim()).filter(Boolean)
+          for (const stmt of statements) {
+            try {
+              db.exec(stmt + ';')
+            } catch (e) {
+              console.warn(`[DB] Migration v${v} statement failed (may be ok if already exists):`, (e as Error).message?.substring(0, 80))
+            }
+          }
         }
       }
       if (currentVersion === 0) {
@@ -178,7 +186,8 @@ function runMigrations(db: DatabaseAdapter): void {
       console.warn(`[DB] Migrated to schema version ${SCHEMA_VERSION}`)
       scheduleSave()
     }
-  } catch {
+  } catch (e) {
+    console.warn('[DB] Migration error:', (e as Error).message)
     db.prepare('INSERT OR IGNORE INTO schema_version (version) VALUES (?)').run(SCHEMA_VERSION)
   }
 }

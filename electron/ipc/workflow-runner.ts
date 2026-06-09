@@ -38,6 +38,21 @@ function resolveProvider(providerOrId: string): { type: ProviderType; apiKey: st
     }
   }
 
+  try {
+    const providersJson = getSettingsJson('providers')
+    if (Array.isArray(providersJson)) {
+      const found = providersJson.find((p: Record<string, unknown>) => p.id === providerOrId)
+      if (found) {
+        return {
+          type: (found.type as ProviderType) || 'openai',
+          apiKey: (found.apiKey as string) || '',
+          baseUrl: (found.baseUrl as string) || '',
+          defaultModel: (found.defaultModel as string) || ''
+        }
+      }
+    }
+  } catch { /* */ }
+
   return { type: 'openai', apiKey: '', baseUrl: '', defaultModel: '' }
 }
 
