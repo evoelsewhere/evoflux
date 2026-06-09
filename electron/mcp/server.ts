@@ -7,7 +7,7 @@ import {
   ReadResourceRequestSchema
 } from '@modelcontextprotocol/sdk/types.js'
 import { TOOL_DEFINITIONS, handleToolCall } from './tools'
-import { listKBs, getKB, listDocuments, listChunks, getKBStats } from '../../src/engine/db/kb-repo'
+import { listKBs, getKB, listDocuments, listChunks, getKBStats, getDocument, listSources } from '../../src/engine/db/kb-repo'
 
 export class EvoluxMCPServer {
   private server: Server
@@ -83,7 +83,7 @@ export class EvoluxMCPServer {
         const kb = getKB(kbMatch[1])
         if (!kb) throw new Error(`KB not found: ${kbMatch[1]}`)
         const stats = getKBStats(kb.id)
-        const sources = require('../../src/engine/db/kb-repo').listSources(kb.id)
+        const sources = listSources(kb.id)
         return {
           contents: [{
             uri,
@@ -95,7 +95,6 @@ export class EvoluxMCPServer {
 
       const docMatch = uri.match(/^kb:\/\/([^/]+)\/doc\/([^/]+)$/)
       if (docMatch) {
-        const { getDocument } = require('../../src/engine/db/kb-repo')
         const doc = getDocument(docMatch[2])
         if (!doc) throw new Error(`Document not found: ${docMatch[2]}`)
         const chunks = listChunks(doc.id)

@@ -1,6 +1,6 @@
 import {
   listKBs, getKB, listSources, listDocuments, listChunks,
-  getKBStats, type KBRow, type SearchResult
+  getKBStats, getDocument, type KBRow, type SearchResult
 } from '../../src/engine/db/kb-repo'
 import { hybridSearch } from '../../src/engine/kb/hybrid-search'
 
@@ -192,7 +192,6 @@ function handleListDocuments(args: Record<string, unknown>): { content: Array<{ 
 
 function handleGetDocument(args: Record<string, unknown>): { content: Array<{ type: string; text: string }> } {
   const docId = String(args.doc_id)
-  const { getDocument } = require('../../src/engine/db/kb-repo')
   const doc = getDocument(docId)
   if (!doc) return { content: [{ type: 'text', text: `Document ${docId} not found.` }] }
 

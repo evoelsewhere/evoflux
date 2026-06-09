@@ -1,5 +1,6 @@
 import { createHash } from 'crypto'
 import { readFile } from 'fs/promises'
+import { join } from 'path'
 import { scanDirectory, scanFiles, type ScannedFile } from './file-scanner'
 import { semanticChunk, type Chunk } from './chunker'
 import { convertFile } from '../file-reader/markitdown'
@@ -279,7 +280,7 @@ export async function syncSource(
 
   for (let i = 0; i < changedFiles.length; i++) {
     const cf = changedFiles[i]
-    const fullPath = require('path').join(source.path, cf.path)
+      const fullPath = join(source.path, cf.path)
     onProgress?.({ type: 'file', sourceId, fileName: cf.path, fileIndex: i, totalFiles: changedFiles.length, status: cf.status })
 
     try {
