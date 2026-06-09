@@ -21,6 +21,27 @@ function sendEvent(event: unknown): void {
 
 type ProviderType = 'openai' | 'ollama' | 'anthropic' | 'claude-cli' | 'copilot-cli' | 'openai-compatible'
 
+function resolveProvider(providerOrId: string): { type: ProviderType; apiKey: string; baseUrl: string; defaultModel: string } {
+  const knownTypes = ['openai', 'ollama', 'anthropic', 'claude-cli', 'copilot-cli', 'openai-compatible']
+  if (knownTypes.includes(providerOrId)) {
+    const config = getProviderConfig(providerOrId as ProviderType)
+    return { type: providerOrId as ProviderType, apiKey: config.apiKey || '', baseUrl: config.baseUrl || '', defaultModel: config.defaultModel || '' }
+  }
+
+  const { getProvider } = require('../../src/engine/db/repos')
+  const provider = getProvider(providerOrId)
+  if (provider) {
+    return {
+      type: provider.type as ProviderType,
+      apiKey: provider.api_key || '',
+      baseUrl: provider.base_url || '',
+      defaultModel: provider.default_model || ''
+    }
+  }
+
+  return { type: 'openai', apiKey: '', baseUrl: '', defaultModel: '' }
+}
+
 function getProviderConfig(provider: ProviderType) {
   switch (provider) {
     case 'openai':
@@ -41,9 +62,11 @@ function getProviderConfig(provider: ProviderType) {
 }
 
 async function aiChat(messages: Array<{ role: string; content: string }>, options?: { model?: string; provider?: string }): Promise<string> {
-  const provider = (options?.provider || getSettingsJson('aiProvider') || 'openai') as ProviderType
+  const providerOrId = String(options?.provider || getSettingsJson('aiProvider') || 'openai')
   const model = options?.model || ''
-  const config = getProviderConfig(provider)
+  const resolved = resolveProvider(providerOrId)
+  const provider = resolved.type
+  const config = { apiKey: resolved.apiKey, baseUrl: resolved.baseUrl, defaultModel: resolved.defaultModel }
 
   switch (provider) {
     case 'openai':
