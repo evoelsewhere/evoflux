@@ -566,7 +566,7 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
                 color: activeTab === tab ? 'var(--accent)' : 'var(--text-tertiary)', cursor: 'pointer', transition: 'all 0.15s',
                 textTransform: 'capitalize'
               }}>
-                {tab === 'tree' ? 'Folder Tree' : tab === 'docs' ? 'Documents' : tab === 'search' ? 'Search' : 'Settings'}
+                {tab === 'tree' ? 'Folder Tree' : tab === 'docs' ? 'Documents' : tab === 'search' ? 'Search' : tab === 'wiki' ? 'Wiki' : 'Settings'}
               </button>
             ))}
           </div>
