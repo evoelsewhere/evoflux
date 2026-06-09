@@ -97,6 +97,26 @@ const api = {
     stop: () => ipcRenderer.invoke('mcp:stop'),
     status: () => ipcRenderer.invoke('mcp:status')
   },
+  wiki: {
+    build: (kbId: string, options?: { providerId?: string; model?: string }) => ipcRenderer.invoke('wiki:build', kbId, options),
+    stats: (kbId: string) => ipcRenderer.invoke('wiki:stats', kbId),
+    entities: (kbId: string, type?: string) => ipcRenderer.invoke('wiki:entities', kbId, type),
+    entity: (entityId: string) => ipcRenderer.invoke('wiki:entity', entityId),
+    entityRelationships: (entityId: string) => ipcRenderer.invoke('wiki:entityRelationships', entityId),
+    entityChunks: (entityId: string) => ipcRenderer.invoke('wiki:entityChunks', entityId),
+    search: (kbId: string, query: string, limit?: number) => ipcRenderer.invoke('wiki:search', kbId, query, limit),
+    pages: (kbId: string) => ipcRenderer.invoke('wiki:pages', kbId),
+    page: (pageId: string) => ipcRenderer.invoke('wiki:page', pageId),
+    pageByEntity: (entityId: string) => ipcRenderer.invoke('wiki:pageByEntity', entityId),
+    overview: (kbId: string) => ipcRenderer.invoke('wiki:overview', kbId),
+    graph: (kbId: string) => ipcRenderer.invoke('wiki:graph', kbId),
+    delete: (kbId: string) => ipcRenderer.invoke('wiki:delete', kbId),
+    onProgress: (callback: (event: unknown) => void) => {
+      const handler = (_event: unknown, data: unknown) => callback(data)
+      ipcRenderer.on('kb:event', handler)
+      return () => ipcRenderer.removeListener('kb:event', handler)
+    }
+  },
   onStreamChunk: (callback: (chunk: string) => void) => {
     const handler = (_event: unknown, chunk: string) => callback(chunk)
     ipcRenderer.on('ai:stream-chunk', handler)

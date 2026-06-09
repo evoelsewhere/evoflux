@@ -191,7 +191,7 @@ CREATE INDEX IF NOT EXISTS idx_kb_chunks_doc ON kb_chunks(doc_id);
 CREATE INDEX IF NOT EXISTS idx_env_workflow ON env_variables(workflow_id);
 `
 
-export const SCHEMA_VERSION = 3
+export const SCHEMA_VERSION = 4
 
 export const MIGRATIONS: Record<number, string> = {
   2: `
@@ -296,5 +296,84 @@ CREATE TRIGGER IF NOT EXISTS kb_chunks_fts_au AFTER UPDATE ON kb_chunks BEGIN
   INSERT INTO kb_chunks_fts(kb_chunks_fts, rowid, content) VALUES('delete', old.rowid, old.content);
   INSERT INTO kb_chunks_fts(rowid, content) VALUES (new.rowid, new.content);
 END;
+  `,
+  4: `
+CREATE TABLE IF NOT EXISTS wiki_entities (
+  id TEXT PRIMARY KEY,
+  kb_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL,
+  summary TEXT,
+  description TEXT,
+  chunk_ids TEXT,
+  embedding BLOB,
+  metadata_json TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS wiki_relationships (
+  id TEXT PRIMARY KEY,
+  kb_id TEXT NOT NULL,
+  source_entity_id TEXT NOT NULL,
+  target_entity_id TEXT NOT NULL,
+  type TEXT NOT NULL,
+  label TEXT,
+  weight REAL DEFAULT 1.0,
+  chunk_ids TEXT,
+  metadata_json TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE,
+  FOREIGN KEY (source_entity_id) REFERENCES wiki_entities(id) ON DELETE CASCADE,
+  FOREIGN KEY (target_entity_id) REFERENCES wiki_entities(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS wiki_pages (
+  id TEXT PRIMARY KEY,
+  kb_id TEXT NOT NULL,
+  entity_id TEXT,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  type TEXT NOT NULL,
+  metadata_json TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE,
+  FOREIGN KEY (entity_id) REFERENCES wiki_entities(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS wiki_entity_chunks (
+  entity_id TEXT NOT NULL,
+  chunk_id TEXT NOT NULL,
+  relevance REAL DEFAULT 1.0,
+  batch_index INTEGER,
+  processed_at INTEGER,
+  PRIMARY KEY (entity_id, chunk_id),
+  FOREIGN KEY (entity_id) REFERENCES wiki_entities(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS wiki_build_progress (
+  id TEXT PRIMARY KEY,
+  kb_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  total_batches INTEGER,
+  completed_batches INTEGER,
+  failed_batches INTEGER,
+  total_entities INTEGER,
+  total_relationships INTEGER,
+  started_at INTEGER,
+  completed_at INTEGER,
+  error_log TEXT,
+  FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_wiki_entities_kb ON wiki_entities(kb_id);
+CREATE INDEX IF NOT EXISTS idx_wiki_entities_type ON wiki_entities(type);
+CREATE INDEX IF NOT EXISTS idx_wiki_entities_name ON wiki_entities(name);
+CREATE INDEX IF NOT EXISTS idx_wiki_relationships_kb ON wiki_relationships(kb_id);
+CREATE INDEX IF NOT EXISTS idx_wiki_relationships_source ON wiki_relationships(source_entity_id);
+CREATE INDEX IF NOT EXISTS idx_wiki_relationships_target ON wiki_relationships(target_entity_id);
+CREATE INDEX IF NOT EXISTS idx_wiki_pages_kb ON wiki_pages(kb_id);
   `
 }

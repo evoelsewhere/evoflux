@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Spin, message } from 'antd'
 import KBGitChanges from './KBGitChanges'
+import KBWiki from './KBWiki'
 
 const icons = {
   back: <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 2L4 7L9 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>,
@@ -31,7 +32,7 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
   const [documents, setDocuments] = useState<KBDocument[]>([])
   const [stats, setStats] = useState<KBStats>({ totalDocs: 0, indexedDocs: 0, totalChunks: 0, totalSize: 0, indexedPercent: 0 })
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'tree' | 'docs' | 'search' | 'settings'>('tree')
+  const [activeTab, setActiveTab] = useState<'tree' | 'docs' | 'search' | 'wiki' | 'settings'>('tree')
   const [expandedSources, setExpandedSources] = useState<Set<string>>(new Set())
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
   const [selectedDoc, setSelectedDoc] = useState<string | null>(null)
@@ -503,7 +504,7 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {/* Tabs */}
           <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--border-primary)', flexShrink: 0 }}>
-            {(['tree', 'docs', 'search', 'settings'] as const).map(tab => (
+            {(['tree', 'docs', 'search', 'wiki', 'settings'] as const).map(tab => (
               <button key={tab} onClick={() => setActiveTab(tab)} style={{
                 padding: '8px 14px', fontSize: 12, fontWeight: 500, background: 'transparent',
                 border: 'none', borderBottom: activeTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
@@ -591,6 +592,11 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
                   <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: '40px 0', textAlign: 'center' }}>No results found</div>
                 )}
               </div>
+            )}
+
+            {/* Wiki tab */}
+            {activeTab === 'wiki' && (
+              <KBWiki kbId={kbId} />
             )}
 
             {/* Settings tab */}
@@ -769,6 +775,80 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
                           </div>
                         </div>
                       </div>
+                    </div>
+                  )
+                })()}
+
+                {/* Wiki Graph */}
+                {(() => {
+                  let config: Record<string, unknown> = {}
+                  try { config = JSON.parse(kb.config_json) } catch {}
+                  const wikiConfig = (config.wiki || {}) as Record<string, unknown>
+                  const wikiEnabled = wikiConfig.enabled === true
+                  const updateWiki = (key: string, val: unknown) => {
+                    window.api.kb.update(kbId, { config: { ...config, wiki: { ...wikiConfig, [key]: val } } })
+                  }
+
+                  return (
+                    <div style={{ marginBottom: 16, padding: 12, background: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-primary)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Wiki Graph</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Enable</span>
+                          <input type="checkbox" checked={wikiEnabled} onChange={e => updateWiki('enabled', e.target.checked)} />
+                        </div>
+                      </div>
+
+                      {wikiEnabled && (
+                        <>
+                          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 10 }}>
+                            Build a knowledge graph from indexed documents using LLM. Extracts entities, relationships, and generates wiki pages.
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                            <div>
+                              <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Provider ID</div>
+                              <input
+                                value={String(wikiConfig.providerId || '')}
+                                onChange={e => updateWiki('providerId', e.target.value)}
+                                placeholder="Provider ID from Settings"
+                                style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }}
+                              />
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Model</div>
+                              <input
+                                value={String(wikiConfig.model || '')}
+                                onChange={e => updateWiki('model', e.target.value)}
+                                placeholder="e.g. gpt-4o-mini"
+                                style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }}
+                              />
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <button
+                              onClick={async () => {
+                                if (!wikiConfig.providerId) { message.error('Set Provider ID first'); return }
+                                message.info('Building wiki... This may take a while.')
+                                const r = await window.api.wiki.build(kbId, { providerId: String(wikiConfig.providerId), model: String(wikiConfig.model || '') }) as { success?: boolean; entities?: number; relationships?: number; pages?: number; error?: string }
+                                if (r.success) message.success(`Wiki built: ${r.entities} entities, ${r.relationships} relations, ${r.pages} pages`)
+                                else if (r.error) message.error(r.error)
+                              }}
+                              style={{ padding: '6px 14px', fontSize: 12, borderRadius: 5, background: 'var(--accent-muted)', border: '1px solid var(--accent)30', color: 'var(--accent)', cursor: 'pointer', fontWeight: 500 }}
+                            >
+                              Build Wiki
+                            </button>
+                            <button
+                              onClick={async () => {
+                                await window.api.wiki.delete(kbId)
+                                message.success('Wiki deleted')
+                              }}
+                              style={{ padding: '6px 14px', fontSize: 12, borderRadius: 5, background: 'var(--bg-hover)', border: '1px solid var(--border-primary)', color: 'var(--text-secondary)', cursor: 'pointer', fontWeight: 500 }}
+                            >
+                              Delete Wiki
+                            </button>
+                          </div>
+                        </>
+                      )}
                     </div>
                   )
                 })()}

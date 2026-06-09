@@ -77,6 +77,22 @@ interface Window {
       stop: () => Promise<{ success: boolean; error?: string }>
       status: () => Promise<{ running: boolean }>
     }
+    wiki: {
+      build: (kbId: string, options?: { providerId?: string; model?: string }) => Promise<{ success?: boolean; entities?: number; relationships?: number; pages?: number; error?: string }>
+      stats: (kbId: string) => Promise<{ entities: number; relationships: number; pages: number; built: boolean }>
+      entities: (kbId: string, type?: string) => Promise<unknown[]>
+      entity: (entityId: string) => Promise<unknown>
+      entityRelationships: (entityId: string) => Promise<unknown[]>
+      entityChunks: (entityId: string) => Promise<string[]>
+      search: (kbId: string, query: string, limit?: number) => Promise<unknown[]>
+      pages: (kbId: string) => Promise<unknown[]>
+      page: (pageId: string) => Promise<unknown>
+      pageByEntity: (entityId: string) => Promise<unknown>
+      overview: (kbId: string) => Promise<unknown>
+      graph: (kbId: string) => Promise<{ entities: unknown[]; relationships: unknown[] }>
+      delete: (kbId: string) => Promise<{ success: boolean }>
+      onProgress: (callback: (event: unknown) => void) => () => void
+    }
     onStreamChunk: (callback: (chunk: string) => void) => () => void
   }
 }

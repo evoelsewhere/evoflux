@@ -5,6 +5,12 @@ import {
   listDocuments, listChunks, getKBStats,
   searchChunksByVector, exportKB, importKB
 } from '../../src/engine/db/kb-repo'
+import {
+  listEntities, getEntity, searchEntities, getEntityByName,
+  listRelationships, listPages, getPage, getPageByEntity, getOverviewPage,
+  getWikiStats, deleteWikiByKB, getEntityChunkIds
+} from '../../src/engine/db/wiki-repo'
+import { buildWiki } from '../../src/engine/kb/wiki-builder'
 import { hybridSearch } from '../../src/engine/kb/hybrid-search'
 import { indexFolder, indexFiles, syncSource } from '../../src/engine/kb/pipeline'
 import { detectGitRepo, getChangedFiles, getFileDiff, watchGitRepo } from '../../src/engine/kb/git-ops'
@@ -214,5 +220,86 @@ export function registerKBHandlers(): void {
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) }
     }
+  })
+
+  // ==================== Wiki ====================
+
+  ipcMain.handle('wiki:build', async (_event, kbId, options) => {
+    try {
+      const kb = getKB(kbId)
+      if (!kb) return { error: 'KB not found' }
+
+      let config: Record<string, unknown> = {}
+      try { config = JSON.parse(kb.config_json) } catch {}
+      const wikiConfig = (config.wiki || {}) as Record<string, unknown>
+
+      const providerId = options?.providerId || wikiConfig.providerId
+      const model = options?.model || wikiConfig.model
+      if (!providerId) return { error: 'No provider configured for wiki. Set provider in KB Settings > Wiki Graph.' }
+
+      const aiChat = (globalThis as any).__evolux_ai_chat
+      if (!aiChat) return { error: 'AI chat not available' }
+
+      const result = await buildWiki(kbId, { providerId, model: model as string }, aiChat, (progress) => {
+        sendKBEvent({ ...progress, type: 'wiki:progress', timestamp: Date.now() })
+      })
+
+      return { success: true, ...result }
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  ipcMain.handle('wiki:stats', async (_event, kbId) => {
+    return getWikiStats(kbId)
+  })
+
+  ipcMain.handle('wiki:entities', async (_event, kbId, type) => {
+    return listEntities(kbId, type)
+  })
+
+  ipcMain.handle('wiki:entity', async (_entity, entityId) => {
+    return getEntity(entityId) || null
+  })
+
+  ipcMain.handle('wiki:entityRelationships', async (_event, entityId) => {
+    const entity = getEntity(entityId)
+    if (!entity) return []
+    return listRelationships(entity.kb_id, entityId)
+  })
+
+  ipcMain.handle('wiki:entityChunks', async (_event, entityId) => {
+    return getEntityChunkIds(entityId)
+  })
+
+  ipcMain.handle('wiki:search', async (_event, kbId, query, limit) => {
+    return searchEntities(kbId, query, limit || 20)
+  })
+
+  ipcMain.handle('wiki:pages', async (_event, kbId) => {
+    return listPages(kbId)
+  })
+
+  ipcMain.handle('wiki:page', async (_event, pageId) => {
+    return getPage(pageId) || null
+  })
+
+  ipcMain.handle('wiki:pageByEntity', async (_event, entityId) => {
+    return getPageByEntity(entityId) || null
+  })
+
+  ipcMain.handle('wiki:overview', async (_event, kbId) => {
+    return getOverviewPage(kbId) || null
+  })
+
+  ipcMain.handle('wiki:graph', async (_event, kbId) => {
+    const entities = listEntities(kbId)
+    const relationships = listRelationships(kbId)
+    return { entities, relationships }
+  })
+
+  ipcMain.handle('wiki:delete', async (_event, kbId) => {
+    deleteWikiByKB(kbId)
+    return { success: true }
   })
 }
