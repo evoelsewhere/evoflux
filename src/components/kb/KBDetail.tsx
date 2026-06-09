@@ -231,10 +231,11 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
     const [mcpLoading, setMcpLoading] = useState(false)
 
     useEffect(() => {
-      window.api.mcp.status().then((s: { running: boolean }) => setMcpRunning(s.running))
+      window.api?.mcp?.status?.()?.then?.((s: { running: boolean }) => setMcpRunning(s.running))?.catch?.(() => {})
     }, [])
 
     const toggleMCP = async () => {
+      if (!window.api?.mcp) { message.error('MCP not available — restart app'); return }
       setMcpLoading(true)
       try {
         if (mcpRunning) {
