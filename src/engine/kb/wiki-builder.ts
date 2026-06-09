@@ -1,5 +1,5 @@
 import { nanoid } from 'nanoid'
-import { listChunksByKB, type KBChunkRow } from '../db/kb-repo'
+import { listDocuments, listChunksByKB, type KBDocumentRow, type KBChunkRow } from '../db/kb-repo'
 import {
   insertEntity, getEntityByName, mergeEntityChunks, linkEntityChunks,
   insertRelationship, insertPage, createBuildProgress, updateBuildProgress,
@@ -11,89 +11,136 @@ import { embed } from '../memory/embedding'
 export interface WikiBuilderOptions {
   providerId: string
   model: string
-  batchSize?: number
   maxEntities?: number
 }
 
 export interface WikiProgress {
-  type: 'start' | 'batch' | 'entity' | 'page' | 'complete' | 'error'
-  batch?: number
+  type: 'start' | 'document' | 'merge' | 'page' | 'complete' | 'error'
+  current?: number
   total?: number
   entities?: number
   relationships?: number
-  saved?: boolean
   error?: string
 }
 
-const BATCH_SIZE = 50
 const PARALLEL_WORKERS = 3
 
-type ExtractedEntity = { name: string; type: string; summary: string; aliases?: string[]; importance?: number }
-type ExtractedRelationship = { source: string; target: string; type: string; label: string; weight?: number }
+type ExtractedEntity = { name: string; type: string; summary: string; details?: string; aliases?: string[]; importance?: number }
+type ExtractedRelationship = { source: string; target: string; type: string; description?: string; weight?: number }
 
-const EXTRACT_SYSTEM_PROMPT = `You are a knowledge extraction engine. Extract structured information from documents.
+const SUMMARIZE_PROMPT = `You are a technical analyst. Analyze this document and extract structured knowledge.
 
-Rules:
-- Extract ONLY concrete, meaningful entities (not generic words)
-- Entity types: concept, api, class, function, config, tool, pattern
-- Relationships: depends_on, part_of, uses, extends, related_to, alternative_to
-- Be precise and concise
-- Output valid JSON only, no markdown`
+Document: {docName}
 
-function extractUserPrompt(content: string): string {
-  return `Extract all entities and relationships from this document.
+Content:
+{content}
 
-Document content:
-${content.substring(0, 8000)}
-
-Output JSON format:
+Extract in JSON format:
 {
+  "summary": "2-3 sentence summary of what this document covers",
   "entities": [
-    { "name": "EntityName", "type": "concept", "summary": "1-2 sentence description", "aliases": ["alt name"], "importance": 0.8 }
+    {
+      "name": "EntityName",
+      "type": "concept|api|class|function|config|tool|pattern",
+      "summary": "Clear 1-2 sentence description",
+      "details": "Key details, usage notes, important facts",
+      "importance": 0.0-1.0
+    }
   ],
   "relationships": [
-    { "source": "EntityA", "target": "EntityB", "type": "depends_on", "label": "human-readable description", "weight": 0.8 }
+    {
+      "source": "EntityA",
+      "target": "EntityB",
+      "type": "depends_on|part_of|uses|extends|related_to|alternative_to",
+      "description": "Clear description of how they relate"
+    }
   ]
 }
 
-If no entities found, return {"entities": [], "relationships": []}`
-}
+Rules:
+- Extract ONLY significant, specific entities (not generic words)
+- Entity names should be proper nouns or specific technical terms
+- Include code examples in details if relevant
+- Relationships must be between entities you extracted
+- Be thorough but precise
+- Output valid JSON only`
 
-function summarizePrompt(entities: Array<{ name: string; type: string; summary: string }>, relationships: Array<{ source: string; target: string; type: string; label: string }>): string {
-  return `Generate a brief overview wiki page for a knowledge base.
+const OVERVIEW_PROMPT = `You are a technical writer creating a wiki overview page.
 
-Entities (${entities.length}):
-${entities.map(e => `- ${e.name} (${e.type}): ${e.summary}`).join('\n')}
+Knowledge Base: {kbName}
 
-Key relationships:
-${relationships.slice(0, 50).map(r => `- ${r.source} → ${r.target} (${r.type}: ${r.label})`).join('\n')}
+Document Summaries:
+{summaries}
 
-Write a markdown overview page with:
-1. Executive summary (2-3 sentences)
-2. Key topics grouped by type
-3. Quick reference table (name | type | summary)
+Key Entities ({entityCount} total):
+{entities}
 
-Keep it concise. No code blocks, no unnecessary formatting.`
-}
+Key Relationships:
+{relationships}
 
-function entityPagePrompt(entity: { name: string; type: string; summary: string }, relatedEntities: string[], chunkContents: string[]): string {
-  return `Generate a wiki page for entity "${entity.name}".
+Write a comprehensive wiki overview page in markdown:
 
-Type: ${entity.type}
-Summary: ${entity.summary}
-Related: ${relatedEntities.join(', ')}
+# Overview
 
-Source content:
-${chunkContents.map(c => c.substring(0, 1000)).join('\n---\n').substring(0, 6000)}
+[2-3 paragraph executive summary]
 
-Write a wiki page in markdown:
-1. Overview (2-3 sentences)
-2. Key details
-3. Usage/examples (if applicable)
-4. Related topics
+## Key Concepts
 
-Keep it concise and factual.`
-}
+[Group and describe the main concepts, each as a subsection]
+
+## Architecture
+
+[Describe the overall structure and how components relate]
+
+## Quick Reference
+
+[Table: Name | Type | Description]
+
+## Getting Started
+
+[Brief guide on where to start reading]
+
+Use proper markdown formatting. Be factual and concise. Do not use code blocks for the overview text.`
+
+const ENTITY_PAGE_PROMPT = `You are a technical writer creating a wiki page for a specific entity.
+
+Entity: {name}
+Type: {type}
+Summary: {summary}
+Details: {details}
+
+Related Entities:
+{relatedEntities}
+
+Source Documents:
+{sourceDocs}
+
+Source Content (relevant excerpts):
+{sourceContent}
+
+Write a detailed wiki page in markdown:
+
+# {name}
+
+[Comprehensive description - 3-5 paragraphs]
+
+## Key Details
+
+[Important facts, parameters, configurations]
+
+## Usage
+
+[How to use, examples if applicable]
+
+## Related Topics
+
+[Links to related entities with brief descriptions]
+
+## References
+
+[Source document names]
+
+Use proper markdown formatting. Be thorough and accurate. Include code examples where relevant.`
 
 export async function buildWiki(
   kbId: string,
@@ -101,124 +148,127 @@ export async function buildWiki(
   aiChat: (messages: Array<{ role: string; content: string }>, opts?: { model?: string; provider?: string }) => Promise<string>,
   onProgress?: (progress: WikiProgress) => void
 ): Promise<{ entities: number; relationships: number; pages: number }> {
-  const batchSize = options.batchSize || BATCH_SIZE
 
   deleteWikiByKB(kbId)
 
-  const allChunks = listChunksByKB(kbId)
-  if (allChunks.length === 0) {
+  const documents = listDocuments(kbId)
+  if (documents.length === 0) {
     onProgress?.({ type: 'complete', entities: 0, relationships: 0 })
     return { entities: 0, relationships: 0, pages: 0 }
   }
 
-  const batches: KBChunkRow[][] = []
-  for (let i = 0; i < allChunks.length; i += batchSize) {
-    batches.push(allChunks.slice(i, i + batchSize))
+  const allChunks = listChunksByKB(kbId)
+  const chunkMap = new Map<string, KBChunkRow[]>()
+  for (const chunk of allChunks) {
+    if (!chunkMap.has(chunk.doc_id)) chunkMap.set(chunk.doc_id, [])
+    chunkMap.get(chunk.doc_id)!.push(chunk)
   }
 
-  const progressId = createBuildProgress(kbId, batches.length)
-  onProgress?.({ type: 'start', total: batches.length })
+  const progressId = createBuildProgress(kbId, documents.length)
+  onProgress?.({ type: 'start', total: documents.length })
 
-  const entityMap = new Map<string, { entityId: string; name: string; type: string; summary: string }>()
-  const allRelationships: Array<{ source: string; target: string; type: string; label: string; weight: number; chunkIds: string[] }> = []
-  let failedBatches = 0
-  let errorLog: Array<{ batch: number; error: string }> = []
+  const entityMap = new Map<string, { entityId: string; name: string; type: string; summary: string; details: string }>()
+  const allRelationships: Array<{ source: string; target: string; type: string; description: string; chunkIds: string[] }> = []
+  const documentSummaries: Array<{ name: string; summary: string }> = []
+  let failedDocs = 0
 
-  async function processBatch(batchIdx: number): Promise<{ entities: ExtractedEntity[]; relationships: ExtractedRelationship[]; batchIds: string[] } | null> {
-    const batch = batches[batchIdx]
-    const batchIds = batch.map(c => c.id)
+  async function processDocument(docIdx: number): Promise<void> {
+    const doc = documents[docIdx]
+    const docChunks = chunkMap.get(doc.id) || []
+    if (docChunks.length === 0) return
 
-    const alreadyLinked = getLinkedChunkIds(batchIds)
-    if (alreadyLinked.length === batchIds.length) {
-      onProgress?.({ type: 'batch', batch: batchIdx, total: batches.length, saved: false })
-      return null
-    }
+    const content = docChunks.map(c => c.content).join('\n\n').substring(0, 30000)
+    const chunkIds = docChunks.map(c => c.id)
 
     try {
-      const content = batch.map(c => c.content).join('\n---\n')
+      const prompt = SUMMARIZE_PROMPT
+        .replace('{docName}', doc.name)
+        .replace('{content}', content)
+
       const response = await aiChat([
-        { role: 'system', content: EXTRACT_SYSTEM_PROMPT },
-        { role: 'user', content: extractUserPrompt(content) }
+        { role: 'system', content: 'You are a knowledge extraction engine. Output valid JSON only, no markdown.' },
+        { role: 'user', content: prompt }
       ], { model: options.model, provider: options.providerId })
 
-      const parsed = parseExtractResult(response)
-      onProgress?.({ type: 'batch', batch: batchIdx, total: batches.length, entities: parsed.entities.length, relationships: parsed.relationships.length, saved: true })
-      return { ...parsed, batchIds }
-    } catch (error) {
-      failedBatches++
-      errorLog.push({ batch: batchIdx, error: error instanceof Error ? error.message : String(error) })
-      updateBuildProgress(progressId, { failed_batches: failedBatches, error_log: JSON.stringify(errorLog) })
-      onProgress?.({ type: 'error', batch: batchIdx, error: error instanceof Error ? error.message : String(error) })
-      return null
-    }
-  }
+      const parsed = parseJSON(response)
+      if (!parsed) return
 
-  for (let i = 0; i < batches.length; i += PARALLEL_WORKERS) {
-    const chunk = batches.slice(i, i + PARALLEL_WORKERS)
-    const indices = chunk.map((_, j) => i + j)
-    const results = await Promise.all(indices.map(idx => processBatch(idx)))
+      documentSummaries.push({ name: doc.name, summary: parsed.summary || '' })
 
-    for (const result of results) {
-      if (!result) continue
+      for (const entity of (parsed.entities || [])) {
+        if (!entity.name || !entity.type) continue
 
-      for (const entity of result.entities) {
-        const existingFromMap = entityMap.get(entity.name.toLowerCase())
-        const existingFromDB = getEntityByName(kbId, entity.name)
-        const existingEntityId = existingFromMap?.entityId || existingFromDB?.id
-        if (existingEntityId) {
-          mergeEntityChunks(existingEntityId, result.batchIds, i)
-          entityMap.set(entity.name.toLowerCase(), { entityId: existingEntityId, name: entity.name, type: entity.type, summary: entity.summary })
+        const existing = entityMap.get(entity.name.toLowerCase())
+        if (existing) {
+          const existingEntity = getEntityByName(kbId, entity.name)
+          if (existingEntity) {
+            mergeEntityChunks(existingEntity.id, chunkIds)
+            if (entity.details && (!existing.details || entity.details.length > existing.details.length)) {
+              existing.details = entity.details
+              existing.summary = entity.summary || existing.summary
+            }
+          }
         } else {
           const entityId = `ent-${nanoid(10)}`
+          let embBuf: Buffer | null = null
           try {
-            const embedding = await embed(`${entity.name}: ${entity.summary}`, 'passage')
-            insertEntity({
-              id: entityId, kb_id: kbId, name: entity.name, type: entity.type,
-              summary: entity.summary, description: null,
-              chunk_ids: JSON.stringify(result.batchIds),
-              embedding: Buffer.from(embedding.buffer),
-              metadata_json: JSON.stringify({ aliases: entity.aliases || [], importance: entity.importance || 0.5 })
-            })
-          } catch {
-            insertEntity({
-              id: entityId, kb_id: kbId, name: entity.name, type: entity.type,
-              summary: entity.summary, description: null,
-              chunk_ids: JSON.stringify(result.batchIds),
-              embedding: null,
-              metadata_json: JSON.stringify({ aliases: entity.aliases || [], importance: entity.importance || 0.5 })
-            })
-          }
-          linkEntityChunks(entityId, result.batchIds, i)
-          entityMap.set(entity.name.toLowerCase(), { entityId, name: entity.name, type: entity.type, summary: entity.summary })
-        }
-      }
+            const emb = await embed(`${entity.name}: ${entity.summary || ''}`, 'passage')
+            embBuf = Buffer.from(emb.buffer)
+          } catch { /* skip embedding */ }
 
-      for (const rel of result.relationships) {
-        const srcEntity = entityMap.get(rel.source.toLowerCase())
-        const tgtEntity = entityMap.get(rel.target.toLowerCase())
-        if (srcEntity && tgtEntity) {
-          allRelationships.push({
-            source: srcEntity.entityId, target: tgtEntity.entityId,
-            type: rel.type, label: rel.label, weight: rel.weight || 0.5,
-            chunkIds: result.batchIds
+          insertEntity({
+            id: entityId, kb_id: kbId, name: entity.name, type: entity.type,
+            summary: entity.summary || '', description: entity.details || '',
+            chunk_ids: JSON.stringify(chunkIds), embedding: embBuf,
+            metadata_json: JSON.stringify({ importance: entity.importance || 0.5 })
+          })
+          linkEntityChunks(entityId, chunkIds)
+          entityMap.set(entity.name.toLowerCase(), {
+            entityId, name: entity.name, type: entity.type,
+            summary: entity.summary || '', details: entity.details || ''
           })
         }
       }
-    }
 
-    updateBuildProgress(progressId, {
-      completed_batches: Math.min(i + PARALLEL_WORKERS, batches.length),
-      total_entities: entityMap.size,
-      total_relationships: allRelationships.length
-    })
+      for (const rel of (parsed.relationships || [])) {
+        const srcEntity = entityMap.get(rel.source?.toLowerCase())
+        const tgtEntity = entityMap.get(rel.target?.toLowerCase())
+        if (srcEntity && tgtEntity) {
+          allRelationships.push({
+            source: srcEntity.entityId, target: tgtEntity.entityId,
+            type: rel.type || 'related_to', description: rel.description || '',
+            chunkIds
+          })
+        }
+      }
+
+      updateBuildProgress(progressId, {
+        completed_batches: docIdx + 1,
+        total_entities: entityMap.size,
+        total_relationships: allRelationships.length
+      })
+
+      onProgress?.({ type: 'document', current: docIdx + 1, total: documents.length, entities: entityMap.size, relationships: allRelationships.length })
+    } catch (error) {
+      failedDocs++
+      onProgress?.({ type: 'error', current: docIdx + 1, total: documents.length, error: error instanceof Error ? error.message : String(error) })
+    }
   }
+
+  for (let i = 0; i < documents.length; i += PARALLEL_WORKERS) {
+    const indices = []
+    for (let j = i; j < Math.min(i + PARALLEL_WORKERS, documents.length); j++) indices.push(j)
+    await Promise.all(indices.map(idx => processDocument(idx)))
+  }
+
+  onProgress?.({ type: 'merge', entities: entityMap.size, relationships: allRelationships.length })
 
   const uniqueRelationships = dedupRelationships(allRelationships)
   for (const rel of uniqueRelationships) {
     insertRelationship({
       id: `rel-${nanoid(10)}`, kb_id: kbId,
       source_entity_id: rel.source, target_entity_id: rel.target,
-      type: rel.type, label: rel.label, weight: rel.weight,
+      type: rel.type, label: rel.description, weight: 0.8,
       chunk_ids: JSON.stringify(rel.chunkIds), metadata_json: null
     })
   }
@@ -226,40 +276,63 @@ export async function buildWiki(
   onProgress?.({ type: 'page', entities: entityMap.size, relationships: uniqueRelationships.length })
 
   const entitiesList = Array.from(entityMap.values())
+  const topEntities = entitiesList.sort((a, b) => (b.details?.length || 0) - (a.details?.length || 0)).slice(0, 30)
+
   try {
+    const overviewPrompt = OVERVIEW_PROMPT
+      .replace('{kbName}', documents[0]?.path?.split('/').slice(0, -1).join('/') || 'Knowledge Base')
+      .replace('{summaries}', documentSummaries.slice(0, 50).map(s => `- ${s.name}: ${s.summary}`).join('\n'))
+      .replace('{entityCount}', String(entitiesList.length))
+      .replace('{entities}', topEntities.slice(0, 50).map(e => `- **${e.name}** (${e.type}): ${e.summary}`).join('\n'))
+      .replace('{relationships}', uniqueRelationships.slice(0, 30).map(r => {
+        const src = entityMap.get(r.source)?.name || r.source
+        const tgt = entityMap.get(r.target)?.name || r.target
+        return `- ${src} → ${tgt} (${r.type}): ${r.description}`
+      }).join('\n'))
+
     const overviewResp = await aiChat([
-      { role: 'system', content: 'You are a technical writer. Write concise wiki pages in markdown.' },
-      { role: 'user', content: summarizePrompt(entitiesList, uniqueRelationships.map(r => ({ source: entityMap.get(r.source)?.name || r.source, target: entityMap.get(r.target)?.name || r.target, type: r.type, label: r.label || '' }))) }
+      { role: 'system', content: 'You are a technical writer. Write clear, structured wiki pages in markdown.' },
+      { role: 'user', content: overviewPrompt }
     ], { model: options.model, provider: options.providerId })
 
     insertPage({
       id: `pg-${nanoid(10)}`, kb_id: kbId, entity_id: null,
       title: 'Overview', content: overviewResp, type: 'overview', metadata_json: null
     })
-  } catch { /* overview page is optional */ }
+  } catch { /* overview is optional */ }
 
-  const topEntities = entitiesList.sort((a, b) => {
-    const aMeta = JSON.parse(getEntityByName(kbId, a.name)?.metadata_json || '{}')
-    const bMeta = JSON.parse(getEntityByName(kbId, b.name)?.metadata_json || '{}')
-    return (bMeta.importance || 0.5) - (aMeta.importance || 0.5)
-  }).slice(0, 20)
-
-  for (const entity of topEntities) {
+  for (const entity of topEntities.slice(0, 20)) {
     const fullEntity = getEntityByName(kbId, entity.name)
     if (!fullEntity) continue
 
     const related = uniqueRelationships
       .filter(r => r.source === fullEntity.id || r.target === fullEntity.id)
-      .map(r => r.source === fullEntity.id ? entityMap.get(r.target)?.name : entityMap.get(r.source)?.name)
-      .filter(Boolean) as string[]
+      .map(r => {
+        const otherId = r.source === fullEntity.id ? r.target : r.source
+        const other = entityMap.get(otherId)?.name || otherId
+        return `- ${r.source === fullEntity.id ? '→' : '←'} **${other}** (${r.type}): ${r.description}`
+      }).join('\n')
 
     const chunkIds = JSON.parse(fullEntity.chunk_ids || '[]') as string[]
-    const chunkContents = allChunks.filter(c => chunkIds.includes(c.id)).map(c => c.content)
+    const sourceContent = allChunks.filter(c => chunkIds.includes(c.id)).map(c => c.content).join('\n\n').substring(0, 8000)
+    const sourceDocs = [...new Set(allChunks.filter(c => chunkIds.includes(c.id)).map(c => {
+      const doc = documents.find(d => d.id === c.doc_id)
+      return doc?.name || 'unknown'
+    }))].join(', ')
 
     try {
+      const pagePrompt = ENTITY_PAGE_PROMPT
+        .replace('{name}', entity.name)
+        .replace('{type}', entity.type)
+        .replace('{summary}', entity.summary)
+        .replace('{details}', entity.details || 'No additional details')
+        .replace('{relatedEntities}', related || 'None')
+        .replace('{sourceDocs}', sourceDocs)
+        .replace('{sourceContent}', sourceContent.substring(0, 6000))
+
       const pageResp = await aiChat([
-        { role: 'system', content: 'You are a technical writer. Write concise wiki pages in markdown.' },
-        { role: 'user', content: entityPagePrompt(entity, related, chunkContents) }
+        { role: 'system', content: 'You are a technical writer. Write detailed wiki pages in markdown.' },
+        { role: 'user', content: pagePrompt }
       ], { model: options.model, provider: options.providerId })
 
       insertPage({
@@ -280,34 +353,26 @@ export async function buildWiki(
   return { entities: stats.entities, relationships: stats.relationships, pages: stats.pages }
 }
 
-function parseExtractResult(response: string): {
-  entities: Array<{ name: string; type: string; summary: string; aliases?: string[]; importance?: number }>
-  relationships: Array<{ source: string; target: string; type: string; label: string; weight?: number }>
-} {
-  let text = response.trim()
-
-  const jsonMatch = text.match(/\{[\s\S]*\}/)
-  if (jsonMatch) text = jsonMatch[0]
-
+function parseJSON(text: string): { summary?: string; entities?: ExtractedEntity[]; relationships?: ExtractedRelationship[] } | null {
   try {
-    const parsed = JSON.parse(text)
+    const match = text.match(/\{[\s\S]*\}/)
+    const raw = match ? JSON.parse(match[0]) : JSON.parse(text)
     return {
-      entities: Array.isArray(parsed.entities) ? parsed.entities : [],
-      relationships: Array.isArray(parsed.relationships) ? parsed.relationships : []
+      summary: typeof raw.summary === 'string' ? raw.summary : undefined,
+      entities: Array.isArray(raw.entities) ? raw.entities : [],
+      relationships: Array.isArray(raw.relationships) ? raw.relationships : []
     }
-  } catch {
-    return { entities: [], relationships: [] }
-  }
+  } catch { return null }
 }
 
-function dedupRelationships(rels: Array<{ source: string; target: string; type: string; label: string; weight: number; chunkIds: string[] }>) {
+function dedupRelationships(rels: Array<{ source: string; target: string; type: string; description: string; chunkIds: string[] }>) {
   const map = new Map<string, typeof rels[0]>()
   for (const rel of rels) {
     const key = `${rel.source}:${rel.target}:${rel.type}`
     const existing = map.get(key)
     if (existing) {
-      existing.weight = Math.max(existing.weight, rel.weight)
       existing.chunkIds = [...new Set([...existing.chunkIds, ...rel.chunkIds])]
+      if (rel.description.length > existing.description.length) existing.description = rel.description
     } else {
       map.set(key, { ...rel })
     }

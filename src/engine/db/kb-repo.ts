@@ -323,47 +323,54 @@ function cosineSimilarityFast(a: Float32Array, aNorm: number, b: Float32Array): 
   return denom === 0 ? 0 : dot / denom
 }
 
-// ==================== BM25 Search (FTS5) ====================
+// ==================== BM25 Search (LIKE-based) ====================
 
 export function searchChunksByBM25(kbId: string, query: string, limit: number = 20): SearchResult[] {
   const db = getDatabase()
 
-  const ftsRows = db.prepare(`
-    SELECT rowid, rank FROM kb_chunks_fts
-    WHERE kb_chunks_fts MATCH ?
-    ORDER BY rank
-    LIMIT ?
-  `).all(query, limit) as unknown as Array<{ rowid: number; rank: number }>
+  const terms = query.toLowerCase().split(/\s+/).filter(t => t.length >= 2).slice(0, 5)
+  if (terms.length === 0) return []
 
-  if (ftsRows.length === 0) return []
+  const conditions = terms.map(() => 'LOWER(c.content) LIKE ?').join(' OR ')
+  const params = terms.map(t => `%${t}%`)
 
-  const rowids = ftsRows.map(r => r.rowid)
-  const placeholders = rowids.map(() => '?').join(',')
-  const chunks = db.prepare(`
-    SELECT c.rowid, c.id as chunk_id, c.doc_id, c.kb_id, c.content, c.metadata_json,
+  const rows = db.prepare(`
+    SELECT c.id as chunk_id, c.doc_id, c.kb_id, c.content, c.metadata_json,
            d.name as doc_name, d.path as doc_path, d.extension as doc_extension
     FROM kb_chunks c
     JOIN kb_documents d ON c.doc_id = d.id
-    WHERE c.rowid IN (${placeholders}) AND c.kb_id = ?
-  `).all(...rowids, kbId) as unknown as Array<{ rowid: number; chunk_id: string; doc_id: string; kb_id: string; content: string; metadata_json: string | null; doc_name: string; doc_path: string; doc_extension: string | null }>
+    WHERE c.kb_id = ? AND (${conditions})
+    LIMIT ?
+  `).all(kbId, ...params, limit) as unknown as Array<{ chunk_id: string; doc_id: string; kb_id: string; content: string; metadata_json: string | null; doc_name: string; doc_path: string; doc_extension: string | null }>
 
-  const rankMap = new Map(ftsRows.map(r => [r.rowid, r.rank]))
-  const results: SearchResult[] = chunks.map(row => ({
-    chunk_id: row.chunk_id,
-    doc_id: row.doc_id,
-    kb_id: row.kb_id,
-    content: row.content,
-    metadata_json: row.metadata_json,
-    vector_score: 0,
-    bm25_score: rankMap.get(row.rowid) || 0,
-    hybrid_score: rankMap.get(row.rowid) || 0,
-    doc_name: row.doc_name,
-    doc_path: row.doc_path,
-    doc_extension: row.doc_extension
-  }))
+  const results: SearchResult[] = rows.map(row => {
+    const contentLower = row.content.toLowerCase()
+    let score = 0
+    for (const term of terms) {
+      const idx = contentLower.indexOf(term)
+      if (idx >= 0) {
+        score += 1.0 / (1.0 + idx * 0.001)
+        const count = (contentLower.match(new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length
+        score += count * 0.1
+      }
+    }
+    return {
+      chunk_id: row.chunk_id,
+      doc_id: row.doc_id,
+      kb_id: row.kb_id,
+      content: row.content,
+      metadata_json: row.metadata_json,
+      vector_score: 0,
+      bm25_score: score,
+      hybrid_score: score,
+      doc_name: row.doc_name,
+      doc_path: row.doc_path,
+      doc_extension: row.doc_extension
+    }
+  })
 
   results.sort((a, b) => b.bm25_score - a.bm25_score)
-  return results
+  return results.slice(0, limit)
 }
 
 // ==================== Stats ====================

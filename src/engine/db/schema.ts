@@ -275,27 +275,7 @@ export const MIGRATIONS: Record<number, string> = {
     CREATE INDEX IF NOT EXISTS idx_kb_documents_kb ON kb_documents(kb_id);
     CREATE INDEX IF NOT EXISTS idx_kb_documents_source ON kb_documents(source_id);
     CREATE INDEX IF NOT EXISTS idx_kb_chunks_kb ON kb_chunks(kb_id);
-CREATE INDEX IF NOT EXISTS idx_kb_chunks_doc ON kb_chunks(doc_id);
-
-CREATE VIRTUAL TABLE IF NOT EXISTS kb_chunks_fts USING fts5(
-  content,
-  content='kb_chunks',
-  content_rowid='rowid',
-  tokenize='porter unicode61'
-);
-
-CREATE TRIGGER IF NOT EXISTS kb_chunks_fts_ai AFTER INSERT ON kb_chunks BEGIN
-  INSERT INTO kb_chunks_fts(rowid, content) VALUES (new.rowid, new.content);
-END;
-
-CREATE TRIGGER IF NOT EXISTS kb_chunks_fts_ad AFTER DELETE ON kb_chunks BEGIN
-  INSERT INTO kb_chunks_fts(kb_chunks_fts, rowid, content) VALUES('delete', old.rowid, old.content);
-END;
-
-CREATE TRIGGER IF NOT EXISTS kb_chunks_fts_au AFTER UPDATE ON kb_chunks BEGIN
-  INSERT INTO kb_chunks_fts(kb_chunks_fts, rowid, content) VALUES('delete', old.rowid, old.content);
-  INSERT INTO kb_chunks_fts(rowid, content) VALUES (new.rowid, new.content);
-END;
+    CREATE INDEX IF NOT EXISTS idx_kb_chunks_doc ON kb_chunks(doc_id);
   `,
   4: `
 CREATE TABLE IF NOT EXISTS wiki_entities (

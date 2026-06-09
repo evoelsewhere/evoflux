@@ -173,7 +173,7 @@ function runMigrations(db: DatabaseAdapter): void {
             try {
               db.exec(stmt + ';')
             } catch (e) {
-              console.warn(`[DB] Migration v${v} statement failed (may be ok if already exists):`, (e as Error).message?.substring(0, 80))
+              console.warn(`[DB] Migration v${v} statement failed:`, (e as Error).message?.substring(0, 80))
             }
           }
         }
@@ -186,9 +186,28 @@ function runMigrations(db: DatabaseAdapter): void {
       console.warn(`[DB] Migrated to schema version ${SCHEMA_VERSION}`)
       scheduleSave()
     }
+
+    ensureTables(db)
   } catch (e) {
     console.warn('[DB] Migration error:', (e as Error).message)
     db.prepare('INSERT OR IGNORE INTO schema_version (version) VALUES (?)').run(SCHEMA_VERSION)
+    ensureTables(db)
+  }
+}
+
+function ensureTables(db: DatabaseAdapter): void {
+  const criticalTables = [
+    'knowledge_bases', 'kb_sources', 'kb_documents', 'kb_chunks',
+    'wiki_entities', 'wiki_relationships', 'wiki_pages', 'wiki_entity_chunks', 'wiki_build_progress'
+  ]
+  for (const table of criticalTables) {
+    try {
+      db.prepare(`SELECT 1 FROM ${table} LIMIT 1`).get()
+    } catch {
+      console.warn(`[DB] Table ${table} missing, running full schema...`)
+      try { db.exec(SCHEMA_SQL) } catch { /* some tables may already exist */ }
+      return
+    }
   }
 }
 
