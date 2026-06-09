@@ -595,7 +595,7 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
 
             {/* Settings tab */}
             {activeTab === 'settings' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 900 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 {/* Stats — full width */}
                 <div style={{ padding: 12, background: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-primary)' }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>Index Statistics</div>
@@ -800,7 +800,7 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
           </div>
 
           {/* Chunks preview panel */}
-          {selectedDoc && chunks.length > 0 && (
+          {selectedDoc && chunks.length > 0 && (activeTab === 'tree' || activeTab === 'docs') && (
             <div style={{ height: 200, borderTop: '1px solid var(--border-primary)', overflow: 'auto', padding: 10, flexShrink: 0 }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>
                 Chunks ({chunks.length})
