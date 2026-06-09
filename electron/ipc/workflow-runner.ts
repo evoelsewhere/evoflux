@@ -89,9 +89,10 @@ async function aiChat(messages: Array<{ role: string; content: string }>, option
 }
 
 export function registerWorkflowRunnerHandlers(): void {
+  (globalThis as any).__evolux_ai_chat = aiChat
+
   ipcMain.handle('workflow:run', async (_event, dsl, options) => {
     try {
-      (globalThis as any).__evolux_ai_chat = aiChat
 
       const graph = deserializeGraph(dsl)
       const pool = new VariablePool()
