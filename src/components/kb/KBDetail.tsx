@@ -254,7 +254,7 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
       mcpServers: {
         'evolux-kb': {
           command: 'node',
-          args: [require('path').resolve(__dirname, '../out/mcp/index.js')]
+          args: ['<path-to-evolux>/out/mcp/index.js']
         }
       }
     }, null, 2)
