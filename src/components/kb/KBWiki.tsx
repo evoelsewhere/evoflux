@@ -6,15 +6,24 @@ interface WikiRelationship { id: string; source_entity_id: string; target_entity
 interface WikiPage { id: string; entity_id: string | null; title: string; content: string; type: string }
 interface WikiGraph { entities: WikiEntity[]; relationships: WikiRelationship[] }
 
-  const PAGE_TYPE_META: Record<string, { icon: string; color: string; label: string }> = {
-    overview: { icon: '📋', color: 'var(--accent)', label: 'Overview' },
-    insight: { icon: '💡', color: '#fbbf24', label: 'Insights' },
-    decision: { icon: '🎯', color: '#c084fc', label: 'Decisions' },
-    pattern: { icon: '🔄', color: '#34d399', label: 'Patterns' },
-    anti_pattern: { icon: '⚠️', color: '#f87171', label: 'Anti-patterns' },
-    qa: { icon: '❓', color: '#60a5fa', label: 'Q&A' },
-    entity: { icon: '📄', color: 'var(--text-tertiary)', label: 'Pages' },
-    topic: { icon: '📌', color: 'var(--text-tertiary)', label: 'Topics' }
+  const PAGE_TYPE_DEFAULTS: Record<string, { icon: string; color: string }> = {
+    overview: { icon: '📋', color: 'var(--accent)' },
+    insight: { icon: '💡', color: '#fbbf24' },
+    decision: { icon: '🎯', color: '#c084fc' },
+    pattern: { icon: '🔄', color: '#34d399' },
+    anti_pattern: { icon: '⚠️', color: '#f87171' },
+    qa: { icon: '❓', color: '#60a5fa' },
+    entity: { icon: '📄', color: 'var(--text-tertiary)' },
+    topic: { icon: '📌', color: 'var(--text-tertiary)' }
+  }
+
+  function getPageTypeMeta(type: string) {
+    const defaults = PAGE_TYPE_DEFAULTS[type]
+    return {
+      icon: defaults?.icon || '📄',
+      color: defaults?.color || 'var(--text-tertiary)',
+      label: type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g, ' ')
+    }
   }
 
   const ENTITY_TYPE_COLORS: Record<string, string> = {
@@ -174,7 +183,7 @@ export default function KBWiki({ kbId }: KBWikiProps) {
 
             {/* Dynamic page sections by type */}
             {Array.from(pagesByType.entries()).map(([type, typePages]) => {
-              const meta = PAGE_TYPE_META[type] || { icon: '📄', color: 'var(--text-tertiary)', label: type }
+              const meta = getPageTypeMeta(type)
               return (
                 <div key={type} style={{ marginBottom: 4 }}>
                   <div style={{
