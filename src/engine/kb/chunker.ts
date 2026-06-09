@@ -1,11 +1,15 @@
 export interface ChunkMetadata {
   heading?: string
+  headingBreadcrumb?: string[]
   headingLevel?: number
   lineStart: number
   lineEnd: number
   sourceFile: string
   sourceType: string
   chunkIndex: number
+  contextBefore?: string
+  contextAfter?: string
+  sectionType?: 'prose' | 'code' | 'list' | 'table' | 'config'
 }
 
 export interface Chunk {
@@ -48,27 +52,46 @@ export function semanticChunk(
     else strategy = 'paragraph'
   }
 
+  let chunks: Chunk[] = []
   switch (strategy) {
-    case 'heading': return chunkByHeading(content, filePath, ext, chunkSize, chunkOverlap, minChunkSize)
-    case 'code': return chunkByCode(content, filePath, ext, chunkSize, chunkOverlap, minChunkSize)
-    case 'paragraph': return chunkByParagraph(content, filePath, ext, chunkSize, chunkOverlap, minChunkSize)
-    case 'character': return chunkByCharacter(content, filePath, ext, chunkSize, chunkOverlap)
-    default: return chunkByParagraph(content, filePath, ext, chunkSize, chunkOverlap, minChunkSize)
+    case 'heading': chunks = chunkByHeading(content, filePath, ext, chunkSize, chunkOverlap, minChunkSize); break
+    case 'code': chunks = chunkByCode(content, filePath, ext, chunkSize, chunkOverlap, minChunkSize); break
+    case 'paragraph': chunks = chunkByParagraph(content, filePath, ext, chunkSize, chunkOverlap, minChunkSize); break
+    case 'character': chunks = chunkByCharacter(content, filePath, ext, chunkSize, chunkOverlap); break
+    default: chunks = chunkByParagraph(content, filePath, ext, chunkSize, chunkOverlap, minChunkSize)
   }
+
+  return addContextWindows(chunks)
 }
 
-// ==================== Heading-based chunking (Markdown) ====================
+function addContextWindows(chunks: Chunk[]): Chunk[] {
+  for (let i = 0; i < chunks.length; i++) {
+    if (i > 0) {
+      const prevLines = chunks[i - 1].content.split('\n')
+      chunks[i].metadata.contextBefore = prevLines.slice(-3).join('\n').substring(0, 200)
+    }
+    if (i < chunks.length - 1) {
+      const nextLines = chunks[i + 1].content.split('\n')
+      chunks[i].metadata.contextAfter = nextLines.slice(0, 3).join('\n').substring(0, 200)
+    }
+  }
+  return chunks
+}
+
+// ==================== Heading-based chunking ====================
 
 interface HeadingBlock {
   heading: string
   level: number
   lineStart: number
+  breadcrumb: string[]
   content: string
 }
 
 function parseHeadingBlocks(content: string): HeadingBlock[] {
   const lines = content.split('\n')
   const blocks: HeadingBlock[] = []
+  const headingStack: Array<{ text: string; level: number }> = []
   let current: HeadingBlock | null = null
 
   for (let i = 0; i < lines.length; i++) {
@@ -77,15 +100,24 @@ function parseHeadingBlocks(content: string): HeadingBlock[] {
 
     if (headingMatch) {
       if (current) blocks.push(current)
+      const level = headingMatch[1].length
+      const text = headingMatch[2].trim()
+
+      while (headingStack.length > 0 && headingStack[headingStack.length - 1].level >= level) {
+        headingStack.pop()
+      }
+      headingStack.push({ text, level })
+
       current = {
-        heading: headingMatch[2].trim(),
-        level: headingMatch[1].length,
+        heading: text,
+        level,
         lineStart: i,
+        breadcrumb: headingStack.map(h => h.text),
         content: ''
       }
     } else {
       if (!current) {
-        current = { heading: '', level: 0, lineStart: i, content: '' }
+        current = { heading: '', level: 0, lineStart: i, breadcrumb: [], content: '' }
       }
       current.content += (current.content ? '\n' : '') + line
     }
@@ -105,20 +137,22 @@ function chunkByHeading(
 
   for (const block of blocks) {
     const text = (block.heading ? `${'#'.repeat(block.level)} ${block.heading}\n` : '') + block.content
-    const headingCtx = block.heading || undefined
+    const sectionType = detectSectionType(block.content)
 
     if (text.length <= chunkSize) {
       if (text.trim().length >= minChunkSize) {
         chunks.push({
           content: text.trim(),
           metadata: {
-            heading: headingCtx,
+            heading: block.heading || undefined,
+            headingBreadcrumb: block.breadcrumb.length > 0 ? block.breadcrumb : undefined,
             headingLevel: block.level || undefined,
             lineStart: block.lineStart,
             lineEnd: block.lineStart + text.split('\n').length,
             sourceFile: filePath,
             sourceType: ext,
-            chunkIndex: idx++
+            chunkIndex: idx++,
+            sectionType
           }
         })
       }
@@ -128,13 +162,15 @@ function chunkByHeading(
         chunks.push({
           content: sub.text.trim(),
           metadata: {
-            heading: headingCtx,
+            heading: block.heading || undefined,
+            headingBreadcrumb: block.breadcrumb.length > 0 ? block.breadcrumb : undefined,
             headingLevel: block.level || undefined,
             lineStart: block.lineStart + sub.lineOffset,
             lineEnd: block.lineStart + sub.lineOffset + sub.text.split('\n').length,
             sourceFile: filePath,
             sourceType: ext,
-            chunkIndex: idx++
+            chunkIndex: idx++,
+            sectionType
           }
         })
       }
@@ -147,21 +183,23 @@ function chunkByHeading(
 // ==================== Code-aware chunking ====================
 
 const CODE_BOUNDARY = /^(export\s+)?(async\s+)?(function|class|interface|type|enum|const\s+\w+\s*=\s*(\(|async|\{))/
+const COMMENT_BLOCK = /^\/\*\*[\s\S]*?\*\//
 
 function chunkByCode(
   content: string, filePath: string, ext: string,
   chunkSize: number, overlap: number, minChunkSize: number
 ): Chunk[] {
   const lines = content.split('\n')
-  const blocks: Array<{ name: string; lineStart: number; lines: string[] }> = []
-  let current: { name: string; lineStart: number; lines: string[] } = { name: '', lineStart: 0, lines: [] }
+  const blocks: Array<{ name: string; lineStart: number; lines: string[]; type: 'function' | 'class' | 'comment' | 'other' }> = []
+  let current: { name: string; lineStart: number; lines: string[]; type: 'function' | 'class' | 'comment' | 'other' } = { name: '', lineStart: 0, lines: [], type: 'other' }
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
     if (CODE_BOUNDARY.test(line) && current.lines.length > 0) {
       blocks.push(current)
       const nameMatch = line.match(/(?:function|class|interface|type|enum)\s+(\w+)/)
-      current = { name: nameMatch?.[1] || `block_${blocks.length}`, lineStart: i, lines: [] }
+      const type = line.startsWith('class') ? 'class' : 'function'
+      current = { name: nameMatch?.[1] || `block_${blocks.length}`, lineStart: i, lines: [], type }
     }
     current.lines.push(line)
   }
@@ -179,11 +217,13 @@ function chunkByCode(
         content: text.trim(),
         metadata: {
           heading: block.name,
+          headingBreadcrumb: [block.name],
           lineStart: block.lineStart,
           lineEnd: block.lineStart + block.lines.length,
           sourceFile: filePath,
           sourceType: ext,
-          chunkIndex: idx++
+          chunkIndex: idx++,
+          sectionType: 'code'
         }
       })
     } else {
@@ -193,11 +233,13 @@ function chunkByCode(
           content: sub.text.trim(),
           metadata: {
             heading: block.name,
+            headingBreadcrumb: [block.name],
             lineStart: block.lineStart + sub.lineOffset,
             lineEnd: block.lineStart + sub.lineOffset + sub.text.split('\n').length,
             sourceFile: filePath,
             sourceType: ext,
-            chunkIndex: idx++
+            chunkIndex: idx++,
+            sectionType: 'code'
           }
         })
       }
@@ -221,7 +263,8 @@ function chunkByParagraph(
       lineEnd: p.lineOffset + p.text.split('\n').length,
       sourceFile: filePath,
       sourceType: ext,
-      chunkIndex: i
+      chunkIndex: i,
+      sectionType: detectSectionType(p.text)
     }
   })).filter(c => c.content.length >= minChunkSize)
 }
@@ -240,12 +283,22 @@ function chunkByCharacter(
       lineEnd: p.lineOffset + p.text.split('\n').length,
       sourceFile: filePath,
       sourceType: ext,
-      chunkIndex: i
+      chunkIndex: i,
+      sectionType: detectSectionType(p.text)
     }
   })).filter(c => c.content.length > 0)
 }
 
 // ==================== Helpers ====================
+
+function detectSectionType(text: string): 'prose' | 'code' | 'list' | 'table' | 'config' {
+  const trimmed = text.trim()
+  if (/^```|^import |^export |^const |^function |^class /.test(trimmed)) return 'code'
+  if (/^[-*]\s|^\d+\.\s/.test(trimmed)) return 'list'
+  if (/^\|.*\|/.test(trimmed)) return 'table'
+  if (/^[A-Z_]+\s*[:=]|^\w+:\s*\w+/m.test(trimmed)) return 'config'
+  return 'prose'
+}
 
 interface SplitPart { text: string; lineOffset: number }
 

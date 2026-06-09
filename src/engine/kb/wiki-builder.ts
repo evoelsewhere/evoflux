@@ -26,21 +26,35 @@ const PARALLEL_WORKERS = 3
 
 type ExtractedEntity = { name: string; type: string; description: string }
 type ExtractedRelationship = { source: string; target: string; keywords: string; description: string }
+type ExtractedInsight = { insight: string; importance?: number; related_entities?: string[] }
+type ExtractedDecision = { decision: string; rationale?: string; alternatives?: string }
+type ExtractedPattern = { pattern: string; type?: string; related_entities?: string[] }
+type ExtractedQA = { question: string; answer: string }
+
+interface ExtractionResult {
+  entities?: ExtractedEntity[]
+  relationships?: ExtractedRelationship[]
+  insights?: ExtractedInsight[]
+  decisions?: ExtractedDecision[]
+  patterns?: ExtractedPattern[]
+  qa_pairs?: ExtractedQA[]
+}
 
 // ==================== Prompts (GraphRAG-inspired) ====================
 
 const ENTITY_TYPES = 'Person, Organization, Location, Event, Concept, Method, API, Class, Function, Config, Tool, Pattern, Technology, File, Module'
 
 const EXTRACTION_PROMPT = `---Role---
-You are a Knowledge Graph Specialist responsible for extracting entities and relationships from documents.
+You are a Knowledge Graph Specialist responsible for extracting structured knowledge from documents.
 
 ---Goal---
-Given a text document, identify all significant entities and their relationships.
+Given a text document, extract entities, relationships, key insights, decisions, and patterns.
 
 ---Entity Types---
 ${ENTITY_TYPES}
 
 ---Instructions---
+
 1. Entity Extraction:
    - entity_name: Title Case (capitalize first letter of each significant word)
    - entity_type: One of the types listed above
@@ -52,22 +66,53 @@ ${ENTITY_TYPES}
    - relationship_keywords: High-level keywords separated by comma
    - relationship_description: Concise explanation of how they relate
 
-3. Rules:
-   - Max 30 entities, 50 relationships per extraction
-   - Entity names must be consistent (Title Case)
-   - Descriptions: objective, third-person, factual
-   - Only extract relationships between entities you identified
-   - Include code-specific entities (functions, classes, APIs, configs)
+3. Key Insights (what a human would highlight):
+   - insight: A non-obvious conclusion or takeaway from the text
+   - importance: How important is this? 0.0-1.0
+   - related_entities: Entity names this relates to
 
-4. Output Format: Valid JSON only, no markdown
+4. Decisions & Rationale (what was chosen and why):
+   - decision: What was decided or recommended
+   - rationale: Why this decision was made
+   - alternatives: What alternatives were considered (if mentioned)
+
+5. Patterns & Anti-patterns:
+   - pattern: A recurring solution, approach, or practice
+   - type: "pattern" (good) or "anti_pattern" (avoid)
+   - related_entities: Entity names this relates to
+
+6. QA Pairs (questions this text answers):
+   - question: A natural question a reader might ask
+   - answer: The answer from the text
+
+---Rules---
+- Max 30 entities, 50 relationships, 10 insights, 10 decisions, 10 patterns, 10 QA pairs
+- Entity names: Title Case, consistent
+- Descriptions: objective, third-person, factual
+- Insights: non-obvious, not just restating the text
+- Decisions: include the "why", not just the "what"
+- Patterns: concrete, actionable
+- QA pairs: questions a real user would ask
 
 ---Output Format---
 {
   "entities": [
-    {"name": "Entity Name", "type": "Concept", "description": "Description of the entity"}
+    {"name": "Entity Name", "type": "Concept", "description": "Description"}
   ],
   "relationships": [
-    {"source": "Entity A", "target": "Entity B", "keywords": "uses, depends_on", "description": "How they relate"}
+    {"source": "A", "target": "B", "keywords": "uses, depends_on", "description": "How they relate"}
+  ],
+  "insights": [
+    {"insight": "Non-obvious conclusion", "importance": 0.8, "related_entities": ["Entity A"]}
+  ],
+  "decisions": [
+    {"decision": "What was decided", "rationale": "Why", "alternatives": "What else was considered"}
+  ],
+  "patterns": [
+    {"pattern": "Recurring approach description", "type": "pattern", "related_entities": ["Entity A"]}
+  ],
+  "qa_pairs": [
+    {"question": "Natural question?", "answer": "Answer from text"}
   ]
 }
 
@@ -175,13 +220,17 @@ Use proper markdown. Be thorough and accurate. Include code examples if relevant
 
 // ==================== JSON Parser ====================
 
-function parseJSON(text: string): { entities?: ExtractedEntity[]; relationships?: ExtractedRelationship[] } | null {
+function parseJSON(text: string): ExtractionResult | null {
   try {
     const match = text.match(/\{[\s\S]*\}/)
     const raw = match ? JSON.parse(match[0]) : JSON.parse(text)
     return {
       entities: Array.isArray(raw.entities) ? raw.entities : [],
-      relationships: Array.isArray(raw.relationships) ? raw.relationships : []
+      relationships: Array.isArray(raw.relationships) ? raw.relationships : [],
+      insights: Array.isArray(raw.insights) ? raw.insights : [],
+      decisions: Array.isArray(raw.decisions) ? raw.decisions : [],
+      patterns: Array.isArray(raw.patterns) ? raw.patterns : [],
+      qa_pairs: Array.isArray(raw.qa_pairs) ? raw.qa_pairs : []
     }
   } catch { return null }
 }
@@ -282,6 +331,51 @@ export async function buildWiki(
             chunkIds
           })
         }
+      }
+
+      // Store insights, decisions, patterns, QA pairs as wiki pages
+      const docPrefix = doc.name.replace(/\.[^.]+$/, '')
+
+      for (const insight of (parsed.insights || [])) {
+        if (!insight.insight) continue
+        const related = (insight.related_entities || []).join(', ')
+        insertPage({
+          id: `pg-${nanoid(10)}`, kb_id: kbId, entity_id: null,
+          title: `Insight: ${insight.insight.substring(0, 60)}`,
+          content: `**Insight:** ${insight.insight}\n\n**Importance:** ${((insight.importance || 0.5) * 100).toFixed(0)}%\n${related ? `**Related:** ${related}` : ''}\n\n**Source:** ${doc.name}`,
+          type: 'insight', metadata_json: JSON.stringify({ importance: insight.importance, related_entities: insight.related_entities, source: doc.name })
+        })
+      }
+
+      for (const decision of (parsed.decisions || [])) {
+        if (!decision.decision) continue
+        insertPage({
+          id: `pg-${nanoid(10)}`, kb_id: kbId, entity_id: null,
+          title: `Decision: ${decision.decision.substring(0, 60)}`,
+          content: `**Decision:** ${decision.decision}\n\n**Rationale:** ${decision.rationale || 'Not specified'}\n${decision.alternatives ? `**Alternatives:** ${decision.alternatives}` : ''}\n\n**Source:** ${doc.name}`,
+          type: 'decision', metadata_json: JSON.stringify({ rationale: decision.rationale, alternatives: decision.alternatives, source: doc.name })
+        })
+      }
+
+      for (const pattern of (parsed.patterns || [])) {
+        if (!pattern.pattern) continue
+        const related = (pattern.related_entities || []).join(', ')
+        insertPage({
+          id: `pg-${nanoid(10)}`, kb_id: kbId, entity_id: null,
+          title: `${pattern.type === 'anti_pattern' ? 'Anti-pattern' : 'Pattern'}: ${pattern.pattern.substring(0, 60)}`,
+          content: `**${pattern.type === 'anti_pattern' ? 'Anti-pattern' : 'Pattern'}:** ${pattern.pattern}\n${related ? `**Related:** ${related}` : ''}\n\n**Source:** ${doc.name}`,
+          type: 'pattern', metadata_json: JSON.stringify({ pattern_type: pattern.type, related_entities: pattern.related_entities, source: doc.name })
+        })
+      }
+
+      for (const qa of (parsed.qa_pairs || [])) {
+        if (!qa.question || !qa.answer) continue
+        insertPage({
+          id: `pg-${nanoid(10)}`, kb_id: kbId, entity_id: null,
+          title: `Q: ${qa.question.substring(0, 60)}`,
+          content: `**Q:** ${qa.question}\n\n**A:** ${qa.answer}\n\n**Source:** ${doc.name}`,
+          type: 'qa', metadata_json: JSON.stringify({ source: doc.name })
+        })
       }
 
       updateBuildProgress(progressId, {

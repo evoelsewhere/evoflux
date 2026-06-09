@@ -172,6 +172,98 @@ export default function KBWiki({ kbId }: KBWikiProps) {
               </div>
             )}
 
+            {/* Insights */}
+            {pages.filter(p => p.type === 'insight').length > 0 && (
+              <div style={{ marginBottom: 4 }}>
+                <div style={{ padding: '5px 12px', fontSize: 10, fontWeight: 600, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  💡 Insights
+                  <span style={{ fontSize: 9, color: 'var(--text-tertiary)', marginLeft: 'auto' }}>{pages.filter(p => p.type === 'insight').length}</span>
+                </div>
+                {pages.filter(p => p.type === 'insight').slice(0, 10).map(page => (
+                  <button key={page.id} onClick={() => openPage(page)} style={{
+                    display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '4px 12px 4px 24px',
+                    background: activePage?.id === page.id ? 'var(--accent-muted)' : 'transparent',
+                    border: 'none', cursor: 'pointer', textAlign: 'left', transition: 'background 0.1s'
+                  }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                    onMouseLeave={e => e.currentTarget.style.background = activePage?.id === page.id ? 'var(--accent-muted)' : 'transparent'}>
+                    <span style={{ fontSize: 11, color: activePage?.id === page.id ? 'var(--accent)' : 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {page.title.replace('Insight: ', '')}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Decisions */}
+            {pages.filter(p => p.type === 'decision').length > 0 && (
+              <div style={{ marginBottom: 4 }}>
+                <div style={{ padding: '5px 12px', fontSize: 10, fontWeight: 600, color: '#c084fc', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  🎯 Decisions
+                  <span style={{ fontSize: 9, color: 'var(--text-tertiary)', marginLeft: 'auto' }}>{pages.filter(p => p.type === 'decision').length}</span>
+                </div>
+                {pages.filter(p => p.type === 'decision').slice(0, 10).map(page => (
+                  <button key={page.id} onClick={() => openPage(page)} style={{
+                    display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '4px 12px 4px 24px',
+                    background: activePage?.id === page.id ? 'var(--accent-muted)' : 'transparent',
+                    border: 'none', cursor: 'pointer', textAlign: 'left', transition: 'background 0.1s'
+                  }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                    onMouseLeave={e => e.currentTarget.style.background = activePage?.id === page.id ? 'var(--accent-muted)' : 'transparent'}>
+                    <span style={{ fontSize: 11, color: activePage?.id === page.id ? 'var(--accent)' : 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {page.title.replace('Decision: ', '')}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Patterns */}
+            {pages.filter(p => p.type === 'pattern').length > 0 && (
+              <div style={{ marginBottom: 4 }}>
+                <div style={{ padding: '5px 12px', fontSize: 10, fontWeight: 600, color: '#34d399', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  🔄 Patterns
+                  <span style={{ fontSize: 9, color: 'var(--text-tertiary)', marginLeft: 'auto' }}>{pages.filter(p => p.type === 'pattern').length}</span>
+                </div>
+                {pages.filter(p => p.type === 'pattern').slice(0, 10).map(page => (
+                  <button key={page.id} onClick={() => openPage(page)} style={{
+                    display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '4px 12px 4px 24px',
+                    background: activePage?.id === page.id ? 'var(--accent-muted)' : 'transparent',
+                    border: 'none', cursor: 'pointer', textAlign: 'left', transition: 'background 0.1s'
+                  }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                    onMouseLeave={e => e.currentTarget.style.background = activePage?.id === page.id ? 'var(--accent-muted)' : 'transparent'}>
+                    <span style={{ fontSize: 11, color: activePage?.id === page.id ? 'var(--accent)' : 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {page.title.replace(/^(Anti-pattern|Pattern): /, '')}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Q&A */}
+            {pages.filter(p => p.type === 'qa').length > 0 && (
+              <div style={{ marginBottom: 4 }}>
+                <div style={{ padding: '5px 12px', fontSize: 10, fontWeight: 600, color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  ❓ Q&A
+                  <span style={{ fontSize: 9, color: 'var(--text-tertiary)', marginLeft: 'auto' }}>{pages.filter(p => p.type === 'qa').length}</span>
+                </div>
+                {pages.filter(p => p.type === 'qa').slice(0, 10).map(page => (
+                  <button key={page.id} onClick={() => openPage(page)} style={{
+                    display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '4px 12px 4px 24px',
+                    background: activePage?.id === page.id ? 'var(--accent-muted)' : 'transparent',
+                    border: 'none', cursor: 'pointer', textAlign: 'left', transition: 'background 0.1s'
+                  }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                    onMouseLeave={e => e.currentTarget.style.background = activePage?.id === page.id ? 'var(--accent-muted)' : 'transparent'}>
+                    <span style={{ fontSize: 11, color: activePage?.id === page.id ? 'var(--accent)' : 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {page.title.replace('Q: ', '')}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
             {/* Entity types */}
             {entityTypes.map(type => (
               <div key={type} style={{ marginBottom: 4 }}>
