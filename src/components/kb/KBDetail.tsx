@@ -595,9 +595,9 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
 
             {/* Settings tab */}
             {activeTab === 'settings' && (
-              <div style={{ maxWidth: 600 }}>
-                {/* Stats */}
-                <div style={{ marginBottom: 16, padding: 12, background: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-primary)' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 900 }}>
+                {/* Stats — full width */}
+                <div style={{ padding: 12, background: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-primary)' }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>Index Statistics</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
                     {[
@@ -620,7 +620,7 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
                   </div>
                 </div>
 
-                {/* Chunking */}
+                {/* 2-column grid */}
                 {(() => {
                   let config: Record<string, unknown> = {}
                   try { config = JSON.parse(kb.config_json) } catch {}
@@ -629,145 +629,154 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
                   }
 
                   return (
-                    <>
-                      <div style={{ marginBottom: 16, padding: 12, background: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-primary)' }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 10 }}>Chunking</div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                          <div>
-                            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Strategy</div>
-                            <select value={String(config.strategy || 'auto')} onChange={e => update('strategy', e.target.value)} style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }}>
-                              <option value="auto">Auto (detect by file type)</option>
-                              <option value="heading">Heading (markdown)</option>
-                              <option value="paragraph">Paragraph</option>
-                              <option value="character">Character</option>
-                              <option value="code">Code (function/class)</option>
-                            </select>
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Chunk Size</div>
-                            <input type="number" value={Number(config.chunkSize ?? 1000)} onChange={e => update('chunkSize', parseInt(e.target.value) || 1000)} style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }} />
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Chunk Overlap</div>
-                            <input type="number" value={Number(config.chunkOverlap ?? 200)} onChange={e => update('chunkOverlap', parseInt(e.target.value) || 200)} style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }} />
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Min Chunk Size</div>
-                            <input type="number" value={Number(config.minChunkSize ?? 100)} onChange={e => update('minChunkSize', parseInt(e.target.value) || 100)} style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }} />
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* File Extraction */}
-                      <div style={{ marginBottom: 16, padding: 12, background: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-primary)' }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 10 }}>File Extraction</div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
-                          <div>
-                            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Max File Size</div>
-                            <select value={String(config.maxFileSize ?? 1048576)} onChange={e => update('maxFileSize', parseInt(e.target.value))} style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }}>
-                              <option value="262144">256 KB</option>
-                              <option value="524288">512 KB</option>
-                              <option value="1048576">1 MB</option>
-                              <option value="2097152">2 MB</option>
-                              <option value="5242880">5 MB</option>
-                              <option value="10485760">10 MB</option>
-                            </select>
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Chunking Strategy</div>
-                            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', padding: '6px 0' }}>
-                              {String(config.strategy || 'auto') === 'auto' ? 'Auto-detect: heading for .md, code for .ts/.py, paragraph for others' : `Manual: ${String(config.strategy || 'auto')}`}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                      {/* Left column */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                        {/* Chunking */}
+                        <div style={{ padding: 12, background: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-primary)' }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 10 }}>Chunking</div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            <div>
+                              <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Strategy</div>
+                              <select value={String(config.strategy || 'auto')} onChange={e => update('strategy', e.target.value)} style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }}>
+                                <option value="auto">Auto (detect by file type)</option>
+                                <option value="heading">Heading (markdown)</option>
+                                <option value="paragraph">Paragraph</option>
+                                <option value="character">Character</option>
+                                <option value="code">Code (function/class)</option>
+                              </select>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                              <div>
+                                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Chunk Size</div>
+                                <input type="number" value={Number(config.chunkSize ?? 1000)} onChange={e => update('chunkSize', parseInt(e.target.value) || 1000)} style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }} />
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Overlap</div>
+                                <input type="number" value={Number(config.chunkOverlap ?? 200)} onChange={e => update('chunkOverlap', parseInt(e.target.value) || 200)} style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }} />
+                              </div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Min Chunk Size</div>
+                              <input type="number" value={Number(config.minChunkSize ?? 100)} onChange={e => update('minChunkSize', parseInt(e.target.value) || 100)} style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }} />
                             </div>
                           </div>
                         </div>
-                        <div>
-                          <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Exclude Patterns (one per line)</div>
-                          <textarea
-                            value={Array.isArray(config.excludePatterns) ? (config.excludePatterns as string[]).join('\n') : 'node_modules\n.git\ndist\nout\nbuild\ncoverage\n__pycache__\n.venv\nvenv'}
-                            onChange={e => update('excludePatterns', e.target.value.split('\n').filter(Boolean))}
-                            rows={6}
-                            style={{ width: '100%', padding: '6px 8px', fontSize: 12, fontFamily: 'monospace', background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none', resize: 'vertical' }}
-                          />
-                        </div>
-                      </div>
 
-                      {/* Search */}
-                      <div style={{ marginBottom: 16, padding: 12, background: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-primary)' }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 10 }}>Search</div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                          <div>
-                            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Vector Weight: {Number(config.vectorWeight ?? 0.6).toFixed(2)}</div>
-                            <input type="range" min="0" max="1" step="0.05" value={Number(config.vectorWeight ?? 0.6)} onChange={e => update('vectorWeight', parseFloat(e.target.value))} style={{ width: '100%' }} />
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>BM25 Weight: {Number(config.bm25Weight ?? 0.4).toFixed(2)}</div>
-                            <input type="range" min="0" max="1" step="0.05" value={Number(config.bm25Weight ?? 0.4)} onChange={e => update('bm25Weight', parseFloat(e.target.value))} style={{ width: '100%' }} />
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Default Limit</div>
-                            <input type="number" value={Number(config.defaultLimit ?? 10)} onChange={e => update('defaultLimit', parseInt(e.target.value) || 10)} style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }} />
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Min Score: {Number(config.minScore ?? 0).toFixed(2)}</div>
-                            <input type="range" min="0" max="1" step="0.05" value={Number(config.minScore ?? 0)} onChange={e => update('minScore', parseFloat(e.target.value))} style={{ width: '100%' }} />
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Embedding */}
-                      <div style={{ marginBottom: 16, padding: 12, background: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-primary)' }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 10 }}>Embedding</div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                          <div>
-                            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Model</div>
-                            <div style={{ fontSize: 12, color: 'var(--text-primary)', padding: '6px 0', fontWeight: 500 }}>multilingual-e5-small</div>
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Dimension</div>
-                            <div style={{ fontSize: 12, color: 'var(--text-primary)', padding: '6px 0', fontWeight: 500 }}>384</div>
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Status</div>
-                            <div style={{ fontSize: 12, color: '#34d399', padding: '6px 0', fontWeight: 500 }}>Local (offline)</div>
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Cache</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 0' }}>
-                              <input type="checkbox" checked={config.embeddingCache !== false} onChange={e => update('embeddingCache', e.target.checked)} />
-                              <span style={{ fontSize: 12, color: 'var(--text-primary)' }}>Skip re-embed unchanged content</span>
+                        {/* File Extraction */}
+                        <div style={{ padding: 12, background: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-primary)' }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 10 }}>File Extraction</div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            <div>
+                              <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Max File Size</div>
+                              <select value={String(config.maxFileSize ?? 1048576)} onChange={e => update('maxFileSize', parseInt(e.target.value))} style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }}>
+                                <option value="262144">256 KB</option>
+                                <option value="524288">512 KB</option>
+                                <option value="1048576">1 MB</option>
+                                <option value="2097152">2 MB</option>
+                                <option value="5242880">5 MB</option>
+                                <option value="10485760">10 MB</option>
+                              </select>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Exclude Patterns (one per line)</div>
+                              <textarea
+                                value={Array.isArray(config.excludePatterns) ? (config.excludePatterns as string[]).join('\n') : 'node_modules\n.git\ndist\nout\nbuild\ncoverage\n__pycache__\n.venv\nvenv'}
+                                onChange={e => update('excludePatterns', e.target.value.split('\n').filter(Boolean))}
+                                rows={5}
+                                style={{ width: '100%', padding: '6px 8px', fontSize: 12, fontFamily: 'monospace', background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none', resize: 'vertical' }}
+                              />
                             </div>
                           </div>
                         </div>
                       </div>
-                    </>
+
+                      {/* Right column */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                        {/* Search */}
+                        <div style={{ padding: 12, background: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-primary)' }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 10 }}>Search</div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            <div>
+                              <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Vector Weight: {Number(config.vectorWeight ?? 0.6).toFixed(2)}</div>
+                              <input type="range" min="0" max="1" step="0.05" value={Number(config.vectorWeight ?? 0.6)} onChange={e => update('vectorWeight', parseFloat(e.target.value))} style={{ width: '100%' }} />
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>BM25 Weight: {Number(config.bm25Weight ?? 0.4).toFixed(2)}</div>
+                              <input type="range" min="0" max="1" step="0.05" value={Number(config.bm25Weight ?? 0.4)} onChange={e => update('bm25Weight', parseFloat(e.target.value))} style={{ width: '100%' }} />
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                              <div>
+                                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Default Limit</div>
+                                <input type="number" value={Number(config.defaultLimit ?? 10)} onChange={e => update('defaultLimit', parseInt(e.target.value) || 10)} style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }} />
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Min Score: {Number(config.minScore ?? 0).toFixed(2)}</div>
+                                <input type="range" min="0" max="1" step="0.05" value={Number(config.minScore ?? 0)} onChange={e => update('minScore', parseFloat(e.target.value))} style={{ width: '100%' }} />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Embedding */}
+                        <div style={{ padding: 12, background: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-primary)' }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 10 }}>Embedding</div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                              <div>
+                                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Model</div>
+                                <div style={{ fontSize: 12, color: 'var(--text-primary)', fontWeight: 500 }}>multilingual-e5-small</div>
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Dimension</div>
+                                <div style={{ fontSize: 12, color: 'var(--text-primary)', fontWeight: 500 }}>384</div>
+                              </div>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                              <div>
+                                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Status</div>
+                                <div style={{ fontSize: 12, color: '#34d399', fontWeight: 500 }}>Local (offline)</div>
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Cache</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <input type="checkbox" checked={config.embeddingCache !== false} onChange={e => update('embeddingCache', e.target.checked)} />
+                                  <span style={{ fontSize: 12, color: 'var(--text-primary)' }}>Skip unchanged</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Backup/Restore */}
+                        <div style={{ padding: 12, background: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-primary)' }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>Backup & Restore</div>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button onClick={async () => {
+                              const r = await window.api.kb.export(kbId) as { success: boolean; path?: string; error?: string }
+                              if (r.success) message.success(`Exported to ${r.path}`)
+                              else if (r.error) message.error(r.error)
+                            }} style={{ flex: 1, padding: '6px 14px', fontSize: 12, borderRadius: 5, background: 'var(--accent-muted)', border: '1px solid var(--accent)30', color: 'var(--accent)', cursor: 'pointer', fontWeight: 500 }}>
+                              Export .kb
+                            </button>
+                            <button onClick={async () => {
+                              const r = await window.api.kb.import() as { success: boolean; kbId?: string; error?: string }
+                              if (r.success) message.success('Imported successfully')
+                              else if (r.error) message.error(r.error)
+                            }} style={{ flex: 1, padding: '6px 14px', fontSize: 12, borderRadius: 5, background: 'var(--bg-hover)', border: '1px solid var(--border-primary)', color: 'var(--text-secondary)', cursor: 'pointer', fontWeight: 500 }}>
+                              Import .kb
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   )
                 })()}
 
-                {/* MCP Server */}
+                {/* MCP Server — full width */}
                 <MCPSettings />
 
-                {/* Backup/Restore */}
-                <div style={{ marginBottom: 16, padding: 12, background: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-primary)' }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>Backup & Restore</div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={async () => {
-                      const r = await window.api.kb.export(kbId) as { success: boolean; path?: string; error?: string }
-                      if (r.success) message.success(`Exported to ${r.path}`)
-                      else if (r.error) message.error(r.error)
-                    }} style={{ padding: '6px 14px', fontSize: 12, borderRadius: 5, background: 'var(--accent-muted)', border: '1px solid var(--accent)30', color: 'var(--accent)', cursor: 'pointer', fontWeight: 500 }}>
-                      Export .kb
-                    </button>
-                    <button onClick={async () => {
-                      const r = await window.api.kb.import() as { success: boolean; kbId?: string; error?: string }
-                      if (r.success) message.success('Imported successfully')
-                      else if (r.error) message.error(r.error)
-                    }} style={{ padding: '6px 14px', fontSize: 12, borderRadius: 5, background: 'var(--bg-hover)', border: '1px solid var(--border-primary)', color: 'var(--text-secondary)', cursor: 'pointer', fontWeight: 500 }}>
-                      Import .kb
-                    </button>
-                  </div>
-                </div>
-
-                {/* Danger Zone */}
+                {/* Danger Zone — full width */}
                 <div style={{ padding: 12, background: 'var(--bg-card)', borderRadius: 6, border: '1px solid #f8717130' }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: '#f87171', marginBottom: 8 }}>Danger Zone</div>
                   <div style={{ display: 'flex', gap: 8 }}>
