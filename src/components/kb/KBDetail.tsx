@@ -50,6 +50,8 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
   const [indexProgress, setIndexProgress] = useState<{ fileName: string; current: number; total: number } | null>(null)
   const [config, setConfig] = useState<Record<string, unknown>>({})
   const [availableModels, setAvailableModels] = useState<string[]>([])
+  const [wikiBuilding, setWikiBuilding] = useState(false)
+  const [wikiProgress, setWikiProgress] = useState<{ batch: number; total: number; entities: number; relationships: number; saved?: boolean; error?: string } | null>(null)
   const providers = useProviderStore(s => s.providers)
 
   const load = useCallback(async () => {
@@ -75,7 +77,7 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
 
   useEffect(() => {
     const cleanup = window.api.kb.onProgress((ev: unknown) => {
-      const event = ev as { type: string; fileName?: string; fileIndex?: number; totalFiles?: number; status?: string }
+      const event = ev as { type: string; fileName?: string; fileIndex?: number; totalFiles?: number; status?: string; batch?: number; total?: number; entities?: number; relationships?: number; saved?: boolean; error?: string }
       if (event.type === 'kb:progress' || event.type === 'kb:sync') {
         if (event.status === 'complete' || event.status === 'nochange') {
           setIndexing(false)
@@ -84,7 +86,23 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
         } else if (event.status === 'error') {
           // Keep indexing state, error is shown in message
         } else if (event.fileName && event.fileIndex !== undefined && event.totalFiles) {
+          setIndexing(true)
           setIndexProgress({ fileName: event.fileName, current: event.fileIndex + 1, total: event.totalFiles })
+        }
+      }
+      if (event.type === 'wiki:progress') {
+        if (event.status === 'start') {
+          setWikiBuilding(true)
+          setWikiProgress({ batch: 0, total: event.total || 0, entities: 0, relationships: 0 })
+        } else if (event.status === 'batch') {
+          setWikiProgress({ batch: (event.batch || 0) + 1, total: event.total || 0, entities: event.entities || 0, relationships: event.relationships || 0, saved: event.saved })
+        } else if (event.status === 'error') {
+          setWikiProgress(prev => prev ? { ...prev, error: event.error } : null)
+        } else if (event.status === 'complete') {
+          setWikiBuilding(false)
+          setWikiProgress(null)
+          message.success(`Wiki built: ${event.entities || 0} entities, ${event.relationships || 0} relations`)
+          load()
         }
       }
     })
@@ -869,25 +887,75 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
                             <button
                               onClick={async () => {
                                 if (!wikiConfig.providerId) { message.error('Select a provider first'); return }
-                                message.info('Building wiki... This may take a while.')
+                                setWikiBuilding(true)
+                                setWikiProgress({ batch: 0, total: 0, entities: 0, relationships: 0 })
                                 const r = await window.api.wiki.build(kbId, { providerId: String(wikiConfig.providerId), model: String(wikiConfig.model || '') }) as { success?: boolean; entities?: number; relationships?: number; pages?: number; error?: string }
+                                setWikiBuilding(false)
+                                setWikiProgress(null)
                                 if (r.success) message.success(`Wiki built: ${r.entities} entities, ${r.relationships} relations, ${r.pages} pages`)
                                 else if (r.error) message.error(r.error)
                               }}
-                              style={{ padding: '6px 14px', fontSize: 12, borderRadius: 5, background: 'var(--accent-muted)', border: '1px solid var(--accent)30', color: 'var(--accent)', cursor: 'pointer', fontWeight: 500 }}
+                              disabled={wikiBuilding}
+                              style={{ padding: '6px 14px', fontSize: 12, borderRadius: 5, background: 'var(--accent-muted)', border: '1px solid var(--accent)30', color: 'var(--accent)', cursor: 'pointer', fontWeight: 500, opacity: wikiBuilding ? 0.5 : 1 }}
                             >
-                              Build Wiki
+                              {wikiBuilding ? 'Building...' : 'Build Wiki'}
                             </button>
                             <button
                               onClick={async () => {
                                 await window.api.wiki.delete(kbId)
                                 message.success('Wiki deleted')
                               }}
-                              style={{ padding: '6px 14px', fontSize: 12, borderRadius: 5, background: 'var(--bg-hover)', border: '1px solid var(--border-primary)', color: 'var(--text-secondary)', cursor: 'pointer', fontWeight: 500 }}
+                              disabled={wikiBuilding}
+                              style={{ padding: '6px 14px', fontSize: 12, borderRadius: 5, background: 'var(--bg-hover)', border: '1px solid var(--border-primary)', color: 'var(--text-secondary)', cursor: 'pointer', fontWeight: 500, opacity: wikiBuilding ? 0.5 : 1 }}
                             >
                               Delete Wiki
                             </button>
                           </div>
+
+                          {/* Wiki build progress */}
+                          {wikiBuilding && wikiProgress && (
+                            <div style={{ marginTop: 10, padding: '8px 10px', background: 'var(--bg-primary)', borderRadius: 5, border: '1px solid var(--border-primary)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                                <div style={{ width: 10, height: 10, borderRadius: '50%', border: '2px solid var(--accent)', borderTopColor: 'transparent', animation: 'node-spin 1s linear infinite' }} />
+                                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)' }}>
+                                  Building wiki...
+                                </span>
+                              </div>
+                              {wikiProgress.total > 0 && (
+                                <>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                                    <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+                                      Batch {wikiProgress.batch}/{wikiProgress.total}
+                                    </span>
+                                    <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+                                      {Math.round((wikiProgress.batch / wikiProgress.total) * 100)}%
+                                    </span>
+                                  </div>
+                                  <div style={{ height: 4, background: 'var(--bg-card)', borderRadius: 2, overflow: 'hidden', marginBottom: 6 }}>
+                                    <div style={{ height: '100%', width: `${(wikiProgress.batch / wikiProgress.total) * 100}%`, background: 'var(--accent)', borderRadius: 2, transition: 'width 0.3s' }} />
+                                  </div>
+                                </>
+                              )}
+                              <div style={{ display: 'flex', gap: 12 }}>
+                                <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+                                  Entities: <strong style={{ color: 'var(--text-primary)' }}>{wikiProgress.entities}</strong>
+                                </span>
+                                <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+                                  Relations: <strong style={{ color: 'var(--text-primary)' }}>{wikiProgress.relationships}</strong>
+                                </span>
+                                {wikiProgress.saved !== undefined && (
+                                  <span style={{ fontSize: 10, color: wikiProgress.saved ? '#34d399' : 'var(--text-tertiary)' }}>
+                                    {wikiProgress.saved ? '✓ saved' : '⏭ skipped'}
+                                  </span>
+                                )}
+                              </div>
+                              {wikiProgress.error && (
+                                <div style={{ marginTop: 4, fontSize: 10, color: '#f87171' }}>
+                                  Error: {wikiProgress.error}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </>
                       )}
                     </div>
