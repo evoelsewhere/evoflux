@@ -92,6 +92,11 @@ const api = {
       return () => ipcRenderer.removeListener('kb:event', handler)
     }
   },
+  mcp: {
+    start: () => ipcRenderer.invoke('mcp:start'),
+    stop: () => ipcRenderer.invoke('mcp:stop'),
+    status: () => ipcRenderer.invoke('mcp:status')
+  },
   onStreamChunk: (callback: (chunk: string) => void) => {
     const handler = (_event: unknown, chunk: string) => callback(chunk)
     ipcRenderer.on('ai:stream-chunk', handler)

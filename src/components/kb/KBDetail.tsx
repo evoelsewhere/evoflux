@@ -226,6 +226,106 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
     return root
   }
 
+  function MCPSettings() {
+    const [mcpRunning, setMcpRunning] = useState(false)
+    const [mcpLoading, setMcpLoading] = useState(false)
+
+    useEffect(() => {
+      window.api.mcp.status().then((s: { running: boolean }) => setMcpRunning(s.running))
+    }, [])
+
+    const toggleMCP = async () => {
+      setMcpLoading(true)
+      try {
+        if (mcpRunning) {
+          const r = await window.api.mcp.stop() as { success: boolean; error?: string }
+          if (r.success) setMcpRunning(false)
+          else message.error(r.error)
+        } else {
+          const r = await window.api.mcp.start() as { success: boolean; error?: string }
+          if (r.success) setMcpRunning(true)
+          else message.error(r.error)
+        }
+      } catch { message.error('MCP toggle failed') }
+      finally { setMcpLoading(false) }
+    }
+
+    const configJson = JSON.stringify({
+      mcpServers: {
+        'evolux-kb': {
+          command: 'node',
+          args: [require('path').resolve(__dirname, '../out/mcp/index.js')]
+        }
+      }
+    }, null, 2)
+
+    return (
+      <div style={{ marginBottom: 16, padding: 12, background: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-primary)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>MCP Server</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{
+              fontSize: 10, padding: '2px 8px', borderRadius: 10,
+              background: mcpRunning ? '#34d39920' : 'var(--bg-hover)',
+              color: mcpRunning ? '#34d399' : 'var(--text-tertiary)',
+              fontWeight: 600
+            }}>
+              {mcpRunning ? 'Running' : 'Stopped'}
+            </span>
+            <button
+              onClick={toggleMCP}
+              disabled={mcpLoading}
+              style={{
+                padding: '5px 14px', fontSize: 12, borderRadius: 5, fontWeight: 500,
+                background: mcpRunning ? '#f8717120' : 'var(--accent-muted)',
+                border: `1px solid ${mcpRunning ? '#f8717130' : 'var(--accent)30'}`,
+                color: mcpRunning ? '#f87171' : 'var(--accent)',
+                cursor: 'pointer', opacity: mcpLoading ? 0.5 : 1
+              }}
+            >
+              {mcpRunning ? 'Stop' : 'Start'}
+            </button>
+          </div>
+        </div>
+
+        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 10 }}>
+          Expose knowledge base to external AI tools (Claude Desktop, Cursor, Windsurf) via Model Context Protocol.
+        </div>
+
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Exposed Tools</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+            {['kb_search', 'kb_list', 'kb_get_info', 'kb_list_documents', 'kb_get_document', 'kb_get_chunks'].map(tool => (
+              <div key={tool} style={{ fontSize: 11, color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ width: 4, height: 4, borderRadius: '50%', background: mcpRunning ? '#34d399' : 'var(--text-tertiary)' }} />
+                <code style={{ fontFamily: 'monospace', fontSize: 10 }}>{tool}</code>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Config for Claude Desktop / Cursor</div>
+          <pre style={{
+            fontSize: 10, fontFamily: 'monospace', padding: 8, margin: 0,
+            background: 'var(--bg-primary)', borderRadius: 4,
+            border: '1px solid var(--border-primary)',
+            color: 'var(--text-secondary)', whiteSpace: 'pre-wrap',
+            maxHeight: 120, overflow: 'auto'
+          }}>
+            {configJson}
+          </pre>
+          <button
+            onClick={() => { navigator.clipboard.writeText(configJson); message.success('Copied') }}
+            style={{ marginTop: 6, padding: '4px 10px', fontSize: 10, borderRadius: 4, background: 'var(--bg-hover)', border: '1px solid var(--border-primary)', color: 'var(--text-secondary)', cursor: 'pointer' }}
+          >
+            Copy Config
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   if (loading) return <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 80 }}><Spin /></div>
   if (!kb) return <div style={{ color: 'var(--text-tertiary)', padding: 40, textAlign: 'center' }}>Knowledge base not found</div>
 
@@ -641,6 +741,9 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
                     </>
                   )
                 })()}
+
+                {/* MCP Server */}
+                <MCPSettings />
 
                 {/* Backup/Restore */}
                 <div style={{ marginBottom: 16, padding: 12, background: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-primary)' }}>

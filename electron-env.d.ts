@@ -72,6 +72,11 @@ interface Window {
       import: () => Promise<{ success: boolean; kbId?: string; error?: string }>
       onProgress: (callback: (event: unknown) => void) => () => void
     }
+    mcp: {
+      start: () => Promise<{ success: boolean; error?: string }>
+      stop: () => Promise<{ success: boolean; error?: string }>
+      status: () => Promise<{ running: boolean }>
+    }
     onStreamChunk: (callback: (chunk: string) => void) => () => void
   }
 }

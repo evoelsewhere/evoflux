@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, shell, ipcMain } from 'electron'
 import { join } from 'path'
 import { registerAIHandlers } from './ipc/ai'
 import { registerWorkflowHandlers } from './ipc/workflow'
@@ -8,8 +8,10 @@ import { registerDSLHandlers } from './ipc/dsl'
 import { registerMemoryHandlers } from './ipc/memory'
 import { registerKBHandlers } from './ipc/knowledge-base'
 import { openDatabase, closeDatabase, flushDatabase } from '../src/engine/db/database'
+import { EvoluxMCPServer } from './mcp/server'
 
 let mainWindow: BrowserWindow | null = null
+let mcpServer: EvoluxMCPServer | null = null
 
 function createWindow(): void {
   const isDev = !app.isPackaged
@@ -69,12 +71,37 @@ app.whenReady().then(async () => {
   registerMemoryHandlers()
   registerKBHandlers()
 
+  mcpServer = new EvoluxMCPServer()
+
+  ipcMain.handle('mcp:start', async () => {
+    try {
+      if (!mcpServer!.isRunning()) await mcpServer!.startStdio()
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  ipcMain.handle('mcp:stop', async () => {
+    try {
+      await mcpServer!.stop()
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  ipcMain.handle('mcp:status', async () => {
+    return { running: mcpServer!.isRunning() }
+  })
+
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
 
 app.on('window-all-closed', () => {
+  if (mcpServer) mcpServer.stop()
   closeDatabase()
   if (process.platform !== 'darwin') {
     app.quit()
