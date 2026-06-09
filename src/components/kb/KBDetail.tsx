@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Spin, message } from 'antd'
 import KBGitChanges from './KBGitChanges'
 import KBWiki from './KBWiki'
+import { useProviderStore, PROVIDER_LABELS } from '../../stores/providerStore'
 
 const icons = {
   back: <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 2L4 7L9 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>,
@@ -47,6 +48,9 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
   const [editingName, setEditingName] = useState(false)
   const [editName, setEditName] = useState('')
   const [indexProgress, setIndexProgress] = useState<{ fileName: string; current: number; total: number } | null>(null)
+  const [config, setConfig] = useState<Record<string, unknown>>({})
+  const [availableModels, setAvailableModels] = useState<string[]>([])
+  const providers = useProviderStore(s => s.providers)
 
   const load = useCallback(async () => {
     try {
@@ -60,6 +64,9 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
       setSources(srcData as KBSource[])
       setDocuments(docData as KBDocument[])
       setStats(statsData as KBStats)
+      let parsed: Record<string, unknown> = {}
+      try { parsed = JSON.parse((kbData as KB).config_json) } catch {}
+      setConfig(parsed)
     } catch { message.error('Failed to load KB') }
     finally { setLoading(false) }
   }, [kbId])
@@ -101,6 +108,36 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
     } catch { setDetailChunks([]) }
     finally { setDetailLoading(false) }
   }
+
+  const updateConfig = useCallback((key: string, val: unknown) => {
+    setConfig(prev => {
+      const next = { ...prev, [key]: val }
+      window.api.kb.update(kbId, { config: next })
+      return next
+    })
+  }, [kbId])
+
+  const updateWikiConfig = useCallback((key: string, val: unknown) => {
+    setConfig(prev => {
+      const wiki = { ...((prev.wiki || {}) as Record<string, unknown>), [key]: val }
+      const next = { ...prev, wiki }
+      window.api.kb.update(kbId, { config: next })
+      return next
+    })
+  }, [kbId])
+
+  useEffect(() => {
+    const wikiConfig = (config.wiki || {}) as Record<string, unknown>
+    const providerId = wikiConfig.providerId as string
+    if (!providerId) { setAvailableModels([]); return }
+    const provider = providers.find(p => p.id === providerId)
+    if (provider) setAvailableModels(provider.models)
+    else {
+      window.api.ai.listModels(providerId).then((models: unknown) => {
+        if (Array.isArray(models)) setAvailableModels(models as string[])
+      }).catch(() => setAvailableModels([]))
+    }
+  }, [(config.wiki as Record<string, unknown>)?.providerId, providers])
 
   const handleAddFolder = async () => {
     setIndexing(true)
@@ -628,12 +665,6 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
 
                 {/* 2-column grid */}
                 {(() => {
-                  let config: Record<string, unknown> = {}
-                  try { config = JSON.parse(kb.config_json) } catch {}
-                  const update = (key: string, val: unknown) => {
-                    window.api.kb.update(kbId, { config: { ...config, [key]: val } })
-                  }
-
                   return (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                       {/* Left column */}
@@ -644,7 +675,7 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                             <div>
                               <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Strategy</div>
-                              <select value={String(config.strategy || 'auto')} onChange={e => update('strategy', e.target.value)} style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }}>
+                              <select value={String(config.strategy || 'auto')} onChange={e => updateConfig('strategy', e.target.value)} style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }}>
                                 <option value="auto">Auto (detect by file type)</option>
                                 <option value="heading">Heading (markdown)</option>
                                 <option value="paragraph">Paragraph</option>
@@ -655,16 +686,16 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                               <div>
                                 <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Chunk Size</div>
-                                <input type="number" value={Number(config.chunkSize ?? 1000)} onChange={e => update('chunkSize', parseInt(e.target.value) || 1000)} style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }} />
+                                <input type="number" value={Number(config.chunkSize ?? 1000)} onChange={e => updateConfig('chunkSize', parseInt(e.target.value) || 1000)} style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }} />
                               </div>
                               <div>
                                 <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Overlap</div>
-                                <input type="number" value={Number(config.chunkOverlap ?? 200)} onChange={e => update('chunkOverlap', parseInt(e.target.value) || 200)} style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }} />
+                                <input type="number" value={Number(config.chunkOverlap ?? 200)} onChange={e => updateConfig('chunkOverlap', parseInt(e.target.value) || 200)} style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }} />
                               </div>
                             </div>
                             <div>
                               <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Min Chunk Size</div>
-                              <input type="number" value={Number(config.minChunkSize ?? 100)} onChange={e => update('minChunkSize', parseInt(e.target.value) || 100)} style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }} />
+                              <input type="number" value={Number(config.minChunkSize ?? 100)} onChange={e => updateConfig('minChunkSize', parseInt(e.target.value) || 100)} style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }} />
                             </div>
                           </div>
                         </div>
@@ -675,7 +706,7 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                             <div>
                               <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Max File Size</div>
-                              <select value={String(config.maxFileSize ?? 1048576)} onChange={e => update('maxFileSize', parseInt(e.target.value))} style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }}>
+                              <select value={String(config.maxFileSize ?? 1048576)} onChange={e => updateConfig('maxFileSize', parseInt(e.target.value))} style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }}>
                                 <option value="262144">256 KB</option>
                                 <option value="524288">512 KB</option>
                                 <option value="1048576">1 MB</option>
@@ -688,7 +719,7 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
                               <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Exclude Patterns (one per line)</div>
                               <textarea
                                 value={Array.isArray(config.excludePatterns) ? (config.excludePatterns as string[]).join('\n') : 'node_modules\n.git\ndist\nout\nbuild\ncoverage\n__pycache__\n.venv\nvenv'}
-                                onChange={e => update('excludePatterns', e.target.value.split('\n').filter(Boolean))}
+                                onChange={e => updateConfig('excludePatterns', e.target.value.split('\n').filter(Boolean))}
                                 rows={5}
                                 style={{ width: '100%', padding: '6px 8px', fontSize: 12, fontFamily: 'monospace', background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none', resize: 'vertical' }}
                               />
@@ -705,20 +736,20 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                             <div>
                               <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Vector Weight: {Number(config.vectorWeight ?? 0.6).toFixed(2)}</div>
-                              <input type="range" min="0" max="1" step="0.05" value={Number(config.vectorWeight ?? 0.6)} onChange={e => update('vectorWeight', parseFloat(e.target.value))} style={{ width: '100%' }} />
+                              <input type="range" min="0" max="1" step="0.05" value={Number(config.vectorWeight ?? 0.6)} onChange={e => updateConfig('vectorWeight', parseFloat(e.target.value))} style={{ width: '100%' }} />
                             </div>
                             <div>
                               <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>BM25 Weight: {Number(config.bm25Weight ?? 0.4).toFixed(2)}</div>
-                              <input type="range" min="0" max="1" step="0.05" value={Number(config.bm25Weight ?? 0.4)} onChange={e => update('bm25Weight', parseFloat(e.target.value))} style={{ width: '100%' }} />
+                              <input type="range" min="0" max="1" step="0.05" value={Number(config.bm25Weight ?? 0.4)} onChange={e => updateConfig('bm25Weight', parseFloat(e.target.value))} style={{ width: '100%' }} />
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                               <div>
                                 <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Default Limit</div>
-                                <input type="number" value={Number(config.defaultLimit ?? 10)} onChange={e => update('defaultLimit', parseInt(e.target.value) || 10)} style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }} />
+                                <input type="number" value={Number(config.defaultLimit ?? 10)} onChange={e => updateConfig('defaultLimit', parseInt(e.target.value) || 10)} style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }} />
                               </div>
                               <div>
                                 <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Min Score: {Number(config.minScore ?? 0).toFixed(2)}</div>
-                                <input type="range" min="0" max="1" step="0.05" value={Number(config.minScore ?? 0)} onChange={e => update('minScore', parseFloat(e.target.value))} style={{ width: '100%' }} />
+                                <input type="range" min="0" max="1" step="0.05" value={Number(config.minScore ?? 0)} onChange={e => updateConfig('minScore', parseFloat(e.target.value))} style={{ width: '100%' }} />
                               </div>
                             </div>
                           </div>
@@ -746,7 +777,7 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
                               <div>
                                 <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Cache</div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                  <input type="checkbox" checked={config.embeddingCache !== false} onChange={e => update('embeddingCache', e.target.checked)} />
+                                  <input type="checkbox" checked={config.embeddingCache !== false} onChange={e => updateConfig('embeddingCache', e.target.checked)} />
                                   <span style={{ fontSize: 12, color: 'var(--text-primary)' }}>Skip unchanged</span>
                                 </div>
                               </div>
@@ -781,13 +812,8 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
 
                 {/* Wiki Graph */}
                 {(() => {
-                  let config: Record<string, unknown> = {}
-                  try { config = JSON.parse(kb.config_json) } catch {}
                   const wikiConfig = (config.wiki || {}) as Record<string, unknown>
                   const wikiEnabled = wikiConfig.enabled === true
-                  const updateWiki = (key: string, val: unknown) => {
-                    window.api.kb.update(kbId, { config: { ...config, wiki: { ...wikiConfig, [key]: val } } })
-                  }
 
                   return (
                     <div style={{ marginBottom: 16, padding: 12, background: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-primary)' }}>
@@ -795,7 +821,7 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
                         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Wiki Graph</div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Enable</span>
-                          <input type="checkbox" checked={wikiEnabled} onChange={e => updateWiki('enabled', e.target.checked)} />
+                          <input type="checkbox" checked={wikiEnabled} onChange={e => updateWikiConfig('enabled', e.target.checked)} />
                         </div>
                       </div>
 
@@ -806,28 +832,43 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
                           </div>
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
                             <div>
-                              <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Provider ID</div>
-                              <input
+                              <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Provider</div>
+                              <select
                                 value={String(wikiConfig.providerId || '')}
-                                onChange={e => updateWiki('providerId', e.target.value)}
-                                placeholder="Provider ID from Settings"
+                                onChange={e => { updateWikiConfig('providerId', e.target.value); updateWikiConfig('model', '') }}
                                 style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }}
-                              />
+                              >
+                                <option value="">Select provider...</option>
+                                {providers.map(p => (
+                                  <option key={p.id} value={p.id}>{p.name} ({PROVIDER_LABELS[p.type]})</option>
+                                ))}
+                              </select>
                             </div>
                             <div>
                               <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Model</div>
-                              <input
-                                value={String(wikiConfig.model || '')}
-                                onChange={e => updateWiki('model', e.target.value)}
-                                placeholder="e.g. gpt-4o-mini"
-                                style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }}
-                              />
+                              {availableModels.length > 0 ? (
+                                <select
+                                  value={String(wikiConfig.model || '')}
+                                  onChange={e => updateWikiConfig('model', e.target.value)}
+                                  style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }}
+                                >
+                                  <option value="">Select model...</option>
+                                  {availableModels.map(m => <option key={m} value={m}>{m}</option>)}
+                                </select>
+                              ) : (
+                                <input
+                                  value={String(wikiConfig.model || '')}
+                                  onChange={e => updateWikiConfig('model', e.target.value)}
+                                  placeholder="Type model name"
+                                  style={{ width: '100%', padding: '6px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 5, color: 'var(--text-primary)', outline: 'none' }}
+                                />
+                              )}
                             </div>
                           </div>
                           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                             <button
                               onClick={async () => {
-                                if (!wikiConfig.providerId) { message.error('Set Provider ID first'); return }
+                                if (!wikiConfig.providerId) { message.error('Select a provider first'); return }
                                 message.info('Building wiki... This may take a while.')
                                 const r = await window.api.wiki.build(kbId, { providerId: String(wikiConfig.providerId), model: String(wikiConfig.model || '') }) as { success?: boolean; entities?: number; relationships?: number; pages?: number; error?: string }
                                 if (r.success) message.success(`Wiki built: ${r.entities} entities, ${r.relationships} relations, ${r.pages} pages`)
