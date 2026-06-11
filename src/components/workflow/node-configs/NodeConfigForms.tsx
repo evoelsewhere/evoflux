@@ -547,6 +547,62 @@ export default function NodeConfigForms({ config, nodeType, handleChange, provid
         </Section>
       )}
 
+      {nodeType === 'retry' && (
+        <Section title="Retry">
+          <Field label="Validation Expression">
+            <TextArea rows={2} value={String(config.validation || '')} onChange={(e) => handleChange('validation', e.target.value)} placeholder="input.length > 0" style={{ ...inputStyle, fontFamily: 'monospace' }} />
+          </Field>
+          <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 8 }}>
+            JS expression. Variables: <code>input</code>, <code>value</code>, <code>attempts</code>. Return truthy to pass.
+          </div>
+          <Field label={`Max Retries: ${String(config.max_retries ?? 3)}`}>
+            <Slider min={1} max={20} value={Number(config.max_retries ?? 3)} onChange={(v) => handleChange('max_retries', v)} />
+          </Field>
+          <Field label={`Initial Delay (ms): ${String(config.delay_ms ?? 1000)}`}>
+            <Slider min={100} max={10000} step={100} value={Number(config.delay_ms ?? 1000)} onChange={(v) => handleChange('delay_ms', v)} />
+          </Field>
+          <Field label={`Backoff Multiplier: ${String(config.backoff_multiplier ?? 2)}`}>
+            <Slider min={1} max={5} step={0.5} value={Number(config.backoff_multiplier ?? 2)} onChange={(v) => handleChange('backoff_multiplier', v)} />
+          </Field>
+        </Section>
+      )}
+
+      {nodeType === 'router' && (
+        <Section title="Router">
+          <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 8 }}>
+            Evaluate conditions in order. First match activates that route. Variables: <code>input</code>, <code>value</code>.
+          </div>
+          {((config.routes as Array<{ condition: string; output_handle: string }>) || []).map((route, idx) => (
+            <div key={idx} style={{ padding: 8, background: 'var(--bg-input)', border: '1px solid var(--border-primary)', borderRadius: 6, marginBottom: 6 }}>
+              <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+                <Input size="small" value={route.output_handle || ''} onChange={(e) => {
+                  const routes = [...((config.routes as Array<{ condition: string; output_handle: string }>) || [])]
+                  routes[idx] = { ...routes[idx], output_handle: e.target.value }
+                  handleChange('routes', routes)
+                }} placeholder="route_1" style={{ ...inputStyle, flex: 1, fontWeight: 600 }} />
+                <button onClick={() => {
+                  const routes = [...((config.routes as Array<{ condition: string; output_handle: string }>) || [])]
+                  routes.splice(idx, 1)
+                  handleChange('routes', routes)
+                }} style={{ width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--error)', fontSize: 14 }}>×</button>
+              </div>
+              <TextArea rows={1} value={route.condition || ''} onChange={(e) => {
+                const routes = [...((config.routes as Array<{ condition: string; output_handle: string }>) || [])]
+                routes[idx] = { ...routes[idx], condition: e.target.value }
+                handleChange('routes', routes)
+              }} placeholder='value === "some_value"' style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 11 }} />
+            </div>
+          ))}
+          <button onClick={() => {
+            const routes = [...((config.routes as Array<{ condition: string; output_handle: string }>) || [])]
+            routes.push({ condition: '', output_handle: `route_${routes.length + 1}` })
+            handleChange('routes', routes)
+          }} style={{ padding: '4px 10px', fontSize: 10, borderRadius: 5, cursor: 'pointer', background: 'var(--accent)', color: '#fff', border: 'none', fontWeight: 500, width: '100%' }}>
+            + Add Route
+          </button>
+        </Section>
+      )}
+
       {nodeType === 'ai-agent' && (
         <Section title="AI Agent">
           <Field label="Target Path">

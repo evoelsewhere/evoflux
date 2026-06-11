@@ -41,18 +41,16 @@ export const NODE_CATEGORIES: NodeCategory[] = [
     icon: 'branches',
     nodes: [
       { type: 'condition', label: 'Condition', icon: 'branches', category: 'logic', description: 'IF/ELSE branching' },
+      { type: 'router', label: 'Router', icon: 'apartment', category: 'logic', description: 'Multi-way conditional routing (switch/case)' },
       { type: 'iteration', label: 'Iteration', icon: 'reload', category: 'logic', description: 'For-each loop' },
       { type: 'loop', label: 'Loop', icon: 'sync', category: 'logic', description: 'While loop' },
-      { type: 'variable-aggregator', label: 'Variable Aggregator', icon: 'merge-cells', category: 'logic', description: 'Merge outputs' },
-      { type: 'variable-assigner', label: 'Variable Assigner', icon: 'edit', category: 'logic', description: 'Set variable' },
-      { type: 'template', label: 'Template', icon: 'file-text', category: 'logic', description: 'String template' },
-      { type: 'text-transform', label: 'Text Transform', icon: 'edit', category: 'logic', description: 'String operations' },
-      { type: 'data-transform', label: 'Data Transform', icon: 'swap', category: 'logic', description: 'JSON extract/map/filter' },
-      { type: 'delay', label: 'Delay', icon: 'clock-circle', category: 'logic', description: 'Pause execution' },
-      { type: 'goto', label: 'Goto', icon: 'sync', category: 'logic', description: 'Jump back to a previous node' },
-      { type: 'retry', label: 'Retry', icon: 'reload', category: 'logic', description: 'Retry on failure with backoff' },
-      { type: 'router', label: 'Router', icon: 'branches', category: 'logic', description: 'Multi-way conditional routing' },
-      { type: 'git-operations', label: 'Git Operations', icon: 'sync', category: 'tools', description: 'Git add, commit, push, and create pull request' }
+      { type: 'retry', label: 'Retry', icon: 'redo', category: 'logic', description: 'Retry on failure with exponential backoff' },
+      { type: 'variable-aggregator', label: 'Variable Aggregator', icon: 'merge-cells', category: 'logic', description: 'Merge outputs from parallel branches' },
+      { type: 'variable-assigner', label: 'Variable Assigner', icon: 'edit', category: 'logic', description: 'Set a named variable' },
+      { type: 'template', label: 'Template', icon: 'file-text', category: 'logic', description: 'String template with variables' },
+      { type: 'text-transform', label: 'Text Transform', icon: 'font-size', category: 'logic', description: 'String operations (trim, replace, case...)' },
+      { type: 'data-transform', label: 'Data Transform', icon: 'swap', category: 'logic', description: 'JSON extract/map/filter/merge' },
+      { type: 'delay', label: 'Delay', icon: 'clock-circle', category: 'logic', description: 'Pause execution' }
     ]
   },
   {
@@ -67,7 +65,8 @@ export const NODE_CATEGORIES: NodeCategory[] = [
       { type: 'context-loader', label: 'Context Loader', icon: 'database', category: 'tools', description: 'Load directory as context' },
       { type: 'file-write', label: 'File Write', icon: 'file-text', category: 'tools', description: 'Write content to file' },
       { type: 'web-search', label: 'Web Search', icon: 'search', category: 'tools', description: 'Search the web (DuckDuckGo)' },
-      { type: 'text-splitter', label: 'Text Splitter', icon: 'scissor', category: 'tools', description: 'Chunk text for RAG' }
+      { type: 'text-splitter', label: 'Text Splitter', icon: 'scissor', category: 'tools', description: 'Chunk text for RAG' },
+      { type: 'git-operations', label: 'Git Operations', icon: 'branches', category: 'tools', description: 'Git add, commit, push, and create pull request' }
     ]
   },
   {
