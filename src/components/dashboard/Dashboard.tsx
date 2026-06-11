@@ -21,7 +21,7 @@ interface WorkflowSummary { id: string; name: string; description: string; updat
 
 const TEMPLATES = [
   { id: 'code-review', name: 'Code Review Pipeline', description: 'File Explorer → Context Loader → LLM → Condition', icon: '🔍', nodes: 6 },
-  { id: 'coding-agent', name: 'ReAct Coding Agent', description: 'Start → ReAct Agent → End', icon: '🤖', nodes: 3 },
+  { id: 'ai-agent', name: 'AI Agent Pipeline', description: 'Start → AI Agent → End', icon: '⚡', nodes: 3 },
   { id: 'full-sdlc', name: 'Full SDLC Pipeline', description: 'Requirements → Design → Code → Test → Docs', icon: '🔄', nodes: 8 },
   { id: 'team-orchestrator', name: 'Agent Team', description: 'Supervisor + Architect + Dev + Tester', icon: '👥', nodes: 4 }
 ]
