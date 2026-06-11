@@ -172,7 +172,8 @@ export async function* runAgent(
   config: AgentConfig,
   aiChat: (messages: Message[], opts?: { model?: string; provider?: string }) => Promise<string>
 ): AsyncGenerator<AgentEvent> {
-  const maxIterations = config.maxIterations ?? 30
+  const isUnlimited = config.maxIterations === 0
+  const maxIterations = isUnlimited ? Number.MAX_SAFE_INTEGER : (config.maxIterations ?? 30)
   const ctx = createToolContext(config.codebasePath)
   const filesChanged = new Set<string>()
   const startTime = Date.now()
@@ -194,7 +195,7 @@ export async function* runAgent(
 
   for (let i = 0; i < maxIterations; i++) {
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(0)
-    yield { type: 'thinking', content: `Step ${i + 1}/${maxIterations} (${elapsed}s elapsed)...`, iteration: i + 1 }
+    yield { type: 'thinking', content: `Step ${i + 1}${isUnlimited ? '' : `/${maxIterations}`} (${elapsed}s elapsed)...`, iteration: i + 1 }
 
     let response: string
     try {
@@ -301,8 +302,10 @@ export async function* runAgent(
 
   yield {
     type: 'error',
-    content: `Max iterations (${maxIterations}) reached. ${filesChanged.size} files changed. Use the changes so far or increase max_iterations.`,
-    iteration: maxIterations,
+    content: isUnlimited
+      ? `Agent stopped after ${Number.MAX_SAFE_INTEGER} iterations. ${filesChanged.size} files changed.`
+      : `Max iterations (${maxIterations}) reached. ${filesChanged.size} files changed. Use the changes so far or increase max_iterations.`,
+    iteration: isUnlimited ? Number.MAX_SAFE_INTEGER : maxIterations,
     filesChanged: Array.from(filesChanged)
   }
 }

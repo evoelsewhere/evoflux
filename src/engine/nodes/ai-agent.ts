@@ -54,7 +54,7 @@ export class AIAgentNode extends BaseNode<CodingAgentConfig> {
     const codebasePath = String(cfg.codebase_path || '')
 
     if (!task) throw new NodeExecutionError(context.nodeId, this.type, 'Task is required')
-    if (!codebasePath) throw new NodeExecutionError(context.nodeId, this.type, 'Codebase path is required. Set it in node config.')
+    if (!codebasePath) throw new NodeExecutionError(context.nodeId, this.type, 'Target path is required. Set it in node config.')
 
     const globalChat = (globalThis as any).__evolux_ai_chat as
       | ((messages: Array<{ role: string; content: string }>, opts?: { model?: string; provider?: string }) => Promise<string>)

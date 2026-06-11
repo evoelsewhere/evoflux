@@ -1,6 +1,8 @@
+import { useState, useEffect } from 'react'
 import { Input, Select, Slider } from 'antd'
 import Editor from '@monaco-editor/react'
 import { useTheme } from '../../common/ThemeProvider'
+import { useProviderStore } from '../../../stores/providerStore'
 import { Section, Field, AgentListEditor, inputStyle } from './SectionField'
 
 const { TextArea } = Input
@@ -15,6 +17,20 @@ interface ConfigFormProps {
 
 export default function NodeConfigForms({ config, nodeType, handleChange, providerOptions, defaultProviderId }: ConfigFormProps) {
   const { mode } = useTheme()
+  const providers = useProviderStore(s => s.providers)
+  const [kbList, setKbList] = useState<Array<{ id: string; name: string }>>([])
+
+  useEffect(() => {
+    window.api.kb.list().then(list => {
+      setKbList((list || []) as Array<{ id: string; name: string }>)
+    }).catch(() => {})
+  }, [])
+
+  const selectedProviderId = String(config.provider_id || '')
+  const selectedProvider = providers.find(p => p.id === selectedProviderId)
+  const modelOptions = selectedProvider
+    ? selectedProvider.models.map(m => ({ label: m, value: m }))
+    : []
 
   return (
     <>
@@ -253,8 +269,11 @@ export default function NodeConfigForms({ config, nodeType, handleChange, provid
               ]} style={{ width: '100%' }} />
           </Field>
           {(config.mode === 'kb_search' || config.mode === 'usecase') && (
-            <Field label="Knowledge Base ID">
-              <Input size="small" value={String(config.knowledge_base_id || '')} onChange={(e) => handleChange('knowledge_base_id', e.target.value)} placeholder="kb-xxxxxxxxxx" style={inputStyle} />
+            <Field label="Knowledge Base">
+              <Select size="small" value={String(config.knowledge_base_id || '')} onChange={(v) => handleChange('knowledge_base_id', v)}
+                options={kbList.map(kb => ({ label: `${kb.name} (${kb.id})`, value: kb.id }))}
+                style={{ width: '100%' }} showSearch placeholder="Select knowledge base"
+                filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())} />
             </Field>
           )}
           {config.mode === 'usecase' && (
@@ -530,18 +549,39 @@ export default function NodeConfigForms({ config, nodeType, handleChange, provid
 
       {nodeType === 'ai-agent' && (
         <Section title="AI Agent">
-          <Field label="Codebase Path">
-            <Input size="small" value={String(config.codebase_path || '')} onChange={(e) => handleChange('codebase_path', e.target.value)} placeholder="/path/to/your/project" style={inputStyle} />
+          <Field label="Target Path">
+            <div style={{ display: 'flex', gap: 4 }}>
+              <Input size="small" value={String(config.codebase_path || '')} onChange={(e) => handleChange('codebase_path', e.target.value)} placeholder="/path/to/your/project" style={{ ...inputStyle, flex: 1 }} />
+              <button onClick={async () => {
+                const path = await window.api.kb.selectFolder()
+                if (path) handleChange('codebase_path', path)
+              }} style={{ padding: '4px 8px', fontSize: 10, borderRadius: 4, background: 'var(--bg-hover)', border: '1px solid var(--border-primary)', color: 'var(--text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                Browse
+              </button>
+            </div>
           </Field>
           <Field label="Provider">
             <Select size="small" value={String(config.provider_id || '')} onChange={(v) => handleChange('provider_id', v)}
               options={[{ label: 'Default', value: '' }, ...providerOptions]} style={{ width: '100%' }} />
           </Field>
-          <Field label="Model (optional)">
-            <Input size="small" value={String(config.model || '')} onChange={(e) => handleChange('model', e.target.value)} placeholder="Auto" style={inputStyle} />
+          <Field label="Model">
+            <Select size="small" value={String(config.model || '')} onChange={(v) => handleChange('model', v)}
+              options={[{ label: 'Auto (Provider Default)', value: '' }, ...modelOptions]} style={{ width: '100%' }}
+              showSearch placeholder="Select model" />
           </Field>
-          <Field label={`Max Iterations: ${String(config.max_iterations ?? 20)}`}>
-            <Slider min={5} max={50} value={Number(config.max_iterations ?? 20)} onChange={(v) => handleChange('max_iterations', v)} />
+          <Field label="Max Iterations">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                {Number(config.max_iterations) === 0 ? 'Unlimited' : `${String(config.max_iterations ?? 20)} iterations`}
+              </span>
+              <label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 3, marginLeft: 'auto', cursor: 'pointer' }}>
+                <input type="checkbox" checked={Number(config.max_iterations) === 0} onChange={(e) => handleChange('max_iterations', e.target.checked ? 0 : 20)} />
+                Unlimited
+              </label>
+            </div>
+            {Number(config.max_iterations) !== 0 && (
+              <Slider min={1} max={3000} value={Number(config.max_iterations ?? 20)} onChange={(v) => handleChange('max_iterations', v)} />
+            )}
           </Field>
           <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
             AI agent that reads, writes, edits files and runs commands to complete the task.
