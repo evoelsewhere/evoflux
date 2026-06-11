@@ -55,7 +55,10 @@ export default function KBUsecases({ projectPath, onSelect }: KBUsecasesProps) {
   if (usecases.length === 0) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '40px 0' }}>
-        <div style={{ fontSize: 40, marginBottom: 12 }}>📋</div>
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none" style={{ marginBottom: 12 }}>
+          <rect x="6" y="4" width="28" height="32" rx="4" stroke="var(--accent)" strokeWidth="2" />
+          <path d="M12 12H28M12 17H28M12 22H20" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
         <h3 style={{ color: 'var(--text-primary)', fontSize: 14, fontWeight: 600, margin: '0 0 4px 0' }}>No usecases found</h3>
         <p style={{ color: 'var(--text-tertiary)', fontSize: 12, margin: 0, textAlign: 'center', maxWidth: 300 }}>
           Create .evoflux/usecases/*.md files in your project to define reusable workflow patterns.

@@ -7,20 +7,34 @@ interface WikiPage { id: string; entity_id: string | null; title: string; conten
 interface WikiGraph { entities: WikiEntity[]; relationships: WikiRelationship[] }
 
   const PAGE_TYPE_DEFAULTS: Record<string, { icon: string; color: string }> = {
-    overview: { icon: '📋', color: 'var(--accent)' },
-    insight: { icon: '💡', color: '#fbbf24' },
-    decision: { icon: '🎯', color: '#c084fc' },
-    pattern: { icon: '🔄', color: '#34d399' },
-    anti_pattern: { icon: '⚠️', color: '#f87171' },
-    qa: { icon: '❓', color: '#60a5fa' },
-    entity: { icon: '📄', color: 'var(--text-tertiary)' },
-    topic: { icon: '📌', color: 'var(--text-tertiary)' }
+    overview: { icon: 'overview', color: 'var(--accent)' },
+    insight: { icon: 'insight', color: '#fbbf24' },
+    decision: { icon: 'decision', color: '#c084fc' },
+    pattern: { icon: 'pattern', color: '#34d399' },
+    anti_pattern: { icon: 'warning', color: '#f87171' },
+    qa: { icon: 'question', color: '#60a5fa' },
+    entity: { icon: 'file', color: 'var(--text-tertiary)' },
+    topic: { icon: 'pin', color: 'var(--text-tertiary)' }
+  }
+
+  function renderIcon(icon: string, size = 14, color = 'currentColor') {
+    switch (icon) {
+      case 'overview': return <svg width={size} height={size} viewBox="0 0 14 14" fill="none"><rect x="2" y="1" width="10" height="12" rx="2" stroke={color} strokeWidth="1.2" /><path d="M4.5 4H9.5M4.5 6.5H9.5M4.5 9H7" stroke={color} strokeWidth="1" strokeLinecap="round" /></svg>
+      case 'insight': return <svg width={size} height={size} viewBox="0 0 14 14" fill="none"><circle cx="7" cy="5" r="3.5" stroke={color} strokeWidth="1.2" /><path d="M5.5 8.5V10C5.5 10.8 6.2 11.5 7 11.5S8.5 10.8 8.5 10V8.5" stroke={color} strokeWidth="1.2" strokeLinecap="round" /><path d="M7 1.5V3M11 5H12.5M1.5 5H3M10 2L11 1M4 2L3 1" stroke={color} strokeWidth="1" strokeLinecap="round" /></svg>
+      case 'decision': return <svg width={size} height={size} viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke={color} strokeWidth="1.2" /><circle cx="7" cy="7" r="2" fill={color} /></svg>
+      case 'pattern': return <svg width={size} height={size} viewBox="0 0 14 14" fill="none"><path d="M2 7C2 4.2 4.2 2 7 2C9.8 2 12 4.2 12 7C12 9.8 9.8 12 7 12" stroke={color} strokeWidth="1.2" strokeLinecap="round" /><path d="M7 4V7L9 9" stroke={color} strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      case 'warning': return <svg width={size} height={size} viewBox="0 0 14 14" fill="none"><path d="M7 1L13 12H1L7 1Z" stroke={color} strokeWidth="1.2" strokeLinejoin="round" /><path d="M7 5V8M7 10V10.5" stroke={color} strokeWidth="1.2" strokeLinecap="round" /></svg>
+      case 'question': return <svg width={size} height={size} viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke={color} strokeWidth="1.2" /><path d="M5.5 5.5C5.5 4.1 6.6 3 7 3S8.5 4.1 8.5 5C8.5 6 7 6 7 7.5V8" stroke={color} strokeWidth="1.2" strokeLinecap="round" /><circle cx="7" cy="10.5" r="0.8" fill={color} /></svg>
+      case 'file': return <svg width={size} height={size} viewBox="0 0 14 14" fill="none"><rect x="3" y="1" width="8" height="12" rx="1" stroke={color} strokeWidth="1.2" /><path d="M5 5H9M5 7H9M5 9H7" stroke={color} strokeWidth="0.9" strokeLinecap="round" /></svg>
+      case 'pin': return <svg width={size} height={size} viewBox="0 0 14 14" fill="none"><path d="M7 1V7M4 4L7 1L10 4" stroke={color} strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" /><path d="M3 10V12H11V10" stroke={color} strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      default: return <svg width={size} height={size} viewBox="0 0 14 14" fill="none"><rect x="3" y="1" width="8" height="12" rx="1" stroke={color} strokeWidth="1.2" /></svg>
+    }
   }
 
   function getPageTypeMeta(type: string) {
     const defaults = PAGE_TYPE_DEFAULTS[type]
     return {
-      icon: defaults?.icon || '📄',
+      icon: defaults?.icon || 'file',
       color: defaults?.color || 'var(--text-tertiary)',
       label: type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g, ' ')
     }
@@ -36,9 +50,10 @@ interface WikiGraph { entities: WikiEntity[]; relationships: WikiRelationship[] 
   pattern: '#fb923c'
 }
 
-const ENTITY_TYPE_ICONS: Record<string, string> = {
-  concept: '💡', api: '🔌', class: '📦', function: '⚡', config: '⚙️', tool: '🔧', pattern: '🔄'
-}
+  const ENTITY_TYPE_ICONS: Record<string, string> = {
+    concept: 'insight', api: 'pattern', class: 'file', function: 'decision',
+    config: 'warning', tool: 'pin', pattern: 'pattern'
+  }
 
 interface KBWikiProps { kbId: string }
 
@@ -171,7 +186,7 @@ export default function KBWiki({ kbId }: KBWikiProps) {
                   }}
                     onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
                     onMouseLeave={e => e.currentTarget.style.background = activeEntity?.id === entity.id ? 'var(--accent-muted)' : 'transparent'}>
-                    <span style={{ fontSize: 14 }}>{ENTITY_TYPE_ICONS[entity.type] || '📄'}</span>
+                    <span style={{ display: 'flex' }}>{renderIcon(ENTITY_TYPE_ICONS[entity.type] || 'file', 14, ENTITY_TYPE_COLORS[entity.type] || 'var(--text-tertiary)')}</span>
                     <div>
                       <div style={{ fontSize: 12, fontWeight: 500, color: activeEntity?.id === entity.id ? 'var(--accent)' : 'var(--text-primary)' }}>{entity.name}</div>
                       <div style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{entity.type}</div>
@@ -190,7 +205,7 @@ export default function KBWiki({ kbId }: KBWikiProps) {
                     padding: '5px 12px', fontSize: 10, fontWeight: 600, color: meta.color,
                     textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: 4
                   }}>
-                    <span>{meta.icon}</span>
+                    <span style={{ display: 'flex' }}>{renderIcon(meta.icon, 12, meta.color)}</span>
                     {meta.label}
                     <span style={{ fontSize: 9, color: 'var(--text-tertiary)', marginLeft: 'auto' }}>{typePages.length}</span>
                   </div>
@@ -223,7 +238,7 @@ export default function KBWiki({ kbId }: KBWikiProps) {
                   padding: '5px 12px', fontSize: 10, fontWeight: 600, color: ENTITY_TYPE_COLORS[type] || 'var(--text-tertiary)',
                   textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: 4
                 }}>
-                  <span>{ENTITY_TYPE_ICONS[type] || '📄'}</span>
+                  <span style={{ display: 'flex' }}>{renderIcon(ENTITY_TYPE_ICONS[type] || 'file', 12, ENTITY_TYPE_COLORS[type] || 'var(--text-tertiary)')}</span>
                   {type}s
                   <span style={{ fontSize: 9, color: 'var(--text-tertiary)', marginLeft: 'auto' }}>{entitiesByType[type]?.length || 0}</span>
                 </div>
@@ -260,7 +275,7 @@ export default function KBWiki({ kbId }: KBWikiProps) {
           </button>
           {activeEntity && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: 14 }}>{ENTITY_TYPE_ICONS[activeEntity.type] || '📄'}</span>
+              <span style={{ display: 'flex' }}>{renderIcon(ENTITY_TYPE_ICONS[activeEntity.type] || 'file', 16, ENTITY_TYPE_COLORS[activeEntity.type] || 'var(--text-tertiary)')}</span>
               <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{activeEntity.name}</span>
               <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 3, background: (ENTITY_TYPE_COLORS[activeEntity.type] || '#666') + '20', color: ENTITY_TYPE_COLORS[activeEntity.type] || '#666', fontWeight: 500 }}>{activeEntity.type}</span>
             </div>
@@ -319,7 +334,7 @@ export default function KBWiki({ kbId }: KBWikiProps) {
                           }}
                             onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'var(--bg-hover)' }}
                             onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-primary)'; e.currentTarget.style.background = 'var(--bg-card)' }}>
-                            <span style={{ fontSize: 14 }}>{ENTITY_TYPE_ICONS[otherEntity?.type || ''] || '📄'}</span>
+                            <span style={{ display: 'flex' }}>{renderIcon(ENTITY_TYPE_ICONS[otherEntity?.type || ''] || 'file', 14, ENTITY_TYPE_COLORS[otherEntity?.type || ''] || 'var(--text-tertiary)')}</span>
                             <div style={{ flex: 1 }}>
                               <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)' }}>{otherName}</div>
                               <div style={{ fontSize: 10, color: 'var(--accent)' }}>{isSource ? '→' : '←'} {rel.type}</div>
@@ -348,7 +363,12 @@ export default function KBWiki({ kbId }: KBWikiProps) {
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '80px 0' }}>
-              <div style={{ fontSize: 40, marginBottom: 16 }}>📚</div>
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none" style={{ marginBottom: 16 }}>
+          <rect x="4" y="6" width="32" height="28" rx="3" stroke="var(--accent)" strokeWidth="2" />
+          <path d="M20 6V34" stroke="var(--accent)" strokeWidth="1.5" />
+          <path d="M8 12H17M8 16H17M8 20H17" stroke="var(--accent)" strokeWidth="1" strokeLinecap="round" opacity="0.5" />
+          <path d="M23 12H32M23 16H32M23 20H32" stroke="var(--accent)" strokeWidth="1" strokeLinecap="round" opacity="0.5" />
+        </svg>
               <h3 style={{ color: 'var(--text-primary)', fontSize: 16, fontWeight: 600, margin: '0 0 6px 0' }}>Welcome to the Wiki</h3>
               <p style={{ color: 'var(--text-tertiary)', fontSize: 13, margin: 0 }}>Select an entity or page from the sidebar to get started.</p>
             </div>
