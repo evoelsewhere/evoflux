@@ -117,6 +117,13 @@ const api = {
       return () => ipcRenderer.removeListener('kb:event', handler)
     }
   },
+  usecase: {
+    list: (projectPath: string) => ipcRenderer.invoke('usecase:list', projectPath),
+    get: (projectPath: string, name: string) => ipcRenderer.invoke('usecase:get', projectPath, name),
+    resolve: (projectPath: string, name: string, kbId: string, input?: string) => ipcRenderer.invoke('usecase:resolve', projectPath, name, kbId, input),
+    selectFolder: () => ipcRenderer.invoke('usecase:selectFolder'),
+    clearCache: () => ipcRenderer.invoke('usecase:clearCache')
+  },
   onStreamChunk: (callback: (chunk: string) => void) => {
     const handler = (_event: unknown, chunk: string) => callback(chunk)
     ipcRenderer.on('ai:stream-chunk', handler)

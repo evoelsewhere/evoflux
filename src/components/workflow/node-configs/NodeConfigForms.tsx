@@ -245,19 +245,38 @@ export default function NodeConfigForms({ config, nodeType, handleChange, provid
         <Section title="Knowledge Retrieval">
           <Field label="Mode">
             <Select size="small" value={String(config.mode || 'search')} onChange={(v) => handleChange('mode', v)}
-              options={[{ label: 'Search Memory', value: 'search' }, { label: 'Search Knowledge Base', value: 'kb_search' }, { label: 'Ingest Knowledge', value: 'ingest' }]} style={{ width: '100%' }} />
+              options={[
+                { label: 'Search Memory', value: 'search' },
+                { label: 'Search Knowledge Base', value: 'kb_search' },
+                { label: 'Use Case', value: 'usecase' },
+                { label: 'Ingest Knowledge', value: 'ingest' }
+              ]} style={{ width: '100%' }} />
           </Field>
-          {config.mode === 'kb_search' && (
+          {(config.mode === 'kb_search' || config.mode === 'usecase') && (
+            <Field label="Knowledge Base ID">
+              <Input size="small" value={String(config.knowledge_base_id || '')} onChange={(e) => handleChange('knowledge_base_id', e.target.value)} placeholder="kb-xxxxxxxxxx" style={inputStyle} />
+            </Field>
+          )}
+          {config.mode === 'usecase' && (
             <>
-              <Field label="Knowledge Base ID">
-                <Input size="small" value={String(config.knowledge_base_id || '')} onChange={(e) => handleChange('knowledge_base_id', e.target.value)} placeholder="kb-xxxxxxxxxx" style={inputStyle} />
+              <Field label="Project Path">
+                <Input size="small" value={String(config.project_path || '')} onChange={(e) => handleChange('project_path', e.target.value)} placeholder="/path/to/project (with .evoflux/usecases)" style={inputStyle} />
               </Field>
-              <Field label="Min Similarity">
-                <Slider min={0} max={1} step={0.05} value={Number(config.min_similarity ?? 0)} onChange={(v) => handleChange('min_similarity', v)} />
+              <Field label="Usecase Name">
+                <Input size="small" value={String(config.usecase_name || '')} onChange={(e) => handleChange('usecase_name', e.target.value)} placeholder="code-review" style={inputStyle} />
               </Field>
+              <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 8 }}>
+                Reads .evoflux/usecases/{String(config.usecase_name || 'name')}.md from project path.
+                Runs kb_queries against the KB and formats context for the next node.
+              </div>
             </>
           )}
-          {config.mode !== 'ingest' && (
+          {config.mode === 'kb_search' && (
+            <Field label="Min Similarity">
+              <Slider min={0} max={1} step={0.05} value={Number(config.min_similarity ?? 0)} onChange={(v) => handleChange('min_similarity', v)} />
+            </Field>
+          )}
+          {config.mode !== 'ingest' && config.mode !== 'usecase' && (
             <>
               <Field label={`Top K: ${String(config.top_k ?? 5)}`}>
                 <Slider min={1} max={20} value={Number(config.top_k ?? 5)} onChange={(v) => handleChange('top_k', v)} />
@@ -284,7 +303,7 @@ export default function NodeConfigForms({ config, nodeType, handleChange, provid
               </Field>
             </>
           )}
-          {config.mode !== 'kb_search' && (
+          {config.mode !== 'kb_search' && config.mode !== 'usecase' && (
             <Field label="Workflow ID (optional)">
               <Input size="small" value={String(config.workflow_id || '')} onChange={(e) => handleChange('workflow_id', e.target.value)} placeholder="Default: current workflow" style={inputStyle} />
             </Field>

@@ -26,7 +26,8 @@ export interface ScanOptions {
 const DEFAULT_EXCLUDE = [
   'node_modules', '.git', 'dist', 'out', '.next', '__pycache__',
   '.venv', 'venv', '.cache', 'coverage', '.idea', '.vscode',
-  'build', 'target', 'bin', 'obj', '.gradle', '.npm', '.yarn'
+  'build', 'target', 'bin', 'obj', '.gradle', '.npm', '.yarn',
+  '.evoflux'
 ]
 
 export async function scanDirectory(dirPath: string, options?: ScanOptions): Promise<ScannedFile[]> {

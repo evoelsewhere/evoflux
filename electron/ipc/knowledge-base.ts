@@ -13,6 +13,8 @@ import {
 import { buildWiki } from '../../src/engine/kb/wiki-builder'
 import { hybridSearch } from '../../src/engine/kb/hybrid-search'
 import { indexFolder, indexFiles, syncSource } from '../../src/engine/kb/pipeline'
+import { listUsecases, parseUsecaseFile, clearUsecaseCache } from '../../src/engine/usecase/parser'
+import { executeUsecase } from '../../src/engine/usecase/executor'
 import { detectGitRepo, getChangedFiles, getFileDiff, watchGitRepo } from '../../src/engine/kb/git-ops'
 
 let mainWindow: BrowserWindow | null = null
@@ -300,6 +302,52 @@ export function registerKBHandlers(): void {
 
   ipcMain.handle('wiki:delete', async (_event, kbId) => {
     deleteWikiByKB(kbId)
+    return { success: true }
+  })
+
+  // ==================== Usecases ====================
+
+  ipcMain.handle('usecase:list', async (_event, projectPath) => {
+    try {
+      return await listUsecases(projectPath)
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  ipcMain.handle('usecase:get', async (_event, projectPath, name) => {
+    try {
+      const usecases = await listUsecases(projectPath)
+      const usecase = usecases.find(u => u.name === name)
+      if (!usecase) return { error: `Usecase "${name}" not found` }
+      const definition = await parseUsecaseFile(usecase.path)
+      return definition
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  ipcMain.handle('usecase:resolve', async (_event, projectPath, name, kbId, input) => {
+    try {
+      const aiChat = (globalThis as any).__evolux_ai_chat
+      const result = await executeUsecase(projectPath, name, kbId, input || '', { aiChat })
+      return result
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  ipcMain.handle('usecase:selectFolder', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory'],
+      title: 'Select project folder (with .evoflux/usecases)'
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return result.filePaths[0]
+  })
+
+  ipcMain.handle('usecase:clearCache', async () => {
+    clearUsecaseCache()
     return { success: true }
   })
 }

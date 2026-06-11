@@ -93,6 +93,13 @@ interface Window {
       delete: (kbId: string) => Promise<{ success: boolean }>
       onProgress: (callback: (event: unknown) => void) => () => void
     }
+    usecase: {
+      list: (projectPath: string) => Promise<Array<{ name: string; description: string; path: string; tags: string[] }> | { error: string }>
+      get: (projectPath: string, name: string) => Promise<unknown>
+      resolve: (projectPath: string, name: string, kbId: string, input?: string) => Promise<unknown>
+      selectFolder: () => Promise<string | null>
+      clearCache: () => Promise<{ success: boolean }>
+    }
     onStreamChunk: (callback: (chunk: string) => void) => () => void
   }
 }

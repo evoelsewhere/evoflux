@@ -10,17 +10,20 @@ import {
   incrementSemanticAccess
 } from '../db/memory-repo'
 import { hybridSearch } from '../kb/hybrid-search'
+import { executeUsecase } from '../usecase/executor'
 
 interface KnowledgeRetrievalConfig {
   query?: string
   top_k?: number
   layer?: 'semantic' | 'episodic' | 'procedural' | 'all'
   workflow_id?: string
-  mode?: 'search' | 'ingest' | 'kb_search'
+  mode?: 'search' | 'ingest' | 'kb_search' | 'usecase'
   content?: string
   content_type?: 'fact' | 'document' | 'code_snippet' | 'api_doc' | 'error_pattern'
   knowledge_base_id?: string
   min_similarity?: number
+  project_path?: string
+  usecase_name?: string
 }
 
 export class KnowledgeRetrievalNode extends BaseNode<KnowledgeRetrievalConfig> {
@@ -32,11 +35,12 @@ export class KnowledgeRetrievalNode extends BaseNode<KnowledgeRetrievalConfig> {
       label: 'Knowledge Retrieval',
       icon: 'database',
       category: 'ai',
-      description: 'RAG from workflow memory or Knowledge Base.',
+      description: 'RAG from workflow memory, Knowledge Base, or Use Cases.',
       inputs: [
         { name: 'query', label: 'Query', type: 'string', required: false },
         { name: 'content', label: 'Content to Ingest', type: 'string', required: false },
-        { name: 'workflow_id', label: 'Workflow ID', type: 'string', required: false }
+        { name: 'workflow_id', label: 'Workflow ID', type: 'string', required: false },
+        { name: 'input', label: 'Input (for usecase)', type: 'string', required: false }
       ],
       outputs: [
         { name: 'results', label: 'Results', type: 'array', required: false },
@@ -59,6 +63,7 @@ export class KnowledgeRetrievalNode extends BaseNode<KnowledgeRetrievalConfig> {
 
     if (mode === 'ingest') return this.ingest(inputs, cfg, workflowId, context)
     if (mode === 'kb_search') return this.kbSearch(inputs, cfg, context)
+    if (mode === 'usecase') return this.usecase(inputs, cfg, context)
     return this.search(inputs, cfg, workflowId, context)
   }
 
@@ -171,5 +176,37 @@ export class KnowledgeRetrievalNode extends BaseNode<KnowledgeRetrievalConfig> {
     }
 
     return { results, formatted: parts.join('\n'), count: results.length }
+  }
+
+  private async usecase(
+    inputs: Record<string, unknown>,
+    cfg: KnowledgeRetrievalConfig,
+    context: NodeRunContext
+  ): Promise<NodeOutput> {
+    const projectPath = cfg.project_path
+    if (!projectPath) throw new NodeExecutionError(context.nodeId, this.type, 'project_path is required for usecase mode')
+
+    const usecaseName = cfg.usecase_name
+    if (!usecaseName) throw new NodeExecutionError(context.nodeId, this.type, 'usecase_name is required for usecase mode')
+
+    const kbId = cfg.knowledge_base_id
+    if (!kbId) throw new NodeExecutionError(context.nodeId, this.type, 'knowledge_base_id is required for usecase mode')
+
+    const input = String(inputs.input || inputs.query || '')
+
+    const globalChat = (globalThis as any).__evolux_ai_chat as
+      | ((messages: Array<{ role: string; content: string }>, opts?: { model?: string; provider?: string }) => Promise<string>)
+      | undefined
+
+    const result = await executeUsecase(projectPath, usecaseName, kbId, input, {
+      aiChat: globalChat || undefined,
+      maxResults: cfg.top_k || 5
+    })
+
+    return {
+      results: result.kb_results,
+      formatted: result.context,
+      count: Object.values(result.kb_results).flat().length
+    }
   }
 }
