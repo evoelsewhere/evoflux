@@ -12,16 +12,16 @@ interface CodingAgentConfig {
   context?: string
 }
 
-export class CodingAgentNode extends BaseNode<CodingAgentConfig> {
-  readonly type = 'coding-agent'
+export class AIAgentNode extends BaseNode<CodingAgentConfig> {
+  readonly type = 'ai-agent'
 
   getMetadata(): NodeMetadata {
     return {
-      type: 'coding-agent',
-      label: 'Coding Agent',
-      icon: 'code',
-      category: 'tools',
-      description: 'AI coding agent that reads, understands, plans, implements, and verifies code changes.',
+      type: 'ai-agent',
+      label: 'AI Agent',
+      icon: 'robot',
+      category: 'agent',
+      description: 'Autonomous agent that understands, plans, implements, and verifies. Works with code, documents, APIs, and any task that needs multi-step reasoning with tools.',
       inputs: [
         { name: 'task', label: 'Task', type: 'string', required: true },
         { name: 'context', label: 'Context', type: 'string', required: false }

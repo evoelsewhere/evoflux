@@ -17,7 +17,6 @@ import { QuestionClassifierNode } from './question-classifier'
 import { FileExplorerNode } from './file-explorer'
 import { FileReaderNode } from './file-reader'
 import { ContextLoaderNode } from './context-loader'
-import { ReActAgentNode } from './react-agent'
 import { AgentOrchestratorNode } from './agent-orchestrator'
 import { ShellNode } from './shell'
 import { ManualTriggerNode, WebhookTriggerNode, ScheduleTriggerNode } from './triggers'
@@ -31,7 +30,7 @@ import { DataTransformNode } from './data-transform'
 import { GotoNode } from './goto'
 import { RetryNode } from './retry'
 import { RouterNode } from './router'
-import { CodingAgentNode } from './coding-agent'
+import { AIAgentNode } from './ai-agent'
 import { GitOpsNode } from './git-operations'
 
 const registry = new Map<string, new () => BaseNode>([
@@ -52,7 +51,6 @@ const registry = new Map<string, new () => BaseNode>([
   ['file-explorer', FileExplorerNode as unknown as new () => BaseNode],
   ['file-reader', FileReaderNode as unknown as new () => BaseNode],
   ['context-loader', ContextLoaderNode as unknown as new () => BaseNode],
-  ['react-agent', ReActAgentNode as unknown as new () => BaseNode],
   ['agent-orchestrator', AgentOrchestratorNode as unknown as new () => BaseNode],
   ['shell', ShellNode as unknown as new () => BaseNode],
   ['manual-trigger', ManualTriggerNode as unknown as new () => BaseNode],
@@ -68,7 +66,7 @@ const registry = new Map<string, new () => BaseNode>([
   ['goto', GotoNode as unknown as new () => BaseNode],
   ['retry', RetryNode as unknown as new () => BaseNode],
   ['router', RouterNode as unknown as new () => BaseNode],
-  ['coding-agent', CodingAgentNode as unknown as new () => BaseNode],
+  ['ai-agent', AIAgentNode as unknown as new () => BaseNode],
   ['git-operations', GitOpsNode as unknown as new () => BaseNode]
 ])
 

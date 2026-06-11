@@ -79,48 +79,6 @@ export default function NodeConfigForms({ config, nodeType, handleChange, provid
         </Section>
       )}
 
-      {nodeType === 'react-agent' && (
-        <Section title="ReAct Agent">
-          <Field label="Provider">
-            <Select size="small" value={String(config.provider || defaultProviderId || '')} onChange={(v) => handleChange('provider', v)}
-              options={providerOptions} style={{ width: '100%' }} />
-          </Field>
-          <Field label="Model">
-            <Input size="small" value={String(config.model || 'gpt-4o')} onChange={(e) => handleChange('model', e.target.value)} placeholder="gpt-4o" style={inputStyle} />
-          </Field>
-          <Field label="System Prompt">
-            <TextArea rows={3} value={String(config.system_prompt || '')} onChange={(e) => handleChange('system_prompt', e.target.value)} placeholder="You are a helpful agent..." style={inputStyle} />
-          </Field>
-          <Field label="Tools">
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-              {['run_code', 'run_command', 'read_file', 'write_file', 'search_memory', 'http_request'].map(tool => {
-                const tools = (config.tools as string[]) || ['run_code', 'read_file', 'write_file']
-                const active = tools.includes(tool)
-                return (
-                  <button key={tool} onClick={() => handleChange('tools', active ? tools.filter(t => t !== tool) : [...tools, tool])}
-                    style={{ padding: '3px 8px', fontSize: 10, borderRadius: 6, cursor: 'pointer',
-                      background: active ? 'var(--accent-muted)' : 'var(--bg-input)',
-                      border: `1px solid ${active ? 'var(--accent)' : 'var(--border-primary)'}`,
-                      color: active ? 'var(--accent)' : 'var(--text-secondary)', fontWeight: 500 }}>
-                    {tool}
-                  </button>
-                )
-              })}
-            </div>
-          </Field>
-          <Field label={`Max Iterations: ${String(config.max_iterations ?? 25)}`}>
-            <Slider min={1} max={50} value={Number(config.max_iterations ?? 25)} onChange={(v) => handleChange('max_iterations', v)} />
-          </Field>
-          <Field label={`Max Time (s): ${String(config.max_time_seconds ?? 300)}`}>
-            <Slider min={30} max={600} step={30} value={Number(config.max_time_seconds ?? 300)} onChange={(v) => handleChange('max_time_seconds', v)} />
-          </Field>
-          <Field label="Use Memory">
-            <Select size="small" value={String(config.use_memory ?? false)} onChange={(v) => handleChange('use_memory', v === 'true')}
-              options={[{ label: 'Disabled', value: 'false' }, { label: 'Enabled', value: 'true' }]} style={{ width: '100%' }} />
-          </Field>
-        </Section>
-      )}
-
       {nodeType === 'http-request' && (
         <Section title="HTTP Request">
           <Field label="Method">
@@ -543,8 +501,8 @@ export default function NodeConfigForms({ config, nodeType, handleChange, provid
         </Section>
       )}
 
-      {nodeType === 'coding-agent' && (
-        <Section title="Coding Agent">
+      {nodeType === 'ai-agent' && (
+        <Section title="AI Agent">
           <Field label="Codebase Path">
             <Input size="small" value={String(config.codebase_path || '')} onChange={(e) => handleChange('codebase_path', e.target.value)} placeholder="/path/to/your/project" style={inputStyle} />
           </Field>

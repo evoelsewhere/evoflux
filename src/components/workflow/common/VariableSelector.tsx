@@ -96,7 +96,7 @@ function getNodeOutputs(node: Node): string[] {
     case 'variable-aggregator':
     case 'variable-assigner':
       return ['output']
-    case 'react-agent':
+    case 'ai-agent':
       return ['output', 'iterations', 'thoughts']
     case 'agent-orchestrator':
       return ['output', 'results', 'rounds']

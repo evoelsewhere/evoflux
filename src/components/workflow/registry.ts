@@ -52,7 +52,6 @@ export const NODE_CATEGORIES: NodeCategory[] = [
       { type: 'goto', label: 'Goto', icon: 'sync', category: 'logic', description: 'Jump back to a previous node' },
       { type: 'retry', label: 'Retry', icon: 'reload', category: 'logic', description: 'Retry on failure with backoff' },
       { type: 'router', label: 'Router', icon: 'branches', category: 'logic', description: 'Multi-way conditional routing' },
-      { type: 'coding-agent', label: 'Coding Agent', icon: 'code', category: 'tools', description: 'AI agent that reads/writes/edits code to complete tasks' },
       { type: 'git-operations', label: 'Git Operations', icon: 'sync', category: 'tools', description: 'Git add, commit, push, and create pull request' }
     ]
   },
@@ -75,7 +74,7 @@ export const NODE_CATEGORIES: NodeCategory[] = [
     name: 'Agent',
     icon: 'robot',
     nodes: [
-      { type: 'react-agent', label: 'ReAct Agent', icon: 'robot', category: 'agent', description: 'Thought→Action→Observation' },
+      { type: 'ai-agent', label: 'AI Agent', icon: 'robot', category: 'agent', description: 'Autonomous agent with tools for code, docs, APIs, and multi-step reasoning' },
       { type: 'agent-orchestrator', label: 'Orchestrator', icon: 'team', category: 'agent', description: 'Team of agents' },
       { type: 'sub-workflow', label: 'Sub-Workflow', icon: 'apartment', category: 'agent', description: 'Embed another workflow' }
     ]

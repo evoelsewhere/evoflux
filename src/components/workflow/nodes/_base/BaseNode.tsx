@@ -61,7 +61,7 @@ function getSubtitle(data: BaseNodeData): string | null {
   const cfg = data.config || {}
   switch (data.type) {
     case 'llm':
-    case 'react-agent':
+    case 'ai-agent':
       return cfg.prompt ? String(cfg.prompt).substring(0, 40) : cfg.model ? String(cfg.model) : null
     case 'condition':
       return cfg.expression ? String(cfg.expression).substring(0, 40) : null
