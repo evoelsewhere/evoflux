@@ -18,6 +18,7 @@ import Sidebar from '../layout/Sidebar'
 import NodePopup from './NodePopup'
 import EdgePopup from './EdgePopup'
 import RunPanel, { type RunEvent } from './RunPanel'
+import RunDetailModal from './RunDetailModal'
 import RunInputDialog from './RunInputDialog'
 import AssistantPanel from './AssistantPanel'
 import CodeEditor from '../common/CodeEditor'
@@ -56,6 +57,7 @@ function EditorCanvas() {
 
   const [showCode, setShowCode] = useState(false)
   const [showRun, setShowRun] = useState(false)
+  const [showRunDetail, setShowRunDetail] = useState(false)
   const [showInput, setShowInput] = useState(false)
   const [showAssistant, setShowAssistant] = useState(false)
   const [layoutDirection, setLayoutDirection] = useState<'TB' | 'LR'>('TB')
@@ -64,10 +66,12 @@ function EditorCanvas() {
   const [edgeStatuses, setEdgeStatuses] = useState<Record<string, 'idle' | 'active' | 'completed' | 'error'>>({})
   const [edgeIterations, setEdgeIterations] = useState<Record<string, number>>({})
   const [nodeOutputs, setNodeOutputs] = useState<Record<string, unknown>>({})
+  const [nodeProgress, setNodeProgress] = useState<Record<string, unknown[]>>({})
   const [elapsed, setElapsed] = useState(0)
   const [editingName, setEditingName] = useState(false)
   const [popupNode, setPopupNode] = useState<Node<NodeData> | null>(null)
   const [popupEdge, setPopupEdge] = useState<Edge | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId: string } | null>(null)
   const [loading, setLoading] = useState(true)
   const [showSearch, setShowSearch] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -253,8 +257,8 @@ function EditorCanvas() {
   }, [setNodes])
 
   const handleRunWithInputs = useCallback(async (inputs: Record<string, unknown>) => {
-    setShowInput(false); setShowRun(true); setRunEvents([]); setIsRunning(true)
-    setNodeStatuses({}); setNodeOutputs({}); setEdgeStatuses({}); setEdgeIterations({}); setElapsed(0)
+    setShowInput(false); setShowRun(true); setShowRunDetail(true); setRunEvents([]); setIsRunning(true)
+    setNodeStatuses({}); setNodeOutputs({}); setNodeProgress({}); setEdgeStatuses({}); setEdgeIterations({}); setElapsed(0)
     setNodes(prev => prev.map(n => ({ ...n, data: { ...n.data, status: 'idle' as const, error: undefined } })))
     runStartRef.current = Date.now()
     elapsedTimer.current = setInterval(() => { setElapsed(Date.now() - runStartRef.current) }, 100)
@@ -263,6 +267,9 @@ function EditorCanvas() {
       const ev = event as RunEvent
       setRunEvents(prev => [...prev, ev])
       if (ev.type === 'node:start' && ev.nodeId) updateNodeStatus(ev.nodeId, 'running')
+      else if (ev.type === 'node:progress' && ev.nodeId) {
+        setNodeProgress(prev => ({ ...prev, [ev.nodeId!]: [...(prev[ev.nodeId!] || []), ev.output] }))
+      }
       else if (ev.type === 'node:complete' && ev.nodeId) updateNodeStatus(ev.nodeId, 'completed', ev.output)
       else if (ev.type === 'node:error' && ev.nodeId) updateNodeStatus(ev.nodeId, 'error', ev.error)
       else if (ev.type === 'edge:activate' && ev.edgeId) {
@@ -296,6 +303,13 @@ function EditorCanvas() {
 
   useEffect(() => { return () => { if (elapsedTimer.current) clearInterval(elapsedTimer.current); if (eventCleanupRef.current) eventCleanupRef.current() } }, [])
 
+  useEffect(() => {
+    if (!contextMenu) return
+    const dismiss = () => setContextMenu(null)
+    window.addEventListener('click', dismiss)
+    return () => window.removeEventListener('click', dismiss)
+  }, [contextMenu])
+
   const resizeMon = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     const startY = e.clientY; const startH = monH
@@ -306,11 +320,22 @@ function EditorCanvas() {
 
   const onConnect = useCallback((p: Connection) => setEdges(es => addEdge({ ...p, type: 'custom', animated: true }, es)), [setEdges])
   const onNodeClick = useCallback((_: React.MouseEvent, n: Node) => {
-    if (n.type === 'comment') return
-    setSelectedNodeId(n.id); setPopupNode(n as Node<NodeData>); setPopupEdge(null)
+    setSelectedNodeId(n.id)
+    setPopupEdge(null)
+    setContextMenu(null)
   }, [])
-  const onEdgeClick = useCallback((_: React.MouseEvent, e: Edge) => { setPopupEdge(e); setPopupNode(null) }, [])
-  const onPaneClick = useCallback(() => { setSelectedNodeId(null); setPopupNode(null); setPopupEdge(null) }, [])
+  const onNodeDoubleClick = useCallback((_: React.MouseEvent, n: Node) => {
+    if (n.type === 'comment') return
+    setPopupNode(n as Node<NodeData>)
+    setPopupEdge(null)
+    setContextMenu(null)
+  }, [])
+  const onNodeContextMenu = useCallback((e: React.MouseEvent, n: Node) => {
+    e.preventDefault()
+    setContextMenu({ x: e.clientX, y: e.clientY, nodeId: n.id })
+  }, [])
+  const onEdgeClick = useCallback((_: React.MouseEvent, e: Edge) => { setPopupEdge(e); setPopupNode(null); setContextMenu(null) }, [])
+  const onPaneClick = useCallback(() => { setSelectedNodeId(null); setPopupNode(null); setPopupEdge(null); setContextMenu(null) }, [])
 
   const handleEdgeUpdate = useCallback((edgeId: string, data: Record<string, unknown>) => {
     setEdges(prev => prev.map(e => e.id === edgeId ? { ...e, data: { ...e.data, ...data }, label: data.label !== undefined ? String(data.label) : e.label } as Edge : e))
@@ -449,7 +474,7 @@ function EditorCanvas() {
             <ReactFlow
               nodes={nodes} edges={edgesWithStatus}
               onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
-              onConnect={onConnect} onNodeClick={onNodeClick} onEdgeClick={onEdgeClick} onPaneClick={onPaneClick}
+              onConnect={onConnect} onNodeClick={onNodeClick} onNodeDoubleClick={onNodeDoubleClick} onNodeContextMenu={onNodeContextMenu} onEdgeClick={onEdgeClick} onPaneClick={onPaneClick}
               nodeTypes={nodeTypes} edgeTypes={edgeTypes} proOptions={proOptions}
               multiSelectionKeyCode="Shift" panOnDrag={[0, 1, 2]} panOnScroll zoomOnScroll={false} zoomOnPinch zoomOnDoubleClick={false}
               minZoom={0.15} maxZoom={3} fitView fitViewOptions={{ padding: 0.2 }}
@@ -470,6 +495,41 @@ function EditorCanvas() {
             </ReactFlow>
             {popupNode && <ErrorBoundary><NodePopup node={popupNode} onClose={() => setPopupNode(null)} onDelete={handleDeleteNode} onUpdateNodeData={updateNodeData} /></ErrorBoundary>}
             {popupEdge && <ErrorBoundary><EdgePopup edge={popupEdge} onClose={() => setPopupEdge(null)} onUpdate={handleEdgeUpdate} onDelete={handleEdgeDelete} /></ErrorBoundary>}
+
+            {contextMenu && (
+              <div style={{
+                position: 'fixed', left: contextMenu.x, top: contextMenu.y, zIndex: 1100,
+                background: 'var(--bg-elevated)', border: '1px solid var(--border-primary)',
+                borderRadius: 8, boxShadow: '0 8px 32px rgba(0,0,0,0.35)',
+                padding: 4, minWidth: 160
+              }} onMouseDown={(e) => e.stopPropagation()}>
+                <button onClick={() => {
+                  const n = nodes.find(x => x.id === contextMenu.nodeId)
+                  if (n) { setPopupNode(n as Node<NodeData>); setSelectedNodeId(n.id) }
+                  setContextMenu(null)
+                }} style={{
+                  display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '6px 10px',
+                  fontSize: 12, color: 'var(--text-primary)', background: 'transparent',
+                  border: 'none', borderRadius: 4, cursor: 'pointer', textAlign: 'left'
+                }} onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-hover)'}
+                   onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="var(--text-tertiary)" strokeWidth="1.2" /><path d="M7 5v4M5.5 7h3" stroke="var(--text-tertiary)" strokeWidth="1.2" strokeLinecap="round" /></svg>
+                  Open Settings
+                </button>
+                <button onClick={() => {
+                  handleDeleteNode(contextMenu.nodeId)
+                  setContextMenu(null)
+                }} style={{
+                  display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '6px 10px',
+                  fontSize: 12, color: 'var(--error, #f87171)', background: 'transparent',
+                  border: 'none', borderRadius: 4, cursor: 'pointer', textAlign: 'left'
+                }} onMouseEnter={(e) => e.currentTarget.style.background = 'var(--error-muted, #f8717115)'}
+                   onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 4h8M5.5 4V3a.5.5 0 01.5-.5h2a.5.5 0 01.5.5v1M10 4v6.5a1 1 0 01-1 1H5a1 1 0 01-1-1V4" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" /></svg>
+                  Delete Node
+                </button>
+              </div>
+            )}
 
             {showSearch && (
               <div style={{
@@ -556,6 +616,8 @@ function EditorCanvas() {
           )}
         </div>
       </div>
+
+      <RunDetailModal open={showRunDetail} events={runEvents} nodes={nodes} nodeStatuses={nodeStatuses} nodeOutputs={nodeOutputs} nodeProgress={nodeProgress} isRunning={isRunning} elapsed={elapsed} onStop={handleStop} onClose={() => setShowRunDetail(false)} />
 
       <Sidebar editorMode workflowName={workflowName} isRunning={isRunning} showCode={showCode} showAssistant={showAssistant} layoutDirection={layoutDirection} canUndo={canUndo} canRedo={canRedo}
         onSave={handleSave} onRun={handleRun} onStop={handleStop} onToggleCode={() => setShowCode(!showCode)} onToggleAssistant={() => setShowAssistant(!showAssistant)} onToggleLayout={handleToggleLayout}

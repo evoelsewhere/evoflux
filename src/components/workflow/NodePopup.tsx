@@ -85,15 +85,18 @@ function NodePopupInner({ node, onClose, onDelete, onUpdateNodeData }: NodePopup
     <div
       style={{
         position: 'fixed', inset: 0, zIndex: 1000,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(3px)'
+        display: 'flex', alignItems: 'center', justifyContent: 'center'
       }}
-      onMouseDown={(e) => { if (e.target === e.currentTarget) handleCancel() }}
       onKeyDown={handleKeyDown}
     >
+      <div style={{
+        position: 'absolute', inset: 0,
+        background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(3px)'
+      }} onClick={handleCancel} />
+
       <div ref={measureRef} style={{
         position: 'absolute', visibility: 'hidden', pointerEvents: 'none',
-        width: 'fit-content', minWidth: 340, maxWidth: 'min(720px, calc(100vw - 40px))',
+        width: 'fit-content', minWidth: 340, maxWidth: 'min(900px, calc(100vw - 40px))',
         display: 'flex', flexDirection: 'column'
       }}>
         <div style={{ padding: '8px 12px' }}>
@@ -110,10 +113,10 @@ function NodePopupInner({ node, onClose, onDelete, onUpdateNodeData }: NodePopup
         </div>
       </div>
 
-      <div ref={containerRef} style={{
+      <div ref={containerRef} onClick={(e) => e.stopPropagation()} style={{
         width: w, height: h,
-        minWidth: 340, minHeight: 260,
-        maxWidth: 'min(720px, calc(100vw - 40px))',
+        minWidth: 500, minHeight: 360,
+        maxWidth: 'min(900px, calc(100vw - 40px))',
         maxHeight: 'calc(100vh - 60px)',
         background: 'var(--bg-elevated)',
         border: '1px solid var(--border-primary)',

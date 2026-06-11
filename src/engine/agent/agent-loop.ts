@@ -1,4 +1,4 @@
-import { createToolContext, executeTool, TOOL_DEFINITIONS, type ToolContext, type ToolResult } from './coding-tools'
+import { createToolContext, executeTool, TOOL_DEFINITIONS, type ToolContext, type ToolResult, type FileDiff } from './coding-tools'
 import { readFile } from 'fs/promises'
 import { join, extname } from 'path'
 import { readdir } from 'fs/promises'
@@ -20,6 +20,7 @@ export interface AgentEvent {
   toolResult?: ToolResult
   iteration?: number
   filesChanged?: string[]
+  fileDiffs?: FileDiff[]
   plan?: string[]
 }
 
@@ -222,7 +223,8 @@ export async function* runAgent(
         type: 'complete',
         content: `${summary}\n\nCompleted in ${elapsed}s, ${i + 1} steps, ${filesChanged.size} files changed.`,
         iteration: i + 1,
-        filesChanged: Array.from(filesChanged)
+        filesChanged: Array.from(filesChanged),
+        fileDiffs: ctx.fileDiffs
       }
       return
     }
@@ -306,7 +308,8 @@ export async function* runAgent(
       ? `Agent stopped after ${Number.MAX_SAFE_INTEGER} iterations. ${filesChanged.size} files changed.`
       : `Max iterations (${maxIterations}) reached. ${filesChanged.size} files changed. Use the changes so far or increase max_iterations.`,
     iteration: isUnlimited ? Number.MAX_SAFE_INTEGER : maxIterations,
-    filesChanged: Array.from(filesChanged)
+    filesChanged: Array.from(filesChanged),
+    fileDiffs: ctx.fileDiffs
   }
 }
 

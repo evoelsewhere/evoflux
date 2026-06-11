@@ -12,10 +12,19 @@ export interface ToolResult {
   error?: string
 }
 
+export interface FileDiff {
+  path: string
+  oldContent: string | null
+  newContent: string
+  added: number
+  removed: number
+}
+
 export interface ToolContext {
   workingDir: string
   filesRead: Set<string>
   filesChanged: Set<string>
+  fileDiffs: FileDiff[]
   readFile: (path: string) => Promise<string>
   writeFile: (path: string, content: string) => Promise<void>
   editFile: (path: string, oldText: string, newText: string) => Promise<ToolResult>
@@ -33,23 +42,53 @@ export interface ToolContext {
 export function createToolContext(workingDir: string): ToolContext {
   const filesRead = new Set<string>()
   const filesChanged = new Set<string>()
+  const fileDiffs: FileDiff[] = []
+  const fileSnapshots = new Map<string, string>()
+
+  async function captureSnapshot(path: string): Promise<string | null> {
+    try {
+      const fullPath = path.startsWith('/') ? path : join(workingDir, path)
+      return await readFile(fullPath, 'utf-8')
+    } catch { return null }
+  }
+
+  function recordDiff(path: string, oldContent: string | null, newContent: string) {
+    const oldLines = (oldContent || '').split('\n')
+    const newLines = newContent.split('\n')
+    let added = 0; let removed = 0
+    const maxLen = Math.max(oldLines.length, newLines.length)
+    for (let i = 0; i < maxLen; i++) {
+      if (i >= oldLines.length) added++
+      else if (i >= newLines.length) removed++
+      else if (oldLines[i] !== newLines[i]) { added++; removed++ }
+    }
+    const relPath = path.startsWith('/') ? relative(workingDir, path) : path
+    fileDiffs.push({ path: relPath, oldContent, newContent, added, removed })
+  }
 
   return {
     workingDir,
     filesRead,
     filesChanged,
+    fileDiffs,
 
     async readFile(path: string): Promise<string> {
       const fullPath = path.startsWith('/') ? path : join(workingDir, path)
       const content = await readFile(fullPath, 'utf-8')
-      filesRead.add(relative(workingDir, fullPath))
+      const relPath = relative(workingDir, fullPath)
+      filesRead.add(relPath)
+      if (!fileSnapshots.has(relPath)) fileSnapshots.set(relPath, content)
       return content
     },
 
     async writeFile(path: string, content: string): Promise<void> {
       const fullPath = path.startsWith('/') ? path : join(workingDir, path)
+      const relPath = relative(workingDir, fullPath)
+      const oldContent = fileSnapshots.get(relPath) ?? await captureSnapshot(path)
       await writeFile(fullPath, content, 'utf-8')
-      filesChanged.add(relative(workingDir, fullPath))
+      filesChanged.add(relPath)
+      fileSnapshots.set(relPath, content)
+      recordDiff(path, oldContent, content)
     },
 
     async editFile(path: string, oldText: string, newText: string): Promise<ToolResult> {
@@ -63,8 +102,12 @@ export function createToolContext(workingDir: string): ToolContext {
           return { success: false, output: '', error: `Text not found in ${path}.${hint}\nMake sure old_text matches exactly including whitespace and indentation.` }
         }
         const newContent = content.replace(oldText, newText)
+        const relPath = relative(workingDir, fullPath)
+        if (!fileSnapshots.has(relPath)) fileSnapshots.set(relPath, content)
         await writeFile(fullPath, newContent, 'utf-8')
-        filesChanged.add(relative(workingDir, fullPath))
+        filesChanged.add(relPath)
+        recordDiff(path, fileSnapshots.get(relPath) || content, newContent)
+        fileSnapshots.set(relPath, newContent)
         return { success: true, output: `Edited ${path} (${oldText.length} chars → ${newText.length} chars)` }
       } catch (e) {
         return { success: false, output: '', error: (e as Error).message }

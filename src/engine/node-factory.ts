@@ -29,6 +29,7 @@ export type NodeStatus = 'idle' | 'running' | 'completed' | 'error'
 export interface NodeRunContext {
   nodeId: string
   signal?: AbortSignal
+  onProgress?: (data: unknown) => void
 }
 
 export abstract class BaseNode<_TConfig = unknown> {

@@ -8,6 +8,7 @@ import {
   NodeExtractIcon, NodeTagIcon, NodeEditIcon,
   NodeSubWorkflowIcon
 } from '../../../common/NodeIcons'
+import { useTheme } from '../../../common/ThemeProvider'
 
 const ICONS: Record<string, (sz: number, c: string) => React.ReactNode> = {
   'play-circle': (s, c) => <NodeStartIcon size={s} color={c} />,
@@ -36,13 +37,22 @@ const ICONS: Record<string, (sz: number, c: string) => React.ReactNode> = {
 
 interface CatStyle { bg: string; bgSel: string; accent: string; bar: string; text: string }
 
-const CAT: Record<string, CatStyle> = {
+const CAT_DARK: Record<string, CatStyle> = {
   trigger: { bg: '#0f1a14', bgSel: '#132a1d', accent: '#34d399', bar: '#065f46', text: '#6ee7b7' },
   ai:      { bg: '#0f172a', bgSel: '#172554', accent: '#60a5fa', bar: '#1e40af', text: '#93c5fd' },
   logic:   { bg: '#1c1917', bgSel: '#292524', accent: '#fbbf24', bar: '#92400e', text: '#fcd34d' },
   tools:   { bg: '#131c1c', bgSel: '#1a2e2e', accent: '#2dd4bf', bar: '#115e59', text: '#5eead4' },
   agent:   { bg: '#1e1028', bgSel: '#2e1040', accent: '#c084fc', bar: '#7e22ce', text: '#d8b4fe' },
   other:   { bg: '#18181b', bgSel: '#27272a', accent: '#a1a1aa', bar: '#3f3f46', text: '#d4d4d8' }
+}
+
+const CAT_LIGHT: Record<string, CatStyle> = {
+  trigger: { bg: '#f0fdf4', bgSel: '#dcfce7', accent: '#16a34a', bar: '#86efac', text: '#15803d' },
+  ai:      { bg: '#eff6ff', bgSel: '#dbeafe', accent: '#2563eb', bar: '#93c5fd', text: '#1d4ed8' },
+  logic:   { bg: '#fffbeb', bgSel: '#fef3c7', accent: '#d97706', bar: '#fcd34d', text: '#b45309' },
+  tools:   { bg: '#f0fdfa', bgSel: '#ccfbf1', accent: '#0d9488', bar: '#5eead4', text: '#0f766e' },
+  agent:   { bg: '#faf5ff', bgSel: '#f3e8ff', accent: '#9333ea', bar: '#d8b4fe', text: '#7e22ce' },
+  other:   { bg: '#f4f4f5', bgSel: '#e4e4e7', accent: '#71717a', bar: '#d4d4d8', text: '#52525b' }
 }
 
 interface BaseNodeData {
@@ -164,6 +174,8 @@ function StatusIcon({ status, color }: { status: 'completed' | 'error'; color: s
 }
 
 function BaseNodeComponent({ data, selected }: NodeProps<BaseNodeData>) {
+  const { mode } = useTheme()
+  const CAT = mode === 'light' ? CAT_LIGHT : CAT_DARK
   const cat = CAT[data.category || 'tools'] || CAT.tools
   const iconFn = ICONS[data.icon || ''] || ICONS['unknown']
   const isCondition = data.type === 'condition'
@@ -301,7 +313,7 @@ function BaseNodeComponent({ data, selected }: NodeProps<BaseNodeData>) {
             style={{
               width: 8, height: 8,
               background: statusColor || '#34d399',
-              border: '2px solid #065f46',
+              border: `2px solid ${cat.bar}`,
               ...(isLR ? { right: -4, top: '30%' } : { bottom: -4, left: '30%' }),
               zIndex: 10,
               transition: 'all 0.2s ease'
@@ -314,7 +326,7 @@ function BaseNodeComponent({ data, selected }: NodeProps<BaseNodeData>) {
             style={{
               width: 8, height: 8,
               background: statusColor || '#f87171',
-              border: '2px solid #991b1b',
+              border: `2px solid ${mode === 'light' ? '#fca5a5' : '#991b1b'}`,
               ...(isLR ? { right: -4, top: '70%' } : { bottom: -4, left: '70%' }),
               zIndex: 10,
               transition: 'all 0.2s ease'

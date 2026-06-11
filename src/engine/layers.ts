@@ -18,6 +18,7 @@ export interface GraphEngineLayer {
   onNodeStart?(node: GraphNode, iteration?: number): void | Promise<void>
   onNodeEnd?(node: GraphNode, output: NodeOutput, iteration?: number): void | Promise<void>
   onNodeError?(node: GraphNode, error: Error): void | Promise<void>
+  onNodeProgress?(node: GraphNode, data: unknown): void | Promise<void>
   onEdgeActivate?(edgeId: string, source: string, target: string): void | Promise<void>
   onEdgeSkip?(edgeId: string, source: string, target: string): void | Promise<void>
 }
@@ -63,6 +64,12 @@ export class LayerManager {
     }
   }
 
+  async emitNodeProgress(node: GraphNode, data: unknown): Promise<void> {
+    for (const layer of this.layers) {
+      try { await layer.onNodeProgress?.(node, data) } catch (e) { console.warn(`[Layer:${layer.name}] onNodeProgress error:`, e) }
+    }
+  }
+
   async emitEdgeActivate(edgeId: string, source: string, target: string): Promise<void> {
     for (const layer of this.layers) {
       try { await layer.onEdgeActivate?.(edgeId, source, target) } catch (e) { console.warn(`[Layer:${layer.name}] onEdgeActivate error:`, e) }
@@ -102,6 +109,10 @@ export class UILayer implements GraphEngineLayer {
 
   onNodeError(node: GraphNode, error: Error): void {
     this.emit({ type: 'node:error', nodeId: node.id, error, timestamp: Date.now() })
+  }
+
+  onNodeProgress(node: GraphNode, data: unknown): void {
+    this.emit({ type: 'node:progress', nodeId: node.id, output: data as Record<string, unknown>, timestamp: Date.now() })
   }
 
   onEdgeActivate(edgeId: string, source: string, _target: string): void {

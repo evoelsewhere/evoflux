@@ -353,7 +353,10 @@ export class GraphEngine {
     try {
       return await nodeInstance.run(inputs, config, pool, {
         nodeId: node.id,
-        signal
+        signal,
+        onProgress: (data: unknown) => {
+          this.layers.emitNodeProgress(node, data)
+        }
       })
     } catch (error) {
       if (error instanceof NodeExecutionError) throw error

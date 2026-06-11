@@ -2,6 +2,7 @@ import { BaseNode, type NodeMetadata, type NodeOutput, type NodeRunContext } fro
 import type { VariablePool } from '../variable-pool'
 import { NodeExecutionError } from '../errors'
 import { runAgent, type AgentEvent } from '../agent/agent-loop'
+import type { FileDiff } from '../agent/coding-tools'
 
 interface CodingAgentConfig {
   codebase_path?: string
@@ -67,6 +68,7 @@ export class AIAgentNode extends BaseNode<CodingAgentConfig> {
     let filesChanged: string[] = []
     let needsInfo = ''
     let success = false
+    let fileDiffs: FileDiff[] = []
 
     try {
       for await (const event of runAgent({
@@ -79,9 +81,24 @@ export class AIAgentNode extends BaseNode<CodingAgentConfig> {
       }, globalChat)) {
         events.push(event)
 
+        if (context.onProgress) {
+          context.onProgress({
+            agentEvent: event.type,
+            content: event.content?.substring(0, 500),
+            tool: event.tool,
+            toolArgs: event.toolArgs,
+            toolResult: event.toolResult ? { success: event.toolResult.success, output: event.toolResult.output?.substring(0, 300), error: event.toolResult.error } : undefined,
+            iteration: event.iteration,
+            filesChanged: event.filesChanged,
+            fileDiffs: event.fileDiffs,
+            plan: event.plan
+          })
+        }
+
         if (event.type === 'complete') {
           summary = event.content
           filesChanged = event.filesChanged || []
+          fileDiffs = event.fileDiffs || []
           success = true
         }
         if (event.type === 'needs_info') {
@@ -89,6 +106,7 @@ export class AIAgentNode extends BaseNode<CodingAgentConfig> {
         }
         if (event.type === 'error') {
           summary = event.content
+          fileDiffs = event.fileDiffs || []
           success = false
         }
       }
@@ -109,7 +127,8 @@ export class AIAgentNode extends BaseNode<CodingAgentConfig> {
       needs_more_info: needsInfo,
       success,
       log: logLines.join('\n'),
-      events: events.map(e => ({ type: e.type, content: e.content?.substring(0, 200), tool: e.tool }))
+      events: events.map(e => ({ type: e.type, content: e.content?.substring(0, 200), tool: e.tool })),
+      file_diffs: fileDiffs
     }
   }
 }
