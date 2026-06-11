@@ -543,6 +543,61 @@ export default function NodeConfigForms({ config, nodeType, handleChange, provid
         </Section>
       )}
 
+      {nodeType === 'coding-agent' && (
+        <Section title="Coding Agent">
+          <Field label="Codebase Path">
+            <Input size="small" value={String(config.codebase_path || '')} onChange={(e) => handleChange('codebase_path', e.target.value)} placeholder="/path/to/your/project" style={inputStyle} />
+          </Field>
+          <Field label="Provider">
+            <Select size="small" value={String(config.provider_id || '')} onChange={(v) => handleChange('provider_id', v)}
+              options={[{ label: 'Default', value: '' }, ...providerOptions]} style={{ width: '100%' }} />
+          </Field>
+          <Field label="Model (optional)">
+            <Input size="small" value={String(config.model || '')} onChange={(e) => handleChange('model', e.target.value)} placeholder="Auto" style={inputStyle} />
+          </Field>
+          <Field label={`Max Iterations: ${String(config.max_iterations ?? 20)}`}>
+            <Slider min={5} max={50} value={Number(config.max_iterations ?? 20)} onChange={(v) => handleChange('max_iterations', v)} />
+          </Field>
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+            AI agent that reads, writes, edits files and runs commands to complete the task.
+          </div>
+        </Section>
+      )}
+
+      {nodeType === 'git-operations' && (
+        <Section title="Git Operations">
+          <Field label="Repository Path">
+            <Input size="small" value={String(config.repo_path || '')} onChange={(e) => handleChange('repo_path', e.target.value)} placeholder="/path/to/repo" style={inputStyle} />
+          </Field>
+          <Field label="Remote">
+            <Input size="small" value={String(config.remote || 'origin')} onChange={(e) => handleChange('remote', e.target.value)} style={inputStyle} />
+          </Field>
+          <Field label="Base Branch">
+            <Input size="small" value={String(config.base_branch || 'main')} onChange={(e) => handleChange('base_branch', e.target.value)} style={inputStyle} />
+          </Field>
+          <div style={{ display: 'flex', gap: 10, marginBottom: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <input type="checkbox" checked={config.auto_push !== false} onChange={(e) => handleChange('auto_push', e.target.checked)} />
+              <span style={{ fontSize: 11, color: 'var(--text-primary)' }}>Auto Push</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <input type="checkbox" checked={config.create_pr === true} onChange={(e) => handleChange('create_pr', e.target.checked)} />
+              <span style={{ fontSize: 11, color: 'var(--text-primary)' }}>Create PR</span>
+            </div>
+          </div>
+          {config.create_pr === true && (
+            <>
+              <Field label="PR Title">
+                <Input size="small" value={String(config.pr_title || '')} onChange={(e) => handleChange('pr_title', e.target.value)} placeholder="Auto-generated PR" style={inputStyle} />
+              </Field>
+              <Field label="PR Body">
+                <TextArea rows={2} value={String(config.pr_body || '')} onChange={(e) => handleChange('pr_body', e.target.value)} placeholder="PR description..." style={inputStyle} />
+              </Field>
+            </>
+          )}
+        </Section>
+      )}
+
       {nodeType === 'data-transform' && (
         <Section title="Data Transform">
           <Field label="Operation">

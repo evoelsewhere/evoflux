@@ -51,7 +51,9 @@ export const NODE_CATEGORIES: NodeCategory[] = [
       { type: 'delay', label: 'Delay', icon: 'clock-circle', category: 'logic', description: 'Pause execution' },
       { type: 'goto', label: 'Goto', icon: 'sync', category: 'logic', description: 'Jump back to a previous node' },
       { type: 'retry', label: 'Retry', icon: 'reload', category: 'logic', description: 'Retry on failure with backoff' },
-      { type: 'router', label: 'Router', icon: 'branches', category: 'logic', description: 'Multi-way conditional routing' }
+      { type: 'router', label: 'Router', icon: 'branches', category: 'logic', description: 'Multi-way conditional routing' },
+      { type: 'coding-agent', label: 'Coding Agent', icon: 'code', category: 'tools', description: 'AI agent that reads/writes/edits code to complete tasks' },
+      { type: 'git-operations', label: 'Git Operations', icon: 'sync', category: 'tools', description: 'Git add, commit, push, and create pull request' }
     ]
   },
   {

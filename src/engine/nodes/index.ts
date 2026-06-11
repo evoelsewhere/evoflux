@@ -31,6 +31,8 @@ import { DataTransformNode } from './data-transform'
 import { GotoNode } from './goto'
 import { RetryNode } from './retry'
 import { RouterNode } from './router'
+import { CodingAgentNode } from './coding-agent'
+import { GitOpsNode } from './git-operations'
 
 const registry = new Map<string, new () => BaseNode>([
   ['start', StartNode as unknown as new () => BaseNode],
@@ -65,7 +67,9 @@ const registry = new Map<string, new () => BaseNode>([
   ['data-transform', DataTransformNode as unknown as new () => BaseNode],
   ['goto', GotoNode as unknown as new () => BaseNode],
   ['retry', RetryNode as unknown as new () => BaseNode],
-  ['router', RouterNode as unknown as new () => BaseNode]
+  ['router', RouterNode as unknown as new () => BaseNode],
+  ['coding-agent', CodingAgentNode as unknown as new () => BaseNode],
+  ['git-operations', GitOpsNode as unknown as new () => BaseNode]
 ])
 
 const originalCreate = NodeFactory.create
