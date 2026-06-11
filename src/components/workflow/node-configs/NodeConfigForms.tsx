@@ -260,7 +260,15 @@ export default function NodeConfigForms({ config, nodeType, handleChange, provid
           {config.mode === 'usecase' && (
             <>
               <Field label="Project Path">
-                <Input size="small" value={String(config.project_path || '')} onChange={(e) => handleChange('project_path', e.target.value)} placeholder="/path/to/project (with .evoflux/usecases)" style={inputStyle} />
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <Input size="small" value={String(config.project_path || '')} onChange={(e) => handleChange('project_path', e.target.value)} placeholder="/path/to/project" style={{ ...inputStyle, flex: 1 }} />
+                  <button onClick={async () => {
+                    const path = await window.api.usecase.selectFolder()
+                    if (path) handleChange('project_path', path)
+                  }} style={{ padding: '4px 8px', fontSize: 10, borderRadius: 4, background: 'var(--bg-hover)', border: '1px solid var(--border-primary)', color: 'var(--text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    Browse
+                  </button>
+                </div>
               </Field>
               <Field label="Usecase Name">
                 <Input size="small" value={String(config.usecase_name || '')} onChange={(e) => handleChange('usecase_name', e.target.value)} placeholder="code-review" style={inputStyle} />

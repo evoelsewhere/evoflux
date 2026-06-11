@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Spin, message } from 'antd'
 import KBGitChanges from './KBGitChanges'
 import KBWiki from './KBWiki'
+import KBUsecases from './KBUsecases'
 import { useProviderStore, PROVIDER_LABELS } from '../../stores/providerStore'
 
 const icons = {
@@ -33,7 +34,7 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
   const [documents, setDocuments] = useState<KBDocument[]>([])
   const [stats, setStats] = useState<KBStats>({ totalDocs: 0, indexedDocs: 0, totalChunks: 0, totalSize: 0, indexedPercent: 0 })
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'tree' | 'docs' | 'search' | 'wiki' | 'settings'>('tree')
+  const [activeTab, setActiveTab] = useState<'tree' | 'docs' | 'search' | 'wiki' | 'usecases' | 'settings'>('tree')
   const [expandedSources, setExpandedSources] = useState<Set<string>>(new Set())
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
   const [selectedDoc, setSelectedDoc] = useState<string | null>(null)
@@ -537,14 +538,14 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {/* Tabs */}
           <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--border-primary)', flexShrink: 0 }}>
-            {(['tree', 'docs', 'search', 'wiki', 'settings'] as const).map(tab => (
+            {(['tree', 'docs', 'search', 'wiki', 'usecases', 'settings'] as const).map(tab => (
               <button key={tab} onClick={() => setActiveTab(tab)} style={{
                 padding: '8px 14px', fontSize: 12, fontWeight: 500, background: 'transparent',
                 border: 'none', borderBottom: activeTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
                 color: activeTab === tab ? 'var(--accent)' : 'var(--text-tertiary)', cursor: 'pointer', transition: 'all 0.15s',
                 textTransform: 'capitalize'
               }}>
-                {tab === 'tree' ? 'Folder Tree' : tab === 'docs' ? 'Documents' : tab === 'search' ? 'Search' : tab === 'wiki' ? 'Wiki' : 'Settings'}
+                {tab === 'tree' ? 'Folder Tree' : tab === 'docs' ? 'Documents' : tab === 'search' ? 'Search' : tab === 'wiki' ? 'Wiki' : tab === 'usecases' ? 'Usecases' : 'Settings'}
               </button>
             ))}
           </div>
@@ -684,6 +685,20 @@ export default function KBDetail({ kbId, onBack }: KBDetailProps) {
             {/* Wiki tab */}
             {activeTab === 'wiki' && (
               <KBWiki kbId={kbId} />
+            )}
+
+            {/* Usecases tab */}
+            {activeTab === 'usecases' && (
+              <KBUsecases
+                projectPath={sources.length > 0 ? sources[0].path : ''}
+                onSelect={(name) => {
+                  const cfg = { ...config }
+                  cfg.usecase_name = name
+                  if (sources.length > 0) cfg.project_path = sources[0].path
+                  window.api.kb.update(kbId, { config: cfg })
+                  setConfig(cfg)
+                }}
+              />
             )}
 
             {/* Settings tab */}

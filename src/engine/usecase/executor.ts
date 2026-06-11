@@ -42,9 +42,14 @@ export async function executeUsecase(
         const heading = meta.heading ? `[${meta.heading}] ` : ''
         return `**${r.doc_name}** ${heading}(score: ${r.hybrid_score.toFixed(2)})\n${r.content.substring(0, 500)}`
       })
-    } catch {
-      kbResults[`kb_result_${i}`] = [`[Search failed for: ${query}]`]
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
+      kbResults[`kb_result_${i}`] = [`[Search failed for "${query}": ${msg}]`]
     }
+  }
+
+  if (Object.values(kbResults).every(r => r.length === 0)) {
+    kbResults['warning'] = ['No KB query results. The KB may be empty or queries returned no matches.']
   }
 
   let context = definition.context_template || definition.body
