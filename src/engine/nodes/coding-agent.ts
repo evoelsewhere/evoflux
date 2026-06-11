@@ -21,7 +21,7 @@ export class CodingAgentNode extends BaseNode<CodingAgentConfig> {
       label: 'Coding Agent',
       icon: 'code',
       category: 'tools',
-      description: 'AI coding agent that reads, writes, edits files and runs commands to complete tasks.',
+      description: 'AI coding agent that reads, understands, plans, implements, and verifies code changes.',
       inputs: [
         { name: 'task', label: 'Task', type: 'string', required: true },
         { name: 'context', label: 'Context', type: 'string', required: false }
@@ -30,7 +30,8 @@ export class CodingAgentNode extends BaseNode<CodingAgentConfig> {
         { name: 'summary', label: 'Summary', type: 'string', required: false },
         { name: 'files_changed', label: 'Files Changed', type: 'array', required: false },
         { name: 'needs_more_info', label: 'Needs More Info', type: 'string', required: false },
-        { name: 'success', label: 'Success', type: 'boolean', required: false }
+        { name: 'success', label: 'Success', type: 'boolean', required: false },
+        { name: 'log', label: 'Execution Log', type: 'string', required: false }
       ],
       defaultConfig: {
         codebase_path: '',
@@ -44,7 +45,7 @@ export class CodingAgentNode extends BaseNode<CodingAgentConfig> {
   async run(
     inputs: Record<string, unknown>,
     config: unknown,
-    pool: VariablePool,
+    _pool: VariablePool,
     context: NodeRunContext
   ): Promise<NodeOutput> {
     const cfg = config as CodingAgentConfig
@@ -95,17 +96,19 @@ export class CodingAgentNode extends BaseNode<CodingAgentConfig> {
       throw new NodeExecutionError(context.nodeId, this.type, error instanceof Error ? error.message : String(error), { cause: error })
     }
 
-    const log = events
-      .filter(e => e.type === 'tool_call' || e.type === 'tool_result' || e.type === 'complete' || e.type === 'error')
-      .map(e => `[${e.type}] ${e.content?.substring(0, 100)}`)
-      .join('\n')
+    const logLines = events
+      .filter(e => e.type !== 'thinking')
+      .map(e => {
+        const prefix = e.type === 'tool_call' ? '🔧' : e.type === 'tool_result' ? (e.toolResult?.success ? '✅' : '❌') : e.type === 'complete' ? '✅' : e.type === 'error' ? '❌' : e.type === 'checkpoint' ? '💾' : e.type === 'plan' ? '📋' : '💬'
+        return `${prefix} [${e.type}] ${e.content?.substring(0, 150) || ''}`
+      })
 
     return {
       summary: summary || 'Agent completed',
       files_changed: filesChanged,
       needs_more_info: needsInfo,
       success,
-      log,
+      log: logLines.join('\n'),
       events: events.map(e => ({ type: e.type, content: e.content?.substring(0, 200), tool: e.tool }))
     }
   }
