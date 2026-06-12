@@ -231,29 +231,43 @@ export default function NodeConfigForms({ config, nodeType, handleChange, provid
       {nodeType === 'agent-orchestrator' && (
         <Section title="Agent Orchestrator">
           <Field label="Task">
-            <TextArea rows={3} value={String(config.task || '')} onChange={(e) => handleChange('task', e.target.value)} placeholder="Describe the task for the team..." style={inputStyle} />
+            <TextArea rows={3} value={String(config.task || '')} onChange={(e) => handleChange('task', e.target.value)} placeholder="Describe the task to dispatch to agents..." style={inputStyle} />
           </Field>
           <Field label="Expected Output">
             <Input size="small" value={String(config.expected_output || '')} onChange={(e) => handleChange('expected_output', e.target.value)} placeholder="What success looks like" style={inputStyle} />
           </Field>
-          <Field label="Process Type">
-            <Select size="small" value={String(config.process || 'sequential')} onChange={(v) => handleChange('process', v)}
-              options={[{ label: 'Sequential', value: 'sequential' }, { label: 'Hierarchical', value: 'hierarchical' }]} style={{ width: '100%' }} />
-          </Field>
-          <Field label={`Max Rounds: ${String(config.max_rounds ?? 15)}`}>
-            <Slider min={1} max={30} value={Number(config.max_rounds ?? 15)} onChange={(v) => handleChange('max_rounds', v)} />
-          </Field>
-          <Field label={`Max Stalls: ${String(config.max_stalls ?? 3)}`}>
-            <Slider min={1} max={10} value={Number(config.max_stalls ?? 3)} onChange={(v) => handleChange('max_stalls', v)} />
-          </Field>
-          <Field label="Planning">
-            <Select size="small" value={String(config.planning ?? false)} onChange={(v) => handleChange('planning', v === 'true')}
-              options={[{ label: 'Disabled', value: 'false' }, { label: 'Enabled', value: 'true' }]} style={{ width: '100%' }} />
-          </Field>
-          <Field label="Manager Model (Hierarchical)">
-            <Input size="small" value={String(config.manager_model || 'gpt-4o')} onChange={(e) => handleChange('manager_model', e.target.value)} style={inputStyle} />
-          </Field>
-          <AgentListEditor config={config} onChange={handleChange} />
+          <div style={{ marginBottom: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <div style={{ color: 'var(--text-secondary)', fontSize: 12, fontWeight: 500 }}>Output Handles</div>
+              <button onClick={() => {
+                const handles = [...((config.output_handles as string[]) || [])]
+                handles.push(`agent_${handles.length + 1}`)
+                handleChange('output_handles', handles)
+              }} style={{ padding: '2px 8px', fontSize: 10, borderRadius: 6, cursor: 'pointer', background: 'var(--accent)', color: '#fff', border: 'none', fontWeight: 500 }}>
+                + Add
+              </button>
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 6 }}>
+              Each handle connects to a separate AI Agent node. The task is dispatched to all handles.
+            </div>
+            {((config.output_handles as string[]) || []).map((handle, idx) => (
+              <div key={idx} style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+                <Input size="small" value={handle} onChange={(e) => {
+                  const handles = [...((config.output_handles as string[]) || [])]
+                  handles[idx] = e.target.value
+                  handleChange('output_handles', handles)
+                }} placeholder="handle_name" style={{ ...inputStyle, flex: 1, fontFamily: 'monospace', fontSize: 11 }} />
+                <button onClick={() => {
+                  const handles = [...((config.output_handles as string[]) || [])]
+                  handles.splice(idx, 1)
+                  handleChange('output_handles', handles)
+                }} style={{ width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--error)', fontSize: 14 }}>×</button>
+              </div>
+            ))}
+            {((config.output_handles as string[]) || []).length === 0 && (
+              <div style={{ fontSize: 10, color: 'var(--text-tertiary)', textAlign: 'center', padding: '6px 0' }}>No output handles. Add at least one.</div>
+            )}
+          </div>
         </Section>
       )}
 

@@ -7,7 +7,7 @@ import ReactFlow, {
   type Connection, type NodeTypes, type EdgeTypes
 } from 'reactflow'
 import 'reactflow/dist/style.css'
-import { Input, message, Spin } from 'antd'
+import { Input, message, Spin, Popconfirm } from 'antd'
 import { useNavigate, useParams } from 'react-router-dom'
 import { nanoid } from 'nanoid'
 import { autoLayout } from '../../utils/layout'
@@ -86,6 +86,7 @@ function EditorCanvas() {
   const elapsedTimer = useRef<ReturnType<typeof setInterval> | null>(null)
   const runStartRef = useRef<number>(0)
   const eventCleanupRef = useRef<(() => void) | null>(null)
+  const deletedRef = useRef(false)
   const latestName = useRef(workflowName)
   const latestDesc = useRef(workflowDescription)
   const latestId = useRef(id)
@@ -152,12 +153,12 @@ function EditorCanvas() {
   }, [nodes, edges, workflowName, loading])
 
   useEffect(() => {
-    const handleBeforeUnload = () => { doSaveSync() }
+    const handleBeforeUnload = () => { if (!deletedRef.current) doSaveSync() }
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload)
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
-      doSaveSync()
+      if (!deletedRef.current) doSaveSync()
     }
   }, [id, doSaveSync])
 
@@ -348,7 +349,7 @@ function EditorCanvas() {
 
   const addNode = useCallback((type: string, def: NodeDefinition, position?: { x: number; y: number }) => {
     const nid = `${type}-${nanoid(6)}`
-    const data = type === 'comment' ? { label: 'Comment', type: 'comment', text: 'Double-click to edit...', direction: layoutDirection } : { label: def.label, type, icon: def.icon, category: def.category, config: {}, direction: layoutDirection }
+    const data = type === 'comment' ? { label: 'Comment', type: 'comment', category: 'other', icon: 'edit', text: 'Double-click to edit...', config: { text: 'Double-click to edit...' }, direction: layoutDirection } : { label: def.label, type, icon: def.icon, category: def.category, config: {}, direction: layoutDirection }
     const pos = position || { x: 200 + Math.random() * 300, y: 80 + Math.random() * 300 }
     const n = { id: nid, type: type === 'comment' ? 'comment' : 'default', position: pos, data }
     setNodes(prev => [...prev, n as Node<NodeData>])
@@ -363,7 +364,7 @@ function EditorCanvas() {
     const def = JSON.parse(defStr) as NodeDefinition
     const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY })
 
-    const insertedNode = { id: `${type}-${nanoid(6)}`, type: type === 'comment' ? 'comment' : 'default', position: pos, data: type === 'comment' ? { label: 'Comment', type: 'comment', text: 'Double-click to edit...', direction: layoutDirection } : { label: def.label, type, icon: def.icon, category: def.category, config: {}, direction: layoutDirection } }
+    const insertedNode = { id: `${type}-${nanoid(6)}`, type: type === 'comment' ? 'comment' : 'default', position: pos, data: type === 'comment' ? { label: 'Comment', type: 'comment', category: 'other', icon: 'edit', text: 'Double-click to edit...', config: { text: 'Double-click to edit...' }, direction: layoutDirection } : { label: def.label, type, icon: def.icon, category: def.category, config: {}, direction: layoutDirection } }
 
     const nearbyEdge = edges.find(edge => {
       const src = nodes.find(n => n.id === edge.source)
@@ -391,6 +392,14 @@ function EditorCanvas() {
 
   const handleSave = useCallback(async () => { await doSave(nodes, edges, workflowName, workflowDescription, id); message.success('Saved') }, [id, nodes, edges, workflowName, workflowDescription, doSave])
   const handleBack = useCallback(() => { doSaveSync(); navigate('/workflows') }, [doSaveSync, navigate])
+  const handleDeleteWorkflow = useCallback(async () => {
+    if (!id) return
+    deletedRef.current = true
+    if (autoSaveTimer.current) { clearTimeout(autoSaveTimer.current); autoSaveTimer.current = null }
+    try { await window.api.workflow.delete(id) } catch { /* */ }
+    navigate('/workflows')
+    message.success('Workflow deleted')
+  }, [id, navigate])
   const applyDirection = useCallback((ns: Node<NodeData>[], dir: 'TB' | 'LR') => ns.map(n => ({ ...n, data: { ...n.data, direction: dir } })), [])
   const handleLayout = useCallback(() => { const l = applyDirection(autoLayout(nodes, edges, layoutDirection), layoutDirection); setNodes(l) }, [nodes, edges, layoutDirection, setNodes, applyDirection])
   const handleToggleLayout = useCallback(() => { const next = layoutDirection === 'TB' ? 'LR' : 'TB'; setLayoutDirection(next); setNodes(applyDirection(autoLayout(nodes, edges, next), next)) }, [layoutDirection, nodes, edges, setNodes, applyDirection])
@@ -426,14 +435,23 @@ function EditorCanvas() {
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey
+      const target = e.target as HTMLElement | null
+      const inEditor = !!target && (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.getAttribute('contenteditable') === 'true' ||
+        target.closest('.monaco-editor') !== null ||
+        target.closest('.node-popup-editor') !== null
+      )
+
       if (mod && e.key === 's') { e.preventDefault(); handleSave() }
+      if (inEditor) return
       if (mod && e.key === 'z' && !e.shiftKey) { e.preventDefault(); handleUndo() }
       if (mod && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); handleRedo() }
       if (mod && e.key === 'c') { e.preventDefault(); handleCopy() }
       if (mod && e.key === 'v') { e.preventDefault(); handlePaste() }
       if (mod && e.key === 'f') { e.preventDefault(); setShowSearch(true) }
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return
         e.preventDefault()
         const selected = nodes.filter(n => n.selected)
         if (selected.length > 1) handleDeleteSelected()
@@ -467,6 +485,15 @@ function EditorCanvas() {
               Running... {Math.round(elapsed / 1000)}s
             </div>
           )}
+          {!isRunning && (
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 2, WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+              <Popconfirm title="Delete this workflow?" description="This action cannot be undone." onConfirm={handleDeleteWorkflow} okText="Delete" cancelText="Cancel" okButtonProps={{ danger: true }}>
+                <button onClick={(e) => e.stopPropagation()} aria-label="Delete workflow" style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', borderRadius: 4, cursor: 'pointer', color: 'var(--text-tertiary)', transition: 'all 0.1s' }} onMouseEnter={(e) => { e.currentTarget.style.color = '#f87171'; e.currentTarget.style.background = '#f8717115' }} onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.background = 'transparent' }}>
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 3H10M4.5 3V2C4.5 1.4 4.9 1 5.5 1H6.5C7.1 1 7.5 1.4 7.5 2V3M9.5 3V10C9.5 10.6 9.1 11 8.5 11H3.5C2.9 11 2.5 10.6 2.5 10V3" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" /><path d="M5 5.5V8.5M7 5.5V8.5" stroke="currentColor" strokeWidth="1" strokeLinecap="round" /></svg>
+                </button>
+              </Popconfirm>
+            </div>
+          )}
         </div>
 
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
@@ -496,26 +523,30 @@ function EditorCanvas() {
             {popupNode && <ErrorBoundary><NodePopup node={popupNode} onClose={() => setPopupNode(null)} onDelete={handleDeleteNode} onUpdateNodeData={updateNodeData} /></ErrorBoundary>}
             {popupEdge && <ErrorBoundary><EdgePopup edge={popupEdge} onClose={() => setPopupEdge(null)} onUpdate={handleEdgeUpdate} onDelete={handleEdgeDelete} /></ErrorBoundary>}
 
-            {contextMenu && (
+            {contextMenu && (() => {
+              const ctxNode = nodes.find(x => x.id === contextMenu.nodeId)
+              const isComment = ctxNode?.type === 'comment'
+              return (
               <div style={{
                 position: 'fixed', left: contextMenu.x, top: contextMenu.y, zIndex: 1100,
                 background: 'var(--bg-elevated)', border: '1px solid var(--border-primary)',
                 borderRadius: 8, boxShadow: '0 8px 32px rgba(0,0,0,0.35)',
                 padding: 4, minWidth: 160
               }} onMouseDown={(e) => e.stopPropagation()}>
-                <button onClick={() => {
-                  const n = nodes.find(x => x.id === contextMenu.nodeId)
-                  if (n) { setPopupNode(n as Node<NodeData>); setSelectedNodeId(n.id) }
-                  setContextMenu(null)
-                }} style={{
-                  display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '6px 10px',
-                  fontSize: 12, color: 'var(--text-primary)', background: 'transparent',
-                  border: 'none', borderRadius: 4, cursor: 'pointer', textAlign: 'left'
-                }} onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-hover)'}
-                   onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="var(--text-tertiary)" strokeWidth="1.2" /><path d="M7 5v4M5.5 7h3" stroke="var(--text-tertiary)" strokeWidth="1.2" strokeLinecap="round" /></svg>
-                  Open Settings
-                </button>
+                {!isComment && (
+                  <button onClick={() => {
+                    if (ctxNode) { setPopupNode(ctxNode as Node<NodeData>); setSelectedNodeId(ctxNode.id) }
+                    setContextMenu(null)
+                  }} style={{
+                    display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '6px 10px',
+                    fontSize: 12, color: 'var(--text-primary)', background: 'transparent',
+                    border: 'none', borderRadius: 4, cursor: 'pointer', textAlign: 'left'
+                  }} onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-hover)'}
+                     onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="var(--text-tertiary)" strokeWidth="1.2" /><path d="M7 5v4M5.5 7h3" stroke="var(--text-tertiary)" strokeWidth="1.2" strokeLinecap="round" /></svg>
+                    Open Settings
+                  </button>
+                )}
                 <button onClick={() => {
                   handleDeleteNode(contextMenu.nodeId)
                   setContextMenu(null)
@@ -529,7 +560,8 @@ function EditorCanvas() {
                   Delete Node
                 </button>
               </div>
-            )}
+              )
+            })()}
 
             {showSearch && (
               <div style={{

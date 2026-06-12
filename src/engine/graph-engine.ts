@@ -331,9 +331,16 @@ export class GraphEngine {
       if (edge.target === node.id) {
         const sourceOutput = pool.get([edge.source, '__output__'])
         if (sourceOutput !== undefined) {
+          let value: unknown = sourceOutput
+          if (edge.sourceHandle && typeof sourceOutput === 'object' && sourceOutput !== null && !Array.isArray(sourceOutput)) {
+            const obj = sourceOutput as Record<string, unknown>
+            if (edge.sourceHandle in obj) {
+              value = obj[edge.sourceHandle]
+            }
+          }
           const targetPort = edge.targetHandle || metadata.inputs[0]?.name
           if (targetPort) {
-            inputs[targetPort] = resolveValue(sourceOutput, pool)
+            inputs[targetPort] = resolveValue(value, pool)
           }
         }
       }

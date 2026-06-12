@@ -490,6 +490,33 @@ function RunDetailModalInner({ open, events, nodes, nodeStatuses, nodeOutputs, n
             )}
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
+            {!isRunning && events.length > 0 && (
+              <button onClick={() => {
+                const report = {
+                  exportedAt: new Date().toISOString(),
+                  elapsed,
+                  status: errorCount > 0 ? 'error' : 'success',
+                  summary: { totalNodes, completedCount, errorCount },
+                  events,
+                  nodeStatuses,
+                  nodeOutputs,
+                  nodeProgress,
+                  nodes: nodes.map(n => ({ id: n.id, type: n.data.type, label: n.data.label, category: n.data.category }))
+                }
+                const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' })
+                const url = URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url; a.download = `run-log-${new Date().toISOString().replace(/[:.]/g, '-')}.json`; a.click()
+                URL.revokeObjectURL(url)
+              }} style={{
+                padding: '5px 10px', fontSize: 11, borderRadius: 5, cursor: 'pointer',
+                background: 'var(--bg-hover)', border: '1px solid var(--border-primary)',
+                color: 'var(--text-secondary)', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 4
+              }}>
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v7M3 6l3 3 3-3M2 10h8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                Export Log
+              </button>
+            )}
             {isRunning && (
               <button onClick={onStop} style={{
                 padding: '5px 14px', fontSize: 11, borderRadius: 5, cursor: 'pointer',

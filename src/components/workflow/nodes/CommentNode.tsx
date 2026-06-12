@@ -6,6 +6,7 @@ function CommentNode({ id, data, selected }: NodeProps) {
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState(String(data.text || 'Double-click to edit...'))
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     setText(String(data.text || 'Double-click to edit...'))
@@ -13,7 +14,7 @@ function CommentNode({ id, data, selected }: NodeProps) {
 
   const saveText = useCallback(() => {
     setEditing(false)
-    setNodes(prev => prev.map(n => n.id === id ? { ...n, data: { ...n.data, text } } : n))
+    setNodes(prev => prev.map(n => n.id === id ? { ...n, data: { ...n.data, text, config: { ...((n.data as Record<string, unknown>).config as Record<string, unknown> || {}), text } } } : n))
   }, [id, text, setNodes])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -22,27 +23,28 @@ function CommentNode({ id, data, selected }: NodeProps) {
   }, [data.text, saveText])
 
   useEffect(() => {
-    if (editing && textareaRef.current) {
+    if (editing && textareaRef.current && containerRef.current) {
+      const container = containerRef.current
+      textareaRef.current.style.height = container.clientHeight + 'px'
       textareaRef.current.focus()
       textareaRef.current.selectionStart = textareaRef.current.value.length
     }
   }, [editing])
 
+  const nodeStyle: React.CSSProperties = {
+    background: 'var(--warning-muted)',
+    border: `1.5px solid ${selected ? 'var(--warning)' : 'transparent'}`,
+    borderRadius: 6,
+    padding: '6px 10px',
+    minWidth: 120,
+    maxWidth: 250,
+    minHeight: 40,
+    cursor: editing ? 'text' : 'pointer',
+    boxShadow: selected ? '0 0 0 2px var(--warning-muted)' : 'var(--shadow-sm)'
+  }
+
   return (
-    <div
-      style={{
-        background: 'var(--warning-muted)',
-        border: `1.5px solid ${selected ? 'var(--warning)' : 'transparent'}`,
-        borderRadius: 6,
-        padding: '6px 10px',
-        minWidth: 120,
-        maxWidth: 250,
-        minHeight: 40,
-        cursor: editing ? 'text' : 'pointer',
-        boxShadow: selected ? '0 0 0 2px var(--warning-muted)' : 'var(--shadow-sm)'
-      }}
-      onDoubleClick={() => setEditing(true)}
-    >
+    <div ref={containerRef} style={nodeStyle} onDoubleClick={() => setEditing(true)}>
       {editing ? (
         <textarea
           ref={textareaRef}
@@ -51,10 +53,10 @@ function CommentNode({ id, data, selected }: NodeProps) {
           onBlur={saveText}
           onKeyDown={handleKeyDown}
           style={{
-            width: '100%', minHeight: 30, background: 'transparent',
-            border: 'none', outline: 'none', resize: 'vertical',
+            width: '100%', height: '100%', background: 'transparent',
+            border: 'none', outline: 'none', resize: 'none',
             color: 'var(--text-primary)', fontSize: 11, fontFamily: 'inherit',
-            lineHeight: '16px'
+            lineHeight: '16px', padding: 0, margin: 0, overflow: 'hidden'
           }}
         />
       ) : (

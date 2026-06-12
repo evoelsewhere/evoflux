@@ -7,7 +7,7 @@ import {
   MoreOutlined,
   ImportOutlined
 } from '@ant-design/icons'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { nanoid } from 'nanoid'
 import Breadcrumb from '../common/Breadcrumb'
 
@@ -21,11 +21,12 @@ interface WorkflowSummary {
 
 export default function WorkflowList() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [workflows, setWorkflows] = useState<WorkflowSummary[]>([])
   const [loading, setLoading] = useState(true)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => { loadWorkflows() }, [])
+  useEffect(() => { loadWorkflows() }, [location.pathname])
 
   const loadWorkflows = async () => {
     try {
@@ -150,8 +151,8 @@ export default function WorkflowList() {
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                     <Popconfirm title="Delete workflow?" description="This action cannot be undone." onConfirm={(e) => handleDelete(wf.id, e as unknown as React.MouseEvent)} onCancel={(e) => e?.stopPropagation()} okText="Delete" cancelText="Cancel" okButtonProps={{ danger: true }}>
-                      <button onClick={(e) => e.stopPropagation()} style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', borderRadius: 6, cursor: 'pointer', color: 'var(--text-tertiary)', transition: 'all 0.1s' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--text-primary)' }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-tertiary)' }}>
-                        <MoreOutlined style={{ fontSize: 14 }} />
+                      <button onClick={(e) => e.stopPropagation()} aria-label="Delete workflow" style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', borderRadius: 6, cursor: 'pointer', color: 'var(--text-tertiary)', transition: 'all 0.1s' }} onMouseEnter={(e) => { e.currentTarget.style.background = '#f8717120'; e.currentTarget.style.color = '#f87171' }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-tertiary)' }}>
+                        <svg width="14" height="14" viewBox="0 0 12 12" fill="none"><path d="M2 3H10M4.5 3V2C4.5 1.4 4.9 1 5.5 1H6.5C7.1 1 7.5 1.4 7.5 2V3M9.5 3V10C9.5 10.6 9.1 11 8.5 11H3.5C2.9 11 2.5 10.6 2.5 10V3" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" /><path d="M5 5.5V8.5M7 5.5V8.5" stroke="currentColor" strokeWidth="1" strokeLinecap="round" /></svg>
                       </button>
                     </Popconfirm>
                   </div>
