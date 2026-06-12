@@ -264,6 +264,7 @@ function EditorCanvas() {
     runStartRef.current = Date.now()
     elapsedTimer.current = setInterval(() => { setElapsed(Date.now() - runStartRef.current) }, 100)
 
+    if (eventCleanupRef.current) { eventCleanupRef.current(); eventCleanupRef.current = null }
     const cleanup = window.api.workflow.onEvent((event: unknown) => {
       const ev = event as RunEvent
       setRunEvents(prev => [...prev, ev])
@@ -484,6 +485,16 @@ function EditorCanvas() {
               <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#60a5fa', animation: 'pulse 1s infinite' }} />
               Running... {Math.round(elapsed / 1000)}s
             </div>
+          )}
+          {!isRunning && runEvents.length > 0 && !showRunDetail && (
+            <button onClick={() => setShowRunDetail(true)} style={{
+              marginLeft: 'auto', padding: '3px 8px', fontSize: 10, borderRadius: 4,
+              background: 'var(--bg-hover)', border: '1px solid var(--border-primary)',
+              color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4
+            }}>
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><rect x="1" y="1" width="8" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.1" /><path d="M3 4h4M3 6h3" stroke="currentColor" strokeWidth="1" strokeLinecap="round" /></svg>
+              View Run Log
+            </button>
           )}
           {!isRunning && (
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 2, WebkitAppRegion: 'no-drag' } as React.CSSProperties}>

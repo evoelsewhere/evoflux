@@ -2,6 +2,7 @@ import { createToolContext, executeTool, TOOL_DEFINITIONS, type ToolContext, typ
 import { readFile } from 'fs/promises'
 import { join, extname } from 'path'
 import { readdir } from 'fs/promises'
+import { hybridSearch } from '../kb/hybrid-search'
 
 export interface AgentConfig {
   task: string
@@ -10,6 +11,7 @@ export interface AgentConfig {
   maxIterations?: number
   provider?: string
   model?: string
+  kbId?: string
 }
 
 export interface AgentEvent {
@@ -91,74 +93,58 @@ async function buildFileTree(dir: string, depth: number, prefix = ''): Promise<s
   return lines.join('\n')
 }
 
-function buildSystemPrompt(projectContext: string, kbContext?: string): string {
-  return `You are an expert coding agent. You read codebases, understand architecture, write clean code, and verify your work.
+function buildSystemPrompt(projectContext: string, kbContext?: string, hasKb?: boolean): string {
+  return `You are an expert technical documentation agent specializing in Japanese enterprise system design.
 
-## Your Capabilities
-You have tools to: read files, write files, edit files, run bash commands, search code, manage git, and run tests.
+## Your Mission
+Generate detailed design documents based on basic design docs and KB documentation. Output MUST follow the exact file structure specified in the task.
 
-## How You Work
+## Workflow — Follow This Order
+${hasKb ? `### Step 1: Search KB FIRST
+- Use search_kb to find relevant documentation for the target module
+- Search for: module overview, API specs, table definitions, business rules
+- DO NOT read random files — use search_kb to find what you need efficiently
+` : ''}
+### Step ${hasKb ? '2' : '1'}: Read Target Basic Design
+- Read ONLY the basic design file for the target module (e.g., BD_FUNC_CUS_001_Customer_Flow.md)
+- Read the ER diagram and data dictionary for relevant tables
+- DO NOT read unrelated files (WBS, project plans, other modules)
 
-### Step 1: Understand
-Before making any changes:
-- Read the project structure (get_file_tree)
-- Read key files (README, package.json, config files)
-- Search for relevant code (grep)
-- Understand the architecture
+### Step ${hasKb ? '3' : '2'}: Generate Output Files
+- Use batch_write_files to write ALL output files in a single call (much faster)
+- Write the EXACT files specified in the task (e.g., DD_CUS_001_Diagram.md, DD_CUS_002_Service.md, DD_CUS_003_Repository.md)
+- Each file MUST be complete — include full content
+- Use PlantUML format for all diagrams
+- Write ALL content in Japanese
 
-### Step 2: Plan
-Before coding, think through your approach:
-- Use the think tool to outline your plan
-- Identify which files need changes
-- Consider edge cases and error handling
-- Plan for testing
+### Step ${hasKb ? '4' : '3'}: Verify
+- Read back each file to verify it was written correctly
+- Say DONE: when all files are complete
 
-### Step 3: Implement
-Make changes carefully:
-- Read a file before editing it
-- Use edit_file for precise changes (exact text replacement)
-- Use write_file for new files or complete rewrites
-- Make small, focused changes
-- Check your work with git_diff
-
-### Step 4: Verify
-After changes:
-- Run tests (run_tests)
-- Run build if applicable (bash: npm run build)
-- Check for errors
-- Verify the logic is correct
-
-### Step 5: Checkpoint
-Save your progress:
-- Use git_checkpoint to save working state
-- Use git_diff to verify changes before committing
-
-## Important Rules
-1. ALWAYS read a file before editing it — you need to see the exact content
-2. Use edit_file for small changes — old_text must match EXACTLY (including whitespace)
-3. Use write_file for new files or complete rewrites
-4. Run tests after changes to verify correctness
-5. If tests fail, analyze the error and fix it
-6. If you need more information, say NEED_INFO: <what you need>
-7. When the task is complete, say DONE: <summary of all changes>
-8. Be concise — don't repeat yourself
-9. If stuck, try a different approach or ask for help
-10. Use think tool to reason through complex problems
-
-## Project Context
-${projectContext}
-
-${kbContext ? `## Knowledge Base Context\n${kbContext}` : ''}
+## Critical Rules
+1. Output EXACTLY the files specified in the task — no more, no less
+2. Use search_kb to find relevant context — do NOT browse random directories
+3. Each file must be COMPLETE (not a stub or partial)
+4. Follow the template structure from the task description
+5. Use PlantUML (@startuml ... @enduml) for all diagrams
+6. Write content in Japanese
+7. When the task is complete, say DONE: <list of files created>
 
 ## Available Tools
 ${TOOL_DEFINITIONS.map(t => `- **${t.name}**: ${t.description}`).join('\n')}
 
-When you need to call a tool, output a JSON code block:
+When you need to call a tool, output ONLY a JSON code block (no XML, no markdown before it):
 \`\`\`json
 {"tool": "tool_name", "args": {"param": "value"}}
 \`\`\`
 
-You can call multiple tools in sequence. Always explain what you're doing briefly before calling a tool.`
+CRITICAL RULES:
+- Use "path" as parameter name for file paths (NOT "file_path")
+- NEVER use XML or <tool_call> format. ONLY JSON code blocks.
+- Use batch_write_files to write multiple files at once (much faster)
+- When the task is complete, say DONE: <summary>
+
+${kbContext ? `## KB Context\n${kbContext}` : ''}`
 }
 
 function buildToolResultMessage(toolName: string, args: Record<string, unknown>, result: ToolResult): string {
@@ -176,13 +162,31 @@ export async function* runAgent(
   const isUnlimited = config.maxIterations === 0
   const maxIterations = isUnlimited ? Number.MAX_SAFE_INTEGER : (config.maxIterations ?? 30)
   const ctx = createToolContext(config.codebasePath)
+
+  if (config.kbId) {
+    ctx.searchKb = async (query: string, topK = 5): Promise<ToolResult> => {
+      try {
+        const results = await hybridSearch(config.kbId!, query, { limit: topK })
+        if (results.length === 0) return { success: true, output: 'No results found in Knowledge Base.' }
+        const parts = results.map((r, i) => {
+          const meta = r.metadata_json ? JSON.parse(r.metadata_json) : {}
+          const heading = meta.heading ? ` [${meta.heading}]` : ''
+          return `### ${i + 1}. ${r.doc_name}${heading} (score: ${r.hybrid_score.toFixed(2)})\n${r.content.substring(0, 800)}`
+        })
+        return { success: true, output: `Found ${results.length} results:\n\n${parts.join('\n\n')}` }
+      } catch (e) {
+        return { success: false, output: '', error: `KB search failed: ${(e as Error).message}` }
+      }
+    }
+  }
+
   const filesChanged = new Set<string>()
   const startTime = Date.now()
 
   yield { type: 'thinking', content: 'Analyzing project structure...', iteration: 0 }
 
   const projectContext = await buildProjectContext(config.codebasePath)
-  const systemPrompt = buildSystemPrompt(projectContext, config.context)
+  const systemPrompt = buildSystemPrompt(projectContext, config.context, !!config.kbId)
 
   const messages: Message[] = [
     { role: 'system', content: systemPrompt },
@@ -334,7 +338,7 @@ function parseToolCalls(text: string): ToolCall[] {
 
   // Pattern 2: tool_name({ "key": "value" })
   if (calls.length === 0) {
-    const toolPattern = /\b(read_file|write_file|edit_file|bash|grep|find|list_dir|git_checkpoint|git_diff|run_tests|think|get_file_tree)\s*\(\s*(\{[\s\S]*?\})\s*\)/g
+    const toolPattern = /\b(read_file|write_file|edit_file|batch_write_files|bash|grep|find|list_dir|git_checkpoint|git_diff|run_tests|think|get_file_tree|search_kb|todo)\s*\(\s*(\{[\s\S]*?\})\s*\)/g
     while ((match = toolPattern.exec(text)) !== null) {
       try {
         const args = JSON.parse(match[2])
@@ -358,6 +362,45 @@ function parseToolCalls(text: string): ToolCall[] {
             calls.push({ name: toolName, args })
           }
         } catch { /* not valid JSON */ }
+      }
+    }
+  }
+
+  // Pattern 4: XML tool calls
+  if (calls.length === 0) {
+    const xmlPattern = /<tool_call>\s*([\s\S]*?)\s*<\/tool_call>/g
+    while ((match = xmlPattern.exec(text)) !== null) {
+      try {
+        const inner = match[1].trim()
+        const jsonMatch = inner.match(/\{[\s\S]*\}/)
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0])
+          if (parsed.tool || parsed.name) {
+            calls.push({ name: parsed.tool || parsed.name, args: parsed.args || {} })
+          }
+        }
+      } catch { /* not valid JSON inside XML */ }
+    }
+  }
+
+  // Pattern 5: XML function call format
+  if (calls.length === 0) {
+    const fnPattern = /<function=(\w+)>[\s\S]*?<\/function>/g
+    while ((match = fnPattern.exec(text)) !== null) {
+      const fnName = match[1]
+      const fnBody = match[0]
+      const paramPattern = /<parameter=(\w+)>([\s\S]*?)<\/parameter>/g
+      let paramMatch
+      const args: Record<string, unknown> = {}
+      while ((paramMatch = paramPattern.exec(fnBody)) !== null) {
+        try {
+          args[paramMatch[1]] = JSON.parse(paramMatch[2])
+        } catch {
+          args[paramMatch[1]] = paramMatch[2]
+        }
+      }
+      if (Object.keys(args).length > 0) {
+        calls.push({ name: fnName, args })
       }
     }
   }

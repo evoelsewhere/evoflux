@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, memo } from 'react'
+import { useState, useRef, useEffect, memo, Fragment } from 'react'
 import { Spin } from 'antd'
 import { DiffFileList, type FileDiffData } from './DiffViewer'
 import type { NodeData } from '../../types/workflow'
@@ -35,19 +35,31 @@ const STATUS_CONFIG = {
   error: { color: '#f87171', icon: '✕', label: 'Error', bg: '#f8717115' }
 }
 
-const TOOL_META: Record<string, { icon: string; color: string; label: string }> = {
-  read_file:       { icon: '📖', color: '#60a5fa', label: 'Read' },
-  write_file:      { icon: '✏️', color: '#f59e0b', label: 'Write' },
-  edit_file:       { icon: '🔧', color: '#f59e0b', label: 'Edit' },
-  bash:            { icon: '⚡', color: '#a78bfa', label: 'Bash' },
-  grep:            { icon: '🔍', color: '#2dd4bf', label: 'Search' },
-  find:            { icon: '📂', color: '#2dd4bf', label: 'Find' },
-  list_dir:        { icon: '📁', color: '#2dd4bf', label: 'List' },
-  git_checkpoint:  { icon: '💾', color: '#34d399', label: 'Commit' },
-  git_diff:        { icon: '📊', color: '#34d399', label: 'Diff' },
-  run_tests:       { icon: '🧪', color: '#f472b6', label: 'Test' },
-  think:           { icon: '💭', color: '#94a3b8', label: 'Think' },
-  get_file_tree:   { icon: '🌳', color: '#2dd4bf', label: 'Tree' },
+const TOOL_META: Record<string, { color: string; label: string; icon: string }> = {
+  read_file:        { color: '#60a5fa', label: 'Read', icon: '📄' },
+  write_file:       { color: '#f59e0b', label: 'Write', icon: '✏️' },
+  edit_file:        { color: '#f59e0b', label: 'Edit', icon: '🔧' },
+  batch_write_files:{ color: '#f59e0b', label: 'Batch Write', icon: '📦' },
+  bash:             { color: '#a78bfa', label: 'Bash', icon: '⚡' },
+  grep:             { color: '#2dd4bf', label: 'Search', icon: '🔍' },
+  find:             { color: '#2dd4bf', label: 'Find', icon: '📂' },
+  list_dir:         { color: '#2dd4bf', label: 'List', icon: '📁' },
+  git_checkpoint:   { color: '#34d399', label: 'Commit', icon: '💾' },
+  git_diff:         { color: '#34d399', label: 'Diff', icon: '📊' },
+  run_tests:        { color: '#f472b6', label: 'Test', icon: '🧪' },
+  think:            { color: '#94a3b8', label: 'Think', icon: '💭' },
+  get_file_tree:    { color: '#2dd4bf', label: 'Tree', icon: '🌳' },
+  search_kb:        { color: '#60a5fa', label: 'KB Search', icon: '🔎' },
+}
+
+const NODE_TYPE_ICONS: Record<string, string> = {
+  'manual-trigger': '▶',
+  'knowledge-retrieval': '🗄',
+  'agent-orchestrator': '🎯',
+  'ai-agent': '🤖',
+  'condition': '◇',
+  'shell': '⌘',
+  'variable-aggregator': '⊕',
 }
 
 function formatElapsed(ms: number): string {
@@ -57,174 +69,72 @@ function formatElapsed(ms: number): string {
   return `${m}m ${s % 60}s`
 }
 
-function AgentEventRow({ ev, idx }: { ev: Record<string, unknown>; idx: number }) {
-  const agentEvent = String(ev.agentEvent || '')
-  const content = String(ev.content || '')
-  const tool = ev.tool ? String(ev.tool) : ''
-  const toolArgs = ev.toolArgs as Record<string, unknown> | undefined
-  const toolResult = ev.toolResult as { success?: boolean; output?: string; error?: string } | undefined
-  const iteration = ev.iteration as number | undefined
-  const fileDiffs = ev.fileDiffs as FileDiffData[] | undefined
-  const meta = tool ? TOOL_META[tool] : null
-  const isError = agentEvent === 'error' || (agentEvent === 'tool_result' && toolResult && !toolResult.success)
-
+function ToolCallResultPair({ callEv, resultEv }: { callEv: Record<string, unknown>; resultEv?: Record<string, unknown> }) {
+  const tool = String(callEv.tool || '')
+  const toolArgs = callEv.toolArgs as Record<string, unknown> | undefined
+  const toolResult = resultEv?.toolResult as { success?: boolean; output?: string; error?: string } | undefined
+  const meta = TOOL_META[tool]
   const [expanded, setExpanded] = useState(false)
+  const isError = toolResult && !toolResult.success
+  const output = toolResult?.output || ''
+  const hasOutput = !!resultEv && !!output
 
-  if (agentEvent === 'thinking') {
-    return (
-      <div key={idx} style={{
-        display: 'flex', alignItems: 'center', gap: 8, padding: '3px 8px',
-        fontSize: 10, color: 'var(--text-tertiary)', opacity: 0.7
-      }}>
-        <span style={{ animation: 'pulse 1.5s infinite' }}>💭</span>
-        <span>{content}</span>
-      </div>
-    )
-  }
-
-  if (agentEvent === 'tool_call') {
-    const argsPreview = toolArgs ? Object.entries(toolArgs).map(([k, v]) => {
-      const val = typeof v === 'string' ? (v.length > 60 ? v.substring(0, 60) + '...' : v) : JSON.stringify(v)
-      return `${k}=${val}`
-    }).join(', ') : ''
-
-    return (
-      <div key={idx} style={{
-        padding: '6px 8px', borderRadius: 6, marginBottom: 2,
-        background: meta ? `${meta.color}08` : 'var(--bg-card)',
-        border: `1px solid ${meta?.color || 'var(--border-primary)'}15`
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 14 }}>{meta?.icon || '🔧'}</span>
-          <span style={{ fontSize: 11, fontWeight: 600, color: meta?.color || 'var(--text-primary)' }}>{meta?.label || tool}</span>
-          {tool === 'bash' && toolArgs?.command ? (
-            <span style={{ fontSize: 10, color: 'var(--text-secondary)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-              $ {String(toolArgs.command)}
-            </span>
-          ) : null}
-          {(tool === 'read_file' || tool === 'write_file' || tool === 'edit_file') && toolArgs?.path ? (
-            <span style={{ fontSize: 10, color: 'var(--text-secondary)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-              {String(toolArgs.path)}
-            </span>
-          ) : null}
-          {iteration ? <span style={{ fontSize: 9, color: 'var(--text-tertiary)', marginLeft: 'auto' }}>#{iteration}</span> : null}
-        </div>
-        {toolArgs && tool !== 'bash' && (
-          <div style={{ marginTop: 4, fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {argsPreview}
-          </div>
-        )}
-      </div>
-    )
-  }
-
-  if (agentEvent === 'tool_result') {
-    const output = toolResult?.output || content
-    const hasLongOutput = output.length > 200
-    return (
-      <div key={idx} style={{
-        padding: '4px 8px 4px 28px', marginBottom: 2
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 10, color: toolResult?.success ? '#34d399' : '#f87171' }}>{toolResult?.success ? '✓' : '✗'}</span>
-          <span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontWeight: 500 }}>{tool}</span>
-          {hasLongOutput && (
-            <button onClick={() => setExpanded(!expanded)} style={{
-              fontSize: 9, color: 'var(--accent)', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0
-            }}>{expanded ? 'collapse' : 'expand'}</button>
-          )}
-          {toolResult?.error && <span style={{ fontSize: 10, color: '#f87171', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{toolResult.error}</span>}
-        </div>
-        {(expanded || !hasLongOutput) && output && (
-          <pre style={{
-            marginTop: 4, padding: '4px 6px', fontSize: 10, lineHeight: '15px',
-            fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-secondary)',
-            background: 'var(--bg-primary)', borderRadius: 4, border: '1px solid var(--border-primary)',
-            maxHeight: 200, overflow: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all', margin: 0
-          }}>
-            {toolResult?.success === false ? (toolResult.error || output) : output.substring(0, expanded ? 5000 : 500)}
-          </pre>
-        )}
-      </div>
-    )
-  }
-
-  if (agentEvent === 'complete') {
-    return (
-      <div key={idx} style={{
-        padding: '8px 10px', borderRadius: 6, marginTop: 4,
-        background: '#34d39910', border: '1px solid #34d39925'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 14 }}>✅</span>
-          <span style={{ fontSize: 11, fontWeight: 600, color: '#34d399' }}>Task Complete</span>
-        </div>
-        <div style={{ marginTop: 4, fontSize: 11, color: 'var(--text-secondary)', whiteSpace: 'pre-wrap' }}>{content}</div>
-      </div>
-    )
-  }
-
-  if (agentEvent === 'error') {
-    return (
-      <div key={idx} style={{
-        padding: '8px 10px', borderRadius: 6, marginTop: 4,
-        background: '#f8717110', border: '1px solid #f8717125'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 14 }}>❌</span>
-          <span style={{ fontSize: 11, fontWeight: 600, color: '#f87171' }}>Error</span>
-        </div>
-        <div style={{ marginTop: 4, fontSize: 11, color: '#f87171', whiteSpace: 'pre-wrap' }}>{content}</div>
-      </div>
-    )
-  }
-
-  if (agentEvent === 'checkpoint') {
-    return (
-      <div key={idx} style={{
-        padding: '6px 10px', borderRadius: 6, marginBottom: 2,
-        background: '#34d39908', border: '1px solid #34d39915'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 14 }}>💾</span>
-          <span style={{ fontSize: 11, fontWeight: 500, color: '#34d399' }}>Checkpoint</span>
-        </div>
-        <div style={{ marginTop: 2, fontSize: 10, color: 'var(--text-tertiary)' }}>{content}</div>
-      </div>
-    )
-  }
-
-  if (agentEvent === 'needs_info') {
-    return (
-      <div key={idx} style={{
-        padding: '8px 10px', borderRadius: 6, marginTop: 4,
-        background: '#fbbf2410', border: '1px solid #fbbf2425'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 14 }}>❓</span>
-          <span style={{ fontSize: 11, fontWeight: 600, color: '#fbbf24' }}>Needs More Info</span>
-        </div>
-        <div style={{ marginTop: 4, fontSize: 11, color: 'var(--text-secondary)' }}>{content}</div>
-      </div>
-    )
-  }
-
-  if (agentEvent === 'message') {
-    return (
-      <div key={idx} style={{ padding: '4px 8px', fontSize: 11, color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
-        💬 {content}
-      </div>
-    )
+  const getArgsSummary = (): string => {
+    if (!toolArgs) return ''
+    if (tool === 'bash') return String(toolArgs.command || '')
+    if (tool === 'search_kb') return `"${String(toolArgs.query || '')}"`
+    if (tool === 'batch_write_files' && toolArgs.files) return `${(toolArgs.files as unknown[]).length} files`
+    if (toolArgs.path) return String(toolArgs.path)
+    return Object.entries(toolArgs).map(([k, v]) => `${k}=${typeof v === 'string' ? v.substring(0, 40) : JSON.stringify(v)}`).join(', ')
   }
 
   return (
-    <div key={idx} style={{ padding: '3px 8px', fontSize: 10, color: 'var(--text-tertiary)' }}>
-      [{agentEvent}] {content}
+    <div style={{ marginBottom: 2 }}>
+      {/* Tool call header — always clickable if has output */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
+        borderLeft: `3px solid ${meta?.color || 'var(--border-primary)'}`,
+        background: isError ? '#f8717108' : 'transparent',
+        borderRadius: '0 4px 4px 0',
+        cursor: hasOutput ? 'pointer' : 'default'
+      }} onClick={() => hasOutput && setExpanded(!expanded)}>
+        {/* Chevron */}
+        {hasOutput ? (
+          <span style={{ fontSize: 8, color: 'var(--text-tertiary)', width: 10, textAlign: 'center', flexShrink: 0, transition: 'transform 0.15s', transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
+        ) : (
+          <span style={{ width: 10, flexShrink: 0 }} />
+        )}
+        <span style={{ fontSize: 13, width: 20, textAlign: 'center', flexShrink: 0 }}>{meta?.icon || '🔧'}</span>
+        <span style={{ fontSize: 11, fontWeight: 600, color: meta?.color || 'var(--text-primary)', minWidth: 60 }}>{meta?.label || tool}</span>
+        <span style={{ fontSize: 10, color: 'var(--text-secondary)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+          {getArgsSummary()}
+        </span>
+        {toolResult && (
+          <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: isError ? '#f8717120' : '#34d39920', color: isError ? '#f87171' : '#34d399' }}>
+            {isError ? 'FAIL' : 'OK'}
+          </span>
+        )}
+      </div>
+
+      {/* Tool result — collapsible */}
+      {expanded && hasOutput && (
+        <div style={{ padding: '2px 10px 4px 38px' }}>
+          <pre style={{
+            padding: '6px 8px', fontSize: 10, lineHeight: '14px',
+            fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-secondary)',
+            background: 'var(--bg-primary)', borderRadius: 4,
+            border: `1px solid ${isError ? '#f8717130' : 'var(--border-primary)'}`,
+            maxHeight: 300, overflow: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all', margin: 0
+          }}>
+            {isError ? (toolResult.error || output) : output}
+          </pre>
+        </div>
+      )}
     </div>
   )
 }
 
-function LiveAgentLog({ progressEvents, status }: { progressEvents: unknown[]; status: string }) {
+function AgentEventTimeline({ progressEvents, status }: { progressEvents: unknown[]; status: string }) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -236,42 +146,153 @@ function LiveAgentLog({ progressEvents, status }: { progressEvents: unknown[]; s
   if (progressEvents.length === 0) {
     if (status === 'running') {
       return (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12 }}>
-          <Spin size="large" />
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 16 }}>
+          <div style={{ display: 'flex', gap: 4 }}>
+            {[0, 1, 2].map(i => (
+              <div key={i} style={{ width: 6, height: 6, borderRadius: '50%', background: '#60a5fa', animation: `pulse 1.2s ${i * 0.2}s infinite` }} />
+            ))}
+          </div>
           <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Agent is starting...</span>
         </div>
       )
     }
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-tertiary)', fontSize: 12 }}>
-        No agent activity recorded
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 8, color: 'var(--text-tertiary)' }}>
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" style={{ opacity: 0.3 }}><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        <span style={{ fontSize: 12 }}>No agent activity</span>
       </div>
     )
   }
 
-  const lastEvent = progressEvents[progressEvents.length - 1] as Record<string, unknown>
   const isLive = status === 'running'
+  const lastEvent = progressEvents[progressEvents.length - 1] as Record<string, unknown>
+
+  // Group tool_call + tool_result pairs
+  const groups: Array<{ call?: Record<string, unknown>; result?: Record<string, unknown>; standalone?: Record<string, unknown> }> = []
+  let i = 0
+  while (i < progressEvents.length) {
+    const ev = progressEvents[i] as Record<string, unknown>
+    const evType = String(ev.agentEvent || '')
+
+    if (evType === 'tool_call') {
+      const nextEv = i + 1 < progressEvents.length ? progressEvents[i + 1] as Record<string, unknown> : undefined
+      const nextType = nextEv ? String(nextEv.agentEvent || '') : ''
+      if (nextType === 'tool_result') {
+        groups.push({ call: ev, result: nextEv })
+        i += 2
+        continue
+      }
+    }
+
+    groups.push({ standalone: ev })
+    i++
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {isLive && lastEvent?.agentEvent ? (
+      {/* Live status bar */}
+      {isLive && lastEvent ? (
         <div style={{
-          padding: '6px 12px', borderBottom: '1px solid var(--border-primary)', flexShrink: 0,
-          display: 'flex', alignItems: 'center', gap: 8, fontSize: 11
+          padding: '8px 14px', borderBottom: '1px solid var(--border-primary)', flexShrink: 0,
+          display: 'flex', alignItems: 'center', gap: 10, fontSize: 11,
+          background: 'var(--bg-card)'
         }}>
-          <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#60a5fa', animation: 'pulse 1s infinite' }} />
-          <span style={{ color: 'var(--text-secondary)' }}>
+          <div style={{ display: 'flex', gap: 3 }}>
+            {[0, 1, 2].map(idx => (
+              <div key={idx} style={{ width: 4, height: 4, borderRadius: '50%', background: '#60a5fa', animation: `pulse 1s ${idx * 0.15}s infinite` }} />
+            ))}
+          </div>
+          <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
             {lastEvent.agentEvent === 'thinking' ? 'Thinking...'
-              : lastEvent.agentEvent === 'tool_call' ? `${TOOL_META[String(lastEvent.tool || '')]?.label || 'Using'} ${String(lastEvent.tool || '')}`
+              : lastEvent.agentEvent === 'tool_call' ? `${TOOL_META[String(lastEvent.tool || '')]?.icon || '🔧'} ${TOOL_META[String(lastEvent.tool || '')]?.label || String(lastEvent.tool || '')}`
               : lastEvent.agentEvent === 'tool_result' ? 'Processing result...'
               : String(lastEvent.agentEvent)}
           </span>
-          {lastEvent.iteration ? <span style={{ color: 'var(--text-tertiary)', marginLeft: 'auto' }}>Step {String(lastEvent.iteration)}</span> : null}
+          {lastEvent.iteration ? <span style={{ color: 'var(--text-tertiary)', marginLeft: 'auto', fontFamily: 'monospace', fontSize: 10 }}>step {String(lastEvent.iteration)}</span> : null}
         </div>
       ) : null}
 
-      <div ref={scrollRef} style={{ flex: 1, overflow: 'auto', padding: '8px 4px' }}>
-        {progressEvents.map((ev, i) => <AgentEventRow key={i} ev={ev as Record<string, unknown>} idx={i} />)}
+      {/* Timeline */}
+      <div ref={scrollRef} style={{ flex: 1, overflow: 'auto', padding: '6px 4px' }}>
+        {groups.map((group, gi) => {
+          if (group.call && group.result) {
+            return <ToolCallResultPair key={gi} callEv={group.call} resultEv={group.result} />
+          }
+
+          const ev = group.standalone!
+          const evType = String(ev.agentEvent || '')
+          const content = String(ev.content || '')
+
+          if (evType === 'thinking') {
+            return (
+              <div key={gi} style={{
+                display: 'flex', alignItems: 'center', gap: 6, padding: '2px 10px',
+                fontSize: 10, color: 'var(--text-tertiary)', opacity: 0.5
+              }}>
+                <span style={{ fontSize: 7 }}>•</span>
+                <span>{content}</span>
+              </div>
+            )
+          }
+
+          if (evType === 'complete') {
+            return (
+              <div key={gi} style={{
+                margin: '8px 4px', padding: '10px 12px', borderRadius: 6,
+                background: '#34d39910', border: '1px solid #34d39925'
+              }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#34d399', marginBottom: 4, letterSpacing: 0.5 }}>COMPLETE</div>
+                <div style={{ fontSize: 11, color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', lineHeight: '16px' }}>{content}</div>
+              </div>
+            )
+          }
+
+          if (evType === 'error') {
+            return (
+              <div key={gi} style={{
+                margin: '8px 4px', padding: '10px 12px', borderRadius: 6,
+                background: '#f8717110', border: '1px solid #f8717125'
+              }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#f87171', marginBottom: 4, letterSpacing: 0.5 }}>ERROR</div>
+                <div style={{ fontSize: 11, color: '#f87171', whiteSpace: 'pre-wrap', lineHeight: '16px' }}>{content}</div>
+              </div>
+            )
+          }
+
+          if (evType === 'checkpoint') {
+            return (
+              <div key={gi} style={{ padding: '4px 10px', fontSize: 10, color: '#34d399', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 8 }}>💾</span> {content}
+              </div>
+            )
+          }
+
+          if (evType === 'needs_info') {
+            return (
+              <div key={gi} style={{
+                margin: '8px 4px', padding: '10px 12px', borderRadius: 6,
+                background: '#fbbf2410', border: '1px solid #fbbf2425'
+              }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#fbbf24', marginBottom: 4 }}>NEED INFO</div>
+                <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{content}</div>
+              </div>
+            )
+          }
+
+          if (evType === 'message') {
+            return (
+              <div key={gi} style={{ padding: '4px 10px', fontSize: 10, color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
+                {content}
+              </div>
+            )
+          }
+
+          return (
+            <div key={gi} style={{ padding: '2px 10px', fontSize: 10, color: 'var(--text-tertiary)' }}>
+              [{evType}] {content}
+            </div>
+          )
+        })}
       </div>
     </div>
   )
@@ -302,20 +323,27 @@ function CompletedAgentView({ output }: { output: Record<string, unknown> }) {
 
       <div style={{ flex: 1, overflow: 'auto', padding: 12 }}>
         {tab === 'log' && (
-          <div>
-            {events.map((ev, i) => (
-              <div key={i} style={{
-                display: 'flex', gap: 8, padding: '4px 6px', borderRadius: 4, marginBottom: 2,
-                background: (ev.type === 'error' || (ev.type === 'tool_result' && ev.content?.includes('Error'))) ? '#f8717110' : 'transparent'
-              }}>
-                <span style={{ flexShrink: 0, width: 20, textAlign: 'center' }}>
-                  {ev.type === 'thinking' ? '💭' : ev.type === 'tool_call' ? '🔧' : ev.type === 'tool_result' ? '📋' : ev.type === 'complete' ? '✅' : ev.type === 'error' ? '❌' : ev.type === 'checkpoint' ? '💾' : '💬'}
-                </span>
-                <span style={{ flexShrink: 0, width: 70, color: 'var(--text-tertiary)', fontSize: 10, fontWeight: 500 }}>{ev.type}</span>
-                {ev.tool && <span style={{ flexShrink: 0, color: 'var(--accent)', fontSize: 10, fontWeight: 600 }}>{ev.tool}</span>}
-                <span style={{ flex: 1, color: 'var(--text-secondary)', wordBreak: 'break-all', whiteSpace: 'pre-wrap', fontSize: 11 }}>{ev.content || ''}</span>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, lineHeight: '20px' }}>
+            {events.length > 0 ? events.map((ev, i) => {
+              const isError = ev.type === 'error' || (ev.type === 'tool_result' && ev.content?.includes('Error'))
+              return (
+                <div key={i} style={{
+                  display: 'flex', gap: 8, padding: '4px 6px', borderRadius: 4,
+                  marginBottom: 2, background: isError ? '#f8717110' : 'transparent'
+                }}>
+                  <span style={{ flexShrink: 0, width: 20, textAlign: 'center' }}>
+                    {ev.type === 'thinking' ? '💭' : ev.type === 'tool_call' ? '🔧' : ev.type === 'tool_result' ? '📋' : ev.type === 'complete' ? '✅' : ev.type === 'error' ? '❌' : ev.type === 'checkpoint' ? '💾' : '💬'}
+                  </span>
+                  <span style={{ flexShrink: 0, width: 70, color: 'var(--text-tertiary)', fontSize: 10, fontWeight: 500 }}>{ev.type}</span>
+                  {ev.tool && <span style={{ flexShrink: 0, color: 'var(--accent)', fontSize: 10, fontWeight: 600 }}>{ev.tool}</span>}
+                  <span style={{ flex: 1, color: 'var(--text-secondary)', wordBreak: 'break-all', whiteSpace: 'pre-wrap', fontSize: 11 }}>{ev.content || ''}</span>
+                </div>
+              )
+            }) : (
+              <div style={{ color: 'var(--text-tertiary)', fontSize: 11, padding: 20, textAlign: 'center' }}>
+                No agent events recorded
               </div>
-            ))}
+            )}
           </div>
         )}
 
@@ -381,7 +409,7 @@ function NodeDetailPanel({ node, output, progressEvents, status }: { node: Node<
       const finalOutput = (typeof output === 'object' && output !== null) ? output as Record<string, unknown> : { summary: String(output || '') }
       return <CompletedAgentView output={finalOutput} />
     }
-    return <LiveAgentLog progressEvents={progressEvents} status={status} />
+    return <AgentEventTimeline progressEvents={progressEvents} status={status} />
   }
 
   if (status === 'running') {
@@ -468,6 +496,7 @@ function RunDetailModalInner({ open, events, nodes, nodeStatuses, nodeOutputs, n
         display: 'flex', flexDirection: 'column', overflow: 'hidden'
       }} onClick={(e) => e.stopPropagation()}>
 
+        {/* Header */}
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '12px 16px', borderBottom: '1px solid var(--border-primary)', flexShrink: 0
@@ -482,7 +511,7 @@ function RunDetailModalInner({ open, events, nodes, nodeStatuses, nodeOutputs, n
             <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
               {isRunning ? 'Running...' : errorCount > 0 ? 'Completed with Errors' : 'Completed'}
             </span>
-            <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{formatElapsed(elapsed)}</span>
+            <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'monospace' }}>{formatElapsed(elapsed)}</span>
             {isRunning && (
               <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: 4 }}>
                 {completedCount}/{totalNodes} nodes • {runningCount} running
@@ -493,14 +522,10 @@ function RunDetailModalInner({ open, events, nodes, nodeStatuses, nodeOutputs, n
             {!isRunning && events.length > 0 && (
               <button onClick={() => {
                 const report = {
-                  exportedAt: new Date().toISOString(),
-                  elapsed,
+                  exportedAt: new Date().toISOString(), elapsed,
                   status: errorCount > 0 ? 'error' : 'success',
                   summary: { totalNodes, completedCount, errorCount },
-                  events,
-                  nodeStatuses,
-                  nodeOutputs,
-                  nodeProgress,
+                  events, nodeStatuses, nodeOutputs, nodeProgress,
                   nodes: nodes.map(n => ({ id: n.id, type: n.data.type, label: n.data.label, category: n.data.category }))
                 }
                 const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' })
@@ -531,6 +556,7 @@ function RunDetailModalInner({ open, events, nodes, nodeStatuses, nodeOutputs, n
           </div>
         </div>
 
+        {/* Progress bar */}
         <div style={{ padding: '0 16px', flexShrink: 0 }}>
           <div style={{ height: 3, background: 'var(--border-primary)', borderRadius: 2, marginTop: 8 }}>
             <div style={{
@@ -541,7 +567,9 @@ function RunDetailModalInner({ open, events, nodes, nodeStatuses, nodeOutputs, n
           </div>
         </div>
 
+        {/* Main content */}
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+          {/* Left panel — Node list */}
           <div style={{
             width: 260, borderRight: '1px solid var(--border-primary)',
             display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden'
@@ -555,6 +583,7 @@ function RunDetailModalInner({ open, events, nodes, nodeStatuses, nodeOutputs, n
                 const cfg = STATUS_CONFIG[status]
                 const isSelected = selectedNodeId === node.id
                 const progressCount = (nodeProgress[node.id] || []).length
+                const nodeIcon = NODE_TYPE_ICONS[node.data.type] || '⬡'
                 return (
                   <div
                     key={node.id}
@@ -572,27 +601,30 @@ function RunDetailModalInner({ open, events, nodes, nodeStatuses, nodeOutputs, n
                     onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'var(--bg-hover)' }}
                     onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'transparent' }}
                   >
-                    <span style={{ fontSize: 10, color: cfg.color, width: 14, textAlign: 'center', flexShrink: 0, animation: status === 'running' ? 'pulse 1s infinite' : 'none' }}>
-                      {cfg.icon}
-                    </span>
-                    <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-primary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {node.data.label}
-                    </span>
-                    {status === 'running' && progressCount > 0 && (
-                      <span style={{ fontSize: 9, color: '#60a5fa', flexShrink: 0 }}>{progressCount}</span>
-                    )}
+                    <span style={{ fontSize: 12, width: 18, textAlign: 'center', flexShrink: 0 }}>{nodeIcon}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {node.data.label}
+                      </div>
+                      <div style={{ fontSize: 9, color: cfg.color, display: 'flex', alignItems: 'center', gap: 4, marginTop: 1 }}>
+                        <span style={{ animation: status === 'running' ? 'pulse 1s infinite' : 'none' }}>{cfg.icon}</span>
+                        <span>{cfg.label}</span>
+                        {progressCount > 0 && status === 'running' && <span>• {progressCount} events</span>}
+                      </div>
+                    </div>
                     {status === 'running' && <Spin size="small" />}
-                    {status === 'completed' && nodeOutputs[node.id] !== undefined && (
-                      <span style={{ fontSize: 8, padding: '1px 4px', borderRadius: 3, background: '#34d39920', color: '#34d399', fontWeight: 600 }}>OK</span>
+                    {status === 'completed' && (
+                      <span style={{ fontSize: 8, padding: '1px 4px', borderRadius: 3, background: '#34d39920', color: '#34d399', fontWeight: 600, flexShrink: 0 }}>OK</span>
                     )}
                     {status === 'error' && (
-                      <span style={{ fontSize: 8, padding: '1px 4px', borderRadius: 3, background: '#f8717120', color: '#f87171', fontWeight: 600 }}>ERR</span>
+                      <span style={{ fontSize: 8, padding: '1px 4px', borderRadius: 3, background: '#f8717120', color: '#f87171', fontWeight: 600, flexShrink: 0 }}>ERR</span>
                     )}
                   </div>
                 )
               })}
             </div>
 
+            {/* Event log toggle */}
             <div style={{ borderTop: '1px solid var(--border-primary)', flexShrink: 0 }}>
               <button onClick={() => setShowEventLog(!showEventLog)} style={{
                 width: '100%', padding: '7px 12px', background: 'transparent', border: 'none',
@@ -616,6 +648,7 @@ function RunDetailModalInner({ open, events, nodes, nodeStatuses, nodeOutputs, n
             </div>
           </div>
 
+          {/* Right panel — Node detail */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             {selectedNode ? (
               <>
@@ -623,11 +656,12 @@ function RunDetailModalInner({ open, events, nodes, nodeStatuses, nodeOutputs, n
                   display: 'flex', alignItems: 'center', gap: 10,
                   padding: '10px 16px', borderBottom: '1px solid var(--border-primary)', flexShrink: 0
                 }}>
-                  <span style={{ fontSize: 10, color: STATUS_CONFIG[selectedStatus].color }}>{STATUS_CONFIG[selectedStatus].icon}</span>
+                  <span style={{ fontSize: 14 }}>{NODE_TYPE_ICONS[selectedNode.data.type] || '⬡'}</span>
                   <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{selectedNode.data.label}</span>
                   <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: 'var(--bg-card)', border: '1px solid var(--border-primary)', color: 'var(--text-tertiary)' }}>{selectedNode.data.type}</span>
+                  <span style={{ fontSize: 10, color: STATUS_CONFIG[selectedStatus].color, marginLeft: 'auto' }}>{STATUS_CONFIG[selectedStatus].label}</span>
                   {selectedStatus === 'error' && selectedNode.data.error && (
-                    <span style={{ fontSize: 10, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{selectedNode.data.error}</span>
+                    <span style={{ fontSize: 10, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 300 }}>{selectedNode.data.error}</span>
                   )}
                 </div>
                 <div style={{ flex: 1, overflow: 'hidden' }}>
@@ -636,9 +670,9 @@ function RunDetailModalInner({ open, events, nodes, nodeStatuses, nodeOutputs, n
               </>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 8 }}>
-                <svg width="32" height="32" viewBox="0 0 14 14" fill="none" style={{ opacity: 0.3 }}>
-                  <circle cx="7" cy="7" r="5.5" stroke="var(--text-tertiary)" strokeWidth="1.2" />
-                  <path d="M5 6l2 2 2-2" stroke="var(--text-tertiary)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" style={{ opacity: 0.2 }}>
+                  <circle cx="12" cy="12" r="10" stroke="var(--text-tertiary)" strokeWidth="1.5" />
+                  <path d="M8 12h8M12 8v8" stroke="var(--text-tertiary)" strokeWidth="1.5" strokeLinecap="round" />
                 </svg>
                 <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Select a node to view details</span>
               </div>

@@ -20,7 +20,10 @@ function serialize(nodes: Node[], edges: Edge[]): string {
     edges: edges.map((e) => ({
       id: e.id, source: e.source, target: e.target,
       sourceHandle: e.sourceHandle, targetHandle: e.targetHandle,
-      type: e.type, animated: e.animated, label: e.label
+      type: e.type, animated: e.animated, label: e.label,
+      condition: e.data?.condition,
+      isBackEdge: e.data?.isBackEdge || undefined,
+      maxIterations: e.data?.maxIterations || undefined
     }))
   }, null, 2)
 }
@@ -63,7 +66,14 @@ export default function CodeEditor({ nodes, edges, onApply }: CodeEditorProps) {
         sourceHandle: e.sourceHandle as string | undefined,
         targetHandle: e.targetHandle as string | undefined,
         type: String(e.type || 'custom'),
-        animated: e.animated !== false
+        animated: e.animated !== false,
+        label: e.label as string | undefined,
+        data: {
+          condition: e.condition as string | undefined,
+          isBackEdge: e.isBackEdge as boolean | undefined,
+          maxIterations: e.maxIterations as number | undefined,
+          ...(e.data as Record<string, unknown> || {})
+        }
       }))
 
       onApply?.(parsedNodes, parsedEdges)

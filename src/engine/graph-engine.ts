@@ -308,7 +308,7 @@ export class GraphEngine {
     iteration: number
   ): boolean {
     try {
-      const fn = new Function('output', 'pool', 'iteration', `return ${condition}`)
+      const fn = new Function('value', 'pool', 'iteration', `return ${condition}`)
       return Boolean(fn(output, pool, iteration))
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -340,7 +340,13 @@ export class GraphEngine {
           }
           const targetPort = edge.targetHandle || metadata.inputs[0]?.name
           if (targetPort) {
-            inputs[targetPort] = resolveValue(value, pool)
+            const resolved = resolveValue(value, pool)
+            const existing = inputs[targetPort]
+            if (existing !== undefined && targetPort === 'context' && typeof resolved === 'string') {
+              inputs[targetPort] = String(existing) + '\n\n---\n\n' + resolved
+            } else {
+              inputs[targetPort] = resolved
+            }
           }
         }
       }
@@ -353,7 +359,8 @@ export class GraphEngine {
       }
     }
 
-    const config = resolveValue(node.data, pool)
+    const rawData = resolveValue(node.data, pool) as Record<string, unknown>
+    const config = (rawData && typeof rawData === 'object' && 'config' in rawData) ? rawData.config : rawData
 
     nodeInstance.validateInputs(inputs, metadata)
 

@@ -236,6 +236,16 @@ export default function NodeConfigForms({ config, nodeType, handleChange, provid
           <Field label="Expected Output">
             <Input size="small" value={String(config.expected_output || '')} onChange={(e) => handleChange('expected_output', e.target.value)} placeholder="What success looks like" style={inputStyle} />
           </Field>
+          <Field label="Provider">
+            <Select size="small" value={String(config.provider_id || '')} onChange={(v) => handleChange('provider_id', v)}
+              options={[{ label: 'Default', value: '' }, ...providerOptions]} style={{ width: '100%' }} />
+          </Field>
+          <Field label="Model">
+            <Select size="small" value={String(config.model || '')} onChange={(v) => handleChange('model', v)}
+              options={[{ label: 'Auto (Provider Default)', value: '' }, ...modelOptions]} style={{ width: '100%' }}
+              showSearch placeholder="Select model"
+              filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())} />
+          </Field>
           <div style={{ marginBottom: 8 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
               <div style={{ color: 'var(--text-secondary)', fontSize: 12, fontWeight: 500 }}>Output Handles</div>
@@ -629,6 +639,12 @@ export default function NodeConfigForms({ config, nodeType, handleChange, provid
                 Browse
               </button>
             </div>
+          </Field>
+          <Field label="Knowledge Base">
+            <Select size="small" value={String(config.kb_id || '')} onChange={(v) => handleChange('kb_id', v)}
+              options={[{ label: 'None', value: '' }, ...kbList.map(kb => ({ label: `${kb.name} (${kb.id})`, value: kb.id }))]}
+              style={{ width: '100%' }} showSearch placeholder="Select KB for agent to search"
+              filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())} />
           </Field>
           <Field label="Provider">
             <Select size="small" value={String(config.provider_id || '')} onChange={(v) => handleChange('provider_id', v)}

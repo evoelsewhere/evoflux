@@ -6,6 +6,8 @@ interface OrchestratorConfig {
   task?: string
   expected_output?: string
   output_handles?: string[]
+  provider_id?: string
+  model?: string
 }
 
 export class AgentOrchestratorNode extends BaseNode<OrchestratorConfig> {
@@ -19,7 +21,7 @@ export class AgentOrchestratorNode extends BaseNode<OrchestratorConfig> {
       category: 'agent',
       description: 'Dispatch a task to multiple AI Agent nodes via output handles. Connect each handle to a separate AI Agent.',
       inputs: [
-        { name: 'task', label: 'Task', type: 'string', required: true },
+        { name: 'task', label: 'Task', type: 'string', required: false },
         { name: 'context', label: 'Context', type: 'string', required: false }
       ],
       outputs: [
@@ -28,7 +30,9 @@ export class AgentOrchestratorNode extends BaseNode<OrchestratorConfig> {
       defaultConfig: {
         task: '',
         expected_output: '',
-        output_handles: ['implementer', 'reviewer']
+        output_handles: ['implementer', 'reviewer'],
+        provider_id: '',
+        model: ''
       }
     }
   }
@@ -40,7 +44,7 @@ export class AgentOrchestratorNode extends BaseNode<OrchestratorConfig> {
     context: NodeRunContext
   ): Promise<NodeOutput> {
     const cfg = config as OrchestratorConfig
-    const task = String(inputs.task || cfg.task || '')
+    const task = String(cfg.task || inputs.task || '')
     const contextStr = inputs.context ? String(inputs.context) : ''
     const handles = cfg.output_handles || []
 

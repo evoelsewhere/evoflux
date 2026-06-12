@@ -1,6 +1,7 @@
 import { parseUsecaseFile, listUsecases, type UsecaseDefinition } from './parser'
 import { hybridSearch } from '../kb/hybrid-search'
-import { join } from 'path'
+import { join, dirname } from 'path'
+import { readFile } from 'fs/promises'
 
 export interface UsecaseExecutionResult {
   usecase: UsecaseDefinition
@@ -58,6 +59,18 @@ export async function executeUsecase(
   context = context.replace(/\{project_path\}/g, projectPath)
   context = context.replace(/\{usecase_name\}/g, definition.name)
 
+  const functionCode = input || ''
+  const functionMap: Record<string, string> = {
+    INV: 'Invoice', CUS: 'Customer', PRD: 'Product', EIN: 'EInvoice',
+    PAY: 'Payment', RPT: 'Report', USR: 'User', INT: 'Integration',
+    SEC: 'Security', SET: 'Settings'
+  }
+  const modulePrefix = functionCode.replace(/_\d+$/, '')
+  const functionName = functionMap[modulePrefix] || modulePrefix || functionCode
+  context = context.replace(/\{function_code\}/g, functionCode)
+  context = context.replace(/\{function_name\}/g, functionName)
+  context = context.replace(/\{module\}/g, functionName)
+
   for (const [key, values] of Object.entries(kbResults)) {
     context = context.replace(new RegExp(`\\{${key}\\}`, 'g'), values.join('\n\n'))
   }
@@ -65,7 +78,19 @@ export async function executeUsecase(
   const allResults = Object.values(kbResults).flat()
   context = context.replace(/\{kb_results_all\}/g, allResults.join('\n\n'))
 
-  context = context.replace(/\{include:[^}]+\}/g, '[include not resolved]')
+  const usecaseDir = dirname(usecasePath)
+  const includePattern = /\{include:([^}]+)\}/g
+  let includeMatch: RegExpExecArray | null
+  while ((includeMatch = includePattern.exec(context)) !== null) {
+    const includePath = includeMatch[1].trim()
+    try {
+      const fullPath = join(usecaseDir, includePath)
+      const fileContent = await readFile(fullPath, 'utf-8')
+      context = context.replace(includeMatch[0], fileContent)
+    } catch {
+      context = context.replace(includeMatch[0], `[ERROR: File not found: ${includePath}]`)
+    }
+  }
 
   return {
     usecase: definition,

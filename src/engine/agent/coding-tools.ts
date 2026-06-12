@@ -27,6 +27,7 @@ export interface ToolContext {
   fileDiffs: FileDiff[]
   readFile: (path: string) => Promise<string>
   writeFile: (path: string, content: string) => Promise<void>
+  batchWriteFiles: (files: Array<{ path: string; content: string }>) => Promise<ToolResult>
   editFile: (path: string, oldText: string, newText: string) => Promise<ToolResult>
   bash: (command: string, timeout?: number) => Promise<ToolResult>
   grep: (pattern: string, path?: string, include?: string) => Promise<ToolResult>
@@ -37,6 +38,21 @@ export interface ToolContext {
   runTests: (command?: string) => Promise<ToolResult>
   think: (thought: string) => ToolResult
   getFileTree: (maxDepth?: number) => Promise<ToolResult>
+  searchKb?: (query: string, topK?: number) => Promise<ToolResult>
+  todo: TodoManager
+}
+
+export interface TodoItem {
+  id: string
+  content: string
+  status: 'pending' | 'in_progress' | 'completed' | 'cancelled'
+}
+
+export interface TodoManager {
+  items: TodoItem[]
+  add: (content: string) => TodoItem
+  update: (id: string, status: TodoItem['status']) => TodoItem | null
+  list: () => TodoItem[]
 }
 
 export function createToolContext(workingDir: string): ToolContext {
@@ -66,11 +82,31 @@ export function createToolContext(workingDir: string): ToolContext {
     fileDiffs.push({ path: relPath, oldContent, newContent, added, removed })
   }
 
+  let todoIdCounter = 0
+  const todoItems: TodoItem[] = []
+  const todo: TodoManager = {
+    items: todoItems,
+    add(content: string): TodoItem {
+      const item: TodoItem = { id: `t${++todoIdCounter}`, content, status: 'pending' }
+      todoItems.push(item)
+      return item
+    },
+    update(id: string, status: TodoItem['status']): TodoItem | null {
+      const item = todoItems.find(t => t.id === id)
+      if (item) item.status = status
+      return item || null
+    },
+    list(): TodoItem[] {
+      return [...todoItems]
+    }
+  }
+
   return {
     workingDir,
     filesRead,
     filesChanged,
     fileDiffs,
+    todo,
 
     async readFile(path: string): Promise<string> {
       const fullPath = path.startsWith('/') ? path : join(workingDir, path)
@@ -89,6 +125,23 @@ export function createToolContext(workingDir: string): ToolContext {
       filesChanged.add(relPath)
       fileSnapshots.set(relPath, content)
       recordDiff(path, oldContent, content)
+    },
+
+    async batchWriteFiles(files: Array<{ path: string; content: string }>): Promise<ToolResult> {
+      const results: string[] = []
+      const errors: string[] = []
+      await Promise.all(files.map(async (f) => {
+        try {
+          await this.writeFile(f.path, f.content)
+          results.push(`${f.path} (${f.content.length} chars)`)
+        } catch (e) {
+          errors.push(`${f.path}: ${(e as Error).message}`)
+        }
+      }))
+      if (errors.length > 0) {
+        return { success: false, output: `Wrote ${results.length}/${files.length} files.\n${results.join('\n')}`, error: errors.join('\n') }
+      }
+      return { success: true, output: `Wrote ${results.length} files in parallel:\n${results.join('\n')}` }
     },
 
     async editFile(path: string, oldText: string, newText: string): Promise<ToolResult> {
@@ -152,7 +205,7 @@ export function createToolContext(workingDir: string): ToolContext {
 
     async find(pattern: string, path?: string): Promise<ToolResult> {
       try {
-        const { stdout } = await execFileAsync('find', [path || '.', '-name', pattern, '-type', 'f', '-not', 'path', '*/node_modules/*', '-not', 'path', '*/.git/*'], {
+        const { stdout } = await execFileAsync('find', [path || '.', '-name', pattern, '-type', 'f', '-not', '-path', '*/node_modules/*', '-not', '-path', '*/.git/*'], {
           cwd: workingDir,
           timeout: 10000,
           maxBuffer: 1024 * 1024 * 5
@@ -228,7 +281,7 @@ export function createToolContext(workingDir: string): ToolContext {
 
     async getFileTree(maxDepth = 3): Promise<ToolResult> {
       try {
-        const { stdout } = await execFileAsync('find', ['.', '-maxdepth', String(maxDepth), '-not', 'path', '*/node_modules/*', '-not', 'path', '*/.git/*', '-not', 'path', '*/dist/*', '-not', 'path', '*/.next/*'], {
+        const { stdout } = await execFileAsync('find', ['.', '-maxdepth', String(maxDepth), '-not', '-path', '*/node_modules/*', '-not', '-path', '*/.git/*', '-not', '-path', '*/dist/*', '-not', '-path', '*/.next/*', '-not', '-path', '*/out/*'], {
           cwd: workingDir,
           timeout: 10000,
           maxBuffer: 1024 * 1024 * 2
@@ -245,7 +298,7 @@ export function createToolContext(workingDir: string): ToolContext {
 export const TOOL_DEFINITIONS = [
   {
     name: 'read_file',
-    description: 'Read the contents of a file. Returns the full file content with line numbers.',
+    description: 'Read the contents of a file. Returns the full file content with line numbers. Use "path" parameter.',
     parameters: {
       type: 'object',
       properties: {
@@ -378,6 +431,54 @@ export const TOOL_DEFINITIONS = [
         max_depth: { type: 'number', description: 'Maximum directory depth (default: 3)' }
       }
     }
+  },
+  {
+    name: 'search_kb',
+    description: 'Search the Knowledge Base for relevant documentation, design specs, and business rules. Use this to find context for generating design documents.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search query (e.g. "顧客管理 API設計", "テーブル定義 customer")' },
+        top_k: { type: 'number', description: 'Maximum results to return (default: 5)' }
+      },
+      required: ['query']
+    }
+  },
+  {
+    name: 'batch_write_files',
+    description: 'Write MULTIPLE files in parallel in a single call. Use this instead of multiple write_file calls to generate all output files at once. Much faster for creating multiple documents simultaneously.',
+    parameters: {
+      type: 'object',
+      properties: {
+        files: {
+          type: 'array',
+          description: 'Array of files to write',
+          items: {
+            type: 'object',
+            properties: {
+              path: { type: 'string', description: 'File path relative to working directory' },
+              content: { type: 'string', description: 'Full file content' }
+            },
+            required: ['path', 'content']
+          }
+        }
+      },
+      required: ['files']
+    }
+  },
+  {
+    name: 'todo',
+    description: 'Manage a task/todo list to track your progress. Use this to plan work, track what is done, and show the user what remains. Supports add, update status, and list operations.',
+    parameters: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', description: 'Action: "add" (create task), "update" (change status), "list" (show all)', enum: ['add', 'update', 'list'] },
+        content: { type: 'string', description: 'Task description (required for add)' },
+        id: { type: 'string', description: 'Task ID (required for update)' },
+        status: { type: 'string', description: 'New status (required for update)', enum: ['pending', 'in_progress', 'completed', 'cancelled'] }
+      },
+      required: ['action']
+    }
   }
 ]
 
@@ -389,7 +490,8 @@ export async function executeTool(
   switch (name) {
     case 'read_file':
       try {
-        const content = await ctx.readFile(String(args.path))
+        const filePath = String(args.path || args.file_path || '')
+        const content = await ctx.readFile(filePath)
         const lines = content.split('\n')
         const numbered = lines.map((l, i) => `${i + 1}: ${l}`).join('\n')
         return { success: true, output: numbered.substring(0, 50000) }
@@ -440,6 +542,44 @@ export async function executeTool(
 
     case 'get_file_tree':
       return await ctx.getFileTree(args.max_depth as number | undefined)
+
+    case 'search_kb':
+      if (!ctx.searchKb) return { success: false, output: '', error: 'KB search not available. No knowledge_base_id configured.' }
+      return await ctx.searchKb(String(args.query), args.top_k as number | undefined)
+
+    case 'batch_write_files': {
+      const files = args.files as Array<{ path: string; content: string }>
+      if (!Array.isArray(files) || files.length === 0) return { success: false, output: '', error: 'files array is required and must not be empty' }
+      return await ctx.batchWriteFiles(files)
+    }
+
+    case 'todo': {
+      const action = String(args.action || '')
+      if (action === 'add') {
+        const content = String(args.content || '')
+        if (!content) return { success: false, output: '', error: 'content is required for add' }
+        const item = ctx.todo.add(content)
+        return { success: true, output: `Added task ${item.id}: ${item.content}` }
+      }
+      if (action === 'update') {
+        const id = String(args.id || '')
+        const status = String(args.status || '') as TodoItem['status']
+        if (!id || !status) return { success: false, output: '', error: 'id and status are required for update' }
+        const item = ctx.todo.update(id, status)
+        if (!item) return { success: false, output: '', error: `Task ${id} not found` }
+        return { success: true, output: `Updated ${item.id}: ${item.status} — ${item.content}` }
+      }
+      if (action === 'list') {
+        const items = ctx.todo.list()
+        if (items.length === 0) return { success: true, output: 'No tasks.' }
+        const lines = items.map(t => {
+          const icon = t.status === 'completed' ? '✅' : t.status === 'in_progress' ? '🔄' : t.status === 'cancelled' ? '❌' : '⬜'
+          return `${icon} ${t.id}: ${t.content} [${t.status}]`
+        })
+        return { success: true, output: lines.join('\n') }
+      }
+      return { success: false, output: '', error: `Unknown action: ${action}` }
+    }
 
     default:
       return { success: false, output: '', error: `Unknown tool: ${name}` }

@@ -136,8 +136,12 @@ export function registerWorkflowRunnerHandlers(): void {
       const pool = new VariablePool()
 
       if (options?.inputs) {
+        const triggerNodes = dsl.graph.nodes.filter((n: { data?: { type?: string } }) => n.data?.type === 'manual-trigger')
         for (const [key, value] of Object.entries(options.inputs)) {
           pool.set(['start', key], value)
+          for (const trigger of triggerNodes) {
+            pool.set([trigger.id, key], value)
+          }
         }
       }
 

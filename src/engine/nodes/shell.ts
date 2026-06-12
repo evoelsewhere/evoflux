@@ -39,7 +39,8 @@ export class ShellNode extends BaseNode<ShellConfig> {
     context: NodeRunContext
   ): Promise<NodeOutput> {
     const cfg = config as ShellConfig
-    const command = String(inputs.command || cfg.command || '')
+    const inputCmd = typeof inputs.command === 'string' ? inputs.command : ''
+    const command = inputCmd || String(cfg.command || '')
     if (!command) throw new NodeExecutionError(context.nodeId, this.type, 'Command is required')
 
     try {

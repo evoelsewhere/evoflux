@@ -314,7 +314,7 @@ function BaseNodeComponent({ data, selected }: NodeProps<BaseNodeData>) {
           <Handle
             type="source"
             position={sourcePos}
-            id="true"
+            id="true_branch"
             style={{
               width: 8, height: 8,
               background: statusColor || '#34d399',
@@ -327,7 +327,7 @@ function BaseNodeComponent({ data, selected }: NodeProps<BaseNodeData>) {
           <Handle
             type="source"
             position={sourcePos}
-            id="false"
+            id="false_branch"
             style={{
               width: 8, height: 8,
               background: statusColor || '#f87171',

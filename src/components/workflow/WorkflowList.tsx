@@ -67,7 +67,14 @@ export default function WorkflowList() {
           sourceHandle: e.sourceHandle as string | undefined,
           targetHandle: e.targetHandle as string | undefined,
           type: String(e.type || 'custom'),
-          animated: e.animated !== false
+          animated: e.animated !== false,
+          label: e.label as string | undefined,
+          data: {
+            condition: e.condition as string | undefined,
+            isBackEdge: e.isBackEdge as boolean | undefined,
+            maxIterations: e.maxIterations as number | undefined,
+            ...(e.data as Record<string, unknown> || {})
+          }
         }))
         try {
           await window.api.workflow.save({ id: wfId, name: json.name || file.name.replace('.json', ''), nodes, edges })

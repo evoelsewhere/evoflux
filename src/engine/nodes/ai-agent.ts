@@ -11,6 +11,7 @@ interface CodingAgentConfig {
   model?: string
   task?: string
   context?: string
+  kb_id?: string
 }
 
 export class AIAgentNode extends BaseNode<CodingAgentConfig> {
@@ -24,7 +25,7 @@ export class AIAgentNode extends BaseNode<CodingAgentConfig> {
       category: 'agent',
       description: 'Autonomous agent that understands, plans, implements, and verifies. Works with code, documents, APIs, and any task that needs multi-step reasoning with tools.',
       inputs: [
-        { name: 'task', label: 'Task', type: 'string', required: true },
+        { name: 'task', label: 'Task', type: 'string', required: false },
         { name: 'context', label: 'Context', type: 'string', required: false }
       ],
       outputs: [
@@ -51,7 +52,8 @@ export class AIAgentNode extends BaseNode<CodingAgentConfig> {
   ): Promise<NodeOutput> {
     const cfg = config as CodingAgentConfig
     const task = String(inputs.task || cfg.task || '')
-    const ctx = inputs.context ? String(inputs.context) : (cfg.context || '')
+    const rawCtx = inputs.context ?? cfg.context ?? ''
+    const ctx = typeof rawCtx === 'object' ? JSON.stringify(rawCtx, null, 2) : String(rawCtx)
     const codebasePath = String(cfg.codebase_path || '')
 
     if (!task) throw new NodeExecutionError(context.nodeId, this.type, 'Task is required')
@@ -75,9 +77,10 @@ export class AIAgentNode extends BaseNode<CodingAgentConfig> {
         task,
         codebasePath,
         context: ctx || undefined,
-        maxIterations: cfg.max_iterations || 20,
+        maxIterations: cfg.max_iterations != null ? cfg.max_iterations : 20,
         provider: cfg.provider_id,
-        model: cfg.model
+        model: cfg.model,
+        kbId: cfg.kb_id || undefined
       }, globalChat)) {
         events.push(event)
 
