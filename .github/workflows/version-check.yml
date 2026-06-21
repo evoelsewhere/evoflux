@@ -1,0 +1,60 @@
+name: Version sync check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "app/version.txt"
+      - "pyproject.toml"
+      - "web/package.json"
+      - "desktop/src-tauri/Cargo.toml"
+      - "desktop/src-tauri/tauri.conf.json"
+      - "desktop/src-tauri/tauri.dev.conf.json"
+      - "desktop/src-tauri/tauri.dev-bundled.conf.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Opt JS actions into Node.js 24 ahead of the June 2026 forced switch.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  check:
+    name: Verify version consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check release versions match
+        run: |
+          FILE_VERSION=$(cat app/version.txt | tr -d '[:space:]')
+          TOML_VERSION=$(grep '^version' pyproject.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          WEB_VERSION=$(python3 -c 'import json; print(json.load(open("web/package.json"))["version"])')
+          DESKTOP_CARGO_VERSION=$(grep '^version' desktop/src-tauri/Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          DESKTOP_TAURI_VERSION=$(python3 -c 'import json; print(json.load(open("desktop/src-tauri/tauri.conf.json"))["version"])')
+
+          echo "app/version.txt:                 $FILE_VERSION"
+          echo "pyproject.toml:                  $TOML_VERSION"
+          echo "web/package.json:                $WEB_VERSION"
+          echo "desktop/src-tauri/Cargo.toml:    $DESKTOP_CARGO_VERSION"
+          echo "desktop/src-tauri/tauri.conf:    $DESKTOP_TAURI_VERSION"
+
+          for candidate in \
+            "$TOML_VERSION" \
+            "$WEB_VERSION" \
+            "$DESKTOP_CARGO_VERSION" \
+            "$DESKTOP_TAURI_VERSION"; do
+            if [ "$candidate" != "$FILE_VERSION" ]; then
+              echo ""
+              echo "ERROR: Version mismatch!"
+              echo "All release-facing version files must match app/version.txt ($FILE_VERSION)."
+              exit 1
+            fi
+          done
+
+          echo "Versions match."

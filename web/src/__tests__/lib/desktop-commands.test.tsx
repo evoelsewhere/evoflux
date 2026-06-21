@@ -1,0 +1,156 @@
+import { afterEach, describe, expect, it, mock } from 'bun:test'
+import { render, waitFor } from '@testing-library/react'
+
+import { useDesktopCommands } from '@/lib/desktop-commands'
+import { useUIStore } from '@/stores/useUIStore'
+
+let listener: ((event: { payload: unknown }) => void) | null = null
+let unlistenCalls = 0
+
+mock.module('@tauri-apps/api/event', () => ({
+  listen: async (_event: string, cb: (event: { payload: unknown }) => void) => {
+    listener = cb
+    return () => {
+      unlistenCalls += 1
+      listener = null
+    }
+  },
+}))
+
+function Harness() {
+  useDesktopCommands()
+  return null
+}
+
+async function renderBridge() {
+  const view = render(<Harness />)
+  await waitFor(() => expect(listener).not.toBeNull())
+  return view
+}
+
+function resetUIStore(): void {
+  useUIStore.setState({
+    wikiOpen: false,
+    schedulerOpen: false,
+    agentCapabilitiesOpen: false,
+  })
+  listener = null
+  unlistenCalls = 0
+}
+
+afterEach(resetUIStore)
+
+describe('useDesktopCommands', () => {
+  it('routes panel commands through the shared UI store and keeps panels mutually exclusive', async () => {
+    await renderBridge()
+
+    listener?.({ payload: 'wiki' })
+    expect(useUIStore.getState()).toMatchObject({
+      wikiOpen: true,
+      schedulerOpen: false,
+      agentCapabilitiesOpen: false,
+    })
+
+    listener?.({ payload: 'scheduler' })
+    expect(useUIStore.getState()).toMatchObject({
+      wikiOpen: false,
+      schedulerOpen: true,
+      agentCapabilitiesOpen: false,
+    })
+
+    listener?.({ payload: 'agent_capabilities' })
+    expect(useUIStore.getState()).toMatchObject({
+      wikiOpen: false,
+      schedulerOpen: false,
+      agentCapabilitiesOpen: true,
+    })
+  })
+
+  it('dispatches the same Ctrl+P keyboard event used by the in-app command palette shortcut', async () => {
+    const events: KeyboardEvent[] = []
+    const onKeyDown = (event: KeyboardEvent) => events.push(event)
+    window.addEventListener('keydown', onKeyDown)
+    try {
+      await renderBridge()
+
+      listener?.({ payload: 'command_palette' })
+
+      expect(events).toHaveLength(1)
+      expect(events[0].key).toBe('p')
+      expect(events[0].ctrlKey).toBe(true)
+      expect(events[0].metaKey).toBe(false)
+      expect(events[0].bubbles).toBe(true)
+    } finally {
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  })
+
+  it('deduplicates repeated native emits for the same command but allows a different command immediately', async () => {
+    const originalNow = Date.now
+    const times = [1_000, 1_100, 1_200]
+    Date.now = mock(() => times.shift() ?? 1_200) as typeof Date.now
+    try {
+      await renderBridge()
+
+      listener?.({ payload: 'wiki' })
+      listener?.({ payload: 'wiki' })
+      expect(useUIStore.getState().wikiOpen).toBe(true)
+
+      listener?.({ payload: 'scheduler' })
+      expect(useUIStore.getState()).toMatchObject({
+        wikiOpen: false,
+        schedulerOpen: true,
+        agentCapabilitiesOpen: false,
+      })
+    } finally {
+      Date.now = originalNow
+    }
+  })
+
+  it('allows the same command again after the duplicate-suppression window', async () => {
+    const originalNow = Date.now
+    const times = [2_000, 2_500]
+    Date.now = mock(() => times.shift() ?? 2_500) as typeof Date.now
+    try {
+      await renderBridge()
+
+      listener?.({ payload: 'wiki' })
+      expect(useUIStore.getState().wikiOpen).toBe(true)
+
+      listener?.({ payload: 'wiki' })
+      expect(useUIStore.getState().wikiOpen).toBe(false)
+    } finally {
+      Date.now = originalNow
+    }
+  })
+
+  it('ignores unknown payloads instead of mutating UI state or dispatching shortcuts', async () => {
+    let keydownCount = 0
+    const onKeyDown = () => { keydownCount += 1 }
+    window.addEventListener('keydown', onKeyDown)
+    try {
+      await renderBridge()
+
+      listener?.({ payload: 'not-a-command' })
+      listener?.({ payload: null })
+
+      expect(useUIStore.getState()).toMatchObject({
+        wikiOpen: false,
+        schedulerOpen: false,
+        agentCapabilitiesOpen: false,
+      })
+      expect(keydownCount).toBe(0)
+    } finally {
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  })
+
+  it('unsubscribes from the Tauri event bus when the root unmounts', async () => {
+    const view = await renderBridge()
+
+    view.unmount()
+
+    expect(unlistenCalls).toBe(1)
+    expect(listener).toBeNull()
+  })
+})

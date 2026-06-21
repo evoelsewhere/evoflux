@@ -1,0 +1,70 @@
+/**
+ * Native desktop command bridge.
+ *
+ * Tauri menu/tray items live in Rust, while panel state and the command
+ * palette live in React/Zustand. Rust emits a small string command and this
+ * bridge fans it back into the same keyboard events the web UI already uses.
+ */
+import { useEffect } from 'react'
+import { useUIStore } from '@/stores/useUIStore'
+
+function dispatchCtrlKey(key: string): void {
+  window.dispatchEvent(
+    new KeyboardEvent('keydown', {
+      key,
+      ctrlKey: true,
+      metaKey: false,
+      bubbles: true,
+    }),
+  )
+}
+
+function runDesktopCommand(command: unknown): void {
+  switch (command) {
+    case 'command_palette':
+      dispatchCtrlKey('p')
+      break
+    case 'wiki':
+      useUIStore.getState().toggleWiki()
+      break
+    case 'scheduler':
+      useUIStore.getState().toggleScheduler()
+      break
+    case 'agent_capabilities':
+      useUIStore.getState().toggleAgentCapabilities()
+      break
+  }
+}
+
+let lastCommand: { command: unknown; timestamp: number } | null = null
+
+export function useDesktopCommands(): void {
+  useEffect(() => {
+    let cleanup: (() => void) | undefined
+    let cancelled = false
+
+    ;(async () => {
+      try {
+        const { listen } = await import('@tauri-apps/api/event')
+        const unlisten = await listen<unknown>('desktop-command', (event) => {
+          const now = Date.now()
+          if (lastCommand && lastCommand.command === event.payload && now - lastCommand.timestamp < 450) return
+          lastCommand = { command: event.payload, timestamp: now }
+          runDesktopCommand(event.payload)
+        })
+        if (cancelled) {
+          unlisten()
+          return
+        }
+        cleanup = unlisten
+      } catch {
+        // Browser build: no Tauri event bus.
+      }
+    })()
+
+    return () => {
+      cancelled = true
+      cleanup?.()
+    }
+  }, [])
+}

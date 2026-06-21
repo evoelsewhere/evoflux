@@ -1,0 +1,368 @@
+name: Release Desktop
+
+# Triggered manually from the Actions tab once a version is tagged.
+# Produces signed (where keys are available) installers for:
+#   - macOS arm64 (.dmg, .app.tar.gz)
+#   - Linux x64  (.AppImage, .deb)
+#
+# Outputs are attached to the GitHub Release matching `app/version.txt`
+# (tag ``v<X.Y.Z>`` — the same tag ``release.yml`` creates for the
+# wheel/sdist). Run ``release.yml`` first so the tag + release exist,
+# then ``release-desktop.yml`` appends the desktop installers via
+# ``gh release upload --clobber``. If the order is reversed, this
+# workflow creates the release itself (see the publish step's
+# create-or-update branch).
+# The ``latest.json`` updater manifest is generated last and uploaded
+# to the same release; the Tauri updater endpoint (configured in
+# tauri.conf.json) points at the rolling ``latest-desktop`` release
+# which only mirrors ``latest.json``.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type 'release-desktop' to confirm"
+        required: true
+      channel:
+        description: "Release channel"
+        type: choice
+        options: [stable, beta, nightly]
+        default: stable
+      platform:
+        description: "Platform matrix to build"
+        type: choice
+        options: [all, macos, linux]
+        default: all
+
+permissions:
+  contents: write
+
+env:
+  # Opt JS actions into Node.js 24 ahead of the June 2026 forced switch.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  prepare:
+    name: Prepare release metadata
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm == 'release-desktop'
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: version
+        # Use the same ``v<X.Y.Z>`` tag as ``release.yml``. Both
+        # workflows publish into one release so the artefact set
+        # (wheel + sdist + .dmg + .deb) lives under one tag the user
+        # can compare-link to. The publish job below uploads with
+        # ``--clobber`` so it does not matter which workflow runs first.
+        run: |
+          VERSION=$(cat app/version.txt | tr -d '[:space:]')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+      - id: matrix
+        run: |
+          case "${{ github.event.inputs.platform }}" in
+            all)
+              MATRIX='{"include":[{"platform":"macos","arch":"aarch64","runner":"macos-26","rust_target":"aarch64-apple-darwin","tauri_args":"--target aarch64-apple-darwin --verbose"},{"platform":"linux","arch":"x86_64","runner":"ubuntu-22.04","rust_target":"x86_64-unknown-linux-gnu","tauri_args":"--bundles deb --verbose"}]}'
+              ;;
+            macos)
+              MATRIX='{"include":[{"platform":"macos","arch":"aarch64","runner":"macos-26","rust_target":"aarch64-apple-darwin","tauri_args":"--target aarch64-apple-darwin --verbose"}]}'
+              ;;
+            linux)
+              MATRIX='{"include":[{"platform":"linux","arch":"x86_64","runner":"ubuntu-22.04","rust_target":"x86_64-unknown-linux-gnu","tauri_args":"--bundles deb --verbose"}]}'
+              ;;
+            *)
+              echo "Unknown platform: ${{ github.event.inputs.platform }}" >&2
+              exit 1
+              ;;
+          esac
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    name: Build (${{ matrix.platform }} / ${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Linux WebKitGTK + AppImage deps
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            libfuse2
+
+      # ``linuxdeploy`` and the AppImage runtime use a FUSE-mounted
+      # squashfs by default. GitHub-hosted ubuntu-22.04 runners don't
+      # allow FUSE mounts inside the action environment, so we tell the
+      # AppImage tools to extract-and-run instead. Without this the
+      # bundle step dies with a bare 'failed to run linuxdeploy' and
+      # Tauri swallows the actual error message.
+      - name: Configure AppImage extract-and-run mode
+        if: matrix.platform == 'linux'
+        run: echo "APPIMAGE_EXTRACT_AND_RUN=1" >> "$GITHUB_ENV"
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      # ``Swatinem/rust-cache`` cleans the target/ tree (drops examples,
+      # tests, incremental artifacts) before saving, so the cached blob
+      # stays small (~200 MB instead of >1 GB). It also keys on
+      # ``rustc -Vv``, ``Cargo.lock``, and target triple so a Rust
+      # toolchain bump or dependency change invalidates correctly.
+      - name: Cache cargo registry + target
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+          key: ${{ matrix.platform }}-${{ matrix.arch }}
+          # Save on every run including PR re-pushes — without this,
+          # only the default branch warms the cache.
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
+
+      # ``tauri-cli`` is a single 30 MB prebuilt binary
+      # (``~/.cargo/bin/cargo-tauri``).
+      # The naïve flow — install
+      # ``cargo-binstall``, then ``binstall --version "^2.0"`` — has
+      # two hidden costs:
+      #
+      # 1. Anonymous GitHub API rate limit. binstall resolves the
+      #    latest 2.x release via ``api.github.com``. GitHub-hosted
+      #    runners share egress IPs, and the anonymous limit (60/hr
+      #    per IP) gets blown out on busy days, especially on the
+      #    larger macOS pool. We've seen this step sit on 120s
+      #    retries for 10+ minutes. Passing ``GITHUB_TOKEN`` lifts
+      #    the limit to 5000/hr.
+      # 2. The binary doesn't change between runs. ``actions/cache``
+      #    keyed on the pinned version eliminates the re-download
+      #    entirely on subsequent runs (per ``runner.os``/``arch``).
+      #
+      # Order: cache check → install binstall if miss → binstall if
+      # miss. Pinning to ``2.11.1`` avoids the semver resolution
+      # hop; bump it deliberately when Tauri ships a new patch.
+      - name: Restore cached tauri-cli
+        id: cache-tauri-cli
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/bin/cargo-tauri
+          key: tauri-cli-2.11.1-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Install cargo-binstall
+        if: steps.cache-tauri-cli.outputs.cache-hit != 'true'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-binstall
+
+      - name: Install tauri-cli (prebuilt)
+        if: steps.cache-tauri-cli.outputs.cache-hit != 'true'
+        env:
+          # Authenticated GitHub API requests — 5000/hr instead of
+          # the anonymous 60/hr. Without this, binstall reliably
+          # stalls on 120s rate-limit retries on macOS-26 runners.
+          GITHUB_TOKEN: ${{ github.token }}
+        # ``--force``: Swatinem/rust-cache restores ``~/.cargo/.crates2.json``
+        # which tracks cargo-installed binaries.  It does NOT restore
+        # ``~/.cargo/bin/`` itself, so on a fresh runner the metadata
+        # says ``tauri-cli`` is installed while the binary is missing.
+        # Without ``--force``, binstall sees the stale metadata, no-ops,
+        # and the next step (``cargo tauri icon``) fails with
+        # ``no such command: tauri``.
+        run: cargo binstall --no-confirm --force --version 2.11.1 tauri-cli
+
+      - name: Generate platform icons
+        working-directory: desktop/src-tauri
+        run: |
+          rm -f icons/32x32.png icons/64x64.png icons/128x128.png icons/128x128@2x.png icons/icon.icns icons/icon.ico
+          cargo tauri icon icons/icon.png
+
+
+      - name: Build Python sidecar bundle
+        run: |
+          python3 scripts/build_sidecar.py \
+            --root . \
+            --out desktop/sidecar-bundle \
+            --python-version 3.14
+
+      - name: Import Apple signing certificate
+        if: matrix.platform == 'macos' && env.APPLE_CERTIFICATE != ''
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          echo -n "$APPLE_CERTIFICATE" | base64 --decode -o $RUNNER_TEMP/cert.p12
+          security import $RUNNER_TEMP/cert.p12 -k "$KEYCHAIN_PATH" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+
+      # Tauri's signing env vars must be UNSET when there is no Apple
+      # signing identity available — passing an empty
+      # ``APPLE_SIGNING_IDENTITY`` makes Tauri try to find an identity
+      # matching the empty string and fail with 'The specified item
+      # could not be found in the keychain.'
+      #
+      # We expose the variables conditionally via a separate ``Set env``
+      # step that writes only the entries whose secrets are non-empty;
+      # ``cargo tauri build`` then sees an empty environment and falls
+      # back to the ad-hoc ``signingIdentity: "-"`` from tauri.conf.json.
+      - name: Resolve signing env
+        id: signing_env
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          # Write each non-empty secret to $GITHUB_ENV so it's available
+          # in the next step. Empty secrets are skipped entirely, so
+          # ``cargo tauri build`` doesn't see a stray empty string and
+          # try to match it against the keychain.
+          for var in APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID \
+                     TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD; do
+            value="${!var:-}"
+            if [ -n "$value" ]; then
+              # Use the heredoc multiline form so values with newlines
+              # (PEM-formatted minisign key) round-trip correctly.
+              {
+                echo "${var}<<__OAD_EOF__"
+                printf '%s\n' "$value"
+                echo "__OAD_EOF__"
+              } >> "$GITHUB_ENV"
+              echo "  ${var}: set (${#value} chars)"
+            else
+              echo "  ${var}: empty — skipped"
+            fi
+          done
+
+      - name: Build Tauri app
+        working-directory: desktop/src-tauri
+        run: cargo tauri build ${{ matrix.tauri_args }}
+
+      - name: Collect artefacts
+        id: collect
+        run: |
+          mkdir -p _release
+          cd desktop/src-tauri/target
+          # Tauri writes to ${target}/release/bundle/{dmg,deb,appimage,...}
+          if [ -d release/bundle ]; then
+            BUNDLE_DIR=release/bundle
+          else
+            BUNDLE_DIR=${{ matrix.rust_target }}/release/bundle
+          fi
+          # Match Tauri's actual product bundles. Installers use
+          # `{productName}_{version}_{arch}{.lang}.{ext}` (e.g.
+          # `EVOFLUX_1.0.6_aarch64.dmg`), while macOS updater
+          # archives use `{productName}.app.tar.gz`.
+          find "$BUNDLE_DIR" -type f \( \
+            -name 'EVOFLUX_*.dmg' \
+            -o -name 'EvoFlux*.app.tar.gz' -o -name 'EvoFlux*.app.tar.gz.sig' \
+            -o -name 'EVOFLUX_*.AppImage' -o -name 'EVOFLUX_*.AppImage.sig' \
+            -o -name 'EVOFLUX_*.deb' \
+          \) -print -exec cp {} "$GITHUB_WORKSPACE/_release/" \;
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: EvoFlux-desktop-${{ matrix.platform }}-${{ matrix.arch }}
+          path: _release/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: [prepare, build]
+    name: Publish release
+    runs-on: ubuntu-latest
+    if: github.event.inputs.platform == 'all'
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: _artifacts
+
+      - name: Flatten artefacts
+        run: |
+          mkdir -p _release
+          find _artifacts -type f -exec cp {} _release/ \;
+          ls -la _release
+
+      - name: Generate latest.json (Tauri updater manifest)
+        run: |
+          python3 scripts/make_updater_manifest.py \
+            --version "${{ needs.prepare.outputs.version }}" \
+            --channel "${{ github.event.inputs.channel }}" \
+            --tag "${{ needs.prepare.outputs.tag }}" \
+            --artefact-dir _release \
+            --out _release/latest.json \
+            --require-platform darwin-aarch64
+
+      - name: Create or update GitHub release
+        # Releases land on the shared ``v<X.Y.Z>`` tag. If
+        # ``release.yml`` already created the release with the
+        # canonical notes + wheel/sdist, we append our installers
+        # via ``upload --clobber``. If we ran first, we create the
+        # release with a minimal title; ``release.yml`` will then
+        # ``upload`` the wheel + sdist on top.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ needs.prepare.outputs.tag }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" _release/* --clobber
+          else
+            gh release create "$TAG" _release/* \
+              --title "$TAG" \
+              --generate-notes
+          fi
+
+      # The Tauri updater (configured in tauri.conf.json) fetches
+      # ``releases/download/latest-desktop/latest.json``. That URL must
+      # always resolve to the most recent desktop release's manifest, so
+      # we maintain a rolling ``latest-desktop`` release that mirrors
+      # only ``latest.json``. The artefact URLs *inside* latest.json
+      # still point at the immutable ``v{X.Y.Z}`` release above,
+      # so old clients keep working and downloads are cacheable.
+      - name: Update rolling latest-desktop release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ROLLING_TAG="latest-desktop"
+          NOTES="Auto-generated. Points at EvoFlux Desktop ${{ needs.prepare.outputs.version }}. Do not download artefacts from this release directly — use the versioned release instead."
+          if gh release view "$ROLLING_TAG" >/dev/null 2>&1; then
+            gh release upload "$ROLLING_TAG" _release/latest.json --clobber
+            gh release edit "$ROLLING_TAG" \
+              --title "Desktop updater manifest (rolling)" \
+              --notes "$NOTES" \
+              --prerelease \
+              --draft=false
+          else
+            gh release create "$ROLLING_TAG" _release/latest.json \
+              --title "Desktop updater manifest (rolling)" \
+              --notes "$NOTES" \
+              --prerelease
+          fi

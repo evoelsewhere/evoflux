@@ -1,0 +1,44 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default capability set for the main window.",
+  "windows": ["main", "main-*"],
+  "local": true,
+  "remote": {
+    "urls": [
+      "http://127.0.0.1:*",
+      "http://localhost:*"
+    ]
+  },
+  "permissions": [
+    "core:default",
+    "core:window:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-internal-toggle-maximize",
+    "core:webview:default",
+    "core:app:default",
+    "core:event:default",
+    "core:resources:default",
+    "dialog:default",
+    "notification:default",
+    "opener:default",
+    "log:default",
+    "updater:default",
+    "allow-request-voice-permissions",
+    "allow-save-workspace-file",
+    "allow-backend-health",
+    "allow-backend-logs-path",
+    "allow-app-backend-status",
+    "allow-app-remove-backend-server",
+    "allow-app-save-backend-server",
+    "allow-app-use-external-backend",
+    "allow-app-use-bundled-backend",
+    "allow-app-new-window",
+    "allow-set-tray-session",
+    "allow-updater-check",
+    "allow-updater-download",
+    "allow-updater-install",
+    "allow-updater-release-notes"
+  ]
+}
