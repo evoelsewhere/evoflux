@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import { FilePreviewStrip } from './FilePreviewStrip'
 import { findActiveMention, rankFileRefs, type FileRef } from './InputBar.mentions'
 import { MentionOverlay } from './InputBar.overlay'
+import { SessionPillsRow, type SessionPillsRowProps } from './SessionPillsRow'
 import type { AgentCapabilities } from '@/api/types'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useReducedMotion } from '@/hooks/useReducedMotion'
@@ -122,6 +123,14 @@ interface InputBarProps {
   onHasContentChange?: (hasContent: boolean) => void
   /** Newest-first prompt history supplied by the parent, e.g. loaded chat history. */
   historyPrompts?: string[]
+  /** Session model settings — when provided, renders SessionPillsRow above the textarea. */
+  sessionModel?: string | null
+  defaultModel?: string | null
+  sessionThinkingLevel?: string | null
+  sessionFastMode?: boolean
+  onSessionModelSettingsChange?: SessionPillsRowProps['onSessionModelSettingsChange']
+  agentNames?: string[]
+  agentWorkspace?: string | null
 }
 
 export interface InputBarHandle {
@@ -165,6 +174,13 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   onBlur,
   onHasContentChange,
   historyPrompts = [],
+  sessionModel,
+  defaultModel,
+  sessionThinkingLevel,
+  sessionFastMode,
+  onSessionModelSettingsChange,
+  agentNames,
+  agentWorkspace,
 }, ref) {
   const [value, setValue] = useState('')
   const [files, setFiles] = useState<File[]>([])
@@ -1118,6 +1134,18 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     <div className={floating ? '' : 'border-t border-(--color-border) bg-(--bg-page) px-4 py-3'}>
       <div className={floating ? 'relative' : 'relative mx-auto max-w-3xl'}>
         {!minimized && !filesBelow && filePreviews}
+
+        {!minimized && onSessionModelSettingsChange && (
+          <SessionPillsRow
+            sessionModel={sessionModel}
+            defaultModel={defaultModel}
+            sessionThinkingLevel={sessionThinkingLevel}
+            sessionFastMode={sessionFastMode}
+            onSessionModelSettingsChange={onSessionModelSettingsChange}
+            agentNames={agentNames}
+            workspace={agentWorkspace}
+          />
+        )}
 
         {!minimized && slashMenuOpen && filteredSlashCommands.length > 0 && (
           <div

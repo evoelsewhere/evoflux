@@ -6,19 +6,12 @@ import { FloatingInputBar } from '@/components/FloatingInputBar'
 import { useTeamStore } from '@/stores/useTeamStore'
 import type { InputBarHandle } from '@/components/InputBar'
 
-const STORAGE_KEY = 'oa-input-position'
-
 afterEach(cleanup)
 beforeEach(() => {
-  localStorage.clear()
   useTeamStore.setState({ _pendingMessages: [] })
 })
 
-function nextFrame(): Promise<void> {
-  return new Promise((resolve) => requestAnimationFrame(() => resolve()))
-}
-
-// Test harness — provides a bounds container with a stable, measurable size.
+// Test harness — provides a bounds container.
 function Harness(props: {
   onSubmit?: (message: string, files?: File[]) => void
   onStop?: () => void
@@ -52,109 +45,21 @@ function Harness(props: {
 }
 
 describe('FloatingInputBar', () => {
-  it('keeps the inner InputBar textarea mounted but hidden from AT while minimized', () => {
+  it('renders the textarea as always visible (no minimize)', () => {
     render(<Harness />)
-    // The textarea is always in the DOM regardless of minimized state
-    // — visibility is opacity-driven so the ref stays valid and focus
-    // can land instantly on expand. While minimized, the wrapping
-    // ``aria-hidden`` correctly removes it from the accessibility
-    // tree, so we query by label (DOM-level) rather than role
-    // (a11y-tree-level).
     const textarea = screen.getByLabelText('Message input')
     expect(textarea).toBeTruthy()
-    expect(textarea.getAttribute('disabled')).not.toBeNull()
+    // The bar is always expanded — textarea is never disabled
+    expect(textarea.getAttribute('disabled')).toBeNull()
   })
 
-  it('exposes a drag handle labelled for screen readers', () => {
-    render(<Harness />)
-    const handle = screen.getByRole('button', { name: /drag input bar/i })
-    expect(handle).toBeTruthy()
-  })
-
-  it('starts at the default position (zero offset) when no value is stored', () => {
-    render(<Harness />)
-    expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
-  })
-
-  it('reads persisted offset from localStorage on mount without throwing', () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ x: 40, y: -120 }))
-    expect(() => render(<Harness />)).not.toThrow()
-    // After mount the clamp effect may rewrite the value if bounds don't
-    // accommodate the stored offset; we only require the entry remains
-    // valid JSON with numeric fields.
-    const raw = localStorage.getItem(STORAGE_KEY)
-    expect(raw).not.toBeNull()
-    const parsed = JSON.parse(raw!) as { x: number; y: number }
-    expect(typeof parsed.x).toBe('number')
-    expect(typeof parsed.y).toBe('number')
-  })
-
-  it('ignores malformed localStorage entries without throwing', () => {
-    localStorage.setItem(STORAGE_KEY, 'not-json')
-    expect(() => render(<Harness />)).not.toThrow()
-  })
-
-  it('ignores localStorage entries that do not match the expected shape', () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ foo: 'bar' }))
-    expect(() => render(<Harness />)).not.toThrow()
-  })
-
-  it('resets position on double-click of the handle', async () => {
-    const user = userEvent.setup()
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ x: 40, y: -120 }))
-    render(<Harness />)
-
-    const handle = screen.getByRole('button', { name: /drag input bar/i })
-    await user.dblClick(handle)
-
-    expect(localStorage.getItem(STORAGE_KEY)).toBe(JSON.stringify({ x: 0, y: 0 }))
-  })
-
-  it('clamps a stored offset back into bounds on window resize', () => {
-    // Seed an out-of-bounds offset. The clamp effect runs on mount and on
-    // resize; the mount pass should already correct it, but we also verify
-    // a resize event does not push it further.
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ x: 99999, y: -99999 }))
-    render(<Harness />)
-
-    act(() => {
-      window.dispatchEvent(new Event('resize'))
-    })
-
-    const raw = localStorage.getItem(STORAGE_KEY)
-    // Clamp may be a no-op if jsdom reports zero-sized rects, but if it
-    // writes anything it must not preserve the extreme values.
-    if (raw !== null && raw !== JSON.stringify({ x: 99999, y: -99999 })) {
-      const parsed = JSON.parse(raw) as { x: number; y: number }
-      expect(Math.abs(parsed.x)).toBeLessThan(99999)
-      expect(Math.abs(parsed.y)).toBeLessThan(99999)
-    }
-  })
-
-  it('forwards the placeholder prop to the inner InputBar when expanded', async () => {
-    const user = userEvent.setup()
+  it('forwards the placeholder prop to the inner InputBar', () => {
     render(<Harness placeholder="Ask the team…" />)
-    // Placeholder is empty while the bar is minimized so its ghost
-    // doesn't bleed through the slot opacity fade. The minimized
-    // The collapsed strip's chat button expands the bar so the
-    // textarea's placeholder becomes visible.
-    await user.click(screen.getByRole('button', { name: 'Expand input bar' }))
-    const textarea = await screen.findByRole('textbox', { name: 'Message input' })
+    const textarea = screen.getByRole('textbox', { name: 'Message input' })
     expect(textarea.getAttribute('placeholder')).toBe('Ask the team…')
   })
 
-  it('keeps the collapsed strip available while streaming', () => {
-    render(<Harness isStreaming onStop={() => {}} />)
-
-    const textarea = screen.getByLabelText('Message input')
-    expect(textarea.getAttribute('disabled')).not.toBeNull()
-    expect(screen.getByRole('button', { name: 'Attach file' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Voice input unavailable' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Expand input bar' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Stop generation' })).toBeTruthy()
-  })
-
-  it('does not render queued messages inside the floating composer', () => {
+  it('does not render queued messages inside the composer', () => {
     useTeamStore.setState({
       sessionId: 'session-a',
       _pendingMessages: [
@@ -165,41 +70,20 @@ describe('FloatingInputBar', () => {
 
     render(<Harness />)
 
-    expect(screen.queryByRole('button', { name: /2 messages awaiting/i })).toBeNull()
     expect(screen.queryByText('first queued message')).toBeNull()
   })
 
-  it('expands and focuses the textarea through its imperative focus handle', async () => {
+  it('focuses the textarea through its imperative focus handle', async () => {
     const user = userEvent.setup()
     render(<Harness exposeFocus />)
 
     const textarea = screen.getByLabelText('Message input')
-    expect(textarea.getAttribute('disabled')).not.toBeNull()
-
     await user.click(screen.getByRole('button', { name: 'Focus input' }))
-    await act(nextFrame)
 
-    expect(textarea.getAttribute('disabled')).toBeNull()
     expect(document.activeElement).toBe(textarea)
   })
 
-  it('minimizes when Escape is pressed while the input is focused', async () => {
-    const user = userEvent.setup()
-    render(<Harness />)
-
-    await user.click(screen.getByRole('button', { name: 'Expand input bar' }))
-    const textarea = screen.getByRole('textbox', { name: 'Message input' })
-    await user.click(textarea)
-
-    expect(textarea.getAttribute('disabled')).toBeNull()
-
-    await user.keyboard('{Escape}')
-
-    expect(textarea.getAttribute('disabled')).not.toBeNull()
-    expect(screen.getByRole('button', { name: 'Expand input bar' })).toBeTruthy()
-  })
-
-  it('expands and inserts the first typed character through its imperative insertText handle', async () => {
+  it('inserts text through its imperative insertText handle', () => {
     const ref = createRef<InputBarHandle>()
     function InsertHarness() {
       const boundsRef = useRef<HTMLDivElement>(null)
@@ -213,27 +97,26 @@ describe('FloatingInputBar', () => {
     render(<InsertHarness />)
 
     const textarea = screen.getByLabelText('Message input') as HTMLTextAreaElement
-    expect(textarea.getAttribute('disabled')).not.toBeNull()
-
     act(() => {
-      ref.current?.focus()
-      ref.current?.insertText('h')
+      ref.current?.insertText('hello')
     })
-
-    expect(textarea.getAttribute('disabled')).toBeNull()
-    expect(textarea.value).toBe('h')
+    expect(textarea.value).toBe('hello')
   })
 
-  it('minimizes after sending a message', async () => {
+  it('submits a message on send button click', async () => {
+    let submitted = ''
     const user = userEvent.setup()
-    render(<Harness />)
+    render(<Harness onSubmit={(msg) => { submitted = msg }} />)
 
-    await user.click(screen.getByRole('button', { name: 'Expand input bar' }))
     const textarea = screen.getByRole('textbox', { name: 'Message input' })
     await user.type(textarea, 'hello')
     await user.click(screen.getByRole('button', { name: 'Send message' }))
 
-    expect(textarea.getAttribute('disabled')).not.toBeNull()
-    expect(screen.getByRole('button', { name: 'Expand input bar' })).toBeTruthy()
+    expect(submitted).toBe('hello')
+  })
+
+  it('shows stop button while streaming', () => {
+    render(<Harness isStreaming onStop={() => {}} />)
+    expect(screen.getByRole('button', { name: 'Stop generation' })).toBeTruthy()
   })
 })
