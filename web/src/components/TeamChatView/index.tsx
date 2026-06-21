@@ -1234,6 +1234,13 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
             revertedCount={leadName ? agentStreams[leadName]?.revertedCount ?? 0 : 0}
             revertedMessages={leadName ? agentStreams[leadName]?.revertedMessages ?? [] : []}
             onRedo={() => { void useTeamStore.getState().redoTeam() }}
+            sessionModel={sessionModel}
+            defaultModel={leadAgent?.model ?? null}
+            sessionThinkingLevel={sessionThinkingLevel}
+            sessionFastMode={sessionFastMode}
+            onSessionModelSettingsChange={setSessionModelSettings}
+            agentNames={agentNames}
+            agentWorkspace={agentWorkspace}
           />
         )}
         </main>
