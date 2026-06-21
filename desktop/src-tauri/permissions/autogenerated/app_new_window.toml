@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-app-new-window"
+description = "Enables the app_new_window command without any pre-configured scope."
+commands.allow = ["app_new_window"]
+
+[[permission]]
+identifier = "deny-app-new-window"
+description = "Denies the app_new_window command without any pre-configured scope."
+commands.deny = ["app_new_window"]

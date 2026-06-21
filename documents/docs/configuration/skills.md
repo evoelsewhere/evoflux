@@ -1,0 +1,104 @@
+---
+title: Skills
+description: SKILL.md format, registration, and the builtin skill catalog.
+status: stable
+updated: 2026-05-29
+---
+
+# Skills
+
+**Source:** `app/agent/tools/builtin/skill.py`, `app/agent/builtin_skills/`
+
+Skills are domain-specific instruction sets that an agent loads **on demand** via the `skill` tool, rather than carrying their full text in the system prompt at all times. The framework injects only each skill's one-line `description:` into the system prompt as a registry the agent can browse.
+
+## Layout
+
+Each skill lives in its own subdirectory. One nested namespace level is also
+supported:
+
+```
+{EVOFLUX_CONFIG_DIR}/skills/
+├── my-skill/
+│   ├── SKILL.md          ← required — frontmatter + body
+│   ├── creating.md       ← optional supporting files the agent can read
+│   └── reference/        ← optional subdir with extra reference material
+└── oad/
+    └── debug/
+        └── SKILL.md      ← registers as oad/debug
+```
+
+Deeper layouts such as `skills/a/b/c/SKILL.md` are ignored by discovery.
+
+### Discovery roots
+
+Skills are discovered from five roots in this precedence order — first match
+wins on a name collision, so an EvoFlux-native override silently shadows
+the upstream or builtin copy:
+
+| # | Root | Use it for |
+|---|------|------------|
+| 1 | `{workspace}/.EvoFlux/skills/`     | Project-specific, EvoFlux-native |
+| 2 | `{workspace}/.opencode/skills/`       | Project-specific, opencode reuse |
+| 3 | `{EVOFLUX_CONFIG_DIR}/skills/` | Your global EvoFlux library |
+| 4 | `~/.config/opencode/skills/`    | Your global opencode library (reused as-is) |
+| 5 | bundled EvoFlux skills | Read-only operational fallback shipped with the app |
+
+`{workspace}` is the active coding workspace when a session has one; outside a
+session it falls back to the server working directory. The Settings UI lists the
+same runtime-visible catalog. Non-bundled skills are
+edited and deleted in place, including project-local and opencode skills.
+Bundled app skills are read-only and cannot be deleted.
+
+`SKILL.md` follows this layout:
+
+```markdown
+---
+name: my-skill
+description: >-
+  One-sentence description shown in the system prompt registry.
+---
+
+# My Skill
+
+The full instructions the agent reads when it calls `skill("my-skill")`.
+```
+
+- The frontmatter is **not** returned to the agent — only the body below.
+- The skill is identified by the frontmatter `name`. If absent, the directory stem is used (`my-skill` or `parent/sub`).
+
+## Using a skill from an agent
+
+Skills are discovered from the roots above and exposed through the `skill` tool's
+available-skills catalog. Installing a skill into one of those roots is normally
+enough.
+
+The `skills:` frontmatter field still exists for explicit agent metadata and
+file-drift tracking, but it is additive and not the normal install path:
+
+```yaml
+skills:
+  - my-skill
+  - oad/debug
+```
+
+The `skill` tool itself is **always injected** into every agent — do not list it in `tools:`.
+
+## Builtin skills
+
+EvoFlux ships these read-only operational skills inside the app package. They cannot be deleted from Settings or the skills API. A user or project skill with the same `name` overrides the builtin copy.
+
+| Name | Purpose |
+|------|---------|
+| `self-healing` | Update agent/runtime config on request — swap model, tune temperature/thinking, add tools/MCP, change image-gen provider. |
+| `skill-installer` | Install new skills from a URL or write one from scratch. |
+| `mcp-installer` | Install / update / remove / restart MCP servers in `mcp.json`. |
+| `plugin-installer` | Install a user plugin from a URL into `{EVOFLUX_CONFIG_DIR}/plugins/`. |
+
+> Other curated skills (office documents, lightpanda, etc.) are not builtin and must be installed manually via `skill-installer` or by dropping a `SKILL.md` into the skills directory.
+
+## Authoring guidelines
+
+- **One paragraph in `description`.** It goes into every system prompt registered with the skill — keep it tight.
+- **Body is what the LLM reads when `skill(name)` is called.** Be explicit about steps, expected output, common pitfalls.
+- **Supporting files** (`creating.md`, `reference/`, etc.) are reachable by the agent's filesystem tools as long as the workspace allows it — the skill body should reference them by relative path.
+- **Hot reload.** `discover_skills()` is cached via `lru_cache` by an mtime signature aggregated across all discovery roots, so editing a `SKILL.md` in any user/project root — including an opencode one — is live on the next listing without a server restart.

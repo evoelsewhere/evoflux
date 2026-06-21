@@ -1,0 +1,118 @@
+name: Update Homebrew Tap
+
+on:
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+  workflow_dispatch:
+
+env:
+  # Opt JS actions into Node.js 24 ahead of the June 2026 forced switch.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  update-tap:
+    name: Update homebrew-tap formula
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+
+    steps:
+      - name: Get release info
+        id: release
+        run: |
+          # Find the latest v* tag published by the Release workflow
+          RELEASE=$(gh release list --repo khuonghung/evoflux --limit 10 --json tagName,publishedAt \
+            --jq '[.[] | select(.tagName | startswith("v"))] | sort_by(.publishedAt) | last')
+          TAG=$(echo "$RELEASE" | jq -r '.tagName')
+          VERSION=$(echo "$TAG" | sed 's/^v//')
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download sdist from PyPI
+        run: |
+          VERSION="${{ steps.release.outputs.version }}"
+          PYPI_JSON="https://pypi.org/pypi/EvoFlux/${VERSION}/json"
+
+          for attempt in 1 2 3 4 5; do
+            echo "Fetching PyPI metadata for EvoFlux ${VERSION} (attempt ${attempt}/5)"
+            if curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors "$PYPI_JSON" -o pypi.json; then
+              URL=$(python3 -c "import json; d=json.load(open('pypi.json')); print([u['url'] for u in d['urls'] if u['packagetype']=='sdist'][0])")
+              echo "$URL" > pypi-sdist-url.txt
+              if curl -fSL --retry 3 --retry-delay 5 --retry-all-errors "$URL" -o EvoFlux.tar.gz; then
+                exit 0
+              fi
+            fi
+            sleep $((attempt * 10))
+          done
+
+          echo "Unable to download EvoFlux ${VERSION} sdist from PyPI after retries" >&2
+          exit 1
+
+      - name: Compute SHA-256
+        id: hash
+        run: |
+          echo "sha256=$(sha256sum EvoFlux.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "url=$(cat pypi-sdist-url.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout homebrew-tap
+        uses: actions/checkout@v6
+        with:
+          repository: khuonghung/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - name: Update formula
+        run: |
+          VERSION="${{ steps.release.outputs.version }}"
+          SHA256="${{ steps.hash.outputs.sha256 }}"
+          URL="${{ steps.hash.outputs.url }}"
+
+          cat > homebrew-tap/Formula/EvoFlux.rb <<FORMULA
+          class EvoFlux < Formula
+            desc "On-machine multi-agent AI assistant with a web cockpit"
+            homepage "https://github.com/khuonghung/evoflux"
+            url "${URL}"
+            sha256 "${SHA256}"
+            license "Apache-2.0"
+
+            depends_on "python@3.14"
+
+            def install
+              python3 = Formula["python@3.14"].opt_bin/"python3.14"
+              system python3, "-m", "venv", libexec
+              system libexec/"bin/pip", "install", "--no-cache-dir", "--upgrade", "pip"
+              # Install from prebuilt wheels (including cryptography) so no Rust
+              # toolchain is required on the user's machine. Homebrew may emit a
+              # cosmetic "Failed changing dylib ID" warning for cryptography,
+              # which is harmless and does not affect functionality.
+              system libexec/"bin/pip", "install", "--no-cache-dir", buildpath
+              bin.install_symlink libexec/"bin/EvoFlux"
+            end
+
+            def caveats
+              <<~EOS
+                This formula installs the base package only. Optional extras are not
+                supported by Homebrew. To install with every optional extra:
+
+                  uv tool install "EvoFlux[full]"
+                  # or
+                  pip install "EvoFlux[full]"
+              EOS
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/EvoFlux --version")
+            end
+          end
+          FORMULA
+
+      - name: Commit and push
+        working-directory: homebrew-tap
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/EvoFlux.rb
+          git diff --cached --quiet && echo "No changes, skipping" || \
+            (git commit -m "EvoFlux ${{ steps.release.outputs.tag }}" && git push)

@@ -1,0 +1,106 @@
+/**
+ * AppHeader — shared 40 px application header.
+ *
+ *   ┌────────────────────────────────────────────────────┐
+ *   │ [traffic-lights]  [🏠] [☰]  Title       ● local  │
+ *   └────────────────────────────────────────────────────┘
+ *
+ * On macOS Tauri the OS overlays the traffic-light buttons over our
+ * WebView; we reserve a 70 px left inset for them and use
+ * `useTauriDrag` to make the header act as the window-drag region.
+ * See `documents/docs/web/chrome.md` for the wider story.
+ */
+import { Link } from '@tanstack/react-router'
+import { Home, Menu } from 'lucide-react'
+import { useEffect, type ReactNode } from 'react'
+
+import { cn } from '@/lib/utils'
+import { usePlatform } from '@/hooks/use-platform'
+import { useTauriDrag } from '@/hooks/use-tauri-drag'
+
+export interface AppHeaderProps {
+  title?: string
+  /** Content between the title and the right cluster. */
+  center?: ReactNode
+  /** Right cluster (defaults to a small "● local" status pill). */
+  right?: ReactNode
+  /** When omitted, the hamburger button is hidden. */
+  onToggleSidebar?: () => void
+  /** Tooltip hint, e.g. `'Ctrl+B'`. */
+  toggleShortcut?: string
+  homeTo?: string
+  className?: string
+}
+
+const ICON_BUTTON =
+  'flex h-9 w-9 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-(--focus-ring)/40 md:h-7 md:w-7'
+
+function DefaultStatus() {
+  return (
+    <div className="flex items-center gap-1.5 pr-3 text-(--color-text-muted)">
+      <span aria-hidden="true" className="h-2 w-2 rounded-full bg-(--color-success)" />
+      <span className="font-mono text-[11px]">local</span>
+    </div>
+  )
+}
+
+export function AppHeader({
+  title,
+  center,
+  right,
+  onToggleSidebar,
+  toggleShortcut,
+  homeTo = '/',
+  className,
+}: AppHeaderProps) {
+  const { isMacOverlay } = usePlatform()
+  const dragHandlers = useTauriDrag()
+
+  // Mirror the platform on <html> so CSS / non-AppHeader code can react.
+  useEffect(() => {
+    if (!isMacOverlay) return
+    document.documentElement.setAttribute('data-platform', 'mac-overlay')
+    return () => document.documentElement.removeAttribute('data-platform')
+  }, [isMacOverlay])
+
+  return (
+    <header
+      {...dragHandlers}
+      className={cn(
+        'mobile-safe-header relative z-30 flex h-(--spacing-app-header) shrink-0 items-center border-b border-(--color-border) bg-(--bg-page)',
+        isMacOverlay && 'pl-(--spacing-mac-traffic-inset) select-none',
+        className,
+      )}
+    >
+      <div className="flex min-w-0 shrink items-center gap-1 pl-2">
+        <Link to={homeTo} aria-label="Home" title="Home" className={ICON_BUTTON}>
+          <Home size={14} aria-hidden="true" />
+        </Link>
+
+        {onToggleSidebar && (
+          <button
+            type="button"
+            onClick={onToggleSidebar}
+            aria-label="Toggle sidebar"
+            title={toggleShortcut ? `Toggle sidebar (${toggleShortcut})` : 'Toggle sidebar'}
+            className={ICON_BUTTON}
+          >
+            <Menu size={14} aria-hidden="true" />
+          </button>
+        )}
+
+        {title && (
+          <span className="ml-1 min-w-0 truncate text-sm font-semibold text-(--color-text) md:ml-2">
+            {title}
+          </span>
+        )}
+      </div>
+
+      <div className="hidden min-w-0 flex-1 items-center sm:flex">
+        {center && <div className="min-w-0 flex-1">{center}</div>}
+      </div>
+
+      <div className="ml-auto flex shrink-0 items-center">{right ?? <DefaultStatus />}</div>
+    </header>
+  )
+}

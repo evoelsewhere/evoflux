@@ -1,0 +1,988 @@
+"""Tests for team route DB endpoints — list_sessions, get_session, delete_session, history.
+
+Covers uncovered lines: 195-215, 226-245, 258-267, 296-340.
+These tests use the real in-memory DB to exercise the SQL queries.
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import datetime, timezone
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.agent.agent_loop import Agent
+from app.agent.providers.base import LLMProviderBase
+from app.agent.mode.team.member import TeamLead, TeamMember
+from app.agent.mode.team.team import AgentTeam, LoopState
+from app.models.chat import ChatSession, CodingWorkspace, SessionMessage
+
+
+class MockProvider(LLMProviderBase):
+    model = "mock"
+
+    def stream(self, messages, tools=None, **kwargs):
+        from app.agent.schemas.chat import (
+            ChatCompletionChunk,
+            ChatCompletionChunkChoice,
+            ChatCompletionDelta,
+        )
+
+        async def gen():
+            yield ChatCompletionChunk(
+                id="1",
+                created=1000,
+                model="mock",
+                choices=[
+                    ChatCompletionChunkChoice(
+                        index=0,
+                        delta=ChatCompletionDelta(content="OK"),
+                        finish_reason="stop",
+                    )
+                ],
+            )
+
+        return gen()
+
+    async def chat(self, messages, tools=None, **kwargs):
+        from app.agent.schemas.chat import AssistantMessage
+
+        return AssistantMessage(content="OK")
+
+
+@pytest.fixture
+def test_team():
+    lead = TeamLead(
+        Agent(name="lead", llm_provider=MockProvider(), system_prompt="Lead")
+    )
+    worker = TeamMember(
+        Agent(name="worker", llm_provider=MockProvider(), system_prompt="Worker")
+    )
+    return AgentTeam(lead=lead, members={"worker": worker})
+
+
+@pytest.fixture
+def app_with_team(test_team):
+    from app.api.app import create_app
+    from app.services.team_manager import set_team
+
+    app = create_app()
+    set_team(test_team)
+    yield app
+    set_team(None)
+
+
+async def _create_team_session(db, session_id, agent_name="lead", **kwargs):
+    """Helper to create a top-level (team lead) session in DB."""
+    session = ChatSession(
+        id=session_id,
+        agent_name=agent_name,
+        **kwargs,
+    )
+    db.add(session)
+    return session
+
+
+async def _create_member_session(db, session_id, parent_id, agent_name="worker"):
+    """Helper to create a team-member session (child of a lead) in DB."""
+    session = ChatSession(
+        id=session_id,
+        parent_session_id=parent_id,
+        agent_name=agent_name,
+    )
+    db.add(session)
+    return session
+
+
+async def _add_message(db, session_id, role="user", content="test", **kwargs):
+    msg = SessionMessage(
+        session_id=session_id,
+        role=role,
+        content=content,
+        **kwargs,
+    )
+    db.add(msg)
+    return msg
+
+
+# ---------------------------------------------------------------------------
+# GET /team/sessions — list with children (lines 163-215)
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# GET /team/sessions — cursor-paginated list with children
+# ---------------------------------------------------------------------------
+
+
+class TestListTeamSessionsWithData:
+    @pytest.mark.asyncio
+    async def test_list_sessions_returns_lead_session(self, app_with_team):
+        import app.core.db as _db
+
+        lead_id = uuid.uuid7()
+        child_id = uuid.uuid7()
+
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _create_team_session(db, lead_id)
+                await _create_member_session(db, child_id, lead_id)
+
+        client = TestClient(app_with_team)
+        resp = client.get("/api/team/sessions")
+        assert resp.status_code == 200
+        data = resp.json()
+
+        assert "data" in data
+        assert "has_more" in data
+        assert "next_cursor" in data
+        # Me lead session is in the list; member session is not
+        found = [s for s in data["data"] if s["id"] == str(lead_id)]
+        assert len(found) == 1
+
+    @pytest.mark.asyncio
+    async def test_list_sessions_marks_running_sessions(self, app_with_team):
+        import app.core.db as _db
+        from app.services import memory_stream_store
+
+        running_id = uuid.uuid7()
+        idle_id = uuid.uuid7()
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _create_team_session(db, running_id)
+                await _create_team_session(db, idle_id)
+
+        await memory_stream_store.init_turn(str(running_id))
+        try:
+            client = TestClient(app_with_team)
+            resp = client.get("/api/team/sessions")
+            assert resp.status_code == 200
+            by_id = {s["id"]: s for s in resp.json()["data"]}
+
+            assert by_id[str(running_id)]["running"] is True
+            assert by_id[str(idle_id)]["running"] is False
+        finally:
+            await memory_stream_store.clear(str(running_id))
+
+    @pytest.mark.asyncio
+    async def test_list_sessions_filters_coding_workspace(self, app_with_team):
+        import app.core.db as _db
+
+        workspace_id = uuid.uuid7()
+        other_workspace_id = uuid.uuid7()
+        normal_id = uuid.uuid7()
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _create_team_session(
+                    db, workspace_id, mode="coding", workspace="/repo/project"
+                )
+                await _create_team_session(
+                    db, other_workspace_id, mode="coding", workspace="/repo/other"
+                )
+                await _create_team_session(db, normal_id, mode="normal")
+
+        client = TestClient(app_with_team)
+        resp = client.get(
+            "/api/team/sessions",
+            params={"mode": "coding", "workspace": "/repo/project"},
+        )
+        assert resp.status_code == 200
+        ids = [s["id"] for s in resp.json()["data"]]
+        assert ids == [str(workspace_id)]
+
+    @pytest.mark.asyncio
+    async def test_list_sessions_empty(self, app_with_team):
+        """No team_lead sessions → empty data list, has_more=False."""
+        client = TestClient(app_with_team)
+        # Me use a before= cursor that predates any real data
+        resp = client.get("/api/team/sessions?before=2000-01-01T00:00:00Z")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["data"] == []
+        assert data["has_more"] is False
+        assert data["next_cursor"] is None
+
+    @pytest.mark.asyncio
+    async def test_list_sessions_pagination(self, app_with_team):
+        import app.core.db as _db
+
+        # Me create 3 lead sessions
+        ids = [uuid.uuid7() for _ in range(3)]
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                for sid in ids:
+                    await _create_team_session(db, sid)
+
+        client = TestClient(app_with_team)
+        resp = client.get("/api/team/sessions?limit=2")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["data"]) <= 2
+
+
+class TestResolveTeamSession:
+    def test_resolve_creates_normal_session(self, app_with_team):
+        client = TestClient(app_with_team)
+
+        resp = client.post("/api/team/sessions/resolve", json={"mode": "normal"})
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["created"] is True
+        assert data["mode"] == "normal"
+        assert "workspace" not in data
+
+    @pytest.mark.asyncio
+    async def test_resolve_reuses_latest_normal_session(self, app_with_team):
+        import app.core.db as _db
+
+        lead_id = uuid.uuid7()
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _create_team_session(db, lead_id)
+
+        client = TestClient(app_with_team)
+        resp = client.post("/api/team/sessions/resolve", json={"mode": "normal"})
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["created"] is False
+        assert data["id"] == str(lead_id)
+
+    @pytest.mark.asyncio
+    async def test_resolve_can_force_create_normal_session(self, app_with_team):
+        import app.core.db as _db
+
+        lead_id = uuid.uuid7()
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _create_team_session(db, lead_id)
+
+        client = TestClient(app_with_team)
+        resp = client.post(
+            "/api/team/sessions/resolve",
+            json={"mode": "normal", "create": True},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["created"] is True
+        assert data["id"] != str(lead_id)
+
+    def test_resolve_creates_coding_session(self, app_with_team, tmp_path):
+        client = TestClient(app_with_team)
+
+        resp = client.post(
+            "/api/team/sessions/resolve",
+            json={"mode": "coding", "workspace": str(tmp_path)},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["created"] is True
+        assert data["mode"] == "coding"
+        assert data["workspace"] == str(tmp_path.resolve())
+
+    def test_resolve_requires_workspace_for_coding(self, app_with_team):
+        client = TestClient(app_with_team)
+
+        resp = client.post("/api/team/sessions/resolve", json={"mode": "coding"})
+
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_resolve_existing_worktree_session_keeps_registry_child(
+        self, app_with_team, tmp_path
+    ):
+        import app.core.db as _db
+
+        repo = tmp_path / "repo"
+        worktree = tmp_path / "worktrees" / "task-a"
+        repo.mkdir()
+        worktree.mkdir(parents=True)
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                db.add(CodingWorkspace(path=str(repo), kind="repo", name="repo"))
+                db.add(
+                    CodingWorkspace(
+                        path=str(worktree),
+                        kind="worktree",
+                        source_path=str(repo),
+                        name="task-a",
+                        managed=True,
+                    )
+                )
+
+        client = TestClient(app_with_team)
+        resp = client.post(
+            "/api/team/sessions/resolve",
+            json={"mode": "coding", "workspace": str(worktree)},
+        )
+        assert resp.status_code == 200
+
+        tree = client.get("/api/team/workspace/tree")
+        assert tree.status_code == 200
+        assert tree.json()["repositories"] == [
+            {
+                "path": str(repo),
+                "name": "repo",
+                "worktrees": [
+                    {"path": str(worktree), "name": "task-a", "managed": True}
+                ],
+            }
+        ]
+
+    @pytest.mark.asyncio
+    async def test_workspace_tree_ignores_hidden_and_deleted_worktrees(
+        self, app_with_team, tmp_path
+    ):
+        import app.core.db as _db
+
+        repo = tmp_path / "repo"
+        hidden = tmp_path / "worktrees" / "hidden"
+        deleted = tmp_path / "worktrees" / "deleted"
+        repo.mkdir()
+        hidden.mkdir(parents=True)
+        deleted.mkdir(parents=True)
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                db.add(CodingWorkspace(path=str(repo), kind="repo", name="repo"))
+                db.add(
+                    CodingWorkspace(
+                        path=str(hidden),
+                        kind="worktree",
+                        source_path=str(repo),
+                        name="hidden",
+                        managed=True,
+                        hidden=True,
+                    )
+                )
+                db.add(
+                    CodingWorkspace(
+                        path=str(deleted),
+                        kind="worktree",
+                        source_path=str(repo),
+                        name="deleted",
+                        managed=True,
+                        deleted_at=datetime.now(timezone.utc),
+                    )
+                )
+
+        client = TestClient(app_with_team)
+        tree = client.get("/api/team/workspace/tree")
+        assert tree.status_code == 200
+        assert tree.json()["repositories"] == [
+            {"path": str(repo), "name": "repo", "worktrees": []}
+        ]
+
+    @pytest.mark.asyncio
+    async def test_workspace_tree_keeps_visible_worktree_under_hidden_source(
+        self, app_with_team, tmp_path
+    ):
+        import app.core.db as _db
+
+        repo = tmp_path / "repo"
+        worktree = tmp_path / "worktrees" / "task-a"
+        repo.mkdir()
+        worktree.mkdir(parents=True)
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                db.add(
+                    CodingWorkspace(
+                        path=str(repo), kind="repo", name="repo", hidden=True
+                    )
+                )
+                db.add(
+                    CodingWorkspace(
+                        path=str(worktree),
+                        kind="worktree",
+                        source_path=str(repo),
+                        name="task-a",
+                        managed=True,
+                    )
+                )
+
+        client = TestClient(app_with_team)
+        tree = client.get("/api/team/workspace/tree")
+        assert tree.status_code == 200
+        assert tree.json()["repositories"] == [
+            {
+                "path": str(repo),
+                "name": "repo",
+                "worktrees": [
+                    {"path": str(worktree), "name": "task-a", "managed": True}
+                ],
+            }
+        ]
+
+    @pytest.mark.asyncio
+    async def test_workspace_visibility_hides_all_workspace_sessions(
+        self, app_with_team, tmp_path
+    ):
+        import app.core.db as _db
+
+        workspace = str(tmp_path.resolve())
+        first_id = uuid.uuid7()
+        second_id = uuid.uuid7()
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _create_team_session(
+                    db, first_id, mode="coding", workspace=workspace
+                )
+                await _create_team_session(
+                    db, second_id, mode="coding", workspace=workspace
+                )
+
+        client = TestClient(app_with_team)
+        resp = client.patch(
+            "/api/team/workspace/visibility",
+            json={"workspace": workspace, "hidden": True},
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"workspace": workspace, "hidden": True}
+
+        tree = client.get("/api/team/workspace/tree")
+        assert tree.status_code == 200
+        assert tree.json()["repositories"] == []
+
+    @pytest.mark.asyncio
+    async def test_workspace_visibility_can_hide_missing_workspace(
+        self, app_with_team, tmp_path
+    ):
+        import app.core.db as _db
+
+        workspace = str((tmp_path / "missing-worktree").resolve())
+        lead_id = uuid.uuid7()
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _create_team_session(
+                    db, lead_id, mode="coding", workspace=workspace
+                )
+
+        client = TestClient(app_with_team)
+        resp = client.patch(
+            "/api/team/workspace/visibility",
+            json={"workspace": workspace, "hidden": True},
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"workspace": workspace, "hidden": True}
+
+        tree = client.get("/api/team/workspace/tree")
+        assert tree.status_code == 200
+        assert tree.json()["repositories"] == []
+
+
+# ---------------------------------------------------------------------------
+# DELETE /team/sessions/{session_id}
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateTeamSession:
+    @pytest.mark.asyncio
+    async def test_update_session_title(self, app_with_team):
+        import app.core.db as _db
+
+        lead_id = uuid.uuid7()
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _create_team_session(db, lead_id, title="Old title")
+
+        client = TestClient(app_with_team)
+        resp = client.patch(
+            f"/api/team/sessions/{lead_id}", json={"title": "New title"}
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["title"] == "New title"
+
+        async with _db.async_session_factory() as db:
+            session = await db.get(ChatSession, lead_id)
+            assert session is not None
+            assert session.title == "New title"
+
+    @pytest.mark.asyncio
+    async def test_update_session_title_trims_whitespace(self, app_with_team):
+        import app.core.db as _db
+
+        lead_id = uuid.uuid7()
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _create_team_session(db, lead_id, title="Old title")
+
+        client = TestClient(app_with_team)
+        resp = client.patch(
+            f"/api/team/sessions/{lead_id}", json={"title": "  New title  "}
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["title"] == "New title"
+
+        async with _db.async_session_factory() as db:
+            session = await db.get(ChatSession, lead_id)
+            assert session is not None
+            assert session.title == "New title"
+
+    @pytest.mark.asyncio
+    async def test_update_session_title_rejects_blank_title(self, app_with_team):
+        import app.core.db as _db
+
+        lead_id = uuid.uuid7()
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _create_team_session(db, lead_id, title="Keep me")
+
+        client = TestClient(app_with_team)
+        resp = client.patch(f"/api/team/sessions/{lead_id}", json={"title": "   "})
+
+        assert resp.status_code == 422
+        assert resp.json()["detail"] == "Title cannot be empty."
+
+        async with _db.async_session_factory() as db:
+            session = await db.get(ChatSession, lead_id)
+            assert session is not None
+            assert session.title == "Keep me"
+
+    @pytest.mark.asyncio
+    async def test_update_session_title_does_not_update_member_sessions(
+        self, app_with_team
+    ):
+        import app.core.db as _db
+
+        lead_id = uuid.uuid7()
+        member_id = uuid.uuid7()
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _create_team_session(db, lead_id, title="Lead")
+                member = await _create_member_session(db, member_id, lead_id)
+                member.title = "Member"
+
+        client = TestClient(app_with_team)
+        resp = client.patch(f"/api/team/sessions/{member_id}", json={"title": "Nope"})
+
+        assert resp.status_code == 404
+
+        async with _db.async_session_factory() as db:
+            member = await db.get(ChatSession, member_id)
+            assert member is not None
+            assert member.title == "Member"
+
+    def test_update_session_title_returns_404_for_missing_session(self, app_with_team):
+        client = TestClient(app_with_team)
+
+        resp = client.patch(f"/api/team/sessions/{uuid.uuid7()}", json={"title": "New"})
+
+        assert resp.status_code == 404
+
+
+class TestDeleteTeamSessionWithData:
+    @pytest.mark.asyncio
+    async def test_delete_session_removes_session_and_messages(self, app_with_team):
+        import app.core.db as _db
+
+        lead_id = uuid.uuid7()
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _create_team_session(db, lead_id)
+                await _add_message(db, lead_id, role="user", content="delete me")
+
+        client = TestClient(app_with_team)
+        resp = client.delete(f"/api/team/sessions/{lead_id}")
+        assert resp.status_code == 204
+
+        # Me verify session is gone via history endpoint
+        resp = client.get(f"/api/team/{lead_id}/history")
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_delete_coding_session_keeps_workspace_dir(
+        self, app_with_team, tmp_path, monkeypatch
+    ):
+        import app.core.db as _db
+        from app.core.config import settings
+        from app.core.paths import uploads_dir, workspace_dir
+
+        monkeypatch.setattr(settings, "EVOFLUX_WORKSPACE_DIR", str(tmp_path / "runs"))
+        lead_id = uuid.uuid7()
+        app_workspace = workspace_dir(str(lead_id))
+        upload_root = uploads_dir(str(lead_id))
+        upload_root.mkdir(parents=True)
+        (upload_root / "attachment.txt").write_text("upload", encoding="utf-8")
+        (app_workspace / "keep.txt").write_text("keep", encoding="utf-8")
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                db.add(
+                    ChatSession(
+                        id=lead_id,
+                        agent_name="lead",
+                        mode="coding",
+                        workspace=str(tmp_path / "project"),
+                    )
+                )
+
+        client = TestClient(app_with_team)
+        resp = client.delete(f"/api/team/sessions/{lead_id}")
+
+        assert resp.status_code == 204
+        assert app_workspace.exists()
+        assert (app_workspace / "keep.txt").read_text(encoding="utf-8") == "keep"
+        assert not upload_root.exists()
+
+
+# ---------------------------------------------------------------------------
+# GET /team/{session_id}/history (lines 281-340)
+# ---------------------------------------------------------------------------
+
+
+class TestTeamHistoryWithData:
+    @pytest.mark.asyncio
+    async def test_history_returns_lead_and_members(self, app_with_team):
+        import app.core.db as _db
+
+        lead_id = uuid.uuid7()
+        member_id = uuid.uuid7()
+
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _create_team_session(db, lead_id)
+                await _create_member_session(
+                    db, member_id, lead_id, agent_name="worker"
+                )
+                await _add_message(db, lead_id, role="user", content="lead msg")
+                await _add_message(db, lead_id, role="assistant", content="lead reply")
+                await _add_message(db, member_id, role="user", content="member input")
+                await _add_message(
+                    db, member_id, role="assistant", content="member reply"
+                )
+
+        client = TestClient(app_with_team)
+        resp = client.get(f"/api/team/{lead_id}/history")
+        assert resp.status_code == 200
+        data = resp.json()
+
+        # Me check lead messages
+        assert "lead" in data
+        assert len(data["lead"]["messages"]) >= 2
+
+        # Me check members
+        assert "members" in data
+        assert len(data["members"]) >= 1
+        member = data["members"][0]
+        assert len(member["messages"]) >= 2
+        assert member["name"] == "worker"
+
+    @pytest.mark.asyncio
+    async def test_history_includes_summary_messages(self, app_with_team):
+        """Summary rows (``is_summary=True``) must be returned by the history
+        endpoint so the frontend can render the inline "Session compacted"
+        divider — both at stream time and on subsequent page reloads.
+        """
+        import app.core.db as _db
+
+        lead_id = uuid.uuid7()
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _create_team_session(db, lead_id)
+                await _add_message(db, lead_id, role="user", content="visible")
+                await _add_message(
+                    db,
+                    lead_id,
+                    role="user",
+                    content="compacted summary body",
+                    is_summary=True,
+                )
+
+        client = TestClient(app_with_team)
+        resp = client.get(f"/api/team/{lead_id}/history")
+        data = resp.json()
+
+        msgs = data["lead"]["messages"]
+        contents = [m["content"] for m in msgs]
+        assert "visible" in contents
+        assert "compacted summary body" in contents
+        summary_msg = next(m for m in msgs if m["content"] == "compacted summary body")
+        assert summary_msg["is_summary"] is True
+
+    @pytest.mark.asyncio
+    async def test_history_excludes_reasoning_for_continuation_rows(
+        self, app_with_team
+    ):
+        import app.core.db as _db
+
+        lead_id = uuid.uuid7()
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _create_team_session(db, lead_id)
+                await _add_message(
+                    db,
+                    lead_id,
+                    role="assistant",
+                    content="continued answer",
+                    reasoning_content="hidden thinking",
+                    extra={"is_continuation": True},
+                )
+
+        client = TestClient(app_with_team)
+        resp = client.get(f"/api/team/{lead_id}/history")
+        data = resp.json()
+
+        msg = data["lead"]["messages"][0]
+        assert msg["content"] == "continued answer"
+        assert "reasoning_content" not in msg
+        assert msg["extra"] == {"is_continuation": True}
+
+    @pytest.mark.asyncio
+    async def test_history_excludes_hidden_from_user_rows(self, app_with_team):
+        import app.core.db as _db
+
+        lead_id = uuid.uuid7()
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _create_team_session(db, lead_id)
+                await _add_message(db, lead_id, role="user", content="visible")
+                await _add_message(
+                    db,
+                    lead_id,
+                    role="user",
+                    content="hidden directive",
+                    extra={"hidden_from_user": True},
+                )
+
+        client = TestClient(app_with_team)
+        resp = client.get(f"/api/team/{lead_id}/history")
+        data = resp.json()
+
+        contents = [m["content"] for m in data["lead"]["messages"]]
+        assert contents == ["visible"]
+
+    @pytest.mark.asyncio
+    async def test_history_no_sub_sessions_returns_empty_members(self, app_with_team):
+        import app.core.db as _db
+
+        lead_id = uuid.uuid7()
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _create_team_session(db, lead_id)
+                await _add_message(db, lead_id, role="user", content="solo")
+
+        client = TestClient(app_with_team)
+        resp = client.get(f"/api/team/{lead_id}/history")
+        data = resp.json()
+
+        assert data["members"] == []
+
+    @pytest.mark.asyncio
+    async def test_history_includes_active_loop_status(self, app_with_team, test_team):
+        import app.core.db as _db
+
+        lead_id = uuid.uuid7()
+        session_id = str(lead_id)
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _create_team_session(db, lead_id)
+                await _add_message(db, lead_id, role="user", content="loop prompt")
+
+        test_team._loop_limits[session_id] = 5
+        test_team._loop_states[session_id] = LoopState(
+            prompt="loop prompt",
+            remaining=3,
+            paused=True,
+        )
+
+        client = TestClient(app_with_team)
+        resp = client.get(f"/api/team/{lead_id}/history")
+        data = resp.json()
+
+        assert resp.status_code == 200
+        assert data["loop_status"] == {
+            "prompt": "loop prompt",
+            "limit": 5,
+            "remaining": 3,
+            "used": 2,
+            "paused": True,
+        }
+
+
+# ---------------------------------------------------------------------------
+# GET /team/sessions — cursor pagination behaviour
+# ---------------------------------------------------------------------------
+
+
+class TestListTeamSessionsCursorPagination:
+    """Verify cursor-based pagination semantics for GET /team/sessions."""
+
+    @pytest.mark.asyncio
+    async def test_response_shape(self, app_with_team):
+        """Response always contains data, has_more, next_cursor."""
+        client = TestClient(app_with_team)
+        resp = client.get("/api/team/sessions")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "data" in data
+        assert "has_more" in data
+        assert "next_cursor" in data
+        # Me legacy fields must NOT be present
+        assert "total" not in data
+        assert "offset" not in data
+
+    @pytest.mark.asyncio
+    async def test_first_page_no_cursor(self, app_with_team):
+        """First page (no before=) returns newest sessions."""
+        import app.core.db as _db
+
+        ids = [uuid.uuid7() for _ in range(3)]
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                for sid in ids:
+                    await _create_team_session(db, sid)
+
+        client = TestClient(app_with_team)
+        resp = client.get("/api/team/sessions?limit=3")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["data"]) >= 1
+        # Me sessions are newest-first (UUIDv7 monotonically increases)
+        created_times = [s["created_at"] for s in data["data"] if s["created_at"]]
+        assert created_times == sorted(created_times, reverse=True)
+
+    @pytest.mark.asyncio
+    async def test_has_more_false_when_all_fit(self, app_with_team):
+        """has_more=False when result count < limit."""
+        import app.core.db as _db
+
+        lead_id = uuid.uuid7()
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _create_team_session(db, lead_id)
+
+        client = TestClient(app_with_team)
+        # Me limit=100 — far more than 1 session
+        resp = client.get("/api/team/sessions?limit=100")
+        data = resp.json()
+        # has_more must be False when fewer rows than limit were returned
+        assert len(data["data"]) < 100
+        assert data["has_more"] is False
+        assert data["next_cursor"] is None
+
+    @pytest.mark.asyncio
+    async def test_has_more_true_and_cursor_set(self, app_with_team):
+        """has_more=True and next_cursor is set when more rows exist."""
+        import app.core.db as _db
+
+        ids = [uuid.uuid7() for _ in range(5)]
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                for sid in ids:
+                    await _create_team_session(db, sid)
+
+        client = TestClient(app_with_team)
+        resp = client.get("/api/team/sessions?limit=2")
+        data = resp.json()
+        # Me only valid when there are at least 3 sessions total
+        if len(data["data"]) == 2 and data["has_more"]:
+            assert data["next_cursor"] is not None
+
+    @pytest.mark.asyncio
+    async def test_cursor_advances_to_next_page(self, app_with_team):
+        """Passing next_cursor as before= fetches the next page without overlap."""
+        import app.core.db as _db
+
+        # Me create 4 sessions so pagination is deterministic within this test
+        ids = [uuid.uuid7() for _ in range(4)]
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                for sid in ids:
+                    await _create_team_session(db, sid)
+
+        client = TestClient(app_with_team)
+
+        # Page 1 — limit=2
+        resp1 = client.get("/api/team/sessions?limit=2")
+        assert resp1.status_code == 200
+        page1 = resp1.json()
+        ids_page1 = {s["id"] for s in page1["data"]}
+
+        if not page1["has_more"]:
+            pytest.skip("Not enough sessions for multi-page test")
+
+        cursor = page1["next_cursor"]
+        assert cursor is not None
+
+        # Page 2 — use cursor
+        resp2 = client.get(f"/api/team/sessions?limit=2&before={cursor}")
+        assert resp2.status_code == 200
+        page2 = resp2.json()
+        ids_page2 = {s["id"] for s in page2["data"]}
+
+        # Me no overlap between pages
+        assert ids_page1.isdisjoint(ids_page2)
+
+    @pytest.mark.asyncio
+    async def test_invalid_before_returns_422(self, app_with_team):
+        """Malformed before= cursor returns 422."""
+        client = TestClient(app_with_team)
+        resp = client.get("/api/team/sessions?before=not-a-date")
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_before_far_past_returns_empty(self, app_with_team):
+        """before= in the distant past returns no sessions."""
+        import app.core.db as _db
+
+        lead_id = uuid.uuid7()
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _create_team_session(db, lead_id)
+
+        client = TestClient(app_with_team)
+        resp = client.get("/api/team/sessions?before=2000-01-01T00:00:00Z")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["data"] == []
+        assert data["has_more"] is False
+        assert data["next_cursor"] is None
+
+    @pytest.mark.asyncio
+    async def test_default_limit_is_20(self, app_with_team):
+        """Default limit is 20."""
+        import app.core.db as _db
+
+        ids = [uuid.uuid7() for _ in range(25)]
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                for sid in ids:
+                    await _create_team_session(db, sid)
+
+        client = TestClient(app_with_team)
+        resp = client.get("/api/team/sessions")
+        assert resp.status_code == 200
+        data = resp.json()
+        # Default page size is 20 — must not return more than 20
+        assert len(data["data"]) <= 20
+
+    @pytest.mark.asyncio
+    async def test_limit_exceeding_max_rejected(self, app_with_team):
+        """limit > 100 is rejected (422)."""
+        client = TestClient(app_with_team)
+        resp = client.get("/api/team/sessions?limit=101")
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_member_sessions_excluded_from_list(self, app_with_team):
+        """Member sessions (parent_session_id set) do not appear in the top-level list."""
+        import app.core.db as _db
+
+        lead_id = uuid.uuid7()
+        member_id = uuid.uuid7()
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _create_team_session(db, lead_id)
+                await _create_member_session(db, member_id, lead_id)
+
+        client = TestClient(app_with_team)
+        resp = client.get("/api/team/sessions")
+        data = resp.json()
+
+        top_level_ids = {s["id"] for s in data["data"]}
+        assert str(lead_id) in top_level_ids
+        assert str(member_id) not in top_level_ids

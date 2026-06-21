@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-backend-logs-path"
+description = "Enables the backend_logs_path command without any pre-configured scope."
+commands.allow = ["backend_logs_path"]
+
+[[permission]]
+identifier = "deny-backend-logs-path"
+description = "Denies the backend_logs_path command without any pre-configured scope."
+commands.deny = ["backend_logs_path"]

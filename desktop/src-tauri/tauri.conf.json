@@ -1,0 +1,112 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "EvoFlux",
+  "mainBinaryName": "EvoFlux",
+  "version": "1.57.1",
+  "identifier": "com.evoflux.desktop",
+  "build": {
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": {
+      "cwd": "../..",
+      "script": "cd web && bun install --frozen-lockfile && bun run build"
+    },
+    "frontendDist": "../../web/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "create": false,
+        "label": "main",
+        "title": "EvoFlux",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 760,
+        "minHeight": 560,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true,
+        "visible": false,
+        "transparent": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 12, "y": 22 }
+      }
+    ],
+    "security": {
+      "dangerousDisableAssetCspModification": ["script-src", "style-src"],
+      "csp": {
+        "default-src": "'self' http: https:",
+        "connect-src": "'self' http: https: ws: wss: ipc: https://ipc.localhost",
+        "script-src": "'self' 'unsafe-inline' 'unsafe-eval' blob: data: http: https:",
+        "style-src": "'self' 'unsafe-inline' blob: data: http: https:",
+        "img-src": "'self' data: blob: http: https:",
+        "font-src": "'self' data: blob: http: https:",
+        "media-src": "'self' blob: http: https:",
+        "frame-src": "'self' about: data: blob: http: https:",
+        "object-src": "'none'",
+        "worker-src": "'self' blob:"
+      },
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$APPDATA/*", "$APPLOCALDATA/*", "$APPCACHE/*", "$APPLOG/*"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "createUpdaterArtifacts": true,
+    "category": "Productivity",
+    "copyright": "Copyright (c) 2026 EvoFlux contributors",
+    "shortDescription": "On-machine AI agents — streaming chat, tool use, persistent memory.",
+    "longDescription": "EvoFlux is a self-hosted AI agent platform. The desktop app runs everything locally — your data, your keys, your machine.",
+    "targets": ["dmg", "app", "msi", "deb", "appimage"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "../sidecar-bundle/": "sidecar/",
+      "../scripts/install.sh": "install.sh",
+      "../scripts/INSTALL.md": "INSTALL.md",
+      "entitlements.plist": "entitlements.plist"
+    },
+    "macOS": {
+      "frameworks": [],
+      "minimumSystemVersion": "11.0",
+      "exceptionDomain": "",
+      "signingIdentity": "-",
+      "entitlements": "entitlements.plist",
+      "infoPlist": "Info.plist"
+    },
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "http://timestamp.digicert.com",
+      "wix": {
+        "language": "en-US"
+      }
+    },
+    "linux": {
+      "deb": {
+        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"]
+      },
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/khuonghung/evoflux/releases/download/latest-desktop/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZBODEyQUU4RjBFMjJFOEIKUldTTEx1THc2Q3FCYXE5L3VCTUlTZ1VwRHF2bXlIQ1BHdjVtZHpGUlBjZE1SaGkvYUFjclJJbEkK",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}
