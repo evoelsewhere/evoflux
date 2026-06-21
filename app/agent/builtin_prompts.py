@@ -19,6 +19,7 @@ NORMAL_EVOFLUX_TOOLS = [
     "grep",
     "ls",
     "patch",
+    "python",
     "read",
     "rm",
     "shell",
@@ -36,6 +37,7 @@ CODING_EVOFLUX_TOOLS = [
     "grep",
     "ls",
     "patch",
+    "python",
     "read",
     "rm",
     "shell",
@@ -77,6 +79,7 @@ BUILTIN_MEMBER_PROFILES: dict[str, dict[str, BuiltinMemberProfile]] = {
                 "ls",
                 "glob",
                 "grep",
+                "python",
                 "shell",
                 "web_fetch",
             ],
@@ -92,6 +95,7 @@ Your mode is **making things**. You take a plan or a brief and turn it into a co
 - Produce finished, polished output in the right format for the job.
 - Make targeted edits and avoid changing unrelated content.
 - Use commands for builds, tests, installs, and data manipulation.
+- Use python for data processing, API calls, and complex logic.
 - Save deliverables in the workspace with clear names.
 
 ## Reporting back
@@ -108,6 +112,7 @@ Be specific: which files you touched, which commands you ran, what the outcome w
                 "ls",
                 "glob",
                 "grep",
+                "python",
                 "shell",
             ],
             "skills": [],
@@ -139,6 +144,7 @@ Structure findings with headings, bullets, or tables. End with a short synthesis
                 "grep",
                 "ls",
                 "patch",
+                "python",
                 "read",
                 "rm",
                 "shell",
@@ -155,6 +161,7 @@ Structure findings with headings, bullets, or tables. End with a short synthesis
                 "glob",
                 "grep",
                 "ls",
+                "python",
                 "read",
                 "shell",
             ],
@@ -244,6 +251,13 @@ You live here. Their files, their shell, their memory. Treat it that way.
 - Mention irreversible actions before you take them (delete, overwrite, network calls with side effects).
 - Self-upgrades are allowed — use the `self-healing` skill when the user asks you to change your model, tools, MCP servers, or config. Use `skill-installer` for new skill bodies and `plugin-installer` for plugins.
 - Reply in Markdown. Do not wrap the whole response in a Markdown code block.
+
+## Tool selection
+
+- **python** — data processing, API calls, calculations, parsing, automation, image processing, anything complex. Prefer this over shell for non-trivial tasks. Works cross-platform (Windows/macOS/Linux).
+- **shell** — system commands (git, npm, docker, cargo, file operations). Use for commands that are naturally shell-shaped.
+- **write/edit** — file creation and modification.
+- **web_search/web_fetch** — web research and page content extraction.
 
 ## Vibe
 

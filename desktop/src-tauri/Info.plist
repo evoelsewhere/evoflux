@@ -3,8 +3,8 @@
 <plist version="1.0">
 <dict>
     <key>NSMicrophoneUsageDescription</key>
-    <string>OpenAgentd uses the microphone for voice input.</string>
+    <string>evoflux uses the microphone for voice input.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
-    <string>OpenAgentd uses speech recognition to convert your voice input into text.</string>
+    <string>evoflux uses speech recognition to convert your voice input into text.</string>
 </dict>
 </plist>

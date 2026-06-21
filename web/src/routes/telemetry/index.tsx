@@ -1,5 +1,5 @@
 /**
- * /telemetry — standalone top-level page.
+ * /telemetry — standalone top-level page with sidebar navigation.
  *
  * Two modes driven by local state:
  *   - No trace selected: aggregates (totals, latency, breakdowns) + traces list.
@@ -24,6 +24,7 @@ import { SummaryView } from './summary/SummaryView'
 import { TracesSection } from './traces/TracesSection'
 import { SpanDetailPanel } from './waterfall/SpanDetailPanel'
 import { Waterfall } from './waterfall/Waterfall'
+import { TelemetrySidebar, type TelemetryTab } from './TelemetrySidebar'
 
 type WindowDays = 1 | 7 | 30 | 90
 
@@ -39,22 +40,32 @@ const TRACE_PAGE_SIZE = 25
 export function TelemetryPage() {
   const [days, setDays] = useState<WindowDays>(7)
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null)
+  const [tab, setTab] = useState<TelemetryTab>('summary')
 
   return (
-    <main id="main" className="mobile-safe-shell mobile-viewport flex h-dvh flex-col overflow-hidden bg-(--bg-page) text-(--color-text)">
-      {selectedTraceId ? (
-        <TraceDetailRoute
-          traceId={selectedTraceId}
-          onBack={() => setSelectedTraceId(null)}
-        />
-      ) : (
-        <SummaryRoute
-          days={days}
-          onChangeDays={setDays}
-          onSelectTrace={setSelectedTraceId}
-        />
-      )}
-    </main>
+    <div className="mobile-safe-shell mobile-viewport flex h-dvh overflow-hidden bg-(--bg-page) text-(--color-text)">
+      <TelemetrySidebar active={tab} onSelect={(t) => { setTab(t); setSelectedTraceId(null) }} />
+      <main id="main" className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {selectedTraceId ? (
+          <TraceDetailRoute
+            traceId={selectedTraceId}
+            onBack={() => setSelectedTraceId(null)}
+          />
+        ) : tab === 'traces' ? (
+          <TracesOnlyRoute
+            days={days}
+            onChangeDays={setDays}
+            onSelectTrace={setSelectedTraceId}
+          />
+        ) : (
+          <SummaryRoute
+            days={days}
+            onChangeDays={setDays}
+            onSelectTrace={setSelectedTraceId}
+          />
+        )}
+      </main>
+    </div>
   )
 }
 
@@ -214,8 +225,75 @@ function TraceDetailRoute({
             <SpanDetailPanel
               span={selectedSpan}
               onClose={() => setSelectedSpanId(null)}
-            />
+             />
           )
+        )}
+      </div>
+    </>
+  )
+}
+
+// ── Traces-only route ──────────────────────────────────────────────────────
+
+function TracesOnlyRoute({
+  days,
+  onChangeDays,
+  onSelectTrace,
+}: {
+  days: WindowDays
+  onChangeDays: (d: WindowDays) => void
+  onSelectTrace: (traceId: string) => void
+}) {
+  const traces = useInfiniteTracesQuery(days, TRACE_PAGE_SIZE)
+  const isFetching = traces.isFetching
+  const traceRows = useMemo(
+    () => traces.data?.pages.flatMap((page) => page.traces) ?? [],
+    [traces.data],
+  )
+  const traceTotal = traces.data?.pages[0]?.total ?? traceRows.length
+
+  function loadMoreTraces() {
+    if (!traces.hasNextPage || traces.isFetchingNextPage) return
+    void traces.fetchNextPage()
+  }
+
+  return (
+    <>
+      <PageHeader
+        isFetching={isFetching}
+        right={
+          <div className="flex items-center gap-1 rounded-lg border border-(--color-border) bg-(--bg-card) p-0.5">
+            {RANGES.map((r) => (
+              <button
+                key={r.value}
+                onClick={() => onChangeDays(r.value)}
+                className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                  days === r.value
+                    ? 'bg-(--bg-key) text-(--color-accent)'
+                    : 'text-(--color-text-muted) hover:text-(--color-text)'
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+        }
+      />
+      <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
+        {traces.isLoading ? (
+          <LoadingState label="Loading traces…" />
+        ) : traces.isError ? (
+          <ErrorState message={String(traces.error)} onRetry={() => traces.refetch()} />
+        ) : (
+          <TracesSection
+            query={traces}
+            traces={traceRows}
+            limit={TRACE_PAGE_SIZE}
+            total={traceTotal}
+            hasNext={traces.hasNextPage}
+            onLoadMore={loadMoreTraces}
+            onSelectTrace={onSelectTrace}
+          />
         )}
       </div>
     </>
