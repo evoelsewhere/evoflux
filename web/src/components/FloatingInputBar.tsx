@@ -71,7 +71,7 @@ export const FloatingInputBar = forwardRef<InputBarHandle, FloatingInputBarProps
     // ── Desktop: centered bottom bar matching chat content width ─────────
     return (
       <div className="pointer-events-auto shrink-0 px-4 pb-4 pt-2">
-        <div className="mx-auto max-w-3xl rounded-t-2xl border border-b-0 border-(--color-border) bg-(--color-surface) px-4 pb-3 pt-2 shadow-[0_-4px_16px_rgba(0,0,0,0.06)]">
+        <div className="mx-auto max-w-3xl rounded-2xl border border-(--color-border) bg-(--color-surface) px-4 pb-3 pt-2 shadow-[0_-4px_16px_rgba(0,0,0,0.06)]">
           <RevertNotice count={inputProps.revertedCount ?? 0} messages={inputProps.revertedMessages ?? []} onRedo={inputProps.onRedo} />
           <InputBar ref={innerRef} floating {...inputProps} />
         </div>
