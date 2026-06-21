@@ -772,13 +772,36 @@ class TeamMemberBase(abc.ABC):
             session_row.thinking_level if session_row is not None else None
         )
         last_service_tier: str | None = None
+        last_user_model: str | None = None
         for msg in reversed(history):
-            value = (msg.extra or {}).get("service_tier") if msg.extra else None
-            if isinstance(value, str) and value:
-                last_service_tier = value
-                break
-        effective_model = session_model or (
-            self.agent.model_id if session_thinking_level or last_service_tier else None
+            extra = msg.extra or {} if msg.extra else {}
+            if msg.role == "user":
+                if last_service_tier is None:
+                    value = extra.get("service_tier")
+                    if isinstance(value, str) and value:
+                        last_service_tier = value
+                # The most recent user message may have a per-message model override.
+                if last_user_model is None:
+                    value = extra.get("model")
+                    if isinstance(value, str) and value:
+                        last_user_model = value
+                if last_service_tier is not None and last_user_model is not None:
+                    break
+            elif last_service_tier is None:
+                value = extra.get("service_tier")
+                if isinstance(value, str) and value:
+                    last_service_tier = value
+
+        # Prefer the per-message requested model when available; fall back to the
+        # session model stored on ChatSession, then the lead agent default.
+        effective_model = (
+            last_user_model
+            or session_model
+            or (
+                self.agent.model_id
+                if session_thinking_level or last_service_tier
+                else None
+            )
         )
         if (
             self._role_label == "lead"
