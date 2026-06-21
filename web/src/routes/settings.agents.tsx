@@ -14,23 +14,23 @@ import {
 import { SettingsListView, type ListViewRow } from '@/components/settings/SettingsListView'
 import { useAgentFilesQuery } from '@/queries'
 
+type Tab = 'all' | 'normal' | 'coding'
+
 export function AgentsListPage() {
   const { data, isLoading, isError } = useAgentFilesQuery()
   const { name: selected } = useParams({ strict: false }) as { name?: string }
   const [modeDialogOpen, setModeDialogOpen] = useState(false)
+  const [tab, setTab] = useState<Tab>('all')
+
+  const agents = data?.agents ?? []
+  const normalAgents = agents.filter((a) => !a.name.startsWith('coding/'))
+  const codingAgents = agents.filter((a) => a.name.startsWith('coding/'))
 
   const rows: ListViewRow[] = (() => {
-    const agents = data?.agents ?? []
     const byLeadFirst = (a: (typeof agents)[number], b: (typeof agents)[number]) => {
       if (a.role === b.role) return a.name.localeCompare(b.name)
       return a.role === 'lead' ? -1 : 1
     }
-    const normal = agents
-      .filter((a) => !a.name.startsWith('coding/'))
-      .sort(byLeadFirst)
-    const coding = agents
-      .filter((a) => a.name.startsWith('coding/'))
-      .sort(byLeadFirst)
 
     const mapAgent = (a: (typeof agents)[number]): ListViewRow => {
       const isLead = a.role === 'lead'
@@ -54,6 +54,15 @@ export function AgentsListPage() {
       }
     }
 
+    if (tab === 'normal') {
+      return normalAgents.sort(byLeadFirst).map(mapAgent)
+    }
+    if (tab === 'coding') {
+      return codingAgents.sort(byLeadFirst).map(mapAgent)
+    }
+
+    const normal = normalAgents.sort(byLeadFirst)
+    const coding = codingAgents.sort(byLeadFirst)
     return [
       ...(normal.length > 0
         ? [{ key: 'group-normal', kind: 'group' as const, title: 'Normal' }, ...normal.map(mapAgent)]
@@ -68,7 +77,7 @@ export function AgentsListPage() {
     <>
     <SettingsListView
       title="Agents"
-      description="Markdown files with YAML frontmatter. Normal and Coding agents are grouped below; built-in EvoFlux profiles use additive local overrides."
+      description="Markdown files with YAML frontmatter. Normal and Coding agents are separate teams."
       newTo="/settings/agents/new"
       newLabel="New agent"
       newAction={
@@ -78,6 +87,24 @@ export function AgentsListPage() {
         </Button>
       }
       filterPlaceholder="Filter agents…"
+      tabs={
+        <div className="flex gap-1 rounded-lg border border-(--color-border) bg-(--bg-key) p-0.5">
+          {(['all', 'normal', 'coding'] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTab(t)}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                tab === t
+                  ? 'bg-(--bg-card) text-(--color-text) shadow-sm'
+                  : 'text-(--color-text-muted) hover:text-(--color-text)'
+              }`}
+            >
+              {t === 'all' ? 'All' : t === 'normal' ? `Normal (${normalAgents.length})` : `Coding (${codingAgents.length})`}
+            </button>
+          ))}
+        </div>
+      }
       rows={rows}
       isLoading={isLoading}
       isError={isError}

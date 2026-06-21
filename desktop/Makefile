@@ -55,7 +55,7 @@ icons:
 # ``-c tauri.dev.conf.json`` overrides the bundle identifier + product
 # name so the dev build coexists with a Homebrew-cask-installed prod
 # build (they get separate Dock icons, tray entries, and log dirs).
-# Without this, macOS routes ``open -a OpenAgentd`` to whichever
+# Without this, macOS routes ``open -a evoflux`` to whichever
 # instance is already running, masking which app you're testing.
 dev:
 	@echo "→ Tauri dev shell. Make sure Vite (:5173) is running. Backend uses bundled sidecar when available."

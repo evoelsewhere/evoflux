@@ -11,6 +11,7 @@ from .filesystem import (
 )
 from .memory_search import memory_search
 from .note import note_tool
+from .python import python_tool
 from .schedule import schedule_task
 from .shell import background_process, shell_tool
 from .skill import discover_skills, load_skill
@@ -31,6 +32,7 @@ __all__ = [
     "load_skill",
     "memory_search",
     "note_tool",
+    "python_tool",
     "read_file",
     "remove_path",
     "schedule_task",
