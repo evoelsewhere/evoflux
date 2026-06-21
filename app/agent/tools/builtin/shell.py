@@ -41,6 +41,7 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
+import sys
 import uuid
 from collections import deque
 from collections.abc import Awaitable, Callable
@@ -68,7 +69,9 @@ _OUTPUT_MAX_LINES = 300
 _OUTPUT_MAX_BYTES = 131_072  # 128 KB (matches opencode Truncate.MAX_BYTES)
 
 
-# ── Background process registry ──────────────────────────────────────────────
+# On Windows SIGKILL doesn't exist; _kill_process_group handles this by
+# calling proc.kill() (TerminateProcess) when on win32.
+_FORCE_KILL = getattr(signal, "SIGKILL", signal.SIGTERM)
 
 
 class _BgProcess:
@@ -119,7 +122,7 @@ class _BgProcess:
             try:
                 await asyncio.wait_for(self.proc.wait(), timeout=5)
             except asyncio.TimeoutError:
-                _kill_process_group(self.proc, signal.SIGKILL)
+                _kill_process_group(self.proc, _FORCE_KILL)
                 await self.proc.wait()
         self._reader_task.cancel()
         return self.proc.returncode
@@ -173,10 +176,20 @@ def _scrubbed_env() -> dict[str, str]:
     return {k: v for k, v in os.environ.items() if k not in _PYTHON_ENV_LEAK_KEYS}
 
 
-def _kill_process_group(proc: asyncio.subprocess.Process, sig: signal.Signals) -> None:
-    """Send *sig* to the process group led by *proc*, falling back to direct kill."""
+def _kill_process_group(proc: asyncio.subprocess.Process, sig: int) -> None:
+    """Send *sig* to the process group led by *proc*, falling back to direct kill.
+
+    On Windows, ``os.killpg`` does not exist; we use ``proc.kill()`` which
+    calls ``TerminateProcess``.  On POSIX we try the process group first.
+    """
     pid = proc.pid
     if pid is None:
+        return
+    if sys.platform == "win32":
+        try:
+            proc.kill()
+        except (ProcessLookupError, OSError):
+            pass
         return
     try:
         os.killpg(os.getpgid(pid), sig)
@@ -442,7 +455,7 @@ async def _shell(
                         pending_output.append(decoded)
 
         except asyncio.TimeoutError:
-            _kill_process_group(proc, signal.SIGKILL)
+            _kill_process_group(proc, _FORCE_KILL)
             # Drain any remaining output after kill
             try:
                 async with asyncio.timeout(2):
@@ -531,13 +544,13 @@ shell_tool = Tool(
     _shell,
     name="shell",
     description=(
-        "Run a shell command via the user's POSIX shell. "
+        "Run a shell command. "
         "Supports &&, ||, pipes, $VAR, subshells. "
         "Default CWD is the session workspace. Relative workdir paths resolve inside it; "
         "use an absolute path to run elsewhere. "
         "Set background=true for long-running processes; returns a PID. "
         "Prefer file tools for file ops. "
-        "IMPORTANT: stdin is /dev/null — the shell is non-interactive. "
+        "IMPORTANT: stdin is /dev/null (NUL on Windows) — the shell is non-interactive. "
         "Always use non-interactive flags to suppress prompts "
         "(e.g. npm init -y, npm create vite@latest -- --template react, "
         "pip install -q, apt-get install -y, npx --yes, python3 -m venv --without-pip)."

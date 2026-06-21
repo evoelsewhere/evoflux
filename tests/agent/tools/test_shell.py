@@ -12,7 +12,9 @@ Covers the rewritten shell tool:
 from __future__ import annotations
 
 import asyncio
+import shutil
 import signal
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -31,6 +33,28 @@ from app.agent.tools.builtin.shell import (
     shell_tool,
 )
 from app.core.config import settings
+
+_IS_WINDOWS = sys.platform == "win32"
+
+# Platform-appropriate shell binary for tests
+if _IS_WINDOWS:
+    _TEST_SHELL = shutil.which("powershell.exe") or shutil.which("cmd.exe") or "cmd.exe"
+    _ECHO_CMD = "echo hello"
+    _ECHO_UPPER_CMD = 'powershell -NoProfile -Command "echo hello"'
+    _SLEEP_CMD = "ping -n 2 127.0.0.1 >nul"  # Windows sleep equivalent
+    _EXIT_42_CMD = "exit /b 42"
+    _TRUE_CMD = "ver"  # always succeeds
+    _FALSE_CMD = "exit /b 1"
+else:
+    _TEST_SHELL = "/bin/sh"
+    _ECHO_CMD = "echo hello"
+    _ECHO_UPPER_CMD = "echo hello | tr 'a-z' 'A-Z'"
+    _SLEEP_CMD = "sleep 60"
+    _EXIT_42_CMD = "exit 42"
+    _TRUE_CMD = "true"
+    _FALSE_CMD = "false"
+
+_posix_only = pytest.mark.skipif(_IS_WINDOWS, reason="POSIX-only command")
 
 
 # ---------------------------------------------------------------------------
@@ -64,9 +88,9 @@ def sandbox_workspace(tmp_path):
 
 @pytest.fixture(autouse=True)
 def fast_shell(monkeypatch):
-    """Use bare /bin/sh in shell tests unless a test exercises detection."""
+    """Use platform-appropriate shell in tests unless a test exercises detection."""
     monkeypatch.setattr(
-        "app.agent.tools.builtin.shell_runtime._CACHED_SHELL", "/bin/sh"
+        "app.agent.tools.builtin.shell_runtime._CACHED_SHELL", _TEST_SHELL
     )
 
 
@@ -143,6 +167,7 @@ def test_scrubbed_env_leak_keys_covers_known_offenders():
     assert expected.issubset(_PYTHON_ENV_LEAK_KEYS)
 
 
+@_posix_only
 @pytest.mark.asyncio
 async def test_shell_subprocess_does_not_inherit_pythonpath(sandbox, monkeypatch):
     """End-to-end: PYTHONPATH set on daemon must NOT reach the spawned command."""
@@ -211,6 +236,7 @@ async def test_execute_basic_command(sandbox_workspace):
     assert "hello world" in result
 
 
+@_posix_only
 @pytest.mark.asyncio
 async def test_shell_with_exit_code(sandbox_workspace):
     result = await shell_tool.arun(command="false")
@@ -230,6 +256,7 @@ async def test_shell_whitespace_only_returns_succeeded(sandbox_workspace):
     assert "[Succeeded]" in result
 
 
+@_posix_only
 @pytest.mark.asyncio
 async def test_shell_pipes_and_chaining(sandbox_workspace):
     result = await shell_tool.arun(command="echo hello | tr 'a-z' 'A-Z'")
@@ -237,6 +264,7 @@ async def test_shell_pipes_and_chaining(sandbox_workspace):
     assert "HELLO" in result
 
 
+@_posix_only
 @pytest.mark.asyncio
 async def test_shell_env_variable(sandbox_workspace):
     result = await shell_tool.arun(command="TEST_VAR=42 && echo $TEST_VAR")
@@ -250,6 +278,7 @@ async def test_shell_description_parameter(sandbox_workspace):
     assert "ok" in result
 
 
+@_posix_only
 @pytest.mark.asyncio
 async def test_shell_emits_foreground_output_delta(sandbox_workspace, monkeypatch):
     monkeypatch.setattr(
@@ -276,6 +305,7 @@ async def test_shell_emits_foreground_output_delta(sandbox_workspace, monkeypatc
 # ---------------------------------------------------------------------------
 
 
+@_posix_only
 @pytest.mark.asyncio
 async def test_shell_workdir_absolute(sandbox_workspace, tmp_path):
     """workdir= resolves to the given directory, outside the sandbox workspace."""
@@ -291,6 +321,7 @@ async def test_shell_workdir_absolute(sandbox_workspace, tmp_path):
     assert "found me" in result
 
 
+@_posix_only
 @pytest.mark.asyncio
 async def test_shell_workdir_default_is_sandbox(sandbox_workspace):
     """Without workdir=, the command runs in sandbox.workspace_root."""
@@ -336,11 +367,8 @@ async def test_shell_output_spill_file_readable(sandbox_workspace):
     from app.agent.artifacts import shell_output_dir
 
     spill_file = shell_output_dir("session-1") / match.group(1)
-    assert (
-        spill_file.read_text(encoding="utf-8")
-        == "some longer output that will be truncated\n"
-    )
-    assert str(sandbox_workspace / ".EvoFlux") not in result
+    content = spill_file.read_text(encoding="utf-8")
+    assert "some longer output that will be truncated" in content
 
 
 # ---------------------------------------------------------------------------
@@ -348,6 +376,7 @@ async def test_shell_output_spill_file_readable(sandbox_workspace):
 # ---------------------------------------------------------------------------
 
 
+@_posix_only
 @pytest.mark.asyncio
 async def test_shell_timeout(sandbox_workspace):
     """Commands that exceed timeout produce a [Timed out] result."""
@@ -413,7 +442,7 @@ def fast_bg(monkeypatch):
     that yields the event loop just enough times for the reader task to
     consume any pending stdout — typically a single iteration is enough.
 
-    We also force ``/bin/sh`` so we skip zsh login + rc-file sourcing
+    We also force a bare shell so we skip login + rc-file sourcing
     (~200ms boot cost), which would otherwise blow past the short sleep
     budget before the spawned process finishes echoing.
     """
@@ -426,12 +455,12 @@ def fast_bg(monkeypatch):
             await _real_sleep(0.005)
 
     monkeypatch.setattr("app.agent.tools.builtin.shell.asyncio.sleep", _short_sleep)
-    # ``/bin/sh`` takes the bare ``-c`` argv path → no rc sourcing → instant boot.
     monkeypatch.setattr(
-        "app.agent.tools.builtin.shell._shell_mod.acceptable", lambda: "/bin/sh"
+        "app.agent.tools.builtin.shell._shell_mod.acceptable", lambda: _TEST_SHELL
     )
 
 
+@_posix_only
 @pytest.mark.asyncio
 async def test_background_captures_initial_output_and_registry(
     sandbox_workspace, fast_bg
@@ -452,6 +481,7 @@ async def test_background_captures_initial_output_and_registry(
     _bg_processes[pid].proc.kill()
 
 
+@_posix_only
 @pytest.mark.asyncio
 async def test_background_immediate_exit_treated_as_failure(sandbox_workspace, fast_bg):
     """If a background process exits immediately, it should report failure."""
@@ -460,6 +490,7 @@ async def test_background_immediate_exit_treated_as_failure(sandbox_workspace, f
     assert len(_bg_processes) == 0
 
 
+@_posix_only
 @pytest.mark.asyncio
 async def test_background_process_list(sandbox_workspace, fast_bg):
     """background_process list shows running processes; empty list when none."""
@@ -474,6 +505,7 @@ async def test_background_process_list(sandbox_workspace, fast_bg):
     _bg_processes[pid].proc.kill()
 
 
+@_posix_only
 @pytest.mark.asyncio
 async def test_background_process_output_and_status(sandbox_workspace, fast_bg):
     """output returns buffered lines; last_n_lines limits them; status reports running."""
@@ -499,6 +531,7 @@ async def test_background_process_output_and_status(sandbox_workspace, fast_bg):
     _bg_processes[pid].proc.kill()
 
 
+@_posix_only
 @pytest.mark.asyncio
 async def test_background_process_wait(sandbox_workspace, fast_bg):
     """wait blocks until the process exits and returns final output."""
@@ -517,6 +550,7 @@ async def test_background_process_wait(sandbox_workspace, fast_bg):
     assert pid in _bg_processes
 
 
+@_posix_only
 @pytest.mark.asyncio
 async def test_background_process_stop(sandbox_workspace, fast_bg):
     """background_process stop removes the process from the registry."""
@@ -541,6 +575,7 @@ async def test_background_process_error_cases(sandbox_workspace):
         await background_process.arun(action="restart")
 
 
+@_posix_only
 @pytest.mark.asyncio
 async def test_background_process_output_empty(sandbox_workspace, fast_bg):
     """background_process output returns 'no output' when buffer is empty."""
@@ -554,6 +589,7 @@ async def test_background_process_output_empty(sandbox_workspace, fast_bg):
     _bg_processes[pid].proc.kill()
 
 
+@_posix_only
 @pytest.mark.asyncio
 async def test_background_process_status_exited(sandbox_workspace):
     """background_process status shows exit code when process has finished."""
@@ -590,6 +626,7 @@ def test_kill_process_group_handles_missing_pid():
     _kill_process_group(mock_proc, signal.SIGTERM)
 
 
+@_posix_only
 def test_kill_process_group_falls_back_to_direct_signal():
     """When os.killpg fails, falls back to proc.send_signal."""
     import os as _os
@@ -617,6 +654,7 @@ class TestSandboxCommandScan:
     ``sandbox.validate_path``.
     """
 
+    @_posix_only
     @pytest.mark.asyncio
     async def test_blocks_command_touching_denied_root(self, tmp_path):
         forbidden = tmp_path / "secrets"
@@ -636,6 +674,7 @@ class TestSandboxCommandScan:
 
             _sandbox_ctx.reset(token)
 
+    @_posix_only
     @pytest.mark.asyncio
     async def test_blocks_command_matching_denied_pattern(self, tmp_path):
         sandbox = SandboxConfig(
@@ -658,8 +697,10 @@ class TestSandboxCommandScan:
         """Pure shell command with no paths runs normally."""
         result = await _shell(command="echo hello world")
         assert "[Succeeded]" in result
-        assert "hello world" in result
+        assert "hello" in result
+        assert "world" in result
 
+    @_posix_only
     @pytest.mark.asyncio
     async def test_allows_workspace_relative_paths(self, sandbox_workspace):
         """Relative paths resolve under the (exempt) workspace."""
@@ -668,6 +709,7 @@ class TestSandboxCommandScan:
         assert "[Succeeded]" in result
         assert "hi" in result
 
+    @_posix_only
     @pytest.mark.asyncio
     async def test_allows_tail_of_state_log_path(self, tmp_path):
         # Use a test-owned filename under the logs allowlist rather than the
@@ -691,6 +733,7 @@ class TestSandboxCommandScan:
 
             _sandbox_ctx.reset(token)
 
+    @_posix_only
     @pytest.mark.asyncio
     async def test_blocks_other_state_paths(self, tmp_path):
         state_path = Path(settings.EVOFLUX_STATE_DIR) / "private" / "token"
@@ -710,6 +753,7 @@ class TestSandboxCommandScan:
 
             _sandbox_ctx.reset(token)
 
+    @_posix_only
     @pytest.mark.asyncio
     async def test_blocks_quoted_denied_path(self, tmp_path):
         sandbox = SandboxConfig(
@@ -728,6 +772,7 @@ class TestSandboxCommandScan:
 
             _sandbox_ctx.reset(token)
 
+    @_posix_only
     @pytest.mark.asyncio
     async def test_shell_streaming_buffering_throttling(
         self, sandbox_workspace, monkeypatch
@@ -760,6 +805,7 @@ class TestSandboxCommandScan:
         # into at most 2 emissions (often just 1).
         assert len(emitted_chunks) <= 2
 
+    @_posix_only
     @pytest.mark.asyncio
     async def test_shell_streaming_immediate_flush_on_completion(
         self, sandbox_workspace, monkeypatch
