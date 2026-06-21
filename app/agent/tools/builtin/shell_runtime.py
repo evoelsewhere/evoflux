@@ -8,6 +8,7 @@ Mirrors the design of opencode's ``shell.ts``:
   would misinterpret them.
 - Falls back through ``zsh`` → ``bash`` → ``sh`` when no usable shell is
   found or the preference is blocked.
+- On Windows, uses PowerShell (preferred) or cmd.exe.
 - Exposes ``preferred()`` (exact user preference, may be None) and
   ``acceptable()`` (always non-None, safe to pass to subprocess).
 
@@ -23,6 +24,8 @@ import shutil
 import sys
 from pathlib import Path
 
+_IS_WINDOWS = sys.platform == "win32"
+
 # ── Shell name sets ──────────────────────────────────────────────────────────
 
 # Shells that do not understand POSIX syntax; agents generate POSIX commands
@@ -31,6 +34,10 @@ BLACKLIST: frozenset[str] = frozenset({"fish", "nu", "nushell"})
 
 # POSIX-compatible shells — ordered by preference (best first)
 _POSIX_FALLBACKS: tuple[str, ...] = ("zsh", "bash", "sh")
+
+# Windows shells — ordered by preference (PowerShell first because it's
+# more capable than cmd.exe and available on all modern Windows).
+_WINDOWS_SHELLS: tuple[str, ...] = ("powershell.exe", "pwsh.exe", "cmd.exe")
 
 
 # ── Internal helpers ─────────────────────────────────────────────────────────
@@ -60,7 +67,9 @@ def _is_usable(path: str) -> bool:
 
 
 def _fallback() -> str:
-    """Return the best available POSIX shell on this machine."""
+    """Return the best available shell on this machine."""
+    if _IS_WINDOWS:
+        return _windows_fallback()
     # macOS always ships /bin/zsh since Catalina
     if sys.platform == "darwin":
         return "/bin/zsh"
@@ -69,6 +78,16 @@ def _fallback() -> str:
         if found:
             return found
     return "/bin/sh"  # POSIX guarantee — always present
+
+
+def _windows_fallback() -> str:
+    """Return the best available Windows shell (PowerShell preferred)."""
+    for name in _WINDOWS_SHELLS:
+        found = _which(name)
+        if found:
+            return found
+    # COMSPEC is always set on Windows (typically cmd.exe)
+    return os.environ.get("COMSPEC", "cmd.exe")
 
 
 # ── Module-level detection cache ────────────────────────────────────────────
@@ -82,13 +101,20 @@ def _detect() -> str:
     """Detect the best shell, caching the result in ``_CACHED_SHELL``.
 
     Detection order:
-    1. ``$SHELL`` environment variable, if set and acceptable.
-    2. ``/bin/zsh`` on macOS (default since Catalina).
-    3. First of ``zsh``, ``bash``, ``sh`` found on PATH.
-    4. ``/bin/sh`` (POSIX guarantee).
+    1. ``$SHELL`` environment variable (POSIX) or ``COMSPEC`` (Windows).
+    2. Platform-specific fallbacks.
     """
     global _CACHED_SHELL
     if _CACHED_SHELL is not None:
+        return _CACHED_SHELL
+
+    if _IS_WINDOWS:
+        # On Windows, check COMSPEC first (usually cmd.exe), then fall back
+        comspec = os.environ.get("COMSPEC", "")
+        if comspec and _is_usable(comspec):
+            _CACHED_SHELL = comspec
+            return _CACHED_SHELL
+        _CACHED_SHELL = _windows_fallback()
         return _CACHED_SHELL
 
     env_shell = os.environ.get("SHELL", "")
@@ -107,7 +133,7 @@ def _detect() -> str:
 def acceptable() -> str:
     """Return the shell binary path to use for subprocess execution.
 
-    Always returns a non-None, executable, POSIX-compatible path.
+    Always returns a non-None, executable path.
     """
     return _detect()
 
@@ -126,6 +152,12 @@ def is_posix(shell_path: str | None = None) -> bool:
     return n in {"bash", "dash", "ksh", "sh", "zsh"}
 
 
+def is_windows(shell_path: str | None = None) -> bool:
+    """True if the shell is a Windows shell (cmd or PowerShell)."""
+    n = name(shell_path)
+    return n in {"cmd", "powershell", "pwsh"}
+
+
 # ── argv construction ───────────────────────────────────────────────────────
 # Mirrors opencode's ``shell.ts`` (packages/opencode/src/shell/shell.ts).
 #
@@ -139,7 +171,7 @@ def is_posix(shell_path: str | None = None) -> bool:
 # Fix: invoke the shell with ``-l`` (login) AND explicitly source the
 # interactive rc files.  Errors during sourcing are swallowed so a broken
 # rc never blocks a command.  Other POSIX shells (sh/dash/ksh) fall back
-# to bare ``-c`` — they have no widely-used per-user rc file.
+# to bare ``-c`` — they have no widely-used per-user rc convention.
 
 
 def build_argv(shell_bin: str, command: str) -> list[str]:
@@ -149,12 +181,26 @@ def build_argv(shell_bin: str, command: str) -> list[str]:
     rc files before evaluating it.  For other POSIX shells we use a bare
     ``-c`` since they have no portable per-user rc convention.
 
+    For Windows shells we use the appropriate flag (``/c`` for cmd,
+    ``-Command`` for PowerShell).
+
     The shell's ``cwd`` is set by the caller via ``subprocess`` ``cwd=`` —
     we don't ``cd`` inside the script so a missing workdir raises a clear
     OS-level error instead of an opaque shell error.
     """
     shell_name = _shell_name(shell_bin)
 
+    # ── Windows shells ─────────────────────────────────────────────────
+    if shell_name == "cmd":
+        return ["/c", command]
+
+    if shell_name in ("powershell", "pwsh"):
+        # -NoProfile: skip loading profile (faster, no side effects)
+        # -NonInteractive: no prompts
+        # -Command: run the following string as a script
+        return ["-NoProfile", "-NonInteractive", "-Command", command]
+
+    # ── POSIX shells ───────────────────────────────────────────────────
     if shell_name == "zsh":
         # -l loads ~/.zprofile/~/.zlogin; explicit source covers ~/.zshenv
         # and ~/.zshrc which a non-interactive login shell skips.
