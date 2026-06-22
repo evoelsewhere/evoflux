@@ -527,23 +527,6 @@ a svg[aria-hidden="true"],
 }
 
 /* ─────────────────────────────────────────────────────────────
- * Skip link
- * ───────────────────────────────────────────────────────────── */
-.skip-link {
-  position: absolute;
-  top: -40px;
-  left: 0;
-  padding: 8px 16px;
-  background: var(--bg-send);
-  color: var(--color-text-on-accent);
-  z-index: 100;
-  transition: top var(--motion-fast) var(--ease-out);
-}
-.skip-link:focus-visible {
-  top: 0;
-}
-
-/* ─────────────────────────────────────────────────────────────
  * Animations
  * ───────────────────────────────────────────────────────────── */
 

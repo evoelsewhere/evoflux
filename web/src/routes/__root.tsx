@@ -6,7 +6,6 @@ import { Link, Outlet, useLocation, useNavigate } from '@tanstack/react-router'
 import { queryClient } from '@/lib/query-client'
 import { Home } from 'lucide-react'
 import { ToastStack } from '@/components/ToastStack'
-import { SkipLink } from '@/components/motion'
 import { MacTitleBar } from '@/components/MacTitleBar'
 import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
 import { useHistorySwipeNavigation } from '@/hooks/use-history-swipe-navigation'
@@ -41,7 +40,6 @@ export function Root() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <SkipLink />
       <MacTitleBar />
       <Suspense fallback={<RouteLoadingFallback />}>
         <Outlet />
