@@ -609,6 +609,42 @@ export function getToolDisplay(name: string, args: string | undefined): ToolDisp
     }
   }
 
+  // ── browser_use: show action summary ────────────────────────────────
+  if (name === 'browser_use') {
+    const actions = parsed.actions as Array<Record<string, unknown>> | undefined
+    if (!Array.isArray(actions) || actions.length === 0) {
+      return { header: 'Controlling browser…', headerTitle: null, formattedArgs: null }
+    }
+    const first = actions[0]
+    const action = first?.action as string | undefined
+    const summaryMap: Record<string, string> = {
+      start: 'Launching browser…',
+      stop: 'Closing browser…',
+      navigate: `Navigating to ${first?.url ?? 'page'}`,
+      click: `Clicking ${first?.selector ?? 'element'}`,
+      fill: `Filling ${first?.selector ?? 'field'}`,
+      select: `Selecting in ${first?.selector ?? 'dropdown'}`,
+      extract: 'Extracting content…',
+      screenshot: 'Taking screenshot…',
+      evaluate: 'Running JavaScript…',
+      scroll: `Scrolling ${(first?.direction as string) ?? 'down'}`,
+      back: 'Going back…',
+      forward: 'Going forward…',
+      wait: 'Waiting…',
+      new_tab: `Opening ${first?.url ?? 'new tab'}`,
+      close_tab: 'Closing tab…',
+      get_tabs: 'Listing tabs…',
+      switch_tab: 'Switching tab…',
+    }
+    const header = (action && summaryMap[action]) || `Browser: ${action ?? 'unknown'}`
+    const extra = actions.length > 1 ? ` (+${actions.length - 1} more)` : ''
+    return {
+      header: `${header}${extra}`,
+      headerTitle: `${header}${extra}`,
+      formattedArgs: null,
+    }
+  }
+
   // ── Default: tool name as header, pretty-printed JSON as args ──────
   // Hide args entirely if the object is empty.
   if (Object.keys(parsed).length === 0) {

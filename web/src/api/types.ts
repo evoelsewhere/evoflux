@@ -237,6 +237,7 @@ export type SSEEventType =
   | 'summarization_start'
   | 'summarization_content'
   | 'summarization_end'
+  | 'browser_session'
 
 export interface SSEEvent {
   type: SSEEventType

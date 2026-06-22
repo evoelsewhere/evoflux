@@ -465,6 +465,40 @@ async fn app_new_window(app: AppHandle) -> Result<(), String> {
         .map_err(|e| format!("{e:#}"))
 }
 
+#[tauri::command]
+async fn app_open_browser_devtools(app: AppHandle, cdp_url: String) -> Result<(), String> {
+    use tauri::{WebviewUrl, WebviewWindowBuilder};
+
+    // Derive the DevTools frontend URL from the CDP HTTP endpoint.
+    // Chromium serves its built-in DevTools at /devtools/inspector.html
+    // which connects back via WebSocket.
+    let ws_url = cdp_url
+        .trim_start_matches("http://")
+        .trim_start_matches("https://");
+    let devtools_url = format!(
+        "{}/devtools/inspector.html?ws={}",
+        cdp_url.trim_end_matches('/'),
+        ws_url,
+    );
+
+    let label = next_window_label(&app);
+
+    let parsed: url::Url = devtools_url
+        .parse()
+        .map_err(|e| format!("Invalid devtools URL: {e}"))?;
+
+    let win = WebviewWindowBuilder::new(&app, label, WebviewUrl::External(parsed))
+        .title("Browser DevTools")
+        .inner_size(1280.0, 820.0)
+        .min_inner_size(760.0, 560.0)
+        .build()
+        .map_err(|e| format!("Failed to open DevTools: {e}"))?;
+
+    let _ = win.show();
+    let _ = win.set_focus();
+    Ok(())
+}
+
 fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
         let _ = window.unminimize();
@@ -1668,6 +1702,7 @@ fn main() {
             app_use_external_backend,
             app_use_bundled_backend,
             app_new_window,
+            app_open_browser_devtools,
             set_tray_session,
             updater_check,
             updater_download,

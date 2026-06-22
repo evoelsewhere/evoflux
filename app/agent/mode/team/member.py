@@ -1135,8 +1135,31 @@ class TeamLead(TeamMemberBase):
 
     def build_protocol(self, base_prompt: str, team: "AgentTeam") -> str:
         """Assemble lead protocol into the system prompt."""
+        # Build mode-aware routing guide from the team's actual blueprints.
+        builder = "coder" if "coder" in team.blueprints else "executor"
+        has_consultant = "consultant" in team.blueprints
+        consultant_line = (
+            "\n  - Hard decisions, architecture review, trade-off analysis → **consultant**"
+            if has_consultant
+            else ""
+        )
+        routing = (
+            f"- **Routing guide** (when you do delegate):\n"
+            f"  - Building, writing files, running commands → **{builder}**\n"
+            f"  - Research, web search, reading docs or codebases → **explorer**"
+            f"{consultant_line}\n"
+            f"  - Multiple concerns → spawn / message multiple members in parallel"
+        )
+        rules = LEAD_COMMUNICATION_RULES.replace(
+            "- **Routing guide** (when you do delegate):\n"
+            "  - Building, writing files, running commands → **executor**\n"
+            "  - Research, web search, reading docs or codebases → **explorer**\n"
+            "  - Hard decisions, architecture review, trade-off analysis → **consultant**\n"
+            "  - Multiple concerns → spawn / message multiple members in parallel",
+            routing,
+        )
         sections: list[str] = [
-            LEAD_COMMUNICATION_RULES,
+            rules,
             LEAD_MESSAGE_FORMAT,
             LEAD_PROTOCOL,
         ]

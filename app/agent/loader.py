@@ -331,7 +331,7 @@ def _build_agent(
 ) -> Agent:
     """Construct one Agent.  ``source_path`` enables drift detection."""
     system_prompt = cfg.system_prompt
-    if cfg.role == "lead" and cfg.name == "EvoFlux":
+    if cfg.role == "lead" and cfg.name.lower() == "evoflux":
         from app.agent.builtin_prompts import (
             apply_EVOFLUX_extra_prompt,
             EVOFLUX_description_for_mode,

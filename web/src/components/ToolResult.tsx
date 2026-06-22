@@ -12,7 +12,7 @@
  * rather than an overlay. Theme-aware, no hard-coded rgba.
  */
 
-import { ExternalLink, FileText, Globe } from 'lucide-react'
+import { ExternalLink, FileText, Globe, MonitorPlayIcon } from 'lucide-react'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -268,6 +268,57 @@ function TeamManageResult({ result }: { result: string }) {
 }
 
 // ---------------------------------------------------------------------------
+// Browser use result
+// ---------------------------------------------------------------------------
+
+function BrowserUseResult({ result }: { result: string }) {
+  // browser_use returns actions separated by "\n---\n"
+  const parts = result.split('\n---\n').filter(Boolean)
+
+  if (parts.length <= 1) {
+    // Single action — render as compact status
+    return (
+      <div className="flex items-start gap-1.5 text-[11px] leading-relaxed text-(--color-text-2)">
+        <MonitorPlayIcon size={12} className="mt-0.5 shrink-0 text-(--color-accent) opacity-60" />
+        <span className="whitespace-pre-wrap break-words">{result}</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-1">
+      {parts.map((part, i) => {
+        const trimmed = part.trim()
+        const isError = trimmed.startsWith('Error')
+        return (
+          <div
+            key={i}
+            className="flex items-start gap-1.5 text-[11px] leading-relaxed"
+          >
+            <span
+              className={`mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold ${
+                isError
+                  ? 'bg-(--color-error-subtle) text-(--color-error)'
+                  : 'bg-(--color-accent)/10 text-(--color-accent)'
+              }`}
+            >
+              {i + 1}
+            </span>
+            <span
+              className={`whitespace-pre-wrap break-words ${
+                isError ? 'text-(--color-error)' : 'text-(--color-text-2)'
+              }`}
+            >
+              {trimmed}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Generic fallback renderer
 // ---------------------------------------------------------------------------
 
@@ -317,6 +368,9 @@ export function ToolResult({ toolName, result }: { toolName: string; result: str
   }
   if (toolName === 'team_manage') {
     return <TeamManageResult result={result} />
+  }
+  if (toolName === 'browser_use') {
+    return <BrowserUseResult result={result} />
   }
   // web_fetch, date, math, skill, etc.
   return <GenericResult result={result} />

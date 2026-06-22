@@ -18,13 +18,15 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronRight, Copy, Check } from 'lucide-react'
+import { ChevronRight, Copy, Check, MonitorPlayIcon } from 'lucide-react'
 import { ToolResult } from '../ToolResult'
 import { DURATIONS_S, EASINGS } from '@/lib/motion'
 import { getToolDisplay } from './display'
 import { DiffView } from './DiffView'
 import { ReadView } from './ReadView'
 import { getDiffStats } from './diffUtils'
+import { useUIStore } from '@/stores/useUIStore'
+import { useTeamStore } from '@/stores/useTeamStore'
 import type { ToolCallState } from './types'
 
 interface ToolCallProps {
@@ -224,6 +226,9 @@ export function ToolCall({ name, args, done, liveOutput, result, durationMs, sta
         )}
       </button>
 
+      {/* "See Browser" button — visible when browser_use tool is active */}
+      {name === 'browser_use' && <SeeBrowserButton />}
+
       {/* Expandable details — divider then warm paper body per pencil LJOUY */}
       <AnimatePresence initial={false}>
         {expanded && hasDetails && (
@@ -349,5 +354,31 @@ export function ToolCall({ name, args, done, liveOutput, result, durationMs, sta
         )}
       </AnimatePresence>
     </div>
+  )
+}
+
+function SeeBrowserButton() {
+  const toggleBrowser = useUIStore((s) => s.toggleBrowser)
+  const browserOpen = useUIStore((s) => s.browserOpen)
+  const browserActive = useTeamStore((s) => s.browserSession?.active ?? false)
+
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation()
+        toggleBrowser()
+      }}
+      className={`ml-1 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium transition-all ${
+        browserOpen
+          ? 'bg-(--color-accent) text-white shadow-sm'
+          : browserActive
+            ? 'bg-(--color-accent)/10 text-(--color-accent) ring-1 ring-(--color-accent)/20 hover:bg-(--color-accent) hover:text-white hover:ring-0'
+            : 'bg-(--bg-key) text-(--color-accent) hover:bg-(--color-accent) hover:text-white'
+      }`}
+      title={browserOpen ? 'Hide browser panel' : 'See browser live'}
+    >
+      <MonitorPlayIcon size={11} />
+      <span>{browserOpen ? 'Hide' : 'See Browser'}</span>
+    </button>
   )
 }

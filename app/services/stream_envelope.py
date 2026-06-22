@@ -24,6 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.agent.schemas.events import (
     AgentNotConfiguredEvent,
     AgentStatusEvent,
+    BrowserSessionEvent,
     DoneEvent,
     ErrorEvent,
     MessageEvent,
@@ -69,6 +70,7 @@ AnyStreamEvent = Union[
     SummarizationStartEvent,
     SummarizationContentEvent,
     SummarizationEndEvent,
+    BrowserSessionEvent,
 ]
 
 

@@ -35,6 +35,7 @@
     "allow-app-use-external-backend",
     "allow-app-use-bundled-backend",
     "allow-app-new-window",
+    "allow-app-open-browser-devtools",
     "allow-set-tray-session",
     "allow-updater-check",
     "allow-updater-download",

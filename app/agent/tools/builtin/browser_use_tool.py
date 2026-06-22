@@ -5,6 +5,13 @@ Manages a persistent :class:`BrowserSession` per agent session stored in
 ``state.metadata["_browser_session"]`` so the browser stays alive across
 tool calls.
 
+CDP Exposure
+------------
+Each browser session gets a dedicated CDP (Chrome DevTools Protocol)
+endpoint.  The CDP WebSocket URL and HTTP URL are stored in
+: data:`_cdp_info` and exposed via :func:`get_browser_info` so the API
+layer and frontend can connect for live screencasting.
+
 Actions
 -------
 start     — Launch a headless Chromium session (auto-called on first action).
@@ -42,32 +49,174 @@ from app.agent.tools.registry import InjectedArg, tool
 
 _sessions: dict[str, Any] = {}
 _pages: dict[str, Any] = {}
+_cdp_info: dict[str, dict[str, Any]] = {}
+
+
+def get_browser_info(session_id: str) -> dict[str, Any] | None:
+    """Return browser session info for *session_id*, or ``None`` if inactive.
+
+    Called by the ``/api/team/{sid}/browser`` endpoint.
+    """
+    info = _cdp_info.get(session_id)
+    if info is None:
+        return None
+    return {
+        "active": True,
+        "cdp_url": info.get("cdp_url"),
+        "cdp_http": info.get("cdp_http"),
+        "current_url": info.get("current_url"),
+        "current_title": info.get("current_title"),
+        "tabs": info.get("tabs", []),
+    }
+
+
+def get_browser_page(session_id: str) -> Any | None:
+    """Return the live Page object for *session_id*, or ``None``.
+
+    Called by the screencast WebSocket endpoint to capture frames.
+    """
+    return _pages.get(session_id)
+
+
+def get_browser_session(session_id: str) -> Any | None:
+    """Return the live BrowserSession for *session_id*, or ``None``.
+
+    Called by the screencast WebSocket endpoint for tab enumeration.
+    """
+    return _sessions.get(session_id)
+
+
+async def _refresh_cdp_info(sid: str, session: Any, page: Any, *, action: str) -> None:
+    """Update :data:`_cdp_info` from the live session and emit an SSE event."""
+    try:
+        cdp_url = getattr(session, "cdp_url", None)
+        cdp_http: str | None = None
+        if cdp_url and isinstance(cdp_url, str):
+            # Derive HTTP URL from ws://127.0.0.1:PORT/...
+            # cdp_url looks like: ws://127.0.0.1:9222/devtools/browser/...
+            if cdp_url.startswith("ws://"):
+                cdp_http = "http://" + cdp_url[len("ws://") :].split("/")[0]
+            elif cdp_url.startswith("wss://"):
+                cdp_http = "https://" + cdp_url[len("wss://") :].split("/")[0]
+
+        url = await page.get_url() if page else None
+        title = await page.get_title() if page else None
+
+        tabs: list[dict[str, Any]] = []
+        try:
+            pages = await session.get_pages()
+            for i, p in enumerate(pages):
+                t_url = await p.get_url()
+                t_title = await p.get_title()
+                tabs.append({"index": i, "url": t_url, "title": t_title})
+        except Exception:
+            pass
+
+        _cdp_info[sid] = {
+            "cdp_url": cdp_url,
+            "cdp_http": cdp_http,
+            "current_url": url,
+            "current_title": title,
+            "tabs": tabs,
+        }
+
+        await _emit_browser_event(
+            sid,
+            active=True,
+            action=action,
+            cdp_url=cdp_url,
+            cdp_http=cdp_http,
+            current_url=url,
+            current_title=title,
+            tabs=tabs,
+        )
+    except Exception as e:
+        logger.debug("browser_cdp_info_refresh_failed sid={} error={}", sid, e)
+
+
+async def _emit_browser_event(
+    sid: str,
+    *,
+    active: bool,
+    action: str,
+    cdp_url: str | None = None,
+    cdp_http: str | None = None,
+    current_url: str | None = None,
+    current_title: str | None = None,
+    tabs: list[dict[str, Any]] | None = None,
+) -> None:
+    """Push a ``browser_session`` SSE event to the stream store."""
+    try:
+        from app.services.memory_stream_store import push_event
+        from app.services.stream_envelope import StreamEnvelope
+
+        data: dict[str, Any] = {
+            "type": "browser_session",
+            "agent": "",
+            "active": active,
+            "action": action,
+        }
+        if cdp_url is not None:
+            data["cdp_url"] = cdp_url
+        if cdp_http is not None:
+            data["cdp_http"] = cdp_http
+        if current_url is not None:
+            data["current_url"] = current_url
+        if current_title is not None:
+            data["current_title"] = current_title
+        if tabs is not None:
+            data["tabs"] = tabs
+
+        envelope = StreamEnvelope.from_parts(event="browser_session", data=data)
+        await push_event(sid, envelope)
+    except Exception as e:
+        logger.debug("browser_sse_emit_failed sid={} error={}", sid, e)
+
+
+def _get_sid(state: Any) -> str:
+    return state.metadata.get("session_id", "default") if state else "default"
 
 
 async def _get_session(state: Any) -> tuple[Any, Any]:
     """Return ``(BrowserSession, current Page)``, launching if needed."""
-    sid = state.metadata.get("session_id", "default") if state else "default"
+    sid = _get_sid(state)
     if sid in _sessions:
         session = _sessions[sid]
         page = _pages.get(sid) or await session.get_current_page()
         _pages[sid] = page
         return session, page
 
-    from browser_use import BrowserSession
+    return await _launch_session(sid, headless=True)
 
-    session = BrowserSession(headless=True)
+
+async def _launch_session(
+    sid: str, *, headless: bool = True, user_data_dir: str | None = None
+) -> tuple[Any, Any]:
+    """Launch a new BrowserSession and register it."""
+    from browser_use import BrowserProfile, BrowserSession
+
+    profile_kwargs: dict[str, Any] = {"headless": headless}
+    if user_data_dir:
+        profile_kwargs["user_data_dir"] = user_data_dir
+
+    profile = BrowserProfile(**profile_kwargs)
+    session = BrowserSession(browser_profile=profile)
     await session.start()
     page = await session.get_current_page()
+
     _sessions[sid] = session
     _pages[sid] = page
+
     logger.info("browser_session_started session_id={}", sid)
+    await _refresh_cdp_info(sid, session, page, action="started")
     return session, page
 
 
 async def _close_session(state: Any) -> str:
-    sid = state.metadata.get("session_id", "default") if state else "default"
+    sid = _get_sid(state)
     session = _sessions.pop(sid, None)
     _pages.pop(sid, None)
+    _cdp_info.pop(sid, None)
     if session is None:
         return "No active browser session."
     try:
@@ -75,6 +224,7 @@ async def _close_session(state: Any) -> str:
     except Exception:
         pass
     logger.info("browser_session_stopped session_id={}", sid)
+    await _emit_browser_event(sid, active=False, action="stopped")
     return "Browser session closed."
 
 
@@ -286,11 +436,11 @@ async def _dispatch(act: Any, state: Any) -> str:
     session, page = await _get_session(state)
 
     if action == "navigate":
-        return await _handle_navigate(act, page)
+        return await _handle_navigate(act, page, state)
     if action == "click":
-        return await _handle_click(act, page)
+        return await _handle_click(act, page, state)
     if action == "fill":
-        return await _handle_fill(act, page)
+        return await _handle_fill(act, page, state)
     if action == "select":
         return await _handle_select(act, page)
     if action == "extract":
@@ -300,13 +450,15 @@ async def _dispatch(act: Any, state: Any) -> str:
     if action == "evaluate":
         return await _handle_evaluate(act, page)
     if action == "scroll":
-        return await _handle_scroll(act, page)
+        return await _handle_scroll(act, page, state)
     if action == "back":
         await page.go_back()
+        await _refresh_cdp_info(_get_sid(state), session, page, action="navigated")
         url = await page.get_url()
         return f"Navigated back → {url}"
     if action == "forward":
         await page.go_forward()
+        await _refresh_cdp_info(_get_sid(state), session, page, action="navigated")
         url = await page.get_url()
         return f"Navigated forward → {url}"
     if action == "wait":
@@ -329,22 +481,11 @@ async def _dispatch(act: Any, state: Any) -> str:
 
 
 async def _handle_start(act: StartAction, state: Any) -> str:
-    sid = state.metadata.get("session_id", "default") if state else "default"
+    sid = _get_sid(state)
     if sid in _sessions:
         return "Browser session already running."
 
-    from browser_use import BrowserSession
-
-    kwargs: dict[str, Any] = {"headless": act.headless}
-    if act.user_data_dir:
-        kwargs["user_data_dir"] = act.user_data_dir
-
-    session = BrowserSession(**kwargs)
-    await session.start()
-    page = await session.get_current_page()
-    _sessions[sid] = session
-    _pages[sid] = page
-    logger.info("browser_session_started session_id={}", sid)
+    await _launch_session(sid, headless=act.headless, user_data_dir=act.user_data_dir)
     return "Browser session started."
 
 
@@ -352,26 +493,35 @@ async def _handle_stop(state: Any) -> str:
     return await _close_session(state)
 
 
-async def _handle_navigate(act: NavigateAction, page: Any) -> str:
+async def _handle_navigate(act: NavigateAction, page: Any, state: Any) -> str:
     await page.goto(act.url)
+    session = _sessions.get(_get_sid(state))
+    if session:
+        await _refresh_cdp_info(_get_sid(state), session, page, action="navigated")
     url = await page.get_url()
     title = await page.get_title()
     return f"Navigated to {url}\nTitle: {title}"
 
 
-async def _handle_click(act: ClickAction, page: Any) -> str:
+async def _handle_click(act: ClickAction, page: Any, state: Any) -> str:
     elements = await page.get_elements_by_css_selector(act.selector)
     if not elements:
         return f"No element found for selector: {act.selector}"
     await elements[0].click()
+    session = _sessions.get(_get_sid(state))
+    if session:
+        await _refresh_cdp_info(_get_sid(state), session, page, action="clicked")
     return f"Clicked: {act.selector}"
 
 
-async def _handle_fill(act: FillAction, page: Any) -> str:
+async def _handle_fill(act: FillAction, page: Any, state: Any) -> str:
     elements = await page.get_elements_by_css_selector(act.selector)
     if not elements:
         return f"No element found for selector: {act.selector}"
     await elements[0].fill(act.text, clear=act.clear)
+    session = _sessions.get(_get_sid(state))
+    if session:
+        await _refresh_cdp_info(_get_sid(state), session, page, action="filled")
     return f"Filled {act.selector} with text ({len(act.text)} chars)."
 
 
@@ -421,10 +571,13 @@ async def _handle_evaluate(act: EvaluateAction, page: Any) -> str:
     return str(result) if result is not None else "(no return value)"
 
 
-async def _handle_scroll(act: ScrollAction, page: Any) -> str:
+async def _handle_scroll(act: ScrollAction, page: Any, state: Any) -> str:
     delta = act.pixels if act.direction == "down" else -act.pixels
     mouse = await page.mouse
     await mouse.scroll(delta_y=delta)
+    session = _sessions.get(_get_sid(state))
+    if session:
+        await _refresh_cdp_info(_get_sid(state), session, page, action="scrolled")
     return f"Scrolled {act.direction} {act.pixels}px."
 
 
@@ -448,8 +601,9 @@ async def _handle_wait(act: WaitAction, page: Any) -> str:
 async def _handle_new_tab(act: NewTabAction, state: Any) -> str:
     session, _ = await _get_session(state)
     page = await session.new_page(act.url)
-    sid = state.metadata.get("session_id", "default") if state else "default"
+    sid = _get_sid(state)
     _pages[sid] = page
+    await _refresh_cdp_info(sid, session, page, action="new_tab")
     url = await page.get_url()
     title = await page.get_title()
     return f"New tab: {url}\nTitle: {title}"
@@ -465,11 +619,14 @@ async def _handle_close_tab(act: CloseTabAction, state: Any) -> str:
     await session.close_page(target)
     # Switch to first available tab
     remaining = await session.get_pages()
-    sid = state.metadata.get("session_id", "default") if state else "default"
+    sid = _get_sid(state)
     if remaining:
         _pages[sid] = remaining[0]
+        await _refresh_cdp_info(sid, session, remaining[0], action="closed_tab")
     else:
         _pages.pop(sid, None)
+        _cdp_info.pop(sid, None)
+        await _emit_browser_event(sid, active=False, action="closed_tab")
     return f"Closed tab {act.index} ({url}). {len(remaining)} tabs remaining."
 
 
@@ -490,8 +647,9 @@ async def _handle_switch_tab(act: SwitchTabAction, state: Any) -> str:
     if act.index < 0 or act.index >= len(pages):
         return f"Invalid tab index {act.index}. {len(pages)} tabs open."
     page = pages[act.index]
-    sid = state.metadata.get("session_id", "default") if state else "default"
+    sid = _get_sid(state)
     _pages[sid] = page
+    await _refresh_cdp_info(sid, session, page, action="tab_switched")
     url = await page.get_url()
     title = await page.get_title()
     return f"Switched to tab {act.index}: {title} — {url}"

@@ -35,6 +35,7 @@ import { WorkspaceFilesPanel } from '../WorkspaceFilesPanel'
 import { TodosPopover } from '../TodosPopover'
 import { WikiPanel } from '../WikiPanel'
 import { SchedulerPanel } from '../SchedulerPanel'
+import { BrowserViewer } from '../BrowserViewer'
 import { useTodosQuery } from '@/queries/useTodosQuery'
 import { useProvidersQuery, useTriggerDreamMutation } from '@/queries'
 import { useCommandsQuery } from '@/queries/useCommandsQuery'
@@ -166,12 +167,14 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
   const wikiOpen = useUIStore((s) => s.wikiOpen)
   const schedulerOpen = useUIStore((s) => s.schedulerOpen)
   const agentCapabilitiesOpen = useUIStore((s) => s.agentCapabilitiesOpen)
+  const browserOpen = useUIStore((s) => s.browserOpen)
   const toggleWiki = useUIStore((s) => s.toggleWiki)
   const toggleScheduler = useUIStore((s) => s.toggleScheduler)
   const toggleAgentCapabilities = useUIStore((s) => s.toggleAgentCapabilities)
   const closeWiki = useUIStore((s) => s.closeWiki)
   const closeScheduler = useUIStore((s) => s.closeScheduler)
   const closeAgentCapabilities = useUIStore((s) => s.closeAgentCapabilities)
+  const closeBrowser = useUIStore((s) => s.closeBrowser)
 
   // Subscribe to active-agent stream fields directly to avoid recomputing on
   // every other agent's tick.
@@ -1298,6 +1301,11 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
         onClose={closeScheduler}
         contextMode={mode}
         contextWorkspace={workspace ?? null}
+      />
+      <BrowserViewer
+        sessionId={sessionIdState}
+        open={browserOpen}
+        onClose={closeBrowser}
       />
       {showPalette && (
         <CommandPalette commands={paletteCommands} onClose={() => setShowPalette(false)} />

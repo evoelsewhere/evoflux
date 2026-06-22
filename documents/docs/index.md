@@ -39,6 +39,7 @@ Connects to LLM providers (Anthropic, Gemini, Vertex AI, OpenAI, OpenRouter, Cop
 | [Architecture](./architecture.md) | C4 diagrams, in-memory SSE streaming, SSE protocol, request flow. |
 | [Agent engine](./agent/index.md) | Reasoning loop, hooks, tools, teams, plugins, context, memory, summarization. |
 | [API reference](./api/index.md) | HTTP routes, SSE event payloads, file/upload handling. |
+| [Browser-in-App](./browser-in-app.md) | Native live browser viewer plan — CDP screencast, BrowserViewer panel, SSE integration. |
 
 ### Operations
 

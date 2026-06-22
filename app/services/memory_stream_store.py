@@ -51,6 +51,7 @@ class _TurnState:
         "usage",
         "error",
         "agent_not_configured",
+        "browser_session",
         "subscribers",
         "_cleanup_handle",
     )
@@ -80,6 +81,10 @@ class _TurnState:
         self.usage: dict | None = None
         self.error: str | None = None
         self.agent_not_configured: dict[str, Any] | None = None
+        # Latest browser session state for reconnect replay.  Updated on
+        # every ``browser_session`` SSE event; replayed in ``attach()`` so
+        # a mid-turn reconnect shows the correct "See Browser" button state.
+        self.browser_session: dict[str, Any] | None = None
         # Me keep list of queues — one per SSE client
         self.subscribers: list[asyncio.Queue] = []
         self._cleanup_handle: asyncio.TimerHandle | None = None
@@ -95,6 +100,8 @@ class _TurnState:
         self.usage = None
         self.error = None
         self.agent_not_configured = None
+        # Preserve browser_session across turns — the browser may still be
+        # active and the next turn needs to know about it.
 
 
 # Me store all active turns here
@@ -136,6 +143,10 @@ async def init_turn(session_id: str, *, keep_subscribers: bool = False) -> None:
                     pass
 
         state = _TurnState()
+        # Preserve browser_session across turns — the browser may still be
+        # active when a new turn starts.
+        if old is not None and old.browser_session is not None:
+            state.browser_session = old.browser_session
         _turns[session_id] = state
         _schedule_cleanup(session_id, state)
     except Exception as exc:
@@ -260,6 +271,12 @@ async def push_event(session_id: str, envelope: StreamEnvelope) -> None:
                 meta = data.get("metadata") or {}
                 if isinstance(meta, dict) and meta.get("error"):
                     entry["error"] = True
+
+        elif event_type == "browser_session":
+            # Store the latest browser session state for reconnect replay.
+            # Only the most recent snapshot matters — intermediate states
+            # (navigated, clicked, etc.) are not worth replaying.
+            state.browser_session = data
 
         # Me refresh TTL on every write
         _schedule_cleanup(session_id, state)
@@ -464,6 +481,13 @@ async def attach(session_id: str) -> AsyncGenerator[dict[str, str], None]:
                             metadata={"error": True} if entry.get("error") else {},
                         )
                     ).to_wire()
+
+            # Me replay browser session state so a mid-turn reconnect shows
+            # the correct "See Browser" button state.
+            if state.browser_session is not None:
+                yield StreamEnvelope.from_parts(
+                    event="browser_session", data=state.browser_session
+                ).to_wire()
 
             # Me replay accumulated thinking per-agent so the frontend can
             # route each chunk to the correct agent panel. A single empty-
