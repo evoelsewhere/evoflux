@@ -54,13 +54,13 @@ export function ViewToggle({
             title={label}
             onClick={() => onValueChange(mode)}
             className={cn(
-              'inline-flex h-8 w-8 items-center justify-center rounded-sm transition-colors',
+              'inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors',
               selected
                 ? 'bg-(--color-surface-2) text-(--color-text)'
                 : 'text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text-2)',
             )}
           >
-            <Icon size={14} aria-hidden="true" />
+            <Icon size={15} aria-hidden="true" />
           </button>
         )
       })}

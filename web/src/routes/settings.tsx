@@ -16,13 +16,15 @@
  *   │ Outlet — full width                                   │
  *   └──────────────────────────────────────────────────────┘
  */
-import { Outlet, useLocation, useNavigate } from '@tanstack/react-router'
-import { useState } from 'react'
+import { Link, Outlet, useLocation } from '@tanstack/react-router'
+import { useEffect, useState } from 'react'
+import { Home, Menu } from 'lucide-react'
 
-import { AppHeader } from '@/components/AppHeader'
+import { Breadcrumb, type BreadcrumbItem } from '@/components/Breadcrumb'
 import { SettingsSidebar } from '@/components/settings/SettingsSidebar'
 import { useIsMobile } from '@/hooks/use-mobile'
-import type { BreadcrumbItem } from '@/components/Breadcrumb'
+import { usePlatform } from '@/hooks/use-platform'
+import { useTauriDrag } from '@/hooks/use-tauri-drag'
 
 /** Page title shown in the AppHeader based on the current pathname. */
 function pageTitleFor(pathname: string): string {
@@ -47,27 +49,71 @@ function breadcrumbsFor(pathname: string): BreadcrumbItem[] {
   ]
 }
 
+const ICON_BTN =
+  'flex h-9 w-9 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) md:h-7 md:w-7'
+
 export function SettingsLayout() {
   const { pathname } = useLocation()
-  const navigate = useNavigate()
   const isMobile = useIsMobile()
+  const { isMacOverlay } = usePlatform()
+  const dragHandlers = useTauriDrag()
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
 
-  const handleToggleSidebar = () => {
-    if (isMobile) {
-      setMobileSidebarOpen((v) => !v)
-    } else {
-      navigate({ to: '/settings' })
-    }
-  }
+  useEffect(() => {
+    if (!isMacOverlay) return
+    document.documentElement.setAttribute('data-platform', 'mac-overlay')
+    return () => document.documentElement.removeAttribute('data-platform')
+  }, [isMacOverlay])
 
   return (
     <div className="mobile-safe-shell mobile-viewport flex h-dvh flex-col overflow-hidden bg-(--bg-page) text-(--color-text) md:gap-0.5 md:p-1">
-      <AppHeader
-        title={isMobile ? pageTitleFor(pathname) : undefined}
-        onToggleSidebar={handleToggleSidebar}
-        breadcrumbs={!isMobile ? breadcrumbsFor(pathname) : undefined}
-      />
+      {/* Header — disconnected pills matching TeamChatView */}
+      <header
+        {...dragHandlers}
+        className={`mobile-safe-header relative z-20 flex shrink-0 items-center gap-1.5 px-1.5 py-1.5${
+          isMacOverlay ? ' select-none' : ''
+        }`}
+        style={isMacOverlay ? { paddingLeft: 'calc(var(--spacing-mac-traffic-inset) + 6px)' } : undefined}
+      >
+        {/* Left pill */}
+        <div
+          className={`flex items-center gap-1 ${
+            isMobile
+              ? 'flex-1'
+              : 'shrink-0 rounded-[10px] bg-(--bg-sidebar)/80 px-2.5 py-1.5 shadow-sm backdrop-blur-xl'
+          }`}
+        >
+          {!isMobile && (
+            <Link to="/" aria-label="Home" title="Home" className={ICON_BTN}>
+              <Home size={14} aria-hidden="true" />
+            </Link>
+          )}
+          {isMobile && (
+            <button
+              type="button"
+              onClick={() => setMobileSidebarOpen((v) => !v)}
+              aria-label="Open settings navigation"
+              className={ICON_BTN}
+            >
+              <Menu size={14} aria-hidden="true" />
+            </button>
+          )}
+          {!isMobile && <Breadcrumb items={breadcrumbsFor(pathname)} />}
+          {isMobile && (
+            <span className="min-w-0 truncate text-sm font-semibold text-(--color-text)">
+              {pageTitleFor(pathname)}
+            </span>
+          )}
+        </div>
+
+        <div className="flex-1" />
+
+        {/* Right pill — connection status */}
+        <div className="flex shrink-0 items-center gap-1.5 rounded-[10px] bg-(--bg-sidebar)/80 px-3 py-2 shadow-sm backdrop-blur-xl">
+          <span aria-hidden="true" className="h-2 w-2 rounded-full bg-(--color-success)" />
+          <span className="font-mono text-[11px] text-(--color-text-muted)">local</span>
+        </div>
+      </header>
 
       <div className="flex min-h-0 flex-1 overflow-hidden md:gap-0.5">
         {/* Desktop sidebar — always visible. Mobile renders the same
@@ -88,7 +134,7 @@ export function SettingsLayout() {
           </>
         )}
 
-        <main id="main" className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[10px] bg-(--bg-card) md:shadow-sm">
+        <main id="main" className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[10px] bg-(--bg-page) md:shadow-sm">
           <Outlet />
         </main>
       </div>
