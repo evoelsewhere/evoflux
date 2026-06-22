@@ -182,10 +182,23 @@ export const ScreencastCanvas = forwardRef<ScreencastHandle, ScreencastCanvasPro
       function connect() {
         if (!alive) return
 
-        const base = apiBaseUrl().replace(/^http/, 'ws')
+        // Build WebSocket URL — resolve to the actual backend, not the
+        // Vite dev proxy (which doesn't reliably forward WS upgrades).
+        let wsUrl: string
+        const apiBase = apiBaseUrl()
+        if (apiBase.startsWith('http')) {
+          // Production / Tauri: absolute URL from __OAD_API_BASE_URL__
+          wsUrl = apiBase.replace(/^http/, 'ws')
+        } else {
+          // Dev mode: apiBase is "/api" (relative).  Point WS directly
+          // at the backend so we don't depend on Vite's WS proxy.
+          const host = window.location.hostname || 'localhost'
+          const backendPort = '8000' // matches VITE_API_PROXY_TARGET default
+          wsUrl = `ws://${host}:${backendPort}/api`
+        }
         const url = withTokenParam(
-          `${base}/${sessionId}/browser/screencast`,
-        ).replace(/^http/, 'ws')
+          `${wsUrl}/${sessionId}/browser/screencast`,
+        )
 
         const ws = new WebSocket(url)
         wsRef.current = ws
@@ -285,7 +298,7 @@ export const ScreencastCanvas = forwardRef<ScreencastHandle, ScreencastCanvasPro
           width: '100%',
           height: '100%',
           objectFit: 'contain',
-          backgroundColor: 'var(--bg-page, #000)',
+          backgroundColor: 'var(--bg-key)',
           borderRadius: 'var(--radius-md, 6px)',
           cursor: interactive ? 'crosshair' : 'default',
           outline: 'none',

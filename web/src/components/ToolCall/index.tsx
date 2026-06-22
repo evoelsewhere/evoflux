@@ -368,12 +368,12 @@ function SeeBrowserButton() {
         e.stopPropagation()
         toggleBrowser()
       }}
-      className={`ml-1 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium transition-all ${
+      className={`ml-1 inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-semibold transition-colors border ${
         browserOpen
-          ? 'bg-(--color-accent) text-white shadow-sm'
+          ? 'border-(--accent-blue) bg-(--accent-blue) text-white'
           : browserActive
-            ? 'bg-(--color-accent)/10 text-(--color-accent) ring-1 ring-(--color-accent)/20 hover:bg-(--color-accent) hover:text-white hover:ring-0'
-            : 'bg-(--bg-key) text-(--color-accent) hover:bg-(--color-accent) hover:text-white'
+            ? 'border-(--accent-blue) bg-(--accent-blue-soft) text-(--accent-blue-text) hover:bg-(--accent-blue) hover:text-white hover:border-(--accent-blue)'
+            : 'border-(--color-border-strong) bg-(--bg-page) text-(--accent-blue-text) hover:bg-(--accent-blue-soft) hover:border-(--accent-blue)'
       }`}
       title={browserOpen ? 'Hide browser panel' : 'See browser live'}
     >

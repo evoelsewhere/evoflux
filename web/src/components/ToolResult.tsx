@@ -279,7 +279,7 @@ function BrowserUseResult({ result }: { result: string }) {
     // Single action — render as compact status
     return (
       <div className="flex items-start gap-1.5 text-[11px] leading-relaxed text-(--color-text-2)">
-        <MonitorPlayIcon size={12} className="mt-0.5 shrink-0 text-(--color-accent) opacity-60" />
+        <MonitorPlayIcon size={12} className="mt-0.5 shrink-0 text-(--accent-blue)" />
         <span className="whitespace-pre-wrap break-words">{result}</span>
       </div>
     )
@@ -299,7 +299,7 @@ function BrowserUseResult({ result }: { result: string }) {
               className={`mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold ${
                 isError
                   ? 'bg-(--color-error-subtle) text-(--color-error)'
-                  : 'bg-(--color-accent)/10 text-(--color-accent)'
+                  : 'bg-(--accent-blue-soft) text-(--accent-blue-text)'
               }`}
             >
               {i + 1}
