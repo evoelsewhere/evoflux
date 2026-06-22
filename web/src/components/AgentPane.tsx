@@ -12,6 +12,7 @@
  * footer while the agent is actively streaming.
  */
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
 
 import { LazyMarkdownBlock } from '@/utils/LazyMarkdownBlock'
 import { ChevronDown, ChevronUp, Copy, Check, Undo2, Terminal } from 'lucide-react'
@@ -536,10 +537,11 @@ export function AgentPane({
               (isContinuing && stream.currentBlocks.length === 0) ||
               (stream.currentBlocks.length > 0 && stream.currentBlocks.every((b) => b.type === 'user'))
             ))) && (
-            <div className="flex items-center gap-1.5 px-3 pt-3" role="status" aria-label={`${name} is preparing a response`}>
-              <span aria-hidden="true" className="h-1.5 w-1.5 animate-bounce rounded-full bg-(--color-accent)" style={{ animationDelay: '0ms' }} />
-              <span aria-hidden="true" className="h-1.5 w-1.5 animate-bounce rounded-full bg-(--color-accent)" style={{ animationDelay: '150ms' }} />
-              <span aria-hidden="true" className="h-1.5 w-1.5 animate-bounce rounded-full bg-(--color-accent)" style={{ animationDelay: '300ms' }} />
+            <div className="flex items-center gap-2 px-3 pt-3" role="status" aria-label={`${name} is preparing a response`}>
+              <div className="relative flex h-5 w-5 shrink-0 items-center justify-center" aria-hidden="true">
+                <div className="absolute inset-0 animate-spin rounded-full border-[1.5px] border-(--color-accent)/20 border-t-(--color-accent) motion-reduce:animate-none" />
+                <img src={EvoFluxLogo} width={11} height={11} className="rounded-[3px]" alt="" />
+              </div>
             </div>
           )}
 

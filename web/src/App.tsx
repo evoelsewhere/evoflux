@@ -3,6 +3,7 @@ import { RouterProvider } from '@tanstack/react-router'
 import { UpdateCard } from './components/UpdateCard'
 import { useAppBackendBootstrap } from './hooks/use-app-backend-bootstrap'
 import { router } from './router'
+import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
 
 function App() {
   const backendReady = useAppBackendBootstrap()
@@ -19,10 +20,10 @@ function App() {
 
 function AppLoadingScreen() {
   return (
-    <div className="mobile-safe-shell mobile-viewport flex h-dvh items-center justify-center bg-(--bg-page) text-(--color-text-muted)" role="status" aria-live="polite">
-      <div className="flex items-center gap-3 rounded-full border border-(--color-border) bg-(--bg-card) px-4 py-3 text-sm shadow-sm">
-        <span className="h-2 w-2 animate-pulse rounded-full bg-(--color-accent) motion-reduce:animate-none" />
-        Loading EvoFlux...
+    <div className="mobile-safe-shell mobile-viewport flex h-dvh items-center justify-center bg-(--bg-page)" role="status" aria-label="Loading EvoFlux">
+      <div className="relative flex items-center justify-center">
+        <div className="absolute h-20 w-20 animate-pulse rounded-3xl bg-(--color-accent) opacity-20 blur-xl motion-reduce:animate-none" />
+        <img src={EvoFluxLogo} width={52} height={52} className="relative rounded-2xl" alt="" aria-hidden="true" />
       </div>
     </div>
   )

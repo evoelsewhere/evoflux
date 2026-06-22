@@ -162,6 +162,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
   const sessionFastMode = useTeamStore((s) => s.sessionFastMode)
   const leadName       = useTeamStore((s) => s.leadName)
   const activeLoop     = useTeamStore((s) => s.activeLoop)
+  const isConnected    = useTeamStore((s) => s.isConnected)
 
   // Utility modal state lives in useUIStore so only one can be open at a time.
   const wikiOpen = useUIStore((s) => s.wikiOpen)
@@ -1196,6 +1197,30 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
         ) : mode === 'coding' && workspace ? (
           <div className="flex flex-1 flex-col items-center justify-center py-16">
             <WorkspaceInfoCard workspace={workspace} />
+          </div>
+        ) : sessionId && !isConnected ? (
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden" aria-hidden="true">
+            <div className="flex-1 overflow-hidden">
+              <div className="mx-auto max-w-3xl space-y-8 px-4 py-6">
+                <div className="flex justify-end">
+                  <div className="h-9 w-44 animate-pulse rounded-2xl bg-(--bg-key)" />
+                </div>
+                <div className="space-y-2.5">
+                  <div className="h-3.5 w-3/4 animate-pulse rounded-lg bg-(--bg-key)" />
+                  <div className="h-3.5 w-full animate-pulse rounded-lg bg-(--bg-key)" />
+                  <div className="h-3.5 w-2/3 animate-pulse rounded-lg bg-(--bg-key)" />
+                  <div className="mt-1 h-3.5 w-5/6 animate-pulse rounded-lg bg-(--bg-key)" />
+                </div>
+                <div className="flex justify-end">
+                  <div className="h-9 w-32 animate-pulse rounded-2xl bg-(--bg-key)" />
+                </div>
+                <div className="space-y-2.5">
+                  <div className="h-3.5 w-1/2 animate-pulse rounded-lg bg-(--bg-key)" />
+                  <div className="h-3.5 w-5/6 animate-pulse rounded-lg bg-(--bg-key)" />
+                  <div className="h-3.5 w-3/4 animate-pulse rounded-lg bg-(--bg-key)" />
+                </div>
+              </div>
+            </div>
           </div>
         ) : null}
 

@@ -1,14 +1,15 @@
 import { useEffect } from 'react'
 import { useNavigate } from '@tanstack/react-router'
+import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
 
 export function SchedulerPage() {
   const navigate = useNavigate()
   useEffect(() => { navigate({ to: '/forge', replace: true }) }, [navigate])
   return (
-    <main className="mobile-safe-shell mobile-viewport flex h-dvh items-center justify-center bg-(--bg-page) text-(--color-text-muted)">
-      <div className="flex items-center gap-3 rounded-full border border-(--color-border) bg-(--bg-card) px-4 py-3 text-sm shadow-sm">
-        <span className="h-2 w-2 animate-pulse rounded-full bg-(--color-accent)" />
-        Loading EvoFlux...
+    <main className="mobile-safe-shell mobile-viewport flex h-dvh items-center justify-center bg-(--bg-page)" aria-label="Loading EvoFlux">
+      <div className="relative flex items-center justify-center">
+        <div className="absolute h-20 w-20 animate-pulse rounded-3xl bg-(--color-accent) opacity-20 blur-xl motion-reduce:animate-none" />
+        <img src={EvoFluxLogo} width={52} height={52} className="relative rounded-2xl" alt="" aria-hidden="true" />
       </div>
     </main>
   )

@@ -106,35 +106,41 @@
 :root.dark {
     color-scheme: dark;
 
-    /* Surfaces */
-    --bg-page:           #0A0A0A;
-    --bg-sidebar:        #171717;
-    --bg-card:           #171717;
-    --bg-input:          #171717;
-    --bg-key:            #262626;
-    --bg-muted:          #262626;
-    --bg-send:           #F5F5F5;
-    --color-surface:     #171717;
-    --color-surface-2:   #262626;
-    --color-bg-elevated: #171717;
+    /* Surfaces — dark, neutral with minimal tint */
+    --bg-page:           #0C0C0E;
+    --bg-sidebar:        #141416;
+    --bg-card:           #1C1C1F;
+    --bg-input:          #1C1C1F;
+    --bg-key:            #272729;
+    --bg-muted:          #272729;
+    --bg-send:           #F2F2F4;
+    --color-surface:     #1C1C1F;
+    --color-surface-2:   #272729;
+    --color-bg-elevated: #202023;
 
     /* Borders */
-    --border-soft:         #1F1F1F;
-    --border-card:         #262626;
-    --color-border-subtle: #1F1F1F;
-    --color-border:        #262626;
-    --color-border-strong: #404040;
+    --border-soft:         #1F1F22;
+    --border-card:         #2C2C30;
+    --color-border-subtle: #1F1F22;
+    --color-border:        #2C2C30;
+    --color-border-strong: #3E3E44;
 
     /* Text */
-    --color-text:           #F5F5F5;
-    --color-text-2:         #D4D4D4;
-    --color-text-muted:     #737373;
-    --color-text-subtle:    #525252;
-    --color-text-on-accent: #0A0A0A;
+    --color-text:           #F2F2F4;
+    --color-text-2:         #C8C8CC;
+    --color-text-muted:     #686870;
+    --color-text-subtle:    #484850;
+    --color-text-on-accent: #0C0C0E;
 
     /* Accent */
-    --color-accent:  #F5F5F5;
-    --color-overlay: #000000B3;
+    --color-accent:  #F2F2F4;
+    --color-overlay: #000000CC;
+
+    /* Arc gradients */
+    --color-gradient-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --color-gradient-cyan:    linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    --color-gradient-rose:    linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    --color-gradient-amber:   linear-gradient(135deg, #f7971e 0%, #ffd200 100%);
 
     /* Agent chips — muted monochrome with single accent hue */
     --accent-blue:        #60A5FA;
@@ -193,9 +199,9 @@
     --color-syn-operator: #737373;
 
     /* Focus + depth */
-    --focus-ring:   #60A5FA;
-    --shadow-depth: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.3);
-    --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.32);
+    --focus-ring:   #7C6FD8;
+    --shadow-depth: 0 2px 4px rgba(0, 0, 0, 0.5), 0 4px 16px rgba(0, 0, 0, 0.4);
+    --shadow-popover: 0 16px 48px rgba(0, 0, 0, 0.65), 0 6px 24px rgba(0, 0, 0, 0.45);
 
     /* Motion */
     --motion-instant: 80ms;
@@ -252,35 +258,41 @@
 :root.light {
     color-scheme: light;
 
-    /* Surfaces */
-    --bg-page:           #FFFFFF;
-    --bg-sidebar:        #FAFAFA;
+    /* Surfaces — light, neutral with minimal tint */
+    --bg-page:           #FAFAFA;
+    --bg-sidebar:        #F5F5F7;
     --bg-card:           #FFFFFF;
     --bg-input:          #FFFFFF;
-    --bg-key:            #F5F5F5;
-    --bg-muted:          #F5F5F5;
-    --bg-send:           #0A0A0A;
+    --bg-key:            #EBEBED;
+    --bg-muted:          #EBEBED;
+    --bg-send:           #111114;
     --color-surface:     #FFFFFF;
-    --color-surface-2:   #F5F5F5;
+    --color-surface-2:   #EBEBED;
     --color-bg-elevated: #FFFFFF;
 
     /* Borders */
-    --border-soft:         #F0F0F0;
-    --border-card:         #E5E5E5;
-    --color-border-subtle: #F0F0F0;
-    --color-border:        #E5E5E5;
-    --color-border-strong: #D4D4D4;
+    --border-soft:         #E8E8EA;
+    --border-card:         #E0E0E2;
+    --color-border-subtle: #E8E8EA;
+    --color-border:        #E0E0E2;
+    --color-border-strong: #C8C8CA;
 
     /* Text */
-    --color-text:           #0A0A0A;
-    --color-text-2:         #525252;
-    --color-text-muted:     #A3A3A3;
-    --color-text-subtle:    #D4D4D4;
-    --color-text-on-accent: #FFFFFF;
+    --color-text:           #111114;
+    --color-text-2:         #4A4A52;
+    --color-text-muted:     #8A8A94;
+    --color-text-subtle:    #C4C4C8;
+    --color-text-on-accent: #FAFAFA;
 
     /* Accent */
-    --color-accent:  #0A0A0A;
-    --color-overlay: rgba(0, 0, 0, 0.4);
+    --color-accent:  #111114;
+    --color-overlay: rgba(0, 0, 0, 0.40);
+
+    /* Arc gradients */
+    --color-gradient-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --color-gradient-cyan:    linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    --color-gradient-rose:    linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    --color-gradient-amber:   linear-gradient(135deg, #f7971e 0%, #ffd200 100%);
 
     /* Agent chips */
     --accent-blue:        #3B82F6;
@@ -339,9 +351,9 @@
     --color-syn-operator: #737373;
 
     /* Focus + depth */
-    --focus-ring:   #3B82F6;
-    --shadow-depth: 0 1px 2px rgba(0, 0, 0, 0.04), 0 2px 8px rgba(0, 0, 0, 0.06);
-    --shadow-popover: 0 8px 24px rgba(26, 23, 20, 0.16);
+    --focus-ring:   #667eea;
+    --shadow-depth: 0 1px 3px rgba(10, 10, 30, 0.07), 0 4px 12px rgba(10, 10, 30, 0.10);
+    --shadow-popover: 0 8px 32px rgba(10, 10, 30, 0.20), 0 4px 16px rgba(10, 10, 30, 0.12);
 }
 
 @layer base {
@@ -445,19 +457,19 @@ html[data-mobile-shell] .text-\[10px\] {
 }
 
 /* ─────────────────────────────────────────────────────────────
- * Scrollbar — minimal
+ * Scrollbar — minimal Arc-style
  * ───────────────────────────────────────────────────────────── */
 @layer base {
   ::-webkit-scrollbar {
-    width: 5px;
-    height: 5px;
+    width: 4px;
+    height: 4px;
   }
   ::-webkit-scrollbar-track {
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: var(--color-border);
-    border-radius: 3px;
+    background: var(--color-border-strong);
+    border-radius: 4px;
   }
   ::-webkit-scrollbar-thumb:hover {
     background: var(--color-text-muted);
@@ -583,6 +595,54 @@ html[data-mobile-shell] .text-\[10px\] {
   outline: 2px dashed color-mix(in srgb, var(--color-accent) 55%, transparent);
   outline-offset: -2px;
   background: color-mix(in srgb, var(--color-accent) 4%, transparent);
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * Arc gradient utilities
+ * ───────────────────────────────────────────────────────────── */
+.gradient-primary {
+  background: var(--color-gradient-primary);
+}
+.gradient-cyan {
+  background: var(--color-gradient-cyan);
+}
+.gradient-rose {
+  background: var(--color-gradient-rose);
+}
+.gradient-amber {
+  background: var(--color-gradient-amber);
+}
+
+/* Gradient text */
+.text-gradient-primary {
+  background: var(--color-gradient-primary);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* Arc-style sidebar active indicator (left gradient bar) */
+.arc-active-indicator {
+  position: relative;
+}
+.arc-active-indicator::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 15%;
+  bottom: 15%;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--color-gradient-primary);
+}
+
+/* Subtle gradient glow on hover for interactive surfaces */
+.arc-hover-glow {
+  transition: box-shadow var(--motion-fast) var(--ease-out);
+}
+.arc-hover-glow:hover {
+  box-shadow: 0 0 0 1px rgba(102, 126, 234, 0.15), 0 4px 16px rgba(102, 126, 234, 0.08);
 }
 
 /* ─────────────────────────────────────────────────────────────

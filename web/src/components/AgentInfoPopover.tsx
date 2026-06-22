@@ -162,21 +162,34 @@ function groupTools(
   return groups
 }
 
-function ToolGroupHeader({ server, count }: { server: string | null; count: number }) {
-  if (server === null) {
-    return (
-      <div className="flex items-center gap-2 pt-2 pb-1">
-        <span className="text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">Built-in</span>
-        <span className="rounded-md bg-(--bg-key) px-1.5 py-0.5 text-[10px] text-(--color-text-muted)">{count}</span>
-      </div>
-    )
-  }
+function ToolGroupHeader({
+  server,
+  count,
+  collapsed,
+  onToggle,
+}: {
+  server: string | null
+  count: number
+  collapsed: boolean
+  onToggle: () => void
+}) {
+  const label = server === null ? 'Built-in' : `MCP · ${server}`
   return (
-    <div className="flex items-center gap-2 pt-2 pb-1">
-      <Plug size={10} className="text-(--color-text-muted)" aria-hidden />
-      <span className="text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">MCP · {server}</span>
+    <button
+      type="button"
+      onClick={onToggle}
+      className="flex w-full items-center gap-2 pt-2 pb-1 text-left hover:opacity-80 transition-opacity"
+    >
+      {server !== null && <Plug size={10} className="text-(--color-text-muted) shrink-0" aria-hidden />}
+      <span className="text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">{label}</span>
       <span className="rounded-md bg-(--bg-key) px-1.5 py-0.5 text-[10px] text-(--color-text-muted)">{count}</span>
-    </div>
+      <ChevronDown
+        size={10}
+        className={`ml-auto shrink-0 text-(--color-text-muted) transition-transform duration-150 ${
+          collapsed ? '' : 'rotate-180'
+        }`}
+      />
+    </button>
   )
 }
 
@@ -241,6 +254,17 @@ export function AgentInfoPopover({
     [leadAgent],
   )
 
+  // Built-in group collapsed by default; MCP groups open by default
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
+    () => new Set(['__builtin__']),
+  )
+  const toggleGroup = (key: string) =>
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      return next
+    })
+
   return (
     <div ref={containerRef} className="relative">
       <button
@@ -295,20 +319,41 @@ export function AgentInfoPopover({
                     <h4 className="mb-1 text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
                       Tools
                     </h4>
-                    {toolGroups.map((group) => (
-                      <div key={group.server ?? '__builtin__'} className="mb-1">
-                        <ToolGroupHeader server={group.server} count={group.tools.length} />
-                        <div className="flex flex-col gap-0.5">
-                          {group.tools.map((tool) => (
-                            <ToolRow
-                              key={tool.name}
-                              name={tool.name}
-                              description={tool.description}
-                            />
-                          ))}
+                    {toolGroups.map((group) => {
+                      const key = group.server ?? '__builtin__'
+                      const collapsed = collapsedGroups.has(key)
+                      return (
+                        <div key={key} className="mb-1">
+                          <ToolGroupHeader
+                            server={group.server}
+                            count={group.tools.length}
+                            collapsed={collapsed}
+                            onToggle={() => toggleGroup(key)}
+                          />
+                          <AnimatePresence initial={false}>
+                            {!collapsed && (
+                              <motion.div
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: 'auto', opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                transition={{ duration: 0.15 }}
+                                className="overflow-hidden"
+                              >
+                                <div className="flex flex-col gap-0.5 pt-0.5">
+                                  {group.tools.map((tool) => (
+                                    <ToolRow
+                                      key={tool.name}
+                                      name={tool.name}
+                                      description={tool.description}
+                                    />
+                                  ))}
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
                         </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
               </div>

@@ -290,9 +290,9 @@ export function Sidebar({
 
   const resizable = useResizableWidth({
     storageKey: "oa.sidebar.width",
-    defaultWidth: 256,
-    minWidth: 220,
-    maxWidth: 420,
+    defaultWidth: 220,
+    minWidth: 180,
+    maxWidth: 360,
     edge: "right",
     disabled: isMobile || collapsed,
   });
@@ -335,8 +335,8 @@ export function Sidebar({
         }}
         className={
           isMobile
-            ? "mobile-safe-top fixed bottom-0 left-0 z-40 flex w-[min(272px,calc(100vw-2rem))] shrink-0 flex-col overflow-hidden border-r border-(--color-border) bg-(--bg-page) shadow-xl"
-            : "relative flex shrink-0 flex-col overflow-hidden border-r border-(--color-border) bg-(--bg-page)"
+            ? "mobile-safe-top fixed bottom-0 left-0 z-40 flex w-[min(272px,calc(100vw-2rem))] shrink-0 flex-col overflow-hidden border-r border-(--border-soft) bg-(--bg-sidebar) shadow-xl"
+            : "relative flex shrink-0 flex-col overflow-hidden border-r border-(--border-soft) bg-(--bg-sidebar)"
         }
         style={isMobile ? undefined : { minWidth: desktopWidth }}
       >
