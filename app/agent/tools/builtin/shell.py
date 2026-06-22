@@ -41,6 +41,7 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
+import subprocess
 import sys
 import uuid
 from collections import deque
@@ -370,6 +371,17 @@ async def _shell(
         # is launched from a GUI/launchd context where PATH is minimal.
         # See ``shell_runtime.build_argv`` for details.
         argv = _shell_mod.build_argv(shell_bin, command)
+        # On Windows: CREATE_NO_WINDOW prevents a console window from flashing
+        # (important when running as a Tauri GUI sidecar with no attached
+        # console).  start_new_session is POSIX-only; on Windows we rely on
+        # CREATE_NO_WINDOW + CREATE_NEW_PROCESS_GROUP via creationflags.
+        _extra: dict[str, object] = {}
+        if sys.platform == "win32":
+            _extra["creationflags"] = (
+                subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
+            )
+        else:
+            _extra["start_new_session"] = True  # new process group → clean killTree
         proc = await asyncio.create_subprocess_exec(
             shell_bin,
             *argv,
@@ -378,7 +390,7 @@ async def _shell(
             stderr=asyncio.subprocess.STDOUT,
             cwd=str(cwd),
             env=_scrubbed_env(),
-            start_new_session=True,  # new process group → clean killTree
+            **_extra,
         )
 
         # ── Background mode ───────────────────────────────────────────
