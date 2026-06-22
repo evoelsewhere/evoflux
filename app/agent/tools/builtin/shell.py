@@ -382,16 +382,79 @@ async def _shell(
             )
         else:
             _extra["start_new_session"] = True  # new process group → clean killTree
-        proc = await asyncio.create_subprocess_exec(
-            shell_bin,
-            *argv,
-            stdin=asyncio.subprocess.DEVNULL,  # no TTY — interactive prompts must not hang
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-            cwd=str(cwd),
-            env=_scrubbed_env(),
-            **_extra,
-        )
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                shell_bin,
+                *argv,
+                stdin=asyncio.subprocess.DEVNULL,  # no TTY — interactive prompts must not hang
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                cwd=str(cwd),
+                env=_scrubbed_env(),
+                **_extra,
+            )
+        except NotImplementedError:
+            # Windows SelectorEventLoop does not support asyncio subprocess.
+            # Fall back to synchronous subprocess.run() in a thread.
+            # Background mode is not supported in this fallback path.
+            logger.info(
+                "shell_execute_thread_fallback reason=NotImplementedError command={}",
+                command[:200],
+            )
+            if background:
+                return "[Failed — background mode is not supported when asyncio subprocess is unavailable on this system]"
+
+            _win_cflags = (
+                subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
+                if sys.platform == "win32"
+                else 0
+            )
+
+            def _run_sync() -> subprocess.CompletedProcess[bytes]:
+                return subprocess.run(  # noqa: S603
+                    [shell_bin, *argv],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    cwd=str(cwd),
+                    env=_scrubbed_env(),
+                    timeout=timeout,
+                    creationflags=_win_cflags,
+                )
+
+            try:
+                completed = await asyncio.to_thread(_run_sync)
+            except subprocess.TimeoutExpired:
+                raise TimeoutError(
+                    f"Command timed out after {timeout}s: {command!r}. "
+                    f"Retry with a higher timeout_seconds value."
+                )
+
+            raw_bytes = completed.stdout or b""
+            text = raw_bytes.decode("utf-8", errors="replace")
+            exit_code = completed.returncode
+            total_bytes = len(raw_bytes)
+            logger.info(
+                "shell_execute_complete exit_code={} output_bytes={}{} (thread_fallback)",
+                exit_code,
+                total_bytes,
+                desc_tag,
+            )
+            await _emit_tool_output(_tool_output, text)
+            status = (
+                "[Succeeded]" if exit_code == 0 else f"[Failed — exit code {exit_code}]"
+            )
+            tail, was_cut = _tail_text(text, _OUTPUT_MAX_LINES, _OUTPUT_MAX_BYTES)
+            if was_cut:
+                call_id = str(uuid.uuid4())[:8]
+                try:
+                    spill_path = _spill_output(text, sandbox.workspace_root, call_id)
+                    header = f"{status}\n\n...output truncated — full output saved to {spill_path}\n\n"
+                except Exception:
+                    header = f"{status}\n\n...output truncated\n\n"
+                return header + tail
+            return f"{status}\n\n{text}"
 
         # ── Background mode ───────────────────────────────────────────
         if background:

@@ -183,7 +183,7 @@ Proximity should never *replace* the binary hover state — it should coexist. A
 | `⌘N` / `Ctrl+N` | Start new chat | active |
 | `⌘K` / `Ctrl+K` | Split active pane to the right (team view, unified mode) | disabled |
 | `Ctrl+A` | Toggle Agent Capabilities panel (team view) | active |
-| `Ctrl+T` | Toggle Todos popover (team view, requires active session) | active |
+| `Ctrl+T` | Toggle Tasks list in chat input (team view, requires active session) | active |
 | `Ctrl+I` | Focus chat input (team view) | active |
 | `Esc` | Close top-most modal/panel; cancel in-flight action; blur focused input | active |
 | `Tab` / `Shift+Tab` | Move focus forward / backward | active |

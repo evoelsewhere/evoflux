@@ -250,5 +250,9 @@ def cmd_serve(args: argparse.Namespace) -> None:
             )
         await serve_task
 
+    # On Windows ensure ProactorEventLoop is used — SelectorEventLoop does not
+    # support asyncio.create_subprocess_exec() which the shell/python tools need.
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())  # type: ignore[attr-defined]
     # Run in this thread; KeyboardInterrupt / SIGTERM propagate naturally.
     asyncio.run(_serve_and_handshake())

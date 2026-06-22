@@ -60,7 +60,7 @@ Connects to LLM providers (Anthropic, Gemini, Vertex AI, OpenAI, OpenRouter, Cop
 | [Voice input](./web/voice-input.md) | Client speech recognition and transcript insertion. |
 | [Tool results](./web/tool-results.md) | Per-tool result renderers. |
 | [Workspace Files panel](./web/workspace-files.md) | Files drawer, previews, live invalidation. |
-| [Todos popover](./web/todos.md) | Task list display, live invalidation, shortcut. |
+| [Task list](./web/todos.md) | Task list display, live invalidation, shortcut. |
 | [Mobile layout](./web/mobile.md) | Phone-first responsive design — breakpoints, safe areas. |
 
 ### Contributing

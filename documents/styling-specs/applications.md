@@ -398,7 +398,7 @@ The topbar is composed from smaller primitives. Each primitive owns its appearan
 2. **Dream indicator** — small mono row with a pulsing moon glyph, shown while the dream loop is running. Label is hidden on narrow viewports; the pulsing glyph is the minimum.
 3. **Split-pane controls** — desktop only, only meaningful in unified view. Two icon-only ghost buttons for "split down" and "split right".
 4. **View toggle** — desktop only. Three-state segmented control for `agent` / `split` / `unified`. See [View toggle](#view-toggle).
-5. **Topbar action triplet** — Todos, Files, Agents. Each is a small icon+label button (see [Topbar action](#topbar-action)).
+5. **Topbar action pair** — Files, Agents. Each is a small icon+label button (see [Topbar action](#topbar-action)).
 
 **Visibility rules**
 
@@ -433,7 +433,7 @@ Three-state icon-only segmented control for chat view modes — `agent` (single 
 
 ## Topbar action
 
-Small icon+label button used in the agent topbar (Todos, Files, Agents).
+Small icon+label button used in the agent topbar (Files, Agents).
 
 **Rules**
 
@@ -445,32 +445,32 @@ Small icon+label button used in the agent topbar (Todos, Files, Agents).
 
 ---
 
-## Todos popover
+## Task list
 
-Task-list popover surfaced from the agent topbar. Trigger is a `TopbarAction`; content is a paper-card panel.
+Collapsible task list rendered inline inside the chat input card.
 
 **Trigger**
 
-- Uses the `TopbarAction` primitive directly so it sits inline with Files and Agents.
+- A small circular button in the input toolbar, next to Attach and Shell.
 - The accent dot is shown when any task is in progress.
 - Disabled (with a "No active session" tooltip) when there is no session.
 
 **Panel chrome**
 
-- Surface: medium-width panel, small radius, `--color-surface` fill, 1px `--color-border` outline (no shadow ring), shadow at the depth scale because the panel floats over chat.
+- Surface: inline section at the top of the input card, separated by a 1px `--color-border` divider, `--color-surface` fill inherited from the card.
 - Header: mono uppercase 10px title ("Tasks"), mono completion counter ("3 / 8 done") aligned to the trailing edge.
-- Empty state: each status column shows a hand-drawn Inter `Nothing here` callout in `--color-text-subtle`.
+- Empty state: a single centered `No tasks yet` line in `--color-text-subtle`.
 
 **Item rules**
 
 - Sort order: in-progress, then pending, then completed, then cancelled.
 - Status glyph leads the row, sized small. Completed and cancelled rows use `line-through` and shift the text to `--color-text-subtle`.
-- Priority badge trails the row in mono uppercase 9px on a soft fill: high uses `--color-error` at low alpha, medium uses `--color-warning` at low alpha, low uses `--bg-key` neutral.
+- Assigned/claimed agent tag trails the row in mono uppercase 10px `--color-text-subtle`.
 
 **Don't**
 
-- Color the status glyph by agent role. The popover represents the assistant's task list as a whole.
-- Use the chip palette for priority. Priority is a status concept, not an identity concept.
+- Color the status glyph by agent role. The list represents the assistant's task list as a whole.
+- Render priority badges or dependency lists. The inline list is a quick-glance affordance, not a full task manager.
 
 ---
 

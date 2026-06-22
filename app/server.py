@@ -6,7 +6,18 @@ Run with:
     uv run uvicorn app.server:app --reload
 """
 
+import asyncio
+import sys
+
 import truststore  # noqa: F401 — patches ssl to use OS cert store
+
+# On Windows, asyncio defaults to ProactorEventLoop since Python 3.8, but
+# Uvicorn's --reload mode can inadvertently leave a SelectorEventLoop active
+# in the worker process.  asyncio.create_subprocess_exec() raises
+# NotImplementedError with SelectorEventLoop, breaking shell/python tools.
+# Setting the policy explicitly here guarantees ProactorEventLoop.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())  # type: ignore[attr-defined]
 
 import uvicorn
 
