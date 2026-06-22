@@ -301,6 +301,8 @@ export function Sidebar({
   // x transform and always stays 272px wide. The desktop version animates
   // its inline width between 56px (icon-only) and the user-resized width.
   const desktopWidth = collapsed ? 56 : resizable.width;
+  // Computed here so both desktop and mobile branches can reference it.
+  const showIconOnly = !isMobile && collapsed;
 
   return (
     <>
@@ -335,8 +337,8 @@ export function Sidebar({
         }}
         className={
           isMobile
-            ? "mobile-safe-top fixed bottom-0 left-0 z-40 flex w-[min(272px,calc(100vw-2rem))] shrink-0 flex-col overflow-hidden border-r border-(--border-soft) bg-(--bg-sidebar) shadow-xl"
-            : "relative flex shrink-0 flex-col overflow-hidden border-r border-(--border-soft) bg-(--bg-sidebar)"
+            ? "mobile-safe-top fixed bottom-0 left-0 z-40 flex w-[min(272px,calc(100vw-2rem))] shrink-0 flex-col overflow-hidden bg-(--bg-sidebar) shadow-xl"
+            : "relative flex shrink-0 flex-col overflow-hidden"
         }
         style={isMobile ? undefined : { minWidth: desktopWidth }}
       >
@@ -353,19 +355,203 @@ export function Sidebar({
         )}
 
         {/* showIconOnly: desktop collapsed icon-only mode.
-          On mobile the drawer is always fully expanded.
-
-          No brand block — Home lives in the topbar, sidebar toggle is
-          owned by the topbar hamburger + Ctrl+B (see wireframe ``mmhQL``
-          which starts directly with the search input). */}
+          On mobile the drawer is always fully expanded. */}
         {(() => {
-          const showIconOnly = !isMobile && collapsed;
+          // showIconOnly is hoisted to component level above; re-shadow here
+          // for clarity inside the IIFE.
+          const ico = showIconOnly;
+
+          // Desktop: each logical group becomes its own floating region card.
+          if (!isMobile) {
+            const card = 'rounded-[10px] bg-(--bg-sidebar)/80 shadow-sm backdrop-blur-xl'
+            return (
+              <div className="flex h-full flex-col gap-1 overflow-hidden p-1">
+
+                {/* ─── Top section: search + nav ─── */}
+                <div className={`shrink-0 ${card} ${
+                  ico ? 'flex flex-col items-center px-1 py-2' : ''
+                }`}>
+                  {!ico && onCommandPalette && (
+                    <div className="px-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={onCommandPalette}
+                        className="flex h-8 w-full items-center gap-2 rounded-md border border-(--color-border) bg-(--bg-page) px-2.5 text-left text-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
+                        aria-label="Open command palette"
+                        title="Open command palette (Ctrl+P)"
+                      >
+                        <Search size={13} aria-hidden="true" />
+                        <span className="flex-1">Search…</span>
+                        <kbd className="font-mono text-[10px] text-(--color-text-subtle)">^P</kbd>
+                      </button>
+                    </div>
+                  )}
+                  <nav
+                    aria-label="Primary"
+                    className={`space-y-0.5 ${
+                      ico ? 'flex flex-col items-center gap-0.5' : 'px-2 py-2'
+                    }`}
+                  >
+                    {ico && onCommandPalette && (
+                      <SidebarItem
+                        Icon={Search}
+                        label="Commands"
+                        kbd="^P"
+                        collapsed
+                        onClick={onCommandPalette}
+                      />
+                    )}
+                    <SidebarItem
+                      Icon={Plus}
+                      label="New Chat"
+                      kbd="^N"
+                      collapsed={ico}
+                      onClick={handleNewChat}
+                    />
+                  </nav>
+                </div>
+
+                {/* ─── Sessions / dots section ─── */}
+                {!ico ? (
+                  <AnimatePresence>
+                    <motion.div
+                      key="sessions-panel"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: prefersReducedMotion ? 0.01 : 0.15 }}
+                      className={`flex min-h-0 flex-1 flex-col overflow-hidden ${card}`}
+                    >
+                      <div className="flex items-center justify-between px-3 pb-1 pt-2">
+                        <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-(--color-text-muted)">
+                          Recent
+                        </span>
+                        <button
+                          onClick={() => refetchSessions()}
+                          className="rounded p-1 text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-muted)"
+                          aria-label="Refresh sessions"
+                          title="Refresh sessions (Ctrl+R)"
+                        >
+                          <RefreshCw size={12} className={sessions.isFetching ? 'animate-spin' : ''} />
+                        </button>
+                      </div>
+                      <div
+                        ref={sessionListRef}
+                        className="relative flex-1 overflow-y-auto px-2 pb-2"
+                        onTouchStart={handleSessionListTouchStart}
+                        onTouchMove={handleSessionListTouchMove}
+                        onTouchEnd={handleSessionListTouchEnd}
+                        onTouchCancel={handleSessionListTouchEnd}
+                      >
+                        {sessions.isLoading && <SessionListSkeleton />}
+                        {sessions.isError && (
+                          <p className="px-3 py-4 text-center text-xs text-(--color-error)">Failed to load sessions</p>
+                        )}
+                        {sessions.isSuccess && normalSessions.length === 0 && (
+                          <p className="px-3 py-4 text-center text-xs text-(--color-text-subtle)">No sessions yet</p>
+                        )}
+                        {sessions.isSuccess && normalSessions.length > 0 && (
+                          <div className="space-y-0.5">
+                            {groupByDate(normalSessions).map(({ label, sessions: group }) => (
+                              <div key={label}>
+                                <p className="px-2 pb-0.5 pt-2 text-xs text-(--color-text-subtle) first:pt-1">{label}</p>
+                                {group.map((session) => (
+                                  <SessionRow
+                                    key={session.id}
+                                    session={session}
+                                    isActive={session.id === currentSessionId}
+                                    onSelect={handleSelect}
+                                    onDelete={(s) => handleDelete(s)}
+                                    pendingDelete={pendingDeleteId === session.id}
+                                    onCancelDelete={() => setPendingDeleteId(null)}
+                                    onConfirmDelete={confirmDelete}
+                                    onEdit={handleEdit}
+                                    mobileLongPressActions={mobileLongPressActions}
+                                    onLongPress={setMobileSessionActions}
+                                    onContextActions={(session, event) => {
+                                      setDesktopSessionActions({ session, x: event.clientX, y: event.clientY });
+                                    }}
+                                  />
+                                ))}
+                              </div>
+                            ))}
+                            <div ref={loadMoreRef} className="h-1" aria-hidden />
+                            {isFetchingNextPage && <SessionListSkeleton count={3} />}
+                          </div>
+                        )}
+                      </div>
+                    </motion.div>
+                  </AnimatePresence>
+                ) : (
+                  <div className={`flex flex-1 flex-col items-center gap-1 overflow-y-auto py-2 ${card}`}>
+                    {sessions.isSuccess &&
+                      normalSessions.slice(0, 8).map((session) => {
+                        const isActive = session.id === currentSessionId;
+                        return (
+                          <button
+                            key={session.id}
+                            onClick={() => handleSelect(session.id)}
+                            title={session.title || 'Untitled'}
+                            className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
+                              isActive
+                                ? 'bg-(--bg-key) text-(--color-accent)'
+                                : 'text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-text-2)'
+                            }`}
+                          >
+                            <div className="h-1.5 w-1.5 rounded-full bg-current" />
+                          </button>
+                        );
+                      })}
+                  </div>
+                )}
+
+                {/* ─── Footer section ─── */}
+                <div className={`shrink-0 ${card} ${
+                  ico ? 'flex justify-center py-2 pb-safe px-1' : 'flex items-center justify-between gap-2 px-3 py-2 pb-safe'
+                }`}>
+                  {ico ? (
+                    <ThemeToggle collapsed />
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => navigate({ to: '/settings' })}
+                          className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+                          aria-label="Settings"
+                          title="Settings"
+                        >
+                          <Settings size={14} aria-hidden="true" />
+                        </button>
+                        {onCommandPalette && (
+                          <button
+                            type="button"
+                            onClick={onCommandPalette}
+                            className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+                            aria-label="Help and shortcuts"
+                            title="Help and shortcuts (Ctrl+P)"
+                          >
+                            <HelpCircle size={14} aria-hidden="true" />
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <HealthDot />
+                        <ThemeToggle collapsed />
+                      </div>
+                    </>
+                  )}
+                </div>
+
+              </div>
+            )
+          }
+
+          // Mobile: original flat layout (drawer overlay)
           return (
             <>
-              {/* Search trigger — opens the command palette. Styled as an
-                input field per the wireframe; clicking anywhere fires the
-                palette open. */}
-              {!showIconOnly && onCommandPalette && (
+              {/* Search trigger */}
+              {onCommandPalette && (
                 <div className="px-3 pt-3">
                   <button
                     type="button"
@@ -376,234 +562,140 @@ export function Sidebar({
                   >
                     <Search size={13} aria-hidden="true" />
                     <span className="flex-1">Search…</span>
-                    <kbd className="font-mono text-[10px] text-(--color-text-subtle)">
-                      ^P
-                    </kbd>
+                    <kbd className="font-mono text-[10px] text-(--color-text-subtle)">^P</kbd>
                   </button>
                 </div>
               )}
 
-              {/* Nav action buttons */}
-              <nav
-                aria-label="Primary"
-                className={`space-y-0.5 pb-2 ${showIconOnly ? "flex flex-col items-center px-1 pt-3" : "px-2 pt-2"}`}
-              >
-                {isMobile && (
-                  <SidebarItem
-                    Icon={Home}
-                    label="Home"
-                    onClick={() => {
-                      navigate({ to: "/" });
-                      onMobileClose?.();
-                    }}
-                  />
-                )}
-                {showIconOnly && onCommandPalette && (
-                  <SidebarItem
-                    Icon={Search}
-                    label="Commands"
-                    kbd="^P"
-                    collapsed
-                    onClick={onCommandPalette}
-                  />
-                )}
+              {/* Nav */}
+              <nav aria-label="Primary" className="space-y-0.5 px-2 pb-2 pt-2">
+                <SidebarItem
+                  Icon={Home}
+                  label="Home"
+                  onClick={() => { navigate({ to: '/' }); onMobileClose?.(); }}
+                />
                 <SidebarItem
                   Icon={Plus}
                   label="New Chat"
                   kbd="^N"
-                  collapsed={showIconOnly}
                   onClick={handleNewChat}
                 />
               </nav>
 
-              {/* Sessions section — expanded view (desktop expanded or mobile drawer) */}
+              {/* Sessions */}
               <AnimatePresence>
-                {!showIconOnly && (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    transition={{
-                      duration: prefersReducedMotion ? 0.01 : 0.15,
-                    }}
-                    className="flex min-h-0 flex-1 flex-col overflow-hidden"
-                  >
-                    <div className="flex items-center justify-between px-3 pb-1 pt-2">
-                      <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-(--color-text-muted)">
-                        Recent
-                      </span>
-                      <button
-                        onClick={() => refetchSessions()}
-                        className="rounded p-1 text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-muted)"
-                        aria-label="Refresh sessions"
-                        title="Refresh sessions (Ctrl+R)"
-                      >
-                        <RefreshCw
-                          size={12}
-                          className={sessions.isFetching ? "animate-spin" : ""}
-                        />
-                      </button>
-                    </div>
-
-                    <div
-                      ref={sessionListRef}
-                      className="relative flex-1 overflow-y-auto px-2 pb-2"
-                      onTouchStart={handleSessionListTouchStart}
-                      onTouchMove={handleSessionListTouchMove}
-                      onTouchEnd={handleSessionListTouchEnd}
-                      onTouchCancel={handleSessionListTouchEnd}
+                <motion.div
+                  key="mobile-sessions"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: prefersReducedMotion ? 0.01 : 0.15 }}
+                  className="flex min-h-0 flex-1 flex-col overflow-hidden"
+                >
+                  <div className="flex items-center justify-between px-3 pb-1 pt-2">
+                    <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-(--color-text-muted)">
+                      Recent
+                    </span>
+                    <button
+                      onClick={() => refetchSessions()}
+                      className="rounded p-1 text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-muted)"
+                      aria-label="Refresh sessions"
+                      title="Refresh sessions (Ctrl+R)"
                     >
-                      {canPullRefresh && (
-                        <div
-                          className="pointer-events-none sticky top-0 z-10 flex justify-center overflow-hidden transition-[height] duration-150"
-                          style={{ height: pullDistance }}
-                          aria-hidden
-                        >
-                          <div className="mt-2 inline-flex h-8 items-center gap-2 rounded-full border border-(--color-border) bg-(--bg-card) px-3 text-[11px] text-(--color-text-muted) shadow-sm">
-                            <RefreshCw
-                              size={12}
-                              className={
-                                pullDistance >= 54 || sessions.isFetching
-                                  ? "animate-spin"
-                                  : ""
-                              }
-                            />
-                            {pullDistance >= 54
-                              ? "Release to refresh"
-                              : "Pull to refresh"}
+                      <RefreshCw size={12} className={sessions.isFetching ? 'animate-spin' : ''} />
+                    </button>
+                  </div>
+                  <div
+                    ref={sessionListRef}
+                    className="relative flex-1 overflow-y-auto px-2 pb-2"
+                    onTouchStart={handleSessionListTouchStart}
+                    onTouchMove={handleSessionListTouchMove}
+                    onTouchEnd={handleSessionListTouchEnd}
+                    onTouchCancel={handleSessionListTouchEnd}
+                  >
+                    {canPullRefresh && (
+                      <div
+                        className="pointer-events-none sticky top-0 z-10 flex justify-center overflow-hidden transition-[height] duration-150"
+                        style={{ height: pullDistance }}
+                        aria-hidden
+                      >
+                        <div className="mt-2 inline-flex h-8 items-center gap-2 rounded-full border border-(--color-border) bg-(--bg-card) px-3 text-[11px] text-(--color-text-muted) shadow-sm">
+                          <RefreshCw size={12} className={pullDistance >= 54 || sessions.isFetching ? 'animate-spin' : ''} />
+                          {pullDistance >= 54 ? 'Release to refresh' : 'Pull to refresh'}
+                        </div>
+                      </div>
+                    )}
+                    {sessions.isLoading && <SessionListSkeleton />}
+                    {sessions.isError && (
+                      <p className="px-3 py-4 text-center text-xs text-(--color-error)">Failed to load sessions</p>
+                    )}
+                    {sessions.isSuccess && normalSessions.length === 0 && (
+                      <p className="px-3 py-4 text-center text-xs text-(--color-text-subtle)">No sessions yet</p>
+                    )}
+                    {sessions.isSuccess && normalSessions.length > 0 && (
+                      <div className="space-y-0.5">
+                        {groupByDate(normalSessions).map(({ label, sessions: group }) => (
+                          <div key={label}>
+                            <p className="px-2 pb-0.5 pt-2 text-xs text-(--color-text-subtle) first:pt-1">{label}</p>
+                            {group.map((session) => (
+                              <SessionRow
+                                key={session.id}
+                                session={session}
+                                isActive={session.id === currentSessionId}
+                                onSelect={handleSelect}
+                                onDelete={(s) => handleDelete(s)}
+                                pendingDelete={pendingDeleteId === session.id}
+                                onCancelDelete={() => setPendingDeleteId(null)}
+                                onConfirmDelete={confirmDelete}
+                                onEdit={handleEdit}
+                                mobileLongPressActions={mobileLongPressActions}
+                                onLongPress={setMobileSessionActions}
+                                onContextActions={(session, event) => {
+                                  setDesktopSessionActions({ session, x: event.clientX, y: event.clientY });
+                                }}
+                              />
+                            ))}
                           </div>
-                        </div>
-                      )}
-                      {sessions.isLoading && <SessionListSkeleton />}
-                      {sessions.isError && (
-                        <p className="px-3 py-4 text-center text-xs text-(--color-error)">
-                          Failed to load sessions
-                        </p>
-                      )}
-                      {sessions.isSuccess && normalSessions.length === 0 && (
-                        <p className="px-3 py-4 text-center text-xs text-(--color-text-subtle)">
-                          No sessions yet
-                        </p>
-                      )}
-                      {sessions.isSuccess && normalSessions.length > 0 && (
-                        <div className="space-y-0.5">
-                          {groupByDate(normalSessions).map(
-                            ({ label, sessions: group }) => (
-                              <div key={label}>
-                                <p className="px-2 pb-0.5 pt-2 text-xs text-(--color-text-subtle) first:pt-1">
-                                  {label}
-                                </p>
-                                {group.map((session) => (
-                                  <SessionRow
-                                    key={session.id}
-                                    session={session}
-                                    isActive={session.id === currentSessionId}
-                                    onSelect={handleSelect}
-                                    onDelete={(s) => handleDelete(s)}
-                                    pendingDelete={
-                                      pendingDeleteId === session.id
-                                    }
-                                    onCancelDelete={() =>
-                                      setPendingDeleteId(null)
-                                    }
-                                    onConfirmDelete={confirmDelete}
-                                    onEdit={handleEdit}
-                                    mobileLongPressActions={
-                                      mobileLongPressActions
-                                    }
-                                    onLongPress={setMobileSessionActions}
-                                    onContextActions={(session, event) => {
-                                      setDesktopSessionActions({
-                                        session,
-                                        x: event.clientX,
-                                        y: event.clientY,
-                                      });
-                                    }}
-                                  />
-                                ))}
-                              </div>
-                            ),
-                          )}
-                          <div ref={loadMoreRef} className="h-1" aria-hidden />
-                          {isFetchingNextPage && (
-                            <SessionListSkeleton count={3} />
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </motion.div>
-                )}
+                        ))}
+                        <div ref={loadMoreRef} className="h-1" aria-hidden />
+                        {isFetchingNextPage && <SessionListSkeleton count={3} />}
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
               </AnimatePresence>
 
-              {/* Collapsed icon-only session dots — desktop only */}
-              {showIconOnly && (
-                <div className="flex flex-1 flex-col items-center gap-1 overflow-y-auto py-2">
-                  {sessions.isSuccess &&
-                    normalSessions.slice(0, 8).map((session) => {
-                      const isActive = session.id === currentSessionId;
-                      return (
-                        <button
-                          key={session.id}
-                          onClick={() => handleSelect(session.id)}
-                          title={session.title || "Untitled"}
-                          className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
-                            isActive
-                              ? "bg-(--bg-key) text-(--color-accent)"
-                              : "text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-text-2)"
-                          }`}
-                        >
-                          <div className="h-1.5 w-1.5 rounded-full bg-current" />
-                        </button>
-                      );
-                    })}
+              {/* Footer */}
+              <div className="flex items-center justify-between gap-2 px-3 py-2 pb-safe">
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => { navigate({ to: '/settings' }); onMobileClose?.(); }}
+                    className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+                    aria-label="Settings"
+                    title="Settings"
+                  >
+                    <Settings size={14} aria-hidden="true" />
+                  </button>
+                  {onCommandPalette && (
+                    <button
+                      type="button"
+                      onClick={onCommandPalette}
+                      className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+                      aria-label="Help and shortcuts"
+                      title="Help and shortcuts (Ctrl+P)"
+                    >
+                      <HelpCircle size={14} aria-hidden="true" />
+                    </button>
+                  )}
                 </div>
-              )}
-
-              {/* Footer — wireframe trio: Settings · Help (palette) · ThemeToggle.
-                HealthDot is the small status dot tucked between the icon group
-                and the theme toggle. Collapsed mode keeps only the theme
-                cycler so the rail stays at 56px wide. */}
-              <div
-                className={`flex items-center gap-2 border-t border-(--color-border) px-3 py-2 pb-safe ${showIconOnly ? "justify-center" : "justify-between"}`}
-              >
-                {showIconOnly ? (
+                <div className="flex items-center gap-2">
+                  <HealthDot />
                   <ThemeToggle collapsed />
-                ) : (
-                  <>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigate({ to: "/settings" });
-                          onMobileClose?.();
-                        }}
-                        className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-                        aria-label="Settings"
-                        title="Settings"
-                      >
-                        <Settings size={14} aria-hidden="true" />
-                      </button>
-                      {onCommandPalette && (
-                        <button
-                          type="button"
-                          onClick={onCommandPalette}
-                          className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-                          aria-label="Help and shortcuts"
-                          title="Help and shortcuts (Ctrl+P)"
-                        >
-                          <HelpCircle size={14} aria-hidden="true" />
-                        </button>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <HealthDot />
-                      <ThemeToggle collapsed />
-                    </div>
-                  </>
-                )}
+                </div>
               </div>
             </>
-          );
+          )
         })()}
 
         {desktopSessionActions && (

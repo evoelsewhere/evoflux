@@ -865,8 +865,8 @@ export function CodingSidebar({
         }}
         className={
           isMobile
-            ? "mobile-safe-top fixed bottom-0 left-0 z-40 flex w-[min(272px,calc(100vw-2rem))] shrink-0 flex-col overflow-hidden border-r border-(--color-border) bg-(--bg-page) shadow-xl"
-            : "relative flex shrink-0 flex-col overflow-hidden border-r border-(--color-border) bg-(--bg-page)"
+            ? "mobile-safe-top fixed bottom-0 left-0 z-40 flex w-[min(272px,calc(100vw-2rem))] shrink-0 flex-col overflow-hidden bg-(--bg-sidebar) shadow-xl"
+            : "relative flex shrink-0 flex-col overflow-hidden"
         }
       >
         {!isMobile && !desktopCollapsed && (
@@ -881,6 +881,14 @@ export function CodingSidebar({
           />
         )}
 
+        {/* Content sections — desktop gets floating cards, mobile stays flat. */}
+        <div
+          className={
+            !isMobile
+              ? "flex h-full flex-col gap-1 overflow-hidden p-1"
+              : "flex flex-1 flex-col overflow-hidden"
+          }
+        >
         {isMobile && (
           <nav aria-label="Primary" className="px-2 pt-3">
             <button
@@ -899,11 +907,17 @@ export function CodingSidebar({
 
         {/* Search trigger — opens the command palette (Ctrl+P). */}
         {onCommandPalette && (
-          <div className={isMobile ? "px-3 pt-3" : "px-3 py-3"}>
+          <div
+            className={
+              isMobile
+                ? "px-3 pt-3"
+                : "shrink-0 rounded-[10px] bg-(--bg-sidebar)/80 px-2 py-2 shadow-sm backdrop-blur-xl"
+            }
+          >
             <button
               type="button"
               onClick={onCommandPalette}
-              className="flex h-8 w-full items-center gap-2 rounded-md border border-(--color-border) bg-(--bg-page) px-2.5 text-left text-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
+              className="flex h-8 w-full items-center gap-2 rounded-md border border-(--color-border) bg-(--bg-key)/60 px-2.5 text-left text-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
               aria-label="Open command palette"
               title="Open command palette (Ctrl+P)"
             >
@@ -917,7 +931,9 @@ export function CodingSidebar({
         )}
 
         {/* Workspace + sessions tree */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pt-2">
+        <div
+          className={`flex min-h-0 flex-1 flex-col overflow-y-auto pt-2${!isMobile ? " rounded-[10px] bg-(--bg-sidebar)/80 shadow-sm backdrop-blur-xl" : ""}`}
+        >
           {visibleWorkspaces.length === 0 && (
             <p className="px-3 py-4 text-xs text-(--color-text-subtle)">
               No workspaces yet. Use “Open folder…” below to add one.
@@ -1281,7 +1297,9 @@ export function CodingSidebar({
 
         {/* Footer trio — Settings · Help · HealthDot + ThemeToggle. Mirrors
           the forge sidebar so both feel like the same shell. */}
-        <div className="flex items-center justify-between gap-2 border-t border-(--color-border) px-3 py-2 pb-safe">
+        <div
+          className={`flex shrink-0 items-center justify-between gap-2 px-3 py-2 pb-safe${!isMobile ? " rounded-[10px] bg-(--bg-sidebar)/80 shadow-sm backdrop-blur-xl" : " border-t border-(--color-border)"}`}
+        >
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -1311,6 +1329,7 @@ export function CodingSidebar({
             <HealthDot />
             <ThemeToggle collapsed />
           </div>
+        </div>
         </div>
 
         <Dialog

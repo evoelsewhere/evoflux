@@ -48,8 +48,9 @@ import { useUIStore } from '@/stores/useUIStore'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useTeamAgentsQuery } from '@/queries/useAgentsQuery'
 import { useFileRefsQuery } from '@/queries/useFileRefsQuery'
-import { AlertCircle, Brain, CalendarClock, Check, ChevronDown, FolderOpen, FolderCode, Home, ListTodo, Menu, MoreHorizontal, SlidersHorizontal, X } from 'lucide-react'
+import { AlertCircle, Brain, CalendarClock, Check, ChevronDown, FolderOpen, FolderCode, ListTodo, Menu, MoreHorizontal, SlidersHorizontal, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import { Breadcrumb } from '@/components/Breadcrumb'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { usePlatform } from '@/hooks/use-platform'
 import { useTauriDrag } from '@/hooks/use-tauri-drag'
@@ -848,7 +849,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
   return (
     // h-dvh handles iOS Safari's dynamic toolbar.
     <div
-      className="mobile-safe-shell mobile-viewport flex h-dvh flex-col bg-(--bg-page)"
+      className="mobile-safe-shell mobile-viewport flex h-dvh flex-col bg-(--bg-page) md:gap-0.5 md:p-1"
       onTouchStart={(event) => {
         handleMobileSidebarSwipeStart(event)
         handleMobileActionsSwipeStart(event)
@@ -866,42 +867,19 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
         handleMobileActionsSwipeEnd()
       }}
     >
-      {/* 40 px header above the sidebar/content row. On macOS Tauri it
-          doubles as the window drag region via useTauriDrag, with a
-          70 px left inset reserved for the OS traffic-lights. */}
+      {/* Header — transparent container on desktop; left and right clusters
+          float as separate pills against the window background. */}
       <header
         {...dragHandlers}
-        className={`mobile-safe-header flex h-10 items-center border-b border-(--color-border) bg-(--bg-page) ${
-          isMacOverlay ? 'select-none pl-[70px]' : ''
+        className={`mobile-safe-header flex shrink-0 items-center gap-1.5 px-1.5 py-1.5 ${
+          isMacOverlay ? 'select-none' : ''
         }`}
+        style={isMacOverlay ? { paddingLeft: 'calc(var(--spacing-mac-traffic-inset) + 6px)' } : undefined}
       >
-          {/* Desktop keeps a Home affordance in the menubar. Mobile uses
-              one global nav entry and places Home inside the drawer. */}
-          {!isMobile && (
-            <div
-              className={`flex h-full shrink-0 items-center justify-center ${
-                isMacOverlay ? 'pl-2' : 'md:w-14'
-              }`}
-            >
-              <a
-                href="/"
-                aria-label="Home"
-                title="Home"
-                className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-                onClick={(event) => {
-                  event.preventDefault()
-                  navigate({ to: '/' })
-                }}
-              >
-                <Home size={16} aria-hidden="true" />
-              </a>
-            </div>
-          )}
-
-          {/* Hamburger target depends on mode: coding sidebar toggle,
-              mobile drawer, or synthetic Ctrl+B for the normal sidebar
-              (whose collapse state is owned by Sidebar). */}
-          <div className={isMacOverlay ? 'mr-1 flex min-w-0 shrink items-center gap-1 pl-2 md:mr-2' : 'mr-1 flex min-w-0 shrink items-center gap-1 pl-2 md:mr-2 md:pl-0'}>
+          {/* LEFT PILL — hamburger + breadcrumb on desktop; flat full row on mobile */}
+          <div className={`flex shrink-0 items-center gap-1.5 ${
+            isMobile ? 'flex-1' : 'rounded-full bg-(--bg-sidebar)/80 px-2.5 py-1 shadow-sm backdrop-blur-xl'
+          }`}>
             <button
               type="button"
               onClick={() => {
@@ -916,45 +894,45 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
               }}
               aria-label="Toggle sidebar"
               title="Toggle sidebar (Ctrl+B)"
-              className="flex h-9 w-9 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) md:h-8 md:w-8"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
             >
-              <Menu size={16} aria-hidden="true" />
+              <Menu size={15} aria-hidden="true" />
             </button>
-            {mode === 'coding' && workspace && !isMobile ? (
-              <span
-                className="ml-1 flex min-w-0 max-w-60 items-baseline gap-1 text-sm"
-                title={workspace}
-              >
-                <span className="shrink-0 text-(--color-text-muted)">Workspace:</span>
-                <span className="truncate font-semibold text-(--color-text)">{workspaceLabel(workspace)}</span>
-              </span>
-            ) : mode !== 'coding' && sessionTitle && !isMobile ? (
-              <span
-                className="ml-1 max-w-60 truncate text-sm font-semibold text-(--color-text)"
-                title={sessionTitle}
-              >
-                {sessionTitle}
-              </span>
-            ) : null}
-          </div>
 
-          {!isMobile && activeLoop && loopLabel && loopProgress && (
-            <LoopStatusPill
-              label={loopLabel}
-              progress={loopProgress}
-              compact={false}
-            />
-          )}
+            {!isMobile && (
+              <Breadcrumb
+                items={
+                  mode === 'coding' && workspace
+                    ? [
+                        { label: 'Coding', to: '/coding' },
+                        { label: workspaceLabel(workspace) },
+                      ]
+                    : sessionTitle
+                    ? [
+                        { label: 'Forge', to: '/forge' },
+                        { label: sessionTitle },
+                      ]
+                    : [{ label: 'Forge', to: '/forge' }]
+                }
+              />
+            )}
 
-          {/* Active-agent chip → dropdown of all members. Split view
-              collapses to a count pill — each pane already shows its
-              own agent. */}
-          <div className="flex min-w-0 flex-1 justify-start overflow-hidden px-1">
             {isMobile && (
               <div className="min-w-0 text-sm font-semibold text-(--color-text)">
                 <div className="truncate">{mode === 'coding' && workspace ? workspaceLabel(workspace) : sessionTitle || 'Forge'}</div>
                 {activeAgent && <div className="truncate font-mono text-[10px] font-normal text-(--color-text-muted)">{activeAgent}</div>}
               </div>
+            )}
+          </div>
+
+          {/* CENTER — transparent: loop status + agent tabs (desktop only) */}
+          <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+            {!isMobile && activeLoop && loopLabel && loopProgress && (
+              <LoopStatusPill
+                label={loopLabel}
+                progress={loopProgress}
+                compact={false}
+              />
             )}
             {effectiveViewMode === 'agent' && activeAgent && !isMobile && (
               <ActiveAgentSwitcher
@@ -964,7 +942,6 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
                 onSelect={setActiveAgent}
               />
             )}
-
             {effectiveViewMode === 'split' && (
               <span className="text-xs text-(--color-text-muted)">
                 Split · {splitAgentNames.length} agents
@@ -972,9 +949,10 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
             )}
           </div>
 
-          {/* Right cluster — desktop gets the full action row. Mobile keeps
-              frequent actions visible and leaves secondary panels in More. */}
-          <div className="flex shrink-0 items-center gap-0.5">
+          {/* RIGHT PILL — action cluster */}
+          <div className={`flex shrink-0 items-center gap-0.5 ${
+            !isMobile ? 'rounded-2xl bg-(--bg-sidebar)/80 shadow-sm backdrop-blur-xl' : ''
+          }`}>
           {isMobile ? (
             <>
               {headerTokens && (
@@ -1067,7 +1045,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
       {/* Body row — sidebar (or coding rail) + main content column. On
           mobile the Sidebar is position:fixed (overlay drawer), so it
           takes no space here and the main column is always full-width. */}
-      <div className="flex min-h-0 flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 overflow-hidden md:gap-0.5">
         {mode === 'coding' ? (
           <CodingSidebar
             currentSessionId={sessionIdState || undefined}
@@ -1089,7 +1067,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
           />
         )}
 
-        <main id="main" ref={mainColumnRef} className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+        <main id="main" ref={mainColumnRef} className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-[10px] bg-(--bg-page) shadow-sm">
         {setupRequired && (
           <div className="mx-3 mt-3 flex flex-col gap-3 rounded-xl border border-(--accent-blue)/35 bg-(--accent-blue-soft) p-3 text-sm text-(--color-text) shadow-sm sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 gap-3">
