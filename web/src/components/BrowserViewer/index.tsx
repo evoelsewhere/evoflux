@@ -138,7 +138,7 @@ export function BrowserViewer({
     <>
       {/* Backdrop — click to close on mobile */}
       <div
-        className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm sm:hidden"
+        className="fixed inset-0 z-40 bg-(--color-overlay) backdrop-blur-sm sm:hidden"
         onClick={onClose}
       />
 
@@ -193,7 +193,7 @@ export function BrowserViewer({
             className={cn(
               'inline-flex h-6 items-center gap-1 rounded-md px-2 text-[10px] font-semibold transition-colors border',
               interactive
-                ? 'border-(--accent-blue) bg-(--accent-blue) text-white'
+                ? 'border-(--accent-blue) bg-(--accent-blue) text-(--color-text-on-accent)'
                 : 'border-(--color-border-strong) bg-(--bg-page) text-(--color-text-2) hover:bg-(--color-surface-2) hover:text-(--color-text)',
             )}
             title={interactive ? 'Interaction ON — click/type in browser' : 'Enable interaction'}

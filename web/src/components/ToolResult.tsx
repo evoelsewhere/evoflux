@@ -102,7 +102,7 @@ function WebSearchResult({ result }: { result: string }) {
             {link && (
               <div className="flex items-center gap-1 pl-5">
                 <ExternalLink size={9} className="text-(--color-text-muted)" />
-                <span className="font-mono text-[10px] text-(--color-text-muted)">
+                <span className="font-mono text-[11px] text-(--color-text-muted)">
                   {hostname(link)}
                 </span>
               </div>
@@ -175,7 +175,7 @@ function FileListResult({ result }: { result: string }) {
 
   return (
     <div className="flex flex-col gap-1">
-      <span className="font-mono text-[10px] text-(--color-text-muted)">
+      <span className="font-mono text-[11px] text-(--color-text-muted)">
         {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
       </span>
       <ul className="space-y-0.5">
@@ -199,7 +199,7 @@ function FileReadResult({ result }: { result: string }) {
 
   return (
     <div className="min-w-0 overflow-hidden rounded-md border border-(--color-border) bg-(--bg-card)">
-      <div className="flex items-center gap-2 border-b border-(--color-border) bg-(--bg-key) px-2.5 py-1 font-mono text-[10px] font-semibold tracking-wider text-(--color-text-muted) uppercase">
+      <div className="flex items-center gap-2 border-b border-(--color-border) bg-(--bg-key) px-2.5 py-1 font-mono text-[11px] font-semibold tracking-wider text-(--color-text-muted) uppercase">
         <FileText size={12} className="shrink-0" aria-hidden />
         <span className="truncate">read</span>
         <span className="ml-auto shrink-0 font-normal normal-case tracking-normal">
@@ -296,7 +296,7 @@ function BrowserUseResult({ result }: { result: string }) {
             className="flex items-start gap-1.5 text-[11px] leading-relaxed"
           >
             <span
-              className={`mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold ${
+              className={`mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${
                 isError
                   ? 'bg-(--color-error-subtle) text-(--color-error)'
                   : 'bg-(--accent-blue-soft) text-(--accent-blue-text)'

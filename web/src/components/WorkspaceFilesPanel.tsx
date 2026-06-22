@@ -258,7 +258,7 @@ function TreeNodeView({
         >
           <FileTypeIcon file={node.file} />
           <span className="min-w-0 flex-1 truncate font-mono">{node.name}</span>
-          <span className="shrink-0 text-[10px] text-(--color-text-subtle)">
+          <span className="shrink-0 text-[11px] text-(--color-text-subtle)">
             {formatBytes(node.file.size)}
           </span>
         </button>
@@ -594,7 +594,7 @@ function PreviewArea({
             <FileTypeIcon file={file} size={13} />
             <div className="truncate font-mono text-xs text-(--color-text)">{file.path}</div>
           </div>
-          <div className="mt-0.5 text-[10px] text-(--color-text-subtle)">
+          <div className="mt-0.5 text-[11px] text-(--color-text-subtle)">
             {formatBytes(file.size)} · {file.mime}
           </div>
         </div>
@@ -731,7 +731,7 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
             onClick={onClose}
-            className="fixed inset-0 z-40 bg-black/40 [[data-mobile-shell]_&]:top-[calc(var(--spacing-app-header)+env(safe-area-inset-top,0px))]"
+            className="fixed inset-0 z-40 bg-(--color-overlay) [[data-mobile-shell]_&]:top-[calc(var(--spacing-app-header)+env(safe-area-inset-top,0px))]"
           />
 
           <motion.aside

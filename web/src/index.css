@@ -3,6 +3,7 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/inter";
 @import "@fontsource-variable/jetbrains-mono";
+@import "@fontsource/caveat";
 @import "highlight.js/styles/atom-one-dark.css";
 
 /* ─────────────────────────────────────────────────────────────
@@ -49,10 +50,10 @@
  * Tokens themselves are defined in :root.dark / :root.light below.
  * ───────────────────────────────────────────────────────────── */
 @theme inline {
-    --font-heading: var(--font-sans);
-    --font-sans: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', 'Courier New', monospace;
-    --font-hand: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-heading: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --font-sans: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', 'Cascadia Code', 'Fira Code', 'Courier New', monospace;
+    --font-hand: 'Caveat', cursive;
 
     /* shadcn semantic tokens */
     --color-sidebar-ring: var(--sidebar-ring);
@@ -111,6 +112,7 @@
     --bg-card:           #171717;
     --bg-input:          #171717;
     --bg-key:            #262626;
+    --bg-muted:          #262626;
     --bg-send:           #F5F5F5;
     --color-surface:     #171717;
     --color-surface-2:   #262626;
@@ -129,9 +131,6 @@
     --color-text-muted:     #737373;
     --color-text-subtle:    #525252;
     --color-text-on-accent: #0A0A0A;
-    --fg-primary:           #F5F5F5;
-    --fg-secondary:         #D4D4D4;
-    --fg-muted:             #737373;
 
     /* Accent */
     --color-accent:  #F5F5F5;
@@ -196,6 +195,7 @@
     /* Focus + depth */
     --focus-ring:   #60A5FA;
     --shadow-depth: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.3);
+    --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.32);
 
     /* Motion */
     --motion-instant: 80ms;
@@ -258,6 +258,7 @@
     --bg-card:           #FFFFFF;
     --bg-input:          #FFFFFF;
     --bg-key:            #F5F5F5;
+    --bg-muted:          #F5F5F5;
     --bg-send:           #0A0A0A;
     --color-surface:     #FFFFFF;
     --color-surface-2:   #F5F5F5;
@@ -276,9 +277,6 @@
     --color-text-muted:     #A3A3A3;
     --color-text-subtle:    #D4D4D4;
     --color-text-on-accent: #FFFFFF;
-    --fg-primary:           #0A0A0A;
-    --fg-secondary:         #525252;
-    --fg-muted:             #A3A3A3;
 
     /* Accent */
     --color-accent:  #0A0A0A;
@@ -343,6 +341,7 @@
     /* Focus + depth */
     --focus-ring:   #3B82F6;
     --shadow-depth: 0 1px 2px rgba(0, 0, 0, 0.04), 0 2px 8px rgba(0, 0, 0, 0.06);
+    --shadow-popover: 0 8px 24px rgba(26, 23, 20, 0.16);
 }
 
 @layer base {
@@ -359,6 +358,13 @@
   }
   body {
     @apply bg-background text-foreground;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "cv01", "cv11", "ss01", "ss03", "ss07";
+    font-optical-sizing: auto;
+    letter-spacing: -0.006em;
+    line-height: 1.6;
   }
   html {
     @apply font-sans;
@@ -392,7 +398,7 @@ html[data-mobile-shell] [contenteditable="true"] {
 
 html[data-mobile-shell] .text-\[9px\],
 html[data-mobile-shell] .text-\[10px\] {
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .mobile-safe-shell {
@@ -584,8 +590,9 @@ html[data-mobile-shell] .text-\[10px\] {
  * ───────────────────────────────────────────────────────────── */
 .oa-prose {
   color: var(--color-text);
-  line-height: 1.75;
+  line-height: 1.8;
   overflow-wrap: anywhere;
+  letter-spacing: -0.003em;
 }
 .oa-prose p { margin-bottom: 0.75em; }
 .oa-prose p:last-child { margin-bottom: 0; }
@@ -614,7 +621,7 @@ html[data-mobile-shell] .text-\[10px\] {
   border: 1px solid var(--color-border);
   border-radius: 4px;
   padding: 0.15em 0.4em;
-  font-size: 0.85em;
+  font-size: 0.88em;
   font-family: var(--font-mono);
   color: var(--color-text);
 }

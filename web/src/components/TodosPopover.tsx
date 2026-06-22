@@ -139,7 +139,7 @@ export function TodosPopover({
                 </span>
                 {agent && (
                   <span
-                    className="mt-0.5 shrink-0 font-mono text-[9px] uppercase tracking-wide text-(--color-text-subtle)"
+                    className="mt-0.5 shrink-0 font-mono text-[10px] uppercase tracking-wide text-(--color-text-subtle)"
                     title={`Assigned to ${agent}`}
                   >
                     {agent}

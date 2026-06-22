@@ -1181,6 +1181,10 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
             lastError={agentStreams[activeAgent].lastError}
             isContinuing={isContinuing && activeAgent === leadName}
             onContinue={activeAgent === leadName ? continueTeam : undefined}
+            onSuggestion={(text) => {
+              inputRef.current?.setValue(text)
+              inputRef.current?.focus()
+            }}
             emptyState={
               mode === 'coding' && workspace ? (
                 <div className="flex flex-col items-center justify-center py-16">
@@ -1387,7 +1391,7 @@ function MobileHeaderAction({
     >
       <Icon size={16} aria-hidden="true" />
       {badge > 0 && (
-        <span className="absolute right-0.5 top-0.5 min-w-3.5 rounded-full bg-(--color-accent) px-1 text-center font-mono text-[9px] leading-3.5 text-(--bg-page)">
+        <span className="absolute right-0.5 top-0.5 min-w-3.5 rounded-full bg-(--color-accent) px-1 text-center font-mono text-[10px] leading-3.5 text-(--bg-page)">
           {badge > 9 ? '9+' : badge}
         </span>
       )}
@@ -1444,7 +1448,7 @@ function MobileChatActions({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.18 }}
-              className="mobile-safe-top fixed inset-x-0 bottom-0 z-30 bg-black/60 md:hidden"
+              className="mobile-safe-top fixed inset-x-0 bottom-0 z-30 bg-(--color-overlay) md:hidden"
               aria-hidden="true"
               onClick={() => onOpenChange(false)}
             />
@@ -1483,13 +1487,13 @@ function MobileChatActions({
               <div className="flex-1 overflow-y-auto p-2">
                 {activeLoop && (
                   <>
-                    <div className="px-2 py-2 text-xs font-medium text-muted-foreground">Loop</div>
+                    <div className="px-2 py-2 text-xs font-medium text-(--color-text-muted)">Loop</div>
                     <MobileLoopStatusCard activeLoop={activeLoop} />
                   </>
                 )}
                 {activeAgent && agents.length > 1 && (
                   <>
-                    <div className="px-2 py-2 text-xs font-medium text-muted-foreground">Agents</div>
+                    <div className="px-2 py-2 text-xs font-medium text-(--color-text-muted)">Agents</div>
                     {agents.map((name) => (
                       <button
                         type="button"
@@ -1505,7 +1509,7 @@ function MobileChatActions({
                   </>
                 )}
 
-                <div className="px-2 py-2 text-xs font-medium text-muted-foreground">Session</div>
+                <div className="px-2 py-2 text-xs font-medium text-(--color-text-muted)">Session</div>
                 <button type="button" onClick={onWiki} className="flex min-h-10 w-full items-center gap-2 rounded-md px-2 text-left text-sm transition-colors hover:bg-(--bg-key)">
                   <Brain size={15} aria-hidden="true" />
                   <span className="flex-1">Wiki</span>

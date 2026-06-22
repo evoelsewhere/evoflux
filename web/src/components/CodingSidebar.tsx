@@ -264,7 +264,7 @@ function WorkspaceSessionList({
                     e.stopPropagation();
                     onConfirmDelete();
                   }}
-                  className="rounded bg-(--color-error) px-2 py-1 text-[10px] text-white hover:bg-(--color-error)/90"
+                  className="rounded bg-(--color-error) px-2 py-1 text-[10px] text-(--color-text-on-accent) hover:bg-(--color-error)/90"
                 >
                   Delete
                 </button>
@@ -842,7 +842,7 @@ export function CodingSidebar({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: prefersReducedMotion ? 0.01 : 0.2 }}
-            className="mobile-safe-top fixed inset-x-0 bottom-0 z-30 bg-black/60 md:hidden"
+            className="mobile-safe-top fixed inset-x-0 bottom-0 z-30 bg-(--color-overlay) md:hidden"
             aria-hidden="true"
             onClick={onMobileClose}
           />
@@ -1098,7 +1098,7 @@ export function CodingSidebar({
 
                     {nestedWorktrees.length > 0 && (
                       <div className="px-2 py-1" style={{ paddingLeft: 28 }}>
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--color-text-subtle)">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-(--color-text-subtle)">
                           Worktrees
                         </p>
                       </div>
@@ -1164,7 +1164,7 @@ export function CodingSidebar({
                                 {item.name}
                               </span>
                               {!item.managed && (
-                                <span className="shrink-0 rounded-full bg-(--bg-key) px-1.5 py-0.5 text-[9px] text-(--color-text-subtle)">
+                                <span className="shrink-0 rounded-full bg-(--bg-key) px-1.5 py-0.5 text-[10px] text-(--color-text-subtle)">
                                   external
                                 </span>
                               )}
@@ -1590,7 +1590,7 @@ export function CodingSidebar({
               </DialogHeader>
               <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3 sm:px-5">
                 <div className="rounded-md border border-(--color-border) bg-(--bg-page) px-3 py-2">
-                  <div className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-(--color-text-subtle)">
+                  <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-(--color-text-subtle)">
                     <Folder size={12} aria-hidden="true" />
                     Source workspace
                   </div>

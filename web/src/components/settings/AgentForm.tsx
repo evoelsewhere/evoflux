@@ -803,7 +803,7 @@ export function ModelCombobox({
               left: anchorRect.left,
               width: anchorRect.width,
             }}
-            className="z-50 max-h-64 overflow-y-auto rounded-lg border border-(--color-border-strong) bg-(--bg-page) p-1 shadow-[0_8px_24px_rgba(26,23,20,0.16)]"
+            className="z-50 max-h-64 overflow-y-auto rounded-lg border border-(--color-border-strong) bg-(--bg-page) p-1 shadow-(--shadow-popover)"
           >
             {filtered.length === 0 ? (
               <li className="px-3 py-3 text-center text-xs text-(--color-text-muted)">
@@ -830,7 +830,7 @@ export function ModelCombobox({
                     >
                       <span className="min-w-0 truncate">{o.id}</span>
                       {o.vision && (
-                        <span className="shrink-0 text-[10px] text-(--color-text-muted)">
+                        <span className="shrink-0 text-[11px] text-(--color-text-muted)">
                           vision
                         </span>
                       )}

@@ -145,7 +145,7 @@ export function WikiPanel({ open, onClose }: WikiPanelProps) {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
             onClick={onClose}
-            className="fixed inset-0 z-40 bg-black/40"
+            className="fixed inset-0 z-40 bg-(--color-overlay)"
           />
 
           <motion.div
@@ -540,7 +540,7 @@ function WikiEditor({
         <div className="min-w-0 flex-1">
           <div className="truncate font-mono text-xs text-(--color-text)">{path}</div>
           {file.description && (
-            <div className="truncate text-[10px] text-(--color-text-subtle)">
+            <div className="truncate text-[11px] text-(--color-text-subtle)">
               {file.description}
             </div>
           )}
@@ -607,7 +607,7 @@ function WikiEditor({
         }
       />
 
-      <div className="flex items-center justify-between border-t border-(--color-border) px-4 py-1.5 text-[10px] text-(--color-text-subtle)">
+      <div className="flex items-center justify-between border-t border-(--color-border) px-4 py-1.5 text-[11px] text-(--color-text-subtle)">
         <span>{displayChars} chars</span>
         {isReadOnly ? (
           <span className="italic">read-only</span>

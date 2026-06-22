@@ -19,7 +19,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
 
 import { LazyMarkdownBlock } from '@/utils/LazyMarkdownBlock'
-import { ChevronDown, ChevronUp, Copy, Check, Undo2, Terminal } from 'lucide-react'
+import { ChevronDown, ChevronUp, Copy, Check, Undo2, Terminal, Lightbulb, Code2, FileSearch, Bug, BookOpen } from 'lucide-react'
 import { Thinking } from './Thinking'
 import { ToolCall } from './ToolCall'
 import { MCPAppResult } from './MCPAppResult'
@@ -65,6 +65,8 @@ interface AgentViewProps {
   onContinue?: () => void
   /** Optional slot rendered in place of the default mascot empty state. */
   emptyState?: React.ReactNode
+  /** Called when the user clicks a suggestion chip in the empty state. */
+  onSuggestion?: (text: string) => void
 }
 
 const USER_COLLAPSE_LINES = 10
@@ -331,9 +333,10 @@ function BlockRenderer({ block, isStreaming, sessionId, onRevert, latestMCPAppBl
           <div>
             {sleepPrefix && <LazyMarkdownBlock content={sleepPrefix} sessionId={sessionId} />}
             <p className="text-xs text-(--color-text-subtle) italic">— idle —</p>
-          </div>
-        )
-      }
+    </div>
+  )
+}
+
       return (
         <div>
           <LazyMarkdownBlock content={block.content} sessionId={sessionId} />
@@ -345,7 +348,7 @@ function BlockRenderer({ block, isStreaming, sessionId, onRevert, latestMCPAppBl
   }
 }
 
-export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError, isContinuing = false, onContinue, emptyState }: AgentViewProps) {
+export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError, isContinuing = false, onContinue, emptyState, onSuggestion }: AgentViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const pinnedRef = useRef(true)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
@@ -491,18 +494,60 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
       <div className="mx-auto max-w-3xl px-4 py-6">
         {isEmpty && (
            emptyState ?? (
-             <div className="flex select-none flex-col items-center justify-center gap-4 py-16">
-               <img
-                 src={EvoFluxLogo}
-                 className="opacity-90"
-                 width={120}
-                 height={120}
-                 alt=""
-                 aria-hidden="true"
-               />
-               <h2 className="font-hand text-4xl font-bold text-(--color-text)">
-                 what&rsquo;s on your mind?
-               </h2>
+             <div className="flex select-none flex-col items-center justify-center gap-6 py-20">
+               <div className="relative">
+                 <div className="absolute inset-0 rounded-2xl bg-(--bg-key) blur-xl" />
+                 <img
+                   src={EvoFluxLogo}
+                   className="relative opacity-90"
+                   width={80}
+                   height={80}
+                   alt=""
+                   aria-hidden="true"
+                 />
+               </div>
+               <div className="text-center">
+                 <h2 className="font-hand text-3xl font-bold text-(--color-text)">
+                   what&rsquo;s on your mind?
+                 </h2>
+                 <p className="mt-1.5 text-sm text-(--color-text-muted)">
+                   Start a conversation or pick a suggestion below
+                 </p>
+               </div>
+               {onSuggestion && (
+                 <div className="flex w-full max-w-md flex-wrap items-center justify-center gap-2">
+                   <SuggestionChip
+                     icon={Lightbulb}
+                     label="Explain this codebase"
+                     onClick={() => onSuggestion('Explain the architecture of this codebase')}
+                   />
+                   <SuggestionChip
+                     icon={Code2}
+                     label="Write a feature"
+                     onClick={() => onSuggestion('Help me write a new feature')}
+                   />
+                   <SuggestionChip
+                     icon={Bug}
+                     label="Fix a bug"
+                     onClick={() => onSuggestion('Help me find and fix a bug')}
+                   />
+                   <SuggestionChip
+                     icon={FileSearch}
+                     label="Review code"
+                     onClick={() => onSuggestion('Review my recent changes and suggest improvements')}
+                   />
+                   <SuggestionChip
+                     icon={BookOpen}
+                     label="Write docs"
+                     onClick={() => onSuggestion('Help me write documentation for this project')}
+                   />
+                   <SuggestionChip
+                     icon={Terminal}
+                     label="Run a command"
+                     onClick={() => onSuggestion('Help me set up and run this project')}
+                   />
+                 </div>
+               )}
              </div>
            )
          )}
@@ -604,5 +649,26 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
 
     )}
     </div>
+  )
+}
+
+function SuggestionChip({
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  icon: React.ComponentType<{ size?: number; className?: string }>
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-(--color-border) bg-(--bg-card) px-3 py-1.5 text-xs text-(--color-text-2) transition-all hover:border-(--color-border-strong) hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:ring-2 focus-visible:ring-(--focus-ring) focus-visible:outline-none active:scale-[0.97]"
+    >
+      <Icon size={13} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
+      <span>{label}</span>
+    </button>
   )
 }

@@ -103,7 +103,7 @@ function Capabilities({
 
   return (
     <section className="border-t border-(--color-border) px-5 py-4">
-      <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
+      <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
         Capabilities
       </h3>
       <div className="flex flex-wrap items-center gap-2">
@@ -208,7 +208,7 @@ function ToolGroupHeader({
   if (server === null) {
     return (
       <div className="flex items-center gap-2 px-5 pt-3 pb-1.5">
-        <h4 className="text-[10px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
+        <h4 className="text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
           Built-in
         </h4>
         <span className="rounded-md bg-(--bg-key) px-2 py-0.5 text-[10px] text-(--color-text-muted)">
@@ -220,7 +220,7 @@ function ToolGroupHeader({
   return (
     <div className="flex items-center gap-2 px-5 pt-3 pb-1.5">
       <Plug size={11} className="text-(--color-text-muted)" aria-hidden />
-      <h4 className="text-[10px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
+      <h4 className="text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
         MCP · {server}
       </h4>
       <span className="rounded-md bg-(--bg-key) px-2 py-0.5 text-[10px] text-(--color-text-muted)">
@@ -272,7 +272,7 @@ function Tools({
   return (
     <section className="border-t border-(--color-border)">
       <div className="flex shrink-0 items-center gap-2 px-5 pt-4 pb-2">
-        <h3 className="text-[10px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
+        <h3 className="text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
           Tools
         </h3>
         <span className="rounded-md bg-(--bg-key) px-2 py-0.5 text-[10px] text-(--color-text-muted)">
@@ -497,7 +497,7 @@ function SessionModelSettings({
                 }}
               />
             {modelPickerOpen && (
-              <div className="absolute left-0 top-full z-50 mt-1 w-[min(34rem,calc(90vw-3rem))] rounded-md border border-(--color-border-strong) bg-(--bg-page) p-1 shadow-[0_8px_24px_rgba(26,23,20,0.16)]">
+              <div className="absolute left-0 top-full z-50 mt-1 w-[min(34rem,calc(90vw-3rem))] rounded-md border border-(--color-border-strong) bg-(--bg-page) p-1 shadow-(--shadow-popover)">
                 <div className="max-h-64 overflow-auto">
                 {pickerOptions.map((model, index) => (
                   <button
@@ -557,7 +557,7 @@ function SessionModelSettings({
             <ChevronDown size={13} aria-hidden="true" className={`shrink-0 text-(--color-text-muted) transition-transform ${thinkingPickerOpen ? 'rotate-180' : ''}`} />
           </button>
           {thinkingPickerOpen && (
-            <div className="absolute left-0 top-full z-50 mt-1 w-full rounded-md border border-(--color-border-strong) bg-(--bg-page) p-1 shadow-[0_8px_24px_rgba(26,23,20,0.16)]" role="listbox">
+            <div className="absolute left-0 top-full z-50 mt-1 w-full rounded-md border border-(--color-border-strong) bg-(--bg-page) p-1 shadow-(--shadow-popover)" role="listbox">
               {THINKING_LEVELS.map((level, index) => (
                 <button
                   type="button"
@@ -701,7 +701,7 @@ export function SessionSettingsPanel({
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
             onClick={onClose}
-            className="fixed inset-0 z-40 bg-black/40"
+            className="fixed inset-0 z-40 bg-(--color-overlay)"
           />
 
           <motion.aside
@@ -762,7 +762,7 @@ export function SessionSettingsPanel({
                 />
               )}
               <section className="shrink-0 px-5 py-4">
-                <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
+                <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
                   Lead agent
                 </h3>
                 <p className="text-sm leading-relaxed text-(--color-text-2)">
