@@ -72,7 +72,7 @@ export function SettingsLayout() {
         {isMobile && mobileSidebarOpen && (
           <>
             <div
-              className="mobile-safe-overlay fixed inset-0 z-30 bg-black/40"
+              className="mobile-safe-overlay fixed inset-0 z-30 bg-(--color-overlay)"
               onClick={() => setMobileSidebarOpen(false)}
               aria-hidden="true"
             />

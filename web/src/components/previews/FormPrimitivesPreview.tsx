@@ -137,7 +137,7 @@ export function CreateTaskFormPreview() {
   const [enabled, setEnabled] = useState(true)
 
   return (
-    <section className="max-w-lg rounded-[14px] border border-(--color-border) bg-(--bg-card) p-6 text-(--color-text) shadow-[0_8px_32px_rgba(26,23,20,0.12)]">
+    <section className="max-w-lg rounded-[14px] border border-(--color-border) bg-(--bg-card) p-6 text-(--color-text) shadow-(--shadow-popover)">
       <div className="mb-5">
         <h2 className="font-hand text-3xl font-bold">Create scheduled task</h2>
         <p className="text-sm text-(--color-text-2)">Composite preview assembled from the low-level primitives.</p>

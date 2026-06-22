@@ -190,7 +190,7 @@ export function ImageLightbox({ src, alt, isOpen, onClose }: ImageLightboxProps)
 
   return createPortal(
     <div
-      className="mobile-safe-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm transition-opacity duration-200"
+      className="mobile-safe-overlay fixed inset-0 z-50 flex items-center justify-center bg-(--color-overlay) backdrop-blur-sm transition-opacity duration-200"
       onClick={closeLightbox}
       role="dialog"
       aria-modal="true"

@@ -160,7 +160,7 @@ export function AppBackendDialog({ open, onOpenChange }: AppBackendDialogProps) 
 
   return (
     <div
-      className="mobile-safe-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="mobile-safe-overlay fixed inset-0 z-50 flex items-center justify-center bg-(--color-overlay) p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="app-backend-title"
@@ -234,7 +234,7 @@ export function AppBackendDialog({ open, onOpenChange }: AppBackendDialogProps) 
                     <ServerStatusDot status={serverHealth[normalizedServerUrl] ?? serverHealth[server.base_url]} />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-medium">{server.name || server.base_url}</span>
-                      {server.name ? <span className="block truncate font-mono text-[10px] text-(--color-text-muted)">{server.base_url}</span> : null}
+                      {server.name ? <span className="block truncate font-mono text-[11px] text-(--color-text-muted)">{server.base_url}</span> : null}
                     </span>
                   </button>
                   {active ? (

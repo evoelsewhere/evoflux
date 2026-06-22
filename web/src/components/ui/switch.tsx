@@ -12,7 +12,7 @@ function Switch({ className, ...props }: SwitchPrimitive.Root.Props) {
       )}
       {...props}
     >
-      <SwitchPrimitive.Thumb className="size-3.5 rounded-full border border-(--color-border) bg-(--bg-card) transition-transform data-checked:translate-x-4 data-checked:border-white data-checked:bg-white" />
+      <SwitchPrimitive.Thumb className="size-3.5 rounded-full border border-(--color-border) bg-(--bg-card) transition-transform data-checked:translate-x-4 data-checked:border-(--color-text-on-accent) data-checked:bg-(--color-text-on-accent)" />
     </SwitchPrimitive.Root>
   )
 }

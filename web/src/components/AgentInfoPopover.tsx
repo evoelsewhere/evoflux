@@ -78,7 +78,7 @@ function CapabilitiesSection({
 
   return (
     <div className="py-2">
-      <h4 className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
+      <h4 className="mb-1.5 text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
         Capabilities
       </h4>
       <div className="flex flex-wrap items-center gap-2">
@@ -166,7 +166,7 @@ function ToolGroupHeader({ server, count }: { server: string | null; count: numb
   if (server === null) {
     return (
       <div className="flex items-center gap-2 pt-2 pb-1">
-        <span className="text-[10px] font-semibold uppercase tracking-widest text-(--color-text-muted)">Built-in</span>
+        <span className="text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">Built-in</span>
         <span className="rounded-md bg-(--bg-key) px-1.5 py-0.5 text-[10px] text-(--color-text-muted)">{count}</span>
       </div>
     )
@@ -174,7 +174,7 @@ function ToolGroupHeader({ server, count }: { server: string | null; count: numb
   return (
     <div className="flex items-center gap-2 pt-2 pb-1">
       <Plug size={10} className="text-(--color-text-muted)" aria-hidden />
-      <span className="text-[10px] font-semibold uppercase tracking-widest text-(--color-text-muted)">MCP · {server}</span>
+      <span className="text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">MCP · {server}</span>
       <span className="rounded-md bg-(--bg-key) px-1.5 py-0.5 text-[10px] text-(--color-text-muted)">{count}</span>
     </div>
   )
@@ -264,7 +264,7 @@ export function AgentInfoPopover({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.97 }}
             transition={{ duration: 0.15 }}
-            className="absolute bottom-full right-0 z-50 mb-1 w-[min(24rem,calc(90vw-2rem))] max-h-[60vh] overflow-y-auto rounded-lg border border-(--color-border-strong) bg-(--color-surface) shadow-[0_8px_24px_rgba(26,23,20,0.16)]"
+            className="absolute bottom-full right-0 z-50 mb-1 w-[min(24rem,calc(90vw-2rem))] max-h-[60vh] overflow-y-auto rounded-lg border border-(--color-border-strong) bg-(--color-surface) shadow-(--shadow-popover)"
           >
             {isLoading || !leadAgent ? (
               <div className="space-y-2 p-3">
@@ -292,7 +292,7 @@ export function AgentInfoPopover({
                 {/* Tools */}
                 {toolGroups.length > 0 && (
                   <div className="mt-2">
-                    <h4 className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
+                    <h4 className="mb-1 text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
                       Tools
                     </h4>
                     {toolGroups.map((group) => (

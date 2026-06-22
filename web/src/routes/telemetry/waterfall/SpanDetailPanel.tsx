@@ -81,7 +81,7 @@ export function SpanDetailPanel({
                   key={t.label}
                   className="rounded-md border border-(--color-border) bg-(--bg-card) p-2"
                 >
-                  <p className="text-[9px] uppercase tracking-wide text-(--color-text-muted)">
+                  <p className="text-[10px] uppercase tracking-wide text-(--color-text-muted)">
                     {t.label}
                   </p>
                   <p className="mt-0.5 text-sm font-semibold tabular-nums text-(--color-text)">

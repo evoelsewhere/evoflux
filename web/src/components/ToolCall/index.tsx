@@ -212,7 +212,7 @@ export function ToolCall({ name, args, done, liveOutput, result, durationMs, sta
         </span>
 
         {elapsedMs !== undefined && (
-          <span className="shrink-0 font-mono text-[10px] text-(--color-text-muted)" title="Duration">
+          <span className="shrink-0 font-mono text-[11px] text-(--color-text-muted)" title="Duration">
             {formatDuration(elapsedMs)}
           </span>
         )}
@@ -260,7 +260,7 @@ export function ToolCall({ name, args, done, liveOutput, result, durationMs, sta
                   {formattedArgs && (
                     <div>
                       <div className="flex items-center justify-between gap-3 border-b border-(--color-border) bg-(--bg-key) py-0.5 pr-1.5 pl-3">
-                        <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-(--color-text-muted)">
+                        <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-(--color-text-muted)">
                           {isShellTerminal ? 'terminal' : 'arguments'}
                         </span>
                         <button
@@ -309,7 +309,7 @@ export function ToolCall({ name, args, done, liveOutput, result, durationMs, sta
                   {shownLiveOutput && !isShellTerminal && (
                     <div>
                       <div className={`flex items-center justify-between gap-3 border-b border-(--color-border) bg-(--bg-key) py-0.5 pr-1.5 pl-3 ${formattedArgs ? 'border-t' : ''}`}>
-                        <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-(--color-text-muted)">
+                        <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-(--color-text-muted)">
                           output
                         </span>
                       </div>
@@ -326,7 +326,7 @@ export function ToolCall({ name, args, done, liveOutput, result, durationMs, sta
                   {shownResult && !isShellTerminal && (
                     <div>
                       <div className={`flex items-center justify-between gap-3 border-b border-(--color-border) bg-(--bg-key) py-0.5 pr-1.5 pl-3 ${formattedArgs || shownLiveOutput ? 'border-t' : ''}`}>
-                        <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-(--color-text-muted)">
+                        <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-(--color-text-muted)">
                           result
                         </span>
                         <button
@@ -370,9 +370,9 @@ function SeeBrowserButton() {
       }}
       className={`ml-1 inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-semibold transition-colors border ${
         browserOpen
-          ? 'border-(--accent-blue) bg-(--accent-blue) text-white'
+          ? 'border-(--accent-blue) bg-(--accent-blue) text-(--color-text-on-accent)'
           : browserActive
-            ? 'border-(--accent-blue) bg-(--accent-blue-soft) text-(--accent-blue-text) hover:bg-(--accent-blue) hover:text-white hover:border-(--accent-blue)'
+            ? 'border-(--accent-blue) bg-(--accent-blue-soft) text-(--accent-blue-text) hover:bg-(--accent-blue) hover:text-(--color-text-on-accent) hover:border-(--accent-blue)'
             : 'border-(--color-border-strong) bg-(--bg-page) text-(--accent-blue-text) hover:bg-(--accent-blue-soft) hover:border-(--accent-blue)'
       }`}
       title={browserOpen ? 'Hide browser panel' : 'See browser live'}

@@ -48,7 +48,7 @@ interface SchedulerPanelProps {
 // <SelectTrigger> primitives default to bg-transparent which leaves them
 // indistinguishable from the parent. Give them an explicit fillable surface
 // so the controls read as inputs.
-const FIELD_CLASS = 'bg-(--bg-page) dark:bg-(--bg-page)'
+const FIELD_CLASS = 'bg-(--bg-page)'
 
 // Inline className for SelectContent — the global default (`bg-popover`)
 // resolves to `--bg-card`, the same surface as this drawer, so the dropdown
@@ -352,7 +352,7 @@ export function SchedulerPanel({
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
             onClick={onClose}
-            className="fixed inset-0 z-40 bg-black/40"
+            className="fixed inset-0 z-40 bg-(--color-overlay)"
           />
 
           <motion.aside
@@ -1064,7 +1064,7 @@ function TaskDetailView({
           uppercase muted headings, bordered sections, no outer padding. */}
       <div className="flex-1 overflow-y-auto">
         <section className="px-5 py-4">
-          <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
+          <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
             Status
           </h3>
           <div className="space-y-1.5">
@@ -1081,7 +1081,7 @@ function TaskDetailView({
         </section>
 
         <section className="border-t border-(--color-border) px-5 py-4">
-          <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
+          <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
             Schedule
           </h3>
           <div className="space-y-1.5">
@@ -1112,7 +1112,7 @@ function TaskDetailView({
         </section>
 
         <section className="border-t border-(--color-border) px-5 py-4">
-          <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
+          <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
             Configuration
           </h3>
           <div className="space-y-3">
@@ -1151,7 +1151,7 @@ function TaskDetailView({
         </section>
 
         <section className="border-t border-(--color-border) px-5 py-4">
-          <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
+          <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
             Run History
           </h3>
           <div className="space-y-1.5">
