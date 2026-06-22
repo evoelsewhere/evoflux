@@ -442,6 +442,8 @@ export function AgentPane({
 
   const borderClass = isError
     ? 'border-(--color-error)'
+    : isWorking
+    ? 'border-(--color-accent)/50'
     : isLead
     ? 'border-(--color-border-strong)'
     : 'border-(--color-border)'

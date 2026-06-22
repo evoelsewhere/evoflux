@@ -177,7 +177,7 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell 
            </div>
          )}
 
-          <div className={`relative min-w-0 max-w-full overflow-hidden rounded-sm border px-4 py-3 text-sm leading-relaxed text-(--color-text) shadow-sm ${shell ? 'border-(--accent-blue)/30 bg-(--bg-key)' : 'border-(--color-border) bg-(--color-surface)'}`}>
+          <div className={`relative min-w-0 max-w-full overflow-hidden rounded-2xl border px-4 py-3 text-sm leading-relaxed text-(--color-text) ${shell ? 'border-(--accent-blue)/30 bg-(--bg-key)' : 'border-(--color-border) bg-(--color-surface)'}`}>
            {/* Expand / collapse button — top-right inside bubble */}
            {needsCollapse && (
              <button
@@ -354,6 +354,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const [renderedTurnCount, setRenderedTurnCount] = useState(INITIAL_RENDERED_TURNS)
   const sessionId = useTeamStore((s) => s.sessionId) ?? undefined
+  const activeAgent = useTeamStore((s) => s.activeAgent)
   const prevScrollHeightRef = useRef<number | null>(null)
   // Me mirror store _loadingOlder in a ref so the wheel handler can check
   // it synchronously without subscribing to store state changes.
@@ -515,7 +516,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                  </p>
                </div>
                {onSuggestion && (
-                 <div className="flex w-full max-w-md flex-wrap items-center justify-center gap-2">
+                 <div className="grid w-full max-w-sm grid-cols-2 gap-2 sm:max-w-md sm:grid-cols-3">
                    <SuggestionChip
                      icon={Lightbulb}
                      label="Explain this codebase"
@@ -552,7 +553,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
            )
          )}
 
-         <div className="space-y-3">
+         <div className="space-y-6">
               {hiddenTurnCount > 0 && (
                 <div className="flex justify-center py-2">
                   <button
@@ -583,26 +584,31 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                  // Me only the trailing turn (no user block after) can be "live"
                   const isTrailingTurn = globalTurnIndex === turnItems.length - 1
                  return (
-                   <AssistantTurn
-                     key={`turn-${item.startIndex}-${item.blocks[0]?.id ?? k}`}
-                     blocks={item.blocks}
-                     startIndex={item.startIndex}
-                     finalizedCount={blocks.length}
-                     isWorking={isWorking}
-                     isTrailingTurn={isTrailingTurn}
-                      totalBlocks={allBlocks.length}
-                      size="roomy"
-                      onContinue={onContinue}
-                      renderBlock={({ block, isStreaming }) => (
-                       <BlockRenderer
-                         block={block}
-                            isStreaming={isStreaming}
-                            sessionId={sessionId}
-                            onRevert={isDirectUserBlock(block) && block.id === latestUserBlockId ? handleRevert : undefined}
-                            latestMCPAppBlockIds={latestMCPAppBlockIds}
-                          />
-                     )}
-                   />
+                   <div key={`turn-${item.startIndex}-${item.blocks[0]?.id ?? k}`}>
+                     <div className="mb-2 flex items-center gap-1.5">
+                       <img src={EvoFluxLogo} width={14} height={14} className="rounded-[3px] opacity-70" alt="" aria-hidden="true" />
+                       <span className="text-xs font-medium text-(--color-text-muted)">{activeAgent ?? 'evoflux'}</span>
+                     </div>
+                     <AssistantTurn
+                       blocks={item.blocks}
+                       startIndex={item.startIndex}
+                       finalizedCount={blocks.length}
+                       isWorking={isWorking}
+                       isTrailingTurn={isTrailingTurn}
+                       totalBlocks={allBlocks.length}
+                       size="roomy"
+                       onContinue={onContinue}
+                       renderBlock={({ block, isStreaming }) => (
+                         <BlockRenderer
+                           block={block}
+                           isStreaming={isStreaming}
+                           sessionId={sessionId}
+                           onRevert={isDirectUserBlock(block) && block.id === latestUserBlockId ? handleRevert : undefined}
+                           latestMCPAppBlockIds={latestMCPAppBlockIds}
+                         />
+                       )}
+                     />
+                   </div>
                  )
                 })}
 
@@ -621,10 +627,15 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                 (isContinuing && currentBlocks.length === 0) ||
                 (currentBlocks.length > 0 && currentBlocks.every((b) => b.type === 'user'))
               ))) && (
-              <div className="flex items-center gap-2 py-1.5" role="status" aria-label="Agent is preparing a response">
-                <div className="relative flex h-5 w-5 shrink-0 items-center justify-center" aria-hidden="true">
-                  <div className="absolute inset-0 animate-spin rounded-full border-[1.5px] border-(--color-accent)/20 border-t-(--color-accent) motion-reduce:animate-none" />
-                  <img src={EvoFluxLogo} width={11} height={11} className="rounded-[3px]" alt="" />
+              <div>
+                <div className="mb-2 flex items-center gap-1.5">
+                  <img src={EvoFluxLogo} width={14} height={14} className="rounded-[3px] opacity-70" alt="" aria-hidden="true" />
+                  <span className="text-xs font-medium text-(--color-text-muted)">{activeAgent ?? 'evoflux'}</span>
+                </div>
+                <div className="flex items-center gap-2 py-1" role="status" aria-label="Agent is preparing a response">
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-(--color-text-muted) [animation-delay:0ms]" aria-hidden="true" />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-(--color-text-muted) [animation-delay:150ms]" aria-hidden="true" />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-(--color-text-muted) [animation-delay:300ms]" aria-hidden="true" />
                 </div>
               </div>
             )}

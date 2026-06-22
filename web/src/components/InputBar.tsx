@@ -1262,8 +1262,8 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
             onDrop={handleDrop}
             className={`relative block bg-(--color-surface) transition-[border-color,box-shadow] duration-200 ${
               minimized
-                ? 'w-fit rounded-2xl border border-(--color-border) shadow-sm hover:bg-(--bg-key)'
-                : 'w-full rounded-xl border border-(--color-border) shadow-[0_4px_24px_rgba(0,0,0,0.10)] focus-within:border-(--focus-ring)/40 focus-within:shadow-[0_8px_32px_rgba(0,0,0,0.16)]'
+                ? 'w-fit rounded-2xl border border-(--color-border) hover:bg-(--bg-key)'
+                : 'w-full rounded-xl border border-(--color-border) focus-within:border-(--focus-ring)/40'
             }`}
           >
             {/* ── Minimized: compact action strip ── */}
