@@ -143,6 +143,9 @@ def build_provider(
                         s.OPENAI_API_KEY, "OPENAI_API_KEY", "OpenAI"
                     ),
                     model=model,
+                    base_url=os.getenv("OPENAI_BASE_URL")
+                    or s.OPENAI_BASE_URL
+                    or "https://api.openai.com/v1",
                     model_kwargs=kwargs,
                 ),
                 name,
