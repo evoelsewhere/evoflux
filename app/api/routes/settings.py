@@ -43,7 +43,6 @@ from app.api.schemas.settings import (
     SandboxSettingsBody,
     SeedInstallRequest,
     SeedInstallResponse,
-    TitleGenerationSettingsBody,
 )
 from app.services.provider_usage import (
     ProviderUsageCredentialsError,
@@ -94,36 +93,6 @@ async def update_sandbox_settings(body: SandboxSettingsBody) -> SandboxSettingsB
     cleaned = [p.strip() for p in body.denied_patterns if p.strip()]
     save_config(SandboxFileConfig(denied_patterns=cleaned))
     return SandboxSettingsBody(denied_patterns=cleaned)
-
-
-@router.get("/title-generation")
-async def get_title_generation_settings() -> TitleGenerationSettingsBody:
-    from app.core.runtime_settings import load_runtime_settings
-
-    cfg = load_runtime_settings().title_generation
-    return TitleGenerationSettingsBody(
-        enabled=cfg.enabled,
-        model=cfg.model or "",
-        wait_timeout_seconds=cfg.wait_timeout_seconds,
-    )
-
-
-@router.put("/title-generation")
-async def update_title_generation_settings(
-    body: TitleGenerationSettingsBody,
-) -> TitleGenerationSettingsBody:
-    from app.core.runtime_settings import load_runtime_settings, save_runtime_settings
-
-    cfg = load_runtime_settings()
-    cfg.title_generation.enabled = body.enabled
-    cfg.title_generation.model = body.model.strip() or None
-    cfg.title_generation.wait_timeout_seconds = max(0.0, body.wait_timeout_seconds)
-    save_runtime_settings(cfg)
-    return TitleGenerationSettingsBody(
-        enabled=cfg.title_generation.enabled,
-        model=cfg.title_generation.model or "",
-        wait_timeout_seconds=cfg.title_generation.wait_timeout_seconds,
-    )
 
 
 # ── Providers (Settings → Providers tab) ────────────────────────────────────

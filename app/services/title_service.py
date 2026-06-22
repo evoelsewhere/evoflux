@@ -175,9 +175,13 @@ async def generate_and_save_title(
                 "title_generated session_id={} title={!r}", session_id_str, title
             )
 
-        except Exception:
-            logger.warning("title_generation_failed session_id={}", session_id_str)
-            span.set_status(StatusCode.ERROR, "unexpected error")
+        except Exception as exc:
+            logger.warning(
+                "title_generation_failed session_id={} error={}",
+                session_id_str,
+                exc,
+            )
+            span.set_status(StatusCode.ERROR, str(exc))
 
 
 def _attach_usage(

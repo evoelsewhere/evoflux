@@ -9,20 +9,14 @@ just decides *when* to trigger it.
 Because the task is fire-and-forget, the agent loop is never blocked by the
 LLM call itself. ``after_agent`` performs a best-effort ``await`` on the task
 so the ``title_update`` SSE arrives before ``done`` is emitted, but the wait
-is capped by ``wait_timeout`` (default ``3.0`` s, configurable via
-``.EvoFlux/config/settings.yaml``). Set ``wait_timeout=0`` to make
-the hook fully non-blocking — the title still lands via SSE whenever it is
-ready.
-
-Runtime settings live in ``.EvoFlux/config/settings.yaml``. The title prompt
-is bundled in code, like summarization.
+is capped by ``wait_timeout`` (default ``3.0`` s).
 
 Usage::
 
     from app.agent.hooks.title_generation import build_title_generation_hook
 
     hook = build_title_generation_hook(
-        default_provider=llm_provider,
+        provider=llm_provider,
         db_factory=db_factory,
     )
     if hook is not None:
@@ -39,9 +33,7 @@ from uuid import UUID
 from loguru import logger
 
 from app.agent.hooks.base import BaseAgentHook
-from app.agent.providers.factory import build_provider
 from app.agent.schemas.chat import AssistantMessage, HumanMessage
-from app.core.runtime_settings import load_runtime_settings
 
 if TYPE_CHECKING:
     from app.agent.providers.base import LLMProviderBase
@@ -92,6 +84,9 @@ class TitleGenerationHook(BaseAgentHook):
 
     Args:
         provider: LLM provider used for the lightweight title generation call.
+            When the hook is wired from a team chat turn, pass the same
+            provider the chat turn is using so title generation shares the
+            configured chat model.
         db_factory: Async session factory for persisting the title.
         system_prompt: Title-generator system prompt (required, non-empty).
         wait_timeout: Seconds to wait in ``after_agent`` for the background
@@ -163,7 +158,11 @@ class TitleGenerationHook(BaseAgentHook):
                 system_prompt=self._system_prompt,
             )
         )
-        logger.debug("title_generation_hook_spawned session_id={}", ctx.session_id)
+        logger.info(
+            "title_generation_hook_spawned session_id={} model={}",
+            ctx.session_id,
+            getattr(self._provider, "model", None),
+        )
 
     async def after_agent(
         self, ctx: "RunContext", state: "AgentState", response: AssistantMessage
@@ -192,28 +191,16 @@ class TitleGenerationHook(BaseAgentHook):
 
 def build_title_generation_hook(
     *,
-    default_provider: "LLMProviderBase",
+    provider: "LLMProviderBase",
     db_factory: "DbFactory",
+    wait_timeout: float = DEFAULT_WAIT_TIMEOUT_SECONDS,
 ) -> "TitleGenerationHook | None":
-    """Construct a :class:`TitleGenerationHook` from runtime settings."""
-    try:
-        cfg = load_runtime_settings().title_generation
-    except ValueError as exc:
-        logger.warning(
-            "title_generation_disabled reason=settings_invalid error={}", exc
-        )
-        return None
+    """Construct a :class:`TitleGenerationHook`.
 
-    if not cfg.enabled:
-        logger.warning("title_generation_disabled reason=enabled_false")
-        return None
-
-    provider = default_provider
-    if cfg.model:
-        provider = build_provider(cfg.model)
-
-    wait_timeout = cfg.wait_timeout_seconds or DEFAULT_WAIT_TIMEOUT_SECONDS
-
+    Title generation is always enabled. The caller supplies the provider to
+    use; in team chat this should be the same provider the chat turn is using
+    so the title is generated with the active chat model.
+    """
     return TitleGenerationHook(
         provider=provider,
         db_factory=db_factory,

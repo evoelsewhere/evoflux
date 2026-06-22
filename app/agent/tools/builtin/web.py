@@ -102,6 +102,23 @@ async def web_search(
         return "No result found"
 
 
+def _fallback_convert(content_bytes: bytes, mime: str | None) -> str:
+    """Minimal HTML/text conversion when markitdown is unavailable (onnxruntime DLL issue)."""
+    if mime and mime.startswith("text/") and mime != "text/html":
+        return content_bytes.decode("utf-8", errors="replace")
+
+    try:
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(content_bytes, "html.parser")
+        for tag in soup(["script", "style", "noscript"]):
+            tag.decompose()
+        text = soup.get_text(separator="\n", strip=True)
+        return text
+    except Exception:
+        return content_bytes.decode("utf-8", errors="replace")
+
+
 @tool(name="web_fetch")
 async def web_fetch(
     url: Annotated[
@@ -170,14 +187,18 @@ async def web_fetch(
         # backend always starts; only ``web_fetch`` calls that actually need
         # conversion are affected when the native runtime is missing.
         def _convert() -> str:
-            from markitdown import MarkItDown, StreamInfo
+            try:
+                from markitdown import MarkItDown, StreamInfo
 
-            md = MarkItDown()
-            result = md.convert_stream(
-                BytesIO(content_bytes),
-                stream_info=StreamInfo(url=url, mimetype=mime),
-            )
-            return result.markdown
+                md = MarkItDown()
+                result = md.convert_stream(
+                    BytesIO(content_bytes),
+                    stream_info=StreamInfo(url=url, mimetype=mime),
+                )
+                return result.markdown
+            except (ImportError, OSError):
+                logger.debug("web_fetch_markitdown_fallback url={}", url)
+                return _fallback_convert(content_bytes, mime)
 
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, _convert)

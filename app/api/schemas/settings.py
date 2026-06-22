@@ -13,14 +13,6 @@ class SandboxSettingsBody(BaseModel):
     denied_patterns: list[str] = Field(default_factory=list)
 
 
-class TitleGenerationSettingsBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    enabled: bool
-    model: str = ""
-    wait_timeout_seconds: float = 3.0
-
-
 # ── Providers (Settings → Providers tab) ────────────────────────────────────
 
 

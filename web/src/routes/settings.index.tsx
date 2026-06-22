@@ -19,7 +19,6 @@ import {
   Plug,
   Shield,
   Sparkles,
-  Type,
   Wrench,
   type LucideIcon,
 } from 'lucide-react'
@@ -40,16 +39,7 @@ import {
 } from '@/queries'
 
 interface CardProps {
-  to:
-    | '/settings/agents'
-    | '/settings/skills'
-    | '/settings/mcp'
-    | '/settings/providers'
-    | '/settings/multimodal'
-    | '/settings/sandbox'
-    | '/settings/dream'
-    | '/settings/title-generation'
-    | '/settings/notifications'
+  to: string
   icon: LucideIcon
   title: string
   description: string
@@ -361,14 +351,6 @@ export function SettingsHubPage() {
                   icon={Moon}
                   title="Dream"
                   description="Cron agent that synthesises sessions into wiki topics"
-                  count={null}
-                  countLabel=""
-                />
-                <SettingsNavCard
-                  to="/settings/title-generation"
-                  icon={Type}
-                  title="Title generation"
-                  description="Configure automatic chat title model and latency"
                   count={null}
                   countLabel=""
                 />
