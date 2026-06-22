@@ -32,6 +32,8 @@ import {
   Copy,
   Check,
   ArrowLeft,
+  ChevronRight,
+  Search,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { workspaceMediaUrl } from '@/api/client'
@@ -97,56 +99,102 @@ function FileTypeIcon({ file, size = 12 }: { file: WorkspaceFileInfo; size?: num
   return <FileIcon size={size} className={cls} />
 }
 
-// ── Tree grouping ─────────────────────────────────────────────────────────────
+// ── Tree data structure ───────────────────────────────────────────────────
 //
-// Flat listing from the API is sorted lexicographically, which already groups
-// by directory.  We split each path into (dir, file) and collect files under
-// their dir bucket — one level of grouping is enough for the UX, even when
-// paths are deeply nested (the dir label shows the full posix prefix).
+// Builds a nested tree from the flat file listing so directories can be
+// collapsed/expanded like VS Code's explorer.
 
-interface Group {
-  dir: string  // '' = root, otherwise POSIX path
-  files: WorkspaceFileInfo[]
+interface TreeNode {
+  name: string
+  path: string
+  children: Map<string, TreeNode>
+  file?: WorkspaceFileInfo
 }
 
-function groupByDir(files: WorkspaceFileInfo[]): Group[] {
-  const buckets = new Map<string, WorkspaceFileInfo[]>()
-  for (const f of files) {
-    const slash = f.path.lastIndexOf('/')
-    const dir = slash < 0 ? '' : f.path.slice(0, slash)
-    const bucket = buckets.get(dir) ?? []
-    bucket.push(f)
-    buckets.set(dir, bucket)
-  }
-  return Array.from(buckets.entries())
-    .sort(([a], [b]) => {
-      // Root directory first, then alphabetical.
-      if (a === '') return -1
-      if (b === '') return 1
-      return a.localeCompare(b)
+function buildTree(files: WorkspaceFileInfo[]): TreeNode {
+  const root: TreeNode = { name: '/', path: '', children: new Map() }
+  for (const file of files) {
+    const parts = file.path.split('/')
+    let node = root
+    parts.forEach((part, index) => {
+      const path = parts.slice(0, index + 1).join('/')
+      let child = node.children.get(part)
+      if (!child) {
+        child = { name: part, path, children: new Map() }
+        node.children.set(part, child)
+      }
+      if (index === parts.length - 1) child.file = file
+      node = child
     })
-    .map(([dir, files]) => ({ dir, files }))
+  }
+  return root
+}
+
+/** Return the set of paths that should be visible when the given query is
+ *  active.  A file matches when its path (case-insensitive) contains the
+ *  query.  Ancestor directories of every matching file are also included so
+ *  the tree stays connected. */
+function matchingPaths(files: WorkspaceFileInfo[], query: string): Set<string> | null {
+  if (!query.trim()) return null  // null = no filter active
+  const q = query.toLowerCase()
+  const matched = new Set<string>()
+  for (const f of files) {
+    if (f.path.toLowerCase().includes(q) || f.name.toLowerCase().includes(q)) {
+      // Mark the file and every ancestor dir.
+      const parts = f.path.split('/')
+      for (let i = 1; i <= parts.length; i++) {
+        matched.add(parts.slice(0, i).join('/'))
+      }
+    }
+  }
+  return matched
 }
 
 // ── Tree node ─────────────────────────────────────────────────────────────────
 
-function FileRow({
-  file,
-  selected,
+/** Recursive tree node — renders a folder row (with expand/collapse) or a
+ *  file row.  ``depth`` controls left-padding indentation. */
+function TreeNodeView({
+  node,
+  depth,
+  selectedPath,
   sessionId,
   onSelect,
+  visiblePaths,
+  defaultOpen,
 }: {
-  file: WorkspaceFileInfo
-  selected: boolean
+  node: TreeNode
+  depth: number
+  selectedPath: string | null
   sessionId: string
   onSelect: (file: WorkspaceFileInfo) => void
+  visiblePaths: Set<string> | null
+  defaultOpen: boolean
 }) {
+  const [open, setOpen] = useState(defaultOpen)
+  const isDir = node.children.size > 0 && !node.file
   const isMobile = useIsMobile()
   const { isTauri, os } = usePlatform()
   const isTauriMobile = isTauri && (os === 'ios' || os === 'android')
   const [actionsPoint, setActionsPoint] = useState<{ x: number; y: number } | null>(null)
   const longPressTimerRef = useRef<number | null>(null)
   const longPressStartRef = useRef<{ x: number; y: number } | null>(null)
+
+  // Keep folders open when a search filter is active so results are visible.
+  const effectiveOpen = visiblePaths ? true : open
+
+  // Sort: folders first, then alphabetical.
+  const children = Array.from(node.children.values()).sort((a, b) => {
+    const aDir = a.children.size > 0 && !a.file
+    const bDir = b.children.size > 0 && !b.file
+    if (aDir !== bDir) return aDir ? -1 : 1
+    return a.name.localeCompare(b.name)
+  })
+
+  // When a filter is active, prune children that are not in visiblePaths.
+  const filteredChildren = visiblePaths
+    ? children.filter((child) => visiblePaths.has(child.path))
+    : children
 
   const clearLongPress = () => {
     if (longPressTimerRef.current !== null) window.clearTimeout(longPressTimerRef.current)
@@ -155,143 +203,173 @@ function FileRow({
   }
 
   const copyPath = async () => {
-    await navigator.clipboard.writeText(file.path)
+    await navigator.clipboard.writeText(node.file!.path)
+  }
+
+  // If filtering and nothing matches under this node, hide the whole subtree.
+  if (visiblePaths && !visiblePaths.has(node.path) && filteredChildren.length === 0) {
+    return null
+  }
+
+  if (!isDir && node.file) {
+    // ── File leaf ──────────────────────────────────────────────────────────
+    const isSelected = node.file.path === selectedPath
+
+    return (
+      <>
+        <button
+          onClick={() => onSelect(node.file!)}
+          onContextMenu={(event) => {
+            if (isTauriMobile) return
+            event.preventDefault()
+            setActionsPoint({ x: event.clientX, y: event.clientY })
+          }}
+          onPointerDown={(event) => {
+            if (!isMobile || !isTauriMobile || event.pointerType === 'mouse') return
+            longPressStartRef.current = { x: event.clientX, y: event.clientY }
+            longPressTimerRef.current = window.setTimeout(() => {
+              longPressTimerRef.current = null
+              longPressStartRef.current = null
+              mediumHapticFeedback()
+              setActionsPoint({ x: event.clientX, y: event.clientY })
+            }, FILE_LONG_PRESS_MS)
+          }}
+          onPointerMove={(event) => {
+            const start = longPressStartRef.current
+            if (!start) return
+            if (
+              Math.abs(event.clientX - start.x) > FILE_LONG_PRESS_MOVE_TOLERANCE ||
+              Math.abs(event.clientY - start.y) > FILE_LONG_PRESS_MOVE_TOLERANCE
+            ) {
+              clearLongPress()
+            }
+          }}
+          onPointerUp={clearLongPress}
+          onPointerCancel={clearLongPress}
+          onPointerLeave={clearLongPress}
+          className={cn(
+            'group flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs transition-colors',
+            isSelected
+              ? 'bg-(--bg-key) text-(--color-accent)'
+              : 'text-(--color-text-2) hover:bg-(--bg-key) hover:text-(--color-text)',
+          )}
+          style={{ paddingLeft: 8 + depth * 12 }}
+          title={node.file.path}
+        >
+          <FileTypeIcon file={node.file} />
+          <span className="min-w-0 flex-1 truncate font-mono">{node.name}</span>
+          <span className="shrink-0 text-[10px] text-(--color-text-subtle)">
+            {formatBytes(node.file.size)}
+          </span>
+        </button>
+        {actionsPoint && (
+          <div
+            className="fixed inset-0 z-[70]"
+            onClick={() => setActionsPoint(null)}
+            onContextMenu={(event) => {
+              event.preventDefault()
+              setActionsPoint(null)
+            }}
+          >
+            <div
+              role="menu"
+              aria-label={`Actions for ${node.file!.name}`}
+              className="fixed min-w-44 rounded-lg border border-(--color-border) bg-(--bg-card) p-1 text-sm text-(--color-text) shadow-xl"
+              style={{ left: actionsPoint.x, top: actionsPoint.y }}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <button
+                type="button"
+                role="menuitem"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-(--bg-key) focus-visible:bg-(--bg-key) focus-visible:outline-none"
+                onClick={() => {
+                  setActionsPoint(null)
+                  onSelect(node.file!)
+                }}
+              >
+                <FileText size={14} aria-hidden="true" />
+                Preview
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-(--bg-key) focus-visible:bg-(--bg-key) focus-visible:outline-none"
+                onClick={() => {
+                  setActionsPoint(null)
+                  void copyPath()
+                }}
+              >
+                <Copy size={14} aria-hidden="true" />
+                Copy path
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-(--bg-key) focus-visible:bg-(--bg-key) focus-visible:outline-none"
+                onClick={() => {
+                  setActionsPoint(null)
+                  void downloadWorkspaceFile(sessionId, node.file!)
+                }}
+              >
+                <Download size={14} aria-hidden="true" />
+                Download
+              </button>
+            </div>
+          </div>
+        )}
+      </>
+    )
+  }
+
+  // ── Folder node ─────────────────────────────────────────────────────────
+  if (!node.path) {
+    // Root — render children directly without a folder row.
+    return (
+      <>
+        {filteredChildren.map((child) => (
+          <TreeNodeView
+            key={child.path}
+            node={child}
+            depth={0}
+            selectedPath={selectedPath}
+            sessionId={sessionId}
+            onSelect={onSelect}
+            visiblePaths={visiblePaths}
+            defaultOpen={defaultOpen}
+          />
+        ))}
+      </>
+    )
   }
 
   return (
-    <>
-    <button
-      onClick={() => onSelect(file)}
-      onContextMenu={(event) => {
-        if (isTauriMobile) return
-        event.preventDefault()
-        setActionsPoint({ x: event.clientX, y: event.clientY })
-      }}
-      onPointerDown={(event) => {
-        if (!isMobile || !isTauriMobile || event.pointerType === 'mouse') return
-        longPressStartRef.current = { x: event.clientX, y: event.clientY }
-        longPressTimerRef.current = window.setTimeout(() => {
-          longPressTimerRef.current = null
-          longPressStartRef.current = null
-          mediumHapticFeedback()
-          setActionsPoint({ x: event.clientX, y: event.clientY })
-        }, FILE_LONG_PRESS_MS)
-      }}
-      onPointerMove={(event) => {
-        const start = longPressStartRef.current
-        if (!start) return
-        if (
-          Math.abs(event.clientX - start.x) > FILE_LONG_PRESS_MOVE_TOLERANCE ||
-          Math.abs(event.clientY - start.y) > FILE_LONG_PRESS_MOVE_TOLERANCE
-        ) {
-          clearLongPress()
-        }
-      }}
-      onPointerUp={clearLongPress}
-      onPointerCancel={clearLongPress}
-      onPointerLeave={clearLongPress}
-      className={cn(
-        'group flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs transition-colors',
-        selected
-          ? 'bg-(--bg-key) text-(--color-accent)'
-          : 'text-(--color-text-2) hover:bg-(--bg-key) hover:text-(--color-text)',
-      )}
-      title={file.path}
-    >
-      <FileTypeIcon file={file} />
-      <span className="min-w-0 flex-1 truncate font-mono">{file.name}</span>
-      <span className="shrink-0 text-[10px] text-(--color-text-subtle)">
-        {formatBytes(file.size)}
-      </span>
-    </button>
-    {actionsPoint && (
-      <div
-        className="fixed inset-0 z-[70]"
-        onClick={() => setActionsPoint(null)}
-        onContextMenu={(event) => {
-          event.preventDefault()
-          setActionsPoint(null)
-        }}
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs text-(--color-text-2) hover:bg-(--bg-key) hover:text-(--color-text)"
+        style={{ paddingLeft: 8 + depth * 12 }}
       >
-        <div
-          role="menu"
-          aria-label={`Actions for ${file.name}`}
-          className="fixed min-w-44 rounded-lg border border-(--color-border) bg-(--bg-card) p-1 text-sm text-(--color-text) shadow-xl"
-          style={{ left: actionsPoint.x, top: actionsPoint.y }}
-          onClick={(event) => event.stopPropagation()}
-        >
-          <button
-            type="button"
-            role="menuitem"
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-(--bg-key) focus-visible:bg-(--bg-key) focus-visible:outline-none"
-            onClick={() => {
-              setActionsPoint(null)
-              onSelect(file)
-            }}
-          >
-            <FileText size={14} aria-hidden="true" />
-            Preview
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-(--bg-key) focus-visible:bg-(--bg-key) focus-visible:outline-none"
-            onClick={() => {
-              setActionsPoint(null)
-              void copyPath()
-            }}
-          >
-            <Copy size={14} aria-hidden="true" />
-            Copy path
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-(--bg-key) focus-visible:bg-(--bg-key) focus-visible:outline-none"
-            onClick={() => {
-              setActionsPoint(null)
-              void downloadWorkspaceFile(sessionId, file)
-            }}
-          >
-            <Download size={14} aria-hidden="true" />
-            Download
-          </button>
-        </div>
-      </div>
-    )}
-    </>
-  )
-}
-
-function TreeGroup({
-  group,
-  selectedPath,
-  sessionId,
-  onSelect,
-}: {
-  group: Group
-  selectedPath: string | null
-  sessionId: string
-  onSelect: (file: WorkspaceFileInfo) => void
-}) {
-  return (
-    <div className="mb-3">
-      <div className="mb-1 flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-(--color-text-subtle)">
-        <Folder size={11} />
-        <span className="truncate">{group.dir || '/'}</span>
-      </div>
-      <ul className="space-y-0.5">
-        {group.files.map((f) => (
-          <li key={f.path}>
-            <FileRow
-              file={f}
-              selected={f.path === selectedPath}
-              sessionId={sessionId}
-              onSelect={onSelect}
-            />
-          </li>
+        <ChevronRight
+          size={12}
+          className={cn('shrink-0 transition-transform', effectiveOpen && 'rotate-90')}
+        />
+        <Folder size={12} className="shrink-0 text-(--color-accent)" />
+        <span className="min-w-0 flex-1 truncate font-mono">{node.name}</span>
+      </button>
+      {effectiveOpen &&
+        filteredChildren.map((child) => (
+          <TreeNodeView
+            key={child.path}
+            node={child}
+            depth={depth + 1}
+            selectedPath={selectedPath}
+            sessionId={sessionId}
+            onSelect={onSelect}
+            visiblePaths={visiblePaths}
+            defaultOpen={defaultOpen}
+          />
         ))}
-      </ul>
     </div>
   )
 }
@@ -573,8 +651,10 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
   const prefersReducedMotion = useReducedMotion()
 
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
   // Mobile: which pane is active — 'tree' (file list) or 'preview'
   const [mobilePane, setMobilePane] = useState<'tree' | 'preview'>('tree')
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const handleModalClose = useCallback(() => {
     if (isMobile && mobilePane === 'preview') {
       setMobilePane('tree')
@@ -592,9 +672,15 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
 
   // Wrap ``data?.files ?? []`` in a memo so the ``files`` reference is stable
   // when the query returns the same cache entry — otherwise downstream
-  // memoised derivations (``groups``) would recompute every render.
+  // memoised derivations (``tree``) would recompute every render.
   const files = useMemo<WorkspaceFileInfo[]>(() => data?.files ?? [], [data])
-  const groups = useMemo(() => groupByDir(files), [files])
+  const tree = useMemo(() => buildTree(files), [files])
+  const visiblePaths = useMemo(() => matchingPaths(files, searchQuery), [files, searchQuery])
+
+  // Clear search when panel closes.
+  useEffect(() => {
+    if (!open) setSearchQuery('')
+  }, [open])
 
   // Keep selection valid as the list churns — e.g. the selected file was deleted
   // by a new turn's rm tool call.  When the selection disappears, clear it.
@@ -620,6 +706,19 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
   // On mobile, tree pane and preview pane are mutually exclusive full-width views.
   const showTree = !isMobile || mobilePane === 'tree'
   const showPreview = !isMobile || mobilePane === 'preview'
+
+  // Ctrl+F focuses the search input when the tree pane is visible.
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f' && showTree) {
+        e.preventDefault()
+        searchInputRef.current?.focus()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [open, showTree])
 
   return (
     <AnimatePresence>
@@ -700,36 +799,68 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
               {/* Tree — full width on mobile tree pane, fixed 260px on desktop */}
               {showTree && (
                 <nav className={cn(
-                  'overflow-y-auto border-r border-(--color-border) px-2 py-3',
+                  'flex flex-col overflow-hidden border-r border-(--color-border)',
                   isMobile ? 'w-full' : 'w-[260px] shrink-0',
                 )}>
-                  {!sessionId ? (
-                    <p className="px-2 py-4 text-xs italic text-(--color-text-subtle)">
-                      No active session.
-                    </p>
-                  ) : isLoading ? (
-                    <div className="px-2 py-6 text-center text-xs text-(--color-text-subtle)">
-                      <Loader2 size={14} className="mx-auto animate-spin" />
+                  {/* Search bar */}
+                  {sessionId && files.length > 0 && (
+                    <div className="shrink-0 border-b border-(--color-border) px-2 py-1.5">
+                      <div className="flex items-center gap-1.5 rounded-md border border-(--color-border) bg-(--bg-page) px-2 py-1">
+                        <Search size={12} className="shrink-0 text-(--color-text-subtle)" />
+                        <input
+                          ref={searchInputRef}
+                          type="text"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          placeholder="Search files…"
+                          className="w-full bg-transparent text-xs text-(--color-text) outline-none placeholder:text-(--color-text-subtle)"
+                        />
+                        {searchQuery && (
+                          <button
+                            type="button"
+                            onClick={() => setSearchQuery('')}
+                            className="shrink-0 rounded p-0.5 text-(--color-text-subtle) hover:text-(--color-text)"
+                            aria-label="Clear search"
+                          >
+                            <X size={10} />
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  ) : isError ? (
-                    <p className="px-2 py-4 text-xs text-(--color-error)">
-                      Failed to load workspace files
-                    </p>
-                  ) : groups.length === 0 ? (
-                    <p className="px-2 py-4 text-xs italic text-(--color-text-subtle)">
-                      No files yet.  Anything the agent writes will appear here.
-                    </p>
-                  ) : (
-                    groups.map((group) => (
-                      <TreeGroup
-                        key={group.dir}
-                        group={group}
+                  )}
+                  <div className="flex-1 overflow-y-auto px-2 py-3">
+                    {!sessionId ? (
+                      <p className="px-2 py-4 text-xs italic text-(--color-text-subtle)">
+                        No active session.
+                      </p>
+                    ) : isLoading ? (
+                      <div className="px-2 py-6 text-center text-xs text-(--color-text-subtle)">
+                        <Loader2 size={14} className="mx-auto animate-spin" />
+                      </div>
+                    ) : isError ? (
+                      <p className="px-2 py-4 text-xs text-(--color-error)">
+                        Failed to load workspace files
+                      </p>
+                    ) : files.length === 0 ? (
+                      <p className="px-2 py-4 text-xs italic text-(--color-text-subtle)">
+                        No files yet.  Anything the agent writes will appear here.
+                      </p>
+                    ) : visiblePaths && visiblePaths.size === 0 ? (
+                      <p className="px-2 py-4 text-xs italic text-(--color-text-subtle)">
+                        No files match "{searchQuery}"
+                      </p>
+                    ) : (
+                      <TreeNodeView
+                        node={tree}
+                        depth={0}
                         selectedPath={selectedPath}
                         sessionId={sessionId}
                         onSelect={handleSelectFile}
+                        visiblePaths={visiblePaths}
+                        defaultOpen
                       />
-                    ))
-                  )}
+                    )}
+                  </div>
                 </nav>
               )}
 
@@ -750,7 +881,15 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
 
             {/* Footer */}
             <div className="shrink-0 border-t border-(--color-border) px-4 py-2 text-[11px] text-(--color-text-muted) pb-safe">
-              {files.length > 0 && <span>{files.length} file{files.length === 1 ? '' : 's'} · </span>}
+              {files.length > 0 && (
+                <span>
+                  {visiblePaths
+                    ? `${Array.from(visiblePaths).filter((p) => files.some((f) => f.path === p)).length} of ${files.length} file${files.length === 1 ? '' : 's'}`
+                    : `${files.length} file${files.length === 1 ? '' : 's'}`
+                  }
+                  {' · '}
+                </span>
+              )}
               {isMobile ? 'Tap a file to preview' : 'Esc or click outside to close'}
             </div>
           </motion.aside>
