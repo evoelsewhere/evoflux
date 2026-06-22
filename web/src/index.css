@@ -380,6 +380,9 @@
   }
   html {
     @apply font-sans;
+    /* Scale the entire UI ~10 % so it reads comfortably at 100 % browser zoom.
+       All Tailwind spacing / text / height utilities use rem and scale here. */
+    font-size: 17px;
   }
 }
 
@@ -416,6 +419,21 @@ html[data-mobile-shell] .text-\[10px\] {
 .mobile-safe-shell {
   padding-right: env(safe-area-inset-right, 0px);
   padding-left: env(safe-area-inset-left, 0px);
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * Icon scaling — lift Lucide SVG icons to match the 17.6 px rem
+ * base.  The element selector (specificity 0,0,2) wins over HTML
+ * width/height attributes but loses to any Tailwind utility class
+ * (specificity 0,1,0), so explicitly-sized SVGs (TokenMeter ring,
+ * progress arcs, etc.) are unaffected.
+ * ───────────────────────────────────────────────────────────── */
+button svg[aria-hidden="true"],
+a svg[aria-hidden="true"],
+[role="menuitem"] svg[aria-hidden="true"],
+[role="option"] svg[aria-hidden="true"] {
+  width: 0.9em;
+  height: 0.9em;
 }
 
 .mobile-safe-header {

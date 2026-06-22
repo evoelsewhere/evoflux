@@ -15,7 +15,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
 
 import { LazyMarkdownBlock } from '@/utils/LazyMarkdownBlock'
-import { ChevronDown, ChevronUp, Copy, Check, Undo2, Terminal } from 'lucide-react'
+import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Copy, Check, Undo2, Terminal } from 'lucide-react'
 import { Thinking } from './Thinking'
 import { ToolCall } from './ToolCall'
 import { MCPAppResult } from './MCPAppResult'
@@ -43,6 +43,10 @@ interface AgentPaneProps {
   isLead: boolean
   isContinuing?: boolean
   onContinue?: () => void
+  canMoveLeft?: boolean
+  canMoveRight?: boolean
+  onMoveLeft?: () => void
+  onMoveRight?: () => void
 }
 
 const USER_COLLAPSE_LINES = 10
@@ -328,7 +332,9 @@ function BlockRenderer({ block, isStreaming, sessionId, onRevert, latestMCPAppBl
 
 export function AgentPane({
   name, stream, isLead, isContinuing = false, onContinue,
+  canMoveLeft, canMoveRight, onMoveLeft, onMoveRight,
 }: AgentPaneProps) {
+  const [paneCollapsed, setPaneCollapsed] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const sessionId = useTeamStore((s) => s.sessionId) ?? undefined
   const handleRevert = useCallback(() => {
@@ -440,21 +446,20 @@ export function AgentPane({
     if (scrollRef.current) scrollRef.current.scrollTop = 0
   }, [isEmpty])
 
-  const borderClass = isError
-    ? 'border-(--color-error)'
+  const paneClass = isError
+    ? 'ring-1 ring-inset ring-(--color-error)/40 shadow-sm'
     : isWorking
-    ? 'border-(--color-accent)/50'
+    ? 'ring-1 ring-inset ring-(--color-border-strong) shadow-[0_4px_16px_rgba(0,0,0,.3),0_1px_3px_rgba(0,0,0,.2)]'
     : isLead
-    ? 'border-(--color-border-strong)'
-    : 'border-(--color-border)'
-  const headerAccent = isError ? 'border-b-(--color-error)' : isWorking ? 'border-b-(--color-accent)' : isOffline ? 'border-b-(--color-text-subtle)' : isLead ? 'border-b-(--color-border-strong)' : 'border-b-(--color-border)'
+    ? 'ring-1 ring-inset ring-(--color-border-strong) shadow-md'
+    : 'ring-1 ring-inset ring-(--color-border-subtle) shadow-sm'
 
   return (
     <div
-      className={`flex h-full flex-col overflow-hidden rounded-lg border bg-(--bg-page) transition-all duration-150 ${borderClass}`}
+      className={`flex h-full flex-col overflow-hidden rounded-[10px] bg-(--bg-card) transition-all duration-200 ${paneClass}`}
     >
       {/* Header */}
-      <div className={`flex items-center gap-2 border-b px-3 py-2.5 ${headerAccent}`}>
+      <div className="flex items-center gap-2 border-b border-(--color-border-subtle) bg-(--bg-key)/50 px-3 py-2.5">
          <div className="flex min-w-0 flex-1 items-center gap-1.5">
            <span className={`truncate text-xs font-semibold ${isLead ? 'text-(--color-text)' : 'text-(--color-text-2)'}`}>
              {name}
@@ -478,10 +483,40 @@ export function AgentPane({
              isError ? 'bg-(--color-error)' : isWorking ? 'bg-(--color-accent)' : isOffline ? 'bg-(--color-text-subtle) opacity-50' : 'bg-(--color-success)'
            }`} />
          </div>
+         {/* Pane controls: move + collapse */}
+         <div className="flex shrink-0 items-center gap-0.5">
+           {canMoveLeft && (
+             <button
+               onClick={onMoveLeft}
+               className="flex h-6 w-6 items-center justify-center rounded text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
+               title="Move left"
+             >
+               <ChevronLeft size={13} aria-hidden="true" />
+             </button>
+           )}
+           {canMoveRight && (
+             <button
+               onClick={onMoveRight}
+               className="flex h-6 w-6 items-center justify-center rounded text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
+               title="Move right"
+             >
+               <ChevronRight size={13} aria-hidden="true" />
+             </button>
+           )}
+           <button
+             onClick={() => setPaneCollapsed((c) => !c)}
+             className="flex h-6 w-6 items-center justify-center rounded text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
+             title={paneCollapsed ? 'Expand' : 'Collapse'}
+           >
+             {paneCollapsed
+               ? <ChevronDown size={13} aria-hidden="true" />
+               : <ChevronUp size={13} aria-hidden="true" />}
+           </button>
+         </div>
        </div>
 
       {/* Body */}
-      <div className="relative flex min-h-0 flex-1 flex-col">
+      <div className={paneCollapsed ? 'hidden' : 'relative flex min-h-0 flex-1 flex-col'}>
       <div ref={scrollRef} className="flex-1 overflow-y-auto" style={{ minHeight: 0 }}>
         {isEmpty && !isWorking && (isError || isOffline) && (
             <div className="flex h-full select-none flex-col items-center justify-center py-8">

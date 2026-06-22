@@ -53,14 +53,14 @@ export function TokenMeter({
     >
       <button
         type="button"
-        className="relative flex h-9 min-w-9 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:outline-none md:h-7 md:min-w-7 md:rounded-sm"
+        className="relative flex h-9 min-w-9 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:outline-none md:h-8 md:min-w-8 md:rounded-md"
         aria-label={tooltip}
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
         onFocus={() => setOpen(true)}
         onBlur={() => setOpen(false)}
       >
-        <svg className="h-[17px] w-[17px] -rotate-90" viewBox="0 0 18 18" aria-hidden="true">
+        <svg className="h-[20px] w-[20px] -rotate-90" viewBox="0 0 18 18" aria-hidden="true">
           <circle
             cx="9"
             cy="9"

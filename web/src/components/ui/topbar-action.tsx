@@ -45,12 +45,12 @@ export const TopbarAction = forwardRef<HTMLButtonElement, TopbarActionProps>(
         ref={ref}
         type="button"
         className={cn(
-          'inline-flex h-9 min-w-9 items-center justify-center gap-1.5 rounded-md px-2 text-xs font-medium leading-none text-(--color-text-2) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent md:h-auto md:min-w-0 md:rounded-sm md:px-2.5 md:py-1.5',
+          'inline-flex h-9 min-w-9 items-center justify-center gap-1.5 rounded-md px-2 text-xs font-medium leading-none text-(--color-text-2) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent md:h-8 md:min-w-0 md:rounded-md md:px-2.5 md:py-0',
           className,
         )}
         {...rest}
       >
-        <Icon size={13} aria-hidden="true" />
+        <Icon size={15} aria-hidden="true" />
         {label && (
           <span className={cn(hideLabelOnMobile && 'hidden md:inline')}>{label}</span>
         )}

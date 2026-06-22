@@ -871,14 +871,14 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
           float as separate pills against the window background. */}
       <header
         {...dragHandlers}
-        className={`mobile-safe-header flex shrink-0 items-center gap-1.5 px-1.5 py-1.5 ${
+        className={`mobile-safe-header relative z-20 flex shrink-0 items-center gap-1.5 px-1.5 py-1.5 ${
           isMacOverlay ? 'select-none' : ''
         }`}
         style={isMacOverlay ? { paddingLeft: 'calc(var(--spacing-mac-traffic-inset) + 6px)' } : undefined}
       >
           {/* LEFT PILL — hamburger + breadcrumb on desktop; flat full row on mobile */}
           <div className={`flex shrink-0 items-center gap-1.5 ${
-            isMobile ? 'flex-1' : 'rounded-full bg-(--bg-sidebar)/80 px-2.5 py-1 shadow-sm backdrop-blur-xl'
+            isMobile ? 'flex-1' : 'rounded-[10px] bg-(--bg-sidebar)/80 px-3 py-1.5 shadow-sm backdrop-blur-xl'
           }`}>
             <button
               type="button"
@@ -894,7 +894,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
               }}
               aria-label="Toggle sidebar"
               title="Toggle sidebar (Ctrl+B)"
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
             >
               <Menu size={15} aria-hidden="true" />
             </button>
@@ -926,7 +926,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
           </div>
 
           {/* CENTER — transparent: loop status + agent tabs (desktop only) */}
-          <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+          <div className="flex min-w-0 flex-1 items-center gap-2 overflow-visible">
             {!isMobile && activeLoop && loopLabel && loopProgress && (
               <LoopStatusPill
                 label={loopLabel}
@@ -951,7 +951,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
 
           {/* RIGHT PILL — action cluster */}
           <div className={`flex shrink-0 items-center gap-0.5 ${
-            !isMobile ? 'rounded-2xl bg-(--bg-sidebar)/80 shadow-sm backdrop-blur-xl' : ''
+            !isMobile ? 'rounded-[10px] bg-(--bg-sidebar)/80 px-1 shadow-sm backdrop-blur-xl' : ''
           }`}>
           {isMobile ? (
             <>
@@ -1569,7 +1569,7 @@ function ActiveAgentSwitcher({
     <DropdownMenu>
       <DropdownMenuTrigger
         data-no-drag
-        className="inline-flex h-9 min-w-0 shrink items-center gap-2 rounded-md px-2 font-mono text-xs leading-none font-semibold text-(--color-text) outline-none transition-all hover:bg-(--bg-key) focus-visible:ring-2 focus-visible:ring-(--color-accent)/40 sm:h-auto sm:px-3 sm:py-1.5"
+        className="inline-flex h-9 min-w-0 shrink items-center gap-2 rounded-md px-2 font-mono text-xs leading-none font-semibold text-(--color-text) outline-none transition-all hover:bg-(--bg-key) focus-visible:ring-2 focus-visible:ring-(--color-accent)/40 sm:h-8 sm:px-3 sm:py-0"
         aria-label={`Switch active agent (current: ${activeAgent})`}
       >
         <span

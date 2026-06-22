@@ -1,26 +1,21 @@
 /**
- * SplitGrid — automatic n-pane grid layout for the `split` view mode.
+ * SplitGrid — resizable, reorderable, collapsible n-pane layout (split view).
  *
- * ≤4 agents: automatic column grid (lead treated equally, columns by sqrt).
- *
+ * ≤4 agents: PanelGroup-based grid with drag handles for resize.
  *   1 → fullscreen
- *   2 → side-by-side columns
- *   3 → big left, two stacked right
- *   4 → 2×2
+ *   2 → side-by-side columns (1 horizontal resize handle)
+ *   3 → big left, two stacked right (horizontal + vertical handles)
+ *   4 → 2×2 (1 horizontal + 2 vertical handles)
  *
- * ≥5 agents: "command center" layout
- *   - Lead agent: dedicated left column (40% width), full height.
- *   - Worker agents: right side, 2-column scrollable grid, each card 240px.
- *   - Workers sorted by activity: working → idle/error.
+ * Reorder: ← → arrows in each pane header cycle the agent through positions.
+ * Collapse: ↑ button in the pane header hides the body; click ↓ to restore.
  *
- * Spawn / dismiss animations are driven by framer-motion: panes fade + scale
- * in on mount, fade + scale out on unmount (offline). The dismissed pane
- * keeps its slot during its exit animation; remaining panes reflow via CSS
- * flex once the unmount completes. We intentionally avoid `layout` here so
- * external container resizes (e.g. sidebar collapse) don't trigger pane
- * layout animations.
+ * ≥5 agents: fixed "command center" layout (no resize / reorder controls).
  */
+import { useState, useEffect, useCallback } from 'react'
+import type { ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
+import { Panel, Group, Separator } from 'react-resizable-panels'
 import { AgentPane } from '../AgentPane'
 import { useReducedMotion } from '@/hooks/useReducedMotion'
 import type { AgentStream } from '@/stores/useTeamStore'
@@ -33,22 +28,33 @@ interface SplitGridProps {
   onContinue?: () => void
 }
 
-// Easing + durations mirror tokens in index.css so the motion matches sibling
-// animations (tool-row-enter, done-pulse, etc.). Per styling-specs/motion.md
-// (Split pane enter / exit), exit is faster than enter so dismissal stays
-// readable without delaying the next interaction.
 const SPRING_SOFT = [0.34, 1.2, 0.64, 1] as const
-const MOTION_BASE_S = 0.24 // matches --motion-base (240ms)
-const MOTION_FAST_S = 0.15 // matches --motion-fast (150ms)
-
-// At this agent count or above, switch to the command-center layout.
+const MOTION_BASE_S = 0.24
+const MOTION_FAST_S = 0.15
 const COMMAND_CENTER_THRESHOLD = 5
 
-// Working agents float to the top of the worker grid; ties broken by name.
 function statusPriority(status: AgentStream['status']): number {
   if (status === 'working') return 0
   if (status === 'error') return 2
-  return 1 // idle and everything else
+  return 1
+}
+
+// ── Resize handles (defined at module scope for stable identity) ─────────────
+
+function HResizeHandle() {
+  return (
+    <Separator className="group relative z-10 flex w-2 cursor-col-resize items-center justify-center focus-visible:outline-none">
+      <div className="h-10 w-0.5 rounded-full bg-(--color-border-subtle) transition-colors group-hover:bg-(--color-border) group-data-[resize-handle-active]:bg-(--color-accent)" />
+    </Separator>
+  )
+}
+
+function VResizeHandle() {
+  return (
+    <Separator className="group relative z-10 flex h-2 cursor-row-resize items-center justify-center focus-visible:outline-none">
+      <div className="h-0.5 w-10 rounded-full bg-(--color-border-subtle) transition-colors group-hover:bg-(--color-border) group-data-[resize-handle-active]:bg-(--color-accent)" />
+    </Separator>
+  )
 }
 
 export function SplitGrid({
@@ -56,12 +62,43 @@ export function SplitGrid({
 }: SplitGridProps) {
   const prefersReducedMotion = useReducedMotion()
 
-  const visibleAgentNames = agentNames.filter((name) => {
+  // User-controlled ordering — new agents appended, gone agents pruned.
+  const [orderedNames, setOrderedNames] = useState(agentNames)
+  useEffect(() => {
+    setOrderedNames((prev) => {
+      const nameSet = new Set(agentNames)
+      const kept = prev.filter((n) => nameSet.has(n))
+      const added = agentNames.filter((n) => !prev.includes(n))
+      return [...kept, ...added]
+    })
+  }, [agentNames])
+
+  const moveLeft = useCallback((name: string) => {
+    setOrderedNames((prev) => {
+      const i = prev.indexOf(name)
+      if (i <= 0) return prev
+      const arr = [...prev]
+      ;[arr[i - 1], arr[i]] = [arr[i], arr[i - 1]]
+      return arr
+    })
+  }, [])
+
+  const moveRight = useCallback((name: string) => {
+    setOrderedNames((prev) => {
+      const i = prev.indexOf(name)
+      if (i >= prev.length - 1) return prev
+      const arr = [...prev]
+      ;[arr[i], arr[i + 1]] = [arr[i + 1], arr[i]]
+      return arr
+    })
+  }, [])
+
+  const visibleNames = orderedNames.filter((name) => {
     const stream = agentStreams[name]
     return stream && stream.status !== 'offline'
   })
 
-  if (visibleAgentNames.length === 0) return null
+  if (visibleNames.length === 0) return null
 
   const enterTransition = prefersReducedMotion
     ? { duration: 0 }
@@ -70,11 +107,10 @@ export function SplitGrid({
     ? { duration: 0 }
     : { duration: MOTION_FAST_S, ease: SPRING_SOFT }
 
-  // compact=true → pane fills its CSS grid cell (command-center workers).
-  // compact=false → pane grows via flex-1 in the column layout.
-  const renderPanel = (name: string, compact?: boolean) => {
+  const renderPane = (name: string, fill = 'h-full') => {
     const stream = agentStreams[name]
     if (!stream) return null
+    const idx = orderedNames.indexOf(name)
     return (
       <motion.div
         key={name}
@@ -82,7 +118,7 @@ export function SplitGrid({
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 10, scale: 0.98, transition: exitTransition }}
         transition={enterTransition}
-        className={compact ? 'h-full' : 'min-h-0 flex-1'}
+        className={fill}
       >
         <AgentPane
           name={name}
@@ -90,18 +126,22 @@ export function SplitGrid({
           isLead={name === leadName}
           isContinuing={isContinuing && name === leadName}
           onContinue={name === leadName ? onContinue : undefined}
+          canMoveLeft={idx > 0}
+          canMoveRight={idx < visibleNames.length - 1}
+          onMoveLeft={() => moveLeft(name)}
+          onMoveRight={() => moveRight(name)}
         />
       </motion.div>
     )
   }
 
-  // ── Command-center layout (≥5 agents) ─────────────────────────────────────
+  // ── Command-center (≥5 agents, fixed layout) ──────────────────────────────
   if (
-    visibleAgentNames.length >= COMMAND_CENTER_THRESHOLD &&
+    visibleNames.length >= COMMAND_CENTER_THRESHOLD &&
     leadName &&
-    visibleAgentNames.includes(leadName)
+    visibleNames.includes(leadName)
   ) {
-    const workerNames = visibleAgentNames
+    const workerNames = visibleNames
       .filter((n) => n !== leadName)
       .sort((a, b) => {
         const pa = statusPriority(agentStreams[a]?.status ?? 'idle')
@@ -110,22 +150,16 @@ export function SplitGrid({
       })
 
     return (
-      <div className="flex h-full gap-3">
-        {/* Lead agent — fixed-width left column, full height */}
+      <div className="flex h-full gap-2">
         <div className="flex w-2/5 shrink-0 flex-col">
           <AnimatePresence initial={false}>
-            {renderPanel(leadName, false)}
+            {renderPane(leadName, 'min-h-0 flex-1')}
           </AnimatePresence>
         </div>
-
-        {/* Worker grid — 2-column, independently scrollable */}
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <div
-            className="grid grid-cols-2 gap-3 pb-3"
-            style={{ gridAutoRows: '240px' }}
-          >
+          <div className="grid grid-cols-2 gap-2 pb-2" style={{ gridAutoRows: '240px' }}>
             <AnimatePresence initial={false}>
-              {workerNames.map((name) => renderPanel(name, true))}
+              {workerNames.map((name) => renderPane(name))}
             </AnimatePresence>
           </div>
         </div>
@@ -133,28 +167,63 @@ export function SplitGrid({
     )
   }
 
-  // ── Auto-grid layout (≤4 agents, unchanged) ───────────────────────────────
-  const columnCount = Math.ceil(Math.sqrt(visibleAgentNames.length))
-  const baseColumnSize = Math.floor(visibleAgentNames.length / columnCount)
-  const extraColumns = visibleAgentNames.length % columnCount
+  // ── Auto-grid (≤4 agents) — PanelGroup with resize handles ────────────────
+  const columnCount = Math.ceil(Math.sqrt(visibleNames.length))
+  const baseColumnSize = Math.floor(visibleNames.length / columnCount)
+  const extraColumns = visibleNames.length % columnCount
   const columns: string[][] = []
   let offset = 0
-
   for (let col = 0; col < columnCount; col += 1) {
     const size = baseColumnSize + (col >= columnCount - extraColumns ? 1 : 0)
-    columns.push(visibleAgentNames.slice(offset, offset + size))
+    columns.push(visibleNames.slice(offset, offset + size))
     offset += size
   }
 
+  const defaultColSize = 100 / columns.length
+
   return (
-    <div className="flex h-full flex-col gap-3 lg:flex-row">
-      {columns.map((column, idx) => (
-        <div key={idx} className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
-          <AnimatePresence initial={false}>
-            {column.map((name) => renderPanel(name))}
-          </AnimatePresence>
-        </div>
-      ))}
-    </div>
+    <Group orientation="horizontal" style={{ height: '100%' }}>
+      {columns.flatMap((column, colIdx) => {
+        const nodes: ReactNode[] = []
+
+        if (colIdx > 0) {
+          nodes.push(<HResizeHandle key={`hr-${colIdx}`} />)
+        }
+
+        nodes.push(
+          <Panel key={colIdx} minSize={10} defaultSize={defaultColSize}>
+            {column.length === 1 ? (
+              <AnimatePresence initial={false}>
+                {renderPane(column[0])}
+              </AnimatePresence>
+            ) : (
+              <Group orientation="vertical" style={{ height: '100%' }}>
+                {column.flatMap((name, paneIdx) => {
+                  const panes: ReactNode[] = []
+                  if (paneIdx > 0) {
+                    panes.push(<VResizeHandle key={`vr-${colIdx}-${paneIdx}`} />)
+                  }
+                  panes.push(
+                    <Panel
+                      key={name}
+                      minSize={5}
+                      defaultSize={100 / column.length}
+                      className="overflow-hidden"
+                    >
+                      <AnimatePresence initial={false}>
+                        {renderPane(name)}
+                      </AnimatePresence>
+                    </Panel>,
+                  )
+                  return panes
+                })}
+              </Group>
+            )}
+          </Panel>,
+        )
+
+        return nodes
+      })}
+    </Group>
   )
 }
