@@ -1,5 +1,5 @@
-/**
- * SessionPillsRow — compact inline model/thinking/fast-mode controls.
+﻿/**
+ * SessionPillsRow â€” compact inline model/thinking/fast-mode controls.
  *
  * Rendered inside InputBar above the textarea. Each control is a minimal
  * pill button that opens a small dropdown on click. The design mirrors
@@ -16,24 +16,27 @@ import { ChevronDown, Zap } from 'lucide-react'
 import { useRegistryQuery } from '@/queries'
 import { AgentInfoPopover } from './AgentInfoPopover'
 
-const THINKING_LEVELS = [
-  { value: '', label: 'Default' },
-  { value: 'none', label: 'None' },
-  { value: 'low', label: 'Low' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'high', label: 'High' },
-]
+const THINKING_LEVEL_LABEL: Record<string, string> = {
+  none: 'None', minimal: 'Minimal', low: 'Low',
+  medium: 'Medium', high: 'High', xhigh: 'X-High', max: 'Max',
+}
+function buildThinkingOptions(levels: string[]) {
+  return [
+    { value: '', label: 'Default' },
+    ...levels.map((l) => ({ value: l, label: THINKING_LEVEL_LABEL[l] ?? l })),
+  ]
+}
 
-/** Short display name for a model id — strip common provider prefixes. */
+/** Short display name for a model id â€” strip common provider prefixes. */
 function shortModelName(id: string): string {
-  // "copilot:claude-haiku-4.5" → "claude-haiku-4.5"
-  // "openai:gpt-4o" → "gpt-4o"
-  // "ollama:llama3" → "llama3"
+  // "copilot:claude-haiku-4.5" â†’ "claude-haiku-4.5"
+  // "openai:gpt-4o" â†’ "gpt-4o"
+  // "ollama:llama3" â†’ "llama3"
   const colon = id.indexOf(':')
   return colon === -1 ? id : id.slice(colon + 1)
 }
 
-// ── Model pill ───────────────────────────────────────────────────────────────
+// â”€â”€ Model pill â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function ModelPill({
   sessionModel,
@@ -158,20 +161,23 @@ function ModelPill({
   )
 }
 
-// ── Thinking pill ────────────────────────────────────────────────────────────
+// â”€â”€ Thinking pill â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function ThinkingPill({
   sessionThinkingLevel,
+  thinkingLevels,
   onSelect,
 }: {
   sessionThinkingLevel: string | null
+  thinkingLevels: string[]
   onSelect: (level: string | null) => void
 }) {
   const [open, setOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(0)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const currentLabel = THINKING_LEVELS.find((l) => l.value === (sessionThinkingLevel ?? ''))?.label ?? 'Default'
+  const options = buildThinkingOptions(thinkingLevels)
+  const currentLabel = options.find((l) => l.value === (sessionThinkingLevel ?? ''))?.label ?? 'Default'
 
   useEffect(() => {
     if (!open) return
@@ -203,7 +209,7 @@ function ThinkingPill({
           className="absolute bottom-full left-0 z-50 mb-1 w-36 rounded-lg border border-(--color-border-strong) bg-(--color-surface) p-1 shadow-(--shadow-popover)"
           role="listbox"
         >
-          {THINKING_LEVELS.map((level, index) => (
+          {options.map((level, index) => (
             <button
               key={level.value}
               type="button"
@@ -230,7 +236,7 @@ function ThinkingPill({
   )
 }
 
-// ── Fast mode pill ───────────────────────────────────────────────────────────
+// â”€â”€ Fast mode pill â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function FastModePill({
   sessionFastMode,
@@ -260,7 +266,7 @@ function FastModePill({
   )
 }
 
-// ── Main row ─────────────────────────────────────────────────────────────────
+// â”€â”€ Main row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface SessionPillsRowProps {
   sessionModel?: string | null
@@ -286,8 +292,13 @@ export function SessionPillsRow({
   agentNames,
   workspace,
 }: SessionPillsRowProps) {
+  const registry = useRegistryQuery()
   const effectiveModel = sessionModel ?? defaultModel ?? ''
   const fastModeAvailable = effectiveModel.startsWith('codex:')
+  const thinkingLevels = useMemo(() => {
+    if (!effectiveModel) return []
+    return registry.data?.models.find((m) => m.id === effectiveModel)?.thinking_levels ?? []
+  }, [effectiveModel, registry.data?.models])
 
   return (
     <div className="flex items-center gap-1 px-1 pb-1">
@@ -302,16 +313,19 @@ export function SessionPillsRow({
           )
         }}
       />
-      <ThinkingPill
-        sessionThinkingLevel={sessionThinkingLevel ?? null}
-        onSelect={(level) => {
-          onSessionModelSettingsChange?.(
-            sessionModel ?? null,
-            level,
-            fastModeAvailable && (sessionFastMode ?? false),
-          )
-        }}
-      />
+      {thinkingLevels.length > 0 && (
+        <ThinkingPill
+          sessionThinkingLevel={sessionThinkingLevel ?? null}
+          thinkingLevels={thinkingLevels}
+          onSelect={(level) => {
+            onSessionModelSettingsChange?.(
+              sessionModel ?? null,
+              level,
+              fastModeAvailable && (sessionFastMode ?? false),
+            )
+          }}
+        />
+      )}
       <FastModePill
         sessionFastMode={sessionFastMode ?? false}
         available={fastModeAvailable}

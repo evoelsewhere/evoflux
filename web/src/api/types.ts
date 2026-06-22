@@ -502,6 +502,8 @@ export interface ModelCatalogEntry {
   output_image: boolean
   output_video: boolean
   summary_trigger_tokens: number
+  /** Non-empty only for models that support extended thinking. Used to show/hide ThinkingPill. */
+  thinking_levels: string[]
 }
 
 export interface RegistryResponse {

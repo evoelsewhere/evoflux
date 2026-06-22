@@ -24,6 +24,7 @@ from app.agent.providers.model_discovery import (
     discover_provider_models,
     filter_agent_model_ids,
 )
+from app.agent.providers.model_metadata import get_model_thinking_levels
 from app.core.runtime_settings import provider_visible_models
 from app.agent.tools.builtin.skill import discover_skills
 from app.api.schemas.agents import (
@@ -285,6 +286,7 @@ async def get_registry() -> RegistryResponse:
                 output_image=caps.output.image,
                 output_video=caps.output.video,
                 summary_trigger_tokens=prompt_token_threshold_for_model(model_id),
+                thinking_levels=list(get_model_thinking_levels(model_id)),
             )
         )
 
