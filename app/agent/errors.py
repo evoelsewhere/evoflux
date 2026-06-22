@@ -155,5 +155,14 @@ class AgentConfigError(EvoFluxError):
     """Agent YAML configuration is invalid or incomplete."""
 
 
+class AgentLoopError(EvoFluxError):
+    """Agent loop detected an unrecoverable state mid-turn.
+
+    Raised (instead of silently breaking) so the team infrastructure can
+    notify the lead and reset in-progress todos rather than leaving tasks
+    permanently stuck.
+    """
+
+
 class RoutingError(EvoFluxError):
     """Could not resolve an agent for the incoming request."""

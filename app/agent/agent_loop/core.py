@@ -60,9 +60,9 @@ MAX_CONCURRENT_TOOLS = 10
 # transient connectivity failure (ReadTimeout / ConnectError).  Without this,
 # such an exhaustion raises straight out of ``run()`` and abandons all
 # completed tool work mid-task — the "agent stopped after a tool call" symptom.
-MAX_PROVIDER_RESUME_ATTEMPTS = 3
+MAX_PROVIDER_RESUME_ATTEMPTS = 5
 # Base backoff (seconds) between in-loop resume attempts; grows linearly.
-PROVIDER_RESUME_BASE_DELAY = 2.0
+PROVIDER_RESUME_BASE_DELAY = 3.0
 
 TContext = TypeVar("TContext", bound=AgentContext)
 
@@ -479,6 +479,13 @@ class Agent(Generic[TContext]):
                     iteration,
                     empty_after_tool_continuations,
                 )
+                from app.agent.errors import AgentLoopError
+
+                raise AgentLoopError(
+                    f"Agent produced {max_empty_after_tool_continuations} consecutive "
+                    f"empty responses after tool calls — stopping to avoid a silent loop. "
+                    f"Reassign remaining work or retry."
+                )
             elif has_assistant_payload:
                 empty_after_tool_continuations = 0
 
@@ -569,6 +576,7 @@ class Agent(Generic[TContext]):
 
             cancelled = interrupt_event is not None and interrupt_event.is_set()
             tool_durations = state.metadata.pop("_tool_duration_ms", {})
+            tool_result_chars = 0
             for item in results:
                 if isinstance(item, BaseException):
                     logger.error("tool_gather_error error={}", item)
@@ -586,7 +594,16 @@ class Agent(Generic[TContext]):
                     if tool_msg.extra is None:
                         tool_msg.extra = {}
                     tool_msg.extra["mcp_app"] = mcp_apps[tc.id]
+                tool_result_chars += len(result or "")
                 messages.append(tool_msg)
+
+            # Bump last_prompt_tokens to account for tool results just appended.
+            # SummarizationHook reads this value at the START of the next iteration
+            # (before_model); without this bump the tool results added after the
+            # LLM call are invisible to the threshold check, letting the context
+            # grow past the model's context limit before summarization fires.
+            # Rough heuristic: ~4 chars per token.
+            state.usage.last_prompt_tokens += max(0, tool_result_chars // 4)
 
             if cancelled:
                 break
