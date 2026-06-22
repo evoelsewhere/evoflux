@@ -59,6 +59,9 @@ class ModelCatalogEntry(BaseModel):
     output_image: bool = False
     output_video: bool = False
     summary_trigger_tokens: int
+    # Non-empty only for models that support extended thinking (e.g. Claude Opus 4).
+    # The frontend uses this to decide whether to show the thinking-level pill.
+    thinking_levels: list[str] = []
 
 
 class RegistryResponse(BaseModel):
