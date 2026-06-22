@@ -35,9 +35,11 @@ BLACKLIST: frozenset[str] = frozenset({"fish", "nu", "nushell"})
 # POSIX-compatible shells — ordered by preference (best first)
 _POSIX_FALLBACKS: tuple[str, ...] = ("zsh", "bash", "sh")
 
-# Windows shells — ordered by preference (PowerShell first because it's
-# more capable than cmd.exe and available on all modern Windows).
-_WINDOWS_SHELLS: tuple[str, ...] = ("powershell.exe", "pwsh.exe", "cmd.exe")
+# Windows shells — ordered by preference.
+# bash (Git Bash) gives full POSIX compatibility; pwsh (PS7) supports &&
+# as a pipeline chain operator; powershell (PS5.1) is a reasonable fallback;
+# cmd.exe is the last resort.
+_WINDOWS_SHELLS: tuple[str, ...] = ("bash", "pwsh", "pwsh.exe", "powershell", "powershell.exe", "cmd.exe")
 
 
 # ── Internal helpers ─────────────────────────────────────────────────────────
@@ -109,11 +111,10 @@ def _detect() -> str:
         return _CACHED_SHELL
 
     if _IS_WINDOWS:
-        # On Windows, check COMSPEC first (usually cmd.exe), then fall back
-        comspec = os.environ.get("COMSPEC", "")
-        if comspec and _is_usable(comspec):
-            _CACHED_SHELL = comspec
-            return _CACHED_SHELL
+        # Prefer the _windows_fallback order (bash → pwsh → powershell → cmd)
+        # over COMSPEC which almost always resolves to cmd.exe.  cmd.exe does
+        # not understand POSIX commands that agents generate, so it must be
+        # the last resort, not the first.
         _CACHED_SHELL = _windows_fallback()
         return _CACHED_SHELL
 
