@@ -1,11 +1,13 @@
 import { useRef, useState, useCallback, useImperativeHandle, forwardRef, useEffect, useMemo } from 'react'
-import { ArrowUp, File, Folder, Loader2, MessageCircle, Paperclip, Square, Terminal } from 'lucide-react'
+import { ArrowUp, File, Folder, ListTodo, Loader2, MessageCircle, Paperclip, Square, Terminal } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { FilePreviewStrip } from './FilePreviewStrip'
 import { findActiveMention, rankFileRefs, type FileRef } from './InputBar.mentions'
 import { MentionOverlay } from './InputBar.overlay'
 import { SessionPillsRow, type SessionPillsRowProps } from './SessionPillsRow'
-import type { AgentCapabilities } from '@/api/types'
+import { TodosList } from './TodosList'
+import { cn } from '@/lib/utils'
+import type { AgentCapabilities, TodoItem } from '@/api/types'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useReducedMotion } from '@/hooks/useReducedMotion'
 
@@ -131,6 +133,15 @@ interface InputBarProps {
   onSessionModelSettingsChange?: SessionPillsRowProps['onSessionModelSettingsChange']
   agentNames?: string[]
   agentWorkspace?: string | null
+  /**
+   * Inline task list shown above the textarea. ``todosOpen`` controls
+   * visibility and ``onTodosOpenChange`` is fired by the tasks toggle
+   * button in the bottom action bar.
+   */
+  todos?: TodoItem[]
+  todosOpen?: boolean
+  onTodosOpenChange?: (open: boolean) => void
+  sessionId?: string | null
 }
 
 export interface InputBarHandle {
@@ -181,6 +192,10 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   onSessionModelSettingsChange,
   agentNames,
   agentWorkspace,
+  todos,
+  todosOpen = false,
+  onTodosOpenChange,
+  sessionId,
 }, ref) {
   const [value, setValue] = useState('')
   const [files, setFiles] = useState<File[]>([])
@@ -919,6 +934,15 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     ? 'flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-(--color-accent) bg-(--bg-key) px-3 font-mono text-xs text-(--color-text) transition-colors hover:bg-(--color-surface) disabled:cursor-not-allowed disabled:opacity-50'
     : actionBtnClass
 
+  const todoCount = todos?.length ?? 0
+  const hasInProgressTodos = todos?.some((t) => t.status === 'in_progress') ?? false
+  const todosBtnClass = cn(
+    actionBtnClass,
+    'relative',
+    todosOpen && 'border-(--color-accent) bg-(--bg-key) text-(--color-text)',
+  )
+  const showTodosInline = todosOpen && todoCount >= 0
+
   // Three states share one DOM tree: minimized, single-line, multi-line.
   // Multi-line is triggered by the slot's flex-basis:100% which wraps the
   // row so action buttons land on the line below — no DOM reordering.
@@ -939,6 +963,28 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       <Paperclip size={14} aria-hidden="true" />
     </button>
   )
+
+  const todosBtnEl = onTodosOpenChange ? (
+    <button
+      type="button"
+      onClick={(e) => {
+        stopClick(e)
+        onTodosOpenChange(!todosOpen)
+      }}
+      disabled={disabled || !sessionId}
+      aria-label="Task list"
+      title={sessionId ? 'Task list (Ctrl+T)' : 'No active session'}
+      className={todosBtnClass}
+    >
+      <ListTodo size={14} aria-hidden="true" />
+      {hasInProgressTodos && (
+        <span
+          aria-hidden="true"
+          className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-(--color-accent)"
+        />
+      )}
+    </button>
+  ) : null
 
   const chatEl = minimized ? (
     <button
@@ -1279,6 +1325,14 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
             {/* ── Expanded: Gemini-style vertical card ── */}
             {!minimized && (
               <>
+                {showTodosInline && (
+                  <div className="border-b border-(--color-border)">
+                    <TodosList
+                      todos={todos ?? []}
+                      listClassName="max-h-[min(40vh,16rem)]"
+                    />
+                  </div>
+                )}
                 {/* Textarea area */}
                 <div className="px-4 pt-3 pb-1">
                   {shellMode && (
@@ -1326,6 +1380,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                       <Terminal size={13} aria-hidden="true" />
                     </button>
                   )}
+                  {todosBtnEl}
                   {onSessionModelSettingsChange && (
                     <SessionPillsRow
                       sessionModel={sessionModel}
