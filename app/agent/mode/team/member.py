@@ -62,7 +62,7 @@ from app.core.db import DbFactory, resolve_db_factory
 from app.models.chat import ChatSession, SessionMessage
 from app.services.chat_service import get_messages_for_llm, save_message
 
-MAX_OPEN_TASK_NUDGES = 1
+MAX_OPEN_TASK_NUDGES = 3
 
 if TYPE_CHECKING:
     from app.agent.mode.team.mailbox import TeamMailbox
