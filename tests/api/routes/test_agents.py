@@ -136,7 +136,13 @@ async def test_list_includes_coding_agents(fs_dirs, client: AsyncClient):
 
     assert res.status_code == 200
     names = [row["name"] for row in res.json()["agents"]]
-    assert names == ["coding/coder", "coding/explorer", "coding/evoflux", "lead"]
+    assert names == [
+        "coding/coder",
+        "coding/debate",
+        "coding/evoflux",
+        "coding/explorer",
+        "lead",
+    ]
 
 
 @pytest.mark.asyncio
