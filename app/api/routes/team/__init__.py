@@ -19,13 +19,14 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.routes.team import chat, files, permissions, todos, worktrees
+from app.api.routes.team import browser, chat, files, permissions, todos, worktrees
 
 # Back-compat re-export: some tests import ``_serialize_agent`` directly
 # from the package.  New code should import from the owning submodule.
 from app.api.routes.team.chat import _serialize_agent
 
 router = APIRouter()
+router.include_router(browser.router)
 router.include_router(chat.router)
 router.include_router(files.router)
 router.include_router(todos.router)

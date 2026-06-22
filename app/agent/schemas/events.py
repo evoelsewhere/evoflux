@@ -250,3 +250,23 @@ class SummarizationEndEvent(BaseModel):
     agent: str
     summary: str = ""
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class BrowserSessionEvent(BaseModel):
+    """Browser session state change — start, navigate, stop, etc.
+
+    Emitted by the ``browser_use`` tool after every action that changes
+    the browser session's observable state.  The frontend uses this to
+    show/hide the "See Browser" button and update the BrowserViewer panel.
+    """
+
+    type: Literal["browser_session"] = "browser_session"
+    agent: str
+    active: bool
+    action: str  # "started" | "navigated" | "stopped" | "tab_switched" | ...
+    cdp_url: str | None = None
+    cdp_http: str | None = None
+    current_url: str | None = None
+    current_title: str | None = None
+    tabs: list[dict[str, Any]] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)

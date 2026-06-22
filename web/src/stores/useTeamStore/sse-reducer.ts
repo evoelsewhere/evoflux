@@ -547,6 +547,31 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
         })
         break
       }
+
+      case 'browser_session': {
+        const active = d.active as boolean
+        const tabs = (d.tabs as Array<Record<string, unknown>> | undefined) ?? []
+        set((draft) => {
+          if (!active) {
+            draft.browserSession = null
+          } else {
+            draft.browserSession = {
+              active: true,
+              cdpUrl: (d.cdp_url as string | undefined) ?? null,
+              cdpHttp: (d.cdp_http as string | undefined) ?? null,
+              currentUrl: (d.current_url as string | undefined) ?? null,
+              currentTitle: (d.current_title as string | undefined) ?? null,
+              tabs: tabs.map((t, i) => ({
+                index: (t.index as number) ?? i,
+                url: (t.url as string) ?? '',
+                title: (t.title as string) ?? '',
+              })),
+              lastAction: (d.action as string | undefined) ?? null,
+            }
+          }
+        })
+        break
+      }
     }
   }
 }

@@ -374,7 +374,7 @@ MCP. Deeper doc: [`agent/tools.md`](./agent/tools.md).
 |---|---|
 | Filesystem | `read`, `write`, `edit`, `patch`, `ls`, `glob`, `grep`, `rm` |
 | Shell | `shell`, `bg` (background processes) |
-| Web | `web_search`, `web_fetch` |
+| Web | `web_search`, `web_fetch`, `browser_use` |
 | Memory | `wiki_search`, `note` |
 | Scheduling | `schedule_task` |
 | Tasks | `todo_manage` |
@@ -383,6 +383,10 @@ MCP. Deeper doc: [`agent/tools.md`](./agent/tools.md).
 
 - **Cross-tool `tool_output_delta` streaming** `[since v1.0]` — long-running
   tools (shell, web search) stream output to the inspector as they run.
+- **`browser_use` built-in tool** `[v1.60.0]` — native browser automation via
+  `browser-use` library. 17 actions: navigate, click, fill, extract, screenshot,
+  evaluate JS, tab management. No external install required. Sessions persist
+  across tool calls. Deeper doc: [`browser-in-app.md`](./browser-in-app.md).
 - **Tool result offload** `[since v1.0]` — bulky tool outputs (large file
   reads, shell spills) move to `{EVOFLUX_DATA_DIR}/sessions/{id}/.tool_results/` and the inspector
   links to them.

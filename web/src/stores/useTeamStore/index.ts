@@ -182,6 +182,7 @@ export const useTeamStore = create<TeamStore>()(
     error: null,
     activeLoop: null,
     setupRequired: null,
+    browserSession: null,
     _pendingMessages: [],
     _abortController: null,
     _sessionGeneration: 0,

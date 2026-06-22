@@ -370,3 +370,24 @@ export async function getTodos(sessionId: string): Promise<TodosResponse> {
   if (!res.ok) await parseDetailOrThrow(res, 'getTodos')
   return res.json()
 }
+
+export interface BrowserTabInfo {
+  index: number
+  url: string
+  title: string
+}
+
+export interface BrowserSessionResponse {
+  active: boolean
+  cdp_url: string | null
+  cdp_http: string | null
+  current_url: string | null
+  current_title: string | null
+  tabs: BrowserTabInfo[]
+}
+
+export async function getBrowserSession(sessionId: string): Promise<BrowserSessionResponse> {
+  const res = await fetch(`${apiBaseUrl()}/team/${encodeURIComponent(sessionId)}/browser`)
+  if (!res.ok) await parseDetailOrThrow(res, 'getBrowserSession')
+  return res.json()
+}

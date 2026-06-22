@@ -48,6 +48,22 @@ export interface ActiveLoop {
   paused: boolean
 }
 
+export interface BrowserTabInfo {
+  index: number
+  url: string
+  title: string
+}
+
+export interface BrowserSessionInfo {
+  active: boolean
+  cdpUrl: string | null
+  cdpHttp: string | null
+  currentUrl: string | null
+  currentTitle: string | null
+  tabs: BrowserTabInfo[]
+  lastAction: string | null
+}
+
 export interface TeamStoreState {
   agentStreams: Record<string, AgentStream>
   activeAgent: string | null
@@ -66,6 +82,7 @@ export interface TeamStoreState {
   error: string | null
   activeLoop: ActiveLoop | null
   setupRequired: SetupRequiredNotice | null
+  browserSession: BrowserSessionInfo | null
   _pendingMessages: PendingMessage[]
   _sessionGeneration: number
   hasMore: boolean

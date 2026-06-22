@@ -14,12 +14,15 @@ interface UIStore {
   wikiOpen: boolean
   schedulerOpen: boolean
   agentCapabilitiesOpen: boolean
+  browserOpen: boolean
   toggleWiki: () => void
   toggleScheduler: () => void
   toggleAgentCapabilities: () => void
+  toggleBrowser: () => void
   closeWiki: () => void
   closeScheduler: () => void
   closeAgentCapabilities: () => void
+  closeBrowser: () => void
 }
 
 export const useUIStore = create<UIStore>()(
@@ -27,12 +30,14 @@ export const useUIStore = create<UIStore>()(
     wikiOpen: false,
     schedulerOpen: false,
     agentCapabilitiesOpen: false,
+    browserOpen: false,
     toggleWiki: () => set((state) => {
       const nextOpen = !state.wikiOpen
       state.wikiOpen = nextOpen
       if (nextOpen) {
         state.schedulerOpen = false
         state.agentCapabilitiesOpen = false
+        state.browserOpen = false
       }
     }),
     toggleScheduler: () => set((state) => {
@@ -41,6 +46,7 @@ export const useUIStore = create<UIStore>()(
       if (nextOpen) {
         state.wikiOpen = false
         state.agentCapabilitiesOpen = false
+        state.browserOpen = false
       }
     }),
     toggleAgentCapabilities: () => set((state) => {
@@ -49,10 +55,21 @@ export const useUIStore = create<UIStore>()(
       if (nextOpen) {
         state.wikiOpen = false
         state.schedulerOpen = false
+        state.browserOpen = false
+      }
+    }),
+    toggleBrowser: () => set((state) => {
+      const nextOpen = !state.browserOpen
+      state.browserOpen = nextOpen
+      if (nextOpen) {
+        state.wikiOpen = false
+        state.schedulerOpen = false
+        state.agentCapabilitiesOpen = false
       }
     }),
     closeWiki: () => set((state) => { state.wikiOpen = false }),
     closeScheduler: () => set((state) => { state.schedulerOpen = false }),
     closeAgentCapabilities: () => set((state) => { state.agentCapabilitiesOpen = false }),
+    closeBrowser: () => set((state) => { state.browserOpen = false }),
   }))
 )
