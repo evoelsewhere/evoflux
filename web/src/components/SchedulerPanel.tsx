@@ -7,7 +7,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Clock, Play, Pause, Trash2, Plus, Loader2, AlertCircle, CalendarClock, Zap, ArrowLeft, Pencil, FolderOpen } from 'lucide-react'
+import { X, Clock, Play, Pause, Trash2, Plus, Loader2, AlertCircle, CalendarClock, Zap, ArrowLeft, Pencil, FolderOpen, ChevronRight } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { DateTimePicker } from '@/components/ui/date-time-picker'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -58,10 +59,76 @@ const SELECT_CONTENT_CLASS = 'bg-(--bg-page) border-(--color-border-strong)'
 const TASK_LONG_PRESS_MS = 520
 const TASK_LONG_PRESS_MOVE_TOLERANCE = 10
 
+// Status dot colour mapping
+const STATUS_DOT: Record<string, string> = {
+  pending: 'bg-(--color-text-subtle)',
+  running: 'bg-(--color-accent) animate-pulse',
+  paused: 'bg-(--color-warning)',
+  completed: 'bg-(--color-success)',
+  failed: 'bg-(--color-error)',
+}
+
 // Three-option segmented control used for "Schedule type". The shared Tabs
 // primitive inverts in light mode (track = bg-key which is darker than the
 // active bg-background = bg-page), so we render a flat row of buttons that
 // match the rest of this drawer's surfaces.
+
+// ── Session ID select ────────────────────────────────────────────────────────
+
+type SessionMode = 'new' | 'auto' | 'custom'
+
+function resolveSessionMode(value: string | null | undefined): SessionMode {
+  if (!value) return 'new'
+  if (value === 'auto') return 'auto'
+  return 'custom'
+}
+
+function SessionIdField({
+  value,
+  onChange,
+}: {
+  value: string | null | undefined
+  onChange: (v: string | null) => void
+}) {
+  const mode = resolveSessionMode(value)
+
+  const handleModeChange = (next: SessionMode) => {
+    if (next === 'new') onChange(null)
+    else if (next === 'auto') onChange('auto')
+    else onChange('')          // open custom input with empty string
+  }
+
+  return (
+    <div>
+      <label className="block text-sm font-medium text-(--color-text)">Session</label>
+      <Select value={mode} onValueChange={(v) => handleModeChange(v as SessionMode)}>
+        <SelectTrigger className={cn('mt-1 w-full', FIELD_CLASS)}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent className={SELECT_CONTENT_CLASS}>
+          <SelectItem value="new">New session each run</SelectItem>
+          <SelectItem value="auto">Auto — persistent per task</SelectItem>
+          <SelectItem value="custom">Custom UUID…</SelectItem>
+        </SelectContent>
+      </Select>
+      {mode === 'custom' && (
+        <Input
+          className={cn('mt-2', FIELD_CLASS)}
+          value={value ?? ''}
+          onChange={(e) => onChange(e.target.value || null)}
+          placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+          spellCheck={false}
+        />
+      )}
+      <p className="mt-1 text-xs text-(--color-text-muted)">
+        {mode === 'new' && 'Creates a fresh session each time the task fires.'}
+        {mode === 'auto' && 'Reuses the same session across all runs of this task.'}
+        {mode === 'custom' && 'Continues a specific existing session by UUID.'}
+      </p>
+    </div>
+  )
+}
+
 function ScheduleTypeSegmented({
   value,
   onChange,
@@ -274,32 +341,27 @@ export function SchedulerPanel({
   contextMode = 'normal',
   contextWorkspace = null,
 }: SchedulerPanelProps) {
-  const isMobile = useIsMobile()
+  const prefersReducedMotion = useReducedMotion()
 
-  // Ephemeral panel-scoped state — not shared outside this component tree,
-  // so useState is correct here (no need for Zustand).
+  // Single-pane navigation for all screen sizes
+  const [pane, setPane] = useState<'list' | 'detail' | 'create'>('list')
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  // Mobile: 'list' | 'detail' | 'create'
-  const [mobilePane, setMobilePane] = useState<'list' | 'detail' | 'create'>('list')
 
   const tasksQuery = useScheduledTasksQuery()
-  const prefersReducedMotion = useReducedMotion()
   useModalFocus(open, onClose)
 
-  // Refresh on open — the drawer is mounted persistently so AnimatePresence
-  // can play exit animations; without this the list goes stale on reopen.
   useEffect(() => {
-    if (open) {
-      tasksQuery.refetch()
-    }
+    if (open) tasksQuery.refetch()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
-  const tasks = tasksQuery.data?.tasks ?? []
+  // Reset to list on close
+  useEffect(() => {
+    if (!open) { setPane('list'); setSelectedTaskId(null); setSearchQuery('') }
+  }, [open])
 
-  // Show all scheduled tasks. Each row carries a routing badge so users can
-  // distinguish normal reminders from coding-workspace reminders.
+  const tasks = tasksQuery.data?.tasks ?? []
   const filteredTasks = tasks.filter((task) => {
     const q = searchQuery.toLowerCase()
     if (!q) return true
@@ -309,196 +371,178 @@ export function SchedulerPanel({
       (task.workspace ?? '').toLowerCase().includes(q)
     )
   })
-
   const selectedTask = selectedTaskId ? tasks.find((t) => t.id === selectedTaskId) : null
 
-  const handleSelectTask = (id: string) => {
-    setSelectedTaskId(id)
-    if (isMobile) setMobilePane('detail')
-  }
-
-  const handleCloseDetail = () => {
-    setSelectedTaskId(null)
-    if (isMobile) setMobilePane('list')
-  }
-
-  // When a task is deleted from the list, drop the selection if it was the
-  // currently-selected one — otherwise the detail pane (mobile especially)
-  // would render an empty state until the user navigates back manually.
-  const handleTaskDeleted = (id: string) => {
-    if (selectedTaskId === id) handleCloseDetail()
-  }
-
-  const handleOpenCreate = () => {
-    if (isMobile) setMobilePane('create')
-  }
-
-  const handleBackToList = () => {
-    setMobilePane('list')
-  }
-
-  // On mobile: show list OR detail/create — never both side-by-side.
-  const showList = !isMobile || mobilePane === 'list'
-  const showDetail = !isMobile || mobilePane === 'detail' || mobilePane === 'create'
+  const handleSelectTask = (id: string) => { setSelectedTaskId(id); setPane('detail') }
+  const handleBackToList = () => { setPane('list'); setSelectedTaskId(null) }
+  const handleTaskDeleted = (id: string) => { if (selectedTaskId === id) handleBackToList() }
 
   return (
     <AnimatePresence>
       {open && (
         <>
+          {/* Backdrop */}
           <motion.div
             key="backdrop"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
+            transition={{ duration: 0.18 }}
             onClick={onClose}
             className="fixed inset-0 z-40 bg-(--color-overlay)"
           />
 
+          {/* Right-side drawer */}
           <motion.aside
-            key="dialog"
-            initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: 8 }}
-            animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 }}
-            exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: 8 }}
-            transition={{ duration: prefersReducedMotion ? 0.01 : 0.18, ease: [0.4, 0, 0.2, 1] }}
-            className="fixed inset-x-0 bottom-0 top-[env(safe-area-inset-top,0px)] z-50 flex flex-col overflow-hidden border-(--color-border) bg-(--bg-card) shadow-2xl sm:left-1/2 sm:top-1/2 sm:inset-auto sm:h-[min(90vh,860px)] sm:w-[min(90vw,1180px)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:border"
+            key="drawer"
+            initial={prefersReducedMotion ? { opacity: 0 } : { x: '100%', opacity: 0 }}
+            animate={prefersReducedMotion ? { opacity: 1 } : { x: 0, opacity: 1 }}
+            exit={prefersReducedMotion ? { opacity: 0 } : { x: '100%', opacity: 0 }}
+            transition={{ duration: prefersReducedMotion ? 0.01 : 0.22, ease: [0.4, 0, 0.2, 1] }}
+            className="fixed bottom-0 right-0 top-[env(safe-area-inset-top,0px)] z-50 flex w-full flex-col overflow-hidden border-l border-(--color-border) bg-(--bg-card) shadow-2xl sm:w-[460px]"
             role="dialog"
             aria-modal="true"
             aria-label="Scheduled tasks"
             data-modal-focus="true"
           >
-            {/* Header */}
-            <header className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-5 py-4">
-              <div className="flex min-w-0 flex-1 items-center gap-2">
-                {/* Mobile back button — shown in detail/create pane */}
-                {isMobile && mobilePane !== 'list' && (
-                  <button
-                    onClick={handleBackToList}
-                    className="shrink-0 rounded-md p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
-                    aria-label="Back to task list"
-                  >
-                    <ArrowLeft size={14} />
-                  </button>
-                )}
-                <div className="flex min-w-0 items-center gap-2">
-                  <CalendarClock size={18} className="shrink-0 text-(--color-accent)" />
-                  <div className="min-w-0">
-                    <h2 className="truncate text-base font-semibold text-(--color-text)">
-                      {isMobile && mobilePane === 'create'
-                        ? 'Create Task'
-                        : isMobile && mobilePane === 'detail'
-                          ? (selectedTask?.name ?? 'Task')
-                          : 'Scheduled Tasks'}
-                    </h2>
-                    {(!isMobile || mobilePane === 'list') && (
-                      <p
-                        className="mt-0.5 truncate text-xs text-(--color-text-muted)"
-                        // ``title`` exposes the full workspace path on
-                        // hover when the truncated label hides it.
-                        title="Normal and coding scheduled tasks"
-                      >
-                        All scheduled tasks
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-              <div className="flex shrink-0 items-center gap-1">
-                {/* Mobile: Create button shown in list pane */}
-                {isMobile && mobilePane === 'list' && (
-                  <button
-                    onClick={handleOpenCreate}
-                    className="rounded-md p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
-                    aria-label="Create new task"
-                    title="Create task"
-                  >
-                    <Plus size={16} />
-                  </button>
-                )}
+            {/* ── Header ── */}
+            <header className="flex shrink-0 items-center gap-2 border-b border-(--color-border) px-4 py-3">
+              {pane !== 'list' && (
                 <button
-                  onClick={onClose}
-                  className="rounded-md p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
-                  aria-label="Close scheduler panel"
-                  title="Close (Esc)"
+                  onClick={handleBackToList}
+                  className="rounded p-1 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+                  aria-label="Back to task list"
                 >
-                  <X size={16} />
+                  <ArrowLeft size={16} />
                 </button>
+              )}
+              <CalendarClock size={16} className="shrink-0 text-(--color-accent)" />
+              <div className="min-w-0 flex-1">
+                <h2 className="text-sm font-semibold text-(--color-text)">
+                  {pane === 'create' ? 'New Task' : pane === 'detail' ? (selectedTask?.name ?? 'Task') : 'Scheduled Tasks'}
+                </h2>
+                {pane === 'list' && (
+                  <p className="text-xs text-(--color-text-subtle)">
+                    {tasks.length === 0 ? 'No tasks yet' : `${tasks.length} task${tasks.length !== 1 ? 's' : ''}`}
+                  </p>
+                )}
               </div>
+              {pane === 'list' && (
+                <button
+                  onClick={() => setPane('create')}
+                  className="flex items-center gap-1 rounded-md border border-(--color-border) px-2.5 py-1.5 text-xs font-medium text-(--color-text-muted) transition-colors hover:border-(--color-border-strong) hover:text-(--color-text)"
+                  aria-label="New scheduled task"
+                >
+                  <Plus size={13} aria-hidden="true" />
+                  New
+                </button>
+              )}
+              <button
+                onClick={onClose}
+                className="rounded p-1 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+                aria-label="Close scheduler panel"
+                title="Close (Esc)"
+              >
+                <X size={16} />
+              </button>
             </header>
 
-            {/* Main content */}
-            <div className="flex flex-1 overflow-hidden">
-              {/* List panel */}
-              {showList && (
-                <div className={`flex flex-col border-r border-(--color-border) ${isMobile ? 'w-full' : 'w-96 shrink-0'}`}>
-                  {/* Search bar */}
-                  <div className="border-b border-(--color-border) p-3">
+            {/* ── Body ── */}
+            <AnimatePresence mode="wait" initial={false}>
+              {pane === 'list' && (
+                <motion.div
+                  key="list"
+                  initial={prefersReducedMotion ? { opacity: 0 } : { x: -20, opacity: 0 }}
+                  animate={prefersReducedMotion ? { opacity: 1 } : { x: 0, opacity: 1 }}
+                  exit={prefersReducedMotion ? { opacity: 0 } : { x: -20, opacity: 0 }}
+                  transition={{ duration: 0.14 }}
+                  className="flex flex-1 flex-col overflow-hidden"
+                >
+                  {/* Search */}
+                  <div className="border-b border-(--color-border) px-3 py-2">
                     <Input
-                      className={FIELD_CLASS}
+                      className={cn(FIELD_CLASS, 'h-8 text-sm')}
                       placeholder="Search tasks…"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                     />
                   </div>
 
-                  {/* Task list */}
+                  {/* List */}
                   <div className="flex-1 overflow-y-auto">
                     {tasksQuery.isLoading ? (
                       <div className="flex items-center justify-center p-8">
-                        <Loader2 size={20} className="animate-spin text-(--color-text-muted)" />
+                        <Loader2 size={18} className="animate-spin text-(--color-text-muted)" />
                       </div>
                     ) : tasksQuery.isError ? (
-                      <div className="flex flex-col items-center justify-center gap-2 p-8 text-center">
-                        <AlertCircle size={20} className="text-(--color-error)" />
+                      <div className="flex flex-col items-center justify-center gap-2 p-10 text-center">
+                        <AlertCircle size={18} className="text-(--color-error)" />
                         <p className="text-sm text-(--color-text-muted)">Failed to load tasks</p>
                       </div>
                     ) : filteredTasks.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center gap-2 p-8 text-center">
-                        <Clock size={20} className="text-(--color-text-muted)" />
-                        <p className="text-sm text-(--color-text-muted)">
-                          {searchQuery ? 'No tasks match your search' : 'No scheduled tasks yet'}
-                        </p>
-                        {!searchQuery && !isMobile && (
-                          <p className="text-xs text-(--color-text-subtle)">
-                            Use the form on the right to create one.
+                      <div className="flex flex-col items-center justify-center gap-3 p-10 text-center">
+                        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-(--bg-key) text-(--color-text-muted)">
+                          <Clock size={18} />
+                        </span>
+                        <div>
+                          <p className="text-sm font-medium text-(--color-text)">
+                            {searchQuery ? 'No matching tasks' : 'No scheduled tasks'}
                           </p>
-                        )}
+                          <p className="mt-0.5 text-xs text-(--color-text-subtle)">
+                            {searchQuery ? 'Try a different search' : 'Click "New" to create one'}
+                          </p>
+                        </div>
                       </div>
                     ) : (
-                      <div className="space-y-1 p-2">
+                      <div className="py-1">
                         {filteredTasks.map((task) => (
-                          <TaskListItem
+                          <TaskRow
                             key={task.id}
                             task={task}
                             isSelected={selectedTaskId === task.id}
                             onSelect={() => handleSelectTask(task.id)}
-                            onDeleted={() => handleTaskDeleted(task.id)}
                           />
                         ))}
                       </div>
                     )}
                   </div>
-                </div>
+                </motion.div>
               )}
 
-              {/* Detail / Create panel */}
-              {showDetail && (
-                <div className="flex flex-1 flex-col overflow-hidden">
-                  {selectedTask && (!isMobile || mobilePane === 'detail') ? (
-                    <TaskDetailView
-                      task={selectedTask}
-                      onClose={handleCloseDetail}
-                    />
-                  ) : (
-                    <CreateTaskForm
-                      contextMode={contextMode}
-                      contextWorkspace={contextWorkspace}
-                      onSuccess={handleCloseDetail}
-                    />
-                  )}
-                </div>
+              {pane === 'detail' && selectedTask && (
+                <motion.div
+                  key={`detail-${selectedTask.id}`}
+                  initial={prefersReducedMotion ? { opacity: 0 } : { x: 20, opacity: 0 }}
+                  animate={prefersReducedMotion ? { opacity: 1 } : { x: 0, opacity: 1 }}
+                  exit={prefersReducedMotion ? { opacity: 0 } : { x: 20, opacity: 0 }}
+                  transition={{ duration: 0.14 }}
+                  className="flex flex-1 flex-col overflow-hidden"
+                >
+                  <TaskDetailView
+                    task={selectedTask}
+                    onClose={handleBackToList}
+                    onDeleted={() => handleTaskDeleted(selectedTask.id)}
+                  />
+                </motion.div>
               )}
-            </div>
+
+              {pane === 'create' && (
+                <motion.div
+                  key="create"
+                  initial={prefersReducedMotion ? { opacity: 0 } : { x: 20, opacity: 0 }}
+                  animate={prefersReducedMotion ? { opacity: 1 } : { x: 0, opacity: 1 }}
+                  exit={prefersReducedMotion ? { opacity: 0 } : { x: 20, opacity: 0 }}
+                  transition={{ duration: 0.14 }}
+                  className="flex flex-1 flex-col overflow-hidden"
+                >
+                  <CreateTaskForm
+                    contextMode={contextMode}
+                    contextWorkspace={contextWorkspace}
+                    onSuccess={handleBackToList}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
           </motion.aside>
         </>
       )}
@@ -506,225 +550,44 @@ export function SchedulerPanel({
   )
 }
 
-// ── Task list item ──────────────────────────────────────────────────────────
+// ── Task row (session-list style) ───────────────────────────────────────────
 
-function TaskListItem({
+function TaskRow({
   task,
   isSelected,
   onSelect,
-  onDeleted,
 }: {
   task: ScheduledTaskResponse
   isSelected: boolean
   onSelect: () => void
-  onDeleted: () => void
 }) {
-  const deleteMutation = useDeleteScheduledTaskMutation()
-  const pauseMutation = usePauseScheduledTaskMutation()
-  const resumeMutation = useResumeScheduledTaskMutation()
-  const triggerMutation = useTriggerScheduledTaskMutation()
-  const isMobile = useIsMobile()
-  const { isTauri, os } = usePlatform()
-  const isTauriMobile = isTauri && (os === 'ios' || os === 'android')
-  const [actionsPoint, setActionsPoint] = useState<{ x: number; y: number } | null>(null)
-  const longPressTimerRef = useRef<number | null>(null)
-  const longPressStartRef = useRef<{ x: number; y: number } | null>(null)
-
-  const clearLongPress = () => {
-    if (longPressTimerRef.current !== null) window.clearTimeout(longPressTimerRef.current)
-    longPressTimerRef.current = null
-    longPressStartRef.current = null
-  }
-
-  const triggerTask = () => triggerMutation.mutate(task.id)
-  const togglePaused = () => {
-    if (task.status === 'paused') resumeMutation.mutate(task.id)
-    else pauseMutation.mutate(task.id)
-  }
-  const deleteTask = () => {
-    if (confirm(`Delete task "${task.name}"?`)) {
-      deleteMutation.mutate(task.id, { onSuccess: onDeleted })
-    }
-  }
-
-  const statusColor = {
-    pending: 'text-(--color-text-muted)',
-    running: 'text-(--color-accent)',
-    paused: 'text-(--color-warning)',
-    completed: 'text-(--color-success)',
-    failed: 'text-(--color-error)',
-  }[task.status] ?? 'text-(--color-text-muted)'
-
+  const dot = STATUS_DOT[task.status] ?? STATUS_DOT.pending
   return (
-    <>
     <button
       onClick={onSelect}
-      onContextMenu={(event) => {
-        if (isTauriMobile) return
-        event.preventDefault()
-        setActionsPoint({ x: event.clientX, y: event.clientY })
-      }}
-      onPointerDown={(event) => {
-        if (!isMobile || !isTauriMobile || event.pointerType === 'mouse') return
-        longPressStartRef.current = { x: event.clientX, y: event.clientY }
-        longPressTimerRef.current = window.setTimeout(() => {
-          longPressTimerRef.current = null
-          longPressStartRef.current = null
-          mediumHapticFeedback()
-          setActionsPoint({ x: event.clientX, y: event.clientY })
-        }, TASK_LONG_PRESS_MS)
-      }}
-      onPointerMove={(event) => {
-        const start = longPressStartRef.current
-        if (!start) return
-        if (
-          Math.abs(event.clientX - start.x) > TASK_LONG_PRESS_MOVE_TOLERANCE ||
-          Math.abs(event.clientY - start.y) > TASK_LONG_PRESS_MOVE_TOLERANCE
-        ) {
-          clearLongPress()
-        }
-      }}
-      onPointerUp={clearLongPress}
-      onPointerCancel={clearLongPress}
-      onPointerLeave={clearLongPress}
-      className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
-        isSelected
-          ? 'border-(--color-accent) bg-(--bg-key)'
-          : 'border-(--color-border) bg-(--bg-page) hover:border-(--color-border-strong)'
-      }`}
+      className={cn(
+        'group flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors',
+        isSelected ? 'bg-(--bg-key)' : 'hover:bg-(--bg-key)/60',
+      )}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-(--color-text)">{task.name}</p>
-          <p className="mt-0.5 truncate text-xs text-(--color-text-muted)">
-            {formatScheduleLabel(task)}
-          </p>
-          <div className="mt-1 flex items-center gap-2">
-            <ModeBadge task={task} />
-            <span className={`text-xs font-medium ${statusColor}`}>{task.status}</span>
-          </div>
-          {task.last_error && (
-            <p className="mt-1 truncate text-xs text-(--color-error)">{task.last_error}</p>
-          )}
-          {task.next_fire_at && (
-            <p className="mt-1 text-xs text-(--color-text-muted)">
-              Next: {formatRelativeDate(task.next_fire_at)}
-            </p>
-          )}
-        </div>
+      {/* Status dot */}
+      <span className={cn('h-2 w-2 shrink-0 rounded-full', dot)} />
 
-        {/* Action buttons */}
-        <div className="flex shrink-0 gap-1">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={(e) => {
-              e.stopPropagation()
-              triggerTask()
-            }}
-            disabled={triggerMutation.isPending}
-            title="Trigger now"
-          >
-            {triggerMutation.isPending ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <Zap size={14} />
-            )}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={(e) => {
-              e.stopPropagation()
-              togglePaused()
-            }}
-            disabled={pauseMutation.isPending || resumeMutation.isPending}
-            title={task.status === 'paused' ? 'Resume' : 'Pause'}
-          >
-            {pauseMutation.isPending || resumeMutation.isPending ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : task.status === 'paused' ? (
-              <Play size={14} />
-            ) : (
-              <Pause size={14} />
-            )}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={(e) => {
-              e.stopPropagation()
-              deleteTask()
-            }}
-            disabled={deleteMutation.isPending}
-            title="Delete"
-            className="hover:bg-(--color-error-subtle) hover:text-(--color-error)"
-          >
-            {deleteMutation.isPending ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <Trash2 size={14} />
-            )}
-          </Button>
-        </div>
+      {/* Main text */}
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-(--color-text)">{task.name}</p>
+        <p className="mt-0.5 truncate text-xs text-(--color-text-muted)">
+          {formatScheduleLabel(task)}
+          {task.next_fire_at ? ` · ${formatRelativeDate(task.next_fire_at)}` : ''}
+        </p>
       </div>
+
+      {/* Mode badge */}
+      <ModeBadge task={task} />
+
+      {/* Chevron */}
+      <ChevronRight size={14} className="shrink-0 text-(--color-text-subtle) transition-transform group-hover:translate-x-0.5 group-hover:text-(--color-text-muted)" />
     </button>
-    {actionsPoint && (
-      <div
-        className="fixed inset-0 z-[70]"
-        onClick={() => setActionsPoint(null)}
-        onContextMenu={(event) => {
-          event.preventDefault()
-          setActionsPoint(null)
-        }}
-      >
-        <div
-          role="menu"
-          aria-label={`Actions for ${task.name}`}
-          className="fixed min-w-44 rounded-lg border border-(--color-border) bg-(--bg-card) p-1 text-sm text-(--color-text) shadow-xl"
-          style={{ left: actionsPoint.x, top: actionsPoint.y }}
-          onClick={(event) => event.stopPropagation()}
-        >
-          <button
-            type="button"
-            role="menuitem"
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-(--bg-key) focus-visible:bg-(--bg-key) focus-visible:outline-none"
-            onClick={() => {
-              setActionsPoint(null)
-              triggerTask()
-            }}
-          >
-            <Zap size={14} aria-hidden="true" />
-            Trigger now
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-(--bg-key) focus-visible:bg-(--bg-key) focus-visible:outline-none"
-            onClick={() => {
-              setActionsPoint(null)
-              togglePaused()
-            }}
-          >
-            {task.status === 'paused' ? <Play size={14} aria-hidden="true" /> : <Pause size={14} aria-hidden="true" />}
-            {task.status === 'paused' ? 'Resume' : 'Pause'}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-(--color-error) hover:bg-(--color-error-subtle) focus-visible:bg-(--color-error-subtle) focus-visible:outline-none"
-            onClick={() => {
-              setActionsPoint(null)
-              deleteTask()
-            }}
-          >
-            <Trash2 size={14} aria-hidden="true" />
-            Delete task
-          </button>
-        </div>
-      </div>
-    )}
-    </>
   )
 }
 
@@ -825,16 +688,8 @@ function CreateTaskForm({
 
   return (
     <div className="flex flex-col overflow-hidden">
-      {/* Header */}
-      <div className="border-b border-(--color-border) px-5 py-4">
-        <div className="flex items-center gap-2">
-          <Plus size={18} className="text-(--color-accent)" />
-          <h2 className="text-base font-semibold text-(--color-text)">Create Task</h2>
-        </div>
-      </div>
-
       {/* Form */}
-      <form onSubmit={handleSubmit} className="flex flex-1 flex-col overflow-y-auto px-5 py-4">
+      <form onSubmit={handleSubmit} className="flex flex-1 flex-col overflow-y-auto px-4 py-4">
         <div className="space-y-4">
           {/* Name */}
           <div>
@@ -955,19 +810,11 @@ function CreateTaskForm({
             />
           </div>
 
-          {/* Session ID */}
-          <div>
-            <label className="block text-sm font-medium text-(--color-text)">Session ID (optional)</label>
-            <Input
-              className={`mt-1 ${FIELD_CLASS}`}
-              value={formData.session_id ?? ''}
-              onChange={(e) => setFormData({ ...formData, session_id: e.target.value || null })}
-              placeholder="Leave blank for new session, or enter 'auto'"
-            />
-            <p className="mt-1 text-xs text-(--color-text-muted)">
-              null = new session each run, "auto" = persistent session, or UUID
-            </p>
-          </div>
+          {/* Session */}
+          <SessionIdField
+            value={formData.session_id}
+            onChange={(v) => setFormData({ ...formData, session_id: v })}
+          />
 
           {/* Error message */}
           {error && (
@@ -1006,10 +853,27 @@ function CreateTaskForm({
 function TaskDetailView({
   task,
   onClose,
+  onDeleted,
 }: {
   task: ScheduledTaskResponse
   onClose: () => void
+  onDeleted: () => void
 }) {
+  const deleteMutation = useDeleteScheduledTaskMutation()
+  const pauseMutation = usePauseScheduledTaskMutation()
+  const resumeMutation = useResumeScheduledTaskMutation()
+  const triggerMutation = useTriggerScheduledTaskMutation()
+
+  const triggerTask = () => triggerMutation.mutate(task.id)
+  const togglePaused = () => {
+    if (task.status === 'paused') resumeMutation.mutate(task.id)
+    else pauseMutation.mutate(task.id)
+  }
+  const deleteTask = () => {
+    if (confirm(`Delete task "${task.name}"?`)) {
+      deleteMutation.mutate(task.id, { onSuccess: onDeleted })
+    }
+  }
   const [editing, setEditing] = useState(false)
 
   if (editing) {
@@ -1022,54 +886,72 @@ function TaskDetailView({
     )
   }
 
-  const statusColor = {
-    pending: 'text-(--color-text-muted)',
-    running: 'text-(--color-accent)',
-    paused: 'text-(--color-warning)',
-    completed: 'text-(--color-success)',
-    failed: 'text-(--color-error)',
-  }[task.status] ?? 'text-(--color-text-muted)'
+  const dot = STATUS_DOT[task.status] ?? STATUS_DOT.pending
 
   return (
     <div className="flex flex-col overflow-hidden">
-      {/* Header */}
-      <div className="border-b border-(--color-border) px-5 py-4">
-        <div className="flex items-start justify-between gap-3">
+      {/* Sub-header: task name + action buttons */}
+      <div className="border-b border-(--color-border) px-4 py-3">
+        <div className="flex items-center gap-3">
+          <span className={cn('h-2.5 w-2.5 shrink-0 rounded-full', dot)} />
           <div className="min-w-0 flex-1">
-            <h2 className="truncate text-base font-semibold text-(--color-text)">{task.name}</h2>
-            <p className="mt-1 text-sm text-(--color-text-muted)">{formatScheduleLabel(task)}</p>
+            <p className="truncate text-sm font-semibold text-(--color-text)">{task.name}</p>
+            <p className="mt-0.5 truncate text-xs text-(--color-text-muted)">{formatScheduleLabel(task)}</p>
           </div>
+          {/* Quick action buttons */}
           <div className="flex shrink-0 items-center gap-1">
             <button
-              onClick={() => setEditing(true)}
-              className="rounded-md p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
-              aria-label="Edit task"
-              title="Edit task"
+              onClick={triggerTask}
+              disabled={triggerMutation.isPending}
+              className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-40"
+              title="Trigger now"
             >
-              <Pencil size={16} />
+              {triggerMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
             </button>
             <button
-              onClick={onClose}
-              className="rounded-md p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
-              aria-label="Close detail"
-              title="Close"
+              onClick={togglePaused}
+              disabled={pauseMutation.isPending || resumeMutation.isPending}
+              className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-40"
+              title={task.status === 'paused' ? 'Resume' : 'Pause'}
             >
-              <X size={16} />
+              {(pauseMutation.isPending || resumeMutation.isPending)
+                ? <Loader2 size={14} className="animate-spin" />
+                : task.status === 'paused' ? <Play size={14} /> : <Pause size={14} />}
+            </button>
+            <button
+              onClick={() => setEditing(true)}
+              className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+              title="Edit task"
+            >
+              <Pencil size={14} />
+            </button>
+            <button
+              onClick={deleteTask}
+              disabled={deleteMutation.isPending}
+              className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--color-error-subtle) hover:text-(--color-error) disabled:opacity-40"
+              title="Delete task"
+            >
+              {deleteMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
             </button>
           </div>
         </div>
       </div>
 
-      {/* Content — sectioned layout matches AgentCapabilities drawer:
-          uppercase muted headings, bordered sections, no outer padding. */}
+      {/* Content */}
       <div className="flex-1 overflow-y-auto">
-        <section className="px-5 py-4">
+        <section className="px-4 py-4">
           <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
             Status
           </h3>
           <div className="space-y-1.5">
             <DetailRow label="Current">
-              <span className={`text-sm font-medium ${statusColor}`}>{task.status}</span>
+              <span className={cn('text-sm font-medium capitalize', {
+                'text-(--color-text-muted)': task.status === 'pending',
+                'text-(--color-accent)': task.status === 'running',
+                'text-(--color-warning)': task.status === 'paused',
+                'text-(--color-success)': task.status === 'completed',
+                'text-(--color-error)': task.status === 'failed',
+              })}>{task.status}</span>
             </DetailRow>
             <DetailRow label="Enabled">
               <span className="text-sm text-(--color-text)">{task.enabled ? 'Yes' : 'No'}</span>
@@ -1080,7 +962,7 @@ function TaskDetailView({
           </div>
         </section>
 
-        <section className="border-t border-(--color-border) px-5 py-4">
+        <section className="border-t border-(--color-border) px-4 py-4">
           <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
             Schedule
           </h3>
@@ -1111,7 +993,7 @@ function TaskDetailView({
           </div>
         </section>
 
-        <section className="border-t border-(--color-border) px-5 py-4">
+        <section className="border-t border-(--color-border) px-4 py-4">
           <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
             Configuration
           </h3>
@@ -1150,7 +1032,7 @@ function TaskDetailView({
           </div>
         </section>
 
-        <section className="border-t border-(--color-border) px-5 py-4">
+        <section className="border-t border-(--color-border) px-4 py-4">
           <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
             Run History
           </h3>
@@ -1183,7 +1065,7 @@ function TaskDetailView({
           </div>
         </section>
 
-        <section className="border-t border-(--color-border) px-5 py-3">
+        <section className="border-t border-(--color-border) px-4 py-3">
           <div className="space-y-1 text-[11px] text-(--color-text-muted)">
             <div>Created: {formatRelativeDate(task.created_at)}</div>
             <div>Updated: {formatRelativeDate(task.updated_at)}</div>
@@ -1284,27 +1166,8 @@ function EditTaskForm({
 
   return (
     <div className="flex flex-col overflow-hidden">
-      {/* Header */}
-      <div className="border-b border-(--color-border) px-5 py-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <Pencil size={18} className="text-(--color-accent)" />
-            <h2 className="text-base font-semibold text-(--color-text)">Edit Task</h2>
-          </div>
-          <button
-            onClick={onCancel}
-            className="rounded-md p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
-            aria-label="Cancel edit"
-            title="Cancel"
-          >
-            <X size={16} />
-          </button>
-        </div>
-        <p className="mt-1 text-sm text-(--color-text-muted)">{task.name}</p>
-      </div>
-
       {/* Form */}
-      <form onSubmit={handleSubmit} className="flex flex-1 flex-col overflow-y-auto px-5 py-4">
+      <form onSubmit={handleSubmit} className="flex flex-1 flex-col overflow-y-auto px-4 py-4">
         <div className="space-y-4">
           {/* Routing — mode + workspace */}
           <ModeWorkspaceFields
@@ -1412,19 +1275,11 @@ function EditTaskForm({
             />
           </div>
 
-          {/* Session ID */}
-          <div>
-            <label className="block text-sm font-medium text-(--color-text)">Session ID (optional)</label>
-            <Input
-              className={`mt-1 ${FIELD_CLASS}`}
-              value={formData.session_id ?? ''}
-              onChange={(e) => setFormData({ ...formData, session_id: e.target.value || undefined })}
-              placeholder="Leave blank for new session, or enter 'auto'"
-            />
-            <p className="mt-1 text-xs text-(--color-text-muted)">
-              null = new session each run, "auto" = persistent session, or UUID
-            </p>
-          </div>
+          {/* Session */}
+          <SessionIdField
+            value={formData.session_id}
+            onChange={(v) => setFormData({ ...formData, session_id: v ?? undefined })}
+          />
 
           {/* Error message */}
           {error && (
