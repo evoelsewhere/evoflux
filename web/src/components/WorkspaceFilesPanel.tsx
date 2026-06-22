@@ -45,6 +45,7 @@ import { useReducedMotion } from '@/hooks/useReducedMotion'
 import { usePlatform } from '@/hooks/use-platform'
 import { mediumHapticFeedback } from '@/lib/haptics'
 import { formatBytes } from '@/utils/format'
+import { MarkdownBlock } from '@/utils/markdown'
 import { ImageLightbox } from './ImageLightbox'
 import type { WorkspaceFileInfo } from '@/api/types'
 
@@ -97,6 +98,23 @@ function FileTypeIcon({ file, size = 12 }: { file: WorkspaceFileInfo; size?: num
     return isCode ? <FileCode size={size} className={cls} /> : <FileText size={size} className={cls} />
   }
   return <FileIcon size={size} className={cls} />
+}
+
+// ── Resize constants ─────────────────────────────────────────────────────────
+
+const PANEL_WIDTH_KEY = 'workspace-panel-width'
+const TREE_WIDTH_KEY = 'workspace-tree-width'
+const PANEL_WIDTH_MIN = 320
+const TREE_WIDTH_MIN = 160
+const TREE_WIDTH_MAX_RATIO = 0.55
+
+function readStoredWidth(key: string, fallback: number, min: number): number {
+  try {
+    const v = localStorage.getItem(key)
+    return v ? Math.max(min, parseInt(v, 10)) : fallback
+  } catch {
+    return fallback
+  }
 }
 
 // ── Tree data structure ───────────────────────────────────────────────────
@@ -459,6 +477,33 @@ function TextPreview({ sessionId, file }: { sessionId: string; file: WorkspaceFi
   }
   if (content === null) return null
 
+  const ext = extOf(file.name)
+  const isMarkdown = ext === 'md' || ext === 'markdown'
+  // Code = any TEXT_EXTENSIONS entry that isn't a plain-prose or data format
+  const PLAIN_TEXT_EXTS = new Set([
+    'txt', 'log', 'csv', 'tsv', 'env', 'gitignore', 'ini', 'md', 'markdown', 'rst',
+  ])
+  const isCode = !isMarkdown && TEXT_EXTENSIONS.has(ext) && !PLAIN_TEXT_EXTS.has(ext)
+
+  if (isMarkdown) {
+    return (
+      <div className="h-full overflow-auto px-6 py-4">
+        <MarkdownBlock content={content} sessionId={sessionId} />
+      </div>
+    )
+  }
+
+  if (isCode) {
+    // Wrap in a markdown code fence so rehype-highlight can apply syntax colouring.
+    // MarkdownBlock's fixNestedFences will handle any backtick sequences inside.
+    const fenced = '```' + ext + '\n' + content + '\n```'
+    return (
+      <div className="h-full overflow-auto p-2">
+        <MarkdownBlock content={fenced} />
+      </div>
+    )
+  }
+
   return (
     <pre className="h-full overflow-auto p-4 font-mono text-xs leading-relaxed text-(--color-text) whitespace-pre">
       {content}
@@ -654,6 +699,60 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
   const [searchQuery, setSearchQuery] = useState('')
   // Mobile: which pane is active — 'tree' (file list) or 'preview'
   const [mobilePane, setMobilePane] = useState<'tree' | 'preview'>('tree')
+
+  // Resizable widths — persisted in localStorage.
+  const [panelWidth, setPanelWidth] = useState(() =>
+    readStoredWidth(PANEL_WIDTH_KEY, Math.min(960, Math.round(window.innerWidth * 0.6)), PANEL_WIDTH_MIN),
+  )
+  const [treeWidth, setTreeWidth] = useState(() =>
+    readStoredWidth(TREE_WIDTH_KEY, 260, TREE_WIDTH_MIN),
+  )
+
+  const startPanelResize = (e: React.PointerEvent) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startW = panelWidth
+    const maxW = Math.round(window.innerWidth * 0.95)
+    const onMove = (ev: PointerEvent) => {
+      const newW = Math.max(PANEL_WIDTH_MIN, Math.min(maxW, startW + startX - ev.clientX))
+      setPanelWidth(newW)
+    }
+    const onUp = (ev: PointerEvent) => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      const finalW = Math.max(PANEL_WIDTH_MIN, Math.min(maxW, startW + startX - ev.clientX))
+      try { localStorage.setItem(PANEL_WIDTH_KEY, String(finalW)) } catch { /* ignore */ }
+    }
+    document.body.style.cursor = 'ew-resize'
+    document.body.style.userSelect = 'none'
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
+
+  const startTreeResize = (e: React.PointerEvent) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startW = treeWidth
+    const maxTW = Math.round(panelWidth * TREE_WIDTH_MAX_RATIO)
+    const onMove = (ev: PointerEvent) => {
+      const newW = Math.max(TREE_WIDTH_MIN, Math.min(maxTW, startW + ev.clientX - startX))
+      setTreeWidth(newW)
+    }
+    const onUp = (ev: PointerEvent) => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      const finalW = Math.max(TREE_WIDTH_MIN, Math.min(maxTW, startW + ev.clientX - startX))
+      try { localStorage.setItem(TREE_WIDTH_KEY, String(finalW)) } catch { /* ignore */ }
+    }
+    document.body.style.cursor = 'ew-resize'
+    document.body.style.userSelect = 'none'
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
   const searchInputRef = useRef<HTMLInputElement>(null)
   const handleModalClose = useCallback(() => {
     if (isMobile && mobilePane === 'preview') {
@@ -741,15 +840,24 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
             exit={prefersReducedMotion ? { opacity: 0 } : { x: '100%', opacity: 0 }}
             transition={{ duration: prefersReducedMotion ? 0.01 : 0.22, ease: [0.4, 0, 0.2, 1] }}
             className={cn(
-              'fixed bottom-0 right-0 top-[env(safe-area-inset-top,0px)] z-50 flex w-[min(960px,95vw)] flex-col overflow-hidden border-l border-(--color-border) bg-(--bg-card) shadow-2xl',
+              'fixed bottom-0 right-0 top-[env(safe-area-inset-top,0px)] z-50 flex flex-col overflow-hidden border-l border-(--color-border) bg-(--bg-card) shadow-2xl',
               '[[data-mobile-shell]_&]:top-[calc(var(--spacing-app-header)+env(safe-area-inset-top,0px))] [[data-mobile-shell]_&]:right-[env(safe-area-inset-right,0px)] [[data-mobile-shell]_&]:w-[min(960px,calc(100vw-env(safe-area-inset-left,0px)-env(safe-area-inset-right,0px)))]',
               isMacOverlay && 'top-(--spacing-app-header)',
             )}
+            style={!isMobile ? { width: panelWidth } : undefined}
             role="dialog"
             aria-modal="true"
             aria-label="Workspace files"
             data-modal-focus="true"
           >
+            {/* Left-edge drag handle to resize the panel */}
+            {!isMobile && (
+              <div
+                className="absolute bottom-0 left-0 top-0 z-10 w-1 cursor-ew-resize transition-colors hover:bg-(--color-accent)/20"
+                onPointerDown={startPanelResize}
+                title="Drag to resize"
+              />
+            )}
             {/* Header */}
             <header className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-4 py-3">
               <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -796,12 +904,15 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
 
             {/* Body: tree + preview split (desktop) / master-detail (mobile) */}
             <div className="flex min-h-0 flex-1 overflow-hidden">
-              {/* Tree — full width on mobile tree pane, fixed 260px on desktop */}
+              {/* Tree — full width on mobile tree pane, resizable on desktop */}
               {showTree && (
-                <nav className={cn(
-                  'flex flex-col overflow-hidden border-r border-(--color-border)',
-                  isMobile ? 'w-full' : 'w-[260px] shrink-0',
-                )}>
+                <nav
+                  className={cn(
+                    'flex flex-col overflow-hidden',
+                    isMobile ? 'w-full' : 'shrink-0',
+                  )}
+                  style={!isMobile ? { width: treeWidth } : undefined}
+                >
                   {/* Search bar */}
                   {sessionId && files.length > 0 && (
                     <div className="shrink-0 border-b border-(--color-border) px-2 py-1.5">
@@ -862,6 +973,15 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
                     )}
                   </div>
                 </nav>
+              )}
+
+              {/* Tree/preview drag divider — desktop only */}
+              {!isMobile && showTree && showPreview && (
+                <div
+                  className="relative w-px shrink-0 cursor-ew-resize bg-(--color-border) transition-colors hover:bg-(--color-accent)/40"
+                  onPointerDown={startTreeResize}
+                  title="Drag to resize"
+                />
               )}
 
               {/* Preview — full width on mobile preview pane, flex-1 on desktop */}
