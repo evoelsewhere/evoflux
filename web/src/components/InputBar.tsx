@@ -267,7 +267,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   //     The 20% guard band absorbs the layout feedback loop where
   //     promoting widens the textarea (so the same content fits on
   //     one line again) which would otherwise demote → re-promote.
-  const [isMultiLine, setIsMultiLine] = useState(false)
+  const [isMultiLine] = useState(false)
   const promoteLengthRef = useRef(0)
   const resize = useCallback(() => {
     const el = textareaRef.current
@@ -281,26 +281,9 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     const wrapped = el.scrollHeight > lineHeight * 1.4
     const currentLen = el.value.length
     const hasNewline = el.value.includes('\n')
-
-    setIsMultiLine((prev) => {
-      if (!prev && wrapped) {
-        // Promote: remember the length so we know when it's safe to
-        // demote later.
-        promoteLengthRef.current = currentLen
-        return true
-      }
-      if (prev && !wrapped && !hasNewline) {
-        // Demote candidate. Only commit if length has dropped clearly
-        // below the promote-length (80% threshold) — guards against
-        // the wrap-promote-rewrap loop in the boundary band.
-        const demoteThreshold = Math.floor(promoteLengthRef.current * 0.8)
-        if (currentLen <= demoteThreshold) {
-          promoteLengthRef.current = 0
-          return false
-        }
-      }
-      return prev
-    })
+    // isMultiLine detection kept alive so consumers that read it still work;
+    // the current vertical layout does not need it for flex-order tricks.
+    void wrapped; void currentLen; void hasNewline; void promoteLengthRef
   }, [])
 
   useImperativeHandle(ref, () => ({
@@ -931,9 +914,9 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   // calls these `inputBarAttach`, `inputBarMic`: 32×32, rounded-sm border,
   // --color-surface fill).
   const actionBtnClass =
-    'flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-(--color-border) bg-(--color-surface) text-(--color-text-2) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:cursor-not-allowed disabled:opacity-50'
+    'flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-(--color-border) bg-(--color-surface) text-(--color-text-2) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:cursor-not-allowed disabled:opacity-50'
   const shellBtnClass = shellMode
-    ? 'flex h-7 shrink-0 items-center gap-1 rounded-md border border-(--color-accent) bg-(--bg-key) px-2 font-mono text-xs text-(--color-text) transition-colors hover:bg-(--color-surface) disabled:cursor-not-allowed disabled:opacity-50'
+    ? 'flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-(--color-accent) bg-(--bg-key) px-3 font-mono text-xs text-(--color-text) transition-colors hover:bg-(--color-surface) disabled:cursor-not-allowed disabled:opacity-50'
     : actionBtnClass
 
   // Three states share one DOM tree: minimized, single-line, multi-line.
@@ -956,27 +939,6 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       <Paperclip size={14} aria-hidden="true" />
     </button>
   )
-
-  const shellEl = !minimized ? (
-    <button
-      type="button"
-      onClick={(e) => {
-        stopClick(e)
-        setShellMode((next) => !next)
-        setMentionRange(null)
-        setSnippetRange(null)
-        requestAnimationFrame(() => textareaRef.current?.focus())
-      }}
-      disabled={disabled}
-      aria-label={shellMode ? 'Exit shell mode' : 'Use shell mode'}
-      aria-pressed={shellMode}
-      title={shellMode ? 'Exit shell mode (Esc)' : 'Run a shell command'}
-      className={shellBtnClass}
-    >
-      <Terminal size={13} aria-hidden="true" />
-      {shellMode && <span>Shell</span>}
-    </button>
-  ) : null
 
   const chatEl = minimized ? (
     <button
@@ -1012,26 +974,27 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       type="button"
       onClick={(e) => { stopClick(e); onStop?.() }}
       aria-label="Stop generation"
-      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-(--color-error) bg-(--color-error) text-(--bg-page) transition-colors hover:opacity-90"
+      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-(--color-error) text-white transition-all hover:opacity-90 active:scale-95"
     >
-      <Square size={12} fill="currentColor" />
+      <Square size={13} fill="currentColor" />
     </button>
   ) : (
     <button
       type="button"
-      onClick={(e) => {
-        stopClick(e)
-        submit()
-      }}
+      onClick={(e) => { stopClick(e); submit() }}
       disabled={!canSend}
       aria-label="Send message"
       title={isMobile ? 'Send message' : 'Send (Enter) · New line (Shift+Enter) · Commands (/)'}
-      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-(--color-border) bg-(--color-surface) text-(--color-text-2) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:cursor-not-allowed disabled:opacity-50"
+      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-all active:scale-95 ${
+        canSend
+          ? 'bg-[linear-gradient(135deg,#667eea_0%,#764ba2_100%)] text-white shadow-sm hover:opacity-90'
+          : 'bg-(--bg-key) text-(--color-text-muted) opacity-40 cursor-not-allowed'
+      }`}
     >
       {disabled && !minimized ? (
         <Loader2 size={14} className="animate-spin" aria-hidden="true" />
       ) : (
-        <ArrowUp size={14} aria-hidden="true" />
+        <ArrowUp size={15} aria-hidden="true" />
       )}
     </button>
   )
@@ -1131,21 +1094,9 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   )
 
   return (
-    <div className={floating ? '' : 'border-t border-(--color-border) bg-(--bg-page) px-4 py-3'}>
+    <div className={floating ? '' : 'bg-(--bg-page) px-4 pb-5 pt-3'}>
       <div className={floating ? 'relative' : 'relative mx-auto max-w-3xl'}>
         {!minimized && !filesBelow && filePreviews}
-
-        {!minimized && onSessionModelSettingsChange && (
-          <SessionPillsRow
-            sessionModel={sessionModel}
-            defaultModel={defaultModel}
-            sessionThinkingLevel={sessionThinkingLevel}
-            sessionFastMode={sessionFastMode}
-            onSessionModelSettingsChange={onSessionModelSettingsChange}
-            agentNames={agentNames}
-            workspace={agentWorkspace}
-          />
-        )}
 
         {!minimized && slashMenuOpen && filteredSlashCommands.length > 0 && (
           <div
@@ -1297,68 +1248,109 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
           </div>
         )}
 
-        {/* ``flex justify-center`` centers the self-sized minimized pill. */}
+        {/* Input card — minimized: compact pill · expanded: Gemini-style card */}
         <div className={`relative ${minimized ? 'flex justify-center' : ''}`}>
           {renderDragHandle?.()}
           <motion.div
             layout
             initial={false}
-            animate={{ padding: minimized ? 6 : 8 }}
+            animate={{ padding: minimized ? 8 : 0 }}
             transition={{ duration: prefersReducedMotion ? 0.01 : 0.24, ease: [0.32, 0.72, 0, 1] }}
             onDragEnter={handleDragEnter}
             onDragLeave={handleDragLeave}
             onDragOver={handleDragOver}
             onDrop={handleDrop}
-            className={`relative block rounded-lg border bg-(--color-surface) transition-[border-color,box-shadow,background-color] duration-200 ${
+            className={`relative block bg-(--color-surface) transition-[border-color,box-shadow] duration-200 ${
               minimized
-                ? 'w-fit border-(--color-border) shadow-sm hover:bg-(--bg-key)'
-                : 'w-full border-(--color-border-strong) shadow-md focus-within:ring-1 focus-within:ring-(--color-accent)'
+                ? 'w-fit rounded-2xl border border-(--color-border) shadow-sm hover:bg-(--bg-key)'
+                : 'w-full rounded-xl border border-(--color-border) shadow-[0_4px_24px_rgba(0,0,0,0.10)] focus-within:border-(--focus-ring)/40 focus-within:shadow-[0_8px_32px_rgba(0,0,0,0.16)]'
             }`}
           >
-            {/* Click-anywhere-to-expand on bare strip whitespace. Action
-                buttons call stopClick so they don't trigger this. No ARIA
-                role here — the Send button is the keyboard-accessible
-                "Expand input bar" affordance. */}
-            <div
-              onClick={minimized ? handleExpand : undefined}
-              className={`flex w-full flex-wrap items-center gap-2 ${
-                minimized ? 'cursor-text' : ''
-              }`}
-            >
-              {shellEl}
-              {!shellMode && (
-                <>
-                  {attachEl}
-                  {chatEl}
-                </>
-              )}
-              {/* Slot snaps w-0 ↔ flex-1 in lockstep with the card's
-                  w-fit ↔ w-full. ``-ml-2`` absorbs the parent gap-2
-                  when collapsed. */}
-              <div
-                style={{
-                  flexBasis: !minimized && isMultiLine ? '100%' : undefined,
-                  order: !minimized && isMultiLine ? -1 : 0,
-                }}
-                className={`min-w-0 overflow-hidden ${
-                  minimized ? 'w-0 -ml-2' : 'flex-1'
-                }`}
-              >
-                {messageSlot}
+            {/* ── Minimized: compact action strip ── */}
+            {minimized && (
+              <div onClick={handleExpand} className="flex items-center gap-2 cursor-text">
+                {!shellMode && attachEl}
+                {chatEl}
+                <div className="w-0 -ml-2 min-w-0 overflow-hidden">{messageSlot}</div>
+                {sendOrStopEl}
               </div>
-              {!minimized && showCharCount && (
-                <span
-                  className={`shrink-0 font-mono text-xs ${
-                    charCount > 2000 ? 'text-(--color-error)' : 'text-(--color-text-muted)'
-                  }`}
-                >
-                  {charCount}
-                </span>
-              )}
-              {/* Spacer pushes Send to the right edge in multi-line. */}
-              {!minimized && isMultiLine && <div className="flex-1" />}
-              {sendOrStopEl}
-            </div>
+            )}
+
+            {/* ── Expanded: Gemini-style vertical card ── */}
+            {!minimized && (
+              <>
+                {/* Textarea area */}
+                <div className="px-4 pt-3 pb-1">
+                  {shellMode && (
+                    <div className="mb-2">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          stopClick(e)
+                          setShellMode(false)
+                          setMentionRange(null)
+                          setSnippetRange(null)
+                          requestAnimationFrame(() => textareaRef.current?.focus())
+                        }}
+                        disabled={disabled}
+                        aria-label="Exit shell mode"
+                        title="Exit shell mode (Esc)"
+                        className={shellBtnClass}
+                      >
+                        <Terminal size={12} aria-hidden="true" />
+                        <span>Shell</span>
+                      </button>
+                    </div>
+                  )}
+                  {messageSlot}
+                </div>
+
+                {/* Bottom action bar — pills + tools on left, send on right */}
+                <div className="flex items-center gap-1.5 px-3 pb-3 pt-1">
+                  {!shellMode && attachEl}
+                  {!shellMode && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        stopClick(e)
+                        setShellMode(true)
+                        setMentionRange(null)
+                        setSnippetRange(null)
+                        requestAnimationFrame(() => textareaRef.current?.focus())
+                      }}
+                      disabled={disabled}
+                      aria-label="Shell mode"
+                      title="Run a shell command"
+                      className={actionBtnClass}
+                    >
+                      <Terminal size={13} aria-hidden="true" />
+                    </button>
+                  )}
+                  {onSessionModelSettingsChange && (
+                    <SessionPillsRow
+                      sessionModel={sessionModel}
+                      defaultModel={defaultModel}
+                      sessionThinkingLevel={sessionThinkingLevel}
+                      sessionFastMode={sessionFastMode}
+                      onSessionModelSettingsChange={onSessionModelSettingsChange}
+                      agentNames={agentNames}
+                      workspace={agentWorkspace}
+                    />
+                  )}
+                  <div className="flex-1" />
+                  {showCharCount && (
+                    <span
+                      className={`shrink-0 font-mono text-xs ${
+                        charCount > 2000 ? 'text-(--color-error)' : 'text-(--color-text-muted)'
+                      }`}
+                    >
+                      {charCount}
+                    </span>
+                  )}
+                  {sendOrStopEl}
+                </div>
+              </>
+            )}
           </motion.div>
         </div>
 

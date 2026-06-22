@@ -900,7 +900,11 @@ class AgentTeam:
 
                 await db.commit()
         except Exception as exc:
-            logger.warning("team_save_user_message_failed error={}", exc)
+            logger.opt(exception=True).warning(
+                "team_save_user_message_failed type={} error={}",
+                type(exc).__name__,
+                repr(exc),
+            )
 
         # Initialise a fresh state blob for this turn synchronously before
         # delivering the message to the lead. This guarantees the state key

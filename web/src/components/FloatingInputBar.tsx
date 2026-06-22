@@ -42,7 +42,7 @@ interface FloatingInputBarProps {
  * soft keyboard via `visualViewport` inset.
  */
 export const FloatingInputBar = forwardRef<InputBarHandle, FloatingInputBarProps>(
-  function FloatingInputBar({ boundsRef: _, ...inputProps }, ref) {
+  function FloatingInputBar({ boundsRef: _, revertedCount, revertedMessages, onRedo, ...inputBarProps }, ref) {
     const isMobile = useIsMobile()
     const keyboardInset = useVisualKeyboardInset()
     const innerRef = useRef<InputBarHandle | null>(null)
@@ -55,26 +55,28 @@ export const FloatingInputBar = forwardRef<InputBarHandle, FloatingInputBarProps
       setFiles: (files: File[]) => innerRef.current?.setFiles(files),
     }), [])
 
-    // ── Mobile: soft keyboard aware ──────────────────────────────────────
+    // ── Mobile: sticky bottom sheet with keyboard-inset awareness ────────
     if (isMobile) {
       return (
         <div
-          className="pointer-events-auto shrink-0 rounded-t-2xl border border-b-0 border-(--color-border) bg-(--color-surface) px-3 pb-safe pt-2 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] transition-[padding-bottom] duration-150"
+          className="pointer-events-auto shrink-0 border-t border-(--color-border) bg-(--bg-page) pb-safe transition-[padding-bottom] duration-150"
           style={keyboardInset > 0 ? { paddingBottom: `calc(${keyboardInset}px + 0.5rem)` } : undefined}
         >
-          <RevertNotice count={inputProps.revertedCount ?? 0} messages={inputProps.revertedMessages ?? []} onRedo={inputProps.onRedo} />
-          <InputBar ref={innerRef} floating filesBelow={false} {...inputProps} />
+          <RevertNotice count={revertedCount ?? 0} messages={revertedMessages ?? []} onRedo={onRedo} />
+          <InputBar ref={innerRef} floating filesBelow={false} {...inputBarProps} />
         </div>
       )
     }
 
-    // ── Desktop: centered bottom bar matching chat content width ─────────
+    // ── Desktop: InputBar owns the card — we just provide flex context ───
     return (
-      <div className="pointer-events-auto shrink-0 px-4 pb-4 pt-2">
-        <div className="mx-auto max-w-3xl rounded-2xl border border-(--color-border) bg-(--color-surface) px-4 pb-3 pt-2 shadow-[0_-4px_16px_rgba(0,0,0,0.06)]">
-          <RevertNotice count={inputProps.revertedCount ?? 0} messages={inputProps.revertedMessages ?? []} onRedo={inputProps.onRedo} />
-          <InputBar ref={innerRef} floating {...inputProps} />
-        </div>
+      <div className="pointer-events-auto shrink-0">
+        {(revertedCount ?? 0) > 0 && (
+          <div className="mx-auto max-w-3xl px-4 pb-1">
+            <RevertNotice count={revertedCount ?? 0} messages={revertedMessages ?? []} onRedo={onRedo} />
+          </div>
+        )}
+        <InputBar ref={innerRef} {...inputBarProps} />
       </div>
     )
   },

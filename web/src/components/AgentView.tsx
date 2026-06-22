@@ -621,10 +621,11 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                 (isContinuing && currentBlocks.length === 0) ||
                 (currentBlocks.length > 0 && currentBlocks.every((b) => b.type === 'user'))
               ))) && (
-              <div className="flex items-center gap-1.5 py-1" role="status" aria-label="Agent is preparing a response">
-                <span aria-hidden="true" className="h-1.5 w-1.5 animate-bounce rounded-full bg-(--color-accent)" style={{ animationDelay: '0ms' }} />
-                <span aria-hidden="true" className="h-1.5 w-1.5 animate-bounce rounded-full bg-(--color-accent)" style={{ animationDelay: '150ms' }} />
-                <span aria-hidden="true" className="h-1.5 w-1.5 animate-bounce rounded-full bg-(--color-accent)" style={{ animationDelay: '300ms' }} />
+              <div className="flex items-center gap-2 py-1.5" role="status" aria-label="Agent is preparing a response">
+                <div className="relative flex h-5 w-5 shrink-0 items-center justify-center" aria-hidden="true">
+                  <div className="absolute inset-0 animate-spin rounded-full border-[1.5px] border-(--color-accent)/20 border-t-(--color-accent) motion-reduce:animate-none" />
+                  <img src={EvoFluxLogo} width={11} height={11} className="rounded-[3px]" alt="" />
+                </div>
               </div>
             )}
 
