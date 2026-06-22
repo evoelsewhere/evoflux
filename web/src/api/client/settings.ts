@@ -27,30 +27,6 @@ export async function updateSandboxSettings(
   return res.json()
 }
 
-export type TitleGenerationSettings = {
-  enabled: boolean
-  model: string
-  wait_timeout_seconds: number
-}
-
-export async function getTitleGenerationSettings(): Promise<TitleGenerationSettings> {
-  const res = await fetch(`${apiBaseUrl()}/settings/title-generation`)
-  if (!res.ok) await parseDetailOrThrow(res, 'GET /settings/title-generation')
-  return res.json()
-}
-
-export async function updateTitleGenerationSettings(
-  body: TitleGenerationSettings,
-): Promise<TitleGenerationSettings> {
-  const res = await fetch(`${apiBaseUrl()}/settings/title-generation`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-  if (!res.ok) await parseDetailOrThrow(res, 'PUT /settings/title-generation')
-  return res.json()
-}
-
 export type MultimodalSectionSettings = {
   model: string
   [key: string]: string | number | boolean | null

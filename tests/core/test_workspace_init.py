@@ -181,7 +181,6 @@ def test_install_seed_writes_runtime_settings_model(tmp_path: Path) -> None:
         "settings.yaml",
     ]
     settings = (tmp_path / "config" / "settings.yaml").read_text(encoding="utf-8")
-    assert "title_generation:" in settings
     assert "dream:" in settings
     assert "model: codex:gpt-5.5" in settings
 

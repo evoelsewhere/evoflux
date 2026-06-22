@@ -69,8 +69,4 @@ export {
   useTestProviderMutation,
   useInstallSeedMutation,
 } from './useProvidersQuery'
-export {
-  useTitleGenerationSettingsQuery,
-  useUpdateTitleGenerationSettingsMutation,
-} from './useTitleGenerationSettingsQuery'
 export { queryKeys } from './keys'

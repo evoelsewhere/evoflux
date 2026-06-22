@@ -16,7 +16,6 @@ import { McpServerDetailPage } from './routes/settings.mcp.$name'
 import { SandboxSettingsPage } from './routes/settings.sandbox'
 import { ProvidersSettingsPage } from './routes/settings.providers'
 import { DreamSettingsPage } from './routes/settings.dream'
-import { TitleGenerationSettingsPage } from './routes/settings.title-generation'
 import { NotificationSettingsPage } from './routes/settings.notifications'
 import { TelemetryPage } from './routes/telemetry'
 import { SchedulerPage } from './routes/scheduler'
@@ -151,12 +150,6 @@ const settingsDreamRoute = createRoute({
   component: DreamSettingsPage,
 })
 
-const settingsTitleGenerationRoute = createRoute({
-  getParentRoute: () => settingsLayoutRoute,
-  path: 'title-generation',
-  component: TitleGenerationSettingsPage,
-})
-
 // /settings/notifications
 const settingsNotificationsRoute = createRoute({
   getParentRoute: () => settingsLayoutRoute,
@@ -196,7 +189,6 @@ const routeTree = rootRoute.addChildren([
     settingsSandboxRoute,
     settingsProvidersRoute,
     settingsDreamRoute,
-    settingsTitleGenerationRoute,
     settingsNotificationsRoute,
   ]),
   telemetryRoute,

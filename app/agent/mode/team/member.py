@@ -328,6 +328,18 @@ class TeamMemberBase(abc.ABC):
                         self.name,
                         self.session_id,
                     )
+                elif not existing.title:
+                    existing.title = title or f"Team {self._role_label}: {self.name}"
+                    existing.mode = mode
+                    existing.workspace = workspace
+                    db.add(existing)
+                    await db.commit()
+                    logger.info(
+                        "team_member_session_title_set name={} session_id={} title={}",
+                        self.name,
+                        self.session_id,
+                        existing.title,
+                    )
         except Exception as e:
             logger.warning(
                 "team_member_session_ensure_failed name={} error={}", self.name, e
@@ -866,12 +878,13 @@ class TeamMemberBase(abc.ABC):
             hooks.append(WorkspaceInstructionsHook(self._team.workspace))
 
         # Title generation — lead only (members don't need session titles).
-        # Returns None with a warning when the feature is disabled or
-        # unconfigured — non-fatal, sessions just keep the fallback title.
+        # Always enabled; uses the same runtime provider as the chat turn so
+        # title generation does not require a separate model configuration.
         if self._role_label == "lead" and self.db_factory:
             title_hook = build_title_generation_hook(
-                default_provider=runtime_provider or self.agent.llm_provider,
+                provider=runtime_provider or self.agent.llm_provider,
                 db_factory=self.db_factory,
+                wait_timeout=3.0,
             )
             if title_hook is not None:
                 hooks.append(title_hook)

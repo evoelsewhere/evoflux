@@ -28,7 +28,6 @@ import {
   Plug,
   Shield,
   Sparkles,
-  Type,
   Wrench,
   type LucideIcon,
 } from 'lucide-react'
@@ -49,7 +48,6 @@ type SidebarPath =
   | '/settings/providers'
   | '/settings/sandbox'
   | '/settings/dream'
-  | '/settings/title-generation'
   | '/settings/notifications'
   | '/telemetry'
   | '/settings'
@@ -157,12 +155,6 @@ export function SettingsSidebar() {
         label: 'Dream',
         icon: Moon,
         matchPrefix: '/settings/dream',
-      },
-      {
-        to: '/settings/title-generation',
-        label: 'Title generation',
-        icon: Type,
-        matchPrefix: '/settings/title-generation',
       },
       {
         to: '/settings/notifications',

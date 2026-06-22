@@ -583,37 +583,6 @@ def test_install_seed_defaults_rejects_invalid_model() -> None:
     assert response.status_code == 422
 
 
-def test_title_generation_settings_roundtrip(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(settings_routes.settings, "EVOFLUX_CONFIG_DIR", str(tmp_path))
-
-    app = _make_app()
-    client = TestClient(app)
-
-    response = client.put(
-        "/api/settings/title-generation",
-        json={
-            "enabled": False,
-            "model": "codex:gpt-5.5-mini",
-            "wait_timeout_seconds": 0,
-        },
-    )
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "enabled": False,
-        "model": "codex:gpt-5.5-mini",
-        "wait_timeout_seconds": 0.0,
-    }
-    assert (tmp_path / "settings.yaml").is_file()
-
-    read_response = client.get("/api/settings/title-generation")
-
-    assert read_response.status_code == 200
-    assert read_response.json() == response.json()
-
-
 # ── Daemon reachability probe ───────────────────────────────────────────────
 
 
