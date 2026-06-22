@@ -273,7 +273,7 @@ async def discover_provider_models(
             case "openai":
                 models = await _openai_compatible_models(
                     provider_id=provider_id,
-                    base_url="https://api.openai.com/v1",
+                    base_url=_resolve(overrides, "OPENAI_BASE_URL", settings.OPENAI_BASE_URL),
                     api_key=_resolve(overrides, "OPENAI_API_KEY"),
                 )
             case _ if provider_id in OPENAI_COMPATIBLE_PROVIDER_SPECS:

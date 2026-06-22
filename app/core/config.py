@@ -77,6 +77,7 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: SecretStr | None = None
     ANTHROPIC_BASE_URL: str = "https://api.anthropic.com"
     OPENAI_API_KEY: SecretStr | None = None
+    OPENAI_BASE_URL: str = "https://api.openai.com/v1"
     OPENROUTER_API_KEY: SecretStr | None = None
     NVIDIA_API_KEY: SecretStr | None = None
     XAI_API_KEY: SecretStr | None = None

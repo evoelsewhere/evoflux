@@ -106,6 +106,22 @@ _CATALOG: list[ProviderEntry] = [
         "description": "GPT-5.x, GPT-4.1, etc.",
         "kind": "api_key",
         "env_var": "OPENAI_API_KEY",
+        "credentials": [
+            {
+                "name": "OPENAI_API_KEY",
+                "label": "OpenAI API key",
+                "secret": True,
+                "required": True,
+                "placeholder": "sk-...",
+            },
+            {
+                "name": "OPENAI_BASE_URL",
+                "label": "Base URL",
+                "secret": False,
+                "required": False,
+                "placeholder": "https://api.openai.com/v1",
+            },
+        ],
         "docs_url": "https://platform.openai.com/api-keys",
     },
     {
