@@ -17,6 +17,7 @@ import { useEffect, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { usePlatform } from '@/hooks/use-platform'
 import { useTauriDrag } from '@/hooks/use-tauri-drag'
+import { Breadcrumb, type BreadcrumbItem } from './Breadcrumb'
 
 export interface AppHeaderProps {
   title?: string
@@ -29,6 +30,8 @@ export interface AppHeaderProps {
   /** Tooltip hint, e.g. `'Ctrl+B'`. */
   toggleShortcut?: string
   homeTo?: string
+  /** Optional breadcrumb trail shown after the title (desktop only). */
+  breadcrumbs?: BreadcrumbItem[]
   className?: string
 }
 
@@ -51,6 +54,7 @@ export function AppHeader({
   onToggleSidebar,
   toggleShortcut,
   homeTo = '/',
+  breadcrumbs,
   className,
 }: AppHeaderProps) {
   const { isMacOverlay } = usePlatform()
@@ -67,7 +71,7 @@ export function AppHeader({
     <header
       {...dragHandlers}
       className={cn(
-        'mobile-safe-header relative z-30 flex h-(--spacing-app-header) shrink-0 items-center border-b border-(--border-soft) bg-(--bg-sidebar)',
+        'mobile-safe-header relative z-30 flex h-(--spacing-app-header) shrink-0 items-center rounded-[10px] bg-(--bg-sidebar)/80 shadow-sm backdrop-blur-xl',
         isMacOverlay && 'pl-(--spacing-mac-traffic-inset) select-none',
         className,
       )}
@@ -93,6 +97,10 @@ export function AppHeader({
           <span className="ml-1 min-w-0 truncate text-sm font-semibold text-(--color-text) md:ml-2">
             {title}
           </span>
+        )}
+
+        {breadcrumbs && breadcrumbs.length > 0 && (
+          <Breadcrumb items={breadcrumbs} className="ml-2 hidden md:flex" />
         )}
       </div>
 

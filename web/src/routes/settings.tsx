@@ -1,9 +1,9 @@
 /**
  * Settings shell — responsive two-column layout below a shared header.
  *
- * Desktop (≥768px):
+ * Desktop (≥768px):  floating-block layout with 4 px inset + 2 px gaps.
  *   ┌──────────────────────────────────────────────────────┐
- *   │ AppHeader (Home · ☰ · "Settings" · ● local)          │
+ *   │ AppHeader  Home › Settings › Agents        ● local   │
  *   ├──────────────┬───────────────────────────────────────┤
  *   │ Sidebar      │ Detail / list / editor (Outlet)       │
  *   │ (240 px)     │                                       │
@@ -11,13 +11,10 @@
  *
  * Mobile (<768px):
  *   ┌──────────────────────────────────────────────────────┐
- *   │ AppHeader (Home · ☰ · "Settings" · ● local)          │
+ *   │ AppHeader                                             │
  *   ├──────────────────────────────────────────────────────┤
  *   │ Outlet — full width                                   │
  *   └──────────────────────────────────────────────────────┘
- *
- * The list pages (agents/skills/MCP) render cards inline in the right
- * pane via `SettingsListView`; there is no middle list column.
  */
 import { Outlet, useLocation, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
@@ -25,6 +22,7 @@ import { useState } from 'react'
 import { AppHeader } from '@/components/AppHeader'
 import { SettingsSidebar } from '@/components/settings/SettingsSidebar'
 import { useIsMobile } from '@/hooks/use-mobile'
+import type { BreadcrumbItem } from '@/components/Breadcrumb'
 
 /** Page title shown in the AppHeader based on the current pathname. */
 function pageTitleFor(pathname: string): string {
@@ -39,13 +37,20 @@ function pageTitleFor(pathname: string): string {
   return 'Settings'
 }
 
+/** Breadcrumb trail for the current settings page. */
+function breadcrumbsFor(pathname: string): BreadcrumbItem[] {
+  const section = pageTitleFor(pathname)
+  if (section === 'Settings') return [{ label: 'Settings' }]
+  return [
+    { label: 'Settings', to: '/settings' },
+    { label: section },
+  ]
+}
+
 export function SettingsLayout() {
   const { pathname } = useLocation()
   const navigate = useNavigate()
   const isMobile = useIsMobile()
-  // Mobile-only drawer state for the sidebar. On desktop the sidebar
-  // is permanently visible so the hamburger acts as a back-to-settings
-  // shortcut (navigates the outlet to /settings).
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
 
   const handleToggleSidebar = () => {
@@ -57,13 +62,14 @@ export function SettingsLayout() {
   }
 
   return (
-    <div className="mobile-safe-shell mobile-viewport flex h-dvh flex-col overflow-hidden bg-(--bg-page) text-(--color-text)">
+    <div className="mobile-safe-shell mobile-viewport flex h-dvh flex-col overflow-hidden bg-(--bg-page) text-(--color-text) md:gap-0.5 md:p-1">
       <AppHeader
-        title={pageTitleFor(pathname)}
+        title={isMobile ? pageTitleFor(pathname) : undefined}
         onToggleSidebar={handleToggleSidebar}
+        breadcrumbs={!isMobile ? breadcrumbsFor(pathname) : undefined}
       />
 
-      <div className="flex min-h-0 flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 overflow-hidden md:gap-0.5">
         {/* Desktop sidebar — always visible. Mobile renders the same
             sidebar inside a slide-over so the hamburger has somewhere
             meaningful to open. */}
@@ -82,7 +88,7 @@ export function SettingsLayout() {
           </>
         )}
 
-        <main id="main" className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <main id="main" className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[10px] bg-(--bg-card) md:shadow-sm">
           <Outlet />
         </main>
       </div>
