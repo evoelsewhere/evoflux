@@ -125,6 +125,12 @@ const MENU_CHECK_UPDATES: &str = "check_updates";
 const MENU_OPEN_CONFIG_DIR: &str = "open_config_dir";
 const MENU_REVEAL_BACKEND_LOG: &str = "reveal_backend_log";
 const MENU_QUIT: &str = "quit";
+const MENU_EDIT_UNDO: &str = "edit_undo";
+const MENU_EDIT_REDO: &str = "edit_redo";
+const MENU_EDIT_CUT: &str = "edit_cut";
+const MENU_EDIT_COPY: &str = "edit_copy";
+const MENU_EDIT_PASTE: &str = "edit_paste";
+const MENU_EDIT_SELECT_ALL: &str = "edit_select_all";
 
 /// Zoom factor bounds and step. ``ZOOM_STEP`` is the multiplier per
 /// ⌘+/⌘- press (≈20%, matching Chrome). Bounds keep the factor from
@@ -716,6 +722,12 @@ fn handle_desktop_menu(app: &AppHandle, id: &str) {
         MENU_WIKI => emit_frontend_command(app, "wiki"),
         MENU_SCHEDULER => emit_frontend_command(app, "scheduler"),
         MENU_AGENT_CAPABILITIES => emit_frontend_command(app, "agent_capabilities"),
+        MENU_EDIT_UNDO => emit_frontend_command(app, "edit_undo"),
+        MENU_EDIT_REDO => emit_frontend_command(app, "edit_redo"),
+        MENU_EDIT_CUT => emit_frontend_command(app, "edit_cut"),
+        MENU_EDIT_COPY => emit_frontend_command(app, "edit_copy"),
+        MENU_EDIT_PASTE => emit_frontend_command(app, "edit_paste"),
+        MENU_EDIT_SELECT_ALL => emit_frontend_command(app, "edit_select_all"),
         MENU_SETTINGS => navigate_main_window(app, "/settings"),
         MENU_PROVIDERS => navigate_main_window(app, "/settings/providers"),
         MENU_NOTIFICATIONS => navigate_main_window(app, "/settings/notifications"),
@@ -1123,13 +1135,18 @@ fn install_desktop_menus(app: &tauri::App) -> Result<()> {
         Some("CmdOrCtrl+0"),
     )?;
 
-    // Edit submenu is required on macOS so ⌘A/⌘C/⌘V/⌘X/⌘Z reach the webview.
-    let edit_undo = PredefinedMenuItem::undo(app, None)?;
-    let edit_redo = PredefinedMenuItem::redo(app, None)?;
-    let edit_cut = PredefinedMenuItem::cut(app, None)?;
-    let edit_copy = PredefinedMenuItem::copy(app, None)?;
-    let edit_paste = PredefinedMenuItem::paste(app, None)?;
-    let edit_select_all = PredefinedMenuItem::select_all(app, None)?;
+    // Edit submenu: PredefinedMenuItem gives native ⌘A/⌘C/⌘V/⌘X/⌘Z behavior on
+    // macOS and adds visible menu entries on Windows/Linux, but on Windows the
+    // predefined items may not bind Ctrl+A/C/V/X/Z accelerators automatically.
+    // We therefore use explicit MenuItem entries with CmdOrCtrl accelerators
+    // and route their events back to the webview via ``emit_frontend_command``,
+    // which dispatches the corresponding document.execCommand.
+    let edit_undo = MenuItem::with_id(app, MENU_EDIT_UNDO, "Undo", true, Some("CmdOrCtrl+Z"))?;
+    let edit_redo = MenuItem::with_id(app, MENU_EDIT_REDO, "Redo", true, Some("CmdOrCtrl+Y"))?;
+    let edit_cut = MenuItem::with_id(app, MENU_EDIT_CUT, "Cut", true, Some("CmdOrCtrl+X"))?;
+    let edit_copy = MenuItem::with_id(app, MENU_EDIT_COPY, "Copy", true, Some("CmdOrCtrl+C"))?;
+    let edit_paste = MenuItem::with_id(app, MENU_EDIT_PASTE, "Paste", true, Some("CmdOrCtrl+V"))?;
+    let edit_select_all = MenuItem::with_id(app, MENU_EDIT_SELECT_ALL, "Select All", true, Some("CmdOrCtrl+A"))?;
 
     let app_menu = SubmenuBuilder::new(app, "EvoFlux")
         .item(&app_about)
@@ -1544,7 +1561,7 @@ async fn start_backend_and_window(app: AppHandle) -> Result<()> {
                         .insert(MAIN_WINDOW.to_string(), base.clone());
                     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
                         window
-                            .eval(&frontend_init_script(None, &base))
+                            .eval(frontend_init_script(None, &base))
                             .context("inject external backend config")?;
                     }
                     update_tray_status(&app, "Status: Running");

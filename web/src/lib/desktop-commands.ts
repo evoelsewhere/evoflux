@@ -19,6 +19,18 @@ function dispatchCtrlKey(key: string): void {
   )
 }
 
+function execCommand(command: string): void {
+  // Focus the active element first so execCommand targets the right editable
+  // region. Browsers require contentEditable/designMode or an editable form
+  // control for clipboard commands; this mirrors the Edit menu behavior in
+  // native apps and works for the chat textarea and other inputs.
+  const active = document.activeElement as HTMLElement | null
+  if (active && active.focus) {
+    active.focus()
+  }
+  document.execCommand(command, false, undefined)
+}
+
 function runDesktopCommand(command: unknown): void {
   switch (command) {
     case 'command_palette':
@@ -32,6 +44,24 @@ function runDesktopCommand(command: unknown): void {
       break
     case 'agent_capabilities':
       useUIStore.getState().toggleAgentCapabilities()
+      break
+    case 'edit_undo':
+      execCommand('undo')
+      break
+    case 'edit_redo':
+      execCommand('redo')
+      break
+    case 'edit_cut':
+      execCommand('cut')
+      break
+    case 'edit_copy':
+      execCommand('copy')
+      break
+    case 'edit_paste':
+      execCommand('paste')
+      break
+    case 'edit_select_all':
+      execCommand('selectAll')
       break
   }
 }
