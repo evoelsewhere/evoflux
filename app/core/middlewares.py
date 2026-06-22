@@ -19,7 +19,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
 # Default: 4 MB
-_DEFAULT_MAX_BYTES = 4 * 1024 * 1024
+_DEFAULT_MAX_BYTES = 100 * 1024 * 1024
 
 # ── Security headers ─────────────────────────────────────────────────────────
 # EvoFlux is an on-machine single-owner app.  The bundled web UI is served
