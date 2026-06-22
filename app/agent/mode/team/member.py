@@ -97,6 +97,7 @@ LEAD_COMMUNICATION_RULES = """\
   - Building, writing files, running commands → **executor**
   - Research, web search, reading docs or codebases → **explorer**
   - Hard decisions, architecture review, trade-off analysis → **consultant**
+  - Stress-test a proposal, surface counter-arguments, adversarial review → **debate**
   - Multiple concerns → spawn / message multiple members in parallel
 - **Roster management — `team_manage`.** Members are spawned on demand. Use the `team_manage` tool description and schema for spawn/restore/dismiss usage and available blueprint discovery. Spawn what you need, address returned handles via `team_message`, and **keep useful members alive across turns** — reusing a live instance preserves its warm context and is faster and cheaper than dismiss-then-respawn. Dismiss only to free resources or clear clutter when an instance clearly won't be needed again.
 - Coordination with members must go through the `team_message` tool. Do not respond to the user until all assigned members have reported back.
@@ -1138,16 +1139,23 @@ class TeamLead(TeamMemberBase):
         # Build mode-aware routing guide from the team's actual blueprints.
         builder = "coder" if "coder" in team.blueprints else "executor"
         has_consultant = "consultant" in team.blueprints
+        has_debate = "debate" in team.blueprints
         consultant_line = (
             "\n  - Hard decisions, architecture review, trade-off analysis → **consultant**"
             if has_consultant
+            else ""
+        )
+        debate_line = (
+            "\n  - Stress-test a proposal, surface counter-arguments, adversarial review → **debate**"
+            if has_debate
             else ""
         )
         routing = (
             f"- **Routing guide** (when you do delegate):\n"
             f"  - Building, writing files, running commands → **{builder}**\n"
             f"  - Research, web search, reading docs or codebases → **explorer**"
-            f"{consultant_line}\n"
+            f"{consultant_line}"
+            f"{debate_line}\n"
             f"  - Multiple concerns → spawn / message multiple members in parallel"
         )
         rules = LEAD_COMMUNICATION_RULES.replace(
@@ -1155,6 +1163,7 @@ class TeamLead(TeamMemberBase):
             "  - Building, writing files, running commands → **executor**\n"
             "  - Research, web search, reading docs or codebases → **explorer**\n"
             "  - Hard decisions, architecture review, trade-off analysis → **consultant**\n"
+            "  - Stress-test a proposal, surface counter-arguments, adversarial review → **debate**\n"
             "  - Multiple concerns → spawn / message multiple members in parallel",
             routing,
         )
