@@ -11,6 +11,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 
 import {
+  CalendarClock,
   Home,
   Plus,
   Trash2,
@@ -44,6 +45,7 @@ import { Button } from "@/components/ui/button";
 import { LongPressButton } from "@/components/ui/long-press-button";
 import { usePlatform } from "@/hooks/use-platform";
 import { useResizableWidth } from "@/hooks/use-resizable-width";
+import { useUIStore } from "@/stores/useUIStore";
 import type { SessionResponse } from "@/api/types";
 
 interface DateGroup {
@@ -113,6 +115,7 @@ export function Sidebar({
   const mobileLongPressActions = isMobile && isTauriMobile && mobileOpen;
   const prefersReducedMotion = useReducedMotion();
   const navigate = useNavigate();
+  const toggleScheduler = useUIStore((s) => s.toggleScheduler);
   const sessions = useTeamSessionsQuery();
   const deleteSession = useDeleteTeamSessionMutation();
   const updateSessionTitle = useUpdateTeamSessionTitleMutation();
@@ -408,6 +411,13 @@ export function Sidebar({
                       collapsed={ico}
                       onClick={handleNewChat}
                     />
+                    <SidebarItem
+                      Icon={CalendarClock}
+                      label="Scheduler"
+                      kbd="^S"
+                      collapsed={ico}
+                      onClick={toggleScheduler}
+                    />
                   </nav>
                 </div>
 
@@ -579,6 +589,12 @@ export function Sidebar({
                   label="New Chat"
                   kbd="^N"
                   onClick={handleNewChat}
+                />
+                <SidebarItem
+                  Icon={CalendarClock}
+                  label="Scheduler"
+                  kbd="^S"
+                  onClick={() => { toggleScheduler(); onMobileClose?.(); }}
                 />
               </nav>
 
