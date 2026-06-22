@@ -116,6 +116,11 @@ def _pid_alive(pid: int) -> bool:
         # PID exists but we can't signal it — still alive enough for our purposes.
         return True
     except OSError:
+        if sys.platform == "win32":
+            # On Windows, OpenProcess may fail with ERROR_ACCESS_DENIED (5)
+            # or other codes even when the process is alive. Be conservative:
+            # assume the parent is alive rather than killing the sidecar.
+            return True
         return False
     return True
 

@@ -46,6 +46,7 @@ import argparse
 import os
 import platform
 import shutil
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -69,6 +70,8 @@ STRIP_GLOBS = (
     "**/locale/*.mo",
 )
 
+IS_WINDOWS = platform.system() == "Windows"
+
 
 def detect_target_triple() -> str:
     """Return the python-build-standalone triple for the current host."""
@@ -84,6 +87,10 @@ def detect_target_triple() -> str:
         if machine in ("aarch64", "arm64"):
             return "aarch64-unknown-linux-gnu"
         return "x86_64-unknown-linux-gnu"
+    if system == "Windows":
+        if machine in ("aarch64", "arm64"):
+            return "aarch64-pc-windows-msvc"
+        return "x86_64-pc-windows-msvc"
     raise SystemExit(f"unsupported host: {system}/{machine}")
 
 
@@ -138,6 +145,11 @@ def _find_python_binary(root: Path, version: str) -> Path | None:
     # rest of the script doesn't follow a symlink it then has to rewrite
     # during normalisation.
     names = [f"python{version}", "python3"]
+    if IS_WINDOWS:
+        # python-build-standalone on Windows ships ``python.exe`` and
+        # ``python3.14.exe`` at the install root. Prefer the versioned
+        # executable to stay consistent with the Unix path.
+        names = [f"python{version}.exe", "python.exe"]
     for name in names:
         for candidate in root.rglob(name):
             # ``is_file()`` follows symlinks — we want both that the
@@ -156,21 +168,30 @@ def normalise_python_dir(install_root: Path, target: Path, python_bin: Path) -> 
     """Move uv's install tree to a flat ``target/`` directory.
 
     ``python_bin`` is the resolved (symlink-free) path to the interpreter
-    inside ``install_root``. The install root is ``python_bin``'s
-    grandparent (``bin/python`` → install root). We move *that* directory
-    to ``target`` so the layout becomes::
+    inside ``install_root``. On Unix the interpreter lives at
+    ``<root>/bin/python3.X``, so the install root is ``python_bin.parent.parent``.
+    On Windows python-build-standalone places ``python.exe`` directly in the
+    install root, so the install root is ``python_bin.parent``.
 
-        <target>/bin/python3.14
-        <target>/lib/python3.14/
+    After normalisation the layout is::
+
+        <target>/bin/python3.14        (Unix)
+        <target>/python3.14.exe        (Windows)
+        <target>/lib/python3.14/       (Unix)
+        <target>/Lib/                  (Windows)
         ...
 
     Returns the new path of the python binary inside ``target``.
     """
-    # <install_root>/bin/python3.X → parent.parent is the root.
-    source = python_bin.parent.parent
+    if IS_WINDOWS:
+        source = python_bin.parent
+        expected_bin = source / "python.exe"
+    else:
+        source = python_bin.parent.parent
+        expected_bin = source / "bin" / python_bin.name
 
-    if not (source / "bin").is_dir():
-        raise SystemExit(f"resolved install root {source} missing bin/")
+    if not expected_bin.is_file():
+        raise SystemExit(f"resolved install root {source} missing expected binary {expected_bin}")
 
     if target.exists():
         shutil.rmtree(target)
@@ -182,13 +203,20 @@ def normalise_python_dir(install_root: Path, target: Path, python_bin: Path) -> 
     shutil.move(str(source), str(target))
 
     # Compute the new binary path inside ``target`` and verify.
-    new_bin = target / "bin" / python_bin.name
-    if not new_bin.is_file():
-        # Fall back to ``python3`` if the rglob picked the versioned
-        # name but only ``python3`` exists at the target.
-        alt = target / "bin" / "python3"
-        if alt.is_file():
-            new_bin = alt
+    if IS_WINDOWS:
+        new_bin = target / python_bin.name
+        if not new_bin.is_file():
+            alt = target / "python.exe"
+            if alt.is_file():
+                new_bin = alt
+    else:
+        new_bin = target / "bin" / python_bin.name
+        if not new_bin.is_file():
+            # Fall back to ``python3`` if the rglob picked the versioned
+            # name but only ``python3`` exists at the target.
+            alt = target / "bin" / "python3"
+            if alt.is_file():
+                new_bin = alt
     if not new_bin.is_file():
         raise SystemExit(f"normalisation moved tree but binary not at {new_bin}")
     return new_bin
@@ -251,22 +279,22 @@ def smoke_test(python_bin: Path, site_packages: Path) -> None:
     3. Hit ``/api/health/live`` *with* the generated token (proves
        middleware wiring + lifespan startup).
     4. Hit it *without* the token (proves 401 enforcement).
-    5. SIGTERM and reap.
+    5. Terminate and reap.
 
     Any failure here fails the build — we never want a broken bundle to
     leave CI.
     """
     import json
-    import signal as _signal
     import time
     import urllib.error
     import urllib.request
 
     smoke_root = site_packages.parent / "_smoke"
     # PYTHONHOME must point at the python-build-standalone install root —
-    # the directory containing ``lib/``. The interpreter lives at
-    # ``<root>/bin/python3.X`` so the root is parent.parent.
-    python_home = python_bin.parent.parent
+    # the directory containing the standard library. On Unix that's the
+    # grandparent of ``bin/python3.X``; on Windows the binary lives at the
+    # install root, so it's the parent.
+    python_home = python_bin.parent.parent if not IS_WINDOWS else python_bin.parent
     env = {
         **os.environ,
         "PYTHONHOME": str(python_home),
@@ -314,16 +342,21 @@ def smoke_test(python_bin: Path, site_packages: Path) -> None:
         "--generate-token",
     ]
     print(">> " + " ".join(smoke_cmd))
-    proc = subprocess.Popen(
-        smoke_cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        env=env,
-        text=True,
-        # New process group so the smoke test can hard-kill the child
-        # (and any uvicorn worker it spawns) on timeout.
-        start_new_session=True,
-    )
+
+    popen_kwargs: dict = {
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "env": env,
+        "text": True,
+    }
+    if IS_WINDOWS:
+        # CREATE_NEW_PROCESS_GROUP lets us terminate the child tree from
+        # this process; start_new_session is Unix-only.
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        popen_kwargs["start_new_session"] = True
+
+    proc = subprocess.Popen(smoke_cmd, **popen_kwargs)
 
     # Read output from background threads so the main thread can
     # enforce a real wall-clock timeout. ``subprocess.Popen.stdout`` is
@@ -444,7 +477,10 @@ def smoke_test(python_bin: Path, site_packages: Path) -> None:
             print(f"smoke test: protected endpoint returned {e.code} (acceptable)")
     finally:
         if proc.poll() is None:
-            proc.send_signal(_signal.SIGTERM)
+            if IS_WINDOWS:
+                proc.terminate()
+            else:
+                proc.send_signal(signal.SIGTERM)
             try:
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
