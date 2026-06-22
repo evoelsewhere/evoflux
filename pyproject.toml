@@ -53,6 +53,7 @@ dependencies = [
     "botocore[crt]>=1.43.1",
     "duckdb>=1.1.0",
     "truststore>=0.10.4",
+    "browser-use>=0.11.13",
 ]
 
 [project.urls]

@@ -1,3 +1,4 @@
+from .browser_use_tool import browser_use
 from .date import get_date
 from .filesystem import (
     edit_file,
@@ -21,6 +22,7 @@ from .wiki_search import wiki_search
 
 __all__ = [
     "background_process",
+    "browser_use",
     "discover_skills",
     "edit_file",
     "shell_tool",

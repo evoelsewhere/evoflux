@@ -13,6 +13,7 @@ CODING_EVOFLUX_DESCRIPTION = "Lead coding agent. Plans the work, coordinates the
 
 NORMAL_EVOFLUX_TOOLS = [
     "bg",
+    "browser_use",
     "date",
     "edit",
     "glob",
@@ -31,6 +32,7 @@ NORMAL_EVOFLUX_TOOLS = [
 ]
 CODING_EVOFLUX_TOOLS = [
     "bg",
+    "browser_use",
     "date",
     "edit",
     "glob",
@@ -135,6 +137,7 @@ Structure findings with headings, bullets, or tables. End with a short synthesis
         "consultant": {
             "description": "Deep analysis engine. Decomposes complex problems, quantifies trade-offs, and delivers evidence-backed recommendations with clear reasoning.",
             "tools": [
+                "browser_use",
                 "date",
                 "read",
                 "ls",
