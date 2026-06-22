@@ -61,8 +61,14 @@ def snapshot_dir(session_id: str) -> Path:
 
 
 def is_available() -> bool:
-    """Return True when the ``git`` binary is on PATH."""
-    return shutil.which("git") is not None
+    """Return True when the ``git`` binary is on PATH and subprocess is supported."""
+    return not _subprocess_unsupported and shutil.which("git") is not None
+
+
+# Set to True the first time asyncio raises NotImplementedError (Windows
+# SelectorEventLoop does not support subprocesses).  Once set, is_available()
+# returns False so subsequent calls skip snapshot work immediately.
+_subprocess_unsupported: bool = False
 
 
 async def _git(
@@ -91,9 +97,16 @@ async def _git(
         )
         out, err = await proc.communicate(stdin)
         return proc.returncode or 0, out, err
-    except (OSError, asyncio.CancelledError) as exc:
-        logger.warning("snapshot_git_spawn_failed args={} error={}", args, exc)
-        return 1, b"", str(exc).encode()
+    except (OSError, asyncio.CancelledError, NotImplementedError) as exc:
+        if isinstance(exc, NotImplementedError):
+            global _subprocess_unsupported
+            _subprocess_unsupported = True
+            logger.info(
+                "snapshot_subprocess_unavailable reason=\'asyncio.create_subprocess_exec not supported on this event loop (Windows SelectorEventLoop)\' snapshots=disabled"
+            )
+        else:
+            logger.warning("snapshot_git_spawn_failed args={} error={}", args, repr(exc))
+        return 1, b"", b""
 
 
 def _gitdir_args(gitdir: Path, worktree: Path) -> list[str]:
@@ -113,11 +126,12 @@ async def _init_repo(gitdir: Path, worktree: Path) -> bool:
         env={"GIT_DIR": str(gitdir), "GIT_WORK_TREE": str(worktree)},
     )
     if code != 0:
-        logger.warning(
-            "snapshot_init_failed gitdir={} stderr={}",
-            gitdir,
-            err.decode(errors="replace"),
-        )
+        if not _subprocess_unsupported:
+            logger.warning(
+                "snapshot_init_failed gitdir={} stderr={}",
+                gitdir,
+                err.decode(errors="replace"),
+            )
         return False
 
     for key, value in (
