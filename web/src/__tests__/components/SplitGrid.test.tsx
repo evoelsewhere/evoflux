@@ -97,7 +97,7 @@ describe("SplitGrid automatic layout", () => {
     expect(columns[1][1]).toContain("reviewer#1")
   })
 
-  it("grows to three columns at five agents and stacks extra panes to the right", async () => {
+  it("switches to command-center layout for five or more agents", async () => {
     const { root } = await renderGrid([
       "lead",
       "executor#1",
@@ -106,16 +106,18 @@ describe("SplitGrid automatic layout", () => {
       "reviewer#2",
     ])
 
-    const columns = columnTexts(root)
-    expect(columns).toHaveLength(3)
-    expect(columns[0]).toHaveLength(1)
-    expect(columns[0][0]).toContain("lead")
-    expect(columns[1]).toHaveLength(2)
-    expect(columns[1][0]).toContain("executor#1")
-    expect(columns[1][1]).toContain("executor#2")
-    expect(columns[2]).toHaveLength(2)
-    expect(columns[2][0]).toContain("reviewer#1")
-    expect(columns[2][1]).toContain("reviewer#2")
+    // Root has 2 children: lead column + workers panel
+    expect(root?.children).toHaveLength(2)
+    // Lead is in the first (left) panel
+    expect(root?.children[0].textContent).toContain("lead")
+    // All workers are in the second (right) panel
+    const workersText = root?.children[1].textContent ?? ""
+    expect(workersText).toContain("executor#1")
+    expect(workersText).toContain("executor#2")
+    expect(workersText).toContain("reviewer#1")
+    expect(workersText).toContain("reviewer#2")
+    // Lead must not appear in the worker panel
+    expect(root?.children[1].textContent).not.toContain("lead")
   })
 
   it("ignores transient roster entries that do not have streams yet", async () => {
@@ -173,11 +175,11 @@ describe("SplitGrid automatic layout", () => {
       <SplitGrid agentNames={names} leadName="lead" agentStreams={initialStreams} />,
     )
 
-    expect(columnTexts(container.firstElementChild as HTMLElement | null)).toEqual([
-      ["lead"],
-      ["executor#1", "executor#2"],
-      ["reviewer#1", "reviewer#2"],
-    ])
+    // Initial: 5 agents → command-center (lead panel + workers panel)
+    const root5 = container.firstElementChild as HTMLElement | null
+    expect(root5?.children).toHaveLength(2)
+    expect(root5?.children[0].textContent).toContain("lead")
+    expect(root5?.children[1].textContent).toContain("executor#1")
 
     rerender(
       <SplitGrid
@@ -190,6 +192,7 @@ describe("SplitGrid automatic layout", () => {
       />,
     )
 
+    // After executor#1 goes offline: 4 visible agents → auto grid (2 columns)
     // Use waitFor so this test stays correct whether framer-motion is real
     // (exit animation delays unmount ~150ms) or stubbed (synchronous).
     await waitFor(() => {

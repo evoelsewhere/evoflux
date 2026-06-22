@@ -1,15 +1,17 @@
 /**
  * SplitGrid — automatic n-pane grid layout for the `split` view mode.
  *
- * All panes (lead included) are treated equally and follow `agentNames` order.
- * New spawned agents are appended by the store, so they automatically claim the
- * next available split-view slot. Columns grow by square capacity:
+ * ≤4 agents: automatic column grid (lead treated equally, columns by sqrt).
  *
  *   1 → fullscreen
  *   2 → side-by-side columns
  *   3 → big left, two stacked right
  *   4 → 2×2
- *   5..9 → three columns, stacked as needed
+ *
+ * ≥5 agents: "command center" layout
+ *   - Lead agent: dedicated left column (40% width), full height.
+ *   - Worker agents: right side, 2-column scrollable grid, each card 240px.
+ *   - Workers sorted by activity: working → idle/error.
  *
  * Spawn / dismiss animations are driven by framer-motion: panes fade + scale
  * in on mount, fade + scale out on unmount (offline). The dismissed pane
@@ -39,6 +41,16 @@ const SPRING_SOFT = [0.34, 1.2, 0.64, 1] as const
 const MOTION_BASE_S = 0.24 // matches --motion-base (240ms)
 const MOTION_FAST_S = 0.15 // matches --motion-fast (150ms)
 
+// At this agent count or above, switch to the command-center layout.
+const COMMAND_CENTER_THRESHOLD = 5
+
+// Working agents float to the top of the worker grid; ties broken by name.
+function statusPriority(status: AgentStream['status']): number {
+  if (status === 'working') return 0
+  if (status === 'error') return 2
+  return 1 // idle and everything else
+}
+
 export function SplitGrid({
   agentNames, leadName, agentStreams, isContinuing = false, onContinue,
 }: SplitGridProps) {
@@ -58,7 +70,9 @@ export function SplitGrid({
     ? { duration: 0 }
     : { duration: MOTION_FAST_S, ease: SPRING_SOFT }
 
-  const renderPanel = (name: string) => {
+  // compact=true → pane fills its CSS grid cell (command-center workers).
+  // compact=false → pane grows via flex-1 in the column layout.
+  const renderPanel = (name: string, compact?: boolean) => {
     const stream = agentStreams[name]
     if (!stream) return null
     return (
@@ -68,7 +82,7 @@ export function SplitGrid({
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 10, scale: 0.98, transition: exitTransition }}
         transition={enterTransition}
-        className="min-h-0 flex-1"
+        className={compact ? 'h-full' : 'min-h-0 flex-1'}
       >
         <AgentPane
           name={name}
@@ -81,6 +95,45 @@ export function SplitGrid({
     )
   }
 
+  // ── Command-center layout (≥5 agents) ─────────────────────────────────────
+  if (
+    visibleAgentNames.length >= COMMAND_CENTER_THRESHOLD &&
+    leadName &&
+    visibleAgentNames.includes(leadName)
+  ) {
+    const workerNames = visibleAgentNames
+      .filter((n) => n !== leadName)
+      .sort((a, b) => {
+        const pa = statusPriority(agentStreams[a]?.status ?? 'idle')
+        const pb = statusPriority(agentStreams[b]?.status ?? 'idle')
+        return pa - pb || a.localeCompare(b)
+      })
+
+    return (
+      <div className="flex h-full gap-3">
+        {/* Lead agent — fixed-width left column, full height */}
+        <div className="flex w-2/5 shrink-0 flex-col">
+          <AnimatePresence initial={false}>
+            {renderPanel(leadName, false)}
+          </AnimatePresence>
+        </div>
+
+        {/* Worker grid — 2-column, independently scrollable */}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div
+            className="grid grid-cols-2 gap-3 pb-3"
+            style={{ gridAutoRows: '240px' }}
+          >
+            <AnimatePresence initial={false}>
+              {workerNames.map((name) => renderPanel(name, true))}
+            </AnimatePresence>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Auto-grid layout (≤4 agents, unchanged) ───────────────────────────────
   const columnCount = Math.ceil(Math.sqrt(visibleAgentNames.length))
   const baseColumnSize = Math.floor(visibleAgentNames.length / columnCount)
   const extraColumns = visibleAgentNames.length % columnCount
@@ -98,7 +151,7 @@ export function SplitGrid({
       {columns.map((column, idx) => (
         <div key={idx} className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
           <AnimatePresence initial={false}>
-            {column.map(renderPanel)}
+            {column.map((name) => renderPanel(name))}
           </AnimatePresence>
         </div>
       ))}
