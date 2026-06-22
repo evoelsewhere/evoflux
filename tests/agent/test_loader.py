@@ -38,7 +38,7 @@ def _write_agent_md(
 ) -> Path:
     """Write a single agent .md file with frontmatter + body."""
     fm = yaml.dump(frontmatter, default_flow_style=False).strip()
-    path.write_text(f"---\n{fm}\n---\n\n{body}\n")
+    path.write_text(f"---\n{fm}\n---\n\n{body}\n", encoding="utf-8")
     return path
 
 
@@ -493,7 +493,7 @@ def test_load_team_from_dir_valid_minimal(tmp_path):
     team = load_team_from_dir(d, provider_factory=factory)
     assert team is not None
     assert team.lead.name == "lead"
-    assert set(team.blueprints) == {"executor", "explorer", "consultant"}
+    assert set(team.blueprints) == {"executor", "explorer", "consultant", "debate"}
     assert team.members == {}
 
 
@@ -510,7 +510,7 @@ def test_load_team_from_dir_materializes_coding_builtin_members(tmp_path):
     factory, _ = _make_provider_factory()
     team = load_team_from_dir(d, provider_factory=factory, mode="coding")
     assert team is not None
-    assert set(team.blueprints) == {"coder", "explorer"}
+    assert set(team.blueprints) == {"coder", "explorer", "debate"}
     assert (d / "coder.md").is_file()
     assert (d / "explorer.md").is_file()
     assert "model: zai:glm-5-turbo" in (d / "explorer.md").read_text(encoding="utf-8")
@@ -540,7 +540,7 @@ def test_load_team_from_dir_does_not_overwrite_existing_builtin_member(tmp_path)
     factory, _ = _make_provider_factory()
     team = load_team_from_dir(d, provider_factory=factory, mode="coding")
     assert team is not None
-    assert set(team.blueprints) == {"coder", "explorer"}
+    assert set(team.blueprints) == {"coder", "explorer", "debate"}
     assert (d / "explorer.md").read_text(encoding="utf-8") == before
     assert team.blueprints["explorer"].description == "Custom explorer."
 
@@ -558,7 +558,7 @@ def test_coding_mode_hides_retired_executor_member(tmp_path):
     factory, _ = _make_provider_factory()
     team = load_team_from_dir(d, provider_factory=factory, mode="coding")
     assert team is not None
-    assert set(team.blueprints) == {"coder", "explorer"}
+    assert set(team.blueprints) == {"coder", "explorer", "debate"}
 
 
 def test_EVOFLUX_lead_uses_builtin_prompt_with_extra(tmp_path):
@@ -712,8 +712,9 @@ def test_builtin_member_profiles_are_curated_to_default_agents():
         "executor",
         "explorer",
         "consultant",
+        "debate",
     }
-    assert set(BUILTIN_MEMBER_PROFILES["coding"]) == {"coder", "explorer"}
+    assert set(BUILTIN_MEMBER_PROFILES["coding"]) == {"coder", "explorer", "debate"}
 
 
 def test_builtin_member_user_description_overrides_code_default(tmp_path):
@@ -1050,6 +1051,7 @@ def test_load_team_discovers_all_agents(tmp_path):
         "executor",
         "explorer",
         "consultant",
+        "debate",
         "worker",
         "helper",
     }
@@ -1078,6 +1080,7 @@ def test_load_team_skips_unconfigured_members(tmp_path):
         "executor",
         "explorer",
         "consultant",
+        "debate",
         "worker",
     }
 
