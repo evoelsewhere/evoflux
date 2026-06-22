@@ -103,7 +103,7 @@ def _effective_config(cfg: AgentConfig, *, mode: str) -> AgentConfig:
     if data.role == "lead":
         implicit_tools += ["todo_manage", "schedule_task", "note"]
     data.tools = [*implicit_tools, *data.tools]
-    if data.role == "lead" and data.name == "EvoFlux":
+    if data.role == "lead" and data.name.lower() == "evoflux":
         from app.agent.builtin_prompts import (
             EVOFLUX_description_for_mode,
             EVOFLUX_tools_for_mode,
