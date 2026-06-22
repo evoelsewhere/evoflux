@@ -1,18 +1,15 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import { cleanup, render, screen } from '@testing-library/react'
-import { TodosPopover } from '@/components/TodosPopover'
+import { TodosList } from '@/components/TodosList'
 import type { TodoItem } from '@/api/types'
 
 afterEach(cleanup)
 
-describe('TodosPopover', () => {
+describe('TodosList', () => {
   it('shows an empty-state message when there are no todos', () => {
     render(
-      <TodosPopover
-        open
-        onOpenChange={() => {}}
+      <TodosList
         todos={[]}
-        sessionId="session-123"
       />,
     )
 
@@ -56,11 +53,8 @@ describe('TodosPopover', () => {
     ]
 
     render(
-      <TodosPopover
-        open
-        onOpenChange={() => {}}
+      <TodosList
         todos={todos}
-        sessionId="session-123"
       />,
     )
 
@@ -93,11 +87,8 @@ describe('TodosPopover', () => {
     ]
 
     render(
-      <TodosPopover
-        open
-        onOpenChange={() => {}}
+      <TodosList
         todos={todos}
-        sessionId="session-123"
       />,
     )
 
