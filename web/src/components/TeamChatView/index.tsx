@@ -4,7 +4,7 @@
  * Owns:
  *   - View-mode state (``agent`` / ``split``).
  *   - Side panels (``Sidebar``, ``WorkspaceFilesPanel``, ``SessionSettingsPanel``,
- *     todos popover, command palette).
+ *     inline task list, command palette).
  *   - The header (token totals, view toggle, panel toggles, agent tabs).
  *   - Mount-time SSE connect + session restore (carefully sequenced so
  *     ``loadSession`` runs *before* ``connectStream`` to avoid wiping

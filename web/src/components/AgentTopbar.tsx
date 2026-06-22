@@ -59,12 +59,9 @@ export interface AgentTopbarProps {
   /** Force the mobile/desktop layout. Defaults to desktop. */
   isMobile?: boolean
   /**
-   * Custom Todos trigger. The TodosPopover handles its own trigger
-   * (open state, popover wiring), so the consumer passes the rendered
-   * trigger element. When omitted the topbar renders a plain Todos
-   * action driven by `onTodosClick`.
+   * Todos action — opens the task list (legacy topbar trigger).
+   * When omitted no todos action is rendered.
    */
-  todosSlot?: React.ReactNode
   todosAction?: AgentTopbarActionDescriptor
   /** Scheduler action — opens the scheduled-tasks drawer (Ctrl+S). */
   schedulerAction?: AgentTopbarActionDescriptor
@@ -90,7 +87,6 @@ export function AgentTopbar({
   viewMode,
   onViewModeChange,
   isMobile = false,
-  todosSlot,
   todosAction,
   schedulerAction,
   wikiAction,
@@ -137,7 +133,7 @@ export function AgentTopbar({
         <ViewToggle value={viewMode} onValueChange={onViewModeChange} />
       )}
 
-      {todosSlot ?? (todosAction && <AgentTopbarActionButton action={todosAction} fallbackIcon={ListChecks} />)}
+      {todosAction && <AgentTopbarActionButton action={todosAction} fallbackIcon={ListChecks} />}
       {schedulerAction && (
         <AgentTopbarActionButton action={schedulerAction} fallbackIcon={CalendarClock} />
       )}
