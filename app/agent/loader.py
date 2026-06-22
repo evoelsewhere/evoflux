@@ -265,6 +265,7 @@ def _default_tool_registry() -> dict[str, Tool]:
     from app.agent.mcp import mcp_manager
     from app.agent.tools.builtin import (
         background_process,
+        browser_use,
         edit_file,
         get_date,
         glob_files,
@@ -289,6 +290,7 @@ def _default_tool_registry() -> dict[str, Tool]:
     registry: dict[str, Tool] = {
         "web_search": web_search,
         "web_fetch": web_fetch,
+        "browser_use": browser_use,
         "date": get_date,
         "read": read_file,
         "write": write_file,

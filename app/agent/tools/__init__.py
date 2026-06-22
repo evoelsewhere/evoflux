@@ -1,6 +1,7 @@
 from .registry import Tool, tool
 from .builtin import (
     background_process,
+    browser_use,
     discover_skills,
     shell_tool,
     get_date,
@@ -23,6 +24,7 @@ __all__ = [
     "tool",
     # builtin
     "background_process",
+    "browser_use",
     "discover_skills",
     "shell_tool",
     "get_date",

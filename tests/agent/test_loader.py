@@ -493,7 +493,7 @@ def test_load_team_from_dir_valid_minimal(tmp_path):
     team = load_team_from_dir(d, provider_factory=factory)
     assert team is not None
     assert team.lead.name == "lead"
-    assert set(team.blueprints) == {"executor", "explorer"}
+    assert set(team.blueprints) == {"executor", "explorer", "consultant"}
     assert team.members == {}
 
 
@@ -708,7 +708,11 @@ def test_builtin_member_profile_uses_code_defaults_with_extra(tmp_path):
 def test_builtin_member_profiles_are_curated_to_default_agents():
     from app.agent.builtin_prompts import BUILTIN_MEMBER_PROFILES
 
-    assert set(BUILTIN_MEMBER_PROFILES["normal"]) == {"executor", "explorer"}
+    assert set(BUILTIN_MEMBER_PROFILES["normal"]) == {
+        "executor",
+        "explorer",
+        "consultant",
+    }
     assert set(BUILTIN_MEMBER_PROFILES["coding"]) == {"coder", "explorer"}
 
 
@@ -1042,7 +1046,13 @@ def test_load_team_discovers_all_agents(tmp_path):
     assert team is not None
     assert team.lead.name == "lead"
     # Members are lazy blueprints; nothing is live until spawned.
-    assert set(team.blueprints.keys()) == {"executor", "explorer", "worker", "helper"}
+    assert set(team.blueprints.keys()) == {
+        "executor",
+        "explorer",
+        "consultant",
+        "worker",
+        "helper",
+    }
     assert team.members == {}
 
 
@@ -1064,7 +1074,12 @@ def test_load_team_skips_unconfigured_members(tmp_path):
     factory, _ = _make_provider_factory()
     team = load_team_from_dir(d, provider_factory=factory)
     assert team is not None
-    assert set(team.blueprints.keys()) == {"executor", "explorer", "worker"}
+    assert set(team.blueprints.keys()) == {
+        "executor",
+        "explorer",
+        "consultant",
+        "worker",
+    }
 
 
 def test_load_team_parse_error_raises(tmp_path):
