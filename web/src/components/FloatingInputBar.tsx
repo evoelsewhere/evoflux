@@ -3,7 +3,7 @@ import { InputBar, type FileRef, type InputBarHandle, type SlashCommand, type Sn
 import { RevertNotice } from './RevertNotice'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useVisualKeyboardInset } from '@/hooks/use-visual-keyboard-inset'
-import type { AgentCapabilities } from '@/api/types'
+import type { AgentCapabilities, TodoItem } from '@/api/types'
 
 interface FloatingInputBarProps {
   boundsRef: React.RefObject<HTMLElement | null>
@@ -31,6 +31,10 @@ interface FloatingInputBarProps {
   onSessionModelSettingsChange?: (model: string | null, thinkingLevel: string | null, fastMode: boolean) => void
   agentNames?: string[]
   agentWorkspace?: string | null
+  todos?: TodoItem[]
+  todosOpen?: boolean
+  onTodosOpenChange?: (open: boolean) => void
+  sessionId?: string | null
 }
 
 /**

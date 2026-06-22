@@ -32,7 +32,6 @@ import { CodingFileViewerPanel } from '../CodingFileViewerPanel'
 import { Sidebar } from '../Sidebar'
 import { CommandPalette } from '../CommandPalette'
 import { WorkspaceFilesPanel } from '../WorkspaceFilesPanel'
-import { TodosPopover } from '../TodosPopover'
 import { WikiPanel } from '../WikiPanel'
 import { SchedulerPanel } from '../SchedulerPanel'
 import { BrowserViewer } from '../BrowserViewer'
@@ -48,7 +47,7 @@ import { useUIStore } from '@/stores/useUIStore'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useTeamAgentsQuery } from '@/queries/useAgentsQuery'
 import { useFileRefsQuery } from '@/queries/useFileRefsQuery'
-import { AlertCircle, Brain, CalendarClock, Check, ChevronDown, FolderOpen, FolderCode, ListTodo, Menu, MoreHorizontal, SlidersHorizontal, X } from 'lucide-react'
+import { AlertCircle, Brain, CalendarClock, Check, ChevronDown, FolderOpen, FolderCode, Menu, MoreHorizontal, SlidersHorizontal, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Breadcrumb } from '@/components/Breadcrumb'
 import { useIsMobile } from '@/hooks/use-mobile'
@@ -966,13 +965,6 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
                 />
               )}
               <MobileHeaderAction
-                Icon={ListTodo}
-                label="Tasks"
-                onClick={() => setShowTodos(true)}
-                disabled={!sessionIdState}
-                badge={todos.filter((todo) => todo.status === 'pending' || todo.status === 'in_progress').length}
-              />
-              <MobileHeaderAction
                 Icon={FolderOpen}
                 label={mode === 'coding' ? 'Workspace files' : 'Session files'}
                 onClick={mode === 'coding'
@@ -1008,14 +1000,6 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
               dreamRunning={dreamMutation.isPending}
               viewMode={viewMode}
               onViewModeChange={setViewMode}
-              todosSlot={
-                <TodosPopover
-                  open={showTodos}
-                  onOpenChange={setShowTodos}
-                  todos={todos}
-                  sessionId={sessionIdState}
-                />
-              }
               filesAction={mode === 'coding'
                 ? workspace ? {
                     Icon: FolderOpen,
@@ -1251,6 +1235,10 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
             onSessionModelSettingsChange={setSessionModelSettings}
             agentNames={agentNames}
             agentWorkspace={agentWorkspace}
+            todos={todos}
+            todosOpen={showTodos}
+            onTodosOpenChange={setShowTodos}
+            sessionId={sessionIdState}
           />
         )}
         </main>
@@ -1294,13 +1282,6 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
         open={mode !== 'coding' && showFilesPanel}
         sessionId={sessionIdState}
         onClose={() => setShowFilesPanel(false)}
-      />
-      <TodosPopover
-        open={isMobile && showTodos}
-        onOpenChange={setShowTodos}
-        todos={todos}
-        sessionId={sessionIdState}
-        trigger={false}
       />
       <WikiPanel open={wikiOpen} onClose={closeWiki} />
       <SchedulerPanel

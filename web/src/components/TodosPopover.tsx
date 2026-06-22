@@ -14,43 +14,11 @@
  *   in_progress → pending → completed → cancelled
  */
 
-import { ListTodo, Square, SquareCheck, X } from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
+import { ListTodo, X } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { TopbarAction } from '@/components/ui/topbar-action'
+import { TodosList } from './TodosList'
 import type { TodoItem } from '@/api/types'
-
-// ── Status → row style ──────────────────────────────────────────────────────
-
-const STATUS_ICON: Record<TodoItem['status'], LucideIcon> = {
-  completed: SquareCheck,
-  cancelled: Square,
-  in_progress: Square,
-  pending: Square,
-}
-
-// ``--color-accent`` resolves to ``--color-text`` in the dark palette, so
-// it can't be used for status hue — we'd lose the contrast against
-// regular text. ``--color-info`` (resolves to ``--accent-blue``) is
-// defined distinctly in both themes and reads as "in progress".
-const STATUS_ICON_COLOR: Record<TodoItem['status'], string> = {
-  completed: 'text-(--color-success)',
-  cancelled: 'text-(--color-text-subtle)',
-  in_progress: 'text-(--color-info)',
-  pending: 'text-(--color-text-muted)',
-}
-
-// Sort priority for the flat list — most actionable first.
-const STATUS_ORDER: Record<TodoItem['status'], number> = {
-  in_progress: 0,
-  pending: 1,
-  completed: 2,
-  cancelled: 3,
-}
-
-function getAgentLabel(todo: TodoItem): string | null {
-  return todo.claimed_by ?? todo.assigned_to ?? null
-}
 
 // ── Component ────────────────────────────────────────────────────────────────
 
@@ -71,86 +39,18 @@ export function TodosPopover({
   sessionId,
   trigger = true,
 }: TodosPopoverProps) {
-  // "Finished" includes cancelled — once a task leaves the active set
-  // (whether shipped or dropped) it no longer needs attention. This is
-  // also what the topbar progress badge reports so the two stay in sync.
   const finishedCount = todos.filter(
     (t) => t.status === 'completed' || t.status === 'cancelled',
   ).length
   const hasInProgress = todos.some((t) => t.status === 'in_progress')
   const progressLabel =
     todos.length > 0 ? `${finishedCount}/${todos.length}` : undefined
-  const sortedTodos = [...todos].sort(
-    (a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status],
-  )
 
   const content = (
-    <>
-      {/* Header: mono-uppercase title + completion counter. */}
-      <div className="flex items-center justify-between border-b border-(--color-border) px-3 py-2">
-        <span className="font-mono text-[10px] font-medium uppercase tracking-wider text-(--color-text-muted)">
-          Tasks
-        </span>
-        {todos.length > 0 && (
-          <span className="font-mono text-[10px] text-(--color-text-subtle)">
-            {finishedCount}/{todos.length} done
-          </span>
-        )}
-      </div>
-
-      {todos.length === 0 ? (
-        <p
-          role="status"
-          className="px-3 py-6 text-center font-(family-name:--font-hand) text-sm text-(--color-text-subtle)"
-        >
-          No tasks yet
-        </p>
-      ) : (
-        <ul
-          aria-label="Task list"
-          className="scrollbar-none max-h-[min(60vh,24rem)] overflow-y-auto py-1"
-        >
-          {sortedTodos.map((todo) => {
-            const Icon = STATUS_ICON[todo.status]
-            const isStruck =
-              todo.status === 'completed' || todo.status === 'cancelled'
-            const isInProgress = todo.status === 'in_progress'
-            const agent = getAgentLabel(todo)
-            return (
-              <li
-                key={todo.task_id}
-                className="flex items-start gap-2.5 px-3 py-1.5"
-              >
-                <Icon
-                  size={14}
-                  aria-hidden="true"
-                  className={`mt-0.5 shrink-0 ${STATUS_ICON_COLOR[todo.status]} ${
-                    isInProgress ? 'animate-pulse' : ''
-                  }`}
-                />
-                <span
-                  className={`min-w-0 flex-1 text-xs leading-snug ${
-                    isStruck
-                      ? 'text-(--color-text-subtle) line-through'
-                      : 'text-(--color-text)'
-                  }`}
-                >
-                  {todo.content}
-                </span>
-                {agent && (
-                  <span
-                    className="mt-0.5 shrink-0 font-mono text-[10px] uppercase tracking-wide text-(--color-text-subtle)"
-                    title={`Assigned to ${agent}`}
-                  >
-                    {agent}
-                  </span>
-                )}
-              </li>
-            )
-          })}
-        </ul>
-      )}
-    </>
+    <TodosList
+      todos={todos}
+      listClassName="max-h-[min(60vh,24rem)]"
+    />
   )
 
   if (!trigger) {
