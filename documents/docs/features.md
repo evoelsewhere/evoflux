@@ -130,8 +130,9 @@ from the terminal. Deeper docs: [`desktop.md`](./desktop.md), [`web/chrome.md`](
   icon-sized input-token progress ring against the backend's model-aware
   summarization trigger; hover, focus, or tap/click reveals input/output/cache
   details. See [`web/chrome.md`](./web/chrome.md).
-- **Todos panel** `[since v1.0]` — task board with a topbar progress badge
-  `<finished>/<total>` `[v1.17.0]`. Live invalidation. See [`web/todos.md`](./web/todos.md).
+- **Todos panel** `[since v1.0]` — collapsible task board inside the chat input
+  with a progress badge `<finished>/<total>` `[v1.17.0]`. Live invalidation.
+  See [`web/todos.md`](./web/todos.md).
 - **Mobile / phone-first layout** `[since v1.0]` — breakpoints, safe areas, drawer
   shapes, composer keyboard avoidance, touch row actions, pull-to-refresh,
   haptics, and legibility guards optimized for small screens `[v1.45.2]`;

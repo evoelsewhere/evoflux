@@ -674,7 +674,7 @@ Response model: `TodosResponse` (Pydantic). Each `TodoItemResponse`:
 
 Returns `{todos: []}` when the session todo file does not exist yet. `session_id` must be a valid UUID (400 on malformed).
 
-**Invalidation:** the frontend refetches via `queryKeys.todos(sessionId)` whenever a `tool_end` event fires for `todo_manage` — see `web/src/stores/useTeamStore.ts`. The **Todos** popover in the chat header displays this data — see [`documents/docs/web/todos.md`](../web/todos.md).
+**Invalidation:** the frontend refetches via `queryKeys.todos(sessionId)` whenever a `tool_end` event fires for `todo_manage` — see `web/src/stores/useTeamStore.ts`. The **Tasks** list in the chat input displays this data — see [`documents/docs/web/todos.md`](../web/todos.md).
 
 ---
 

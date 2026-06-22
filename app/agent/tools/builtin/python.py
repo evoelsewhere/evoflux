@@ -21,6 +21,7 @@ Or on failure::
 from __future__ import annotations
 
 import asyncio
+import subprocess
 import sys
 import tempfile
 from collections.abc import Awaitable, Callable
@@ -126,27 +127,54 @@ async def _python(
         tmp.close()
 
     try:
-        proc = await asyncio.create_subprocess_exec(
-            sys.executable,
-            "-u",  # unbuffered stdout for streaming
-            tmp_path,
-            stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-            cwd=str(cwd),
-        )
-
         try:
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-        except asyncio.TimeoutError:
-            proc.kill()
-            await proc.wait()
-            logger.warning("python_execute_timeout timeout={}", timeout)
-            return f"[Failed — timed out after {timeout}s]\n\nThe code took too long. Simplify it or increase timeout_seconds."
+            proc = await asyncio.create_subprocess_exec(
+                sys.executable,
+                "-u",  # unbuffered stdout for streaming
+                tmp_path,
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                cwd=str(cwd),
+            )
 
-        output = stdout.decode(errors="replace").rstrip()
+            try:
+                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
+                logger.warning("python_execute_timeout timeout={}", timeout)
+                return f"[Failed — timed out after {timeout}s]\n\nThe code took too long. Simplify it or increase timeout_seconds."
 
-        if proc.returncode == 0:
+            raw_output = stdout
+            returncode = proc.returncode or 0
+
+        except NotImplementedError:
+            # Windows SelectorEventLoop does not support asyncio subprocess.
+            # Fall back to synchronous subprocess.run() in a thread.
+            logger.info("python_execute_thread_fallback reason=NotImplementedError")
+
+            def _run_sync() -> subprocess.CompletedProcess[bytes]:
+                return subprocess.run(  # noqa: S603
+                    [sys.executable, "-u", tmp_path],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    cwd=str(cwd),
+                    timeout=timeout,
+                )
+
+            try:
+                completed = await asyncio.to_thread(_run_sync)
+            except subprocess.TimeoutExpired:
+                logger.warning("python_execute_timeout timeout={}", timeout)
+                return f"[Failed — timed out after {timeout}s]\n\nThe code took too long. Simplify it or increase timeout_seconds."
+            raw_output = completed.stdout
+            returncode = completed.returncode
+
+        output = (raw_output or b"").decode(errors="replace").rstrip()
+
+        if returncode == 0:
             logger.info("python_execute_done exit=0 output_len={}", len(output))
             if not output:
                 return "[Succeeded]\n\n(No output)"
@@ -164,10 +192,10 @@ async def _python(
         else:
             logger.info(
                 "python_execute_failed exit={} output_len={}",
-                proc.returncode,
+                returncode,
                 len(output),
             )
-            return f"[Failed — exit code {proc.returncode}]\n\n{output}"
+            return f"[Failed — exit code {returncode}]\n\n{output}"
 
     finally:
         try:

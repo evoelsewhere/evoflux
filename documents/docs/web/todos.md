@@ -1,30 +1,29 @@
 ---
-title: Todos Popover
-description: Chat header popover showing the agent's current task list with live invalidation on tool_end.
+title: Task List
+description: Collapsible task list inside the chat input, showing the agent's current tasks with live invalidation on tool_end.
 status: stable
-updated: 2026-05-22
+updated: 2026-06-22
 ---
 
-# Todos popover
+# Task list
 
-A popover card anchored to the **Todos** button in the team chat header. Shows
-the agent's current task list as a flat scrollable checklist managed by
-`todo_manage`, sorted by status and updated automatically after each
-`todo_manage` call.
+A collapsible task list inside the team chat input. Shows the agent's current
+task list as a flat scrollable checklist managed by `todo_manage`, sorted by
+status and updated automatically after each `todo_manage` call.
 
 ---
 
-## Opening the popover
+## Opening the task list
 
 | Trigger | Notes |
 |---------|-------|
-| **"Todos" button** in the chat header | Between the view toggles and the **Files** button; disabled when no session is active. |
+| **Tasks button** in the chat input toolbar | Next to the attach and shell buttons; disabled when no session is active. |
 | **`Ctrl+T`** | Keyboard shortcut registered in `useKeyboardShortcuts`. Disabled when no session is active. |
 | **Command Palette** (`Ctrl+P`) | "Task List" entry under the **View** group. |
 
-The popover is controlled (`open` / `onOpenChange`) so the keyboard shortcut
-can toggle it programmatically. It is rendered via the shared `Popover` /
-`PopoverContent` / `PopoverTrigger` primitives (`@base-ui/react/popover`).
+The list is controlled (`open` / `onOpenChange`) so the keyboard shortcut can
+toggle it programmatically. When open, it renders inline above the message
+textarea inside the input card.
 
 ---
 
@@ -75,9 +74,9 @@ Items render as a flat checklist sorted `in_progress → pending → completed �
 
 Note: `--color-accent` is **not** used for status hue — in the dark palette it resolves to the same value as `--color-text` and would lose contrast. The `in_progress` icon uses `--color-info` (which resolves to `--accent-blue`) so it stays distinct in both themes.
 
-The popover header shows a `{done}/{total}` counter when the list is non-empty. A dot indicator on the button itself appears when any item has `status === 'in_progress'`. Empty state: a single `No tasks yet` line.
+The list header shows a `{done}/{total}` counter when the list is non-empty. A dot indicator on the tasks button appears when any item has `status === 'in_progress'`. Empty state: a single `No tasks yet` line.
 
-Priority badges, task ids, and dependency lists from the underlying schema are intentionally not rendered — the popover is a quick-glance affordance, not a full task manager. Schema details are still available via `GET /api/team/sessions/{id}/todos`.
+Priority badges, task ids, and dependency lists from the underlying schema are intentionally not rendered — the task list is a quick-glance affordance, not a full task manager. Schema details are still available via `GET /api/team/sessions/{id}/todos`.
 
 ---
 
@@ -93,4 +92,6 @@ See [API reference — todo list](../api/index.md#todo-list) for the full contra
 
 - [API reference — todo list](../api/index.md#todo-list)
 - [Agent tools — todo list](../agent/tools.md)
-- [Workspace Files panel](./workspace-files.md) — same header, similar invalidation pattern
+- [Workspace Files panel](./workspace-files.md) — same invalidation pattern
+- `web/src/components/TodosList.tsx` — shared list rendering
+- `web/src/components/InputBar.tsx` — chat input that hosts the tasks toggle and inline list
