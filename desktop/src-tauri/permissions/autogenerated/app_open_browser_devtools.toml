@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-app-open-browser-devtools"
+description = "Enables the app_open_browser_devtools command without any pre-configured scope."
+commands.allow = ["app_open_browser_devtools"]
+
+[[permission]]
+identifier = "deny-app-open-browser-devtools"
+description = "Denies the app_open_browser_devtools command without any pre-configured scope."
+commands.deny = ["app_open_browser_devtools"]
