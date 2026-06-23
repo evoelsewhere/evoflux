@@ -595,8 +595,18 @@ function FormFields({
   )
 }
 
-const NORMAL_BUILT_IN_MEMBERS = new Set(['executor', 'explorer'])
-const CODING_BUILT_IN_MEMBERS = new Set(['coder', 'explorer'])
+const NORMAL_BUILT_IN_MEMBERS = new Set([
+  'executor',
+  'explorer',
+  'consultant',
+  'debate',
+])
+const CODING_BUILT_IN_MEMBERS = new Set([
+  'coder',
+  'explorer',
+  'debate',
+  'architect',
+])
 
 function isBuiltInProfile(
   name?: string,
