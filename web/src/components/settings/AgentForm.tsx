@@ -199,6 +199,7 @@ export function AgentForm({
           modelOptions={modelOptions}
           agentPath={agentPath}
           effectiveTools={agentSummary?.tools}
+          effectiveSkills={agentSummary?.skills}
           updateFromForm={updateFromForm}
         />
       ) : (
@@ -265,6 +266,7 @@ function FormFields({
   modelOptions,
   agentPath,
   effectiveTools,
+  effectiveSkills,
   updateFromForm,
 }: {
   fm: AgentFrontmatter
@@ -277,6 +279,7 @@ function FormFields({
   modelOptions: { id: string; provider: string; model: string; vision: boolean }[]
   agentPath?: string
   effectiveTools?: string[]
+  effectiveSkills?: string[]
   updateFromForm: (next: AgentFrontmatter, nextBody: string) => void
 }) {
   // Temperature has a pending state (e.g. "0." while typing) that we need
@@ -323,6 +326,12 @@ function FormFields({
     ? toolOptions.filter((option) => !builtInTools.includes(option.value))
     : toolOptions
   ).filter((option) => !implicitToolNames.has(option.value))
+  const builtInSkills = (effectiveSkills ?? [])
+    .filter(() => hasBuiltInProfile)
+    .filter((skill) => !(fm.skills ?? []).includes(skill))
+  const extraSkillOptions = hasBuiltInProfile
+    ? skillOptions.filter((option) => !builtInSkills.includes(option.value))
+    : skillOptions
 
   const onTempChange = (next: string) => {
     setTempRaw(next)
@@ -545,11 +554,14 @@ function FormFields({
             hint={
               hasBuiltInProfile
                 ? `${(fm.skills ?? []).length} extra selected. Built-in skills are always included when this profile has them.`
-                : `${(fm.skills ?? []).length} selected of ${skillOptions.length} available.`
+                : `${(fm.skills ?? []).length} selected of ${extraSkillOptions.length} available.`
             }
           >
+            {builtInSkills.length > 0 && (
+              <CapabilityChips label="Built-in skills" values={builtInSkills} />
+            )}
             <MultiSelect
-              options={skillOptions}
+              options={extraSkillOptions}
               value={fm.skills ?? []}
               onChange={(v) => updateFromForm({ ...fm, skills: v }, body)}
               placeholder="Pick skills the agent can load on demand…"
