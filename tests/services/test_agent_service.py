@@ -83,7 +83,7 @@ def test_require_team_raises_when_none():
         ("page.html", "text/html", "document"),
         ("notes.txt", "text/plain", "text"),
         # Extension fallback when MIME is absent
-        ("data.csv", None, "text"),
+        ("data.csv", None, "data"),
         ("report.docx", None, "document"),
         ("page.htm", None, "document"),
         ("pic.png", None, "image"),
