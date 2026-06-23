@@ -182,6 +182,29 @@ def _store_oauth_secrets(name: str, cfg: HttpServerConfig) -> HttpServerConfig:
     )
 
 
+def _store_stdio_env_secrets(name: str, cfg: StdioServerConfig) -> StdioServerConfig:
+    """Write literal env values to .env and replace with ${VAR} refs in config.
+
+    Called when the user enters a real secret value in the Settings UI.
+    Values that already look like ${VAR} refs are passed through unchanged.
+    """
+    env_values: dict[str, str] = {}
+    new_env: dict[str, str] = {}
+    for key, value in cfg.env.items():
+        if value and not _ENV_REF_RE.match(value):
+            env_values[key] = value
+            new_env[key] = f"${{{key}}}"
+        else:
+            new_env[key] = value
+    _save_env_values(env_values)
+    return StdioServerConfig(
+        command=cfg.command,
+        args=list(cfg.args),
+        env=new_env,
+        enabled=cfg.enabled,
+    )
+
+
 def _to_response(
     status: MCPServerStatus,
     config: StdioServerConfig | HttpServerConfig | None = None,
@@ -289,7 +312,9 @@ async def create_server(body: CreateServerRequest) -> ServerStatusResponse:
         )
 
     server_cfg: StdioServerConfig | HttpServerConfig = body.server.to_config()
-    if isinstance(server_cfg, HttpServerConfig):
+    if isinstance(server_cfg, StdioServerConfig):
+        server_cfg = _store_stdio_env_secrets(body.name, server_cfg)
+    elif isinstance(server_cfg, HttpServerConfig):
         server_cfg = _store_oauth_secrets(body.name, server_cfg)
     cfg.servers[body.name] = server_cfg
     save_config(cfg)
@@ -305,7 +330,9 @@ async def update_server(name: str, body: UpdateServerRequest) -> ServerStatusRes
         raise HTTPException(status_code=404, detail=f"MCP server '{name}' not found.")
 
     server_cfg = body.server.to_config()
-    if isinstance(server_cfg, HttpServerConfig):
+    if isinstance(server_cfg, StdioServerConfig):
+        server_cfg = _store_stdio_env_secrets(name, server_cfg)
+    elif isinstance(server_cfg, HttpServerConfig):
         server_cfg = _merge_masked_http_headers(server_cfg, cfg.servers[name])
         server_cfg = _merge_masked_oauth(server_cfg, cfg.servers[name])
         server_cfg = _store_oauth_secrets(name, server_cfg)

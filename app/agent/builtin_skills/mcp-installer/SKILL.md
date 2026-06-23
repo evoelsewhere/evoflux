@@ -96,7 +96,22 @@ always proceed to wiring after these commands regardless of daemon state.
 
 1. **Handle secrets safely** before installing servers that need them:
 
-   - For stdio servers that read env vars directly, confirm the env var exists with `printenv KEY | head -c 4`. Empty → tell the user to add it to `{EVOFLUX_CONFIG_DIR}/.env`; don't install a server you know will fail.
+   **When you generate a custom MCP server script** (e.g. Jira, Confluence, any API wrapper):
+   - Do **not** ask the user to manually edit `.env` or restart the daemon.
+   - Register the server immediately using `${VAR}` placeholders for all secrets:
+     ```bash
+     python3 "$SCRIPT" add jira --stdio python /path/to/server.py \
+       --env JIRA_SERVER_URL='${JIRA_SERVER_URL}' \
+       --env JIRA_USERNAME='${JIRA_USERNAME}' \
+       --env JIRA_PAT='${JIRA_PAT}'
+     ```
+   - The server appears in **Settings → MCP** immediately. The env vars show an
+     orange **unset** badge — user clicks the server, fills in the values, saves.
+     The backend writes them to `{EVOFLUX_CONFIG_DIR}/.env` automatically.
+   - Tell the user: *"The server is registered. Go to Settings → MCP → `<name>` and fill in
+     your credentials, then save."*
+
+   - For stdio servers that read env vars directly, confirm the env var exists with `printenv KEY | head -c 4`. Empty → use the `${VAR}` pattern above so the user can fill it in Settings.
    - For HTTP headers, prefer env refs (`--header Authorization='Bearer ${TOKEN_ENV}'`) over pasting raw bearer tokens.
    - For HTTP OAuth servers, choose the server's supported mode:
      - Dynamic registration, e.g. Notion: use `--oauth` without credential values.

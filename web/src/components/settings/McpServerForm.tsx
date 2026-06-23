@@ -10,7 +10,7 @@
  * Draft model + validators live in `./McpServerDraft` so this module
  * stays component-only (Vite fast-refresh requirement).
  */
-import { Plus, Trash2 } from 'lucide-react'
+import { Plus, Trash2, KeyRound } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -136,11 +136,12 @@ export function McpServerForm({
             <PairListField
               label="Environment variables"
               keyPlaceholder="KEY"
-              valuePlaceholder="value"
+              valuePlaceholder="value or ${ENV_VAR}"
               error={errors?.env}
               pairs={value.envPairs}
               onChange={(envPairs) => set({ envPairs })}
               disabled={disabled}
+              isEnvField
             />
           </CardContent>
         </Card>
@@ -377,6 +378,8 @@ function ToggleOption({
 
 // ── Pair list field (env vars, headers) ─────────────────────────────────────
 
+const ENV_REF_RE = /^\$\{[A-Za-z_][A-Za-z0-9_]*\}$/
+
 function PairListField({
   label,
   keyPlaceholder,
@@ -385,6 +388,7 @@ function PairListField({
   pairs,
   onChange,
   disabled,
+  isEnvField,
 }: {
   label: string
   keyPlaceholder: string
@@ -393,6 +397,8 @@ function PairListField({
   pairs: KeyValuePair[]
   onChange: (next: KeyValuePair[]) => void
   disabled?: boolean
+  /** When true, detect ${VAR} refs and show unset-secret indicator. */
+  isEnvField?: boolean
 }) {
   const setAt = (idx: number, patch: Partial<KeyValuePair>) =>
     onChange(pairs.map((p, i) => (i === idx ? { ...p, ...patch } : p)))
@@ -429,13 +435,30 @@ function PairListField({
                 placeholder={keyPlaceholder}
                 className="min-h-11 font-mono text-xs md:min-h-9"
               />
-              <Input
-                value={pair.value}
-                onChange={(e) => setAt(idx, { value: e.target.value })}
-                disabled={disabled}
-                placeholder={valuePlaceholder}
-                className="min-h-11 font-mono text-xs md:min-h-9"
-              />
+              {isEnvField && ENV_REF_RE.test(pair.value) ? (
+                <div className="relative">
+                  <Input
+                    value=""
+                    onChange={(e) => setAt(idx, { value: e.target.value })}
+                    disabled={disabled}
+                    placeholder={`Enter value for ${pair.value}`}
+                    type="password"
+                    className="min-h-11 font-mono text-xs md:min-h-9 pr-20 border-amber-500/50 bg-amber-500/5"
+                  />
+                  <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                    <KeyRound size={9} />
+                    unset
+                  </span>
+                </div>
+              ) : (
+                <Input
+                  value={pair.value}
+                  onChange={(e) => setAt(idx, { value: e.target.value })}
+                  disabled={disabled}
+                  placeholder={valuePlaceholder}
+                  className="min-h-11 font-mono text-xs md:min-h-9"
+                />
+              )}
               <Button
                 size="icon-xs"
                 variant="ghost"
