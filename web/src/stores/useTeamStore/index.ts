@@ -84,6 +84,7 @@ function resetSessionState(
   state._pendingMessages = []
   state._sessionGeneration = (state._sessionGeneration ?? 0) + 1
   state.cacheInvalidations = []
+  state.activityLog = []
   state.hasMore = false
   state.nextCursor = null
   state._leadRevertTime = null
@@ -117,6 +118,8 @@ function resetSessionState(
 
 export type {
   ActiveLoop,
+  ActivityItem,
+  ActivityKind,
   AgentStream,
   CacheInvalidation,
   PendingMessage,
@@ -194,6 +197,7 @@ export const useTeamStore = create<TeamStore>()(
     _loadingOlder: false,
     _resolvedSessionReadyId: null,
     _unloading: false,
+    activityLog: [],
 
     newSession: () => {
       get()._abortController?.abort()

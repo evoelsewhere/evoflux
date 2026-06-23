@@ -140,8 +140,11 @@ class TestTeamMessageTool:
         mb = _make_mailbox("lead", "worker")
         tool = make_team_message_tool(mb, agent_name="worker", role="member")
 
-        assert "silently discarded" in tool.description.lower()
-        assert "ONLY way" in tool.description
+        assert (
+            "question" in tool.description.lower()
+            or "clarification" in tool.description.lower()
+        )
+        assert "team_handoff" in tool.description
 
     async def test_returns_success_message(self):
         """Tool returns 'Message sent to ...' on success."""

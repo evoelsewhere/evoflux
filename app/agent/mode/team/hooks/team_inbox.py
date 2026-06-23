@@ -65,13 +65,17 @@ class TeamInboxHook(BaseAgentHook):
         for msg_obj, raw_msg in zip(inbox_msgs, pending):
             if member._should_emit_inbox_sse([raw_msg.from_agent]):
                 assert member._team is not None
+                inbox_extra: dict = {
+                    "content": msg_obj.content,
+                    "from_agent": raw_msg.from_agent,
+                }
+                artifact = getattr(raw_msg, "_handoff_artifact", None)
+                if artifact is not None:
+                    inbox_extra["_handoff_artifact"] = artifact
                 await member._team._emit(
                     agent=member.name,
                     event="inbox",
-                    extra={
-                        "content": msg_obj.content,
-                        "from_agent": raw_msg.from_agent,
-                    },
+                    extra=inbox_extra,
                 )
             state.messages.append(msg_obj)
             logger.info(

@@ -1,6 +1,7 @@
 import { Square, SquareCheck } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { TierBadge } from './TierBadge'
 import type { TodoItem } from '@/api/types'
 
 const STATUS_ICON: Record<TodoItem['status'], LucideIcon> = {
@@ -113,6 +114,9 @@ export function TodosList({
                 >
                   {todo.content}
                 </span>
+                {todo.tier && !isStruck && (
+                  <TierBadge tier={todo.tier} className="mt-0.5" />
+                )}
                 {agent && (
                   <span
                     className="mt-0.5 shrink-0 font-mono text-[10px] uppercase tracking-wide text-(--color-text-subtle)"

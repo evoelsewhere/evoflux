@@ -159,6 +159,68 @@ def prompt_for_mode(mode: str | None) -> str:
     return CODING_SUMMARY_PROMPT if mode == "coding" else CHAT_SUMMARY_PROMPT
 
 
+# TEAM mode: structured Markdown template that preserves cross-member
+# coordination context.  Extends the coding template with sections for
+# team role, peers, assigned tasks, and handoff history so a member's
+# compacted state retains enough for seamless resumption within the team.
+TEAM_SUMMARY_PROMPT = """\
+Output exactly the Markdown structure shown inside <template> and keep the section order unchanged. Do not include the <template> tags in your response.
+<template>
+## Team Role
+- My name: {agent_name}
+- Role: {role}
+- Team lead: {lead_name}
+- Live peers: {peers}
+
+## Goal
+- [single-sentence task summary]
+
+## Assigned Tasks
+- [todo tasks assigned to me with id, status, and tier — or "(none)"]
+
+## Progress
+### Done
+- [completed work or "(none)"]
+
+### In Progress
+- [current work or "(none)"]
+
+### Blocked
+- [blockers or "(none)"]
+
+## Key Decisions
+- [decision and why, or "(none)"]
+
+## Handoff History
+- [structured handoffs sent or received: from/to whom, summary, status — or "(none)"]
+
+## Peer Interactions
+- [important messages exchanged with peers: who said what, outstanding questions — or "(none)"]
+
+## Next Steps
+- [ordered next actions or "(none)"]
+
+## Critical Context
+- [important technical facts, errors, open questions, or "(none)"]
+
+## Relevant Files
+- [file or directory path: why it matters, or "(none)"]
+</template>
+
+Rules:
+- Keep every section, even when empty.
+- Start your response with exactly `## Team Role`.
+- The Team Role section is pre-filled — copy it verbatim.
+- Synthesize the history into the template; do not copy, replay, or lightly reformat the transcript.
+- Do not output raw role/tool prefixes such as `[user]:`, `[assistant]:`, `[tool/shell]:`, or `[main ...]`.
+- Use terse bullets, not prose paragraphs.
+- Preserve exact file paths, commands, error strings, and identifiers when known.
+- Preserve task IDs, handoff details, and peer names — these are critical for team continuity.
+- Do not call tools or request tool execution.
+- Return only the summary text.
+- Do not mention the summary process or that context was compacted."""
+
+
 def keep_last_for_mode(mode: str | None) -> int:
     """Return the ``keep_last_assistants`` window for a given session mode.
 
@@ -290,6 +352,50 @@ def build_summarization_hook(
         summary_prompt=prompt_for_mode(mode),
         prompt_token_threshold=prompt_token_threshold_for_model(model_id),
         keep_last_assistants=keep_last_for_mode(mode),
+        max_token_length=DEFAULT_MAX_TOKEN_LENGTH,
+    )
+
+
+def build_team_summarization_hook(
+    default_provider: LLMProviderBase,
+    *,
+    mode: str | None = None,
+    model_id: str | None = None,
+    agent_name: str,
+    role: str,
+    lead_name: str,
+    peer_names: list[str],
+    state_snapshot: str | None = None,
+) -> "SummarizationHook | None":
+    """Return a team-aware SummarizationHook with cross-member context.
+
+    Uses :data:`TEAM_SUMMARY_PROMPT` with agent/team details interpolated,
+    combined with coding-mode ``keep_last_assistants=0`` (summarise
+    everything) so the full team context collapses into one authoritative
+    record.
+
+    When *state_snapshot* is provided (non-empty), it is appended to the
+    summary prompt so the compacted context retains the current shared
+    team state key-value pairs.
+    """
+    if DEFAULT_PROMPT_TOKEN_THRESHOLD <= 0:
+        return None
+
+    prompt = TEAM_SUMMARY_PROMPT.format(
+        agent_name=agent_name,
+        role=role,
+        lead_name=lead_name,
+        peers=", ".join(peer_names) if peer_names else "(none)",
+    )
+
+    if state_snapshot:
+        prompt = f"{prompt}\n\nPreserve the following shared team state in your summary:\n{state_snapshot}"
+
+    return SummarizationHook(
+        default_provider,
+        summary_prompt=prompt,
+        prompt_token_threshold=prompt_token_threshold_for_model(model_id),
+        keep_last_assistants=CODING_KEEP_LAST_ASSISTANTS,
         max_token_length=DEFAULT_MAX_TOKEN_LENGTH,
     )
 

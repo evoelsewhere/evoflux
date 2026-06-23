@@ -41,12 +41,14 @@ from app.agent.hooks.wiki_injection import default_wiki_injection_hook
 from app.agent.hooks.workspace_instructions import WorkspaceInstructionsHook
 from app.agent.hooks.otel import OpenTelemetryHook
 from app.agent.hooks.stream_publisher import StreamPublisherHook
-from app.agent.hooks.summarization import build_summarization_hook
+from app.agent.hooks.summarization import build_team_summarization_hook
 from app.agent.hooks.title_generation import build_title_generation_hook
 from app.agent.mode.team.hooks.queued_injection import QueuedMessageInjectionHook
 from app.agent.mode.team.hooks.team_inbox import TeamInboxHook
 from app.agent.mode.team.hooks.team_prompt import AgentTeamProtocolHook
 from app.agent.hooks.tool_result_offload import ToolResultOffloadHook
+from app.agent.mode.team.shared_state import format_state_snapshot
+from app.agent.mode.team.tier_policy import denied_tools_for_tier, resolve_member_tier
 from app.agent.plugins.role import reset_role, set_role
 from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
 from app.core.paths import session_workspace_dir
@@ -75,12 +77,14 @@ if TYPE_CHECKING:
 LEAD_MESSAGE_FORMAT = """\
 ## Message format
 - `[name]: content` — message from a teammate (the `[name]:` prefix is added automatically by the system)
+- `[name]  FINAL HANDOFF:` — structured deliverable from a teammate via `team_handoff` (contains Summary, Findings, Evidence, Confidence, Next actions)
 - `[user]: content` — message from the user"""
 
 MEMBER_MESSAGE_FORMAT = """\
 ## Message format
 - `[{lead_name}]: content` — message from the team lead
-- `[name]: content` — message from a teammate"""
+- `[name]: content` — message from a teammate
+- `[name]  FINAL HANDOFF:` — structured deliverable received via `team_handoff`"""
 
 LEAD_COMMUNICATION_RULES = """\
 ## Communication protocol
@@ -100,13 +104,15 @@ LEAD_COMMUNICATION_RULES = """\
   - Stress-test a proposal, surface counter-arguments, adversarial review → **debate**
   - Multiple concerns → spawn / message multiple members in parallel
 - **Roster management — `team_manage`.** Members are spawned on demand. Use the `team_manage` tool description and schema for spawn/restore/dismiss usage and available blueprint discovery. Spawn what you need, address returned handles via `team_message`, and **keep useful members alive across turns** — reusing a live instance preserves its warm context and is faster and cheaper than dismiss-then-respawn. Dismiss only to free resources or clear clutter when an instance clearly won't be needed again.
-- Coordination with members must go through the `team_message` tool. Do not respond to the user until all assigned members have reported back.
+- Coordination with members must go through `team_message` (quick questions, instructions) or `team_handoff` (structured deliverables). Use `team_state` to share persistent key-value data (URLs, config, discoveries) across the team. Do not respond to the user until all assigned members have reported back.
+- **Structured handoffs.** When a member delivers substantial work output, expect it via `team_handoff` with structured fields (summary, findings, evidence, confidence, next_actions). Use these fields to synthesise your response rather than re-parsing prose. If a handoff has `status: "partial"`, wait for the `"final"` handoff before synthesising.
 - Member capabilities come from their blueprint/root configuration at spawn time. If a member lacks a required capability, use an appropriately configured blueprint or update durable settings rather than mutating a live member.
 - Always format your responses in **Markdown**. No emoji."""
 
 LEAD_PROTOCOL = """\
 ## Lead workflow
 1. Receive user request. **Assess scope first.** For small, quick requests, just handle them yourself — don't spin up members for trivia. For substantial work, plan delegation: break the request into pieces, match each to the right blueprint, and prefer reusing a live member over spawning a fresh one.
+   - **Use task tiers** when creating todos: `trivial` (handle yourself), `simple` (one member, straightforward), `multi_step` (one member, multiple steps), `complex` (multi-member coordination). Tiers guide delegation — never delegate `trivial` tasks.
 2. **Before delegating, consult your skills.** If the user's request matches one of your declared skills (e.g. install/setup/configure/add a skill body → `skill-installer`; MCP server → `mcp-installer`; plugin → `plugin-installer`; agent config/model/tools → `self-healing`; brand or design work → relevant skill), call `skill(skill_name='<name>')` *before* spawning members. Skills carry canonical paths, file formats, and conventions members would otherwise guess wrong. Skipping this step is the #1 cause of members writing to the wrong location.
 3. When delegating:
    - For multi-step work, create a todo plan first. Use first-class `dependencies` and `assigned_to` fields; `assigned_to` must be one concrete spawned handle (`<blueprint>#<n>`), not a bare blueprint or group expression. Do not spawn or message owners of blocked tasks until their dependencies are complete.
@@ -115,24 +121,27 @@ LEAD_PROTOCOL = """\
    - **Spawn before assigning member todos.** Call `team_manage` with the needed blueprints or restorable handles, then use the returned concrete handles in `assigned_to`.
    - Assign every relevant instance **in parallel** via `team_message(to=['<handle>'])`.
    - **Once a task is delegated to a member, do not execute the same task in parallel yourself.** Stay in coordination/verification mode unless you explicitly reclaim or cancel the member task first.
-   - For dependent workflows, delegate a peer handoff chain from the todo dependencies. Tell prerequisite owners to send final output directly to the owner of each unblocked downstream task; spawn/message downstream owners only after their dependencies are complete so they can claim the task and start.
+   - For dependent workflows, delegate a peer handoff chain from the todo dependencies. Tell prerequisite owners to use `team_handoff` to deliver output directly to the owner of each unblocked downstream task; spawn/message downstream owners only after their dependencies are complete so they can claim the task and start.
    - Do not make yourself the default relay for member outputs. Use the lead as the synthesizer/final verifier, not as a message bus between members.
    - Briefly let the user know work is underway (plain text — 1 sentence max).
 4. When members report back:
-   - If a member's result is partial or more is coming, respond with `<sleep>` to wait.
+   - **Expect structured handoffs.** Members deliver final work via `team_handoff` with `summary`, `findings`, `evidence`, `confidence`, and `next_actions`. Use these structured fields to synthesise efficiently — don't re-parse prose. A handoff with `status: "partial"` means more is coming; wait for the `"final"` handoff.
+   - **Check the `verification` field.** If a member set `verified: true`, review the method and result — this often saves you an independent check. If `verified: false` or verification is absent on work that mutated state (wrote files, ran commands), do a quick sanity-check yourself before reporting to the user.
+   - If a member uses `team_message` for a final deliverable instead of `team_handoff`, accept it but note the lack of structure.
    - When ALL assigned members have reported final results, respond to the user with the full synthesised answer.
    - **Sanity-check claims before promising "done" to the user.** When a member says they wrote a file or changed state, verify with a cheap read (`ls`, `read`) when feasible. Members can hallucinate success after a failed tool call — one verification beats one wrong answer.
 5. After delivering the answer, **keep members alive by default.** A live instance carries warm context and prompt-cache state, so reusing it on the next related turn is faster and cheaper than dismiss-then-respawn — message the same live handle again rather than recreating it. Dismiss (`team_manage(action='dismiss', members=['<handle>'])`) only when an instance is clearly finished for the rest of the session, or the roster is cluttered with idle members you won't reuse. Dismissal preserves history on disk, so you can still restore a dismissed handle with `team_manage(action='spawn', members=['<blueprint>#<n>'])` if a later turn revives that work."""
 
 MEMBER_COMMUNICATION_RULES = """\
 ## Communication protocol
-- **Do not use plain text output for responses/results.** Plain text is discarded — every message MUST go through `team_message`, addressed to **anyone on the team who needs it**, a peer or the lead: `team_message(to=["<teammate_name>"])`.
-- **Talk to peers directly — you are not limited to the lead.** If you need information, ask the teammate who has it. If your output feeds another member's work, send it straight to them. Do not route everything through the lead.
+- **Do not use plain text output for responses/results.** Plain text is discarded — every deliverable MUST go through `team_handoff` (structured work output) or `team_message` (quick questions/clarifications).
+- **Use `team_handoff` for all substantial deliverables** — research findings, analysis, proposals, completed work. It produces structured artifacts (summary, findings, evidence, confidence, next_actions) that recipients can act on without re-parsing. Use `team_message` only for short questions, clarifications, or status queries. Use `team_state` to share persistent key-value data (URLs, config, discoveries) visible to all team members.
+- **Talk to peers directly — you are not limited to the lead.** If you need information, ask the teammate who has it. If your output feeds another member's work, `team_handoff` it straight to them. Do not route everything through the lead.
 - Message the lead specifically only when you owe *them* your final deliverable, or you are blocked and need a decision; otherwise prefer peer-to-peer.
 - **Idle, waiting, or done? Your only response is exactly `<sleep>`** — just the token, no tool calls and no plain text. Use it whenever you have nothing to send this turn (waiting on a peer's reply, no task to claim, or your work is finished).
 - NEVER send social messages ("hi", "got it", "working on it", "standing by") — `<sleep>` instead.
 - **Missing a capability?** If the task needs something you can't do with your current tools, describe **what you're trying to do** in plain language to the lead via `team_message` (e.g. "I need to write files to disk", "I need to run shell commands", "I need shadcn component examples"). Do **not** guess tool/skill/MCP names — you may not know what's actually available. The lead picks the exact capability and grants it; you'll see it on your next turn.
-- **Verify before you claim.** Read each tool result before reporting. If a tool returned an error, NEVER say the operation succeeded. When you write a file or mutate state, confirm with a cheap follow-up (e.g. `ls` the directory, `read` the file) before telling anyone it's done.
+- **Verify before you claim.** Read each tool result before reporting. If a tool returned an error, NEVER say the operation succeeded. When you write a file or mutate state, confirm with a cheap follow-up (e.g. `ls` the directory, `read` the file) before telling anyone it's done. **Record your verification** in `team_handoff` by setting `verified=True`, `verification_method`, and `verification_result` so the lead can trust your work without re-checking.
 - Always format your output in **Markdown**."""
 
 MEMBER_PROTOCOL = """\
@@ -141,11 +150,12 @@ MEMBER_PROTOCOL = """\
 2. If the instruction names a todo task, call `todo_manage(actions=[{{"action":"claim","task_id":"..."}}])` before starting. If the claim is blocked, respond `<sleep>` and wait for the dependency owner to finish instead of starting early.
 3. Do your work (research, write, calculate, etc.).
 4. If you need help or input from any teammate, call `team_message(to=[teammate_name])`, then `<sleep>` — the answer arrives next wake.
-5. **Send output straight to whoever needs it.** If your result is an input to a peer's task, `team_message` it directly to that peer; call it incrementally as you complete batches and state whether each is partial (more coming) or final. Route through the lead only when the deliverable is for the lead.
-6. When sending to the lead: call `team_message(to=["{lead_name}"])` with your **final, complete result** unless the lead explicitly asked for incremental updates.
+5. **Deliver output via `team_handoff`** (not `team_message`) to whoever needs it. Use `status: "partial"` for incremental batches and `status: "final"` for the complete deliverable. Fill `findings` with key points, `evidence` with supporting data, and `confidence` with your self-assessed certainty (0.0–1.0). If your result feeds a peer's task, `team_handoff` it directly to that peer.
+   - **Verify before you hand off.** If your work mutated state (wrote a file, ran a command, changed config), confirm the result with a cheap follow-up check *before* handing off. Then set `verified=True` with `verification_method` describing how you checked and `verification_result` with what you found. For pure research/analysis with no side-effects, omit verification.
+6. When sending to the lead: `team_handoff(to=["{lead_name}"])` with your **final, complete result** (`status: "final"`) unless the lead explicitly asked for incremental updates.
 7. If you have nothing to do: `<sleep>` immediately.
 
-**NEVER write plain text for responses/results; use `team_message` to the right teammate, or return exactly `<sleep>` directly when waiting or idle.**"""
+**NEVER write plain text for responses/results; use `team_handoff` for deliverables, `team_message` for questions/clarifications, or return exactly `<sleep>` when waiting or idle.**"""
 
 
 # -- Helpers -------------------------------------------------------------------
@@ -577,13 +587,17 @@ class TeamMemberBase(abc.ABC):
             # Emit one inbox SSE per message for split view
             for msg_obj, raw_msg in zip(inbox_msgs, pending):
                 if self._should_emit_inbox_sse([raw_msg.from_agent]):
+                    inbox_extra: dict = {
+                        "content": msg_obj.content,
+                        "from_agent": raw_msg.from_agent,
+                    }
+                    artifact = getattr(raw_msg, "_handoff_artifact", None)
+                    if artifact is not None:
+                        inbox_extra["_handoff_artifact"] = artifact
                     await self._team._emit(
                         agent=self.name,
                         event="inbox",
-                        extra={
-                            "content": msg_obj.content,
-                            "from_agent": raw_msg.from_agent,
-                        },
+                        extra=inbox_extra,
                     )
 
         try:
@@ -912,10 +926,19 @@ class TeamMemberBase(abc.ABC):
             hooks.append(ToolResultOffloadHook())
             summarization_provider = runtime_provider or self.agent.llm_provider
             summarization_model = runtime_model or self.agent.model_id
-            summ_hook = build_summarization_hook(
+            # Build team-aware summarization hook so compacted context
+            # preserves role, peers, assigned tasks, and handoff history.
+            peer_names = [m.name for m in self._team.all_members if m.name != self.name]
+            snapshot = format_state_snapshot()
+            summ_hook = build_team_summarization_hook(
                 summarization_provider,
                 mode=self._team.mode,
                 model_id=summarization_model,
+                agent_name=self.name,
+                role=self._role_label,
+                lead_name=self._team.lead.name,
+                peer_names=peer_names,
+                state_snapshot=snapshot,
             )
             if summ_hook:
                 # Flush memory before the summariser compresses the window —
@@ -930,6 +953,13 @@ class TeamMemberBase(abc.ABC):
 
         # Inject team tools
         injected = self._team.get_injected_tools(self.name)
+
+        # Resolve tier-based tool restrictions for non-lead members.
+        # The lead always has full tool access.
+        tier_excluded: frozenset[str] | None = None
+        if self._role_label == "member":
+            member_tier = resolve_member_tier(self.name)
+            tier_excluded = denied_tools_for_tier(member_tier) or None
 
         # Surface team routing context to tools via state.metadata.  The
         # schedule tool reads these as injected args so the LLM never has
@@ -963,6 +993,7 @@ class TeamMemberBase(abc.ABC):
                 config=config,
                 hooks=hooks,
                 injected_tools=injected,
+                excluded_tools=tier_excluded,
                 interrupt_event=self._cancel_event,
                 checkpointer=checkpointer,
                 llm_provider=runtime_provider,

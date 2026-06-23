@@ -21,7 +21,7 @@ import {
   touchesWiki,
 } from './helpers'
 import { isBackgroundCompletion, sendDesktopNotification } from '@/lib/desktop-notifications'
-import type { CacheInvalidation, TeamStore } from './types'
+import type { ActivityItem, CacheInvalidation, TeamStore } from './types'
 
 type Setter = (fn: (draft: TeamStore) => void) => void
 type Getter = () => TeamStore
@@ -49,6 +49,15 @@ function codingWorkspaceSuffix(state: TeamStore): string {
 function ensureAgent(draft: TeamStore, agent: string) {
   if (!draft.agentStreams[agent]) draft.agentStreams[agent] = createDefaultAgentStream()
   if (!draft.agentNames.includes(agent)) draft.agentNames.push(agent)
+}
+
+const MAX_ACTIVITY_ITEMS = 200
+
+function pushActivity(draft: TeamStore, item: Omit<ActivityItem, 'id' | 'timestamp'>) {
+  draft.activityLog.push({ ...item, id: generateBlockId(), timestamp: new Date() })
+  if (draft.activityLog.length > MAX_ACTIVITY_ITEMS) {
+    draft.activityLog = draft.activityLog.slice(-MAX_ACTIVITY_ITEMS)
+  }
 }
 
 interface CreateSSEHandlerArgs {
@@ -331,14 +340,43 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
 
       case 'inbox': {
         const agent = d.agent as string
+        const fromAgent = d.from_agent as string
+        const artifact = d._handoff_artifact as Record<string, unknown> | undefined
         set((draft) => {
           ensureAgent(draft, agent)
+          const extra: Record<string, unknown> = { from_agent: fromAgent }
+          if (artifact) extra._handoff_artifact = artifact
           draft.agentStreams[agent].currentBlocks.push({
             id: generateBlockId(),
             type: 'user',
             content: d.content as string,
-            extra: { from_agent: d.from_agent as string },
+            extra,
             timestamp: new Date(),
+          })
+          pushActivity(draft, {
+            kind: artifact ? 'handoff' : 'inbox',
+            agent,
+            label: artifact
+              ? `Handoff from ${fromAgent}`
+              : `Message from ${fromAgent}`,
+            artifact: artifact ?? undefined,
+            meta: { from_agent: fromAgent },
+          })
+        })
+        break
+      }
+
+      case 'handoff': {
+        const fromAgent = d.from_agent as string
+        const toAgents = d.to_agents as string[]
+        const artifact = d.artifact as Record<string, unknown> | undefined
+        set((draft) => {
+          pushActivity(draft, {
+            kind: 'handoff',
+            agent: fromAgent,
+            label: `${fromAgent} → ${toAgents.join(', ')}`,
+            artifact,
+            meta: { from_agent: fromAgent, to_agents: toAgents },
           })
         })
         break
@@ -437,17 +475,20 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
             draft.isTeamWorking = true
             if (draft.liveAgentNames && !draft.liveAgentNames.includes(agent)) draft.liveAgentNames.push(agent)
             draft.cacheInvalidations.push({ kind: 'team_sessions' })
+            pushActivity(draft, { kind: 'spawn', agent, label: `${agent} started working` })
           } else if (status === 'idle') {
             draft.agentStreams[agent].status = 'idle'
             if (draft.liveAgentNames && !draft.liveAgentNames.includes(agent)) draft.liveAgentNames.push(agent)
           } else if (status === 'offline') {
             draft.agentStreams[agent].status = 'offline'
             if (draft.liveAgentNames) draft.liveAgentNames = draft.liveAgentNames.filter((name) => name !== agent)
+            pushActivity(draft, { kind: 'dismiss', agent, label: `${agent} went offline` })
           } else if (status === 'error') {
             draft.agentStreams[agent].status = 'error'
             draft.agentStreams[agent].lastError =
               (d.metadata as Record<string, unknown>)?.message as string ?? null
             if (draft.liveAgentNames && !draft.liveAgentNames.includes(agent)) draft.liveAgentNames.push(agent)
+            pushActivity(draft, { kind: 'status', agent, label: `${agent} encountered an error` })
           }
           if (status !== 'working') {
             draft.isTeamWorking = Object.values(draft.agentStreams).some(
@@ -482,6 +523,7 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
             }
           })
           draft.cacheInvalidations.push({ kind: 'team_sessions' })
+          pushActivity(draft, { kind: 'done', agent: draft.leadName ?? 'team', label: 'Turn completed' })
         })
         break
       }
