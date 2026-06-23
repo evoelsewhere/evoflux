@@ -85,7 +85,10 @@ BUILTIN_MEMBER_PROFILES: dict[str, dict[str, BuiltinMemberProfile]] = {
                 "shell",
                 "web_fetch",
             ],
-            "skills": [],
+            "skills": [
+                "writing-and-deliverables",
+                "documentation-and-adrs",
+            ],
             "mcp": [],
             "prompt": """You are "executor".
 
@@ -131,7 +134,10 @@ List exactly: which files were created or modified (with paths), which commands 
                 "python",
                 "shell",
             ],
-            "skills": [],
+            "skills": [
+                "research-and-fact-checking",
+                "source-driven-development",
+            ],
             "mcp": [],
             "prompt": """You are "explorer".
 
@@ -192,7 +198,11 @@ Your mode is **deep reconnaissance**. You don't skim — you investigate until y
                 "wiki_search",
                 "write",
             ],
-            "skills": [],
+            "skills": [
+                "decision-analysis",
+                "idea-refine",
+                "planning-and-task-breakdown",
+            ],
             "mcp": [],
             "prompt": """You are "consultant".
 
@@ -289,7 +299,10 @@ Assign explicit weights to the criteria based on the stated constraints. Score e
                 "web_search",
                 "web_fetch",
             ],
-            "skills": [],
+            "skills": [
+                "red-team-and-critique",
+                "doubt-driven-development",
+            ],
             "mcp": [],
             "prompt": """You are "debate".
 
