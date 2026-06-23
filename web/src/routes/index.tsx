@@ -60,7 +60,7 @@ export function HomePage() {
       >
         {/* Header */}
         <div className="flex items-center gap-4">
-          <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-(--bg-key) ring-1 ring-(--color-border)">
+          <div className="relative flex h-12 w-12 shrink-0 items-center justify-center">
             <img src={EvoFluxAppIcon} width={40} height={40} alt="EvoFlux" className="rounded-lg" />
           </div>
           <div className="min-w-0 flex-1">
