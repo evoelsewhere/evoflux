@@ -46,6 +46,7 @@ class WorkspaceFilesResponse(BaseModel):
     session_id: str
     files: list[WorkspaceFileInfo]
     truncated: bool = False  # True when the walk hit the max-files cap
+    workspace_root: str | None = None  # Absolute OS path to the workspace root (None for empty/new sessions)
 
 
 class CodingWorkspaceFilesResponse(BaseModel):

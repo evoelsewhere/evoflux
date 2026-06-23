@@ -219,6 +219,8 @@ def _list_workspace_files(root: Path, session_id: str) -> WorkspaceFilesResponse
     if not root.exists() or not root.is_dir():
         return WorkspaceFilesResponse(session_id=session_id, files=[], truncated=False)
 
+    workspace_root = str(root.resolve(strict=False))
+
     root_resolved = root.resolve(strict=False)
     gitignore_rules = _load_gitignore_rules(root)
     files: list[WorkspaceFileInfo] = []
@@ -279,7 +281,10 @@ def _list_workspace_files(root: Path, session_id: str) -> WorkspaceFilesResponse
             break
 
     return WorkspaceFilesResponse(
-        session_id=session_id, files=files, truncated=truncated
+        session_id=session_id,
+        files=files,
+        truncated=truncated,
+        workspace_root=workspace_root,
     )
 
 

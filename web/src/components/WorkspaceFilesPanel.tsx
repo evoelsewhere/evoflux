@@ -100,6 +100,21 @@ function FileTypeIcon({ file, size = 12 }: { file: WorkspaceFileInfo; size?: num
   return <FileIcon size={size} className={cls} />
 }
 
+function VscodeIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="#007ACC" d="M23.15 2.587L18.21.21a1.494 1.494 0 0 0-1.705.29l-9.46 8.63-4.12-3.128a.999.999 0 0 0-1.276.057L.327 7.261A1 1 0 0 0 .326 8.74L3.899 12 .326 15.26a1 1 0 0 0 .001 1.479L1.65 17.94a.999.999 0 0 0 1.276.057l4.12-3.128 9.46 8.63a1.492 1.492 0 0 0 1.704.29l4.942-2.377A1.5 1.5 0 0 0 24 19.881V4.099a1.5 1.5 0 0 0-.85-1.512zm-5.146 14.861L10.826 12l7.178-5.448v10.896z" />
+    </svg>
+  )
+}
+
+function vscodeWorkspaceUrl(workspaceRoot: string): string {
+  // vscode://file/{folder} opens the folder as a workspace in VS Code.
+  // Convert backslashes to forward slashes for Windows paths.
+  const root = workspaceRoot.replace(/\\/g, '/')
+  return `vscode://file/${root}`
+}
+
 // ── Resize constants ─────────────────────────────────────────────────────────
 
 const PANEL_WIDTH_KEY = 'workspace-panel-width'
@@ -177,6 +192,7 @@ function TreeNodeView({
   depth,
   selectedPath,
   sessionId,
+  workspaceRoot,
   onSelect,
   visiblePaths,
   defaultOpen,
@@ -185,6 +201,7 @@ function TreeNodeView({
   depth: number
   selectedPath: string | null
   sessionId: string
+  workspaceRoot: string | null
   onSelect: (file: WorkspaceFileInfo) => void
   visiblePaths: Set<string> | null
   defaultOpen: boolean
@@ -332,6 +349,17 @@ function TreeNodeView({
                 <Download size={14} aria-hidden="true" />
                 Download
               </button>
+              {workspaceRoot && (
+                <a
+                  href={vscodeWorkspaceUrl(workspaceRoot)}
+                  role="menuitem"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-(--bg-key) focus-visible:bg-(--bg-key) focus-visible:outline-none"
+                  onClick={() => setActionsPoint(null)}
+                >
+                  <VscodeIcon size={14} />
+                  Open in VS Code
+                </a>
+              )}
             </div>
           </div>
         )}
@@ -351,6 +379,7 @@ function TreeNodeView({
             depth={0}
             selectedPath={selectedPath}
             sessionId={sessionId}
+            workspaceRoot={workspaceRoot}
             onSelect={onSelect}
             visiblePaths={visiblePaths}
             defaultOpen={defaultOpen}
@@ -383,6 +412,7 @@ function TreeNodeView({
             depth={depth + 1}
             selectedPath={selectedPath}
             sessionId={sessionId}
+            workspaceRoot={workspaceRoot}
             onSelect={onSelect}
             visiblePaths={visiblePaths}
             defaultOpen={defaultOpen}
@@ -626,9 +656,11 @@ export function CopyContentsButton({
 function PreviewArea({
   sessionId,
   file,
+  workspaceRoot,
 }: {
   sessionId: string
   file: WorkspaceFileInfo
+  workspaceRoot: string | null
 }) {
   const kind = kindOf(file)
   return (
@@ -772,6 +804,7 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
   // Wrap ``data?.files ?? []`` in a memo so the ``files`` reference is stable
   // when the query returns the same cache entry — otherwise downstream
   // memoised derivations (``tree``) would recompute every render.
+  const workspaceRoot = data?.workspace_root ?? null
   const files = useMemo<WorkspaceFileInfo[]>(() => data?.files ?? [], [data])
   const tree = useMemo(() => buildTree(files), [files])
   const visiblePaths = useMemo(() => matchingPaths(files, searchQuery), [files, searchQuery])
@@ -882,6 +915,16 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-1">
+                {workspaceRoot && (
+                  <a
+                    href={vscodeWorkspaceUrl(workspaceRoot)}
+                    title="Open in VS Code"
+                    aria-label="Open in VS Code"
+                    className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+                  >
+                    <VscodeIcon size={14} />
+                  </a>
+                )}
                 <button
                   onClick={() => refetch()}
                   disabled={!sessionId || isFetching}
@@ -966,6 +1009,7 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
                         depth={0}
                         selectedPath={selectedPath}
                         sessionId={sessionId}
+                        workspaceRoot={workspaceRoot}
                         onSelect={handleSelectFile}
                         visiblePaths={visiblePaths}
                         defaultOpen
@@ -988,7 +1032,7 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
               {showPreview && (
                 <div className="min-w-0 flex-1">
                   {selected && sessionId ? (
-                    <PreviewArea key={selected.path} sessionId={sessionId} file={selected} />
+                    <PreviewArea key={selected.path} sessionId={sessionId} file={selected} workspaceRoot={workspaceRoot} />
                   ) : (
                     <EmptyState
                       message="Select a file"
