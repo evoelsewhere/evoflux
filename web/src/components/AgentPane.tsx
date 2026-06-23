@@ -30,9 +30,11 @@ import { formatTokens, extractSleepPrefix, formatTime } from '@/utils/format'
 import { latestMCPAppResourceBlockIds } from '@/utils/mcp-app-artifacts'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { findCommittedMentions } from './InputBar.mentions'
+import { TierBadge } from './TierBadge'
+import { resolveMemberTier } from '@/utils/tier'
 import type { AgentStream } from '@/stores/useTeamStore'
 import { resolveApiUrl } from '@/api/client'
-import type { ContentBlock, MessageAttachment } from '@/api/types'
+import type { ContentBlock, MessageAttachment, TodoItem } from '@/api/types'
 
 const SCROLL_THRESHOLD = 40
 const USER_SCROLL_DETACH_DELTA = 4
@@ -41,6 +43,7 @@ interface AgentPaneProps {
   name: string
   stream: AgentStream
   isLead: boolean
+  todos?: TodoItem[]
   isContinuing?: boolean
   onContinue?: () => void
   canMoveLeft?: boolean
@@ -331,7 +334,7 @@ function BlockRenderer({ block, isStreaming, sessionId, onRevert, latestMCPAppBl
 }
 
 export function AgentPane({
-  name, stream, isLead, isContinuing = false, onContinue,
+  name, stream, isLead, todos, isContinuing = false, onContinue,
   canMoveLeft, canMoveRight, onMoveLeft, onMoveRight,
 }: AgentPaneProps) {
   const [paneCollapsed, setPaneCollapsed] = useState(false)
@@ -345,6 +348,11 @@ export function AgentPane({
   const isOffline = stream.status === 'offline'
   // Me show waiting indicator when a user message exists but the agent hasn't woken yet
   const isPending = !isWorking && !isError && !isOffline && stream.currentBlocks.some(isDirectUserBlock)
+
+  const memberTier = useMemo(
+    () => (!isLead && todos ? resolveMemberTier(todos, name) : null),
+    [isLead, todos, name],
+  )
 
   const pinnedRef = useRef(true)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
@@ -469,6 +477,7 @@ export function AgentPane({
                lead
              </span>
            )}
+           {memberTier && <TierBadge tier={memberTier} />}
          </div>
          <div className="flex items-center gap-1 text-xs text-(--color-text-subtle)">
            {stream.usage.totalTokens > 0 && (

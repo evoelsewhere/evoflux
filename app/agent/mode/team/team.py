@@ -36,7 +36,9 @@ from app.agent.mode.team.member import (
     TeamMember,
     TeamMemberBase,
 )
+from app.agent.mode.team.handoff import make_team_handoff_tool
 from app.agent.mode.team.manage import make_team_manage_tool
+from app.agent.mode.team.shared_state import make_team_state_tool
 from app.agent.mode.team.tools import make_team_message_tool
 from app.agent.multimodal import build_parts_from_metas
 from app.agent.schemas.chat import AssistantMessage, HumanMessage, ToolMessage
@@ -1658,7 +1660,11 @@ class AgentTeam:
             make_team_message_tool(
                 self.mailbox, agent_name=agent_name, role=role, team=self
             ),
+            make_team_handoff_tool(
+                self.mailbox, agent_name=agent_name, role=role, team=self
+            ),
             make_todo_manage_tool(role),
+            make_team_state_tool(agent_name),
         ]
 
         if agent_name == self.lead.name:

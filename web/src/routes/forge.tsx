@@ -1,4 +1,4 @@
-import { useRef, useEffect, useLayoutEffect } from 'react'
+import { useRef, useEffect, useLayoutEffect, useState } from 'react'
 import { Outlet, useParams, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { TeamChatView } from '@/components/TeamChatView'
@@ -7,6 +7,7 @@ import { useTeamStore } from '@/stores/useTeamStore'
 import { applyCacheInvalidations, patchSessionTitle } from '@/stores/cache-invalidation-bridge'
 import { queryKeys } from '@/queries'
 import { loadLastCodingWorkspace, removeCodingWorkspace, saveLastCodingWorkspace, shouldRestoreLastCodingWorkspace, workspaceFromSession } from '@/utils/workspace'
+import { AppBackendDialog } from '@/components/AppBackendDialog'
 
 /**
  * Layout route for /forge, /coding, and their session routes.
@@ -84,6 +85,10 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'normal' | 'coding' }) {
     }
   }, [mode, navigate, queryClient, sessionId])
 
+  const storeError = useTeamStore((s) => s.error)
+  const [backendDialogOpen, setBackendDialogOpen] = useState(false)
+  const [retryKey, setRetryKey] = useState(0)
+
   const navigateRef = useRef(navigate)
   const sessionIdRef = useRef(sessionId)
   const modeRef = useRef(mode)
@@ -157,7 +162,8 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'normal' | 'coding' }) {
     return () => {
       cancelled = true
     }
-  }, [mode, navigate, queryClient, sessionId, workspace])
+    // retryKey is intentionally included so the retry button can re-trigger this effect.
+  }, [mode, navigate, queryClient, sessionId, workspace, retryKey])
 
   // When team store gets a new sessionId, navigate to the matching session route.
   useEffect(() => {
@@ -211,6 +217,41 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'normal' | 'coding' }) {
         codingSessionLoading={mode === 'coding' && Boolean(sessionId) && !workspace && sessionQuery.isLoading}
       />
       <Outlet />
+      {storeError && !sessionId && (
+        <div
+          className="fixed inset-0 z-40 flex items-center justify-center bg-(--color-overlay) p-4"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="forge-backend-error-title"
+        >
+          <div className="flex w-full max-w-sm flex-col gap-4 rounded-xl border border-(--color-border) bg-(--bg-card) p-5 shadow-2xl">
+            <div>
+              <p id="forge-backend-error-title" className="text-sm font-semibold text-(--color-text)">Backend connection failed</p>
+              <p className="mt-1 text-xs leading-5 text-(--color-text-muted)">{storeError}</p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  useTeamStore.setState((state) => { state.error = null })
+                  setRetryKey((k) => k + 1)
+                }}
+                className="flex-1 rounded-md border border-(--color-border) bg-(--bg-key) px-3 py-2 text-xs font-medium text-(--color-text) hover:bg-(--bg-page)"
+              >
+                Retry
+              </button>
+              <button
+                type="button"
+                onClick={() => setBackendDialogOpen(true)}
+                className="flex-1 rounded-md border border-(--color-border-strong) bg-(--bg-key) px-3 py-2 text-xs font-medium text-(--color-text) hover:bg-(--bg-page)"
+              >
+                Configure Backend
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      <AppBackendDialog open={backendDialogOpen} onOpenChange={setBackendDialogOpen} />
     </>
   )
 }

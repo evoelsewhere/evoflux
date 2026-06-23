@@ -232,6 +232,7 @@ export type SSEEventType =
   | 'agent_status'
   | 'queued_turn_start'
   | 'inbox'
+  | 'handoff'
   | 'desktop_notification'
   | 'title_update'
   | 'summarization_start'
@@ -581,11 +582,14 @@ export interface ScheduledTaskListResponse {
   tasks: ScheduledTaskResponse[]
 }
 
+export type TodoTier = 'trivial' | 'simple' | 'multi_step' | 'complex'
+
 export interface TodoItem {
   task_id: string
   content: string
   status: 'pending' | 'in_progress' | 'completed' | 'cancelled'
   priority: 'high' | 'medium' | 'low'
+  tier?: TodoTier
   dependencies?: string[]
   assigned_to?: string | null
   claimed_by?: string | null

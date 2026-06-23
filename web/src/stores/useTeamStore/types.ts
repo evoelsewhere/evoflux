@@ -7,6 +7,21 @@ export interface PendingMessage {
   submittedAt?: number
 }
 
+export type ActivityKind = 'spawn' | 'dismiss' | 'inbox' | 'handoff' | 'status' | 'done'
+
+export interface ActivityItem {
+  id: string
+  kind: ActivityKind
+  agent: string
+  timestamp: Date
+  /** Brief description rendered in the feed. */
+  label: string
+  /** Structured handoff artifact (for kind === 'handoff'). */
+  artifact?: Record<string, unknown>
+  /** Extra metadata (e.g. from_agent for inbox/handoff). */
+  meta?: Record<string, unknown>
+}
+
 export type CacheInvalidation =
   | { kind: 'wiki' }
   | { kind: 'workspace_files'; sessionId: string }
@@ -93,6 +108,7 @@ export interface TeamStoreState {
   _resolvedSessionReadyId: string | null
   _unloading: boolean
   cacheInvalidations: CacheInvalidation[]
+  activityLog: ActivityItem[]
 }
 
 export interface TeamStoreActions {

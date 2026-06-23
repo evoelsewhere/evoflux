@@ -24,6 +24,7 @@ import { Thinking } from './Thinking'
 import { ToolCall } from './ToolCall'
 import { MCPAppResult } from './MCPAppResult'
 import { InboxBubble } from './InboxBubble'
+import { HandoffCard } from './HandoffCard'
 import { CompactionDivider } from './CompactionDivider'
 import { ImageAttachment } from './ImageAttachment'
 import { FileCard } from './FileCard'
@@ -261,6 +262,10 @@ function BlockRenderer({ block, isStreaming, sessionId, onRevert, latestMCPAppBl
       // Me check if this is an inbox message (from another agent, not real user)
       const fromAgent = block.extra?.from_agent as string | undefined
       if (fromAgent && fromAgent !== 'user') {
+        const handoffArtifact = block.extra?._handoff_artifact as Record<string, unknown> | undefined
+        if (handoffArtifact) {
+          return <HandoffCard artifact={handoffArtifact as never} fromAgent={fromAgent} />
+        }
         return <InboxBubble content={block.content} fromAgent={fromAgent} />
       }
       const blockModel = typeof block.extra?.model === 'string' ? block.extra.model : null

@@ -2,7 +2,8 @@
 
 One tool for everyone: team_message(to, content)
 
-Injected into agent.run() at runtime via injected_tools.
+Injected into agent.run() at runtime via injected_tools.  For structured
+deliverables, see ``handoff.py`` which provides ``team_handoff``.
 Lead and members share the same underlying function but get role-specific
 descriptions so the LLM understands the intended usage for each role.
 
@@ -35,9 +36,9 @@ _LEAD_DESCRIPTION = (
 )
 
 _MEMBER_DESCRIPTION = (
-    "Your ONLY way to communicate — plain text output is silently discarded. "
-    "Call this tool to: deliver work output (findings, drafts, data) to the lead, "
-    "hand off results to a peer, or ask a specific unblocking question."
+    "Send a quick message to a teammate — use for questions, clarifications, "
+    "status queries, and short coordination. For delivering substantial work "
+    "output (findings, analysis, completed tasks), use team_handoff instead."
 )
 
 

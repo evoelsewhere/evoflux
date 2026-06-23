@@ -186,6 +186,7 @@ class Agent(Generic[TContext]):
         *,
         hooks: Sequence[BaseAgentHook] | None = None,
         injected_tools: list[Tool] | None = None,
+        excluded_tools: frozenset[str] | None = None,
         interrupt_event: asyncio.Event | None = None,
         checkpointer: Checkpointer | None = None,
         llm_provider: LLMProviderBase | None = None,
@@ -202,6 +203,11 @@ class Agent(Generic[TContext]):
         ``injected_tools`` provides additional tools for this specific run only,
         merged with the agent's constructor tools. Callers should use this
         instead of mutating ``agent._tools`` directly.
+
+        ``excluded_tools`` is an optional frozenset of tool names to remove
+        from the run-local tool lookup after merging constructor + injected
+        tools.  Used by team tier policies to restrict heavy tools for
+        lower-tier tasks.
 
         ``checkpointer`` is an optional :class:`~app.agent.checkpointer.Checkpointer`
         that the loop calls at defined sync points to persist state.  When
@@ -225,6 +231,11 @@ class Agent(Generic[TContext]):
         run_tools: dict[str, Tool] = dict(self._tools)
         for t in injected_tools or []:
             run_tools[t.name] = t
+
+        # Apply tier-based tool exclusions when requested.
+        if excluded_tools:
+            for name in excluded_tools:
+                run_tools.pop(name, None)
 
         # Work on a local copy, strip any SystemMessage — system prompt lives
         # in state.system_prompt and is prepended per-call by the loop.

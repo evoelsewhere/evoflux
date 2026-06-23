@@ -65,6 +65,7 @@ class TodoItemResponse(BaseModel):
     content: str
     status: str
     priority: str
+    tier: str = "simple"
     dependencies: list[str] = Field(default_factory=list)
     assigned_to: str | None = None
     claimed_by: str | None = None

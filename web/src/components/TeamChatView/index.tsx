@@ -35,6 +35,7 @@ import { WorkspaceFilesPanel } from '../WorkspaceFilesPanel'
 import { WikiPanel } from '../WikiPanel'
 import { SchedulerPanel } from '../SchedulerPanel'
 import { BrowserViewer } from '../BrowserViewer'
+import { ActivityPanel } from '../ActivityPanel'
 import { useTodosQuery } from '@/queries/useTodosQuery'
 import { useProvidersQuery, useTriggerDreamMutation } from '@/queries'
 import { useCommandsQuery } from '@/queries/useCommandsQuery'
@@ -47,7 +48,7 @@ import { useUIStore } from '@/stores/useUIStore'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useTeamAgentsQuery } from '@/queries/useAgentsQuery'
 import { useFileRefsQuery } from '@/queries/useFileRefsQuery'
-import { AlertCircle, Brain, CalendarClock, Check, ChevronDown, FolderOpen, FolderCode, Menu, MoreHorizontal, SlidersHorizontal, X } from 'lucide-react'
+import { AlertCircle, Activity, Brain, CalendarClock, Check, ChevronDown, FolderOpen, FolderCode, Menu, MoreHorizontal, SlidersHorizontal, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Breadcrumb } from '@/components/Breadcrumb'
 import { useIsMobile } from '@/hooks/use-mobile'
@@ -115,6 +116,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
   const [codingSidebarCollapsed, setCodingSidebarCollapsed] = useState(true)
   const [openWorkspaceDialogKey, setOpenWorkspaceDialogKey] = useState(0)
   const [showTodos, setShowTodos] = useState(false)
+  const [showActivity, setShowActivity] = useState(false)
   const [showMobileActions, setShowMobileActions] = useState(false)
   const [showPalette, setShowPalette] = useState(false)
   const [fileRefsEnabled, setFileRefsEnabled] = useState(false)
@@ -1021,6 +1023,16 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
                 ariaLabel: 'Session model settings',
                 className: agentCapabilitiesOpen ? 'mr-2 bg-(--bg-key) text-(--color-text)' : 'mr-2',
               }}
+              extraActions={
+                <button
+                  onClick={() => setShowActivity((v) => !v)}
+                  title="Team activity log"
+                  aria-label="Team activity log"
+                  className={`inline-flex h-7 w-7 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-hover) hover:text-(--color-text) ${showActivity ? 'bg-(--bg-key) text-(--color-text)' : ''}`}
+                >
+                  <Activity size={15} />
+                </button>
+              }
             />
           )}
           </div>
@@ -1100,6 +1112,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
               agentNames={splitAgentNames}
               leadName={leadName}
               agentStreams={agentStreams}
+              todos={todos}
               isContinuing={isContinuing}
               onContinue={continueTeam}
             />
@@ -1242,6 +1255,32 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
           />
         )}
         </main>
+        <AnimatePresence>
+          {showActivity && (
+            <motion.aside
+              key="activity-panel"
+              initial={{ width: 0, opacity: 0 }}
+              animate={{ width: 280, opacity: 1 }}
+              exit={{ width: 0, opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="flex h-full shrink-0 flex-col overflow-hidden border-l border-(--color-border) bg-(--bg-page)"
+            >
+              <div className="flex items-center justify-between border-b border-(--color-border) px-3 py-2">
+                <span className="text-xs font-semibold text-(--color-text-2)">Activity</span>
+                <button
+                  onClick={() => setShowActivity(false)}
+                  className="flex h-5 w-5 items-center justify-center rounded-md text-(--color-text-muted) hover:text-(--color-text)"
+                  aria-label="Close activity panel"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+              <div className="min-h-0 flex-1">
+                <ActivityPanel />
+              </div>
+            </motion.aside>
+          )}
+        </AnimatePresence>
         {mode === 'coding' && workspace && codingFileViewer !== null && (
           <CodingFileViewerPanel
             workspace={workspace}

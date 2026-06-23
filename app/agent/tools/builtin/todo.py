@@ -59,6 +59,15 @@ class CreateAction(BaseModel):
     priority: Literal["high", "medium", "low"] = Field(
         description="Priority level.",
     )
+    tier: Literal["trivial", "simple", "multi_step", "complex"] = Field(
+        default="simple",
+        description=(
+            "Complexity tier: trivial (lead handles directly — don't delegate), "
+            "simple (one member, straightforward), multi_step (one member, "
+            "multiple steps with intermediate results), complex (multi-member "
+            "coordination with dependencies)."
+        ),
+    )
     dependencies: list[str] = Field(
         default_factory=list,
         description="Task IDs that must be completed before this task can start.",
@@ -81,6 +90,10 @@ class UpdateAction(BaseModel):
     )
     priority: Literal["high", "medium", "low"] | None = Field(
         default=None, description="New priority (omit to keep unchanged)."
+    )
+    tier: Literal["trivial", "simple", "multi_step", "complex"] | None = Field(
+        default=None,
+        description="New complexity tier (omit to keep unchanged).",
     )
     dependencies: list[str] | None = Field(
         default=None,
@@ -237,8 +250,10 @@ def _format_items(items: list[dict]) -> str:
         assignee_text = f" assigned={assigned_to}" if assigned_to else ""
         claimed_by = item.get("claimed_by")
         claim_text = f" claimed={claimed_by}" if claimed_by else ""
+        tier = item.get("tier", "simple")
+        tier_text = f" {{{tier}}}" if tier != "simple" else ""
         lines.append(
-            f"[{item['task_id']}] [{item['status']}] ({item['priority']}){dependency_text}{assignee_text}{claim_text} {item['content']}"
+            f"[{item['task_id']}] [{item['status']}] ({item['priority']}){tier_text}{dependency_text}{assignee_text}{claim_text} {item['content']}"
         )
     return "\n".join(lines)
 
@@ -253,6 +268,7 @@ def _normalize_store(store: dict) -> dict:
             )
             item.setdefault("assigned_to", None)
             item.setdefault("claimed_by", None)
+            item.setdefault("tier", "simple")
     return store
 
 
@@ -319,15 +335,23 @@ Actions
 -------
 create  — Add a new task (returns the assigned task_id).
 update  — Update an existing task by task_id (change any combination of
-          content, status, priority, dependencies, assigned_to).
+          content, status, priority, tier, dependencies, assigned_to).
 delete  — Remove a task permanently by task_id.
 read    — Return the full task list with task_ids.
+
+Tiers
+-----
+- trivial   — Handle directly; do NOT delegate (quick answer, single tool call).
+- simple    — One member, straightforward work (default).
+- multi_step — One member, multiple steps with intermediate results.
+- complex   — Multi-member coordination with dependencies.
 
 Rules
 -----
 - Batch related changes into a single call (e.g. complete the current task
   and start the next one together).
 - Assign member work with assigned_to and model ordering with dependencies.
+- Set tier to reflect actual complexity — it guides delegation decisions.
 - Only ONE task per agent should be in_progress at a time.
 - Mark tasks completed immediately when done; do not batch updates across turns.
 - Use dependencies=["task_1"] for dependent work. A task with incomplete
@@ -435,6 +459,7 @@ async def _apply_actions(
                     "content": act.content,
                     "status": status,
                     "priority": act.priority,
+                    "tier": act.tier,
                     "dependencies": dependencies,
                     "assigned_to": act.assigned_to,
                     "claimed_by": actor if status == "in_progress" else None,
@@ -462,6 +487,8 @@ async def _apply_actions(
                         item["dependencies"] = dependencies
                     if isinstance(act, UpdateAction) and act.assigned_to is not None:
                         item["assigned_to"] = act.assigned_to
+                    if isinstance(act, UpdateAction) and act.tier is not None:
+                        item["tier"] = act.tier
                     if act.content is not None:
                         item["content"] = act.content
                     if act.status is not None:

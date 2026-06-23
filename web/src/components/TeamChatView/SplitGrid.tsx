@@ -19,11 +19,13 @@ import { Panel, Group, Separator } from 'react-resizable-panels'
 import { AgentPane } from '../AgentPane'
 import { useReducedMotion } from '@/hooks/useReducedMotion'
 import type { AgentStream } from '@/stores/useTeamStore'
+import type { TodoItem } from '@/api/types'
 
 interface SplitGridProps {
   agentNames: string[]
   leadName: string | null
   agentStreams: Record<string, AgentStream>
+  todos?: TodoItem[]
   isContinuing?: boolean
   onContinue?: () => void
 }
@@ -58,7 +60,7 @@ function VResizeHandle() {
 }
 
 export function SplitGrid({
-  agentNames, leadName, agentStreams, isContinuing = false, onContinue,
+  agentNames, leadName, agentStreams, todos, isContinuing = false, onContinue,
 }: SplitGridProps) {
   const prefersReducedMotion = useReducedMotion()
 
@@ -124,6 +126,7 @@ export function SplitGrid({
           name={name}
           stream={stream}
           isLead={name === leadName}
+          todos={todos}
           isContinuing={isContinuing && name === leadName}
           onContinue={name === leadName ? onContinue : undefined}
           canMoveLeft={idx > 0}

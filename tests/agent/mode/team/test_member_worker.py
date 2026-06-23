@@ -203,7 +203,17 @@ class TestOnDemandActivation:
             captured["factory_model"] = model
             return override_provider
 
-        def fake_build_summarization_hook(provider, *, mode=None, model_id=None):
+        def fake_build_team_summarization_hook(
+            provider,
+            *,
+            mode=None,
+            model_id=None,
+            agent_name="",
+            role="",
+            lead_name="",
+            peer_names=None,
+            state_snapshot=None,
+        ):
             captured["summary_provider"] = provider
             captured["summary_model"] = model_id
             return None
@@ -218,8 +228,8 @@ class TestOnDemandActivation:
         lead.register(team)
         monkeypatch.setattr(lead.agent, "run", fake_run)
         monkeypatch.setattr(
-            "app.agent.mode.team.member.build_summarization_hook",
-            fake_build_summarization_hook,
+            "app.agent.mode.team.member.build_team_summarization_hook",
+            fake_build_team_summarization_hook,
         )
 
         await lead._handle_messages(force_compaction=True)
