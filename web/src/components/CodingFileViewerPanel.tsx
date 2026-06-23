@@ -22,7 +22,10 @@ const TEXT_EXTENSIONS = new Set([
   'sql', 'xml', 'svg',
 ])
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'])
+const DRAWIO_EXTENSIONS = new Set(['drawio', 'dio'])
 const MAX_TEXT_PREVIEW_BYTES = 512 * 1024
+// Viewer URL length limit — diagrams above ~400KB XML fall back to text
+const MAX_DRAWIO_VIEWER_BYTES = 400 * 1024
 const GUTTER_WIDTH_CH = 4
 
 function extOf(name: string): string {
@@ -30,11 +33,12 @@ function extOf(name: string): string {
   return i >= 0 ? name.slice(i + 1).toLowerCase() : ''
 }
 
-type FileKind = 'image' | 'text' | 'binary'
+type FileKind = 'image' | 'text' | 'drawio' | 'binary'
 
 function kindOf(file: WorkspaceFileInfo): FileKind {
   const ext = extOf(file.name)
   if (IMAGE_EXTENSIONS.has(ext) || file.mime.startsWith('image/')) return 'image'
+  if (DRAWIO_EXTENSIONS.has(ext)) return 'drawio'
   if (!ext || TEXT_EXTENSIONS.has(ext) || file.mime.startsWith('text/') || file.mime === 'application/json') return 'text'
   return 'binary'
 }
@@ -252,6 +256,61 @@ function ImagePreview({ workspace, file }: { workspace: string; file: WorkspaceF
   )
 }
 
+function DrawioPreview({ workspace, file }: { workspace: string; file: WorkspaceFileInfo }) {
+  const [xmlContent, setXmlContent] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(codingWorkspaceFileUrl(workspace, file.path))
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return res.text()
+      })
+      .then((xml) => {
+        if (!cancelled) { setXmlContent(xml); setLoading(false) }
+      })
+      .catch((e) => {
+        if (!cancelled) { setError(e instanceof Error ? e.message : String(e)); setLoading(false) }
+      })
+    return () => { cancelled = true }
+  }, [workspace, file.path])
+
+  if (loading) return <div className="flex h-full items-center justify-center"><Loader2 size={16} className="animate-spin text-(--color-text-subtle)" /></div>
+  if (error) return <div className="flex h-full items-center justify-center px-4 text-center text-xs text-(--color-error)">Failed to load: {error}</div>
+  if (!xmlContent) return null
+
+  // Large diagrams fall back to a text/XML view
+  if (new Blob([xmlContent]).size > MAX_DRAWIO_VIEWER_BYTES) {
+    const lines = xmlContent.split('\n')
+    return (
+      <div className="min-h-0 flex-1 overflow-auto font-mono text-xs leading-relaxed">
+        {lines.map((line, i) => (
+          <div key={i} className="flex items-start gap-3 whitespace-pre-wrap break-words px-3 text-(--color-text-2)">
+            <span className="inline-block w-8 shrink-0 select-none text-right tabular-nums text-(--color-text-subtle)">{i + 1}</span>
+            <span className="min-w-0 flex-1">{line || ' '}</span>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  const encoded = btoa(unescape(encodeURIComponent(xmlContent)))
+  const iframeSrc = `https://viewer.diagrams.net/?lightbox=0&toolbar=0&nav=1&xml=${encodeURIComponent(encoded)}`
+
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-(--bg-page)">
+      <iframe
+        src={iframeSrc}
+        title={file.name}
+        className="h-full w-full border-0"
+        sandbox="allow-scripts allow-same-origin allow-popups"
+      />
+    </div>
+  )
+}
+
 function BinaryPreview({ workspace, file }: { workspace: string; file: WorkspaceFileInfo }) {
   const url = codingWorkspaceFileUrl(workspace, file.path)
   return (
@@ -367,7 +426,7 @@ export function CodingFileViewerPanel({
             <button type="button" onClick={() => void downloadCodingWorkspaceFile(workspace, file)} title="Download" className="flex h-9 w-9 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) md:h-auto md:w-auto md:p-1.5">
               <Download size={14} />
             </button>
-            {kind === 'text' && <CopyButton workspace={workspace} file={file} />}
+            {(kind === 'text' || kind === 'drawio') && <CopyButton workspace={workspace} file={file} />}
             <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) md:h-auto md:w-auto md:p-1.5" aria-label="Close file viewer">
               <X size={16} />
             </button>
@@ -380,8 +439,7 @@ export function CodingFileViewerPanel({
                 : !scopedDiff.data?.is_git_repo ? <div className="flex h-full items-center justify-center px-4 text-center text-xs text-(--color-text-subtle)">Not a git repository</div>
                   : !scopedDiff.data.diff ? <div className="flex h-full items-center justify-center px-4 text-center text-xs text-(--color-text-subtle)">No diff for this file</div>
                     : <DiffPreview diff={scopedDiff.data.diff} />
-          ) : kind === 'image' ? <ImagePreview workspace={workspace} file={file} />
-            : kind === 'text' ? <TextPreview key={file.path} workspace={workspace} file={file} onAddComment={onAddComment} />
+          ) : kind === 'image' ? <ImagePreview workspace={workspace} file={file} />            : kind === 'drawio' ? <DrawioPreview key={file.path} workspace={workspace} file={file} />            : kind === 'text' ? <TextPreview key={file.path} workspace={workspace} file={file} onAddComment={onAddComment} />
               : <BinaryPreview workspace={workspace} file={file} />}
         </div>
       </div>
