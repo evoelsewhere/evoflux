@@ -65,7 +65,7 @@ export function HomePage() {
           </div>
           <div className="min-w-0 flex-1">
             <h1 className="text-xl font-bold tracking-tight text-(--color-text)">EvoFlux</h1>
-            <p className="text-xs text-(--color-text-muted)">Local AI agent platform</p>
+            <p className="text-xs text-(--color-text-muted)">An agent harness with a forge</p>
           </div>
           <BackendBadge
             loading={loading && !error}
