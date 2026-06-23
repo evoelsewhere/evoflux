@@ -362,7 +362,13 @@ Your mode is **adversarial stress-testing**. You are not here to be agreeable. Y
                 "shell",
                 "write",
             ],
-            "skills": [],
+            "skills": [
+                "incremental-implementation",
+                "test-driven-development",
+                "debugging-and-error-recovery",
+                "code-simplification",
+                "git-workflow-and-versioning",
+            ],
             "mcp": [],
             "prompt": "You are **coder**.\n\nYour job is to make the requested code change with the smallest correct diff and verify it.",
         },
@@ -377,7 +383,11 @@ Your mode is **adversarial stress-testing**. You are not here to be agreeable. Y
                 "read",
                 "shell",
             ],
-            "skills": [],
+            "skills": [
+                "context-engineering",
+                "source-driven-development",
+                "planning-and-task-breakdown",
+            ],
             "mcp": [],
             "prompt": """You are **explorer**.
 
@@ -405,7 +415,11 @@ Summarize what exists, where it lives, what patterns to follow, and any risks or
                 "read",
                 "shell",
             ],
-            "skills": [],
+            "skills": [
+                "code-review-and-quality",
+                "security-and-hardening",
+                "performance-optimization",
+            ],
             "mcp": [],
             "prompt": """You are **debate**.
 
@@ -449,6 +463,48 @@ For each Critical/Warning include:
 > **Fix:** <Concrete corrective action>
 
 End with a one-line verdict: **LGTM**, **Fix before merging**, or **Needs rework**.""",
+        },
+        "architect": {
+            "description": "Designs the change before code is written. Decomposes the request, picks the approach, and specs the interfaces and contracts so the coder builds the right thing.",
+            "tools": [
+                "date",
+                "glob",
+                "grep",
+                "ls",
+                "python",
+                "read",
+                "shell",
+                "write",
+            ],
+            "skills": [
+                "spec-driven-development",
+                "planning-and-task-breakdown",
+                "api-and-interface-design",
+                "context-engineering",
+            ],
+            "mcp": [],
+            "prompt": """You are **architect**.
+
+Your job is to design the change before a line of code is written. You turn a request into a concrete, buildable plan: the approach, the affected surfaces, the interfaces, and the risks. You do not implement — you make the coder's job unambiguous.
+
+## How to operate
+
+1. **Ground in the codebase.** Read the relevant files, existing patterns, and tests before proposing anything. A design that ignores the current structure creates rework.
+2. **Decompose.** Break the request into ordered, independently verifiable steps. Call out dependencies between them.
+3. **Design the contracts.** Specify the interfaces, data shapes, function signatures, and module boundaries the change introduces or touches. Be concrete — name files, types, and functions.
+4. **Pick one approach.** When there are options, compare them briefly and commit to one, with the reason. State the trade-off you accepted.
+5. **Surface risk early.** Identify the riskiest part of the change, the edge cases, and what could break elsewhere. Flag anything that needs a decision from the lead or user.
+
+## Operating rules
+
+- Read before designing. Cite file paths and line numbers for anything you build on.
+- Match existing conventions — naming, layering, error handling, test style.
+- Keep the plan minimal and tied to the request. No speculative architecture.
+- Do not edit code or run mutating commands. Your output is the design the coder executes.
+
+## Reporting back
+
+Deliver a structured plan: the approach in one paragraph, the ordered steps (with affected files), the key interfaces/contracts, the verification strategy, and the top risks with mitigations.""",
         },
     },
 }
@@ -514,6 +570,16 @@ BUILTIN_AGENT_BLUEPRINTS: dict[str, dict[str, BuiltinAgentBlueprint]] = {
             "description": BUILTIN_MEMBER_PROFILES["coding"]["debate"]["description"],
             "temperature": 0.3,
             "thinking_level": "medium",
+        },
+        "architect": {
+            "name": "architect",
+            "role": "member",
+            "mode": "coding",
+            "description": BUILTIN_MEMBER_PROFILES["coding"]["architect"][
+                "description"
+            ],
+            "temperature": 0.2,
+            "thinking_level": "high",
         },
     },
 }

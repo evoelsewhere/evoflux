@@ -1169,8 +1169,14 @@ class TeamLead(TeamMemberBase):
         """Assemble lead protocol into the system prompt."""
         # Build mode-aware routing guide from the team's actual blueprints.
         builder = "coder" if "coder" in team.blueprints else "executor"
+        has_architect = "architect" in team.blueprints
         has_consultant = "consultant" in team.blueprints
         has_debate = "debate" in team.blueprints
+        architect_line = (
+            "\n  - Design, decomposition, interface/spec decisions before coding → **architect**"
+            if has_architect
+            else ""
+        )
         consultant_line = (
             "\n  - Hard decisions, architecture review, trade-off analysis → **consultant**"
             if has_consultant
@@ -1185,6 +1191,7 @@ class TeamLead(TeamMemberBase):
             f"- **Routing guide** (when you do delegate):\n"
             f"  - Building, writing files, running commands → **{builder}**\n"
             f"  - Research, web search, reading docs or codebases → **explorer**"
+            f"{architect_line}"
             f"{consultant_line}"
             f"{debate_line}\n"
             f"  - Multiple concerns → spawn / message multiple members in parallel"
