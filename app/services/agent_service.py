@@ -43,6 +43,7 @@ if TYPE_CHECKING:
 
 SIZE_LIMITS: dict[str, int] = {
     "text": 500 * 1024,  # 500 KB
+    "data": 10 * 1024 * 1024,  # 10 MB — structured data files (JSON, CSV, JSONL)
     "image": 10 * 1024 * 1024,  # 10 MB
     "document": 5 * 1024 * 1024,  # 5 MB
 }
@@ -50,11 +51,11 @@ GLOBAL_SIZE_LIMIT = 20 * 1024 * 1024  # 20 MB total across all files per message
 
 MIME_CATEGORY: dict[str, str] = {
     "text/plain": "text",
-    "text/csv": "text",
-    "text/tab-separated-values": "text",
+    "text/csv": "data",
+    "text/tab-separated-values": "data",
     "text/markdown": "text",
-    "application/json": "text",
-    "application/x-ndjson": "text",
+    "application/json": "data",
+    "application/x-ndjson": "data",
     "text/html": "document",
     "application/xhtml+xml": "document",
     "image/jpeg": "image",
@@ -68,13 +69,13 @@ MIME_CATEGORY: dict[str, str] = {
 }
 EXT_CATEGORY: dict[str, str] = {
     ".txt": "text",
-    ".csv": "text",
-    ".tsv": "text",
+    ".csv": "data",
+    ".tsv": "data",
     ".md": "text",
     ".markdown": "text",
-    ".json": "text",
-    ".ndjson": "text",
-    ".jsonl": "text",
+    ".json": "data",
+    ".ndjson": "data",
+    ".jsonl": "data",
     ".jpg": "image",
     ".jpeg": "image",
     ".png": "image",
@@ -175,7 +176,7 @@ def _validate_ext_mime_consistency(filename: str, mime: str) -> bool:
 
 
 def _default_ext(category: str) -> str:
-    return {"text": ".txt", "image": ".jpg", "document": ".pdf"}.get(category, ".bin")
+    return {"text": ".txt", "data": ".json", "image": ".jpg", "document": ".pdf"}.get(category, ".bin")
 
 
 def _convert_with_markitdown(data: bytes, mime: str, filename: str) -> str | None:
@@ -273,7 +274,7 @@ async def _persist_attachment(
         "category": category,
         "url": f"/api/team/{session_id}/uploads/{filename}",
     }
-    if category == "text":
+    if category in ("text", "data"):
         try:
             text = data.decode("utf-8")
         except UnicodeDecodeError:
