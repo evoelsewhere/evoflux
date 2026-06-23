@@ -1141,7 +1141,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
 
   return (
     <div className={floating ? '' : 'bg-(--bg-page) px-4 pb-5 pt-3'}>
-      <div className={floating ? 'relative' : 'relative mx-auto max-w-3xl'}>
+      <div className={floating ? 'relative' : 'relative mx-auto max-w-4xl'}>
         {!minimized && !filesBelow && filePreviews}
 
         {!minimized && slashMenuOpen && filteredSlashCommands.length > 0 && (

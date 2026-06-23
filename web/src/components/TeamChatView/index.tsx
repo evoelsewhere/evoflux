@@ -1163,7 +1163,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
         ) : sessionId && !isConnected ? (
           <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden" aria-hidden="true">
             <div className="flex-1 overflow-hidden">
-              <div className="mx-auto max-w-3xl space-y-8 px-4 py-6">
+              <div className="mx-auto max-w-4xl space-y-8 px-4 py-6">
                 <div className="flex justify-end">
                   <div className="h-9 w-44 animate-pulse rounded-2xl bg-(--bg-key)" />
                 </div>

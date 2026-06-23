@@ -76,7 +76,7 @@ export const FloatingInputBar = forwardRef<InputBarHandle, FloatingInputBarProps
     return (
       <div className="pointer-events-auto shrink-0">
         {(revertedCount ?? 0) > 0 && (
-          <div className="mx-auto max-w-3xl px-4 pb-1">
+          <div className="mx-auto max-w-4xl px-4 pb-1">
             <RevertNotice count={revertedCount ?? 0} messages={revertedMessages ?? []} onRedo={onRedo} />
           </div>
         )}
