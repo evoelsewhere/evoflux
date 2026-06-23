@@ -510,7 +510,7 @@ def test_load_team_from_dir_materializes_coding_builtin_members(tmp_path):
     factory, _ = _make_provider_factory()
     team = load_team_from_dir(d, provider_factory=factory, mode="coding")
     assert team is not None
-    assert set(team.blueprints) == {"coder", "explorer", "debate"}
+    assert set(team.blueprints) == {"coder", "explorer", "debate", "architect"}
     assert (d / "coder.md").is_file()
     assert (d / "explorer.md").is_file()
     assert "model: zai:glm-5-turbo" in (d / "explorer.md").read_text(encoding="utf-8")
@@ -540,7 +540,7 @@ def test_load_team_from_dir_does_not_overwrite_existing_builtin_member(tmp_path)
     factory, _ = _make_provider_factory()
     team = load_team_from_dir(d, provider_factory=factory, mode="coding")
     assert team is not None
-    assert set(team.blueprints) == {"coder", "explorer", "debate"}
+    assert set(team.blueprints) == {"coder", "explorer", "debate", "architect"}
     assert (d / "explorer.md").read_text(encoding="utf-8") == before
     assert team.blueprints["explorer"].description == "Custom explorer."
 
@@ -558,7 +558,7 @@ def test_coding_mode_hides_retired_executor_member(tmp_path):
     factory, _ = _make_provider_factory()
     team = load_team_from_dir(d, provider_factory=factory, mode="coding")
     assert team is not None
-    assert set(team.blueprints) == {"coder", "explorer", "debate"}
+    assert set(team.blueprints) == {"coder", "explorer", "debate", "architect"}
 
 
 def test_EVOFLUX_lead_uses_builtin_prompt_with_extra(tmp_path):
@@ -714,7 +714,12 @@ def test_builtin_member_profiles_are_curated_to_default_agents():
         "consultant",
         "debate",
     }
-    assert set(BUILTIN_MEMBER_PROFILES["coding"]) == {"coder", "explorer", "debate"}
+    assert set(BUILTIN_MEMBER_PROFILES["coding"]) == {
+        "coder",
+        "explorer",
+        "debate",
+        "architect",
+    }
 
 
 def test_builtin_member_user_description_overrides_code_default(tmp_path):

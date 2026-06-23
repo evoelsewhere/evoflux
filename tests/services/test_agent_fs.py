@@ -108,7 +108,9 @@ def test_list_agents_includes_nested_files(fs_dirs):
     agent_fs.write_agent("evoflux", "x", create=True)
     agent_fs.write_agent("coding/evoflux", "x", create=True)
     assert agent_fs.list_agents() == [
+        "coding/architect",
         "coding/coder",
+        "coding/debate",
         "coding/evoflux",
         "coding/explorer",
         "evoflux",
