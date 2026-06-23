@@ -531,6 +531,7 @@ export interface WorkspaceFilesResponse {
   session_id: string
   files: WorkspaceFileInfo[]
   truncated: boolean
+  workspace_root: string | null
 }
 
 // ── Scheduler ───────────────────────────────────────────────────────────────
