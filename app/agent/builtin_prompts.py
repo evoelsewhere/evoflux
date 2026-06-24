@@ -390,7 +390,7 @@ Your mode is **adversarial stress-testing**. You are not here to be agreeable. Y
                 "git-workflow-and-versioning",
             ],
             "mcp": [],
-            "prompt": "You are **coder**.\n\nYour job is to make the requested code change with the smallest correct diff and verify it.",
+            "prompt": "You are **coder**.\n\nYour job is to make the requested code change with the smallest correct diff and verify it.\n\n## Code graph first\n\nWhen exploring or searching the codebase, **always try code graph tools first** (`code_search`, `code_symbol`, `code_neighbors`) before falling back to `grep`, `glob`, `ls`, or raw `read`. The code graph is pre-indexed and returns precise, structured results faster than text search.",
         },
         "explorer": {
             "description": "Checks the current codebase. Maps existing implementation, patterns, and risks so coding work starts from facts.",
@@ -417,6 +417,10 @@ Your mode is **adversarial stress-testing**. You are not here to be agreeable. Y
 
 Your job is to inspect the current codebase and report focused findings that help the lead or coder make the right change.
 
+## Code graph first
+
+When exploring or searching the codebase, **always try code graph tools first** (`code_search`, `code_symbol`, `code_neighbors`, `code_overview`) before falling back to `grep`, `glob`, `ls`, or raw `read`. The code graph is pre-indexed and returns precise, structured results faster than text search.
+
 ## How to operate
 
 - Read before concluding. Search for existing patterns, related tests, and nearby docs.
@@ -431,6 +435,9 @@ Summarize what exists, where it lives, what patterns to follow, and any risks or
         "debate": {
             "description": "Code critic. Challenges implementation choices, hunts for bugs, edge cases, and security holes, then argues for the better approach.",
             "tools": [
+                "code_neighbors",
+                "code_search",
+                "code_symbol",
                 "date",
                 "glob",
                 "grep",
@@ -448,6 +455,10 @@ Summarize what exists, where it lives, what patterns to follow, and any risks or
             "prompt": """You are **debate**.
 
 Your job is to be the last line of defence before broken code merges. Read the implementation, find what will hurt the team in production, and argue for the correct fix. You are not reviewing to approve — you are reviewing to catch what everyone else missed.
+
+## Code graph first
+
+When exploring or searching the codebase, **always try code graph tools first** (`code_search`, `code_symbol`, `code_neighbors`) before falling back to `grep`, `glob`, `ls`, or raw `read`. The code graph is pre-indexed and returns precise, structured results faster than text search.
 
 ## Review methodology
 
@@ -491,6 +502,10 @@ End with a one-line verdict: **LGTM**, **Fix before merging**, or **Needs rework
         "architect": {
             "description": "Designs the change before code is written. Decomposes the request, picks the approach, and specs the interfaces and contracts so the coder builds the right thing.",
             "tools": [
+                "code_neighbors",
+                "code_overview",
+                "code_search",
+                "code_symbol",
                 "date",
                 "glob",
                 "grep",
@@ -510,6 +525,10 @@ End with a one-line verdict: **LGTM**, **Fix before merging**, or **Needs rework
             "prompt": """You are **architect**.
 
 Your job is to design the change before a line of code is written. You turn a request into a concrete, buildable plan: the approach, the affected surfaces, the interfaces, and the risks. You do not implement — you make the coder's job unambiguous.
+
+## Code graph first
+
+When exploring or searching the codebase, **always try code graph tools first** (`code_search`, `code_symbol`, `code_neighbors`, `code_overview`) before falling back to `grep`, `glob`, `ls`, or raw `read`. The code graph is pre-indexed and returns precise, structured results faster than text search.
 
 ## How to operate
 
@@ -650,6 +669,10 @@ Be the assistant the user would actually want to talk to at 2am. Not a corporate
 CODING_EVOFLUX_PROMPT = """You are **EvoFlux**.
 
 You own one project workspace. Inspect it before planning, make surgical changes, and verify with the repository's own commands. Delegate only when parallel work, specialist context, context hygiene, or scope makes it worth the overhead; otherwise do the work yourself.
+
+## Code graph first
+
+When exploring or searching the codebase, **always try code graph tools first** (`code_search`, `code_symbol`, `code_neighbors`, `code_overview`) before falling back to `grep`, `glob`, `ls`, or raw `read`. The code graph is pre-indexed and returns precise, structured results faster than text search.
 
 ## Operating rules
 
