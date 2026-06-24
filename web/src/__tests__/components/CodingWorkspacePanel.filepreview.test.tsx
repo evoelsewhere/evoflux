@@ -20,11 +20,14 @@ mock.module('lucide-react', () => ({
   Copy: Icon,
   Download: Icon,
   ExternalLink: Icon,
+  FileCode: Icon,
   FileText: Icon,
   Folder: Icon,
   GitCompare: Icon,
   Loader2: Icon,
+  Network: Icon,
   RefreshCw: Icon,
+  Search: Icon,
   X: Icon,
 }))
 mock.module('@/hooks/useReducedMotion', () => ({ useReducedMotion: () => false }))

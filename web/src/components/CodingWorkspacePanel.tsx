@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { ChevronRight, FileText, Folder, GitCompare, RefreshCw, X } from 'lucide-react'
+import { ChevronRight, FileText, Folder, GitCompare, Network, RefreshCw, X } from 'lucide-react'
 import { getCodingWorkspaceGitDiff, listCodingWorkspaceFiles } from '@/api/client'
 import { cn } from '@/lib/utils'
 import { queryKeys } from '@/queries'
@@ -10,6 +10,7 @@ import { workspaceLabel } from '@/utils/workspace'
 import { useReducedMotion } from '@/hooks/useReducedMotion'
 import { useResizableWidth } from '@/hooks/use-resizable-width'
 import { usePlatform } from '@/hooks/use-platform'
+import { CodeGraphPanel } from './CodeGraphPanel'
 import type { WorkspaceFileInfo, WorkspaceGitDiffResponse } from '@/api/types'
 
 interface TreeNode {
@@ -180,7 +181,7 @@ export function CodingWorkspacePanel({
 }: {
   workspace: string
   open: boolean
-  initialTab?: 'files' | 'changed'
+  initialTab?: 'files' | 'changed' | 'graph'
   onClose: () => void
   mobile?: boolean
   selectedFilePath?: string | null
@@ -188,7 +189,7 @@ export function CodingWorkspacePanel({
 }) {
   const prefersReducedMotion = useReducedMotion()
   const { isMacOverlay } = usePlatform()
-  const [tab, setTab] = useState<'files' | 'changed'>(initialTab)
+  const [tab, setTab] = useState<'files' | 'changed' | 'graph'>(initialTab)
   const files = useQuery({
     queryKey: queryKeys.coding.files(workspace),
     queryFn: () => listCodingWorkspaceFiles(workspace),
@@ -256,7 +257,16 @@ export function CodingWorkspacePanel({
           <button type="button" onClick={() => setTab('files')} className={cn('flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs', tab === 'files' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted)')}>
             <Folder size={13} /> Files
           </button>
+          <button type="button" onClick={() => setTab('graph')} className={cn('flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs', tab === 'graph' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted)')}>
+            <Network size={13} /> Graph
+          </button>
         </div>
+        {tab === 'graph' ? (
+          <div className="min-h-0 flex-1">
+            <CodeGraphPanel workspace={workspace} onFileSelect={onFileSelect} />
+          </div>
+        ) : (
+          <>
         <div className={cn('min-h-0 flex-1 overflow-auto', tab === 'files' && 'p-2')}>
           {tab === 'changed' ? (
             diff.isLoading || files.isLoading ? (
@@ -311,6 +321,8 @@ export function CodingWorkspacePanel({
         <button type="button" onClick={() => { void files.refetch(); void diff.refetch() }} className="flex items-center justify-center gap-1.5 border-t border-(--color-border) px-3 py-2 text-xs text-(--color-text-muted) hover:bg-(--bg-key)">
           <RefreshCw size={12} /> Refresh
         </button>
+          </>
+        )}
       </div>
     </motion.aside>
   )

@@ -12,6 +12,7 @@ from loguru import logger
 from app.agent.mcp import load_config as load_mcp_config, mcp_manager
 from app.api.routes.agents import router as agents_router
 from app.api.routes.auth import router as auth_router
+from app.api.routes.code_graph import router as code_graph_router
 from app.api.routes.commands import router as commands_router
 from app.api.routes.diagnostics import router as diagnostics_router
 from app.api.routes.dream import router as dream_router
@@ -103,8 +104,19 @@ async def lifespan(app: FastAPI):
         logger.info("dream_scheduler_disabled enabled=false")
     app.state.dream_scheduler = dream_scheduler
 
+    # Start the code-graph file watcher (only if code_graph.watch_enabled: true)
+    from app.services.code_graph.watcher import CodeGraphWatcher
+
+    code_graph_watcher = CodeGraphWatcher(db_factory=async_session_factory)
+    if runtime_settings.code_graph.watch_enabled:
+        await code_graph_watcher.start()
+    else:
+        logger.info("code_graph_watcher_disabled enabled=false")
+    app.state.code_graph_watcher = code_graph_watcher
+
     yield
 
+    await code_graph_watcher.stop()
     await dream_scheduler.stop()
     await task_scheduler.stop()
     await team_manager.stop()
@@ -158,6 +170,7 @@ def create_app() -> FastAPI:
     app.include_router(agents_router, prefix="/api/agents", tags=["agents"])
     app.include_router(skills_router, prefix="/api/skills", tags=["skills"])
     app.include_router(commands_router, prefix="/api/commands", tags=["commands"])
+    app.include_router(code_graph_router, prefix="/api/code-graph", tags=["code-graph"])
     app.include_router(snippets_router, prefix="/api/snippets", tags=["snippets"])
     app.include_router(
         observability_router, prefix="/api/observability", tags=["observability"]

@@ -113,7 +113,8 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
   const [showFilesPanel, setShowFilesPanel] = useState(false)
   const [codingPanel, setCodingPanel] = useState<null | 'changed' | 'files'>(null)
   const [codingFileViewer, setCodingFileViewer] = useState<WorkspaceFileInfo | null>(null)
-  const [codingSidebarCollapsed, setCodingSidebarCollapsed] = useState(true)
+  // Coding-mode sidebar is expanded by default so it's always visible on entry.
+  const [codingSidebarCollapsed, setCodingSidebarCollapsed] = useState(false)
   const [openWorkspaceDialogKey, setOpenWorkspaceDialogKey] = useState(0)
   const [showTodos, setShowTodos] = useState(false)
   const [showActivity, setShowActivity] = useState(false)

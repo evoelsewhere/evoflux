@@ -115,6 +115,42 @@ export interface CodingWorkspaceFilesResponse {
   truncated: boolean
 }
 
+// ── Code knowledge graph (/api/code-graph) ──────────────────────────────────
+
+export interface CodeGraphStatusResponse {
+  indexed: boolean
+  files: number
+  nodes: number
+  edges: number
+  semantic_enabled: boolean
+  embedding_model: string | null
+  vector_count: number
+  indexing: boolean
+  index_error: string | null
+}
+
+export interface CodeGraphNode {
+  id: string
+  kind: string
+  name: string
+  qualified_name: string
+  file_path: string
+  language: string
+  line_start: number
+  line_end: number
+  signature: string | null
+  docstring: string | null
+}
+
+export interface CodeGraphSearchResponse {
+  nodes: CodeGraphNode[]
+}
+
+export interface CodeGraphReindexResponse {
+  indexing: boolean
+  already_running: boolean
+}
+
 export interface MessageAttachment {
   filename?: string
   media_type?: string

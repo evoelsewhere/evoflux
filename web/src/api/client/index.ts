@@ -7,6 +7,7 @@
 
 export * from './_shared'
 export * from './team'
+export * from './codeGraph'
 export * from './observability'
 export * from './misc'
 export * from './wiki'

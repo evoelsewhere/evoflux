@@ -42,6 +42,30 @@ class MemoryVectorSettings(BaseModel):
     index_path: str | None = None
 
 
+class CodeGraphSettings(BaseModel):
+    """Semantic layer for the code knowledge graph (sqlite-vec + embeddings).
+
+    Disabled by default: the lexical graph (P1/P2) works without any model.
+    When enabled, the indexer embeds symbols with ``embedding_model`` (via
+    fastembed) and stores vectors in a sqlite-vec table for hybrid search.
+    If the embedding backend cannot load, semantic features degrade silently
+    to lexical-only.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    semantic_enabled: bool = False
+    embedding_model: str = "jinaai/jina-embeddings-v2-base-code"
+    embedding_dim: int = 768
+    # Weight of the semantic signal when fusing with lexical results (0..1).
+    semantic_weight: float = 0.5
+    # Auto-reindex coding workspaces when their source files change on disk.
+    # Off by default; the panel's manual "Reindex" always works regardless.
+    watch_enabled: bool = False
+    # Coalesce bursts of file events before reindexing (milliseconds).
+    watch_debounce_ms: int = 1500
+
+
 class ServerSettings(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -66,6 +90,7 @@ class RuntimeSettings(BaseModel):
     memory_vector: MemoryVectorSettings = Field(default_factory=MemoryVectorSettings)
     server: ServerSettings = Field(default_factory=ServerSettings)
     providers: dict[str, ProviderUiSettings] = Field(default_factory=dict)
+    code_graph: CodeGraphSettings = Field(default_factory=CodeGraphSettings)
 
 
 def provider_visible_models(provider_id: str) -> list[str]:

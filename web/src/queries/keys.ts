@@ -29,6 +29,15 @@ export const queryKeys = {
     status: (workspace: string) =>
       ['coding-workspace-status', workspace] as const,
   },
+  // Code knowledge graph panel — keyed by the absolute workspace path, like
+  // the coding sidebar. Status + search share the path so a reindex can
+  // invalidate both with a single prefix.
+  codeGraph: {
+    all: (workspace: string) => ['code-graph', workspace] as const,
+    status: (workspace: string) => ['code-graph', workspace, 'status'] as const,
+    search: (workspace: string, query: string) =>
+      ['code-graph', workspace, 'search', query] as const,
+  },
   // File references for the input bar's @-mention picker. Keyed by the
   // workspace path (coding mode) or session id (normal mode) so the two
   // origins don't share a cache entry.
