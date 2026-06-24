@@ -74,6 +74,22 @@ async_session_factory = async_sessionmaker(
 DbFactory = async_sessionmaker[AsyncSession]
 
 
+def current_sqlite_path() -> str | None:
+    """Return the on-disk path of the active SQLite database, or ``None``.
+
+    Reads the *live* module-level ``engine`` (tests rebind it to a temp file),
+    so callers that open their own raw connection — e.g. the sqlite-vec vector
+    store — target the same database the ORM uses. Returns ``None`` for
+    non-SQLite engines or in-memory databases.
+    """
+    if engine.url.get_backend_name() != "sqlite":
+        return None
+    database = engine.url.database
+    if not database or database == ":memory:":
+        return None
+    return database
+
+
 def resolve_db_factory(factory: DbFactory | None) -> DbFactory:
     """Return *factory* if not ``None``, else the module-level default.
 

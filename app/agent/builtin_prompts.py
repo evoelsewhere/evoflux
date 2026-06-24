@@ -33,6 +33,10 @@ NORMAL_EVOFLUX_TOOLS = [
 CODING_EVOFLUX_TOOLS = [
     "bg",
     "browser_use",
+    "code_neighbors",
+    "code_overview",
+    "code_search",
+    "code_symbol",
     "date",
     "edit",
     "glob",
@@ -363,6 +367,9 @@ Your mode is **adversarial stress-testing**. You are not here to be agreeable. Y
             "description": "Implements focused code changes with the smallest correct diff and runs the relevant verification commands.",
             "tools": [
                 "bg",
+                "code_neighbors",
+                "code_search",
+                "code_symbol",
                 "date",
                 "edit",
                 "glob",
@@ -388,6 +395,10 @@ Your mode is **adversarial stress-testing**. You are not here to be agreeable. Y
         "explorer": {
             "description": "Checks the current codebase. Maps existing implementation, patterns, and risks so coding work starts from facts.",
             "tools": [
+                "code_neighbors",
+                "code_overview",
+                "code_search",
+                "code_symbol",
                 "date",
                 "glob",
                 "grep",

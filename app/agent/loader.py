@@ -286,6 +286,12 @@ def _default_tool_registry() -> dict[str, Tool]:
     )
     from app.agent.tools.builtin.note import note_tool
     from app.agent.tools.builtin.wiki_search import wiki_search
+    from app.agent.tools.builtin.code_graph import (
+        code_neighbors,
+        code_overview,
+        code_search,
+        code_symbol,
+    )
 
     registry: dict[str, Tool] = {
         "web_search": web_search,
@@ -309,6 +315,10 @@ def _default_tool_registry() -> dict[str, Tool]:
         "wiki_search": wiki_search,
         "memory_search": memory_search,
         "note": note_tool,
+        "code_search": code_search,
+        "code_symbol": code_symbol,
+        "code_neighbors": code_neighbors,
+        "code_overview": code_overview,
     }
     # Merge MCP tools from healthy servers. Names follow ``mcp_<server>_<tool>``
     # so they cannot collide with the builtins above.

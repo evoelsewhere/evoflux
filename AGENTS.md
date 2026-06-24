@@ -1,6 +1,6 @@
 # EvoFlux — Agent Instructions
 
-The desktop cockpit for local AI agents — a Tauri 2 desktop shell wrapping a FastAPI backend + React web UI. Apache 2.0, ships as `EvoFlux` (CLI + sidecar) on every platform. Canonical feature catalogue: [`documents/docs/features.md`](documents/docs/features.md) — check there before claiming the product does (or doesn't) something.
+The desktop forge for local AI agents — a Tauri 2 desktop shell wrapping a FastAPI backend + React web UI. Apache 2.0, ships as `EvoFlux` (CLI + sidecar) on every platform. Canonical feature catalogue: [`documents/docs/features.md`](documents/docs/features.md) — check there before claiming the product does (or doesn't) something.
 
 ## Tech stack
 
