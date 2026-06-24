@@ -1,6 +1,4 @@
-import { useState } from 'react'
-
-import { AppBackendDialog } from '@/components/AppBackendDialog'
+import { useUIStore } from '@/stores/useUIStore'
 import { useHealthQuery } from '@/queries/useHealthQuery'
 
 /**
@@ -11,7 +9,6 @@ import { useHealthQuery } from '@/queries/useHealthQuery'
  */
 export function HealthDot() {
   const health = useHealthQuery()
-  const [dialogOpen, setDialogOpen] = useState(false)
 
   let bgColor = 'bg-(--color-text-muted)'
   let pulseClass = 'animate-pulse'
@@ -31,17 +28,14 @@ export function HealthDot() {
       : 'Connecting — change backend connection'
 
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => setDialogOpen(true)}
-        className="flex h-8 w-8 items-center justify-center rounded-md transition-colors hover:bg-(--bg-key) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)"
-        title={label}
-        aria-label={label}
-      >
-        <span className={`h-1.5 w-1.5 rounded-full ${bgColor} ${pulseClass}`} aria-hidden="true" />
-      </button>
-      <AppBackendDialog open={dialogOpen} onOpenChange={setDialogOpen} />
-    </>
+    <button
+      type="button"
+      onClick={() => useUIStore.getState().openSettings('connection')}
+      className="flex h-8 w-8 items-center justify-center rounded-md transition-colors hover:bg-(--bg-key) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)"
+      title={label}
+      aria-label={label}
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${bgColor} ${pulseClass}`} aria-hidden="true" />
+    </button>
   )
 }

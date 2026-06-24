@@ -4,7 +4,7 @@ import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
 
 export function SchedulerPage() {
   const navigate = useNavigate()
-  useEffect(() => { navigate({ to: '/forge', replace: true }) }, [navigate])
+  useEffect(() => { navigate({ to: '/', replace: true }) }, [navigate])
   return (
     <main className="mobile-safe-shell mobile-viewport flex h-dvh items-center justify-center bg-(--bg-page)" aria-label="Loading EvoFlux">
       <div className="relative flex items-center justify-center">

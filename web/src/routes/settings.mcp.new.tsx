@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useNavigate } from '@tanstack/react-router'
 
 import { useCreateMcpServerMutation } from '@/queries'
 import { useToastStore } from '@/stores/useToastStore'
@@ -12,6 +11,7 @@ import {
   validateDraft,
   type McpServerDraft,
 } from '@/components/settings/McpServerDraft'
+import { useSettingsNavigate } from '@/contexts/SettingsContext'
 
 const TEMPLATE: McpServerDraft = {
   ...emptyDraft(),
@@ -41,7 +41,7 @@ export function NewMcpServerPage() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const createMut = useCreateMcpServerMutation()
   const push = useToastStore((s) => s.push)
-  const navigate = useNavigate()
+  const navigate = useSettingsNavigate()
 
   const fieldErrors = validateDraft(draft, { isNew: true })
   const invalid = fieldErrors !== null
@@ -66,7 +66,7 @@ export function NewMcpServerPage() {
         title: `Created MCP server "${draft.name}"`,
         description: 'Available on next turn.',
       })
-      navigate({ to: '/settings/mcp/$name', params: { name: draft.name } })
+      navigate('/settings/mcp/$name', { params: { name: draft.name } })
     } catch (err) {
       const msg = err instanceof ApiValidationError ? err.message : String(err)
       setSaveError(msg)

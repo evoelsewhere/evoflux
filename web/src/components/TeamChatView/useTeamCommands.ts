@@ -18,6 +18,7 @@
 import type { useNavigate } from '@tanstack/react-router'
 import type { Command } from '../CommandPalette'
 import type { ViewMode } from './types'
+import { useUIStore } from '@/stores/useUIStore'
 
 /**
  * Dispatch a synthetic Ctrl+key event so the window-level shortcut
@@ -109,17 +110,17 @@ export function useTeamCommands({
     { id: 'prev-agent', group: 'Agents', label: 'Previous Agent', description: 'Shift+Tab', action: () => cycleActiveAgent('prev') },
     { id: 'go-home',     group: 'Navigation', label: 'Go to Home',     description: '', action: () => navigate({ to: '/' }) },
     ...(mode === 'normal' ? [{ id: 'go-coding', group: 'Navigation', label: 'Go to Coding Mode', description: 'Open the coding workbench', action: () => navigate({ to: '/coding' }) }] : []),
-    { id: 'go-settings', group: 'Navigation', label: 'Open Settings',  description: 'Manage agents & skills', action: () => navigate({ to: '/settings/agents' }) },
-    { id: 'settings-agents', group: 'Settings', label: 'Manage Agents', description: 'Edit agent .md files',  action: () => navigate({ to: '/settings/agents' }) },
-    { id: 'settings-new-agent', group: 'Settings', label: 'New Agent',  description: 'Create a new agent',    action: () => navigate({ to: '/settings/agents/new' }) },
-    { id: 'settings-skills', group: 'Settings', label: 'Manage Skills', description: 'Edit skill .md files',  action: () => navigate({ to: '/settings/skills' }) },
-    { id: 'settings-new-skill', group: 'Settings', label: 'New Skill',  description: 'Create a new skill',    action: () => navigate({ to: '/settings/skills/new' }) },
-    { id: 'settings-dream', group: 'Settings', label: 'Dream Settings',  description: 'Edit the dream model and schedule', action: () => navigate({ to: '/settings/dream' }) },
+    { id: 'go-settings', group: 'Navigation', label: 'Open Settings',  description: 'Manage agents & skills', action: () => useUIStore.getState().openSettings('agents') },
+    { id: 'settings-agents', group: 'Settings', label: 'Manage Agents', description: 'Edit agent .md files',  action: () => useUIStore.getState().openSettings('agents') },
+    { id: 'settings-new-agent', group: 'Settings', label: 'New Agent',  description: 'Create a new agent',    action: () => useUIStore.getState().openSettings('agents/new') },
+    { id: 'settings-skills', group: 'Settings', label: 'Manage Skills', description: 'Edit skill .md files',  action: () => useUIStore.getState().openSettings('skills') },
+    { id: 'settings-new-skill', group: 'Settings', label: 'New Skill',  description: 'Create a new skill',    action: () => useUIStore.getState().openSettings('skills/new') },
+    { id: 'settings-dream', group: 'Settings', label: 'Dream Settings',  description: 'Edit the dream model and schedule', action: () => useUIStore.getState().openSettings('dream') },
     ...agentNames.map((name) => ({
       id: `edit-${name}`, group: 'Settings',
       label: `Edit ${name}…`,
       description: 'Jump to agent editor',
-      action: () => navigate({ to: '/settings/agents/$name', params: { name } }),
+      action: () => useUIStore.getState().openSettings(`agents/${name}`),
     })),
   ]
   return commands

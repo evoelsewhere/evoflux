@@ -4,13 +4,13 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { TeamChatView } from '@/components/TeamChatView'
 import { getTeamSession, resolveTeamSession } from '@/api/client'
 import { useTeamStore } from '@/stores/useTeamStore'
+import { useUIStore } from '@/stores/useUIStore'
 import { applyCacheInvalidations, patchSessionTitle } from '@/stores/cache-invalidation-bridge'
 import { queryKeys } from '@/queries'
 import { loadLastCodingWorkspace, removeCodingWorkspace, saveLastCodingWorkspace, shouldRestoreLastCodingWorkspace, workspaceFromSession } from '@/utils/workspace'
-import { AppBackendDialog } from '@/components/AppBackendDialog'
 
 /**
- * Layout route for /forge, /coding, and their session routes.
+ * Layout route for /, /coding, and their session routes.
  * Stays mounted across URL changes — handles navigation when a new
  * team session_id arrives from POST /team/chat.
  */
@@ -86,7 +86,6 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'normal' | 'coding' }) {
   }, [mode, navigate, queryClient, sessionId])
 
   const storeError = useTeamStore((s) => s.error)
-  const [backendDialogOpen, setBackendDialogOpen] = useState(false)
   const [retryKey, setRetryKey] = useState(0)
 
   const navigateRef = useRef(navigate)
@@ -141,13 +140,13 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'normal' | 'coding' }) {
         if (mode === 'coding') {
           if (workspace) saveLastCodingWorkspace(workspace)
           navigate({
-            to: '/coding/$sessionId',
+            to: '/$sessionId',
             params: { sessionId: session.id },
             replace: true,
           })
         } else {
           navigate({
-            to: '/forge/$sessionId',
+            to: '/$sessionId',
             params: { sessionId: session.id },
             replace: true,
           })
@@ -181,7 +180,7 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'normal' | 'coding' }) {
           })
         } else {
           navigateRef.current({
-            to: '/forge/$sessionId',
+            to: '/$sessionId',
             params: { sessionId: state.sessionId },
             replace: true,
           })
@@ -242,7 +241,7 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'normal' | 'coding' }) {
               </button>
               <button
                 type="button"
-                onClick={() => setBackendDialogOpen(true)}
+                onClick={() => useUIStore.getState().openSettings('connection')}
                 className="flex-1 rounded-md border border-(--color-border-strong) bg-(--bg-key) px-3 py-2 text-xs font-medium text-(--color-text) hover:bg-(--bg-page)"
               >
                 Configure Backend
@@ -251,7 +250,6 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'normal' | 'coding' }) {
           </div>
         </div>
       )}
-      <AppBackendDialog open={backendDialogOpen} onOpenChange={setBackendDialogOpen} />
     </>
   )
 }

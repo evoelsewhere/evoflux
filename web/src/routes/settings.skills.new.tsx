@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useNavigate } from '@tanstack/react-router'
 
 import { useCreateSkillMutation } from '@/queries'
 import { useToastStore } from '@/stores/useToastStore'
@@ -8,6 +7,7 @@ import { EditorSubHeader } from '@/components/settings/EditorSubHeader'
 import { validateSkillDraft } from '@/components/settings/schema'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
+import { useSettingsNavigate } from '@/contexts/SettingsContext'
 
 const TEMPLATE = `---
 name: new-skill
@@ -25,7 +25,7 @@ export function NewSkillPage() {
   const [name, setName] = useState('new-skill')
   const createMut = useCreateSkillMutation()
   const push = useToastStore((s) => s.push)
-  const navigate = useNavigate()
+  const navigate = useSettingsNavigate()
   const [saveError, setSaveError] = useState<string | null>(null)
 
   const handleContentChange = (raw: string) => {
@@ -51,7 +51,7 @@ export function NewSkillPage() {
         title: `Created skill "${name}"`,
         description: 'Active on next turn.',
       })
-      navigate({ to: '/settings/skills/$name', params: { name } })
+      navigate('/settings/skills/$name', { params: { name } })
     } catch (err) {
       const msg = err instanceof ApiValidationError ? err.message : String(err)
       setSaveError(msg)

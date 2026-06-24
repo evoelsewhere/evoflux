@@ -1,16 +1,16 @@
 /**
  * /settings/skills — inline list of skill packs in the detail pane.
  */
-import { useParams } from '@tanstack/react-router'
 import { Sparkles } from 'lucide-react'
 import { useMemo } from 'react'
 
 import { SettingsListView, type ListViewRow } from '@/components/settings/SettingsListView'
 import { useSkillFilesQuery } from '@/queries'
+import { useSettingsParams } from '@/contexts/SettingsContext'
 
 export function SkillsListPage() {
   const { data, isLoading, isError } = useSkillFilesQuery()
-  const { name: selected } = useParams({ strict: false }) as { name?: string }
+  const { name: selected } = useSettingsParams() as { name?: string }
 
   const rows = useMemo<ListViewRow[]>(() => {
     const skills = data?.skills ?? []

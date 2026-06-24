@@ -29,10 +29,11 @@ import { usePlatform } from "@/hooks/use-platform";
 import { useResizableWidth } from "@/hooks/use-resizable-width";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import {
+  Code2,
   Folder,
+  Gauge,
   GitBranch,
   HelpCircle,
-  Home,
   CircleHelp,
   Loader2,
   Pencil,
@@ -68,6 +69,7 @@ import {
 import { formatRelativeDate } from "@/utils/format";
 import { saveLastCodingWorkspace, workspaceLabel } from "@/utils/workspace";
 import { isTransientNetworkError } from "@/utils/errors";
+import { useUIStore } from "@/stores/useUIStore";
 import { ThemeToggle } from "./ThemeToggle";
 import { HealthDot } from "./HealthDot";
 import { Button } from "@/components/ui/button";
@@ -890,19 +892,50 @@ export function CodingSidebar({
           }
         >
         {isMobile && (
-          <nav aria-label="Primary" className="px-2 pt-3">
-            <button
-              type="button"
-              onClick={() => {
-                navigate({ to: "/" });
-                onMobileClose?.();
-              }}
-              className="flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm text-(--color-text-2) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-            >
-              <Home size={15} aria-hidden="true" />
-              <span>Home</span>
-            </button>
-          </nav>
+          <div className="px-3 pt-3">
+            <div className="flex h-8 items-center rounded-md border border-(--color-border) bg-(--bg-page) p-0.5">
+              <button
+                type="button"
+                onClick={() => { navigate({ to: "/" }); onMobileClose?.(); }}
+                className="flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 text-xs font-medium text-(--color-text-muted) transition-colors hover:text-(--color-text)"
+              >
+                <Gauge size={12} aria-hidden="true" />
+                Forge
+              </button>
+              <button
+                type="button"
+                onClick={() => {}}
+                className="flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 text-xs font-medium bg-(--bg-key) text-(--color-text) shadow-sm transition-colors"
+              >
+                <Code2 size={12} aria-hidden="true" />
+                Coding
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Mode switch — desktop */}
+        {!isMobile && (
+          <div className="shrink-0 rounded-[10px] bg-(--bg-sidebar)/80 px-2 py-2 shadow-sm backdrop-blur-xl">
+            <div className="flex h-8 items-center rounded-md border border-(--color-border) bg-(--bg-page) p-0.5">
+              <button
+                type="button"
+                onClick={() => navigate({ to: "/" })}
+                className="flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 text-xs font-medium text-(--color-text-muted) transition-colors hover:text-(--color-text)"
+              >
+                <Gauge size={12} aria-hidden="true" />
+                Forge
+              </button>
+              <button
+                type="button"
+                onClick={() => {}}
+                className="flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 text-xs font-medium bg-(--bg-key) text-(--color-text) shadow-sm transition-colors"
+              >
+                <Code2 size={12} aria-hidden="true" />
+                Coding
+              </button>
+            </div>
+          </div>
         )}
 
         {/* Search trigger — opens the command palette (Ctrl+P). */}
@@ -1304,7 +1337,7 @@ export function CodingSidebar({
             <button
               type="button"
               onClick={() => {
-                navigate({ to: "/settings" });
+                useUIStore.getState().openSettings();
                 onMobileClose?.();
               }}
               className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"

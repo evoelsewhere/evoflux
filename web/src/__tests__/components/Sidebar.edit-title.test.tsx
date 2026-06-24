@@ -38,13 +38,16 @@ mock.module('@/hooks/useReducedMotion', () => ({
 
 const Icon = () => null
 mock.module('lucide-react', () => ({
+  CalendarClock: Icon,
   Check: Icon,
   ChevronRight: Icon,
+  Code2: Icon,
   Copy: Icon,
   Download: Icon,
   ExternalLink: Icon,
   FileText: Icon,
   Folder: Icon,
+  Gauge: Icon,
   GitCompare: Icon,
   Globe: Icon,
   HelpCircle: Icon,

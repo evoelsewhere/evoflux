@@ -1,4 +1,3 @@
-import { useNavigate, useParams } from '@tanstack/react-router'
 import { useState } from 'react'
 import { Trash2 } from 'lucide-react'
 
@@ -23,6 +22,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { useSettingsParams, useSettingsNavigate } from '@/contexts/SettingsContext'
 
 /**
  * Edit an existing agent. Loads the raw .md, renders the hybrid form,
@@ -30,8 +30,8 @@ import {
  * success the toast shows the reload diff.
  */
 export function AgentEditorPage() {
-  const { name } = useParams({ from: '/settings/agents/$name' })
-  const navigate = useNavigate()
+  const { name } = useSettingsParams()
+  const navigate = useSettingsNavigate()
   const push = useToastStore((s) => s.push)
   const { data, isLoading, isError, error, refetch } = useAgentFileQuery(name)
   const { data: agentsData } = useAgentFilesQuery()
@@ -92,7 +92,7 @@ export function AgentEditorPage() {
     try {
       await deleteMut.mutateAsync(name)
       push({ tone: 'success', title: `Deleted "${name}"` })
-      navigate({ to: '/settings/agents' })
+      navigate('/settings/agents')
     } catch (err) {
       const msg = err instanceof ApiValidationError ? err.message : String(err)
       push({ tone: 'error', title: 'Delete failed', description: msg })
@@ -150,7 +150,7 @@ export function AgentEditorPage() {
                     variant="ghost"
                     size="xs"
                     className="min-h-11 md:min-h-0"
-                    onClick={() => navigate({ to: '/settings/agents' })}
+                    onClick={() => navigate('/settings/agents')}
                   >
                     Leave without saving
                   </Button>

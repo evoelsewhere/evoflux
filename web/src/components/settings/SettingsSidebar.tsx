@@ -1,24 +1,11 @@
 /**
- * SettingsSidebar — wide labeled sidebar (240px) for the settings shell.
+ * SettingsSidebar — wide labeled sidebar (240px) for the settings modal.
  *
- *   ┌──────────────────────────┐
- *   │ CONFIGURATION             │
- *   │ ▌ 🔧 Agents          6    │  ← active row has accent left border
- *   │   ✨ Skills          12   │
- *   │   🔌 MCP servers     4    │
- *   │   🛡 Sandbox              │
- *   │   💭 Dream                │
- *   │   🎙 Voice                │
- *   │ ────────────────────────  │
- *   │ ABOUT                     │
- *   │   📊 Telemetry            │
- *   │   ℹ About EvoFlux      │
- *   └──────────────────────────┘
- *
- * Counts come from the same TanStack queries the hub page uses; rows
- * without a queryable count omit the trailing badge.
+ * Supports two modes:
+ *   - Route-driven (default): uses TanStack Router Link + useLocation
+ *   - Store-driven: uses useUIStore.navigateSettings for modal popup mode
  */
-import { Link, useLocation } from '@tanstack/react-router'
+import { useLocation } from '@tanstack/react-router'
 import {
   BarChart3,
   Bell,
@@ -26,6 +13,7 @@ import {
   KeyRound,
   Moon,
   Plug,
+  Server,
   Shield,
   Sparkles,
   Wrench,
@@ -40,6 +28,7 @@ import {
   useSandboxSettingsQuery,
   useSkillFilesQuery,
 } from '@/queries'
+import { useUIStore } from '@/stores/useUIStore'
 
 type SidebarPath =
   | '/settings/agents'
@@ -47,6 +36,7 @@ type SidebarPath =
   | '/settings/mcp'
   | '/settings/providers'
   | '/settings/sandbox'
+  | '/settings/connection'
   | '/settings/dream'
   | '/settings/notifications'
   | '/telemetry'
@@ -71,14 +61,50 @@ function GroupLabel({ children }: { children: string }) {
   )
 }
 
-function SidebarRow({ item, active }: { item: SidebarItem; active: boolean }) {
+function SidebarRow({ item, active, onNavigate }: { item: SidebarItem; active: boolean; onNavigate?: (path: string) => void }) {
   const Icon = item.icon
+  if (onNavigate) {
+    return (
+      <button
+        type="button"
+        onClick={() => onNavigate(item.to)}
+        aria-current={active ? 'page' : undefined}
+        className={cn(
+          'group relative mx-2 flex h-9 items-center gap-2.5 rounded-md px-3 text-left text-sm transition-colors',
+          'text-(--color-text-2) hover:bg-(--bg-key) hover:text-(--color-text)',
+          'focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-(--focus-ring)/40',
+          active && 'bg-(--bg-key) font-semibold text-(--color-text)',
+        )}
+      >
+        <Icon
+          size={15}
+          className={cn(
+            'shrink-0',
+            active ? 'text-(--color-text)' : 'text-(--color-text-muted)',
+          )}
+          aria-hidden="true"
+        />
+        <span className="min-w-0 flex-1 truncate">{item.label}</span>
+        {item.count !== undefined && item.count !== null && (
+          <span
+            className={cn(
+              'shrink-0 font-mono text-[10px] tabular-nums',
+              active ? 'font-semibold text-(--color-text-muted)' : 'text-(--color-text-muted)',
+            )}
+          >
+            {item.count}
+          </span>
+        )}
+      </button>
+    )
+  }
   return (
-    <Link
-      to={item.to}
+    <button
+      type="button"
+      onClick={() => useUIStore.getState().navigateSettings(item.to.replace(/^\/settings\/?/, ''))}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'group relative mx-2 flex h-9 items-center gap-2.5 rounded-md px-3 text-sm transition-colors',
+        'group relative mx-2 flex h-9 items-center gap-2.5 rounded-md px-3 text-left text-sm transition-colors',
         'text-(--color-text-2) hover:bg-(--bg-key) hover:text-(--color-text)',
         'focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-(--focus-ring)/40',
         active && 'bg-(--bg-key) font-semibold text-(--color-text)',
@@ -103,12 +129,20 @@ function SidebarRow({ item, active }: { item: SidebarItem; active: boolean }) {
           {item.count}
         </span>
       )}
-    </Link>
+    </button>
   )
 }
 
-export function SettingsSidebar() {
-  const { pathname } = useLocation()
+interface SettingsSidebarProps {
+  /** Override the active path (for store-driven modal mode). */
+  currentPath?: string
+  /** When provided, row clicks call this instead of navigating via Link. */
+  onNavigate?: (path: string) => void
+}
+
+export function SettingsSidebar({ currentPath, onNavigate }: SettingsSidebarProps = {}) {
+  const { pathname: routePathname } = useLocation()
+  const pathname = currentPath ?? routePathname
   const agentsQ = useAgentFilesQuery()
   const skillsQ = useSkillFilesQuery()
   const mcpQ = useMcpServersQuery()
@@ -142,6 +176,12 @@ export function SettingsSidebar() {
         label: 'Providers',
         icon: KeyRound,
         matchPrefix: '/settings/providers',
+      },
+      {
+        to: '/settings/connection',
+        label: 'Connection',
+        icon: Server,
+        matchPrefix: '/settings/connection',
       },
       {
         to: '/settings/sandbox',
@@ -207,7 +247,7 @@ export function SettingsSidebar() {
       <GroupLabel>Configuration</GroupLabel>
       <div className="flex flex-col">
         {configurationItems.map((item) => (
-          <SidebarRow key={item.to} item={item} active={isActive(item.matchPrefix)} />
+          <SidebarRow key={item.to} item={item} active={isActive(item.matchPrefix)} onNavigate={onNavigate} />
         ))}
       </div>
 
@@ -216,7 +256,7 @@ export function SettingsSidebar() {
       <GroupLabel>About</GroupLabel>
       <div className="flex flex-col">
         {aboutItems.map((item) => (
-          <SidebarRow key={item.to} item={item} active={isActive(item.matchPrefix)} />
+          <SidebarRow key={item.to} item={item} active={isActive(item.matchPrefix)} onNavigate={onNavigate} />
         ))}
       </div>
     </nav>
