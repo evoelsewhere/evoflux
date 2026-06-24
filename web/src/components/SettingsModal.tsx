@@ -11,7 +11,6 @@ import { useIsMobile } from '@/hooks/use-mobile'
 import { useReducedMotion } from '@/hooks/useReducedMotion'
 import { SettingsSidebar } from '@/components/settings/SettingsSidebar'
 import { SettingsProvider } from '@/contexts/SettingsContext'
-import { AppBackendDialog } from '@/components/AppBackendDialog'
 import { SettingsHubPage } from '@/routes/settings.index'
 import { AgentsListPage } from '@/routes/settings.agents'
 import { AgentEditorPage } from '@/routes/settings.agents.$name'
@@ -26,11 +25,13 @@ import { SandboxSettingsPage } from '@/routes/settings.sandbox'
 import { ProvidersSettingsPage } from '@/routes/settings.providers'
 import { DreamSettingsPage } from '@/routes/settings.dream'
 import { NotificationSettingsPage } from '@/routes/settings.notifications'
+import { BackendConnectionPage } from '@/routes/settings.connection'
 
 function pageTitleFor(path: string): string {
   if (path.startsWith('agents')) return 'Agents'
   if (path.startsWith('skills')) return 'Skills'
   if (path.startsWith('mcp')) return 'MCP servers'
+  if (path === 'connection') return 'Connection'
   if (path === 'providers') return 'Providers'
   if (path === 'sandbox') return 'Sandbox'
   if (path === 'dream') return 'Dream'
@@ -53,6 +54,7 @@ function SettingsContent({ path }: { path: string }) {
   if (section === 'mcp' && sub === 'new') return <NewMcpServerPage />
   if (section === 'mcp' && sub) return <McpServerDetailPage />
   if (section === 'mcp') return <McpListPage />
+  if (section === 'connection') return <BackendConnectionPage />
   if (section === 'providers') return <ProvidersSettingsPage />
   if (section === 'sandbox') return <SandboxSettingsPage />
   if (section === 'dream') return <DreamSettingsPage />
@@ -101,9 +103,6 @@ export function SettingsModal() {
     const stripped = path.replace(/^\/settings\/?/, '')
     navigateSettings(stripped)
   }, [navigateSettings])
-
-  // Backend connection dialog state
-  const isConnectionPath = settingsPath === 'connection'
 
   return (
     <AnimatePresence>
@@ -170,8 +169,6 @@ export function SettingsModal() {
           </motion.div>
         </motion.div>
       )}
-      {/* Backend connection dialog — shown on top of settings modal */}
-      <AppBackendDialog open={isConnectionPath && settingsOpen} onOpenChange={(open) => { if (!open) navigateSettings('') }} />
     </AnimatePresence>
   )
 }
