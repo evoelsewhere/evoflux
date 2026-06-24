@@ -228,7 +228,7 @@ export function CodingWorkspacePanel({
         mobile ? 'mobile-safe-top max-w-none' : isMacOverlay ? 'h-full' : '-mt-10 h-[calc(100%+2.5rem)]',
       )}
     >
-      <div className={cn('relative flex h-full min-h-0 w-full flex-col', mobile ? 'max-w-none' : 'md:w-full')}>
+      <div className={cn('relative flex h-full min-h-0 w-full flex-col', mobile ? 'max-w-none' : 'md:w-full', !mobile && !isMacOverlay && 'pt-10')}>
         {!mobile && (
           <div
             role="separator"
