@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { Check, Copy, Download, ExternalLink, FileText, GitCompare, Loader2, Pencil, X } from 'lucide-react'
-import Editor, { useMonaco } from '@monaco-editor/react'
-import { codingWorkspaceFileUrl, getCodingWorkspaceGitDiff } from '@/api/client'
+import { Check, Copy, Download, ExternalLink, FileText, GitCompare, Loader2, Pencil, Save, Undo2, X } from 'lucide-react'
+import Editor, { DiffEditor, useMonaco } from '@monaco-editor/react'
+import { codingWorkspaceFileUrl, getCodingWorkspaceGitDiff, writeCodingWorkspaceFile } from '@/api/client'
 import { downloadCodingWorkspaceFile } from '@/lib/coding-workspace-download'
 import { cn } from '@/lib/utils'
 import { formatBytes } from '@/utils/format'
@@ -84,23 +84,34 @@ function TextPreview({
   workspace,
   file,
   onAddComment,
+  onSendToChat,
   editing = false,
-  onContentChange,
+  onSaved,
+  pendingDiff,
+  onAcceptDiff,
+  onRejectDiff,
 }: {
   workspace: string
   file: WorkspaceFileInfo
   onAddComment?: (path: string, startLine: number, endLine: number) => void
+  onSendToChat?: (action: string, code: string, path: string, startLine: number, endLine: number) => void
   editing?: boolean
-  onContentChange?: (content: string) => void
+  onSaved?: () => void
+  pendingDiff?: { original: string; modified: string } | null
+  onAcceptDiff?: () => void
+  onRejectDiff?: () => void
 }) {
   const tooLarge = file.size > MAX_TEXT_PREVIEW_BYTES
   const [content, setContent] = useState<string | null>(null)
+  const [modified, setModified] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(!tooLarge)
+  const [saving, setSaving] = useState(false)
   const editorRef = useRef<Parameters<NonNullable<Parameters<typeof Editor>[0]['onMount']>>[0] | null>(null)
 
   const monaco = useMonaco()
   const theme = useMonacoTheme(monaco)
+  const isDirty = modified !== null && modified !== content
 
   useEffect(() => {
     if (tooLarge) return
@@ -113,6 +124,7 @@ function TextPreview({
       .then((text) => {
         if (!cancelled) {
           setContent(text)
+          setModified(null)
           setLoading(false)
         }
       })
@@ -122,28 +134,113 @@ function TextPreview({
           setLoading(false)
         }
       })
-    return () => {
-      cancelled = true
-    }
+    return () => { cancelled = true }
   }, [workspace, file.path, tooLarge])
+
+  // Register custom context menu actions
+  useEffect(() => {
+    if (!monaco || !editorRef.current) return
+    const editor = editorRef.current
+    const disposables: { dispose: () => void }[] = []
+
+    if (!editing && onSendToChat) {
+      disposables.push(
+        editor.addAction({
+          id: 'evoflux.explain',
+          label: 'Explain this code',
+          contextMenuGroupId: 'evoflux',
+          contextMenuOrder: 1,
+          run: (ed) => {
+            const sel = ed.getSelection()
+            const text = sel ? ed.getModel()?.getValueInRange(sel) : ''
+            if (text && sel) onSendToChat('explain', text, file.path, sel.startLineNumber, sel.endLineNumber)
+          },
+        }),
+      )
+      disposables.push(
+        editor.addAction({
+          id: 'evoflux.refactor',
+          label: 'Refactor selection',
+          contextMenuGroupId: 'evoflux',
+          contextMenuOrder: 2,
+          run: (ed) => {
+            const sel = ed.getSelection()
+            const text = sel ? ed.getModel()?.getValueInRange(sel) : ''
+            if (text && sel) onSendToChat('refactor', text, file.path, sel.startLineNumber, sel.endLineNumber)
+          },
+        }),
+      )
+      disposables.push(
+        editor.addAction({
+          id: 'evoflux.fix',
+          label: 'Fix this code',
+          contextMenuGroupId: 'evoflux',
+          contextMenuOrder: 3,
+          run: (ed) => {
+            const sel = ed.getSelection()
+            const text = sel ? ed.getModel()?.getValueInRange(sel) : ''
+            if (text && sel) onSendToChat('fix', text, file.path, sel.startLineNumber, sel.endLineNumber)
+          },
+        }),
+      )
+      disposables.push(
+        editor.addAction({
+          id: 'evoflux.addComment',
+          label: 'Add to chat as reference',
+          contextMenuGroupId: 'evoflux',
+          contextMenuOrder: 4,
+          run: (ed) => {
+            const sel = ed.getSelection()
+            if (sel) onAddComment?.(file.path, sel.startLineNumber, sel.endLineNumber)
+          },
+        }),
+      )
+    }
+
+    // Ctrl+S to save in edit mode
+    if (editing) {
+      disposables.push(
+        editor.addAction({
+          id: 'evoflux.save',
+          label: 'Save file',
+          keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS],
+          run: () => { void handleSave() },
+        }),
+      )
+    }
+
+    return () => { disposables.forEach((d) => d.dispose()) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [monaco, editing, onSendToChat, onAddComment, file.path])
 
   const handleEditorMount = useCallback((editor: Parameters<NonNullable<Parameters<typeof Editor>[0]['onMount']>>[0]) => {
     editorRef.current = editor
-
-    // Wire up line selection for "Add comment" when not editing
-    if (!editing && onAddComment) {
-      editor.onDidChangeCursorSelection((e) => {
-        const sel = e.selection
-        if (sel.startLineNumber > 0) {
-          onAddComment(file.path, sel.startLineNumber, sel.endLineNumber)
-        }
-      })
-    }
-  }, [editing, onAddComment, file.path])
+  }, [])
 
   const handleChange = useCallback((value: string | undefined) => {
-    if (value !== undefined) onContentChange?.(value)
-  }, [onContentChange])
+    if (value !== undefined) setModified(value)
+  }, [])
+
+  const handleSave = useCallback(async () => {
+    if (!isDirty || saving || modified === null) return
+    setSaving(true)
+    try {
+      await writeCodingWorkspaceFile(workspace, file.path, modified)
+      setContent(modified)
+      onSaved?.()
+    } catch {
+      // Error silently — user can retry
+    } finally {
+      setSaving(false)
+    }
+  }, [isDirty, saving, modified, workspace, file.path, onSaved])
+
+  const handleDiscard = useCallback(() => {
+    setModified(null)
+    if (editorRef.current && content !== null) {
+      editorRef.current.setValue(content)
+    }
+  }, [content])
 
   if (tooLarge) {
     return (
@@ -161,8 +258,82 @@ function TextPreview({
   const ext = extOf(file.name)
   const language = languageForExt(ext)
 
+  // Show inline diff when agent suggests changes
+  if (pendingDiff) {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-(--color-border) bg-(--bg-key) px-3 py-2">
+          <span className="text-xs font-medium text-(--color-text-muted)">Agent suggested changes</span>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={onAcceptDiff}
+              className="flex items-center gap-1 rounded-md bg-(--color-success)/15 px-2.5 py-1 text-xs font-medium text-(--color-success) hover:bg-(--color-success)/25"
+            >
+              <Check size={12} /> Accept
+            </button>
+            <button
+              type="button"
+              onClick={onRejectDiff}
+              className="flex items-center gap-1 rounded-md bg-(--color-error)/15 px-2.5 py-1 text-xs font-medium text-(--color-error) hover:bg-(--color-error)/25"
+            >
+              <X size={12} /> Reject
+            </button>
+          </div>
+        </div>
+        <DiffEditor
+          theme={theme}
+          language={language}
+          original={pendingDiff.original}
+          modified={pendingDiff.modified}
+          loading={<div className="flex h-full items-center justify-center"><Loader2 size={16} className="animate-spin text-(--color-text-subtle)" /></div>}
+          options={{
+            readOnly: true,
+            renderSideBySide: false,
+            minimap: { enabled: false },
+            scrollBeyondLastLine: false,
+            fontSize: 12,
+            lineHeight: 20,
+            fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
+            glyphMargin: false,
+            folding: false,
+            wordWrap: 'on',
+            scrollbar: { verticalScrollbarSize: 8, horizontalScrollbarSize: 8, useShadows: false },
+            overviewRulerLanes: 0,
+            padding: { top: 8, bottom: 8 },
+            automaticLayout: true,
+          }}
+        />
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {/* Dirty indicator bar */}
+      {editing && isDirty && (
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-(--color-border) bg-(--bg-key) px-3 py-1.5">
+          <span className="text-[11px] text-(--color-text-muted)">Unsaved changes</span>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={handleDiscard}
+              disabled={saving}
+              className="flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-(--color-text-muted) transition-colors hover:bg-(--bg-page) hover:text-(--color-text)"
+            >
+              <Undo2 size={11} /> Discard
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleSave()}
+              disabled={saving}
+              className="flex items-center gap-1 rounded-md bg-(--color-accent) px-2.5 py-0.5 text-[11px] font-medium text-(--color-text-on-accent) hover:opacity-90 disabled:opacity-50"
+            >
+              {saving ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />} Save
+            </button>
+          </div>
+        </div>
+      )}
       <Editor
         theme={theme}
         language={language}
@@ -183,7 +354,7 @@ function TextPreview({
           glyphMargin: false,
           folding: true,
           wordWrap: 'on',
-          contextmenu: editing,
+          contextmenu: true,
           scrollbar: {
             verticalScrollbarSize: 8,
             horizontalScrollbarSize: 8,
@@ -309,12 +480,24 @@ export function CodingFileViewerPanel({
   file,
   onClose,
   onAddComment,
+  onSendToChat,
+  pendingDiff,
+  onAcceptDiff,
+  onRejectDiff,
   mobile = false,
 }: {
   workspace: string
   file: WorkspaceFileInfo | null
   onClose: () => void
   onAddComment?: (path: string, startLine: number, endLine: number) => void
+  /** Editor → Chat: user triggers an action on selected code */
+  onSendToChat?: (action: string, code: string, path: string, startLine: number, endLine: number) => void
+  /** Show inline diff from agent suggestion (original vs modified) */
+  pendingDiff?: { original: string; modified: string } | null
+  /** Accept the pending diff — apply modified content */
+  onAcceptDiff?: () => void
+  /** Reject the pending diff — keep original */
+  onRejectDiff?: () => void
   mobile?: boolean
 }) {
   const prefersReducedMotion = useReducedMotion()
@@ -400,7 +583,19 @@ export function CodingFileViewerPanel({
                     : <DiffPreview diff={scopedDiff.data.diff} />
           ) : kind === 'image' ? <ImagePreview workspace={workspace} file={file} />
             : kind === 'drawio' ? <DrawioPreview key={file.path} workspace={workspace} file={file} />
-            : kind === 'text' ? <TextPreview key={file.path} workspace={workspace} file={file} onAddComment={onAddComment} editing={editing} />
+            : kind === 'text' ? (
+              <TextPreview
+                key={file.path}
+                workspace={workspace}
+                file={file}
+                onAddComment={onAddComment}
+                onSendToChat={onSendToChat}
+                editing={editing}
+                pendingDiff={pendingDiff}
+                onAcceptDiff={onAcceptDiff}
+                onRejectDiff={onRejectDiff}
+              />
+            )
             : <BinaryPreview workspace={workspace} file={file} />}
         </div>
       </div>

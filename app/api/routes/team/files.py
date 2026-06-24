@@ -321,6 +321,35 @@ async def read_coding_workspace_file(
     )
 
 
+@router.put("/workspace/files/write")
+async def write_coding_workspace_file(
+    workspace: str, path: str, body: dict[str, str]
+) -> dict[str, bool]:
+    """Write content to a single file in the coding workspace.
+
+    Accepts JSON ``{"content": "..."}`` body.  Path traversal is rejected
+    via containment check.  Parent directories are created if needed.
+    """
+    content = body.get("content")
+    if content is None:
+        raise HTTPException(status_code=422, detail="Missing 'content' field.")
+    try:
+        resolved = team_manager.validate_workspace(workspace)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    root = Path(resolved).resolve(strict=False)
+    target = (root / path).resolve(strict=False)
+    try:
+        target.relative_to(root)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Path escapes workspace root.")
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding="utf-8")
+    return {"ok": True}
+
+
 @router.get("/workspace/files/list", response_model=CodingWorkspaceFilesResponse)
 async def list_coding_workspace_files(workspace: str) -> CodingWorkspaceFilesResponse:
     try:
