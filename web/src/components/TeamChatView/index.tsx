@@ -474,6 +474,20 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
     inputRef.current?.focus()
   }, [])
 
+  /** Editor context menu → Chat: user requests an action on selected code */
+  const handleSendToChat = useCallback((action: string, code: string, path: string, startLine: number, endLine: number) => {
+    const lineRef = startLine === endLine ? `L${startLine}` : `L${startLine}-L${endLine}`
+    const prefix = action === 'explain'
+      ? `Explain this code from \`${path}#${lineRef}\`:\n`
+      : action === 'refactor'
+        ? `Refactor this code from \`${path}#${lineRef}\`:\n`
+        : action === 'fix'
+          ? `Fix this code from \`${path}#${lineRef}\`:\n`
+          : `@${path}#${lineRef}\n`
+    inputRef.current?.setValue(`${prefix}\`\`\`\n${code}\n\`\`\`\n`)
+    inputRef.current?.focus()
+  }, [])
+
   const handleCodingFileSelect = useCallback((file: WorkspaceFileInfo | null) => {
     setCodingFileViewer(file)
     if (isMobile && file) setCodingPanel(null)
@@ -1313,6 +1327,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
             file={codingFileViewer}
             mobile={isMobile}
             onAddComment={handleAddFileComment}
+            onSendToChat={handleSendToChat}
             onClose={() => setCodingFileViewer(null)}
           />
         )}

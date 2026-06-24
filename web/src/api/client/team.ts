@@ -365,6 +365,17 @@ export function codingWorkspaceFileUrl(workspace: string, path: string, options?
   return withTokenParam(apiUrl(`/team/workspace/files/read?${params}`))
 }
 
+/** Write file content to the coding workspace via PUT. */
+export async function writeCodingWorkspaceFile(workspace: string, path: string, content: string): Promise<void> {
+  const params = new URLSearchParams({ workspace, path })
+  const res = await fetch(apiUrl(`/team/workspace/files/write?${params}`), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'writeCodingWorkspaceFile')
+}
+
 export async function getTodos(sessionId: string): Promise<TodosResponse> {
   const res = await fetch(`${apiBaseUrl()}/team/sessions/${encodeURIComponent(sessionId)}/todos`)
   if (!res.ok) await parseDetailOrThrow(res, 'getTodos')
