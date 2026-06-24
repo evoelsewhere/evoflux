@@ -1,4 +1,3 @@
-import { Link, useParams } from '@tanstack/react-router'
 import { Crown, Plus, Wrench } from 'lucide-react'
 import { useState } from 'react'
 
@@ -13,12 +12,14 @@ import {
 } from '@/components/ui/dialog'
 import { SettingsListView, type ListViewRow } from '@/components/settings/SettingsListView'
 import { useAgentFilesQuery } from '@/queries'
+import { useSettingsParams, useSettingsNavigate } from '@/contexts/SettingsContext'
 
 type Tab = 'all' | 'normal' | 'coding'
 
 export function AgentsListPage() {
   const { data, isLoading, isError } = useAgentFilesQuery()
-  const { name: selected } = useParams({ strict: false }) as { name?: string }
+  const { name: selected } = useSettingsParams() as { name?: string }
+  const navigate = useSettingsNavigate()
   const [modeDialogOpen, setModeDialogOpen] = useState(false)
   const [tab, setTab] = useState<Tab>('all')
 
@@ -118,10 +119,10 @@ export function AgentsListPage() {
           <DialogDescription>Choose which team directory receives the new agent file.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-2 sm:grid-cols-2">
-          <Button render={<Link to="/settings/agents/new" search={{ mode: 'normal' }} />}>
+          <Button onClick={() => { setModeDialogOpen(false); navigate('agents/new', { search: { mode: 'normal' } }) }}>
             Normal
           </Button>
-          <Button render={<Link to="/settings/agents/new" search={{ mode: 'coding' }} />}>
+          <Button onClick={() => { setModeDialogOpen(false); navigate('agents/new', { search: { mode: 'coding' } }) }}>
             Coding
           </Button>
         </div>

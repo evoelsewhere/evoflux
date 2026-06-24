@@ -13,7 +13,6 @@ import {
   TerminalSquare,
 } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
 
 import {
   ApiValidationError,
@@ -39,6 +38,7 @@ import {
 } from '@/queries'
 import { openExternalUrl } from '@/lib/open-external'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { useSettingsNavigate } from '@/contexts/SettingsContext'
 import { usePlatform } from '@/hooks/use-platform'
 import { mediumHapticFeedback } from '@/lib/haptics'
 import { useToastStore } from '@/stores/useToastStore'
@@ -1050,6 +1050,7 @@ function OAuthLoginDialog({
 
 export function ProvidersSettingsPage() {
   const isMobile = useIsMobile()
+  const settingsNavigate = useSettingsNavigate()
   const providersQ = useProvidersQuery()
   // Render in catalog order so the list is stable regardless of which
   // providers happen to be configured. Sorting by ``is_configured`` would
@@ -1062,13 +1063,14 @@ export function ProvidersSettingsPage() {
     <>
       <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-3 border-b border-(--color-border) bg-(--bg-page) px-4">
         {isMobile && (
-          <Link
-            to="/settings"
+          <button
+            type="button"
+            onClick={() => settingsNavigate('/settings')}
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
             aria-label="Back to settings"
           >
             <ArrowLeft size={14} />
-          </Link>
+          </button>
         )}
         <KeyRound size={15} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
         <h1 className="flex-1 truncate text-sm font-semibold text-(--color-text)">Providers</h1>

@@ -1,4 +1,3 @@
-import { useNavigate, useParams } from '@tanstack/react-router'
 import { useState } from 'react'
 import { Trash2 } from 'lucide-react'
 
@@ -19,6 +18,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
+import { useSettingsParams, useSettingsNavigate } from '@/contexts/SettingsContext'
 
 /**
  * Skill editor — lighter than the agent editor because skills have an
@@ -26,8 +26,8 @@ import { Textarea } from '@/components/ui/textarea'
  * We render a single raw .md textarea and let the user go wild.
  */
 export function SkillEditorPage() {
-  const { name } = useParams({ from: '/settings/skills/$name' })
-  const navigate = useNavigate()
+  const { name } = useSettingsParams()
+  const navigate = useSettingsNavigate()
   const push = useToastStore((s) => s.push)
   const { data, isLoading, isError, error, refetch } = useSkillFileQuery(name)
   const updateMut = useUpdateSkillMutation()
@@ -77,7 +77,7 @@ export function SkillEditorPage() {
     try {
       await deleteMut.mutateAsync(name)
       push({ tone: 'success', title: `Deleted "${name}"` })
-      navigate({ to: '/settings/skills' })
+      navigate('/settings/skills')
     } catch (err) {
       const msg = err instanceof ApiValidationError ? err.message : String(err)
       push({ tone: 'error', title: 'Delete failed', description: msg })
@@ -146,7 +146,7 @@ export function SkillEditorPage() {
                     variant="ghost"
                     size="xs"
                     className="min-h-11 md:min-h-0"
-                    onClick={() => navigate({ to: '/settings/skills' })}
+                    onClick={() => navigate('/settings/skills')}
                   >
                     Leave without saving
                   </Button>

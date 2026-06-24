@@ -1,7 +1,6 @@
 /**
  * /settings/mcp — inline list of MCP servers in the detail pane.
  */
-import { useParams } from '@tanstack/react-router'
 import { AlertCircle, Plug } from 'lucide-react'
 import { useMemo } from 'react'
 
@@ -9,6 +8,7 @@ import { type ServerStatus } from '@/api/client'
 import { SettingsListView, type ListViewRow } from '@/components/settings/SettingsListView'
 import { cn } from '@/lib/utils'
 import { useMcpServersQuery } from '@/queries'
+import { useSettingsParams } from '@/contexts/SettingsContext'
 
 const STATE_COLOR: Record<ServerStatus['state'], string> = {
   ready: 'bg-(--accent-green)',
@@ -41,7 +41,7 @@ function StatusDot({ server }: { server: ServerStatus }) {
 
 export function McpListPage() {
   const { data, isLoading, isError } = useMcpServersQuery()
-  const { name: selected } = useParams({ strict: false }) as { name?: string }
+  const { name: selected } = useSettingsParams() as { name?: string }
 
   const rows = useMemo<ListViewRow[]>(
     () =>

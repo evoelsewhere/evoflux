@@ -65,7 +65,7 @@ describe('coding workspace persistence', () => {
 
   it('does not restore while navigating away from coding mode', () => {
     expect(shouldRestoreLastCodingWorkspace('coding', undefined, '/')).toBe(false)
-    expect(shouldRestoreLastCodingWorkspace('coding', undefined, '/forge')).toBe(false)
+    expect(shouldRestoreLastCodingWorkspace('coding', undefined, '/settings')).toBe(false)
   })
 
   it('does not reuse a previous workspace while direct session details are loading', () => {

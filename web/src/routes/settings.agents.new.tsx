@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useNavigate, useSearch } from '@tanstack/react-router'
 
 import { useCreateAgentMutation } from '@/queries'
 import { Button } from '@/components/ui/button'
@@ -8,6 +7,7 @@ import { ApiValidationError } from '@/api/client'
 import { AgentForm } from '@/components/settings/AgentForm'
 import { EditorSubHeader } from '@/components/settings/EditorSubHeader'
 import { validateAgentDraft } from '@/components/settings/schema'
+import { useSettingsSearch, useSettingsNavigate } from '@/contexts/SettingsContext'
 
 type AgentMode = 'normal' | 'coding'
 
@@ -31,14 +31,14 @@ You are "new_agent" — a helpful team member.
 `
 
 export function NewAgentPage() {
-  const search = useSearch({ strict: false }) as { mode?: string }
+  const search = useSettingsSearch()
   const initialMode: AgentMode = search.mode === 'coding' ? 'coding' : 'normal'
   const [draft, setDraft] = useState(TEMPLATE)
   const [name, setName] = useState('new_agent')
   const [agentMode, setAgentMode] = useState<AgentMode>(initialMode)
   const createMut = useCreateAgentMutation()
   const push = useToastStore((s) => s.push)
-  const navigate = useNavigate()
+  const navigate = useSettingsNavigate()
   const [saveError, setSaveError] = useState<string | null>(null)
   const [mode, setMode] = useState<'form' | 'raw'>('form')
 
@@ -69,7 +69,7 @@ export function NewAgentPage() {
         title: `Created "${agentName}"`,
         description: 'Active on next turn.',
       })
-      navigate({ to: '/settings/agents/$name', params: { name: agentName } })
+      navigate('/settings/agents/$name', { params: { name: agentName } })
     } catch (err) {
       const msg = err instanceof ApiValidationError ? err.message : String(err)
       setSaveError(msg)

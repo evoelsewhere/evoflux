@@ -1,4 +1,3 @@
-import { useNavigate, useParams } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import { AlertCircle, RotateCw, Trash2 } from 'lucide-react'
 
@@ -30,6 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { useSettingsParams, useSettingsNavigate } from '@/contexts/SettingsContext'
 
 /**
  * MCP server detail / editor page.
@@ -44,8 +44,8 @@ import {
  *   3. a Restart action at the bottom (it's a runtime concern, not a save)
  */
 export function McpServerDetailPage() {
-  const { name } = useParams({ from: '/settings/mcp/$name' })
-  const navigate = useNavigate()
+  const { name } = useSettingsParams()
+  const navigate = useSettingsNavigate()
   const push = useToastStore((s) => s.push)
   const serverQ = useMcpServerQuery(name)
   const updateMut = useUpdateMcpServerMutation()
@@ -110,7 +110,7 @@ export function McpServerDetailPage() {
     try {
       await deleteMut.mutateAsync(name)
       push({ tone: 'success', title: `Deleted "${name}"` })
-      navigate({ to: '/settings/mcp' })
+      navigate('/settings/mcp')
     } catch (err) {
       const msg = err instanceof ApiValidationError ? err.message : String(err)
       push({ tone: 'error', title: 'Delete failed', description: msg })
@@ -242,7 +242,7 @@ export function McpServerDetailPage() {
                         variant="ghost"
                         size="xs"
                         className="min-h-11 md:min-h-0"
-                        onClick={() => navigate({ to: '/settings/mcp' })}
+                        onClick={() => navigate('/settings/mcp')}
                       >
                         Leave without saving
                       </Button>

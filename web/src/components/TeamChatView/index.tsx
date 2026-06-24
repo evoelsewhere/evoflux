@@ -48,9 +48,8 @@ import { useUIStore } from '@/stores/useUIStore'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useTeamAgentsQuery } from '@/queries/useAgentsQuery'
 import { useFileRefsQuery } from '@/queries/useFileRefsQuery'
-import { AlertCircle, Activity, Brain, CalendarClock, Check, ChevronDown, FolderOpen, FolderCode, Menu, MoreHorizontal, SlidersHorizontal, X } from 'lucide-react'
+import { AlertCircle, Activity, Brain, CalendarClock, Check, ChevronDown, FolderOpen, FolderCode, Menu, MoreHorizontal, PanelLeft, SlidersHorizontal, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { Breadcrumb } from '@/components/Breadcrumb'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { usePlatform } from '@/hooks/use-platform'
 import { useTauriDrag } from '@/hooks/use-tauri-drag'
@@ -359,7 +358,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
           saveLastCodingWorkspace(workspace)
           navigate({ to: '/coding/$sessionId', params: { sessionId: session.id } })
         } else {
-          navigate({ to: '/forge/$sessionId', params: { sessionId: session.id } })
+          navigate({ to: '/$sessionId', params: { sessionId: session.id } })
         }
       } catch (err) {
         useTeamStore.setState((state) => {
@@ -851,7 +850,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
   return (
     // h-dvh handles iOS Safari's dynamic toolbar.
     <div
-      className="mobile-safe-shell mobile-viewport flex h-dvh flex-col bg-(--bg-page) md:gap-0.5 md:p-1"
+      className="mobile-safe-shell mobile-viewport flex h-dvh flex-col bg-(--bg-page) md:flex-row md:gap-0.5 md:p-1"
       onTouchStart={(event) => {
         handleMobileSidebarSwipeStart(event)
         handleMobileActionsSwipeStart(event)
@@ -869,8 +868,55 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
         handleMobileActionsSwipeEnd()
       }}
     >
-      {/* Header — transparent container on desktop; left and right clusters
-          float as separate pills against the window background. */}
+      {/* Sidebar — full height on desktop */}
+      {!isMobile && (
+        mode === 'coding' ? (
+          <CodingSidebar
+            currentSessionId={sessionIdState || undefined}
+            workspace={workspace}
+            onCollapse={() => setCodingSidebarCollapsed(true)}
+            openWorkspaceDialogKey={openWorkspaceDialogKey}
+            onCommandPalette={() => setShowPalette(true)}
+            desktopCollapsed={codingSidebarCollapsed}
+            mobileOpen={false}
+            onMobileClose={() => {}}
+          />
+        ) : (
+          <Sidebar
+            currentSessionId={sessionIdState || undefined}
+            onCommandPalette={() => setShowPalette(true)}
+            onNewChat={handleNewSession}
+            mode={mode}
+            mobileOpen={false}
+            onMobileClose={() => {}}
+          />
+        )
+      )}
+
+      {/* Sidebar toggle — positioned between sidebar and main content on desktop */}
+      {!isMobile && (
+        <div className="flex shrink-0 flex-col items-center pt-2">
+          <button
+            type="button"
+            onClick={() => {
+              if (mode === 'coding') {
+                handleCodingSidebarToggle()
+              } else {
+                window.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', ctrlKey: true, metaKey: false, bubbles: true }))
+              }
+            }}
+            aria-label="Toggle sidebar"
+            title="Toggle sidebar (Ctrl+B)"
+            className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+          >
+            <PanelLeft size={15} aria-hidden="true" />
+          </button>
+        </div>
+      )}
+
+      {/* Right column — header + main content */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      {/* Header */}
       <header
         {...dragHandlers}
         className={`mobile-safe-header relative z-20 flex shrink-0 items-center gap-1.5 px-1.5 py-1.5 ${
@@ -878,70 +924,46 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
         }`}
         style={isMacOverlay ? { paddingLeft: 'calc(var(--spacing-mac-traffic-inset) + 6px)' } : undefined}
       >
-          {/* LEFT PILL — hamburger + breadcrumb on desktop; flat full row on mobile */}
-          <div className={`flex shrink-0 items-center gap-1.5 ${
-            isMobile ? 'flex-1' : 'rounded-[10px] bg-(--bg-sidebar)/80 px-3 py-1.5 shadow-sm backdrop-blur-xl'
-          }`}>
-            <button
-              type="button"
-              onClick={() => {
-                if (mode === 'coding') {
-                  handleCodingSidebarToggle()
-                } else if (isMobile) {
-                  setMobileSidebarOpen(true)
-                } else {
-                  // Ctrl+B is owned by Sidebar's window listener.
-                  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', ctrlKey: true, metaKey: false, bubbles: true }))
-                }
-              }}
-              aria-label="Toggle sidebar"
-              title="Toggle sidebar (Ctrl+B)"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-            >
-              <Menu size={15} aria-hidden="true" />
-            </button>
-
-            {!isMobile && (
-              <Breadcrumb
-                items={
-                  mode === 'coding' && workspace
-                    ? [
-                        { label: 'Coding', to: '/coding' },
-                        { label: workspaceLabel(workspace) },
-                      ]
-                    : sessionTitle
-                    ? [
-                        { label: 'Forge', to: '/forge' },
-                        { label: sessionTitle },
-                      ]
-                    : [{ label: 'Forge', to: '/forge' }]
-                }
-              />
-            )}
-
-            {isMobile && (
+          {/* Mobile only — hamburger + title */}
+          {isMobile && (
+            <div className="flex flex-1 shrink-0 items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  if (mode === 'coding') {
+                    handleCodingSidebarToggle()
+                  } else {
+                    setMobileSidebarOpen(true)
+                  }
+                }}
+                aria-label="Toggle sidebar"
+                title="Toggle sidebar (Ctrl+B)"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+              >
+                <Menu size={15} aria-hidden="true" />
+              </button>
               <div className="min-w-0 text-sm font-semibold text-(--color-text)">
-                <div className="truncate">{mode === 'coding' && workspace ? workspaceLabel(workspace) : sessionTitle || 'Forge'}</div>
+                <div className="truncate">{mode === 'coding' && workspace ? workspaceLabel(workspace) : sessionTitle || 'EvoFlux'}</div>
                 {activeAgent && <div className="truncate font-mono text-[10px] font-normal text-(--color-text-muted)">{activeAgent}</div>}
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
-          {/* CENTER — transparent: loop status + agent tabs (desktop only) */}
+          {/* LEFT — agent switcher + loop status (desktop only) */}
           <div className="flex min-w-0 flex-1 items-center gap-2 overflow-visible">
-            {!isMobile && activeLoop && loopLabel && loopProgress && (
-              <LoopStatusPill
-                label={loopLabel}
-                progress={loopProgress}
-                compact={false}
-              />
-            )}
             {effectiveViewMode === 'agent' && activeAgent && !isMobile && (
               <ActiveAgentSwitcher
                 activeAgent={activeAgent}
                 agents={agentNames}
                 streams={agentStreams}
                 onSelect={setActiveAgent}
+              />
+            )}
+            {!isMobile && activeLoop && loopLabel && loopProgress && (
+              <LoopStatusPill
+                label={loopLabel}
+                progress={loopProgress}
+                compact={false}
               />
             )}
             {effectiveViewMode === 'split' && (
@@ -1039,29 +1061,32 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
           </div>
       </header>
 
-      {/* Body row — sidebar (or coding rail) + main content column. On
-          mobile the Sidebar is position:fixed (overlay drawer), so it
-          takes no space here and the main column is always full-width. */}
-      <div className="flex min-h-0 flex-1 overflow-hidden md:gap-0.5">
-        {mode === 'coding' ? (
-          <CodingSidebar
-            currentSessionId={sessionIdState || undefined}
-            workspace={workspace}
-            onCollapse={() => setCodingSidebarCollapsed(true)}
-            openWorkspaceDialogKey={openWorkspaceDialogKey}
-            onCommandPalette={() => setShowPalette(true)}
-            desktopCollapsed={codingSidebarCollapsed}
-            mobileOpen={mobileSidebarOpen}
-            onMobileClose={() => setMobileSidebarOpen(false)}
-          />
-        ) : (
-          <Sidebar
-            currentSessionId={sessionIdState || undefined}
-            onCommandPalette={() => setShowPalette(true)}
-            onNewChat={handleNewSession}
-            mobileOpen={mobileSidebarOpen}
-            onMobileClose={() => setMobileSidebarOpen(false)}
-          />
+      {/* Body — main content column. On mobile the Sidebar is
+          position:fixed (overlay drawer), rendered here for z-stacking. */}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        {/* Mobile sidebar overlay */}
+        {isMobile && (
+          mode === 'coding' ? (
+            <CodingSidebar
+              currentSessionId={sessionIdState || undefined}
+              workspace={workspace}
+              onCollapse={() => setCodingSidebarCollapsed(true)}
+              openWorkspaceDialogKey={openWorkspaceDialogKey}
+              onCommandPalette={() => setShowPalette(true)}
+              desktopCollapsed={codingSidebarCollapsed}
+              mobileOpen={mobileSidebarOpen}
+              onMobileClose={() => setMobileSidebarOpen(false)}
+            />
+          ) : (
+            <Sidebar
+              currentSessionId={sessionIdState || undefined}
+              onCommandPalette={() => setShowPalette(true)}
+              onNewChat={handleNewSession}
+              mode={mode}
+              mobileOpen={mobileSidebarOpen}
+              onMobileClose={() => setMobileSidebarOpen(false)}
+            />
+          )
         )}
 
         <main id="main" ref={mainColumnRef} className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-[10px] bg-(--bg-page) shadow-sm">
@@ -1077,7 +1102,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
             <div className="flex shrink-0 items-center gap-2 self-start sm:self-center">
               <Button
                 size="sm"
-                onClick={() => navigate({ to: '/settings/providers' })}
+                onClick={() => useUIStore.getState().openSettings('providers')}
               >
                 Open Providers
               </Button>
@@ -1101,7 +1126,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
                 <p className="mt-0.5 text-xs text-(--color-text-muted)">Connect a provider once, then EvoFlux can seed and run the default team.</p>
               </div>
             </div>
-            <Button size="sm" onClick={() => navigate({ to: '/settings/providers' })}>
+            <Button size="sm" onClick={() => useUIStore.getState().openSettings('providers')}>
               Open Providers
             </Button>
           </div>
@@ -1338,6 +1363,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
       {showPalette && (
         <CommandPalette commands={paletteCommands} onClose={() => setShowPalette(false)} />
       )}
+      </div>{/* end right column */}
     </div>
   )
 }

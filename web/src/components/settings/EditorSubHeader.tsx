@@ -9,7 +9,6 @@
  * The Form/Raw toggle is optional; the skill editor (which has only a raw
  * mode) hides it by passing ``mode={undefined}``.
  */
-import { Link } from '@tanstack/react-router'
 import {
   AlertCircle,
   ArrowLeft,
@@ -24,6 +23,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useSettingsNavigate } from '@/contexts/SettingsContext'
 import { cn } from '@/lib/utils'
 
 interface EditorSubHeaderProps {
@@ -66,6 +66,7 @@ export function EditorSubHeader({
   onModeChange,
   onSave,
 }: EditorSubHeaderProps) {
+  const navigate = useSettingsNavigate()
   const KindIcon = kind === 'agent' ? Wrench : kind === 'skill' ? Sparkles : Plug
   const backTo =
     kind === 'agent'
@@ -96,7 +97,8 @@ export function EditorSubHeader({
               size="icon-sm"
               variant="ghost"
               className="h-11 w-11 md:h-7 md:w-7"
-              render={<Link to={backTo} aria-label="Back to list" />}
+              onClick={() => navigate(backTo)}
+              aria-label="Back to list"
             >
               <ArrowLeft size={14} />
             </Button>

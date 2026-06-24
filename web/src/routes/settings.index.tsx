@@ -6,7 +6,6 @@
  *
  */
 import { useState } from 'react'
-import { Link } from '@tanstack/react-router'
 import {
   Bell,
   ChevronRight,
@@ -23,12 +22,12 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 
-import { AppBackendDialog } from '@/components/AppBackendDialog'
 import { checkForUpdates, downloadUpdate, fetchReleaseNotes, installUpdate, type ReleaseNotes, type UpdateStatus } from '@/lib/updater'
 import { openExternalUrl } from '@/lib/open-external'
 import { cn } from '@/lib/utils'
 import { MarkdownBlock } from '@/utils/markdown'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { useSettingsNavigate } from '@/contexts/SettingsContext'
 import {
   useAgentFilesQuery,
   useHealthQuery,
@@ -37,6 +36,7 @@ import {
   useSandboxSettingsQuery,
   useSkillFilesQuery,
 } from '@/queries'
+import { useUIStore } from '@/stores/useUIStore'
 
 interface CardProps {
   to: string
@@ -48,11 +48,13 @@ interface CardProps {
 }
 
 function SettingsNavCard({ to, icon: Icon, title, description, count, countLabel }: CardProps) {
+  const navigate = useSettingsNavigate()
   return (
-    <Link
-      to={to}
+    <button
+      type="button"
+      onClick={() => navigate(to)}
       className={cn(
-        'group flex items-start gap-3 rounded-xl border border-(--color-border) bg-(--bg-card) p-4 text-(--color-text) transition-colors sm:items-center sm:gap-4',
+        'group flex w-full items-start gap-3 rounded-xl border border-(--color-border) bg-(--bg-card) p-4 text-left text-(--color-text) transition-colors sm:items-center sm:gap-4',
         'hover:border-(--color-border-strong) hover:bg-(--color-surface)',
         'focus-visible:border-(--focus-ring) focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-(--focus-ring)/40',
       )}
@@ -79,7 +81,7 @@ function SettingsNavCard({ to, icon: Icon, title, description, count, countLabel
         className="shrink-0 text-(--color-text-muted) transition-transform group-hover:translate-x-0.5 group-hover:text-(--color-text)"
         aria-hidden="true"
       />
-    </Link>
+    </button>
   )
 }
 
@@ -231,7 +233,6 @@ export function SettingsHubPage() {
   const providersQ = useProvidersQuery()
   const sandboxQ = useSandboxSettingsQuery()
   const healthQ = useHealthQuery()
-  const [backendDialogOpen, setBackendDialogOpen] = useState(false)
 
   const agentsCount = agentsQ.data?.agents.length ?? null
   const skillsCount = skillsQ.data?.skills.length ?? null
@@ -273,7 +274,7 @@ export function SettingsHubPage() {
             </div>
             <button
               type="button"
-              onClick={() => setBackendDialogOpen(true)}
+              onClick={() => useUIStore.getState().navigateSettings('connection')}
               className="rounded-md border border-(--color-border) px-3 py-1.5 text-xs font-medium text-(--color-text) hover:bg-(--bg-page)"
             >
               Configure
@@ -282,8 +283,6 @@ export function SettingsHubPage() {
         </section>
 
         <UpdateSettingsCard />
-
-        <AppBackendDialog open={backendDialogOpen} onOpenChange={setBackendDialogOpen} />
 
         {/* Mobile picks up navigation from this list because the sidebar is
             hidden on small screens. */}

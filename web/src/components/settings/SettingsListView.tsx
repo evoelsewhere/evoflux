@@ -22,13 +22,13 @@
  * The view is purely presentational — callers are responsible for
  * producing the `rows` array, including any per-card actions.
  */
-import { Link } from '@tanstack/react-router'
 import { AlertCircle, Plus, Search } from 'lucide-react'
 import { useId, useMemo, useState, type ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useSettingsNavigate } from '@/contexts/SettingsContext'
 import { cn } from '@/lib/utils'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -130,10 +130,7 @@ export function SettingsListView({
             </p>
           </div>
           {newAction ?? (
-            <Button size="sm" render={<Link to={newTo} />}>
-              <Plus size={13} aria-hidden="true" />
-              {newLabel}
-            </Button>
+            <NewButton to={newTo} label={newLabel} />
           )}
         </header>
 
@@ -187,10 +184,7 @@ export function SettingsListView({
               <p className="max-w-md text-xs leading-relaxed text-(--color-text-muted)">
                 {emptyBody}
               </p>
-              <Button size="sm" render={<Link to={newTo} />}>
-                <Plus size={12} aria-hidden="true" />
-                {newLabel}
-              </Button>
+              <NewButton to={newTo} label={newLabel} />
             </div>
           )}
           {!isLoading && !isError && total > 0 && filtered.length === 0 && (
@@ -215,7 +209,19 @@ export function SettingsListView({
 
 // ─── Card ──────────────────────────────────────────────────────────────────
 
+function NewButton({ to, label }: { to: string; label: string }) {
+  const navigate = useSettingsNavigate()
+  return (
+    <Button size="sm" onClick={() => navigate(to)}>
+      <Plus size={13} aria-hidden="true" />
+      {label}
+    </Button>
+  )
+}
+
 function ListCardLink({ row }: { row: ListViewRow }) {
+  const navigate = useSettingsNavigate()
+
   if (row.kind === 'group') {
     return (
       <div className="px-1 pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-(--color-text-muted)">
@@ -225,12 +231,12 @@ function ListCardLink({ row }: { row: ListViewRow }) {
   }
 
   return (
-    <Link
-      to={row.to}
-      params={row.params as never}
+    <button
+      type="button"
+      onClick={() => { if (row.to) navigate(row.to, { params: row.params }) }}
       aria-current={row.active ? 'page' : undefined}
       className={cn(
-        'group flex min-h-11 items-start gap-3 rounded-lg border bg-(--bg-card) px-4 py-3 transition-colors',
+        'group flex w-full min-h-11 items-start gap-3 rounded-lg border bg-(--bg-card) px-4 py-3 text-left transition-colors',
         'hover:border-(--color-border-strong)',
         'focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-(--focus-ring)/40',
         row.active
@@ -273,6 +279,6 @@ function ListCardLink({ row }: { row: ListViewRow }) {
         )}
       </div>
       {row.trailing && <div className="shrink-0">{row.trailing}</div>}
-    </Link>
+    </button>
   )
 }

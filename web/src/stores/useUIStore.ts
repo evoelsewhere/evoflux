@@ -15,6 +15,9 @@ interface UIStore {
   schedulerOpen: boolean
   agentCapabilitiesOpen: boolean
   browserOpen: boolean
+  settingsOpen: boolean
+  settingsPath: string
+  settingsSearch: Record<string, string>
   toggleWiki: () => void
   toggleScheduler: () => void
   toggleAgentCapabilities: () => void
@@ -23,6 +26,9 @@ interface UIStore {
   closeScheduler: () => void
   closeAgentCapabilities: () => void
   closeBrowser: () => void
+  openSettings: (path?: string, search?: Record<string, string>) => void
+  closeSettings: () => void
+  navigateSettings: (path: string, search?: Record<string, string>) => void
 }
 
 export const useUIStore = create<UIStore>()(
@@ -71,5 +77,11 @@ export const useUIStore = create<UIStore>()(
     closeScheduler: () => set((state) => { state.schedulerOpen = false }),
     closeAgentCapabilities: () => set((state) => { state.agentCapabilitiesOpen = false }),
     closeBrowser: () => set((state) => { state.browserOpen = false }),
+    settingsOpen: false,
+    settingsPath: '',
+    settingsSearch: {},
+    openSettings: (path = '', search = {}) => set((state) => { state.settingsOpen = true; state.settingsPath = path; state.settingsSearch = search }),
+    closeSettings: () => set((state) => { state.settingsOpen = false }),
+    navigateSettings: (path: string, search = {}) => set((state) => { state.settingsPath = path; state.settingsSearch = search }),
   }))
 )

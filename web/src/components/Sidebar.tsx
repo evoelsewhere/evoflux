@@ -12,7 +12,8 @@ import { useReducedMotion } from "@/hooks/useReducedMotion";
 
 import {
   CalendarClock,
-  Home,
+  Code2,
+  Gauge,
   Plus,
   Trash2,
   RefreshCw,
@@ -96,6 +97,8 @@ interface SidebarProps {
   currentSessionId?: string;
   onCommandPalette?: () => void;
   onNewChat?: () => void;
+  /** Current mode — 'normal' (forge) or 'coding' */
+  mode?: 'normal' | 'coding';
   /** Mobile only: whether the overlay drawer is open */
   mobileOpen?: boolean;
   /** Mobile only: called when the drawer should close (backdrop tap, session select) */
@@ -106,6 +109,7 @@ export function Sidebar({
   currentSessionId,
   onCommandPalette,
   onNewChat,
+  mode = 'normal',
   mobileOpen = false,
   onMobileClose,
 }: SidebarProps) {
@@ -266,19 +270,19 @@ export function Sidebar({
     if (target.id === currentSessionId) {
       if (fallbackSession) {
         navigate({
-          to: "/forge/$sessionId",
+          to: "/$sessionId",
           params: { sessionId: fallbackSession.id },
           replace: true,
         });
       } else {
-        navigate({ to: "/forge", replace: true });
+        navigate({ to: "/", replace: true });
       }
     }
     setPendingDeleteId(null);
   };
 
   const handleSelect = (id: string) => {
-    navigate({ to: "/forge/$sessionId", params: { sessionId: id } });
+    navigate({ to: "/$sessionId", params: { sessionId: id } });
     onMobileClose?.();
   };
 
@@ -286,7 +290,7 @@ export function Sidebar({
     if (onNewChat) {
       onNewChat();
     } else {
-      navigate({ to: "/forge" });
+      navigate({ to: "/" });
     }
     onMobileClose?.();
   };
@@ -374,6 +378,37 @@ export function Sidebar({
                 <div className={`shrink-0 ${card} ${
                   ico ? 'flex flex-col items-center px-1 py-2' : ''
                 }`}>
+                  {/* Mode switch */}
+                  {!ico && (
+                    <div className="px-2 pt-2">
+                      <div className="flex h-8 items-center rounded-md border border-(--color-border) bg-(--bg-page) p-0.5">
+                        <button
+                          type="button"
+                          onClick={() => navigate({ to: '/' })}
+                          className={`flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 text-xs font-medium transition-colors ${
+                            mode === 'normal'
+                              ? 'bg-(--bg-key) text-(--color-text) shadow-sm'
+                              : 'text-(--color-text-muted) hover:text-(--color-text)'
+                          }`}
+                        >
+                          <Gauge size={12} aria-hidden="true" />
+                          Forge
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => navigate({ to: '/coding' })}
+                          className={`flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 text-xs font-medium transition-colors ${
+                            mode === 'coding'
+                              ? 'bg-(--bg-key) text-(--color-text) shadow-sm'
+                              : 'text-(--color-text-muted) hover:text-(--color-text)'
+                          }`}
+                        >
+                          <Code2 size={12} aria-hidden="true" />
+                          Coding
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   {!ico && onCommandPalette && (
                     <div className="px-2 pt-2">
                       <button
@@ -386,6 +421,34 @@ export function Sidebar({
                         <Search size={13} aria-hidden="true" />
                         <span className="flex-1">Search…</span>
                         <kbd className="font-mono text-[10px] text-(--color-text-subtle)">^P</kbd>
+                      </button>
+                    </div>
+                  )}
+                  {ico && (
+                    <div className="flex flex-col items-center gap-0.5 pb-1">
+                      <button
+                        type="button"
+                        onClick={() => navigate({ to: '/' })}
+                        title="Forge"
+                        className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
+                          mode === 'normal'
+                            ? 'bg-(--bg-key) text-(--color-accent)'
+                            : 'text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-text-2)'
+                        }`}
+                      >
+                        <Gauge size={16} aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => navigate({ to: '/coding' })}
+                        title="Coding"
+                        className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
+                          mode === 'coding'
+                            ? 'bg-(--bg-key) text-(--color-accent)'
+                            : 'text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-text-2)'
+                        }`}
+                      >
+                        <Code2 size={16} aria-hidden="true" />
                       </button>
                     </div>
                   )}
@@ -526,7 +589,7 @@ export function Sidebar({
                       <div className="flex items-center gap-1">
                         <button
                           type="button"
-                          onClick={() => navigate({ to: '/settings' })}
+                          onClick={() => useUIStore.getState().openSettings()}
                           className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
                           aria-label="Settings"
                           title="Settings"
@@ -577,13 +640,38 @@ export function Sidebar({
                 </div>
               )}
 
+              {/* Mode switch */}
+              <div className="px-3 pt-2">
+                <div className="flex h-8 items-center rounded-md border border-(--color-border) bg-(--bg-page) p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => { navigate({ to: '/' }); onMobileClose?.(); }}
+                    className={`flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 text-xs font-medium transition-colors ${
+                      mode === 'normal'
+                        ? 'bg-(--bg-key) text-(--color-text) shadow-sm'
+                        : 'text-(--color-text-muted) hover:text-(--color-text)'
+                    }`}
+                  >
+                    <Gauge size={12} aria-hidden="true" />
+                    Forge
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { navigate({ to: '/coding' }); onMobileClose?.(); }}
+                    className={`flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 text-xs font-medium transition-colors ${
+                      mode === 'coding'
+                        ? 'bg-(--bg-key) text-(--color-text) shadow-sm'
+                        : 'text-(--color-text-muted) hover:text-(--color-text)'
+                    }`}
+                  >
+                    <Code2 size={12} aria-hidden="true" />
+                    Coding
+                  </button>
+                </div>
+              </div>
+
               {/* Nav */}
               <nav aria-label="Primary" className="space-y-0.5 px-2 pb-2 pt-2">
-                <SidebarItem
-                  Icon={Home}
-                  label="Home"
-                  onClick={() => { navigate({ to: '/' }); onMobileClose?.(); }}
-                />
                 <SidebarItem
                   Icon={Plus}
                   label="New Chat"
@@ -686,7 +774,7 @@ export function Sidebar({
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
-                    onClick={() => { navigate({ to: '/settings' }); onMobileClose?.(); }}
+                    onClick={() => { useUIStore.getState().openSettings(); onMobileClose?.(); }}
                     className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
                     aria-label="Settings"
                     title="Settings"
