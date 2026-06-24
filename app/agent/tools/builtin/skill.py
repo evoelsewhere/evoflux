@@ -13,10 +13,11 @@ so the LLM can apply the instructions in subsequent reasoning.
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import yaml
 
@@ -24,7 +25,7 @@ from loguru import logger
 from pydantic import Field
 
 from app.agent.sandbox import get_sandbox
-from app.agent.tools.registry import tool
+from app.agent.tools.registry import InjectedArg, tool
 
 
 def _default_skills_dir() -> Path:
@@ -310,6 +311,39 @@ def _iter_skill_paths(directory: Path):
                 yield nested_file, f"{subdir.name}/{nested.name}"
 
 
+def _loaded_skills_from_messages(state: Any) -> dict[str, str]:
+    """Return skill names and content already loaded in visible conversation."""
+    loaded: dict[str, str] = {}
+    pending_by_tool_call_id: dict[str, str] = {}
+    for message in getattr(state, "messages_for_llm", []):
+        tool_calls = getattr(message, "tool_calls", None) or []
+        for tool_call in tool_calls:
+            fn = getattr(tool_call, "function", None)
+            if fn is None:
+                continue
+            if getattr(fn, "name", None) != "skill":
+                continue
+            try:
+                args = json.loads(getattr(fn, "arguments", "{}"))
+            except (json.JSONDecodeError, TypeError):
+                continue
+            skill_name = args.get("skill_name")
+            if isinstance(skill_name, str) and skill_name:
+                loaded.setdefault(skill_name, "")
+                tool_call_id = getattr(tool_call, "id", None)
+                if isinstance(tool_call_id, str) and tool_call_id:
+                    pending_by_tool_call_id[tool_call_id] = skill_name
+
+        tool_call_id = getattr(message, "tool_call_id", None)
+        if not isinstance(tool_call_id, str):
+            continue
+        skill_name = pending_by_tool_call_id.get(tool_call_id)
+        content = getattr(message, "content", None)
+        if skill_name and isinstance(content, str) and content:
+            loaded[skill_name] = content
+    return loaded
+
+
 @tool(name="skill", description=_skill_tool_description)
 async def load_skill(
     skill_name: Annotated[
@@ -318,8 +352,17 @@ async def load_skill(
             description="Skill name from the available skills listed in this tool description (e.g. 'mcp-installer'). Do not call this again for a skill that is already loaded in the visible conversation; reuse the prior instructions instead."
         ),
     ],
+    _state: Annotated[Any, InjectedArg()] = None,
 ) -> str:
     """Load skill instructions into context."""
+    if _state is not None:
+        loaded_skills = _state.metadata.setdefault(
+            "loaded_skills", _loaded_skills_from_messages(_state)
+        )
+        if loaded_skills.get(skill_name):
+            logger.info("skill_reused name={}", skill_name)
+            return loaded_skills[skill_name]
+
     roots = [r for r in _iter_skill_roots() if r.is_dir()]
     if not roots:
         return "Skills directory not found."
