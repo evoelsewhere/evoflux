@@ -1,13 +1,15 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { Check, Copy, Download, ExternalLink, FileText, GitCompare, Loader2, X } from 'lucide-react'
+import { Check, Copy, Download, ExternalLink, FileText, GitCompare, Loader2, Pencil, X } from 'lucide-react'
+import Editor, { useMonaco } from '@monaco-editor/react'
 import { codingWorkspaceFileUrl, getCodingWorkspaceGitDiff } from '@/api/client'
 import { downloadCodingWorkspaceFile } from '@/lib/coding-workspace-download'
 import { cn } from '@/lib/utils'
 import { formatBytes } from '@/utils/format'
 import { useReducedMotion } from '@/hooks/useReducedMotion'
 import { useResizableWidth } from '@/hooks/use-resizable-width'
+import { useMonacoTheme, languageForExt } from '@/hooks/useMonacoTheme'
 import { queryKeys } from '@/queries'
 import type { WorkspaceFileInfo } from '@/api/types'
 
@@ -26,7 +28,6 @@ const DRAWIO_EXTENSIONS = new Set(['drawio', 'dio'])
 const MAX_TEXT_PREVIEW_BYTES = 512 * 1024
 // Viewer URL length limit — diagrams above ~400KB XML fall back to text
 const MAX_DRAWIO_VIEWER_BYTES = 400 * 1024
-const GUTTER_WIDTH_CH = 4
 
 function extOf(name: string): string {
   const i = name.lastIndexOf('.')
@@ -79,77 +80,27 @@ function CopyButton({ workspace, file }: { workspace: string; file: WorkspaceFil
   )
 }
 
-function LineGutter({ value }: { value: number }) {
-  return (
-    <span
-      className="inline-block shrink-0 select-none text-right tabular-nums text-(--color-text-subtle)"
-      style={{ width: `${GUTTER_WIDTH_CH}ch` }}
-      aria-hidden="true"
-    >
-      {value}
-    </span>
-  )
-}
-
-const KEYWORDS = new Set([
-  'and', 'as', 'async', 'await', 'break', 'case', 'catch', 'class', 'const', 'continue', 'def', 'default',
-  'do', 'elif', 'else', 'enum', 'export', 'extends', 'false', 'finally', 'for', 'from', 'function', 'if',
-  'import', 'in', 'interface', 'let', 'match', 'new', 'none', 'null', 'or', 'pass', 'return', 'self', 'static',
-  'struct', 'switch', 'this', 'throw', 'true', 'try', 'type', 'undefined', 'var', 'while', 'with', 'yield',
-])
-
-function commentIndex(line: string): number {
-  const markers = ['//', '#', '--']
-  let found = -1
-  for (const marker of markers) {
-    const index = line.indexOf(marker)
-    if (index >= 0 && (found < 0 || index < found)) found = index
-  }
-  return found
-}
-
-function highlightCodeLine(line: string): ReactNode[] {
-  const out: React.ReactNode[] = []
-  const commentAt = commentIndex(line)
-  const code = commentAt >= 0 ? line.slice(0, commentAt) : line
-  const comment = commentAt >= 0 ? line.slice(commentAt) : ''
-  const tokenRe = /("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|\b\d+(?:\.\d+)?\b|\b[A-Za-z_][A-Za-z0-9_]*\b)/g
-  let last = 0
-  let match: RegExpExecArray | null
-  while ((match = tokenRe.exec(code)) !== null) {
-    if (match.index > last) out.push(code.slice(last, match.index))
-    const token = match[0]
-    const lower = token.toLowerCase()
-    const cls = token.startsWith('"') || token.startsWith("'") || token.startsWith('`')
-      ? 'text-(--color-syn-string)'
-      : /^\d/.test(token)
-        ? 'text-(--color-syn-number)'
-        : KEYWORDS.has(lower)
-          ? 'text-(--color-syn-keyword)'
-          : 'text-(--color-text-2)'
-    out.push(<span key={`${match.index}-${token}`} className={cls}>{token}</span>)
-    last = match.index + token.length
-  }
-  if (last < code.length) out.push(code.slice(last))
-  if (comment) out.push(<span key="comment" className="text-(--color-text-subtle)">{comment}</span>)
-  return out.length > 0 ? out : [' ']
-}
-
 function TextPreview({
   workspace,
   file,
   onAddComment,
+  editing = false,
+  onContentChange,
 }: {
   workspace: string
   file: WorkspaceFileInfo
   onAddComment?: (path: string, startLine: number, endLine: number) => void
+  editing?: boolean
+  onContentChange?: (content: string) => void
 }) {
   const tooLarge = file.size > MAX_TEXT_PREVIEW_BYTES
   const [content, setContent] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(!tooLarge)
-  const [selection, setSelection] = useState<{ anchor: number; focus: number } | null>(null)
-  const [dragging, setDragging] = useState(false)
+  const editorRef = useRef<Parameters<NonNullable<Parameters<typeof Editor>[0]['onMount']>>[0] | null>(null)
+
+  const monaco = useMonaco()
+  const theme = useMonacoTheme(monaco)
 
   useEffect(() => {
     if (tooLarge) return
@@ -176,6 +127,24 @@ function TextPreview({
     }
   }, [workspace, file.path, tooLarge])
 
+  const handleEditorMount = useCallback((editor: Parameters<NonNullable<Parameters<typeof Editor>[0]['onMount']>>[0]) => {
+    editorRef.current = editor
+
+    // Wire up line selection for "Add comment" when not editing
+    if (!editing && onAddComment) {
+      editor.onDidChangeCursorSelection((e) => {
+        const sel = e.selection
+        if (sel.startLineNumber > 0) {
+          onAddComment(file.path, sel.startLineNumber, sel.endLineNumber)
+        }
+      })
+    }
+  }, [editing, onAddComment, file.path])
+
+  const handleChange = useCallback((value: string | undefined) => {
+    if (value !== undefined) onContentChange?.(value)
+  }, [onContentChange])
+
   if (tooLarge) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
@@ -189,60 +158,44 @@ function TextPreview({
   if (error) return <div className="flex h-full items-center justify-center px-4 text-center text-xs text-(--color-error)">Failed to load: {error}</div>
   if (content === null) return null
 
-  const lines = content.split('\n')
-  const selectedStart = selection ? Math.min(selection.anchor, selection.focus) : null
-  const selectedEnd = selection ? Math.max(selection.anchor, selection.focus) : null
-  const addLabel = selectedStart === selectedEnd
-    ? `Add comment for line ${selectedStart}`
-    : `Add comment for lines ${selectedStart}-${selectedEnd}`
-  const selectLine = (line: number) => {
-    setSelection({ anchor: line, focus: line })
-    setDragging(true)
-  }
-  const extendSelection = (line: number) => {
-    if (!dragging) return
-    setSelection((prev) => prev ? { ...prev, focus: line } : prev)
-  }
+  const ext = extOf(file.name)
+  const language = languageForExt(ext)
+
   return (
-    <div className="flex h-full min-h-0 flex-col" onMouseLeave={() => setDragging(false)} onMouseUp={() => setDragging(false)}>
-      {selection && selectedStart !== null && selectedEnd !== null ? (
-        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-(--color-border) bg-(--bg-card) px-3 py-2">
-          <span className="truncate font-mono text-[11px] text-(--color-text-subtle)">
-            {file.path}#L{selectedStart}{selectedStart === selectedEnd ? '' : `-L${selectedEnd}`}
-          </span>
-          <button
-            type="button"
-            onClick={() => onAddComment?.(file.path, selectedStart, selectedEnd)}
-            className="shrink-0 rounded-md bg-(--color-accent) px-2.5 py-1 text-xs font-medium text-(--bg-page) hover:opacity-90"
-          >
-            {addLabel}
-          </button>
-        </div>
-      ) : null}
-      <div className="min-h-0 flex-1 overflow-auto font-mono text-xs leading-relaxed">
-        {lines.map((line, index) => {
-          const lineNo = index + 1
-          const selected = selectedStart !== null && selectedEnd !== null && lineNo >= selectedStart && lineNo <= selectedEnd
-          return (
-            <button
-              key={index}
-              type="button"
-              onMouseDown={(e) => {
-                e.preventDefault()
-                selectLine(lineNo)
-              }}
-              onMouseEnter={() => extendSelection(lineNo)}
-              className={cn(
-                'flex w-full items-start gap-3 whitespace-pre-wrap break-words px-3 text-left text-(--color-text-2)',
-                selected && 'bg-(--color-accent)/15',
-              )}
-            >
-              <LineGutter value={lineNo} />
-              <span className="min-w-0 flex-1">{highlightCodeLine(line)}</span>
-            </button>
-          )
-        })}
-      </div>
+    <div className="flex h-full min-h-0 flex-col">
+      <Editor
+        theme={theme}
+        language={language}
+        value={content}
+        onMount={handleEditorMount}
+        onChange={editing ? handleChange : undefined}
+        loading={<div className="flex h-full items-center justify-center"><Loader2 size={16} className="animate-spin text-(--color-text-subtle)" /></div>}
+        options={{
+          readOnly: !editing,
+          domReadOnly: !editing,
+          minimap: { enabled: false },
+          scrollBeyondLastLine: false,
+          fontSize: 12,
+          lineHeight: 20,
+          fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
+          renderLineHighlight: editing ? 'line' : 'none',
+          lineNumbers: 'on',
+          glyphMargin: false,
+          folding: true,
+          wordWrap: 'on',
+          contextmenu: editing,
+          scrollbar: {
+            verticalScrollbarSize: 8,
+            horizontalScrollbarSize: 8,
+            useShadows: false,
+          },
+          overviewRulerLanes: 0,
+          hideCursorInOverviewRuler: true,
+          overviewRulerBorder: false,
+          padding: { top: 8, bottom: 8 },
+          automaticLayout: true,
+        }}
+      />
     </div>
   )
 }
@@ -374,6 +327,7 @@ export function CodingFileViewerPanel({
     disabled: mobile,
   })
   const [viewMode, setViewMode] = useState<'file' | 'diff'>('file')
+  const [editing, setEditing] = useState(false)
   const scopedDiff = useQuery({
     queryKey: [...queryKeys.coding.diff(workspace), file?.path ?? null] as const,
     queryFn: () => getCodingWorkspaceGitDiff(workspace, file ? [file.path] : []),
@@ -416,10 +370,15 @@ export function CodingFileViewerPanel({
           </div>
           <div className="flex shrink-0 items-center gap-1">
             <div className="mr-1 flex rounded-md border border-(--color-border) p-0.5">
-              <button type="button" onClick={() => setViewMode('file')} className={cn('h-8 rounded px-2 text-[11px] md:h-auto md:py-1', viewMode === 'file' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}>
+              <button type="button" onClick={() => { setViewMode('file'); setEditing(false) }} className={cn('h-8 rounded px-2 text-[11px] md:h-auto md:py-1', viewMode === 'file' && !editing ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}>
                 File
               </button>
-              <button type="button" onClick={() => setViewMode('diff')} className={cn('flex h-8 items-center gap-1 rounded px-2 text-[11px] md:h-auto md:py-1', viewMode === 'diff' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}>
+              {kind === 'text' && (
+                <button type="button" onClick={() => { setViewMode('file'); setEditing(true) }} className={cn('flex h-8 items-center gap-1 rounded px-2 text-[11px] md:h-auto md:py-1', editing ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}>
+                  <Pencil size={11} /> Edit
+                </button>
+              )}
+              <button type="button" onClick={() => { setViewMode('diff'); setEditing(false) }} className={cn('flex h-8 items-center gap-1 rounded px-2 text-[11px] md:h-auto md:py-1', viewMode === 'diff' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}>
                 <GitCompare size={11} /> Diff
               </button>
             </div>
@@ -439,8 +398,10 @@ export function CodingFileViewerPanel({
                 : !scopedDiff.data?.is_git_repo ? <div className="flex h-full items-center justify-center px-4 text-center text-xs text-(--color-text-subtle)">Not a git repository</div>
                   : !scopedDiff.data.diff ? <div className="flex h-full items-center justify-center px-4 text-center text-xs text-(--color-text-subtle)">No diff for this file</div>
                     : <DiffPreview diff={scopedDiff.data.diff} />
-          ) : kind === 'image' ? <ImagePreview workspace={workspace} file={file} />            : kind === 'drawio' ? <DrawioPreview key={file.path} workspace={workspace} file={file} />            : kind === 'text' ? <TextPreview key={file.path} workspace={workspace} file={file} onAddComment={onAddComment} />
-              : <BinaryPreview workspace={workspace} file={file} />}
+          ) : kind === 'image' ? <ImagePreview workspace={workspace} file={file} />
+            : kind === 'drawio' ? <DrawioPreview key={file.path} workspace={workspace} file={file} />
+            : kind === 'text' ? <TextPreview key={file.path} workspace={workspace} file={file} onAddComment={onAddComment} editing={editing} />
+            : <BinaryPreview workspace={workspace} file={file} />}
         </div>
       </div>
     </motion.aside>

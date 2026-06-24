@@ -63,6 +63,10 @@ export default defineConfig({
           if (id.includes("node_modules/lucide-react")) {
             return "icons"
           }
+          // Monaco Editor — large (~3 MB), lazy-loaded when file viewer opens
+          if (id.includes("node_modules/monaco-editor") || id.includes("node_modules/@monaco-editor")) {
+            return "monaco"
+          }
           // State + utilities (zustand, immer, zod, clsx, cva, tailwind-merge)
           if (
             id.includes("node_modules/zustand") ||
