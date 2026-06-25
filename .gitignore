@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Embedding model cache (auto-downloaded on first start)
+models/embedding/
+
 # C extensions
 *.so
 

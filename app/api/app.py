@@ -114,6 +114,26 @@ async def lifespan(app: FastAPI):
         logger.info("code_graph_watcher_disabled enabled=false")
     app.state.code_graph_watcher = code_graph_watcher
 
+    # Pre-warm embedding model in background so first index isn't slow
+    if runtime_settings.code_graph.semantic_enabled:
+        async def _preload_embedder() -> None:
+            from app.services.code_graph.embeddings import (
+                EmbeddingUnavailable,
+                get_embedder,
+            )
+
+            try:
+                await asyncio.to_thread(
+                    get_embedder,
+                    runtime_settings.code_graph.embedding_model,
+                    runtime_settings.code_graph.embedding_dim,
+                )
+                logger.info("code_graph_embedder_ready")
+            except EmbeddingUnavailable as exc:
+                logger.warning("code_graph_embedder_unavailable err={}", exc)
+
+        asyncio.create_task(_preload_embedder())
+
     yield
 
     await code_graph_watcher.stop()

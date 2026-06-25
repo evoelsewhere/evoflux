@@ -8,6 +8,7 @@ worker thread (CPU-bound) while all database work stays async.
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 import asyncio
@@ -42,6 +43,13 @@ _EMBEDDABLE_KINDS = frozenset({"module", "class", "function", "method", "interfa
 # Reciprocal-rank-fusion constant — dampens the contribution of lower ranks.
 _RRF_K = 60
 
+# Progress callback: (phase, progress_0_to_1, message) → None
+ProgressCallback = Callable[[str, float, str], None]
+
+
+def _noop_progress(_phase: str, _progress: float, _msg: str) -> None:
+    pass
+
 
 @dataclass(frozen=True, slots=True)
 class ReindexStats:
@@ -72,6 +80,7 @@ async def reindex_workspace(
     root_path: str,
     languages: list[str] | None = None,
     incremental: bool = False,
+    progress_cb: ProgressCallback | None = None,
 ) -> ReindexStats:
     """Re-parse ``root_path`` and update the workspace's stored graph.
 
@@ -83,15 +92,20 @@ async def reindex_workspace(
     cross-file edges pointing *into* them survive. See
     :func:`_reindex_incremental`.
     """
+    report = progress_cb or _noop_progress
     registry = build_registry(languages)
     if incremental:
         return await _reindex_incremental(
-            db, workspace_id=workspace_id, root_path=root_path, registry=registry
+            db, workspace_id=workspace_id, root_path=root_path, registry=registry,
+            progress_cb=report,
         )
+    report("parsing", 0.0, "Scanning files…")
     index: WorkspaceIndex = await asyncio.to_thread(
         index_workspace, root_path, registry=registry
     )
+    report("parsing", 0.3, f"Parsed {len(index.files)} files, {len(index.nodes)} symbols")
 
+    report("saving", 0.35, "Saving graph to database…")
     await db.execute(
         sa_delete(CodeEdge).where(col(CodeEdge.workspace_id) == workspace_id)
     )
@@ -164,10 +178,14 @@ async def reindex_workspace(
     # to avoid a self-inflicted "database is locked". The graph persists even
     # if the (optional) embedding step fails.
     await db.commit()
+    report("saving", 0.5, f"Saved {len(node_rows)} nodes, {len(edge_rows)} edges")
 
+    report("embedding", 0.55, "Generating embeddings…")
     embedded_count = await _maybe_index_embeddings(
-        workspace_id=workspace_id, index=index, key_to_id=key_to_id
+        workspace_id=workspace_id, index=index, key_to_id=key_to_id,
+        progress_cb=report,
     )
+    report("embedding", 1.0, f"Embedded {embedded_count} symbols")
 
     logger.info(
         "code_graph reindex workspace={} files={} nodes={} edges={} "
@@ -195,6 +213,7 @@ async def _reindex_incremental(
     workspace_id: UUID,
     root_path: str,
     registry: ParserRegistry,
+    progress_cb: ProgressCallback = _noop_progress,
 ) -> ReindexStats:
     """Re-parse only files whose content hash changed since the last index.
 
@@ -203,6 +222,7 @@ async def _reindex_incremental(
     Symbols that vanished — and every node of a deleted file — are removed
     along with any edge that references them.
     """
+    progress_cb("parsing", 0.0, "Checking for changes…")
     current = await asyncio.to_thread(
         hash_workspace_files, root_path, registry=registry
     )
@@ -218,6 +238,12 @@ async def _reindex_incremental(
     affected = set(changed) | set(deleted)
 
     if not affected:
+        # No file content changed, but vectors may be missing (e.g. after a
+        # dimension change or table drop). Backfill if needed.
+        progress_cb("embedding", 0.5, "Checking vectors…")
+        await _backfill_vectors_if_needed(
+            db, workspace_id=workspace_id, progress_cb=progress_cb,
+        )
         counts = await get_index_status(db, workspace_id=workspace_id)
         return ReindexStats(
             node_count=counts["nodes"],
@@ -227,6 +253,7 @@ async def _reindex_incremental(
             errors=[],
         )
 
+    progress_cb("parsing", 0.1, f"{len(changed)} changed, {len(deleted)} deleted")
     existing_nodes = (
         await db.exec(select(CodeNode).where(CodeNode.workspace_id == workspace_id))
     ).all()
@@ -374,12 +401,22 @@ async def _reindex_incremental(
         ]
     )
     await db.commit()
+    progress_cb("saving", 0.5, "Graph saved")
 
+    progress_cb("embedding", 0.55, "Embedding changed symbols…")
     embedded_count = await _maybe_update_embeddings(
         workspace_id=workspace_id,
         upserts=embed_targets,
         removed_ids=removed_ids,
     )
+
+    # Backfill vectors for unchanged nodes if most are missing (e.g. after a
+    # model/dimension switch that recreated the vector table).
+    backfilled = await _backfill_vectors_if_needed(
+        db, workspace_id=workspace_id, progress_cb=progress_cb,
+    )
+    embedded_count += backfilled
+    progress_cb("embedding", 1.0, f"Embedded {embedded_count} symbols")
 
     counts = await get_index_status(db, workspace_id=workspace_id)
     logger.info(
@@ -425,6 +462,7 @@ async def _maybe_index_embeddings(
     workspace_id: UUID,
     index: WorkspaceIndex,
     key_to_id: dict[str, UUID],
+    progress_cb: ProgressCallback = _noop_progress,
 ) -> int:
     """Embed indexed symbols and persist vectors when semantic search is on.
 
@@ -463,6 +501,7 @@ async def _maybe_index_embeddings(
             logger.warning("code_graph vec clear failed err={}", exc)
         return 0
 
+    progress_cb("embedding", 0.6, f"Embedding {len(items)} symbols…")
     try:
         return await asyncio.to_thread(
             _embed_and_store, db_path, str(workspace_id), cfg, items
@@ -494,6 +533,81 @@ def _clear_vectors(db_path: str, workspace_id: str) -> None:
     with vec.open_connection(db_path) as conn:
         vec.delete_workspace(conn, workspace_id)
         conn.commit()
+
+
+async def _backfill_vectors_if_needed(
+    db: AsyncSession,
+    *,
+    workspace_id: UUID,
+    progress_cb: ProgressCallback = _noop_progress,
+) -> int:
+    """Re-embed all embeddable nodes when most vectors are missing.
+
+    This handles the case where the vector table was recreated (e.g. after a
+    dimension/model change) and an incremental reindex only embedded a few
+    changed files. Returns the number of vectors written (0 if no backfill).
+    """
+    cfg = load_runtime_settings().code_graph
+    if not cfg.semantic_enabled:
+        return 0
+    db_path = current_sqlite_path()
+    if db_path is None:
+        return 0
+
+    # Query all embeddable nodes.
+    all_nodes = (
+        await db.exec(
+            select(CodeNode).where(
+                CodeNode.workspace_id == workspace_id,
+                col(CodeNode.kind).in_(list(_EMBEDDABLE_KINDS)),
+            )
+        )
+    ).all()
+    if not all_nodes:
+        return 0
+
+    # Check existing vector count — skip if already complete.
+    try:
+        vec_count = await asyncio.to_thread(
+            _count_vectors, db_path, str(workspace_id)
+        )
+    except vec.VectorStoreUnavailable:
+        return 0
+    if vec_count >= len(all_nodes):
+        return 0
+
+    progress_cb("embedding", 0.6, f"Backfilling {len(all_nodes)} vectors…")
+    items: list[tuple[str, str]] = [
+        (
+            str(n.id),
+            emb.node_embedding_text(
+                kind=n.kind,
+                name=n.name,
+                qualified_name=n.qualified_name,
+                signature=n.signature,
+                docstring=n.docstring,
+            ),
+        )
+        for n in all_nodes
+    ]
+    logger.info(
+        "code_graph backfilling vectors: have={} need={} workspace={}",
+        vec_count,
+        len(items),
+        workspace_id,
+    )
+    try:
+        return await asyncio.to_thread(
+            _embed_and_store, db_path, str(workspace_id), cfg, items
+        )
+    except (emb.EmbeddingUnavailable, vec.VectorStoreUnavailable) as exc:
+        logger.warning("code_graph vector backfill skipped err={}", exc)
+        return 0
+
+
+def _count_vectors(db_path: str, workspace_id: str) -> int:
+    with vec.open_connection(db_path) as conn:
+        return vec.count_workspace(conn, workspace_id)
 
 
 async def _maybe_update_embeddings(

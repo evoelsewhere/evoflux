@@ -47,12 +47,14 @@ export function CodeGraphPanel({
     // While a background index is running, poll so the panel reflects progress
     // and flips to the indexed view as soon as it finishes — this also restores
     // the "Indexing…" state after a page reload (the flag lives server-side).
-    refetchInterval: (query) => (query.state.data?.indexing ? 1_500 : false),
+    refetchInterval: (query) => (query.state.data?.indexing ? 800 : false),
   })
 
   const indexed = status.data?.indexed ?? false
   const serverIndexing = status.data?.indexing ?? false
   const indexError = status.data?.index_error ?? null
+  const indexProgress = status.data?.index_progress ?? null
+  const indexMessage = status.data?.index_message ?? null
 
   const results = useQuery({
     queryKey: queryKeys.codeGraph.search(workspace, debounced),
@@ -89,10 +91,20 @@ export function CodeGraphPanel({
         ) : !indexed ? (
           <div className="flex flex-col items-start gap-2">
             {serverIndexing ? (
-              <p className="inline-flex items-center gap-1.5 text-xs text-(--color-text-subtle)">
-                <Loader2 size={13} className="animate-spin" />
-                Building index…
-              </p>
+              <div className="flex w-full flex-col gap-1.5">
+                <p className="inline-flex items-center gap-1.5 text-xs text-(--color-text-subtle)">
+                  <Loader2 size={13} className="animate-spin" />
+                  {indexMessage || 'Building index…'}
+                </p>
+                {indexProgress != null && (
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-(--color-border)">
+                    <div
+                      className="h-full rounded-full bg-(--color-accent) transition-all duration-300"
+                      style={{ width: `${Math.round(indexProgress * 100)}%` }}
+                    />
+                  </div>
+                )}
+              </div>
             ) : (
               <>
                 <p className="text-xs text-(--color-text-subtle)">No code graph for this workspace yet.</p>
@@ -119,10 +131,20 @@ export function CodeGraphPanel({
               <StatCount label="Edges" value={status.data?.edges ?? 0} />
             </div>
             {serverIndexing && (
-              <p className="inline-flex items-center gap-1.5 text-[10px] text-(--color-text-subtle)">
-                <Loader2 size={11} className="animate-spin" />
-                Reindexing…
-              </p>
+              <div className="flex w-full flex-col gap-1">
+                <p className="inline-flex items-center gap-1.5 text-[10px] text-(--color-text-subtle)">
+                  <Loader2 size={11} className="animate-spin" />
+                  {indexMessage || 'Reindexing…'}
+                </p>
+                {indexProgress != null && (
+                  <div className="h-1 w-full overflow-hidden rounded-full bg-(--color-border)">
+                    <div
+                      className="h-full rounded-full bg-(--color-accent) transition-all duration-300"
+                      style={{ width: `${Math.round(indexProgress * 100)}%` }}
+                    />
+                  </div>
+                )}
+              </div>
             )}
             {indexError && (
               <p className="text-[10px] text-(--color-error)">Last index failed: {indexError}</p>

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -20,6 +21,20 @@ from loguru import logger
 
 from app.core.db import DbFactory, resolve_db_factory
 from app.services import code_graph_service as svc
+
+# Type for the progress callback used by reindex_workspace.
+ProgressCallback = Callable[[str, float, str], None]
+
+
+def _make_progress_cb(job: IndexJob) -> ProgressCallback:
+    """Return a callback that updates the IndexJob progress fields."""
+
+    def _cb(phase: str, progress: float, message: str) -> None:
+        job.phase = phase
+        job.progress = progress
+        job.message = message
+
+    return _cb
 
 
 @dataclass(slots=True)
@@ -32,6 +47,10 @@ class IndexJob:
     status: str = "running"  # running | done | error
     finished_at: float | None = None
     error: str | None = None
+    # Progress tracking
+    phase: str = "starting"  # starting | parsing | saving | embedding | done
+    progress: float = 0.0  # 0.0 – 1.0
+    message: str = ""
 
 
 class IndexJobRegistry:
@@ -96,8 +115,12 @@ class IndexJobRegistry:
                     root_path=root_path,
                     languages=languages,
                     incremental=not full,
+                    progress_cb=_make_progress_cb(job),
                 )
             job.status = "done"
+            job.phase = "done"
+            job.progress = 1.0
+            job.message = ""
             job.error = None
         except Exception as exc:  # noqa: BLE001 — surfaced to the UI via status
             job.status = "error"
