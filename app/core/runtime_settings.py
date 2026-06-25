@@ -54,14 +54,13 @@ class CodeGraphSettings(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    semantic_enabled: bool = False
+    semantic_enabled: bool = True
     embedding_model: str = "jinaai/jina-embeddings-v2-base-code"
     embedding_dim: int = 768
     # Weight of the semantic signal when fusing with lexical results (0..1).
     semantic_weight: float = 0.5
     # Auto-reindex coding workspaces when their source files change on disk.
-    # Off by default; the panel's manual "Reindex" always works regardless.
-    watch_enabled: bool = False
+    watch_enabled: bool = True
     # Coalesce bursts of file events before reindexing (milliseconds).
     watch_debounce_ms: int = 1500
 
