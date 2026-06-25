@@ -55,8 +55,8 @@ class CodeGraphSettings(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     semantic_enabled: bool = True
-    embedding_model: str = "jinaai/jina-embeddings-v2-base-code"
-    embedding_dim: int = 768
+    embedding_model: str = "snowflake/snowflake-arctic-embed-s"
+    embedding_dim: int = 384
     # Weight of the semantic signal when fusing with lexical results (0..1).
     semantic_weight: float = 0.5
     # Auto-reindex coding workspaces when their source files change on disk.

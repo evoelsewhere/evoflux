@@ -51,6 +51,18 @@ class CodeGraphStatusResponse(BaseModel):
         default=False,
         description="Whether a background reindex is currently running.",
     )
+    index_phase: str | None = Field(
+        default=None,
+        description="Current indexing phase: parsing | saving | embedding.",
+    )
+    index_progress: float | None = Field(
+        default=None,
+        description="Indexing progress from 0.0 to 1.0.",
+    )
+    index_message: str | None = Field(
+        default=None,
+        description="Human-readable progress message.",
+    )
     index_error: str | None = Field(
         default=None,
         description="Error message from the last reindex, if it failed.",

@@ -64,7 +64,17 @@ class CodeEmbedder:
                 f"fastembed/onnxruntime unavailable: {exc}"
             ) from exc
         try:
-            return TextEmbedding(model_name=model_name)
+            from pathlib import Path
+
+            # Use bundled model in repo first, fall back to config dir
+            repo_cache = Path(__file__).resolve().parents[3] / "models" / "embedding"
+            if repo_cache.is_dir():
+                cache_dir = str(repo_cache)
+            else:
+                from app.core.config import settings
+
+                cache_dir = str(Path(settings.EVOFLUX_CONFIG_DIR) / "models")
+            return TextEmbedding(model_name=model_name, cache_dir=cache_dir)
         except Exception as exc:
             raise EmbeddingUnavailable(
                 f"failed to load embedding model '{model_name}': {exc}"

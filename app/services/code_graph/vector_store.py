@@ -53,10 +53,39 @@ def _serialize(vector: Sequence[float]):
 def ensure_table(conn: sqlite3.Connection, dim: int) -> None:
     """Create the vec0 table if missing (vector dimension fixed at ``dim``).
 
+    If the table exists with a different dimension it is dropped and recreated
+    (e.g. after switching embedding models).
+
     ``node_id`` is the primary key so individual symbol vectors can be deleted
     or replaced during an incremental re-index; ``workspace_id`` is the
     partition key so KNN and bulk deletes stay scoped to one workspace.
     """
+    cur = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (_TABLE,)
+    )
+    if cur.fetchone() is not None:
+        # Table exists — verify dimension with a probe insert.
+        import sqlite_vec
+
+        test_vec = sqlite_vec.serialize_float32([0.0] * dim)
+        try:
+            conn.execute(
+                f"INSERT INTO {_TABLE}(node_id, workspace_id, embedding) "
+                "VALUES ('__dim_probe__', '__probe__', ?)",
+                (test_vec,),
+            )
+            conn.execute(
+                f"DELETE FROM {_TABLE} WHERE node_id = '__dim_probe__'"
+            )
+            return  # Dimension matches, table is fine.
+        except sqlite3.OperationalError:
+            # Dimension mismatch — drop and recreate.
+            logger.warning(
+                "code_graph vec table dimension mismatch, recreating with dim={}",
+                dim,
+            )
+            conn.execute(f"DROP TABLE {_TABLE}")
+
     conn.execute(
         f"CREATE VIRTUAL TABLE IF NOT EXISTS {_TABLE} USING vec0("
         "node_id text primary key, "
@@ -64,6 +93,8 @@ def ensure_table(conn: sqlite3.Connection, dim: int) -> None:
         f"embedding float[{dim}]"
         ")"
     )
+
+
 
 
 def delete_workspace(conn: sqlite3.Connection, workspace_id: str) -> None:

@@ -77,6 +77,9 @@ async def get_status(
         embedding_model=semantic.model,
         vector_count=semantic.vector_count,
         indexing=indexing,
+        index_phase=job.phase if indexing else None,
+        index_progress=job.progress if indexing else None,
+        index_message=job.message if indexing else None,
         index_error=index_error,
     )
 

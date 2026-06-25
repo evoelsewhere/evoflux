@@ -126,6 +126,9 @@ export interface CodeGraphStatusResponse {
   embedding_model: string | null
   vector_count: number
   indexing: boolean
+  index_phase: string | null
+  index_progress: number | null
+  index_message: string | null
   index_error: string | null
 }
 
