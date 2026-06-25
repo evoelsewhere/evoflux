@@ -53,6 +53,7 @@ import type { LucideIcon } from 'lucide-react'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { usePlatform } from '@/hooks/use-platform'
 import { useTauriDrag } from '@/hooks/use-tauri-drag'
+import { useWorkspaceFileWatcher } from '@/hooks/useWorkspaceFileWatcher'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -206,6 +207,9 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
   const agentWorkspace = mode === 'coding' ? workspace : null
   const hasCodingWorkspace = mode !== 'coding' || Boolean(workspace)
   const isCodingSessionLoading = mode === 'coding' && codingSessionLoading
+
+  // Watch workspace for external file changes (other editors, git, etc.)
+  useWorkspaceFileWatcher(agentWorkspace)
   const { data: teamAgentsData, isLoading: teamAgentsLoading } = useTeamAgentsQuery(agentWorkspace, hasCodingWorkspace)
   const leadAgent = teamAgentsData?.agents?.find((a) => a.is_lead)
   const leadCapabilities: AgentCapabilitiesType | undefined = leadAgent?.capabilities

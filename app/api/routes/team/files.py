@@ -32,8 +32,9 @@ from app.agent.tools.builtin.filesystem._ignore import (
     matches_gitignore_pattern as _shared_matches_gitignore_pattern,
 )
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
+from sse_starlette.sse import EventSourceResponse
 
 from app.api.schemas.team import (
     CodingWorkspaceFilesResponse,
@@ -44,6 +45,7 @@ from app.core.db import async_session_factory
 from app.core.paths import session_workspace_dir, uploads_dir, workspace_dir
 from app.models.chat import ChatSession
 from app.services import team_manager
+from app.services.workspace_file_watcher import workspace_file_watcher
 
 router = APIRouter()
 
@@ -575,3 +577,45 @@ async def get_coding_workspace_status(workspace: str) -> dict:
         }
     )
     return payload
+
+
+@router.get("/workspace/watch")
+async def watch_workspace_files(workspace: str, request: Request):
+    """SSE stream that emits file-change events for a coding workspace.
+
+    Each event is a JSON array of ``{type, path}`` objects where ``type``
+    is ``"added"`` | ``"modified"`` | ``"deleted"`` and ``path`` is the
+    workspace-relative POSIX path.
+
+    The watcher starts when the first client connects and stops when all
+    clients disconnect. Uses ``watchfiles`` (Rust ``notify`` backend) —
+    typical latency is <100ms.
+    """
+    import json
+    from typing import AsyncGenerator
+
+    try:
+        resolved = team_manager.validate_workspace(workspace)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    queue = await workspace_file_watcher.subscribe(resolved)
+
+    async def _gen() -> AsyncGenerator[dict, None]:
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    events = await asyncio.wait_for(queue.get(), timeout=30)
+                    yield {
+                        "event": "fs_change",
+                        "data": json.dumps(events),
+                    }
+                except TimeoutError:
+                    # Send keepalive so proxies don't close the connection
+                    yield {"event": "keepalive", "data": "{}"}
+        finally:
+            await workspace_file_watcher.unsubscribe(resolved, queue)
+
+    return EventSourceResponse(_gen())
