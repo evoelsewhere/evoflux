@@ -378,7 +378,11 @@ async def load_skill(
                 # Expand placeholders ({EVOFLUX_CONFIG_DIR}, {SKILL_DIR}, etc.)
                 # so the agent receives concrete paths it can hand to its
                 # file/shell tools without further interpretation.
-                return _render_tokens(body, skill_dir=path.parent)
+                rendered = _render_tokens(body, skill_dir=path.parent)
+                # Cache so within-turn duplicate calls don't re-read disk.
+                if _state is not None:
+                    loaded_skills[skill_name] = rendered
+                return rendered
 
     available = list(discover_skills().keys())
     return f"Skill '{skill_name}' not found. Available: {available}"
