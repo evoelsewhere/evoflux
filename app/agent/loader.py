@@ -371,9 +371,10 @@ def _build_agent(
     if cfg.skills:
         cfg.skills = list(dict.fromkeys(cfg.skills))
 
-    # Validate assigned skills exist and pre-load their bodies into the
-    # system prompt so the agent has instructions from the very first turn
-    # (no need to call the skill tool manually).
+    # Validate assigned skills exist and pre-load their bodies for injection
+    # as synthetic tool messages (via SkillPreloadHook) rather than bloating
+    # the system prompt on every turn.
+    preloaded_skills: dict[str, str] = {}
     if cfg.skills:
         from app.agent.tools.builtin.skill import (
             _parse_frontmatter,
@@ -382,7 +383,6 @@ def _build_agent(
         )
 
         available = _discover()
-        loaded_bodies: list[str] = []
         for sk in cfg.skills:
             if sk not in available:
                 logger.warning(
@@ -397,7 +397,7 @@ def _build_agent(
                 _, body = _parse_frontmatter(text)
                 if body:
                     rendered = _render_tokens(body, skill_dir=skill_path.parent)
-                    loaded_bodies.append(rendered)
+                    preloaded_skills[sk] = rendered
                     logger.info(
                         "agent_skill_preloaded agent={} skill={}",
                         cfg.name,
@@ -410,8 +410,6 @@ def _build_agent(
                     sk,
                     skill_path,
                 )
-        if loaded_bodies:
-            system_prompt += "\n\n" + "\n\n".join(loaded_bodies)
 
     from app.agent.tools.builtin.schedule import schedule_task as _schedule_task_tool
     from app.agent.tools.builtin.skill import load_skill as _load_skill_tool
@@ -537,6 +535,13 @@ def _build_agent(
         fallback_provider=fallback_provider,
         fallback_model_id=cfg.fallback_model,
     )
+
+    # Attach skill preload hook — injects skill bodies as synthetic tool
+    # messages on first activation, saving tokens on subsequent turns.
+    if preloaded_skills:
+        from app.agent.hooks.skill_preload import SkillPreloadHook
+
+        agent.hooks.append(SkillPreloadHook(preloaded_skills))
 
     # Stamp config dependencies for end-of-turn drift detection.
     if source_path is not None:

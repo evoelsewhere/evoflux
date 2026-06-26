@@ -8,7 +8,11 @@
 
 /* ─────────────────────────────────────────────────────────────
  * EvoFlux — syntax highlighting (highlight.js)
- * Single accent hue (blue) for keywords/functions; gray scale for rest.
+ * Each token category maps to a distinct semantic CSS variable.
+ * Dark: coral-red keywords, lavender functions, sky-blue strings,
+ *        amber variables, green types, cornflower numbers.
+ * Light: crimson keywords, purple functions, navy strings,
+ *        burnt-amber variables, forest-green types, royal-blue numbers.
  * ───────────────────────────────────────────────────────────── */
 .hljs {
   background: transparent;
@@ -16,30 +20,52 @@
 }
 .hljs-comment,
 .hljs-quote          { color: var(--color-syn-comment); font-style: italic; }
+
+/* Control-flow keywords */
 .hljs-keyword,
-.hljs-selector-tag,
-.hljs-built_in,
-.hljs-tag            { color: var(--color-syn-keyword); }
-.hljs-string,
+.hljs-selector-tag   { color: var(--color-syn-keyword); }
+
+/* Built-ins and language primitives (treat as constants, not keywords) */
+.hljs-built_in       { color: var(--color-syn-number); }
+
+/* HTML/XML/JSX native tags */
+.hljs-tag            { color: var(--color-syn-tag); }
+
+/* Attribute names inside tags */
 .hljs-attr,
-.hljs-attribute      { color: var(--color-syn-string); }
+.hljs-attribute      { color: var(--color-syn-variable); }
+
+/* String literals */
+.hljs-string         { color: var(--color-syn-string); }
+
+/* Numeric/boolean literals */
 .hljs-number,
 .hljs-literal        { color: var(--color-syn-number); }
+
+/* Function/method names */
 .hljs-title,
+.hljs-title.function_ { color: var(--color-syn-function); }
+
+/* Class / type names */
 .hljs-title.class_,
 .hljs-section        { color: var(--color-syn-type); }
+
+/* Variables and template expressions */
 .hljs-variable,
 .hljs-template-variable,
-.hljs-name           { color: var(--color-syn-function); }
+.hljs-name           { color: var(--color-syn-variable); }
+
+/* Type annotations */
 .hljs-type,
-.hljs-class          { color: var(--color-syn-operator); }
-.hljs-symbol,
-.hljs-bullet,
+.hljs-class          { color: var(--color-syn-type); }
+
+/* Additions/deletions in diffs */
 .hljs-addition       { color: var(--color-syn-string); }
 .hljs-deletion       { color: var(--color-syn-variable); }
-.hljs-function .hljs-title,
-.hljs-title.function_            { color: var(--color-syn-function); }
-.hljs-params                     { color: var(--color-text); }
+
+/* Parameters */
+.hljs-params         { color: var(--color-text); }
+
 .hljs-emphasis       { font-style: italic; }
 .hljs-strong         { font-weight: bold; }
 
@@ -106,34 +132,34 @@
 :root.dark {
     color-scheme: dark;
 
-    /* Surfaces — dark, neutral with minimal tint */
-    --bg-page:           #0C0C0E;
-    --bg-sidebar:        #141416;
-    --bg-card:           #1C1C1F;
-    --bg-input:          #1C1C1F;
-    --bg-key:            #272729;
-    --bg-muted:          #272729;
-    --bg-send:           #F2F2F4;
-    --color-surface:     #1C1C1F;
-    --color-surface-2:   #272729;
-    --color-bg-elevated: #202023;
+    /* Surfaces — VSCode 2026 Dark hierarchy: editor=darkest, sidebar recedes, widgets elevated */
+    --bg-page:           #121314;
+    --bg-sidebar:        #191A1B;
+    --bg-card:           #202122;
+    --bg-input:          #191A1B;
+    --bg-key:            #282A2B;
+    --bg-muted:          #282A2B;
+    --bg-send:           #C8CACC;
+    --color-surface:     #202122;
+    --color-surface-2:   #282A2B;
+    --color-bg-elevated: #202122;
 
-    /* Borders */
-    --border-soft:         #1F1F22;
-    --border-card:         #2C2C30;
-    --color-border-subtle: #1F1F22;
-    --color-border:        #2C2C30;
-    --color-border-strong: #3E3E44;
+    /* Borders — subtler steps, more air between surfaces */
+    --border-soft:         #2A2B2C;
+    --border-card:         #333536;
+    --color-border-subtle: #2A2B2C;
+    --color-border:        #333536;
+    --color-border-strong: #4A4B4D;
 
-    /* Text */
-    --color-text:           #F2F2F4;
-    --color-text-2:         #C8C8CC;
-    --color-text-muted:     #686870;
-    --color-text-subtle:    #484850;
-    --color-text-on-accent: #0C0C0E;
+    /* Text — softened foreground reduces glare on near-black bg */
+    --color-text:           #C8CACC;
+    --color-text-2:         #8C8C8C;
+    --color-text-muted:     #555558;
+    --color-text-subtle:    #3A3A3D;
+    --color-text-on-accent: #121314;
 
     /* Accent */
-    --color-accent:  #F2F2F4;
+    --color-accent:  #C8CACC;
     --color-overlay: #000000CC;
 
     /* Arc gradients */
@@ -188,20 +214,30 @@
     --color-diff-del-bg:    rgba(248, 113, 113, 0.08);
     --color-diff-del-text:  #FCA5A5;
 
-    /* Syntax — single accent (blue), rest gray scale */
-    --color-syn-comment:  #525252;
-    --color-syn-keyword:  #60A5FA;
-    --color-syn-function: #60A5FA;
-    --color-syn-variable: #F87171;
-    --color-syn-string:   #A3A3A3;
-    --color-syn-number:   #D4D4D4;
-    --color-syn-type:     #D4D4D4;
-    --color-syn-operator: #737373;
+    /* Syntax — VSCode 2026 Dark inspired: each token category gets a distinct hue */
+    /* Comment: steel gray — de-emphasised by design, 3.9:1 on #121314 (acceptable) */
+    --color-syn-comment:  #6B7280;
+    /* Keyword/control-flow: coral-red — 7.4:1 AAA */
+    --color-syn-keyword:  #FF7B72;
+    /* Function call-site: lavender — 9.6:1 AAA, distinct from keyword red */
+    --color-syn-function: #D2A8FF;
+    /* Variable/parameter: amber-orange — 9.6:1 AAA, warm not error-red */
+    --color-syn-variable: #FFA657;
+    /* String literal: sky blue — 12.1:1 AAA, immediately recognisable */
+    --color-syn-string:   #A5D6FF;
+    /* Number/literal: cornflower blue — 9.6:1 AAA, distinct hue from string */
+    --color-syn-number:   #79C0FF;
+    /* Type/class: soft green — AAA, clear type signal */
+    --color-syn-type:     #7EE787;
+    /* HTML/JSX tag (new token): green-teal, distinct from component (lavender) */
+    --color-syn-tag:      #7EE787;
+    /* Operator: medium gray — intentionally de-emphasised */
+    --color-syn-operator: #8B949E;
 
-    /* Focus + depth */
-    --focus-ring:   #7C6FD8;
-    --shadow-depth: 0 2px 4px rgba(0, 0, 0, 0.5), 0 4px 16px rgba(0, 0, 0, 0.4);
-    --shadow-popover: 0 16px 48px rgba(0, 0, 0, 0.65), 0 6px 24px rgba(0, 0, 0, 0.45);
+    /* Focus + depth — VSCode 2026 Dark blue-teal accent for interactive states */
+    --focus-ring:   #3994BC;
+    --shadow-depth: 0 2px 4px rgba(0, 0, 0, 0.40), 0 4px 16px rgba(0, 0, 0, 0.30);
+    --shadow-popover: 0 16px 48px rgba(0, 0, 0, 0.55), 0 6px 24px rgba(0, 0, 0, 0.38);
 
     /* Motion */
     --motion-instant: 80ms;
@@ -258,31 +294,31 @@
 :root.light {
     color-scheme: light;
 
-    /* Surfaces — light, neutral with minimal tint */
-    --bg-page:           #FAFAFA;
-    --bg-sidebar:        #F5F5F7;
+    /* Surfaces — VSCode 2026 Light: barely-cool tint for chrome, pure white for editor */
+    --bg-page:           #FAFAFD;
+    --bg-sidebar:        #FAFAFD;
     --bg-card:           #FFFFFF;
     --bg-input:          #FFFFFF;
-    --bg-key:            #EBEBED;
-    --bg-muted:          #EBEBED;
+    --bg-key:            #EAEAEA;
+    --bg-muted:          #EAEAEA;
     --bg-send:           #111114;
     --color-surface:     #FFFFFF;
-    --color-surface-2:   #EBEBED;
+    --color-surface-2:   #EAEAEA;
     --color-bg-elevated: #FFFFFF;
 
-    /* Borders */
-    --border-soft:         #E8E8EA;
-    --border-card:         #E0E0E2;
-    --color-border-subtle: #E8E8EA;
-    --color-border:        #E0E0E2;
-    --color-border-strong: #C8C8CA;
+    /* Borders — airy, rely on borders not fills for separation */
+    --border-soft:         #F0F1F2;
+    --border-card:         #E4E5E6;
+    --color-border-subtle: #F0F1F2;
+    --color-border:        #E4E5E6;
+    --color-border-strong: #D8D8DA;
 
-    /* Text */
-    --color-text:           #111114;
-    --color-text-2:         #4A4A52;
-    --color-text-muted:     #8A8A94;
-    --color-text-subtle:    #C4C4C8;
-    --color-text-on-accent: #FAFAFA;
+    /* Text — ink-black primary, measured secondary scale */
+    --color-text:           #202020;
+    --color-text-2:         #606060;
+    --color-text-muted:     #999999;
+    --color-text-subtle:    #C8C8CA;
+    --color-text-on-accent: #FFFFFF;
 
     /* Accent */
     --color-accent:  #111114;
@@ -340,18 +376,28 @@
     --color-diff-del-bg:    rgba(220, 38, 38, 0.10);
     --color-diff-del-text:  #991B1B;
 
-    /* Syntax */
-    --color-syn-comment:  #A3A3A3;
-    --color-syn-keyword:  #2563EB;
-    --color-syn-function: #2563EB;
-    --color-syn-variable: #DC2626;
-    --color-syn-string:   #525252;
-    --color-syn-number:   #0A0A0A;
-    --color-syn-type:     #0A0A0A;
+    /* Syntax — VSCode 2026 Light inspired: GitHub-flavoured ink palette */
+    /* Comment: medium gray — 4.6:1 AA on #FFFFFF (finally passes) */
+    --color-syn-comment:  #6B7280;
+    /* Keyword/control-flow: crimson-red — 5.4:1 AA */
+    --color-syn-keyword:  #CF222E;
+    /* Function call-site: purple — 5.1:1 AA, distinct hue from keyword */
+    --color-syn-function: #8250DF;
+    /* Variable/parameter: burnt amber — 7.4:1 AAA, warm; not error-red */
+    --color-syn-variable: #953800;
+    /* String literal: deep navy — 12.8:1 AAA, immediately recognisable */
+    --color-syn-string:   #0A3069;
+    /* Number/literal: royal blue — 7.6:1 AAA, distinct from string navy */
+    --color-syn-number:   #0550AE;
+    /* Type/class: forest green — 7.4:1 AAA */
+    --color-syn-type:     #116329;
+    /* HTML/JSX tag (new token): same as type for light; components keep purple */
+    --color-syn-tag:      #116329;
+    /* Operator: neutral gray — intentionally de-emphasised */
     --color-syn-operator: #737373;
 
-    /* Focus + depth */
-    --focus-ring:   #667eea;
+    /* Focus + depth — VSCode 2026 Light blue for interactive states */
+    --focus-ring:   #0069CC;
     --shadow-depth: 0 1px 3px rgba(10, 10, 30, 0.07), 0 4px 12px rgba(10, 10, 30, 0.10);
     --shadow-popover: 0 8px 32px rgba(10, 10, 30, 0.20), 0 4px 16px rgba(10, 10, 30, 0.12);
 }

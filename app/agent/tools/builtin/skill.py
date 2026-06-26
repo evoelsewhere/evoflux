@@ -228,7 +228,7 @@ def _discover_skills_cached(
             skills[name] = {
                 "name": name,
                 "description": description,
-                "file": str(path.relative_to(directory)),
+                "file": path.relative_to(directory).as_posix(),
                 # Absolute path to the skill's directory — needed by callers
                 # that want to render {SKILL_DIR} in the body without a
                 # second filesystem walk.

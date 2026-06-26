@@ -588,7 +588,9 @@ class TestBuiltinSkills:
     async def test_builtin_skill_dir_points_at_auxiliary_files(self):
         body = await load_skill("mcp-installer")
 
-        assert str(_builtin_skills_dir() / "mcp-installer" / "mcp_apply.py") in body
+        skill_dir = str((_builtin_skills_dir() / "mcp-installer").resolve())
+        assert skill_dir in body
+        assert "mcp_apply.py" in body
 
 
 # ---------------------------------------------------------------------------
