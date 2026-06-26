@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from app.services.code_graph.parsers.base import (
     Definition,
+    ImportRef,
     SuperType,
     TreeSitterParser,
     node_text,
@@ -15,6 +16,7 @@ from app.services.code_graph.types import (
     NODE_CLASS,
     NODE_FUNCTION,
     NODE_METHOD,
+    NODE_VARIABLE,
 )
 
 if TYPE_CHECKING:
@@ -38,6 +40,10 @@ class PythonParser(TreeSitterParser):
             if name:
                 kind = NODE_METHOD if inside_class else NODE_FUNCTION
                 return Definition(kind=kind, name=name, is_class=False)
+        elif node.type == "assignment" and not inside_class:
+            return self._module_level_assignment(node, source)
+        elif node.type == "typed_assignment" and not inside_class:
+            return self._module_level_typed_assignment(node, source)
         return None
 
     def call_target(self, node: Node, source: bytes) -> str | None:
@@ -49,9 +55,15 @@ class PythonParser(TreeSitterParser):
         if func.type == "identifier":
             return node_text(func, source)
         if func.type == "attribute":
+            obj = func.child_by_field_name("object")
             attr = func.child_by_field_name("attribute")
-            if attr is not None:
-                return node_text(attr, source)
+            if attr is None:
+                return None
+            attr_name = node_text(attr, source)
+            # Emit "Object.method" for qualified resolution
+            if obj is not None and obj.type == "identifier":
+                return f"{node_text(obj, source)}.{attr_name}"
+            return attr_name
         return None
 
     def supertypes(self, node: Node, source: bytes) -> list[SuperType]:
@@ -96,6 +108,125 @@ class PythonParser(TreeSitterParser):
         name = node.child_by_field_name("name")
         return node_text(name, source) if name is not None else None
 
+    def decorators(self, node: Node, source: bytes) -> list[str]:
+        # In Python, decorators live on the parent `decorated_definition` node
+        parent = node.parent
+        if parent is None or parent.type != "decorated_definition":
+            return []
+        out: list[str] = []
+        for child in parent.children:
+            if child.type == "decorator":
+                name = _decorator_name(child, source)
+                if name:
+                    out.append(name)
+        return out
+
+    def type_refs(self, node: Node, source: bytes) -> list[str]:
+        if node.type != "function_definition":
+            return []
+        out: list[str] = []
+        # Parameter type annotations
+        params = node.child_by_field_name("parameters")
+        if params is not None:
+            for param in params.children:
+                if param.type in {"typed_parameter", "typed_default_parameter"}:
+                    type_node = param.child_by_field_name("type")
+                    if type_node is not None:
+                        _collect_type_identifiers(type_node, source, out)
+        # Return type annotation
+        ret = node.child_by_field_name("return_type")
+        if ret is not None:
+            _collect_type_identifiers(ret, source, out)
+        return out
+
+    def _module_level_assignment(self, node: Node, source: bytes) -> Definition | None:
+        """Capture `NAME = value` at module level (not inside functions)."""
+        # Only capture if parent is module (top-level) or expression_statement
+        # whose parent is module.
+        parent = node.parent
+        if parent is not None and parent.type == "expression_statement":
+            parent = parent.parent
+        if parent is None or parent.type != "module":
+            return None
+        # LHS must be a simple identifier (not self.x, not tuple unpacking)
+        left = node.child_by_field_name("left")
+        if left is None or left.type != "identifier":
+            return None
+        name = node_text(left, source)
+        # Skip dunder assignments and private internals
+        if name.startswith("__") and name.endswith("__"):
+            return None
+        return Definition(kind=NODE_VARIABLE, name=name, is_class=False)
+
+    def _module_level_typed_assignment(
+        self, node: Node, source: bytes
+    ) -> Definition | None:
+        """Capture `NAME: type = value` at module level."""
+        parent = node.parent
+        if parent is not None and parent.type != "module":
+            return None
+        left = node.child_by_field_name("left")
+        if left is None or left.type != "identifier":
+            return None
+        name = node_text(left, source)
+        if name.startswith("__") and name.endswith("__"):
+            return None
+        return Definition(kind=NODE_VARIABLE, name=name, is_class=False)
+
+    def import_refs(self, node: Node, source: bytes) -> list[ImportRef]:
+        ntype = node.type
+        if ntype == "import_from_statement":
+            return self._from_import(node, source)
+        if ntype == "import_statement":
+            return self._bare_import(node, source)
+        return []
+
+    def _from_import(self, node: Node, source: bytes) -> list[ImportRef]:
+        """Parse `from <module> import name1, name2 [as alias]`."""
+        module_node = node.child_by_field_name("module_name")
+        if module_node is None:
+            return []
+        module_path = node_text(module_node, source)
+        out: list[ImportRef] = []
+        # Iterate children to find imported names (multiple possible)
+        past_import_kw = False
+        for child in node.children:
+            if child.type == "import":
+                past_import_kw = True
+                continue
+            if not past_import_kw:
+                continue
+            if child.type == "dotted_name":
+                out.append(
+                    ImportRef(name=node_text(child, source), module_path=module_path)
+                )
+            elif child.type == "aliased_import":
+                name_node = child.child_by_field_name("name")
+                if name_node is not None:
+                    out.append(
+                        ImportRef(
+                            name=node_text(name_node, source), module_path=module_path
+                        )
+                    )
+        return out
+
+    def _bare_import(self, node: Node, source: bytes) -> list[ImportRef]:
+        """Parse `import os` or `import os.path`."""
+        out: list[ImportRef] = []
+        for child in node.children:
+            if child.type == "dotted_name":
+                text = node_text(child, source)
+                # Use last component as the name, full path as module
+                parts = text.split(".")
+                out.append(ImportRef(name=parts[-1], module_path=text))
+            elif child.type == "aliased_import":
+                name_node = child.child_by_field_name("name")
+                if name_node is not None:
+                    text = node_text(name_node, source)
+                    parts = text.split(".")
+                    out.append(ImportRef(name=parts[-1], module_path=text))
+        return out
+
 
 def _strip_py_string(text: str) -> str:
     """Strip quotes/prefixes from a Python string literal, best effort."""
@@ -108,3 +239,66 @@ def _strip_py_string(text: str) -> str:
             s = s[len(quote) : len(s) - len(quote)]
             break
     return s.strip()
+
+
+def _decorator_name(node: Node, source: bytes) -> str | None:
+    """Extract the decorator name from a decorator node.
+
+    Handles: @foo, @foo.bar, @foo(...), @foo.bar(...)
+    """
+    for child in node.children:
+        if child.type == "identifier":
+            return node_text(child, source)
+        if child.type == "attribute":
+            # Use the full dotted name
+            return node_text(child, source)
+        if child.type == "call":
+            func = child.child_by_field_name("function")
+            if func is not None:
+                if func.type == "identifier":
+                    return node_text(func, source)
+                if func.type == "attribute":
+                    return node_text(func, source)
+    return None
+
+
+# Builtins/primitives we don't want to emit as type references.
+_PY_BUILTIN_TYPES = frozenset(
+    {
+        "int",
+        "float",
+        "str",
+        "bytes",
+        "bool",
+        "None",
+        "object",
+        "list",
+        "dict",
+        "set",
+        "tuple",
+        "frozenset",
+        "type",
+        "Any",
+        "Self",
+    }
+)
+
+
+def _collect_type_identifiers(node: Node, source: bytes, out: list[str]) -> None:
+    """Recursively collect user-defined type identifiers from a type node."""
+    if node.type == "identifier":
+        name = node_text(node, source)
+        if name not in _PY_BUILTIN_TYPES:
+            out.append(name)
+        return
+    if node.type == "attribute":
+        # e.g. module.Type — use last segment
+        attr = node.child_by_field_name("attribute")
+        if attr is not None:
+            name = node_text(attr, source)
+            if name not in _PY_BUILTIN_TYPES:
+                out.append(name)
+        return
+    # Recurse into generic_type, union_type, type, etc.
+    for child in node.children:
+        _collect_type_identifiers(child, source, out)

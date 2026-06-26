@@ -63,6 +63,9 @@ class CodeGraphSettings(BaseModel):
     watch_enabled: bool = True
     # Coalesce bursts of file events before reindexing (milliseconds).
     watch_debounce_ms: int = 1500
+    # Extra delay after an agent run finishes before reindexing accumulated
+    # changes. Allows final writes to settle so only one reindex fires.
+    watch_resume_delay_ms: int = 5000
 
 
 class ServerSettings(BaseModel):

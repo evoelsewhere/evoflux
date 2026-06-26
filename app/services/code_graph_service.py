@@ -9,13 +9,15 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 import asyncio
 from uuid import UUID, uuid7
 
 from loguru import logger
-from sqlalchemy import delete as sa_delete
+from sqlalchemy import delete as sa_delete, func as sa_func
 from sqlmodel import col, or_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -24,6 +26,7 @@ from app.core.runtime_settings import CodeGraphSettings, load_runtime_settings
 from app.models.chat import CodingWorkspace
 from app.models.code_graph import CodeEdge, CodeIndexState, CodeNode
 from app.services.code_graph import embeddings as emb
+from app.services.code_graph import fts_store as fts
 from app.services.code_graph import vector_store as vec
 from app.services.code_graph.indexer import (
     ExistingDef,
@@ -37,11 +40,44 @@ from app.services.code_graph.parsers.registry import ParserRegistry, build_regis
 # Cap how many errors we keep on the stats payload.
 _MAX_REPORTED_ERRORS = 20
 
+# Single-threaded executor for CPU-heavy indexing work (tree-sitter parsing,
+# file hashing, embedding). Serializes all code-graph computation to one thread
+# so it cannot saturate all cores or spike RAM when multiple workspaces or
+# concurrent reindex requests fire simultaneously.
+_INDEXER_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="codegraph")
+
+# Separate executor for lightweight query operations (semantic embed_one + KNN,
+# FTS5 lookups) so search requests are never blocked behind a running index job.
+_QUERY_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="cg-query")
+
+
+async def _run_in_indexer[T](
+    fn: Callable[..., T], /, *args: object, **kwargs: object
+) -> T:
+    """Run ``fn(*args, **kwargs)`` in the dedicated single-thread indexer executor."""
+    loop = asyncio.get_running_loop()
+    call = partial(fn, *args, **kwargs) if kwargs else partial(fn, *args)
+    return await loop.run_in_executor(_INDEXER_EXECUTOR, call)
+
+
+async def _run_in_query[T](
+    fn: Callable[..., T], /, *args: object, **kwargs: object
+) -> T:
+    """Run ``fn(*args, **kwargs)`` in the query executor (non-blocking vs indexer)."""
+    loop = asyncio.get_running_loop()
+    call = partial(fn, *args, **kwargs) if kwargs else partial(fn, *args)
+    return await loop.run_in_executor(_QUERY_EXECUTOR, call)
+
+
 # Symbol kinds worth embedding for semantic search (skip whole-file nodes).
 _EMBEDDABLE_KINDS = frozenset({"module", "class", "function", "method", "interface"})
 
 # Reciprocal-rank-fusion constant — dampens the contribution of lower ranks.
 _RRF_K = 60
+
+# Embed at most this many symbols per batch to cap peak RAM usage.
+# 384-dim × 32 items ≈ 49 KB of vectors; model intermediates ~10 MB peak.
+_EMBED_BATCH_SIZE = 32
 
 # Progress callback: (phase, progress_0_to_1, message) → None
 ProgressCallback = Callable[[str, float, str], None]
@@ -96,14 +132,19 @@ async def reindex_workspace(
     registry = build_registry(languages)
     if incremental:
         return await _reindex_incremental(
-            db, workspace_id=workspace_id, root_path=root_path, registry=registry,
+            db,
+            workspace_id=workspace_id,
+            root_path=root_path,
+            registry=registry,
             progress_cb=report,
         )
     report("parsing", 0.0, "Scanning files…")
-    index: WorkspaceIndex = await asyncio.to_thread(
+    index: WorkspaceIndex = await _run_in_indexer(
         index_workspace, root_path, registry=registry
     )
-    report("parsing", 0.3, f"Parsed {len(index.files)} files, {len(index.nodes)} symbols")
+    report(
+        "parsing", 0.3, f"Parsed {len(index.files)} files, {len(index.nodes)} symbols"
+    )
 
     report("saving", 0.35, "Saving graph to database…")
     await db.execute(
@@ -182,10 +223,15 @@ async def reindex_workspace(
 
     report("embedding", 0.55, "Generating embeddings…")
     embedded_count = await _maybe_index_embeddings(
-        workspace_id=workspace_id, index=index, key_to_id=key_to_id,
+        workspace_id=workspace_id,
+        index=index,
+        key_to_id=key_to_id,
         progress_cb=report,
     )
     report("embedding", 1.0, f"Embedded {embedded_count} symbols")
+
+    # Rebuild full-text search index (runs in indexer thread, separate sqlite conn).
+    await _rebuild_fts(workspace_id=workspace_id, index=index, key_to_id=key_to_id)
 
     logger.info(
         "code_graph reindex workspace={} files={} nodes={} edges={} "
@@ -223,9 +269,7 @@ async def _reindex_incremental(
     along with any edge that references them.
     """
     progress_cb("parsing", 0.0, "Checking for changes…")
-    current = await asyncio.to_thread(
-        hash_workspace_files, root_path, registry=registry
-    )
+    current = await _run_in_indexer(hash_workspace_files, root_path, registry=registry)
     stored_states = (
         await db.exec(
             select(CodeIndexState).where(CodeIndexState.workspace_id == workspace_id)
@@ -242,7 +286,9 @@ async def _reindex_incremental(
         # dimension change or table drop). Backfill if needed.
         progress_cb("embedding", 0.5, "Checking vectors…")
         await _backfill_vectors_if_needed(
-            db, workspace_id=workspace_id, progress_cb=progress_cb,
+            db,
+            workspace_id=workspace_id,
+            progress_cb=progress_cb,
         )
         counts = await get_index_status(db, workspace_id=workspace_id)
         return ReindexStats(
@@ -264,7 +310,7 @@ async def _reindex_incremental(
         if n.file_path not in affected
     ]
 
-    index = await asyncio.to_thread(
+    index = await _run_in_indexer(
         index_files,
         root_path,
         changed,
@@ -413,10 +459,20 @@ async def _reindex_incremental(
     # Backfill vectors for unchanged nodes if most are missing (e.g. after a
     # model/dimension switch that recreated the vector table).
     backfilled = await _backfill_vectors_if_needed(
-        db, workspace_id=workspace_id, progress_cb=progress_cb,
+        db,
+        workspace_id=workspace_id,
+        progress_cb=progress_cb,
     )
     embedded_count += backfilled
     progress_cb("embedding", 1.0, f"Embedded {embedded_count} symbols")
+
+    # Update FTS index for changed/removed nodes.
+    await _update_fts(
+        workspace_id=workspace_id,
+        index=index,
+        key_to_id=key_to_id,
+        removed_ids=removed_ids,
+    )
 
     counts = await get_index_status(db, workspace_id=workspace_id)
     logger.info(
@@ -496,19 +552,67 @@ async def _maybe_index_embeddings(
     if not items:
         # Still clear any stale vectors for a now-empty workspace.
         try:
-            await asyncio.to_thread(_clear_vectors, db_path, str(workspace_id))
+            await _run_in_indexer(_clear_vectors, db_path, str(workspace_id))
         except vec.VectorStoreUnavailable as exc:
             logger.warning("code_graph vec clear failed err={}", exc)
         return 0
 
     progress_cb("embedding", 0.6, f"Embedding {len(items)} symbols…")
     try:
-        return await asyncio.to_thread(
+        return await _run_in_indexer(
             _embed_and_store, db_path, str(workspace_id), cfg, items
         )
     except (emb.EmbeddingUnavailable, vec.VectorStoreUnavailable) as exc:
         logger.warning("code_graph embedding skipped err={}", exc)
         return 0
+
+
+async def _rebuild_fts(
+    *,
+    workspace_id: UUID,
+    index: WorkspaceIndex,
+    key_to_id: dict[str, UUID],
+) -> None:
+    """Rebuild the FTS5 index for a workspace after a full reindex."""
+    db_path = current_sqlite_path()
+    if db_path is None:
+        return
+    rows: list[tuple[str, str, str]] = [
+        (str(key_to_id[node.key]), node.name, node.qualified_name)
+        for node in index.nodes
+        if node.key in key_to_id
+    ]
+    try:
+        await _run_in_indexer(
+            fts.rebuild_workspace_fts, db_path, str(workspace_id), rows
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("code_graph fts rebuild failed err={}", exc)
+
+
+async def _update_fts(
+    *,
+    workspace_id: UUID,
+    index: WorkspaceIndex,
+    key_to_id: dict[str, UUID],
+    removed_ids: set[UUID],
+) -> None:
+    """Incrementally update the FTS5 index after an incremental reindex."""
+    db_path = current_sqlite_path()
+    if db_path is None:
+        return
+    upserts: list[tuple[str, str, str]] = [
+        (str(key_to_id[node.key]), node.name, node.qualified_name)
+        for node in index.nodes
+        if node.key in key_to_id
+    ]
+    removed = [str(nid) for nid in removed_ids]
+    try:
+        await _run_in_indexer(
+            fts.update_workspace_fts, db_path, str(workspace_id), upserts, removed
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("code_graph fts update failed err={}", exc)
 
 
 def _embed_and_store(
@@ -517,12 +621,16 @@ def _embed_and_store(
     cfg: CodeGraphSettings,
     items: list[tuple[str, str]],
 ) -> int:
-    """Embed ``items`` and replace the workspace's stored vectors (sync)."""
+    """Embed ``items`` in batches and replace the workspace's stored vectors (sync)."""
     embedder = emb.get_embedder(cfg.embedding_model, cfg.embedding_dim)
-    vectors = embedder.embed([text for _, text in items])
-    rows = [
-        (node_id, vector) for (node_id, _), vector in zip(items, vectors, strict=False)
-    ]
+    rows: list[tuple[str, list[float]]] = []
+    for i in range(0, len(items), _EMBED_BATCH_SIZE):
+        batch = items[i : i + _EMBED_BATCH_SIZE]
+        vectors = embedder.embed([text for _, text in batch])
+        rows.extend(
+            (node_id, vector)
+            for (node_id, _), vector in zip(batch, vectors, strict=False)
+        )
     with vec.open_connection(db_path) as conn:
         return vec.replace_workspace_vectors(
             conn, workspace_id=workspace_id, dim=cfg.embedding_dim, rows=rows
@@ -568,9 +676,7 @@ async def _backfill_vectors_if_needed(
 
     # Check existing vector count — skip if already complete.
     try:
-        vec_count = await asyncio.to_thread(
-            _count_vectors, db_path, str(workspace_id)
-        )
+        vec_count = await _run_in_indexer(_count_vectors, db_path, str(workspace_id))
     except vec.VectorStoreUnavailable:
         return 0
     if vec_count >= len(all_nodes):
@@ -597,7 +703,7 @@ async def _backfill_vectors_if_needed(
         workspace_id,
     )
     try:
-        return await asyncio.to_thread(
+        return await _run_in_indexer(
             _embed_and_store, db_path, str(workspace_id), cfg, items
         )
     except (emb.EmbeddingUnavailable, vec.VectorStoreUnavailable) as exc:
@@ -631,7 +737,7 @@ async def _maybe_update_embeddings(
     if not upserts and not removed_ids:
         return 0
     try:
-        return await asyncio.to_thread(
+        return await _run_in_indexer(
             _embed_and_upsert,
             db_path,
             str(workspace_id),
@@ -651,7 +757,7 @@ def _embed_and_upsert(
     upserts: list[tuple[str, str]],
     removed_node_ids: list[str],
 ) -> int:
-    """Delete removed vectors and (re)embed changed symbols (sync)."""
+    """Delete removed vectors and (re)embed changed symbols in batches (sync)."""
     with vec.open_connection(db_path) as conn:
         vec.ensure_table(conn, cfg.embedding_dim)
         if removed_node_ids:
@@ -659,11 +765,14 @@ def _embed_and_upsert(
         written = 0
         if upserts:
             embedder = emb.get_embedder(cfg.embedding_model, cfg.embedding_dim)
-            vectors = embedder.embed([text for _, text in upserts])
-            rows = [
-                (node_id, vector)
-                for (node_id, _), vector in zip(upserts, vectors, strict=False)
-            ]
+            rows: list[tuple[str, list[float]]] = []
+            for i in range(0, len(upserts), _EMBED_BATCH_SIZE):
+                batch = upserts[i : i + _EMBED_BATCH_SIZE]
+                vectors = embedder.embed([text for _, text in batch])
+                rows.extend(
+                    (node_id, vector)
+                    for (node_id, _), vector in zip(batch, vectors, strict=False)
+                )
             written = vec.upsert_rows(
                 conn, workspace_id=workspace_id, dim=cfg.embedding_dim, rows=rows
             )
@@ -705,9 +814,7 @@ async def get_semantic_status(*, workspace_id: UUID) -> SemanticStatus:
     db_path = current_sqlite_path()
     if db_path is not None:
         try:
-            vectors = await asyncio.to_thread(
-                _count_vectors, db_path, str(workspace_id)
-            )
+            vectors = await _run_in_query(_count_vectors, db_path, str(workspace_id))
         except vec.VectorStoreUnavailable:
             vectors = 0
     return SemanticStatus(
@@ -751,7 +858,7 @@ async def search_nodes(
         return lexical[:limit]
 
     try:
-        semantic_hits = await asyncio.to_thread(
+        semantic_hits = await _run_in_query(
             _semantic_query, db_path, cfg, str(workspace_id), query, fetch
         )
     except (emb.EmbeddingUnavailable, vec.VectorStoreUnavailable) as exc:
@@ -806,6 +913,29 @@ async def _lexical_search(
     kind: str | None,
     limit: int,
 ) -> list[CodeNode]:
+    # Try FTS5 first — O(log N) token lookup instead of LIKE '%q%' full scan.
+    db_path = current_sqlite_path()
+    if db_path is not None:
+        try:
+            fts_ids = await _run_in_query(
+                fts.search_fts, db_path, str(workspace_id), query, limit
+            )
+        except Exception:  # noqa: BLE001
+            fts_ids = []
+        if fts_ids:
+            stmt = select(CodeNode).where(
+                CodeNode.workspace_id == workspace_id,
+                col(CodeNode.id).in_([UUID(nid) for nid in fts_ids]),
+            )
+            if kind:
+                stmt = stmt.where(CodeNode.kind == kind)
+            nodes = list((await db.exec(stmt)).all())
+            # Preserve FTS rank order
+            id_order = {UUID(nid): i for i, nid in enumerate(fts_ids)}
+            nodes.sort(key=lambda n: id_order.get(n.id, limit))
+            return nodes[:limit]
+
+    # Fallback: ILIKE substring search (no FTS table yet, or in-memory DB)
     pattern = f"%{query}%"
     stmt = select(CodeNode).where(
         CodeNode.workspace_id == workspace_id,
@@ -897,36 +1027,29 @@ async def _adjacent(
     edge_kind: str | None,
     outgoing: bool,
 ) -> list[tuple[str, CodeNode]]:
+    """Fetch neighbors in a single JOIN — one DB roundtrip instead of two."""
     if outgoing:
-        edge_stmt = select(CodeEdge).where(
-            CodeEdge.workspace_id == workspace_id, CodeEdge.src_id == node_id
-        )
-    else:
-        edge_stmt = select(CodeEdge).where(
-            CodeEdge.workspace_id == workspace_id, CodeEdge.dst_id == node_id
-        )
-    if edge_kind:
-        edge_stmt = edge_stmt.where(CodeEdge.kind == edge_kind)
-    edges = list((await db.exec(edge_stmt)).all())
-    if not edges:
-        return []
-
-    target_ids = [e.dst_id if outgoing else e.src_id for e in edges]
-    nodes = (
-        await db.exec(
-            select(CodeNode).where(
-                CodeNode.workspace_id == workspace_id,
-                col(CodeNode.id).in_(target_ids),
+        stmt = (
+            select(CodeEdge.kind, CodeNode)
+            .join(CodeNode, col(CodeEdge.dst_id) == col(CodeNode.id))
+            .where(
+                CodeEdge.workspace_id == workspace_id,
+                CodeEdge.src_id == node_id,
             )
         )
-    ).all()
-    node_by_id = {n.id: n for n in nodes}
-    out: list[tuple[str, CodeNode]] = []
-    for edge in edges:
-        target = node_by_id.get(edge.dst_id if outgoing else edge.src_id)
-        if target is not None:
-            out.append((edge.kind, target))
-    return out
+    else:
+        stmt = (
+            select(CodeEdge.kind, CodeNode)
+            .join(CodeNode, col(CodeEdge.src_id) == col(CodeNode.id))
+            .where(
+                CodeEdge.workspace_id == workspace_id,
+                CodeEdge.dst_id == node_id,
+            )
+        )
+    if edge_kind:
+        stmt = stmt.where(CodeEdge.kind == edge_kind)
+    rows = (await db.exec(stmt)).all()
+    return [(ek, node) for ek, node in rows]
 
 
 async def resolve_workspace_id(db: AsyncSession, *, path: str) -> UUID | None:
@@ -985,15 +1108,16 @@ async def get_overview(
             select(CodeNode.kind).where(CodeNode.workspace_id == workspace_id)
         )
     ).all()
-    edge_count = len(
-        (
-            await db.exec(
-                select(CodeEdge.id).where(CodeEdge.workspace_id == workspace_id)
-            )
-        ).all()
-    )
+    # Use COUNT(*) instead of fetching all edge ids — avoids loading thousands of
+    # rows into memory just to count them.
+    edge_count_result = (
+        await db.exec(
+            select(sa_func.count()).where(CodeEdge.workspace_id == workspace_id)
+        )
+    ).one()
+    edge_count = edge_count_result or 0
 
-    languages = sorted({f.language for f in files})
+    languages = sorted({f.language for f in files if f.language})
     ranked = sorted(files, key=lambda f: f.node_count, reverse=True)[:top_files]
     return WorkspaceOverview(
         node_count=len(kinds),

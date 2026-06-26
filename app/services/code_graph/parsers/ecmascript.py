@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from app.services.code_graph.parsers.base import (
     Definition,
+    ImportRef,
     SuperType,
     TreeSitterParser,
     node_text,
@@ -21,6 +22,7 @@ from app.services.code_graph.types import (
     NODE_FUNCTION,
     NODE_INTERFACE,
     NODE_METHOD,
+    NODE_VARIABLE,
 )
 
 if TYPE_CHECKING:
@@ -44,6 +46,14 @@ class EcmaScriptParser(TreeSitterParser):
             name = self._name(node, source)
             if name:
                 return Definition(kind=NODE_INTERFACE, name=name, is_class=False)
+        elif ntype == "type_alias_declaration":
+            name = self._name(node, source)
+            if name:
+                return Definition(kind=NODE_CLASS, name=name, is_class=False)
+        elif ntype == "enum_declaration":
+            name = self._name(node, source)
+            if name:
+                return Definition(kind=NODE_CLASS, name=name, is_class=True)
         elif ntype in {
             "function_declaration",
             "generator_function_declaration",
@@ -63,6 +73,14 @@ class EcmaScriptParser(TreeSitterParser):
                 if name_node is not None and name_node.type == "identifier":
                     return Definition(
                         kind=NODE_FUNCTION,
+                        name=node_text(name_node, source),
+                        is_class=False,
+                    )
+            elif not inside_class and self._is_top_level_var(node):
+                name_node = node.child_by_field_name("name")
+                if name_node is not None and name_node.type == "identifier":
+                    return Definition(
+                        kind=NODE_VARIABLE,
                         name=node_text(name_node, source),
                         is_class=False,
                     )
@@ -120,13 +138,203 @@ class EcmaScriptParser(TreeSitterParser):
         if func.type == "identifier":
             return node_text(func, source)
         if func.type == "member_expression":
+            obj = func.child_by_field_name("object")
             prop = func.child_by_field_name("property")
-            return node_text(prop, source) if prop is not None else None
+            if prop is None:
+                return None
+            prop_name = node_text(prop, source)
+            # Emit "Object.method" for qualified resolution
+            if obj is not None and obj.type == "identifier":
+                return f"{node_text(obj, source)}.{prop_name}"
+            return prop_name
         return None
+
+    def import_refs(self, node: Node, source: bytes) -> list[ImportRef]:
+        if node.type != "import_statement":
+            return []
+        source_node = node.child_by_field_name("source")
+        if source_node is None:
+            return []
+        module_path = _string_content(source_node, source)
+        if not module_path:
+            return []
+        out: list[ImportRef] = []
+        for child in node.children:
+            if child.type == "import_clause":
+                out.extend(self._import_clause_names(child, source, module_path))
+        return out
+
+    def _import_clause_names(
+        self, clause: Node, source: bytes, module_path: str
+    ) -> list[ImportRef]:
+        out: list[ImportRef] = []
+        for child in clause.children:
+            if child.type == "identifier":
+                # Default import
+                out.append(
+                    ImportRef(name=node_text(child, source), module_path=module_path)
+                )
+            elif child.type == "named_imports":
+                for spec in child.children:
+                    if spec.type == "import_specifier":
+                        name_node = spec.child_by_field_name("name")
+                        if name_node is not None:
+                            out.append(
+                                ImportRef(
+                                    name=node_text(name_node, source),
+                                    module_path=module_path,
+                                )
+                            )
+            elif child.type == "namespace_import":
+                # import * as name → use last identifier
+                for sub in child.children:
+                    if sub.type == "identifier":
+                        out.append(
+                            ImportRef(
+                                name=node_text(sub, source), module_path=module_path
+                            )
+                        )
+        return out
 
     def _name(self, node: Node, source: bytes) -> str | None:
         name = node.child_by_field_name("name")
         return node_text(name, source) if name is not None else None
+
+    def _is_top_level_var(self, node: Node) -> bool:
+        """Check if a variable_declarator is at module/program level."""
+        # Parent chain: variable_declarator → lexical_declaration/variable_declaration
+        # → program/export_statement
+        parent = node.parent
+        if parent is None:
+            return False
+        grandparent = parent.parent
+        if grandparent is None:
+            return False
+        return grandparent.type in {
+            "program",
+            "export_statement",
+            "module",
+        }
+
+    def decorators(self, node: Node, source: bytes) -> list[str]:
+        out: list[str] = []
+        # Class-level decorators are direct children of class_declaration
+        for child in node.children:
+            if child.type == "decorator":
+                name = _decorator_name(child, source)
+                if name:
+                    out.append(name)
+        # Method-level decorators are preceding siblings in class_body
+        if not out:
+            prev = node.prev_named_sibling
+            while prev is not None and prev.type == "decorator":
+                name = _decorator_name(prev, source)
+                if name:
+                    out.insert(0, name)
+                prev = prev.prev_named_sibling
+        return out
+
+    def type_refs(self, node: Node, source: bytes) -> list[str]:
+        if node.type not in {
+            "function_declaration",
+            "generator_function_declaration",
+            "function_signature",
+            "method_definition",
+        }:
+            return []
+        out: list[str] = []
+        # Parameter type annotations
+        params = node.child_by_field_name("parameters")
+        if params is not None:
+            for param in params.children:
+                if param.type in {"required_parameter", "optional_parameter"}:
+                    for child in param.children:
+                        if child.type == "type_annotation":
+                            _collect_ts_type_ids(child, source, out)
+        # Return type annotation (direct child type_annotation)
+        ret = node.child_by_field_name("return_type")
+        if ret is not None:
+            _collect_ts_type_ids(ret, source, out)
+        else:
+            # Some grammars put it as a direct child
+            for child in node.children:
+                if child.type == "type_annotation" and child != params:
+                    _collect_ts_type_ids(child, source, out)
+                    break
+        return out
+
+
+def _string_content(node: Node, source: bytes) -> str:
+    """Extract the text content of a string node, stripping quotes."""
+    for child in node.children:
+        if child.type == "string_fragment":
+            return node_text(child, source)
+    # Fallback: strip quotes manually
+    text = node_text(node, source)
+    return text.strip("'\"")
+
+
+def _decorator_name(node: Node, source: bytes) -> str | None:
+    """Extract the decorator name from a TS/JS decorator node (@foo, @foo(...))."""
+    for child in node.children:
+        if child.type == "identifier":
+            return node_text(child, source)
+        if child.type == "member_expression":
+            return node_text(child, source)
+        if child.type == "call_expression":
+            func = child.child_by_field_name("function")
+            if func is not None:
+                if func.type == "identifier":
+                    return node_text(func, source)
+                if func.type == "member_expression":
+                    return node_text(func, source)
+    return None
+
+
+# Primitive/builtin types to skip in TS/JS.
+_TS_BUILTIN_TYPES = frozenset(
+    {
+        "string",
+        "number",
+        "boolean",
+        "void",
+        "null",
+        "undefined",
+        "never",
+        "any",
+        "unknown",
+        "object",
+        "symbol",
+        "bigint",
+    }
+)
+
+
+def _collect_ts_type_ids(node: Node, source: bytes, out: list[str]) -> None:
+    """Recursively collect user-defined type identifiers from a TS type node."""
+    if node.type == "type_identifier":
+        name = node_text(node, source)
+        if name not in _TS_BUILTIN_TYPES:
+            out.append(name)
+        return
+    if (
+        node.type == "identifier"
+        and node.parent
+        and node.parent.type
+        in {
+            "type_annotation",
+            "generic_type",
+        }
+    ):
+        name = node_text(node, source)
+        if name not in _TS_BUILTIN_TYPES:
+            out.append(name)
+        return
+    # Don't descend into value expressions
+    if node.type in {"call_expression", "arrow_function", "function"}:
+        return
+    for child in node.children:
+        _collect_ts_type_ids(child, source, out)
 
 
 class JavaScriptParser(EcmaScriptParser):

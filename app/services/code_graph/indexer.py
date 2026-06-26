@@ -23,12 +23,17 @@ from app.agent.tools.builtin.filesystem._ignore import (
 )
 from app.services.code_graph.parsers.registry import ParserRegistry, default_registry
 from app.services.code_graph.types import (
+    EDGE_DECORATED_BY,
     EDGE_IMPLEMENTS,
+    EDGE_IMPORTS,
     EDGE_INHERITS,
+    EDGE_REFERENCES,
     NODE_CLASS,
     NODE_FUNCTION,
     NODE_INTERFACE,
     NODE_METHOD,
+    NODE_MODULE,
+    NODE_VARIABLE,
 )
 
 # Skip files larger than this — generated bundles/minified blobs aren't worth
@@ -39,6 +44,10 @@ _MAX_FILE_BYTES = 1_500_000
 _CALLABLE_KINDS = frozenset({NODE_FUNCTION, NODE_METHOD, NODE_CLASS})
 # Definition kinds an inherits/implements edge may resolve to.
 _TYPE_KINDS = frozenset({NODE_CLASS, NODE_INTERFACE})
+# Import targets can be any defined symbol.
+_ANY_KINDS = frozenset(
+    {NODE_FUNCTION, NODE_METHOD, NODE_CLASS, NODE_INTERFACE, NODE_MODULE, NODE_VARIABLE}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,6 +168,7 @@ def _build_index(
     # map and kind map with pre-existing definitions so cross-file edges from a
     # re-parsed file can resolve to unchanged symbols.
     name_to_keys: dict[str, list[str]] = {}
+    qname_to_keys: dict[str, list[str]] = {}
     extra_kinds: dict[str, str] = {}
     for definition in existing_defs:
         name_to_keys.setdefault(definition.name, []).append(definition.key)
@@ -197,6 +207,8 @@ def _build_index(
                 )
             )
             name_to_keys.setdefault(node.name, []).append(key)
+            if node.qualified_name != node.name:
+                qname_to_keys.setdefault(node.qualified_name, []).append(key)
             node_count += 1
 
         for edge in result.edges:
@@ -217,7 +229,9 @@ def _build_index(
             )
         )
 
-    _resolve_edges(index, raw_edges, local_to_key, name_to_keys, extra_kinds)
+    _resolve_edges(
+        index, raw_edges, local_to_key, name_to_keys, qname_to_keys, extra_kinds
+    )
     _backfill_edge_counts(index)
     return index
 
@@ -227,6 +241,7 @@ def _resolve_edges(
     raw_edges: list[tuple[str, str | None, str | None, str, int | None]],
     local_to_key: dict[tuple[str, str], str],
     name_to_keys: dict[str, list[str]],
+    qname_to_keys: dict[str, list[str]],
     extra_kinds: dict[str, str] | None = None,
 ) -> None:
     kind_by_key = {n.key: n.kind for n in index.nodes}
@@ -241,12 +256,19 @@ def _resolve_edges(
             src_file = file_by_key.get(src_key, "")
             dst_key = local_to_key.get((src_file, dst_local_id))
         elif dst_name is not None:
-            allowed = (
-                _TYPE_KINDS
-                if kind in {EDGE_INHERITS, EDGE_IMPLEMENTS}
-                else _CALLABLE_KINDS
+            if kind in {EDGE_INHERITS, EDGE_IMPLEMENTS}:
+                allowed = _TYPE_KINDS
+            elif kind == EDGE_IMPORTS:
+                allowed = _ANY_KINDS
+            elif kind == EDGE_DECORATED_BY:
+                allowed = _CALLABLE_KINDS
+            elif kind == EDGE_REFERENCES:
+                allowed = _TYPE_KINDS
+            else:
+                allowed = _CALLABLE_KINDS
+            dst_key = _resolve_qualified(
+                dst_name, name_to_keys, qname_to_keys, kind_by_key, allowed
             )
-            dst_key = _resolve_name(dst_name, name_to_keys, kind_by_key, allowed)
 
         if dst_key is None or dst_key == src_key:
             continue
@@ -265,13 +287,21 @@ def _resolve_edges(
         )
 
 
-def _resolve_name(
+def _resolve_qualified(
     name: str,
     name_to_keys: dict[str, list[str]],
+    qname_to_keys: dict[str, list[str]],
     kind_by_key: dict[str, str],
     allowed_kinds: frozenset[str],
 ) -> str | None:
-    """Resolve a name to a single matching definition key, else ``None``."""
+    """Resolve a name with qualified-name fallback.
+
+    Resolution order:
+    1. Exact match on simple ``name`` — if exactly 1 candidate, return it.
+    2. Exact match on ``qualified_name`` — handles ``Class.method`` calls.
+    3. If ``name`` contains ``.``, try the last segment as simple name.
+    """
+    # Step 1: direct name lookup
     candidates = [
         key
         for key in name_to_keys.get(name, [])
@@ -279,6 +309,27 @@ def _resolve_name(
     ]
     if len(candidates) == 1:
         return candidates[0]
+
+    # Step 2: try as qualified name (e.g. "Animal.run" → qualified_name "Animal.run")
+    qcandidates = [
+        key
+        for key in qname_to_keys.get(name, [])
+        if kind_by_key.get(key) in allowed_kinds
+    ]
+    if len(qcandidates) == 1:
+        return qcandidates[0]
+
+    # Step 3: for dotted names like "obj.method", fall back to last segment
+    if "." in name:
+        short = name.rsplit(".", 1)[1]
+        short_candidates = [
+            key
+            for key in name_to_keys.get(short, [])
+            if kind_by_key.get(key) in allowed_kinds
+        ]
+        if len(short_candidates) == 1:
+            return short_candidates[0]
+
     return None
 
 

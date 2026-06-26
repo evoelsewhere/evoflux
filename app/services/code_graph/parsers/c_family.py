@@ -1,0 +1,224 @@
+"""C and C++ language parsers.
+
+C and C++ share the same tree-sitter grammar family (``c`` / ``cpp``) with very
+similar node shapes.  A common base handles the shared extraction logic and the
+subclasses differ in grammar, extensions, and C++ specific constructs (classes,
+namespaces, templates).
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, ClassVar
+
+from app.services.code_graph.parsers.base import (
+    Definition,
+    SuperType,
+    TreeSitterParser,
+    node_text,
+)
+from app.services.code_graph.types import (
+    EDGE_INHERITS,
+    NODE_CLASS,
+    NODE_FUNCTION,
+    NODE_METHOD,
+)
+
+if TYPE_CHECKING:
+    from tree_sitter import Node
+
+
+class CFamilyParser(TreeSitterParser):
+    """Shared C/C++ extraction logic."""
+
+    def classify(
+        self, node: Node, source: bytes, *, inside_class: bool
+    ) -> Definition | None:
+        ntype = node.type
+        # struct/union/enum definitions (with a name)
+        if ntype in ("struct_specifier", "union_specifier"):
+            name = self._specifier_name(node, source)
+            if name and self._has_body(node):
+                return Definition(kind=NODE_CLASS, name=name, is_class=True)
+        elif ntype == "enum_specifier":
+            name = self._specifier_name(node, source)
+            if name and self._has_body(node):
+                return Definition(kind=NODE_CLASS, name=name, is_class=False)
+        elif ntype == "class_specifier":
+            # C++ only
+            name = self._specifier_name(node, source)
+            if name:
+                return Definition(kind=NODE_CLASS, name=name, is_class=True)
+        elif ntype == "function_definition":
+            name = self._function_name(node, source)
+            if name:
+                kind = NODE_METHOD if inside_class else NODE_FUNCTION
+                return Definition(kind=kind, name=name, is_class=False)
+        elif ntype in ("declaration", "field_declaration") and inside_class:
+            # Forward-declared or pure virtual methods in class body
+            name = self._declaration_func_name(node, source)
+            if name:
+                return Definition(kind=NODE_METHOD, name=name, is_class=False)
+        elif ntype == "type_definition":
+            # typedef struct { ... } Name;
+            name = self._typedef_name(node, source)
+            if name:
+                return Definition(kind=NODE_CLASS, name=name, is_class=False)
+        return None
+
+    def call_target(self, node: Node, source: bytes) -> str | None:
+        if node.type != "call_expression":
+            return None
+        func = node.child_by_field_name("function")
+        if func is None:
+            return None
+        return self._callee_name(func, source)
+
+    def _callee_name(self, func: Node, source: bytes) -> str | None:
+        if func.type == "identifier":
+            return node_text(func, source)
+        if func.type == "field_expression":
+            field = func.child_by_field_name("field")
+            if field is not None:
+                return node_text(field, source)
+        if func.type == "qualified_identifier":
+            name_node = func.child_by_field_name("name")
+            if name_node is not None:
+                return self._callee_name(name_node, source)
+        if func.type == "template_function":
+            name_node = func.child_by_field_name("name")
+            if name_node is not None:
+                return node_text(name_node, source)
+        return None
+
+    def supertypes(self, node: Node, source: bytes) -> list[SuperType]:
+        if node.type != "class_specifier":
+            return []
+        out: list[SuperType] = []
+        for child in node.children:
+            if child.type == "base_class_clause":
+                for sub in child.children:
+                    if sub.type == "type_identifier":
+                        out.append(
+                            SuperType(
+                                name=node_text(sub, source), edge_kind=EDGE_INHERITS
+                            )
+                        )
+                    elif sub.type == "qualified_identifier":
+                        name_node = sub.child_by_field_name("name")
+                        if name_node is not None:
+                            out.append(
+                                SuperType(
+                                    name=node_text(name_node, source),
+                                    edge_kind=EDGE_INHERITS,
+                                )
+                            )
+        return out
+
+    def docstring(self, node: Node, source: bytes) -> str | None:
+        return _preceding_comment(node, source)
+
+    # -- helpers ------------------------------------------------------------
+
+    def _specifier_name(self, node: Node, source: bytes) -> str | None:
+        name_node = node.child_by_field_name("name")
+        return node_text(name_node, source) if name_node is not None else None
+
+    def _has_body(self, node: Node) -> bool:
+        return node.child_by_field_name("body") is not None
+
+    def _function_name(self, node: Node, source: bytes) -> str | None:
+        decl = node.child_by_field_name("declarator")
+        if decl is None:
+            return None
+        return self._declarator_name(decl, source)
+
+    def _declarator_name(self, node: Node, source: bytes) -> str | None:
+        """Recursively extract the identifier from a declarator chain."""
+        if node.type == "identifier":
+            return node_text(node, source)
+        if node.type == "field_identifier":
+            return node_text(node, source)
+        # function_declarator, pointer_declarator, reference_declarator, etc.
+        inner = node.child_by_field_name("declarator")
+        if inner is not None:
+            return self._declarator_name(inner, source)
+        # destructor_name: ~Foo
+        if node.type == "destructor_name":
+            return node_text(node, source)
+        # qualified_identifier: Namespace::func
+        if node.type == "qualified_identifier":
+            name_node = node.child_by_field_name("name")
+            if name_node is not None:
+                return self._declarator_name(name_node, source)
+        # template_function
+        if node.type == "template_function":
+            name_node = node.child_by_field_name("name")
+            if name_node is not None:
+                return node_text(name_node, source)
+        # operator overloads: operator==
+        if node.type == "operator_name":
+            return node_text(node, source)
+        return None
+
+    def _declaration_func_name(self, node: Node, source: bytes) -> str | None:
+        """Extract function name from a forward declaration inside a class."""
+        decl = node.child_by_field_name("declarator")
+        if decl is None:
+            return None
+        # Only match function_declarator patterns
+        if decl.type == "function_declarator":
+            return self._declarator_name(decl, source)
+        return None
+
+    def _typedef_name(self, node: Node, source: bytes) -> str | None:
+        decl = node.child_by_field_name("declarator")
+        if decl is not None and decl.type == "type_identifier":
+            return node_text(decl, source)
+        return None
+
+
+class CParser(CFamilyParser):
+    name: ClassVar[str] = "c"
+    extensions: ClassVar[tuple[str, ...]] = (".c", ".h")
+    grammar: ClassVar[str] = "c"
+
+
+class CppParser(CFamilyParser):
+    name: ClassVar[str] = "cpp"
+    extensions: ClassVar[tuple[str, ...]] = (
+        ".cpp",
+        ".hpp",
+        ".cc",
+        ".cxx",
+        ".hxx",
+        ".hh",
+    )
+    grammar: ClassVar[str] = "cpp"
+
+
+def _preceding_comment(node: Node, source: bytes) -> str | None:
+    """Extract C-style doc comment (/** ... */ or /// lines) preceding a node."""
+    prev = node.prev_named_sibling
+    if prev is None or prev.type != "comment":
+        return None
+    text = node_text(prev, source)
+    # Block comment (/** ... */)
+    if text.startswith("/*"):
+        s = text
+        if s.startswith("/**"):
+            s = s[3:]
+        elif s.startswith("/*"):
+            s = s[2:]
+        if s.endswith("*/"):
+            s = s[:-2]
+        lines = [ln.strip().lstrip("* ").strip() for ln in s.split("\n")]
+        return "\n".join(ln for ln in lines if ln) or None
+    # Line comments (// or ///)
+    lines: list[str] = []
+    cur: Node | None = prev
+    while cur is not None and cur.type == "comment":
+        lines.append(node_text(cur, source))
+        cur = cur.prev_named_sibling
+    lines.reverse()
+    cleaned = [ln.lstrip("/").strip() for ln in lines]
+    return "\n".join(ln for ln in cleaned if ln) or None

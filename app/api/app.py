@@ -105,9 +105,10 @@ async def lifespan(app: FastAPI):
     app.state.dream_scheduler = dream_scheduler
 
     # Start the code-graph file watcher (only if code_graph.watch_enabled: true)
-    from app.services.code_graph.watcher import CodeGraphWatcher
+    from app.services.code_graph.watcher import CodeGraphWatcher, set_global_watcher
 
     code_graph_watcher = CodeGraphWatcher(db_factory=async_session_factory)
+    set_global_watcher(code_graph_watcher)
     if runtime_settings.code_graph.watch_enabled:
         await code_graph_watcher.start()
     else:
@@ -116,6 +117,7 @@ async def lifespan(app: FastAPI):
 
     # Pre-warm embedding model in background so first index isn't slow
     if runtime_settings.code_graph.semantic_enabled:
+
         async def _preload_embedder() -> None:
             from app.services.code_graph.embeddings import (
                 EmbeddingUnavailable,

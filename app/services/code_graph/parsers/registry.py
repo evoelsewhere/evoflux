@@ -10,12 +10,33 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.services.code_graph.parsers.base import LanguageParser
+from app.services.code_graph.parsers.c_family import CParser, CppParser
+from app.services.code_graph.parsers.csharp import CSharpParser
+from app.services.code_graph.parsers.dart import DartParser
 from app.services.code_graph.parsers.ecmascript import (
     JavaScriptParser,
     TsxParser,
     TypeScriptParser,
 )
+from app.services.code_graph.parsers.go import GoParser
+from app.services.code_graph.parsers.java import JavaParser
+from app.services.code_graph.parsers.kotlin import KotlinParser
+from app.services.code_graph.parsers.lua import LuaParser, LuauParser
+from app.services.code_graph.parsers.objc import ObjCParser
+from app.services.code_graph.parsers.pascal import PascalParser
+from app.services.code_graph.parsers.php import PhpParser
 from app.services.code_graph.parsers.python import PythonParser
+from app.services.code_graph.parsers.r_lang import RParser
+from app.services.code_graph.parsers.ruby import RubyParser
+from app.services.code_graph.parsers.rust import RustParser
+from app.services.code_graph.parsers.scala import ScalaParser
+from app.services.code_graph.parsers.swift import SwiftParser
+from app.services.code_graph.parsers.web_components import (
+    AstroParser,
+    LiquidParser,
+    SvelteParser,
+    VueParser,
+)
 
 # Order matters only for ``available_languages`` display.
 _BUILTIN_PARSER_TYPES: tuple[type[LanguageParser], ...] = (
@@ -23,6 +44,27 @@ _BUILTIN_PARSER_TYPES: tuple[type[LanguageParser], ...] = (
     TypeScriptParser,
     TsxParser,
     JavaScriptParser,
+    GoParser,
+    RustParser,
+    JavaParser,
+    CSharpParser,
+    CParser,
+    CppParser,
+    SwiftParser,
+    KotlinParser,
+    PhpParser,
+    RubyParser,
+    ScalaParser,
+    DartParser,
+    ObjCParser,
+    LuaParser,
+    LuauParser,
+    RParser,
+    PascalParser,
+    SvelteParser,
+    VueParser,
+    AstroParser,
+    LiquidParser,
 )
 
 
