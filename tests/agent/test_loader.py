@@ -416,18 +416,30 @@ def test_build_agent_skill_tool_deduped():
 # ---------------------------------------------------------------------------
 
 
-def test_build_agent_skills_do_not_inject_prompt_descriptions(tmp_path, monkeypatch):
+def test_build_agent_skills_preloads_body_into_prompt(tmp_path, monkeypatch):
     d = tmp_path / "myskill"
     d.mkdir()
     (d / "SKILL.md").write_text(
-        "---\nname: myskill\ndescription: A great skill\n---\nInstructions."
+        "---\nname: myskill\ndescription: A great skill\n---\nDo the thing carefully."
     )
     monkeypatch.setattr("app.agent.tools.builtin.skill._SKILLS_DIR", tmp_path)
     factory, _ = _make_provider_factory()
     cfg = AgentConfig(name="bot", system_prompt="Base prompt", skills=["myskill"])
     agent = _build_agent(cfg, {}, factory)
-    assert agent.system_prompt == "Base prompt"
+    assert agent.system_prompt.startswith("Base prompt")
+    # Full skill body is injected, not just a hint
+    assert "Do the thing carefully." in agent.system_prompt
     assert agent.skills == ["myskill"]
+
+
+def test_build_agent_skills_missing_skill_not_injected(tmp_path, monkeypatch):
+    """Skills listed in frontmatter that don't exist on disk are silently skipped."""
+    monkeypatch.setattr("app.agent.tools.builtin.skill._SKILLS_DIR", tmp_path)
+    factory, _ = _make_provider_factory()
+    cfg = AgentConfig(name="bot", system_prompt="Base prompt", skills=["nonexistent"])
+    agent = _build_agent(cfg, {}, factory)
+    # No valid skills → no body injected
+    assert agent.system_prompt == "Base prompt"
 
 
 # ---------------------------------------------------------------------------
@@ -756,7 +768,7 @@ def test_coding_builtin_member_profile_is_mode_scoped(tmp_path):
     profile = BUILTIN_MEMBER_PROFILES["coding"]["coder"]
     assert normal_agent.system_prompt == "<!-- Add extra prompt text below. -->"
     assert coding_agent.description == profile["description"]
-    assert coding_agent.system_prompt == profile["prompt"]
+    assert coding_agent.system_prompt.startswith(profile["prompt"])
     assert "shell" in coding_agent._tools
 
 
@@ -773,7 +785,7 @@ def test_coding_explorer_builtin_member_profile_checks_codebase(tmp_path):
     coding_agent = rebuild_agent_from_disk(f, provider_factory=factory, mode="coding")
     profile = BUILTIN_MEMBER_PROFILES["coding"]["explorer"]
     assert coding_agent.description == profile["description"]
-    assert coding_agent.system_prompt == profile["prompt"]
+    assert coding_agent.system_prompt.startswith(profile["prompt"])
     assert "current codebase" in coding_agent.system_prompt
     assert "grep" in coding_agent._tools
     assert "write" not in coding_agent._tools
@@ -842,8 +854,8 @@ def test_builtin_member_legacy_seed_prompt_is_not_appended(tmp_path):
     )
     factory, _ = _make_provider_factory()
     agent = rebuild_agent_from_disk(f, provider_factory=factory)
-    assert (
-        agent.system_prompt == BUILTIN_MEMBER_PROFILES["normal"]["executor"]["prompt"]
+    assert agent.system_prompt.startswith(
+        BUILTIN_MEMBER_PROFILES["normal"]["executor"]["prompt"]
     )
 
 
