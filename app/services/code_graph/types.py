@@ -17,6 +17,7 @@ NODE_CLASS = "class"
 NODE_FUNCTION = "function"
 NODE_METHOD = "method"
 NODE_INTERFACE = "interface"
+NODE_VARIABLE = "variable"
 
 # --- Edge kinds -------------------------------------------------------------
 EDGE_CONTAINS = "contains"
@@ -25,6 +26,7 @@ EDGE_INHERITS = "inherits"
 EDGE_IMPLEMENTS = "implements"
 EDGE_REFERENCES = "references"
 EDGE_IMPORTS = "imports"
+EDGE_DECORATED_BY = "decorated_by"
 
 
 @dataclass(frozen=True, slots=True)

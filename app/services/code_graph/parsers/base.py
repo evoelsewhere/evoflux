@@ -21,6 +21,9 @@ from typing import TYPE_CHECKING, ClassVar, Protocol, runtime_checkable
 from app.services.code_graph.types import (
     EDGE_CALLS,
     EDGE_CONTAINS,
+    EDGE_DECORATED_BY,
+    EDGE_IMPORTS,
+    EDGE_REFERENCES,
     ExtractedEdge,
     ExtractedNode,
     ParseResult,
@@ -52,6 +55,7 @@ class Definition:
     kind: str
     name: str
     is_class: bool
+    prefix: str | None = None  # override parent prefix (e.g. Go receiver type)
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +64,19 @@ class SuperType:
 
     name: str
     edge_kind: str
+
+
+@dataclass(frozen=True, slots=True)
+class ImportRef:
+    """A symbol imported from another module.
+
+    ``name`` is the symbol name as used locally (or the module name for bare
+    imports).  ``module_path`` is the raw import source string (e.g.
+    ``"./utils"``, ``"app.services"``, ``"fmt"``).
+    """
+
+    name: str
+    module_path: str
 
 
 def node_text(node: Node, source: bytes) -> str:
@@ -118,6 +135,18 @@ class TreeSitterParser:
         """Return base classes/interfaces for a class definition node."""
         return []
 
+    def import_refs(self, node: Node, source: bytes) -> list[ImportRef]:
+        """Return imported symbols if ``node`` is an import statement."""
+        return []
+
+    def decorators(self, node: Node, source: bytes) -> list[str]:
+        """Return decorator/annotation names applied to a definition node."""
+        return []
+
+    def type_refs(self, node: Node, source: bytes) -> list[str]:
+        """Return type names referenced in annotations/signatures of a definition."""
+        return []
+
     def docstring(self, node: Node, source: bytes) -> str | None:
         """Return the documentation string for a definition node, if any."""
         return None
@@ -156,7 +185,12 @@ class TreeSitterParser:
         if definition is not None:
             line_start = node.start_point[0] + 1
             line_end = node.end_point[0] + 1
-            qualified = f"{prefix}{definition.name}" if prefix else definition.name
+            if definition.prefix is not None:
+                qualified = f"{definition.prefix}{definition.name}"
+            elif prefix:
+                qualified = f"{prefix}{definition.name}"
+            else:
+                qualified = definition.name
             local_id = f"{qualified}#{line_start}"
             result.nodes.append(
                 ExtractedNode(
@@ -187,6 +221,24 @@ class TreeSitterParser:
                         line=line_start,
                     )
                 )
+            for dec_name in self.decorators(node, source):
+                result.edges.append(
+                    ExtractedEdge(
+                        src_local_id=local_id,
+                        kind=EDGE_DECORATED_BY,
+                        dst_name=dec_name,
+                        line=line_start,
+                    )
+                )
+            for type_name in self.type_refs(node, source):
+                result.edges.append(
+                    ExtractedEdge(
+                        src_local_id=local_id,
+                        kind=EDGE_REFERENCES,
+                        dst_name=type_name,
+                        line=line_start,
+                    )
+                )
             child_prefix = f"{qualified}."
             child_parent = local_id
             child_inside_class = definition.is_class
@@ -198,6 +250,15 @@ class TreeSitterParser:
                         src_local_id=parent_local_id,
                         kind=EDGE_CALLS,
                         dst_name=callee,
+                        line=node.start_point[0] + 1,
+                    )
+                )
+            for imp in self.import_refs(node, source):
+                result.edges.append(
+                    ExtractedEdge(
+                        src_local_id=parent_local_id,
+                        kind=EDGE_IMPORTS,
+                        dst_name=imp.name,
                         line=node.start_point[0] + 1,
                     )
                 )

@@ -178,6 +178,16 @@ class AlreadyWorkingError(Exception):
         self.agent_name = agent_name
 
 
+def _get_index_watcher():
+    """Return the global CodeGraphWatcher if available, else None."""
+    try:
+        from app.services.code_graph.watcher import _global_watcher
+
+        return _global_watcher
+    except (ImportError, AttributeError):
+        return None
+
+
 async def _mark_last_assistant_interrupted(
     db_factory: DbFactory, session_id: uuid.UUID
 ) -> None:
@@ -987,6 +997,12 @@ class TeamMemberBase(abc.ABC):
         # Scope agent role for plugin applies_to filtering ("lead"/"member").
         role_token = set_role(self._role_label)
 
+        # Pause code-graph watcher to avoid CPU/RAM spikes from reindexing
+        # while the agent is rapidly writing files.
+        watcher = _get_index_watcher()
+        if watcher is not None:
+            await watcher.pause()
+
         try:
             await self.agent.run(
                 run_messages,
@@ -1005,6 +1021,10 @@ class TeamMemberBase(abc.ABC):
             reset_role(role_token)
             _sandbox_ctx.reset(token)
             _permission_ctx.reset(perm_token)
+            # Always resume watcher — even on crash — so reindex runs once
+            # with all accumulated changes.
+            if watcher is not None:
+                await watcher.resume()
 
         # If interrupted, mark last assistant message
         if self._cancel_event.is_set() and self.db_factory:
