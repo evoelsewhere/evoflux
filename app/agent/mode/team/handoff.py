@@ -261,6 +261,36 @@ def make_team_handoff_tool(
                 result=verification_result,
             )
 
+        # ── System-level quality gate ────────────────────────────────────
+        # Reject obviously inadequate handoffs at the tool level so the LLM
+        # cannot bypass quality requirements via social agreement.
+        if status == "final":
+            quality_issues: list[str] = []
+            if not findings:
+                quality_issues.append(
+                    "A final handoff must include at least one finding. "
+                    "List your key conclusions or results in 'findings'."
+                )
+            if not summary.strip() or len(summary.strip()) < 20:
+                quality_issues.append(
+                    "Summary is too short — provide a meaningful 1–3 sentence TL;DR "
+                    "(at least 20 characters)."
+                )
+            # Members delivering final work that mutated state MUST verify
+            if role == "member" and verified is None:
+                quality_issues.append(
+                    "Final deliverables require a verification record. "
+                    "Set verified=True/False with verification_method describing "
+                    "how you checked your work (or why you didn't)."
+                )
+            if quality_issues:
+                return (
+                    "HANDOFF BLOCKED — quality gate failed:\n"
+                    + "\n".join(f"• {q}" for q in quality_issues)
+                    + "\n\nFix these issues and call team_handoff again."
+                )
+        # ─────────────────────────────────────────────────────────────────
+
         # Build artifact
         artifact = HandoffArtifact(
             summary=summary,

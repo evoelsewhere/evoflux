@@ -45,7 +45,7 @@ SIZE_LIMITS: dict[str, int] = {
     "text": 500 * 1024,  # 500 KB
     "data": 10 * 1024 * 1024,  # 10 MB — structured data files (JSON, CSV, JSONL)
     "image": 10 * 1024 * 1024,  # 10 MB
-    "document": 5 * 1024 * 1024,  # 5 MB
+    "document": 20 * 1024 * 1024,  # 20 MB
 }
 GLOBAL_SIZE_LIMIT = 20 * 1024 * 1024  # 20 MB total across all files per message
 
@@ -66,6 +66,18 @@ MIME_CATEGORY: dict[str, str] = {
     "image/tiff": "image",
     "application/pdf": "document",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "document",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": "document",
+    "application/vnd.ms-excel": "document",
+    "application/vnd.ms-powerpoint": "document",
+    "application/msword": "document",
+    "application/vnd.ms-excel.sheet.macroEnabled.12": "document",
+    "application/vnd.ms-powerpoint.presentation.macroEnabled.12": "document",
+    "application/vnd.oasis.opendocument.text": "document",
+    "application/vnd.oasis.opendocument.spreadsheet": "document",
+    "application/vnd.oasis.opendocument.presentation": "document",
+    "application/rtf": "document",
+    "application/epub+zip": "document",
 }
 EXT_CATEGORY: dict[str, str] = {
     ".txt": "text",
@@ -86,6 +98,18 @@ EXT_CATEGORY: dict[str, str] = {
     ".tiff": "image",
     ".pdf": "document",
     ".docx": "document",
+    ".doc": "document",
+    ".xlsx": "document",
+    ".xls": "document",
+    ".xlsm": "document",
+    ".pptx": "document",
+    ".ppt": "document",
+    ".pptm": "document",
+    ".odt": "document",
+    ".ods": "document",
+    ".odp": "document",
+    ".rtf": "document",
+    ".epub": "document",
     ".html": "document",
     ".htm": "document",
 }
@@ -100,6 +124,16 @@ MAGIC_BYTES: dict[str, list[tuple[bytes, int]]] = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [
         (b"PK", 0)
     ],
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [(b"PK", 0)],
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": [
+        (b"PK", 0)
+    ],
+    "application/vnd.ms-excel.sheet.macroEnabled.12": [(b"PK", 0)],
+    "application/vnd.ms-powerpoint.presentation.macroEnabled.12": [(b"PK", 0)],
+    "application/vnd.oasis.opendocument.text": [(b"PK", 0)],
+    "application/vnd.oasis.opendocument.spreadsheet": [(b"PK", 0)],
+    "application/vnd.oasis.opendocument.presentation": [(b"PK", 0)],
+    "application/epub+zip": [(b"PK", 0)],
 }
 MAX_FILENAME_LEN = 200
 MARKITDOWN_TIMEOUT_SECS = 30
@@ -176,7 +210,9 @@ def _validate_ext_mime_consistency(filename: str, mime: str) -> bool:
 
 
 def _default_ext(category: str) -> str:
-    return {"text": ".txt", "data": ".json", "image": ".jpg", "document": ".pdf"}.get(category, ".bin")
+    return {"text": ".txt", "data": ".json", "image": ".jpg", "document": ".pdf"}.get(
+        category, ".bin"
+    )
 
 
 def _convert_with_markitdown(data: bytes, mime: str, filename: str) -> str | None:

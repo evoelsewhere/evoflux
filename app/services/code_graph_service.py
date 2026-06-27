@@ -1127,3 +1127,176 @@ async def get_overview(
         kind_counts=dict(Counter(kinds)),
         top_files=[(f.file_path, f.node_count) for f in ranked],
     )
+
+
+# ---------------------------------------------------------------------------
+# P4: Find all references to a symbol
+# ---------------------------------------------------------------------------
+
+# Edge kinds that represent a "usage" of the target symbol.
+_REFERENCE_EDGE_KINDS = frozenset(
+    {"calls", "references", "imports", "inherits", "implements", "decorated_by"}
+)
+
+
+async def find_references(
+    db: AsyncSession,
+    *,
+    workspace_id: UUID,
+    node_id: UUID,
+    limit: int = 50,
+) -> list[tuple[str, CodeNode, int | None]]:
+    """Find all locations that reference ``node_id``.
+
+    Returns ``(edge_kind, source_node, line)`` tuples ordered by file path then
+    line number. ``line`` is the edge's originating line (if available).
+    """
+    stmt = (
+        select(CodeEdge.kind, CodeNode, CodeEdge.line)
+        .join(CodeNode, col(CodeEdge.src_id) == col(CodeNode.id))
+        .where(
+            CodeEdge.workspace_id == workspace_id,
+            CodeEdge.dst_id == node_id,
+            col(CodeEdge.kind).in_(_REFERENCE_EDGE_KINDS),
+        )
+        .order_by(CodeNode.file_path, CodeEdge.line)
+        .limit(limit)
+    )
+    rows = (await db.exec(stmt)).all()
+    return [(ek, node, line) for ek, node, line in rows]
+
+
+# ---------------------------------------------------------------------------
+# P5: PageRank-inspired context budget repo map
+# ---------------------------------------------------------------------------
+
+
+async def get_ranked_symbols(
+    db: AsyncSession,
+    *,
+    workspace_id: UUID,
+    budget: int = 30,
+) -> list[tuple[CodeNode, int]]:
+    """Return the top ``budget`` symbols ranked by in-degree (usage count).
+
+    A simple approximation of PageRank: symbols referenced/called more often are
+    more important entry points for understanding the codebase. Returns
+    ``(node, reference_count)`` ordered by descending count.
+    """
+    stmt = (
+        select(CodeNode, sa_func.count(CodeEdge.id).label("ref_count"))
+        .join(CodeNode, col(CodeEdge.dst_id) == col(CodeNode.id))
+        .where(
+            CodeEdge.workspace_id == workspace_id,
+            col(CodeEdge.kind).in_(_REFERENCE_EDGE_KINDS),
+            # Exclude file nodes — they inflate counts via "contains" edges
+            CodeNode.kind != "file",
+        )
+        .group_by(CodeNode.id)
+        .order_by(sa_func.count(CodeEdge.id).desc())
+        .limit(budget)
+    )
+    rows = (await db.exec(stmt)).all()
+    return [(node, count) for node, count in rows]
+
+
+# ---------------------------------------------------------------------------
+# P6: Shortest path between two symbols
+# ---------------------------------------------------------------------------
+
+
+async def find_shortest_path(
+    db: AsyncSession,
+    *,
+    workspace_id: UUID,
+    src_id: UUID,
+    dst_id: UUID,
+    max_hops: int = 6,
+) -> list[tuple[CodeNode, str, CodeNode]] | None:
+    """BFS shortest path from ``src_id`` to ``dst_id`` in the call/dependency graph.
+
+    Returns a list of ``(from_node, edge_kind, to_node)`` hops, or ``None`` if
+    no path exists within ``max_hops``. Only follows ``calls``, ``imports``,
+    ``inherits``, ``implements``, and ``references`` edges (both directions).
+    """
+    if src_id == dst_id:
+        return []
+
+    # BFS in Python over the DB — acceptable for max_hops ≤ 6 and typical
+    # workspace sizes (< 50k nodes). We load adjacency lazily per frontier.
+    visited: dict[UUID, tuple[UUID | None, str | None, bool]] = {
+        src_id: (None, None, True)
+    }  # node_id -> (prev_id, edge_kind, is_forward)
+    frontier: list[UUID] = [src_id]
+
+    for _depth in range(max_hops):
+        if not frontier:
+            break
+        # Batch-fetch all edges from/to the current frontier.
+        out_stmt = select(CodeEdge.src_id, CodeEdge.dst_id, CodeEdge.kind).where(
+            CodeEdge.workspace_id == workspace_id,
+            col(CodeEdge.src_id).in_(frontier),
+            col(CodeEdge.kind).in_(_REFERENCE_EDGE_KINDS),
+        )
+        in_stmt = select(CodeEdge.src_id, CodeEdge.dst_id, CodeEdge.kind).where(
+            CodeEdge.workspace_id == workspace_id,
+            col(CodeEdge.dst_id).in_(frontier),
+            col(CodeEdge.kind).in_(_REFERENCE_EDGE_KINDS),
+        )
+        out_rows = (await db.exec(out_stmt)).all()
+        in_rows = (await db.exec(in_stmt)).all()
+
+        next_frontier: list[UUID] = []
+        for src, dst, kind in out_rows:
+            if dst not in visited:
+                visited[dst] = (src, kind, True)
+                next_frontier.append(dst)
+                if dst == dst_id:
+                    return await _reconstruct_path(db, workspace_id, visited, dst_id)
+        for src, dst, kind in in_rows:
+            if src not in visited:
+                visited[src] = (dst, kind, False)
+                next_frontier.append(src)
+                if src == dst_id:
+                    return await _reconstruct_path(db, workspace_id, visited, dst_id)
+        frontier = next_frontier
+
+    return None  # No path within max_hops
+
+
+async def _reconstruct_path(
+    db: AsyncSession,
+    workspace_id: UUID,
+    visited: dict[UUID, tuple[UUID | None, str | None, bool]],
+    target_id: UUID,
+) -> list[tuple[CodeNode, str, CodeNode]]:
+    """Walk the BFS parent map back to src and fetch node objects."""
+    # Collect the id sequence
+    path_ids: list[UUID] = []
+    current = target_id
+    while current is not None:
+        path_ids.append(current)
+        prev, _, _ = visited[current]
+        current = prev
+    path_ids.reverse()
+
+    # Fetch all nodes in one query
+    nodes_stmt = select(CodeNode).where(
+        CodeNode.workspace_id == workspace_id,
+        col(CodeNode.id).in_(path_ids),
+    )
+    all_nodes = list((await db.exec(nodes_stmt)).all())
+    node_map = {n.id: n for n in all_nodes}
+
+    # Build hop list
+    hops: list[tuple[CodeNode, str, CodeNode]] = []
+    for i in range(1, len(path_ids)):
+        nid = path_ids[i]
+        prev_id, edge_kind, is_forward = visited[nid]
+        if prev_id is None or edge_kind is None:
+            continue
+        from_node = node_map.get(prev_id if is_forward else nid)
+        to_node = node_map.get(nid if is_forward else prev_id)
+        if from_node and to_node:
+            hops.append((from_node, edge_kind, to_node))
+    return hops

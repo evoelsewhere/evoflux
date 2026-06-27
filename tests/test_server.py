@@ -40,4 +40,5 @@ def test_server_main_block_calls_uvicorn_run():
         host=settings.API_HOST,
         port=settings.API_PORT,
         reload=settings.API_RELOAD,
+        loop="asyncio",
     )

@@ -205,3 +205,78 @@ async def web_fetch(
 
     except Exception as e:
         return f"Error fetching or converting: {str(e)}"
+
+
+@tool(name="image_search")
+async def image_search(
+    query: Annotated[
+        str,
+        Field(
+            description="Search query for images (e.g. 'modern office teamwork', 'abstract blue gradient background')."
+        ),
+    ],
+    max_results: Annotated[
+        int,
+        Field(description="Number of images to return (default 5, max 20)."),
+    ] = 5,
+    size: Annotated[
+        Literal["small", "medium", "large", "wallpaper"] | None,
+        Field(description="Filter by image size. None for any size."),
+    ] = None,
+    layout: Annotated[
+        Literal["square", "tall", "wide"] | None,
+        Field(description="Filter by aspect ratio. None for any layout."),
+    ] = None,
+    license_image: Annotated[
+        Literal[
+            "any",
+            "Public",
+            "Share",
+            "ShareCommercially",
+            "Modify",
+            "ModifyCommercially",
+        ]
+        | None,
+        Field(
+            description="License filter. 'Public' = public domain, 'ShareCommercially' = free for commercial use. None for any license."
+        ),
+    ] = None,
+) -> list[dict[str, str]] | str:
+    """Search for images on the web. Returns [{title, image, thumbnail, url, source}].
+
+    Use this to find stock photos, illustrations, icons, or backgrounds
+    for presentations, documents, or design work. Download images via
+    shell (curl/wget) using the returned 'image' URL.
+    """
+    max_results = max(1, min(max_results, 20))
+
+    try:
+        loop = asyncio.get_running_loop()
+        results = await loop.run_in_executor(
+            None,
+            lambda: DDGS().images(
+                query,
+                max_results=max_results,
+                size=size,
+                layout=layout,
+                license_image=license_image,
+                safesearch="moderate",
+            ),
+        )
+    except Exception as e:
+        logger.debug("image_search_failed query={!r} err={}", query, e)
+        return f"Image search failed: {e}"
+
+    if not results:
+        return "No images found for this query. Try different keywords."
+
+    return [
+        {
+            "title": r.get("title", ""),
+            "image": r.get("image", ""),
+            "thumbnail": r.get("thumbnail", ""),
+            "url": r.get("url", ""),
+            "source": r.get("source", ""),
+        }
+        for r in results
+    ]

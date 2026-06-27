@@ -80,8 +80,10 @@ class TestTeamHandoffTool:
 
         result = await tool(
             to=["lead"],
-            summary="Found 2 patterns.",
+            summary="Found 2 architectural patterns used in multi-agent systems.",
             findings=["Pattern A: supervisor", "Pattern B: sequential"],
+            verified=True,
+            verification_method="cross-referenced with documentation",
         )
 
         assert "Handoff delivered" in result
@@ -89,7 +91,7 @@ class TestTeamHandoffTool:
 
         msg = await mb.receive("lead")
         assert "HANDOFF" in msg.content
-        assert "Found 2 patterns." in msg.content
+        assert "Found 2 architectural patterns" in msg.content
         assert "Pattern A: supervisor" in msg.content
 
     async def test_send_to_multiple_recipients(self):
@@ -99,8 +101,10 @@ class TestTeamHandoffTool:
 
         result = await tool(
             to=["consultant", "debate"],
-            summary="Research complete.",
-            findings=["Finding 1"],
+            summary="Research on multi-agent patterns is complete with key findings.",
+            findings=["Finding 1: supervisor pattern is most common"],
+            verified=True,
+            verification_method="reviewed source papers",
         )
 
         assert "consultant" in result
@@ -142,9 +146,10 @@ class TestTeamHandoffTool:
 
         await tool(
             to=["lead"],
-            summary="Analysis done.",
+            summary="Analysis of critical issues in the codebase is done.",
             findings=["Issue A is critical", "Issue B is minor"],
             evidence=["app/core.py:100", "logs/debug.log"],
+            status="partial",
         )
 
         msg = await mb.receive("lead")
@@ -159,8 +164,11 @@ class TestTeamHandoffTool:
 
         await tool(
             to=["lead"],
-            summary="Strategy proposal.",
+            summary="Strategy proposal for the new architecture design.",
+            findings=["Option B is optimal for scale"],
             confidence=0.92,
+            verified=True,
+            verification_method="compared benchmarks",
         )
 
         msg = await mb.receive("lead")
@@ -187,8 +195,11 @@ class TestTeamHandoffTool:
 
         await tool(
             to=["lead"],
-            summary="All done.",
+            summary="All research work is done and findings are documented.",
+            findings=["Completed all objectives"],
             status="final",
+            verified=True,
+            verification_method="reviewed output files",
         )
 
         msg = await mb.receive("lead")
@@ -201,8 +212,11 @@ class TestTeamHandoffTool:
 
         await tool(
             to=["lead"],
-            summary="Review complete.",
+            summary="Review of the implementation is complete with recommendations.",
+            findings=["Architecture is sound"],
             next_actions=["Implement option B", "Run stress tests"],
+            verified=True,
+            verification_method="code review",
         )
 
         msg = await mb.receive("lead")
@@ -244,14 +258,14 @@ class TestTeamHandoffTool:
 
         await tool(
             to=["lead"],
-            summary="Quick summary.",
+            summary="Quick summary of the exploration results.",
+            findings=["Found key pattern"],
             raw_data="Very long raw analysis data...",
+            status="partial",
         )
 
         msg = await mb.receive("lead")
-        assert "Quick summary." in msg.content
-        # raw_data should not be in the human-readable formatted section
-        # (it's in the structured artifact only)
+        assert "Quick summary" in msg.content
 
     async def test_returns_success_message(self):
         """Tool returns 'Handoff delivered to ...' on success."""
@@ -260,7 +274,10 @@ class TestTeamHandoffTool:
 
         result = await tool(
             to=["lead"],
-            summary="Done.",
+            summary="Completed the analysis of the target system architecture.",
+            findings=["System uses event-driven design"],
+            verified=False,
+            verification_method="pure analysis, no side-effects",
         )
 
         assert "Handoff delivered" in result
@@ -273,7 +290,8 @@ class TestTeamHandoffTool:
 
         await tool(
             to=["lead"],
-            summary="My work.",
+            summary="My work in progress.",
+            status="partial",
         )
 
         msg = await mb.receive("lead")

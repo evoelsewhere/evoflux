@@ -417,7 +417,11 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     if (capabilities?.input.vision) parts.push('image/*')
     if (capabilities?.input.document_text) {
       parts.push('application/pdf', '.pdf',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.docx')
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.docx',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.xlsx', '.xls', '.xlsm',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation', '.pptx', '.ppt', '.pptm',
+        'application/msword', '.doc',
+        '.odt', '.ods', '.odp', '.rtf', '.epub')
     }
     if (capabilities?.input.audio) parts.push('audio/*')
     if (capabilities?.input.video) parts.push('video/*')
@@ -436,7 +440,16 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     if (capabilities?.input.document_text && (
       mimeType === 'application/pdf' ||
       mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-      name.endsWith('.pdf') || name.endsWith('.docx')
+      mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
+      mimeType === 'application/vnd.ms-excel' ||
+      mimeType === 'application/vnd.ms-powerpoint' ||
+      mimeType === 'application/msword' ||
+      name.endsWith('.pdf') || name.endsWith('.docx') || name.endsWith('.doc') ||
+      name.endsWith('.xlsx') || name.endsWith('.xls') || name.endsWith('.xlsm') ||
+      name.endsWith('.pptx') || name.endsWith('.ppt') || name.endsWith('.pptm') ||
+      name.endsWith('.odt') || name.endsWith('.ods') || name.endsWith('.odp') ||
+      name.endsWith('.rtf') || name.endsWith('.epub')
     )) return true
     if (capabilities?.input.audio && mimeType.startsWith('audio/')) return true
     if (capabilities?.input.video && mimeType.startsWith('video/')) return true

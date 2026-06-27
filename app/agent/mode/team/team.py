@@ -36,8 +36,10 @@ from app.agent.mode.team.member import (
     TeamMember,
     TeamMemberBase,
 )
+from app.agent.mode.team.delegate import make_team_delegate_tool
 from app.agent.mode.team.handoff import make_team_handoff_tool
 from app.agent.mode.team.manage import make_team_manage_tool
+from app.agent.mode.team.reject import make_team_reject_tool
 from app.agent.mode.team.shared_state import make_team_state_tool
 from app.agent.mode.team.tools import make_team_message_tool
 from app.agent.multimodal import build_parts_from_metas
@@ -1310,8 +1312,14 @@ class AgentTeam:
             KeyError: blueprint not found.
             ValueError: instance with that handle is already live.
         """
-        async with self._roster_lock:
-            return await self._spawn_locked(blueprint, instance_id=instance_id)
+        try:
+            async with asyncio.timeout(30):
+                async with self._roster_lock:
+                    return await self._spawn_locked(blueprint, instance_id=instance_id)
+        except TimeoutError:
+            raise RuntimeError(
+                f"Timed out waiting to spawn '{blueprint}' — roster lock held too long."
+            )
 
     async def _spawn_locked(
         self,
@@ -1461,8 +1469,13 @@ class AgentTeam:
         DB session row is preserved so the instance can later be respawned
         with its history intact via ``spawn(blueprint, instance_id=N)``.
         """
-        async with self._roster_lock:
-            return await self._dismiss_live_member(handle)
+        try:
+            async with asyncio.timeout(30):
+                async with self._roster_lock:
+                    return await self._dismiss_live_member(handle)
+        except TimeoutError:
+            logger.error("team_dismiss_timeout handle={}", handle)
+            return False
 
     async def _dismiss_live_member(self, handle: str) -> bool:
         member = self.members.pop(handle, None)
@@ -1669,6 +1682,12 @@ class AgentTeam:
 
         if agent_name == self.lead.name:
             tools.append(make_team_manage_tool(self))
+            tools.append(
+                make_team_delegate_tool(self.mailbox, agent_name=agent_name, team=self)
+            )
+            tools.append(
+                make_team_reject_tool(self.mailbox, agent_name=agent_name, team=self)
+            )
 
         return tools
 
