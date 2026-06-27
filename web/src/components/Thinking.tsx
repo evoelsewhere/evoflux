@@ -51,7 +51,7 @@ export function Thinking({ content, isStreaming }: ThinkingProps) {
         <Brain size={13} className="shrink-0 text-(--accent-purple)" aria-hidden="true" />
         <span className="flex-1 truncate">{label}</span>
         {isStreaming && (
-          <span className="inline-flex items-center gap-1 text-[10px] text-(--accent-purple)">
+          <span className="inline-flex items-center gap-1 text-xs text-(--accent-purple)">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-(--accent-purple)" />
             streaming
           </span>

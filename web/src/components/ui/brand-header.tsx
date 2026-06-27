@@ -53,7 +53,7 @@ export function BrandHeader({
         <span className="font-hand text-[28px] font-bold leading-none text-(--color-text)">
           EvoFlux
         </span>
-        <span className="font-mono text-[11px] text-(--color-text-muted)">
+        <span className="font-mono text-xs text-(--color-text-muted)">
           on-machine ai
         </span>
       </div>

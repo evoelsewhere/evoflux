@@ -34,7 +34,7 @@ interface TierBadgeProps {
 export function TierBadge({ tier, className = '' }: TierBadgeProps) {
   return (
     <span
-      className={`shrink-0 rounded px-1 py-0.5 font-mono text-[10px] font-medium leading-none ${TIER_CLASS[tier]} ${className}`}
+      className={`shrink-0 rounded px-1 py-0.5 font-mono text-xs font-medium leading-none ${TIER_CLASS[tier]} ${className}`}
       title={`Tool access tier: ${TIER_LABEL[tier]}`}
       aria-label={`Tier: ${TIER_LABEL[tier]}`}
     >

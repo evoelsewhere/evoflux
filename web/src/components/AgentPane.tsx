@@ -177,7 +177,7 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell 
              </button>
            )}
            {shell && (
-             <div className="mb-1 flex items-center gap-1 font-mono text-[10px] text-(--color-text-muted)">
+             <div className="mb-1 flex items-center gap-1 font-mono text-xs text-(--color-text-muted)">
                <Terminal size={11} aria-hidden="true" />
                <span>Shell</span>
              </div>
@@ -199,7 +199,7 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell 
           {(timestamp || modelName) && (
             <div className={`flex items-center gap-1 transition-opacity duration-150 ${showTime ? 'opacity-100' : 'opacity-0'}`}>
               {modelName && (
-                <span className="mr-1 font-mono text-[10px] text-(--color-text-subtle)" title={modelId ?? undefined}>
+                <span className="mr-1 font-mono text-xs text-(--color-text-subtle)" title={modelId ?? undefined}>
                   {modelName}
                 </span>
               )}
@@ -482,7 +482,7 @@ export function AgentPane({
          <div className="flex items-center gap-1 text-xs text-(--color-text-subtle)">
            {stream.usage.totalTokens > 0 && (
              <span
-               className="flex h-7 min-w-7 items-center justify-center rounded-full bg-(--bg-key) px-1.5 font-mono text-[10px] text-(--color-text)"
+                className="flex h-8 min-w-8 items-center justify-center rounded-full bg-(--bg-key) px-2 font-mono text-xs text-(--color-text)"
                title={`Input: ${stream.usage.promptTokens.toLocaleString()} · Output: ${stream.usage.completionTokens.toLocaleString()} · Cache: ${stream.usage.cachedTokens.toLocaleString()}`}
              >
                {formatTokens(stream.usage.promptTokens)}
@@ -497,29 +497,29 @@ export function AgentPane({
            {canMoveLeft && (
              <button
                onClick={onMoveLeft}
-               className="flex h-6 w-6 items-center justify-center rounded text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
+               className="flex h-7 w-7 items-center justify-center rounded text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
                title="Move left"
              >
-               <ChevronLeft size={13} aria-hidden="true" />
+               <ChevronLeft size={14} aria-hidden="true" />
              </button>
            )}
            {canMoveRight && (
              <button
                onClick={onMoveRight}
-               className="flex h-6 w-6 items-center justify-center rounded text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
+               className="flex h-7 w-7 items-center justify-center rounded text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
                title="Move right"
              >
-               <ChevronRight size={13} aria-hidden="true" />
+               <ChevronRight size={14} aria-hidden="true" />
              </button>
            )}
            <button
              onClick={() => setPaneCollapsed((c) => !c)}
-             className="flex h-6 w-6 items-center justify-center rounded text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
+             className="flex h-7 w-7 items-center justify-center rounded text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
              title={paneCollapsed ? 'Expand' : 'Collapse'}
            >
              {paneCollapsed
-               ? <ChevronDown size={13} aria-hidden="true" />
-               : <ChevronUp size={13} aria-hidden="true" />}
+               ? <ChevronDown size={14} aria-hidden="true" />
+               : <ChevronUp size={14} aria-hidden="true" />}
            </button>
          </div>
        </div>

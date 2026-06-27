@@ -191,7 +191,7 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell 
              </button>
            )}
            {shell && (
-             <div className="mb-1.5 flex items-center gap-1 font-mono text-[11px] text-(--color-text-muted)">
+             <div className="mb-1.5 flex items-center gap-1 font-mono text-xs text-(--color-text-muted)">
                <Terminal size={12} aria-hidden="true" />
                <span>Shell</span>
              </div>
@@ -213,7 +213,7 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell 
           {(timestamp || modelName) && (
             <div className={`flex items-center gap-1.5 transition-opacity duration-150 ${showTime ? 'opacity-100' : 'opacity-0'}`}>
               {modelName && (
-                <span className="mr-1 font-mono text-[11px] text-(--color-text-subtle)" title={modelId ?? undefined}>
+                <span className="mr-1 font-mono text-xs text-(--color-text-subtle)" title={modelId ?? undefined}>
                   {modelName}
                 </span>
               )}

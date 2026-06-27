@@ -169,7 +169,7 @@ export function DreamSettingsPage() {
                     placeholder="0 2 * * *"
                     className="min-h-11 font-mono text-sm md:min-h-9"
                   />
-                  <p className="text-[11px] text-(--color-text-muted)">
+                  <p className="text-xs text-(--color-text-muted)">
                     Standard 5-field cron in UTC. Disabled Dream can still be triggered with Run now.
                   </p>
                 </div>
@@ -191,9 +191,9 @@ export function DreamSettingsPage() {
                     placeholder="codex:gpt-5.5"
                   />
                   {modelError ? (
-                    <p className="text-[11px] text-(--color-error)">{modelError}</p>
+                    <p className="text-xs text-(--color-error)">{modelError}</p>
                   ) : (
-                    <p className="text-[11px] text-(--color-text-muted)">
+                    <p className="text-xs text-(--color-text-muted)">
                       Choose from the same registry used by agent setup. Leave empty to skip LLM synthesis.
                     </p>
                   )}

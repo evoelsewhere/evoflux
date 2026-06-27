@@ -1033,7 +1033,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       type="button"
       onClick={(e) => { stopClick(e); onStop?.() }}
       aria-label="Stop generation"
-      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-(--color-error) text-white transition-all hover:opacity-90 active:scale-95"
+      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-(--color-error) text-(--color-text-on-accent) transition-all hover:opacity-90 active:scale-95"
     >
       <Square size={13} fill="currentColor" />
     </button>
@@ -1046,7 +1046,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       title={isMobile ? 'Send message' : 'Send (Enter) · New line (Shift+Enter) · Commands (/)'}
       className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-all active:scale-95 ${
         canSend
-          ? 'bg-[linear-gradient(135deg,#667eea_0%,#764ba2_100%)] text-white shadow-sm hover:opacity-90'
+          ? 'bg-gradient-primary text-(--color-text-on-accent) shadow-sm hover:opacity-90'
           : 'bg-(--bg-key) text-(--color-text-muted) opacity-40 cursor-not-allowed'
       }`}
     >
@@ -1169,7 +1169,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                 return (
                   <div
                     key={cmd.id}
-                    className="px-3 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wide text-(--color-text-muted)"
+                    className="px-3 pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-(--color-text-muted)"
                   >
                     {cmd.label}
                   </div>
@@ -1206,7 +1206,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                     {cmd.description}
                   </span>
                   {cmd.category && (
-                    <span className="shrink-0 rounded-md bg-(--bg-key) px-1.5 py-0.5 font-mono text-[10px] text-(--color-text-muted) ring-1 ring-(--color-border)">
+                    <span className="shrink-0 rounded-md bg-(--bg-key) px-1.5 py-0.5 font-mono text-xs text-(--color-text-muted) ring-1 ring-(--color-border)">
                       {cmd.category}
                     </span>
                   )}
@@ -1242,7 +1242,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                   <span className="shrink-0 font-mono text-xs text-(--color-accent)">#{cmd.label}</span>
                   <span className="min-w-0 flex-1 truncate text-(--color-text-2)">{cmd.description}</span>
                   {cmd.category && (
-                    <span className="shrink-0 rounded-md bg-(--bg-key) px-1.5 py-0.5 font-mono text-[10px] text-(--color-text-muted) ring-1 ring-(--color-border)">
+                    <span className="shrink-0 rounded-md bg-(--bg-key) px-1.5 py-0.5 font-mono text-xs text-(--color-text-muted) ring-1 ring-(--color-border)">
                       {cmd.category}
                     </span>
                   )}

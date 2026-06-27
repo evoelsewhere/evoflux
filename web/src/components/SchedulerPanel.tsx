@@ -940,7 +940,7 @@ function TaskDetailView({
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
         <section className="px-4 py-4">
-          <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-widest text-(--color-text-muted)">
             Status
           </h3>
           <div className="space-y-1.5">
@@ -963,7 +963,7 @@ function TaskDetailView({
         </section>
 
         <section className="border-t border-(--color-border) px-4 py-4">
-          <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-widest text-(--color-text-muted)">
             Schedule
           </h3>
           <div className="space-y-1.5">
@@ -994,7 +994,7 @@ function TaskDetailView({
         </section>
 
         <section className="border-t border-(--color-border) px-4 py-4">
-          <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-widest text-(--color-text-muted)">
             Configuration
           </h3>
           <div className="space-y-3">
@@ -1033,7 +1033,7 @@ function TaskDetailView({
         </section>
 
         <section className="border-t border-(--color-border) px-4 py-4">
-          <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-widest text-(--color-text-muted)">
             Run History
           </h3>
           <div className="space-y-1.5">
@@ -1066,7 +1066,7 @@ function TaskDetailView({
         </section>
 
         <section className="border-t border-(--color-border) px-4 py-3">
-          <div className="space-y-1 text-[11px] text-(--color-text-muted)">
+          <div className="space-y-1 text-xs text-(--color-text-muted)">
             <div>Created: {formatRelativeDate(task.created_at)}</div>
             <div>Updated: {formatRelativeDate(task.updated_at)}</div>
           </div>

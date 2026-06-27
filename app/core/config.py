@@ -82,6 +82,10 @@ class Settings(BaseSettings):
     NVIDIA_API_KEY: SecretStr | None = None
     XAI_API_KEY: SecretStr | None = None
     DEEPSEEK_API_KEY: SecretStr | None = None
+    XIAOMI_API_KEY: SecretStr | None = None
+    XIAOMI_BASE_URL: str = ""
+    MOONSHOT_API_KEY: SecretStr | None = None
+    MOONSHOT_BASE_URL: str = ""
     NINJA_API_KEY: SecretStr | None = None
 
     # AWS Bedrock — region and optional named profile.

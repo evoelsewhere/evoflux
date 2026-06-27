@@ -42,7 +42,7 @@ function DefaultStatus() {
   return (
     <div className="flex items-center gap-1.5 pr-3 text-(--color-text-muted)">
       <span aria-hidden="true" className="h-2 w-2 rounded-full bg-(--color-success)" />
-      <span className="font-mono text-[11px]">local</span>
+      <span className="font-mono text-xs">local</span>
     </div>
   )
 }

@@ -212,7 +212,7 @@ export function ToolCall({ name, args, done, liveOutput, result, durationMs, sta
         </span>
 
         {elapsedMs !== undefined && (
-          <span className="shrink-0 font-mono text-[11px] text-(--color-text-muted)" title="Duration">
+          <span className="shrink-0 font-mono text-xs text-(--color-text-muted)" title="Duration">
             {formatDuration(elapsedMs)}
           </span>
         )}
@@ -260,7 +260,7 @@ export function ToolCall({ name, args, done, liveOutput, result, durationMs, sta
                   {formattedArgs && (
                     <div>
                       <div className="flex items-center justify-between gap-3 border-b border-(--color-border) bg-(--bg-key) py-0.5 pr-1.5 pl-3">
-                        <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-(--color-text-muted)">
+                        <span className="font-mono text-xs font-semibold uppercase tracking-wider text-(--color-text-muted)">
                           {isShellTerminal ? 'terminal' : 'arguments'}
                         </span>
                         <button
@@ -288,7 +288,7 @@ export function ToolCall({ name, args, done, liveOutput, result, durationMs, sta
                           </pre>
                           {shellResult?.statusLine && (
                             <span
-                              className={`font-mono text-[11px] font-medium ${
+                              className={`font-mono text-xs font-medium ${
                                 shellResult.statusLine.startsWith('[Succeeded')
                                   ? 'text-(--color-success)'
                                   : 'text-(--color-error)'
@@ -309,13 +309,13 @@ export function ToolCall({ name, args, done, liveOutput, result, durationMs, sta
                   {shownLiveOutput && !isShellTerminal && (
                     <div>
                       <div className={`flex items-center justify-between gap-3 border-b border-(--color-border) bg-(--bg-key) py-0.5 pr-1.5 pl-3 ${formattedArgs ? 'border-t' : ''}`}>
-                        <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-(--color-text-muted)">
+                        <span className="font-mono text-xs font-semibold uppercase tracking-wider text-(--color-text-muted)">
                           output
                         </span>
                       </div>
                       <pre
                         ref={liveOutputRef}
-                        className="max-h-64 overflow-auto whitespace-pre-wrap break-words px-3 py-2.5 font-mono text-[11px] leading-relaxed text-(--color-text)"
+                        className="max-h-64 overflow-auto whitespace-pre-wrap break-words px-3 py-2.5 font-mono text-xs leading-relaxed text-(--color-text)"
                       >
                         {shownLiveOutput}
                       </pre>
@@ -326,7 +326,7 @@ export function ToolCall({ name, args, done, liveOutput, result, durationMs, sta
                   {shownResult && !isShellTerminal && (
                     <div>
                       <div className={`flex items-center justify-between gap-3 border-b border-(--color-border) bg-(--bg-key) py-0.5 pr-1.5 pl-3 ${formattedArgs || shownLiveOutput ? 'border-t' : ''}`}>
-                        <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-(--color-text-muted)">
+                        <span className="font-mono text-xs font-semibold uppercase tracking-wider text-(--color-text-muted)">
                           result
                         </span>
                         <button
@@ -368,7 +368,7 @@ function SeeBrowserButton() {
         e.stopPropagation()
         toggleBrowser()
       }}
-      className={`ml-1 inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-semibold transition-colors border ${
+      className={`ml-1 inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold transition-colors border ${
         browserOpen
           ? 'border-(--accent-blue) bg-(--accent-blue) text-(--color-text-on-accent)'
           : browserActive

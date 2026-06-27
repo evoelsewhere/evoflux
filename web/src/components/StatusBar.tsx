@@ -44,7 +44,7 @@ export function StatusBar({
        <div className="flex items-center gap-2">
          {usage && (
            <span
-             className="flex h-7 min-w-7 items-center justify-center rounded-full border border-(--color-border) bg-(--bg-key) px-1.5 font-mono text-[10px] text-(--color-text)"
+             className="flex h-8 min-w-8 items-center justify-center rounded-full border border-(--color-border) bg-(--bg-key) px-2 font-mono text-xs text-(--color-text)"
              title={`Input: ${usage.promptTokens.toLocaleString()} · Output: ${usage.completionTokens.toLocaleString()} · Cache: ${usage.cachedTokens.toLocaleString()}`}
            >
              {formatTokens(usage.promptTokens)}

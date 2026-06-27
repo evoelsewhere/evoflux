@@ -191,7 +191,7 @@ export function BrowserViewer({
           <button
             onClick={() => setInteractive(!interactive)}
             className={cn(
-              'inline-flex h-6 items-center gap-1 rounded-md px-2 text-[10px] font-semibold transition-colors border',
+              'inline-flex h-6 items-center gap-1 rounded-md px-2 text-xs font-semibold transition-colors border',
               interactive
                 ? 'border-(--accent-blue) bg-(--accent-blue) text-(--color-text-on-accent)'
                 : 'border-(--color-border-strong) bg-(--bg-page) text-(--color-text-2) hover:bg-(--color-surface-2) hover:text-(--color-text)',
@@ -241,13 +241,13 @@ export function BrowserViewer({
                   <>
                     <Loader2Icon size={28} className="mx-auto mb-3 animate-spin text-(--accent-blue)" />
                     <p className="text-sm font-medium text-(--color-text-2)">Connecting to browser…</p>
-                    <p className="mt-1 text-[11px] text-(--color-text-muted)">Waiting for WebSocket</p>
+                    <p className="mt-1 text-xs text-(--color-text-muted)">Waiting for WebSocket</p>
                   </>
                 ) : !isActive ? (
                   <>
                     <GlobeIcon size={28} className="mx-auto mb-3 text-(--color-text-muted)" />
                     <p className="text-sm font-medium text-(--color-text-2)">Browser not active</p>
-                    <p className="mt-1 text-[11px] text-(--color-text-muted)">The agent will open a browser when needed</p>
+                    <p className="mt-1 text-xs text-(--color-text-muted)">The agent will open a browser when needed</p>
                   </>
                 ) : (
                   <>
@@ -260,7 +260,7 @@ export function BrowserViewer({
           )}
 
           {interactive && connected && isActive && (
-            <div className="absolute top-2 left-1/2 -translate-x-1/2 rounded-full border border-(--accent-blue) bg-(--accent-blue-soft) px-3 py-1 text-[10px] font-semibold text-(--accent-blue-text) pointer-events-none">
+            <div className="absolute top-2 left-1/2 -translate-x-1/2 rounded-full border border-(--accent-blue) bg-(--accent-blue-soft) px-3 py-1 text-xs font-semibold text-(--accent-blue-text) pointer-events-none">
               Click & type in browser · Esc to exit
             </div>
           )}
@@ -288,7 +288,7 @@ export function BrowserViewer({
             onBlur={() => setUrlFocused(false)}
             placeholder="Enter URL…"
             className={cn(
-              'flex-1 truncate rounded-md border border-(--color-border-strong) px-2.5 py-1 text-[11px]',
+              'flex-1 truncate rounded-md border border-(--color-border-strong) px-2.5 py-1 text-xs',
               'bg-(--bg-page) text-(--color-text) font-mono',
               'outline-none transition-colors',
               'hover:border-(--accent-blue)/40',
@@ -308,7 +308,7 @@ export function BrowserViewer({
                   key={tab.index}
                   onClick={() => send({ action: 'switch_tab', index: tab.index })}
                   className={cn(
-                    'shrink-0 truncate rounded-md px-2.5 py-1 text-[10px] max-w-[140px] transition-colors border',
+                    'shrink-0 truncate rounded-md px-2.5 py-1 text-xs max-w-[140px] transition-colors border',
                     isActiveTab
                       ? 'border-(--accent-blue) bg-(--accent-blue-soft) text-(--accent-blue-text) font-semibold'
                       : 'border-transparent bg-(--bg-page) text-(--color-text-2) hover:bg-(--color-surface-2) hover:text-(--color-text)',

@@ -177,7 +177,7 @@ export function MultiSelect({
             className="flex-1 bg-transparent text-sm text-(--color-text) outline-none placeholder:text-(--color-text-muted)"
             aria-label="Search options"
           />
-          <span className="shrink-0 text-[11px] text-(--color-text-muted)">
+          <span className="shrink-0 text-xs text-(--color-text-muted)">
             {filtered.length}/{options.length}
           </span>
         </div>
@@ -228,7 +228,7 @@ export function MultiSelect({
                         {o.label}
                       </p>
                       {o.description && (
-                        <p className="truncate text-[11px] text-(--color-text-muted)">
+                        <p className="truncate text-xs text-(--color-text-muted)">
                           {o.description}
                         </p>
                       )}

@@ -39,7 +39,7 @@ function ActivityRow({ item }: { item: ActivityItem }) {
           </p>
         )}
       </div>
-      <span className="shrink-0 font-mono text-[10px] text-(--color-text-subtle)">
+      <span className="shrink-0 font-mono text-xs text-(--color-text-subtle)">
         {formatTime(item.timestamp)}
       </span>
     </div>

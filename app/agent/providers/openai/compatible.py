@@ -60,4 +60,18 @@ OPENAI_COMPATIBLE_PROVIDER_SPECS: dict[str, OpenAICompatibleProviderSpec] = {
         env_var="DEEPSEEK_API_KEY",
         base_url="https://api.deepseek.com/v1",
     ),
+    "xiaomi": OpenAICompatibleProviderSpec(
+        provider_id="xiaomi",
+        label="Xiaomi MiMo",
+        env_var="XIAOMI_API_KEY",
+        base_url="https://api.xiaomi.com/v1",
+        base_url_env_var="XIAOMI_BASE_URL",
+    ),
+    "kimi": OpenAICompatibleProviderSpec(
+        provider_id="kimi",
+        label="Kimi (Moonshot AI)",
+        env_var="MOONSHOT_API_KEY",
+        base_url="https://api.kimi.ai/v1",
+        base_url_env_var="MOONSHOT_BASE_URL",
+    ),
 }

@@ -406,11 +406,6 @@ def _build_agent(
                 if body:
                     rendered = _render_tokens(body, skill_dir=skill_path.parent)
                     preloaded_skills[sk] = rendered
-                    logger.info(
-                        "agent_skill_preloaded agent={} skill={}",
-                        cfg.name,
-                        sk,
-                    )
             except OSError:
                 logger.warning(
                     "agent_skill_read_failed agent={} skill={} path={}",

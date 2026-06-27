@@ -175,7 +175,7 @@ export function BackendConnectionPage() {
         <section className="space-y-4">
           <div className="rounded-md border border-(--color-border) bg-(--bg-card) px-3 py-2 text-xs text-(--color-text-muted)">
             Connected backend: <span className="font-mono text-(--color-text)">{status?.base_url || apiBaseUrl().replace(/\/api$/, '')}</span>
-            <span className="ml-2 rounded bg-(--bg-key) px-1.5 py-0.5 text-[10px]">
+            <span className="ml-2 rounded bg-(--bg-key) px-1.5 py-0.5 text-xs">
               {status?.mode === 'external' || status?.external ? 'saved server' : 'builtin sidecar'}
             </span>
           </div>
@@ -195,12 +195,12 @@ export function BackendConnectionPage() {
                     <span className="truncate font-medium">Builtin sidecar</span>
                   </button>
                   {!status?.external ? (
-                    <span className="rounded bg-(--bg-key) px-1.5 py-0.5 text-[10px] text-(--color-text-muted)">active</span>
+                    <span className="rounded bg-(--bg-key) px-1.5 py-0.5 text-xs text-(--color-text-muted)">active</span>
                   ) : null}
                   <button
                     type="button"
                     onClick={() => { void connectBundled() }}
-                    className="rounded bg-(--bg-key) px-1.5 py-0.5 text-[10px] text-(--color-text-muted) hover:text-(--color-text)"
+                    className="rounded bg-(--bg-key) px-1.5 py-0.5 text-xs text-(--color-text-muted) hover:text-(--color-text)"
                     disabled={pending}
                   >
                     use builtin
@@ -224,16 +224,16 @@ export function BackendConnectionPage() {
                       <ServerStatusDot status={serverHealth[normalizedServerUrl] ?? serverHealth[server.base_url]} />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate font-medium">{server.name || server.base_url}</span>
-                        {server.name ? <span className="block truncate font-mono text-[11px] text-(--color-text-muted)">{server.base_url}</span> : null}
+                        {server.name ? <span className="block truncate font-mono text-xs text-(--color-text-muted)">{server.base_url}</span> : null}
                       </span>
                     </button>
                     {active ? (
-                      <span className="rounded bg-(--bg-key) px-1.5 py-0.5 text-[10px] text-(--color-text-muted)">active</span>
+                      <span className="rounded bg-(--bg-key) px-1.5 py-0.5 text-xs text-(--color-text-muted)">active</span>
                     ) : null}
                     <button
                       type="button"
                       onClick={() => { void checkExternal(normalizedServerUrl, server.name ?? '', true) }}
-                      className="rounded bg-(--bg-key) px-1.5 py-0.5 text-[10px] text-(--color-text-muted) hover:text-(--color-text)"
+                      className="rounded bg-(--bg-key) px-1.5 py-0.5 text-xs text-(--color-text-muted) hover:text-(--color-text)"
                       disabled={pending}
                     >
                       connect
@@ -241,7 +241,7 @@ export function BackendConnectionPage() {
                     <button
                       type="button"
                       onClick={() => { setBaseUrl(normalizedServerUrl); setServerName(server.name ?? '') }}
-                      className="rounded bg-(--bg-key) px-1.5 py-0.5 text-[10px] text-(--color-text-muted) hover:text-(--color-text)"
+                      className="rounded bg-(--bg-key) px-1.5 py-0.5 text-xs text-(--color-text-muted) hover:text-(--color-text)"
                       disabled={pending}
                     >
                       edit
@@ -249,7 +249,7 @@ export function BackendConnectionPage() {
                     <button
                       type="button"
                       onClick={() => { void removeServer(server.base_url) }}
-                      className="rounded bg-(--bg-key) px-1.5 py-0.5 text-[10px] text-(--color-error) hover:bg-(--color-error)/10"
+                      className="rounded bg-(--bg-key) px-1.5 py-0.5 text-xs text-(--color-error) hover:bg-(--color-error)/10"
                       disabled={pending}
                     >
                       remove

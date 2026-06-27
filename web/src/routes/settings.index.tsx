@@ -69,7 +69,7 @@ function SettingsNavCard({ to, icon: Icon, title, description, count, countLabel
       <div className="min-w-0 flex-1">
         <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
           <span className="text-sm font-semibold text-(--color-text)">{title}</span>
-          <span className="w-fit rounded-md bg-(--bg-key) px-2 py-0.5 font-mono text-[10px] tabular-nums text-(--color-text-muted)">
+          <span className="w-fit rounded-md bg-(--bg-key) px-2 py-0.5 font-mono text-xs tabular-nums text-(--color-text-muted)">
             {count === null ? '–' : count} {countLabel}
           </span>
         </div>
@@ -155,7 +155,7 @@ function UpdateSettingsCard() {
             </button>
           ) : null}
         </div>
-        <span className="rounded-md bg-(--bg-key) px-2 py-0.5 text-[10px] font-medium text-(--color-text-muted)">{title}</span>
+        <span className="rounded-md bg-(--bg-key) px-2 py-0.5 text-xs font-medium text-(--color-text-muted)">{title}</span>
       </div>
 
       <div className="mt-4 flex flex-wrap justify-end gap-2">
@@ -219,7 +219,7 @@ function statusDescription(status: UpdateStatus | null): string {
 
 function SectionHeader({ children }: { children: string }) {
   return (
-    <h2 className="mb-2 px-1 text-[11px] font-medium tracking-wider text-(--color-text-muted) uppercase">
+    <h2 className="mb-2 px-1 text-xs font-medium tracking-wider text-(--color-text-muted) uppercase">
       {children}
     </h2>
   )

@@ -19,7 +19,7 @@ function StatCount({ label, value }: { label: string; value: number }) {
   return (
     <div className="flex flex-col">
       <span className="font-mono text-sm font-semibold text-(--color-text)">{value}</span>
-      <span className="text-[10px] uppercase tracking-[0.12em] text-(--color-text-subtle)">{label}</span>
+      <span className="text-xs uppercase tracking-[0.12em] text-(--color-text-subtle)">{label}</span>
     </div>
   )
 }
@@ -109,7 +109,7 @@ export function CodeGraphPanel({
               <>
                 <p className="text-xs text-(--color-text-subtle)">No code graph for this workspace yet.</p>
                 {indexError && (
-                  <p className="text-[10px] text-(--color-error)">Last index failed: {indexError}</p>
+                  <p className="text-xs text-(--color-error)">Last index failed: {indexError}</p>
                 )}
                 <button
                   type="button"
@@ -132,7 +132,7 @@ export function CodeGraphPanel({
             </div>
             {serverIndexing && (
               <div className="flex w-full flex-col gap-1">
-                <p className="inline-flex items-center gap-1.5 text-[10px] text-(--color-text-subtle)">
+                <p className="inline-flex items-center gap-1.5 text-xs text-(--color-text-subtle)">
                   <Loader2 size={11} className="animate-spin" />
                   {indexMessage || 'Reindexing…'}
                 </p>
@@ -147,9 +147,9 @@ export function CodeGraphPanel({
               </div>
             )}
             {indexError && (
-              <p className="text-[10px] text-(--color-error)">Last index failed: {indexError}</p>
+              <p className="text-xs text-(--color-error)">Last index failed: {indexError}</p>
             )}
-            {statusLine && <p className="text-[10px] text-(--color-text-subtle)">{statusLine}</p>}
+            {statusLine && <p className="text-xs text-(--color-text-subtle)">{statusLine}</p>}
           </div>
         )}
       </div>
@@ -195,9 +195,9 @@ export function CodeGraphPanel({
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5">
                     <span className="truncate font-mono font-medium text-(--color-text)">{node.name}</span>
-                    <span className="shrink-0 rounded bg-(--bg-key) px-1 py-0.5 font-mono text-[9px] uppercase tracking-wide text-(--color-text-subtle)">{node.kind}</span>
+                    <span className="shrink-0 rounded bg-(--bg-key) px-1 py-0.5 font-mono text-xs uppercase tracking-wide text-(--color-text-subtle)">{node.kind}</span>
                   </span>
-                  <span className="mt-0.5 flex items-center gap-1 truncate font-mono text-[10px] text-(--color-text-subtle)">
+                  <span className="mt-0.5 flex items-center gap-1 truncate font-mono text-xs text-(--color-text-subtle)">
                     {node.file_path}:{node.line_start}
                   </span>
                 </span>

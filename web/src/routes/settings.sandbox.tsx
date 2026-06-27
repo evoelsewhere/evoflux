@@ -245,17 +245,17 @@ function SandboxHelpPopover() {
         <ul className="flex flex-col gap-1.5">
           {EXAMPLES.map((ex) => (
             <li key={ex.pattern} className="flex flex-col gap-0.5">
-              <code className="self-start rounded bg-(--bg-key) px-1.5 py-0.5 font-mono text-[11px] text-(--color-text)">
+              <code className="self-start rounded bg-(--bg-key) px-1.5 py-0.5 font-mono text-xs text-(--color-text)">
                 {ex.pattern}
               </code>
-              <span className="text-[11px] leading-snug text-(--color-text-muted)">
+              <span className="text-xs leading-snug text-(--color-text-muted)">
                 {ex.description}
               </span>
             </li>
           ))}
         </ul>
 
-        <p className="border-t border-(--color-border) pt-2 text-[11px] leading-snug text-(--color-text-muted)">
+        <p className="border-t border-(--color-border) pt-2 text-xs leading-snug text-(--color-text-muted)">
           Built-in DB / state / cache paths are always denied; matching is
           logical-OR across patterns &mdash; one match blocks access.
         </p>

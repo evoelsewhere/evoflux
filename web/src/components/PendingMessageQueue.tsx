@@ -77,7 +77,7 @@ export function PendingMessageQueue() {
                 <X size={14} className="md:h-[13px] md:w-[13px]" />
               </button>
             </div>
-            <span className="pr-8 text-[11px] text-(--color-text-subtle)">Queued</span>
+            <span className="pr-8 text-xs text-(--color-text-subtle)">Queued</span>
           </div>
         </div>
       ))}

@@ -293,7 +293,7 @@ function TreeNodeView({
         >
           <FileTypeIcon file={node.file} />
           <span className="min-w-0 flex-1 truncate font-mono">{node.name}</span>
-          <span className="shrink-0 text-[11px] text-(--color-text-subtle)">
+          <span className="shrink-0 text-xs text-(--color-text-subtle)">
             {formatBytes(node.file.size)}
           </span>
         </button>
@@ -671,7 +671,7 @@ function PreviewArea({
             <FileTypeIcon file={file} size={13} />
             <div className="truncate font-mono text-xs text-(--color-text)">{file.path}</div>
           </div>
-          <div className="mt-0.5 text-[11px] text-(--color-text-subtle)">
+          <div className="mt-0.5 text-xs text-(--color-text-subtle)">
             {formatBytes(file.size)} · {file.mime}
           </div>
         </div>
@@ -906,7 +906,7 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
                 )}
                 <div className="min-w-0">
                   <h2 className="text-sm font-semibold text-(--color-text)">Workspace</h2>
-                  <p className="truncate text-[11px] text-(--color-text-subtle)">
+                  <p className="truncate text-xs text-(--color-text-subtle)">
                     {isMobile && mobilePane === 'preview' && selected
                       ? selected.name
                       : <>Files the agent has written into this session{data?.truncated ? ' · list truncated' : ''}</>
@@ -1044,7 +1044,7 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
             </div>
 
             {/* Footer */}
-            <div className="shrink-0 border-t border-(--color-border) px-4 py-2 text-[11px] text-(--color-text-muted) pb-safe">
+            <div className="shrink-0 border-t border-(--color-border) px-4 py-2 text-xs text-(--color-text-muted) pb-safe">
               {files.length > 0 && (
                 <span>
                   {visiblePaths

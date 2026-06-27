@@ -1,5 +1,5 @@
-﻿/**
- * SessionPillsRow â€” compact inline model/thinking/fast-mode controls.
+/**
+ * SessionPillsRow — compact inline model/thinking/fast-mode controls.
  *
  * Rendered inside InputBar above the textarea. Each control is a minimal
  * pill button that opens a small dropdown on click. The design mirrors
@@ -27,16 +27,16 @@ function buildThinkingOptions(levels: string[]) {
   ]
 }
 
-/** Short display name for a model id â€” strip common provider prefixes. */
+/** Short display name for a model id — strip common provider prefixes. */
 function shortModelName(id: string): string {
-  // "copilot:claude-haiku-4.5" â†’ "claude-haiku-4.5"
-  // "openai:gpt-4o" â†’ "gpt-4o"
-  // "ollama:llama3" â†’ "llama3"
+  // "copilot:claude-haiku-4.5" → "claude-haiku-4.5"
+  // "openai:gpt-4o" → "gpt-4o"
+  // "ollama:llama3" → "llama3"
   const colon = id.indexOf(':')
   return colon === -1 ? id : id.slice(colon + 1)
 }
 
-// â”€â”€ Model pill â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Model pill ───────────────────────────────────────────────────────────────
 
 function ModelPill({
   sessionModel,
@@ -161,7 +161,7 @@ function ModelPill({
   )
 }
 
-// â”€â”€ Thinking pill â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Thinking pill ────────────────────────────────────────────────────────────
 
 function ThinkingPill({
   sessionThinkingLevel,
@@ -236,7 +236,7 @@ function ThinkingPill({
   )
 }
 
-// â”€â”€ Fast mode pill â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Fast mode pill ───────────────────────────────────────────────────────────
 
 function FastModePill({
   sessionFastMode,
@@ -266,7 +266,7 @@ function FastModePill({
   )
 }
 
-// â”€â”€ Main row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Main row ─────────────────────────────────────────────────────────────────
 
 export interface SessionPillsRowProps {
   sessionModel?: string | null

@@ -78,7 +78,7 @@ function CapabilitiesSection({
 
   return (
     <div className="py-2">
-      <h4 className="mb-1.5 text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
+      <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-widest text-(--color-text-muted)">
         Capabilities
       </h4>
       <div className="flex flex-wrap items-center gap-2">
@@ -104,7 +104,7 @@ function ToolRow({ name, description }: { name: string; description: string }) {
         className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left ${hasDesc ? 'cursor-pointer' : 'cursor-default'}`}
       >
         <Wrench size={10} className="shrink-0 text-(--color-text-muted)" />
-        <code className="flex-1 truncate font-mono text-[11px] font-medium text-(--color-text)">{name}</code>
+        <code className="flex-1 truncate font-mono text-xs font-medium text-(--color-text)">{name}</code>
         {hasDesc && (
           <ChevronDown
             size={10}
@@ -121,7 +121,7 @@ function ToolRow({ name, description }: { name: string; description: string }) {
             transition={{ duration: 0.14 }}
             className="overflow-hidden"
           >
-            <p className="border-t border-(--color-border) px-2.5 py-1.5 text-[11px] leading-relaxed text-(--color-text-muted)">
+            <p className="border-t border-(--color-border) px-2.5 py-1.5 text-xs leading-relaxed text-(--color-text-muted)">
               {description}
             </p>
           </motion.div>
@@ -181,8 +181,8 @@ function ToolGroupHeader({
       className="flex w-full items-center gap-2 pt-2 pb-1 text-left hover:opacity-80 transition-opacity"
     >
       {server !== null && <Plug size={10} className="text-(--color-text-muted) shrink-0" aria-hidden />}
-      <span className="text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">{label}</span>
-      <span className="rounded-md bg-(--bg-key) px-1.5 py-0.5 text-[10px] text-(--color-text-muted)">{count}</span>
+      <span className="text-xs font-semibold uppercase tracking-widest text-(--color-text-muted)">{label}</span>
+      <span className="rounded-md bg-(--bg-key) px-1.5 py-0.5 text-xs text-(--color-text-muted)">{count}</span>
       <ChevronDown
         size={10}
         className={`ml-auto shrink-0 text-(--color-text-muted) transition-transform duration-150 ${
@@ -316,7 +316,7 @@ export function AgentInfoPopover({
                 {/* Tools */}
                 {toolGroups.length > 0 && (
                   <div className="mt-2">
-                    <h4 className="mb-1 text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
+                    <h4 className="mb-1 text-xs font-semibold uppercase tracking-widest text-(--color-text-muted)">
                       Tools
                     </h4>
                     {toolGroups.map((group) => {

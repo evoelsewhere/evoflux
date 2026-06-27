@@ -85,7 +85,7 @@ export function TokenMeter({
       </button>
       <div
         className={cn(
-          'pointer-events-none absolute right-0 top-full z-50 mt-2 min-w-40 rounded-md border border-(--color-border) bg-(--bg-page) px-3 py-2 font-mono text-[11px] leading-5 text-(--color-text) shadow-lg opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
+          'pointer-events-none absolute right-0 top-full z-50 mt-2 min-w-40 rounded-md border border-(--color-border) bg-(--bg-page) px-3 py-2 font-mono text-xs leading-5 text-(--color-text) shadow-lg opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
           open && 'opacity-100',
         )}
         role="tooltip"

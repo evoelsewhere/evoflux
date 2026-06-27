@@ -116,7 +116,7 @@ export function NewAgentPage() {
                 Coding
               </Button>
             </div>
-            <p className="mt-2 text-[11px] text-(--color-text-muted)">
+            <p className="mt-2 text-xs text-(--color-text-muted)">
               {agentMode === 'coding'
                 ? `Will create coding/${name}.md for coding sessions.`
                 : `Will create ${name}.md for normal sessions.`}

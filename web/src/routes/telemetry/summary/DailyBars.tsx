@@ -35,7 +35,7 @@ export function DailyBars({
                   />
                 )}
               </div>
-              <span className="w-full truncate text-[10px] text-(--color-text-muted)">
+              <span className="w-full truncate text-xs text-(--color-text-muted)">
                 {r.day.slice(5)}
               </span>
             </div>

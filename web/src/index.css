@@ -122,7 +122,7 @@
     --radius-3xl: 32px;
     --radius-4xl: 40px;
 
-    --spacing-app-header: 2.5rem;
+    --spacing-app-header: 2.75rem;
     --spacing-mac-traffic-inset: 70px;
 }
 
@@ -154,8 +154,8 @@
     /* Text — softened foreground reduces glare on near-black bg */
     --color-text:           #C8CACC;
     --color-text-2:         #8C8C8C;
-    --color-text-muted:     #555558;
-    --color-text-subtle:    #3A3A3D;
+    --color-text-muted:     #747478;
+    --color-text-subtle:    #58585C;
     --color-text-on-accent: #121314;
 
     /* Accent */
@@ -163,7 +163,7 @@
     --color-overlay: #000000CC;
 
     /* Arc gradients */
-    --color-gradient-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --color-gradient-primary: linear-gradient(135deg, #667eea 0%, #8B5CF6 100%);
     --color-gradient-cyan:    linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
     --color-gradient-rose:    linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
     --color-gradient-amber:   linear-gradient(135deg, #f7971e 0%, #ffd200 100%);
@@ -215,8 +215,8 @@
     --color-diff-del-text:  #FCA5A5;
 
     /* Syntax — VSCode 2026 Dark inspired: each token category gets a distinct hue */
-    /* Comment: steel gray — de-emphasised by design, 3.9:1 on #121314 (acceptable) */
-    --color-syn-comment:  #6B7280;
+    /* Comment: warm-gray — de-emphasised but readable: 4.8:1 on page, 4.2:1 on card */
+    --color-syn-comment:  #7B828A;
     /* Keyword/control-flow: coral-red — 7.4:1 AAA */
     --color-syn-keyword:  #FF7B72;
     /* Function call-site: lavender — 9.6:1 AAA, distinct from keyword red */
@@ -259,8 +259,8 @@
     --card-foreground:            var(--color-text);
     --popover:                    var(--bg-card);
     --popover-foreground:         var(--color-text);
-    --primary:                    var(--color-accent);
-    --primary-foreground:         var(--bg-page);
+    --primary:                    #2871A3;
+    --primary-foreground:         #FFFFFF;
     --secondary:                  var(--bg-key);
     --secondary-foreground:       var(--color-text);
     --muted:                      var(--bg-key);
@@ -316,8 +316,8 @@
     /* Text — ink-black primary, measured secondary scale */
     --color-text:           #202020;
     --color-text-2:         #606060;
-    --color-text-muted:     #999999;
-    --color-text-subtle:    #C8C8CA;
+    --color-text-muted:     #717171;
+    --color-text-subtle:    #8A8A8C;
     --color-text-on-accent: #FFFFFF;
 
     /* Accent */
@@ -325,44 +325,44 @@
     --color-overlay: rgba(0, 0, 0, 0.40);
 
     /* Arc gradients */
-    --color-gradient-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --color-gradient-primary: linear-gradient(135deg, #667eea 0%, #8B5CF6 100%);
     --color-gradient-cyan:    linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
     --color-gradient-rose:    linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
     --color-gradient-amber:   linear-gradient(135deg, #f7971e 0%, #ffd200 100%);
 
-    /* Agent chips */
-    --accent-blue:        #3B82F6;
-    --accent-blue-soft:   #EFF6FF;
-    --accent-blue-text:   #1D4ED8;
+    /* Agent chips — darker tones for AA contrast on light bg */
+    --accent-blue:        #2563EB;
+    --accent-blue-soft:   #DBEAFE;
+    --accent-blue-text:   #1E40AF;
 
-    --accent-green:       #22C55E;
-    --accent-green-soft:  #F0FDF4;
-    --accent-green-text:  #15803D;
+    --accent-green:       #15803D;
+    --accent-green-soft:  #DCFCE7;
+    --accent-green-text:  #166534;
 
-    --accent-orange:      #F97316;
-    --accent-orange-soft: #FFF7ED;
-    --accent-orange-text: #C2410C;
+    --accent-orange:      #C2410C;
+    --accent-orange-soft: #FFEDD5;
+    --accent-orange-text: #9A3412;
 
-    --accent-pink:        #EC4899;
-    --accent-pink-soft:   #FDF2F8;
+    --accent-pink:        #BE185D;
+    --accent-pink-soft:   #FCE7F3;
 
-    --accent-purple:      #8B5CF6;
-    --accent-purple-soft:  #F5F3FF;
+    --accent-purple:      #7C3AED;
+    --accent-purple-soft: #EDE9FE;
 
     --accent-red:         #DC2626;
 
-    /* Markers */
+    /* Markers — AA-contrast on light bg */
     --color-marker-blue:   #2563EB;
-    --color-marker-mint:   #16A34A;
-    --color-marker-orange: #EA580C;
-    --color-marker-pink:   #DB2777;
-    --color-marker-yellow: #CA8A04;
+    --color-marker-mint:   #15803D;
+    --color-marker-orange: #C2410C;
+    --color-marker-pink:   #BE185D;
+    --color-marker-yellow: #713F12;
     --color-violet:        #7C3AED;
     --color-tint-mint:     rgba(22, 163, 74, 0.08);
     --color-tint-orange:   rgba(234, 88, 12, 0.08);
     --color-tint-violet:   rgba(124, 58, 237, 0.08);
 
-    /* Semantic */
+    /* Semantic — AA-contrast on light bg */
     --color-success:        var(--accent-green);
     --color-success-subtle: var(--accent-green-soft);
     --color-warning:        var(--accent-orange);
@@ -400,6 +400,40 @@
     --focus-ring:   #0069CC;
     --shadow-depth: 0 1px 3px rgba(10, 10, 30, 0.07), 0 4px 12px rgba(10, 10, 30, 0.10);
     --shadow-popover: 0 8px 32px rgba(10, 10, 30, 0.20), 0 4px 16px rgba(10, 10, 30, 0.12);
+
+    /* shadcn base tokens — light mode */
+    --background:                 var(--bg-page);
+    --foreground:                 var(--color-text);
+    --card:                       var(--bg-card);
+    --card-foreground:            var(--color-text);
+    --popover:                    var(--bg-card);
+    --popover-foreground:         var(--color-text);
+    --primary:                    #111114;
+    --primary-foreground:         #FFFFFF;
+    --secondary:                  var(--bg-key);
+    --secondary-foreground:       var(--color-text);
+    --muted:                      var(--bg-key);
+    --muted-foreground:           var(--color-text-muted);
+    --accent:                     var(--bg-key);
+    --accent-foreground:          var(--color-text);
+    --destructive:                var(--color-error);
+    --border:                     var(--color-border);
+    --input:                      var(--color-border);
+    --ring:                       var(--focus-ring);
+    --radius:                     0.5rem;
+    --sidebar:                    var(--bg-sidebar);
+    --sidebar-foreground:         var(--color-text);
+    --sidebar-primary:            var(--color-accent);
+    --sidebar-primary-foreground: var(--bg-page);
+    --sidebar-accent:             var(--bg-key);
+    --sidebar-accent-foreground:  var(--color-text);
+    --sidebar-border:             var(--border-soft);
+    --sidebar-ring:               var(--focus-ring);
+    --chart-1:                    var(--color-marker-blue);
+    --chart-2:                    var(--color-marker-mint);
+    --chart-3:                    var(--color-marker-orange);
+    --chart-4:                    var(--color-violet);
+    --chart-5:                    var(--color-marker-pink);
 }
 
 @layer base {
@@ -426,9 +460,9 @@
   }
   html {
     @apply font-sans;
-    /* Scale the entire UI ~10 % so it reads comfortably at 100 % browser zoom.
+    /* Scale the entire UI ~12 % so it reads comfortably at 100 % browser zoom.
        All Tailwind spacing / text / height utilities use rem and scale here. */
-    font-size: 17px;
+    font-size: 18px;
   }
 }
 
@@ -648,6 +682,9 @@ a svg[aria-hidden="true"],
  * Arc gradient utilities
  * ───────────────────────────────────────────────────────────── */
 .gradient-primary {
+  background: var(--color-gradient-primary);
+}
+.bg-gradient-primary {
   background: var(--color-gradient-primary);
 }
 .gradient-cyan {
