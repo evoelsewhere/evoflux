@@ -114,7 +114,8 @@ class TestHandoffToolVerification:
 
         await tool(
             to=["lead"],
-            summary="File written successfully.",
+            summary="File written successfully to disk as expected.",
+            findings=["Output file created at expected path"],
             verified=True,
             verification_method="read output file",
             verification_result="file exists, 45 lines",
@@ -133,7 +134,8 @@ class TestHandoffToolVerification:
 
         await tool(
             to=["lead"],
-            summary="Command ran.",
+            summary="Command ran but verification was not performed.",
+            findings=["Command executed with exit code 0"],
             verified=False,
             verification_method="no time to check",
         )
@@ -150,8 +152,9 @@ class TestHandoffToolVerification:
 
         await tool(
             to=["lead"],
-            summary="Pure research findings.",
+            summary="Pure research findings on the topic.",
             findings=["Insight 1"],
+            status="partial",
         )
 
         msg = await mb.receive("lead")
@@ -167,7 +170,8 @@ class TestHandoffToolVerification:
 
         await tool(
             to=["lead"],
-            summary="Done.",
+            summary="Task completed successfully and output verified.",
+            findings=["Task done"],
             verified=True,
         )
 
@@ -183,7 +187,8 @@ class TestHandoffToolVerification:
 
         await tool(
             to=["lead"],
-            summary="Tests pass.",
+            summary="All tests pass in the test suite successfully.",
+            findings=["12 tests pass"],
             verified=True,
             verification_method="ran test suite",
             verification_result="all 12 tests pass",
@@ -203,7 +208,9 @@ class TestHandoffToolVerification:
 
         await tool(
             to=["lead"],
-            summary="Analysis done.",
+            summary="Analysis done with partial results.",
+            findings=["Partial insight found"],
+            status="partial",
         )
 
         msg = await mb.receive("lead")
@@ -218,7 +225,8 @@ class TestHandoffToolVerification:
 
         await tool(
             to=["lead"],
-            summary="Partial work.",
+            summary="Partial work delivered, not fully complete yet.",
+            findings=["Initial implementation done"],
             verified=False,
         )
 

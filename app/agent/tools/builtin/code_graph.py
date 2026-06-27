@@ -258,3 +258,190 @@ code_overview = Tool(
         "languages, symbol-kind breakdown, and the densest files."
     ),
 )
+
+
+# ---------------------------------------------------------------------------
+# P4: code_references — find all usages of a symbol
+# ---------------------------------------------------------------------------
+
+
+async def _code_references(
+    name: Annotated[
+        str, Field(description="Symbol name or qualified name to look up.")
+    ],
+    limit: Annotated[
+        int, Field(description="Maximum references to return (max 60).")
+    ] = 30,
+) -> str:
+    """Find all places that reference a symbol (callers, importers, subclasses, decorators).
+
+    Use this to answer "where is X used?" without manually grepping. Returns
+    each reference as ``[edge_kind] source_symbol — file:line``. Resolves by
+    exact name or qualified name.
+    """
+    capped = max(1, min(limit, 60))
+    async with async_session_factory() as db:
+        workspace_id = await _resolve_workspace(db)
+        if workspace_id is None:
+            return _NOT_INDEXED
+        matches = await svc.find_nodes_by_name(
+            db, workspace_id=workspace_id, name=name, limit=5
+        )
+        if not matches:
+            return f"No symbol named '{name}' in the code index."
+        sections: list[str] = []
+        for node in matches:
+            refs = await svc.find_references(
+                db, workspace_id=workspace_id, node_id=node.id, limit=capped
+            )
+            sections.append(_render_references(node, refs))
+    return "\n\n".join(sections)
+
+
+def _render_references(
+    node: CodeNode, refs: list[tuple[str, CodeNode, int | None]]
+) -> str:
+    head = f"References to [{node.kind}] {node.qualified_name} — {_loc(node)}"
+    if not refs:
+        return f"{head}\n  (no references found)"
+    rows: list[str] = []
+    for edge_kind, src_node, line in refs:
+        loc = f"{src_node.file_path}:{line}" if line else _loc(src_node)
+        rows.append(
+            f"  {edge_kind} ← [{src_node.kind}] {src_node.qualified_name} — {loc}"
+        )
+    return head + f" ({len(refs)} refs)\n" + "\n".join(rows)
+
+
+code_references = Tool(
+    _code_references,
+    name="code_references",
+    description=(
+        "Find all usages of a symbol: callers, importers, subclasses, "
+        "decorators. Answers 'where is X used?' without grepping."
+    ),
+)
+
+
+# ---------------------------------------------------------------------------
+# P5: code_map — context-budget repo map ranked by importance
+# ---------------------------------------------------------------------------
+
+
+async def _code_map(
+    budget: Annotated[
+        int,
+        Field(description="How many top symbols to include (max 50, default 25)."),
+    ] = 25,
+) -> str:
+    """Produce a ranked map of the most-referenced symbols in the codebase.
+
+    Symbols are ranked by usage count (in-degree) — the more a function/class
+    is called or referenced, the higher it ranks. This is the codebase's
+    "table of contents": the key entry points and shared abstractions.
+    Use this to understand what matters most before diving into details.
+    """
+    capped = max(1, min(budget, 50))
+    async with async_session_factory() as db:
+        workspace_id = await _resolve_workspace(db)
+        if workspace_id is None:
+            return _NOT_INDEXED
+        ranked = await svc.get_ranked_symbols(
+            db, workspace_id=workspace_id, budget=capped
+        )
+    if not ranked:
+        return "No ranked symbols — the index may be empty or have no cross-references."
+    header = f"Top {len(ranked)} symbols by usage (most-referenced first):"
+    rows = [
+        f"{i}. [{node.kind}] {node.qualified_name} — {_loc(node)}  (refs: {count})"
+        + (f"\n   sig: {node.signature}" if node.signature else "")
+        for i, (node, count) in enumerate(ranked, start=1)
+    ]
+    return header + "\n" + "\n".join(rows)
+
+
+code_map = Tool(
+    _code_map,
+    name="code_map",
+    description=(
+        "Ranked map of the most-referenced symbols in the codebase — the key "
+        "entry points and shared abstractions. Like a table of contents sorted "
+        "by importance."
+    ),
+)
+
+
+# ---------------------------------------------------------------------------
+# P6: code_path — shortest path between two symbols
+# ---------------------------------------------------------------------------
+
+
+async def _code_path(
+    source: Annotated[str, Field(description="Source symbol name or qualified name.")],
+    target: Annotated[str, Field(description="Target symbol name or qualified name.")],
+    max_hops: Annotated[
+        int, Field(description="Maximum hops to search (max 8, default 6).")
+    ] = 6,
+) -> str:
+    """Find the shortest dependency path between two symbols.
+
+    Traces through calls, imports, inheritance, and references in both
+    directions to show how symbol A relates to symbol B. Use this for impact
+    analysis ("how does module X reach module Y?") or understanding data flow.
+    """
+    hops = max(1, min(max_hops, 8))
+    async with async_session_factory() as db:
+        workspace_id = await _resolve_workspace(db)
+        if workspace_id is None:
+            return _NOT_INDEXED
+        src_matches = await svc.find_nodes_by_name(
+            db, workspace_id=workspace_id, name=source, limit=3
+        )
+        if not src_matches:
+            return f"No symbol named '{source}' in the code index."
+        dst_matches = await svc.find_nodes_by_name(
+            db, workspace_id=workspace_id, name=target, limit=3
+        )
+        if not dst_matches:
+            return f"No symbol named '{target}' in the code index."
+
+        # Try all combinations (usually 1×1), return first path found.
+        for src_node in src_matches:
+            for dst_node in dst_matches:
+                path = await svc.find_shortest_path(
+                    db,
+                    workspace_id=workspace_id,
+                    src_id=src_node.id,
+                    dst_id=dst_node.id,
+                    max_hops=hops,
+                )
+                if path is not None:
+                    return _render_path(src_node, dst_node, path)
+
+    return f"No path found between '{source}' and '{target}' within {hops} hops."
+
+
+def _render_path(
+    src: CodeNode, dst: CodeNode, path: list[tuple[CodeNode, str, CodeNode]]
+) -> str:
+    if not path:
+        return f"'{src.qualified_name}' and '{dst.qualified_name}' are the same symbol."
+    head = (
+        f"Path from [{src.kind}] {src.qualified_name} → "
+        f"[{dst.kind}] {dst.qualified_name} ({len(path)} hops):"
+    )
+    rows = [
+        f"  {i}. [{f.kind}] {f.qualified_name} —{kind}→ [{t.kind}] {t.qualified_name}"
+        for i, (f, kind, t) in enumerate(path, start=1)
+    ]
+    return head + "\n" + "\n".join(rows)
+
+
+code_path = Tool(
+    _code_path,
+    name="code_path",
+    description=(
+        "Find the shortest dependency path between two symbols — trace how "
+        "module A reaches module B through calls, imports, and inheritance."
+    ),
+)

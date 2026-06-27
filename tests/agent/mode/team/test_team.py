@@ -586,6 +586,8 @@ class TestAgentTeamToolInjection:
         assert names == {
             "team_message",
             "team_handoff",
+            "team_delegate",
+            "team_reject",
             "todo_manage",
             "team_manage",
             "team_state",

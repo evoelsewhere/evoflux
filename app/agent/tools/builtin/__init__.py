@@ -17,7 +17,7 @@ from .schedule import schedule_task
 from .shell import background_process, shell_tool
 from .skill import discover_skills, load_skill
 from .todo import todo_manage
-from .web import web_fetch, web_search
+from .web import image_search, web_fetch, web_search
 from .wiki_search import wiki_search
 
 __all__ = [
@@ -39,6 +39,7 @@ __all__ = [
     "remove_path",
     "schedule_task",
     "todo_manage",
+    "image_search",
     "web_fetch",
     "web_search",
     "wiki_search",

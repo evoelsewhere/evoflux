@@ -282,13 +282,17 @@ def _default_tool_registry() -> dict[str, Tool]:
         todo_manage,
         web_fetch,
         web_search,
+        image_search,
         write_file,
     )
     from app.agent.tools.builtin.note import note_tool
     from app.agent.tools.builtin.wiki_search import wiki_search
     from app.agent.tools.builtin.code_graph import (
+        code_map,
         code_neighbors,
         code_overview,
+        code_path,
+        code_references,
         code_search,
         code_symbol,
     )
@@ -296,6 +300,7 @@ def _default_tool_registry() -> dict[str, Tool]:
     registry: dict[str, Tool] = {
         "web_search": web_search,
         "web_fetch": web_fetch,
+        "image_search": image_search,
         "browser_use": browser_use,
         "date": get_date,
         "read": read_file,
@@ -319,6 +324,9 @@ def _default_tool_registry() -> dict[str, Tool]:
         "code_symbol": code_symbol,
         "code_neighbors": code_neighbors,
         "code_overview": code_overview,
+        "code_references": code_references,
+        "code_map": code_map,
+        "code_path": code_path,
     }
     # Merge MCP tools from healthy servers. Names follow ``mcp_<server>_<tool>``
     # so they cannot collide with the builtins above.
@@ -542,6 +550,13 @@ def _build_agent(
         from app.agent.hooks.skill_preload import SkillPreloadHook
 
         agent.hooks.append(SkillPreloadHook(preloaded_skills))
+
+    # Attach code overview hook — auto-injects a compact workspace map on first
+    # turn so the agent starts oriented without wasting a round-trip.
+    if "code_overview" in {t.name for t in tools}:
+        from app.agent.hooks.code_overview_injection import CodeOverviewHook
+
+        agent.hooks.append(CodeOverviewHook())
 
     # Stamp config dependencies for end-of-turn drift detection.
     if source_path is not None:
