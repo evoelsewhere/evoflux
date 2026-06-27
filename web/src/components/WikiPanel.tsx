@@ -312,7 +312,7 @@ function WikiSection({
       <button
         type="button"
         onClick={() => setIsExpanded((value) => !value)}
-        className="group flex h-7 w-full items-center gap-1.5 rounded px-1.5 text-left text-xs text-(--color-text-2) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+         className="group flex h-8 w-full items-center gap-1.5 rounded px-1.5 text-left text-xs text-(--color-text-2) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
         aria-expanded={isExpanded}
         title={section.hint}
       >
@@ -324,7 +324,7 @@ function WikiSection({
         <Folder size={13} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
         <span className="min-w-0 flex-1 truncate font-medium">{section.label}</span>
         {childCount > 0 && (
-          <span className="text-[10px] text-(--color-text-subtle)">{childCount}</span>
+          <span className="text-xs text-(--color-text-subtle)">{childCount}</span>
         )}
       </button>
       {isExpanded && (
@@ -412,7 +412,7 @@ function WikiFileRow({
       onPointerCancel={clearLongPress}
       onPointerLeave={clearLongPress}
       className={cn(
-        'group flex h-7 w-full items-center gap-1.5 rounded px-1.5 text-left text-xs transition-colors',
+        'group flex h-8 w-full items-center gap-1.5 rounded px-1.5 text-left text-xs transition-colors',
         isActive
           ? 'bg-(--bg-key) text-(--color-accent)'
           : 'text-(--color-text-2) hover:bg-(--bg-key) hover:text-(--color-text)',
@@ -540,7 +540,7 @@ function WikiEditor({
         <div className="min-w-0 flex-1">
           <div className="truncate font-mono text-xs text-(--color-text)">{path}</div>
           {file.description && (
-            <div className="truncate text-[11px] text-(--color-text-subtle)">
+            <div className="truncate text-xs text-(--color-text-subtle)">
               {file.description}
             </div>
           )}
@@ -607,7 +607,7 @@ function WikiEditor({
         }
       />
 
-      <div className="flex items-center justify-between border-t border-(--color-border) px-4 py-1.5 text-[11px] text-(--color-text-subtle)">
+      <div className="flex items-center justify-between border-t border-(--color-border) px-4 py-1.5 text-xs text-(--color-text-subtle)">
         <span>{displayChars} chars</span>
         {isReadOnly ? (
           <span className="italic">read-only</span>

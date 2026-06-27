@@ -346,7 +346,7 @@ function StatusCard({
               {server.tool_names.map((tool) => (
                 <span
                   key={tool}
-                  className="rounded-md bg-(--bg-key) px-1.5 py-0.5 font-mono text-[11px] text-(--color-text-muted)"
+                  className="rounded-md bg-(--bg-key) px-1.5 py-0.5 font-mono text-xs text-(--color-text-muted)"
                 >
                   {tool}
                 </span>
@@ -362,7 +362,7 @@ function StatusCard({
 function Stat({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="text-[11px] text-(--color-text-muted)">{label}</span>
+      <span className="text-xs text-(--color-text-muted)">{label}</span>
       <span className="font-medium text-(--color-text)">{children}</span>
     </div>
   )
@@ -402,7 +402,7 @@ function RestartCard({
           </Button>
         </div>
         {!enabled && (
-          <p className="mt-2 text-[11px] text-(--color-text-muted)">
+          <p className="mt-2 text-xs text-(--color-text-muted)">
             Server is disabled — enable and save first to restart.
           </p>
         )}

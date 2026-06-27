@@ -420,7 +420,7 @@ export function Sidebar({
                       >
                         <Search size={13} aria-hidden="true" />
                         <span className="flex-1">Search…</span>
-                        <kbd className="font-mono text-[10px] text-(--color-text-subtle)">^P</kbd>
+                        <kbd className="font-mono text-xs text-(--color-text-subtle)">^P</kbd>
                       </button>
                     </div>
                   )}
@@ -496,7 +496,7 @@ export function Sidebar({
                       className={`flex min-h-0 flex-1 flex-col overflow-hidden ${card}`}
                     >
                       <div className="flex items-center justify-between px-3 pb-1 pt-2">
-                        <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-(--color-text-muted)">
+                        <span className="font-mono text-xs font-semibold uppercase tracking-[0.14em] text-(--color-text-muted)">
                           Recent
                         </span>
                         <button
@@ -635,7 +635,7 @@ export function Sidebar({
                   >
                     <Search size={13} aria-hidden="true" />
                     <span className="flex-1">Search…</span>
-                    <kbd className="font-mono text-[10px] text-(--color-text-subtle)">^P</kbd>
+                    <kbd className="font-mono text-xs text-(--color-text-subtle)">^P</kbd>
                   </button>
                 </div>
               )}
@@ -697,7 +697,7 @@ export function Sidebar({
                   className="flex min-h-0 flex-1 flex-col overflow-hidden"
                 >
                   <div className="flex items-center justify-between px-3 pb-1 pt-2">
-                    <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-(--color-text-muted)">
+                    <span className="font-mono text-xs font-semibold uppercase tracking-[0.14em] text-(--color-text-muted)">
                       Recent
                     </span>
                     <button
@@ -723,7 +723,7 @@ export function Sidebar({
                         style={{ height: pullDistance }}
                         aria-hidden
                       >
-                        <div className="mt-2 inline-flex h-8 items-center gap-2 rounded-full border border-(--color-border) bg-(--bg-card) px-3 text-[11px] text-(--color-text-muted) shadow-sm">
+                        <div className="mt-2 inline-flex h-8 items-center gap-2 rounded-full border border-(--color-border) bg-(--bg-card) px-3 text-xs text-(--color-text-muted) shadow-sm">
                           <RefreshCw size={12} className={pullDistance >= 54 || sessions.isFetching ? 'animate-spin' : ''} />
                           {pullDistance >= 54 ? 'Release to refresh' : 'Pull to refresh'}
                         </div>
@@ -1025,7 +1025,7 @@ function SessionRow({
               </motion.p>
             </AnimatePresence>
             {isScheduled && (
-              <span className="shrink-0 rounded px-1 py-px text-[10px] leading-tight bg-(--bg-key) text-(--color-text-subtle)">
+              <span className="shrink-0 rounded px-1 py-px text-xs leading-tight bg-(--bg-key) text-(--color-text-subtle)">
                 sched
               </span>
             )}
@@ -1088,7 +1088,7 @@ function SessionRow({
               e.stopPropagation();
               onCancelDelete();
             }}
-            className="rounded border border-(--color-border) bg-(--bg-card) px-2 py-1 text-[10px] text-(--color-text) hover:bg-(--bg-key)"
+            className="rounded border border-(--color-border) bg-(--bg-card) px-2 py-1 text-xs text-(--color-text) hover:bg-(--bg-key)"
           >
             Cancel
           </button>
@@ -1098,7 +1098,7 @@ function SessionRow({
               e.stopPropagation();
               onConfirmDelete();
             }}
-            className="rounded bg-(--color-error) px-2 py-1 text-[10px] text-(--color-text-on-accent) hover:bg-(--color-error)/90"
+            className="rounded bg-(--color-error) px-2 py-1 text-xs text-(--color-text-on-accent) hover:bg-(--color-error)/90"
           >
             Delete
           </button>

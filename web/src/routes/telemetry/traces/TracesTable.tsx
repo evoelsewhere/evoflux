@@ -158,7 +158,7 @@ function TraceRow({
         <Td align="right" muted>{formatUsd(trace.estimated_cost_usd)}</Td>
         <Td align="right">
           {trace.error ? (
-            <span className="rounded bg-(--color-error-subtle) px-1.5 py-0.5 text-[10px] font-medium text-(--color-error)">
+            <span className="rounded bg-(--color-error-subtle) px-1.5 py-0.5 text-xs font-medium text-(--color-error)">
               error
             </span>
           ) : (

@@ -63,7 +63,7 @@ function SingleFileDiff({ path, kind, moveTo, lines, oldStart = 1, newStart = 1,
             <span className="truncate text-(--color-accent)">{moveTo}</span>
           </>
         )}
-        <span className="ml-auto text-[10px] font-normal text-(--color-text-muted) uppercase">
+        <span className="ml-auto text-xs font-normal text-(--color-text-muted) uppercase">
           {kind}
         </span>
         <ChevronRight
@@ -103,7 +103,7 @@ function SingleFileDiff({ path, kind, moveTo, lines, oldStart = 1, newStart = 1,
               return (
                 <div key={idx} className={`flex items-stretch ${lineBg} ${lineText}`}>
                   {/* Line Numbers */}
-                  <div className="sticky left-0 z-[1] flex shrink-0 select-none border-r border-(--color-border)/40 bg-(--bg-card) text-right text-[10px] text-(--color-text-subtle)">
+                  <div className="sticky left-0 z-[1] flex shrink-0 select-none border-r border-(--color-border)/40 bg-(--bg-card) text-right text-xs text-(--color-text-subtle)">
                     <span className="w-9 py-0.5 pr-1.5">{line.num}</span>
                   </div>
                   {/* Code Line */}

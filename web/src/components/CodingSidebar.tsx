@@ -256,7 +256,7 @@ function WorkspaceSessionList({
                     e.stopPropagation();
                     onCancelDelete();
                   }}
-                  className="rounded border border-(--color-border) bg-(--bg-card) px-2 py-1 text-[10px] text-(--color-text) hover:bg-(--bg-key)"
+                  className="rounded border border-(--color-border) bg-(--bg-card) px-2 py-1 text-xs text-(--color-text) hover:bg-(--bg-key)"
                 >
                   Cancel
                 </button>
@@ -266,7 +266,7 @@ function WorkspaceSessionList({
                     e.stopPropagation();
                     onConfirmDelete();
                   }}
-                  className="rounded bg-(--color-error) px-2 py-1 text-[10px] text-(--color-text-on-accent) hover:bg-(--color-error)/90"
+                  className="rounded bg-(--color-error) px-2 py-1 text-xs text-(--color-text-on-accent) hover:bg-(--color-error)/90"
                 >
                   Delete
                 </button>
@@ -956,7 +956,7 @@ export function CodingSidebar({
             >
               <Search size={13} aria-hidden="true" />
               <span className="flex-1">Search…</span>
-              <kbd className="font-mono text-[10px] text-(--color-text-subtle)">
+              <kbd className="font-mono text-xs text-(--color-text-subtle)">
                 ^P
               </kbd>
             </button>
@@ -1068,7 +1068,7 @@ export function CodingSidebar({
                 {(sourceIsExpanded || sourceHasRunningSession) && (
                   <div className="space-y-0.5 pb-1">
                     <div
-                      className="group flex h-7 items-center pr-2"
+                       className="group flex h-8 items-center pr-2"
                       style={{ paddingLeft: 20 }}
                     >
                       <LongPressButton
@@ -1147,7 +1147,7 @@ export function CodingSidebar({
 
                     {nestedWorktrees.length > 0 && (
                       <div className="px-2 py-1" style={{ paddingLeft: 28 }}>
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-(--color-text-subtle)">
+                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-(--color-text-subtle)">
                           Worktrees
                         </p>
                       </div>
@@ -1172,7 +1172,7 @@ export function CodingSidebar({
                       return (
                         <div key={directory}>
                           <div
-                            className="group flex min-h-7 items-center pr-2"
+                             className="group flex min-h-8 items-center pr-2"
                             style={{ paddingLeft: 20 }}
                           >
                             <LongPressButton
@@ -1213,7 +1213,7 @@ export function CodingSidebar({
                                 {item.name}
                               </span>
                               {!item.managed && (
-                                <span className="shrink-0 rounded-full bg-(--bg-key) px-1.5 py-0.5 text-[10px] text-(--color-text-subtle)">
+                                <span className="shrink-0 rounded-full bg-(--bg-key) px-1.5 py-0.5 text-xs text-(--color-text-subtle)">
                                   external
                                 </span>
                               )}
@@ -1301,7 +1301,7 @@ export function CodingSidebar({
                       onClick={() => {
                         void openWorktreeDialog(path);
                       }}
-                      className="flex h-7 w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs font-mono text-(--color-accent) hover:bg-(--bg-key)"
+                       className="flex h-8 w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs font-mono text-(--color-accent) hover:bg-(--bg-key)"
                       style={{ paddingLeft: 32 }}
                     >
                       <Plus size={12} aria-hidden="true" />
@@ -1642,12 +1642,12 @@ export function CodingSidebar({
               </DialogHeader>
               <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3 sm:px-5">
                 <div className="rounded-md border border-(--color-border) bg-(--bg-page) px-3 py-2">
-                  <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-(--color-text-subtle)">
+                  <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-(--color-text-subtle)">
                     <Folder size={12} aria-hidden="true" />
                     Source workspace
                   </div>
                   <p
-                    className="truncate font-mono text-[11px] text-(--color-text-muted)"
+                    className="truncate font-mono text-xs text-(--color-text-muted)"
                     title={worktreeTarget ?? undefined}
                   >
                     {worktreeTarget}
@@ -1664,7 +1664,7 @@ export function CodingSidebar({
                       maxLength={80}
                       autoFocus
                     />
-                    <p className="text-[11px] font-normal text-(--color-text-subtle)">
+                    <p className="text-xs font-normal text-(--color-text-subtle)">
                       Blank uses “session”.
                     </p>
                   </label>
@@ -1677,13 +1677,13 @@ export function CodingSidebar({
                       className="h-9 w-full min-w-0 rounded-md border border-(--color-border) bg-(--bg-page) px-3 py-1 font-mono text-sm text-(--color-text) outline-none transition-colors placeholder:text-(--color-text-subtle) focus-visible:border-(--focus-ring) focus-visible:ring-2 focus-visible:ring-(--focus-ring)/25"
                       maxLength={255}
                     />
-                    <p className="text-[11px] font-normal text-(--color-text-subtle)">
+                    <p className="text-xs font-normal text-(--color-text-subtle)">
                       Blank defaults to EvoFlux/name.
                     </p>
                   </label>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="hidden gap-2 rounded-md border border-(--color-border) bg-(--bg-key)/30 px-3 py-2 text-[11px] leading-4 text-(--color-text-muted) sm:flex">
+                  <div className="hidden gap-2 rounded-md border border-(--color-border) bg-(--bg-key)/30 px-3 py-2 text-xs leading-4 text-(--color-text-muted) sm:flex">
                     <CircleHelp
                       size={13}
                       className="mt-0.5 shrink-0 text-(--color-text-subtle)"
@@ -1699,7 +1699,7 @@ export function CodingSidebar({
                       <p className="font-medium text-(--color-text-2)">
                         Existing worktrees
                       </p>
-                      <span className="rounded-full bg-(--bg-key) px-2 py-0.5 text-[10px] text-(--color-text-subtle)">
+                      <span className="rounded-full bg-(--bg-key) px-2 py-0.5 text-xs text-(--color-text-subtle)">
                         {worktreeOptions.length}
                       </span>
                     </div>
@@ -1725,7 +1725,7 @@ export function CodingSidebar({
                                 {item.name}
                               </p>
                               {item.branch && (
-                                <p className="truncate text-[11px] text-(--color-text-subtle)">
+                                <p className="truncate text-xs text-(--color-text-subtle)">
                                   {item.branch}
                                 </p>
                               )}
@@ -1752,7 +1752,7 @@ export function CodingSidebar({
                                 )}
                               </button>
                             ) : (
-                              <span className="rounded-full bg-(--bg-key) px-2 py-0.5 text-[10px] text-(--color-text-subtle)">
+                              <span className="rounded-full bg-(--bg-key) px-2 py-0.5 text-xs text-(--color-text-subtle)">
                                 external
                               </span>
                             )}

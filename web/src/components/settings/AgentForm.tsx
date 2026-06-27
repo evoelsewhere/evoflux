@@ -852,7 +852,7 @@ export function ModelCombobox({
                     >
                       <span className="min-w-0 truncate">{o.id}</span>
                       {o.vision && (
-                        <span className="shrink-0 text-[11px] text-(--color-text-muted)">
+                        <span className="shrink-0 text-xs text-(--color-text-muted)">
                           vision
                         </span>
                       )}
@@ -873,14 +873,14 @@ export function ModelCombobox({
 function CapabilityChips({ label, values }: { label: string; values: string[] }) {
   return (
     <div className="rounded-md border border-(--color-border) bg-(--bg-surface) px-3 py-2">
-      <p className="mb-1.5 text-[11px] font-medium text-(--color-text-muted)">
+      <p className="mb-1.5 text-xs font-medium text-(--color-text-muted)">
         {label}
       </p>
       <div className="flex flex-wrap gap-1.5">
         {values.map((value) => (
           <span
             key={value}
-            className="rounded bg-(--bg-key) px-1.5 py-0.5 font-mono text-[11px] text-(--color-text) ring-1 ring-(--color-border)"
+            className="rounded bg-(--bg-key) px-1.5 py-0.5 font-mono text-xs text-(--color-text) ring-1 ring-(--color-border)"
           >
             {value}
           </span>
@@ -920,9 +920,9 @@ function Field({
       </span>
       {children}
       {error ? (
-        <p className="text-[11px] text-(--color-error)">{error}</p>
+        <p className="text-xs text-(--color-error)">{error}</p>
       ) : hint ? (
-        <p className="text-[11px] text-(--color-text-muted)">{hint}</p>
+        <p className="text-xs text-(--color-text-muted)">{hint}</p>
       ) : null}
     </div>
   )

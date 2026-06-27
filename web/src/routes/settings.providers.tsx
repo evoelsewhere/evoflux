@@ -64,6 +64,8 @@ const DAEMON_BASE_URL: Record<string, { var: string; placeholder: string }> = {
   router9: { var: 'ROUTER9_BASE_URL', placeholder: 'http://localhost:20128/v1' },
   cliproxy: { var: 'CLIPROXY_BASE_URL', placeholder: 'http://localhost:8317/v1' },
   ollama: { var: 'OLLAMA_BASE_URL', placeholder: 'http://localhost:11434/v1' },
+  xiaomi: { var: 'XIAOMI_BASE_URL', placeholder: 'https://api.xiaomi.com/v1' },
+  kimi: { var: 'MOONSHOT_BASE_URL', placeholder: 'https://api.kimi.ai/v1' },
 }
 
 function eventLabel(event: OAuthLoginEvent): string {
@@ -114,7 +116,7 @@ function UsageBar({ label, window }: { label: string; window: NonNullable<Provid
   const reset = formatResetTime(window.resets_at)
   return (
     <div className="space-y-1.5">
-      <div className="flex items-center justify-between gap-2 text-[11px] text-(--color-text-muted)">
+      <div className="flex items-center justify-between gap-2 text-xs text-(--color-text-muted)">
         <span>{label}</span>
         <span>{Math.round(percent)}% used{reset ? `, resets ${reset}` : ''}</span>
       </div>
@@ -140,7 +142,7 @@ function UsageLimitRows({ limit }: { limit: ProviderUsageLimit }) {
         <UsageBar label={`${base} · ${formatWindowDuration(limit.secondary.window_minutes)}`} window={limit.secondary} />
       )}
       {credits && !limit.primary && !limit.secondary && (
-        <p className="text-[11px] text-(--color-text-muted)">
+        <p className="text-xs text-(--color-text-muted)">
           {credits.unlimited ? 'Unlimited usage available' : credits.has_credits ? 'Usage credits available' : 'No usage credits available'}
         </p>
       )}
@@ -156,7 +158,7 @@ function UsagePanel({ limits }: { limits: ProviderUsageLimit[] }) {
     <div className="space-y-2 rounded-md border border-(--color-border) bg-(--bg-subtle) p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs font-semibold text-(--color-text)">Active usage</p>
-        <p className="text-[11px] text-(--color-text-muted)">
+        <p className="text-xs text-(--color-text-muted)">
           {primary?.plan_type ? `Plan: ${primary.plan_type}` : 'Live usage'}
           {credits?.unlimited ? ' · unlimited' : credits?.balance ? ` · credits ${credits.balance}` : ''}
         </p>
@@ -167,7 +169,7 @@ function UsagePanel({ limits }: { limits: ProviderUsageLimit[] }) {
         ))}
       </div>
       {primary?.rate_limit_reached_type && (
-        <p className="text-[11px] font-medium text-(--color-error)">
+        <p className="text-xs font-medium text-(--color-error)">
           Limit reached: {primary.rate_limit_reached_type.replaceAll('_', ' ')}
         </p>
       )}
@@ -344,16 +346,16 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
             {provider.kind === 'oauth' ? <ShieldCheck size={13} aria-hidden="true" /> : <KeyRound size={13} aria-hidden="true" />}
           </div>
           <p className="text-sm font-semibold text-(--color-text)">{provider.label}</p>
-          <span className="rounded-md bg-(--bg-key) px-2 py-0.5 text-[11px] font-medium text-(--color-text-muted)">
+          <span className="rounded-md bg-(--bg-key) px-2 py-0.5 text-xs font-medium text-(--color-text-muted)">
             {providerKindLabel(provider.kind)}
           </span>
           {isConfiguredButUnreachable ? (
-            <span className="inline-flex items-center gap-1 rounded-md bg-(--color-error-subtle) px-2 py-0.5 text-[11px] font-medium text-(--color-error)">
+            <span className="inline-flex items-center gap-1 rounded-md bg-(--color-error-subtle) px-2 py-0.5 text-xs font-medium text-(--color-error)">
               <AlertCircle size={12} aria-hidden="true" />
               Failed
             </span>
           ) : isConnected ? (
-            <span className="inline-flex items-center gap-1 rounded-md bg-(--color-success-subtle) px-2 py-0.5 text-[11px] font-medium text-(--color-success)">
+            <span className="inline-flex items-center gap-1 rounded-md bg-(--color-success-subtle) px-2 py-0.5 text-xs font-medium text-(--color-success)">
               <CheckCircle2 size={12} aria-hidden="true" />
               Connected
             </span>
@@ -407,7 +409,7 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
             </div>
             {daemon && (
               <label className="block">
-                <span className="text-[11px] font-medium text-(--color-text-muted)">Base URL (optional)</span>
+                <span className="text-xs font-medium text-(--color-text-muted)">Base URL (optional)</span>
                 <Input
                   type="url"
                   value={baseUrl}
@@ -519,7 +521,7 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
             <div className="grid gap-2 sm:grid-cols-2">
               {provider.credentials.map((credential) => (
                 <label key={credential.name} className="block">
-                  <span className="text-[11px] font-medium text-(--color-text-muted)">{credential.label}</span>
+                  <span className="text-xs font-medium text-(--color-text-muted)">{credential.label}</span>
                   <Input
                     type={credential.secret ? 'password' : 'text'}
                     value={cloudValues[credential.name] ?? provider.saved_credentials[credential.name] ?? ''}
@@ -683,7 +685,7 @@ function ModelsPanel({
         <span>
           {indexed.length} models available · {allVisible ? 'all visible' : `${visibleCount} visible`} {search && <span className="text-(--color-text-muted)">· {visible.length} shown</span>}
         </span>
-        <span className="text-[11px]">{expanded ? 'Hide' : 'Show'}</span>
+        <span className="text-xs">{expanded ? 'Hide' : 'Show'}</span>
       </button>
       {expanded && (
         <div className="border-t border-(--color-border) p-2">
@@ -695,7 +697,7 @@ function ModelsPanel({
             className="h-8 text-xs"
             aria-label="Filter models"
           />
-          <p className="mt-2 text-[11px] text-(--color-text-muted)">
+          <p className="mt-2 text-xs text-(--color-text-muted)">
             Use the visibility button next to each model to choose which models normal EvoFlux pickers show. If none are selected, all models are visible.
           </p>
           <ul className="mt-2 max-h-64 overflow-y-auto">
@@ -778,14 +780,14 @@ function ModelRow({
       onPointerCancel={clearLongPress}
       onPointerLeave={clearLongPress}
     >
-      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-(--color-text)">
+      <span className="min-w-0 flex-1 truncate font-mono text-xs text-(--color-text)">
         {qualifiedId}
       </span>
       <button
         type="button"
         onClick={onToggleVisible}
         disabled={savingVisibleModels}
-        className={`flex h-8 min-w-16 items-center justify-center gap-1 rounded px-2 text-[11px] md:h-6 ${selected ? 'bg-(--color-success-subtle) text-(--color-success)' : 'text-(--color-text-muted) hover:bg-(--bg-card) hover:text-(--color-text)'}`}
+        className={`flex h-8 min-w-16 items-center justify-center gap-1 rounded px-2 text-xs md:h-6 ${selected ? 'bg-(--color-success-subtle) text-(--color-success)' : 'text-(--color-text-muted) hover:bg-(--bg-card) hover:text-(--color-text)'}`}
         aria-label={`${selected ? 'Remove' : 'Show'} ${qualifiedId} in model pickers`}
         title={selected ? 'Remove from visible models' : 'Show in pickers'}
       >

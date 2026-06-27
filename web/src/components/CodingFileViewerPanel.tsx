@@ -313,13 +313,13 @@ function TextPreview({
       {/* Dirty indicator bar */}
       {editing && isDirty && (
         <div className="flex shrink-0 items-center justify-between gap-2 border-b border-(--color-border) bg-(--bg-key) px-3 py-1.5">
-          <span className="text-[11px] text-(--color-text-muted)">Unsaved changes</span>
+          <span className="text-xs text-(--color-text-muted)">Unsaved changes</span>
           <div className="flex items-center gap-1.5">
             <button
               type="button"
               onClick={handleDiscard}
               disabled={saving}
-              className="flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-(--color-text-muted) transition-colors hover:bg-(--bg-page) hover:text-(--color-text)"
+              className="flex items-center gap-1 rounded px-2 py-0.5 text-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-page) hover:text-(--color-text)"
             >
               <Undo2 size={11} /> Discard
             </button>
@@ -327,7 +327,7 @@ function TextPreview({
               type="button"
               onClick={() => void handleSave()}
               disabled={saving}
-              className="flex items-center gap-1 rounded-md bg-(--color-accent) px-2.5 py-0.5 text-[11px] font-medium text-(--color-text-on-accent) hover:opacity-90 disabled:opacity-50"
+              className="flex items-center gap-1 rounded-md bg-(--color-accent) px-2.5 py-0.5 text-xs font-medium text-(--color-text-on-accent) hover:opacity-90 disabled:opacity-50"
             >
               {saving ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />} Save
             </button>
@@ -467,7 +467,7 @@ function diffLineClass(line: string) {
 
 function DiffPreview({ diff }: { diff: string }) {
   return (
-    <pre className="h-full overflow-auto bg-(--bg-page) p-3 font-mono text-[11px] leading-relaxed">
+    <pre className="h-full overflow-auto bg-(--bg-page) p-3 font-mono text-xs leading-relaxed">
       {diff.split('\n').map((line, index) => (
         <span key={index} className={cn('block whitespace-pre-wrap break-all px-1', diffLineClass(line))}>{line || ' '}</span>
       ))}
@@ -547,21 +547,21 @@ export function CodingFileViewerPanel({
         )}
         <header className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-3 py-3">
           <div className="min-w-0 flex-1">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--color-text-subtle)">File</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-(--color-text-subtle)">File</p>
             <p className="mt-1 truncate font-mono text-xs text-(--color-text)" title={file.path}>{file.path}</p>
-            <p className="mt-0.5 text-[10px] text-(--color-text-subtle)">{formatBytes(file.size)} · {file.mime}</p>
+            <p className="mt-0.5 text-xs text-(--color-text-subtle)">{formatBytes(file.size)} · {file.mime}</p>
           </div>
           <div className="flex shrink-0 items-center gap-1">
             <div className="mr-1 flex rounded-md border border-(--color-border) p-0.5">
-              <button type="button" onClick={() => { setViewMode('file'); setEditing(false) }} className={cn('h-8 rounded px-2 text-[11px] md:h-auto md:py-1', viewMode === 'file' && !editing ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}>
+              <button type="button" onClick={() => { setViewMode('file'); setEditing(false) }} className={cn('h-8 rounded px-2 text-xs md:h-auto md:py-1', viewMode === 'file' && !editing ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}>
                 File
               </button>
               {kind === 'text' && (
-                <button type="button" onClick={() => { setViewMode('file'); setEditing(true) }} className={cn('flex h-8 items-center gap-1 rounded px-2 text-[11px] md:h-auto md:py-1', editing ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}>
+                <button type="button" onClick={() => { setViewMode('file'); setEditing(true) }} className={cn('flex h-8 items-center gap-1 rounded px-2 text-xs md:h-auto md:py-1', editing ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}>
                   <Pencil size={11} /> Edit
                 </button>
               )}
-              <button type="button" onClick={() => { setViewMode('diff'); setEditing(false) }} className={cn('flex h-8 items-center gap-1 rounded px-2 text-[11px] md:h-auto md:py-1', viewMode === 'diff' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}>
+              <button type="button" onClick={() => { setViewMode('diff'); setEditing(false) }} className={cn('flex h-8 items-center gap-1 rounded px-2 text-xs md:h-auto md:py-1', viewMode === 'diff' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}>
                 <GitCompare size={11} /> Diff
               </button>
             </div>

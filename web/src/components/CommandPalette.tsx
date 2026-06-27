@@ -207,11 +207,11 @@ export function CommandPalette({ commands, onClose }: CommandPaletteProps) {
 
           {/* Footer hint */}
           <div className="flex items-center gap-2 border-t border-(--color-border) px-4 py-2">
-            <kbd className="rounded border border-(--color-border) bg-(--bg-page) px-1 py-0.5 font-mono text-[11px] text-(--color-text-muted)">↑↓</kbd>
+            <kbd className="rounded border border-(--color-border) bg-(--bg-page) px-1 py-0.5 font-mono text-xs text-(--color-text-muted)">↑↓</kbd>
             <span className="text-xs text-(--color-text-muted)">navigate</span>
-            <kbd className="rounded border border-(--color-border) bg-(--bg-page) px-1 py-0.5 font-mono text-[11px] text-(--color-text-muted)">↵</kbd>
+            <kbd className="rounded border border-(--color-border) bg-(--bg-page) px-1 py-0.5 font-mono text-xs text-(--color-text-muted)">↵</kbd>
             <span className="text-xs text-(--color-text-muted)">run</span>
-            <kbd className="rounded border border-(--color-border) bg-(--bg-page) px-1 py-0.5 font-mono text-[11px] text-(--color-text-muted)">Esc</kbd>
+            <kbd className="rounded border border-(--color-border) bg-(--bg-page) px-1 py-0.5 font-mono text-xs text-(--color-text-muted)">Esc</kbd>
             <span className="text-xs text-(--color-text-muted)">close</span>
           </div>
         </motion.div>

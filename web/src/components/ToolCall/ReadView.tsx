@@ -73,7 +73,7 @@ export function ReadView({ args, result, onCollapse }: ReadViewProps) {
           <FileText size={14} className="shrink-0 text-(--color-text-muted)" aria-hidden />
           <span className="truncate">{path}</span>
         </button>
-        <span className="shrink-0 px-1 text-[10px] font-normal text-(--color-text-muted) uppercase">
+        <span className="shrink-0 px-1 text-xs font-normal text-(--color-text-muted) uppercase">
           {label}
         </span>
         <button
@@ -101,7 +101,7 @@ export function ReadView({ args, result, onCollapse }: ReadViewProps) {
           <div className="min-w-max">
             {lines.map((line, idx) => (
               <div key={idx} className="flex items-stretch bg-(--bg-card) text-(--color-text) hover:bg-(--bg-key)/30">
-                <div className="sticky left-0 z-[1] flex shrink-0 select-none border-r border-(--color-border)/40 bg-(--bg-card) text-right text-[10px] text-(--color-text-subtle)">
+                <div className="sticky left-0 z-[1] flex shrink-0 select-none border-r border-(--color-border)/40 bg-(--bg-card) text-right text-xs text-(--color-text-subtle)">
                   <span className="w-9 py-0.5 pr-1.5">{startLine + idx}</span>
                 </div>
                 <pre className="flex-1 whitespace-pre-wrap px-2 py-0.5">{line || ' '}</pre>

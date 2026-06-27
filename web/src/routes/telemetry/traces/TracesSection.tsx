@@ -38,7 +38,7 @@ export function TracesSection({
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <SectionHeader>Recent traces</SectionHeader>
         {total > 0 && (
-          <span className="text-[11px] text-(--color-text-muted)">
+          <span className="text-xs text-(--color-text-muted)">
             Showing {Math.min(traces.length, total)} of {total}
           </span>
         )}
@@ -61,7 +61,7 @@ export function TracesSection({
         >
           <TracesTable traces={traces} onSelect={onSelectTrace} embedded />
           {hasNext && (
-            <div className="border-t border-(--color-border) px-3 py-2 text-center text-[11px] text-(--color-text-muted)">
+            <div className="border-t border-(--color-border) px-3 py-2 text-center text-xs text-(--color-text-muted)">
               {query.isFetching ? 'Loading more traces…' : `Scroll to load ${limit} more`}
             </div>
           )}

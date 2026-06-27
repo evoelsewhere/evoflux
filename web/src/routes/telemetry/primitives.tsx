@@ -24,7 +24,7 @@ export function Stat({
 }) {
   return (
     <div className="rounded-lg border border-(--color-border) bg-(--bg-card) p-3">
-      <p className="text-[10px] uppercase tracking-wide text-(--color-text-muted)">
+      <p className="text-xs uppercase tracking-wide text-(--color-text-muted)">
         {label}
       </p>
       <p

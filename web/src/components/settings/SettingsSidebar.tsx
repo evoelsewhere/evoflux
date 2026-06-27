@@ -55,7 +55,7 @@ interface SidebarItem {
 
 function GroupLabel({ children }: { children: string }) {
   return (
-    <p className="px-3 pt-4 pb-1.5 font-mono text-[10px] font-semibold tracking-wider text-(--color-text-muted) uppercase">
+    <p className="px-3 pt-4 pb-1.5 font-mono text-xs font-semibold tracking-wider text-(--color-text-muted) uppercase">
       {children}
     </p>
   )
@@ -88,7 +88,7 @@ function SidebarRow({ item, active, onNavigate }: { item: SidebarItem; active: b
         {item.count !== undefined && item.count !== null && (
           <span
             className={cn(
-              'shrink-0 font-mono text-[10px] tabular-nums',
+              'shrink-0 font-mono text-xs tabular-nums',
               active ? 'font-semibold text-(--color-text-muted)' : 'text-(--color-text-muted)',
             )}
           >
@@ -122,7 +122,7 @@ function SidebarRow({ item, active, onNavigate }: { item: SidebarItem; active: b
       {item.count !== undefined && item.count !== null && (
         <span
           className={cn(
-            'shrink-0 font-mono text-[10px] tabular-nums',
+            'shrink-0 font-mono text-xs tabular-nums',
             active ? 'font-semibold text-(--color-text-muted)' : 'text-(--color-text-muted)',
           )}
         >

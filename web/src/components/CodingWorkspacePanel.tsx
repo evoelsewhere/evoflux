@@ -134,11 +134,11 @@ function TreeNodeView({
         <FileText size={12} className={cn('shrink-0', isChanged ? 'text-(--accent-orange-text)' : 'text-(--color-text-subtle)')} />
         <span className="min-w-0 flex-1 truncate font-mono">{node.name}</span>
         {isChanged && (
-          <span className="shrink-0 font-mono text-[10px] font-semibold text-(--accent-orange-text)">
+          <span className="shrink-0 font-mono text-xs font-semibold text-(--accent-orange-text)">
             M
           </span>
         )}
-        <span className="shrink-0 text-[10px] text-(--color-text-subtle)">{formatBytes(node.file.size)}</span>
+        <span className="shrink-0 text-xs text-(--color-text-subtle)">{formatBytes(node.file.size)}</span>
       </button>
     )
   }
@@ -242,7 +242,7 @@ export function CodingWorkspacePanel({
         )}
         <div className="flex items-center justify-between border-b border-(--color-border) px-3 py-3">
           <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--color-text-subtle)">Workspace</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-(--color-text-subtle)">Workspace</p>
             <p className="mt-1 truncate font-mono text-xs text-(--color-text)" title={workspace}>{workspaceLabel(workspace)}</p>
           </div>
           <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-md text-(--color-text-muted) hover:bg-(--bg-key) md:h-auto md:w-auto md:p-1" aria-label="Close workspace panel">
@@ -252,7 +252,7 @@ export function CodingWorkspacePanel({
         <div className="flex border-b border-(--color-border) p-1">
           <button type="button" onClick={() => setTab('changed')} className={cn('flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs', tab === 'changed' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted)')}>
             <GitCompare size={13} /> Changed
-            {changedPaths.size > 0 && <span className="rounded-full bg-(--color-warning)/15 px-1.5 py-0.5 font-mono text-[10px] text-(--accent-orange-text)">{changedPaths.size}</span>}
+            {changedPaths.size > 0 && <span className="rounded-full bg-(--color-warning)/15 px-1.5 py-0.5 font-mono text-xs text-(--accent-orange-text)">{changedPaths.size}</span>}
           </button>
           <button type="button" onClick={() => setTab('files')} className={cn('flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs', tab === 'files' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted)')}>
             <Folder size={13} /> Files
@@ -297,9 +297,9 @@ export function CodingWorkspacePanel({
                       >
                         <FileText size={12} className="shrink-0 text-(--accent-orange-text)" />
                         <span className="min-w-0 flex-1 truncate font-mono">{changedFile.path}</span>
-                        <span className="shrink-0 font-mono text-[10px] text-(--color-diff-add-text)">{changedFile.additions > 0 ? `+${changedFile.additions}` : ''}</span>
-                        <span className="shrink-0 font-mono text-[10px] text-(--color-diff-del-text)">{changedFile.deletions > 0 ? `-${changedFile.deletions}` : ''}</span>
-                        <span className="shrink-0 font-mono text-[10px] font-semibold text-(--accent-orange-text)" aria-label={CHANGED_STATUS_LABELS[changedFile.status]}>{changedFile.status}</span>
+                        <span className="shrink-0 font-mono text-xs text-(--color-diff-add-text)">{changedFile.additions > 0 ? `+${changedFile.additions}` : ''}</span>
+                        <span className="shrink-0 font-mono text-xs text-(--color-diff-del-text)">{changedFile.deletions > 0 ? `-${changedFile.deletions}` : ''}</span>
+                        <span className="shrink-0 font-mono text-xs font-semibold text-(--accent-orange-text)" aria-label={CHANGED_STATUS_LABELS[changedFile.status]}>{changedFile.status}</span>
                       </button>
                     )
                   })}

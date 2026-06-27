@@ -103,7 +103,7 @@ function Capabilities({
 
   return (
     <section className="border-t border-(--color-border) px-5 py-4">
-      <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
+      <h3 className="mb-2 text-xs font-semibold uppercase tracking-widest text-(--color-text-muted)">
         Capabilities
       </h3>
       <div className="flex flex-wrap items-center gap-2">
@@ -208,10 +208,10 @@ function ToolGroupHeader({
   if (server === null) {
     return (
       <div className="flex items-center gap-2 px-5 pt-3 pb-1.5">
-        <h4 className="text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
+        <h4 className="text-xs font-semibold uppercase tracking-widest text-(--color-text-muted)">
           Built-in
         </h4>
-        <span className="rounded-md bg-(--bg-key) px-2 py-0.5 text-[10px] text-(--color-text-muted)">
+        <span className="rounded-md bg-(--bg-key) px-2 py-0.5 text-xs text-(--color-text-muted)">
           {count}
         </span>
       </div>
@@ -220,10 +220,10 @@ function ToolGroupHeader({
   return (
     <div className="flex items-center gap-2 px-5 pt-3 pb-1.5">
       <Plug size={11} className="text-(--color-text-muted)" aria-hidden />
-      <h4 className="text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
+      <h4 className="text-xs font-semibold uppercase tracking-widest text-(--color-text-muted)">
         MCP · {server}
       </h4>
-      <span className="rounded-md bg-(--bg-key) px-2 py-0.5 text-[10px] text-(--color-text-muted)">
+      <span className="rounded-md bg-(--bg-key) px-2 py-0.5 text-xs text-(--color-text-muted)">
         {count}
       </span>
     </div>
@@ -272,10 +272,10 @@ function Tools({
   return (
     <section className="border-t border-(--color-border)">
       <div className="flex shrink-0 items-center gap-2 px-5 pt-4 pb-2">
-        <h3 className="text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
+        <h3 className="text-xs font-semibold uppercase tracking-widest text-(--color-text-muted)">
           Tools
         </h3>
-        <span className="rounded-md bg-(--bg-key) px-2 py-0.5 text-[10px] text-(--color-text-muted)">
+        <span className="rounded-md bg-(--bg-key) px-2 py-0.5 text-xs text-(--color-text-muted)">
           {tools.length}
         </span>
       </div>
@@ -309,7 +309,7 @@ function Tools({
               <ToolGroupHeader server={group.server} count={group.tools.length} />
               {status && (
                 <div className="mb-2 flex flex-wrap items-center gap-2 px-5">
-                  <span className="rounded-md bg-(--bg-key) px-2 py-0.5 text-[10px] font-medium text-(--color-text-muted)">
+                  <span className="rounded-md bg-(--bg-key) px-2 py-0.5 text-xs font-medium text-(--color-text-muted)">
                     {status.enabled ? (status.state === 'auth_required' ? 'OAuth required' : status.state) : 'disabled'}
                   </span>
                   <Button
@@ -333,7 +333,7 @@ function Tools({
                     </Button>
                   )}
                   {status.error && status.state !== 'auth_required' && (
-                    <span className="text-[11px] text-(--color-error)">{status.error}</span>
+                    <span className="text-xs text-(--color-error)">{status.error}</span>
                   )}
                 </div>
               )}
@@ -516,12 +516,12 @@ function SessionModelSettings({
             )}
           </div>
           {!modelValid && (
-            <span className="mt-1 block text-[11px] text-(--color-error)">
+            <span className="mt-1 block text-xs text-(--color-error)">
               Choose a model from the list.
             </span>
           )}
           {modelValid && !trimmedDraftModel && defaultModel && (
-            <span className="mt-1 block text-[11px] text-(--color-text-muted)">
+            <span className="mt-1 block text-xs text-(--color-text-muted)">
               Using default: {defaultModel}
             </span>
           )}
@@ -590,7 +590,7 @@ function SessionModelSettings({
           />
           <span>
             <span className="block font-medium text-(--color-text-2)">Fast mode</span>
-            <span className="mt-0.5 block text-[11px]">
+            <span className="mt-0.5 block text-xs">
               {fastModeAvailable
                 ? 'Use Codex Fast mode for messages in this session.'
                 : 'Available when the session model is codex:*.'}
@@ -762,7 +762,7 @@ export function SessionSettingsPanel({
                 />
               )}
               <section className="shrink-0 px-5 py-4">
-                <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-widest text-(--color-text-muted)">
+                <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-widest text-(--color-text-muted)">
                   Lead agent
                 </h3>
                 <p className="text-sm leading-relaxed text-(--color-text-2)">
@@ -790,7 +790,7 @@ export function SessionSettingsPanel({
 
         {/* Footer */}
         <div className="shrink-0 border-t border-(--color-border) px-5 py-2.5">
-          <p className="text-[11px] text-(--color-text-muted)">
+          <p className="text-xs text-(--color-text-muted)">
             Esc or click outside to close · Ctrl+A to toggle
           </p>
         </div>

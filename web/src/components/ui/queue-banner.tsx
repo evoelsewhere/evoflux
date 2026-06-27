@@ -45,7 +45,7 @@ export function QueueBanner({
         className="h-1.5 w-1.5 shrink-0 rounded-full bg-(--color-marker-orange)"
         aria-hidden="true"
       />
-      <span className="font-mono text-[11px] font-semibold tracking-wider text-(--color-text)">
+      <span className="font-mono text-xs font-semibold tracking-wider text-(--color-text)">
         QUEUE · {count} {labelNoun} awaiting
       </span>
       <span className="ml-auto" aria-hidden="true">

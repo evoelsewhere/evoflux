@@ -53,7 +53,7 @@ export function InboxBubble({ content, fromAgent, compact = false }: InboxBubble
   const textSize  = compact ? 'text-xs'    : 'text-sm'
   const maxWidth  = compact ? 'max-w-[88%]' : 'max-w-[78%]'
   const padding   = compact ? 'px-3 py-2'  : 'px-4 py-3'
-  const labelSize = compact ? 'text-[10px]' : 'text-xs'
+  const labelSize = compact ? 'text-xs' : 'text-xs'
   const fadeHeight = compact
     ? `${FADE_LINES * 1.4}rem`
     : `${FADE_LINES * 1.6}rem`

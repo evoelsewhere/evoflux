@@ -962,7 +962,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
               </button>
               <div className="min-w-0 text-sm font-semibold text-(--color-text)">
                 <div className="truncate">{mode === 'coding' && workspace ? workspaceLabel(workspace) : sessionTitle || 'EvoFlux'}</div>
-                {activeAgent && <div className="truncate font-mono text-[10px] font-normal text-(--color-text-muted)">{activeAgent}</div>}
+                {activeAgent && <div className="truncate font-mono text-xs font-normal text-(--color-text-muted)">{activeAgent}</div>}
               </div>
             </div>
           )}
@@ -1406,7 +1406,7 @@ function LoopStatusPill({
       <span className="min-w-0 truncate font-medium">
         {compact ? 'Loop' : label}
       </span>
-      <span className="shrink-0 font-mono text-[10px] text-(--color-text-muted)">{progress}</span>
+      <span className="shrink-0 font-mono text-xs text-(--color-text-muted)">{progress}</span>
     </div>
   )
 }
@@ -1460,7 +1460,7 @@ function MobileHeaderAction({
     >
       <Icon size={16} aria-hidden="true" />
       {badge > 0 && (
-        <span className="absolute right-0.5 top-0.5 min-w-3.5 rounded-full bg-(--color-accent) px-1 text-center font-mono text-[10px] leading-3.5 text-(--bg-page)">
+        <span className="absolute right-0.5 top-0.5 min-w-3.5 rounded-full bg-(--color-accent) px-1 text-center font-mono text-xs leading-3.5 text-(--bg-page)">
           {badge > 9 ? '9+' : badge}
         </span>
       )}

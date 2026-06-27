@@ -59,11 +59,11 @@ export function TodosList({
           headerClassName,
         )}
       >
-        <span className="font-mono text-[10px] font-medium uppercase tracking-wider text-(--color-text-muted)">
+        <span className="font-mono text-xs font-medium uppercase tracking-wider text-(--color-text-muted)">
           Tasks
         </span>
         {todos.length > 0 && (
-          <span className="font-mono text-[10px] text-(--color-text-subtle)">
+          <span className="font-mono text-xs text-(--color-text-subtle)">
             {finishedCount}/{todos.length} done
           </span>
         )}
@@ -119,7 +119,7 @@ export function TodosList({
                 )}
                 {agent && (
                   <span
-                    className="mt-0.5 shrink-0 font-mono text-[10px] uppercase tracking-wide text-(--color-text-subtle)"
+                    className="mt-0.5 shrink-0 font-mono text-xs uppercase tracking-wide text-(--color-text-subtle)"
                     title={`Assigned to ${agent}`}
                   >
                     {agent}

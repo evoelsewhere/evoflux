@@ -47,7 +47,7 @@ export function Waterfall({
       </div>
       <div className="overflow-x-auto rounded-lg border border-(--color-border) bg-(--bg-card)">
         <div className="min-w-[480px]">
-          <div className="flex border-b border-(--color-border) bg-(--bg-key) px-3 py-2 text-[10px] font-medium uppercase tracking-wide text-(--color-text-muted)">
+          <div className="flex border-b border-(--color-border) bg-(--bg-key) px-3 py-2 text-xs font-medium uppercase tracking-wide text-(--color-text-muted)">
             <div className="w-48 shrink-0 sm:w-64">Span</div>
             <div className="flex-1">Timeline</div>
             <div className="w-20 shrink-0 text-right">Duration</div>

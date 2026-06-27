@@ -293,6 +293,6 @@ describe("ToolResult — team_message", () => {
   it("uses small text size for result", () => {
     render(<ToolResult toolName="team_message" result="Message sent" />)
     const span = screen.getByText("Message sent")
-    expect(span.className).toContain("text-[11px]")
+    expect(span.className).toContain("text-xs")
   })
 })

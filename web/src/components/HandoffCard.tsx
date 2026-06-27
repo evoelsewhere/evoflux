@@ -39,7 +39,7 @@ function ConfidenceMeter({ value, compact }: { value: number; compact?: boolean 
       ? 'bg-(--color-warning, orange)'
       : 'bg-(--color-error)'
   return (
-    <div className={`flex items-center gap-2 ${compact ? 'text-[10px]' : 'text-xs'}`}>
+    <div className={`flex items-center gap-2 ${compact ? 'text-xs' : 'text-xs'}`}>
       <span className="text-(--color-text-muted)">Confidence</span>
       <div className={`${compact ? 'h-1 w-12' : 'h-1.5 w-16'} overflow-hidden rounded-full bg-(--color-border)`}>
         <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
@@ -62,7 +62,7 @@ export function HandoffCard({ artifact, fromAgent, compact = false }: HandoffCar
   const textSize  = compact ? 'text-xs'    : 'text-sm'
   const maxWidth  = compact ? 'max-w-[88%]' : 'max-w-[78%]'
   const padding   = compact ? 'px-3 py-2'  : 'px-4 py-3'
-  const labelSize = compact ? 'text-[10px]' : 'text-xs'
+  const labelSize = compact ? 'text-xs' : 'text-xs'
 
   const isPartial = artifact.status === 'partial'
 
@@ -86,7 +86,7 @@ export function HandoffCard({ artifact, fromAgent, compact = false }: HandoffCar
             <p className={`${labelSize} font-semibold tracking-wide text-(--color-text-2)`}>
               Handoff from {fromAgent}
             </p>
-            <Badge variant={isPartial ? 'outline' : 'secondary'} className={`${compact ? 'text-[9px] px-1 py-0' : 'text-[10px] px-1.5 py-0'}`}>
+            <Badge variant={isPartial ? 'outline' : 'secondary'} className={`${compact ? 'text-xs px-1 py-0' : 'text-xs px-1.5 py-0'}`}>
               {isPartial ? 'partial' : 'final'}
             </Badge>
           </div>

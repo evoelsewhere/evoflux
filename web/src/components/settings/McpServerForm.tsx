@@ -264,9 +264,9 @@ function Field({
       </span>
       {children}
       {error ? (
-        <p className="text-[11px] text-(--color-error)">{error}</p>
+        <p className="text-xs text-(--color-error)">{error}</p>
       ) : hint ? (
-        <p className="text-[11px] text-(--color-text-muted)">{hint}</p>
+        <p className="text-xs text-(--color-text-muted)">{hint}</p>
       ) : null}
     </div>
   )
@@ -423,7 +423,7 @@ function PairListField({
       </div>
 
       {pairs.length === 0 ? (
-        <p className="text-[11px] text-(--color-text-muted)">None.</p>
+        <p className="text-xs text-(--color-text-muted)">None.</p>
       ) : (
         <div className="flex flex-col gap-1.5">
           {pairs.map((pair, idx) => (
@@ -445,7 +445,7 @@ function PairListField({
                     type="password"
                     className="min-h-11 font-mono text-xs md:min-h-9 pr-20 border-amber-500/50 bg-amber-500/5"
                   />
-                  <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                  <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
                     <KeyRound size={9} />
                     unset
                   </span>
@@ -474,7 +474,7 @@ function PairListField({
         </div>
       )}
 
-      {error && <p className="text-[11px] text-(--color-error)">{error}</p>}
+      {error && <p className="text-xs text-(--color-error)">{error}</p>}
     </div>
   )
 }

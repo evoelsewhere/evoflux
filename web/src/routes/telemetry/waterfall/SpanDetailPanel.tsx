@@ -72,7 +72,7 @@ export function SpanDetailPanel({
 
         {tokens.length > 0 && (
           <>
-            <h4 className="mb-2 mt-5 text-[10px] font-semibold uppercase tracking-wide text-(--color-text-muted)">
+            <h4 className="mb-2 mt-5 text-xs font-semibold uppercase tracking-wide text-(--color-text-muted)">
               Token usage
             </h4>
             <div className="grid grid-cols-2 gap-2">
@@ -81,7 +81,7 @@ export function SpanDetailPanel({
                   key={t.label}
                   className="rounded-md border border-(--color-border) bg-(--bg-card) p-2"
                 >
-                  <p className="text-[10px] uppercase tracking-wide text-(--color-text-muted)">
+                  <p className="text-xs uppercase tracking-wide text-(--color-text-muted)">
                     {t.label}
                   </p>
                   <p className="mt-0.5 text-sm font-semibold tabular-nums text-(--color-text)">
@@ -95,27 +95,27 @@ export function SpanDetailPanel({
 
         {estimatedCost !== null && (
           <>
-            <h4 className="mb-2 mt-5 text-[10px] font-semibold uppercase tracking-wide text-(--color-text-muted)">
+            <h4 className="mb-2 mt-5 text-xs font-semibold uppercase tracking-wide text-(--color-text-muted)">
               Estimated cost
             </h4>
             <div className="rounded-md border border-(--color-border) bg-(--bg-card) p-3">
               <p className="text-lg font-semibold tabular-nums text-(--color-text)">
                 {formatUsd(estimatedCost)}
               </p>
-              <p className="mt-1 text-[10px] text-(--color-text-muted)">
+              <p className="mt-1 text-xs text-(--color-text-muted)">
                 Based on registry pricing and provider usage tokens.
               </p>
             </div>
           </>
         )}
 
-        <h4 className="mb-2 mt-5 text-[10px] font-semibold uppercase tracking-wide text-(--color-text-muted)">
+        <h4 className="mb-2 mt-5 text-xs font-semibold uppercase tracking-wide text-(--color-text-muted)">
           Attributes
         </h4>
         {attrs.length === 0 ? (
           <p className="text-xs text-(--color-text-muted)">No attributes.</p>
         ) : (
-          <dl className="flex flex-col divide-y divide-(--color-border) rounded-md border border-(--color-border) bg-(--bg-card) text-[11px]">
+          <dl className="flex flex-col divide-y divide-(--color-border) rounded-md border border-(--color-border) bg-(--bg-card) text-xs">
             {attrs.map(([key, value]) => (
               <div key={key} className="flex flex-col gap-0.5 px-3 py-2">
                 <dt className="font-medium text-(--color-text-muted)">{key}</dt>

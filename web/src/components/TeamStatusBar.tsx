@@ -71,7 +71,7 @@ export function TeamStatusBar({
             <span className="text-(--color-text-2)">{name}</span>
             {stream.usage.totalTokens > 0 && (
               <span
-                className="flex h-5 min-w-5 items-center justify-center rounded-full bg-(--bg-page) px-1 font-mono text-[10px] text-(--color-text)"
+                className="flex h-5 min-w-5 items-center justify-center rounded-full bg-(--bg-page) px-1 font-mono text-xs text-(--color-text)"
                 title={`Input: ${stream.usage.promptTokens.toLocaleString()} · Output: ${stream.usage.completionTokens.toLocaleString()} · Cache: ${stream.usage.cachedTokens.toLocaleString()}`}
               >
                 {formatTokens(stream.usage.promptTokens)}

@@ -158,7 +158,7 @@ export function SettingsListView({
                 className="h-full flex-1 border-0 bg-transparent pr-3 pl-9 text-sm focus:ring-0 focus-visible:ring-0"
               />
               {!isLoading && (
-                <span className="pr-3 font-mono text-[11px] tabular-nums text-(--color-text-muted)">
+                <span className="pr-3 font-mono text-xs tabular-nums text-(--color-text-muted)">
                   {countLabel}
                 </span>
               )}
@@ -250,7 +250,7 @@ function ListCardLink({ row }: { row: ListViewRow }) {
             {row.title}
           </span>
           {row.badge && (
-            <span className="rounded-md bg-(--bg-key) px-1.5 py-0.5 font-mono text-[10px] text-(--color-text-muted) ring-1 ring-(--color-border)">
+            <span className="rounded-md bg-(--bg-key) px-1.5 py-0.5 font-mono text-xs text-(--color-text-muted) ring-1 ring-(--color-border)">
               {row.badge}
             </span>
           )}
@@ -273,7 +273,7 @@ function ListCardLink({ row }: { row: ListViewRow }) {
           </p>
         )}
         {row.meta && (
-          <p className="mt-1 truncate font-mono text-[10px] text-(--color-text-muted)/70">
+          <p className="mt-1 truncate font-mono text-xs text-(--color-text-muted)/70">
             {row.meta}
           </p>
         )}
