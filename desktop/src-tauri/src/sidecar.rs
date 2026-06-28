@@ -102,7 +102,7 @@ impl Sidecar {
         // Homebrew Python scripts, …) then finds *our* pure-Python
         // packages on ``sys.path`` before its own.  When that package
         // tries to load a native extension built for our ABI
-        // (``pydantic_core`` cpython-3.14 vs. the tool's cpython-3.12),
+        // (``pydantic_core`` cpython-3.12 vs. the tool's cpython-3.12),
         // the import crashes with ``ModuleNotFoundError`` because
         // Python's import system has already committed to our package
         // directory.

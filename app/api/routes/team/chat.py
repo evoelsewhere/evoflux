@@ -343,7 +343,8 @@ async def team_chat(
                         _,
                         queued_attachment_metas,
                     ) = await agent_service.validate_and_persist_attachments(
-                        team_obj, mention_attachments, session_id
+                        team_obj, mention_attachments, session_id,
+                        model_override=model,
                     )
                 except AttachmentError as exc:
                     raise HTTPException(

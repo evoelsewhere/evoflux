@@ -283,6 +283,8 @@ async def get_registry() -> RegistryResponse:
                 provider=provider,
                 model=model,
                 vision=caps.input.vision,
+                input_audio=caps.input.audio,
+                input_video=caps.input.video,
                 output_image=caps.output.image,
                 output_video=caps.output.video,
                 summary_trigger_tokens=prompt_token_threshold_for_model(model_id),

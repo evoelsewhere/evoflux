@@ -6,7 +6,7 @@ Layout produced under ``<out>/``::
     sidecar-bundle/
       python/                ← python-build-standalone interpreter
         bin/python3
-        lib/python3.14/
+        lib/python3.12/
       site-packages/         ← EvoFlux + dependencies
         app/                 ← API server package
         fastapi/
@@ -33,7 +33,7 @@ Usage::
 
     python scripts/build_sidecar.py \\
         --root ./ --out ./desktop/sidecar-bundle \\
-        --python-version 3.14 [--extras office,audio]
+        --python-version 3.12 [--extras office,audio]
 
 CI uses this same script on each runner (macos-26, ubuntu-22.04). The
 output is consumed by the Tauri bundler via the ``bundle.resources``
@@ -109,8 +109,8 @@ def fetch_python(version: str, out: Path) -> Path:
     # under ``out``. As of uv 0.5+ the layout is:
     #
     #   <out>/cpython-<version>-<triple>/        ← real install root
-    #     bin/python3.14
-    #     lib/python3.14/
+    #     bin/python3.12
+    #     lib/python3.12/
     #     ...
     #   <out>/cpython-<major>-<triple>           ← *symlink* to the versioned dir
     #
@@ -147,7 +147,7 @@ def _find_python_binary(root: Path, version: str) -> Path | None:
     names = [f"python{version}", "python3"]
     if IS_WINDOWS:
         # python-build-standalone on Windows ships ``python.exe`` and
-        # ``python3.14.exe`` at the install root. Prefer the versioned
+        # ``python3.12.exe`` at the install root. Prefer the versioned
         # executable to stay consistent with the Unix path.
         names = [f"python{version}.exe", "python.exe"]
     for name in names:
@@ -175,9 +175,9 @@ def normalise_python_dir(install_root: Path, target: Path, python_bin: Path) -> 
 
     After normalisation the layout is::
 
-        <target>/bin/python3.14        (Unix)
-        <target>/python3.14.exe        (Windows)
-        <target>/lib/python3.14/       (Unix)
+        <target>/bin/python3.12        (Unix)
+        <target>/python3.12.exe        (Windows)
+        <target>/lib/python3.12/       (Unix)
         <target>/Lib/                  (Windows)
         ...
 
@@ -515,8 +515,8 @@ def main() -> int:
     )
     ap.add_argument(
         "--python-version",
-        default="3.14",
-        help="Major.minor Python version to bundle (default: 3.14).",
+        default="3.12",
+        help="Major.minor Python version to bundle (default: 3.12).",
     )
     ap.add_argument(
         "--extras",

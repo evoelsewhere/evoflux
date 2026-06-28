@@ -56,6 +56,8 @@ class ModelCatalogEntry(BaseModel):
     provider: str
     model: str
     vision: bool
+    input_audio: bool = False
+    input_video: bool = False
     output_image: bool = False
     output_video: bool = False
     summary_trigger_tokens: int

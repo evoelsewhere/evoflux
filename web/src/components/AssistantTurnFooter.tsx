@@ -162,7 +162,7 @@ export function AssistantTurn({
         const absoluteIdx = startIndex + j
         const isStreaming = isWorking && absoluteIdx >= finalizedCount
         return (
-          <div key={block.id}>
+          <div key={block.id} className={isStreaming ? 'block-reveal' : undefined}>
             {renderBlock({
               block,
               isStreaming,

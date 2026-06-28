@@ -27,7 +27,7 @@
 
 ROOT       := $(abspath ..)
 BUNDLE     := sidecar-bundle
-PYVER      := 3.14
+PYVER      := 3.12
 EXTRAS     ?=                       # set to e.g. "audio,azure-doc-intel,full"
 sidecar:
 	@python3 ../scripts/build_sidecar.py \
