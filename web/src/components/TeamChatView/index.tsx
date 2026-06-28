@@ -37,7 +37,7 @@ import { SchedulerPanel } from '../SchedulerPanel'
 import { BrowserViewer } from '../BrowserViewer'
 import { ActivityPanel } from '../ActivityPanel'
 import { useTodosQuery } from '@/queries/useTodosQuery'
-import { useProvidersQuery, useTriggerDreamMutation } from '@/queries'
+import { useProvidersQuery, useRegistryQuery, useTriggerDreamMutation } from '@/queries'
 import { useCommandsQuery } from '@/queries/useCommandsQuery'
 import { useSnippetsQuery } from '@/queries/useSnippetsQuery'
 import { renderCommand, renderSnippet, resolveApiUrl, resolveTeamSession } from '@/api/client'
@@ -216,6 +216,31 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
   const selectedModel = sessionModel ?? ''
   const summaryTriggerTokens = leadAgent?.summary_trigger_tokens
   const selectedThinkingLevel = sessionThinkingLevel ?? ''
+
+  // When the user selects a session model override, derive capabilities from
+  // the model registry so file-upload affordances match the selected model.
+  // Also used as fallback when the team hasn't started yet (leadCapabilities
+  // is undefined) but we know which model will be used.
+  const registryQ = useRegistryQuery()
+  const effectiveCapabilities: AgentCapabilitiesType | undefined = useMemo(() => {
+    const modelToLookup = sessionModel || (leadCapabilities ? null : leadAgent?.model)
+    if (!modelToLookup || !registryQ.data) return leadCapabilities
+    const entry = registryQ.data.models.find((m) => m.id === modelToLookup)
+    if (!entry) return leadCapabilities
+    return {
+      input: {
+        vision: entry.vision,
+        document_text: leadCapabilities?.input.document_text ?? true,
+        audio: entry.input_audio ?? false,
+        video: entry.input_video ?? false,
+      },
+      output: {
+        text: leadCapabilities?.output.text ?? true,
+        image: entry.output_image,
+        audio: leadCapabilities?.output.audio ?? false,
+      },
+    }
+  }, [sessionModel, registryQ.data, leadCapabilities, leadAgent?.model])
 
   // Workspace file/folder list for the InputBar's @-mention picker. Fetched
   // lazily — the query is keyed on workspace/session so coding and normal
@@ -1281,7 +1306,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
                     ? `Coding in ${workspaceLabel(workspace)}`
                     : 'Message the team…'
             }
-            capabilities={leadCapabilities}
+            capabilities={effectiveCapabilities}
             revertedCount={leadName ? agentStreams[leadName]?.revertedCount ?? 0 : 0}
             revertedMessages={leadName ? agentStreams[leadName]?.revertedMessages ?? [] : []}
             onRedo={() => { void useTeamStore.getState().redoTeam() }}

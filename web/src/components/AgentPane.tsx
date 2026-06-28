@@ -12,7 +12,6 @@
  * footer while the agent is actively streaming.
  */
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
-import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
 
 import { LazyMarkdownBlock } from '@/utils/LazyMarkdownBlock'
 import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Copy, Check, Undo2, Terminal } from 'lucide-react'
@@ -34,6 +33,7 @@ import { TierBadge } from './TierBadge'
 import { resolveMemberTier } from '@/utils/tier'
 import type { AgentStream } from '@/stores/useTeamStore'
 import { resolveApiUrl } from '@/api/client'
+import { LoadingVerb } from './motion/LoadingVerb'
 import type { ContentBlock, MessageAttachment, TodoItem } from '@/api/types'
 
 const SCROLL_THRESHOLD = 40
@@ -574,20 +574,17 @@ export function AgentPane({
               </div>
             )}
 
-          {/* Me show dots when pending (user sent, agent not woken) or working with no agent content yet.
+          {/* Me show loading verb when pending (user sent, agent not woken) or working with no agent content yet.
             * `[].every()` returns true, so the working branch also requires a non-empty
-            * currentBlocks list — otherwise dots persist after `done` flushes the buffer
-            * if a stale `working` status briefly survives. */}
+            * currentBlocks list — otherwise the indicator persists after `done` flushes
+            * the buffer if a stale `working` status briefly survives. */}
           {(isPending ||
             (isWorking && (
               (isContinuing && stream.currentBlocks.length === 0) ||
               (stream.currentBlocks.length > 0 && stream.currentBlocks.every((b) => b.type === 'user'))
             ))) && (
             <div className="flex items-center gap-2 px-3 pt-3" role="status" aria-label={`${name} is preparing a response`}>
-              <div className="relative flex h-5 w-5 shrink-0 items-center justify-center" aria-hidden="true">
-                <div className="absolute inset-0 animate-spin rounded-full border-[1.5px] border-(--color-accent)/20 border-t-(--color-accent) motion-reduce:animate-none" />
-                <img src={EvoFluxLogo} width={11} height={11} className="rounded-[3px]" alt="" />
-              </div>
+              <LoadingVerb className="text-xs" />
             </div>
           )}
 

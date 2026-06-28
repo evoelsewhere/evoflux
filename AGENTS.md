@@ -4,7 +4,7 @@ The desktop forge for local AI agents — a Tauri 2 desktop shell wrapping a Fas
 
 ## Tech stack
 
-- **Backend:** Python `>=3.14`, FastAPI, SQLModel, Pydantic v2, SQLite (WAL), SSE, loguru.
+- **Backend:** Python `>=3.12`, FastAPI, SQLModel, Pydantic v2, SQLite (WAL), SSE, loguru.
 - **Frontend:** React 19, TypeScript 5.9, Vite 7, Bun, Tailwind v4, Zustand + Immer, TanStack Query.
 - **Desktop:** Tauri v2 shell with a Python sidecar; Rust 2021 / minimum Rust 1.77.
 - **Agent config:** `.md` files with YAML frontmatter in `{EVOFLUX_CONFIG_DIR}/agents/`.
@@ -43,7 +43,7 @@ Full command + style reference: [`documents/docs/guidelines.md`](documents/docs/
 
 ## Code style (summary)
 
-- **Python 3.14+** — `|` unions, `from __future__ import annotations`, strict type hints, Pydantic v2, absolute imports from `app`, loguru `logger.info("event key={}", val)`.
+- **Python 3.12+** — `|` unions, `from __future__ import annotations`, strict type hints, Pydantic v2, absolute imports from `app`, loguru `logger.info("event key={}", val)`.
 - **TypeScript** — `strict: true`, functional components with explicit props, TanStack for server state, Zustand + Immer for client state, ESM only, mobile-first design before desktop layouts; account for mobile safe areas/notches without wasting header space.
 - **General** — thin routes, logic in services/hooks, no unnecessary abstractions, always invoke the `guidelines` skill.
 

@@ -37,6 +37,7 @@ import { latestMCPAppResourceBlockIds } from '@/utils/mcp-app-artifacts'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { findCommittedMentions } from './InputBar.mentions'
 import { resolveApiUrl } from '@/api/client'
+import { LoadingVerb } from './motion/LoadingVerb'
 import type { ContentBlock, MessageAttachment } from '@/api/types'
 
 const SCROLL_THRESHOLD = 40
@@ -617,15 +618,15 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                  )
                 })}
 
-            {/* Me show dots when:
+            {/* Me show loading verb when:
              *   1. pending — user just sent, agent hasn't woken yet (no agent_status event yet), OR
              *   2. working with no agent content yet (user bubbles don't count).
              * Covers the POST → first SSE event gap so the user always gets immediate feedback.
              *
              * Note: `[].every()` returns true, so the working branch must
-             * also require a non-empty currentBlocks list — otherwise dots
-             * stick around after `done` flushes the buffer if a stale
-             * `working` status briefly survives.
+             * also require a non-empty currentBlocks list — otherwise the
+             * indicator sticks around after `done` flushes the buffer if a
+             * stale `working` status briefly survives.
              */}
             {((!isWorking && !isError && currentBlocks.some(isDirectUserBlock)) ||
               (isWorking && (
@@ -637,11 +638,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                   <img src={EvoFluxLogo} width={14} height={14} className="rounded-[3px] opacity-70" alt="" aria-hidden="true" />
                   <span className="text-xs font-medium text-(--color-text-muted)">{activeAgent ?? 'evoflux'}</span>
                 </div>
-                <div className="flex items-center gap-2 py-1" role="status" aria-label="Agent is preparing a response">
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-(--color-text-muted) [animation-delay:0ms]" aria-hidden="true" />
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-(--color-text-muted) [animation-delay:150ms]" aria-hidden="true" />
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-(--color-text-muted) [animation-delay:300ms]" aria-hidden="true" />
-                </div>
+                <LoadingVerb className="py-1 pl-0.5" />
               </div>
             )}
 

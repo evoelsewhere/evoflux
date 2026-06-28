@@ -635,6 +635,84 @@ a svg[aria-hidden="true"],
 }
 
 /* ─────────────────────────────────────────────────────────────
+ * Claude-style loading verb
+ * ───────────────────────────────────────────────────────────── */
+.loading-verb {
+  /* Inline transition handles the opacity cross-fade; this just
+     adds the subtle upward drift so each new verb slides in from
+     below.  The `transition` shorthand is overridden by Tailwind
+     `duration-400` on the element, so we only set the transform
+     part here. */
+  transition-property: opacity, transform;
+  transition-timing-function: var(--ease-out);
+}
+.loading-verb-fade-out {
+  opacity: 0;
+  transform: translateY(2px);
+}
+.loading-verb-fade-in {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * Progressive block reveal — fade-in + slight slide-up
+ * ───────────────────────────────────────────────────────────── */
+@keyframes block-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.block-reveal {
+  animation: block-reveal var(--motion-base) var(--ease-out) both;
+}
+
+/* Staggered children — each child delays by 40ms * index.
+   Apply to a parent container; children inherit via CSS custom prop. */
+.stagger-children > * {
+  animation: block-reveal var(--motion-base) var(--ease-out) both;
+}
+.stagger-children > *:nth-child(1)  { animation-delay: 0ms; }
+.stagger-children > *:nth-child(2)  { animation-delay: 40ms; }
+.stagger-children > *:nth-child(3)  { animation-delay: 80ms; }
+.stagger-children > *:nth-child(4)  { animation-delay: 120ms; }
+.stagger-children > *:nth-child(5)  { animation-delay: 160ms; }
+.stagger-children > *:nth-child(6)  { animation-delay: 200ms; }
+.stagger-children > *:nth-child(7)  { animation-delay: 240ms; }
+.stagger-children > *:nth-child(8)  { animation-delay: 280ms; }
+.stagger-children > *:nth-child(9)  { animation-delay: 320ms; }
+.stagger-children > *:nth-child(10) { animation-delay: 360ms; }
+
+/* ─────────────────────────────────────────────────────────────
+ * Skeleton shimmer — reduced-motion-safe subtle pulse
+ * ───────────────────────────────────────────────────────────── */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--bg-card) 25%,
+    var(--bg-key) 50%,
+    var(--bg-card) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s var(--ease-in-out) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-shimmer {
+    animation: none;
+    background: var(--bg-key);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
  * Raised surface
  * ───────────────────────────────────────────────────────────── */
 .surface-raised {

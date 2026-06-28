@@ -197,7 +197,7 @@ export const ScreencastCanvas = forwardRef<ScreencastHandle, ScreencastCanvasPro
           wsUrl = `ws://${host}:${backendPort}/api`
         }
         const url = withTokenParam(
-          `${wsUrl}/${sessionId}/browser/screencast`,
+          `${wsUrl}/team/${sessionId}/browser/screencast`,
         )
 
         const ws = new WebSocket(url)

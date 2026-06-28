@@ -133,7 +133,7 @@ uv run alembic -c app/alembic.ini upgrade head
 
 ### Python
 
-- **Python 3.14+** — use `|` for unions, `from __future__ import annotations` in every file.
+- **Python 3.12+** — use `|` for unions, `from __future__ import annotations` in every file.
 - Strict type hints on all function signatures.
 - Pydantic v2 for all data models (`ConfigDict(extra="ignore")` for external responses).
 - `snake_case` for modules/functions/variables, `PascalCase` for classes, `UPPER_SNAKE_CASE` for constants.

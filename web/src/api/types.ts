@@ -539,6 +539,8 @@ export interface ModelCatalogEntry {
   provider: string
   model: string
   vision: boolean
+  input_audio: boolean
+  input_video: boolean
   output_image: boolean
   output_video: boolean
   summary_trigger_tokens: number

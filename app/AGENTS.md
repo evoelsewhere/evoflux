@@ -4,7 +4,7 @@ FastAPI backend, CLI, agent runtime, persistence, scheduler, and service-layer c
 
 ## Tech stack
 
-- Python `>=3.14`, managed with `uv`.
+- Python `>=3.12`, managed with `uv`.
 - FastAPI, SQLModel/SQLite, Pydantic v2, Alembic, SSE, loguru.
 - CLI entry point: `evoflux = app.cli:main`.
 

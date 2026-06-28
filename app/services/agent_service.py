@@ -373,12 +373,19 @@ async def validate_and_persist_attachments(
     team: "AgentTeam",
     attachments: list[RawAttachment],
     session_id: str | None = None,
+    *,
+    model_override: str | None = None,
 ) -> tuple[str, list[dict]]:
     """Validate attachments against lead capabilities and save them to disk.
 
     If ``session_id`` is ``None`` a fresh UUIDv7 is minted; otherwise the
     provided id is used so uploads land under the same workspace as the
     chat session that owns them.
+
+    When ``model_override`` is provided (session model picker), capabilities
+    are resolved for that model instead of the lead's default model.  This
+    ensures image/audio/video uploads are accepted when the user selects a
+    multimodal model even if the agent's default model doesn't support them.
 
     Returns ``(session_id, attachment_metas)``.
 
@@ -387,7 +394,13 @@ async def validate_and_persist_attachments(
     is expected to abort the turn, and a future cleanup task can sweep any
     orphaned uploads that never got referenced.
     """
-    caps = team.lead.agent.capabilities
+    from app.agent.providers.capabilities import get_capabilities
+
+    caps = (
+        get_capabilities(model_override)
+        if model_override
+        else team.lead.agent.capabilities
+    )
 
     valid: list[tuple[RawAttachment, str]] = []
     total_size = 0
@@ -456,7 +469,9 @@ async def dispatch_user_message(
     sid = session_id or str(uuid7())
 
     if atts:
-        _, metas = await validate_and_persist_attachments(team, atts, sid)
+        _, metas = await validate_and_persist_attachments(
+            team, atts, sid, model_override=model
+        )
     else:
         metas = []
 
