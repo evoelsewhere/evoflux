@@ -43,6 +43,8 @@ from app.agent.hooks.otel import OpenTelemetryHook
 from app.agent.hooks.stream_publisher import StreamPublisherHook
 from app.agent.hooks.summarization import build_team_summarization_hook
 from app.agent.hooks.title_generation import build_title_generation_hook
+from app.agent.hooks.memory_extraction import build_memory_extraction_hook
+from app.agent.hooks.prompt_suggestions import build_prompt_suggestions_hook
 from app.agent.mode.team.hooks.queued_injection import QueuedMessageInjectionHook
 from app.agent.mode.team.hooks.team_inbox import TeamInboxHook
 from app.agent.mode.team.hooks.team_prompt import AgentTeamProtocolHook
@@ -56,6 +58,11 @@ from app.agent.permission import (
     AutoAllowPermissionService,
     set_permission_service,
     _permission_ctx,
+)
+from app.agent.plan import (
+    PlanModeService,
+    reset_plan_mode_service,
+    set_plan_mode_service,
 )
 from app.agent.schemas.agent import RunConfig
 from app.agent.schemas.chat import HumanMessage
@@ -931,6 +938,22 @@ class TeamMemberBase(abc.ABC):
             if title_hook is not None:
                 hooks.append(title_hook)
 
+        # Auto-extract memory facts at session end (lead only, fire-and-forget).
+        if self._role_label == "lead":
+            mem_hook = build_memory_extraction_hook(
+                provider=runtime_provider or self.agent.llm_provider,
+            )
+            if mem_hook is not None:
+                hooks.append(mem_hook)
+
+        # Prompt suggestion chips after each response (lead only, fire-and-forget).
+        if self._role_label == "lead":
+            sugg_hook = build_prompt_suggestions_hook(
+                provider=runtime_provider or self.agent.llm_provider,
+            )
+            if sugg_hook is not None:
+                hooks.append(sugg_hook)
+
         # Continuation stamp — one-shot, flags the first assistant message
         # of this run as a continuation of the prior assistant turn so the
         # frontend can render it tight against that prior bubble.
@@ -1011,6 +1034,13 @@ class TeamMemberBase(abc.ABC):
         permission_service = AutoAllowPermissionService(session_id=self.session_id)
         perm_token = set_permission_service(permission_service)
 
+        # Scope plan mode service — tracks active plan and pending approvals.
+        plan_service = PlanModeService(
+            session_id=self.session_id,
+            stream_session_id=lead_session_id,
+        )
+        plan_token = set_plan_mode_service(plan_service)
+
         # Scope agent role for plugin applies_to filtering ("lead"/"member").
         role_token = set_role(self._role_label)
 
@@ -1038,6 +1068,7 @@ class TeamMemberBase(abc.ABC):
             reset_role(role_token)
             _sandbox_ctx.reset(token)
             _permission_ctx.reset(perm_token)
+            reset_plan_mode_service(plan_token, self.session_id)
             # Always resume watcher — even on crash — so reindex runs once
             # with all accumulated changes.
             if watcher is not None:

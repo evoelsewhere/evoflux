@@ -1,5 +1,6 @@
 export const queryKeys = {
   health: () => ['health'] as const,
+  diagnostics: () => ['diagnostics'] as const,
   agents: () => ['agents'] as const,
   teamAgents: (workspace?: string | null) => workspace ? ['agents', 'team', workspace] as const : ['agents', 'team'] as const,
   team: {

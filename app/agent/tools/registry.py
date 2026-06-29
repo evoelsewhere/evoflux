@@ -139,6 +139,8 @@ class Tool:
         *,
         name: str | None = None,
         description: str | Callable[[], str] | None = None,
+        concurrency_safe: bool = False,
+        read_only: bool = False,
     ) -> None:
         self._func = func
         # ``Callable`` is the abstract type; only function objects guarantee
@@ -147,6 +149,15 @@ class Tool:
         # in that case.
         self.name = name or getattr(func, "__name__", repr(func))
         self._custom_description = description
+        # Whether this tool can safely run in parallel with other tools in the
+        # same LLM turn.  Read-only tools (grep, read, web_search, etc.) are
+        # safe; write tools (edit, shell, python, etc.) must run serially to
+        # prevent races on shared resources.
+        self.concurrency_safe = concurrency_safe
+        # Whether this tool only reads state and never modifies it.  Used by
+        # future permission-system shortcuts (read-only tools can skip the
+        # ``ask`` prompt in default mode).
+        self.read_only = read_only
 
         self._model, self._definition, self._injected_params = self._build()
         self._description_factory: Callable[[], str] | None = (
@@ -338,6 +349,8 @@ def tool(
     *,
     name: str | None = None,
     description: str | Callable[[], str] | None = None,
+    concurrency_safe: bool = False,
+    read_only: bool = False,
 ) -> Callable[[Callable], Tool]: ...
 
 
@@ -346,6 +359,8 @@ def tool(
     *,
     name: str | None = None,
     description: str | Callable[[], str] | None = None,
+    concurrency_safe: bool = False,
+    read_only: bool = False,
 ) -> Tool | Callable[[Callable], Tool]:
     """Decorator that converts a function into a :class:`Tool`.
 
@@ -379,6 +394,12 @@ def tool(
 
     # Used as @tool(...) with keyword arguments
     def decorator(f: Callable) -> Tool:
-        return Tool(f, name=name, description=description)
+        return Tool(
+            f,
+            name=name,
+            description=description,
+            concurrency_safe=concurrency_safe,
+            read_only=read_only,
+        )
 
     return decorator

@@ -26,6 +26,7 @@ import { ProvidersSettingsPage } from '@/routes/settings.providers'
 import { DreamSettingsPage } from '@/routes/settings.dream'
 import { NotificationSettingsPage } from '@/routes/settings.notifications'
 import { BackendConnectionPage } from '@/routes/settings.connection'
+import { DiagnosticsPage } from '@/routes/settings.diagnostics'
 
 function pageTitleFor(path: string): string {
   if (path.startsWith('agents')) return 'Agents'
@@ -36,6 +37,7 @@ function pageTitleFor(path: string): string {
   if (path === 'sandbox') return 'Sandbox'
   if (path === 'dream') return 'Dream'
   if (path === 'notifications') return 'Notifications'
+  if (path === 'diagnostics') return 'Diagnostics'
   return 'Settings'
 }
 
@@ -59,6 +61,7 @@ function SettingsContent({ path }: { path: string }) {
   if (section === 'sandbox') return <SandboxSettingsPage />
   if (section === 'dream') return <DreamSettingsPage />
   if (section === 'notifications') return <NotificationSettingsPage />
+  if (section === 'diagnostics') return <DiagnosticsPage />
   return <SettingsHubPage />
 }
 

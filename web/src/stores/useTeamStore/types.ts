@@ -1,4 +1,4 @@
-import type { ContentBlock, AgentUsage, TeamCommandResponse } from '@/api/types'
+import type { ContentBlock, AgentUsage, TeamCommandResponse, PlanApprovalPending } from '@/api/types'
 
 export interface PendingMessage {
   id: string
@@ -98,6 +98,8 @@ export interface TeamStoreState {
   activeLoop: ActiveLoop | null
   setupRequired: SetupRequiredNotice | null
   browserSession: BrowserSessionInfo | null
+  planApproval: PlanApprovalPending | null
+  promptSuggestions: string[] | null
   _pendingMessages: PendingMessage[]
   _sessionGeneration: number
   hasMore: boolean

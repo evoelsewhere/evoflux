@@ -116,4 +116,6 @@ grep_files = Tool(
     _grep_files,
     name="grep",
     description="Search file contents by regex. Returns 'file:line: content'.",
+    concurrency_safe=True,
+    read_only=True,
 )

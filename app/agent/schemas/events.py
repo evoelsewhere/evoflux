@@ -270,3 +270,33 @@ class BrowserSessionEvent(BaseModel):
     current_title: str | None = None
     tabs: list[dict[str, Any]] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class PlanApprovalRequestedEvent(BaseModel):
+    """Agent has finished recording a plan and requests user approval.
+
+    The frontend should display a plan-approval modal and POST a reply to
+    ``/api/team/{session_id}/plan/{request_id}/reply``.
+
+    Each step in ``steps`` has ``tool``, ``args`` (JSON-serialisable dict),
+    and ``summary`` (one-line description for the user).
+    """
+
+    type: Literal["plan_approval_requested"] = "plan_approval_requested"
+    request_id: str  # unique ID — included in the reply POST
+    session_id: str  # agent session that owns the plan
+    steps: list[dict[str, Any]]  # [{tool, args, summary}, ...]
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class PromptSuggestionsEvent(BaseModel):
+    """Contextual follow-up suggestions for the user after an agent response.
+
+    Delivered after ``done`` so the frontend can render 2–3 clickable chips
+    below the latest assistant message.  Suggestions are short enough to fit
+    in a chip (≤ 60 chars each).
+    """
+
+    type: Literal["prompt_suggestions"] = "prompt_suggestions"
+    suggestions: list[str]  # 1–3 short follow-up prompts
+    metadata: dict[str, Any] = Field(default_factory=dict)

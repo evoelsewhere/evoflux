@@ -80,6 +80,8 @@ function resetSessionState(
   state.error = null
   state.activeLoop = null
   state.setupRequired = null
+  state.planApproval = null
+  state.promptSuggestions = null
   state._abortController = null
   state._pendingMessages = []
   state._sessionGeneration = (state._sessionGeneration ?? 0) + 1
@@ -186,6 +188,8 @@ export const useTeamStore = create<TeamStore>()(
     activeLoop: null,
     setupRequired: null,
     browserSession: null,
+    planApproval: null,
+    promptSuggestions: null,
     _pendingMessages: [],
     _abortController: null,
     _sessionGeneration: 0,
@@ -306,6 +310,7 @@ export const useTeamStore = create<TeamStore>()(
           draft.isContinuing = false
           draft.error = null
           draft.setupRequired = null
+          draft.promptSuggestions = null
         draft._leadRevertTime = null
         Object.values(draft.agentStreams).forEach((stream) => {
           stream._revertedSuffix = []

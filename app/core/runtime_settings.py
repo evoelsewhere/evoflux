@@ -82,6 +82,32 @@ class ProviderUiSettings(BaseModel):
     visible_models: list[str] = Field(default_factory=list)
 
 
+class MemoryExtractionSettings(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    # Enable auto memory extraction after agent turns.
+    enabled: bool = True
+    # Minimum assistant messages in the session before extraction fires.
+    min_assistant_messages: int = 3
+    # Re-extract every N new assistant messages after the first extraction.
+    every_n_messages: int = 10
+    # Maximum characters of conversation to send to the extractor LLM.
+    max_input_chars: int = 12000
+    # Override the extraction model ('provider:model'). Null = use the chat model.
+    model: str | None = None
+
+
+class PromptSuggestionsSettings(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    # Enable contextual follow-up suggestion chips after each response.
+    enabled: bool = True
+    # Maximum number of suggestions to generate (1–5).
+    count: int = 3
+    # Override the suggestions model ('provider:model'). Null = use the chat model.
+    model: str | None = None
+
+
 class RuntimeSettings(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -89,6 +115,12 @@ class RuntimeSettings(BaseModel):
         default_factory=TitleGenerationSettings
     )
     dream: DreamSettings = Field(default_factory=DreamSettings)
+    memory_extraction: MemoryExtractionSettings = Field(
+        default_factory=MemoryExtractionSettings
+    )
+    prompt_suggestions: PromptSuggestionsSettings = Field(
+        default_factory=PromptSuggestionsSettings
+    )
     memory_vector: MemoryVectorSettings = Field(default_factory=MemoryVectorSettings)
     server: ServerSettings = Field(default_factory=ServerSettings)
     providers: dict[str, ProviderUiSettings] = Field(default_factory=dict)
