@@ -35,6 +35,30 @@ def sanitize_error(message: str) -> str:
     return message
 
 
+# Tools intercepted in plan mode — recorded rather than executed.
+_PLAN_INTERCEPTED: frozenset[str] = frozenset(
+    {"edit", "write", "patch", "rm", "shell", "python", "bg"}
+)
+
+
+def _plan_summary(tool_name: str, args: dict) -> str:
+    """Build a short human-readable summary of a planned tool call."""
+    if tool_name in ("edit", "write", "patch"):
+        path = str(args.get("file_path") or args.get("path") or "?")
+        return path
+    if tool_name == "rm":
+        return str(args.get("path") or "?")
+    if tool_name in ("shell", "bg"):
+        cmd = str(args.get("command") or "")
+        return (cmd[:120] + "…") if len(cmd) > 120 else cmd or "(no command)"
+    if tool_name == "python":
+        code = str(args.get("code") or "")
+        first = code.split("\n")[0].strip()
+        return (first[:120] + "…") if len(first) > 120 else first or "(python code)"
+    raw = str(args)
+    return (raw[:120] + "…") if len(raw) > 120 else raw
+
+
 def make_tool_executor(
     run_tools: dict[str, Tool],
     agent_name: str,
@@ -75,6 +99,28 @@ def make_tool_executor(
 
             if tc.function.name not in run_tools:
                 raise ToolNotFoundError(f"Tool '{tc.function.name}' not found.")
+
+            # ── Plan mode intercept ────────────────────────────────────────
+            # When the agent is in plan mode, record destructive tool calls
+            # instead of executing them. The agent receives a [PLAN] ack and
+            # continues planning; the actual execution only happens after the
+            # user approves the plan via exit_plan_mode.
+            if s.metadata.get("_plan_mode") and tc.function.name in _PLAN_INTERCEPTED:
+                from app.agent.plan import get_plan_mode_service
+
+                plan_svc = get_plan_mode_service()
+                summary = _plan_summary(tc.function.name, args)
+                result = plan_svc.record_step(tc.function.name, args, summary)
+                tool_elapsed = time.monotonic() - tool_start
+                logger.info(
+                    "plan_step_recorded agent={} tool={} elapsed={:.2f}s step={}",
+                    agent_name,
+                    tc.function.name,
+                    tool_elapsed,
+                    plan_svc.step_count,
+                )
+                return result
+            # ─────────────────────────────────────────────────────────────
 
             # Surface team routing context as first-class injected args so
             # tools (e.g. schedule_task) don't have to fish through

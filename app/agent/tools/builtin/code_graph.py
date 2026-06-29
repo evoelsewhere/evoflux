@@ -230,6 +230,8 @@ code_search = Tool(
         "references (kind, qualified name, file:line, signature) without reading "
         "file bodies — fast, token-cheap code location."
     ),
+    concurrency_safe=True,
+    read_only=True,
 )
 
 code_symbol = Tool(
@@ -239,6 +241,8 @@ code_symbol = Tool(
         "Summarise a single symbol from the code graph: signature, docstring, "
         "and its direct callers/callees/base types. Use before opening a file."
     ),
+    concurrency_safe=True,
+    read_only=True,
 )
 
 code_neighbors = Tool(
@@ -248,6 +252,8 @@ code_neighbors = Tool(
         "List graph neighbours of a symbol — callers, callees, subtypes, "
         "containment — to trace impact and dependencies without reading files."
     ),
+    concurrency_safe=True,
+    read_only=True,
 )
 
 code_overview = Tool(
@@ -257,6 +263,8 @@ code_overview = Tool(
         "High-level map of the indexed codebase: node/edge/file totals, "
         "languages, symbol-kind breakdown, and the densest files."
     ),
+    concurrency_safe=True,
+    read_only=True,
 )
 
 
@@ -320,6 +328,8 @@ code_references = Tool(
         "Find all usages of a symbol: callers, importers, subclasses, "
         "decorators. Answers 'where is X used?' without grepping."
     ),
+    concurrency_safe=True,
+    read_only=True,
 )
 
 
@@ -368,6 +378,8 @@ code_map = Tool(
         "entry points and shared abstractions. Like a table of contents sorted "
         "by importance."
     ),
+    concurrency_safe=True,
+    read_only=True,
 )
 
 
@@ -444,4 +456,6 @@ code_path = Tool(
         "Find the shortest dependency path between two symbols — trace how "
         "module A reaches module B through calls, imports, and inheritance."
     ),
+    concurrency_safe=True,
+    read_only=True,
 )

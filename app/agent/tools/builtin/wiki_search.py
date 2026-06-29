@@ -89,4 +89,6 @@ wiki_search = Tool(
         "and comparisons.  Use this to recall what was previously discussed "
         "or decided on any subject.  Returns full content of matching pages."
     ),
+    concurrency_safe=True,
+    read_only=True,
 )

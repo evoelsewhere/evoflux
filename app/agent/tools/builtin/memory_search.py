@@ -55,4 +55,6 @@ memory_search = Tool(
         "Search EvoFlux memory v2 across compiled wiki pages, notes, imports, "
         "and visible chat messages. Returns cited excerpts with stable source refs."
     ),
+    concurrency_safe=True,
+    read_only=True,
 )

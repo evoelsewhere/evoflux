@@ -23,7 +23,7 @@ import httpx
 from loguru import logger
 
 from app.agent.agent_loop.streaming import stream_and_assemble
-from app.agent.agent_loop.tool_dispatch import gather_or_cancel
+from app.agent.agent_loop.tool_dispatch import gather_or_cancel, run_serially
 from app.agent.agent_loop.tool_executor import make_tool_executor
 from app.agent.usage import usage_to_dict
 from app.agent.checkpointer import Checkpointer
@@ -564,20 +564,40 @@ class Agent(Generic[TContext]):
                     )
                 break
 
+            # Determine dispatch mode: parallel when every tool in this batch
+            # declares concurrency_safe=True; serial otherwise to prevent races
+            # (e.g. two simultaneous edit() calls on the same file).
+            all_safe = all(
+                getattr(run_tools.get(tc.function.name), "concurrency_safe", False)
+                for tc in tc_list
+            )
+
             logger.info(
-                "tool_dispatch agent={} count={} tools=[{}]",
+                "tool_dispatch agent={} count={} mode={} tools=[{}]",
                 self.name,
                 len(tc_list),
+                "parallel" if all_safe else "serial",
                 ", ".join(tc.function.name for tc in tc_list),
             )
 
-            # Execute tool calls in parallel, cancelling on interrupt
-            results = await gather_or_cancel(
-                [self._run_tool(ctx, state, tc, tool_chain) for tc in tc_list],
-                interrupt_event,
-                tc_list,
-                self.name,
-            )
+            if all_safe:
+                # All tools are concurrency-safe — run in parallel as before.
+                results = await gather_or_cancel(
+                    [self._run_tool(ctx, state, tc, tool_chain) for tc in tc_list],
+                    interrupt_event,
+                    tc_list,
+                    self.name,
+                )
+            else:
+                # At least one tool is not concurrency-safe — run all serially
+                # to guarantee no shared-resource races, while still honouring
+                # interrupt and per-batch timeout.
+                results = await run_serially(
+                    [self._run_tool(ctx, state, tc, tool_chain) for tc in tc_list],
+                    interrupt_event,
+                    tc_list,
+                    self.name,
+                )
 
             # Retrieve any multimodal parts stashed by ToolResult-returning tools
             multimodal_parts: dict[str, list[ContentBlock]] = state.metadata.pop(

@@ -5,12 +5,21 @@
 import { apiBaseUrl } from '../base-url'
 import { parseDetailOrThrow } from './_shared'
 import type {
+  DiagnosticsResponse,
   TeamStatusResponse,
 } from '../types'
 
 export async function health(): Promise<{ status: string; version: string }> {
   const res = await fetch(`${apiBaseUrl()}/health/ready`)
   if (!res.ok) await parseDetailOrThrow(res, 'health')
+  return res.json()
+}
+
+// ── Diagnostics ───────────────────────────────────────────────────────────────
+
+export async function getDiagnostics(): Promise<DiagnosticsResponse> {
+  const res = await fetch(`${apiBaseUrl()}/health/diagnostics`)
+  if (!res.ok) await parseDetailOrThrow(res, 'getDiagnostics')
   return res.json()
 }
 

@@ -26,7 +26,7 @@ _USER_AGENT = (
 )
 
 
-@tool(name="web_search")
+@tool(name="web_search", concurrency_safe=True, read_only=True)
 async def web_search(
     query: Annotated[
         str,
@@ -119,7 +119,7 @@ def _fallback_convert(content_bytes: bytes, mime: str | None) -> str:
         return content_bytes.decode("utf-8", errors="replace")
 
 
-@tool(name="web_fetch")
+@tool(name="web_fetch", concurrency_safe=True, read_only=True)
 async def web_fetch(
     url: Annotated[
         str,
@@ -207,7 +207,7 @@ async def web_fetch(
         return f"Error fetching or converting: {str(e)}"
 
 
-@tool(name="image_search")
+@tool(name="image_search", concurrency_safe=True, read_only=True)
 async def image_search(
     query: Annotated[
         str,

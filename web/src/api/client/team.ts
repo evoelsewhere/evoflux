@@ -124,6 +124,22 @@ export async function cancelQueuedTeamMessage(sessionId: string, messageId: stri
   }
 }
 
+export async function replyPlanApproval(
+  sessionId: string,
+  requestId: string,
+  decision: 'approved' | 'rejected',
+): Promise<void> {
+  const res = await fetch(`${apiBaseUrl()}/team/${encodeURIComponent(sessionId)}/plan/reply`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ request_id: requestId, decision }),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(body?.detail || `POST plan/reply failed: ${res.status}`)
+  }
+}
+
 export function teamStream(sessionId: string, callbacks: SSECallbacks, signal?: AbortSignal): void {
   fetch(`${apiBaseUrl()}/team/${encodeURIComponent(sessionId)}/stream`, { signal })
     .then((res) => {

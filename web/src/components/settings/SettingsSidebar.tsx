@@ -16,6 +16,7 @@ import {
   Server,
   Shield,
   Sparkles,
+  Stethoscope,
   Wrench,
   type LucideIcon,
 } from 'lucide-react'
@@ -39,6 +40,7 @@ type SidebarPath =
   | '/settings/connection'
   | '/settings/dream'
   | '/settings/notifications'
+  | '/settings/diagnostics'
   | '/telemetry'
   | '/settings'
 
@@ -201,6 +203,12 @@ export function SettingsSidebar({ currentPath, onNavigate }: SettingsSidebarProp
         label: 'Notifications',
         icon: Bell,
         matchPrefix: '/settings/notifications',
+      },
+      {
+        to: '/settings/diagnostics',
+        label: 'Diagnostics',
+        icon: Stethoscope,
+        matchPrefix: '/settings/diagnostics',
       },
     ],
     [

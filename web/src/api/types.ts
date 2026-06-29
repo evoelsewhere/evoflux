@@ -1,4 +1,32 @@
 // API Response Types
+
+export type DiagnosticsStatus = 'ok' | 'warn' | 'fail'
+
+export interface DiagnosticsCheck {
+  id: string
+  label: string
+  status: DiagnosticsStatus
+  detail: string
+  hint: string | null
+}
+
+export interface DiagnosticsResponse {
+  checks: DiagnosticsCheck[]
+  summary: DiagnosticsStatus
+}
+
+export interface PlanStep {
+  tool: string
+  args: Record<string, unknown>
+  summary: string
+}
+
+export interface PlanApprovalPending {
+  requestId: string
+  sessionId: string
+  steps: PlanStep[]
+}
+
 export interface AgentToolInfo {
   name: string
   description: string

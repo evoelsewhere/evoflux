@@ -614,6 +614,31 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
         })
         break
       }
+
+      case 'plan_approval_requested': {
+        set((draft) => {
+          draft.planApproval = {
+            requestId: d.request_id as string,
+            sessionId: d.session_id as string,
+            steps: (d.steps as Array<Record<string, unknown>>).map((s) => ({
+              tool: s.tool as string,
+              args: (s.args as Record<string, unknown>) ?? {},
+              summary: s.summary as string,
+            })),
+          }
+        })
+        break
+      }
+
+      case 'prompt_suggestions': {
+        const suggestions = Array.isArray(d.suggestions)
+          ? (d.suggestions as string[]).filter((s) => typeof s === 'string' && s.trim())
+          : []
+        if (suggestions.length > 0) {
+          set((draft) => { draft.promptSuggestions = suggestions })
+        }
+        break
+      }
     }
   }
 }

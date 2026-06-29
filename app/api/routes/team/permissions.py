@@ -7,7 +7,11 @@ from typing import Literal, cast
 from fastapi import APIRouter, HTTPException
 from loguru import logger
 
-from app.api.schemas.team import PermissionReplyRequest, PermissionRequestResponse
+from app.api.schemas.team import (
+    PermissionReplyRequest,
+    PermissionRequestResponse,
+    PlanReplyRequest,
+)
 
 router = APIRouter()
 
@@ -80,3 +84,52 @@ async def reply_permission(
         body.reply,
     )
     return {"status": "ok", "request_id": request_id, "reply": body.reply}
+
+
+# ── Plan approval ─────────────────────────────────────────────────────────────
+
+
+@router.post("/{session_id}/plan/reply", status_code=200)
+async def reply_plan_approval(session_id: str, body: PlanReplyRequest) -> dict:
+    """Reply to a pending plan-approval request.
+
+    ``decision`` must be ``"approved"`` or ``"rejected"``.
+
+    - ``"approved"`` — unblocks the agent; it will execute the recorded steps.
+    - ``"rejected"`` — unblocks the agent; it will abandon the plan.
+    """
+    from app.agent.plan import get_service_for_session
+
+    valid = {"approved", "rejected"}
+    if body.decision not in valid:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid decision '{body.decision}'. Must be one of: {sorted(valid)}",
+        )
+
+    svc = get_service_for_session(session_id)
+    if svc is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No active plan approval for session '{session_id}'.",
+        )
+
+    from typing import cast as _cast
+
+    resolved = svc.reply(
+        body.request_id,
+        _cast(Literal["approved", "rejected"], body.decision),  # type: ignore[arg-type]
+    )
+    if not resolved:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Plan request '{body.request_id}' not found or already resolved.",
+        )
+
+    logger.info(
+        "plan_replied session_id={} request_id={} decision={}",
+        session_id,
+        body.request_id,
+        body.decision,
+    )
+    return {"status": "ok", "request_id": body.request_id, "decision": body.decision}

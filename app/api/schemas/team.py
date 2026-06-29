@@ -46,7 +46,9 @@ class WorkspaceFilesResponse(BaseModel):
     session_id: str
     files: list[WorkspaceFileInfo]
     truncated: bool = False  # True when the walk hit the max-files cap
-    workspace_root: str | None = None  # Absolute OS path to the workspace root (None for empty/new sessions)
+    workspace_root: str | None = (
+        None  # Absolute OS path to the workspace root (None for empty/new sessions)
+    )
 
 
 class CodingWorkspaceFilesResponse(BaseModel):
@@ -95,3 +97,15 @@ class PermissionRequestResponse(BaseModel):
     tool: str
     patterns: list[str]
     metadata: dict
+
+
+# ── Plan mode ─────────────────────────────────────────────────────────────────
+
+
+class PlanReplyRequest(BaseModel):
+    """Body for replying to a pending plan-approval request."""
+
+    request_id: str = Field(
+        description="ID returned in the plan_approval_requested event."
+    )
+    decision: str = Field(description="'approved' or 'rejected'")

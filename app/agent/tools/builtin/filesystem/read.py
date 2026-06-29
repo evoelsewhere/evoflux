@@ -135,4 +135,6 @@ read_file = Tool(
         "Images and documents are processed for visual/text analysis. "
         "Paths are workspace-relative."
     ),
+    concurrency_safe=True,
+    read_only=True,
 )

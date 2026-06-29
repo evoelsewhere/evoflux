@@ -112,4 +112,6 @@ glob_files = Tool(
         "Find files by glob pattern. Use match='path' (default) for full-path patterns "
         "like 'src/**/*.ts', or match='name' for filename-only like '*.py'."
     ),
+    concurrency_safe=True,
+    read_only=True,
 )

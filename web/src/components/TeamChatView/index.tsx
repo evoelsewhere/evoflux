@@ -35,7 +35,7 @@ import { WorkspaceFilesPanel } from '../WorkspaceFilesPanel'
 import { WikiPanel } from '../WikiPanel'
 import { SchedulerPanel } from '../SchedulerPanel'
 import { BrowserViewer } from '../BrowserViewer'
-import { ActivityPanel } from '../ActivityPanel'
+import { PlanApprovalModal } from '../PlanApprovalModal'
 import { useTodosQuery } from '@/queries/useTodosQuery'
 import { useProvidersQuery, useRegistryQuery, useTriggerDreamMutation } from '@/queries'
 import { useCommandsQuery } from '@/queries/useCommandsQuery'
@@ -48,7 +48,7 @@ import { useUIStore } from '@/stores/useUIStore'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useTeamAgentsQuery } from '@/queries/useAgentsQuery'
 import { useFileRefsQuery } from '@/queries/useFileRefsQuery'
-import { AlertCircle, Activity, Brain, CalendarClock, Check, ChevronDown, FolderOpen, FolderCode, Menu, MoreHorizontal, PanelLeft, SlidersHorizontal, X } from 'lucide-react'
+import { AlertCircle, Activity, Brain, CalendarClock, Check, ChevronDown, FolderOpen, FolderCode, Menu, Minimize2, MoreHorizontal, PanelLeft, SlidersHorizontal, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { usePlatform } from '@/hooks/use-platform'
@@ -166,6 +166,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
   const leadName       = useTeamStore((s) => s.leadName)
   const activeLoop     = useTeamStore((s) => s.activeLoop)
   const isConnected    = useTeamStore((s) => s.isConnected)
+  const promptSuggestions = useTeamStore((s) => s.promptSuggestions)
 
   // Utility modal state lives in useUIStore so only one can be open at a time.
   const wikiOpen = useUIStore((s) => s.wikiOpen)
@@ -1058,6 +1059,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
                 onSelectAgent={setActiveAgent}
                 onWiki={() => { toggleWiki(); closeMobileActionsMenu() }}
                 onScheduler={() => { toggleScheduler(); closeMobileActionsMenu() }}
+                onCompact={() => { useTeamStore.getState().compactTeam(); closeMobileActionsMenu() }}
                 activeLoop={activeLoop}
               />
             </>
@@ -1090,14 +1092,25 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
                 className: agentCapabilitiesOpen ? 'mr-2 bg-(--bg-key) text-(--color-text)' : 'mr-2',
               }}
               extraActions={
-                <button
-                  onClick={() => setShowActivity((v) => !v)}
-                  title="Team activity log"
-                  aria-label="Team activity log"
-                  className={`inline-flex h-7 w-7 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-hover) hover:text-(--color-text) ${showActivity ? 'bg-(--bg-key) text-(--color-text)' : ''}`}
-                >
-                  <Activity size={15} />
-                </button>
+                <>
+                  <button
+                    onClick={() => useTeamStore.getState().compactTeam()}
+                    disabled={isTeamWorking || !sessionIdState}
+                    title="Compact context (/compact)"
+                    aria-label="Compact context"
+                    className={`inline-flex h-7 w-7 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-hover) hover:text-(--color-text) disabled:cursor-not-allowed disabled:opacity-40`}
+                  >
+                    <Minimize2 size={15} />
+                  </button>
+                  <button
+                    onClick={() => setShowActivity((v) => !v)}
+                    title="Team activity log"
+                    aria-label="Team activity log"
+                    className={`inline-flex h-7 w-7 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-hover) hover:text-(--color-text) ${showActivity ? 'bg-(--bg-key) text-(--color-text)' : ''}`}
+                  >
+                    <Activity size={15} />
+                  </button>
+                </>
               }
             />
           )}
@@ -1226,7 +1239,9 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
             lastError={agentStreams[activeAgent].lastError}
             isContinuing={isContinuing && activeAgent === leadName}
             onContinue={activeAgent === leadName ? continueTeam : undefined}
+            suggestions={activeAgent === leadName ? promptSuggestions : null}
             onSuggestion={(text) => {
+              useTeamStore.setState({ promptSuggestions: null })
               inputRef.current?.setValue(text)
               inputRef.current?.focus()
             }}
@@ -1404,6 +1419,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
         open={browserOpen}
         onClose={closeBrowser}
       />
+      <PlanApprovalModal />
       {showPalette && (
         <CommandPalette commands={paletteCommands} onClose={() => setShowPalette(false)} />
       )}
@@ -1504,6 +1520,7 @@ interface MobileChatActionsProps {
   onSelectAgent: (agent: string) => void
   onWiki: () => void
   onScheduler: () => void
+  onCompact: () => void
   activeLoop: ActiveLoop | null
 }
 
@@ -1518,6 +1535,7 @@ function MobileChatActions({
   onSelectAgent,
   onWiki,
   onScheduler,
+  onCompact,
   activeLoop,
 }: MobileChatActionsProps) {
   return (
@@ -1611,6 +1629,10 @@ function MobileChatActions({
                 <button type="button" onClick={onScheduler} className="flex min-h-10 w-full items-center gap-2 rounded-md px-2 text-left text-sm transition-colors hover:bg-(--bg-key)">
                   <CalendarClock size={15} aria-hidden="true" />
                   <span className="flex-1">Scheduler</span>
+                </button>
+                <button type="button" onClick={onCompact} className="flex min-h-10 w-full items-center gap-2 rounded-md px-2 text-left text-sm transition-colors hover:bg-(--bg-key)">
+                  <Minimize2 size={15} aria-hidden="true" />
+                  <span className="flex-1">Compact context</span>
                 </button>
               </div>
             </motion.aside>
