@@ -859,7 +859,7 @@ export function CodingSidebar({
                 x: mobileOpen ? 0 : -280,
                 width: "min(272px, calc(100vw - 2rem))",
               }
-            : { width: desktopCollapsed ? 0 : resizable.width }
+            : { width: desktopCollapsed ? 56 : resizable.width }
         }
         transition={{
           duration: prefersReducedMotion ? 0.01 : 0.22,
@@ -883,12 +883,80 @@ export function CodingSidebar({
           />
         )}
 
+        {/* Collapsed icon strip — desktop only, mirrors Forge sidebar collapsed state */}
+        {!isMobile && desktopCollapsed && (
+          <div className="flex h-full flex-col items-center gap-1 overflow-hidden p-1">
+            <div className="flex w-full shrink-0 flex-col items-center gap-0.5 rounded-[10px] bg-(--bg-sidebar)/80 px-1 py-2 shadow-sm backdrop-blur-xl">
+              <button
+                type="button"
+                onClick={() => navigate({ to: '/' })}
+                title="Forge"
+                className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
+              >
+                <Gauge size={16} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                title="Coding"
+                className="flex h-8 w-8 items-center justify-center rounded-md bg-(--bg-key) text-(--color-accent)"
+              >
+                <Code2 size={16} aria-hidden="true" />
+              </button>
+              {onCommandPalette && (
+                <button
+                  type="button"
+                  onClick={onCommandPalette}
+                  title="Search (Ctrl+P)"
+                  className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
+                >
+                  <Search size={15} aria-hidden="true" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => { void openWorkspaceDialog(); }}
+                title="Open folder"
+                className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
+              >
+                <Folder size={15} aria-hidden="true" />
+              </button>
+            </div>
+            <div className="flex-1" />
+            <div className="flex w-full shrink-0 flex-col items-center gap-1 rounded-[10px] bg-(--bg-sidebar)/80 px-1 py-2 shadow-sm backdrop-blur-xl">
+              <button
+                type="button"
+                onClick={() => { useUIStore.getState().openSettings(); }}
+                className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+                aria-label="Settings"
+                title="Settings"
+              >
+                <Settings size={14} aria-hidden="true" />
+              </button>
+              {onCommandPalette && (
+                <button
+                  type="button"
+                  onClick={onCommandPalette}
+                  className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+                  aria-label="Help and shortcuts"
+                  title="Help and shortcuts"
+                >
+                  <HelpCircle size={14} aria-hidden="true" />
+                </button>
+              )}
+              <ThemeToggle collapsed />
+              <HealthDot />
+            </div>
+          </div>
+        )}
+
         {/* Content sections — desktop gets floating cards, mobile stays flat. */}
         <div
           className={
-            !isMobile
-              ? "flex h-full flex-col gap-1 overflow-hidden p-1"
-              : "flex flex-1 flex-col overflow-hidden"
+            !isMobile && desktopCollapsed
+              ? "hidden"
+              : !isMobile
+                ? "flex h-full flex-col gap-1 overflow-hidden p-1"
+                : "flex flex-1 flex-col overflow-hidden"
           }
         >
         {isMobile && (
