@@ -230,7 +230,7 @@ function WorkspaceSessionList({
                     e.stopPropagation();
                     onSessionEdit(session);
                   }}
-                  className="absolute right-6 top-1/2 flex -translate-y-1/2 items-center justify-center rounded p-1 text-(--color-text-subtle) opacity-0 transition-all hover:bg-(--bg-key) hover:text-(--color-text) group-hover:opacity-100 pointer-coarse:opacity-100"
+                  className="absolute right-6 top-1/2 flex -translate-y-1/2 items-center justify-center rounded-xs p-1 text-(--color-text-subtle) opacity-0 transition-all hover:bg-(--bg-key) hover:text-(--color-text) group-hover:opacity-100 pointer-coarse:opacity-100"
                   aria-label={`Edit session ${session.title || "Untitled"}`}
                 >
                   <Pencil size={11} />
@@ -241,7 +241,7 @@ function WorkspaceSessionList({
                     e.stopPropagation();
                     onSessionDelete(session);
                   }}
-                  className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center justify-center rounded p-1 text-(--color-text-subtle) opacity-0 transition-all hover:bg-(--color-error-subtle) hover:text-(--color-error) group-hover:opacity-100 pointer-coarse:opacity-100"
+                  className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center justify-center rounded-xs p-1 text-(--color-text-subtle) opacity-0 transition-all hover:bg-(--color-error-subtle) hover:text-(--color-error) group-hover:opacity-100 pointer-coarse:opacity-100"
                   aria-label={`Delete session ${session.title || "Untitled"}`}
                 >
                   <Trash2 size={11} />
@@ -256,7 +256,7 @@ function WorkspaceSessionList({
                     e.stopPropagation();
                     onCancelDelete();
                   }}
-                  className="rounded border border-(--color-border) bg-(--bg-card) px-2 py-1 text-xs text-(--color-text) hover:bg-(--bg-key)"
+                  className="rounded-xs border border-(--color-border) bg-(--bg-card) px-2 py-1 text-xs text-(--color-text) hover:bg-(--bg-key)"
                 >
                   Cancel
                 </button>
@@ -266,7 +266,7 @@ function WorkspaceSessionList({
                     e.stopPropagation();
                     onConfirmDelete();
                   }}
-                  className="rounded bg-(--color-error) px-2 py-1 text-xs text-(--color-text-on-accent) hover:bg-(--color-error)/90"
+                  className="rounded-xs bg-(--color-error) px-2 py-1 text-xs text-(--color-text-on-accent) hover:bg-(--color-error)/90"
                 >
                   Delete
                 </button>
@@ -1012,7 +1012,7 @@ export function CodingSidebar({
                         y: event.clientY,
                       });
                     }}
-                    className="flex min-w-0 flex-1 items-center gap-1.5 truncate rounded px-2 py-1 text-left text-xs transition-colors hover:bg-(--bg-key)"
+                    className="flex min-w-0 flex-1 items-center gap-1.5 truncate rounded-xs px-2 py-1 text-left text-xs transition-colors hover:bg-(--bg-key)"
                     aria-expanded={sourceIsExpanded}
                     aria-label={`${sourceIsExpanded ? "Collapse" : "Expand"} repository ${workspaceLabel(path)}`}
                     title={path}
@@ -1048,7 +1048,7 @@ export function CodingSidebar({
                     onClick={() => {
                       void openWorktreeDialog(path);
                     }}
-                    className={`ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded border border-(--color-border) text-(--color-text-muted) transition-all hover:bg-(--bg-key) hover:text-(--color-text-2) ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                    className={`ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-xs border border-(--color-border) text-(--color-text-muted) transition-all hover:bg-(--bg-key) hover:text-(--color-text-2) ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
                     aria-label={`Create worktree from ${workspaceLabel(path)}`}
                     title="Create worktree"
                   >
@@ -1057,7 +1057,7 @@ export function CodingSidebar({
                   <button
                     type="button"
                     onClick={() => setRemoveWorkspaceTarget(path)}
-                    className={`ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded text-(--color-text-subtle) transition-all hover:bg-(--color-error-subtle) hover:text-(--color-error) ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                    className={`ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-xs text-(--color-text-subtle) transition-all hover:bg-(--color-error-subtle) hover:text-(--color-error) ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
                     aria-label={`Hide repository ${workspaceLabel(path)} from sidebar`}
                     title="Hide repository from sidebar"
                   >
@@ -1088,7 +1088,7 @@ export function CodingSidebar({
                             y: event.clientY,
                           });
                         }}
-                        className={`flex min-w-0 flex-1 items-center gap-1.5 rounded px-2 py-1 text-left text-xs transition-colors hover:bg-(--bg-key) ${sourceIsActive ? "text-(--color-accent)" : "text-(--color-text-2)"}`}
+                        className={`flex min-w-0 flex-1 items-center gap-1.5 rounded-xs px-2 py-1 text-left text-xs transition-colors hover:bg-(--bg-key) ${sourceIsActive ? "text-(--color-accent)" : "text-(--color-text-2)"}`}
                         aria-expanded={sourceSessionGroupExpanded}
                         aria-label={`${sourceSessionGroupExpanded ? "Collapse" : "Expand"} main workspace ${workspaceLabel(path)}`}
                         title={path}
@@ -1113,7 +1113,7 @@ export function CodingSidebar({
                         onClick={() => {
                           void selectWorkspace(path, { create: true });
                         }}
-                        className={`ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded border border-(--color-border) text-(--color-text-muted) transition-all hover:bg-(--bg-key) hover:text-(--color-text-2) ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                        className={`ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-xs border border-(--color-border) text-(--color-text-muted) transition-all hover:bg-(--bg-key) hover:text-(--color-text-2) ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
                         aria-label={`New session in main workspace ${workspaceLabel(path)}`}
                         title={`New session in main workspace ${workspaceLabel(path)}`}
                       >
@@ -1199,7 +1199,7 @@ export function CodingSidebar({
                                   y: event.clientY,
                                 });
                               }}
-                              className={`flex min-w-0 flex-1 items-center gap-1.5 rounded px-2 py-1 text-left text-xs transition-colors hover:bg-(--bg-key) ${isActive ? "text-(--color-accent)" : "text-(--color-text-2)"}`}
+                              className={`flex min-w-0 flex-1 items-center gap-1.5 rounded-xs px-2 py-1 text-left text-xs transition-colors hover:bg-(--bg-key) ${isActive ? "text-(--color-accent)" : "text-(--color-text-2)"}`}
                               aria-expanded={isExpanded}
                               aria-label={`${isExpanded ? "Collapse" : "Expand"} worktree ${item.name}`}
                               title={directory}
@@ -1240,7 +1240,7 @@ export function CodingSidebar({
                                   create: true,
                                 });
                               }}
-                              className={`ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded border border-(--color-border) text-(--color-text-muted) transition-all hover:bg-(--bg-key) hover:text-(--color-text-2) ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                              className={`ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-xs border border-(--color-border) text-(--color-text-muted) transition-all hover:bg-(--bg-key) hover:text-(--color-text-2) ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
                               aria-label={`New session in worktree ${item.name}`}
                               title={`New session in worktree ${item.name}`}
                             >
@@ -1253,7 +1253,7 @@ export function CodingSidebar({
                                   void handleRemoveWorktree(worktreeInfo);
                                 }}
                                 disabled={worktreeRemoving === directory}
-                                className={`ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded text-(--color-text-subtle) transition-all hover:bg-(--color-error-subtle) hover:text-(--color-error) disabled:opacity-50 ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                                className={`ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-xs text-(--color-text-subtle) transition-all hover:bg-(--color-error-subtle) hover:text-(--color-error) disabled:opacity-50 ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
                                 aria-label={`Remove worktree ${item.name}`}
                                 title="Remove managed worktree"
                               >
@@ -1301,7 +1301,7 @@ export function CodingSidebar({
                       onClick={() => {
                         void openWorktreeDialog(path);
                       }}
-                       className="flex h-8 w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs font-mono text-(--color-accent) hover:bg-(--bg-key)"
+                       className="flex h-8 w-full items-center gap-1.5 rounded-xs px-2 py-1 text-left text-xs font-mono text-(--color-accent) hover:bg-(--bg-key)"
                       style={{ paddingLeft: 32 }}
                     >
                       <Plus size={12} aria-hidden="true" />

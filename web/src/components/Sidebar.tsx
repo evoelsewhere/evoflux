@@ -501,7 +501,7 @@ export function Sidebar({
                         </span>
                         <button
                           onClick={() => refetchSessions()}
-                          className="rounded p-1 text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-muted)"
+                          className="rounded-xs p-1 text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-muted)"
                           aria-label="Refresh sessions"
                           title="Refresh sessions (Ctrl+R)"
                         >
@@ -702,7 +702,7 @@ export function Sidebar({
                     </span>
                     <button
                       onClick={() => refetchSessions()}
-                      className="rounded p-1 text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-muted)"
+                      className="rounded-xs p-1 text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-muted)"
                       aria-label="Refresh sessions"
                       title="Refresh sessions (Ctrl+R)"
                     >
@@ -1025,7 +1025,7 @@ function SessionRow({
               </motion.p>
             </AnimatePresence>
             {isScheduled && (
-              <span className="shrink-0 rounded px-1 py-px text-xs leading-tight bg-(--bg-key) text-(--color-text-subtle)">
+              <span className="shrink-0 rounded-xs px-1 py-px text-xs leading-tight bg-(--bg-key) text-(--color-text-subtle)">
                 sched
               </span>
             )}
@@ -1060,7 +1060,7 @@ function SessionRow({
               e.stopPropagation();
               onEdit(session);
             }}
-            className="absolute right-7 top-1/2 flex -translate-y-1/2 items-center justify-center rounded p-1 text-(--color-text-subtle) opacity-0 transition-all hover:bg-(--bg-key) hover:text-(--color-text) group-hover:opacity-100 pointer-coarse:opacity-100"
+            className="absolute right-7 top-1/2 flex -translate-y-1/2 items-center justify-center rounded-xs p-1 text-(--color-text-subtle) opacity-0 transition-all hover:bg-(--bg-key) hover:text-(--color-text) group-hover:opacity-100 pointer-coarse:opacity-100"
             aria-label={`Edit session ${session.title || "Untitled"}`}
           >
             <Pencil size={12} />
@@ -1072,7 +1072,7 @@ function SessionRow({
               e.stopPropagation();
               onDelete(session);
             }}
-            className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center justify-center rounded p-1 text-(--color-text-subtle) opacity-0 transition-all hover:bg-(--color-error-subtle) hover:text-(--color-error) group-hover:opacity-100 pointer-coarse:opacity-100"
+            className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center justify-center rounded-xs p-1 text-(--color-text-subtle) opacity-0 transition-all hover:bg-(--color-error-subtle) hover:text-(--color-error) group-hover:opacity-100 pointer-coarse:opacity-100"
             aria-label={`Delete session ${session.title || "Untitled"}`}
           >
             <Trash2 size={12} />
@@ -1088,7 +1088,7 @@ function SessionRow({
               e.stopPropagation();
               onCancelDelete();
             }}
-            className="rounded border border-(--color-border) bg-(--bg-card) px-2 py-1 text-xs text-(--color-text) hover:bg-(--bg-key)"
+            className="rounded-xs border border-(--color-border) bg-(--bg-card) px-2 py-1 text-xs text-(--color-text) hover:bg-(--bg-key)"
           >
             Cancel
           </button>
@@ -1098,7 +1098,7 @@ function SessionRow({
               e.stopPropagation();
               onConfirmDelete();
             }}
-            className="rounded bg-(--color-error) px-2 py-1 text-xs text-(--color-text-on-accent) hover:bg-(--color-error)/90"
+            className="rounded-xs bg-(--color-error) px-2 py-1 text-xs text-(--color-text-on-accent) hover:bg-(--color-error)/90"
           >
             Delete
           </button>

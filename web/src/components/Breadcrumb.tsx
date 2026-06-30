@@ -35,7 +35,7 @@ export function Breadcrumb({ items, className }: BreadcrumbProps) {
       <Link
         to="/"
         aria-label="Home"
-        className="flex shrink-0 items-center rounded px-0.5 py-0.5 transition-colors hover:text-(--color-text)"
+        className="flex shrink-0 items-center rounded-xs px-0.5 py-0.5 transition-colors hover:text-(--color-text)"
       >
         <Home size={11} aria-hidden="true" />
       </Link>
@@ -52,7 +52,7 @@ export function Breadcrumb({ items, className }: BreadcrumbProps) {
             {!isLast && item.to ? (
               <Link
                 to={item.to}
-                className="shrink-0 truncate rounded px-0.5 py-0.5 transition-colors hover:text-(--color-text)"
+                className="shrink-0 truncate rounded-xs px-0.5 py-0.5 transition-colors hover:text-(--color-text)"
               >
                 {item.label}
               </Link>

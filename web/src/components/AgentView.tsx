@@ -223,7 +223,7 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell 
                {onRevert && (
                 <button
                   onClick={onRevert}
-                  className="rounded p-0.5 text-(--color-text-muted) transition-colors hover:text-(--color-text-2)"
+                  className="rounded-xs p-0.5 text-(--color-text-muted) transition-colors hover:text-(--color-text-2)"
                   aria-label="Revert latest message"
                   title="Revert latest message"
                 >
@@ -232,7 +232,7 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell 
               )}
               <button
                 onClick={handleCopy}
-                className="rounded p-0.5 text-(--color-text-muted) transition-colors hover:text-(--color-text-2)"
+                className="rounded-xs p-0.5 text-(--color-text-muted) transition-colors hover:text-(--color-text-2)"
                aria-label="Copy message"
                title="Copy"
              >
@@ -594,7 +594,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                  return (
                    <div key={`turn-${item.startIndex}-${item.blocks[0]?.id ?? k}`}>
                      <div className="mb-2 flex items-center gap-1.5">
-                       <img src={EvoFluxLogo} width={14} height={14} className="rounded-[3px] opacity-70" alt="" aria-hidden="true" />
+                       <img src={EvoFluxLogo} width={14} height={14} className="rounded-xs opacity-70" alt="" aria-hidden="true" />
                        <span className="text-xs font-medium text-(--color-text-muted)">{activeAgent ?? 'evoflux'}</span>
                      </div>
                      <AssistantTurn
@@ -637,7 +637,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
               ))) && (
               <div>
                 <div className="mb-2 flex items-center gap-1.5">
-                  <img src={EvoFluxLogo} width={14} height={14} className="rounded-[3px] opacity-70" alt="" aria-hidden="true" />
+                  <img src={EvoFluxLogo} width={14} height={14} className="rounded-xs opacity-70" alt="" aria-hidden="true" />
                   <span className="text-xs font-medium text-(--color-text-muted)">{activeAgent ?? 'evoflux'}</span>
                 </div>
                 <LoadingVerb className="py-1 pl-0.5" />

@@ -399,7 +399,7 @@ export function SchedulerPanel({
             animate={prefersReducedMotion ? { opacity: 1 } : { x: 0, opacity: 1 }}
             exit={prefersReducedMotion ? { opacity: 0 } : { x: '100%', opacity: 0 }}
             transition={{ duration: prefersReducedMotion ? 0.01 : 0.22, ease: [0.4, 0, 0.2, 1] }}
-            className="fixed bottom-0 right-0 top-[env(safe-area-inset-top,0px)] z-50 flex w-full flex-col overflow-hidden border-l border-(--color-border) bg-(--bg-card) shadow-2xl sm:w-[460px]"
+            className="fixed bottom-0 right-0 top-[env(safe-area-inset-top,0px)] z-50 flex w-full flex-col overflow-hidden border-l border-(--color-border) bg-(--bg-page) shadow-2xl sm:w-[460px]"
             role="dialog"
             aria-modal="true"
             aria-label="Scheduled tasks"
@@ -410,7 +410,7 @@ export function SchedulerPanel({
               {pane !== 'list' && (
                 <button
                   onClick={handleBackToList}
-                  className="rounded p-1 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+                  className="rounded-xs p-1 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
                   aria-label="Back to task list"
                 >
                   <ArrowLeft size={16} />
@@ -439,7 +439,7 @@ export function SchedulerPanel({
               )}
               <button
                 onClick={onClose}
-                className="rounded p-1 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+                className="rounded-xs p-1 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
                 aria-label="Close scheduler panel"
                 title="Close (Esc)"
               >
@@ -903,7 +903,7 @@ function TaskDetailView({
             <button
               onClick={triggerTask}
               disabled={triggerMutation.isPending}
-              className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-40"
+              className="rounded-xs p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-40"
               title="Trigger now"
             >
               {triggerMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
@@ -911,7 +911,7 @@ function TaskDetailView({
             <button
               onClick={togglePaused}
               disabled={pauseMutation.isPending || resumeMutation.isPending}
-              className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-40"
+              className="rounded-xs p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-40"
               title={task.status === 'paused' ? 'Resume' : 'Pause'}
             >
               {(pauseMutation.isPending || resumeMutation.isPending)
@@ -920,7 +920,7 @@ function TaskDetailView({
             </button>
             <button
               onClick={() => setEditing(true)}
-              className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+              className="rounded-xs p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
               title="Edit task"
             >
               <Pencil size={14} />
@@ -928,7 +928,7 @@ function TaskDetailView({
             <button
               onClick={deleteTask}
               disabled={deleteMutation.isPending}
-              className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--color-error-subtle) hover:text-(--color-error) disabled:opacity-40"
+              className="rounded-xs p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--color-error-subtle) hover:text-(--color-error) disabled:opacity-40"
               title="Delete task"
             >
               {deleteMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}

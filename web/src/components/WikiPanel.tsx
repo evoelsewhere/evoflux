@@ -153,7 +153,7 @@ export function WikiPanel({ open, onClose }: WikiPanelProps) {
             animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 }}
             exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: 8 }}
             transition={{ duration: prefersReducedMotion ? 0.01 : 0.18, ease: [0.4, 0, 0.2, 1] }}
-            className="fixed inset-x-0 bottom-0 top-[env(safe-area-inset-top,0px)] z-50 flex flex-col overflow-hidden border-(--color-border) bg-(--bg-card) shadow-2xl sm:left-1/2 sm:top-1/2 sm:inset-auto sm:h-[min(90vh,860px)] sm:w-[min(90vw,1180px)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:border"
+            className="fixed inset-x-0 bottom-0 top-[env(safe-area-inset-top,0px)] z-50 flex flex-col overflow-hidden border-(--color-border) bg-(--bg-page) shadow-2xl sm:left-1/2 sm:top-1/2 sm:inset-auto sm:h-[min(90vh,860px)] sm:w-[min(90vw,1180px)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:border"
             role="dialog"
             aria-modal="true"
             aria-label="Wiki"
@@ -164,7 +164,7 @@ export function WikiPanel({ open, onClose }: WikiPanelProps) {
                 {isMobile && mobilePane === 'editor' && (
                   <button
                     onClick={handleBack}
-                    className="rounded p-1 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+                    className="rounded-xs p-1 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
                     aria-label="Back to file list"
                   >
                     <ArrowLeft size={16} />
@@ -179,7 +179,7 @@ export function WikiPanel({ open, onClose }: WikiPanelProps) {
               </div>
               <button
                 onClick={onClose}
-                className="rounded p-1 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+                className="rounded-xs p-1 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
                 aria-label="Close wiki panel"
               >
                 <X size={16} />
@@ -312,7 +312,7 @@ function WikiSection({
       <button
         type="button"
         onClick={() => setIsExpanded((value) => !value)}
-         className="group flex h-8 w-full items-center gap-1.5 rounded px-1.5 text-left text-xs text-(--color-text-2) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+         className="group flex h-8 w-full items-center gap-1.5 rounded-xs px-1.5 text-left text-xs text-(--color-text-2) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
         aria-expanded={isExpanded}
         title={section.hint}
       >
@@ -412,7 +412,7 @@ function WikiFileRow({
       onPointerCancel={clearLongPress}
       onPointerLeave={clearLongPress}
       className={cn(
-        'group flex h-8 w-full items-center gap-1.5 rounded px-1.5 text-left text-xs transition-colors',
+        'group flex h-8 w-full items-center gap-1.5 rounded-xs px-1.5 text-left text-xs transition-colors',
         isActive
           ? 'bg-(--bg-key) text-(--color-accent)'
           : 'text-(--color-text-2) hover:bg-(--bg-key) hover:text-(--color-text)',
@@ -551,7 +551,7 @@ function WikiEditor({
               onClick={handleSave}
               disabled={!dirty || writeMutation.isPending}
               className={cn(
-                'flex items-center gap-1 rounded px-2.5 py-1 text-xs font-medium transition-colors',
+                'flex items-center gap-1 rounded-xs px-2.5 py-1 text-xs font-medium transition-colors',
                 dirty
                   ? 'text-(--color-success) hover:bg-(--accent-green-soft)'
                   : 'cursor-not-allowed text-(--color-text-subtle)',
@@ -566,7 +566,7 @@ function WikiEditor({
             <button
               onClick={handleDelete}
               disabled={deleteMutation.isPending}
-              className="flex items-center gap-1 rounded px-2.5 py-1 text-xs font-medium text-(--color-error) transition-colors hover:bg-(--color-error-subtle)"
+              className="flex items-center gap-1 rounded-xs px-2.5 py-1 text-xs font-medium text-(--color-error) transition-colors hover:bg-(--color-error-subtle)"
               title="Delete file"
             >
               <Trash2 size={12} />
