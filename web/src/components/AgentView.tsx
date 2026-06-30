@@ -181,7 +181,7 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell 
            </div>
          )}
 
-          <div className={`relative min-w-0 max-w-full overflow-hidden rounded-2xl border px-4 py-3 text-sm leading-relaxed text-(--color-text) ${shell ? 'border-(--accent-blue)/30 bg-(--bg-key)' : 'border-(--color-border) bg-(--color-surface)'}`}>
+          <div className={`relative min-w-0 max-w-full overflow-hidden rounded-2xl border px-4 py-3 text-sm leading-relaxed text-(--color-text) ${shell ? 'border-(--accent-blue)/30 bg-(--bg-key)' : 'border-(--color-border-subtle) bg-(--bg-key)'}`}>
            {/* Expand / collapse button — top-right inside bubble */}
            {needsCollapse && (
              <button

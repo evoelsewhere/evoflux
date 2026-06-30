@@ -294,24 +294,24 @@
 :root.light {
     color-scheme: light;
 
-    /* Surfaces — VSCode 2026 Light: barely-cool tint for chrome, pure white for editor */
-    --bg-page:           #FAFAFD;
-    --bg-sidebar:        #FAFAFD;
+    /* Surfaces — warm off-white hierarchy, sidebar recedes from page */
+    --bg-page:           #FAF9F6;
+    --bg-sidebar:        #F3F1EB;
     --bg-card:           #FFFFFF;
     --bg-input:          #FFFFFF;
-    --bg-key:            #EAEAEA;
-    --bg-muted:          #EAEAEA;
+    --bg-key:            #ECEAE3;
+    --bg-muted:          #ECEAE3;
     --bg-send:           #111114;
     --color-surface:     #FFFFFF;
-    --color-surface-2:   #EAEAEA;
+    --color-surface-2:   #ECEAE3;
     --color-bg-elevated: #FFFFFF;
 
-    /* Borders — airy, rely on borders not fills for separation */
-    --border-soft:         #F0F1F2;
-    --border-card:         #E4E5E6;
-    --color-border-subtle: #F0F1F2;
-    --color-border:        #E4E5E6;
-    --color-border-strong: #D8D8DA;
+    /* Borders — warm-tinted, airy */
+    --border-soft:         #EEECE5;
+    --border-card:         #E4E2DA;
+    --color-border-subtle: #EEECE5;
+    --color-border:        #E4E2DA;
+    --color-border-strong: #D5D3CB;
 
     /* Text — ink-black primary, measured secondary scale */
     --color-text:           #202020;

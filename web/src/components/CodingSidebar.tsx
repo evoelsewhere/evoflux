@@ -197,10 +197,10 @@ function WorkspaceSessionList({
                 e.preventDefault();
                 onSessionContextActions(session, e);
               }}
-              className={`w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors ${
+              className={`w-full rounded-lg px-2 py-1.5 text-left text-xs transition-colors ${
                 isCurrent
                   ? "bg-(--bg-key) text-(--color-text)"
-                  : "text-(--color-text-2) hover:text-(--color-text)"
+                  : "text-(--color-text-2) hover:bg-(--bg-key)/50 hover:text-(--color-text)"
               }`}
             >
               <p className="truncate font-medium">

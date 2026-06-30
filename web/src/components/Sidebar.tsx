@@ -495,8 +495,8 @@ export function Sidebar({
                       transition={{ duration: prefersReducedMotion ? 0.01 : 0.15 }}
                       className={`flex min-h-0 flex-1 flex-col overflow-hidden ${card}`}
                     >
-                      <div className="flex items-center justify-between px-3 pb-1 pt-2">
-                        <span className="font-mono text-xs font-semibold uppercase tracking-[0.14em] text-(--color-text-muted)">
+                      <div className="flex items-center justify-between px-3 pb-1 pt-2.5">
+                        <span className="text-xs font-medium text-(--color-text-subtle)">
                           Recent
                         </span>
                         <button
@@ -505,7 +505,7 @@ export function Sidebar({
                           aria-label="Refresh sessions"
                           title="Refresh sessions (Ctrl+R)"
                         >
-                          <RefreshCw size={12} className={sessions.isFetching ? 'animate-spin' : ''} />
+                          <RefreshCw size={11} className={sessions.isFetching ? 'animate-spin' : ''} />
                         </button>
                       </div>
                       <div
@@ -527,7 +527,7 @@ export function Sidebar({
                           <div className="space-y-0.5">
                             {groupByDate(normalSessions).map(({ label, sessions: group }) => (
                               <div key={label}>
-                                <p className="px-2 pb-0.5 pt-2 text-xs text-(--color-text-subtle) first:pt-1">{label}</p>
+                                <p className="px-3 pb-1 pt-3 text-xs font-medium text-(--color-text-subtle) first:pt-1.5">{label}</p>
                                 {group.map((session) => (
                                   <SessionRow
                                     key={session.id}
@@ -1000,10 +1000,10 @@ function SessionRow({
           e.preventDefault();
           onContextActions?.(session, e);
         }}
-        className={`flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left transition-colors ${
+        className={`flex w-full items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors ${
           isActive
             ? "bg-(--bg-key) text-(--color-text)"
-            : "text-(--color-text-2) hover:text-(--color-text)"
+            : "text-(--color-text-2) hover:bg-(--bg-key)/50 hover:text-(--color-text)"
         }`}
       >
         <div className="min-w-0 flex-1">
