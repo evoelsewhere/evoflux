@@ -330,6 +330,7 @@ export function Sidebar({
       </AnimatePresence>
 
       <motion.aside
+        initial={false}
         animate={
           isMobile
             ? {
