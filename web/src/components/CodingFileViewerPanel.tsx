@@ -73,7 +73,7 @@ function CopyButton({ workspace, file }: { workspace: string; file: WorkspaceFil
       disabled={busy || tooLarge}
       title={label}
       aria-label={label}
-      className="flex h-9 min-w-9 items-center justify-center gap-1 rounded px-2 text-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2) disabled:cursor-not-allowed disabled:opacity-40 md:h-auto md:min-w-0 md:py-1"
+      className="flex h-9 min-w-9 items-center justify-center gap-1 rounded-xs px-2 text-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2) disabled:cursor-not-allowed disabled:opacity-40 md:h-auto md:min-w-0 md:py-1"
     >
       {copied ? <Check size={12} className="text-(--color-success)" /> : busy ? <Loader2 size={12} className="animate-spin" /> : <Copy size={12} />}
     </button>
@@ -319,7 +319,7 @@ function TextPreview({
               type="button"
               onClick={handleDiscard}
               disabled={saving}
-              className="flex items-center gap-1 rounded px-2 py-0.5 text-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-page) hover:text-(--color-text)"
+              className="flex items-center gap-1 rounded-xs px-2 py-0.5 text-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-page) hover:text-(--color-text)"
             >
               <Undo2 size={11} /> Discard
             </button>
@@ -375,7 +375,7 @@ function ImagePreview({ workspace, file }: { workspace: string; file: WorkspaceF
   const url = codingWorkspaceFileUrl(workspace, file.path)
   return (
     <div className="flex h-full min-h-0 items-center justify-center overflow-auto bg-(--bg-page) p-4">
-      <img src={url} alt={file.name} className="block max-h-full max-w-full rounded border border-(--color-border) object-contain" />
+      <img src={url} alt={file.name} className="block max-h-full max-w-full rounded-xs border border-(--color-border) object-contain" />
     </div>
   )
 }
@@ -553,23 +553,23 @@ export function CodingFileViewerPanel({
           </div>
           <div className="flex shrink-0 items-center gap-1">
             <div className="mr-1 flex rounded-md border border-(--color-border) p-0.5">
-              <button type="button" onClick={() => { setViewMode('file'); setEditing(false) }} className={cn('h-8 rounded px-2 text-xs md:h-auto md:py-1', viewMode === 'file' && !editing ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}>
+              <button type="button" onClick={() => { setViewMode('file'); setEditing(false) }} className={cn('h-8 rounded-xs px-2 text-xs md:h-auto md:py-1', viewMode === 'file' && !editing ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}>
                 File
               </button>
               {kind === 'text' && (
-                <button type="button" onClick={() => { setViewMode('file'); setEditing(true) }} className={cn('flex h-8 items-center gap-1 rounded px-2 text-xs md:h-auto md:py-1', editing ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}>
+                <button type="button" onClick={() => { setViewMode('file'); setEditing(true) }} className={cn('flex h-8 items-center gap-1 rounded-xs px-2 text-xs md:h-auto md:py-1', editing ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}>
                   <Pencil size={11} /> Edit
                 </button>
               )}
-              <button type="button" onClick={() => { setViewMode('diff'); setEditing(false) }} className={cn('flex h-8 items-center gap-1 rounded px-2 text-xs md:h-auto md:py-1', viewMode === 'diff' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}>
+              <button type="button" onClick={() => { setViewMode('diff'); setEditing(false) }} className={cn('flex h-8 items-center gap-1 rounded-xs px-2 text-xs md:h-auto md:py-1', viewMode === 'diff' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}>
                 <GitCompare size={11} /> Diff
               </button>
             </div>
-            <button type="button" onClick={() => void downloadCodingWorkspaceFile(workspace, file)} title="Download" className="flex h-9 w-9 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) md:h-auto md:w-auto md:p-1.5">
+            <button type="button" onClick={() => void downloadCodingWorkspaceFile(workspace, file)} title="Download" className="flex h-9 w-9 items-center justify-center rounded-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) md:h-auto md:w-auto md:p-1.5">
               <Download size={14} />
             </button>
             {(kind === 'text' || kind === 'drawio') && <CopyButton workspace={workspace} file={file} />}
-            <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) md:h-auto md:w-auto md:p-1.5" aria-label="Close file viewer">
+            <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) md:h-auto md:w-auto md:p-1.5" aria-label="Close file viewer">
               <X size={16} />
             </button>
           </div>

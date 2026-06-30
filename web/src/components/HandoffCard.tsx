@@ -36,7 +36,7 @@ function ConfidenceMeter({ value, compact }: { value: number; compact?: boolean 
   const color = value >= 0.8
     ? 'bg-(--color-success)'
     : value >= 0.5
-      ? 'bg-(--color-warning, orange)'
+      ? 'bg-(--color-warning)'
       : 'bg-(--color-error)'
   return (
     <div className={`flex items-center gap-2 ${compact ? 'text-xs' : 'text-xs'}`}>
@@ -75,7 +75,7 @@ export function HandoffCard({ artifact, fromAgent, compact = false }: HandoffCar
           textSize,
           'relative rounded-lg rounded-bl-sm',
           isPartial
-            ? 'border border-dashed border-(--color-warning, orange)/50 bg-(--color-surface)'
+            ? 'border border-dashed border-(--color-warning)/50 bg-(--color-surface)'
             : 'border border-(--color-accent)/30 bg-(--color-surface)',
           'leading-relaxed text-(--color-text) shadow-sm',
         ].join(' ')}
@@ -124,7 +124,7 @@ export function HandoffCard({ artifact, fromAgent, compact = false }: HandoffCar
               <ConfidenceMeter value={artifact.confidence} compact={compact} />
             )}
             {artifact.verification && (
-              <span className={`flex items-center gap-1 ${labelSize} ${artifact.verification.verified ? 'text-(--color-success)' : 'text-(--color-warning, orange)'}`}>
+              <span className={`flex items-center gap-1 ${labelSize} ${artifact.verification.verified ? 'text-(--color-success)' : 'text-(--color-warning)'}`}>
                 {artifact.verification.verified
                   ? <><CheckCircle2 size={compact ? 10 : 12} /> {artifact.verification.method}</>
                   : <><AlertTriangle size={compact ? 10 : 12} /> Not verified</>}

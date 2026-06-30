@@ -206,7 +206,7 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell 
               {onRevert && (
                 <button
                   onClick={onRevert}
-                  className="rounded p-0.5 text-(--color-text-muted) transition-colors hover:text-(--color-text-2)"
+                  className="rounded-xs p-0.5 text-(--color-text-muted) transition-colors hover:text-(--color-text-2)"
                   aria-label="Revert latest message"
                   title="Revert latest message"
                 >
@@ -215,7 +215,7 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell 
               )}
               <button
                 onClick={handleCopy}
-                className="rounded p-0.5 text-(--color-text-muted) transition-colors hover:text-(--color-text-2)"
+                className="rounded-xs p-0.5 text-(--color-text-muted) transition-colors hover:text-(--color-text-2)"
                aria-label="Copy message"
                title="Copy"
              >
@@ -497,7 +497,7 @@ export function AgentPane({
            {canMoveLeft && (
              <button
                onClick={onMoveLeft}
-               className="flex h-7 w-7 items-center justify-center rounded text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
+               className="flex h-7 w-7 items-center justify-center rounded-xs text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
                title="Move left"
              >
                <ChevronLeft size={14} aria-hidden="true" />
@@ -506,7 +506,7 @@ export function AgentPane({
            {canMoveRight && (
              <button
                onClick={onMoveRight}
-               className="flex h-7 w-7 items-center justify-center rounded text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
+               className="flex h-7 w-7 items-center justify-center rounded-xs text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
                title="Move right"
              >
                <ChevronRight size={14} aria-hidden="true" />
@@ -514,7 +514,7 @@ export function AgentPane({
            )}
            <button
              onClick={() => setPaneCollapsed((c) => !c)}
-             className="flex h-7 w-7 items-center justify-center rounded text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
+             className="flex h-7 w-7 items-center justify-center rounded-xs text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
              title={paneCollapsed ? 'Expand' : 'Collapse'}
            >
              {paneCollapsed

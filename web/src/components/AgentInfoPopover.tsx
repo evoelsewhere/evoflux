@@ -292,9 +292,9 @@ export function AgentInfoPopover({
           >
             {isLoading || !leadAgent ? (
               <div className="space-y-2 p-3">
-                <div className="h-4 w-32 animate-pulse rounded bg-(--bg-key)" />
-                <div className="h-8 animate-pulse rounded bg-(--bg-key)" />
-                <div className="h-16 animate-pulse rounded bg-(--bg-key)" />
+                <div className="h-4 w-32 animate-pulse rounded-xs bg-(--bg-key)" />
+                <div className="h-8 animate-pulse rounded-xs bg-(--bg-key)" />
+                <div className="h-16 animate-pulse rounded-xs bg-(--bg-key)" />
               </div>
             ) : (
               <div className="p-3">

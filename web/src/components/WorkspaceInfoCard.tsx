@@ -36,7 +36,7 @@ export function WorkspaceInfoCard({ workspace }: Props) {
   const dirtyTotal = dirty ? dirty.staged + dirty.unstaged + dirty.untracked : 0
 
   return (
-    <div className="mx-auto w-full max-w-md px-4 py-4">
+    <div className="mx-auto w-full max-w-md rounded-xl bg-(--bg-card) px-4 py-4">
       <div className="flex min-w-0 items-center gap-2">
         <Folder size={16} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
         <h2 className="truncate text-sm font-medium text-(--color-text)" title={name}>

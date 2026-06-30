@@ -710,7 +710,7 @@ export function SessionSettingsPanel({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: 8 }}
             transition={{ duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
-            className="fixed bottom-0 left-0 right-0 top-[env(safe-area-inset-top,0px)] z-50 flex flex-col overflow-hidden border border-(--color-border) bg-(--bg-card) shadow-2xl sm:bottom-auto sm:left-1/2 sm:right-auto sm:top-1/2 sm:h-[min(90vh,860px)] sm:w-[min(90vw,960px)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-md"
+            className="fixed bottom-0 left-0 right-0 top-[env(safe-area-inset-top,0px)] z-50 flex flex-col overflow-hidden border border-(--color-border) bg-(--bg-page) shadow-2xl sm:bottom-auto sm:left-1/2 sm:right-auto sm:top-1/2 sm:h-[min(90vh,860px)] sm:w-[min(90vw,960px)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-md"
             role="dialog"
             aria-modal="true"
             aria-label="Session settings"
@@ -718,7 +718,7 @@ export function SessionSettingsPanel({
         {/* Header */}
         <header className="flex shrink-0 items-start justify-between gap-3 border-b border-(--color-border) px-5 py-4">
           {isLoading || !leadAgent ? (
-            <div className="h-6 w-48 animate-pulse rounded bg-(--bg-key)" />
+            <div className="h-6 w-48 animate-pulse rounded-xs bg-(--bg-key)" />
           ) : (
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">

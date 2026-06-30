@@ -30,7 +30,7 @@ function StepRow({ step, index }: { step: PlanStep; index: number }) {
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="rounded bg-(--bg-key) px-1.5 py-0.5 font-mono text-xs text-(--color-text-muted)">
+          <span className="rounded-xs bg-(--bg-key) px-1.5 py-0.5 font-mono text-xs text-(--color-text-muted)">
             {step.tool}
           </span>
           <span className="text-xs font-semibold text-(--color-text-muted)">
@@ -74,7 +74,7 @@ export function PlanApprovalModal() {
       aria-labelledby="plan-approval-title"
     >
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" aria-hidden="true" />
+      <div className="absolute inset-0 bg-(--color-overlay) backdrop-blur-sm" aria-hidden="true" />
 
       {/* Panel */}
       <div className="relative z-10 w-full max-w-lg overflow-hidden rounded-2xl border border-(--color-border) bg-(--bg-page) shadow-2xl">
