@@ -152,11 +152,11 @@
     --color-border-strong: #4A4B4D;
 
     /* Text — softened foreground reduces glare on near-black bg */
-    --color-text:           #C8CACC;
-    --color-text-2:         #8C8C8C;
-    --color-text-muted:     #747478;
-    --color-text-subtle:    #58585C;
-    --color-text-on-accent: #121314;
+    --color-text:           #ffffff;
+    --color-text-2:         #d9d9d9;
+    --color-text-muted:     #b8b8bd;
+    --color-text-subtle:    #ababaf;
+    --color-text-on-accent: #494d52;
 
     /* Accent */
     --color-accent:  #C8CACC;
@@ -314,10 +314,10 @@
     --color-border-strong: #D5D3CB;
 
     /* Text — ink-black primary, measured secondary scale */
-    --color-text:           #202020;
-    --color-text-2:         #606060;
-    --color-text-muted:     #717171;
-    --color-text-subtle:    #8A8A8C;
+    --color-text:           #000000;
+    --color-text-2:         #1a1a1a;
+    --color-text-muted:     #3c3c3c;
+    --color-text-subtle:    #4d4d4d;
     --color-text-on-accent: #FFFFFF;
 
     /* Accent */
