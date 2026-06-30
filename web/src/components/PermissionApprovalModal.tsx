@@ -25,7 +25,6 @@ export function PermissionApprovalModal() {
   const handleReply = async (reply: 'once' | 'always' | 'reject') => {
     if (!permissionRequest || !sessionId) return
     setReplying(true)
-    setReplyError(null)
     try {
       await replyPermissionRequest(sessionId, permissionRequest.requestId, reply)
     } catch {

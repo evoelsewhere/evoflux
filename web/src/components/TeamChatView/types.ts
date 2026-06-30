@@ -9,6 +9,6 @@
  * 2-way segmented control in the header.
  */
 
-export type ViewMode = 'agent' | 'split'
+export type ViewMode = 'agent' | 'split' | 'monitor'
 
-export const VIEW_MODES: ViewMode[] = ['agent', 'split']
+export const VIEW_MODES: ViewMode[] = ['agent', 'split', 'monitor']

@@ -38,6 +38,7 @@ import { ActivityPanel } from '../ActivityPanel'
 import { BrowserViewer } from '../BrowserViewer'
 import { PlanApprovalModal } from '../PlanApprovalModal'
 import { PermissionApprovalModal } from '../PermissionApprovalModal'
+import { MonitorView } from '../MonitorView'
 import { useTodosQuery } from '@/queries/useTodosQuery'
 import { useSessionChapters } from '@/hooks/useSessionChapters'
 import { SessionTOC } from '@/components/SessionTOC'
@@ -128,7 +129,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
   const [fileRefsEnabled, setFileRefsEnabled] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('agent')
 
-  // On mobile, always force agent view — split/unified require a wide screen.
+  // On mobile, always force agent view — split/monitor require a wide screen.
   // Also close any desktop-only panels when shrinking to mobile.
   const effectiveViewMode: ViewMode = isMobile ? 'agent' : viewMode
   useEffect(() => {
@@ -1207,7 +1208,13 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
           </div>
         )}
         {/* Content area */}
-        {effectiveViewMode === 'split' && splitAgentNames.length > 0 ? (
+        {effectiveViewMode === 'monitor' ? (
+          <MonitorView
+            agentNames={agentNames}
+            leadName={leadName}
+            agentStreams={agentStreams}
+          />
+        ) : effectiveViewMode === 'split' && splitAgentNames.length > 0 ? (
           <div className="min-h-0 flex-1 p-3">
             <SplitGrid
               agentNames={splitAgentNames}
