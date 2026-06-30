@@ -913,29 +913,33 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
         handleMobileActionsSwipeEnd()
       }}
     >
-      {/* Sidebar — full height on desktop */}
+      {/* Sidebar — full height on desktop. Both sidebars stay mounted to avoid
+          remount jitter on mode switch; CSS hides the inactive one. */}
       {!isMobile && (
-        mode === 'coding' ? (
-          <CodingSidebar
-            currentSessionId={sessionIdState || undefined}
-            workspace={workspace}
-            onCollapse={() => setCodingSidebarCollapsed(true)}
-            openWorkspaceDialogKey={openWorkspaceDialogKey}
-            onCommandPalette={() => setShowPalette(true)}
-            desktopCollapsed={codingSidebarCollapsed}
-            mobileOpen={false}
-            onMobileClose={() => {}}
-          />
-        ) : (
-          <Sidebar
-            currentSessionId={sessionIdState || undefined}
-            onCommandPalette={() => setShowPalette(true)}
-            onNewChat={handleNewSession}
-            mode={mode}
-            mobileOpen={false}
-            onMobileClose={() => {}}
-          />
-        )
+        <>
+          <div className={mode !== 'coding' ? 'contents' : 'hidden'}>
+            <Sidebar
+              currentSessionId={sessionIdState || undefined}
+              onCommandPalette={() => setShowPalette(true)}
+              onNewChat={handleNewSession}
+              mode={mode}
+              mobileOpen={false}
+              onMobileClose={() => {}}
+            />
+          </div>
+          <div className={mode === 'coding' ? 'contents' : 'hidden'}>
+            <CodingSidebar
+              currentSessionId={sessionIdState || undefined}
+              workspace={workspace}
+              onCollapse={() => setCodingSidebarCollapsed(true)}
+              openWorkspaceDialogKey={openWorkspaceDialogKey}
+              onCommandPalette={() => setShowPalette(true)}
+              desktopCollapsed={codingSidebarCollapsed}
+              mobileOpen={false}
+              onMobileClose={() => {}}
+            />
+          </div>
+        </>
       )}
 
       {/* Sidebar toggle — positioned between sidebar and main content on desktop */}
@@ -1121,29 +1125,32 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
       {/* Body — main content column. On mobile the Sidebar is
           position:fixed (overlay drawer), rendered here for z-stacking. */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        {/* Mobile sidebar overlay */}
+        {/* Mobile sidebar overlay. Both sidebars stay mounted; CSS hides inactive one. */}
         {isMobile && (
-          mode === 'coding' ? (
-            <CodingSidebar
-              currentSessionId={sessionIdState || undefined}
-              workspace={workspace}
-              onCollapse={() => setCodingSidebarCollapsed(true)}
-              openWorkspaceDialogKey={openWorkspaceDialogKey}
-              onCommandPalette={() => setShowPalette(true)}
-              desktopCollapsed={codingSidebarCollapsed}
-              mobileOpen={mobileSidebarOpen}
-              onMobileClose={() => setMobileSidebarOpen(false)}
-            />
-          ) : (
-            <Sidebar
-              currentSessionId={sessionIdState || undefined}
-              onCommandPalette={() => setShowPalette(true)}
-              onNewChat={handleNewSession}
-              mode={mode}
-              mobileOpen={mobileSidebarOpen}
-              onMobileClose={() => setMobileSidebarOpen(false)}
-            />
-          )
+          <>
+            <div className={mode !== 'coding' ? 'contents' : 'hidden'}>
+              <Sidebar
+                currentSessionId={sessionIdState || undefined}
+                onCommandPalette={() => setShowPalette(true)}
+                onNewChat={handleNewSession}
+                mode={mode}
+                mobileOpen={mobileSidebarOpen}
+                onMobileClose={() => setMobileSidebarOpen(false)}
+              />
+            </div>
+            <div className={mode === 'coding' ? 'contents' : 'hidden'}>
+              <CodingSidebar
+                currentSessionId={sessionIdState || undefined}
+                workspace={workspace}
+                onCollapse={() => setCodingSidebarCollapsed(true)}
+                openWorkspaceDialogKey={openWorkspaceDialogKey}
+                onCommandPalette={() => setShowPalette(true)}
+                desktopCollapsed={codingSidebarCollapsed}
+                mobileOpen={mobileSidebarOpen}
+                onMobileClose={() => setMobileSidebarOpen(false)}
+              />
+            </div>
+          </>
         )}
 
         <main id="main" ref={mainColumnRef} className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-[10px] bg-(--bg-page) shadow-sm">
