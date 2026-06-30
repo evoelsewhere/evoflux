@@ -6,10 +6,10 @@
  * cluster as the bordered status pill and chip dropdown next to it.
  */
 
-import { User, Columns2, type LucideIcon } from 'lucide-react'
+import { User, Columns2, LayoutDashboard, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-export type ViewMode = 'agent' | 'split'
+export type ViewMode = 'agent' | 'split' | 'monitor'
 
 interface ModeDef {
   mode: ViewMode
@@ -20,6 +20,7 @@ interface ModeDef {
 const MODES: readonly ModeDef[] = [
   { mode: 'agent', label: 'Agent view', Icon: User },
   { mode: 'split', label: 'Split view', Icon: Columns2 },
+  { mode: 'monitor', label: 'Monitor view', Icon: LayoutDashboard },
 ] as const
 
 export interface ViewToggleProps {
