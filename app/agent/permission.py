@@ -298,21 +298,68 @@ class AutoAllowPermissionService(PermissionService):
                     tool, pattern, self.base_ruleset + self.session_ruleset
                 )
 
-        # Fire on_ask callback for SSE visibility (non-blocking)
-        if self._on_ask is not None:
-            req = PermissionRequest.create(
-                session_id=self.session_id,
-                tool=tool,
-                patterns=patterns,
-                always_patterns=always_patterns or patterns,
-                metadata=metadata or {},
+        # Auto-allow — add to session ruleset silently (no SSE, no modal).
+        for p in (always_patterns or patterns):
+            self.session_ruleset.append(
+                Rule(permission=tool, pattern=p, action="allow")
             )
-            self._on_ask(req)
-            # Auto-allow — add to session ruleset
-            for p in req.always_patterns:
+
+
+# ── AcceptEdits service ───────────────────────────────────────────────────────
+
+# Tools that are safe to auto-accept without asking the user.
+_ACCEPT_EDITS_TOOLS: frozenset[str] = frozenset(
+    {"read", "edit", "write", "patch", "glob", "grep", "ls", "lsp_diagnostics"}
+)
+
+
+class AcceptEditsPermissionService(PermissionService):
+    """Auto-accepts file-read/edit/write tool calls; blocks on shell and other
+    destructive ops so the user can approve them one at a time.
+    """
+
+    async def ask(
+        self,
+        tool: str,
+        patterns: list[str],
+        always_patterns: list[str] | None = None,
+        metadata: dict | None = None,
+    ) -> None:
+        for pattern in patterns:
+            rule = evaluate(tool, pattern, self.base_ruleset, self.session_ruleset)
+            if rule.action == "deny":
+                raise PermissionDeniedError(
+                    tool, pattern, self.base_ruleset + self.session_ruleset
+                )
+
+        if tool in _ACCEPT_EDITS_TOOLS:
+            # Auto-allow read/edit/write — no blocking, no SSE noise.
+            for p in (always_patterns or patterns):
                 self.session_ruleset.append(
                     Rule(permission=tool, pattern=p, action="allow")
                 )
+            return
+
+        # Delegate to the base blocking service for everything else.
+        await super().ask(tool, patterns, always_patterns, metadata)
+
+
+# ── Bypass service ────────────────────────────────────────────────────────────
+
+
+class BypassPermissionService(PermissionService):
+    """Skips rule evaluation entirely — all tool calls are allowed without SSE
+    noise.  Intended for power users who trust the agent completely.
+    """
+
+    async def ask(
+        self,
+        tool: str,
+        patterns: list[str],
+        always_patterns: list[str] | None = None,
+        metadata: dict | None = None,
+    ) -> None:
+        return  # unconditional allow, no events
 
 
 # ── Context-var integration ───────────────────────────────────────────────────

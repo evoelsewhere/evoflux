@@ -83,6 +83,25 @@ async def reply_permission(
         request_id,
         body.reply,
     )
+
+    # Push SSE so the frontend closes the permission modal immediately.
+    import contextlib as _cl
+    from app.agent.schemas.events import PermissionRepliedEvent
+    from app.services import memory_stream_store as stream_store
+    from app.services.stream_envelope import StreamEnvelope
+
+    with _cl.suppress(Exception):
+        await stream_store.push_event(
+            session_id,
+            StreamEnvelope.from_event(
+                PermissionRepliedEvent(
+                    request_id=request_id,
+                    session_id=session_id,
+                    reply=body.reply,
+                )
+            ),
+        )
+
     return {"status": "ok", "request_id": request_id, "reply": body.reply}
 
 

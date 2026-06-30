@@ -297,6 +297,7 @@ def _default_tool_registry() -> dict[str, Tool]:
         code_symbol,
     )
     from app.agent.tools.builtin.plan import enter_plan_mode, exit_plan_mode
+    from app.agent.tools.builtin.chapter import mark_chapter
     from app.agent.tools.builtin.bg_tasks import (
         shell_bg_start,
         shell_bg_status,
@@ -345,6 +346,7 @@ def _default_tool_registry() -> dict[str, Tool]:
         "lsp_diagnostics": lsp_diagnostics,
         "lsp_definition": lsp_definition,
         "lsp_references": lsp_references,
+        "mark_chapter": mark_chapter,
     }
     # Merge MCP tools from healthy servers. Names follow ``mcp_<server>_<tool>``
     # so they cannot collide with the builtins above.

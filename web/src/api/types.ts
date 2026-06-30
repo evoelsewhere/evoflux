@@ -27,6 +27,16 @@ export interface PlanApprovalPending {
   steps: PlanStep[]
 }
 
+export type PermissionMode = 'ask' | 'accept-edits' | 'plan' | 'auto' | 'bypass'
+
+export interface PermissionRequestPending {
+  requestId: string
+  sessionId: string
+  tool: string
+  patterns: string[]
+  metadata: Record<string, unknown>
+}
+
 export interface AgentToolInfo {
   name: string
   description: string
@@ -230,6 +240,7 @@ export interface SessionResponse {
   mode?: string
   workspace?: string | null
   workspace_hidden?: boolean
+  permission_mode?: string
   model?: string | null
   thinking_level?: string | null
   running?: boolean
@@ -282,6 +293,16 @@ export interface TeamHistoryResponse {
   next_cursor: string | null
 }
 
+export interface Chapter {
+  id: string
+  session_id: string
+  title: string
+  summary: string | null
+  message_id: string | null
+  wiki_paths: string[]
+  created_at: string
+}
+
 // SSE Event Types
 export type SSEEventType =
   | 'session'
@@ -306,6 +327,7 @@ export type SSEEventType =
   | 'summarization_content'
   | 'summarization_end'
   | 'browser_session'
+  | 'chapter_created'
 
 export interface SSEEvent {
   type: SSEEventType

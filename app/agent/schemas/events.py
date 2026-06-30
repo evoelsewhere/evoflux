@@ -300,3 +300,18 @@ class PromptSuggestionsEvent(BaseModel):
     type: Literal["prompt_suggestions"] = "prompt_suggestions"
     suggestions: list[str]  # 1–3 short follow-up prompts
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ChapterCreatedEvent(BaseModel):
+    """An agent called mark_chapter — a new session chapter was persisted.
+
+    The frontend invalidates its chapter query cache so the SessionTOC
+    refreshes without a full page reload.
+    """
+
+    type: Literal["chapter_created"] = "chapter_created"
+    chapter_id: str
+    session_id: str
+    title: str
+    summary: str | None = None
+    message_id: str | None = None

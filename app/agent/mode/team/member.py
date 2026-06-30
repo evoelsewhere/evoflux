@@ -55,7 +55,10 @@ from app.agent.plugins.role import reset_role, set_role
 from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
 from app.core.paths import session_workspace_dir
 from app.agent.permission import (
+    AcceptEditsPermissionService,
     AutoAllowPermissionService,
+    BypassPermissionService,
+    PermissionService,
     set_permission_service,
     _permission_ctx,
 )
@@ -273,6 +276,19 @@ def _open_task_nudge_content(open_todos: list[dict], lead_name: str) -> str:
 
 
 # =============================================================================
+def _make_permission_service(session_id: str, permission_mode: str) -> "PermissionService":
+    """Return the PermissionService that corresponds to the session's mode."""
+    if permission_mode == "ask":
+        return PermissionService(session_id=session_id)
+    if permission_mode == "accept-edits":
+        return AcceptEditsPermissionService(session_id=session_id)
+    if permission_mode == "bypass":
+        return BypassPermissionService(session_id=session_id)
+    # "plan" and "auto" both use AutoAllowPermissionService; plan is handled
+    # separately by PlanModeService (the agent calls enter_plan_mode itself).
+    return AutoAllowPermissionService(session_id=session_id)
+
+
 # TeamMemberBase — shared worker infrastructure
 # =============================================================================
 
@@ -1029,9 +1045,11 @@ class TeamMemberBase(abc.ABC):
         session_sandbox = SandboxConfig(workspace=workspace, session_id=lead_session_id)
         token = set_sandbox(session_sandbox)
 
-        # Scope permission service to this agent run — auto-allows by default,
-        # fires SSE events so the frontend can optionally show an approval UI.
-        permission_service = AutoAllowPermissionService(session_id=self.session_id)
+        # Scope permission service — instantiate based on the session's
+        # persisted permission_mode (ask | accept-edits | plan | auto | bypass).
+        permission_service: PermissionService = _make_permission_service(
+            self.session_id, self._team.permission_mode
+        )
         perm_token = set_permission_service(permission_service)
 
         # Scope plan mode service — tracks active plan and pending approvals.

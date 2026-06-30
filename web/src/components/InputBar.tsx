@@ -1,10 +1,11 @@
 import { useRef, useState, useCallback, useImperativeHandle, forwardRef, useEffect, useMemo } from 'react'
-import { ArrowUp, File, Folder, ListTodo, Loader2, MessageCircle, Paperclip, Square, Terminal } from 'lucide-react'
+import { Activity, ArrowUp, Brain, File, Folder, FolderOpen, Loader2, MessageCircle, Paperclip, Square, Terminal } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { FilePreviewStrip } from './FilePreviewStrip'
 import { findActiveMention, rankFileRefs, type FileRef } from './InputBar.mentions'
 import { MentionOverlay } from './InputBar.overlay'
 import { SessionPillsRow, type SessionPillsRowProps } from './SessionPillsRow'
+import { ModeSelector } from './ModeSelector'
 import { TodosList } from './TodosList'
 import { cn } from '@/lib/utils'
 import type { AgentCapabilities, TodoItem } from '@/api/types'
@@ -142,6 +143,14 @@ interface InputBarProps {
   todosOpen?: boolean
   onTodosOpenChange?: (open: boolean) => void
   sessionId?: string | null
+  onWiki?: () => void
+  wikiActive?: boolean
+  onFiles?: () => void
+  filesDisabled?: boolean
+  onActivity?: () => void
+  activityActive?: boolean
+  permissionMode?: import('@/api/types').PermissionMode
+  onPermissionModeChange?: (mode: import('@/api/types').PermissionMode) => void
 }
 
 export interface InputBarHandle {
@@ -196,6 +205,14 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   todosOpen = false,
   onTodosOpenChange,
   sessionId,
+  onWiki,
+  wikiActive,
+  onFiles,
+  filesDisabled,
+  onActivity,
+  activityActive,
+  permissionMode,
+  onPermissionModeChange,
 }, ref) {
   const [value, setValue] = useState('')
   const [files, setFiles] = useState<File[]>([])
@@ -948,13 +965,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     : actionBtnClass
 
   const todoCount = todos?.length ?? 0
-  const hasInProgressTodos = todos?.some((t) => t.status === 'in_progress') ?? false
-  const todosBtnClass = cn(
-    actionBtnClass,
-    'relative',
-    todosOpen && 'border-(--color-accent) bg-(--bg-key) text-(--color-text)',
-  )
-  const showTodosInline = todosOpen && todoCount >= 0
+  const showTodosInline = todosOpen && todoCount > 0
 
   // Three states share one DOM tree: minimized, single-line, multi-line.
   // Multi-line is triggered by the slot's flex-basis:100% which wraps the
@@ -976,28 +987,6 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       <Paperclip size={14} aria-hidden="true" />
     </button>
   )
-
-  const todosBtnEl = onTodosOpenChange ? (
-    <button
-      type="button"
-      onClick={(e) => {
-        stopClick(e)
-        onTodosOpenChange(!todosOpen)
-      }}
-      disabled={disabled || !sessionId}
-      aria-label="Task list"
-      title={sessionId ? 'Task list (Ctrl+T)' : 'No active session'}
-      className={todosBtnClass}
-    >
-      <ListTodo size={14} aria-hidden="true" />
-      {hasInProgressTodos && (
-        <span
-          aria-hidden="true"
-          className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-(--color-accent)"
-        />
-      )}
-    </button>
-  ) : null
 
   const chatEl = minimized ? (
     <button
@@ -1343,6 +1332,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                     <TodosList
                       todos={todos ?? []}
                       listClassName="max-h-[min(40vh,16rem)]"
+                      onClose={() => onTodosOpenChange?.(false)}
                     />
                   </div>
                 )}
@@ -1372,28 +1362,48 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                   {messageSlot}
                 </div>
 
-                {/* Bottom action bar — pills + tools on left, send on right */}
+                {/* Bottom action bar — action buttons left · config selectors right · send */}
                 <div className="flex items-center gap-1.5 px-3 pb-3 pt-1">
+                  {/* Left: content & navigation actions */}
                   {!shellMode && attachEl}
-                  {!shellMode && (
+                  {onFiles && (
                     <button
                       type="button"
-                      onClick={(e) => {
-                        stopClick(e)
-                        setShellMode(true)
-                        setMentionRange(null)
-                        setSnippetRange(null)
-                        requestAnimationFrame(() => textareaRef.current?.focus())
-                      }}
-                      disabled={disabled}
-                      aria-label="Shell mode"
-                      title="Run a shell command"
+                      onClick={(e) => { stopClick(e); onFiles() }}
+                      disabled={filesDisabled}
+                      aria-label="Workspace files"
+                      title={filesDisabled ? 'No active session' : 'Workspace files (Ctrl+F)'}
                       className={actionBtnClass}
                     >
-                      <Terminal size={13} aria-hidden="true" />
+                      <FolderOpen size={14} aria-hidden="true" />
                     </button>
                   )}
-                  {todosBtnEl}
+                  {onWiki && (
+                    <button
+                      type="button"
+                      onClick={(e) => { stopClick(e); onWiki() }}
+                      aria-label="Wiki"
+                      title="Wiki / session notes (Ctrl+M)"
+                      className={cn(actionBtnClass, wikiActive && 'bg-(--bg-key) text-(--color-text)')}
+                    >
+                      <Brain size={14} aria-hidden="true" />
+                    </button>
+                  )}
+                  {onActivity && (
+                    <button
+                      type="button"
+                      onClick={(e) => { stopClick(e); onActivity() }}
+                      aria-label="Team activity log"
+                      title="Team activity log"
+                      className={cn(actionBtnClass, activityActive && 'bg-(--bg-key) text-(--color-text)')}
+                    >
+                      <Activity size={14} aria-hidden="true" />
+                    </button>
+                  )}
+
+                  <div className="flex-1" />
+
+                  {/* Right: session config selectors */}
                   {onSessionModelSettingsChange && (
                     <SessionPillsRow
                       sessionModel={sessionModel}
@@ -1405,7 +1415,12 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                       workspace={agentWorkspace}
                     />
                   )}
-                  <div className="flex-1" />
+                  {permissionMode && onPermissionModeChange && (
+                    <ModeSelector
+                      mode={permissionMode}
+                      onModeChange={onPermissionModeChange}
+                    />
+                  )}
                   {showCharCount && (
                     <span
                       className={`shrink-0 font-mono text-xs ${

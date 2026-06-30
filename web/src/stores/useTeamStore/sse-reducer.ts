@@ -133,6 +133,19 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
         break
       }
 
+      case 'chapter_created': {
+        const sessionId = d.session_id as string | undefined
+        if (sessionId) {
+          set((draft) => {
+            draft.cacheInvalidations = [
+              ...draft.cacheInvalidations,
+              { kind: 'chapters', sessionId },
+            ]
+          })
+        }
+        break
+      }
+
       case 'thinking': {
         const agent = d.agent as string
         const text = d.text as string
@@ -610,6 +623,28 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
               })),
               lastAction: (d.action as string | undefined) ?? null,
             }
+          }
+        })
+        break
+      }
+
+      case 'permission_asked': {
+        set((draft) => {
+          draft.permissionRequest = {
+            requestId: d.request_id as string,
+            sessionId: d.session_id as string,
+            tool: d.tool as string,
+            patterns: (d.patterns as string[]) ?? [],
+            metadata: (d.metadata as Record<string, unknown>) ?? {},
+          }
+        })
+        break
+      }
+
+      case 'permission_replied': {
+        set((draft) => {
+          if (draft.permissionRequest?.requestId === (d.request_id as string)) {
+            draft.permissionRequest = null
           }
         })
         break

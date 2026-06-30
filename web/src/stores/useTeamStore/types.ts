@@ -1,4 +1,6 @@
-import type { ContentBlock, AgentUsage, TeamCommandResponse, PlanApprovalPending } from '@/api/types'
+import type { ContentBlock, AgentUsage, TeamCommandResponse, PlanApprovalPending, PermissionRequestPending, PermissionMode } from '@/api/types'
+
+export type { PermissionMode }
 
 export interface PendingMessage {
   id: string
@@ -31,6 +33,7 @@ export type CacheInvalidation =
   | { kind: 'todos'; sessionId: string }
   | { kind: 'team_agents' }
   | { kind: 'team_sessions' }
+  | { kind: 'chapters'; sessionId: string }
 
 export interface SetupRequiredNotice {
   agent: string
@@ -99,6 +102,8 @@ export interface TeamStoreState {
   setupRequired: SetupRequiredNotice | null
   browserSession: BrowserSessionInfo | null
   planApproval: PlanApprovalPending | null
+  permissionRequest: PermissionRequestPending | null
+  permissionMode: PermissionMode
   promptSuggestions: string[] | null
   _pendingMessages: PendingMessage[]
   _sessionGeneration: number

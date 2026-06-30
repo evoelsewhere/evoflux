@@ -85,6 +85,9 @@ export const queryKeys = {
     list: () => ['scheduler', 'list'] as const,
   },
   todos: (sessionId: string) => ['todos', sessionId] as const,
+  chapters: {
+    list: (sessionId: string) => ['chapters', sessionId] as const,
+  },
   mcp: {
     all: () => ['mcp'] as const,
     list: () => ['mcp', 'list'] as const,

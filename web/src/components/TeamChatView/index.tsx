@@ -37,11 +37,14 @@ import { SchedulerPanel } from '../SchedulerPanel'
 import { ActivityPanel } from '../ActivityPanel'
 import { BrowserViewer } from '../BrowserViewer'
 import { PlanApprovalModal } from '../PlanApprovalModal'
+import { PermissionApprovalModal } from '../PermissionApprovalModal'
 import { useTodosQuery } from '@/queries/useTodosQuery'
+import { useSessionChapters } from '@/hooks/useSessionChapters'
+import { SessionTOC } from '@/components/SessionTOC'
 import { useProvidersQuery, useRegistryQuery, useTriggerDreamMutation } from '@/queries'
 import { useCommandsQuery } from '@/queries/useCommandsQuery'
 import { useSnippetsQuery } from '@/queries/useSnippetsQuery'
-import { renderCommand, renderSnippet, resolveApiUrl, resolveTeamSession } from '@/api/client'
+import { renderCommand, renderSnippet, resolveApiUrl, resolveTeamSession, setSessionPermissionMode, getTeamSession } from '@/api/client'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { useToastStore } from '@/stores/useToastStore'
 import { prependSession, prependWorkspaceSession } from '@/stores/cache-invalidation-bridge'
@@ -49,7 +52,7 @@ import { useUIStore } from '@/stores/useUIStore'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useTeamAgentsQuery } from '@/queries/useAgentsQuery'
 import { useFileRefsQuery } from '@/queries/useFileRefsQuery'
-import { AlertCircle, Activity, Brain, CalendarClock, Check, ChevronDown, FolderOpen, FolderCode, Menu, Minimize2, MoreHorizontal, PanelLeft, SlidersHorizontal, X } from 'lucide-react'
+import { AlertCircle, Brain, CalendarClock, Check, ChevronDown, FolderOpen, FolderCode, Menu, Minimize2, MoreHorizontal, PanelLeft, SlidersHorizontal, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { usePlatform } from '@/hooks/use-platform'
@@ -119,6 +122,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
   const [openWorkspaceDialogKey, setOpenWorkspaceDialogKey] = useState(0)
   const [showTodos, setShowTodos] = useState(false)
   const [showActivity, setShowActivity] = useState(false)
+  const [permissionMode, setPermissionMode] = useState<import('@/api/types').PermissionMode>('auto')
   const [showMobileActions, setShowMobileActions] = useState(false)
   const [showPalette, setShowPalette] = useState(false)
   const [fileRefsEnabled, setFileRefsEnabled] = useState(false)
@@ -168,6 +172,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
   const activeLoop     = useTeamStore((s) => s.activeLoop)
   const isConnected    = useTeamStore((s) => s.isConnected)
   const promptSuggestions = useTeamStore((s) => s.promptSuggestions)
+  const permissionModeSt = useTeamStore((s) => s.permissionMode)
 
   // Utility modal state lives in useUIStore so only one can be open at a time.
   const wikiOpen = useUIStore((s) => s.wikiOpen)
@@ -200,6 +205,13 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
 
   const { data: todosData } = useTodosQuery(sessionIdState)
   const todos = todosData?.todos ?? []
+  const prevTodosLen = useRef(todos.length)
+  useEffect(() => {
+    if (prevTodosLen.current === 0 && todos.length > 0) setShowTodos(true)
+    if (todos.length === 0) setShowTodos(false)
+    prevTodosLen.current = todos.length
+  }, [todos.length])
+  const { data: chapters = [] } = useSessionChapters(sessionIdState)
   const providersQ = useProvidersQuery()
   const hasConfiguredModelProvider = providersQ.data?.providers.some(
     (provider) => provider.kind !== 'local' && provider.is_configured,
@@ -417,6 +429,17 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
     if (sessionIdState) setShowFilesPanel((value) => !value)
   }, [isMobile, mode, workspace, sessionIdState])
 
+  const handlePermissionModeChange = useCallback(async (newMode: import('@/api/types').PermissionMode) => {
+    setPermissionMode(newMode)
+    if (sessionIdState) {
+      try {
+        await setSessionPermissionMode(sessionIdState, newMode)
+      } catch {
+        // non-fatal: in-memory mode is already updated; DB sync failed silently
+      }
+    }
+  }, [sessionIdState])
+
   const handleCodingSidebarToggle = useCallback(() => {
     if (isMobile) {
       setCodingPanel(null)
@@ -538,6 +561,21 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
     return () => window.removeEventListener('queue:restore-draft', handler)
   }, [])
 
+  // Restore permission mode from the session's persisted value whenever the
+  // active session changes (e.g. on load or navigation).
+  useEffect(() => {
+    if (!sessionIdState) return
+    let cancelled = false
+    getTeamSession(sessionIdState)
+      .then((session) => {
+        if (!cancelled && session.permission_mode) {
+          setPermissionMode(session.permission_mode as import('@/api/types').PermissionMode)
+        }
+      })
+      .catch(() => {/* non-fatal */})
+    return () => { cancelled = true }
+  }, [sessionIdState])
+
   // Push the active session/workspace label to the desktop tray. The
   // command is a no-op outside Tauri so this is safe to fire from the
   // web build too.
@@ -579,6 +617,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
     { id: 'stop', label: 'Stop', description: 'Stop all working agents' },
     { id: 'continue', label: 'Continue', description: 'Continue the last assistant response' },
     { id: 'compact', label: 'Compact', description: 'Summarize and compact this session' },
+    { id: 'shell', label: 'Shell', description: 'Run a shell command (prefix your command with !)' },
     { id: 'undo', label: 'Undo', description: 'Undo the previous message' },
     { id: 'redo', label: 'Redo', description: 'Restore all undone messages back to the live tip' },
     { id: 'new', label: 'New Chat', description: 'Start a fresh team conversation' },
@@ -649,6 +688,10 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
         break
       case 'compact':
         useTeamStore.getState().compactTeam()
+        break
+      case 'shell':
+        inputRef.current?.setValue('! ')
+        inputRef.current?.focus()
         break
       case 'undo':
         void useTeamStore.getState().undoTeam().then(async (response) => {
@@ -1069,26 +1112,14 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
               />
             </>
           ) : (
+            <>
+            <SessionTOC sessionId={sessionIdState} />
             <AgentTopbar
               isMobile={false}
               tokens={headerTokens}
               dreamRunning={dreamMutation.isPending}
               viewMode={viewMode}
               onViewModeChange={setViewMode}
-              filesAction={mode === 'coding'
-                ? workspace ? {
-                    Icon: FolderOpen,
-                    onClick: handleWorkspaceFiles,
-                    title: codingPanel === null ? 'Changed files and workspace files' : 'Close changed files and workspace files',
-                    ariaLabel: 'Changed files and workspace files',
-                  } : undefined
-                : {
-                    Icon: FolderOpen,
-                    onClick: () => setShowFilesPanel((v) => !v),
-                    disabled: !sessionIdState,
-                    title: sessionIdState ? 'Workspace files (Ctrl+F)' : 'No active session',
-                    ariaLabel: 'Workspace files',
-                  }}
               agentsAction={{
                 Icon: SlidersHorizontal,
                 onClick: toggleAgentCapabilities,
@@ -1096,28 +1127,8 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
                 ariaLabel: 'Session model settings',
                 className: agentCapabilitiesOpen ? 'mr-2 bg-(--bg-key) text-(--color-text)' : 'mr-2',
               }}
-              extraActions={
-                <>
-                  <button
-                    onClick={() => useTeamStore.getState().compactTeam()}
-                    disabled={isTeamWorking || !sessionIdState}
-                    title="Compact context (/compact)"
-                    aria-label="Compact context"
-                    className={`inline-flex h-7 w-7 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-hover) hover:text-(--color-text) disabled:cursor-not-allowed disabled:opacity-40`}
-                  >
-                    <Minimize2 size={15} />
-                  </button>
-                  <button
-                    onClick={() => setShowActivity((v) => !v)}
-                    title="Team activity log"
-                    aria-label="Team activity log"
-                    className={`inline-flex h-7 w-7 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-hover) hover:text-(--color-text) ${showActivity ? 'bg-(--bg-key) text-(--color-text)' : ''}`}
-                  >
-                    <Activity size={15} />
-                  </button>
-                </>
-              }
             />
+            </>
           )}
           </div>
       </header>
@@ -1248,6 +1259,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
             isContinuing={isContinuing && activeAgent === leadName}
             onContinue={activeAgent === leadName ? continueTeam : undefined}
             suggestions={activeAgent === leadName ? promptSuggestions : null}
+            chapters={activeAgent === leadName ? chapters : undefined}
             onSuggestion={(text) => {
               useTeamStore.setState({ promptSuggestions: null })
               inputRef.current?.setValue(text)
@@ -1291,6 +1303,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
           </div>
         ) : null}
 
+        <PermissionApprovalModal />
         {(mode !== 'coding' || workspace) && (
           <FloatingInputBar
             ref={inputRef}
@@ -1344,6 +1357,18 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
             todosOpen={showTodos}
             onTodosOpenChange={setShowTodos}
             sessionId={sessionIdState}
+            onWiki={toggleWiki}
+            wikiActive={wikiOpen}
+            onFiles={
+              mode === 'coding'
+                ? workspace ? handleWorkspaceFiles : undefined
+                : () => setShowFilesPanel((v) => !v)
+            }
+            filesDisabled={mode !== 'coding' && !sessionIdState}
+            onActivity={() => setShowActivity((v) => !v)}
+            activityActive={showActivity}
+            permissionMode={permissionMode}
+            onPermissionModeChange={handlePermissionModeChange}
           />
         )}
         </main>

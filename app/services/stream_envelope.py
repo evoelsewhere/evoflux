@@ -25,6 +25,7 @@ from app.agent.schemas.events import (
     AgentNotConfiguredEvent,
     AgentStatusEvent,
     BrowserSessionEvent,
+    ChapterCreatedEvent,
     DoneEvent,
     ErrorEvent,
     MessageEvent,
@@ -75,6 +76,7 @@ AnyStreamEvent = Union[
     BrowserSessionEvent,
     PlanApprovalRequestedEvent,
     PromptSuggestionsEvent,
+    ChapterCreatedEvent,
 ]
 
 
