@@ -120,8 +120,13 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'normal' | 'coding' }) {
     let cancelled = false
     ;(async () => {
       const current = useTeamStore.getState()
-      const model = current.sessionId ? current.sessionModel : null
-      const thinkingLevel = current.sessionId ? current.sessionThinkingLevel : null
+      // Use undefined (not null) when no model is known, so resolveTeamSession
+      // omits the field and the backend applies its default instead of
+      // rejecting with "Choose a model from the registry". This also avoids
+      // carrying a null model from a different mode's stale session into the
+      // new session.
+      const model = (current.sessionId && current.sessionModel) ? current.sessionModel : undefined
+      const thinkingLevel = (current.sessionId && current.sessionThinkingLevel) ? current.sessionThinkingLevel : undefined
       try {
         const session = await resolveTeamSession({
           mode,
