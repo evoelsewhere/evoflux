@@ -274,6 +274,7 @@ class AgentTeam:
         db_factory: DbFactory | None = None,
         mode: str = "normal",
         workspace: str | None = None,
+        permission_mode: str = "auto",
         # Back-compat: callers (especially older tests) can still pass a
         # pre-built members map.  These instances are registered as if they
         # were spawned by name; their handles stay verbatim (no ``#1``
@@ -289,6 +290,7 @@ class AgentTeam:
         self._db_factory = db_factory
         self.mode = mode
         self.workspace = workspace
+        self.permission_mode = permission_mode
 
         self.mailbox = TeamMailbox(on_message=self._on_message)
 

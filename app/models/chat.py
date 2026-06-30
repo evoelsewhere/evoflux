@@ -92,6 +92,11 @@ class ChatSession(SQLModel, table=True):
         max_length=20,
         sa_column=Column(sa.String(20), nullable=False, server_default="normal"),
     )
+    permission_mode: str = Field(
+        default="auto",
+        max_length=20,
+        sa_column=Column(sa.String(20), nullable=False, server_default="auto"),
+    )
     workspace: str | None = Field(default=None)
     model: str | None = Field(default=None, max_length=255)
     thinking_level: str | None = Field(default=None, max_length=50)
@@ -258,3 +263,44 @@ class MemoryProcessedSource(SQLModel, table=True):
     )  # JSON array
     status: str = Field(max_length=20)
     error: str | None = Field(default=None, sa_column=Column(sa.Text(), nullable=True))
+
+
+class SessionChapter(SQLModel, table=True):
+    """A named chapter/section within a chat session for the session TOC."""
+
+    __tablename__: str = "session_chapters"  # type: ignore[reportIncompatibleVariableOverride]
+    __table_args__ = (
+        sa.Index("ix_session_chapters_session_created", "session_id", "created_at"),
+    )
+
+    id: UUID = Field(default_factory=uuid7, primary_key=True)
+    session_id: UUID = Field(
+        sa_column=Column(
+            sa.Uuid(),
+            ForeignKey("chat_sessions.id", ondelete="CASCADE"),
+            index=True,
+            nullable=False,
+        ),
+    )
+    title: str = Field(max_length=255)
+    summary: str | None = Field(default=None, sa_column=Column(sa.Text(), nullable=True))
+    message_id: UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            sa.Uuid(),
+            ForeignKey("session_messages.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+    )
+    wiki_paths: list[str] = Field(
+        default_factory=list,
+        sa_column=Column(
+            JSON().with_variant(pg.JSONB(), "postgresql"),
+            nullable=False,
+            server_default="[]",
+        ),
+    )
+    created_at: datetime = Field(
+        default_factory=_utcnow,
+        sa_column=Column(TZDateTime(), nullable=False),
+    )

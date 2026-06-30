@@ -34,12 +34,22 @@ import {
   ArrowLeft,
   ChevronRight,
   Search,
+  Upload,
+  Edit2,
+  RotateCcw,
+  FolderOpen,
+  Trash2,
+  Pencil,
+  FolderUp,
 } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
-import { workspaceMediaUrl } from '@/api/client'
+import { workspaceMediaUrl, updateSessionWorkspace, uploadWorkspaceFiles, moveWorkspaceFile, deleteWorkspaceFile } from '@/api/client'
 import { downloadWorkspaceFile } from '@/lib/workspace-download'
 import { useWorkspaceFilesQuery } from '@/queries'
+import { queryKeys } from '@/queries/keys'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { useSessionFilesWatcher } from '@/hooks/useSessionFilesWatcher'
 import { useModalFocus } from '@/hooks/useModalFocus'
 import { useReducedMotion } from '@/hooks/useReducedMotion'
 import { usePlatform } from '@/hooks/use-platform'
@@ -194,6 +204,8 @@ function TreeNodeView({
   sessionId,
   workspaceRoot,
   onSelect,
+  onRename,
+  onDelete,
   visiblePaths,
   defaultOpen,
 }: {
@@ -203,6 +215,8 @@ function TreeNodeView({
   sessionId: string
   workspaceRoot: string | null
   onSelect: (file: WorkspaceFileInfo) => void
+  onRename: (file: WorkspaceFileInfo, newPath: string) => Promise<void>
+  onDelete: (file: WorkspaceFileInfo) => Promise<void>
   visiblePaths: Set<string> | null
   defaultOpen: boolean
 }) {
@@ -214,6 +228,11 @@ function TreeNodeView({
   const [actionsPoint, setActionsPoint] = useState<{ x: number; y: number } | null>(null)
   const longPressTimerRef = useRef<number | null>(null)
   const longPressStartRef = useRef<{ x: number; y: number } | null>(null)
+  const [isRenaming, setIsRenaming] = useState(false)
+  const [renameValue, setRenameValue] = useState('')
+  const [isBusyRename, setIsBusyRename] = useState(false)
+  const [isBusyDelete, setIsBusyDelete] = useState(false)
+  const renameInputRef = useRef<HTMLInputElement>(null)
 
   // Keep folders open when a search filter is active so results are visible.
   const effectiveOpen = visiblePaths ? true : open
@@ -250,8 +269,46 @@ function TreeNodeView({
     // ── File leaf ──────────────────────────────────────────────────────────
     const isSelected = node.file.path === selectedPath
 
+    const commitRename = async () => {
+      const trimmed = renameValue.trim()
+      if (!trimmed || trimmed === node.name) { setIsRenaming(false); return }
+      const dir = node.file!.path.includes('/')
+        ? node.file!.path.slice(0, node.file!.path.lastIndexOf('/') + 1)
+        : ''
+      const newPath = dir + trimmed
+      setIsBusyRename(true)
+      try {
+        await onRename(node.file!, newPath)
+      } finally {
+        setIsBusyRename(false)
+        setIsRenaming(false)
+      }
+    }
+
     return (
       <>
+        {isRenaming ? (
+          <div
+            className="flex items-center gap-1.5 rounded px-2 py-1"
+            style={{ paddingLeft: 8 + depth * 12 }}
+          >
+            <FileTypeIcon file={node.file!} />
+            <input
+              ref={renameInputRef}
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void commitRename()
+                if (e.key === 'Escape') setIsRenaming(false)
+              }}
+              onBlur={() => void commitRename()}
+              disabled={isBusyRename}
+              className="flex-1 rounded border border-(--color-border) bg-(--color-surface) px-1 py-0 font-mono text-xs text-(--color-text) outline-none focus:border-(--focus-ring)"
+              autoFocus
+            />
+            {isBusyRename && <Loader2 size={11} className="animate-spin shrink-0 text-(--color-text-muted)" />}
+          </div>
+        ) : (
         <button
           onClick={() => onSelect(node.file!)}
           onContextMenu={(event) => {
@@ -297,6 +354,7 @@ function TreeNodeView({
             {formatBytes(node.file.size)}
           </span>
         </button>
+        )}
         {actionsPoint && (
           <div
             className="fixed inset-0 z-[70]"
@@ -349,6 +407,33 @@ function TreeNodeView({
                 <Download size={14} aria-hidden="true" />
                 Download
               </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-(--bg-key) focus-visible:bg-(--bg-key) focus-visible:outline-none"
+                onClick={() => {
+                  setActionsPoint(null)
+                  setRenameValue(node.file!.name)
+                  setIsRenaming(true)
+                }}
+              >
+                <Pencil size={14} aria-hidden="true" />
+                Rename
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={isBusyDelete}
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-(--color-error) hover:bg-(--bg-key) focus-visible:bg-(--bg-key) focus-visible:outline-none disabled:opacity-50"
+                onClick={() => {
+                  setActionsPoint(null)
+                  setIsBusyDelete(true)
+                  void onDelete(node.file!).finally(() => setIsBusyDelete(false))
+                }}
+              >
+                {isBusyDelete ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} aria-hidden="true" />}
+                Delete
+              </button>
               {workspaceRoot && (
                 <a
                   href={vscodeWorkspaceUrl(workspaceRoot)}
@@ -381,6 +466,8 @@ function TreeNodeView({
             sessionId={sessionId}
             workspaceRoot={workspaceRoot}
             onSelect={onSelect}
+            onRename={onRename}
+            onDelete={onDelete}
             visiblePaths={visiblePaths}
             defaultOpen={defaultOpen}
           />
@@ -414,6 +501,8 @@ function TreeNodeView({
             sessionId={sessionId}
             workspaceRoot={workspaceRoot}
             onSelect={onSelect}
+            onRename={onRename}
+            onDelete={onDelete}
             visiblePaths={visiblePaths}
             defaultOpen={defaultOpen}
           />
@@ -726,11 +815,26 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
   const { isMacOverlay } = usePlatform()
   const { data, isLoading, isError, refetch, isFetching } = useWorkspaceFilesQuery(sessionId)
   const prefersReducedMotion = useReducedMotion()
+  const queryClient = useQueryClient()
+  useSessionFilesWatcher(sessionId)
 
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   // Mobile: which pane is active — 'tree' (file list) or 'preview'
   const [mobilePane, setMobilePane] = useState<'tree' | 'preview'>('tree')
+
+  // Workspace picker state
+  const [isPickerOpen, setIsPickerOpen] = useState(false)
+  const [pickerPath, setPickerPath] = useState('')
+  const [isPickerSaving, setIsPickerSaving] = useState(false)
+  const [pickerError, setPickerError] = useState<string | null>(null)
+
+  // Upload state
+  const [isUploading, setIsUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const dragCounterRef = useRef(0)
 
   // Resizable widths — persisted in localStorage.
   const [panelWidth, setPanelWidth] = useState(() =>
@@ -808,6 +912,104 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
   const files = useMemo<WorkspaceFileInfo[]>(() => data?.files ?? [], [data])
   const tree = useMemo(() => buildTree(files), [files])
   const visiblePaths = useMemo(() => matchingPaths(files, searchQuery), [files, searchQuery])
+
+  // ── Workspace picker ────────────────────────────────────────────────────────
+
+  const openPicker = () => {
+    setPickerPath(workspaceRoot ?? '')
+    setPickerError(null)
+    setIsPickerOpen(true)
+  }
+
+  const handleSaveWorkspace = async (pathOverride?: string | null) => {
+    if (!sessionId) return
+    const newPath = pathOverride !== undefined ? pathOverride : pickerPath.trim() || null
+    setIsPickerSaving(true)
+    setPickerError(null)
+    try {
+      const result = await updateSessionWorkspace(sessionId, newPath)
+      queryClient.setQueryData(queryKeys.team.files(sessionId), result)
+      setIsPickerOpen(false)
+    } catch (err) {
+      setPickerError((err as Error).message ?? 'Failed to update workspace')
+    } finally {
+      setIsPickerSaving(false)
+    }
+  }
+
+  // ── File upload ─────────────────────────────────────────────────────────────
+
+  const handleUpload = useCallback(async (fileList: File[]) => {
+    if (!sessionId || fileList.length === 0) return
+    setIsUploading(true)
+    setUploadError(null)
+    try {
+      const result = await uploadWorkspaceFiles(sessionId, fileList)
+      queryClient.setQueryData(queryKeys.team.files(sessionId), result)
+    } catch (err) {
+      setUploadError((err as Error).message ?? 'Upload failed')
+    } finally {
+      setIsUploading(false)
+    }
+  }, [sessionId, queryClient])
+
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? [])
+    if (files.length) void handleUpload(files)
+    e.target.value = ''
+  }
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault()
+    dragCounterRef.current += 1
+    if (e.dataTransfer.types.includes('Files')) setIsDragging(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    dragCounterRef.current -= 1
+    if (dragCounterRef.current <= 0) { dragCounterRef.current = 0; setIsDragging(false) }
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    dragCounterRef.current = 0
+    setIsDragging(false)
+    const files = Array.from(e.dataTransfer.files)
+    if (files.length) void handleUpload(files)
+  }
+
+  // ── Rename / delete ─────────────────────────────────────────────────────────
+
+  const handleRenameFile = useCallback(async (file: WorkspaceFileInfo, newPath: string) => {
+    if (!sessionId) return
+    try {
+      const result = await moveWorkspaceFile(sessionId, file.path, newPath)
+      queryClient.setQueryData(queryKeys.team.files(sessionId), result)
+    } catch (err) {
+      setUploadError((err as Error).message ?? 'Rename failed')
+    }
+  }, [sessionId, queryClient])
+
+  const handleDeleteFile = useCallback(async (file: WorkspaceFileInfo) => {
+    if (!sessionId) return
+    try {
+      const result = await deleteWorkspaceFile(sessionId, file.path)
+      queryClient.setQueryData(queryKeys.team.files(sessionId), result)
+      if (selectedPath === file.path) setSelectedPath(null)
+    } catch (err) {
+      setUploadError((err as Error).message ?? 'Delete failed')
+    }
+  }, [sessionId, queryClient, selectedPath])
+
+  // ── Folder import ───────────────────────────────────────────────────────────
+  const folderInputRef = useRef<HTMLInputElement>(null)
+
+  const handleFolderInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? [])
+    if (files.length) void handleUpload(files)
+    e.target.value = ''
+  }
 
   // Clear search when panel closes.
   useEffect(() => {
@@ -926,6 +1128,24 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
                   </a>
                 )}
                 <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={!sessionId || isUploading}
+                  className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-50"
+                  title="Upload files"
+                  aria-label="Upload files"
+                >
+                  {isUploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                </button>
+                <button
+                  onClick={() => folderInputRef.current?.click()}
+                  disabled={!sessionId || isUploading}
+                  className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-50"
+                  title="Import folder"
+                  aria-label="Import folder"
+                >
+                  <FolderUp size={14} />
+                </button>
+                <button
                   onClick={() => refetch()}
                   disabled={!sessionId || isFetching}
                   className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-50"
@@ -945,17 +1165,96 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
               </div>
             </header>
 
+            {/* Workspace path bar + inline picker */}
+            {sessionId && (
+              <div className="shrink-0 border-b border-(--color-border)">
+                <div className="flex items-center gap-2 px-3 py-1.5">
+                  <FolderOpen size={12} className="shrink-0 text-(--color-text-muted)" />
+                  <span className="flex-1 truncate font-mono text-xs text-(--color-text-subtle)" title={workspaceRoot ?? undefined}>
+                    {workspaceRoot ?? 'Session sandbox (default)'}
+                  </span>
+                  <button
+                    onClick={openPicker}
+                    className={cn(
+                      'shrink-0 rounded px-2 py-0.5 text-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)',
+                      isPickerOpen && 'bg-(--bg-key) text-(--color-text)',
+                    )}
+                    title="Change workspace folder"
+                    aria-label="Change workspace folder"
+                  >
+                    <Edit2 size={11} className="inline-block" />
+                  </button>
+                </div>
+                {isPickerOpen && (
+                  <div className="flex flex-col gap-2 border-t border-(--color-border) bg-(--bg-page) px-3 py-2">
+                    <input
+                      type="text"
+                      value={pickerPath}
+                      onChange={(e) => setPickerPath(e.target.value)}
+                      placeholder="Absolute path, e.g. /home/user/project"
+                      className="w-full rounded border border-(--color-border) bg-(--color-surface) px-2 py-1.5 font-mono text-xs text-(--color-text) outline-none focus:border-(--focus-ring) placeholder:text-(--color-text-subtle)"
+                      onKeyDown={(e) => { if (e.key === 'Enter') void handleSaveWorkspace(); if (e.key === 'Escape') setIsPickerOpen(false) }}
+                      autoFocus
+                    />
+                    {pickerError && (
+                      <p className="text-xs text-(--color-error)">{pickerError}</p>
+                    )}
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => void handleSaveWorkspace()}
+                        disabled={isPickerSaving}
+                        className="rounded bg-(--color-accent) px-3 py-1 text-xs font-medium text-(--color-text-on-accent) transition-opacity hover:opacity-90 disabled:opacity-50"
+                      >
+                        {isPickerSaving ? 'Applying…' : 'Apply'}
+                      </button>
+                      <button
+                        onClick={() => void handleSaveWorkspace(null)}
+                        disabled={isPickerSaving}
+                        className="flex items-center gap-1 rounded px-2 py-1 text-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-50"
+                        title="Reset to session sandbox"
+                      >
+                        <RotateCcw size={11} />
+                        Reset
+                      </button>
+                      <button
+                        onClick={() => setIsPickerOpen(false)}
+                        className="ml-auto rounded px-2 py-1 text-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-key)"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {uploadError && (
+                  <div className="flex items-center justify-between border-t border-(--color-border) bg-(--bg-page) px-3 py-1.5">
+                    <span className="text-xs text-(--color-error)">{uploadError}</span>
+                    <button onClick={() => setUploadError(null)} className="text-(--color-text-muted) hover:text-(--color-text)"><X size={12} /></button>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Body: tree + preview split (desktop) / master-detail (mobile) */}
             <div className="flex min-h-0 flex-1 overflow-hidden">
               {/* Tree — full width on mobile tree pane, resizable on desktop */}
               {showTree && (
                 <nav
                   className={cn(
-                    'flex flex-col overflow-hidden',
+                    'relative flex flex-col overflow-hidden',
                     isMobile ? 'w-full' : 'shrink-0',
                   )}
                   style={!isMobile ? { width: treeWidth } : undefined}
+                  onDragEnter={handleDragEnter}
+                  onDragLeave={handleDragLeave}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={handleDrop}
                 >
+                  {isDragging && (
+                    <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded border-2 border-dashed border-(--color-accent) bg-(--color-accent)/8">
+                      <Upload size={22} className="text-(--color-accent)" />
+                      <span className="text-xs font-medium text-(--color-accent)">Drop to upload</span>
+                    </div>
+                  )}
                   {/* Search bar */}
                   {sessionId && files.length > 0 && (
                     <div className="shrink-0 border-b border-(--color-border) px-2 py-1.5">
@@ -1011,6 +1310,8 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
                         sessionId={sessionId}
                         workspaceRoot={workspaceRoot}
                         onSelect={handleSelectFile}
+                        onRename={handleRenameFile}
+                        onDelete={handleDeleteFile}
                         visiblePaths={visiblePaths}
                         defaultOpen
                       />
@@ -1056,6 +1357,27 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
               )}
               {isMobile ? 'Tap a file to preview' : 'Esc or click outside to close'}
             </div>
+
+            {/* Hidden file input for upload button */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              aria-hidden="true"
+              onChange={handleFileInput}
+            />
+            {/* Hidden folder input for import folder button */}
+            <input
+              ref={folderInputRef}
+              type="file"
+              multiple
+              // @ts-expect-error webkitdirectory is not in TS types
+              webkitdirectory=""
+              className="hidden"
+              aria-hidden="true"
+              onChange={handleFolderInput}
+            />
           </motion.aside>
         </>
       )}

@@ -35,6 +35,14 @@ interface FloatingInputBarProps {
   todosOpen?: boolean
   onTodosOpenChange?: (open: boolean) => void
   sessionId?: string | null
+  onWiki?: () => void
+  wikiActive?: boolean
+  onFiles?: () => void
+  filesDisabled?: boolean
+  onActivity?: () => void
+  activityActive?: boolean
+  permissionMode?: import('@/api/types').PermissionMode
+  onPermissionModeChange?: (mode: import('@/api/types').PermissionMode) => void
 }
 
 /**

@@ -32,8 +32,9 @@ from app.agent.tools.builtin.filesystem._ignore import (
     matches_gitignore_pattern as _shared_matches_gitignore_pattern,
 )
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from app.api.schemas.team import (
@@ -46,6 +47,10 @@ from app.core.paths import session_workspace_dir, uploads_dir, workspace_dir
 from app.models.chat import ChatSession
 from app.services import team_manager
 from app.services.workspace_file_watcher import workspace_file_watcher
+
+
+class WorkspaceSetRequest(BaseModel):
+    path: str | None = None  # None → reset to session default sandbox
 
 router = APIRouter()
 
@@ -217,11 +222,161 @@ async def list_workspace_files(session_id: str) -> WorkspaceFilesResponse:
     )
 
 
-def _list_workspace_files(root: Path, session_id: str) -> WorkspaceFilesResponse:
-    if not root.exists() or not root.is_dir():
-        return WorkspaceFilesResponse(session_id=session_id, files=[], truncated=False)
+@router.put("/{session_id}/workspace", response_model=WorkspaceFilesResponse)
+async def set_session_workspace(
+    session_id: str,
+    body: WorkspaceSetRequest,
+) -> WorkspaceFilesResponse:
+    """Update (or reset) the workspace folder for a session.
 
+    Pass ``path: null`` to revert to the session sandbox default.  When a
+    custom path is provided it must be absolute; it will be created (including
+    parent directories) if it does not already exist.
+    """
+    try:
+        sid = uuid.UUID(session_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid session id.")
+
+    new_workspace: str | None = None
+    if body.path is not None:
+        p = Path(body.path).expanduser()
+        if not p.is_absolute():
+            raise HTTPException(status_code=400, detail="Workspace path must be absolute.")
+        try:
+            p.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise HTTPException(status_code=400, detail=f"Cannot create directory: {exc}")
+        new_workspace = str(p.resolve())
+
+    async with async_session_factory() as db:
+        row = await db.get(ChatSession, sid)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Session not found.")
+        row.workspace = new_workspace
+        await db.commit()
+
+    return _list_workspace_files(await _session_workspace(session_id), session_id)
+
+
+@router.post("/{session_id}/files/upload", response_model=WorkspaceFilesResponse)
+async def upload_workspace_files(
+    session_id: str,
+    files: list[UploadFile],
+    subfolder: str = Query(default=""),
+) -> WorkspaceFilesResponse:
+    """Upload one or more files into the session workspace.
+
+    Files land at ``<workspace_root>/<subfolder>/<filename>``.  The subfolder
+    parameter is optional and defaults to the workspace root.  Path traversal
+    in filenames or the subfolder is rejected.
+    """
+    try:
+        uuid.UUID(session_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid session id.")
+
+    workspace = await _session_workspace(session_id)
+    workspace.mkdir(parents=True, exist_ok=True)
+
+    # Resolve target directory with traversal protection.
+    if subfolder:
+        candidate = Path(subfolder)
+        if candidate.is_absolute() or ".." in candidate.parts:
+            raise HTTPException(status_code=400, detail="Invalid subfolder path.")
+        target_dir = (workspace / candidate).resolve()
+        try:
+            target_dir.relative_to(workspace.resolve())
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Subfolder escapes workspace root.")
+        target_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        target_dir = workspace
+
+    written: list[str] = []
+    for upload in files:
+        raw_name = Path(upload.filename or "upload").name
+        if not raw_name or raw_name in (".", ".."):
+            continue
+        dest = target_dir / raw_name
+        content = await upload.read()
+        try:
+            dest.write_bytes(content)
+            written.append(raw_name)
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail=f"Write failed for {raw_name}: {exc}")
+
+    return _list_workspace_files(workspace, session_id)
+
+
+class FileMoveRequest(BaseModel):
+    from_path: str  # Relative POSIX path within workspace
+    to_path: str    # Relative POSIX path within workspace
+
+
+@router.post("/{session_id}/files/move", response_model=WorkspaceFilesResponse)
+async def move_workspace_file(
+    session_id: str,
+    body: FileMoveRequest,
+) -> WorkspaceFilesResponse:
+    """Rename or move a file within the session workspace.
+
+    Both ``from_path`` and ``to_path`` are relative, POSIX-separated paths.
+    Parent directories for the destination are created automatically.
+    """
+    try:
+        uuid.UUID(session_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid session id.")
+
+    workspace = await _session_workspace(session_id)
+    src = _safe_resolve(workspace, body.from_path)
+    dest_candidate = Path(body.to_path)
+    if dest_candidate.is_absolute() or ".." in dest_candidate.parts:
+        raise HTTPException(status_code=400, detail="Destination path must be relative.")
+    dest = (workspace / dest_candidate).resolve()
+    try:
+        dest.relative_to(workspace.resolve())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Destination escapes workspace root.")
+    if dest == src:
+        return _list_workspace_files(workspace, session_id)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        src.rename(dest)
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Move failed: {exc}")
+    return _list_workspace_files(workspace, session_id)
+
+
+@router.delete("/{session_id}/files/{file_path:path}", response_model=WorkspaceFilesResponse)
+async def delete_workspace_file(
+    session_id: str,
+    file_path: str,
+) -> WorkspaceFilesResponse:
+    """Delete a single file from the session workspace."""
+    try:
+        uuid.UUID(session_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid session id.")
+
+    workspace = await _session_workspace(session_id)
+    target = _safe_resolve(workspace, file_path)
+    try:
+        target.unlink()
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="File not found.")
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Delete failed: {exc}")
+    return _list_workspace_files(workspace, session_id)
+
+
+def _list_workspace_files(root: Path, session_id: str) -> WorkspaceFilesResponse:
     workspace_root = str(root.resolve(strict=False))
+    if not root.exists() or not root.is_dir():
+        return WorkspaceFilesResponse(
+            session_id=session_id, files=[], truncated=False, workspace_root=workspace_root
+        )
 
     root_resolved = root.resolve(strict=False)
     gitignore_rules = _load_gitignore_rules(root)
@@ -577,6 +732,39 @@ async def get_coding_workspace_status(workspace: str) -> dict:
         }
     )
     return payload
+
+
+@router.get("/{session_id}/files/watch")
+async def watch_session_files(session_id: str, request: Request):
+    """SSE stream that emits file-change events for a session workspace.
+
+    Same wire protocol as ``/workspace/watch`` but resolves the workspace
+    path from the session record (custom path or sandbox default) so the
+    caller only needs the session ID.
+    """
+    import json
+    from typing import AsyncGenerator
+
+    resolved = await _get_workspace_root(session_id)
+    queue = await workspace_file_watcher.subscribe(resolved)
+
+    async def _gen() -> AsyncGenerator[dict, None]:
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    events = await asyncio.wait_for(queue.get(), timeout=30)
+                    yield {
+                        "event": "fs_change",
+                        "data": json.dumps(events),
+                    }
+                except TimeoutError:
+                    yield {"event": "keepalive", "data": "{}"}
+        finally:
+            await workspace_file_watcher.unsubscribe(resolved, queue)
+
+    return EventSourceResponse(_gen())
 
 
 @router.get("/workspace/watch")

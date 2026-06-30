@@ -38,7 +38,7 @@ import { useTeamStore } from '@/stores/useTeamStore'
 import { findCommittedMentions } from './InputBar.mentions'
 import { resolveApiUrl } from '@/api/client'
 import { LoadingVerb } from './motion/LoadingVerb'
-import type { ContentBlock, MessageAttachment } from '@/api/types'
+import type { Chapter, ContentBlock, MessageAttachment } from '@/api/types'
 
 const SCROLL_THRESHOLD = 40
 const USER_SCROLL_DETACH_DELTA = 4
@@ -71,6 +71,8 @@ interface AgentViewProps {
   onSuggestion?: (text: string) => void
   /** Contextual follow-up suggestions from the last agent response. */
   suggestions?: string[] | null
+  /** Session chapters for anchor markers and TOC dividers. */
+  chapters?: Chapter[]
 }
 
 const USER_COLLAPSE_LINES = 10
@@ -356,7 +358,7 @@ function BlockRenderer({ block, isStreaming, sessionId, onRevert, latestMCPAppBl
   }
 }
 
-export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError, isContinuing = false, onContinue, emptyState, onSuggestion, suggestions }: AgentViewProps) {
+export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError, isContinuing = false, onContinue, emptyState, onSuggestion, suggestions, chapters }: AgentViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const pinnedRef = useRef(true)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
@@ -385,6 +387,14 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
     [renderedTurnCount, turnItems],
   )
   const latestMCPAppBlockIds = useMemo(() => latestMCPAppResourceBlockIds(allBlocks), [allBlocks])
+
+  const chapterByMessageId = useMemo(() => {
+    const map = new Map<string, Chapter>()
+    for (const ch of chapters ?? []) {
+      if (ch.message_id) map.set(ch.message_id, ch)
+    }
+    return map
+  }, [chapters])
 
   const showEarlierTurns = useCallback(() => {
     const el = scrollRef.current
@@ -578,15 +588,24 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
               {visibleTurnItems.map((item, k) => {
                  const globalTurnIndex = hiddenTurnCount + k
                  if (item.kind === 'user') {
+                   const chapter = chapterByMessageId.get(item.block.id)
                    return (
-                     <BlockRenderer
-                       key={item.block.id}
-                       block={item.block}
-                       isStreaming={false}
+                     <div key={item.block.id} data-chapter-anchor={item.block.id}>
+                       {chapter && (
+                         <div className="mb-3 flex items-center gap-2 text-xs text-(--color-text-muted)">
+                           <div className="h-px flex-1 bg-(--color-border)" />
+                           <span className="font-medium">{chapter.title}</span>
+                           <div className="h-px flex-1 bg-(--color-border)" />
+                         </div>
+                       )}
+                       <BlockRenderer
+                         block={item.block}
+                         isStreaming={false}
                          sessionId={sessionId}
                          onRevert={item.block.id === latestUserBlockId ? handleRevert : undefined}
                          latestMCPAppBlockIds={latestMCPAppBlockIds}
-                        />
+                       />
+                     </div>
                    )
                  }
                  // Me only the trailing turn (no user block after) can be "live"

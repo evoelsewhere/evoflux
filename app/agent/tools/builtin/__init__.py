@@ -1,4 +1,5 @@
 from .browser_use_tool import browser_use
+from .chapter import mark_chapter
 from .date import get_date
 from .filesystem import (
     edit_file,
@@ -24,6 +25,7 @@ __all__ = [
     "background_process",
     "browser_use",
     "discover_skills",
+    "mark_chapter",
     "edit_file",
     "shell_tool",
     "get_date",

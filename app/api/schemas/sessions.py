@@ -58,6 +58,7 @@ class SessionResponse(_ExcludeNoneModel):
     scheduled_task_name: str | None = None
     mode: str = "normal"
     workspace: str | None = None
+    permission_mode: str = "auto"
     model: str | None = None
     thinking_level: str | None = None
     revert: dict | None = None

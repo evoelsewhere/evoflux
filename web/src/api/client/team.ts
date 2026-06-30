@@ -8,6 +8,7 @@ import { readSSE } from '../sse'
 import type { SSECallbacks } from '../sse'
 import { parseDetailOrThrow } from './_shared'
 import type {
+  Chapter,
   SessionDetailResponse,
   TeamSessionResolveResponse,
   SessionPageResponse,
@@ -121,6 +122,43 @@ export async function cancelQueuedTeamMessage(sessionId: string, messageId: stri
   if (!res.ok) {
     const body = await res.json().catch(() => null)
     throw new Error(body?.detail || `DELETE queued message failed: ${res.status}`)
+  }
+}
+
+export async function replyPermissionRequest(
+  sessionId: string,
+  requestId: string,
+  reply: 'once' | 'always' | 'reject',
+): Promise<void> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/${encodeURIComponent(sessionId)}/permissions/${encodeURIComponent(requestId)}/reply`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reply }),
+    },
+  )
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(body?.detail || `POST permissions reply failed: ${res.status}`)
+  }
+}
+
+export async function setSessionPermissionMode(
+  sessionId: string,
+  mode: string,
+): Promise<void> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/sessions/${encodeURIComponent(sessionId)}/permission-mode`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode }),
+    },
+  )
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(body?.detail || `PATCH permission-mode failed: ${res.status}`)
   }
 }
 
@@ -355,6 +393,47 @@ export async function listWorkspaceFiles(sessionId: string): Promise<WorkspaceFi
   return res.json()
 }
 
+export async function updateSessionWorkspace(sessionId: string, path: string | null): Promise<WorkspaceFilesResponse> {
+  const res = await fetch(`${apiBaseUrl()}/team/${encodeURIComponent(sessionId)}/workspace`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'updateSessionWorkspace')
+  return res.json()
+}
+
+export async function uploadWorkspaceFiles(sessionId: string, files: File[], subfolder?: string): Promise<WorkspaceFilesResponse> {
+  const fd = new FormData()
+  files.forEach((f) => fd.append('files', f))
+  const params = subfolder ? `?subfolder=${encodeURIComponent(subfolder)}` : ''
+  const res = await fetch(`${apiBaseUrl()}/team/${encodeURIComponent(sessionId)}/files/upload${params}`, {
+    method: 'POST',
+    body: fd,
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'uploadWorkspaceFiles')
+  return res.json()
+}
+
+export async function moveWorkspaceFile(sessionId: string, fromPath: string, toPath: string): Promise<WorkspaceFilesResponse> {
+  const res = await fetch(`${apiBaseUrl()}/team/${encodeURIComponent(sessionId)}/files/move`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from_path: fromPath, to_path: toPath }),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'moveWorkspaceFile')
+  return res.json()
+}
+
+export async function deleteWorkspaceFile(sessionId: string, filePath: string): Promise<WorkspaceFilesResponse> {
+  const encoded = filePath.split('/').map(encodeURIComponent).join('/')
+  const res = await fetch(`${apiBaseUrl()}/team/${encodeURIComponent(sessionId)}/files/${encoded}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'deleteWorkspaceFile')
+  return res.json()
+}
+
 /** Build the ``/media/{path}`` URL for a workspace file.
  *
  *  Each segment is encoded individually — ``encodeURIComponent`` on the whole
@@ -417,4 +496,43 @@ export async function getBrowserSession(sessionId: string): Promise<BrowserSessi
   const res = await fetch(`${apiBaseUrl()}/team/${encodeURIComponent(sessionId)}/browser`)
   if (!res.ok) await parseDetailOrThrow(res, 'getBrowserSession')
   return res.json()
+}
+
+// ── Session chapters ──────────────────────────────────────────────────────────
+
+export async function listSessionChapters(sessionId: string): Promise<Chapter[]> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/sessions/${encodeURIComponent(sessionId)}/chapters`,
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'listSessionChapters')
+  return res.json()
+}
+
+export async function createSessionChapter(
+  sessionId: string,
+  title: string,
+  summary?: string | null,
+  messageId?: string | null,
+): Promise<Chapter> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/sessions/${encodeURIComponent(sessionId)}/chapters`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, summary: summary ?? null, message_id: messageId ?? null }),
+    },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'createSessionChapter')
+  return res.json()
+}
+
+export async function deleteSessionChapter(
+  sessionId: string,
+  chapterId: string,
+): Promise<void> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/sessions/${encodeURIComponent(sessionId)}/chapters/${encodeURIComponent(chapterId)}`,
+    { method: 'DELETE' },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'deleteSessionChapter')
 }

@@ -46,7 +46,7 @@ from app.api.routes.team.worktrees import (
     create_coding_workspace_worktree,
     find_managed_worktree_source,
 )
-from app.models.chat import ChatSession
+from app.models.chat import ChatSession, SessionChapter
 from app.services import (
     agent_service,
     memory_stream_store as stream_store,
@@ -231,6 +231,16 @@ async def team_chat(
             session_id = str(uuid7())
         team_obj = await team_manager.get_or_start_team_for_session(session_id)
         team_obj = _require_team(team_obj)
+        # Restore persisted custom workspace so the in-memory team stays in sync
+        # with whatever the user configured via the workspace panel.  Without
+        # this, self._team.workspace stays None after a server restart or when
+        # the workspace is changed between messages.
+        if workspace is None and existing is not None and existing.workspace:
+            workspace = existing.workspace
+        # Restore persisted permission mode so the in-memory team reflects the
+        # user's selection even after a server restart.
+        if existing is not None:
+            team_obj.permission_mode = existing.permission_mode
 
     effective_request_model = (
         model
@@ -886,6 +896,43 @@ async def update_team_session(
     )
 
 
+_VALID_PERMISSION_MODES = frozenset({"ask", "accept-edits", "plan", "auto", "bypass"})
+
+
+class PermissionModeRequest(BaseModel):
+    mode: str
+
+
+@router.patch("/sessions/{session_id}/permission-mode", status_code=200)
+async def set_session_permission_mode(
+    session_id: UUID, body: PermissionModeRequest, db: DbSession
+) -> dict:
+    """Persist the agent permission mode for a session.
+
+    ``mode`` must be one of: ``ask``, ``accept-edits``, ``plan``, ``auto``, ``bypass``.
+    The change takes effect on the next agent run.  The in-memory team is also
+    updated if one is loaded for this session.
+    """
+    if body.mode not in _VALID_PERMISSION_MODES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid mode '{body.mode}'. Must be one of: {sorted(_VALID_PERMISSION_MODES)}",
+        )
+
+    async with db.begin():
+        session = await db.get(ChatSession, session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="Session not found.")
+        session.permission_mode = body.mode
+
+    sid = str(session_id)
+    team_obj = await team_manager.get_or_start_team_for_session(sid)
+    if team_obj is not None:
+        team_obj.permission_mode = body.mode
+
+    return {"session_id": sid, "permission_mode": body.mode}
+
+
 @router.delete("/sessions/{session_id}", status_code=204)
 async def delete_team_session(session_id: UUID, db: DbSession) -> None:
     """Delete a team session, all its messages, and uploaded files."""
@@ -961,3 +1008,94 @@ async def team_history(
         has_more=history.has_more,
         next_cursor=next_cursor,
     )
+
+
+# ── Session chapters ──────────────────────────────────────────────────────────
+
+
+class ChapterCreateRequest(BaseModel):
+    title: str
+    summary: str | None = None
+    message_id: str | None = None
+
+
+class ChapterResponse(BaseModel):
+    id: str
+    session_id: str
+    title: str
+    summary: str | None
+    message_id: str | None
+    wiki_paths: list[str]
+    created_at: str
+
+
+def _chapter_response(chapter: SessionChapter) -> ChapterResponse:
+    return ChapterResponse(
+        id=str(chapter.id),
+        session_id=str(chapter.session_id),
+        title=chapter.title,
+        summary=chapter.summary,
+        message_id=str(chapter.message_id) if chapter.message_id else None,
+        wiki_paths=chapter.wiki_paths or [],
+        created_at=chapter.created_at.isoformat(),
+    )
+
+
+@router.get("/sessions/{session_id}/chapters")
+async def list_chapters(
+    db: DbSession,
+    session_id: UUID,
+) -> list[ChapterResponse]:
+    """List all chapters for a session, ordered oldest-first."""
+    import sqlalchemy as sa_
+
+    result = await db.execute(
+        sa_.select(SessionChapter)
+        .where(SessionChapter.session_id == session_id)
+        .order_by(SessionChapter.created_at)
+    )
+    chapters = result.scalars().all()
+    return [_chapter_response(c) for c in chapters]
+
+
+@router.post("/sessions/{session_id}/chapters", status_code=201)
+async def create_chapter(
+    db: DbSession,
+    session_id: UUID,
+    body: ChapterCreateRequest,
+) -> ChapterResponse:
+    """Create a new chapter bookmark for a session."""
+    from uuid import UUID as _UUID
+
+    chapter = SessionChapter(
+        session_id=session_id,
+        title=body.title[:255],
+        summary=body.summary,
+        message_id=_UUID(body.message_id) if body.message_id else None,
+    )
+    db.add(chapter)
+    await db.commit()
+    await db.refresh(chapter)
+    return _chapter_response(chapter)
+
+
+@router.delete("/sessions/{session_id}/chapters/{chapter_id}", status_code=204)
+async def delete_chapter(
+    db: DbSession,
+    session_id: UUID,
+    chapter_id: UUID,
+) -> None:
+    """Delete a single chapter."""
+    import sqlalchemy as sa_
+
+    result = await db.execute(
+        sa_.select(SessionChapter).where(
+            SessionChapter.id == chapter_id,
+            SessionChapter.session_id == session_id,
+        )
+    )
+    chapter = result.scalar_one_or_none()
+    if chapter is None:
+        raise HTTPException(status_code=404, detail="Chapter not found.")
+    await db.delete(chapter)
+    await db.commit()

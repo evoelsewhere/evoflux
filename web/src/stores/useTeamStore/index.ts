@@ -81,6 +81,7 @@ function resetSessionState(
   state.activeLoop = null
   state.setupRequired = null
   state.planApproval = null
+  state.permissionRequest = null
   state.promptSuggestions = null
   state._abortController = null
   state._pendingMessages = []
@@ -189,6 +190,8 @@ export const useTeamStore = create<TeamStore>()(
     setupRequired: null,
     browserSession: null,
     planApproval: null,
+    permissionRequest: null,
+    permissionMode: 'auto',
     promptSuggestions: null,
     _pendingMessages: [],
     _abortController: null,

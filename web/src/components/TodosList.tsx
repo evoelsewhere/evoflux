@@ -1,4 +1,4 @@
-import { Square, SquareCheck } from 'lucide-react'
+import { Square, SquareCheck, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { TierBadge } from './TierBadge'
@@ -35,6 +35,7 @@ export interface TodosListProps {
   headerClassName?: string
   listClassName?: string
   emptyClassName?: string
+  onClose?: () => void
 }
 
 export function TodosList({
@@ -43,6 +44,7 @@ export function TodosList({
   headerClassName,
   listClassName,
   emptyClassName,
+  onClose,
 }: TodosListProps) {
   const finishedCount = todos.filter(
     (t) => t.status === 'completed' || t.status === 'cancelled',
@@ -62,11 +64,23 @@ export function TodosList({
         <span className="font-mono text-xs font-medium uppercase tracking-wider text-(--color-text-muted)">
           Tasks
         </span>
-        {todos.length > 0 && (
-          <span className="font-mono text-xs text-(--color-text-subtle)">
-            {finishedCount}/{todos.length} done
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {todos.length > 0 && (
+            <span className="font-mono text-xs text-(--color-text-subtle)">
+              {finishedCount}/{todos.length} done
+            </span>
+          )}
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Dismiss tasks"
+              className="flex h-5 w-5 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-hover) hover:text-(--color-text)"
+            >
+              <X size={12} aria-hidden="true" />
+            </button>
+          )}
+        </div>
       </div>
 
       {todos.length === 0 ? (
