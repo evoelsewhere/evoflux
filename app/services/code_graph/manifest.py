@@ -43,6 +43,16 @@ ECOSYSTEM_PYTHON = "python"
 ECOSYSTEM_GO = "go"
 ECOSYSTEM_CARGO = "cargo"
 ECOSYSTEM_MAVEN = "maven"
+ECOSYSTEM_GRADLE = "gradle"
+ECOSYSTEM_COMPOSER = "composer"
+ECOSYSTEM_GEM = "gem"
+ECOSYSTEM_PUB = "pub"
+ECOSYSTEM_NUGET = "nuget"
+ECOSYSTEM_COCOAPODS = "cocoapods"
+ECOSYSTEM_SWIFTPM = "swiftpm"
+ECOSYSTEM_DOCKER = "docker"
+ECOSYSTEM_HELM = "helm"
+ECOSYSTEM_TERRAFORM = "terraform"
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,6 +122,50 @@ def read_manifests(root_path: str | Path) -> list[PackageManifest]:
         if name:
             out.append(PackageManifest(ecosystem=ECOSYSTEM_MAVEN, package_name=name))
 
+    gradle_name = _read_gradle_identity(root)
+    if gradle_name:
+        out.append(PackageManifest(ecosystem=ECOSYSTEM_GRADLE, package_name=gradle_name))
+
+    composer_json = root / "composer.json"
+    if composer_json.is_file():
+        out.extend(_read_composer_identities(composer_json))
+
+    gemspec = _find_glob_file(root, "*.gemspec")
+    if gemspec is not None:
+        name = _read_gemspec_name(gemspec)
+        if name:
+            out.append(PackageManifest(ecosystem=ECOSYSTEM_GEM, package_name=name))
+
+    pubspec = root / "pubspec.yaml"
+    if pubspec.is_file():
+        name = _read_pubspec_name(pubspec)
+        if name:
+            out.append(PackageManifest(ecosystem=ECOSYSTEM_PUB, package_name=name))
+
+    csproj = _find_glob_file(root, "*.csproj")
+    if csproj is not None:
+        name = _read_csproj_identity(csproj)
+        if name:
+            out.append(PackageManifest(ecosystem=ECOSYSTEM_NUGET, package_name=name))
+
+    podspec = _find_glob_file(root, "*.podspec")
+    if podspec is not None:
+        name = _read_podspec_name(podspec)
+        if name:
+            out.append(PackageManifest(ecosystem=ECOSYSTEM_COCOAPODS, package_name=name))
+
+    package_swift = root / "Package.swift"
+    if package_swift.is_file():
+        name = _read_package_swift_name(package_swift)
+        if name:
+            out.append(PackageManifest(ecosystem=ECOSYSTEM_SWIFTPM, package_name=name))
+
+    chart_yaml = root / "Chart.yaml"
+    if chart_yaml.is_file():
+        name = _read_helm_chart_name(chart_yaml)
+        if name:
+            out.append(PackageManifest(ecosystem=ECOSYSTEM_HELM, package_name=name))
+
     return out
 
 
@@ -171,6 +225,45 @@ def read_path_dependencies(root_path: str | Path) -> list[PathDependency]:
     cargo_toml = root / "Cargo.toml"
     if cargo_toml.is_file():
         out.extend(_read_cargo_path_deps(cargo_toml))
+
+    settings_gradle = _find_gradle_settings(root)
+    if settings_gradle is not None:
+        out.extend(_read_gradle_path_deps(settings_gradle))
+
+    composer_json = root / "composer.json"
+    if composer_json.is_file():
+        out.extend(_read_composer_path_deps(root, composer_json))
+
+    gemfile = root / "Gemfile"
+    if gemfile.is_file():
+        out.extend(_read_gemfile_path_deps(gemfile, ecosystem=ECOSYSTEM_GEM))
+
+    pubspec = root / "pubspec.yaml"
+    if pubspec.is_file():
+        out.extend(_read_pubspec_path_deps(root, pubspec))
+
+    for csproj in root.glob("*.csproj"):
+        out.extend(_read_csproj_path_deps(root, csproj))
+
+    podfile = root / "Podfile"
+    if podfile.is_file():
+        out.extend(_read_gemfile_path_deps(podfile, ecosystem=ECOSYSTEM_COCOAPODS, method="pod"))
+
+    package_swift = root / "Package.swift"
+    if package_swift.is_file():
+        out.extend(_read_package_swift_path_deps(root, package_swift))
+
+    for compose_name in ("docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"):
+        compose_file = root / compose_name
+        if compose_file.is_file():
+            out.extend(_read_compose_path_deps(compose_file))
+            break  # only one compose file convention per repo
+
+    chart_yaml = root / "Chart.yaml"
+    if chart_yaml.is_file():
+        out.extend(_read_helm_path_deps(chart_yaml))
+
+    out.extend(_read_terraform_path_deps(root))
 
     return out
 
@@ -518,6 +611,482 @@ def _cargo_path_deps_from(deps: dict) -> list[PathDependency]:
     return out
 
 
+# --- Shared filesystem helpers ------------------------------------------------
+
+
+def _find_glob_file(root: Path, pattern: str) -> Path | None:
+    """Return the first match for ``pattern`` at the root of ``root``, if any."""
+    return next(iter(root.glob(pattern)), None)
+
+
+def _sibling_manifest_name(root: Path, relative_path: str) -> str | None:
+    """Peek at a path-dependency target's OWN manifest for its self-declared
+    name — used by ecosystems (Composer, NuGet, SwiftPM) whose local-path
+    dependency syntax names a file/URL rather than the target's package
+    identity directly, so the alias has to come from the target itself."""
+    try:
+        target = (root / relative_path).resolve()
+    except (OSError, ValueError):
+        return None
+    if not target.is_dir():
+        return None
+    for manifest in read_manifests(target):
+        return manifest.package_name
+    return None
+
+
+# --- Gradle (JVM, separate from Maven) ---------------------------------------
+
+_GRADLE_ROOT_NAME_RE = re.compile(r"""rootProject\.name\s*=\s*['"]([^'"]+)['"]""")
+_GRADLE_GROUP_RE = re.compile(r"""^\s*group\s*=?\s*['"]([^'"]+)['"]""", re.MULTILINE)
+_GRADLE_INCLUDE_BUILD_RE = re.compile(r"""includeBuild\(\s*['"]([^'"]+)['"]\s*\)""")
+# implementation("group:artifact:version") / implementation "group:artifact:version"
+# / api(...) / testImplementation(...) / runtimeOnly(...) / compileOnly(...) —
+# regex-based since Gradle build files are Groovy/Kotlin DSL code, not data.
+_GRADLE_DEP_COORD_RE = re.compile(
+    r"""(?:implementation|api|compileOnly|runtimeOnly|testImplementation|testRuntimeOnly)"""
+    r"""[\s(]+['"]([^:'"]+):([^:'"]+):[^'"]*['"]"""
+)
+
+
+def _find_gradle_settings(root: Path) -> Path | None:
+    for name in ("settings.gradle.kts", "settings.gradle"):
+        path = root / name
+        if path.is_file():
+            return path
+    return None
+
+
+def _find_gradle_build(root: Path) -> Path | None:
+    for name in ("build.gradle.kts", "build.gradle"):
+        path = root / name
+        if path.is_file():
+            return path
+    return None
+
+
+def _read_gradle_identity(root: Path) -> str | None:
+    settings = _find_gradle_settings(root)
+    name: str | None = None
+    if settings is not None:
+        try:
+            text = settings.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            text = ""
+        match = _GRADLE_ROOT_NAME_RE.search(text)
+        if match:
+            name = match.group(1)
+    if name is None:
+        return None
+    build = _find_gradle_build(root)
+    if build is not None:
+        try:
+            text = build.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            text = ""
+        match = _GRADLE_GROUP_RE.search(text)
+        if match:
+            return f"{match.group(1)}:{name}"
+    return name
+
+
+def _read_gradle_path_deps(settings_file: Path) -> list[PathDependency]:
+    """Gradle composite builds (``includeBuild("../sibling")``) — the closest
+    JVM analogue to npm ``workspace:``/Cargo ``path=``. No alias is declared
+    here (Gradle auto-substitutes matching dependency coordinates against
+    included builds at the project-dependency level, not by name in
+    settings) — the placeholder alias falls through to Tier B identity
+    matching against the target's own build.gradle ``group``/name, same
+    pattern as Go's ``go.work`` "use" entries.
+    """
+    try:
+        text = settings_file.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    out: list[PathDependency] = []
+    for match in _GRADLE_INCLUDE_BUILD_RE.finditer(text):
+        rel = match.group(1)
+        out.append(PathDependency(ECOSYSTEM_GRADLE, rel, rel))
+    return out
+
+
+def _gradle_declared_deps(build_gradle: Path) -> list[str]:
+    try:
+        text = build_gradle.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    return [match.group(1) for match in _GRADLE_DEP_COORD_RE.finditer(text)]
+
+
+# --- Composer (PHP) -----------------------------------------------------------
+
+
+def _read_composer_identities(composer_json: Path) -> list[PackageManifest]:
+    """``name`` (vendor/package) plus every PSR-4 autoload namespace prefix —
+    the latter is an unusually strong, machine-exact identity signal (see
+    documents/analysis/code-graph-cross-repo-implementation-plan.md): a
+    ``use Acme\\Shared\\Foo;`` reference matches a sibling's declared PSR-4
+    prefix directly, no groupId-style guessing needed."""
+    data = _read_json_dict(composer_json)
+    if data is None:
+        return []
+    out: list[PackageManifest] = []
+    name = data.get("name")
+    if isinstance(name, str) and name:
+        out.append(PackageManifest(ECOSYSTEM_COMPOSER, name))
+    autoload = data.get("autoload")
+    psr4 = autoload.get("psr-4") if isinstance(autoload, dict) else None
+    if isinstance(psr4, dict):
+        for namespace in psr4:
+            if isinstance(namespace, str) and namespace:
+                out.append(PackageManifest(ECOSYSTEM_COMPOSER, namespace.rstrip("\\")))
+    return out
+
+
+def _read_composer_path_deps(root: Path, composer_json: Path) -> list[PathDependency]:
+    data = _read_json_dict(composer_json)
+    if data is None:
+        return []
+    repositories = data.get("repositories")
+    if not isinstance(repositories, list):
+        return []
+    out: list[PathDependency] = []
+    for repo in repositories:
+        if not isinstance(repo, dict) or repo.get("type") != "path":
+            continue
+        url = repo.get("url")
+        if not isinstance(url, str) or not url:
+            continue
+        alias = _sibling_manifest_name(root, url) or url
+        out.append(PathDependency(ECOSYSTEM_COMPOSER, alias, url))
+    return out
+
+
+def _composer_declared_deps(composer_json: Path) -> list[str]:
+    data = _read_json_dict(composer_json)
+    if data is None:
+        return []
+    out: list[str] = []
+    for section in ("require", "require-dev"):
+        deps = data.get(section)
+        if isinstance(deps, dict):
+            out.extend(name for name in deps if isinstance(name, str) and name != "php")
+    return out
+
+
+def _read_json_dict(path: Path) -> dict | None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+# --- Gem (Ruby / Bundler) and CocoaPods (share a Ruby-DSL Gemfile/Podfile shape) --
+
+_GEMSPEC_NAME_RE = re.compile(r"""\.name\s*=\s*['"]([^'"]+)['"]""")
+_PODSPEC_NAME_RE = re.compile(r"""\.name\s*=\s*['"]([^'"]+)['"]""")
+# gem 'foo', path: '../foo'  |  gem "foo", :path => "../foo"
+_GEM_PATH_RE = re.compile(
+    r"""gem\s+['"]([^'"]+)['"]\s*,.*?(?::path\s*=>|path:)\s*['"]([^'"]+)['"]"""
+)
+_GEM_NAME_RE = re.compile(r"""gem\s+['"]([^'"]+)['"]""")
+# pod 'Name', :path => '../Name'  |  pod "Name", path: "../Name"
+_POD_PATH_RE = re.compile(
+    r"""pod\s+['"]([^'"]+)['"]\s*,.*?(?::path\s*=>|path:)\s*['"]([^'"]+)['"]"""
+)
+_POD_NAME_RE = re.compile(r"""pod\s+['"]([^'"]+)['"]""")
+
+
+def _read_gemspec_name(path: Path) -> str | None:
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    match = _GEMSPEC_NAME_RE.search(text)
+    return match.group(1) if match else None
+
+
+def _read_gemfile_path_deps(
+    path: Path, *, ecosystem: str, method: str = "gem"
+) -> list[PathDependency]:
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    pattern = _POD_PATH_RE if method == "pod" else _GEM_PATH_RE
+    return [
+        PathDependency(ecosystem, match.group(1), match.group(2))
+        for match in pattern.finditer(text)
+    ]
+
+
+def _gemfile_declared_deps(gemfile: Path) -> list[str]:
+    try:
+        text = gemfile.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    return [match.group(1) for match in _GEM_NAME_RE.finditer(text)]
+
+
+def _podfile_declared_deps(podfile: Path) -> list[str]:
+    try:
+        text = podfile.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    return [match.group(1) for match in _POD_NAME_RE.finditer(text)]
+
+
+def _read_podspec_name(path: Path) -> str | None:
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    match = _PODSPEC_NAME_RE.search(text)
+    return match.group(1) if match else None
+
+
+# --- Pub (Dart) ----------------------------------------------------------------
+
+_PUB_DEP_SECTIONS = ("dependencies", "dev_dependencies")
+
+
+def _read_pubspec_name(path: Path) -> str | None:
+    data = _read_yaml_dict(path)
+    if data is None:
+        return None
+    name = data.get("name")
+    return name if isinstance(name, str) and name else None
+
+
+def _read_pubspec_path_deps(root: Path, pubspec: Path) -> list[PathDependency]:
+    data = _read_yaml_dict(pubspec)
+    if data is None:
+        return []
+    out: list[PathDependency] = []
+    for section in _PUB_DEP_SECTIONS:
+        deps = data.get(section)
+        if not isinstance(deps, dict):
+            continue
+        for alias, spec in deps.items():
+            if isinstance(spec, dict):
+                path = spec.get("path")
+                if isinstance(path, str) and path:
+                    out.append(PathDependency(ECOSYSTEM_PUB, alias, path))
+
+    # Dart 3.6+ native pub workspaces: root pubspec.yaml declares explicit
+    # member paths directly (globs are NOT supported by this feature).
+    workspace = data.get("workspace")
+    if isinstance(workspace, list):
+        for member_rel in workspace:
+            if not isinstance(member_rel, str) or not member_rel:
+                continue
+            member_name = _sibling_manifest_name(root, member_rel)
+            if member_name:
+                out.append(PathDependency(ECOSYSTEM_PUB, member_name, member_rel))
+    return out
+
+
+def _pubspec_declared_deps(pubspec: Path) -> list[str]:
+    data = _read_yaml_dict(pubspec)
+    if data is None:
+        return []
+    out: list[str] = []
+    for section in _PUB_DEP_SECTIONS:
+        deps = data.get(section)
+        if isinstance(deps, dict):
+            out.extend(name for name in deps if isinstance(name, str) and name != "flutter")
+    return out
+
+
+def _read_yaml_dict(path: Path) -> dict | None:
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+# --- NuGet (.NET/C#) -----------------------------------------------------------
+
+_MSBUILD_PROJECT_REFERENCE = "ProjectReference"
+_MSBUILD_PACKAGE_REFERENCE = "PackageReference"
+
+
+def _read_csproj_identity(path: Path) -> str | None:
+    try:
+        root = ET.fromstring(path.read_text(encoding="utf-8"))
+    except (OSError, ET.ParseError):
+        return None
+    for tag in ("AssemblyName", "RootNamespace"):
+        for elem in root.iter():
+            if _pom_local_tag(elem) == tag and elem.text and elem.text.strip():
+                return elem.text.strip()
+    # SDK-style projects default both to the project file's own base name
+    # ($(MSBuildProjectName)) when neither property is set explicitly.
+    return path.stem
+
+
+def _read_csproj_path_deps(root: Path, csproj: Path) -> list[PathDependency]:
+    try:
+        tree_root = ET.fromstring(csproj.read_text(encoding="utf-8"))
+    except (OSError, ET.ParseError):
+        return []
+    out: list[PathDependency] = []
+    for elem in tree_root.iter():
+        if _pom_local_tag(elem) != _MSBUILD_PROJECT_REFERENCE:
+            continue
+        include = elem.get("Include")
+        if not include:
+            continue
+        # Include points at a sibling .csproj FILE, not a directory.
+        rel_dir = str(Path(include.replace("\\", "/")).parent)
+        target_dir = (csproj.parent / rel_dir).resolve()
+        alias = None
+        if target_dir.is_dir():
+            for target_csproj in target_dir.glob("*.csproj"):
+                alias = _read_csproj_identity(target_csproj)
+                break
+        alias = alias or Path(include.replace("\\", "/")).stem
+        out.append(PathDependency(ECOSYSTEM_NUGET, alias, rel_dir))
+    return out
+
+
+def _csproj_declared_deps(csproj: Path) -> list[str]:
+    try:
+        tree_root = ET.fromstring(csproj.read_text(encoding="utf-8"))
+    except (OSError, ET.ParseError):
+        return []
+    out: list[str] = []
+    for elem in tree_root.iter():
+        if _pom_local_tag(elem) == _MSBUILD_PACKAGE_REFERENCE:
+            include = elem.get("Include")
+            if include:
+                out.append(include)
+    return out
+
+
+# --- Swift Package Manager -----------------------------------------------------
+
+# Package.swift is executable Swift, not data — regex-scraped like setup.py.
+_SPM_PACKAGE_NAME_RE = re.compile(r"""Package\(\s*name:\s*"([^"]+)\"""")
+_SPM_LOCAL_DEP_RE = re.compile(r"""\.package\(\s*path:\s*"([^"]+)\"""")
+_SPM_REMOTE_DEP_RE = re.compile(r"""\.package\(\s*(?:name:\s*"[^"]+"\s*,\s*)?url:\s*"([^"]+)\"""")
+
+
+def _read_package_swift_name(path: Path) -> str | None:
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    match = _SPM_PACKAGE_NAME_RE.search(text)
+    return match.group(1) if match else None
+
+
+def _read_package_swift_path_deps(root: Path, package_swift: Path) -> list[PathDependency]:
+    try:
+        text = package_swift.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    out: list[PathDependency] = []
+    for match in _SPM_LOCAL_DEP_RE.finditer(text):
+        rel = match.group(1)
+        # SPM path deps carry no alias of their own in this syntax — peek at
+        # the target's own Package.swift name, matching the Composer/NuGet
+        # "resolve the target's self-declared identity" pattern.
+        alias = _sibling_manifest_name(root, rel) or rel
+        out.append(PathDependency(ECOSYSTEM_SWIFTPM, alias, rel))
+    return out
+
+
+def _package_swift_declared_deps(package_swift: Path) -> list[str]:
+    try:
+        text = package_swift.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    out: list[str] = []
+    for match in _SPM_REMOTE_DEP_RE.finditer(text):
+        url = match.group(1).rstrip("/")
+        name = url.rsplit("/", 1)[-1]
+        if name.endswith(".git"):
+            name = name[: -len(".git")]
+        if name:
+            out.append(name)
+    return out
+
+
+# --- Docker Compose, Helm, Terraform (infra-as-code — no source-code parser --
+# --- exists for these yet, so path-dependency data alone won't surface as a --
+# --- resolvable cross-repo import edge without further work; still worth   --
+# --- collecting so a linked "infra" repo's declared local references show  --
+# --- up for a future dedicated resolution pass) -------------------------------
+
+
+def _read_compose_path_deps(compose_file: Path) -> list[PathDependency]:
+    data = _read_yaml_dict(compose_file)
+    if data is None:
+        return []
+    services = data.get("services")
+    if not isinstance(services, dict):
+        return []
+    out: list[PathDependency] = []
+    for service_name, spec in services.items():
+        if not isinstance(spec, dict):
+            continue
+        build = spec.get("build")
+        context = build.get("context") if isinstance(build, dict) else build
+        if isinstance(context, str) and (context.startswith("./") or context.startswith("../")):
+            out.append(PathDependency(ECOSYSTEM_DOCKER, str(service_name), context))
+    return out
+
+
+def _read_helm_chart_name(chart_yaml: Path) -> str | None:
+    data = _read_yaml_dict(chart_yaml)
+    if data is None:
+        return None
+    name = data.get("name")
+    return name if isinstance(name, str) and name else None
+
+
+def _read_helm_path_deps(chart_yaml: Path) -> list[PathDependency]:
+    data = _read_yaml_dict(chart_yaml)
+    if data is None:
+        return []
+    deps = data.get("dependencies")
+    if not isinstance(deps, list):
+        return []
+    out: list[PathDependency] = []
+    for dep in deps:
+        if not isinstance(dep, dict):
+            continue
+        repository = dep.get("repository")
+        name = dep.get("name")
+        if isinstance(repository, str) and repository.startswith("file://") and name:
+            out.append(PathDependency(ECOSYSTEM_HELM, str(name), repository[len("file://") :]))
+    return out
+
+
+# module "name" { source = "../relative/path" } — HCL isn't JSON/YAML/TOML, so
+# this is a deliberately narrow regex covering the common single-line-ish
+# case rather than a full HCL parser.
+_TERRAFORM_MODULE_RE = re.compile(
+    r"""module\s+"([^"]+)"\s*\{[^}]*?source\s*=\s*"(\.\.?/[^"]+)\"""",
+    re.DOTALL,
+)
+
+
+def _read_terraform_path_deps(root: Path) -> list[PathDependency]:
+    out: list[PathDependency] = []
+    for tf_file in root.glob("*.tf"):
+        try:
+            text = tf_file.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for match in _TERRAFORM_MODULE_RE.finditer(text):
+            out.append(PathDependency(ECOSYSTEM_TERRAFORM, match.group(1), match.group(2)))
+    return out
+
+
 # --- External-dependency filtering -------------------------------------------
 
 
@@ -562,6 +1131,35 @@ def read_declared_dependencies(root_path: str | Path) -> list[str]:
     pom_xml = root / "pom.xml"
     if pom_xml.is_file():
         out.extend(_maven_declared_deps(pom_xml))
+
+    settings_gradle = _find_gradle_settings(root)
+    build_gradle = _find_gradle_build(root)
+    if build_gradle is not None:
+        out.extend(_gradle_declared_deps(build_gradle))
+    _ = settings_gradle  # settings.gradle has no dependency declarations of its own
+
+    composer_json = root / "composer.json"
+    if composer_json.is_file():
+        out.extend(_composer_declared_deps(composer_json))
+
+    gemfile = root / "Gemfile"
+    if gemfile.is_file():
+        out.extend(_gemfile_declared_deps(gemfile))
+
+    pubspec = root / "pubspec.yaml"
+    if pubspec.is_file():
+        out.extend(_pubspec_declared_deps(pubspec))
+
+    for csproj in root.glob("*.csproj"):
+        out.extend(_csproj_declared_deps(csproj))
+
+    podfile = root / "Podfile"
+    if podfile.is_file():
+        out.extend(_podfile_declared_deps(podfile))
+
+    package_swift = root / "Package.swift"
+    if package_swift.is_file():
+        out.extend(_package_swift_declared_deps(package_swift))
 
     path_dep_aliases = {d.alias for d in read_path_dependencies(root_path)}
     return [dep for dep in out if dep not in path_dep_aliases]
@@ -688,12 +1286,42 @@ _PYTHON_STDLIB_MODULES = frozenset(getattr(sys, "stdlib_module_names", ()))
 _JVM_EXTENSIONS = (".java", ".kt", ".kts", ".scala")
 _GO_EXTENSIONS = (".go",)
 _PYTHON_EXTENSIONS = (".py", ".pyi")
+_CSHARP_EXTENSIONS = (".cs",)
+_DART_EXTENSIONS = (".dart",)
+_SWIFT_EXTENSIONS = (".swift",)
+_OBJC_EXTENSIONS = (".m", ".mm")
+_PHP_EXTENSIONS = (".php",)
+_RUBY_EXTENSIONS = (".rb",)
+
+# Apple SDK frameworks — always external for Swift `import Foundation` (whole
+# raw_reference) and Objective-C `#import <Foundation/Foundation.h>` (first
+# path segment of raw_reference), never a plausible sibling-repo package.
+_APPLE_FRAMEWORKS = frozenset(
+    {
+        "Foundation", "UIKit", "SwiftUI", "Combine", "CoreData", "CoreGraphics",
+        "CoreLocation", "AVFoundation", "MapKit", "WebKit", "StoreKit", "CloudKit",
+        "CryptoKit", "Network", "Dispatch", "ObjectiveC", "XCTest", "os", "simd",
+        "Security", "CoreBluetooth", "HealthKit", "Contacts", "EventKit", "Photos",
+        "PhotosUI", "MessageUI", "GameKit", "SpriteKit", "SceneKit", "ARKit",
+        "Metal", "MetalKit", "CoreImage", "CoreText", "QuartzCore", "CoreMotion",
+        "LocalAuthentication", "UserNotifications", "WatchKit", "ClockKit",
+        "Intents", "IntentsUI", "NaturalLanguage", "Vision", "CoreML", "CreateML",
+        "Speech", "AuthenticationServices", "PassKit", "MultipeerConnectivity",
+        "ExternalAccessory", "CoreTelephony", "SystemConfiguration", "Accelerate",
+        "GLKit", "OpenGLES", "CoreAudio", "AudioToolbox", "AVKit", "PDFKit",
+        "QuickLook", "Social", "Accounts", "CoreSpotlight", "CoreServices",
+        "DeviceCheck",
+    }
+)
 
 # Extremely well-known third-party library prefixes, bundled as a fast,
 # always-on supplement to a repo's own declared dependencies — catches
 # common libraries even when the manifest -> import-prefix mapping is
 # imperfect (Maven groupId "org.liquibase" -> Java package "liquibase" is
-# not derivable from any automatic heuristic).
+# not derivable from any automatic heuristic). Matching also allows "/",
+# "\\", or ":" as the delimiter after a prefix (not just "."), since Dart
+# ("dart:async"), PHP ("Illuminate\\Support"), and Objective-C
+# ("Foundation/Foundation.h") all use non-dot namespace separators.
 _WELL_KNOWN_EXTERNAL_PREFIXES: tuple[str, ...] = (
     # JVM
     "liquibase", "org.springframework", "org.hibernate", "com.fasterxml",
@@ -710,6 +1338,21 @@ _WELL_KNOWN_EXTERNAL_PREFIXES: tuple[str, ...] = (
     "urllib3", "certifi", "six", "attrs", "jinja2",
     # Rust
     "serde", "tokio", "clap", "anyhow", "thiserror", "log", "reqwest", "rand",
+    # PHP (Composer's declared vendor/package slug rarely matches the PSR-4
+    # namespace prefix, e.g. "illuminate/support" -> `Illuminate\Support`, so
+    # this bundled list carries the same load Maven's groupId mismatch does)
+    "Illuminate", "Symfony", "Psr", "Doctrine", "GuzzleHttp", "Monolog",
+    "PHPUnit", "Composer", "PhpParser", "Twig", "Laravel", "Zend", "Laminas",
+    "Carbon", "Ramsey", "Nette",
+    # Ruby (gem `require` strings are typically underscored, decoupled from
+    # any Gemfile-declared-dependency matching)
+    "active_support", "active_record", "action_pack", "action_view",
+    "action_controller", "active_job", "active_model", "railties", "rails",
+    "rspec", "rack", "sinatra", "bundler", "faraday", "nokogiri", "devise",
+    "puma", "sidekiq", "factory_bot", "capybara", "pry",
+    # Dart (published packages beyond the Flutter SDK itself, which is
+    # handled structurally below via the "dart:" scheme check)
+    "package:flutter", "package:flutter_test", "package:meta", "package:test",
 )
 
 
@@ -760,6 +1403,16 @@ def is_likely_external(
         and raw_reference.split(".", 1)[0] in _PYTHON_STDLIB_MODULES
     ):
         return True
+    if suffix in _CSHARP_EXTENSIONS and (
+        raw_reference == "System" or raw_reference.startswith(("System.", "Microsoft."))
+    ):
+        return True
+    if suffix in _DART_EXTENSIONS and raw_reference.startswith("dart:"):
+        return True
+    if suffix in _SWIFT_EXTENSIONS and raw_reference in _APPLE_FRAMEWORKS:
+        return True
+    if suffix in _OBJC_EXTENSIONS and raw_reference.split("/", 1)[0] in _APPLE_FRAMEWORKS:
+        return True
 
     for dep in declared_dependencies:
         if not dep:
@@ -777,7 +1430,9 @@ def is_likely_external(
             return True
 
     for prefix in _WELL_KNOWN_EXTERNAL_PREFIXES:
-        if raw_reference == prefix or raw_reference.startswith(prefix + "."):
+        if raw_reference == prefix:
+            return True
+        if raw_reference.startswith(prefix) and raw_reference[len(prefix)] in ".\\/:":
             return True
 
     return False
