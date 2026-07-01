@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from app.services.code_graph.parsers.base import (
     Definition,
+    ImportRef,
     SuperType,
     TreeSitterParser,
     node_text,
@@ -65,6 +66,43 @@ class ObjCParser(TreeSitterParser):
                     is_class=False,
                 )
         return None
+
+    def import_refs(self, node: Node, source: bytes) -> list[ImportRef]:
+        # #import/#include are preproc_include nodes (shared with the C/C++
+        # grammar family) — they DO appear as regular nodes in the normal
+        # child hierarchy (verified via the real parse tree), so base.py's
+        # `_walk` visits them like any other statement.
+        if node.type == "preproc_include":
+            path_node = node.child_by_field_name("path")
+            if path_node is None:
+                return []
+            if path_node.type == "system_lib_string":
+                # <Foundation/Foundation.h> — angle brackets, framework-qualified.
+                raw = node_text(path_node, source).strip("<>")
+                name = raw.split("/", 1)[0]
+                return [ImportRef(name=name, module_path=raw)]
+            if path_node.type == "string_literal":
+                # "MyHeader.h" — a quoted local include. These resolve within
+                # the same target rather than naming an external package, but
+                # we still emit a ref (using the header name as-is) so the
+                # raw specifier is available; the cross-repo resolver is free
+                # to treat local-looking paths differently downstream.
+                raw = _string_literal_content(path_node, source)
+                if not raw:
+                    return []
+                name = raw.rsplit("/", 1)[-1]
+                return [ImportRef(name=name, module_path=raw)]
+            return []
+        if node.type == "module_import":
+            # @import SomeModule; or @import Foo.Bar; (Clang module import) —
+            # a dotted submodule path is multiple sibling identifier nodes
+            # joined by "." tokens, not one dotted identifier like Swift's.
+            idents = [c for c in node.children if c.type == "identifier"]
+            if not idents:
+                return []
+            dotted = ".".join(node_text(c, source) for c in idents)
+            return [ImportRef(name=node_text(idents[-1], source), module_path=dotted)]
+        return []
 
     def call_target(self, node: Node, source: bytes) -> str | None:
         if node.type == "message_expression":
@@ -165,6 +203,14 @@ def _declarator_name(node: Node, source: bytes) -> str | None:
         if decl is not None:
             return _declarator_name(decl, source)
     return None
+
+
+def _string_literal_content(node: Node, source: bytes) -> str:
+    """Extract the text content of a string_literal, stripping quotes."""
+    for child in node.children:
+        if child.type == "string_content":
+            return node_text(child, source)
+    return node_text(node, source).strip('"')
 
 
 def _strip_objc_doc(text: str) -> str:

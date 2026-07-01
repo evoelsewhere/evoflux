@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from app.services.code_graph.parsers.base import (
     Definition,
+    ImportRef,
     SuperType,
     TreeSitterParser,
     node_text,
@@ -74,6 +75,33 @@ class CSharpParser(TreeSitterParser):
             if name:
                 return Definition(kind=NODE_FUNCTION, name=name, is_class=False)
         return None
+
+    def import_refs(self, node: Node, source: bytes) -> list[ImportRef]:
+        if node.type != "using_directive":
+            return []
+        # Children (no useful "target" field, so dispatch positionally):
+        # bare:    "using" [qualified_name|identifier] ";" (optionally
+        #          preceded by "global")
+        # alias:   "using" name=identifier "=" [qualified_name|identifier] ";"
+        # static:  "using" "static" [qualified_name|identifier] ";"
+        # Static usings ("using static System.Math;") import a type's members
+        # directly; the type's simple name is still the closest local anchor.
+        alias_node = node.child_by_field_name("name")
+        target = next(
+            (
+                c
+                for c in node.children
+                if c.type in ("qualified_name", "identifier") and c != alias_node
+            ),
+            None,
+        )
+        if target is None:
+            return []
+        dotted = node_text(target, source)
+        if alias_node is not None:
+            return [ImportRef(name=node_text(alias_node, source), module_path=dotted)]
+        local_name = dotted.rsplit(".", 1)[-1]
+        return [ImportRef(name=local_name, module_path=dotted)]
 
     def call_target(self, node: Node, source: bytes) -> str | None:
         if node.type == "invocation_expression":

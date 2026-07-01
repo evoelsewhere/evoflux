@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from app.services.code_graph.parsers.base import (
     Definition,
+    ImportRef,
     SuperType,
     TreeSitterParser,
     node_text,
@@ -85,6 +86,24 @@ class KotlinParser(TreeSitterParser):
 
     def docstring(self, node: Node, source: bytes) -> str | None:
         return _preceding_comment(node, source)
+
+    def import_refs(self, node: Node, source: bytes) -> list[ImportRef]:
+        if node.type != "import_header":
+            return []
+        # Children: "import", identifier (dotted path), then optionally
+        # either an "import_alias" (aliased import) or a "wildcard_import".
+        # For an aliased import the symbol actually defined at the target is
+        # still the last dotted segment — the alias only renames the local
+        # binding — so we record that original name, matching how
+        # python.py/rust.py treat "import X as Y".
+        path_node = next((c for c in node.children if c.type == "identifier"), None)
+        if path_node is None:
+            return []
+        dotted = node_text(path_node, source)
+        is_wildcard = any(c.type == "wildcard_import" for c in node.children)
+        if is_wildcard:
+            return [ImportRef(name="*", module_path=f"{dotted}.*")]
+        return [ImportRef(name=dotted.rsplit(".", 1)[-1], module_path=dotted)]
 
     def _class_name(self, node: Node, source: bytes) -> str | None:
         for child in node.children:

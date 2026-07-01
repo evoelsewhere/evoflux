@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from app.services.code_graph.parsers.base import (
     Definition,
+    ImportRef,
     SuperType,
     TreeSitterParser,
     node_text,
@@ -96,6 +97,41 @@ class DartParser(TreeSitterParser):
             pass
         return None
 
+    def import_refs(self, node: Node, source: bytes) -> list[ImportRef]:
+        # `import 'uri' [as alias] [show/hide ...];` parses as
+        # import_or_export > library_import > import_specification, with the
+        # "configurable_uri" > "uri" > "string_literal" holding the quoted
+        # URI and an optional "as" identifier (no locally-bound name for
+        # show/hide combinators). `export 'uri';` parses as import_or_export
+        # > library_export, with "configurable_uri" a *direct* child (no
+        # wrapping import_specification, and no alias support in Dart).
+        # Exports re-publish another module's symbols under this one, so
+        # treating them as import-like edges is reasonable for cross-repo
+        # resolution purposes.
+        if node.type == "library_import":
+            container = next(
+                (c for c in node.children if c.type == "import_specification"), None
+            )
+        elif node.type == "library_export":
+            container = node
+        else:
+            return []
+        if container is None:
+            return []
+        uri_node = _find_uri(container, source)
+        if uri_node is None:
+            return []
+        module_path = node_text(uri_node, source).strip("'\"")
+        if not module_path:
+            return []
+        alias = next((c for c in container.children if c.type == "identifier"), None)
+        name = (
+            node_text(alias, source)
+            if alias is not None
+            else _dart_local_name(module_path)
+        )
+        return [ImportRef(name=name, module_path=module_path)]
+
     def supertypes(self, node: Node, source: bytes) -> list[SuperType]:
         if node.type != "class_definition":
             return []
@@ -145,3 +181,28 @@ def _dart_type_name(node: Node, source: bytes) -> str | None:
         if child.type == "identifier" or child.type == "type_identifier":
             return node_text(child, source)
     return None
+
+
+def _find_uri(spec: Node, source: bytes) -> Node | None:
+    """Descend configurable_uri > uri > string_literal to the quoted URI."""
+    for child in spec.children:
+        if child.type == "configurable_uri":
+            for sub in child.children:
+                if sub.type == "uri":
+                    for leaf in sub.children:
+                        if leaf.type == "string_literal":
+                            return leaf
+    return None
+
+
+def _dart_local_name(module_path: str) -> str:
+    """Derive a locally-usable name from a URI when no `as` alias is given.
+
+    ``package:my_pkg/my_pkg.dart`` -> ``my_pkg``, ``dart:core`` -> ``core``,
+    ``src/local_file.dart`` -> ``local_file``.
+    """
+    tail = module_path.rsplit("/", 1)[-1]
+    tail = tail.rsplit(":", 1)[-1]
+    if tail.endswith(".dart"):
+        tail = tail[: -len(".dart")]
+    return tail or module_path
