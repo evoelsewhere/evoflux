@@ -4,13 +4,15 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 from sqlmodel import col, select
 
 from app.api.deps import DbSession
 from app.api.schemas.code_graph import (
+    CodeEdgeOut,
     CodeNodeOut,
+    ProjectCodeGraphDataOut,
     ProjectCodeSearchResponse,
     ProjectCodeSearchResultOut,
     ProjectRepoStatus,
@@ -334,6 +336,7 @@ def _cross_repo_edge_out(row: CrossRepoEdge) -> CrossRepoEdgeOut:
     return CrossRepoEdgeOut(
         id=row.id,
         src_workspace_id=row.src_workspace_id,
+        src_node_id=row.src_node_id,
         src_file_path=row.src_file_path,
         src_line=row.src_line,
         raw_reference=row.raw_reference,
@@ -344,6 +347,7 @@ def _cross_repo_edge_out(row: CrossRepoEdge) -> CrossRepoEdgeOut:
         confidence=row.confidence,
         rationale=row.rationale,
         dst_workspace_id=row.dst_workspace_id,
+        dst_node_id=row.dst_node_id,
         dst_qualified_name=row.dst_qualified_name,
     )
 
@@ -469,4 +473,103 @@ async def search_project_code_graph(
             ProjectCodeSearchResultOut(path=path, node=CodeNodeOut.from_model(node))
             for path, node in results
         ]
+    )
+
+
+@router.get("/{project_id}/code-graph/graph-data", response_model=ProjectCodeGraphDataOut)
+async def get_project_code_graph_data(
+    project_id: UUID,
+    db: DbSession,
+    node_limit_per_repo: int = Query(500, ge=1, le=5000),
+    edge_limit_per_repo: int = Query(2000, ge=1, le=10000),
+) -> ProjectCodeGraphDataOut:
+    """Project-wide graph payload for the spatial neuron view.
+
+    Returns repo statuses, a capped set of symbol nodes and intra-repo
+    edges per repo, plus all cross-repo edges. The caps keep the frontend
+    renderer responsive for monorepos with tens of thousands of symbols.
+    """
+    project = await svc.get_project(db, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    pairs = await svc.get_project_workspaces(db, project_id)
+    repos: list[ProjectRepoStatus] = []
+    nodes: list[CodeNodeOut] = []
+    edges: list[CodeEdgeOut] = []
+    total_node_count = 0
+    total_edge_count = 0
+
+    for _link, ws in pairs:
+        workspace_id = await cg_svc.resolve_workspace_id(db, path=ws.path)
+        if workspace_id is None:
+            repos.append(
+                ProjectRepoStatus(
+                    workspace_id=str(ws.id),
+                    path=ws.path,
+                    name=ws.name or ws.path,
+                    indexed=False,
+                )
+            )
+            continue
+
+        counts = await cg_svc.get_index_status(db, workspace_id=workspace_id)
+        job = index_jobs.snapshot(workspace_id)
+        indexing = job is not None and job.status == "running"
+        index_error = job.error if job is not None and job.status == "error" else None
+        repos.append(
+            ProjectRepoStatus(
+                workspace_id=str(ws.id),
+                path=ws.path,
+                name=ws.name or ws.path,
+                indexed=counts["files"] > 0,
+                files=counts["files"],
+                nodes=counts["nodes"],
+                edges=counts["edges"],
+                indexing=indexing,
+                index_phase=job.phase if indexing else None,
+                index_progress=job.progress if indexing else None,
+                index_message=job.message if indexing else None,
+                index_error=index_error,
+            )
+        )
+
+        if counts["files"] == 0:
+            continue
+
+        repo_nodes, repo_edges, repo_total_nodes, repo_total_edges = (
+            await cg_svc.get_workspace_graph_data(
+                db,
+                workspace_id=workspace_id,
+                node_limit=node_limit_per_repo,
+                edge_limit=edge_limit_per_repo,
+            )
+        )
+        total_node_count += repo_total_nodes
+        total_edge_count += repo_total_edges
+        nodes.extend(CodeNodeOut.from_model(n) for n in repo_nodes)
+        edges.extend(
+            CodeEdgeOut(
+                id=str(e.id),
+                src_id=str(e.src_id),
+                dst_id=str(e.dst_id),
+                kind=e.kind,
+                file_path=e.file_path,
+                line=e.line,
+            )
+            for e in repo_edges
+        )
+
+    cross_stmt = select(CrossRepoEdge).where(col(CrossRepoEdge.project_id) == project_id)
+    cross_rows = (await db.exec(cross_stmt)).all()
+
+    return ProjectCodeGraphDataOut(
+        repos=repos,
+        nodes=nodes,
+        edges=edges,
+        cross_repo_edges=[_cross_repo_edge_out(row) for row in cross_rows],
+        node_limit_per_repo=node_limit_per_repo,
+        edge_limit_per_repo=edge_limit_per_repo,
+        total_node_count=total_node_count,
+        total_edge_count=total_edge_count,
     )

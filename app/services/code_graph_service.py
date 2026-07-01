@@ -22,7 +22,6 @@ from sqlmodel import col, or_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db import current_sqlite_path
-from app.core.runtime_settings import load_runtime_settings
 from app.models.chat import CodingWorkspace
 from app.models.code_graph import CodeEdge, CodeIndexState, CodeNode, CrossRepoEdge
 from app.services.code_graph import fts_store as fts
@@ -608,6 +607,67 @@ async def get_index_status(db: AsyncSession, *, workspace_id: UUID) -> dict[str,
         "nodes": len(nodes),
         "edges": len(edges),
     }
+
+
+# Priority order for graph visualization: structural containers first, then
+# callable symbols, then fine-grained variables. This lets the UI cap nodes
+# per repo while keeping the most "connection-dense" symbols visible.
+_GRAPH_NODE_KIND_PRIORITY: dict[str, int] = {
+    "file": 0,
+    "module": 0,
+    "class": 1,
+    "interface": 1,
+    "function": 2,
+    "method": 3,
+    "variable": 4,
+}
+
+
+async def get_workspace_graph_data(
+    db: AsyncSession,
+    *,
+    workspace_id: UUID,
+    node_limit: int = 500,
+    edge_limit: int = 2000,
+) -> tuple[list[CodeNode], list[CodeEdge], int, int]:
+    """Return a renderable slice of a workspace's graph.
+
+    Nodes are prioritized by kind (files/modules/classes first) so the cap
+    keeps the most topology-relevant symbols. Edges are filtered to those
+    whose both endpoints are in the returned node set, then capped by
+    occurrence order.
+    """
+    total_nodes_result = await db.exec(
+        select(sa_func.count()).where(CodeNode.workspace_id == workspace_id)
+    )
+    total_edges_result = await db.exec(
+        select(sa_func.count()).where(CodeEdge.workspace_id == workspace_id)
+    )
+    total_node_count = total_nodes_result.first() or 0
+    total_edge_count = total_edges_result.first() or 0
+
+    all_nodes = list(
+        (await db.exec(select(CodeNode).where(CodeNode.workspace_id == workspace_id))).all()
+    )
+    all_nodes.sort(
+        key=lambda n: (
+            _GRAPH_NODE_KIND_PRIORITY.get(n.kind, 5),
+            n.qualified_name or n.name,
+        )
+    )
+    nodes = all_nodes[:node_limit]
+    node_ids = {n.id for n in nodes}
+
+    edges_result = await db.exec(
+        select(CodeEdge).where(
+            CodeEdge.workspace_id == workspace_id,
+            col(CodeEdge.src_id).in_(node_ids),
+            col(CodeEdge.dst_id).in_(node_ids),
+        )
+    )
+    edges = list(edges_result.all())[:edge_limit]
+
+    return nodes, edges, total_node_count, total_edge_count
 
 
 async def search_nodes(

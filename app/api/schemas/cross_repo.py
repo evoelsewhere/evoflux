@@ -10,6 +10,7 @@ from pydantic import BaseModel
 class CrossRepoEdgeOut(BaseModel):
     id: UUID
     src_workspace_id: UUID
+    src_node_id: UUID | None
     src_file_path: str
     src_line: int | None
     raw_reference: str
@@ -20,6 +21,7 @@ class CrossRepoEdgeOut(BaseModel):
     confidence: float | None
     rationale: str | None
     dst_workspace_id: UUID | None
+    dst_node_id: UUID | None
     dst_qualified_name: str | None
 
 

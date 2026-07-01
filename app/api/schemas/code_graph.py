@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from app.api.schemas.cross_repo import CrossRepoEdgeOut
 from app.services.code_graph_service import (
     ReindexStats,
     WorkspaceOverview,
@@ -13,6 +14,7 @@ from app.models.code_graph import CodeNode
 
 class CodeNodeOut(BaseModel):
     id: str
+    workspace_id: str
     kind: str
     name: str
     qualified_name: str
@@ -27,6 +29,7 @@ class CodeNodeOut(BaseModel):
     def from_model(cls, node: CodeNode) -> "CodeNodeOut":
         return cls(
             id=str(node.id),
+            workspace_id=str(node.workspace_id),
             kind=node.kind,
             name=node.name,
             qualified_name=node.qualified_name,
@@ -68,6 +71,15 @@ class CodeGraphStatusResponse(BaseModel):
 
 class CodeSearchResponse(BaseModel):
     nodes: list[CodeNodeOut]
+
+
+class CodeEdgeOut(BaseModel):
+    id: str
+    src_id: str
+    dst_id: str
+    kind: str
+    file_path: str | None = None
+    line: int | None = None
 
 
 class NeighborOut(BaseModel):
@@ -142,6 +154,24 @@ class ProjectCodeSearchResultOut(BaseModel):
 
 class ProjectCodeSearchResponse(BaseModel):
     results: list[ProjectCodeSearchResultOut]
+
+
+class ProjectCodeGraphDataOut(BaseModel):
+    """Project-wide code-graph payload for the spatial neuron graph UI.
+
+    Nodes and intra-repo edges are capped per repo so the frontend can
+    render large monorepos without choking. Cross-repo edges are the
+    project's resolved/unresolved inter-repo references.
+    """
+
+    repos: list[ProjectRepoStatus]
+    nodes: list[CodeNodeOut]
+    edges: list[CodeEdgeOut]
+    cross_repo_edges: list[CrossRepoEdgeOut]
+    node_limit_per_repo: int
+    edge_limit_per_repo: int
+    total_node_count: int
+    total_edge_count: int
 
 
 class ReindexResponse(BaseModel):

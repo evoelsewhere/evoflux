@@ -37,6 +37,7 @@ import type {
   CrossRepoResolveStatusResponse,
   ProjectRepoStatus,
   ProjectCodeSearchResponse,
+  ProjectCodeGraphData,
 } from '../types'
 
 export async function postTeamChat(
@@ -702,5 +703,24 @@ export async function searchProjectCodeGraph(
     `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/code-graph/search?${params}`,
   )
   if (!res.ok) await parseDetailOrThrow(res, 'searchProjectCodeGraph')
+  return res.json()
+}
+
+export async function getProjectCodeGraphData(
+  projectId: string,
+  options?: { nodeLimitPerRepo?: number; edgeLimitPerRepo?: number },
+): Promise<ProjectCodeGraphData> {
+  const params = new URLSearchParams()
+  if (options?.nodeLimitPerRepo !== undefined) {
+    params.set('node_limit_per_repo', String(options.nodeLimitPerRepo))
+  }
+  if (options?.edgeLimitPerRepo !== undefined) {
+    params.set('edge_limit_per_repo', String(options.edgeLimitPerRepo))
+  }
+  const qs = params.toString()
+  const res = await fetch(
+    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/code-graph/graph-data${qs ? `?${qs}` : ''}`,
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'getProjectCodeGraphData')
   return res.json()
 }

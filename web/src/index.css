@@ -721,8 +721,14 @@ a svg[aria-hidden="true"],
 .repo-graph-flow {
   animation: repo-graph-flow 1s linear infinite;
 }
+/* Same pulse, slowed down — the modal's "always alive" synapse animation
+ * when no resolve job is actively running. */
+.repo-graph-flow-slow {
+  animation: repo-graph-flow 3.5s linear infinite;
+}
 @media (prefers-reduced-motion: reduce) {
-  .repo-graph-flow {
+  .repo-graph-flow,
+  .repo-graph-flow-slow {
     animation: none;
   }
 }
