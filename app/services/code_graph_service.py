@@ -34,6 +34,7 @@ from app.services.code_graph.indexer import (
     index_files,
     index_workspace,
 )
+from app.services.code_graph.manifest import is_likely_external, read_declared_dependencies
 from app.services.code_graph.parsers.registry import ParserRegistry, build_registry
 from app.services.code_graph.types import EDGE_IMPORTS
 
@@ -206,6 +207,7 @@ async def reindex_workspace(
     await _persist_unresolved_imports(
         db,
         workspace_id=workspace_id,
+        root_path=root_path,
         unresolved_imports=index.unresolved_imports,
         key_to_id=key_to_id,
     )
@@ -238,6 +240,7 @@ async def _persist_unresolved_imports(
     db: AsyncSession,
     *,
     workspace_id: UUID,
+    root_path: str,
     unresolved_imports: list[UnresolvedImport],
     key_to_id: dict[str, UUID],
     affected_files: set[str] | None = None,
@@ -254,12 +257,22 @@ async def _persist_unresolved_imports(
     ``affected_files`` (changed + deleted) were reprocessed, so the replace
     is scoped to those files — a deleted file's rows are dropped and never
     reinserted since it no longer appears in ``unresolved_imports``.
+
+    Each candidate is pre-filtered with ``is_likely_external`` against this
+    workspace's own manifest — an import that's almost certainly a
+    third-party library (the JDK, a well-known package, something this
+    repo's own manifest already declares as a dependency) is stored with
+    ``status="external"`` instead of ``"unresolved"`` so it never inflates
+    the unresolved count or gets attempted by Tier A/B, without losing the
+    row outright (still visible/auditable via the edges list).
     """
     from app.services.coding_project_service import get_projects_for_workspace
 
     project_ids = await get_projects_for_workspace(db, workspace_id)
     if not project_ids:
         return
+
+    declared_dependencies = read_declared_dependencies(root_path)
 
     for project_id in project_ids:
         delete_stmt = sa_delete(CrossRepoEdge).where(
@@ -285,6 +298,15 @@ async def _persist_unresolved_imports(
                         raw_reference=u.module_path,
                         dst_name_hint=u.dst_name_hint,
                         kind=EDGE_IMPORTS,
+                        status=(
+                            "external"
+                            if is_likely_external(
+                                u.module_path,
+                                file_path=u.file_path,
+                                declared_dependencies=declared_dependencies,
+                            )
+                            else "unresolved"
+                        ),
                     )
                     for u in unresolved_imports
                 ]
@@ -466,6 +488,7 @@ async def _reindex_incremental(
     await _persist_unresolved_imports(
         db,
         workspace_id=workspace_id,
+        root_path=root_path,
         unresolved_imports=index.unresolved_imports,
         key_to_id=key_to_id,
         affected_files=affected,
