@@ -8,9 +8,14 @@ tiers of increasing cost:
   Tier 0 — reattach: a previously ``resolved`` row whose ``dst_node_id`` was
     SET NULL by the target repo's own reindex gets re-attached by name,
     cheaper than re-matching from scratch.
-  Tier A — static (this module, free): Java fully-qualified-name matching
-    plus manifest-identity matching (package.json/pyproject.toml/go.mod/
-    Cargo.toml) for the languages that already extract imports.
+  Tier A — static (this module, free), tried in order:
+    1. explicit path dependency — the SOURCE repo's own manifest points at a
+       sibling by relative path (npm file:/link:/workspace:, uv/poetry
+       path=, Go replace, Cargo path=). Unambiguous by construction: no
+       cross-sibling search needed, so this is tried before anything else.
+    2. Java fully-qualified-name matching.
+    3. manifest-identity matching (package.json/pyproject.toml/go.mod/
+       Cargo.toml) for the languages that already extract imports.
   Tier B — embedding-narrowed + LLM fallback (a later module) for whatever
     Tier A leaves unresolved.
 """
@@ -18,6 +23,7 @@ tiers of increasing cost:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from uuid import UUID
 
 from sqlalchemy import func as sa_func
@@ -27,8 +33,11 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.models.code_graph import CodeNode, CrossRepoEdge
 from app.services.code_graph.manifest import (
     PackageManifest,
+    PathDependency,
+    match_path_dependency,
     match_reference_to_package,
     read_manifests,
+    read_path_dependencies,
 )
 from app.services.coding_project_service import get_project_workspaces
 
@@ -37,6 +46,7 @@ _ANY_SYMBOL_KINDS = frozenset(
     {"file", "module", "class", "function", "method", "interface", "variable"}
 )
 
+METHOD_STATIC_PATH_DEPENDENCY = "static_path_dependency"
 METHOD_STATIC_FQN = "static_fqn"
 METHOD_STATIC_MANIFEST_EXACT = "static_manifest_exact"
 METHOD_STATIC_MANIFEST_PACKAGE = "static_manifest_package"
@@ -62,6 +72,7 @@ class _SiblingRepo:
     workspace_id: UUID
     path: str
     manifests: list[PackageManifest]
+    path_dependencies: list[PathDependency]
 
 
 async def resolve_project(
@@ -135,7 +146,10 @@ async def _load_sibling_repos(
     pairs = await get_project_workspaces(db, project_id)
     return {
         ws.id: _SiblingRepo(
-            workspace_id=ws.id, path=ws.path, manifests=read_manifests(ws.path)
+            workspace_id=ws.id,
+            path=ws.path,
+            manifests=read_manifests(ws.path),
+            path_dependencies=read_path_dependencies(ws.path),
         )
         for _, ws in pairs
     }
@@ -190,7 +204,13 @@ async def _resolve_static(db: AsyncSession, *, project_id: UUID) -> int:
         others = [s for s in siblings.values() if s.workspace_id != row.src_workspace_id]
         if not others:
             continue
+        src_repo = siblings.get(row.src_workspace_id)
 
+        if src_repo is not None and await _try_resolve_path_dependency(
+            db, row, src_repo, others
+        ):
+            resolved += 1
+            continue
         if await _try_resolve_fqn(db, row, others):
             resolved += 1
             continue
@@ -200,6 +220,57 @@ async def _resolve_static(db: AsyncSession, *, project_id: UUID) -> int:
         # Left unresolved for Tier B.
 
     return resolved
+
+
+async def _try_resolve_path_dependency(
+    db: AsyncSession,
+    row: CrossRepoEdge,
+    src_repo: _SiblingRepo,
+    others: list[_SiblingRepo],
+) -> bool:
+    """Resolve via an explicit local-path dependency in the SOURCE repo's own
+    manifest — the referencing repo's author pointed at this exact sibling
+    directory, so there's no cross-sibling ambiguity to resolve, unlike
+    ``_try_resolve_manifest``'s identity search.
+    """
+    dep = match_path_dependency(row.raw_reference, src_repo.path_dependencies)
+    if dep is None:
+        return False
+
+    target_path = str((Path(src_repo.path) / dep.relative_path).resolve())
+    sibling = next(
+        (s for s in others if str(Path(s.path).resolve()) == target_path), None
+    )
+    if sibling is None:
+        return False  # sibling not (yet) a member of this project
+
+    node = None
+    if row.dst_name_hint:
+        node = await _find_node_by_name(
+            db, workspace_id=sibling.workspace_id, name=row.dst_name_hint
+        )
+    if node is not None:
+        _stamp_resolved(
+            row,
+            dst_workspace_id=sibling.workspace_id,
+            dst_node_id=node.id,
+            dst_qualified_name=node.qualified_name,
+            method=METHOD_STATIC_PATH_DEPENDENCY,
+            confidence=1.0,
+        )
+    else:
+        # Repo-level link only — still real signal, just not symbol-precise
+        # (e.g. a bare package import with no specific member referenced).
+        _stamp_resolved(
+            row,
+            dst_workspace_id=sibling.workspace_id,
+            dst_node_id=None,
+            dst_qualified_name=dep.alias,
+            method=METHOD_STATIC_PATH_DEPENDENCY,
+            confidence=0.8,
+        )
+    db.add(row)
+    return True
 
 
 def _fqn_candidates(raw_reference: str) -> list[str]:
