@@ -27,7 +27,7 @@ from app.models.code_graph import CrossRepoEdge
 from app.services import code_graph_service as cg_svc
 from app.services import coding_project_service as svc
 from app.services import team_manager
-from app.services.code_graph.cross_repo import resolve_project
+from app.services.code_graph.cross_repo import METHOD_MANUAL_REJECT, resolve_project
 from app.services.code_graph.cross_repo_jobs import cross_repo_jobs
 from app.services.code_graph.jobs import index_jobs
 
@@ -327,24 +327,69 @@ async def list_cross_repo_edges(
     if status is not None:
         stmt = stmt.where(col(CrossRepoEdge.status) == status)
     rows = (await db.exec(stmt)).all()
-    return [
-        CrossRepoEdgeOut(
-            id=row.id,
-            src_workspace_id=row.src_workspace_id,
-            src_file_path=row.src_file_path,
-            src_line=row.src_line,
-            raw_reference=row.raw_reference,
-            dst_name_hint=row.dst_name_hint,
-            kind=row.kind,
-            status=row.status,
-            method=row.method,
-            confidence=row.confidence,
-            rationale=row.rationale,
-            dst_workspace_id=row.dst_workspace_id,
-            dst_qualified_name=row.dst_qualified_name,
+    return [_cross_repo_edge_out(row) for row in rows]
+
+
+def _cross_repo_edge_out(row: CrossRepoEdge) -> CrossRepoEdgeOut:
+    return CrossRepoEdgeOut(
+        id=row.id,
+        src_workspace_id=row.src_workspace_id,
+        src_file_path=row.src_file_path,
+        src_line=row.src_line,
+        raw_reference=row.raw_reference,
+        dst_name_hint=row.dst_name_hint,
+        kind=row.kind,
+        status=row.status,
+        method=row.method,
+        confidence=row.confidence,
+        rationale=row.rationale,
+        dst_workspace_id=row.dst_workspace_id,
+        dst_qualified_name=row.dst_qualified_name,
+    )
+
+
+@router.post(
+    "/{project_id}/cross-repo/edges/{edge_id}/reject",
+    response_model=CrossRepoEdgeOut,
+)
+async def reject_cross_repo_edge(
+    project_id: UUID, edge_id: UUID, db: DbSession
+) -> CrossRepoEdgeOut:
+    """Permanently dismiss a candidate reference.
+
+    For a false match (a resolved link that's actually wrong) or noise the
+    automatic external-dependency filter missed (``is_likely_external`` is a
+    best-effort heuristic, not exhaustive) — once rejected, no future
+    resolution pass re-suggests it: Tier A/B only ever touch
+    ``status="unresolved"`` rows, and the reindex hot path only replaces rows
+    with ``method IS NULL``, which a rejected row never has (see
+    ``METHOD_MANUAL_REJECT``).
+    """
+    project = await svc.get_project(db, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    edge = (
+        await db.exec(
+            select(CrossRepoEdge).where(
+                col(CrossRepoEdge.id) == edge_id,
+                col(CrossRepoEdge.project_id) == project_id,
+            )
         )
-        for row in rows
-    ]
+    ).first()
+    if edge is None:
+        raise HTTPException(status_code=404, detail="Cross-repo edge not found")
+
+    edge.status = "rejected"
+    edge.method = edge.method or METHOD_MANUAL_REJECT
+    edge.dst_workspace_id = None
+    edge.dst_node_id = None
+    edge.dst_qualified_name = None
+    db.add(edge)
+    await db.commit()
+    await db.refresh(edge)
+
+    return _cross_repo_edge_out(edge)
 
 
 @router.get("/{project_id}/code-graph/status", response_model=list[ProjectRepoStatus])

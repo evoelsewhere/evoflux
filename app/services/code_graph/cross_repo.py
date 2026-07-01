@@ -50,6 +50,13 @@ METHOD_STATIC_PATH_DEPENDENCY = "static_path_dependency"
 METHOD_STATIC_FQN = "static_fqn"
 METHOD_STATIC_MANIFEST_EXACT = "static_manifest_exact"
 METHOD_STATIC_MANIFEST_PACKAGE = "static_manifest_package"
+# Set when a user/agent manually rejects a row via the API — distinct from
+# every resolver-produced method so a rejected row's provenance stays
+# visible. Also doubles as a non-NULL sentinel: _persist_unresolved_imports'
+# reindex-time delete only ever targets ``method IS NULL`` rows, so setting
+# this is what makes a rejection survive the source file being reindexed
+# again (otherwise it would be wiped and recreated as "unresolved").
+METHOD_MANUAL_REJECT = "manual_reject"
 # No longer produced (the embedding layer was removed in favor of FTS5
 # lexical search — see cross_repo_llm.py) — kept only so historical
 # CrossRepoEdge rows with this value still deserialize/display correctly.
