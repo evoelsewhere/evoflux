@@ -2,20 +2,24 @@
  * ProjectCodeGraphPanel — project-wide code graph browsing, no repo picker.
  *
  * Mirrors CodeGraphPanel.tsx's UX (status header, debounced search, result
- * list, reindex) but fans out across every repo in the project via the
- * project-scoped endpoints (`/team/projects/{id}/code-graph/status|search`,
- * backed by `search_across_workspaces` server-side) instead of a single
- * `workspace` query param. Single-repo sessions keep using CodeGraphPanel
- * unchanged — this component only mounts in project mode.
+ * list) but fans out across every repo in the project via the project-scoped
+ * endpoints (`/team/projects/{id}/code-graph/status|search`, backed by
+ * `search_across_workspaces` server-side) instead of a single `workspace`
+ * query param. Single-repo sessions keep using CodeGraphPanel unchanged —
+ * this component only mounts in project mode.
+ *
+ * Indexing itself is triggered from CrossRepoLinksPanel's single Index/
+ * Reindex button (rendered above this panel in the Graph tab) — this
+ * component is read-only status + search, not a second place to kick off
+ * indexing.
  */
 
 import { useEffect, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FileCode, Loader2, Network, RefreshCw, Search } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import { getProjectCodeGraphStatus, reindexCodeGraph, searchProjectCodeGraph } from '@/api/client'
+import { useQuery } from '@tanstack/react-query'
+import { FileCode, Loader2, Search } from 'lucide-react'
+import { getProjectCodeGraphStatus, searchProjectCodeGraph } from '@/api/client'
 import { queryKeys } from '@/queries/keys'
-import type { CodingProject, ProjectCodeSearchResult, ProjectRepoStatus, WorkspaceFileInfo } from '@/api/types'
+import type { CodingProject, ProjectCodeSearchResult, WorkspaceFileInfo } from '@/api/types'
 
 function repoLabel(path: string): string {
   return path.split(/[\\/]/).pop() || path
@@ -39,7 +43,6 @@ export interface ProjectCodeGraphPanelProps {
 }
 
 export function ProjectCodeGraphPanel({ project, onFileSelect }: ProjectCodeGraphPanelProps) {
-  const queryClient = useQueryClient()
   const [query, setQuery] = useState('')
   const [debounced, setDebounced] = useState('')
 
@@ -65,13 +68,6 @@ export function ProjectCodeGraphPanel({ project, onFileSelect }: ProjectCodeGrap
     queryFn: () => searchProjectCodeGraph(project.id, debounced, { limitPerRepo: 10 }),
     enabled: debounced.length > 0,
     staleTime: 5_000,
-  })
-
-  const reindex = useMutation({
-    mutationFn: (path: string) => reindexCodeGraph(path, { full: false }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.projects.codeGraphStatus(project.id) })
-    },
   })
 
   const matches = results.data?.results ?? []
@@ -107,15 +103,7 @@ export function ProjectCodeGraphPanel({ project, onFileSelect }: ProjectCodeGrap
                     {repo.index_message || 'Building…'}
                   </span>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => reindex.mutate(repo.path)}
-                    disabled={reindex.isPending}
-                    className="inline-flex shrink-0 items-center gap-1 rounded-md bg-(--color-accent) px-2 py-1 text-[10px] font-medium text-(--color-accent-fg) hover:opacity-90 disabled:opacity-60"
-                  >
-                    <Network size={11} />
-                    Build index
-                  </button>
+                  <span className="shrink-0 text-[10px] text-(--color-text-subtle)">Not indexed yet</span>
                 )}
               </div>
             ))}
@@ -189,21 +177,6 @@ export function ProjectCodeGraphPanel({ project, onFileSelect }: ProjectCodeGrap
         )}
       </div>
 
-      {/* Reindex-all footer */}
-      {anyIndexed && (
-        <button
-          type="button"
-          onClick={() => repos.filter((r) => r.indexed).forEach((r) => reindex.mutate(r.path))}
-          disabled={reindex.isPending}
-          className={cn(
-            'flex items-center justify-center gap-1.5 border-t border-(--color-border) px-3 py-2 text-xs text-(--color-text-muted) hover:bg-(--bg-key) disabled:opacity-60',
-          )}
-          title="Re-index changed files across every indexed repo"
-        >
-          {reindex.isPending ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-          {reindex.isPending ? 'Indexing…' : 'Reindex all'}
-        </button>
-      )}
     </div>
   )
 }
