@@ -713,6 +713,21 @@ a svg[aria-hidden="true"],
 }
 
 /* ─────────────────────────────────────────────────────────────
+ * Repo-graph edge flow pulse — cross-repo resolve job in flight
+ * ───────────────────────────────────────────────────────────── */
+@keyframes repo-graph-flow {
+  to { stroke-dashoffset: -6; }
+}
+.repo-graph-flow {
+  animation: repo-graph-flow 1s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .repo-graph-flow {
+    animation: none;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
  * Raised surface
  * ───────────────────────────────────────────────────────────── */
 .surface-raised {
