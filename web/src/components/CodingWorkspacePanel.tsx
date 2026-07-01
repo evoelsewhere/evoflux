@@ -246,11 +246,9 @@ export function CodingWorkspacePanel({
             {isProjectMode ? (
               project ? (
                 <>
-                  {project.workspaces.length > 1 && (
-                    <div className="shrink-0 border-b border-(--color-border) p-2">
-                      <CrossRepoLinksPanel project={project} />
-                    </div>
-                  )}
+                  <div className="shrink-0 border-b border-(--color-border) p-2">
+                    <CrossRepoLinksPanel project={project} />
+                  </div>
                   <div className="min-h-0 flex-1">
                     <ProjectCodeGraphPanel project={project} onFileSelect={onFileSelect} />
                   </div>
