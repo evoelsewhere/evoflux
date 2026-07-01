@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from app.services.code_graph.parsers.base import (
     Definition,
+    ImportRef,
     SuperType,
     TreeSitterParser,
     node_text,
@@ -57,6 +58,56 @@ class PhpParser(TreeSitterParser):
             if name:
                 return Definition(kind=NODE_FUNCTION, name=name, is_class=False)
         return None
+
+    def import_refs(self, node: Node, source: bytes) -> list[ImportRef]:
+        if node.type != "namespace_use_declaration":
+            return []
+        # Two shapes: a flat list of "namespace_use_clause" children (each a
+        # full dotted path, optionally "as"-aliased), or a "namespace_name"
+        # prefix followed by a "namespace_use_group" ("{Str, Arr as A}") whose
+        # clauses are bare trailing segments to append to the prefix.
+        group = next(
+            (c for c in node.children if c.type == "namespace_use_group"), None
+        )
+        if group is not None:
+            prefix_node = next(
+                (c for c in node.children if c.type == "namespace_name"), None
+            )
+            prefix = node_text(prefix_node, source) if prefix_node is not None else ""
+            out: list[ImportRef] = []
+            for clause in group.children:
+                if clause.type != "namespace_use_clause":
+                    continue
+                ref = self._use_clause_ref(clause, source, prefix=f"{prefix}\\")
+                if ref is not None:
+                    out.append(ref)
+            return out
+        out = []
+        for clause in node.children:
+            if clause.type != "namespace_use_clause":
+                continue
+            ref = self._use_clause_ref(clause, source, prefix="")
+            if ref is not None:
+                out.append(ref)
+        return out
+
+    def _use_clause_ref(
+        self, clause: Node, source: bytes, *, prefix: str
+    ) -> ImportRef | None:
+        base = next(
+            (c for c in clause.children if c.type in ("qualified_name", "name")),
+            None,
+        )
+        if base is None:
+            return None
+        module_path = f"{prefix}{node_text(base, source)}"
+        alias = clause.child_by_field_name("alias")
+        if alias is not None:
+            return ImportRef(name=node_text(alias, source), module_path=module_path)
+        return ImportRef(
+            name=_last_name(base, source) or node_text(base, source),
+            module_path=module_path,
+        )
 
     def call_target(self, node: Node, source: bytes) -> str | None:
         ntype = node.type

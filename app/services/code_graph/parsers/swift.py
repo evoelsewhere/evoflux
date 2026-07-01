@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from app.services.code_graph.parsers.base import (
     Definition,
+    ImportRef,
     SuperType,
     TreeSitterParser,
     node_text,
@@ -61,6 +62,22 @@ class SwiftParser(TreeSitterParser):
             if name:
                 return Definition(kind=NODE_CLASS, name=name, is_class=False)
         return None
+
+    def import_refs(self, node: Node, source: bytes) -> list[ImportRef]:
+        if node.type != "import_declaration":
+            return []
+        # Children: ["import" | modifiers (e.g. "@testable")], "import",
+        # [a "kind" keyword: struct/class/enum/protocol/func/var/let], identifier.
+        # The identifier child carries the (possibly dotted) module path, e.g.
+        # "Foundation" or "Foundation.Date" for a scoped import.
+        ident = next((c for c in node.children if c.type == "identifier"), None)
+        if ident is None:
+            return []
+        dotted = node_text(ident, source)
+        # A scoped import ("import struct Foundation.Date") names one specific
+        # symbol from the module — the last dotted segment is the locally-used
+        # name, mirroring java.py's handling of nested imports.
+        return [ImportRef(name=dotted.rsplit(".", 1)[-1], module_path=dotted)]
 
     def call_target(self, node: Node, source: bytes) -> str | None:
         if node.type != "call_expression":

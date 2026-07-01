@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from app.services.code_graph.parsers.base import (
     Definition,
+    ImportRef,
     SuperType,
     TreeSitterParser,
     node_text,
@@ -65,6 +66,19 @@ class PascalParser(TreeSitterParser):
                             return node_text(sub, source)
                     break
         return None
+
+    def import_refs(self, node: Node, source: bytes) -> list[ImportRef]:
+        if node.type != "declUses":
+            return []
+        out: list[ImportRef] = []
+        for child in node.children:
+            if child.type == "moduleName":
+                dotted = node_text(child, source)
+                if dotted:
+                    out.append(
+                        ImportRef(name=dotted.rsplit(".", 1)[-1], module_path=dotted)
+                    )
+        return out
 
     def supertypes(self, node: Node, source: bytes) -> list[SuperType]:
         if node.type not in ("declClass", "declType"):

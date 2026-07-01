@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from app.services.code_graph.parsers.base import (
     Definition,
+    ImportRef,
     SuperType,
     TreeSitterParser,
     node_text,
@@ -14,6 +15,8 @@ from app.services.code_graph.types import NODE_FUNCTION
 
 if TYPE_CHECKING:
     from tree_sitter import Node
+
+_LOADER_CALLS = frozenset({"library", "require"})
 
 
 class RParser(TreeSitterParser):
@@ -46,6 +49,44 @@ class RParser(TreeSitterParser):
 
     def supertypes(self, node: Node, source: bytes) -> list[SuperType]:
         return []
+
+    def import_refs(self, node: Node, source: bytes) -> list[ImportRef]:
+        # R has no import statement; packages are loaded via library(pkg)/
+        # require(pkg) calls, or referenced inline via a pkg::fun namespace
+        # operator (call_target already extracts the function half of that
+        # for EDGE_CALLS — here we extract the package half for EDGE_IMPORTS).
+        if node.type == "call":
+            func = node.child_by_field_name("function")
+            if func is not None and func.type == "identifier":
+                fname = node_text(func, source)
+                if fname in _LOADER_CALLS:
+                    pkg = self._first_call_arg_text(node, source)
+                    if pkg:
+                        return [ImportRef(name=pkg, module_path=pkg)]
+            return []
+        if node.type == "namespace_operator":
+            lhs = node.child_by_field_name("lhs")
+            if lhs is not None and lhs.type == "identifier":
+                pkg = node_text(lhs, source)
+                return [ImportRef(name=pkg, module_path=pkg)]
+        return []
+
+    def _first_call_arg_text(self, node: Node, source: bytes) -> str | None:
+        arguments = node.child_by_field_name("arguments")
+        if arguments is None:
+            return None
+        for child in arguments.children:
+            if child.type == "argument":
+                value = child.child_by_field_name("value")
+                if value is None:
+                    continue
+                if value.type == "identifier":
+                    return node_text(value, source)
+                if value.type == "string":
+                    content = value.child_by_field_name("content")
+                    if content is not None:
+                        return node_text(content, source)
+        return None
 
     def docstring(self, node: Node, source: bytes) -> str | None:
         prev = node.prev_named_sibling

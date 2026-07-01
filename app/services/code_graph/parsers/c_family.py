@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from app.services.code_graph.parsers.base import (
     Definition,
+    ImportRef,
     SuperType,
     TreeSitterParser,
     node_text,
@@ -116,6 +117,29 @@ class CFamilyParser(TreeSitterParser):
 
     def docstring(self, node: Node, source: bytes) -> str | None:
         return _preceding_comment(node, source)
+
+    def import_refs(self, node: Node, source: bytes) -> list[ImportRef]:
+        if node.type != "preproc_include":
+            return []
+        path_node = node.child_by_field_name("path")
+        if path_node is None:
+            return []
+        if path_node.type == "system_lib_string":
+            # <vector> — strip the surrounding angle brackets
+            raw = node_text(path_node, source).strip("<>")
+        elif path_node.type == "string_literal":
+            content = next(
+                (c for c in path_node.children if c.type == "string_content"), None
+            )
+            if content is None:
+                return []
+            raw = node_text(content, source)
+        else:
+            return []
+        if not raw:
+            return []
+        name = raw.rsplit("/", 1)[-1]
+        return [ImportRef(name=name, module_path=raw)]
 
     # -- helpers ------------------------------------------------------------
 

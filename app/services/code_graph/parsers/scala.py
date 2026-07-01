@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from app.services.code_graph.parsers.base import (
     Definition,
+    ImportRef,
     SuperType,
     TreeSitterParser,
     node_text,
@@ -101,6 +102,27 @@ class ScalaParser(TreeSitterParser):
                 return _strip_scaladoc(text)
         return None
 
+    def import_refs(self, node: Node, source: bytes) -> list[ImportRef]:
+        if node.type != "import_declaration":
+            return []
+        # A single import_declaration can hold several comma-separated import
+        # paths (`import a.b.C, d.e.F`); split on the top-level unnamed ","
+        # tokens (not the ones inside a namespace_selectors list) into
+        # independent segments, each a dotted "path" optionally followed by
+        # a namespace_selectors ({A, B => C}) or namespace_wildcard (_ / *).
+        segments: list[list[Node]] = [[]]
+        for child in node.children:
+            if child.type == "import":
+                continue
+            if child.type == ",":
+                segments.append([])
+                continue
+            segments[-1].append(child)
+        out: list[ImportRef] = []
+        for segment in segments:
+            out.extend(_scala_import_segment(segment, source))
+        return out
+
     def _name(self, node: Node, source: bytes) -> str | None:
         name_node = node.child_by_field_name("name")
         if name_node is not None:
@@ -125,6 +147,49 @@ def _scala_type_name(node: Node, source: bytes) -> str | None:
             if child.type == "type_identifier":
                 return node_text(child, source)
     return None
+
+
+def _scala_import_segment(segment: list[Node], source: bytes) -> list[ImportRef]:
+    """Extract ImportRefs from one comma-separated segment of an import_declaration.
+
+    ``segment`` holds a dotted run of "path"-field ``identifier``/"."
+    children, optionally followed by a ``namespace_selectors`` or
+    ``namespace_wildcard`` suffix — the selectors/wildcard are NOT part of
+    the leading dotted path, so `path_parts` here is only the prefix before
+    the suffix (e.g. just `a`, `b` in `a.b.{C, D}`).
+    """
+    path_parts = [c for c in segment if c.type == "identifier"]
+    tail = next(
+        (c for c in segment if c.type in ("namespace_selectors", "namespace_wildcard")),
+        None,
+    )
+    if tail is None:
+        # Bare import: the last dotted segment is both the path prefix and
+        # the locally-used name, e.g. `import a.b.C` -> name "C".
+        if not path_parts:
+            return []
+        dotted = ".".join(node_text(p, source) for p in path_parts)
+        return [ImportRef(name=node_text(path_parts[-1], source), module_path=dotted)]
+    base_path = ".".join(node_text(p, source) for p in path_parts)
+    if tail.type == "namespace_wildcard":
+        return [ImportRef(name="*", module_path=f"{base_path}.*")]
+    # namespace_selectors: `{Qux, Quux}` or `{Qux => AliasQux}` — fans out
+    # into one ImportRef per selector, sharing the same dotted path prefix.
+    # For a rename (`Qux => AliasQux`) the symbol actually defined at the
+    # target is still the original name ("Qux") — the "=>" only renames the
+    # local binding — so we record that, matching python.py's "import X as Y"
+    # convention.
+    out: list[ImportRef] = []
+    for sub in tail.children:
+        if sub.type == "identifier":
+            out.append(ImportRef(name=node_text(sub, source), module_path=base_path))
+        elif sub.type == "arrow_renamed_identifier":
+            name_node = sub.child_by_field_name("name")
+            if name_node is not None:
+                out.append(
+                    ImportRef(name=node_text(name_node, source), module_path=base_path)
+                )
+    return out
 
 
 def _strip_scaladoc(text: str) -> str:

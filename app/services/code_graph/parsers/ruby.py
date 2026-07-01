@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from app.services.code_graph.parsers.base import (
     Definition,
+    ImportRef,
     SuperType,
     TreeSitterParser,
     node_text,
@@ -64,6 +65,32 @@ class RubyParser(TreeSitterParser):
             if method is not None:
                 return node_text(method, source)
         return None
+
+    def import_refs(self, node: Node, source: bytes) -> list[ImportRef]:
+        # Ruby has no dedicated import grammar node: `require`/`require_relative`
+        # are ordinary method calls with one or more string-literal arguments.
+        if node.type != "call":
+            return []
+        method = node.child_by_field_name("method")
+        if method is None or node_text(method, source) not in (
+            "require",
+            "require_relative",
+        ):
+            return []
+        args = node.child_by_field_name("arguments")
+        if args is None:
+            return []
+        out: list[ImportRef] = []
+        for arg in args.children:
+            if arg.type != "string":
+                continue
+            content = next((c for c in arg.children if c.type == "string_content"), None)
+            if content is None:
+                continue
+            module_path = node_text(content, source)
+            name = module_path.rsplit("/", 1)[-1]
+            out.append(ImportRef(name=name, module_path=module_path))
+        return out
 
     def supertypes(self, node: Node, source: bytes) -> list[SuperType]:
         if node.type != "class":
