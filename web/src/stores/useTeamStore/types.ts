@@ -90,6 +90,7 @@ export interface TeamStoreState {
   liveAgentNames: string[] | null
   sidebarOpen: boolean
   sessionId: string | null
+  projectId: string | null
   sessionTitle: string | null
   sessionModel: string | null
   sessionThinkingLevel: string | null

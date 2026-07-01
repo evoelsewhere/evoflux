@@ -43,22 +43,14 @@ class MemoryVectorSettings(BaseModel):
 
 
 class CodeGraphSettings(BaseModel):
-    """Semantic layer for the code knowledge graph (sqlite-vec + embeddings).
+    """Runtime knobs for the code knowledge graph's file watcher.
 
-    Disabled by default: the lexical graph (P1/P2) works without any model.
-    When enabled, the indexer embeds symbols with ``embedding_model`` (via
-    fastembed) and stores vectors in a sqlite-vec table for hybrid search.
-    If the embedding backend cannot load, semantic features degrade silently
-    to lexical-only.
+    Search is lexical + structural only (FTS5 + the parsed symbol/edge
+    graph) — no embedding/vector layer.
     """
 
     model_config = ConfigDict(extra="ignore")
 
-    semantic_enabled: bool = True
-    embedding_model: str = "snowflake/snowflake-arctic-embed-s"
-    embedding_dim: int = 384
-    # Weight of the semantic signal when fusing with lexical results (0..1).
-    semantic_weight: float = 0.5
     # Auto-reindex coding workspaces when their source files change on disk.
     watch_enabled: bool = True
     # Coalesce bursts of file events before reindexing (milliseconds).
@@ -66,6 +58,26 @@ class CodeGraphSettings(BaseModel):
     # Extra delay after an agent run finishes before reindexing accumulated
     # changes. Allows final writes to settle so only one reindex fires.
     watch_resume_delay_ms: int = 5000
+
+
+class CrossRepoSettings(BaseModel):
+    """Cross-repo reference resolution for multi-repo CodingProjects.
+
+    Tier A (static: Java FQN + manifest-identity matching) is always free and
+    always runs. These settings only affect Tier B, which narrows candidates
+    via FTS5 lexical search and falls back to an LLM call for whatever's
+    still ambiguous — only reached when Tier A leaves a reference unresolved.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = True
+    llm_enabled: bool = True
+    # Override model ('provider:model'). Empty = reuse the session's own
+    # model, same convention as title generation reusing the chat provider.
+    llm_model: str = ""
+    candidate_k: int = 5
+    llm_batch_size: int = 8
 
 
 class ServerSettings(BaseModel):
@@ -125,6 +137,7 @@ class RuntimeSettings(BaseModel):
     server: ServerSettings = Field(default_factory=ServerSettings)
     providers: dict[str, ProviderUiSettings] = Field(default_factory=dict)
     code_graph: CodeGraphSettings = Field(default_factory=CodeGraphSettings)
+    cross_repo: CrossRepoSettings = Field(default_factory=CrossRepoSettings)
 
 
 def provider_visible_models(provider_id: str) -> list[str]:

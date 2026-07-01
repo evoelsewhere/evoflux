@@ -26,6 +26,17 @@ import type {
   WorkspaceFilesResponse,
   CodingWorkspaceFilesResponse,
   TodosResponse,
+  CodingProject,
+  ProjectCreateRequest,
+  AddWorkspaceToProjectRequest,
+  ProjectWorkspaceItem,
+  CrossRepoEdge,
+  CrossRepoResolveRequest,
+  CrossRepoResolveStats,
+  CrossRepoResolveJob,
+  CrossRepoResolveStatusResponse,
+  ProjectRepoStatus,
+  ProjectCodeSearchResponse,
 } from '../types'
 
 export async function postTeamChat(
@@ -299,13 +310,14 @@ export async function getCodingWorkspaceStatus(workspace: string): Promise<Works
 export async function listTeamSessions(
   before?: string | null,
   limit = 20,
-  filters?: { mode?: 'normal' | 'coding'; workspace?: string | null },
+  filters?: { mode?: 'normal' | 'coding'; workspace?: string | null; project_id?: string | null },
 ): Promise<SessionPageResponse> {
   const params = new URLSearchParams()
   if (before) params.set('before', before)
   params.set('limit', String(limit))
   if (filters?.mode) params.set('mode', filters.mode)
   if (filters?.workspace) params.set('workspace', filters.workspace)
+  if (filters?.project_id) params.set('project_id', filters.project_id)
   const res = await fetch(`${apiBaseUrl()}/team/sessions?${params}`)
   if (!res.ok) await parseDetailOrThrow(res, 'listTeamSessions')
   return res.json()
@@ -330,6 +342,7 @@ export async function getTeamSession(id: string): Promise<SessionDetailResponse>
 export async function resolveTeamSession(options: {
   mode?: string
   workspace?: string | null
+  project_id?: string | null
   model?: string | null
   thinkingLevel?: string | null
   create?: boolean
@@ -341,6 +354,7 @@ export async function resolveTeamSession(options: {
     mode: options.mode ?? 'normal',
   }
   if (options.workspace !== undefined) body.workspace = options.workspace
+  if (options.project_id !== undefined) body.project_id = options.project_id
   if (options.model !== undefined) body.model = options.model
   if (options.thinkingLevel !== undefined) body.thinking_level = options.thinkingLevel
   if (options.create !== undefined) body.create = options.create
@@ -535,4 +549,158 @@ export async function deleteSessionChapter(
     { method: 'DELETE' },
   )
   if (!res.ok) await parseDetailOrThrow(res, 'deleteSessionChapter')
+}
+
+// ── Coding Projects API ───────────────────────────────────────────────────────
+
+export async function listProjects(): Promise<CodingProject[]> {
+  const res = await fetch(`${apiBaseUrl()}/team/projects`)
+  if (!res.ok) await parseDetailOrThrow(res, 'listProjects')
+  return res.json()
+}
+
+export async function getProject(id: string): Promise<CodingProject> {
+  const res = await fetch(`${apiBaseUrl()}/team/projects/${encodeURIComponent(id)}`)
+  if (!res.ok) await parseDetailOrThrow(res, 'getProject')
+  return res.json()
+}
+
+export async function createProject(body: ProjectCreateRequest): Promise<CodingProject> {
+  const res = await fetch(`${apiBaseUrl()}/team/projects`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'createProject')
+  return res.json()
+}
+
+export async function updateProject(
+  id: string,
+  body: Partial<{ name: string; description: string; settings: Record<string, unknown> }>,
+): Promise<CodingProject> {
+  const res = await fetch(`${apiBaseUrl()}/team/projects/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'updateProject')
+  return res.json()
+}
+
+export async function deleteProject(id: string): Promise<void> {
+  const res = await fetch(`${apiBaseUrl()}/team/projects/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'deleteProject')
+}
+
+export async function addWorkspaceToProject(
+  projectId: string,
+  body: AddWorkspaceToProjectRequest,
+): Promise<ProjectWorkspaceItem> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/workspaces`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'addWorkspaceToProject')
+  return res.json()
+}
+
+export async function removeWorkspaceFromProject(
+  projectId: string,
+  workspaceId: string,
+): Promise<void> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/workspaces/${encodeURIComponent(workspaceId)}`,
+    { method: 'DELETE' },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'removeWorkspaceFromProject')
+}
+
+export async function updateWorkspaceInProject(
+  projectId: string,
+  workspaceId: string,
+  body: Partial<{ display_name: string; sort_order: number }>,
+): Promise<ProjectWorkspaceItem> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/workspaces/${encodeURIComponent(workspaceId)}`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'updateWorkspaceInProject')
+  return res.json()
+}
+
+export async function listCrossRepoEdges(
+  projectId: string,
+  status?: 'unresolved' | 'resolved' | 'rejected',
+): Promise<CrossRepoEdge[]> {
+  const params = status ? `?status=${encodeURIComponent(status)}` : ''
+  const res = await fetch(
+    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/cross-repo/edges${params}`,
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'listCrossRepoEdges')
+  return res.json()
+}
+
+// Returns plain stats when use_llm is false (resolved synchronously) or a
+// job snapshot when use_llm is true (started as a background job) — poll
+// getCrossRepoResolveStatus for the job's progress in the latter case.
+export async function startCrossRepoResolve(
+  projectId: string,
+  body: CrossRepoResolveRequest = {},
+): Promise<CrossRepoResolveStats | CrossRepoResolveJob> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/cross-repo/resolve`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'startCrossRepoResolve')
+  return res.json()
+}
+
+export async function getCrossRepoResolveStatus(
+  projectId: string,
+): Promise<CrossRepoResolveStatusResponse> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/cross-repo/status`,
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'getCrossRepoResolveStatus')
+  return res.json()
+}
+
+export async function getProjectCodeGraphStatus(
+  projectId: string,
+): Promise<ProjectRepoStatus[]> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/code-graph/status`,
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'getProjectCodeGraphStatus')
+  return res.json()
+}
+
+export async function searchProjectCodeGraph(
+  projectId: string,
+  query: string,
+  options?: { kind?: string; limitPerRepo?: number },
+): Promise<ProjectCodeSearchResponse> {
+  const params = new URLSearchParams({ query })
+  if (options?.kind) params.set('kind', options.kind)
+  if (options?.limitPerRepo) params.set('limit_per_repo', String(options.limitPerRepo))
+  const res = await fetch(
+    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/code-graph/search?${params}`,
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'searchProjectCodeGraph')
+  return res.json()
 }

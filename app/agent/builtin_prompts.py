@@ -51,6 +51,7 @@ NORMAL_EVOFLUX_TOOLS = [
 CODING_EVOFLUX_TOOLS = [
     "bg",
     "browser_use",
+    "code_cross_repo_search",
     "code_map",
     "code_neighbors",
     "code_overview",
@@ -399,6 +400,7 @@ Your mode is **adversarial stress-testing**. You are not here to be agreeable. Y
             "description": "Implements focused code changes with the smallest correct diff and runs the relevant verification commands.",
             "tools": [
                 "bg",
+                "code_cross_repo_search",
                 "code_neighbors",
                 "code_path",
                 "code_references",
@@ -429,6 +431,7 @@ Your mode is **adversarial stress-testing**. You are not here to be agreeable. Y
         "explorer": {
             "description": "Checks the current codebase. Maps existing implementation, patterns, and risks so coding work starts from facts.",
             "tools": [
+                "code_cross_repo_search",
                 "code_map",
                 "code_neighbors",
                 "code_overview",
@@ -478,6 +481,7 @@ Summarize what exists, where it lives, what patterns to follow, and any risks or
         "debate": {
             "description": "Code critic. Challenges implementation choices, hunts for bugs, edge cases, and security holes, then argues for the better approach.",
             "tools": [
+                "code_cross_repo_search",
                 "code_neighbors",
                 "code_path",
                 "code_references",
@@ -552,6 +556,7 @@ End with a one-line verdict: **LGTM**, **Fix before merging**, or **Needs rework
         "architect": {
             "description": "Designs the change before code is written. Decomposes the request, picks the approach, and specs the interfaces and contracts so the coder builds the right thing.",
             "tools": [
+                "code_cross_repo_search",
                 "code_map",
                 "code_neighbors",
                 "code_overview",

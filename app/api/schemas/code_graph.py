@@ -44,16 +44,13 @@ class CodeGraphStatusResponse(BaseModel):
     files: int = 0
     nodes: int = 0
     edges: int = 0
-    semantic_enabled: bool = False
-    embedding_model: str | None = None
-    vector_count: int = 0
     indexing: bool = Field(
         default=False,
         description="Whether a background reindex is currently running.",
     )
     index_phase: str | None = Field(
         default=None,
-        description="Current indexing phase: parsing | saving | embedding.",
+        description="Current indexing phase: parsing | saving.",
     )
     index_progress: float | None = Field(
         default=None,
@@ -121,13 +118,38 @@ class ReindexStartedResponse(BaseModel):
     )
 
 
+class ProjectRepoStatus(BaseModel):
+    """Per-repo index status, one entry per workspace in a CodingProject."""
+
+    workspace_id: str
+    path: str
+    name: str
+    indexed: bool
+    files: int = 0
+    nodes: int = 0
+    edges: int = 0
+    indexing: bool = False
+    index_phase: str | None = None
+    index_progress: float | None = None
+    index_message: str | None = None
+    index_error: str | None = None
+
+
+class ProjectCodeSearchResultOut(BaseModel):
+    path: str = Field(description="Absolute path of the repo the match was found in.")
+    node: CodeNodeOut
+
+
+class ProjectCodeSearchResponse(BaseModel):
+    results: list[ProjectCodeSearchResultOut]
+
+
 class ReindexResponse(BaseModel):
     node_count: int
     edge_count: int
     file_count: int
     error_count: int
     errors: list[str]
-    embedded_count: int = 0
     changed_files: int = 0
     deleted_files: int = 0
 
@@ -139,7 +161,6 @@ class ReindexResponse(BaseModel):
             file_count=stats.file_count,
             error_count=stats.error_count,
             errors=stats.errors,
-            embedded_count=stats.embedded_count,
             changed_files=stats.changed_files,
             deleted_files=stats.deleted_files,
         )

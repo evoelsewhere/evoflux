@@ -745,7 +745,6 @@ export function CopyContentsButton({
 function PreviewArea({
   sessionId,
   file,
-  workspaceRoot,
 }: {
   sessionId: string
   file: WorkspaceFileInfo

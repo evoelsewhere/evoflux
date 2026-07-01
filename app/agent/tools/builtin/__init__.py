@@ -1,5 +1,6 @@
 from .browser_use_tool import browser_use
 from .chapter import mark_chapter
+from .pr import create_pull_request
 from .date import get_date
 from .filesystem import (
     edit_file,
@@ -24,6 +25,7 @@ from .wiki_search import wiki_search
 __all__ = [
     "background_process",
     "browser_use",
+    "create_pull_request",
     "discover_skills",
     "mark_chapter",
     "edit_file",

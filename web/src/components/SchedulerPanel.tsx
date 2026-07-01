@@ -5,7 +5,7 @@
  * backdrop click to close, and X close button.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Clock, Play, Pause, Trash2, Plus, Loader2, AlertCircle, CalendarClock, Zap, ArrowLeft, Pencil, FolderOpen, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -25,12 +25,9 @@ import {
 } from '@/queries'
 import type { ScheduledTaskResponse, ScheduledTaskCreate, ScheduledTaskMode } from '@/api/types'
 import { formatRelativeDate, formatInTimezone, wallClockToISO, isoToWallClock } from '@/utils/format'
-import { useIsMobile } from '@/hooks/use-mobile'
 import { useModalFocus } from '@/hooks/useModalFocus'
 import { loadCodingWorkspaceEntries, workspaceLabel } from '@/utils/workspace'
 import { useReducedMotion } from '@/hooks/useReducedMotion'
-import { usePlatform } from '@/hooks/use-platform'
-import { mediumHapticFeedback } from '@/lib/haptics'
 
 interface SchedulerPanelProps {
   open: boolean
@@ -56,8 +53,6 @@ const FIELD_CLASS = 'bg-(--bg-page)'
 // looks like an outlined frame floating on the same paper. Use the page
 // surface for clear contrast and soften the border.
 const SELECT_CONTENT_CLASS = 'bg-(--bg-page) border-(--color-border-strong)'
-const TASK_LONG_PRESS_MS = 520
-const TASK_LONG_PRESS_MOVE_TOLERANCE = 10
 
 // Status dot colour mapping
 const STATUS_DOT: Record<string, string> = {
@@ -852,7 +847,6 @@ function CreateTaskForm({
 
 function TaskDetailView({
   task,
-  onClose,
   onDeleted,
 }: {
   task: ScheduledTaskResponse

@@ -5,7 +5,14 @@ re-indexing whenever indexable source files change on disk. The single
 filesystem watcher is shared with SSE subscribers so only one ``awatch``
 loop exists per workspace.
 
-Opt-in via ``code_graph.watch_enabled`` (default off). The watcher degrades
+Scope: only workspaces reachable by an existing session are watched — see
+``list_workspace_paths_with_sessions``. At boot this covers every
+project/workspace someone has already opened; ``watch_paths()`` extends the
+set on demand when a new session is resolved for a workspace/project that
+had none yet (``resolve_team_session``), so a repo only starts being watched
+once it's actually used, not merely registered.
+
+Gated by ``code_graph.watch_enabled`` (default on). The watcher degrades
 gracefully: a transient reindex error is logged, never raised.
 """
 
@@ -20,7 +27,7 @@ from loguru import logger
 from app.core.runtime_settings import load_runtime_settings
 from app.services.code_graph.parsers.registry import default_registry
 from app.services.code_graph_service import reindex_workspace, resolve_workspace_id
-from app.services.coding_workspace_service import list_visible_coding_workspaces
+from app.services.coding_workspace_service import list_workspace_paths_with_sessions
 from app.services.workspace_file_watcher import (
     FsChangeEvent,
     workspace_file_watcher,
@@ -49,31 +56,52 @@ class CodeGraphWatcher:
         self._reindex_pending: set[str] = set()
 
     async def start(self) -> bool:
-        """Subscribe to the shared watcher for all visible workspaces.
+        """Subscribe to the shared watcher for every workspace with a session.
 
         Returns ``True`` if subscribed successfully, ``False`` if nothing to watch.
         """
+        if self._watched_workspaces:
+            return True  # already running
+
+        paths = await self._workspace_paths()
+        if not paths:
+            logger.info("code_graph_watcher_no_workspaces")
+            return False
+        return await self.watch_paths([str(p) for p in paths])
+
+    async def watch_paths(self, paths: list[str]) -> bool:
+        """Idempotently add *paths* to the watch set.
+
+        Safe to call at any time — e.g. when a session is resolved for a
+        workspace or project that isn't watched yet. Already-watched paths
+        are skipped; no-op (returns ``False``) if the feature is disabled.
+        """
+        settings = load_runtime_settings()
+        if not settings.code_graph.watch_enabled:
+            return False
+
         async with self._lock:
-            if self._watched_workspaces:
-                return True  # already running
+            if not self._extensions:
+                self._extensions = set(default_registry().supported_extensions())
+                # Use code_graph debounce for reindex batching
+                self._reindex_debounce_ms = settings.code_graph.watch_debounce_ms
 
-            paths = await self._workspace_paths()
-            if not paths:
-                logger.info("code_graph_watcher_no_workspaces")
-                return False
+            new_paths = [
+                p
+                for p in paths
+                if p not in self._watched_workspaces and Path(p).is_dir()
+            ]
+            if not new_paths:
+                return bool(self._watched_workspaces)
 
-            self._extensions = set(default_registry().supported_extensions())
-            settings = load_runtime_settings()
-            # Use code_graph debounce for reindex batching
-            self._reindex_debounce_ms = settings.code_graph.watch_debounce_ms
-
-            self._watched_workspaces = [str(p) for p in paths]
+            self._watched_workspaces.extend(new_paths)
             await workspace_file_watcher.add_callback_many(
-                self._watched_workspaces, self._on_change
+                new_paths, self._on_change
             )
             logger.info(
-                "code_graph_watcher_started workspaces={}",
+                "code_graph_watcher_started workspaces={} new={}",
                 len(self._watched_workspaces),
+                len(new_paths),
             )
             return True
 
@@ -242,8 +270,8 @@ class CodeGraphWatcher:
 
     async def _workspace_paths(self) -> list[Path]:
         async with self._db_factory() as db:
-            workspaces = await list_visible_coding_workspaces(db)
-        return [Path(w.path) for w in workspaces if Path(w.path).is_dir()]
+            paths = await list_workspace_paths_with_sessions(db)
+        return [Path(p) for p in paths if Path(p).is_dir()]
 
 
 def _suffix(path: str) -> str:

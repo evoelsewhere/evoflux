@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { FileCode, Loader2, Network, RefreshCw, Search } from 'lucide-react'
 import { getCodeGraphStatus, reindexCodeGraph, searchCodeGraph } from '@/api/client'
@@ -73,13 +73,6 @@ export function CodeGraphPanel({
   const nodes = results.data?.nodes ?? []
   const reindexing = reindex.isPending || serverIndexing
 
-  const statusLine = useMemo(() => {
-    if (!status.data) return null
-    const s = status.data
-    if (!s.semantic_enabled) return 'Lexical search only'
-    return `Semantic: ${s.vector_count} vector${s.vector_count === 1 ? '' : 's'}${s.embedding_model ? ` · ${s.embedding_model}` : ''}`
-  }, [status.data])
-
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* Status header */}
@@ -149,7 +142,6 @@ export function CodeGraphPanel({
             {indexError && (
               <p className="text-xs text-(--color-error)">Last index failed: {indexError}</p>
             )}
-            {statusLine && <p className="text-xs text-(--color-text-subtle)">{statusLine}</p>}
           </div>
         )}
       </div>

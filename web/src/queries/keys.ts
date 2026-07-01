@@ -9,6 +9,7 @@ export const queryKeys = {
       all: () => ['team', 'sessions'] as const,
       infinite: () => ['team', 'sessions', 'infinite'] as const,
       workspace: (workspace: string) => ['team', 'sessions', 'workspace', workspace] as const,
+      project: (projectId: string) => ['team', 'sessions', 'project', projectId] as const,
       list: (offset: number, limit: number) =>
         ['team', 'sessions', 'list', offset, limit] as const,
       detail: (id: string) => ['team', 'sessions', id] as const,
@@ -87,6 +88,16 @@ export const queryKeys = {
   todos: (sessionId: string) => ['todos', sessionId] as const,
   chapters: {
     list: (sessionId: string) => ['chapters', sessionId] as const,
+  },
+  projects: {
+    all: () => ['projects'] as const,
+    list: () => ['projects', 'list'] as const,
+    detail: (id: string) => ['projects', 'detail', id] as const,
+    crossRepoEdges: (id: string) => ['projects', 'detail', id, 'cross-repo-edges'] as const,
+    crossRepoStatus: (id: string) => ['projects', 'detail', id, 'cross-repo-status'] as const,
+    codeGraphStatus: (id: string) => ['projects', 'detail', id, 'code-graph-status'] as const,
+    codeGraphSearch: (id: string, query: string) =>
+      ['projects', 'detail', id, 'code-graph-search', query] as const,
   },
   mcp: {
     all: () => ['mcp'] as const,

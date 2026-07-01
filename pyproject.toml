@@ -59,9 +59,6 @@ dependencies = [
     # extra wheels.
     "tree-sitter>=0.25.0",
     "tree-sitter-language-pack>=0.10.0",
-    # Vector layer for semantic code search. sqlite-vec is a tiny loadable
-    # extension; the embedding model itself lives behind the [semantic] extra.
-    "sqlite-vec>=0.1.9",
     # Filesystem watcher (Rust notify backend) for auto-reindexing the code
     # graph when source files change. Opt-in via code_graph.watch_enabled.
     "watchfiles>=0.24.0",
@@ -101,14 +98,9 @@ packages = ["app"]
 # Brings in the azure-ai-* SDK family. Adds ~30 MB.
 azure-doc-intel = ["markitdown[az-doc-intel]>=0.1.5"]
 
-# Semantic code search: fastembed runs the jina-embeddings-v2-base-code model
-# on CPU via ONNX. Kept optional because onnxruntime is a heavy native dep and
-# the lexical code graph works without it.
-semantic = ["fastembed>=0.8.0"]
-
 # Convenience: everything-but-the-kitchen-sink. Used by
 # ``uv tool install evoflux[full]`` for users who don't care about size.
-full = ["evoflux[azure-doc-intel,semantic]"]
+full = ["evoflux[azure-doc-intel]"]
 
 [tool.uv]
 package = true

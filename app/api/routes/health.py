@@ -10,7 +10,6 @@ Three endpoints:
 
 from __future__ import annotations
 
-import importlib.util
 import shutil
 from pathlib import Path
 from typing import Any
@@ -332,23 +331,6 @@ async def health_diagnostics(session: AsyncSession = Depends(get_session)) -> di
         checks.append(
             _check(
                 "code_graph", "Code Graph", "warn", f"Could not query code graph: {exc}"
-            )
-        )
-
-    # ── 7. Semantic embeddings ────────────────────────────────────────────────
-    fastembed_spec = importlib.util.find_spec("fastembed")
-    if fastembed_spec is not None:
-        checks.append(
-            _check("embeddings", "Semantic Embeddings", "ok", "fastembed is installed")
-        )
-    else:
-        checks.append(
-            _check(
-                "embeddings",
-                "Semantic Embeddings",
-                "warn",
-                "fastembed not installed — semantic code search disabled",
-                hint="Run 'uv sync --extra semantic' to enable semantic code search.",
             )
         )
 

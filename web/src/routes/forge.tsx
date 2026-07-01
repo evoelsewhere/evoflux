@@ -22,7 +22,7 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'normal' | 'coding' }) {
   const queryClient = useQueryClient()
   const workspaceRef = useRef<string | null>(null)
   const cachedSessionPages = queryClient.getQueryData<{
-    pages: Array<{ data: Array<{ id: string; workspace?: string | null }> }>
+    pages: Array<{ data: Array<{ id: string; workspace?: string | null; project_id?: string | null }> }>
   }>(queryKeys.team.sessions.infinite())
   const cachedSession = sessionId
     ? cachedSessionPages?.pages
@@ -98,21 +98,25 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'normal' | 'coding' }) {
     workspaceRef.current = workspace
   })
 
-  // Keep ``useTeamStore._workspace`` in sync with the URL-derived
-  // workspace path the moment we render the layout. The SSE reducer
-  // reads this field to decide whether to fire ``coding_workspace`` or
-  // ``workspace_files`` cache-invalidation events on ``tool_end``;
-  // doing it here (instead of waiting for the async ``loadSession``
-  // round-trip in ``TeamChatView``) closes the race window where the
-  // first turn's tool events would otherwise see ``_workspace = null``
-  // and invalidate the wrong query key, leaving the Coding Workspace
-  // sidebar Files / Diff panels stale until the next manual refresh.
+  // Keep ``useTeamStore._workspace`` and ``projectId`` in sync with the
+  // URL-derived session the moment we render the layout — before the async
+  // ``loadSession`` round-trip in TeamChatView.  CodingWorkspacePanel reads
+  // ``projectId`` to decide whether to show multi-repo (DiffReviewPanel) or
+  // single-workspace mode; priming it here prevents the single-workspace
+  // flash on initial load / navigation.
+  const cachedProjectId = cachedSession?.project_id ?? sessionQuery.data?.project_id ?? null
   useLayoutEffect(() => {
-    if (mode !== 'coding') return
     useTeamStore.setState((state) => {
-      state._workspace = workspace ?? null
+      if (mode === 'coding') {
+        state._workspace = workspace ?? null
+        state.projectId = cachedProjectId ?? null
+      } else {
+        // Proactively clear a stale project binding when a non-coding route
+        // renders, rather than waiting for the async loadSession round-trip.
+        state.projectId = null
+      }
     })
-  }, [mode, workspace])
+  }, [mode, workspace, cachedProjectId])
 
   useEffect(() => {
     if (sessionId) return

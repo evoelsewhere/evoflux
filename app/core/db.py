@@ -78,7 +78,7 @@ def current_sqlite_path() -> str | None:
     """Return the on-disk path of the active SQLite database, or ``None``.
 
     Reads the *live* module-level ``engine`` (tests rebind it to a temp file),
-    so callers that open their own raw connection — e.g. the sqlite-vec vector
+    so callers that open their own raw connection — e.g. the code-graph FTS5
     store — target the same database the ORM uses. Returns ``None`` for
     non-SQLite engines or in-memory databases.
     """

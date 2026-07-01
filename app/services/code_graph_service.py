@@ -22,32 +22,32 @@ from sqlmodel import col, or_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db import current_sqlite_path
-from app.core.runtime_settings import CodeGraphSettings, load_runtime_settings
+from app.core.runtime_settings import load_runtime_settings
 from app.models.chat import CodingWorkspace
-from app.models.code_graph import CodeEdge, CodeIndexState, CodeNode
-from app.services.code_graph import embeddings as emb
+from app.models.code_graph import CodeEdge, CodeIndexState, CodeNode, CrossRepoEdge
 from app.services.code_graph import fts_store as fts
-from app.services.code_graph import vector_store as vec
 from app.services.code_graph.indexer import (
     ExistingDef,
+    UnresolvedImport,
     WorkspaceIndex,
     hash_workspace_files,
     index_files,
     index_workspace,
 )
 from app.services.code_graph.parsers.registry import ParserRegistry, build_registry
+from app.services.code_graph.types import EDGE_IMPORTS
 
 # Cap how many errors we keep on the stats payload.
 _MAX_REPORTED_ERRORS = 20
 
 # Single-threaded executor for CPU-heavy indexing work (tree-sitter parsing,
-# file hashing, embedding). Serializes all code-graph computation to one thread
-# so it cannot saturate all cores or spike RAM when multiple workspaces or
+# file hashing). Serializes all code-graph computation to one thread so it
+# cannot saturate all cores or spike RAM when multiple workspaces or
 # concurrent reindex requests fire simultaneously.
 _INDEXER_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="codegraph")
 
-# Separate executor for lightweight query operations (semantic embed_one + KNN,
-# FTS5 lookups) so search requests are never blocked behind a running index job.
+# Separate executor for lightweight query operations (FTS5 lookups) so search
+# requests are never blocked behind a running index job.
 _QUERY_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="cg-query")
 
 
@@ -69,16 +69,6 @@ async def _run_in_query[T](
     return await loop.run_in_executor(_QUERY_EXECUTOR, call)
 
 
-# Symbol kinds worth embedding for semantic search (skip whole-file nodes).
-_EMBEDDABLE_KINDS = frozenset({"module", "class", "function", "method", "interface"})
-
-# Reciprocal-rank-fusion constant — dampens the contribution of lower ranks.
-_RRF_K = 60
-
-# Embed at most this many symbols per batch to cap peak RAM usage.
-# 384-dim × 32 items ≈ 49 KB of vectors; model intermediates ~10 MB peak.
-_EMBED_BATCH_SIZE = 32
-
 # Progress callback: (phase, progress_0_to_1, message) → None
 ProgressCallback = Callable[[str, float, str], None]
 
@@ -94,7 +84,6 @@ class ReindexStats:
     file_count: int
     error_count: int
     errors: list[str]
-    embedded_count: int = 0
     changed_files: int = 0
     deleted_files: int = 0
 
@@ -214,33 +203,26 @@ async def reindex_workspace(
     )
     await db.flush()
 
-    # Commit the graph before embedding: vectors are written from a separate
-    # sqlite connection, so the ORM's write transaction must be released first
-    # to avoid a self-inflicted "database is locked". The graph persists even
-    # if the (optional) embedding step fails.
+    await _persist_unresolved_imports(
+        db,
+        workspace_id=workspace_id,
+        unresolved_imports=index.unresolved_imports,
+        key_to_id=key_to_id,
+    )
+
     await db.commit()
     report("saving", 0.5, f"Saved {len(node_rows)} nodes, {len(edge_rows)} edges")
 
-    report("embedding", 0.55, "Generating embeddings…")
-    embedded_count = await _maybe_index_embeddings(
-        workspace_id=workspace_id,
-        index=index,
-        key_to_id=key_to_id,
-        progress_cb=report,
-    )
-    report("embedding", 1.0, f"Embedded {embedded_count} symbols")
-
     # Rebuild full-text search index (runs in indexer thread, separate sqlite conn).
     await _rebuild_fts(workspace_id=workspace_id, index=index, key_to_id=key_to_id)
+    report("saving", 1.0, "Index saved")
 
     logger.info(
-        "code_graph reindex workspace={} files={} nodes={} edges={} "
-        "embedded={} errors={}",
+        "code_graph reindex workspace={} files={} nodes={} edges={} errors={}",
         workspace_id,
         len(index.files),
         len(node_rows),
         len(edge_rows),
-        embedded_count,
         len(index.errors),
     )
     return ReindexStats(
@@ -249,8 +231,64 @@ async def reindex_workspace(
         file_count=len(index.files),
         error_count=len(index.errors),
         errors=index.errors[:_MAX_REPORTED_ERRORS],
-        embedded_count=embedded_count,
     )
+
+
+async def _persist_unresolved_imports(
+    db: AsyncSession,
+    *,
+    workspace_id: UUID,
+    unresolved_imports: list[UnresolvedImport],
+    key_to_id: dict[str, UUID],
+    affected_files: set[str] | None = None,
+) -> None:
+    """Record import edges that didn't resolve within this workspace as
+    candidate cross-repo references, scoped to every project this workspace
+    belongs to. No-ops for a standalone (non-project) workspace.
+
+    Only replaces rows with ``method IS NULL`` (never touched by a
+    resolution pass) — rows a resolver has already stamped are left alone so
+    this hot reindex path never races with/undoes a resolution pass. On a
+    full reindex every file was just reprocessed, so the whole workspace's
+    untouched rows are replaced; on an incremental reindex only
+    ``affected_files`` (changed + deleted) were reprocessed, so the replace
+    is scoped to those files — a deleted file's rows are dropped and never
+    reinserted since it no longer appears in ``unresolved_imports``.
+    """
+    from app.services.coding_project_service import get_projects_for_workspace
+
+    project_ids = await get_projects_for_workspace(db, workspace_id)
+    if not project_ids:
+        return
+
+    for project_id in project_ids:
+        delete_stmt = sa_delete(CrossRepoEdge).where(
+            col(CrossRepoEdge.project_id) == project_id,
+            col(CrossRepoEdge.src_workspace_id) == workspace_id,
+            col(CrossRepoEdge.method).is_(None),
+        )
+        if affected_files is not None:
+            delete_stmt = delete_stmt.where(
+                col(CrossRepoEdge.src_file_path).in_(list(affected_files))
+            )
+        await db.execute(delete_stmt)
+
+        if unresolved_imports:
+            db.add_all(
+                [
+                    CrossRepoEdge(
+                        project_id=project_id,
+                        src_workspace_id=workspace_id,
+                        src_node_id=key_to_id.get(u.src_key),
+                        src_file_path=u.file_path,
+                        src_line=u.line,
+                        raw_reference=u.module_path,
+                        dst_name_hint=u.dst_name_hint,
+                        kind=EDGE_IMPORTS,
+                    )
+                    for u in unresolved_imports
+                ]
+            )
 
 
 async def _reindex_incremental(
@@ -282,14 +320,6 @@ async def _reindex_incremental(
     affected = set(changed) | set(deleted)
 
     if not affected:
-        # No file content changed, but vectors may be missing (e.g. after a
-        # dimension change or table drop). Backfill if needed.
-        progress_cb("embedding", 0.5, "Checking vectors…")
-        await _backfill_vectors_if_needed(
-            db,
-            workspace_id=workspace_id,
-            progress_cb=progress_cb,
-        )
         counts = await get_index_status(db, workspace_id=workspace_id)
         return ReindexStats(
             node_count=counts["nodes"],
@@ -326,7 +356,6 @@ async def _reindex_incremental(
     }
     key_to_id: dict[str, UUID] = {}
     reused_ids: set[UUID] = set()
-    embed_targets: list[tuple[str, str]] = []
     for node in index.nodes:
         sig = (node.file_path, node.kind, node.qualified_name)
         existing = rows_by_sig.get(sig)
@@ -357,19 +386,6 @@ async def _reindex_incremental(
                 )
             )
         key_to_id[node.key] = node_id
-        if node.kind in _EMBEDDABLE_KINDS:
-            embed_targets.append(
-                (
-                    str(node_id),
-                    emb.node_embedding_text(
-                        kind=node.kind,
-                        name=node.name,
-                        qualified_name=node.qualified_name,
-                        signature=node.signature,
-                        docstring=node.docstring,
-                    ),
-                )
-            )
 
     # Symbols that disappeared from changed files, plus all nodes of deleted
     # files, get removed (and their incoming/outgoing edges below).
@@ -446,25 +462,17 @@ async def _reindex_incremental(
             for f in index.files
         ]
     )
-    await db.commit()
-    progress_cb("saving", 0.5, "Graph saved")
 
-    progress_cb("embedding", 0.55, "Embedding changed symbols…")
-    embedded_count = await _maybe_update_embeddings(
-        workspace_id=workspace_id,
-        upserts=embed_targets,
-        removed_ids=removed_ids,
-    )
-
-    # Backfill vectors for unchanged nodes if most are missing (e.g. after a
-    # model/dimension switch that recreated the vector table).
-    backfilled = await _backfill_vectors_if_needed(
+    await _persist_unresolved_imports(
         db,
         workspace_id=workspace_id,
-        progress_cb=progress_cb,
+        unresolved_imports=index.unresolved_imports,
+        key_to_id=key_to_id,
+        affected_files=affected,
     )
-    embedded_count += backfilled
-    progress_cb("embedding", 1.0, f"Embedded {embedded_count} symbols")
+
+    await db.commit()
+    progress_cb("saving", 0.5, "Graph saved")
 
     # Update FTS index for changed/removed nodes.
     await _update_fts(
@@ -473,17 +481,16 @@ async def _reindex_incremental(
         key_to_id=key_to_id,
         removed_ids=removed_ids,
     )
+    progress_cb("saving", 1.0, "Index saved")
 
     counts = await get_index_status(db, workspace_id=workspace_id)
     logger.info(
-        "code_graph incremental workspace={} changed={} deleted={} "
-        "nodes={} edges={} embedded={} errors={}",
+        "code_graph incremental workspace={} changed={} deleted={} nodes={} edges={} errors={}",
         workspace_id,
         len(changed),
         len(deleted),
         counts["nodes"],
         counts["edges"],
-        embedded_count,
         len(index.errors),
     )
     return ReindexStats(
@@ -492,7 +499,6 @@ async def _reindex_incremental(
         file_count=counts["files"],
         error_count=len(index.errors),
         errors=index.errors[:_MAX_REPORTED_ERRORS],
-        embedded_count=embedded_count,
         changed_files=len(changed),
         deleted_files=len(deleted),
     )
@@ -511,60 +517,6 @@ def _resolve_incremental_dst(dst_key: str, key_to_id: dict[str, UUID]) -> UUID |
         return UUID(dst_key)
     except (ValueError, AttributeError):
         return None
-
-
-async def _maybe_index_embeddings(
-    *,
-    workspace_id: UUID,
-    index: WorkspaceIndex,
-    key_to_id: dict[str, UUID],
-    progress_cb: ProgressCallback = _noop_progress,
-) -> int:
-    """Embed indexed symbols and persist vectors when semantic search is on.
-
-    Returns the number of vectors written. Degrades to ``0`` (lexical-only)
-    when semantic search is disabled, the DB is in-memory, or the embedding
-    backend is unavailable.
-    """
-    cfg = load_runtime_settings().code_graph
-    if not cfg.semantic_enabled:
-        return 0
-    db_path = current_sqlite_path()
-    if db_path is None:
-        return 0
-
-    items: list[tuple[str, str]] = []
-    for node in index.nodes:
-        if node.kind not in _EMBEDDABLE_KINDS:
-            continue
-        node_id = key_to_id.get(node.key)
-        if node_id is None:
-            continue
-        text = emb.node_embedding_text(
-            kind=node.kind,
-            name=node.name,
-            qualified_name=node.qualified_name,
-            signature=node.signature,
-            docstring=node.docstring,
-        )
-        items.append((str(node_id), text))
-
-    if not items:
-        # Still clear any stale vectors for a now-empty workspace.
-        try:
-            await _run_in_indexer(_clear_vectors, db_path, str(workspace_id))
-        except vec.VectorStoreUnavailable as exc:
-            logger.warning("code_graph vec clear failed err={}", exc)
-        return 0
-
-    progress_cb("embedding", 0.6, f"Embedding {len(items)} symbols…")
-    try:
-        return await _run_in_indexer(
-            _embed_and_store, db_path, str(workspace_id), cfg, items
-        )
-    except (emb.EmbeddingUnavailable, vec.VectorStoreUnavailable) as exc:
-        logger.warning("code_graph embedding skipped err={}", exc)
-        return 0
 
 
 async def _rebuild_fts(
@@ -615,171 +567,6 @@ async def _update_fts(
         logger.warning("code_graph fts update failed err={}", exc)
 
 
-def _embed_and_store(
-    db_path: str,
-    workspace_id: str,
-    cfg: CodeGraphSettings,
-    items: list[tuple[str, str]],
-) -> int:
-    """Embed ``items`` in batches and replace the workspace's stored vectors (sync)."""
-    embedder = emb.get_embedder(cfg.embedding_model, cfg.embedding_dim)
-    rows: list[tuple[str, list[float]]] = []
-    for i in range(0, len(items), _EMBED_BATCH_SIZE):
-        batch = items[i : i + _EMBED_BATCH_SIZE]
-        vectors = embedder.embed([text for _, text in batch])
-        rows.extend(
-            (node_id, vector)
-            for (node_id, _), vector in zip(batch, vectors, strict=False)
-        )
-    with vec.open_connection(db_path) as conn:
-        return vec.replace_workspace_vectors(
-            conn, workspace_id=workspace_id, dim=cfg.embedding_dim, rows=rows
-        )
-
-
-def _clear_vectors(db_path: str, workspace_id: str) -> None:
-    with vec.open_connection(db_path) as conn:
-        vec.delete_workspace(conn, workspace_id)
-        conn.commit()
-
-
-async def _backfill_vectors_if_needed(
-    db: AsyncSession,
-    *,
-    workspace_id: UUID,
-    progress_cb: ProgressCallback = _noop_progress,
-) -> int:
-    """Re-embed all embeddable nodes when most vectors are missing.
-
-    This handles the case where the vector table was recreated (e.g. after a
-    dimension/model change) and an incremental reindex only embedded a few
-    changed files. Returns the number of vectors written (0 if no backfill).
-    """
-    cfg = load_runtime_settings().code_graph
-    if not cfg.semantic_enabled:
-        return 0
-    db_path = current_sqlite_path()
-    if db_path is None:
-        return 0
-
-    # Query all embeddable nodes.
-    all_nodes = (
-        await db.exec(
-            select(CodeNode).where(
-                CodeNode.workspace_id == workspace_id,
-                col(CodeNode.kind).in_(list(_EMBEDDABLE_KINDS)),
-            )
-        )
-    ).all()
-    if not all_nodes:
-        return 0
-
-    # Check existing vector count — skip if already complete.
-    try:
-        vec_count = await _run_in_indexer(_count_vectors, db_path, str(workspace_id))
-    except vec.VectorStoreUnavailable:
-        return 0
-    if vec_count >= len(all_nodes):
-        return 0
-
-    progress_cb("embedding", 0.6, f"Backfilling {len(all_nodes)} vectors…")
-    items: list[tuple[str, str]] = [
-        (
-            str(n.id),
-            emb.node_embedding_text(
-                kind=n.kind,
-                name=n.name,
-                qualified_name=n.qualified_name,
-                signature=n.signature,
-                docstring=n.docstring,
-            ),
-        )
-        for n in all_nodes
-    ]
-    logger.info(
-        "code_graph backfilling vectors: have={} need={} workspace={}",
-        vec_count,
-        len(items),
-        workspace_id,
-    )
-    try:
-        return await _run_in_indexer(
-            _embed_and_store, db_path, str(workspace_id), cfg, items
-        )
-    except (emb.EmbeddingUnavailable, vec.VectorStoreUnavailable) as exc:
-        logger.warning("code_graph vector backfill skipped err={}", exc)
-        return 0
-
-
-def _count_vectors(db_path: str, workspace_id: str) -> int:
-    with vec.open_connection(db_path) as conn:
-        return vec.count_workspace(conn, workspace_id)
-
-
-async def _maybe_update_embeddings(
-    *,
-    workspace_id: UUID,
-    upserts: list[tuple[str, str]],
-    removed_ids: set[UUID],
-) -> int:
-    """Refresh vectors for changed symbols and drop them for removed ones.
-
-    Returns the number of vectors (re)written. No-op (returns ``0``) when
-    semantic search is disabled, the DB is in-memory, or the embedding backend
-    is unavailable.
-    """
-    cfg = load_runtime_settings().code_graph
-    if not cfg.semantic_enabled:
-        return 0
-    db_path = current_sqlite_path()
-    if db_path is None:
-        return 0
-    if not upserts and not removed_ids:
-        return 0
-    try:
-        return await _run_in_indexer(
-            _embed_and_upsert,
-            db_path,
-            str(workspace_id),
-            cfg,
-            upserts,
-            [str(node_id) for node_id in removed_ids],
-        )
-    except (emb.EmbeddingUnavailable, vec.VectorStoreUnavailable) as exc:
-        logger.warning("code_graph incremental embedding skipped err={}", exc)
-        return 0
-
-
-def _embed_and_upsert(
-    db_path: str,
-    workspace_id: str,
-    cfg: CodeGraphSettings,
-    upserts: list[tuple[str, str]],
-    removed_node_ids: list[str],
-) -> int:
-    """Delete removed vectors and (re)embed changed symbols in batches (sync)."""
-    with vec.open_connection(db_path) as conn:
-        vec.ensure_table(conn, cfg.embedding_dim)
-        if removed_node_ids:
-            vec.delete_nodes(conn, removed_node_ids)
-        written = 0
-        if upserts:
-            embedder = emb.get_embedder(cfg.embedding_model, cfg.embedding_dim)
-            rows: list[tuple[str, list[float]]] = []
-            for i in range(0, len(upserts), _EMBED_BATCH_SIZE):
-                batch = upserts[i : i + _EMBED_BATCH_SIZE]
-                vectors = embedder.embed([text for _, text in batch])
-                rows.extend(
-                    (node_id, vector)
-                    for (node_id, _), vector in zip(batch, vectors, strict=False)
-                )
-            written = vec.upsert_rows(
-                conn, workspace_id=workspace_id, dim=cfg.embedding_dim, rows=rows
-            )
-        conn.commit()
-        return written
-
-
 async def get_index_status(db: AsyncSession, *, workspace_id: UUID) -> dict[str, int]:
     """Return basic counts for a workspace's stored graph."""
     files = (
@@ -800,35 +587,6 @@ async def get_index_status(db: AsyncSession, *, workspace_id: UUID) -> dict[str,
     }
 
 
-@dataclass(frozen=True, slots=True)
-class SemanticStatus:
-    enabled: bool
-    model: str
-    vector_count: int
-
-
-async def get_semantic_status(*, workspace_id: UUID) -> SemanticStatus:
-    """Report whether semantic search is on and how many vectors are stored."""
-    cfg = load_runtime_settings().code_graph
-    vectors = 0
-    db_path = current_sqlite_path()
-    if db_path is not None:
-        try:
-            vectors = await _run_in_query(_count_vectors, db_path, str(workspace_id))
-        except vec.VectorStoreUnavailable:
-            vectors = 0
-    return SemanticStatus(
-        enabled=cfg.semantic_enabled,
-        model=cfg.embedding_model,
-        vector_count=vectors,
-    )
-
-
-def _count_vectors(db_path: str, workspace_id: str) -> int:
-    with vec.open_connection(db_path) as conn:
-        return vec.count_workspace(conn, workspace_id)
-
-
 async def search_nodes(
     db: AsyncSession,
     *,
@@ -837,72 +595,10 @@ async def search_nodes(
     kind: str | None = None,
     limit: int = 20,
 ) -> list[CodeNode]:
-    """Search the graph for symbols matching ``query``.
-
-    Always runs a lexical (case-insensitive substring) pass. When semantic
-    search is enabled and the embedding backend is available, a vector KNN
-    pass is fused with the lexical results via reciprocal rank fusion so
-    meaning-based matches surface alongside exact name matches. Falls back to
-    lexical-only on any embedding/vector failure.
-    """
-    cfg = load_runtime_settings().code_graph
-    fetch = max(limit, 50) if cfg.semantic_enabled else limit
-    lexical = await _lexical_search(
-        db, workspace_id=workspace_id, query=query, kind=kind, limit=fetch
+    """Search the graph for symbols matching ``query`` (lexical, FTS5-backed)."""
+    return await _lexical_search(
+        db, workspace_id=workspace_id, query=query, kind=kind, limit=limit
     )
-
-    if not cfg.semantic_enabled:
-        return lexical[:limit]
-    db_path = current_sqlite_path()
-    if db_path is None:
-        return lexical[:limit]
-
-    try:
-        semantic_hits = await _run_in_query(
-            _semantic_query, db_path, cfg, str(workspace_id), query, fetch
-        )
-    except (emb.EmbeddingUnavailable, vec.VectorStoreUnavailable) as exc:
-        logger.warning("code_graph semantic search disabled err={}", exc)
-        return lexical[:limit]
-    if not semantic_hits:
-        return lexical[:limit]
-
-    semantic_ids: list[UUID] = []
-    for node_id, _distance in semantic_hits:
-        try:
-            semantic_ids.append(UUID(node_id))
-        except ValueError:
-            continue
-
-    fused = _reciprocal_rank_fusion(
-        [n.id for n in lexical], semantic_ids, cfg.semantic_weight
-    )
-
-    rows_by_id: dict[UUID, CodeNode] = {n.id: n for n in lexical}
-    missing = [nid for nid in fused if nid not in rows_by_id]
-    if missing:
-        extra = (
-            await db.exec(
-                select(CodeNode).where(
-                    CodeNode.workspace_id == workspace_id,
-                    col(CodeNode.id).in_(missing),
-                )
-            )
-        ).all()
-        for node in extra:
-            rows_by_id[node.id] = node
-
-    ranked: list[CodeNode] = []
-    for node_id in fused:
-        node = rows_by_id.get(node_id)
-        if node is None:
-            continue
-        if kind and node.kind != kind:
-            continue
-        ranked.append(node)
-        if len(ranked) >= limit:
-            break
-    return ranked
 
 
 async def _lexical_search(
@@ -948,42 +644,6 @@ async def _lexical_search(
         stmt = stmt.where(CodeNode.kind == kind)
     stmt = stmt.limit(limit)
     return list((await db.exec(stmt)).all())
-
-
-def _semantic_query(
-    db_path: str,
-    cfg: CodeGraphSettings,
-    workspace_id: str,
-    query: str,
-    k: int,
-) -> list[tuple[str, float]]:
-    """Embed ``query`` and run a KNN search against the vector store (sync)."""
-    embedder = emb.get_embedder(cfg.embedding_model, cfg.embedding_dim)
-    query_vector = embedder.embed_one(query)
-    with vec.open_connection(db_path) as conn:
-        return vec.knn(conn, workspace_id=workspace_id, query_vector=query_vector, k=k)
-
-
-def _reciprocal_rank_fusion(
-    lexical_ids: list[UUID],
-    semantic_ids: list[UUID],
-    semantic_weight: float,
-) -> list[UUID]:
-    """Fuse two ranked id lists into one via weighted reciprocal rank fusion."""
-    weight = min(max(semantic_weight, 0.0), 1.0)
-    scores: dict[UUID, float] = {}
-    for rank, node_id in enumerate(lexical_ids):
-        scores[node_id] = scores.get(node_id, 0.0) + (1.0 - weight) / (
-            _RRF_K + rank + 1
-        )
-    for rank, node_id in enumerate(semantic_ids):
-        scores[node_id] = scores.get(node_id, 0.0) + weight / (_RRF_K + rank + 1)
-    return [
-        node_id
-        for node_id, _score in sorted(
-            scores.items(), key=lambda kv: kv[1], reverse=True
-        )
-    ]
 
 
 async def get_neighbors(
@@ -1300,3 +960,38 @@ async def _reconstruct_path(
         if from_node and to_node:
             hops.append((from_node, edge_kind, to_node))
     return hops
+
+
+async def search_across_workspaces(
+    db: AsyncSession,
+    *,
+    workspace_paths: list[str],
+    query: str,
+    kind: str | None = None,
+    limit_per_workspace: int = 10,
+) -> list[tuple[str, CodeNode]]:
+    """Fan-out search across multiple workspaces and return merged results.
+
+    Returns ``(workspace_path, CodeNode)`` tuples ordered by workspace order.
+    Results from each workspace are capped at ``limit_per_workspace``.
+    """
+    results: list[tuple[str, CodeNode]] = []
+    coros = []
+    valid_paths: list[str] = []
+    for path in workspace_paths:
+        ws_id = await resolve_workspace_id(db, path=path)
+        if ws_id is None:
+            continue
+        coros.append(
+            search_nodes(db, workspace_id=ws_id, query=query, kind=kind, limit=limit_per_workspace)
+        )
+        valid_paths.append(path)
+
+    if not coros:
+        return results
+
+    per_workspace = await asyncio.gather(*coros)
+    for path, nodes in zip(valid_paths, per_workspace):
+        for node in nodes:
+            results.append((path, node))
+    return results

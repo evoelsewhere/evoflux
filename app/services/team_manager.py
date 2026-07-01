@@ -395,7 +395,11 @@ async def stop() -> None:
         _coding_team_last_used.clear()
 
 
-async def get_or_start_coding_team(workspace: str, session_id: str) -> "AgentTeam":
+async def get_or_start_coding_team(
+    workspace: str,
+    session_id: str,
+    extra_workspace_paths: list[str] | None = None,
+) -> "AgentTeam":
     resolved_workspace = validate_workspace(workspace)
     key = (resolved_workspace, session_id)
     async with _lock:
@@ -404,6 +408,9 @@ async def get_or_start_coding_team(workspace: str, session_id: str) -> "AgentTea
         existing = _coding_teams.get(key)
         if existing is not None:
             _coding_team_last_used[key] = now
+            # Update extra paths if the project config changed
+            if extra_workspace_paths is not None:
+                existing.extra_workspace_paths = extra_workspace_paths
             team = existing
         else:
             agents_dir = _resolve_coding_agents_dir()
@@ -415,6 +422,8 @@ async def get_or_start_coding_team(workspace: str, session_id: str) -> "AgentTea
                     f"No coding agents found in '{agents_dir}'. "
                     "Create at least one .md file with 'role: lead'."
                 )
+            if extra_workspace_paths:
+                team.extra_workspace_paths = extra_workspace_paths
             await team.start()
             _coding_teams[key] = team
             _coding_team_last_used[key] = now

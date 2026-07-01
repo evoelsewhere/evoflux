@@ -266,6 +266,7 @@ def _default_tool_registry() -> dict[str, Tool]:
     from app.agent.tools.builtin import (
         background_process,
         browser_use,
+        create_pull_request,
         edit_file,
         get_date,
         glob_files,
@@ -296,6 +297,7 @@ def _default_tool_registry() -> dict[str, Tool]:
         code_search,
         code_symbol,
     )
+    from app.agent.tools.builtin.code_cross_repo import code_cross_repo_search
     from app.agent.tools.builtin.plan import enter_plan_mode, exit_plan_mode
     from app.agent.tools.builtin.chapter import mark_chapter
     from app.agent.tools.builtin.bg_tasks import (
@@ -336,6 +338,7 @@ def _default_tool_registry() -> dict[str, Tool]:
         "code_references": code_references,
         "code_map": code_map,
         "code_path": code_path,
+        "code_cross_repo_search": code_cross_repo_search,
         "enter_plan_mode": enter_plan_mode,
         "exit_plan_mode": exit_plan_mode,
         "shell_bg_start": shell_bg_start,
@@ -343,6 +346,7 @@ def _default_tool_registry() -> dict[str, Tool]:
         "shell_bg_wait": shell_bg_wait,
         "worktree_start": worktree_start,
         "worktree_finish": worktree_finish,
+        "create_pull_request": create_pull_request,
         "lsp_diagnostics": lsp_diagnostics,
         "lsp_definition": lsp_definition,
         "lsp_references": lsp_references,

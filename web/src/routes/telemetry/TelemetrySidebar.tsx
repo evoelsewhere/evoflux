@@ -1,4 +1,4 @@
-import { Activity, BarChart3, Clock, List } from 'lucide-react'
+import { Activity, BarChart3, List } from 'lucide-react'
 
 export type TelemetryTab = 'summary' | 'traces'
 

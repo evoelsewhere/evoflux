@@ -275,6 +275,7 @@ class AgentTeam:
         mode: str = "normal",
         workspace: str | None = None,
         permission_mode: str = "auto",
+        extra_workspace_paths: list[str] | None = None,
         # Back-compat: callers (especially older tests) can still pass a
         # pre-built members map.  These instances are registered as if they
         # were spawned by name; their handles stay verbatim (no ``#1``
@@ -291,6 +292,7 @@ class AgentTeam:
         self.mode = mode
         self.workspace = workspace
         self.permission_mode = permission_mode
+        self.extra_workspace_paths: list[str] = extra_workspace_paths or []
 
         self.mailbox = TeamMailbox(on_message=self._on_message)
 
