@@ -78,6 +78,11 @@ class CrossRepoSettings(BaseModel):
     llm_model: str = ""
     candidate_k: int = 5
     llm_batch_size: int = 8
+    # Safety valve for Tier B: even after the is_likely_external pre-filter,
+    # a very large or freshly-linked project could have more unresolved rows
+    # than are sane to run through FTS + an LLM in one pass. The remainder is
+    # simply picked up on the next resolve call.
+    max_rows_per_run: int = 500
 
 
 class ServerSettings(BaseModel):

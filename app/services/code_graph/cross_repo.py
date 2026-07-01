@@ -71,7 +71,9 @@ class CrossRepoResolveStats:
     static_resolved: int = 0
     lexical_resolved: int = 0
     llm_resolved: int = 0
+    llm_external: int = 0
     still_unresolved: int = 0
+    capped: int = 0
 
 
 @dataclass(frozen=True, slots=True)
