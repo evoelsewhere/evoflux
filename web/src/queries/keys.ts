@@ -98,6 +98,7 @@ export const queryKeys = {
     codeGraphStatus: (id: string) => ['projects', 'detail', id, 'code-graph-status'] as const,
     codeGraphSearch: (id: string, query: string) =>
       ['projects', 'detail', id, 'code-graph-search', query] as const,
+    codeGraphData: (id: string) => ['projects', 'detail', id, 'code-graph-data'] as const,
   },
   mcp: {
     all: () => ['mcp'] as const,

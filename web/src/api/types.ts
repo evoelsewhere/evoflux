@@ -169,6 +169,7 @@ export interface CodeGraphStatusResponse {
 
 export interface CodeGraphNode {
   id: string
+  workspace_id: string
   kind: string
   name: string
   qualified_name: string
@@ -182,6 +183,26 @@ export interface CodeGraphNode {
 
 export interface CodeGraphSearchResponse {
   nodes: CodeGraphNode[]
+}
+
+export interface CodeGraphEdge {
+  id: string
+  src_id: string
+  dst_id: string
+  kind: string
+  file_path: string | null
+  line: number | null
+}
+
+export interface ProjectCodeGraphData {
+  repos: ProjectRepoStatus[]
+  nodes: CodeGraphNode[]
+  edges: CodeGraphEdge[]
+  cross_repo_edges: CrossRepoEdge[]
+  node_limit_per_repo: number
+  edge_limit_per_repo: number
+  total_node_count: number
+  total_edge_count: number
 }
 
 export interface CodeGraphReindexResponse {
@@ -322,6 +343,7 @@ export type CrossRepoEdgeStatus = 'unresolved' | 'resolved' | 'rejected'
 export interface CrossRepoEdge {
   id: string
   src_workspace_id: string
+  src_node_id: string | null
   src_file_path: string
   src_line: number | null
   raw_reference: string
@@ -332,6 +354,7 @@ export interface CrossRepoEdge {
   confidence: number | null
   rationale: string | null
   dst_workspace_id: string | null
+  dst_node_id: string | null
   dst_qualified_name: string | null
 }
 
