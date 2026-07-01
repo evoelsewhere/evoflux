@@ -37,6 +37,8 @@ class CrossRepoResolveStatsOut(BaseModel):
     lexical_resolved: int
     llm_resolved: int
     still_unresolved: int
+    llm_external: int = 0
+    capped: int = 0
 
 
 class CrossRepoResolveJobOut(BaseModel):

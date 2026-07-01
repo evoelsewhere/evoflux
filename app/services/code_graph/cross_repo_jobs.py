@@ -123,17 +123,22 @@ class CrossRepoResolveJobRegistry:
                     static_resolved=stats.static_resolved,
                     lexical_resolved=tier_b.lexical_resolved,
                     llm_resolved=tier_b.llm_resolved,
+                    llm_external=tier_b.llm_external,
                     still_unresolved=max(
                         0,
                         stats.still_unresolved
                         - tier_b.lexical_resolved
-                        - tier_b.llm_resolved,
+                        - tier_b.llm_resolved
+                        - tier_b.llm_external,
                     ),
+                    capped=tier_b.capped,
                 )
                 job.stats = asdict(merged)
                 job.message = (
                     f"{tier_b.lexical_resolved} resolved by lexical match, "
                     f"{tier_b.llm_resolved} by AI"
+                    + (f", {tier_b.llm_external} classified external" if tier_b.llm_external else "")
+                    + (f" ({tier_b.capped} deferred to next run)" if tier_b.capped else "")
                 )
 
             job.status = "done"
