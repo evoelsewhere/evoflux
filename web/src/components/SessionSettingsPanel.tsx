@@ -79,7 +79,6 @@ function CapabilityChips({ chips }: { chips: CapabilityChip[] }) {
 
 function Capabilities({
   caps,
-  tools,
 }: {
   caps: AgentCapabilitiesType
   tools: AgentInfo['tools']

@@ -204,7 +204,6 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   todos,
   todosOpen = false,
   onTodosOpenChange,
-  sessionId,
   onWiki,
   wikiActive,
   onFiles,
@@ -299,7 +298,6 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   //     The 20% guard band absorbs the layout feedback loop where
   //     promoting widens the textarea (so the same content fits on
   //     one line again) which would otherwise demote → re-promote.
-  const [isMultiLine] = useState(false)
   const promoteLengthRef = useRef(0)
   const resize = useCallback(() => {
     const el = textareaRef.current

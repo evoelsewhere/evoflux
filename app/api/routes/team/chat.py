@@ -209,9 +209,18 @@ async def team_chat(
         mode = "coding"
         workspace = persisted_workspace
         assert session_id is not None
+        extra_ws_paths: list[str] = []
+        if existing.project_id is not None:
+            from app.services.coding_project_service import get_project_workspace_paths
+
+            async with db.begin():
+                all_paths = await get_project_workspace_paths(
+                    db, existing.project_id
+                )
+            extra_ws_paths = [p for p in all_paths if p != workspace]
         try:
             team_obj = await team_manager.get_or_start_coding_team(
-                workspace, session_id
+                workspace, session_id, extra_workspace_paths=extra_ws_paths or None
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -682,6 +691,7 @@ async def list_team_sessions(
     limit: int = Query(20, ge=1, le=100),
     mode: str | None = Query(None),
     workspace: str | None = Query(None),
+    project_id: UUID | None = Query(None),
 ) -> SessionPageResponse:
     """List team lead sessions newest-first, cursor-paginated by created_at.
 
@@ -700,6 +710,7 @@ async def list_team_sessions(
             limit=limit,
             mode=mode,
             workspace=workspace,
+            project_id=project_id,
         )
     except ValueError:
         raise HTTPException(
@@ -735,12 +746,29 @@ async def resolve_team_session(
         raise HTTPException(status_code=422, detail="Choose a model from the registry.")
 
     workspace = body.workspace
+    project_id = body.project_id
     if body.mode == "normal":
         workspace = None
+        project_id = None
         if body.worktree_from or body.worktree_name or body.worktree_branch:
             raise HTTPException(
                 status_code=422, detail="worktree options require mode='coding'."
             )
+    elif project_id is not None:
+        # Project-mode: derive the primary workspace from the project (paths[0]).
+        # A project session spans all repos; it is matched/reused by project_id,
+        # never by this derived path (see get_latest_top_level_session).
+        from app.services.coding_project_service import get_project_workspace_paths
+
+        async with db.begin():
+            paths = await get_project_workspace_paths(db, project_id)
+        if not paths:
+            raise HTTPException(
+                status_code=422,
+                detail="Project has no workspaces configured.",
+            )
+        # Fail fast with a clear 422 if the primary repo path is stale/missing.
+        workspace = _validate_workspace_or_422(paths[0])
     elif body.worktree_from or body.worktree_name or body.worktree_branch:
         if not body.worktree_from or not body.worktree_name:
             raise HTTPException(
@@ -765,17 +793,19 @@ async def resolve_team_session(
     else:
         workspace = _validate_workspace_or_422(workspace)
 
+    watch_targets: list[str] = []
     async with db.begin():
         session = None
         if not body.create:
             session = await get_latest_top_level_session(
-                db, mode=body.mode, workspace=workspace
+                db, mode=body.mode, workspace=workspace, project_id=project_id
             )
         created = session is None
         if session is None:
             session = ChatSession(
                 mode=body.mode,
                 workspace=workspace,
+                project_id=project_id,
                 model=model,
                 thinking_level=thinking_level,
             )
@@ -797,12 +827,30 @@ async def resolve_team_session(
                     managed=True,
                     hidden=False,
                 )
+                watch_targets = [managed_source, workspace]
             else:
                 await upsert_coding_workspace(
                     db, path=workspace, kind="repo", hidden=False
                 )
+                watch_targets = [workspace]
+            # A project session can touch every repo in the project, not just
+            # the primary one it was resolved with — watch all of them.
+            if project_id is not None:
+                watch_targets = paths
         await db.flush()
         await db.refresh(session)
+
+    if watch_targets:
+        # Lazily extend the code-graph watcher to this workspace/project the
+        # first time someone actually opens it — see watcher.py's docstring
+        # for why this isn't done eagerly for every registered workspace.
+        from app.services.code_graph.watcher import _global_watcher
+
+        if _global_watcher is not None:
+            try:
+                await _global_watcher.watch_paths(watch_targets)
+            except Exception as exc:  # noqa: BLE001 — best-effort, never blocks session resolve
+                logger.warning("code_graph_watch_paths_failed err={}", exc)
 
     data = SessionResponse.model_validate(session).model_dump()
     return TeamSessionResolveResponse(**data, created=created)

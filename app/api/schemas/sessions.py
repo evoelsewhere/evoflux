@@ -18,6 +18,7 @@ class SessionCreate(BaseModel):
 class TeamSessionResolveRequest(BaseModel):
     mode: str = "normal"
     workspace: str | None = None
+    project_id: UUID | None = None
     model: str | None = None
     thinking_level: str | None = None
     create: bool = False
@@ -58,6 +59,7 @@ class SessionResponse(_ExcludeNoneModel):
     scheduled_task_name: str | None = None
     mode: str = "normal"
     workspace: str | None = None
+    project_id: UUID | None = None
     permission_mode: str = "auto"
     model: str | None = None
     thinking_level: str | None = None

@@ -118,3 +118,85 @@ async def seed_workspace_registry_from_sessions(
 ) -> None:
     for workspace in workspaces:
         await upsert_coding_workspace(db, path=workspace, kind="repo", hidden=False)
+
+
+async def list_workspace_paths_with_sessions(db: AsyncSession) -> list[str]:
+    """Absolute paths of every visible workspace reachable by an existing session.
+
+    A project session can read/write any repo in the project (not just the
+    one it was resolved with), so every workspace belonging to a project with
+    at least one session counts as "active" alongside workspaces referenced
+    directly by a standalone (non-project) session. Used to scope the
+    code-graph file watcher to workspaces someone has actually opened, rather
+    than every workspace ever registered (e.g. added to a project but never
+    used).
+    """
+    from app.models.chat import ChatSession, CodingProjectWorkspace
+
+    standalone_paths = (
+        await db.exec(
+            select(ChatSession.workspace)
+            .where(col(ChatSession.workspace).is_not(None))
+            .distinct()
+        )
+    ).all()
+
+    project_ids = (
+        await db.exec(
+            select(ChatSession.project_id)
+            .where(col(ChatSession.project_id).is_not(None))
+            .distinct()
+        )
+    ).all()
+
+    project_paths: list[str] = []
+    if project_ids:
+        project_paths = list(
+            (
+                await db.exec(
+                    select(CodingWorkspace.path)
+                    .join(
+                        CodingProjectWorkspace,
+                        CodingProjectWorkspace.workspace_id == CodingWorkspace.id,
+                    )
+                    .where(col(CodingProjectWorkspace.project_id).in_(project_ids))
+                    .distinct()
+                )
+            ).all()
+        )
+
+    candidate_paths = {p for p in (*standalone_paths, *project_paths) if p}
+    if not candidate_paths:
+        return []
+
+    rows = list(
+        (
+            await db.exec(
+                select(CodingWorkspace).where(
+                    col(CodingWorkspace.path).in_(candidate_paths),
+                    ~col(CodingWorkspace.hidden),
+                    col(CodingWorkspace.deleted_at).is_(None),
+                )
+            )
+        ).all()
+    )
+    result_paths = {row.path for row in rows}
+
+    # Worktree sessions watch the worktree dir directly (that's the session's
+    # `workspace`) — also watch its source repo so edits made there (or a
+    # subsequent reindex of the source) stay in sync, mirroring the pair of
+    # upsert_coding_workspace calls made when the worktree session was created.
+    source_paths = {row.source_path for row in rows if row.source_path}
+    if source_paths:
+        source_rows = (
+            await db.exec(
+                select(CodingWorkspace.path).where(
+                    col(CodingWorkspace.path).in_(source_paths),
+                    ~col(CodingWorkspace.hidden),
+                    col(CodingWorkspace.deleted_at).is_(None),
+                )
+            )
+        ).all()
+        result_paths.update(source_rows)
+
+    return list(result_paths)

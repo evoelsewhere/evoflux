@@ -832,6 +832,7 @@ async def list_sessions_page(
     limit: int = 20,
     mode: str | None = None,
     workspace: str | None = None,
+    project_id: UUID | None = None,
 ) -> tuple[list[ChatSession], str | None, bool]:
     """Return a cursor-paginated page of top-level sessions (newest-first).
 
@@ -863,6 +864,8 @@ async def list_sessions_page(
         stmt = stmt.where(col(ChatSession.mode) == mode)
     if workspace is not None:
         stmt = stmt.where(col(ChatSession.workspace) == workspace)
+    if project_id is not None:
+        stmt = stmt.where(col(ChatSession.project_id) == project_id)
 
     if before:
         cursor_dt = datetime.fromisoformat(before.replace("Z", "+00:00"))
@@ -889,8 +892,16 @@ async def get_latest_top_level_session(
     *,
     mode: str,
     workspace: str | None,
+    project_id: UUID | None = None,
 ) -> ChatSession | None:
-    """Return the newest top-level session for a mode/workspace pair."""
+    """Return the newest top-level session for a mode/workspace pair.
+
+    When ``project_id`` is provided the lookup is scoped by project identity
+    (mode + project_id) rather than by workspace path — a project session spans
+    all of the project's repos, so it must never be matched/reused by the first
+    repo's path alone (which could collide with an unrelated single-repo session
+    or a different project sharing that path).
+    """
     stmt = (
         select(ChatSession)
         .where(
@@ -899,10 +910,16 @@ async def get_latest_top_level_session(
         )
         .order_by(col(ChatSession.created_at).desc())
     )
-    if workspace is None:
-        stmt = stmt.where(col(ChatSession.workspace).is_(None))
+    if project_id is not None:
+        stmt = stmt.where(col(ChatSession.project_id) == project_id)
     else:
-        stmt = stmt.where(ChatSession.workspace == workspace)
+        # Plain (non-project) resolve: never reuse a project session by its
+        # derived primary-repo path — a project session is scoped by project_id.
+        stmt = stmt.where(col(ChatSession.project_id).is_(None))
+        if workspace is None:
+            stmt = stmt.where(col(ChatSession.workspace).is_(None))
+        else:
+            stmt = stmt.where(ChatSession.workspace == workspace)
     return (await db.exec(stmt.limit(1))).first()
 
 

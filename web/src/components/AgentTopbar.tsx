@@ -20,6 +20,7 @@ import {
 import { TopbarAction } from '@/components/ui/topbar-action'
 import { TokenMeter } from '@/components/ui/token-meter'
 import { ViewToggle, type ViewMode } from '@/components/ui/view-toggle'
+import { ContextBudgetBar } from '@/components/ContextBudgetBar'
 import { cn } from '@/lib/utils'
 
 export interface AgentTopbarTokens {
@@ -51,6 +52,12 @@ export interface AgentTopbarActionDescriptor {
 export interface AgentTopbarProps {
   /** Token totals; when omitted (or all zero) the TokenMeter is hidden. */
   tokens?: AgentTopbarTokens
+  /**
+   * Context window budget. When provided, shows a mini usage bar alongside
+   * the token meter. `used` = input + output + cached tokens; `max` defaults
+   * to 200 000 if omitted.
+   */
+  contextBudget?: { used: number; max?: number }
   /** Show "Dream…" indicator when the dream loop is running. */
   dreamRunning?: boolean
   /** Current view mode; when undefined the ViewToggle is hidden. */
@@ -83,6 +90,7 @@ export interface AgentTopbarProps {
  */
 export function AgentTopbar({
   tokens,
+  contextBudget,
   dreamRunning = false,
   viewMode,
   onViewModeChange,
@@ -125,6 +133,14 @@ export function AgentTopbar({
           cached={tokens.cached}
           trigger={tokens.trigger}
           pulsing={tokens.pulsing}
+          className="mr-0.5"
+        />
+      )}
+
+      {!isMobile && contextBudget && contextBudget.used > 0 && (
+        <ContextBudgetBar
+          used={contextBudget.used}
+          max={contextBudget.max}
           className="mr-0.5"
         />
       )}

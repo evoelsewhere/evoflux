@@ -98,6 +98,19 @@ class ChatSession(SQLModel, table=True):
         sa_column=Column(sa.String(20), nullable=False, server_default="auto"),
     )
     workspace: str | None = Field(default=None)
+    project_id: UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            sa.Uuid(),
+            ForeignKey(
+                "coding_projects.id",
+                ondelete="SET NULL",
+                name="fk_chat_sessions_project_id",
+            ),
+            nullable=True,
+            index=True,
+        ),
+    )
     model: str | None = Field(default=None, max_length=255)
     thinking_level: str | None = Field(default=None, max_length=50)
     revert: dict | None = Field(
@@ -263,6 +276,82 @@ class MemoryProcessedSource(SQLModel, table=True):
     )  # JSON array
     status: str = Field(max_length=20)
     error: str | None = Field(default=None, sa_column=Column(sa.Text(), nullable=True))
+
+
+class CodingProject(SQLModel, table=True):
+    """A named project grouping multiple CodingWorkspace repositories."""
+
+    __tablename__: str = "coding_projects"  # type: ignore[reportIncompatibleVariableOverride]
+    __table_args__ = (
+        sa.Index("ix_coding_projects_created_at", "created_at"),
+    )
+
+    id: UUID = Field(default_factory=uuid7, primary_key=True)
+    name: str = Field(sa_column=Column(sa.String(255), nullable=False))
+    description: str | None = Field(
+        default=None, sa_column=Column(sa.Text(), nullable=True)
+    )
+    settings: dict = Field(
+        default_factory=dict,
+        sa_column=Column(
+            JSON().with_variant(pg.JSONB(), "postgresql"),
+            nullable=False,
+            server_default="{}",
+        ),
+    )
+    hidden: bool = Field(
+        default=False,
+        sa_column=Column(sa.Boolean, nullable=False, server_default=sa.false()),
+    )
+    deleted_at: datetime | None = Field(default=None, sa_column=Column(TZDateTime()))
+    created_at: datetime = Field(
+        default_factory=_utcnow,
+        sa_column=Column(TZDateTime(), nullable=False),
+    )
+    updated_at: datetime = Field(
+        default_factory=_utcnow,
+        sa_column=Column(TZDateTime(), nullable=False, onupdate=_utcnow),
+    )
+
+
+class CodingProjectWorkspace(SQLModel, table=True):
+    """Join table linking CodingProject to its member CodingWorkspace repos."""
+
+    __tablename__: str = "coding_project_workspaces"  # type: ignore[reportIncompatibleVariableOverride]
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "project_id", "workspace_id", name="uq_coding_project_workspaces_pair"
+        ),
+        sa.Index("ix_coding_project_workspaces_project", "project_id"),
+        sa.Index("ix_coding_project_workspaces_workspace", "workspace_id"),
+    )
+
+    id: UUID = Field(default_factory=uuid7, primary_key=True)
+    project_id: UUID = Field(
+        sa_column=Column(
+            sa.Uuid(),
+            ForeignKey("coding_projects.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    workspace_id: UUID = Field(
+        sa_column=Column(
+            sa.Uuid(),
+            ForeignKey("coding_workspaces.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    display_name: str | None = Field(
+        default=None, sa_column=Column(sa.String(255), nullable=True)
+    )
+    sort_order: int = Field(
+        default=0,
+        sa_column=Column(sa.Integer, nullable=False, server_default="0"),
+    )
+    created_at: datetime = Field(
+        default_factory=_utcnow,
+        sa_column=Column(TZDateTime(), nullable=False),
+    )
 
 
 class SessionChapter(SQLModel, table=True):

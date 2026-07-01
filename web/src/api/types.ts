@@ -160,9 +160,6 @@ export interface CodeGraphStatusResponse {
   files: number
   nodes: number
   edges: number
-  semantic_enabled: boolean
-  embedding_model: string | null
-  vector_count: number
   indexing: boolean
   index_phase: string | null
   index_progress: number | null
@@ -190,6 +187,33 @@ export interface CodeGraphSearchResponse {
 export interface CodeGraphReindexResponse {
   indexing: boolean
   already_running: boolean
+}
+
+// Per-repo index status for a project-wide code graph view — one entry per
+// workspace, not an aggregate, so the UI can offer "Build index" for
+// whichever specific repo(s) haven't been indexed yet.
+export interface ProjectRepoStatus {
+  workspace_id: string
+  path: string
+  name: string
+  indexed: boolean
+  files: number
+  nodes: number
+  edges: number
+  indexing: boolean
+  index_phase: string | null
+  index_progress: number | null
+  index_message: string | null
+  index_error: string | null
+}
+
+export interface ProjectCodeSearchResult {
+  path: string
+  node: CodeGraphNode
+}
+
+export interface ProjectCodeSearchResponse {
+  results: ProjectCodeSearchResult[]
 }
 
 export interface MessageAttachment {
@@ -239,11 +263,106 @@ export interface SessionResponse {
   scheduled_task_name?: string | null
   mode?: string
   workspace?: string | null
+  project_id?: string | null
   workspace_hidden?: boolean
   permission_mode?: string
   model?: string | null
   thinking_level?: string | null
   running?: boolean
+}
+
+// ── Coding Projects (multi-repo) ─────────────────────────────────────────────
+
+export interface ProjectWorkspaceItem {
+  workspace_id: string
+  path: string
+  name: string | null
+  display_name: string | null
+  sort_order: number
+  kind: string
+}
+
+export interface CodingProject {
+  id: string
+  name: string
+  description: string | null
+  settings: Record<string, unknown>
+  workspaces: ProjectWorkspaceItem[]
+  created_at: string
+  updated_at: string
+}
+
+export interface ProjectCreateRequest {
+  name: string
+  description?: string
+  workspace_paths: string[]
+  settings?: Record<string, unknown>
+}
+
+export interface AddWorkspaceToProjectRequest {
+  workspace_path: string
+  display_name?: string
+}
+
+// method distinguishes "certain" links (static_fqn/static_manifest_exact)
+// from lower-confidence ones (static_manifest_package/lexical) and
+// AI-inferred ones (llm) — the UI badges these differently. 'embedding' is
+// no longer produced (the vector layer was removed in favor of FTS5 lexical
+// search) but stays valid so historical rows still deserialize/display.
+export type CrossRepoEdgeMethod =
+  | 'static_fqn'
+  | 'static_manifest_exact'
+  | 'static_manifest_package'
+  | 'embedding'
+  | 'lexical'
+  | 'llm'
+
+export type CrossRepoEdgeStatus = 'unresolved' | 'resolved' | 'rejected'
+
+export interface CrossRepoEdge {
+  id: string
+  src_workspace_id: string
+  src_file_path: string
+  src_line: number | null
+  raw_reference: string
+  dst_name_hint: string | null
+  kind: string
+  status: CrossRepoEdgeStatus
+  method: CrossRepoEdgeMethod | null
+  confidence: number | null
+  rationale: string | null
+  dst_workspace_id: string | null
+  dst_qualified_name: string | null
+}
+
+export interface CrossRepoResolveRequest {
+  use_llm?: boolean
+  llm_model?: string | null
+}
+
+export interface CrossRepoResolveStats {
+  reattached: number
+  static_resolved: number
+  lexical_resolved: number
+  llm_resolved: number
+  still_unresolved: number
+}
+
+export interface CrossRepoResolveJob {
+  project_id: string
+  use_llm: boolean
+  llm_model: string | null
+  status: 'running' | 'done' | 'error'
+  phase: string
+  progress: number
+  message: string
+  error: string | null
+  stats: CrossRepoResolveStats | null
+}
+
+export interface CrossRepoResolveStatusResponse {
+  running: boolean
+  job: CrossRepoResolveJob | null
 }
 
 export interface SessionDetailResponse extends SessionResponse {
@@ -617,6 +736,13 @@ export interface WorkspaceFileInfo {
   size: number   // Bytes
   mtime: number  // Seconds since epoch
   mime: string   // MIME type (guessed)
+  // Absolute path of the repo this file was listed from. Only set when the
+  // file came from a multi-repo project tree (MultiRepoFileTree) — a project
+  // session's "workspace" is just the primary repo, so a file picked from a
+  // different member repo must carry its own root for the viewer to resolve
+  // the right absolute path. Omitted (falls back to the ambient workspace)
+  // for single-workspace listings.
+  sourceWorkspace?: string
 }
 
 export interface WorkspaceFilesResponse {

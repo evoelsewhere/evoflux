@@ -56,6 +56,11 @@ class ExtractedEdge:
     dst_local_id: str | None = None
     dst_name: str | None = None
     line: int | None = None
+    # Raw import source string (EDGE_IMPORTS only), e.g. "./utils",
+    # "app.services", "com.example.bar.Baz". Survives into the indexer's
+    # unresolved-import bookkeeping even when dst_name can't be resolved
+    # within this workspace — see ImportRef.module_path.
+    module_path: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

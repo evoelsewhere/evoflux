@@ -64,7 +64,6 @@ async def get_status(
     if workspace_id is None:
         return CodeGraphStatusResponse(indexed=False)
     counts = await svc.get_index_status(db, workspace_id=workspace_id)
-    semantic = await svc.get_semantic_status(workspace_id=workspace_id)
     job = index_jobs.snapshot(workspace_id)
     indexing = job is not None and job.status == "running"
     index_error = job.error if job is not None and job.status == "error" else None
@@ -73,9 +72,6 @@ async def get_status(
         files=counts["files"],
         nodes=counts["nodes"],
         edges=counts["edges"],
-        semantic_enabled=semantic.enabled,
-        embedding_model=semantic.model,
-        vector_count=semantic.vector_count,
         indexing=indexing,
         index_phase=job.phase if indexing else None,
         index_progress=job.progress if indexing else None,

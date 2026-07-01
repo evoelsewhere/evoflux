@@ -26,6 +26,8 @@ import { useQueryClient } from '@tanstack/react-query'
 import { SessionSettingsPanel } from '../SessionSettingsPanel'
 import { AgentView } from '../AgentView'
 import { WorkspaceInfoCard } from '../WorkspaceInfoCard'
+import { ProjectInfoCard } from '../ProjectInfoCard'
+import { useProjectQuery } from '@/queries/useProjectsQuery'
 import { CodingSidebar } from '../CodingSidebar'
 import { CodingWorkspacePanel } from '../CodingWorkspacePanel'
 import { CodingFileViewerPanel } from '../CodingFileViewerPanel'
@@ -69,6 +71,7 @@ import {
 import { isAgentRole, type AgentRole } from '@/lib/agent-roles'
 import type { ActiveLoop, AgentStream } from '@/stores/useTeamStore'
 import { AgentTopbar } from '@/components/AgentTopbar'
+import { TaskProgressPill } from '@/components/TaskProgressPill'
 import { type InputBarHandle, type SlashCommand, type SnippetCommand } from '../InputBar'
 import { FloatingInputBar } from '../FloatingInputBar'
 import type { AgentCapabilities as AgentCapabilitiesType, MessageAttachment, WorkspaceFileInfo } from '@/api/types'
@@ -165,6 +168,21 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
   const isTeamWorking  = useTeamStore((s) => s.isTeamWorking)
   const isContinuing   = useTeamStore((s) => s.isContinuing)
   const sessionIdState = useTeamStore((s) => s.sessionId)
+  const projectIdState = useTeamStore((s) => s.projectId)
+  // A project session isn't "in" any one repo — chat-level UI (empty state,
+  // composer placeholder) must reflect the project, not the primary repo
+  // path (`workspace`) the backend happens to derive for the agent's cwd.
+  const activeProjectQuery = useProjectQuery(projectIdState)
+  const activeProject = activeProjectQuery.data ?? null
+  // Single source of truth for "what is this coding session about" wherever
+  // the UI needs a short identity label (tray, mobile header, action sheet,
+  // composer placeholder) — project name when project-scoped, else the repo.
+  const codingIdentityLabel =
+    mode === 'coding' && workspace
+      ? projectIdState
+        ? activeProject?.name ?? 'Project…'
+        : workspaceLabel(workspace)
+      : null
   const sessionTitle   = useTeamStore((s) => s.sessionTitle)
   const sessionModel   = useTeamStore((s) => s.sessionModel)
   const sessionThinkingLevel = useTeamStore((s) => s.sessionThinkingLevel)
@@ -173,7 +191,6 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
   const activeLoop     = useTeamStore((s) => s.activeLoop)
   const isConnected    = useTeamStore((s) => s.isConnected)
   const promptSuggestions = useTeamStore((s) => s.promptSuggestions)
-  const permissionModeSt = useTeamStore((s) => s.permissionMode)
 
   // Utility modal state lives in useUIStore so only one can be open at a time.
   const wikiOpen = useUIStore((s) => s.wikiOpen)
@@ -272,6 +289,11 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
   const totalCompletion = useTeamStore((s) => Object.values(s.agentStreams).reduce((n, st) => n + st.usage.completionTokens, 0))
   const totalCached     = useTeamStore((s) => Object.values(s.agentStreams).reduce((n, st) => n + st.usage.cachedTokens, 0))
   const totalAll        = useTeamStore((s) => Object.values(s.agentStreams).reduce((n, st) => n + st.usage.totalTokens, 0))
+  // Live context-window occupancy = latest-turn input (+ cached), which is what
+  // the summarization threshold actually compares against. Cumulative
+  // totalTokens grows with completion tokens across turns and would falsely
+  // push the budget bar toward 100% on long sessions.
+  const contextUsed = totalPrompt + totalCached
   const headerTokens = totalAll > 0
     ? {
         input: totalPrompt,
@@ -590,18 +612,16 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
   //   - everything else → empty (tray shows ``No active session``)
   useEffect(() => {
     let label = ''
-    const identity = mode === 'coding' && workspace
-      ? workspaceLabel(workspace)
-      : sessionTitle ?? ''
+    const identity = codingIdentityLabel ?? sessionTitle ?? ''
     if (isTeamWorking) {
       label = identity ? `Working: ${identity}` : 'Working…'
-    } else if (mode === 'coding' && workspace) {
-      label = `Coding: ${workspaceLabel(workspace)}`
+    } else if (codingIdentityLabel) {
+      label = `Coding: ${codingIdentityLabel}`
     } else if (sessionTitle) {
       label = `Chat: ${sessionTitle}`
     }
     void setTraySession(label)
-  }, [mode, workspace, sessionTitle, isTeamWorking])
+  }, [codingIdentityLabel, sessionTitle, isTeamWorking])
 
   // Shell shortcut: start a message with `!` to run the rest as a shell command.
   // Slash commands for the input bar (type / to trigger).
@@ -1036,7 +1056,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
                 <Menu size={15} aria-hidden="true" />
               </button>
               <div className="min-w-0 text-sm font-semibold text-(--color-text)">
-                <div className="truncate">{mode === 'coding' && workspace ? workspaceLabel(workspace) : sessionTitle || 'EvoFlux'}</div>
+                <div className="truncate">{codingIdentityLabel ?? (sessionTitle || 'EvoFlux')}</div>
                 {activeAgent && <div className="truncate font-mono text-xs font-normal text-(--color-text-muted)">{activeAgent}</div>}
               </div>
             </div>
@@ -1057,6 +1077,12 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
                 label={loopLabel}
                 progress={loopProgress}
                 compact={false}
+              />
+            )}
+            {!isMobile && mode === 'coding' && (
+              <TaskProgressPill
+                isWorking={isTeamWorking}
+                chapters={chapters}
               />
             )}
             {effectiveViewMode === 'split' && (
@@ -1100,8 +1126,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
               <MobileChatActions
                 open={showMobileActions}
                 onOpenChange={setShowMobileActions}
-                mode={mode}
-                workspace={workspace}
+                codingIdentityLabel={codingIdentityLabel}
                 activeAgent={activeAgent}
                 agents={agentNames}
                 streams={agentStreams}
@@ -1118,6 +1143,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
             <AgentTopbar
               isMobile={false}
               tokens={headerTokens}
+              contextBudget={contextUsed > 0 ? { used: contextUsed, max: summaryTriggerTokens } : undefined}
               dreamRunning={dreamMutation.isPending}
               viewMode={viewMode}
               onViewModeChange={setViewMode}
@@ -1275,14 +1301,22 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
             emptyState={
               mode === 'coding' && workspace ? (
                 <div className="flex flex-col items-center justify-center py-16">
-                  <WorkspaceInfoCard workspace={workspace} />
+                  {projectIdState ? (
+                    activeProject && <ProjectInfoCard project={activeProject} />
+                  ) : (
+                    <WorkspaceInfoCard workspace={workspace} />
+                  )}
                 </div>
               ) : undefined
             }
           />
         ) : mode === 'coding' && workspace ? (
           <div className="flex flex-1 flex-col items-center justify-center py-16">
-            <WorkspaceInfoCard workspace={workspace} />
+            {projectIdState ? (
+              activeProject && <ProjectInfoCard project={activeProject} />
+            ) : (
+              <WorkspaceInfoCard workspace={workspace} />
+            )}
           </div>
         ) : sessionId && !isConnected ? (
           <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden" aria-hidden="true">
@@ -1345,8 +1379,8 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
                 ? 'Dream is running…'
                 : isTeamWorking
                   ? 'Team working… type to interrupt'
-                  : mode === 'coding' && workspace
-                    ? `Coding in ${workspaceLabel(workspace)}`
+                  : codingIdentityLabel
+                    ? `Coding in ${codingIdentityLabel}`
                     : 'Message the team…'
             }
             capabilities={effectiveCapabilities}
@@ -1407,7 +1441,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
         </AnimatePresence>
         {mode === 'coding' && workspace && codingFileViewer !== null && (
           <CodingFileViewerPanel
-            workspace={workspace}
+            workspace={codingFileViewer.sourceWorkspace ?? workspace}
             file={codingFileViewer}
             mobile={isMobile}
             onAddComment={handleAddFileComment}
@@ -1428,6 +1462,9 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
               setCodingPanel(null)
               setCodingFileViewer(null)
             }}
+            sessionId={sessionIdState}
+            projectId={projectIdState}
+            isWorking={isTeamWorking}
           />
         )}
       </div>
@@ -1552,8 +1589,7 @@ function MobileHeaderAction({
 interface MobileChatActionsProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  mode: 'normal' | 'coding'
-  workspace: string | null
+  codingIdentityLabel: string | null
   activeAgent: string | null
   agents: string[]
   streams: Record<string, AgentStream>
@@ -1567,8 +1603,7 @@ interface MobileChatActionsProps {
 function MobileChatActions({
   open,
   onOpenChange,
-  mode,
-  workspace,
+  codingIdentityLabel,
   activeAgent,
   agents,
   streams,
@@ -1619,7 +1654,7 @@ function MobileChatActions({
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-(--color-text)">
-                      {mode === 'coding' && workspace ? workspaceLabel(workspace) : 'Chat actions'}
+                      {codingIdentityLabel ?? 'Chat actions'}
                     </p>
                     {activeAgent && (
                       <p className="mt-1 truncate font-mono text-xs text-(--color-text-muted)">Active: {activeAgent}</p>

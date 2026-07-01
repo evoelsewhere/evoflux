@@ -39,6 +39,7 @@ from app.agent.hooks.memory_context import default_memory_context_hook
 from app.agent.hooks.memory_flush import build_memory_flush_hook
 from app.agent.hooks.wiki_injection import default_wiki_injection_hook
 from app.agent.hooks.workspace_instructions import WorkspaceInstructionsHook
+from app.agent.hooks.multi_repo_context import MultiRepoContextHook
 from app.agent.hooks.otel import OpenTelemetryHook
 from app.agent.hooks.stream_publisher import StreamPublisherHook
 from app.agent.hooks.summarization import build_team_summarization_hook
@@ -940,7 +941,15 @@ class TeamMemberBase(abc.ABC):
                 )
             )
         if self._team.mode == "coding":
-            hooks.append(WorkspaceInstructionsHook(self._team.workspace))
+            if self._team.extra_workspace_paths:
+                hooks.append(
+                    MultiRepoContextHook(
+                        primary_workspace=self._team.workspace or "",
+                        extra_workspace_paths=self._team.extra_workspace_paths,
+                    )
+                )
+            else:
+                hooks.append(WorkspaceInstructionsHook(self._team.workspace))
 
         # Title generation — lead only (members don't need session titles).
         # Always enabled; uses the same runtime provider as the chat turn so
@@ -1042,7 +1051,11 @@ class TeamMemberBase(abc.ABC):
 
         # Coding mode uses the exact project workspace for every team member.
         workspace = str(session_workspace_dir(lead_session_id, self._team.workspace))
-        session_sandbox = SandboxConfig(workspace=workspace, session_id=lead_session_id)
+        session_sandbox = SandboxConfig(
+            workspace=workspace,
+            session_id=lead_session_id,
+            extra_workspace_paths=self._team.extra_workspace_paths or None,
+        )
         token = set_sandbox(session_sandbox)
 
         # Scope permission service — instantiate based on the session's

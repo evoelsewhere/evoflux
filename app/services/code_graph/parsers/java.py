@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from app.services.code_graph.parsers.base import (
     Definition,
+    ImportRef,
     SuperType,
     TreeSitterParser,
     node_text,
@@ -26,6 +27,42 @@ class JavaParser(TreeSitterParser):
     name: ClassVar[str] = "java"
     extensions: ClassVar[tuple[str, ...]] = (".java",)
     grammar: ClassVar[str] = "java"
+
+    def root_prefix(self, root: Node, source: bytes) -> str:
+        # Java's qualified_name is a dotted path *within the file* by default
+        # (see base.py) — without this, two classes with the same simple name
+        # in different packages collide when resolving edges by name, and
+        # cross-repo FQN matching (import "com.foo.Bar" against a sibling
+        # repo's qualified_name) has nothing to match against.
+        for child in root.children:
+            if child.type == "package_declaration":
+                for sub in child.children:
+                    if sub.type in ("scoped_identifier", "identifier"):
+                        return f"{node_text(sub, source)}."
+        return ""
+
+    def import_refs(self, node: Node, source: bytes) -> list[ImportRef]:
+        if node.type != "import_declaration":
+            return []
+        # Children: "import", ["static"], scoped_identifier|identifier,
+        # ["." , "asterisk"] for a wildcard import, ";".
+        scoped = next(
+            (c for c in node.children if c.type in ("scoped_identifier", "identifier")),
+            None,
+        )
+        if scoped is None:
+            return []
+        dotted = node_text(scoped, source)
+        is_wildcard = any(c.type == "asterisk" for c in node.children)
+        if is_wildcard:
+            return [ImportRef(name="*", module_path=f"{dotted}.*")]
+        # Bare class import ("com.example.Baz") and static-member import
+        # ("com.example.Helper.doThing") are syntactically identical here —
+        # both just the last dotted segment as the locally-used name. The
+        # cross-repo resolver retries with the segment stripped if a class
+        # match fails, so no static-vs-class distinction is needed at
+        # extraction time.
+        return [ImportRef(name=dotted.rsplit(".", 1)[-1], module_path=dotted)]
 
     def classify(
         self, node: Node, source: bytes, *, inside_class: bool

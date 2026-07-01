@@ -82,12 +82,30 @@ class FileIndex:
     edge_count: int
 
 
+@dataclass(frozen=True, slots=True)
+class UnresolvedImport:
+    """An EDGE_IMPORTS edge that couldn't resolve within this workspace.
+
+    Persisted by the service layer as an unresolved ``CrossRepoEdge`` row
+    (only for workspaces that belong to a project) instead of being dropped
+    the way an unresolved same-workspace edge is — the whole point is that
+    the target may be a sibling repo, resolvable later.
+    """
+
+    src_key: str
+    module_path: str
+    dst_name_hint: str | None
+    file_path: str
+    line: int | None
+
+
 @dataclass(slots=True)
 class WorkspaceIndex:
     nodes: list[IndexedNode] = field(default_factory=list)
     edges: list[IndexedEdge] = field(default_factory=list)
     files: list[FileIndex] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    unresolved_imports: list[UnresolvedImport] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
@@ -174,8 +192,8 @@ def _build_index(
         name_to_keys.setdefault(definition.name, []).append(definition.key)
         extra_kinds[definition.key] = definition.kind
 
-    raw_edges: list[tuple[str, str | None, str | None, str, int | None]] = []
-    # (src_key, dst_local_id, dst_name, kind, line)
+    raw_edges: list[tuple[str, str | None, str | None, str, int | None, str | None]] = []
+    # (src_key, dst_local_id, dst_name, kind, line, module_path)
     local_to_key: dict[tuple[str, str], str] = {}
 
     for file_path, source in files_iter:
@@ -216,7 +234,14 @@ def _build_index(
             if src_key is None:
                 continue
             raw_edges.append(
-                (src_key, edge.dst_local_id, edge.dst_name, edge.kind, edge.line)
+                (
+                    src_key,
+                    edge.dst_local_id,
+                    edge.dst_name,
+                    edge.kind,
+                    edge.line,
+                    edge.module_path,
+                )
             )
 
         index.files.append(
@@ -238,7 +263,7 @@ def _build_index(
 
 def _resolve_edges(
     index: WorkspaceIndex,
-    raw_edges: list[tuple[str, str | None, str | None, str, int | None]],
+    raw_edges: list[tuple[str, str | None, str | None, str, int | None, str | None]],
     local_to_key: dict[tuple[str, str], str],
     name_to_keys: dict[str, list[str]],
     qname_to_keys: dict[str, list[str]],
@@ -250,7 +275,7 @@ def _resolve_edges(
     file_by_key = {n.key: n.file_path for n in index.nodes}
     seen: set[tuple[str, str, str]] = set()
 
-    for src_key, dst_local_id, dst_name, kind, line in raw_edges:
+    for src_key, dst_local_id, dst_name, kind, line, module_path in raw_edges:
         dst_key: str | None = None
         if dst_local_id is not None:
             src_file = file_by_key.get(src_key, "")
@@ -271,6 +296,20 @@ def _resolve_edges(
             )
 
         if dst_key is None or dst_key == src_key:
+            # An import that doesn't resolve *within this workspace* may
+            # still resolve to a sibling repo in the same project — keep the
+            # raw reference instead of dropping it outright like every other
+            # unresolved edge kind.
+            if dst_key is None and kind == EDGE_IMPORTS and module_path:
+                index.unresolved_imports.append(
+                    UnresolvedImport(
+                        src_key=src_key,
+                        module_path=module_path,
+                        dst_name_hint=dst_name,
+                        file_path=file_by_key.get(src_key, ""),
+                        line=line,
+                    )
+                )
             continue
         dedupe = (src_key, dst_key, kind)
         if dedupe in seen:

@@ -28,7 +28,9 @@ import { HandoffCard } from './HandoffCard'
 import { CompactionDivider } from './CompactionDivider'
 import { ImageAttachment } from './ImageAttachment'
 import { FileCard } from './FileCard'
-import { AssistantTurn } from './AssistantTurnFooter'
+import { AssistantTurnFooter } from './AssistantTurnFooter'
+import { groupConsecutiveToolCalls, ToolCallGroupCard } from './ToolCallGroup'
+import type { ToolBlockGroup } from './ToolCallGroup'
 import { PendingMessageQueue } from './PendingMessageQueue'
 import { getVisibleTurnWindow, partitionTurns } from '@/utils/turns'
 import { latestDirectUserBlockId, mergeBlocks } from '@/utils/blocks'
@@ -610,31 +612,55 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                  }
                  // Me only the trailing turn (no user block after) can be "live"
                   const isTrailingTurn = globalTurnIndex === turnItems.length - 1
+                  const turnIsStreaming = isWorking && isTrailingTurn
+                  const canContinue = isTrailingTurn && !isWorking ? onContinue : undefined
+                  // Don't collapse the live streaming turn — keep per-tool cards
+                  // visible so long runs show real-time activity instead of a
+                  // static "Read N files" row while the agent is still working.
+                  const groupedBlocks = turnIsStreaming
+                    ? item.blocks
+                    : groupConsecutiveToolCalls(item.blocks)
+                  // Map blockId → absolute index for streaming detection inside groups
+                  const blockAbsIdx = new Map(item.blocks.map((b, j) => [b.id, item.startIndex + j]))
                  return (
                    <div key={`turn-${item.startIndex}-${item.blocks[0]?.id ?? k}`}>
                      <div className="mb-2 flex items-center gap-1.5">
                        <img src={EvoFluxLogo} width={14} height={14} className="rounded-xs opacity-70" alt="" aria-hidden="true" />
                        <span className="text-xs font-medium text-(--color-text-muted)">{activeAgent ?? 'evoflux'}</span>
                      </div>
-                     <AssistantTurn
-                       blocks={item.blocks}
-                       startIndex={item.startIndex}
-                       finalizedCount={blocks.length}
-                       isWorking={isWorking}
-                       isTrailingTurn={isTrailingTurn}
-                       totalBlocks={allBlocks.length}
-                       size="roomy"
-                       onContinue={onContinue}
-                       renderBlock={({ block, isStreaming }) => (
-                         <BlockRenderer
-                           block={block}
-                           isStreaming={isStreaming}
-                           sessionId={sessionId}
-                           onRevert={isDirectUserBlock(block) && block.id === latestUserBlockId ? handleRevert : undefined}
-                           latestMCPAppBlockIds={latestMCPAppBlockIds}
+                     <div className="space-y-2">
+                       {groupedBlocks.map((renderItem, j) => {
+                         if ('kind' in renderItem && (renderItem as ToolBlockGroup).kind === 'group') {
+                           return (
+                             <ToolCallGroupCard
+                               key={`group-${item.startIndex}-${j}`}
+                               group={renderItem as ToolBlockGroup}
+                             />
+                           )
+                         }
+                         const block = renderItem as ContentBlock
+                         const absIdx = blockAbsIdx.get(block.id) ?? item.startIndex + j
+                         const isStreaming = isWorking && absIdx >= blocks.length
+                         return (
+                           <div key={block.id} className={isStreaming ? 'block-reveal' : undefined}>
+                             <BlockRenderer
+                               block={block}
+                               isStreaming={isStreaming}
+                               sessionId={sessionId}
+                               onRevert={isDirectUserBlock(block) && block.id === latestUserBlockId ? handleRevert : undefined}
+                               latestMCPAppBlockIds={latestMCPAppBlockIds}
+                             />
+                           </div>
+                         )
+                       })}
+                       {!turnIsStreaming && (
+                         <AssistantTurnFooter
+                           turnBlocks={item.blocks}
+                           size="roomy"
+                           onContinue={canContinue}
                          />
                        )}
-                     />
+                     </div>
                    </div>
                  )
                 })}

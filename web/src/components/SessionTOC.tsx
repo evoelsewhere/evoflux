@@ -41,25 +41,23 @@ export function SessionTOC({ sessionId, className }: SessionTOCProps) {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          className={cn(
-            'inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs',
-            'text-(--color-text-muted) transition-colors',
-            'hover:bg-(--bg-hover) hover:text-(--color-text)',
-            'disabled:cursor-not-allowed disabled:opacity-40',
-            className,
-          )}
-          title="Session chapters (table of contents)"
-          disabled={isLoading}
-          aria-label="Session chapters"
-        >
-          <BookOpen size={14} />
-          {chapters.length > 0 && (
-            <span className="tabular-nums">{chapters.length}</span>
-          )}
-          <ChevronDown size={11} className="opacity-60" />
-        </button>
+      <DropdownMenuTrigger
+        className={cn(
+          'inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs',
+          'text-(--color-text-muted) transition-colors',
+          'hover:bg-(--bg-hover) hover:text-(--color-text)',
+          'disabled:cursor-not-allowed disabled:opacity-40',
+          className,
+        )}
+        title="Session chapters (table of contents)"
+        disabled={isLoading}
+        aria-label="Session chapters"
+      >
+        <BookOpen size={14} />
+        {chapters.length > 0 && (
+          <span className="tabular-nums">{chapters.length}</span>
+        )}
+        <ChevronDown size={11} className="opacity-60" />
       </DropdownMenuTrigger>
 
       <DropdownMenuContent align="end" className="w-72 max-h-80 overflow-y-auto">

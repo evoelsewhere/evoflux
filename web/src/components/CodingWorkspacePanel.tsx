@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { ChevronRight, FileText, Folder, GitCompare, Network, RefreshCw, X } from 'lucide-react'
+import { ChevronRight, FileText, Folder, GitCompare, Network, RefreshCw, Timer, X } from 'lucide-react'
 import { getCodingWorkspaceGitDiff, listCodingWorkspaceFiles } from '@/api/client'
 import { cn } from '@/lib/utils'
 import { queryKeys } from '@/queries'
@@ -10,58 +10,25 @@ import { workspaceLabel } from '@/utils/workspace'
 import { useReducedMotion } from '@/hooks/useReducedMotion'
 import { useResizableWidth } from '@/hooks/use-resizable-width'
 import { usePlatform } from '@/hooks/use-platform'
+import { useProjectQuery } from '@/queries/useProjectsQuery'
 import { CodeGraphPanel } from './CodeGraphPanel'
-import type { WorkspaceFileInfo, WorkspaceGitDiffResponse } from '@/api/types'
-
-interface TreeNode {
-  name: string
-  path: string
-  children: Map<string, TreeNode>
-  file?: WorkspaceFileInfo
-}
-
-type ChangedFileStatus = 'A' | 'M'
-
-interface ChangedFileInfo {
-  path: string
-  status: ChangedFileStatus
-  additions: number
-  deletions: number
-}
+import { CrossRepoLinksPanel } from './CrossRepoLinksPanel'
+import { DiffReviewPanel } from './DiffReviewPanel'
+import { MultiRepoFileTree } from './MultiRepoFileTree'
+import { ProjectCodeGraphPanel } from './ProjectCodeGraphPanel'
+import { TaskTimelinePanel } from './TaskTimelinePanel'
+import type { WorkspaceFileInfo } from '@/api/types'
+import {
+  buildTree,
+  collectChangedFiles,
+  type ChangedFileStatus,
+  type TreeNode,
+} from '@/utils/workspaceFileTree'
 
 const CHANGED_STATUS_LABELS: Record<ChangedFileStatus, string> = {
   A: 'Added',
   M: 'Modified',
-}
-
-function collectChangedFiles(diff?: WorkspaceGitDiffResponse): ChangedFileInfo[] {
-  const files = new Map<string, ChangedFileInfo>()
-  if (!diff?.is_git_repo) return []
-
-  let current: ChangedFileInfo | null = null
-  for (const line of diff.diff.split('\n')) {
-    if (line.startsWith('diff --git ')) {
-      const match = /^diff --git a\/(.*) b\/(.*)$/.exec(line)
-      if (!match?.[2]) {
-        current = null
-        continue
-      }
-      current = files.get(match[2]) ?? { path: match[2], status: 'M', additions: 0, deletions: 0 }
-      files.set(current.path, current)
-      continue
-    }
-    if (!current) continue
-    if (line.startsWith('new file mode')) current.status = 'A'
-    else if (line.startsWith('+') && !line.startsWith('+++')) current.additions += 1
-    else if (line.startsWith('-') && !line.startsWith('---')) current.deletions += 1
-  }
-
-  for (const path of diff.untracked ?? []) {
-    const existing = files.get(path)
-    if (existing) existing.status = 'A'
-    else files.set(path, { path, status: 'A', additions: 0, deletions: 0 })
-  }
-  return Array.from(files.values()).sort((a, b) => a.path.localeCompare(b.path))
+  D: 'Deleted',
 }
 
 function pathHasChangedDescendant(path: string, changedPaths: Set<string>): boolean {
@@ -72,26 +39,7 @@ function pathHasChangedDescendant(path: string, changedPaths: Set<string>): bool
   return false
 }
 
-function buildTree(files: WorkspaceFileInfo[]): TreeNode {
-  const root: TreeNode = { name: '/', path: '', children: new Map() }
-  for (const file of files) {
-    const parts = file.path.split('/')
-    let node = root
-    parts.forEach((part, index) => {
-      const path = parts.slice(0, index + 1).join('/')
-      let child = node.children.get(part)
-      if (!child) {
-        child = { name: part, path, children: new Map() }
-        node.children.set(part, child)
-      }
-      if (index === parts.length - 1) child.file = file
-      node = child
-    })
-  }
-  return root
-}
-
-function TreeNodeView({
+export function TreeNodeView({
   node,
   depth,
   selectedPath,
@@ -178,28 +126,42 @@ export function CodingWorkspacePanel({
   mobile = false,
   selectedFilePath = null,
   onFileSelect,
+  sessionId = null,
+  projectId = null,
+  isWorking = false,
 }: {
   workspace: string
   open: boolean
-  initialTab?: 'files' | 'changed' | 'graph'
+  initialTab?: 'files' | 'changed' | 'graph' | 'progress'
   onClose: () => void
   mobile?: boolean
   selectedFilePath?: string | null
   onFileSelect?: (file: WorkspaceFileInfo | null) => void
+  sessionId?: string | null
+  projectId?: string | null
+  isWorking?: boolean
 }) {
   const prefersReducedMotion = useReducedMotion()
   const { isMacOverlay } = usePlatform()
-  const [tab, setTab] = useState<'files' | 'changed' | 'graph'>(initialTab)
+  const [tab, setTab] = useState<'files' | 'changed' | 'graph' | 'progress'>(initialTab)
+  const projectQuery = useProjectQuery(projectId)
+  const project = projectQuery.data ?? null
+  // Drive multi/single-repo mode off the *primed* projectId, not the async
+  // project fetch — otherwise the single-workspace diff flashes while the
+  // project detail is still loading (see forge.tsx projectId priming).
+  const isProjectMode = projectId != null
+  // Single-workspace queries — dead in project mode (Files/Changed render
+  // MultiRepoFileTree/DiffReviewPanel instead), so skip the wasted fetch.
   const files = useQuery({
     queryKey: queryKeys.coding.files(workspace),
     queryFn: () => listCodingWorkspaceFiles(workspace),
-    enabled: open,
+    enabled: open && !isProjectMode,
     staleTime: 5_000,
   })
   const diff = useQuery({
     queryKey: queryKeys.coding.diff(workspace),
     queryFn: () => getCodingWorkspaceGitDiff(workspace),
-    enabled: open,
+    enabled: open && !isProjectMode,
     staleTime: 5_000,
   })
   const tree = buildTree(files.data?.files ?? [])
@@ -242,8 +204,23 @@ export function CodingWorkspacePanel({
         )}
         <div className="flex items-center justify-between border-b border-(--color-border) px-3 py-3">
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-(--color-text-subtle)">Workspace</p>
-            <p className="mt-1 truncate font-mono text-xs text-(--color-text)" title={workspace}>{workspaceLabel(workspace)}</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-(--color-text-subtle)">
+              {isProjectMode ? 'Project' : 'Workspace'}
+            </p>
+            {isProjectMode ? (
+              project ? (
+                <div className="mt-1 flex items-center gap-1.5">
+                  <p className="truncate text-xs font-medium text-(--color-text)">{project.name}</p>
+                  <span className="shrink-0 rounded-full bg-(--bg-key) px-1.5 py-0.5 text-[10px] text-(--color-text-muted)">
+                    {project.workspaces.length} repos
+                  </span>
+                </div>
+              ) : (
+                <p className="mt-1 truncate text-xs text-(--color-text-subtle)">Loading project…</p>
+              )
+            ) : (
+              <p className="mt-1 truncate font-mono text-xs text-(--color-text)" title={workspace}>{workspaceLabel(workspace)}</p>
+            )}
           </div>
           <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-md text-(--color-text-muted) hover:bg-(--bg-key) md:h-auto md:w-auto md:p-1" aria-label="Close workspace panel">
             <X size={16} />
@@ -252,7 +229,7 @@ export function CodingWorkspacePanel({
         <div className="flex border-b border-(--color-border) p-1">
           <button type="button" onClick={() => setTab('changed')} className={cn('flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs', tab === 'changed' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted)')}>
             <GitCompare size={13} /> Changed
-            {changedPaths.size > 0 && <span className="rounded-full bg-(--color-warning)/15 px-1.5 py-0.5 font-mono text-xs text-(--accent-orange-text)">{changedPaths.size}</span>}
+            {!isProjectMode && changedPaths.size > 0 && <span className="rounded-full bg-(--color-warning)/15 px-1.5 py-0.5 font-mono text-xs text-(--accent-orange-text)">{changedPaths.size}</span>}
           </button>
           <button type="button" onClick={() => setTab('files')} className={cn('flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs', tab === 'files' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted)')}>
             <Folder size={13} /> Files
@@ -260,16 +237,48 @@ export function CodingWorkspacePanel({
           <button type="button" onClick={() => setTab('graph')} className={cn('flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs', tab === 'graph' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted)')}>
             <Network size={13} /> Graph
           </button>
+          <button type="button" onClick={() => setTab('progress')} className={cn('flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs', tab === 'progress' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted)')}>
+            <Timer size={13} /> Progress
+          </button>
         </div>
         {tab === 'graph' ? (
-          <div className="min-h-0 flex-1">
-            <CodeGraphPanel workspace={workspace} onFileSelect={onFileSelect} />
+          <div className="flex min-h-0 flex-1 flex-col">
+            {isProjectMode ? (
+              project ? (
+                <>
+                  {project.workspaces.length > 1 && (
+                    <div className="shrink-0 border-b border-(--color-border) p-2">
+                      <CrossRepoLinksPanel project={project} />
+                    </div>
+                  )}
+                  <div className="min-h-0 flex-1">
+                    <ProjectCodeGraphPanel project={project} onFileSelect={onFileSelect} />
+                  </div>
+                </>
+              ) : (
+                <p className="px-2 py-4 text-xs text-(--color-text-subtle)">Loading project repositories…</p>
+              )
+            ) : (
+              <div className="min-h-0 flex-1">
+                <CodeGraphPanel workspace={workspace} onFileSelect={onFileSelect} />
+              </div>
+            )}
+          </div>
+        ) : tab === 'progress' ? (
+          <div className="min-h-0 flex-1 overflow-auto py-2">
+            <TaskTimelinePanel sessionId={sessionId} isWorking={isWorking} />
           </div>
         ) : (
           <>
         <div className={cn('min-h-0 flex-1 overflow-auto', tab === 'files' && 'p-2')}>
           {tab === 'changed' ? (
-            diff.isLoading || files.isLoading ? (
+            isProjectMode ? (
+              project ? (
+                <DiffReviewPanel project={project} className="p-2" />
+              ) : (
+                <p className="px-2 py-4 text-xs text-(--color-text-subtle)">Loading project repositories…</p>
+              )
+            ) : diff.isLoading || files.isLoading ? (
               <p className="px-2 py-4 text-xs text-(--color-text-subtle)">Loading changed files…</p>
             ) : diff.isError ? (
               <p className="px-2 py-4 text-xs text-(--color-error)">Failed to load changed files</p>
@@ -306,6 +315,12 @@ export function CodingWorkspacePanel({
                 </div>
               </div>
             )
+          ) : isProjectMode ? (
+            project ? (
+              <MultiRepoFileTree project={project} selectedFilePath={selectedFilePath} onFileSelect={onFileSelect} />
+            ) : (
+              <p className="px-2 py-4 text-xs text-(--color-text-subtle)">Loading project repositories…</p>
+            )
           ) : (
             files.isLoading ? (
               <p className="px-2 py-4 text-xs text-(--color-text-subtle)">Loading files…</p>
@@ -318,9 +333,11 @@ export function CodingWorkspacePanel({
             )
           )}
         </div>
-        <button type="button" onClick={() => { void files.refetch(); void diff.refetch() }} className="flex items-center justify-center gap-1.5 border-t border-(--color-border) px-3 py-2 text-xs text-(--color-text-muted) hover:bg-(--bg-key)">
-          <RefreshCw size={12} /> Refresh
-        </button>
+        {!isProjectMode && (
+          <button type="button" onClick={() => { void files.refetch(); void diff.refetch() }} className="flex items-center justify-center gap-1.5 border-t border-(--color-border) px-3 py-2 text-xs text-(--color-text-muted) hover:bg-(--bg-key)">
+            <RefreshCw size={12} /> Refresh
+          </button>
+        )}
           </>
         )}
       </div>

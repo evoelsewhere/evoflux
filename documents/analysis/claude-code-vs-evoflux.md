@@ -16,7 +16,7 @@
 | **Tool count** | ~40 tools | ~30 builtin tools |
 | **Skills** | 16 bundled | **40+ builtin skills** ✅ |
 | **Multi-agent** | Coordinator + Teams + InProcessTeammate | Team manager (multi-agent with roles) ✅ |
-| **Code intelligence** | LSPTool (live lang server) | **Code knowledge graph** (tree-sitter + semantic) ✅ |
+| **Code intelligence** | LSPTool (live lang server) | **Code knowledge graph** (tree-sitter + FTS5 lexical) ✅ |
 | **Memory** | CLAUDE.md hierarchy (project/user/team) | Wiki + memory_vector + dream scheduler |
 | **Context compression** | `/compact` (user-triggered) | `SummarizationHook` (auto at token threshold) |
 | **Permission system** | Wildcard rules + plan mode + ML auto-mode | Wildcard rules (ask/allow/deny) |
@@ -78,7 +78,7 @@ Claude Code can expose its own tools as an MCP server (`src/entrypoints/mcp.ts`)
 | Area | EvoFlux Advantage |
 |---|---|
 | **Skills library** | 40+ curated skills vs 16 in Claude Code |
-| **Code knowledge graph** | Semantic code search, call-graph traversal, incremental indexing — not in Claude Code |
+| **Code knowledge graph** | Lexical + structural code search, call-graph traversal, incremental indexing — not in Claude Code |
 | **Desktop UI** | Full browser-quality UI, file diff viewer, workspace panel — vs terminal text only |
 | **Multi-provider** | Supports Anthropic, Google, OpenAI, Ollama, etc. |
 | **Wiki / long-term memory** | Dream scheduler consolidates sessions into semantic wiki |
@@ -112,7 +112,7 @@ Claude Code can expose its own tools as an MCP server (`src/entrypoints/mcp.ts`)
 **Problem:** No guided path for "why is X not working".
 
 **Plan:**
-- Add `GET /api/health/diagnostics` endpoint that checks: provider API reachability, MCP server connectivity, disk space (workspace + DB), code graph index state, embedding model availability.
+- Add `GET /api/health/diagnostics` endpoint that checks: provider API reachability, MCP server connectivity, disk space (workspace + DB), code graph index state.
 - Add a `DiagnosticsPanel` reachable from settings or the header. Each check shows pass/fail/warn with a one-line fix hint.
 
 ---

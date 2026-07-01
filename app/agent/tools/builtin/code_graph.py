@@ -12,17 +12,21 @@ tools say so instead of guessing.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import Field
+from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.agent.sandbox import get_sandbox
 from app.agent.tools.registry import Tool
 from app.core.db import async_session_factory
-from app.models.code_graph import CodeNode
+from app.models.chat import CodingWorkspace
+from app.models.code_graph import CodeNode, CrossRepoEdge
 from app.services import code_graph_service as svc
+from app.services import coding_project_service as proj_svc
 
 _NOT_INDEXED = (
     "This workspace has no code index yet. Build one first "
@@ -297,20 +301,59 @@ async def _code_references(
         )
         if not matches:
             return f"No symbol named '{name}' in the code index."
+        # A symbol can be the resolution target of a cross-repo reference from
+        # a sibling repo in the same project — surface those alongside
+        # same-repo references so "where is X used?" covers the whole project,
+        # not just the active workspace.
+        project_ids = await proj_svc.get_projects_for_workspace(db, workspace_id)
         sections: list[str] = []
         for node in matches:
             refs = await svc.find_references(
                 db, workspace_id=workspace_id, node_id=node.id, limit=capped
             )
-            sections.append(_render_references(node, refs))
+            cross_repo = await _find_cross_repo_references(db, project_ids, node.id)
+            sections.append(_render_references(node, refs, cross_repo))
     return "\n\n".join(sections)
 
 
+async def _find_cross_repo_references(
+    db: AsyncSession, project_ids: list[UUID], node_id: UUID
+) -> list[tuple[CrossRepoEdge, str]]:
+    """Resolved CrossRepoEdge rows from a sibling repo pointing at ``node_id``.
+
+    Returns ``(edge, src_repo_label)`` pairs — the label is the source repo's
+    directory name, resolved in one batched query rather than per-edge.
+    """
+    if not project_ids:
+        return []
+    edges = (
+        await db.exec(
+            select(CrossRepoEdge).where(
+                col(CrossRepoEdge.project_id).in_(project_ids),
+                col(CrossRepoEdge.dst_node_id) == node_id,
+                col(CrossRepoEdge.status) == "resolved",
+            )
+        )
+    ).all()
+    if not edges:
+        return []
+    ws_ids = {edge.src_workspace_id for edge in edges}
+    workspaces = (
+        await db.exec(
+            select(CodingWorkspace).where(col(CodingWorkspace.id).in_(ws_ids))
+        )
+    ).all()
+    label_by_ws = {ws.id: (ws.name or ws.path.rsplit("/", 1)[-1]) for ws in workspaces}
+    return [(edge, label_by_ws.get(edge.src_workspace_id, "?")) for edge in edges]
+
+
 def _render_references(
-    node: CodeNode, refs: list[tuple[str, CodeNode, int | None]]
+    node: CodeNode,
+    refs: list[tuple[str, CodeNode, int | None]],
+    cross_repo: Sequence[tuple[CrossRepoEdge, str]] = (),
 ) -> str:
     head = f"References to [{node.kind}] {node.qualified_name} — {_loc(node)}"
-    if not refs:
+    if not refs and not cross_repo:
         return f"{head}\n  (no references found)"
     rows: list[str] = []
     for edge_kind, src_node, line in refs:
@@ -318,7 +361,13 @@ def _render_references(
         rows.append(
             f"  {edge_kind} ← [{src_node.kind}] {src_node.qualified_name} — {loc}"
         )
-    return head + f" ({len(refs)} refs)\n" + "\n".join(rows)
+    total = len(refs) + len(cross_repo)
+    if cross_repo:
+        rows.append("  Cross-repo:")
+        for edge, repo_label in cross_repo:
+            loc = f"{edge.src_file_path}:{edge.src_line}" if edge.src_line else edge.src_file_path
+            rows.append(f"    {edge.kind} ← {repo_label}/{loc} (`{edge.raw_reference}`)")
+    return head + f" ({total} refs)\n" + "\n".join(rows)
 
 
 code_references = Tool(

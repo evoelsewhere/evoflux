@@ -113,7 +113,7 @@ class TreeSitterParser:
             root,
             source,
             result,
-            prefix="",
+            prefix=self.root_prefix(root, source),
             parent_local_id="<file>",
             inside_class=False,
             depth=0,
@@ -121,6 +121,13 @@ class TreeSitterParser:
         return result
 
     # -- hooks (override in subclasses) -------------------------------------
+    def root_prefix(self, root: Node, source: bytes) -> str:
+        """Qualified-name prefix derived from file-level context (e.g. a Java
+        ``package`` declaration). Applied to every top-level symbol in the
+        file, same as the ``prefix`` a nested class applies to its members.
+        """
+        return ""
+
     def classify(
         self, node: Node, source: bytes, *, inside_class: bool
     ) -> Definition | None:
@@ -260,6 +267,7 @@ class TreeSitterParser:
                         kind=EDGE_IMPORTS,
                         dst_name=imp.name,
                         line=node.start_point[0] + 1,
+                        module_path=imp.module_path,
                     )
                 )
             child_prefix = prefix

@@ -455,6 +455,34 @@ class TaskScheduler:
         # Remove ourselves from the tracking dict
         self._tasks.pop(task.id, None)
 
+    async def _project_extra_paths(
+        self, session_id: str | None, primary_workspace: str
+    ) -> list[str] | None:
+        """Return a project session's non-primary repo paths, or ``None``.
+
+        Best-effort: only resolves when the session row already exists and
+        carries a ``project_id``. On the very first firing of a fresh project
+        session the row may not exist yet, so multi-repo context attaches from
+        the next run onward. Mirrors the derivation in POST /team/chat.
+        """
+        if not session_id:
+            return None
+        try:
+            sid_uuid = UUID(session_id)
+        except ValueError:
+            return None
+
+        from app.models.chat import ChatSession
+        from app.services.coding_project_service import get_project_workspace_paths
+
+        async with self._db() as db:
+            row = await db.get(ChatSession, sid_uuid)
+            if row is None or row.project_id is None:
+                return None
+            all_paths = await get_project_workspace_paths(db, row.project_id)
+        extras = [p for p in all_paths if p != primary_workspace]
+        return extras or None
+
     async def _fire_task(self, task: ScheduledTask) -> None:
         """Execute one scheduled firing of *task*."""
         from app.services import team_manager
@@ -496,8 +524,17 @@ class TaskScheduler:
                     raise NoTeamConfigured(
                         "Task has mode='coding' but no workspace configured."
                     )
+                # If this scheduled session belongs to a multi-repo project,
+                # pass the project's other repos so the agent gets full
+                # multi-repo context (installs MultiRepoContextHook), mirroring
+                # POST /team/chat.
+                extra_ws_paths = await self._project_extra_paths(
+                    resolved_sid, task.workspace
+                )
                 team = await team_manager.get_or_start_coding_team(
-                    task.workspace, f"scheduler:{task.id}"
+                    task.workspace,
+                    f"scheduler:{task.id}",
+                    extra_workspace_paths=extra_ws_paths,
                 )
             else:
                 team = await team_manager.get_or_start_team()

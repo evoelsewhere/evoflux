@@ -87,6 +87,11 @@ class SandboxConfig:
         max_execution_seconds: int | None = None,
         max_output_bytes: int | None = None,
         allow_network: bool | None = None,
+        # Other repos in the same CodingProject, if this session is
+        # project-scoped. Lets tools that call get_sandbox() (e.g.
+        # code_cross_repo_search) see the full repo set without a
+        # model-facing "workspace_paths" argument on every one of them.
+        extra_workspace_paths: list[str] | None = None,
         # Kept for backward compatibility — ignored.
         memory: str | None = None,
     ):
@@ -97,6 +102,7 @@ class SandboxConfig:
             )
         self.workspace_root: Path = Path(workspace).resolve()
         self.session_id = session_id
+        self.extra_workspace_paths: list[str] = list(extra_workspace_paths or [])
         self.workspace_root.mkdir(parents=True, exist_ok=True)
 
         if denied_roots is None:
