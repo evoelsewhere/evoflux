@@ -834,3 +834,76 @@ export interface TodoItem {
 export interface TodosResponse {
   todos: TodoItem[]
 }
+
+// ── Git / Source Control ────────────────────────────────────────────────────
+
+export interface ChangedFile {
+  path: string
+  status: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked' | 'unmerged'
+  staged: boolean
+  old_path?: string
+}
+
+export interface GitChangesResponse {
+  branch: string | null
+  ahead: number
+  behind: number
+  files: ChangedFile[]
+}
+
+export interface GitCommitResponse {
+  sha: string
+  message: string
+}
+
+export interface GitBranch {
+  name: string
+  current: boolean
+  remote: string | null
+  ahead: number
+  behind: number
+}
+
+export interface GitMergeResponse {
+  success: boolean
+  conflicts: string[]
+  message: string
+}
+
+export interface GitJobOut {
+  workspace: string
+  op: string
+  status: string
+  message: string
+  error: string | null
+}
+
+export interface GitLogEntry {
+  sha: string
+  short_sha: string
+  author: string
+  date: string
+  message: string
+}
+
+export interface GitLogResponse {
+  entries: GitLogEntry[]
+  has_more: boolean
+}
+
+export interface GitLogFile {
+  path: string
+  status: string
+}
+
+export interface GitStash {
+  index: number
+  message: string
+  sha: string
+}
+
+export interface GitConflictsResponse {
+  conflicted: boolean
+  operation: string | null
+  files: string[]
+}

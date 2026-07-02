@@ -83,9 +83,10 @@ export interface DiffReviewPanelProps {
   project?: CodingProject | null
   workspacePaths?: string[]
   className?: string
+  onOpenRepo?: (path: string) => void
 }
 
-export function DiffReviewPanel({ project, workspacePaths, className }: DiffReviewPanelProps) {
+export function DiffReviewPanel({ project, workspacePaths, className, onOpenRepo }: DiffReviewPanelProps) {
   const paths = useMemo(() => {
     if (project) return project.workspaces.map((w) => w.path)
     return workspacePaths ?? []
@@ -200,10 +201,51 @@ export function DiffReviewPanel({ project, workspacePaths, className }: DiffRevi
             className="rounded-md border border-(--color-border) overflow-hidden"
           >
             {/* Repo header */}
-            <div className={cn(
-              'flex items-center gap-2 px-3 py-1.5',
-              'bg-(--bg-subtle) border-b border-(--color-border)',
-            )}>
+            {onOpenRepo ? (
+              <button
+                type="button"
+                onClick={() => onOpenRepo(repo.path)}
+                className={cn(
+                  'flex w-full items-center gap-2 px-3 py-1.5',
+                  'bg-(--bg-subtle) border-b border-(--color-border)',
+                  'hover:bg-(--bg-key) transition-colors text-left',
+                )}
+              >
+                <GitBranch size={12} className="shrink-0 text-(--color-text-muted)" />
+                <span className="flex-1 truncate text-xs font-medium text-(--color-text)">
+                  {repo.name}
+                </span>
+                {repo.isLoading && <Loader2 size={11} className="animate-spin text-(--color-text-muted)" />}
+                {repo.isError && (
+                  <span
+                    className="flex items-center gap-1 text-[10px] text-red-400"
+                    title={repo.error instanceof Error ? repo.error.message : 'Failed to load diff'}
+                  >
+                    <AlertCircle size={11} />
+                    failed
+                  </span>
+                )}
+                {!repo.isLoading && !repo.isError && !repo.isGitRepo && (
+                  <span className="text-[10px] text-amber-400" title="This workspace is not a git repository">
+                    not a git repo
+                  </span>
+                )}
+                {!repo.isLoading && !repo.isError && repo.isGitRepo && repo.files.length === 0 && (
+                  <span className="text-[10px] text-(--color-text-muted)">clean</span>
+                )}
+                {repo.files.length > 0 && (
+                  <span className="rounded-full bg-(--bg-key) px-1.5 py-0.5 text-[10px] text-(--color-text-muted)">
+                    {repo.files.length}
+                  </span>
+                )}
+              </button>
+            ) : (
+              <div
+                className={cn(
+                  'flex items-center gap-2 px-3 py-1.5',
+                  'bg-(--bg-subtle) border-b border-(--color-border)',
+                )}
+              >
               <GitBranch size={12} className="shrink-0 text-(--color-text-muted)" />
               <span className="flex-1 truncate text-xs font-medium text-(--color-text)">
                 {repo.name}
@@ -232,6 +274,7 @@ export function DiffReviewPanel({ project, workspacePaths, className }: DiffRevi
                 </span>
               )}
             </div>
+            )}
 
             {/* File list */}
             {repo.files.length > 0 && (

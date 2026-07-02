@@ -100,6 +100,16 @@ export const queryKeys = {
       ['projects', 'detail', id, 'code-graph-search', query] as const,
     codeGraphData: (id: string) => ['projects', 'detail', id, 'code-graph-data'] as const,
   },
+  git: {
+    changes: (ws: string) => ['git', ws, 'changes'] as const,
+    branches: (ws: string) => ['git', ws, 'branches'] as const,
+    log: (ws: string, page: number) => ['git', ws, 'log', page] as const,
+    logFiles: (ws: string, sha: string) => ['git', ws, 'log', sha, 'files'] as const,
+    stashes: (ws: string) => ['git', ws, 'stashes'] as const,
+    jobs: (ws: string) => ['git', ws, 'jobs'] as const,
+    conflicts: (ws: string) => ['git', ws, 'conflicts'] as const,
+    diffView: (ws: string, path: string) => ['git', ws, 'diff-view', path] as const,
+  },
   mcp: {
     all: () => ['mcp'] as const,
     list: () => ['mcp', 'list'] as const,
