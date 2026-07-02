@@ -80,6 +80,32 @@ async def _reindex(client, workspace: Path) -> None:
     await _wait_until_indexed(client, workspace)
 
 
+async def _resolve_static(client, project_id) -> dict:
+    """Kick off a resolve pass and wait for it to finish.
+
+    ``POST .../resolve`` always starts a fire-and-forget background job and
+    replies 202 (or 200 if one was already mid-flight) before it completes —
+    the response body never carries finished stats. Poll ``.../status``
+    instead and read stats off the settled job.
+    """
+    res = await client.post(
+        f"/api/team/projects/{project_id}/cross-repo/resolve", json={"use_llm": False}
+    )
+    assert res.status_code in (200, 202)
+    for _ in range(300):
+        status_res = await client.get(
+            f"/api/team/projects/{project_id}/cross-repo/status"
+        )
+        assert status_res.status_code == 200
+        body = status_res.json()
+        if not body["running"]:
+            job = body["job"]
+            assert job["error"] is None, job["error"]
+            return job["stats"]
+        await asyncio.sleep(0.02)
+    raise AssertionError("cross-repo resolve job did not finish in time")
+
+
 @pytest.mark.asyncio
 async def test_resolve_requires_existing_project(client):
     import uuid
@@ -113,22 +139,14 @@ async def test_resolve_sync_static_only(client, java_project_repos):
 
     # repo-b (the resolution target) hasn't been indexed yet — Tier A should
     # find nothing to link against.
-    res = await client.post(
-        f"/api/team/projects/{project_id}/cross-repo/resolve", json={"use_llm": False}
-    )
-    assert res.status_code == 200
-    stats = res.json()
+    stats = await _resolve_static(client, project_id)
     assert stats["static_resolved"] == 0
     assert stats["still_unresolved"] == 1
 
     # Index repo-b, then resolving again should find the FQN match.
     await _reindex(client, repo_b)
 
-    res = await client.post(
-        f"/api/team/projects/{project_id}/cross-repo/resolve", json={"use_llm": False}
-    )
-    assert res.status_code == 200
-    stats = res.json()
+    stats = await _resolve_static(client, project_id)
     assert stats["static_resolved"] == 1
     assert stats["still_unresolved"] == 0
 

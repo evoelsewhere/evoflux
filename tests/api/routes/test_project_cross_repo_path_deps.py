@@ -63,11 +63,29 @@ async def _reindex(client, workspace: Path) -> None:
 
 
 async def _resolve_static(client, project_id) -> dict:
+    """Kick off a resolve pass and wait for it to finish.
+
+    ``POST .../resolve`` always starts a fire-and-forget background job and
+    replies 202 (or 200 if one was already mid-flight) before it completes —
+    the response body never carries finished stats. Poll ``.../status``
+    instead and read stats off the settled job.
+    """
     res = await client.post(
         f"/api/team/projects/{project_id}/cross-repo/resolve", json={"use_llm": False}
     )
-    assert res.status_code == 200
-    return res.json()
+    assert res.status_code in (200, 202)
+    for _ in range(300):
+        status_res = await client.get(
+            f"/api/team/projects/{project_id}/cross-repo/status"
+        )
+        assert status_res.status_code == 200
+        body = status_res.json()
+        if not body["running"]:
+            job = body["job"]
+            assert job["error"] is None, job["error"]
+            return job["stats"]
+        await asyncio.sleep(0.02)
+    raise AssertionError("cross-repo resolve job did not finish in time")
 
 
 async def _edges(client, project_id) -> list[dict]:
