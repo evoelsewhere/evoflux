@@ -1,4 +1,4 @@
-"""Tests for cross-repo resolution Tier B (FTS5 lexical narrowing + LLM fallback).
+"""Tests for cross-repo resolution Tier B (FTS5 lexical narrowing).
 
 Tier A (static FQN/manifest matching) and its own tests live in
 ``tests/api/routes/test_project_cross_repo.py``. These tests exercise
@@ -10,29 +10,15 @@ pipeline.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
 import app.core.db as db_module
-import app.services.code_graph.cross_repo_llm as cross_repo_llm
 from app.services.code_graph import fts_store
-from app.services.code_graph.cross_repo_llm import (
-    _build_repo_context,
-    resolve_project_tier_b,
-)
-from app.services.coding_project_service import create_project, get_project_workspaces
+from app.services.code_graph.cross_repo_llm import resolve_project_tier_b
+from app.services.coding_project_service import create_project
 from app.services.coding_workspace_service import upsert_coding_workspace
-
-
-class _FakeProvider:
-    def __init__(self, response_text: str) -> None:
-        self._response_text = response_text
-
-    async def chat(self, _messages, **_kwargs):
-        return SimpleNamespace(content=self._response_text)
 
 
 async def _setup_project(tmp_path: Path):
@@ -122,7 +108,6 @@ async def test_tier_b_auto_resolves_single_exact_match(setup_db, tmp_path: Path)
         stats = await resolve_project_tier_b(db, project_id=project_id)
 
     assert stats.lexical_resolved == 1
-    assert stats.llm_resolved == 0
 
     async with db_module.async_session_factory() as db:
         from app.models.code_graph import CrossRepoEdge
@@ -150,13 +135,11 @@ async def test_tier_b_leaves_unresolved_when_no_candidates(setup_db, tmp_path: P
         await db.commit()
         edge_id = edge.id
 
-    # repo_b has no FTS entries at all, and no LLM model is configured
-    # anywhere — nothing for Tier B to find or guess with.
+    # repo_b has no FTS entries at all — nothing for Tier B to find.
     async with db_module.async_session_factory() as db:
         stats = await resolve_project_tier_b(db, project_id=project_id)
 
     assert stats.lexical_resolved == 0
-    assert stats.llm_resolved == 0
 
     async with db_module.async_session_factory() as db:
         from app.models.code_graph import CrossRepoEdge
@@ -167,11 +150,9 @@ async def test_tier_b_leaves_unresolved_when_no_candidates(setup_db, tmp_path: P
 
 
 @pytest.mark.asyncio
-async def test_tier_b_does_not_guess_when_ambiguous_and_no_llm_model(
-    setup_db, tmp_path: Path
-):
-    """Two equally-named candidates and no configured LLM model must not
-    auto-resolve — a wrong guess is worse than staying unresolved."""
+async def test_tier_b_does_not_guess_when_ambiguous(setup_db, tmp_path: Path):
+    """Two equally-named candidates must not auto-resolve — a wrong guess is
+    worse than staying unresolved."""
     project_id, repo_a_id, repo_b_id = await _setup_project(tmp_path)
 
     async with db_module.async_session_factory() as db:
@@ -207,13 +188,9 @@ async def test_tier_b_does_not_guess_when_ambiguous_and_no_llm_model(
     )
 
     async with db_module.async_session_factory() as db:
-        # No llm_model configured anywhere (CrossRepoSettings.llm_model
-        # defaults to "") — the ambiguous candidate set must be left alone
-        # rather than guessed at.
         stats = await resolve_project_tier_b(db, project_id=project_id)
 
     assert stats.lexical_resolved == 0
-    assert stats.llm_resolved == 0
 
     async with db_module.async_session_factory() as db:
         from app.models.code_graph import CrossRepoEdge
@@ -222,136 +199,10 @@ async def test_tier_b_does_not_guess_when_ambiguous_and_no_llm_model(
         assert refreshed.status == "unresolved"
 
 
-# ── P1: manifest/config context + EXTERNAL classification ──────────────────
-
-
-@pytest.mark.asyncio
-async def test_build_repo_context_includes_manifest_identity(setup_db, tmp_path: Path):
-    repo_a = tmp_path / "repo-a"
-    repo_b = tmp_path / "repo-b"
-    repo_a.mkdir()
-    repo_b.mkdir()
-    (repo_a / "package.json").write_text(json.dumps({"name": "shared"}))
-
-    async with db_module.async_session_factory() as db:
-        project = await create_project(
-            db, name="Context Test", workspace_paths=[str(repo_a), str(repo_b)]
-        )
-        await db.commit()
-        pairs = await get_project_workspaces(db, project.id)
-
-    context = _build_repo_context(pairs)
-    assert "Project repos:" in context
-    assert "npm:shared" in context
-    assert "no manifest identity found" in context  # repo_b has no manifest
-
-
-@pytest.mark.asyncio
-async def test_tier_b_llm_classifies_external_when_no_candidates(
-    setup_db, tmp_path: Path, monkeypatch
-):
-    """A reference the static pre-filter didn't catch (e.g. seeded directly,
-    bypassing is_likely_external) but that the LLM recognizes as a
-    third-party dependency — repo_b has zero matching FTS entries, so this
-    only reaches the LLM at all because zero-candidate rows are now queued
-    instead of silently skipped."""
-    project_id, repo_a_id, repo_b_id = await _setup_project(tmp_path)
-
-    async with db_module.async_session_factory() as db:
-        edge = await _seed_unresolved_edge(
-            db,
-            project_id=project_id,
-            src_workspace_id=repo_a_id,
-            raw_reference="liquibase.change.ChangeMetadata",
-            dst_name_hint="ChangeMetadata",
-        )
-        await db.commit()
-        edge_id = edge.id
-
-    monkeypatch.setattr(
-        cross_repo_llm,
-        "build_provider",
-        lambda _model: _FakeProvider("1: EXTERNAL 90"),
-    )
-
-    async with db_module.async_session_factory() as db:
-        stats = await resolve_project_tier_b(
-            db, project_id=project_id, llm_model="fake:model"
-        )
-
-    assert stats.llm_resolved == 0
-    assert stats.llm_external == 1
-
-    async with db_module.async_session_factory() as db:
-        from app.models.code_graph import CrossRepoEdge
-
-        refreshed = await db.get(CrossRepoEdge, edge_id)
-        assert refreshed.status == "external"
-        assert refreshed.method == "llm"
-        assert refreshed.confidence == pytest.approx(0.9)
-        assert "external dependency" in refreshed.rationale
-
-
-@pytest.mark.asyncio
-async def test_tier_b_llm_match_still_works_with_repo_context(
-    setup_db, tmp_path: Path, monkeypatch
-):
-    """Regression check: adding repo context to the prompt must not break
-    the existing MATCH <letter> <confidence> parsing path."""
-    project_id, repo_a_id, repo_b_id = await _setup_project(tmp_path)
-
-    async with db_module.async_session_factory() as db:
-        node1 = await _seed_node(
-            db, workspace_id=repo_b_id, name="Logger", qualified_name="com.example.a.Logger"
-        )
-        node2 = await _seed_node(
-            db, workspace_id=repo_b_id, name="Logger", qualified_name="com.example.b.Logger"
-        )
-        edge = await _seed_unresolved_edge(
-            db,
-            project_id=project_id,
-            src_workspace_id=repo_a_id,
-            raw_reference="com.example.c.Logger",
-            dst_name_hint="Logger",
-        )
-        await db.commit()
-        edge_id = edge.id
-        n1_id = node1.id
-
-    _index_fts(
-        repo_b_id,
-        [
-            (str(node1.id), "Logger", "com.example.a.Logger"),
-            (str(node2.id), "Logger", "com.example.b.Logger"),
-        ],
-    )
-
-    monkeypatch.setattr(
-        cross_repo_llm,
-        "build_provider",
-        lambda _model: _FakeProvider("1: MATCH a 85"),
-    )
-
-    async with db_module.async_session_factory() as db:
-        stats = await resolve_project_tier_b(
-            db, project_id=project_id, llm_model="fake:model"
-        )
-
-    assert stats.llm_resolved == 1
-    assert stats.llm_external == 0
-
-    async with db_module.async_session_factory() as db:
-        from app.models.code_graph import CrossRepoEdge
-
-        refreshed = await db.get(CrossRepoEdge, edge_id)
-        assert refreshed.status == "resolved"
-        assert refreshed.dst_node_id == n1_id
-        assert refreshed.confidence == pytest.approx(0.85)
-
-
 @pytest.mark.asyncio
 async def test_tier_b_row_cap(setup_db, tmp_path: Path, monkeypatch):
     from app.core import runtime_settings as rs_module
+    from app.services.code_graph import cross_repo_llm
 
     project_id, repo_a_id, repo_b_id = await _setup_project(tmp_path)
 
@@ -370,7 +221,6 @@ async def test_tier_b_row_cap(setup_db, tmp_path: Path, monkeypatch):
     def _capped_settings():
         settings = original_load()
         settings.cross_repo.max_rows_per_run = 2
-        settings.cross_repo.llm_enabled = False
         return settings
 
     monkeypatch.setattr(cross_repo_llm, "load_runtime_settings", _capped_settings)
