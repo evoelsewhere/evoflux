@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -61,14 +62,8 @@ def snapshot_dir(session_id: str) -> Path:
 
 
 def is_available() -> bool:
-    """Return True when the ``git`` binary is on PATH and subprocess is supported."""
-    return not _subprocess_unsupported and shutil.which("git") is not None
-
-
-# Set to True the first time asyncio raises NotImplementedError (Windows
-# SelectorEventLoop does not support subprocesses).  Once set, is_available()
-# returns False so subsequent calls skip snapshot work immediately.
-_subprocess_unsupported: bool = False
+    """Return True when the ``git`` binary is on PATH."""
+    return shutil.which("git") is not None
 
 
 async def _git(
@@ -86,26 +81,38 @@ async def _git(
     if env:
         merged_env.update(env)
     try:
-        proc = await asyncio.create_subprocess_exec(
-            "git",
-            *args,
-            cwd=str(cwd) if cwd else None,
-            env=merged_env,
-            stdin=asyncio.subprocess.PIPE if stdin is not None else None,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        out, err = await proc.communicate(stdin)
-        return proc.returncode or 0, out, err
-    except (OSError, asyncio.CancelledError, NotImplementedError) as exc:
-        if isinstance(exc, NotImplementedError):
-            global _subprocess_unsupported
-            _subprocess_unsupported = True
-            logger.info(
-                "snapshot_subprocess_unavailable reason=\'asyncio.create_subprocess_exec not supported on this event loop (Windows SelectorEventLoop)\' snapshots=disabled"
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "git",
+                *args,
+                cwd=str(cwd) if cwd else None,
+                env=merged_env,
+                stdin=asyncio.subprocess.PIPE if stdin is not None else None,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
-        else:
-            logger.warning("snapshot_git_spawn_failed args={} error={}", args, repr(exc))
+            out, err = await proc.communicate(stdin)
+            return proc.returncode or 0, out, err
+        except NotImplementedError:
+            # Windows SelectorEventLoop does not support asyncio subprocess
+            # transports. Uvicorn forces this loop under --reload / multiple
+            # workers (see uvicorn.loops.asyncio.asyncio_loop_factory), which
+            # asyncio.set_event_loop_policy() cannot override. Fall back to
+            # synchronous subprocess.run() in a thread, as shell.py/python.py do.
+            def _run_sync() -> tuple[int, bytes, bytes]:
+                completed = subprocess.run(  # noqa: S603
+                    ["git", *args],
+                    cwd=str(cwd) if cwd else None,
+                    env=merged_env,
+                    input=stdin,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+                return completed.returncode, completed.stdout, completed.stderr
+
+            return await asyncio.to_thread(_run_sync)
+    except (OSError, asyncio.CancelledError) as exc:
+        logger.warning("snapshot_git_spawn_failed args={} error={}", args, repr(exc))
         return 1, b"", b""
 
 
@@ -126,12 +133,11 @@ async def _init_repo(gitdir: Path, worktree: Path) -> bool:
         env={"GIT_DIR": str(gitdir), "GIT_WORK_TREE": str(worktree)},
     )
     if code != 0:
-        if not _subprocess_unsupported:
-            logger.warning(
-                "snapshot_init_failed gitdir={} stderr={}",
-                gitdir,
-                err.decode(errors="replace"),
-            )
+        logger.warning(
+            "snapshot_init_failed gitdir={} stderr={}",
+            gitdir,
+            err.decode(errors="replace"),
+        )
         return False
 
     for key, value in (
