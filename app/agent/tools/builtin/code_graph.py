@@ -13,6 +13,7 @@ tools say so instead of guessing.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -70,6 +71,9 @@ async def _code_search(
     case-insensitive substring matches over symbol name and qualified name.
     Returns each hit as ``[kind] qualified_name — file:line`` plus its
     signature. Optionally restrict to a single ``kind``.
+
+    In a multi-repo project, also searches sibling repos and groups results
+    by repo so you can see where the symbol lives across the whole project.
     """
     capped = max(1, min(limit, 50))
     async with async_session_factory() as db:
@@ -79,11 +83,46 @@ async def _code_search(
         nodes = await svc.search_nodes(
             db, workspace_id=workspace_id, query=query, kind=kind, limit=capped
         )
-    if not nodes:
+
+        project_ids = await proj_svc.get_projects_for_workspace(db, workspace_id)
+        cross_repo_nodes: list[tuple[str, CodeNode]] = []
+        if project_ids:
+            project_id = project_ids[0]
+            pairs = await proj_svc.get_project_workspaces(db, project_id)
+            sibling_paths = [
+                ws.path for _, ws in pairs if str(ws.id) != str(workspace_id)
+            ]
+            if sibling_paths:
+                cross_repo_nodes = await svc.search_across_workspaces(
+                    db,
+                    workspace_paths=sibling_paths,
+                    query=query,
+                    kind=kind,
+                    limit_per_workspace=min(capped, 5),
+                )
+
+    if not nodes and not cross_repo_nodes:
         return f"No symbols matched '{query}'."
-    header = f"Found {len(nodes)} symbol(s) for '{query}':"
-    body = "\n".join(_node_line(i, n) for i, n in enumerate(nodes, start=1))
-    return f"{header}\n{body}"
+
+    sections: list[str] = []
+    if nodes:
+        header = f"Active repo — {len(nodes)} hit(s) for '{query}':"
+        body = "\n".join(_node_line(i, n) for i, n in enumerate(nodes, start=1))
+        sections.append(f"{header}\n{body}")
+
+    if cross_repo_nodes:
+        grouped: dict[str, list[CodeNode]] = {}
+        for path, node in cross_repo_nodes:
+            grouped.setdefault(path, []).append(node)
+        for path, repo_nodes in grouped.items():
+            label = Path(path).name or path
+            lines = "\n".join(
+                f"  {i}. [{n.kind}] {n.qualified_name} — {_loc(n)}"
+                for i, n in enumerate(repo_nodes, start=1)
+            )
+            sections.append(f"{label} ({path}):\n{lines}")
+
+    return "\n\n".join(sections)
 
 
 async def _code_symbol(
@@ -95,8 +134,8 @@ async def _code_symbol(
 
     Returns the symbol's kind, location, signature, docstring (truncated), and
     a one-line tally of its direct relationships (what it calls, who calls it,
-    what it inherits). Use this to understand a specific function/class/method
-    before deciding whether to open the file.
+    what it inherits). In a multi-repo project, also surfaces cross-repo
+    references pointing at this symbol from sibling repos.
     """
     async with async_session_factory() as db:
         workspace_id = await _resolve_workspace(db)
@@ -107,6 +146,7 @@ async def _code_symbol(
         )
         if not matches:
             return f"No symbol named '{name}' in the code index."
+        project_ids = await proj_svc.get_projects_for_workspace(db, workspace_id)
         sections: list[str] = []
         for node in matches:
             out_edges = await svc.get_neighbors(
@@ -115,7 +155,8 @@ async def _code_symbol(
             in_edges = await svc.get_neighbors(
                 db, workspace_id=workspace_id, node_id=node.id, direction="in"
             )
-            sections.append(_render_symbol(node, out_edges, in_edges))
+            cross_repo = await _find_cross_repo_references(db, project_ids, node.id)
+            sections.append(_render_symbol(node, out_edges, in_edges, cross_repo))
     return "\n\n".join(sections)
 
 
@@ -123,6 +164,7 @@ def _render_symbol(
     node: CodeNode,
     out_edges: list[tuple[str, CodeNode]],
     in_edges: list[tuple[str, CodeNode]],
+    cross_repo: Sequence[tuple[CrossRepoEdge, str]] = (),
 ) -> str:
     lines = [
         f"[{node.kind}] {node.qualified_name}",
@@ -144,6 +186,15 @@ def _render_symbol(
         lines.append(f"  called by ({len(callers)}): {', '.join(callers[:15])}")
     if bases:
         lines.append(f"  extends/implements: {', '.join(bases[:15])}")
+    if cross_repo:
+        lines.append(f"  cross-repo refs ({len(cross_repo)}):")
+        for edge, repo_label in cross_repo[:10]:
+            loc = (
+                f"{edge.src_file_path}:{edge.src_line}"
+                if edge.src_line
+                else edge.src_file_path
+            )
+            lines.append(f"    ← {repo_label}/{loc} (`{edge.raw_reference}`)")
     return "\n".join(lines)
 
 
@@ -162,8 +213,8 @@ async def _code_neighbors(
 
     ``direction='out'`` shows what the symbol depends on (it calls / inherits);
     ``'in'`` shows what depends on it (callers / subclasses); ``'both'`` shows
-    both. Optionally filter to a single ``edge_kind``. Resolve the symbol by
-    exact name or qualified name first via ``code_search`` if unsure.
+    both. Optionally filter to a single ``edge_kind``. In a multi-repo project,
+    also shows cross-repo references pointing at this symbol.
     """
     async with async_session_factory() as db:
         workspace_id = await _resolve_workspace(db)
@@ -174,6 +225,7 @@ async def _code_neighbors(
         )
         if not matches:
             return f"No symbol named '{name}' in the code index."
+        project_ids = await proj_svc.get_projects_for_workspace(db, workspace_id)
         sections: list[str] = []
         for node in matches:
             neighbours = await svc.get_neighbors(
@@ -183,13 +235,18 @@ async def _code_neighbors(
                 direction=direction,
                 edge_kind=edge_kind,
             )
-            sections.append(_render_neighbors(node, neighbours))
+            cross_repo = await _find_cross_repo_references(db, project_ids, node.id)
+            sections.append(_render_neighbors(node, neighbours, cross_repo))
     return "\n\n".join(sections)
 
 
-def _render_neighbors(node: CodeNode, neighbours: list[tuple[str, CodeNode]]) -> str:
+def _render_neighbors(
+    node: CodeNode,
+    neighbours: list[tuple[str, CodeNode]],
+    cross_repo: Sequence[tuple[CrossRepoEdge, str]] = (),
+) -> str:
     head = f"[{node.kind}] {node.qualified_name} — {_loc(node)}"
-    if not neighbours:
+    if not neighbours and not cross_repo:
         return f"{head}\n  (no matching neighbours)"
     rows = [
         f"  {kind} → [{n.kind}] {n.qualified_name} — {_loc(n)}"
@@ -198,20 +255,54 @@ def _render_neighbors(node: CodeNode, neighbours: list[tuple[str, CodeNode]]) ->
     extra = len(neighbours) - _MAX_NEIGHBORS
     if extra > 0:
         rows.append(f"  … and {extra} more")
+    if cross_repo:
+        rows.append("  Cross-repo:")
+        for edge, repo_label in cross_repo[:10]:
+            loc = (
+                f"{edge.src_file_path}:{edge.src_line}"
+                if edge.src_line
+                else edge.src_file_path
+            )
+            rows.append(f"    ← {repo_label}/{loc} (`{edge.raw_reference}`)")
     return head + "\n" + "\n".join(rows)
 
 
 async def _code_overview() -> str:
     """Summarise the indexed codebase: totals, languages, and densest files.
 
-    Use this at the start of a task to orient yourself: how big the graph is,
-    which languages are present, the symbol-kind breakdown, and which files
-    carry the most symbols (good entry points).
+    In a multi-repo project, shows a per-repo breakdown plus cross-repo edge
+    statistics so you can see the full project picture.
     """
     async with async_session_factory() as db:
         workspace_id = await _resolve_workspace(db)
         if workspace_id is None:
             return _NOT_INDEXED
+
+        project_ids = await proj_svc.get_projects_for_workspace(db, workspace_id)
+        if project_ids:
+            project_id = project_ids[0]
+            overviews = await svc.get_project_overview(db, project_id=project_id)
+            if len(overviews) > 1:
+                sections: list[str] = []
+                total_nodes = 0
+                total_edges = 0
+                for path, ov in overviews.items():
+                    label = Path(path).name or path
+                    total_nodes += ov.node_count
+                    total_edges += ov.edge_count
+                    kinds = ", ".join(
+                        f"{k}={v}" for k, v in sorted(ov.kind_counts.items())
+                    )
+                    sections.append(
+                        f"  {label}: {ov.node_count} nodes, {ov.edge_count} edges, "
+                        f"{ov.file_count} files — {kinds}"
+                    )
+                header = (
+                    f"Project overview: {total_nodes} nodes, {total_edges} edges "
+                    f"across {len(overviews)} repos:"
+                )
+                return header + "\n" + "\n".join(sections)
+
         ov = await svc.get_overview(db, workspace_id=workspace_id)
     if ov.file_count == 0:
         return "The code index is empty for this workspace."
@@ -402,15 +493,40 @@ async def _code_map(
     """Produce a ranked map of the most-referenced symbols in the codebase.
 
     Symbols are ranked by usage count (in-degree) — the more a function/class
-    is called or referenced, the higher it ranks. This is the codebase's
-    "table of contents": the key entry points and shared abstractions.
-    Use this to understand what matters most before diving into details.
+    is called or referenced, the higher it ranks. In a multi-repo project,
+    ranks across all repos in the project.
     """
     capped = max(1, min(budget, 50))
     async with async_session_factory() as db:
         workspace_id = await _resolve_workspace(db)
         if workspace_id is None:
             return _NOT_INDEXED
+
+        project_ids = await proj_svc.get_projects_for_workspace(db, workspace_id)
+        if project_ids:
+            project_id = project_ids[0]
+            pairs = await proj_svc.get_project_workspaces(db, project_id)
+            all_ranked: list[tuple[CodeNode, int]] = []
+            for _link, ws in pairs:
+                ws_id = await svc.resolve_workspace_id(db, path=ws.path)
+                if ws_id is None:
+                    continue
+                ranked = await svc.get_ranked_symbols(
+                    db, workspace_id=ws_id, budget=capped
+                )
+                for node, count in ranked:
+                    all_ranked.append((node, count))
+            all_ranked.sort(key=lambda x: x[1], reverse=True)
+            all_ranked = all_ranked[:capped]
+            if all_ranked:
+                header = f"Top {len(all_ranked)} symbols by usage across project:"
+                rows = [
+                    f"{i}. [{node.kind}] {node.qualified_name} — {_loc(node)}  (refs: {count})"
+                    + (f"\n   sig: {node.signature}" if node.signature else "")
+                    for i, (node, count) in enumerate(all_ranked, start=1)
+                ]
+                return header + "\n" + "\n".join(rows)
+
         ranked = await svc.get_ranked_symbols(
             db, workspace_id=workspace_id, budget=capped
         )

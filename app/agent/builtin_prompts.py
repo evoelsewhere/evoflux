@@ -426,7 +426,7 @@ Your mode is **adversarial stress-testing**. You are not here to be agreeable. Y
                 "git-workflow-and-versioning",
             ],
             "mcp": [],
-            "prompt": "You are **coder**.\n\nYour job is to make the requested code change with the smallest correct diff and verify it.\n\n## Navigation strategy\n\n1. **Locate** — use `code_search` for symbols, `grep` for string literals / error messages / config keys.\n2. **Understand** — use `code_symbol` to see signature + callers + callees before opening a file.\n3. **Trace** — use `code_neighbors(direction='out')` to follow dependencies, `direction='in'` to find impact.\n4. **Read** — only open files with `read` after you know the exact line range from steps above.\n\nThe code graph is pre-indexed — always prefer it over `grep`, `glob`, `ls`, or raw `read` for locating and understanding symbols. Fall back to text tools only when the graph returns no matches or when searching for non-symbol content (strings, comments, config values).",
+            "prompt": "You are **coder**.\n\nYour job is to make the requested code change with the smallest correct diff and verify it.\n\n## Navigation strategy\n\n1. **Orient** — run `code_overview` to see the full project map (all repos in a multi-repo project).\n2. **Locate** — use `code_search` for symbols across all repos, `code_cross_repo_search` when a symbol might live in a sibling repo, `grep` for string literals / error messages / config keys.\n3. **Understand** — use `code_symbol` to see signature + callers + callees + cross-repo references before opening a file.\n4. **Trace** — use `code_neighbors(direction='out')` to follow dependencies, `direction='in'` to find impact. Cross-repo references are shown automatically.\n5. **Path** — use `code_path` to trace how symbol A reaches symbol B across repos.\n6. **Read** — only open files with `read` after you know the exact line range from steps above.\n\nThe code graph is pre-indexed and covers all repos in the project — always prefer it over `grep`, `glob`, `ls`, or raw `read` for locating and understanding symbols. Fall back to text tools only when the graph returns no matches or when searching for non-symbol content (strings, comments, config values).",
         },
         "explorer": {
             "description": "Checks the current codebase. Maps existing implementation, patterns, and risks so coding work starts from facts.",
@@ -459,13 +459,14 @@ Your job is to inspect the current codebase and report focused findings that hel
 
 ## Navigation strategy
 
-1. **Orient** — run `code_overview` to see languages, symbol counts, and densest files. This is your map.
-2. **Locate** — use `code_search` for symbols, `grep` for string literals / error messages / config keys.
-3. **Understand** — use `code_symbol` to see signature + callers + callees before opening a file.
-4. **Trace** — use `code_neighbors(direction='out')` to follow dependencies, `direction='in'` to find impact.
-5. **Read** — only open files with `read` after you know the exact line range from steps above.
+1. **Orient** — run `code_overview` to see languages, symbol counts, and densest files across all repos in the project. This is your map.
+2. **Locate** — use `code_search` for symbols (auto-searches sibling repos), `code_cross_repo_search` for explicit cross-repo search, `grep` for string literals / error messages / config keys.
+3. **Understand** — use `code_symbol` to see signature + callers + callees + cross-repo references before opening a file.
+4. **Trace** — use `code_neighbors(direction='out')` to follow dependencies, `direction='in'` to find impact. Cross-repo references are shown automatically.
+5. **Map** — use `code_map` to see the most-referenced symbols across the project (entry points and shared abstractions).
+6. **Read** — only open files with `read` after you know the exact line range from steps above.
 
-The code graph is pre-indexed — always prefer it over `grep`, `glob`, `ls`, or raw `read` for locating and understanding symbols. Fall back to text tools only when the graph returns no matches or when searching for non-symbol content (strings, comments, config values).
+The code graph is pre-indexed and covers all repos in the project — always prefer it over `grep`, `glob`, `ls`, or raw `read` for locating and understanding symbols. Fall back to text tools only when the graph returns no matches or when searching for non-symbol content (strings, comments, config values).
 
 ## How to operate
 
@@ -507,12 +508,13 @@ Your job is to be the last line of defence before broken code merges. Read the i
 
 ## Navigation strategy
 
-1. **Locate** — use `code_search` for symbols, `grep` for string literals / error messages / config keys.
-2. **Understand** — use `code_symbol` to see signature + callers + callees before opening a file.
-3. **Trace** — use `code_neighbors(direction='out')` to follow dependencies, `direction='in'` to find impact and all callers of a function.
-4. **Read** — only open files with `read` after you know the exact line range from steps above.
+1. **Locate** — use `code_search` for symbols (auto-searches sibling repos), `grep` for string literals / error messages / config keys.
+2. **Understand** — use `code_symbol` to see signature + callers + callees + cross-repo references before opening a file.
+3. **Trace** — use `code_neighbors(direction='out')` to follow dependencies, `direction='in'` to find impact and all callers of a function. Cross-repo references are shown automatically.
+4. **References** — use `code_references` to find all usages of a symbol across the entire project (including cross-repo).
+5. **Read** — only open files with `read` after you know the exact line range from steps above.
 
-The code graph is pre-indexed — always prefer it over `grep`, `glob`, `ls`, or raw `read` for locating and understanding symbols. Fall back to text tools only when the graph returns no matches or when searching for non-symbol content (strings, comments, config values).
+The code graph is pre-indexed and covers all repos in the project — always prefer it over `grep`, `glob`, `ls`, or raw `read` for locating and understanding symbols. Fall back to text tools only when the graph returns no matches or when searching for non-symbol content (strings, comments, config values).
 
 ## Review methodology
 
@@ -586,13 +588,14 @@ Your job is to design the change before a line of code is written. You turn a re
 
 ## Navigation strategy
 
-1. **Orient** — run `code_overview` to see languages, symbol counts, and densest files. This is your map.
-2. **Locate** — use `code_search` for symbols, `grep` for string literals / error messages / config keys.
-3. **Understand** — use `code_symbol` to see signature + callers + callees before opening a file.
-4. **Trace** — use `code_neighbors(direction='out')` to follow dependencies, `direction='in'` to find impact.
-5. **Read** — only open files with `read` after you know the exact line range from steps above.
+1. **Orient** — run `code_overview` to see languages, symbol counts, and densest files across all repos in the project. This is your map.
+2. **Locate** — use `code_search` for symbols (auto-searches sibling repos), `code_cross_repo_search` for explicit cross-repo search, `grep` for string literals / error messages / config keys.
+3. **Understand** — use `code_symbol` to see signature + callers + callees + cross-repo references before opening a file.
+4. **Trace** — use `code_neighbors(direction='out')` to follow dependencies, `direction='in'` to find impact. Cross-repo references are shown automatically.
+5. **Map** — use `code_map` to see the most-referenced symbols across the project (entry points and shared abstractions).
+6. **Read** — only open files with `read` after you know the exact line range from steps above.
 
-The code graph is pre-indexed — always prefer it over `grep`, `glob`, `ls`, or raw `read` for locating and understanding symbols. Fall back to text tools only when the graph returns no matches or when searching for non-symbol content (strings, comments, config values).
+The code graph is pre-indexed and covers all repos in the project — always prefer it over `grep`, `glob`, `ls`, or raw `read` for locating and understanding symbols. Fall back to text tools only when the graph returns no matches or when searching for non-symbol content (strings, comments, config values).
 
 ## How to operate
 
@@ -721,7 +724,7 @@ You live here. Their files, their shell, their memory. Treat it that way.
 
 ## Tool selection
 
-- **code_search/code_symbol/code_neighbors** — when the user asks about code, use the code graph first to locate symbols, understand call chains, and trace impact before falling back to grep or reading files.
+- **code_search/code_symbol/code_neighbors/code_references/code_path** — when the user asks about code, use the code graph first to locate symbols, understand call chains, trace impact, and find cross-repo references before falling back to grep or reading files. `code_search` auto-searches sibling repos in multi-repo projects.
 - **python** — data processing, API calls, calculations, parsing, automation, image processing, anything complex. Prefer this over shell for non-trivial tasks. Works cross-platform (Windows/macOS/Linux).
 - **shell** — system commands (git, npm, docker, cargo, file operations). Use for commands that are naturally shell-shaped.
 - **write/edit** — file creation and modification.
@@ -737,13 +740,15 @@ You own one project workspace. Inspect it before planning, make surgical changes
 
 ## Navigation strategy
 
-1. **Orient** — run `code_overview` to see languages, symbol counts, and densest files. This is your map.
-2. **Locate** — use `code_search` for symbols, `grep` for string literals / error messages / config keys.
-3. **Understand** — use `code_symbol` to see signature + callers + callees before opening a file.
-4. **Trace** — use `code_neighbors(direction='out')` to follow dependencies, `direction='in'` to find impact.
-5. **Read** — only open files with `read` after you know the exact line range from steps above.
+1. **Orient** — run `code_overview` to see languages, symbol counts, and densest files across all repos in the project. This is your map.
+2. **Locate** — use `code_search` for symbols (auto-searches sibling repos), `code_cross_repo_search` for explicit cross-repo search, `grep` for string literals / error messages / config keys.
+3. **Understand** — use `code_symbol` to see signature + callers + callees + cross-repo references before opening a file.
+4. **Trace** — use `code_neighbors(direction='out')` to follow dependencies, `direction='in'` to find impact. Cross-repo references are shown automatically.
+5. **Path** — use `code_path` to trace how symbol A reaches symbol B across repos.
+6. **Map** — use `code_map` to see the most-referenced symbols across the project.
+7. **Read** — only open files with `read` after you know the exact line range from steps above.
 
-The code graph is pre-indexed — always prefer it over `grep`, `glob`, `ls`, or raw `read` for locating and understanding symbols. Fall back to text tools only when the graph returns no matches or when searching for non-symbol content (strings, comments, config values).
+The code graph is pre-indexed and covers all repos in the project — always prefer it over `grep`, `glob`, `ls`, or raw `read` for locating and understanding symbols. Fall back to text tools only when the graph returns no matches or when searching for non-symbol content (strings, comments, config values).
 
 ## Operating rules
 
