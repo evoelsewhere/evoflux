@@ -15,6 +15,7 @@ import os
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from app.agent.tools.builtin.filesystem._ignore import (
     _SKIPPED_DIR_NAMES,
@@ -35,6 +36,9 @@ from app.services.code_graph.types import (
     NODE_MODULE,
     NODE_VARIABLE,
 )
+
+if TYPE_CHECKING:
+    from app.services.code_graph.path_resolve import ModuleResolution
 
 # Skip files larger than this — generated bundles/minified blobs aren't worth
 # parsing and can be huge.
@@ -121,6 +125,7 @@ class ExistingDef:
     key: str
     name: str
     kind: str
+    file_path: str = ""
 
 
 def index_workspace(
@@ -130,7 +135,11 @@ def index_workspace(
     registry = registry or default_registry()
     root_path = Path(root).expanduser().resolve()
     return _build_index(
-        _iter_source_files(root_path, registry), registry, existing_defs=()
+        _iter_source_files(root_path, registry),
+        registry,
+        existing_defs=(),
+        known_file_paths=frozenset(),
+        root_path=root_path,
     )
 
 
@@ -140,6 +149,7 @@ def index_files(
     *,
     registry: ParserRegistry | None = None,
     existing_defs: Sequence[ExistingDef] = (),
+    known_file_paths: frozenset[str] = frozenset(),
 ) -> WorkspaceIndex:
     """Parse only ``rel_paths`` (relative POSIX paths) into a resolved graph.
 
@@ -154,6 +164,8 @@ def index_files(
         _iter_named_files(root_path, rel_paths, registry),
         registry,
         existing_defs=existing_defs,
+        known_file_paths=known_file_paths,
+        root_path=root_path,
     )
 
 
@@ -178,8 +190,16 @@ def _build_index(
     registry: ParserRegistry,
     *,
     existing_defs: Sequence[ExistingDef],
+    known_file_paths: frozenset[str] = frozenset(),
+    root_path: Path | None = None,
 ) -> WorkspaceIndex:
     """Shared core: turn a stream of ``(rel_path, bytes)`` into a resolved graph."""
+    from app.services.code_graph.path_resolve import (
+        ModuleResolution,
+        build_repo_context,
+        resolve_module_paths,
+    )
+
     index = WorkspaceIndex()
 
     # Per-file raw extraction keyed by workspace-unique node key. Seed the name
@@ -192,9 +212,18 @@ def _build_index(
         name_to_keys.setdefault(definition.name, []).append(definition.key)
         extra_kinds[definition.key] = definition.kind
 
-    raw_edges: list[tuple[str, str | None, str | None, str, int | None, str | None]] = []
+    raw_edges: list[
+        tuple[str, str | None, str | None, str, int | None, str | None]
+    ] = []
     # (src_key, dst_local_id, dst_name, kind, line, module_path)
     local_to_key: dict[tuple[str, str], str] = {}
+    files_by_path: dict[str, list[str]] = {}
+
+    # Seed files_by_path from existing defs so path-aware resolution can find
+    # symbols in unchanged files during incremental reindex.
+    for definition in existing_defs:
+        if definition.file_path:
+            files_by_path.setdefault(definition.file_path, []).append(definition.key)
 
     for file_path, source in files_iter:
         parser = registry.for_path(file_path)
@@ -227,6 +256,7 @@ def _build_index(
             name_to_keys.setdefault(node.name, []).append(key)
             if node.qualified_name != node.name:
                 qname_to_keys.setdefault(node.qualified_name, []).append(key)
+            files_by_path.setdefault(file_path, []).append(key)
             node_count += 1
 
         for edge in result.edges:
@@ -254,8 +284,23 @@ def _build_index(
             )
         )
 
+    # Build path-aware module resolution.
+    module_resolution = ModuleResolution()
+    if root_path is not None:
+        all_known = frozenset(files_by_path.keys()) | known_file_paths
+        repo_ctx = build_repo_context(root_path)
+        module_resolution = resolve_module_paths(
+            raw_edges, files_by_path, all_known, repo_ctx
+        )
+
     _resolve_edges(
-        index, raw_edges, local_to_key, name_to_keys, qname_to_keys, extra_kinds
+        index,
+        raw_edges,
+        local_to_key,
+        name_to_keys,
+        qname_to_keys,
+        extra_kinds,
+        module_resolution=module_resolution,
     )
     _backfill_edge_counts(index)
     return index
@@ -268,6 +313,7 @@ def _resolve_edges(
     name_to_keys: dict[str, list[str]],
     qname_to_keys: dict[str, list[str]],
     extra_kinds: dict[str, str] | None = None,
+    module_resolution: ModuleResolution | None = None,
 ) -> None:
     kind_by_key = {n.key: n.kind for n in index.nodes}
     if extra_kinds:
@@ -285,15 +331,59 @@ def _resolve_edges(
                 allowed = _TYPE_KINDS
             elif kind == EDGE_IMPORTS:
                 allowed = _ANY_KINDS
+                # Try path-aware resolution first for import edges.
+                if module_resolution is not None and module_path:
+                    resolved = module_resolution.by_import_edge.get(
+                        (src_key, module_path)
+                    )
+                    if resolved is not None and resolved.dst_key is not None:
+                        dst_key = resolved.dst_key
+                        # Skip _resolve_qualified — we have a precise match.
+                    elif resolved is not None and resolved.dst_file_path is not None:
+                        # File resolved but specific symbol didn't disambiguate.
+                        # Leave as unresolved rather than guessing.
+                        pass
+                    else:
+                        dst_key = _resolve_qualified(
+                            dst_name,
+                            name_to_keys,
+                            qname_to_keys,
+                            kind_by_key,
+                            allowed,
+                        )
+                else:
+                    dst_key = _resolve_qualified(
+                        dst_name,
+                        name_to_keys,
+                        qname_to_keys,
+                        kind_by_key,
+                        allowed,
+                    )
             elif kind == EDGE_DECORATED_BY:
                 allowed = _CALLABLE_KINDS
             elif kind == EDGE_REFERENCES:
                 allowed = _TYPE_KINDS
             else:
                 allowed = _CALLABLE_KINDS
-            dst_key = _resolve_qualified(
-                dst_name, name_to_keys, qname_to_keys, kind_by_key, allowed
-            )
+
+            if dst_key is None and kind != EDGE_IMPORTS:
+                # Try scope-aware resolution first (Phase 2): use import
+                # context to narrow the search to a specific file before
+                # falling back to the global name heuristic.
+                if module_resolution is not None:
+                    src_file = file_by_key.get(src_key, "")
+                    dst_key = _resolve_scoped(
+                        dst_name,
+                        src_file,
+                        module_resolution,
+                        name_to_keys,
+                        kind_by_key,
+                        allowed,
+                    )
+                if dst_key is None:
+                    dst_key = _resolve_qualified(
+                        dst_name, name_to_keys, qname_to_keys, kind_by_key, allowed
+                    )
 
         if dst_key is None or dst_key == src_key:
             # An import that doesn't resolve *within this workspace* may
@@ -368,6 +458,64 @@ def _resolve_qualified(
         ]
         if len(short_candidates) == 1:
             return short_candidates[0]
+
+    return None
+
+
+def _resolve_scoped(
+    dst_name: str,
+    src_file: str,
+    module_resolution: ModuleResolution,
+    name_to_keys: dict[str, list[str]],
+    kind_by_key: dict[str, str],
+    allowed_kinds: frozenset[str],
+) -> str | None:
+    """Scope-aware resolution using import context.
+
+    For a ``dst_name``-based edge in originating file ``src_file``:
+    1. Split ``dst_name`` into ``head`` + optional ``rest`` (after first ``.``).
+    2. Look up ``head`` in ``module_resolution.imports_by_file[src_file]``.
+    3. If found and ``rest`` is empty: resolve to the import's ``dst_key`` if
+       set; else search only that import's target file for ``name == head``.
+    4. If found and ``rest`` is non-empty: search only that import's target
+       file for ``name == rest[-1]``.
+    5. Return ``None`` if no scope-aware match — caller falls through to
+       ``_resolve_qualified``.
+    """
+    file_imports = module_resolution.imports_by_file.get(src_file)
+    if not file_imports:
+        return None
+
+    if "." in dst_name:
+        head, rest = dst_name.split(".", 1)
+        rest_name = rest.rsplit(".", 1)[-1]
+    else:
+        head = dst_name
+        rest_name = None
+
+    resolved_import = file_imports.get(head)
+    if resolved_import is None:
+        return None
+
+    target_file = resolved_import.dst_file_path
+    if target_file is None:
+        return None
+
+    # Search only within the import's target file.
+    search_name = rest_name if rest_name else head
+    candidates = [
+        key
+        for key in name_to_keys.get(search_name, [])
+        if kind_by_key.get(key) in allowed_kinds
+        and key.rsplit("::", 1)[0] == target_file
+    ]
+    if len(candidates) == 1:
+        return candidates[0]
+
+    # If the import itself resolved to a specific key, use that.
+    if resolved_import.dst_key and not rest_name:
+        if kind_by_key.get(resolved_import.dst_key) in allowed_kinds:
+            return resolved_import.dst_key
 
     return None
 

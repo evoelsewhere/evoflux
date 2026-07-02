@@ -179,7 +179,7 @@ export function RepoGraphModal({ open, onOpenChange, project, job }: RepoGraphMo
             <div className="absolute inset-x-0 top-0 z-20 flex h-7 items-center gap-2 border-b border-(--color-border) bg-(--bg-card)/90 px-3 backdrop-blur-sm">
               <Sparkles size={12} className="shrink-0 animate-pulse text-(--accent-orange-text)" />
               <span className="shrink-0 text-xs font-medium text-(--color-text-muted)">
-                {job.phase === 'llm' ? 'AI resolving' : job.phase === 'lexical' ? 'Lexical match' : 'Static match'}
+                {job.phase === 'lexical' ? 'Lexical match' : job.phase === 'reattach' ? 'Re-attaching stale links' : 'Static match'}
               </span>
               <div className="h-1 max-w-xs flex-1 overflow-hidden rounded-full bg-(--bg-key)">
                 <div className="h-full rounded-full bg-(--accent-orange-text) transition-[width] duration-500 ease-out" style={{ width: `${Math.round(job.progress * 100)}%` }} />

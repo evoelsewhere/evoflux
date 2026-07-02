@@ -174,6 +174,12 @@ class ProjectCodeGraphDataOut(BaseModel):
     total_edge_count: int
 
 
+class ProjectCodeGraphOverviewResponse(BaseModel):
+    """Per-repo workspace overview aggregated for an entire CodingProject."""
+
+    overviews: dict[str, CodeOverviewResponse]
+
+
 class ReindexResponse(BaseModel):
     node_count: int
     edge_count: int

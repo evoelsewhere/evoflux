@@ -102,7 +102,9 @@ def read_manifests(root_path: str | Path) -> list[PackageManifest]:
         if setup_py.is_file():
             name = _read_setup_py_name(setup_py)
             if name:
-                out.append(PackageManifest(ecosystem=ECOSYSTEM_PYTHON, package_name=name))
+                out.append(
+                    PackageManifest(ecosystem=ECOSYSTEM_PYTHON, package_name=name)
+                )
 
     go_mod = root / "go.mod"
     if go_mod.is_file():
@@ -124,7 +126,9 @@ def read_manifests(root_path: str | Path) -> list[PackageManifest]:
 
     gradle_name = _read_gradle_identity(root)
     if gradle_name:
-        out.append(PackageManifest(ecosystem=ECOSYSTEM_GRADLE, package_name=gradle_name))
+        out.append(
+            PackageManifest(ecosystem=ECOSYSTEM_GRADLE, package_name=gradle_name)
+        )
 
     composer_json = root / "composer.json"
     if composer_json.is_file():
@@ -152,7 +156,9 @@ def read_manifests(root_path: str | Path) -> list[PackageManifest]:
     if podspec is not None:
         name = _read_podspec_name(podspec)
         if name:
-            out.append(PackageManifest(ecosystem=ECOSYSTEM_COCOAPODS, package_name=name))
+            out.append(
+                PackageManifest(ecosystem=ECOSYSTEM_COCOAPODS, package_name=name)
+            )
 
     package_swift = root / "Package.swift"
     if package_swift.is_file():
@@ -189,8 +195,7 @@ def match_reference_to_package(
         for m in manifests
         if raw_reference == m.package_name
         or any(
-            raw_reference.startswith(m.package_name + sep)
-            for sep in ("/", ".", "::")
+            raw_reference.startswith(m.package_name + sep) for sep in ("/", ".", "::")
         )
     ]
     if not candidates:
@@ -247,13 +252,22 @@ def read_path_dependencies(root_path: str | Path) -> list[PathDependency]:
 
     podfile = root / "Podfile"
     if podfile.is_file():
-        out.extend(_read_gemfile_path_deps(podfile, ecosystem=ECOSYSTEM_COCOAPODS, method="pod"))
+        out.extend(
+            _read_gemfile_path_deps(
+                podfile, ecosystem=ECOSYSTEM_COCOAPODS, method="pod"
+            )
+        )
 
     package_swift = root / "Package.swift"
     if package_swift.is_file():
         out.extend(_read_package_swift_path_deps(root, package_swift))
 
-    for compose_name in ("docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"):
+    for compose_name in (
+        "docker-compose.yml",
+        "docker-compose.yaml",
+        "compose.yml",
+        "compose.yaml",
+    ):
         compose_file = root / compose_name
         if compose_file.is_file():
             out.extend(_read_compose_path_deps(compose_file))
@@ -292,6 +306,62 @@ def match_path_dependency(
     best_len = len(candidates[0].alias)
     tied = [d for d in candidates if len(d.alias) == best_len]
     return tied[0] if len(tied) == 1 else None
+
+
+def compute_importable_id(
+    file_path: str,
+    qualified_name: str,
+    *,
+    language: str,
+    root_prefix: str | None,
+    separator: str = ".",
+) -> str | None:
+    """Compute a cross-repo-importable identifier for a node.
+
+    Combines a repo-level root prefix (package name, Go module path, etc.)
+    with the relative module path and the symbol's qualified name suffix.
+
+    Returns ``None`` when the ecosystem/layout doesn't support it — the
+    caller falls through to manifest-package matching.
+    """
+    if not root_prefix:
+        return None
+
+    rel = file_path.replace("\\", "/")
+    if language in ("python",):
+        if rel.endswith("/__init__.py"):
+            rel = rel[: -len("/__init__.py")]
+        elif rel.endswith(".py"):
+            rel = rel[: -len(".py")]
+        elif rel.endswith(".pyi"):
+            rel = rel[: -len(".pyi")]
+        else:
+            return None
+        module_part = rel.replace("/", ".")
+    elif language in ("javascript", "typescript"):
+        for ext in (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"):
+            if rel.endswith(ext):
+                rel = rel[: -len(ext)]
+                break
+        if rel.endswith("/index"):
+            rel = rel[: -len("/index")]
+        module_part = rel.replace("/", ".")
+    elif language == "go":
+        # Go imports are directory-level, not file-level.
+        parts = rel.rsplit("/", 1)
+        module_part = parts[0] if len(parts) > 1 else ""
+    else:
+        return None
+
+    if module_part:
+        full = f"{root_prefix}{separator}{module_part}"
+    else:
+        full = root_prefix
+
+    # If the node is the module/file itself, don't append the qualified name.
+    if qualified_name and qualified_name != file_path:
+        return f"{full}{separator}{qualified_name}"
+    return full
 
 
 # --- Per-ecosystem readers ---------------------------------------------------
@@ -334,6 +404,11 @@ def _read_setup_py_name(path: Path) -> str | None:
 
 
 _GO_MOD_MODULE_RE = re.compile(r"^\s*module\s+(\S+)", re.MULTILINE)
+
+
+def read_go_module_path(root_path: str | Path) -> str | None:
+    """Read the ``module`` directive from ``go.mod`` at ``root_path``."""
+    return _read_go_mod_module(Path(root_path) / "go.mod")
 
 
 def _read_go_mod_module(path: Path) -> str | None:
@@ -895,7 +970,9 @@ def _pubspec_declared_deps(pubspec: Path) -> list[str]:
     for section in _PUB_DEP_SECTIONS:
         deps = data.get(section)
         if isinstance(deps, dict):
-            out.extend(name for name in deps if isinstance(name, str) and name != "flutter")
+            out.extend(
+                name for name in deps if isinstance(name, str) and name != "flutter"
+            )
     return out
 
 
@@ -971,7 +1048,9 @@ def _csproj_declared_deps(csproj: Path) -> list[str]:
 # Package.swift is executable Swift, not data — regex-scraped like setup.py.
 _SPM_PACKAGE_NAME_RE = re.compile(r"""Package\(\s*name:\s*"([^"]+)\"""")
 _SPM_LOCAL_DEP_RE = re.compile(r"""\.package\(\s*path:\s*"([^"]+)\"""")
-_SPM_REMOTE_DEP_RE = re.compile(r"""\.package\(\s*(?:name:\s*"[^"]+"\s*,\s*)?url:\s*"([^"]+)\"""")
+_SPM_REMOTE_DEP_RE = re.compile(
+    r"""\.package\(\s*(?:name:\s*"[^"]+"\s*,\s*)?url:\s*"([^"]+)\""""
+)
 
 
 def _read_package_swift_name(path: Path) -> str | None:
@@ -983,7 +1062,9 @@ def _read_package_swift_name(path: Path) -> str | None:
     return match.group(1) if match else None
 
 
-def _read_package_swift_path_deps(root: Path, package_swift: Path) -> list[PathDependency]:
+def _read_package_swift_path_deps(
+    root: Path, package_swift: Path
+) -> list[PathDependency]:
     try:
         text = package_swift.read_text(encoding="utf-8", errors="replace")
     except OSError:
@@ -1035,7 +1116,9 @@ def _read_compose_path_deps(compose_file: Path) -> list[PathDependency]:
             continue
         build = spec.get("build")
         context = build.get("context") if isinstance(build, dict) else build
-        if isinstance(context, str) and (context.startswith("./") or context.startswith("../")):
+        if isinstance(context, str) and (
+            context.startswith("./") or context.startswith("../")
+        ):
             out.append(PathDependency(ECOSYSTEM_DOCKER, str(service_name), context))
     return out
 
@@ -1062,7 +1145,9 @@ def _read_helm_path_deps(chart_yaml: Path) -> list[PathDependency]:
         repository = dep.get("repository")
         name = dep.get("name")
         if isinstance(repository, str) and repository.startswith("file://") and name:
-            out.append(PathDependency(ECOSYSTEM_HELM, str(name), repository[len("file://") :]))
+            out.append(
+                PathDependency(ECOSYSTEM_HELM, str(name), repository[len("file://") :])
+            )
     return out
 
 
@@ -1083,7 +1168,9 @@ def _read_terraform_path_deps(root: Path) -> list[PathDependency]:
         except OSError:
             continue
         for match in _TERRAFORM_MODULE_RE.finditer(text):
-            out.append(PathDependency(ECOSYSTEM_TERRAFORM, match.group(1), match.group(2)))
+            out.append(
+                PathDependency(ECOSYSTEM_TERRAFORM, match.group(1), match.group(2))
+            )
     return out
 
 
@@ -1206,12 +1293,18 @@ def _python_declared_deps(pyproject: Path) -> list[str]:
                     out.extend(
                         _parse_requirement_name(d) for d in group if isinstance(d, str)
                     )
-    poetry = data.get("tool", {}).get("poetry") if isinstance(data.get("tool"), dict) else None
+    poetry = (
+        data.get("tool", {}).get("poetry")
+        if isinstance(data.get("tool"), dict)
+        else None
+    )
     if isinstance(poetry, dict):
         deps = poetry.get("dependencies")
         if isinstance(deps, dict):
             out.extend(
-                name for name in deps if isinstance(name, str) and name.lower() != "python"
+                name
+                for name in deps
+                if isinstance(name, str) and name.lower() != "python"
             )
     return [d for d in out if d]
 
@@ -1298,18 +1391,72 @@ _RUBY_EXTENSIONS = (".rb",)
 # path segment of raw_reference), never a plausible sibling-repo package.
 _APPLE_FRAMEWORKS = frozenset(
     {
-        "Foundation", "UIKit", "SwiftUI", "Combine", "CoreData", "CoreGraphics",
-        "CoreLocation", "AVFoundation", "MapKit", "WebKit", "StoreKit", "CloudKit",
-        "CryptoKit", "Network", "Dispatch", "ObjectiveC", "XCTest", "os", "simd",
-        "Security", "CoreBluetooth", "HealthKit", "Contacts", "EventKit", "Photos",
-        "PhotosUI", "MessageUI", "GameKit", "SpriteKit", "SceneKit", "ARKit",
-        "Metal", "MetalKit", "CoreImage", "CoreText", "QuartzCore", "CoreMotion",
-        "LocalAuthentication", "UserNotifications", "WatchKit", "ClockKit",
-        "Intents", "IntentsUI", "NaturalLanguage", "Vision", "CoreML", "CreateML",
-        "Speech", "AuthenticationServices", "PassKit", "MultipeerConnectivity",
-        "ExternalAccessory", "CoreTelephony", "SystemConfiguration", "Accelerate",
-        "GLKit", "OpenGLES", "CoreAudio", "AudioToolbox", "AVKit", "PDFKit",
-        "QuickLook", "Social", "Accounts", "CoreSpotlight", "CoreServices",
+        "Foundation",
+        "UIKit",
+        "SwiftUI",
+        "Combine",
+        "CoreData",
+        "CoreGraphics",
+        "CoreLocation",
+        "AVFoundation",
+        "MapKit",
+        "WebKit",
+        "StoreKit",
+        "CloudKit",
+        "CryptoKit",
+        "Network",
+        "Dispatch",
+        "ObjectiveC",
+        "XCTest",
+        "os",
+        "simd",
+        "Security",
+        "CoreBluetooth",
+        "HealthKit",
+        "Contacts",
+        "EventKit",
+        "Photos",
+        "PhotosUI",
+        "MessageUI",
+        "GameKit",
+        "SpriteKit",
+        "SceneKit",
+        "ARKit",
+        "Metal",
+        "MetalKit",
+        "CoreImage",
+        "CoreText",
+        "QuartzCore",
+        "CoreMotion",
+        "LocalAuthentication",
+        "UserNotifications",
+        "WatchKit",
+        "ClockKit",
+        "Intents",
+        "IntentsUI",
+        "NaturalLanguage",
+        "Vision",
+        "CoreML",
+        "CreateML",
+        "Speech",
+        "AuthenticationServices",
+        "PassKit",
+        "MultipeerConnectivity",
+        "ExternalAccessory",
+        "CoreTelephony",
+        "SystemConfiguration",
+        "Accelerate",
+        "GLKit",
+        "OpenGLES",
+        "CoreAudio",
+        "AudioToolbox",
+        "AVKit",
+        "PDFKit",
+        "QuickLook",
+        "Social",
+        "Accounts",
+        "CoreSpotlight",
+        "CoreServices",
         "DeviceCheck",
     }
 )
@@ -1324,35 +1471,123 @@ _APPLE_FRAMEWORKS = frozenset(
 # ("Foundation/Foundation.h") all use non-dot namespace separators.
 _WELL_KNOWN_EXTERNAL_PREFIXES: tuple[str, ...] = (
     # JVM
-    "liquibase", "org.springframework", "org.hibernate", "com.fasterxml",
-    "org.apache", "org.slf4j", "com.google", "org.junit", "junit", "org.mockito",
-    "org.testng", "com.zaxxer", "org.postgresql", "com.mysql", "org.aspectj",
-    "io.swagger", "org.thymeleaf", "org.mybatis", "com.h2database", "org.json",
-    "org.yaml", "com.squareup", "ch.qos.logback", "org.codehaus",
+    "liquibase",
+    "org.springframework",
+    "org.hibernate",
+    "com.fasterxml",
+    "org.apache",
+    "org.slf4j",
+    "com.google",
+    "org.junit",
+    "junit",
+    "org.mockito",
+    "org.testng",
+    "com.zaxxer",
+    "org.postgresql",
+    "com.mysql",
+    "org.aspectj",
+    "io.swagger",
+    "org.thymeleaf",
+    "org.mybatis",
+    "com.h2database",
+    "org.json",
+    "org.yaml",
+    "com.squareup",
+    "ch.qos.logback",
+    "org.codehaus",
     # npm
-    "react", "react-dom", "lodash", "express", "axios", "webpack", "typescript",
-    "eslint", "jest", "vue", "vite", "rxjs", "core-js", "moment", "chalk",
+    "react",
+    "react-dom",
+    "lodash",
+    "express",
+    "axios",
+    "webpack",
+    "typescript",
+    "eslint",
+    "jest",
+    "vue",
+    "vite",
+    "rxjs",
+    "core-js",
+    "moment",
+    "chalk",
     # Python
-    "requests", "numpy", "pandas", "django", "flask", "boto3", "pytest",
-    "sqlalchemy", "pydantic", "fastapi", "click", "yaml", "setuptools", "pip",
-    "urllib3", "certifi", "six", "attrs", "jinja2",
+    "requests",
+    "numpy",
+    "pandas",
+    "django",
+    "flask",
+    "boto3",
+    "pytest",
+    "sqlalchemy",
+    "pydantic",
+    "fastapi",
+    "click",
+    "yaml",
+    "setuptools",
+    "pip",
+    "urllib3",
+    "certifi",
+    "six",
+    "attrs",
+    "jinja2",
     # Rust
-    "serde", "tokio", "clap", "anyhow", "thiserror", "log", "reqwest", "rand",
+    "serde",
+    "tokio",
+    "clap",
+    "anyhow",
+    "thiserror",
+    "log",
+    "reqwest",
+    "rand",
     # PHP (Composer's declared vendor/package slug rarely matches the PSR-4
     # namespace prefix, e.g. "illuminate/support" -> `Illuminate\Support`, so
     # this bundled list carries the same load Maven's groupId mismatch does)
-    "Illuminate", "Symfony", "Psr", "Doctrine", "GuzzleHttp", "Monolog",
-    "PHPUnit", "Composer", "PhpParser", "Twig", "Laravel", "Zend", "Laminas",
-    "Carbon", "Ramsey", "Nette",
+    "Illuminate",
+    "Symfony",
+    "Psr",
+    "Doctrine",
+    "GuzzleHttp",
+    "Monolog",
+    "PHPUnit",
+    "Composer",
+    "PhpParser",
+    "Twig",
+    "Laravel",
+    "Zend",
+    "Laminas",
+    "Carbon",
+    "Ramsey",
+    "Nette",
     # Ruby (gem `require` strings are typically underscored, decoupled from
     # any Gemfile-declared-dependency matching)
-    "active_support", "active_record", "action_pack", "action_view",
-    "action_controller", "active_job", "active_model", "railties", "rails",
-    "rspec", "rack", "sinatra", "bundler", "faraday", "nokogiri", "devise",
-    "puma", "sidekiq", "factory_bot", "capybara", "pry",
+    "active_support",
+    "active_record",
+    "action_pack",
+    "action_view",
+    "action_controller",
+    "active_job",
+    "active_model",
+    "railties",
+    "rails",
+    "rspec",
+    "rack",
+    "sinatra",
+    "bundler",
+    "faraday",
+    "nokogiri",
+    "devise",
+    "puma",
+    "sidekiq",
+    "factory_bot",
+    "capybara",
+    "pry",
     # Dart (published packages beyond the Flutter SDK itself, which is
     # handled structurally below via the "dart:" scheme check)
-    "package:flutter", "package:flutter_test", "package:meta", "package:test",
+    "package:flutter",
+    "package:flutter_test",
+    "package:meta",
+    "package:test",
 )
 
 
@@ -1383,7 +1618,11 @@ def is_likely_external(
     every rule here is deliberately conservative — never used to reject an
     *already-resolved* match, only to skip attempting resolution at all.
     """
-    if not raw_reference or raw_reference.startswith(".") or raw_reference.startswith("/"):
+    if (
+        not raw_reference
+        or raw_reference.startswith(".")
+        or raw_reference.startswith("/")
+    ):
         return False  # relative imports are intra-repo by construction
 
     suffix = Path(file_path).suffix.lower()
@@ -1411,7 +1650,10 @@ def is_likely_external(
         return True
     if suffix in _SWIFT_EXTENSIONS and raw_reference in _APPLE_FRAMEWORKS:
         return True
-    if suffix in _OBJC_EXTENSIONS and raw_reference.split("/", 1)[0] in _APPLE_FRAMEWORKS:
+    if (
+        suffix in _OBJC_EXTENSIONS
+        and raw_reference.split("/", 1)[0] in _APPLE_FRAMEWORKS
+    ):
         return True
 
     for dep in declared_dependencies:

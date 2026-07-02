@@ -32,7 +32,6 @@ import type {
   ProjectWorkspaceItem,
   CrossRepoEdge,
   CrossRepoResolveRequest,
-  CrossRepoResolveStats,
   CrossRepoResolveJob,
   CrossRepoResolveStatusResponse,
   ProjectRepoStatus,
@@ -652,13 +651,13 @@ export async function listCrossRepoEdges(
   return res.json()
 }
 
-// Returns plain stats when use_llm is false (resolved synchronously) or a
-// job snapshot when use_llm is true (started as a background job) — poll
-// getCrossRepoResolveStatus for the job's progress in the latter case.
+// Returns a job snapshot — the backend always runs Tier 0 + Tier A +
+// lexical Tier B as a background job. Poll getCrossRepoResolveStatus for
+// the job's progress.
 export async function startCrossRepoResolve(
   projectId: string,
   body: CrossRepoResolveRequest = {},
-): Promise<CrossRepoResolveStats | CrossRepoResolveJob> {
+): Promise<CrossRepoResolveJob> {
   const res = await fetch(
     `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/cross-repo/resolve`,
     {

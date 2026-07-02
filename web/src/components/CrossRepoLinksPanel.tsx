@@ -6,10 +6,9 @@
  * A single button drives the whole pipeline: reindex every repo's code
  * graph, wait for indexing to finish, then (when the project has more than
  * one repo) automatically run cross-repo resolution — static matching
- * (Java FQN / manifest identity / explicit path-dependencies) always,
- * optionally followed by FTS5-narrowed + LLM fallback for whatever's left
- * ambiguous. The model dropdown picks which model the LLM fallback uses;
- * leaving it on "Static only" skips that tier entirely.
+ * (Java FQN / manifest identity / explicit path-dependencies) followed by
+ * FTS5 lexical matching for whatever's still ambiguous. The LLM fallback
+ * that existed in earlier versions has been removed.
  *
  * The compact diagram below the toolbar is a small preview — clicking it
  * (or the expand button) opens RepoGraphModal, a full-screen spatial view
@@ -20,8 +19,6 @@ import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
-  Check,
-  ChevronDown,
   GitBranch,
   Loader2,
   Maximize2,
@@ -31,20 +28,12 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import {
   getCrossRepoResolveStatus,
   getProjectCodeGraphStatus,
   listCrossRepoEdges,
   reindexCodeGraph,
   startCrossRepoResolve,
 } from '@/api/client'
-import { useRegistryQuery } from '@/queries'
 import { queryKeys } from '@/queries/keys'
 import {
   buildRepoLinks,
@@ -232,7 +221,7 @@ function RepoGraph({
         <div className="absolute inset-x-0 top-0 z-20 flex h-5 items-center gap-1.5 border-b border-(--color-border) bg-(--bg-card)/90 px-2 backdrop-blur-sm">
           <Sparkles size={10} className="shrink-0 animate-pulse text-(--accent-orange-text)" />
           <span className="shrink-0 text-[10px] font-medium text-(--color-text-muted)">
-            {job.phase === 'llm' ? 'AI resolving' : job.phase === 'lexical' ? 'Lexical match' : 'Static match'}
+            {job.phase === 'lexical' ? 'Lexical match' : job.phase === 'reattach' ? 'Re-attaching stale links' : 'Static match'}
           </span>
           <div className="h-[3px] flex-1 overflow-hidden rounded-full bg-(--bg-key)">
             <div
@@ -257,17 +246,9 @@ export interface CrossRepoLinksPanelProps {
 export function CrossRepoLinksPanel({ project, className }: CrossRepoLinksPanelProps) {
   const queryClient = useQueryClient()
   const isMultiRepo = project.workspaces.length > 1
-  // Empty string = static matching only (Tier A: FQN / manifest identity /
-  // explicit path-dependencies) — no LLM call, mirroring the old checkbox's
-  // unchecked default.
-  const [llmModel, setLlmModel] = useState('')
-  const [modelMenuOpen, setModelMenuOpen] = useState(false)
   const [pipelinePhase, setPipelinePhase] = useState<'idle' | 'indexing' | 'resolving'>('idle')
   const [jobRunning, setJobRunning] = useState(false)
   const [expanded, setExpanded] = useState(false)
-
-  const registry = useRegistryQuery()
-  const modelOptions = registry.data?.models ?? []
 
   const edgesQuery = useQuery({
     queryKey: queryKeys.projects.crossRepoEdges(project.id),
@@ -330,17 +311,9 @@ export function CrossRepoLinksPanel({ project, className }: CrossRepoLinksPanelP
       if (!isMultiRepo) return
 
       setPipelinePhase('resolving')
-      const result = await startCrossRepoResolve(project.id, {
-        use_llm: llmModel !== '',
-        llm_model: llmModel || null,
-      })
-      if ('use_llm' in result) {
-        // Background job (Tier B) — poll /status until it finishes.
-        setJobRunning(true)
-      } else {
-        // Synchronous Tier-A-only result — refresh immediately.
-        await queryClient.invalidateQueries({ queryKey: queryKeys.projects.crossRepoEdges(project.id) })
-      }
+      await startCrossRepoResolve(project.id, {})
+      // Background job — poll /status until it finishes.
+      setJobRunning(true)
     } finally {
       setPipelinePhase('idle')
     }
@@ -374,31 +347,6 @@ export function CrossRepoLinksPanel({ project, className }: CrossRepoLinksPanelP
                 : `${indexedCount}/${repos.length} repos indexed · ${resolvedCount}/${edges.length} cross-repo references resolved`}
         </span>
         <div className="flex items-center gap-1.5">
-          {isMultiRepo && (
-            <DropdownMenu open={modelMenuOpen} onOpenChange={setModelMenuOpen}>
-              <DropdownMenuTrigger
-                disabled={isBusy}
-                className="flex items-center gap-1 rounded-md border border-(--color-border) px-2 py-1 text-[10px] font-medium text-(--color-text-muted) transition-colors hover:bg-(--bg-key) disabled:opacity-50"
-              >
-                <Sparkles size={11} className="shrink-0" />
-                <span className="max-w-32 truncate font-mono">{llmModel || 'Static only'}</span>
-                <ChevronDown size={11} className="shrink-0" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-72">
-                <DropdownMenuItem onClick={() => setLlmModel('')}>
-                  <Check size={12} className={cn('shrink-0', llmModel === '' ? 'opacity-100' : 'opacity-0')} />
-                  Static only (no AI)
-                </DropdownMenuItem>
-                {modelOptions.length > 0 && <DropdownMenuSeparator />}
-                {modelOptions.map((model) => (
-                  <DropdownMenuItem key={model.id} onClick={() => setLlmModel(model.id)}>
-                    <Check size={12} className={cn('shrink-0', llmModel === model.id ? 'opacity-100' : 'opacity-0')} />
-                    <span className="truncate font-mono">{model.id}</span>
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
           <button
             type="button"
             onClick={() => void runPipeline()}

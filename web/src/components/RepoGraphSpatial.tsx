@@ -81,16 +81,16 @@ function simulateStep(
 }
 
 function edgeColor(edge: SpatialEdge): string {
-  if (!edge.crossRepo) return 'rgba(148,163,184,0.12)'
+  if (!edge.crossRepo) return 'rgba(148,163,184,0.35)'
   switch (edge.status) {
     case 'resolved':
-      return 'rgba(16,185,129,0.45)'
+      return 'rgba(16,185,129,0.55)'
     case 'unresolved':
-      return 'rgba(244,63,94,0.35)'
+      return 'rgba(244,63,94,0.45)'
     case 'rejected':
       return 'rgba(115,115,115,0.25)'
     default:
-      return 'rgba(148,163,184,0.2)'
+      return 'rgba(148,163,184,0.3)'
   }
 }
 
@@ -267,7 +267,7 @@ export function RepoGraphSpatial({ data, searchQuery, selectedId, onSelect, hidd
         ctx.lineTo(dst.x, dst.y)
         ctx.strokeStyle = edgeColor(edge)
         ctx.globalAlpha = alpha
-        ctx.lineWidth = edge.crossRepo ? 1.4 : 0.5
+        ctx.lineWidth = edge.crossRepo ? 1.6 : 0.8
         ctx.stroke()
         ctx.globalAlpha = 1
       }

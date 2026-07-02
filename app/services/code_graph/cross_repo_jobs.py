@@ -6,10 +6,9 @@ repo in a project, not a single workspace, so it doesn't fit that registry's
 one-job-per-workspace design. State is process-local, same as index jobs: a
 job cannot outlive a server restart, and after one "not running" is correct.
 
-Only the ``use_llm=True`` path goes through this registry (see the API route
-in ``app/api/routes/team/projects.py``) — Tier A (static) resolution is cheap
-and stays synchronous; Tier B (LLM) depends on model latency regardless of
-project size, so it always runs as a background job.
+Every run goes through this registry: Tier 0 (reattach), Tier A (static),
+and Tier B (FTS5 lexical) all run together as a background job so the route
+stays fast regardless of project size.
 """
 
 from __future__ import annotations
@@ -31,13 +30,11 @@ class CrossRepoResolveJob:
     """Snapshot of a single project's cross-repo resolution run."""
 
     project_id: str
-    use_llm: bool
     started_at: float
-    llm_model: str | None = None
     status: str = "running"  # running | done | error
     finished_at: float | None = None
     error: str | None = None
-    phase: str = "starting"  # starting | reattach | static | llm | done
+    phase: str = "starting"  # starting | reattach | static | lexical | done
     progress: float = 0.0
     message: str = ""
     stats: dict | None = None
@@ -55,8 +52,6 @@ class CrossRepoResolveJobRegistry:
         self,
         *,
         project_id: UUID,
-        use_llm: bool,
-        llm_model: str | None = None,
         db_factory: DbFactory | None = None,
     ) -> tuple[CrossRepoResolveJob, bool]:
         """Start a background resolution pass for ``project_id``.
@@ -71,8 +66,6 @@ class CrossRepoResolveJobRegistry:
                 return existing, False
             job = CrossRepoResolveJob(
                 project_id=key,
-                use_llm=use_llm,
-                llm_model=llm_model,
                 started_at=time.time(),
             )
             self._jobs[key] = job
@@ -80,8 +73,6 @@ class CrossRepoResolveJobRegistry:
                 self._run(
                     job=job,
                     project_id=project_id,
-                    use_llm=use_llm,
-                    llm_model=llm_model,
                     db_factory=db_factory,
                 )
             )
@@ -94,52 +85,43 @@ class CrossRepoResolveJobRegistry:
         *,
         job: CrossRepoResolveJob,
         project_id: UUID,
-        use_llm: bool,
-        llm_model: str | None,
         db_factory: DbFactory | None,
     ) -> None:
         factory = resolve_db_factory(db_factory)
         try:
             job.phase = "reattach"
+            job.progress = 0.0
             job.message = "Re-attaching stale links…"
             async with factory() as db:
                 stats: CrossRepoResolveStats = await resolve_project(
                     db, project_id=project_id
                 )
+
             job.phase = "static"
-            job.progress = 0.5 if use_llm else 1.0
+            job.progress = 0.33
             job.message = f"{stats.static_resolved} resolved statically"
             job.stats = asdict(stats)
 
-            if use_llm:
-                job.phase = "llm"
-                job.message = "Narrowing remaining references…"
-                async with factory() as db:
-                    tier_b = await resolve_project_tier_b(
-                        db, project_id=project_id, llm_model=llm_model
-                    )
-                merged = CrossRepoResolveStats(
-                    reattached=stats.reattached,
-                    static_resolved=stats.static_resolved,
-                    lexical_resolved=tier_b.lexical_resolved,
-                    llm_resolved=tier_b.llm_resolved,
-                    llm_external=tier_b.llm_external,
-                    still_unresolved=max(
-                        0,
-                        stats.still_unresolved
-                        - tier_b.lexical_resolved
-                        - tier_b.llm_resolved
-                        - tier_b.llm_external,
-                    ),
-                    capped=tier_b.capped,
-                )
-                job.stats = asdict(merged)
-                job.message = (
-                    f"{tier_b.lexical_resolved} resolved by lexical match, "
-                    f"{tier_b.llm_resolved} by AI"
-                    + (f", {tier_b.llm_external} classified external" if tier_b.llm_external else "")
-                    + (f" ({tier_b.capped} deferred to next run)" if tier_b.capped else "")
-                )
+            job.phase = "lexical"
+            job.progress = 0.5
+            job.message = "Narrowing remaining references…"
+            async with factory() as db:
+                tier_b = await resolve_project_tier_b(db, project_id=project_id)
+            merged = CrossRepoResolveStats(
+                reattached=stats.reattached,
+                static_resolved=stats.static_resolved,
+                lexical_resolved=tier_b.lexical_resolved,
+                still_unresolved=max(
+                    0,
+                    stats.still_unresolved - tier_b.lexical_resolved,
+                ),
+                capped=tier_b.capped,
+            )
+            job.stats = asdict(merged)
+            job.progress = 0.9
+            job.message = f"{tier_b.lexical_resolved} resolved by lexical match" + (
+                f" ({tier_b.capped} deferred to next run)" if tier_b.capped else ""
+            )
 
             job.status = "done"
             job.phase = "done"
@@ -149,9 +131,7 @@ class CrossRepoResolveJobRegistry:
         except Exception as exc:  # noqa: BLE001 — surfaced to the UI via status
             job.status = "error"
             job.error = str(exc)
-            logger.exception(
-                "cross_repo resolve job failed project={}", job.project_id
-            )
+            logger.exception("cross_repo resolve job failed project={}", job.project_id)
         finally:
             job.finished_at = time.time()
 

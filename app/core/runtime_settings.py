@@ -65,23 +65,17 @@ class CrossRepoSettings(BaseModel):
 
     Tier A (static: Java FQN + manifest-identity matching) is always free and
     always runs. These settings only affect Tier B, which narrows candidates
-    via FTS5 lexical search and falls back to an LLM call for whatever's
-    still ambiguous — only reached when Tier A leaves a reference unresolved.
+    via FTS5 lexical search for whatever Tier A leaves unresolved.
     """
 
     model_config = ConfigDict(extra="ignore")
 
     enabled: bool = True
-    llm_enabled: bool = True
-    # Override model ('provider:model'). Empty = reuse the session's own
-    # model, same convention as title generation reusing the chat provider.
-    llm_model: str = ""
     candidate_k: int = 5
-    llm_batch_size: int = 8
     # Safety valve for Tier B: even after the is_likely_external pre-filter,
     # a very large or freshly-linked project could have more unresolved rows
-    # than are sane to run through FTS + an LLM in one pass. The remainder is
-    # simply picked up on the next resolve call.
+    # than are sane to run through FTS5 in one pass. The remainder is simply
+    # picked up on the next resolve call.
     max_rows_per_run: int = 500
 
 

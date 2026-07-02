@@ -16,12 +16,13 @@ tiers of increasing cost:
     2. Java fully-qualified-name matching.
     3. manifest-identity matching (package.json/pyproject.toml/go.mod/
        Cargo.toml) for the languages that already extract imports.
-  Tier B — embedding-narrowed + LLM fallback (a later module) for whatever
-    Tier A leaves unresolved.
+  Tier B — FTS5 lexical matching (``cross_repo_llm.py``) for whatever Tier A
+    leaves unresolved.
 """
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import UUID
@@ -34,11 +35,13 @@ from app.models.code_graph import CodeNode, CrossRepoEdge
 from app.services.code_graph.manifest import (
     PackageManifest,
     PathDependency,
+    compute_importable_id,
     match_path_dependency,
     match_reference_to_package,
     read_manifests,
     read_path_dependencies,
 )
+from app.services.code_graph.path_resolve import RepoContext, build_repo_context
 from app.services.coding_project_service import get_project_workspaces
 
 # Symbol kinds a resolved import may point at.
@@ -61,8 +64,11 @@ METHOD_MANUAL_REJECT = "manual_reject"
 # lexical search — see cross_repo_llm.py) — kept only so historical
 # CrossRepoEdge rows with this value still deserialize/display correctly.
 METHOD_EMBEDDING = "embedding"
-METHOD_LEXICAL = "lexical"
+# No longer produced (the LLM fallback layer was removed in favor of pure
+# FTS5 lexical search — see cross_repo_llm.py) — kept only so historical
+# CrossRepoEdge rows with this value still deserialize/display correctly.
 METHOD_LLM = "llm"
+METHOD_LEXICAL = "lexical"
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,8 +76,6 @@ class CrossRepoResolveStats:
     reattached: int = 0
     static_resolved: int = 0
     lexical_resolved: int = 0
-    llm_resolved: int = 0
-    llm_external: int = 0
     still_unresolved: int = 0
     capped: int = 0
 
@@ -82,6 +86,7 @@ class _SiblingRepo:
     path: str
     manifests: list[PackageManifest]
     path_dependencies: list[PathDependency]
+    layout_hints: RepoContext
 
 
 async def resolve_project(
@@ -91,9 +96,9 @@ async def resolve_project(
 ) -> CrossRepoResolveStats:
     """Run Tier 0 (reattach) + Tier A (static) resolution for a project.
 
-    Tier B (embedding + LLM) is a separate, optional pass — see
-    ``resolve_project_tier_b`` — so a caller that only wants the free tiers
-    (``use_llm=False`` in the API) never pays for it.
+    Tier B (FTS5 lexical matching) is a separate pass — see
+    ``resolve_project_tier_b``. The caller controls whether it runs through
+    the job registry in ``app/services/code_graph/cross_repo_jobs.py``.
     """
     reattached = await _reattach_stale(db, project_id=project_id)
     static_resolved = await _resolve_static(db, project_id=project_id)
@@ -159,6 +164,7 @@ async def _load_sibling_repos(
             path=ws.path,
             manifests=read_manifests(ws.path),
             path_dependencies=read_path_dependencies(ws.path),
+            layout_hints=build_repo_context(Path(ws.path)),
         )
         for _, ws in pairs
     }
@@ -210,7 +216,9 @@ async def _resolve_static(db: AsyncSession, *, project_id: UUID) -> int:
 
     resolved = 0
     for row in rows:
-        others = [s for s in siblings.values() if s.workspace_id != row.src_workspace_id]
+        others = [
+            s for s in siblings.values() if s.workspace_id != row.src_workspace_id
+        ]
         if not others:
             continue
         src_repo = siblings.get(row.src_workspace_id)
@@ -220,7 +228,12 @@ async def _resolve_static(db: AsyncSession, *, project_id: UUID) -> int:
         ):
             resolved += 1
             continue
-        if await _try_resolve_fqn(db, row, others):
+        if src_repo is not None and await _try_resolve_relative_cross_repo(
+            db, row, src_repo, others
+        ):
+            resolved += 1
+            continue
+        if await _try_resolve_fqn(db, row, others, siblings):
             resolved += 1
             continue
         if await _try_resolve_manifest(db, row, others):
@@ -282,6 +295,78 @@ async def _try_resolve_path_dependency(
     return True
 
 
+async def _try_resolve_relative_cross_repo(
+    db: AsyncSession,
+    row: CrossRepoEdge,
+    src_repo: _SiblingRepo,
+    others: list[_SiblingRepo],
+) -> bool:
+    """Resolve a relative import that points at a sibling repo.
+
+    A relative import like ``"../sibling-repo/src/utils"`` that Phase 1
+    already tried and failed to resolve *intra*-repo (not in ``known_files``)
+    — that failure is itself the "points at a sibling" signal. Resolve the
+    relative path from the source file's directory, check whether it falls
+    inside any sibling's root, and if so resolve the specific symbol.
+    """
+    raw = row.raw_reference
+    if not raw.startswith("."):
+        return False
+
+    src_dir = str(Path(row.src_file_path).parent)
+    try:
+        target = (Path(src_repo.path) / src_dir / raw).resolve()
+    except (OSError, ValueError):
+        return False
+
+    sibling = next(
+        (
+            s
+            for s in others
+            if str(Path(s.path).resolve()) == target
+            or str(Path(s.path).resolve()) in str(target)
+        ),
+        None,
+    )
+    if sibling is None:
+        # Check if target falls inside any sibling's root.
+        for s in others:
+            sroot = str(Path(s.path).resolve())
+            if str(target).startswith(sroot + os.sep) or str(target).startswith(
+                sroot + "/"
+            ):
+                sibling = s
+                break
+    if sibling is None:
+        return False
+
+    node = None
+    if row.dst_name_hint:
+        node = await _find_node_by_name(
+            db, workspace_id=sibling.workspace_id, name=row.dst_name_hint
+        )
+    if node is not None:
+        _stamp_resolved(
+            row,
+            dst_workspace_id=sibling.workspace_id,
+            dst_node_id=node.id,
+            dst_qualified_name=node.qualified_name,
+            method=METHOD_STATIC_PATH_DEPENDENCY,
+            confidence=1.0,
+        )
+    else:
+        _stamp_resolved(
+            row,
+            dst_workspace_id=sibling.workspace_id,
+            dst_node_id=None,
+            dst_qualified_name=None,
+            method=METHOD_STATIC_PATH_DEPENDENCY,
+            confidence=0.6,
+        )
+    db.add(row)
+    return True
+
+
 def _fqn_candidates(raw_reference: str) -> list[str]:
     """Reference strings worth trying as an exact qualified_name match.
 
@@ -299,7 +384,10 @@ def _fqn_candidates(raw_reference: str) -> list[str]:
 
 
 async def _try_resolve_fqn(
-    db: AsyncSession, row: CrossRepoEdge, others: list[_SiblingRepo]
+    db: AsyncSession,
+    row: CrossRepoEdge,
+    others: list[_SiblingRepo],
+    siblings: dict[UUID, _SiblingRepo] | None = None,
 ) -> bool:
     for candidate in _fqn_candidates(row.raw_reference):
         matches: list[tuple[_SiblingRepo, CodeNode]] = []
@@ -321,7 +409,76 @@ async def _try_resolve_fqn(
             )
             db.add(row)
             return True
+
+    # Fallback: try generalized importable_id for ecosystems without native
+    # FQN support (Python, JS/TS, Go, etc.).
+    if siblings is not None:
+        matches = await _find_by_importable_id(db, row, others, siblings)
+        if len(matches) == 1:
+            sibling, node = matches[0]
+            _stamp_resolved(
+                row,
+                dst_workspace_id=sibling.workspace_id,
+                dst_node_id=node.id,
+                dst_qualified_name=node.qualified_name,
+                method=METHOD_STATIC_FQN,
+                confidence=0.9,
+            )
+            db.add(row)
+            return True
+
     return False
+
+
+async def _find_by_importable_id(
+    db: AsyncSession,
+    row: CrossRepoEdge,
+    others: list[_SiblingRepo],
+    siblings: dict[UUID, _SiblingRepo],
+) -> list[tuple[_SiblingRepo, CodeNode]]:
+    """Try to match via generalized importable_id (Phase 3)."""
+    matches: list[tuple[_SiblingRepo, CodeNode]] = []
+    for sibling in others:
+        root_prefix = _get_root_prefix(sibling)
+        if not root_prefix:
+            continue
+        # Try the raw_reference as an importable_id directly.
+        nodes = (
+            await db.exec(
+                select(CodeNode).where(
+                    col(CodeNode.workspace_id) == sibling.workspace_id,
+                    col(CodeNode.kind).in_(_ANY_SYMBOL_KINDS),
+                )
+            )
+        ).all()
+        for node in nodes:
+            importable = compute_importable_id(
+                node.file_path,
+                node.qualified_name,
+                language=node.language,
+                root_prefix=root_prefix,
+            )
+            if importable and (
+                importable == row.raw_reference
+                or row.raw_reference.startswith(importable + ".")
+            ):
+                matches.append((sibling, node))
+                break
+    return matches
+
+
+def _get_root_prefix(sibling: _SiblingRepo) -> str | None:
+    """Get the root prefix for importable_id computation."""
+    for m in sibling.manifests:
+        if m.ecosystem in ("npm", "python", "go", "cargo"):
+            return m.package_name
+    # Go module path from layout hints
+    if sibling.layout_hints.go_module_path:
+        return sibling.layout_hints.go_module_path
+    # Python top-level packages
+    if sibling.layout_hints.py_top_level_packages:
+        return next(iter(sibling.layout_hints.py_top_level_packages))
+    return None
 
 
 async def _try_resolve_manifest(

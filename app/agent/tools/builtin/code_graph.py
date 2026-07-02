@@ -365,8 +365,14 @@ def _render_references(
     if cross_repo:
         rows.append("  Cross-repo:")
         for edge, repo_label in cross_repo:
-            loc = f"{edge.src_file_path}:{edge.src_line}" if edge.src_line else edge.src_file_path
-            rows.append(f"    {edge.kind} ← {repo_label}/{loc} (`{edge.raw_reference}`)")
+            loc = (
+                f"{edge.src_file_path}:{edge.src_line}"
+                if edge.src_line
+                else edge.src_file_path
+            )
+            rows.append(
+                f"    {edge.kind} ← {repo_label}/{loc} (`{edge.raw_reference}`)"
+            )
     return head + f" ({total} refs)\n" + "\n".join(rows)
 
 
@@ -455,14 +461,47 @@ async def _code_path(
         workspace_id = await _resolve_workspace(db)
         if workspace_id is None:
             return _NOT_INDEXED
+
+        project_ids = await proj_svc.get_projects_for_workspace(db, workspace_id)
+        project_id = project_ids[0] if project_ids else None
+
         src_matches = await svc.find_nodes_by_name(
             db, workspace_id=workspace_id, name=source, limit=3
         )
+        if not src_matches and project_id is not None:
+            sibling_paths = [
+                ws.path
+                for _, ws in await proj_svc.get_project_workspaces(db, project_id)
+            ]
+            src_matches = [
+                node
+                for _path, node in await svc.search_across_workspaces(
+                    db,
+                    workspace_paths=sibling_paths,
+                    query=source,
+                    limit_per_workspace=3,
+                )
+            ]
         if not src_matches:
             return f"No symbol named '{source}' in the code index."
+
         dst_matches = await svc.find_nodes_by_name(
             db, workspace_id=workspace_id, name=target, limit=3
         )
+        if not dst_matches and project_id is not None:
+            sibling_paths = [
+                ws.path
+                for _, ws in await proj_svc.get_project_workspaces(db, project_id)
+            ]
+            dst_matches = [
+                node
+                for _path, node in await svc.search_across_workspaces(
+                    db,
+                    workspace_paths=sibling_paths,
+                    query=target,
+                    limit_per_workspace=3,
+                )
+            ]
         if not dst_matches:
             return f"No symbol named '{target}' in the code index."
 
@@ -475,6 +514,7 @@ async def _code_path(
                     src_id=src_node.id,
                     dst_id=dst_node.id,
                     max_hops=hops,
+                    project_id=project_id,
                 )
                 if path is not None:
                     return _render_path(src_node, dst_node, path)
