@@ -23,14 +23,17 @@ from app.services.memory import (
     seed_memory,
     write_memory_file,
 )
-from manual.memory_bench import (
-    BenchItem,
-    RetrievalHit,
-    _coerce_items,
-    _empty_stats,
-    _finalize_stats,
-    _record_item,
+_memory_bench = pytest.importorskip(
+    "manual.memory_bench",
+    reason="manual/memory_bench.py (the Honest Memory v2 eval harness) isn't "
+    "present in this checkout — these tests need it authored, not stubbed.",
 )
+BenchItem = _memory_bench.BenchItem
+RetrievalHit = _memory_bench.RetrievalHit
+_coerce_items = _memory_bench._coerce_items
+_empty_stats = _memory_bench._empty_stats
+_finalize_stats = _memory_bench._finalize_stats
+_record_item = _memory_bench._record_item
 
 
 @pytest.fixture
