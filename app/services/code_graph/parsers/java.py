@@ -109,6 +109,36 @@ class JavaParser(TreeSitterParser):
                 return _simple_type_name(type_node, source)
         return None
 
+    def uses_target(self, node: Node, source: bytes) -> str | None:
+        """Return a DI-wired field's type, else ``None``.
+
+        Constructor/setter parameter types are already captured generically
+        by ``type_refs()`` — this only covers the one pattern with no other
+        extraction path: injected *fields*. Two signals count as injection:
+        an explicit ``@Autowired``/``@Inject``/``@Resource`` annotation, or a
+        ``final`` field with no initializer (Lombok's ``@RequiredArgsConstructor``
+        generates the constructor, so the annotation is often absent — but an
+        uninitialized ``final`` field can only be set by *some* constructor,
+        making it a required collaborator either way).
+        """
+        if node.type != "field_declaration":
+            return None
+        modifiers = next((c for c in node.children if c.type == "modifiers"), None)
+        mod_types = {m.type for m in modifiers.children} if modifiers is not None else set()
+        if not _INJECTION_ANNOTATIONS.intersection(self.decorators(node, source)):
+            if "final" not in mod_types:
+                return None
+            declarator = next(
+                (c for c in node.children if c.type == "variable_declarator"), None
+            )
+            if declarator is None or declarator.child_by_field_name("value") is not None:
+                return None
+        for child in node.children:
+            if child.type in {"type_identifier", "generic_type", "scoped_type_identifier"}:
+                name = _simple_type_name(child, source)
+                return name if name and name not in _JAVA_BUILTIN_TYPES else None
+        return None
+
     def supertypes(self, node: Node, source: bytes) -> list[SuperType]:
         if node.type not in (
             "class_declaration",
@@ -201,6 +231,8 @@ class JavaParser(TreeSitterParser):
                             break
         return out
 
+
+_INJECTION_ANNOTATIONS = frozenset({"Autowired", "Inject", "Resource"})
 
 _JAVA_BUILTIN_TYPES = frozenset(
     {

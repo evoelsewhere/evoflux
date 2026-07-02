@@ -24,6 +24,7 @@ from app.services.code_graph.types import (
     EDGE_DECORATED_BY,
     EDGE_IMPORTS,
     EDGE_REFERENCES,
+    EDGE_USES,
     ExtractedEdge,
     ExtractedNode,
     ParseResult,
@@ -136,6 +137,11 @@ class TreeSitterParser:
 
     def call_target(self, node: Node, source: bytes) -> str | None:
         """Return the callee name if ``node`` is a call, else ``None``."""
+        return None
+
+    def uses_target(self, node: Node, source: bytes) -> str | None:
+        """Return a wired-in dependency's type name if ``node`` declares one
+        (e.g. a DI-injected field), else ``None``."""
         return None
 
     def supertypes(self, node: Node, source: bytes) -> list[SuperType]:
@@ -257,6 +263,16 @@ class TreeSitterParser:
                         src_local_id=parent_local_id,
                         kind=EDGE_CALLS,
                         dst_name=callee,
+                        line=node.start_point[0] + 1,
+                    )
+                )
+            used = self.uses_target(node, source)
+            if used:
+                result.edges.append(
+                    ExtractedEdge(
+                        src_local_id=parent_local_id,
+                        kind=EDGE_USES,
+                        dst_name=used,
                         line=node.start_point[0] + 1,
                     )
                 )
