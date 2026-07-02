@@ -105,6 +105,21 @@ class PascalParser(TreeSitterParser):
                 return text[2:-2].strip() if text.endswith("*)") else text[2:].strip()
         return None
 
+    def type_refs(self, node: Node, source: bytes) -> list[str]:
+        if node.type not in {"defProc", "declProc"}:
+            return []
+        out: list[str] = []
+        for child in node.children:
+            if child.type == "formalParameters":
+                _collect_pascal_param_types(child, source, out)
+            elif child.type == "resultType":
+                for sub in child.children:
+                    if sub.type == "typeIdentifier":
+                        name = node_text(sub, source)
+                        if name not in _PASCAL_BUILTIN_TYPES:
+                            out.append(name)
+        return out
+
     def _type_name(self, node: Node, source: bytes) -> str | None:
         for child in node.children:
             if child.type == "identifier":
@@ -128,3 +143,46 @@ class PascalParser(TreeSitterParser):
             if child.type == ntype:
                 return child
         return None
+
+
+_PASCAL_BUILTIN_TYPES = frozenset(
+    {
+        "Boolean",
+        "Byte",
+        "Cardinal",
+        "Char",
+        "Double",
+        "Extended",
+        "Integer",
+        "Int64",
+        "LongInt",
+        "LongWord",
+        "Pointer",
+        "Real",
+        "ShortInt",
+        "ShortString",
+        "Single",
+        "SmallInt",
+        "String",
+        "WideChar",
+        "WideString",
+        "Word",
+    }
+)
+
+
+def _collect_pascal_param_types(node: Node, source: bytes, out: list[str]) -> None:
+    """Collect type identifiers from Pascal formal parameter sections."""
+    for child in node.children:
+        if child.type == "formalParameter":
+            for sub in child.children:
+                if sub.type == "typeIdentifier":
+                    name = node_text(sub, source)
+                    if name not in _PASCAL_BUILTIN_TYPES:
+                        out.append(name)
+                elif sub.type == "type":
+                    for tsub in sub.children:
+                        if tsub.type == "typeIdentifier":
+                            name = node_text(tsub, source)
+                            if name not in _PASCAL_BUILTIN_TYPES:
+                                out.append(name)

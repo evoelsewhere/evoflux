@@ -183,9 +183,103 @@ class RustParser(TreeSitterParser):
                         break
         return out
 
+    def decorators(self, node: Node, source: bytes) -> list[str]:
+        out: list[str] = []
+        prev = node.prev_named_sibling
+        while prev is not None and prev.type == "attribute_item":
+            name = _rust_attr_name(prev, source)
+            if name:
+                out.append(name)
+            prev = prev.prev_named_sibling
+        return out
+
+    def type_refs(self, node: Node, source: bytes) -> list[str]:
+        if node.type not in {"function_item", "function_signature_item"}:
+            return []
+        out: list[str] = []
+        params = node.child_by_field_name("parameters")
+        if params is not None:
+            _collect_rust_type_ids(params, source, out)
+        ret = node.child_by_field_name("return_type")
+        if ret is not None:
+            _collect_rust_type_ids(ret, source, out)
+        return out
+
     def _name(self, node: Node, source: bytes) -> str | None:
         name_node = node.child_by_field_name("name")
         return node_text(name_node, source) if name_node is not None else None
+
+
+_RUST_BUILTIN_TYPES = frozenset(
+    {
+        "bool",
+        "char",
+        "f32",
+        "f64",
+        "i8",
+        "i16",
+        "i32",
+        "i64",
+        "i128",
+        "isize",
+        "str",
+        "u8",
+        "u16",
+        "u32",
+        "u64",
+        "u128",
+        "usize",
+        "Self",
+    }
+)
+
+
+def _rust_attr_name(attr_item: Node, source: bytes) -> str | None:
+    """Extract the attribute name from an attribute_item node: #[foo], #[foo::bar]."""
+    for child in attr_item.children:
+        if child.type == "attribute":
+            for sub in child.children:
+                if sub.type == "identifier":
+                    return node_text(sub, source)
+                if sub.type == "scoped_identifier":
+                    name_node = sub.child_by_field_name("name")
+                    if name_node is not None:
+                        return node_text(name_node, source)
+    return None
+
+
+def _collect_rust_type_ids(node: Node, source: bytes, out: list[str]) -> None:
+    """Recursively collect user-defined type identifiers from Rust type nodes."""
+    if node.type == "type_identifier":
+        name = node_text(node, source)
+        if name not in _RUST_BUILTIN_TYPES:
+            out.append(name)
+        return
+    if node.type == "scoped_type_identifier":
+        name_node = node.child_by_field_name("name")
+        if name_node is not None:
+            name = node_text(name_node, source)
+            if name not in _RUST_BUILTIN_TYPES:
+                out.append(name)
+        return
+    if node.type == "generic_type":
+        for child in node.children:
+            _collect_rust_type_ids(child, source, out)
+        return
+    if node.type in {
+        "function_type",
+        "tuple_type",
+        "array_type",
+        "pointer_type",
+        "reference_type",
+        "optional_type",
+        "never_type",
+    }:
+        for child in node.children:
+            _collect_rust_type_ids(child, source, out)
+        return
+    for child in node.children:
+        _collect_rust_type_ids(child, source, out)
 
 
 def _type_name(node: Node, source: bytes) -> str | None:

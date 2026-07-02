@@ -105,6 +105,42 @@ class KotlinParser(TreeSitterParser):
             return [ImportRef(name="*", module_path=f"{dotted}.*")]
         return [ImportRef(name=dotted.rsplit(".", 1)[-1], module_path=dotted)]
 
+    def decorators(self, node: Node, source: bytes) -> list[str]:
+        out: list[str] = []
+        prev = node.prev_named_sibling
+        while prev is not None and prev.type == "annotation":
+            name = _kt_annotation_name(prev, source)
+            if name:
+                out.append(name)
+            prev = prev.prev_named_sibling
+        # Also check for annotations as direct children (class/function modifiers)
+        for child in node.children:
+            if child.type == "modifiers":
+                for mod in child.children:
+                    if mod.type == "annotation":
+                        name = _kt_annotation_name(mod, source)
+                        if name:
+                            out.append(name)
+        return out
+
+    def type_refs(self, node: Node, source: bytes) -> list[str]:
+        if node.type != "function_declaration":
+            return []
+        out: list[str] = []
+        # Parameter types
+        params = node.child_by_field_name("parameters")
+        if params is not None:
+            for param in params.children:
+                if param.type == "parameter":
+                    type_node = param.child_by_field_name("type")
+                    if type_node is not None:
+                        _collect_kt_type_ids(type_node, source, out)
+        # Return type
+        ret = node.child_by_field_name("type")
+        if ret is not None:
+            _collect_kt_type_ids(ret, source, out)
+        return out
+
     def _class_name(self, node: Node, source: bytes) -> str | None:
         for child in node.children:
             if child.type == "type_identifier":
@@ -170,6 +206,61 @@ def _looks_like_interface_kt(name: str) -> bool:
     """
     # Conservative: only 'I' prefix pattern (less common in Kotlin than C#)
     return False
+
+
+_KT_BUILTIN_TYPES = frozenset(
+    {
+        "Any",
+        "Boolean",
+        "Byte",
+        "Char",
+        "Double",
+        "Float",
+        "Int",
+        "Long",
+        "Nothing",
+        "Short",
+        "String",
+        "Unit",
+    }
+)
+
+
+def _kt_annotation_name(node: Node, source: bytes) -> str | None:
+    """Extract annotation name from a Kotlin annotation node."""
+    for child in node.children:
+        if child.type == "user_type":
+            for sub in child.children:
+                if sub.type == "type_identifier":
+                    return node_text(sub, source)
+        if child.type == "constructor_invocation":
+            for sub in child.children:
+                if sub.type == "user_type":
+                    for ssub in sub.children:
+                        if ssub.type == "type_identifier":
+                            return node_text(ssub, source)
+    return None
+
+
+def _collect_kt_type_ids(node: Node, source: bytes, out: list[str]) -> None:
+    """Recursively collect user-defined type identifiers from Kotlin type nodes."""
+    if node.type in ("type_identifier", "simple_identifier"):
+        name = node_text(node, source)
+        if name not in _KT_BUILTIN_TYPES:
+            out.append(name)
+        return
+    if node.type == "user_type":
+        for child in node.children:
+            _collect_kt_type_ids(child, source, out)
+        return
+    if node.type == "nullable_type":
+        for child in node.children:
+            _collect_kt_type_ids(child, source, out)
+        return
+    if node.type == "type_argument_list":
+        for child in node.children:
+            _collect_kt_type_ids(child, source, out)
+        return
 
 
 def _preceding_comment(node: Node, source: bytes) -> str | None:

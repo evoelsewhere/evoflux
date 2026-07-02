@@ -123,6 +123,34 @@ class ScalaParser(TreeSitterParser):
             out.extend(_scala_import_segment(segment, source))
         return out
 
+    def decorators(self, node: Node, source: bytes) -> list[str]:
+        out: list[str] = []
+        prev = node.prev_named_sibling
+        while prev is not None and prev.type == "annotation":
+            name = _scala_annotation_name(prev, source)
+            if name:
+                out.append(name)
+            prev = prev.prev_named_sibling
+        return out
+
+    def type_refs(self, node: Node, source: bytes) -> list[str]:
+        if node.type != "function_definition":
+            return []
+        out: list[str] = []
+        # Parameter types
+        params = node.child_by_field_name("parameters")
+        if params is not None:
+            for param in params.children:
+                if param.type == "parameter":
+                    type_node = param.child_by_field_name("type")
+                    if type_node is not None:
+                        _collect_scala_type_ids(type_node, source, out)
+        # Return type
+        ret = node.child_by_field_name("return_type")
+        if ret is not None:
+            _collect_scala_type_ids(ret, source, out)
+        return out
+
     def _name(self, node: Node, source: bytes) -> str | None:
         name_node = node.child_by_field_name("name")
         if name_node is not None:
@@ -137,6 +165,56 @@ class ScalaParser(TreeSitterParser):
         if pattern is not None and pattern.type == "identifier":
             return node_text(pattern, source)
         return None
+
+
+_SCALA_BUILTIN_TYPES = frozenset(
+    {
+        "Any",
+        "AnyRef",
+        "AnyVal",
+        "Boolean",
+        "Byte",
+        "Char",
+        "Double",
+        "Float",
+        "Int",
+        "Long",
+        "Nothing",
+        "Null",
+        "Short",
+        "String",
+        "Unit",
+    }
+)
+
+
+def _scala_annotation_name(node: Node, source: bytes) -> str | None:
+    """Extract annotation name from a Scala annotation node."""
+    for child in node.children:
+        if child.type == "identifier":
+            return node_text(child, source)
+        if child.type == "type_identifier":
+            return node_text(child, source)
+        if child.type == "constructor_annotation":
+            for sub in child.children:
+                if sub.type == "identifier":
+                    return node_text(sub, source)
+    return None
+
+
+def _collect_scala_type_ids(node: Node, source: bytes, out: list[str]) -> None:
+    """Recursively collect user-defined type identifiers from Scala type nodes."""
+    if node.type == "type_identifier":
+        name = node_text(node, source)
+        if name not in _SCALA_BUILTIN_TYPES:
+            out.append(name)
+        return
+    if node.type == "generic_type":
+        for child in node.children:
+            _collect_scala_type_ids(child, source, out)
+        return
+    for child in node.children:
+        _collect_scala_type_ids(child, source, out)
 
 
 def _scala_type_name(node: Node, source: bytes) -> str | None:

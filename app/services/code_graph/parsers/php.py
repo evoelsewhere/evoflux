@@ -176,6 +176,42 @@ class PhpParser(TreeSitterParser):
                 return _strip_phpdoc(text)
         return None
 
+    def decorators(self, node: Node, source: bytes) -> list[str]:
+        out: list[str] = []
+        for child in node.children:
+            if child.type == "attribute_list":
+                for attr in child.children:
+                    if attr.type == "attribute":
+                        name = _php_attr_name(attr, source)
+                        if name:
+                            out.append(name)
+        return out
+
+    def type_refs(self, node: Node, source: bytes) -> list[str]:
+        if node.type not in {"method_declaration", "function_definition"}:
+            return []
+        out: list[str] = []
+        # Parameter types
+        params = node.child_by_field_name("parameters")
+        if params is not None:
+            for param in params.children:
+                if param.type == "simple_parameter":
+                    for sub in param.children:
+                        if sub.type in {
+                            "type_identifier",
+                            "named_type",
+                            "union_type",
+                            "intersection_type",
+                            "nullable_type",
+                        }:
+                            _collect_php_type_ids(sub, source, out)
+                            break
+        # Return type
+        ret = node.child_by_field_name("return_type")
+        if ret is not None:
+            _collect_php_type_ids(ret, source, out)
+        return out
+
     def _field_name(self, node: Node, source: bytes) -> str | None:
         name_node = node.child_by_field_name("name")
         if name_node is not None:
@@ -184,6 +220,49 @@ class PhpParser(TreeSitterParser):
             if child.type == "name":
                 return node_text(child, source)
         return None
+
+
+_PHP_BUILTIN_TYPES = frozenset(
+    {
+        "bool",
+        "int",
+        "float",
+        "string",
+        "array",
+        "callable",
+        "iterable",
+        "object",
+        "mixed",
+        "void",
+        "null",
+        "never",
+        "self",
+        "static",
+        "true",
+        "false",
+    }
+)
+
+
+def _php_attr_name(attr_node: Node, source: bytes) -> str | None:
+    """Extract attribute name from a PHP attribute node."""
+    for child in attr_node.children:
+        if child.type in ("name", "qualified_name"):
+            return _last_name(child, source) or node_text(child, source)
+    return None
+
+
+def _collect_php_type_ids(node: Node, source: bytes, out: list[str]) -> None:
+    """Recursively collect user-defined type identifiers from PHP type nodes."""
+    if node.type in ("name", "qualified_name", "type_identifier", "named_type"):
+        name = _last_name(node, source) or node_text(node, source)
+        if name.lower() not in _PHP_BUILTIN_TYPES:
+            out.append(name)
+        return
+    if node.type in ("union_type", "intersection_type", "nullable_type"):
+        for child in node.children:
+            _collect_php_type_ids(child, source, out)
+        return
 
 
 def _last_name(node: Node, source: bytes) -> str | None:

@@ -23,7 +23,13 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db import current_sqlite_path
 from app.models.chat import CodingWorkspace
-from app.models.code_graph import CodeEdge, CodeIndexState, CodeNode, CrossRepoEdge
+from app.models.code_graph import (
+    CodeAmbiguousEdge,
+    CodeEdge,
+    CodeIndexState,
+    CodeNode,
+    CrossRepoEdge,
+)
 from app.services.code_graph import fts_store as fts
 from app.services.code_graph.indexer import (
     ExistingDef,
@@ -143,6 +149,11 @@ async def reindex_workspace(
         sa_delete(CodeEdge).where(col(CodeEdge.workspace_id) == workspace_id)
     )
     await db.execute(
+        sa_delete(CodeAmbiguousEdge).where(
+            col(CodeAmbiguousEdge.workspace_id) == workspace_id
+        )
+    )
+    await db.execute(
         sa_delete(CodeNode).where(col(CodeNode.workspace_id) == workspace_id)
     )
     await db.execute(
@@ -190,6 +201,33 @@ async def reindex_workspace(
             )
         )
     db.add_all(edge_rows)
+
+    # Persist ambiguous edges — targets that matched 2+ candidates.
+    import json
+
+    ambiguous_rows = []
+    for amb in index.ambiguous_edges:
+        src_id = key_to_id.get(amb.src_key)
+        if src_id is None:
+            continue
+        candidate_ids = [
+            str(key_to_id[k]) for k in amb.candidate_keys if k in key_to_id
+        ]
+        if len(candidate_ids) < 2:
+            continue
+        ambiguous_rows.append(
+            CodeAmbiguousEdge(
+                workspace_id=workspace_id,
+                src_id=src_id,
+                dst_name=amb.dst_name,
+                kind=amb.kind,
+                candidate_node_ids=json.dumps(candidate_ids),
+                file_path=amb.file_path,
+                line=amb.line,
+            )
+        )
+    if ambiguous_rows:
+        db.add_all(ambiguous_rows)
 
     db.add_all(
         [
@@ -427,6 +465,12 @@ async def _reindex_incremental(
             col(CodeEdge.file_path).in_(list(affected)),
         )
     )
+    await db.execute(
+        sa_delete(CodeAmbiguousEdge).where(
+            col(CodeAmbiguousEdge.workspace_id) == workspace_id,
+            col(CodeAmbiguousEdge.file_path).in_(list(affected)),
+        )
+    )
     if removed_ids:
         rid = list(removed_ids)
         await db.execute(
@@ -654,9 +698,7 @@ async def get_workspace_graph_data(
     # Step 1: fetch all edges, cap by occurrence order.
     all_edges = list(
         (
-            await db.exec(
-                select(CodeEdge).where(CodeEdge.workspace_id == workspace_id)
-            )
+            await db.exec(select(CodeEdge).where(CodeEdge.workspace_id == workspace_id))
         ).all()
     )
     edges = all_edges[:edge_limit]
@@ -670,9 +712,7 @@ async def get_workspace_graph_data(
     # Step 3: fetch all nodes, sort by priority, then build the final set.
     all_nodes = list(
         (
-            await db.exec(
-                select(CodeNode).where(CodeNode.workspace_id == workspace_id)
-            )
+            await db.exec(select(CodeNode).where(CodeNode.workspace_id == workspace_id))
         ).all()
     )
     all_nodes.sort(
@@ -685,9 +725,9 @@ async def get_workspace_graph_data(
     # Nodes referenced by edges must always be included so every edge renders.
     edge_nodes = [n for n in all_nodes if n.id in edge_node_ids]
     remaining_slots = max(0, node_limit - len(edge_nodes))
-    remaining_nodes = [
-        n for n in all_nodes if n.id not in edge_node_ids
-    ][:remaining_slots]
+    remaining_nodes = [n for n in all_nodes if n.id not in edge_node_ids][
+        :remaining_slots
+    ]
     nodes = edge_nodes + remaining_nodes
 
     return nodes, edges, total_node_count, total_edge_count

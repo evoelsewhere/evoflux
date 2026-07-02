@@ -153,6 +153,39 @@ class DartParser(TreeSitterParser):
                         out.append(SuperType(name=name, edge_kind=EDGE_IMPLEMENTS))
         return out
 
+    def decorators(self, node: Node, source: bytes) -> list[str]:
+        out: list[str] = []
+        prev = node.prev_named_sibling
+        while prev is not None:
+            if prev.type == "annotation":
+                name = _dart_annotation_name(prev, source)
+                if name:
+                    out.append(name)
+            elif prev.type not in ("comment",):
+                break
+            prev = prev.prev_named_sibling
+        return out
+
+    def type_refs(self, node: Node, source: bytes) -> list[str]:
+        if node.type not in {
+            "function_signature",
+            "method_signature",
+            "getter_signature",
+            "setter_signature",
+            "constructor_signature",
+        }:
+            return []
+        out: list[str] = []
+        # Return type
+        ret = node.child_by_field_name("return_type")
+        if ret is not None:
+            _collect_dart_type_ids(ret, source, out)
+        # Parameter types
+        params = node.child_by_field_name("parameters")
+        if params is not None:
+            _collect_dart_param_types(params, source, out)
+        return out
+
     def docstring(self, node: Node, source: bytes) -> str | None:
         prev = node.prev_named_sibling
         if prev is not None and prev.type == "comment":
@@ -193,6 +226,78 @@ def _find_uri(spec: Node, source: bytes) -> Node | None:
                         if leaf.type == "string_literal":
                             return leaf
     return None
+
+
+_DART_BUILTIN_TYPES = frozenset(
+    {
+        "bool",
+        "double",
+        "dynamic",
+        "int",
+        "num",
+        "String",
+        "void",
+        "Null",
+        "Object",
+        "Function",
+        "List",
+        "Map",
+        "Set",
+        "Iterable",
+        "Future",
+        "Stream",
+        "Type",
+    }
+)
+
+
+def _dart_annotation_name(node: Node, source: bytes) -> str | None:
+    """Extract annotation name from a Dart annotation node."""
+    for child in node.children:
+        if child.type == "identifier":
+            return node_text(child, source)
+        if child.type == "constructor_invocation":
+            for sub in child.children:
+                if sub.type == "type_identifier":
+                    return node_text(sub, source)
+                if sub.type == "identifier":
+                    return node_text(sub, source)
+    return None
+
+
+def _collect_dart_type_ids(node: Node, source: bytes, out: list[str]) -> None:
+    """Recursively collect user-defined type identifiers from Dart type nodes."""
+    if node.type == "type_identifier":
+        name = node_text(node, source)
+        if name not in _DART_BUILTIN_TYPES:
+            out.append(name)
+        return
+    if node.type == "identifier":
+        name = node_text(node, source)
+        if name not in _DART_BUILTIN_TYPES and name[0:1].isupper():
+            out.append(name)
+        return
+    if node.type in (
+        "nullable_type",
+        "generic_type",
+        "function_type",
+        "record_type",
+        "type_arguments",
+    ):
+        for child in node.children:
+            _collect_dart_type_ids(child, source, out)
+        return
+    for child in node.children:
+        _collect_dart_type_ids(child, source, out)
+
+
+def _collect_dart_param_types(node: Node, source: bytes, out: list[str]) -> None:
+    """Collect type identifiers from Dart formal parameters."""
+    for child in node.children:
+        if child.type == "formal_parameter":
+            type_node = child.child_by_field_name("type")
+            if type_node is not None:
+                _collect_dart_type_ids(type_node, source, out)
 
 
 def _dart_local_name(module_path: str) -> str:

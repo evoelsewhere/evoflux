@@ -84,7 +84,9 @@ class RubyParser(TreeSitterParser):
         for arg in args.children:
             if arg.type != "string":
                 continue
-            content = next((c for c in arg.children if c.type == "string_content"), None)
+            content = next(
+                (c for c in arg.children if c.type == "string_content"), None
+            )
             if content is None:
                 continue
             module_path = node_text(content, source)
@@ -114,6 +116,43 @@ class RubyParser(TreeSitterParser):
                         ]
         return []
 
+    def decorators(self, node: Node, source: bytes) -> list[str]:
+        out: list[str] = []
+        if node.type == "method":
+            prev = node.prev_named_sibling
+            while prev is not None:
+                if prev.type == "call":
+                    method = prev.child_by_field_name("method")
+                    if method is not None:
+                        name = node_text(method, source)
+                        if name in _RUBY_MODIFIER_KEYWORDS:
+                            out.append(name)
+                elif prev.type == "identifier":
+                    name = node_text(prev, source)
+                    if name in _RUBY_MODIFIER_KEYWORDS:
+                        out.append(name)
+                elif prev.type not in ("comment", "empty_statement"):
+                    break
+                prev = prev.prev_named_sibling
+        return out
+
+    def type_refs(self, node: Node, source: bytes) -> list[str]:
+        if node.type != "method":
+            return []
+        out: list[str] = []
+        # Look for Sorbet sig block: sig { params(x: Type).returns(Type) }
+        prev = node.prev_named_sibling
+        while prev is not None:
+            if prev.type == "call":
+                method = prev.child_by_field_name("method")
+                if method is not None and node_text(method, source) == "sig":
+                    _collect_ruby_sig_types(prev, source, out)
+                    break
+            elif prev.type not in ("call", "comment", "empty_statement"):
+                break
+            prev = prev.prev_named_sibling
+        return out
+
     def docstring(self, node: Node, source: bytes) -> str | None:
         prev = node.prev_named_sibling
         if prev is not None and prev.type == "comment":
@@ -138,3 +177,70 @@ class RubyParser(TreeSitterParser):
             if child.type == "constant":
                 return node_text(child, source)
         return None
+
+
+_RUBY_MODIFIER_KEYWORDS = frozenset(
+    {
+        "private",
+        "protected",
+        "public",
+        "private_class_method",
+        "public_class_method",
+        "module_function",
+        "attr_reader",
+        "attr_writer",
+        "attr_accessor",
+        "abstract",
+        "final",
+        "sealed",
+        "override",
+    }
+)
+
+
+def _collect_ruby_sig_types(sig_node: Node, source: bytes, out: list[str]) -> None:
+    """Extract type names from a Sorbet sig { ... } block."""
+    for child in sig_node.children:
+        if child.type == "call":
+            _collect_ruby_sig_call_types(child, source, out)
+            # Also check block (e.g. sig { ... })
+            for sub in child.children:
+                if sub.type == "call":
+                    _collect_ruby_sig_call_types(sub, source, out)
+
+
+def _collect_ruby_sig_call_types(
+    call_node: Node, source: bytes, out: list[str]
+) -> None:
+    """Extract type names from params(x: Type).returns(Type) calls."""
+    method = call_node.child_by_field_name("method")
+    if method is None:
+        return
+    method_name = node_text(method, source)
+    if method_name not in ("params", "returns", "type_parameters"):
+        return
+    args = call_node.child_by_field_name("arguments")
+    if args is None:
+        return
+    for arg in args.children:
+        if arg.type == "pair":
+            # x: Type → value is the type
+            value = arg.child_by_field_name("value")
+            if value is not None and value.type in ("constant", "scope_resolution"):
+                name = _ruby_type_name_from_node(value, source)
+                if name:
+                    out.append(name)
+        elif arg.type in ("constant", "scope_resolution"):
+            name = _ruby_type_name_from_node(arg, source)
+            if name:
+                out.append(name)
+
+
+def _ruby_type_name_from_node(node: Node, source: bytes) -> str | None:
+    if node.type == "constant":
+        return node_text(node, source)
+    if node.type == "scope_resolution":
+        for child in reversed(node.children):
+            if child.type == "constant":
+                return node_text(child, source)
+    return None

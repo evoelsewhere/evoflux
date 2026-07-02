@@ -162,6 +162,55 @@ class ObjCParser(TreeSitterParser):
                         )
         return out
 
+    def decorators(self, node: Node, source: bytes) -> list[str]:
+        out: list[str] = []
+        # ObjC availability attributes and other attributes
+        prev = node.prev_named_sibling
+        while prev is not None:
+            if prev.type == "attribute_declaration":
+                _collect_objc_attr_names(prev, source, out)
+            elif prev.type == "availability_attribute":
+                out.append("availability")
+            elif prev.type not in ("comment",):
+                break
+            prev = prev.prev_named_sibling
+        # Also check direct children for attributes
+        for child in node.children:
+            if child.type in ("attribute_declaration", "availability_attribute"):
+                if child.type == "availability_attribute":
+                    out.append("availability")
+                else:
+                    _collect_objc_attr_names(child, source, out)
+        return out
+
+    def type_refs(self, node: Node, source: bytes) -> list[str]:
+        if node.type not in {
+            "method_declaration",
+            "implementation_definition",
+            "function_definition",
+        }:
+            return []
+        out: list[str] = []
+        # Return type
+        ret = node.child_by_field_name("return_type")
+        if ret is not None:
+            for child in ret.children:
+                if child.type == "type_identifier":
+                    name = node_text(child, source)
+                    if name not in _OBJC_BUILTIN_TYPES:
+                        out.append(name)
+        # Parameter types
+        for child in node.children:
+            if child.type == "parameter_list":
+                for param in child.children:
+                    if param.type == "parameter_declaration":
+                        type_node = param.child_by_field_name("type")
+                        if type_node is not None:
+                            name = node_text(type_node, source)
+                            if name not in _OBJC_BUILTIN_TYPES:
+                                out.append(name)
+        return out
+
     def docstring(self, node: Node, source: bytes) -> str | None:
         prev = node.prev_named_sibling
         if prev is not None and prev.type == "comment":
@@ -211,6 +260,42 @@ def _string_literal_content(node: Node, source: bytes) -> str:
         if child.type == "string_content":
             return node_text(child, source)
     return node_text(node, source).strip('"')
+
+
+_OBJC_BUILTIN_TYPES = frozenset(
+    {
+        "BOOL",
+        "Class",
+        "CGFloat",
+        "NSInteger",
+        "NSString",
+        "NSUInteger",
+        "SEL",
+        "id",
+        "instancetype",
+        "int",
+        "float",
+        "double",
+        "char",
+        "void",
+        "long",
+        "short",
+        "unsigned",
+        "signed",
+        "size_t",
+    }
+)
+
+
+def _collect_objc_attr_names(node: Node, source: bytes, out: list[str]) -> None:
+    """Extract attribute names from an ObjC attribute_declaration node."""
+    for child in node.children:
+        if child.type == "identifier":
+            out.append(node_text(child, source))
+        elif child.type == "argument_list":
+            for arg in child.children:
+                if arg.type == "identifier":
+                    out.append(node_text(arg, source))
 
 
 def _strip_objc_doc(text: str) -> str:
