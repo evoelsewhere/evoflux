@@ -105,6 +105,68 @@ def test_typescript_arrow_function_variable_is_function():
     assert [f.name for f in functions] == ["arrowFn"]
 
 
+def test_javascript_object_literal_methods_are_methods():
+    """Shorthand, function-valued, and arrow-valued object properties are all
+    methods — only the shorthand form (`foo() {}`) produced a method_definition
+    node; `bar: function() {}` and `baz: () => {}` used to be dropped entirely."""
+    source = (
+        b"const obj = {\n"
+        b"  foo() { return 1; },\n"
+        b"  bar: function() { return 2; },\n"
+        b"  baz: () => { return 3; },\n"
+        b"  'quoted-key': function() {},\n"
+        b"};\n"
+    )
+    result = TypeScriptParser().parse(file_path="a.ts", source=source)
+    methods = _by_kind(result.nodes, NODE_METHOD)
+    assert {m.qualified_name for m in methods} == {
+        "obj.foo",
+        "obj.bar",
+        "obj.baz",
+        "obj.quoted-key",
+    }
+
+
+def test_javascript_object_literal_computed_key_is_skipped():
+    """Computed keys have no static name and must not crash or emit a node."""
+    source = b"const obj = {\n  [dynamicKey]: function() {},\n};\n"
+    result = TypeScriptParser().parse(file_path="a.ts", source=source)
+    methods = _by_kind(result.nodes, NODE_METHOD)
+    assert methods == []
+
+
+def test_javascript_prototype_and_this_assignment_are_methods():
+    """Pre-ES6 method patterns (`Obj.prototype.foo = ...`, `this.foo = ...`)
+    were previously invisible to the indexer — not counted as a function or
+    a method at all."""
+    source = (
+        b"Obj.prototype.qux = function() { return 4; };\n"
+        b"this.instanceMethod = function() {};\n"
+        b"this.arrowMethod = () => {};\n"
+    )
+    result = TypeScriptParser().parse(file_path="a.ts", source=source)
+    methods = _by_kind(result.nodes, NODE_METHOD)
+    assert {m.name for m in methods} == {"qux", "instanceMethod", "arrowMethod"}
+
+
+def test_typescript_type_literal_signatures_are_not_methods():
+    """Type-level object shapes (`type`/`interface`) use property_signature /
+    method_signature nodes, not `pair` — they must not be misclassified as
+    real methods since they have no function body."""
+    source = (
+        b"type Foo = {\n"
+        b"  bar: () => void;\n"
+        b"};\n"
+        b"interface Shape {\n"
+        b"  area(): number;\n"
+        b"}\n"
+    )
+    result = TypeScriptParser().parse(file_path="a.ts", source=source)
+    names = {n.name for n in result.nodes}
+    assert "bar" not in names
+    assert "area" not in names
+
+
 # ── Registry ──────────────────────────────────────────────────────────────────
 
 

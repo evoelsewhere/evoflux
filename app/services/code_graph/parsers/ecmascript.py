@@ -66,6 +66,35 @@ class EcmaScriptParser(TreeSitterParser):
             name = self._name(node, source)
             if name:
                 return Definition(kind=NODE_METHOD, name=name, is_class=False)
+        elif ntype == "pair":
+            # Object-literal property holding a function value, e.g.
+            # `{ bar: function() {}, baz: () => {} }`. Unlike shorthand
+            # methods (`foo() {}`, parsed as method_definition), these carry
+            # no method_definition node of their own.
+            value = node.child_by_field_name("value")
+            if value is not None and value.type in _FUNCTION_VALUE_TYPES:
+                key = node.child_by_field_name("key")
+                name = self._property_name(key, source) if key is not None else None
+                if name:
+                    return Definition(kind=NODE_METHOD, name=name, is_class=False)
+        elif ntype == "assignment_expression":
+            # Prototype/instance method assignment, e.g.
+            # `Obj.prototype.foo = function() {}` or `this.foo = () => {}`.
+            left = node.child_by_field_name("left")
+            right = node.child_by_field_name("right")
+            if (
+                left is not None
+                and right is not None
+                and left.type == "member_expression"
+                and right.type in _FUNCTION_VALUE_TYPES
+            ):
+                prop = left.child_by_field_name("property")
+                if prop is not None and prop.type == "property_identifier":
+                    return Definition(
+                        kind=NODE_METHOD,
+                        name=node_text(prop, source),
+                        is_class=False,
+                    )
         elif ntype == "variable_declarator":
             value = node.child_by_field_name("value")
             if value is not None and value.type in _FUNCTION_VALUE_TYPES:
@@ -199,6 +228,18 @@ class EcmaScriptParser(TreeSitterParser):
     def _name(self, node: Node, source: bytes) -> str | None:
         name = node.child_by_field_name("name")
         return node_text(name, source) if name is not None else None
+
+    def _property_name(self, key: Node, source: bytes) -> str | None:
+        """Extract a static name from an object-literal property key.
+
+        Handles ``{ foo: ... }`` and ``{ "foo": ... }``; computed keys
+        (``{ [expr]: ... }``) have no static name and are skipped.
+        """
+        if key.type == "property_identifier":
+            return node_text(key, source)
+        if key.type == "string":
+            return _string_content(key, source)
+        return None
 
     def _is_top_level_var(self, node: Node) -> bool:
         """Check if a variable_declarator is at module/program level."""
