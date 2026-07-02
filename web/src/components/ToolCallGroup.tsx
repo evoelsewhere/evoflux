@@ -135,7 +135,7 @@ export function ToolCallGroupCard({ group, className }: ToolCallGroupProps) {
   const allDone = group.blocks.every((b) => b.toolDone)
 
   return (
-    <div className={cn('rounded-md border border-(--border-subtle) overflow-hidden', className)}>
+    <div className={cn('rounded-md border overflow-hidden', className)}>
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
@@ -160,7 +160,7 @@ export function ToolCallGroupCard({ group, className }: ToolCallGroupProps) {
       </button>
 
       {expanded && (
-        <div className="divide-y divide-(--border-subtle)">
+        <div className="divide-y">
           {group.blocks.map((block) => (
             <div key={block.id} className="px-2 py-1">
               <ToolCall
