@@ -278,7 +278,7 @@ export function DiffReviewPanel({ project, workspacePaths, className, onOpenRepo
 
             {/* File list */}
             {repo.files.length > 0 && (
-              <div className="divide-y divide-(--border-subtle)">
+              <div className="divide-y">
                 {repo.files.map((file) => (
                   <div
                     key={file.path}
