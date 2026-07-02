@@ -4,7 +4,7 @@ CocoaPods, SwiftPM, Docker Compose, Helm, and Terraform.
 
 Docker/Helm/Terraform only get path-dependency detection (no self-identity,
 no declared-dependency filtering) since there's no source-code parser that
-ever creates an UnresolvedImport/CrossRepoEdge candidate from Dockerfiles,
+ever creates an UnresolvedReference/CrossRepoEdge candidate from Dockerfiles,
 Chart.yaml, or .tf files today — this is groundwork, not an end-to-end
 resolvable pipeline yet.
 """

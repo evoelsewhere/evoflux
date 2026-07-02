@@ -1,9 +1,9 @@
 """Cross-repo reference resolver.
 
 Turns ``CrossRepoEdge`` rows recorded by the indexer (see
-``code_graph_service._persist_unresolved_imports``) from raw, unresolved
-import specifiers into links to an actual sibling-repo symbol, in three
-tiers of increasing cost:
+``code_graph_service._persist_unresolved_references``) from raw, unresolved
+import specifiers/type references into links to an actual sibling-repo
+symbol, in three tiers of increasing cost:
 
   Tier 0 — reattach: a previously ``resolved`` row whose ``dst_node_id`` was
     SET NULL by the target repo's own reindex gets re-attached by name,
@@ -55,7 +55,7 @@ METHOD_STATIC_MANIFEST_EXACT = "static_manifest_exact"
 METHOD_STATIC_MANIFEST_PACKAGE = "static_manifest_package"
 # Set when a user/agent manually rejects a row via the API — distinct from
 # every resolver-produced method so a rejected row's provenance stays
-# visible. Also doubles as a non-NULL sentinel: _persist_unresolved_imports'
+# visible. Also doubles as a non-NULL sentinel: _persist_unresolved_references'
 # reindex-time delete only ever targets ``method IS NULL`` rows, so setting
 # this is what makes a rejection survive the source file being reindexed
 # again (otherwise it would be wiped and recreated as "unresolved").

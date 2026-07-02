@@ -24,11 +24,11 @@ from app.agent.tools.builtin.filesystem._ignore import (
 )
 from app.services.code_graph.parsers.registry import ParserRegistry, default_registry
 from app.services.code_graph.types import (
-    EDGE_DECORATED_BY,
     EDGE_IMPLEMENTS,
     EDGE_IMPORTS,
     EDGE_INHERITS,
     EDGE_REFERENCES,
+    EDGE_USES,
     NODE_CLASS,
     NODE_ENUM,
     NODE_FIELD,
@@ -73,6 +73,22 @@ _ANY_KINDS = frozenset(
 )
 # Field/property access targets.
 _FIELD_KINDS = frozenset({NODE_FIELD, NODE_PROPERTY, NODE_VARIABLE})
+# Edge kinds worth keeping as cross-repo candidates when they don't resolve
+# locally at all (as opposed to same-workspace EDGE_IMPORTS, which already
+# gets this treatment separately). All three carry a type name — precise and
+# low-volume compared to e.g. every method signature's parameter/return
+# types (EDGE_REFERENCES) or a bare method-call name (EDGE_CALLS), which are
+# too ambiguous to resolve across repos without receiver-type inference.
+_CROSS_REPO_CANDIDATE_KINDS = frozenset({EDGE_USES, EDGE_INHERITS, EDGE_IMPLEMENTS})
+
+
+def _allowed_kinds_for(kind: str) -> frozenset[str]:
+    """Definition kinds a name-based edge of this ``kind`` may resolve to."""
+    if kind in {EDGE_INHERITS, EDGE_IMPLEMENTS, EDGE_REFERENCES}:
+        return _TYPE_KINDS
+    if kind == EDGE_IMPORTS:
+        return _ANY_KINDS
+    return _CALLABLE_KINDS
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,17 +124,22 @@ class FileIndex:
 
 
 @dataclass(frozen=True, slots=True)
-class UnresolvedImport:
-    """An EDGE_IMPORTS edge that couldn't resolve within this workspace.
+class UnresolvedReference:
+    """An edge that couldn't resolve within this workspace, with 0 local
+    name candidates — plausibly a sibling repo's symbol rather than a typo
+    or dead reference.
 
     Persisted by the service layer as an unresolved ``CrossRepoEdge`` row
     (only for workspaces that belong to a project) instead of being dropped
-    the way an unresolved same-workspace edge is — the whole point is that
-    the target may be a sibling repo, resolvable later.
+    the way any other unresolved same-workspace edge is — the whole point is
+    that the target may be a sibling repo, resolvable later. Originally
+    EDGE_IMPORTS-only; also covers EDGE_USES/EDGE_INHERITS/EDGE_IMPLEMENTS
+    (see ``_CROSS_REPO_CANDIDATE_KINDS``).
     """
 
     src_key: str
-    module_path: str
+    kind: str
+    raw_reference: str
     dst_name_hint: str | None
     file_path: str
     line: int | None
@@ -147,7 +168,7 @@ class WorkspaceIndex:
     edges: list[IndexedEdge] = field(default_factory=list)
     files: list[FileIndex] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
-    unresolved_imports: list[UnresolvedImport] = field(default_factory=list)
+    unresolved_references: list[UnresolvedReference] = field(default_factory=list)
     ambiguous_edges: list[AmbiguousEdge] = field(default_factory=list)
 
 
@@ -366,10 +387,8 @@ def _resolve_edges(
             src_file = file_by_key.get(src_key, "")
             dst_key = local_to_key.get((src_file, dst_local_id))
         elif dst_name is not None:
-            if kind in {EDGE_INHERITS, EDGE_IMPLEMENTS}:
-                allowed = _TYPE_KINDS
-            elif kind == EDGE_IMPORTS:
-                allowed = _ANY_KINDS
+            allowed = _allowed_kinds_for(kind)
+            if kind == EDGE_IMPORTS:
                 # Try path-aware resolution first for import edges.
                 if module_resolution is not None and module_path:
                     resolved = module_resolution.by_import_edge.get(
@@ -398,12 +417,6 @@ def _resolve_edges(
                         kind_by_key,
                         allowed,
                     )
-            elif kind == EDGE_DECORATED_BY:
-                allowed = _CALLABLE_KINDS
-            elif kind == EDGE_REFERENCES:
-                allowed = _TYPE_KINDS
-            else:
-                allowed = _CALLABLE_KINDS
 
             if dst_key is None and kind != EDGE_IMPORTS:
                 # Try scope-aware resolution first (Phase 2): use import
@@ -430,10 +443,11 @@ def _resolve_edges(
             # raw reference instead of dropping it outright like every other
             # unresolved edge kind.
             if dst_key is None and kind == EDGE_IMPORTS and module_path:
-                index.unresolved_imports.append(
-                    UnresolvedImport(
+                index.unresolved_references.append(
+                    UnresolvedReference(
                         src_key=src_key,
-                        module_path=module_path,
+                        kind=EDGE_IMPORTS,
+                        raw_reference=module_path,
                         dst_name_hint=dst_name,
                         file_path=file_by_key.get(src_key, ""),
                         line=line,
@@ -443,21 +457,12 @@ def _resolve_edges(
                 # Check if the name matched multiple candidates (ambiguous)
                 # rather than matching nothing at all. Store these so the UI
                 # can surface them as "ambiguous" instead of silently dropping.
-                allowed_for_check = (
-                    _TYPE_KINDS
-                    if kind in {EDGE_INHERITS, EDGE_IMPLEMENTS}
-                    else _CALLABLE_KINDS
-                    if kind not in {EDGE_DECORATED_BY, EDGE_REFERENCES}
-                    else _TYPE_KINDS
-                    if kind == EDGE_REFERENCES
-                    else _CALLABLE_KINDS
-                )
                 candidates = _collect_candidates(
                     dst_name,
                     name_to_keys,
                     qname_to_keys,
                     kind_by_key,
-                    allowed_for_check,
+                    _allowed_kinds_for(kind),
                 )
                 if len(candidates) >= 2:
                     index.ambiguous_edges.append(
@@ -466,6 +471,22 @@ def _resolve_edges(
                             dst_name=dst_name,
                             kind=kind,
                             candidate_keys=tuple(candidates),
+                            file_path=file_by_key.get(src_key, ""),
+                            line=line,
+                        )
+                    )
+                elif not candidates and kind in _CROSS_REPO_CANDIDATE_KINDS:
+                    # Zero local matches at all (not just ambiguous) — this
+                    # may be a sibling repo's symbol rather than a typo or
+                    # dead reference. Keep it as a candidate for cross-repo
+                    # resolution instead of dropping it, same idea as an
+                    # unresolved import but for a wired dependency/supertype.
+                    index.unresolved_references.append(
+                        UnresolvedReference(
+                            src_key=src_key,
+                            kind=kind,
+                            raw_reference=dst_name,
+                            dst_name_hint=dst_name,
                             file_path=file_by_key.get(src_key, ""),
                             line=line,
                         )
