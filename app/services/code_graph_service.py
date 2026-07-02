@@ -33,7 +33,10 @@ from app.services.code_graph.indexer import (
     index_files,
     index_workspace,
 )
-from app.services.code_graph.manifest import is_likely_external, read_declared_dependencies
+from app.services.code_graph.manifest import (
+    is_likely_external,
+    read_declared_dependencies,
+)
 from app.services.code_graph.parsers.registry import ParserRegistry, build_registry
 from app.services.code_graph.types import EDGE_IMPORTS
 
@@ -356,7 +359,7 @@ async def _reindex_incremental(
     ).all()
     # Unchanged files' nodes act as resolution targets for cross-file edges.
     existing_defs = [
-        ExistingDef(key=str(n.id), name=n.name, kind=n.kind)
+        ExistingDef(key=str(n.id), name=n.name, kind=n.kind, file_path=n.file_path)
         for n in existing_nodes
         if n.file_path not in affected
     ]
@@ -367,6 +370,7 @@ async def _reindex_incremental(
         changed,
         registry=registry,
         existing_defs=existing_defs,
+        known_file_paths=frozenset(current.keys()),
     )
 
     # ── Reconcile nodes of changed files, preserving ids for stable symbols ──
@@ -632,10 +636,11 @@ async def get_workspace_graph_data(
 ) -> tuple[list[CodeNode], list[CodeEdge], int, int]:
     """Return a renderable slice of a workspace's graph.
 
-    Nodes are prioritized by kind (files/modules/classes first) so the cap
-    keeps the most topology-relevant symbols. Edges are filtered to those
-    whose both endpoints are in the returned node set, then capped by
-    occurrence order.
+    Strategy: fetch edges first (capped), then include every node those
+    edges reference *plus* the highest-priority standalone nodes up to the
+    node limit.  This guarantees every returned edge has both endpoints
+    visible — the previous "cap nodes first" approach silently dropped edges
+    whenever one endpoint was filtered out.
     """
     total_nodes_result = await db.exec(
         select(sa_func.count()).where(CodeNode.workspace_id == workspace_id)
@@ -646,8 +651,29 @@ async def get_workspace_graph_data(
     total_node_count = total_nodes_result.first() or 0
     total_edge_count = total_edges_result.first() or 0
 
+    # Step 1: fetch all edges, cap by occurrence order.
+    all_edges = list(
+        (
+            await db.exec(
+                select(CodeEdge).where(CodeEdge.workspace_id == workspace_id)
+            )
+        ).all()
+    )
+    edges = all_edges[:edge_limit]
+
+    # Step 2: collect every node id referenced by the edge set.
+    edge_node_ids: set[UUID] = set()
+    for e in edges:
+        edge_node_ids.add(e.src_id)
+        edge_node_ids.add(e.dst_id)
+
+    # Step 3: fetch all nodes, sort by priority, then build the final set.
     all_nodes = list(
-        (await db.exec(select(CodeNode).where(CodeNode.workspace_id == workspace_id))).all()
+        (
+            await db.exec(
+                select(CodeNode).where(CodeNode.workspace_id == workspace_id)
+            )
+        ).all()
     )
     all_nodes.sort(
         key=lambda n: (
@@ -655,17 +681,14 @@ async def get_workspace_graph_data(
             n.qualified_name or n.name,
         )
     )
-    nodes = all_nodes[:node_limit]
-    node_ids = {n.id for n in nodes}
 
-    edges_result = await db.exec(
-        select(CodeEdge).where(
-            CodeEdge.workspace_id == workspace_id,
-            col(CodeEdge.src_id).in_(node_ids),
-            col(CodeEdge.dst_id).in_(node_ids),
-        )
-    )
-    edges = list(edges_result.all())[:edge_limit]
+    # Nodes referenced by edges must always be included so every edge renders.
+    edge_nodes = [n for n in all_nodes if n.id in edge_node_ids]
+    remaining_slots = max(0, node_limit - len(edge_nodes))
+    remaining_nodes = [
+        n for n in all_nodes if n.id not in edge_node_ids
+    ][:remaining_slots]
+    nodes = edge_nodes + remaining_nodes
 
     return nodes, edges, total_node_count, total_edge_count
 
@@ -955,15 +978,22 @@ async def find_shortest_path(
     src_id: UUID,
     dst_id: UUID,
     max_hops: int = 6,
+    project_id: UUID | None = None,
 ) -> list[tuple[CodeNode, str, CodeNode]] | None:
     """BFS shortest path from ``src_id`` to ``dst_id`` in the call/dependency graph.
 
     Returns a list of ``(from_node, edge_kind, to_node)`` hops, or ``None`` if
     no path exists within ``max_hops``. Only follows ``calls``, ``imports``,
     ``inherits``, ``implements``, and ``references`` edges (both directions).
+
+    When ``project_id`` is set, the BFS can also hop across resolved
+    ``CrossRepoEdge`` rows within that project, allowing paths that span sibling
+    repos in the same CodingProject.
     """
     if src_id == dst_id:
         return []
+
+    cross_repo = project_id is not None
 
     # BFS in Python over the DB — acceptable for max_hops ≤ 6 and typical
     # workspace sizes (< 50k nodes). We load adjacency lazily per frontier.
@@ -975,6 +1005,8 @@ async def find_shortest_path(
     for _depth in range(max_hops):
         if not frontier:
             break
+        frontier_set = set(frontier)
+
         # Batch-fetch all edges from/to the current frontier.
         out_stmt = select(CodeEdge.src_id, CodeEdge.dst_id, CodeEdge.kind).where(
             CodeEdge.workspace_id == workspace_id,
@@ -990,18 +1022,52 @@ async def find_shortest_path(
         in_rows = (await db.exec(in_stmt)).all()
 
         next_frontier: list[UUID] = []
+
+        def _visit(node_id: UUID, prev_id: UUID, kind: str, forward: bool) -> bool:
+            if node_id not in visited:
+                visited[node_id] = (prev_id, kind, forward)
+                next_frontier.append(node_id)
+                if node_id == dst_id:
+                    return True
+            return False
+
         for src, dst, kind in out_rows:
-            if dst not in visited:
-                visited[dst] = (src, kind, True)
-                next_frontier.append(dst)
-                if dst == dst_id:
-                    return await _reconstruct_path(db, workspace_id, visited, dst_id)
+            if _visit(dst, src, kind, True):
+                return await _reconstruct_path(
+                    db, workspace_id, visited, dst_id, cross_repo=cross_repo
+                )
         for src, dst, kind in in_rows:
-            if src not in visited:
-                visited[src] = (dst, kind, False)
-                next_frontier.append(src)
-                if src == dst_id:
-                    return await _reconstruct_path(db, workspace_id, visited, dst_id)
+            if _visit(src, dst, kind, False):
+                return await _reconstruct_path(
+                    db, workspace_id, visited, dst_id, cross_repo=cross_repo
+                )
+
+        if cross_repo:
+            cross_stmt = select(
+                CrossRepoEdge.src_node_id, CrossRepoEdge.dst_node_id, CrossRepoEdge.kind
+            ).where(
+                col(CrossRepoEdge.project_id) == project_id,
+                col(CrossRepoEdge.status) == "resolved",
+                col(CrossRepoEdge.src_node_id).is_not(None),
+                col(CrossRepoEdge.dst_node_id).is_not(None),
+                or_(
+                    col(CrossRepoEdge.src_node_id).in_(frontier),
+                    col(CrossRepoEdge.dst_node_id).in_(frontier),
+                ),
+            )
+            cross_rows = (await db.exec(cross_stmt)).all()
+            for src, dst, kind in cross_rows:
+                if src in frontier_set and src is not None:
+                    if _visit(dst, src, kind, True):
+                        return await _reconstruct_path(
+                            db, workspace_id, visited, dst_id, cross_repo=cross_repo
+                        )
+                if dst in frontier_set and dst is not None:
+                    if _visit(src, dst, kind, False):
+                        return await _reconstruct_path(
+                            db, workspace_id, visited, dst_id, cross_repo=cross_repo
+                        )
+
         frontier = next_frontier
 
     return None  # No path within max_hops
@@ -1012,6 +1078,7 @@ async def _reconstruct_path(
     workspace_id: UUID,
     visited: dict[UUID, tuple[UUID | None, str | None, bool]],
     target_id: UUID,
+    cross_repo: bool = False,
 ) -> list[tuple[CodeNode, str, CodeNode]]:
     """Walk the BFS parent map back to src and fetch node objects."""
     # Collect the id sequence
@@ -1023,11 +1090,15 @@ async def _reconstruct_path(
         current = prev
     path_ids.reverse()
 
-    # Fetch all nodes in one query
-    nodes_stmt = select(CodeNode).where(
-        CodeNode.workspace_id == workspace_id,
-        col(CodeNode.id).in_(path_ids),
-    )
+    # Fetch all nodes in one query. Paths that span repos must be
+    # workspace-unscoped because CodeNode.id is a global uuid7 PK.
+    if cross_repo:
+        nodes_stmt = select(CodeNode).where(col(CodeNode.id).in_(path_ids))
+    else:
+        nodes_stmt = select(CodeNode).where(
+            CodeNode.workspace_id == workspace_id,
+            col(CodeNode.id).in_(path_ids),
+        )
     all_nodes = list((await db.exec(nodes_stmt)).all())
     node_map = {n.id: n for n in all_nodes}
 
@@ -1066,7 +1137,13 @@ async def search_across_workspaces(
         if ws_id is None:
             continue
         coros.append(
-            search_nodes(db, workspace_id=ws_id, query=query, kind=kind, limit=limit_per_workspace)
+            search_nodes(
+                db,
+                workspace_id=ws_id,
+                query=query,
+                kind=kind,
+                limit=limit_per_workspace,
+            )
         )
         valid_paths.append(path)
 
@@ -1078,3 +1155,21 @@ async def search_across_workspaces(
         for node in nodes:
             results.append((path, node))
     return results
+
+
+async def get_project_overview(
+    db: AsyncSession, *, project_id: UUID
+) -> dict[str, WorkspaceOverview]:
+    """Aggregate ``WorkspaceOverview`` for every workspace in a project.
+
+    Returns a mapping from workspace path to its overview, in project order.
+    """
+    from app.services.coding_project_service import get_project_workspaces
+
+    pairs = await get_project_workspaces(db, project_id)
+    if not pairs:
+        return {}
+
+    coros = [get_overview(db, workspace_id=ws.id) for _, ws in pairs]
+    overviews = await asyncio.gather(*coros)
+    return {ws.path: overview for (_, ws), overview in zip(pairs, overviews)}

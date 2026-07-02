@@ -26,27 +26,19 @@ class CrossRepoEdgeOut(BaseModel):
 
 
 class CrossRepoResolveRequest(BaseModel):
-    use_llm: bool = False
-    # Overrides the persisted CrossRepoSettings.llm_model for this call.
-    # There's no "current session" to default to here (this is a
-    # project-level operation, not an agent turn) — pass it explicitly.
-    llm_model: str | None = None
+    pass
 
 
 class CrossRepoResolveStatsOut(BaseModel):
     reattached: int
     static_resolved: int
     lexical_resolved: int
-    llm_resolved: int
     still_unresolved: int
-    llm_external: int = 0
     capped: int = 0
 
 
 class CrossRepoResolveJobOut(BaseModel):
     project_id: UUID
-    use_llm: bool
-    llm_model: str | None
     status: str
     phase: str
     progress: float

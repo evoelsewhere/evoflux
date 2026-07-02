@@ -12,7 +12,9 @@ from app.api.deps import DbSession
 from app.api.schemas.code_graph import (
     CodeEdgeOut,
     CodeNodeOut,
+    CodeOverviewResponse,
     ProjectCodeGraphDataOut,
+    ProjectCodeGraphOverviewResponse,
     ProjectCodeSearchResponse,
     ProjectCodeSearchResultOut,
     ProjectRepoStatus,
@@ -29,7 +31,7 @@ from app.models.code_graph import CrossRepoEdge
 from app.services import code_graph_service as cg_svc
 from app.services import coding_project_service as svc
 from app.services import team_manager
-from app.services.code_graph.cross_repo import METHOD_MANUAL_REJECT, resolve_project
+from app.services.code_graph.cross_repo import METHOD_MANUAL_REJECT
 from app.services.code_graph.cross_repo_jobs import cross_repo_jobs
 from app.services.code_graph.jobs import index_jobs
 
@@ -194,7 +196,9 @@ async def delete_project(project_id: UUID, db: DbSession) -> None:
     await db.commit()
 
 
-@router.post("/{project_id}/workspaces", response_model=ProjectWorkspaceItem, status_code=201)
+@router.post(
+    "/{project_id}/workspaces", response_model=ProjectWorkspaceItem, status_code=201
+)
 async def add_workspace(
     project_id: UUID, body: AddWorkspaceRequest, db: DbSession
 ) -> ProjectWorkspaceItem:
@@ -212,16 +216,16 @@ async def add_workspace(
 
 
 @router.delete("/{project_id}/workspaces/{workspace_id}", status_code=204)
-async def remove_workspace(
-    project_id: UUID, workspace_id: UUID, db: DbSession
-) -> None:
+async def remove_workspace(project_id: UUID, workspace_id: UUID, db: DbSession) -> None:
     removed = await svc.remove_workspace_from_project(db, project_id, workspace_id)
     if not removed:
         raise HTTPException(status_code=404, detail="Workspace not in project")
     await db.commit()
 
 
-@router.put("/{project_id}/workspaces/{workspace_id}", response_model=ProjectWorkspaceItem)
+@router.put(
+    "/{project_id}/workspaces/{workspace_id}", response_model=ProjectWorkspaceItem
+)
 async def update_workspace_in_project(
     project_id: UUID,
     workspace_id: UUID,
@@ -254,8 +258,6 @@ async def update_workspace_in_project(
 def _cross_repo_job_out(job) -> CrossRepoResolveJobOut:
     return CrossRepoResolveJobOut(
         project_id=UUID(job.project_id),
-        use_llm=job.use_llm,
-        llm_model=job.llm_model,
         status=job.status,
         phase=job.phase,
         progress=job.progress,
@@ -271,37 +273,24 @@ async def resolve_cross_repo(
     body: CrossRepoResolveRequest,
     db: DbSession,
     response: Response,
-) -> CrossRepoResolveStatsOut | CrossRepoResolveJobOut:
+) -> CrossRepoResolveJobOut:
     """Resolve unresolved cross-repo references for a project.
 
-    ``use_llm=False`` (default) resolves synchronously — Tier A (static
-    matching) is cheap regardless of project size, so the request just
-    returns the resulting counts. ``use_llm=True`` always starts a
-    background job instead: Tier B's cost is dominated by LLM latency, which
-    doesn't shrink just because a project has few repos.
+    Always starts a background job that runs Tier 0 (reattach) + Tier A
+    (static matching) + Tier B (FTS5 lexical matching).
     """
     project = await svc.get_project(db, project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    if not body.use_llm:
-        stats = await resolve_project(db, project_id=project_id)
-        return CrossRepoResolveStatsOut(
-            reattached=stats.reattached,
-            static_resolved=stats.static_resolved,
-            lexical_resolved=stats.lexical_resolved,
-            llm_resolved=stats.llm_resolved,
-            still_unresolved=stats.still_unresolved,
-        )
-
-    job, started = await cross_repo_jobs.start(
-        project_id=project_id, use_llm=True, llm_model=body.llm_model
-    )
+    job, started = await cross_repo_jobs.start(project_id=project_id)
     response.status_code = 202 if started else 200
     return _cross_repo_job_out(job)
 
 
-@router.get("/{project_id}/cross-repo/status", response_model=CrossRepoResolveStatusResponse)
+@router.get(
+    "/{project_id}/cross-repo/status", response_model=CrossRepoResolveStatusResponse
+)
 async def get_cross_repo_status(
     project_id: UUID, db: DbSession
 ) -> CrossRepoResolveStatusResponse:
@@ -416,7 +405,10 @@ async def get_project_code_graph_status(
         if workspace_id is None:
             statuses.append(
                 ProjectRepoStatus(
-                    workspace_id=str(ws.id), path=ws.path, name=ws.name or ws.path, indexed=False
+                    workspace_id=str(ws.id),
+                    path=ws.path,
+                    name=ws.name or ws.path,
+                    indexed=False,
                 )
             )
             continue
@@ -476,7 +468,29 @@ async def search_project_code_graph(
     )
 
 
-@router.get("/{project_id}/code-graph/graph-data", response_model=ProjectCodeGraphDataOut)
+@router.get(
+    "/{project_id}/code-graph/overview", response_model=ProjectCodeGraphOverviewResponse
+)
+async def get_project_code_graph_overview(
+    project_id: UUID, db: DbSession
+) -> ProjectCodeGraphOverviewResponse:
+    """Aggregated workspace overview for every repo in the project."""
+    project = await svc.get_project(db, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    overviews = await cg_svc.get_project_overview(db, project_id=project_id)
+    return ProjectCodeGraphOverviewResponse(
+        overviews={
+            path: CodeOverviewResponse.from_overview(overview)
+            for path, overview in overviews.items()
+        }
+    )
+
+
+@router.get(
+    "/{project_id}/code-graph/graph-data", response_model=ProjectCodeGraphDataOut
+)
 async def get_project_code_graph_data(
     project_id: UUID,
     db: DbSession,
@@ -537,13 +551,16 @@ async def get_project_code_graph_data(
         if counts["files"] == 0:
             continue
 
-        repo_nodes, repo_edges, repo_total_nodes, repo_total_edges = (
-            await cg_svc.get_workspace_graph_data(
-                db,
-                workspace_id=workspace_id,
-                node_limit=node_limit_per_repo,
-                edge_limit=edge_limit_per_repo,
-            )
+        (
+            repo_nodes,
+            repo_edges,
+            repo_total_nodes,
+            repo_total_edges,
+        ) = await cg_svc.get_workspace_graph_data(
+            db,
+            workspace_id=workspace_id,
+            node_limit=node_limit_per_repo,
+            edge_limit=edge_limit_per_repo,
         )
         total_node_count += repo_total_nodes
         total_edge_count += repo_total_edges
@@ -560,7 +577,9 @@ async def get_project_code_graph_data(
             for e in repo_edges
         )
 
-    cross_stmt = select(CrossRepoEdge).where(col(CrossRepoEdge.project_id) == project_id)
+    cross_stmt = select(CrossRepoEdge).where(
+        col(CrossRepoEdge.project_id) == project_id
+    )
     cross_rows = (await db.exec(cross_stmt)).all()
 
     return ProjectCodeGraphDataOut(

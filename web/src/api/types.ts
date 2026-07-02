@@ -359,22 +359,18 @@ export interface CrossRepoEdge {
 }
 
 export interface CrossRepoResolveRequest {
-  use_llm?: boolean
-  llm_model?: string | null
+  // Empty: the backend always runs Tier 0 + Tier A + lexical Tier B.
 }
 
 export interface CrossRepoResolveStats {
   reattached: number
   static_resolved: number
   lexical_resolved: number
-  llm_resolved: number
   still_unresolved: number
 }
 
 export interface CrossRepoResolveJob {
   project_id: string
-  use_llm: boolean
-  llm_model: string | null
   status: 'running' | 'done' | 'error'
   phase: string
   progress: number
