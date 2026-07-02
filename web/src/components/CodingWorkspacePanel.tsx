@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { ChevronRight, FileText, Folder, GitCompare, Network, RefreshCw, Timer, X } from 'lucide-react'
+import { ChevronRight, FileText, Folder, GitBranch, Network, RefreshCw, Timer, X } from 'lucide-react'
 import { getCodingWorkspaceGitDiff, listCodingWorkspaceFiles } from '@/api/client'
 import { cn } from '@/lib/utils'
 import { queryKeys } from '@/queries'
@@ -13,6 +13,7 @@ import { usePlatform } from '@/hooks/use-platform'
 import { useProjectQuery } from '@/queries/useProjectsQuery'
 import { CodeGraphPanel } from './CodeGraphPanel'
 import { CrossRepoLinksPanel } from './CrossRepoLinksPanel'
+import { SourceControlModal } from './SourceControlModal'
 import { DiffReviewPanel } from './DiffReviewPanel'
 import { MultiRepoFileTree } from './MultiRepoFileTree'
 import { ProjectCodeGraphPanel } from './ProjectCodeGraphPanel'
@@ -144,6 +145,8 @@ export function CodingWorkspacePanel({
   const prefersReducedMotion = useReducedMotion()
   const { isMacOverlay } = usePlatform()
   const [tab, setTab] = useState<'files' | 'changed' | 'graph' | 'progress'>(initialTab)
+  const [scOpen, setScOpen] = useState(false)
+  const [scWorkspace, setScWorkspace] = useState('')
   const projectQuery = useProjectQuery(projectId)
   const project = projectQuery.data ?? null
   // Drive multi/single-repo mode off the *primed* projectId, not the async
@@ -228,7 +231,7 @@ export function CodingWorkspacePanel({
         </div>
         <div className="flex border-b border-(--color-border) p-1">
           <button type="button" onClick={() => setTab('changed')} className={cn('flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs', tab === 'changed' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted)')}>
-            <GitCompare size={13} /> Changed
+            <GitBranch size={13} /> Source Control
             {!isProjectMode && changedPaths.size > 0 && <span className="rounded-full bg-(--color-warning)/15 px-1.5 py-0.5 font-mono text-xs text-(--accent-orange-text)">{changedPaths.size}</span>}
           </button>
           <button type="button" onClick={() => setTab('files')} className={cn('flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs', tab === 'files' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted)')}>
@@ -272,7 +275,11 @@ export function CodingWorkspacePanel({
           {tab === 'changed' ? (
             isProjectMode ? (
               project ? (
-                <DiffReviewPanel project={project} className="p-2" />
+                <DiffReviewPanel
+                  project={project}
+                  className="p-2"
+                  onOpenRepo={(path) => { setScWorkspace(path); setScOpen(true) }}
+                />
               ) : (
                 <p className="px-2 py-4 text-xs text-(--color-text-subtle)">Loading project repositories…</p>
               )
@@ -282,10 +289,15 @@ export function CodingWorkspacePanel({
               <p className="px-2 py-4 text-xs text-(--color-error)">Failed to load changed files</p>
             ) : !diff.data?.is_git_repo ? (
               <p className="px-2 py-4 text-xs text-(--color-text-subtle)">Not a git repository</p>
-            ) : changedFiles.length === 0 ? (
-              <p className="px-2 py-4 text-xs text-(--color-text-subtle)">No changed files</p>
             ) : (
               <div className="p-2">
+                <button
+                  type="button"
+                  onClick={() => { setScWorkspace(workspace); setScOpen(true) }}
+                  className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-md border border-(--color-border) bg-(--bg-key) px-2 py-1.5 text-xs text-(--color-text) hover:bg-(--bg-key)/70"
+                >
+                  <GitBranch size={12} /> Open Source Control
+                </button>
                 {diff.data.truncated && <p className="mb-2 rounded bg-(--color-warning)/10 px-2 py-1 text-xs text-(--color-warning)">Changed list may be incomplete because the diff was truncated.</p>}
                 <div className="space-y-1">
                   {changedFiles.map((changedFile) => {
@@ -339,6 +351,12 @@ export function CodingWorkspacePanel({
           </>
         )}
       </div>
+      <SourceControlModal
+        open={scOpen}
+        onOpenChange={setScOpen}
+        workspace={scWorkspace || workspace}
+        project={project}
+      />
     </motion.aside>
   )
 }
