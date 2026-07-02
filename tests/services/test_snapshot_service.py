@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -60,6 +61,26 @@ async def test_track_missing_workspace_returns_none(
     missing = tmp_path / "does-not-exist"
     snapshot = await snapshot_service.track("sess-miss", missing)
     assert snapshot is None
+
+
+@pytest.mark.asyncio
+async def test_track_falls_back_to_thread_when_subprocess_unsupported(
+    state_dir: Path, workspace: Path
+) -> None:
+    """Windows SelectorEventLoop raises NotImplementedError; track() must
+    still succeed via the synchronous subprocess.run() fallback rather than
+    silently disabling snapshots for the rest of the process lifetime."""
+    (workspace / "a.txt").write_text("hello")
+
+    with patch(
+        "asyncio.create_subprocess_exec",
+        side_effect=NotImplementedError("subprocess not supported"),
+    ):
+        snapshot = await snapshot_service.track("sess-fallback", workspace)
+
+    assert snapshot is not None
+    assert len(snapshot) == 40
+    assert snapshot_service.is_available()
 
 
 @pytest.mark.asyncio
