@@ -157,6 +157,22 @@ class LuauParser(TreeSitterParser):
     def supertypes(self, node: Node, source: bytes) -> list[SuperType]:
         return []
 
+    def type_refs(self, node: Node, source: bytes) -> list[str]:
+        if node.type not in {"function_declaration", "local_function"}:
+            return []
+        out: list[str] = []
+        params = node.child_by_field_name("parameters")
+        if params is not None:
+            for param in params.children:
+                if param.type == "parameter":
+                    type_node = param.child_by_field_name("type")
+                    if type_node is not None:
+                        _collect_luau_type_ids(type_node, source, out)
+        ret = node.child_by_field_name("return_type")
+        if ret is not None:
+            _collect_luau_type_ids(ret, source, out)
+        return out
+
     def docstring(self, node: Node, source: bytes) -> str | None:
         return None
 
@@ -187,7 +203,9 @@ def _require_refs(node: Node, source: bytes) -> list[ImportRef]:
     )
     if not module_path:
         return []
-    return [ImportRef(name=_bound_name(node, module_path, source), module_path=module_path)]
+    return [
+        ImportRef(name=_bound_name(node, module_path, source), module_path=module_path)
+    ]
 
 
 def _first_arg(args_node: Node) -> Node | None:
@@ -221,3 +239,40 @@ def _bound_name(call_node: Node, module_path: str, source: bytes) -> str:
                     if child.type in ("identifier", "dot_index_expression"):
                         return node_text(child, source).split(".")[-1]
     return module_path.split(".")[-1]
+
+
+_LUAU_BUILTIN_TYPES = frozenset(
+    {
+        "boolean",
+        "number",
+        "string",
+        "nil",
+        "thread",
+        "userdata",
+        "buffer",
+        "any",
+        "unknown",
+        "never",
+        "none",
+    }
+)
+
+
+def _collect_luau_type_ids(node: Node, source: bytes, out: list[str]) -> None:
+    """Recursively collect user-defined type identifiers from Luau type nodes."""
+    if node.type == "type_identifier":
+        name = node_text(node, source)
+        if name not in _LUAU_BUILTIN_TYPES:
+            out.append(name)
+        return
+    if node.type in (
+        "generic_type",
+        "nullable_type",
+        "type_intersection",
+        "type_union",
+    ):
+        for child in node.children:
+            _collect_luau_type_ids(child, source, out)
+        return
+    for child in node.children:
+        _collect_luau_type_ids(child, source, out)

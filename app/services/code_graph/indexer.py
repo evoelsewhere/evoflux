@@ -30,10 +30,15 @@ from app.services.code_graph.types import (
     EDGE_INHERITS,
     EDGE_REFERENCES,
     NODE_CLASS,
+    NODE_ENUM,
+    NODE_FIELD,
     NODE_FUNCTION,
     NODE_INTERFACE,
     NODE_METHOD,
     NODE_MODULE,
+    NODE_NAMESPACE,
+    NODE_PROPERTY,
+    NODE_STRUCT,
     NODE_VARIABLE,
 )
 
@@ -45,13 +50,29 @@ if TYPE_CHECKING:
 _MAX_FILE_BYTES = 1_500_000
 
 # Definition kinds a name-based call/reference may resolve to.
-_CALLABLE_KINDS = frozenset({NODE_FUNCTION, NODE_METHOD, NODE_CLASS})
+_CALLABLE_KINDS = frozenset(
+    {NODE_FUNCTION, NODE_METHOD, NODE_CLASS, NODE_ENUM, NODE_STRUCT}
+)
 # Definition kinds an inherits/implements edge may resolve to.
-_TYPE_KINDS = frozenset({NODE_CLASS, NODE_INTERFACE})
+_TYPE_KINDS = frozenset({NODE_CLASS, NODE_INTERFACE, NODE_STRUCT})
 # Import targets can be any defined symbol.
 _ANY_KINDS = frozenset(
-    {NODE_FUNCTION, NODE_METHOD, NODE_CLASS, NODE_INTERFACE, NODE_MODULE, NODE_VARIABLE}
+    {
+        NODE_FUNCTION,
+        NODE_METHOD,
+        NODE_CLASS,
+        NODE_INTERFACE,
+        NODE_MODULE,
+        NODE_VARIABLE,
+        NODE_FIELD,
+        NODE_PROPERTY,
+        NODE_ENUM,
+        NODE_STRUCT,
+        NODE_NAMESPACE,
+    }
 )
+# Field/property access targets.
+_FIELD_KINDS = frozenset({NODE_FIELD, NODE_PROPERTY, NODE_VARIABLE})
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +124,23 @@ class UnresolvedImport:
     line: int | None
 
 
+@dataclass(frozen=True, slots=True)
+class AmbiguousEdge:
+    """An edge whose target name matched 2+ candidates.
+
+    Stored so the UI and future resolution passes can surface these as
+    "ambiguous" rather than silently dropping them. The agent can use
+    ``code_references`` / ``code_neighbors`` to disambiguate manually.
+    """
+
+    src_key: str
+    dst_name: str
+    kind: str
+    candidate_keys: tuple[str, ...]
+    file_path: str
+    line: int | None
+
+
 @dataclass(slots=True)
 class WorkspaceIndex:
     nodes: list[IndexedNode] = field(default_factory=list)
@@ -110,6 +148,7 @@ class WorkspaceIndex:
     files: list[FileIndex] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     unresolved_imports: list[UnresolvedImport] = field(default_factory=list)
+    ambiguous_edges: list[AmbiguousEdge] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
@@ -400,6 +439,37 @@ def _resolve_edges(
                         line=line,
                     )
                 )
+            elif dst_key is None and dst_name is not None and kind != EDGE_IMPORTS:
+                # Check if the name matched multiple candidates (ambiguous)
+                # rather than matching nothing at all. Store these so the UI
+                # can surface them as "ambiguous" instead of silently dropping.
+                allowed_for_check = (
+                    _TYPE_KINDS
+                    if kind in {EDGE_INHERITS, EDGE_IMPLEMENTS}
+                    else _CALLABLE_KINDS
+                    if kind not in {EDGE_DECORATED_BY, EDGE_REFERENCES}
+                    else _TYPE_KINDS
+                    if kind == EDGE_REFERENCES
+                    else _CALLABLE_KINDS
+                )
+                candidates = _collect_candidates(
+                    dst_name,
+                    name_to_keys,
+                    qname_to_keys,
+                    kind_by_key,
+                    allowed_for_check,
+                )
+                if len(candidates) >= 2:
+                    index.ambiguous_edges.append(
+                        AmbiguousEdge(
+                            src_key=src_key,
+                            dst_name=dst_name,
+                            kind=kind,
+                            candidate_keys=tuple(candidates),
+                            file_path=file_by_key.get(src_key, ""),
+                            line=line,
+                        )
+                    )
             continue
         dedupe = (src_key, dst_key, kind)
         if dedupe in seen:
@@ -460,6 +530,48 @@ def _resolve_qualified(
             return short_candidates[0]
 
     return None
+
+
+def _collect_candidates(
+    dst_name: str,
+    name_to_keys: dict[str, list[str]],
+    qname_to_keys: dict[str, list[str]],
+    kind_by_key: dict[str, str],
+    allowed_kinds: frozenset[str],
+) -> list[str]:
+    """Collect all candidate keys that could match ``dst_name``.
+
+    Unlike ``_resolve_qualified`` which only returns when exactly 1 match,
+    this returns ALL matches across name, qualified-name, and last-segment
+    lookups so ambiguous edges can be stored rather than silently dropped.
+    """
+    candidates = [
+        key
+        for key in name_to_keys.get(dst_name, [])
+        if kind_by_key.get(key) in allowed_kinds
+    ]
+    if candidates:
+        return candidates
+
+    qcandidates = [
+        key
+        for key in qname_to_keys.get(dst_name, [])
+        if kind_by_key.get(key) in allowed_kinds
+    ]
+    if qcandidates:
+        return qcandidates
+
+    if "." in dst_name:
+        short = dst_name.rsplit(".", 1)[1]
+        short_candidates = [
+            key
+            for key in name_to_keys.get(short, [])
+            if kind_by_key.get(key) in allowed_kinds
+        ]
+        if short_candidates:
+            return short_candidates
+
+    return []
 
 
 def _resolve_scoped(

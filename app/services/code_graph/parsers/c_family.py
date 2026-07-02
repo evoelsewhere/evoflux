@@ -115,6 +115,54 @@ class CFamilyParser(TreeSitterParser):
                             )
         return out
 
+    def decorators(self, node: Node, source: bytes) -> list[str]:
+        out: list[str] = []
+        for child in node.children:
+            if child.type == "attribute_declaration":
+                # C++ [[attr]] or C11 _Alignas etc.
+                _collect_c_attr_names(child, source, out)
+            elif child.type == "attribute_specifier":
+                # __attribute__((attr))
+                _collect_c_attr_names(child, source, out)
+            elif child.type == "ms_declspec_modifier":
+                # __declspec(attr)
+                _collect_c_attr_names(child, source, out)
+        # Also check preceding siblings (e.g. __attribute__ before function)
+        prev = node.prev_named_sibling
+        while prev is not None:
+            if prev.type in ("attribute_declaration", "attribute_specifier"):
+                _collect_c_attr_names(prev, source, out)
+            elif prev.type not in ("comment",):
+                break
+            prev = prev.prev_named_sibling
+        return out
+
+    def type_refs(self, node: Node, source: bytes) -> list[str]:
+        if node.type not in {"function_definition", "declaration", "field_declaration"}:
+            return []
+        out: list[str] = []
+        # Return type: the type node before the declarator
+        for child in node.children:
+            if child.type in {"primitive_type", "sized_type_specifier"}:
+                continue
+            if child.type == "struct_specifier":
+                name = self._specifier_name(child, source)
+                if name:
+                    out.append(name)
+            elif child.type == "enum_specifier":
+                name = self._specifier_name(child, source)
+                if name:
+                    out.append(name)
+            elif child.type in {"type_identifier", "qualified_identifier"}:
+                name = node_text(child, source)
+                if name not in _C_BUILTIN_TYPES:
+                    out.append(name)
+        # Parameter types from function_declarator
+        decl = node.child_by_field_name("declarator")
+        if decl is not None:
+            _collect_c_param_types(decl, source, out)
+        return out
+
     def docstring(self, node: Node, source: bytes) -> str | None:
         return _preceding_comment(node, source)
 
@@ -218,6 +266,87 @@ class CppParser(CFamilyParser):
         ".hh",
     )
     grammar: ClassVar[str] = "cpp"
+
+
+_C_BUILTIN_TYPES = frozenset(
+    {
+        "bool",
+        "char",
+        "double",
+        "float",
+        "int",
+        "long",
+        "short",
+        "unsigned",
+        "signed",
+        "void",
+        "wchar_t",
+        "char8_t",
+        "char16_t",
+        "char32_t",
+        "size_t",
+        "ptrdiff_t",
+        "nullptr_t",
+        "auto",
+    }
+)
+
+
+def _collect_c_attr_names(node: Node, source: bytes, out: list[str]) -> None:
+    """Extract attribute names from an attribute_declaration/specifier node."""
+    for child in node.children:
+        if child.type == "attribute":
+            # [[attr]] or [[namespace::attr]]
+            name_node = child.child_by_field_name("name")
+            if name_node is not None:
+                out.append(node_text(name_node, source))
+            else:
+                for sub in child.children:
+                    if sub.type == "identifier":
+                        out.append(node_text(sub, source))
+                        break
+        elif child.type == "argument_list":
+            # __attribute__((attr, ...))
+            for arg in child.children:
+                if arg.type == "identifier":
+                    out.append(node_text(arg, source))
+                elif arg.type == "call_expression":
+                    func = arg.child_by_field_name("function")
+                    if func is not None and func.type == "identifier":
+                        out.append(node_text(func, source))
+
+
+def _collect_c_param_types(node: Node, source: bytes, out: list[str]) -> None:
+    """Collect type identifiers from function parameters."""
+    if node.type == "function_declarator":
+        params = node.child_by_field_name("parameters")
+        if params is not None:
+            for param in params.children:
+                if param.type == "parameter_declaration":
+                    for child in param.children:
+                        if child.type == "type_identifier":
+                            name = node_text(child, source)
+                            if name not in _C_BUILTIN_TYPES:
+                                out.append(name)
+                        elif child.type == "struct_specifier":
+                            name_node = child.child_by_field_name("name")
+                            if name_node is not None:
+                                out.append(node_text(name_node, source))
+                        elif child.type == "qualified_identifier":
+                            name = node_text(child, source)
+                            if name not in _C_BUILTIN_TYPES:
+                                out.append(name)
+        # Recurse into nested declarators
+        for child in node.children:
+            _collect_c_param_types(child, source, out)
+    elif node.type in (
+        "pointer_declarator",
+        "reference_declarator",
+        "parenthesized_declarator",
+        "array_declarator",
+    ):
+        for child in node.children:
+            _collect_c_param_types(child, source, out)
 
 
 def _preceding_comment(node: Node, source: bytes) -> str | None:

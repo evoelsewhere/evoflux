@@ -18,6 +18,11 @@ NODE_FUNCTION = "function"
 NODE_METHOD = "method"
 NODE_INTERFACE = "interface"
 NODE_VARIABLE = "variable"
+NODE_FIELD = "field"
+NODE_PROPERTY = "property"
+NODE_ENUM = "enum"
+NODE_STRUCT = "struct"
+NODE_NAMESPACE = "namespace"
 
 # --- Edge kinds -------------------------------------------------------------
 EDGE_CONTAINS = "contains"
@@ -27,6 +32,11 @@ EDGE_IMPLEMENTS = "implements"
 EDGE_REFERENCES = "references"
 EDGE_IMPORTS = "imports"
 EDGE_DECORATED_BY = "decorated_by"
+EDGE_USES = "uses"
+EDGE_OVERRIDES = "overrides"
+EDGE_THROWS = "throws"
+EDGE_READS = "reads"
+EDGE_WRITES = "writes"
 
 
 @dataclass(frozen=True, slots=True)

@@ -179,9 +179,7 @@ class CrossRepoEdge(SQLModel, table=True):
     # SET NULL, not CASCADE — see class docstring.
     src_node_id: UUID | None = Field(
         default=None,
-        sa_column=Column(
-            sa.Uuid(), ForeignKey("code_nodes.id", ondelete="SET NULL")
-        ),
+        sa_column=Column(sa.Uuid(), ForeignKey("code_nodes.id", ondelete="SET NULL")),
     )
     src_file_path: str = Field(sa_column=Column(sa.String(), nullable=False))
     src_line: int | None = Field(default=None, sa_column=Column(sa.Integer))
@@ -215,9 +213,7 @@ class CrossRepoEdge(SQLModel, table=True):
     )
     dst_node_id: UUID | None = Field(
         default=None,
-        sa_column=Column(
-            sa.Uuid(), ForeignKey("code_nodes.id", ondelete="SET NULL")
-        ),
+        sa_column=Column(sa.Uuid(), ForeignKey("code_nodes.id", ondelete="SET NULL")),
     )
     # Denormalized — survives dst_node_id going NULL on the target repo's next
     # reindex, so re-resolution can reattach by name instead of re-matching.
@@ -230,4 +226,44 @@ class CrossRepoEdge(SQLModel, table=True):
     updated_at: datetime = Field(
         default_factory=_utcnow,
         sa_column=Column(TZDateTime(), nullable=False, onupdate=_utcnow),
+    )
+
+
+class CodeAmbiguousEdge(SQLModel, table=True):
+    """An edge whose target name matched 2+ candidates.
+
+    Stored so the UI and agent can surface these as "ambiguous" rather than
+    silently dropping them. The ``candidate_node_ids`` field lists all possible
+    target ``CodeNode.id`` values as a JSON array.
+    """
+
+    __tablename__: str = "code_ambiguous_edges"  # type: ignore[reportIncompatibleVariableOverride]
+    __table_args__ = (sa.Index("ix_cae_workspace_src", "workspace_id", "src_id"),)
+
+    id: UUID = Field(default_factory=uuid7, primary_key=True)
+    workspace_id: UUID = Field(
+        sa_column=Column(
+            sa.Uuid(),
+            ForeignKey("coding_workspaces.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        ),
+    )
+    src_id: UUID = Field(
+        sa_column=Column(
+            sa.Uuid(),
+            ForeignKey("code_nodes.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+    )
+    dst_name: str = Field(sa_column=Column(sa.String(255), nullable=False))
+    # calls | inherits | implements | references | decorated_by | uses | overrides
+    kind: str = Field(sa_column=Column(sa.String(30), nullable=False))
+    # JSON array of candidate CodeNode.id UUIDs.
+    candidate_node_ids: str = Field(sa_column=Column(sa.Text(), nullable=False))
+    file_path: str | None = Field(default=None, sa_column=Column(sa.String()))
+    line: int | None = Field(default=None, sa_column=Column(sa.Integer))
+    created_at: datetime = Field(
+        default_factory=_utcnow,
+        sa_column=Column(TZDateTime(), nullable=False),
     )

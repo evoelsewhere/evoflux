@@ -53,6 +53,15 @@ ECOSYSTEM_SWIFTPM = "swiftpm"
 ECOSYSTEM_DOCKER = "docker"
 ECOSYSTEM_HELM = "helm"
 ECOSYSTEM_TERRAFORM = "terraform"
+ECOSYSTEM_BAZEL = "bazel"
+ECOSYSTEM_BUCK = "buck"
+ECOSYSTEM_MESON = "meson"
+ECOSYSTEM_CONAN = "conan"
+ECOSYSTEM_SBT = "sbt"
+ECOSYSTEM_MIX = "mix"
+ECOSYSTEM_CLOJURE = "clojure"
+ECOSYSTEM_JULIA = "julia"
+ECOSYSTEM_NIMBLE = "nimble"
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,6 +181,40 @@ def read_manifests(root_path: str | Path) -> list[PackageManifest]:
         if name:
             out.append(PackageManifest(ecosystem=ECOSYSTEM_HELM, package_name=name))
 
+    bazel_name = _read_bazel_identity(root)
+    if bazel_name:
+        out.append(PackageManifest(ecosystem=ECOSYSTEM_BAZEL, package_name=bazel_name))
+
+    buck_name = _read_buck_identity(root)
+    if buck_name:
+        out.append(PackageManifest(ecosystem=ECOSYSTEM_BUCK, package_name=buck_name))
+
+    meson_name = _read_meson_identity(root)
+    if meson_name:
+        out.append(PackageManifest(ecosystem=ECOSYSTEM_MESON, package_name=meson_name))
+
+    conan_name = _read_conan_identity(root)
+    if conan_name:
+        out.append(PackageManifest(ecosystem=ECOSYSTEM_CONAN, package_name=conan_name))
+
+    sbt_name = _read_sbt_identity(root)
+    if sbt_name:
+        out.append(PackageManifest(ecosystem=ECOSYSTEM_SBT, package_name=sbt_name))
+
+    mix_name = _read_mix_identity(root)
+    if mix_name:
+        out.append(PackageManifest(ecosystem=ECOSYSTEM_MIX, package_name=mix_name))
+
+    julia_name = _read_julia_identity(root)
+    if julia_name:
+        out.append(PackageManifest(ecosystem=ECOSYSTEM_JULIA, package_name=julia_name))
+
+    nimble_name = _read_nimble_identity(root)
+    if nimble_name:
+        out.append(
+            PackageManifest(ecosystem=ECOSYSTEM_NIMBLE, package_name=nimble_name)
+        )
+
     return out
 
 
@@ -278,6 +321,8 @@ def read_path_dependencies(root_path: str | Path) -> list[PathDependency]:
         out.extend(_read_helm_path_deps(chart_yaml))
 
     out.extend(_read_terraform_path_deps(root))
+
+    out.extend(_read_bazel_path_deps(root))
 
     return out
 
@@ -1123,6 +1168,29 @@ def _read_compose_path_deps(compose_file: Path) -> list[PathDependency]:
     return out
 
 
+_DOCKER_FROM_RE = re.compile(r"""^\s*FROM\s+(\S+)""", re.MULTILINE)
+
+
+def _docker_declared_deps(root: Path) -> list[str]:
+    out: list[str] = []
+    for dockerfile_name in ("Dockerfile", "Dockerfile.dev", "Dockerfile.prod"):
+        dockerfile = root / dockerfile_name
+        if not dockerfile.is_file():
+            continue
+        try:
+            image = dockerfile.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for m in _DOCKER_FROM_RE.finditer(image):
+            ref = m.group(1)
+            if ref.startswith("--"):
+                continue
+            name = ref.rsplit("/", 1)[-1].split(":")[0].split("@")[0]
+            if name:
+                out.append(name)
+    return out
+
+
 def _read_helm_chart_name(chart_yaml: Path) -> str | None:
     data = _read_yaml_dict(chart_yaml)
     if data is None:
@@ -1158,6 +1226,10 @@ _TERRAFORM_MODULE_RE = re.compile(
     r"""module\s+"([^"]+)"\s*\{[^}]*?source\s*=\s*"(\.\.?/[^"]+)\"""",
     re.DOTALL,
 )
+_TERRAFORM_MODULE_SOURCE_RE = re.compile(
+    r"""module\s+"([^"]+)"\s*\{[^}]*?source\s*=\s*"([^"]+)\"""",
+    re.DOTALL,
+)
 
 
 def _read_terraform_path_deps(root: Path) -> list[PathDependency]:
@@ -1172,6 +1244,352 @@ def _read_terraform_path_deps(root: Path) -> list[PathDependency]:
                 PathDependency(ECOSYSTEM_TERRAFORM, match.group(1), match.group(2))
             )
     return out
+
+
+def _terraform_declared_deps(root: Path) -> list[str]:
+    out: list[str] = []
+    for tf_file in root.glob("*.tf"):
+        try:
+            text = tf_file.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for match in _TERRAFORM_MODULE_SOURCE_RE.finditer(text):
+            source = match.group(2)
+            if not source.startswith("./") and not source.startswith("../"):
+                out.append(source)
+    return out
+
+
+# --- Bazel --------------------------------------------------------------------
+
+_BAZEL_WORKSPACE_NAME_RE = re.compile(r"""workspace\(\s*name\s*=\s*["']([^"']+)["']""")
+_BAZEL_HTTP_ARCHIVE_RE = re.compile(r"""http_archive\(\s*name\s*=\s*["']([^"']+)["']""")
+_BAZEL_GIT_REPOSITORY_RE = re.compile(
+    r"""git_repository\(\s*name\s*=\s*["']([^"']+)["']"""
+)
+_BAZEL_LOCAL_REPOSITORY_RE = re.compile(
+    r"""local_repository\(\s*name\s*=\s*["']([^"']+)["']\s*,\s*path\s*=\s*["']([^"']+)["']"""
+)
+
+
+def _read_bazel_workspace_name(path: Path) -> str | None:
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    match = _BAZEL_WORKSPACE_NAME_RE.search(text)
+    return match.group(1) if match else None
+
+
+def _read_bazel_identity(root: Path) -> str | None:
+    for name in ("WORKSPACE.bazel", "WORKSPACE"):
+        path = root / name
+        if path.is_file():
+            result = _read_bazel_workspace_name(path)
+            if result:
+                return result
+    return None
+
+
+def _read_bazel_path_deps(root: Path) -> list[PathDependency]:
+    out: list[PathDependency] = []
+    for name in ("WORKSPACE.bazel", "WORKSPACE"):
+        path = root / name
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for match in _BAZEL_LOCAL_REPOSITORY_RE.finditer(text):
+            out.append(PathDependency(ECOSYSTEM_BAZEL, match.group(1), match.group(2)))
+    return out
+
+
+def _bazel_declared_deps(root: Path) -> list[str]:
+    out: list[str] = []
+    for name in ("WORKSPACE.bazel", "WORKSPACE"):
+        path = root / name
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for pattern in (_BAZEL_HTTP_ARCHIVE_RE, _BAZEL_GIT_REPOSITORY_RE):
+            for match in pattern.finditer(text):
+                out.append(match.group(1))
+    return out
+
+
+# --- Buck / Buck2 -------------------------------------------------------------
+
+_BUCK_TARGET_NAME_RE = re.compile(
+    r"""(?:rust_library|python_library|java_library|cxx_library|android_library|apple_library)"""
+    r"""\(\s*name\s*=\s*["']([^"']+)["']"""
+)
+
+
+def _read_buck_identity(root: Path) -> str | None:
+    for name in ("BUCK", "BUCK.toml"):
+        path = root / name
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        match = _BUCK_TARGET_NAME_RE.search(text)
+        if match:
+            return match.group(1)
+    return None
+
+
+# --- Meson --------------------------------------------------------------------
+
+_MESON_PROJECT_RE = re.compile(r"""project\(\s*['"]([^'"]+)['"]""")
+_MESON_DEP_RE = re.compile(r"""dependency\(\s*['"]([^'"]+)['"]""")
+
+
+def _read_meson_identity(root: Path) -> str | None:
+    path = root / "meson.build"
+    if not path.is_file():
+        return None
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    match = _MESON_PROJECT_RE.search(text)
+    return match.group(1) if match else None
+
+
+def _meson_declared_deps(root: Path) -> list[str]:
+    path = root / "meson.build"
+    if not path.is_file():
+        return []
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    return [m.group(1) for m in _MESON_DEP_RE.finditer(text)]
+
+
+# --- Conan (C/C++ package manager) -------------------------------------------
+
+_CONAN_NAME_ATTR_RE = re.compile(r"""^\s*name\s*=\s*['"]([^'"]+)['"]""", re.MULTILINE)
+_CONAN_REQUIRES_ATTR_RE = re.compile(
+    r"""^\s*requires\s*=\s*['"]([^'"]+)['"]""", re.MULTILINE
+)
+_CONAN_REQUIRES_LIST_RE = re.compile(
+    r"""^\s*requires\s*=\s*\[([^\]]+)\]""", re.MULTILINE | re.DOTALL
+)
+_CONAN_REQUIRES_LIST_ITEM_RE = re.compile(r"""['"]([^'"]+)['"]""")
+
+
+def _read_conan_identity(root: Path) -> str | None:
+    conanfile_py = root / "conanfile.py"
+    if conanfile_py.is_file():
+        try:
+            text = conanfile_py.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return None
+        match = _CONAN_NAME_ATTR_RE.search(text)
+        if match:
+            return match.group(1)
+    return None
+
+
+def _conan_declared_deps(root: Path) -> list[str]:
+    out: list[str] = []
+    conanfile_py = root / "conanfile.py"
+    if conanfile_py.is_file():
+        try:
+            text = conanfile_py.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            text = ""
+        match = _CONAN_REQUIRES_ATTR_RE.search(text)
+        if match:
+            out.append(match.group(1).split("/")[0])
+        for list_match in _CONAN_REQUIRES_LIST_RE.finditer(text):
+            for item_match in _CONAN_REQUIRES_LIST_ITEM_RE.finditer(
+                list_match.group(1)
+            ):
+                out.append(item_match.group(1).split("/")[0])
+    conanfile_txt = root / "conanfile.txt"
+    if conanfile_txt.is_file():
+        try:
+            text = conanfile_txt.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return out
+        in_requires = False
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.lower() == "[requires]":
+                in_requires = True
+                continue
+            if stripped.startswith("[") and stripped.endswith("]"):
+                in_requires = False
+                continue
+            if in_requires and stripped and not stripped.startswith("#"):
+                out.append(stripped.split("/")[0])
+    return out
+
+
+# --- sbt (Scala) --------------------------------------------------------------
+
+_SBT_NAME_RE = re.compile(r"""^\s*name\s*:?=\s*["']([^"']+)["']""", re.MULTILINE)
+_SBT_DEP_RE = re.compile(
+    r"""libraryDependencies\s*\+?=\s*["']([^"']+)["']\s*%\s*["']([^"']+)["']\s*%\s*["']([^"']+)["']"""
+)
+
+
+def _read_sbt_identity(root: Path) -> str | None:
+    path = root / "build.sbt"
+    if not path.is_file():
+        return None
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    match = _SBT_NAME_RE.search(text)
+    return match.group(1) if match else None
+
+
+def _sbt_declared_deps(root: Path) -> list[str]:
+    path = root / "build.sbt"
+    if not path.is_file():
+        return []
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    return [f"{m.group(1)}:{m.group(2)}" for m in _SBT_DEP_RE.finditer(text)]
+
+
+# --- mix.exs (Elixir) ---------------------------------------------------------
+
+_MIX_APP_RE = re.compile(r"""app:\s*:(\w+)""")
+_MIX_DEP_TUPLE_RE = re.compile(
+    r"""\{:(\w+)\s*,\s*["'][^"']*["']\s*,\s*["']([^"']+)["']"""
+)
+_MIX_DEP_ATOM_RE = re.compile(r"""\{:(\w+)\s*,\s*["']([^"']+)["']""")
+
+
+def _read_mix_identity(root: Path) -> str | None:
+    path = root / "mix.exs"
+    if not path.is_file():
+        return None
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    match = _MIX_APP_RE.search(text)
+    return match.group(1) if match else None
+
+
+def _mix_declared_deps(root: Path) -> list[str]:
+    path = root / "mix.exs"
+    if not path.is_file():
+        return []
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    out: list[str] = []
+    for m in _MIX_DEP_TUPLE_RE.finditer(text):
+        out.append(m.group(1))
+    for m in _MIX_DEP_ATOM_RE.finditer(text):
+        out.append(m.group(1))
+    return out
+
+
+# --- deps.edn (Clojure) ------------------------------------------------------
+
+_CLOJURE_DEP_KEY_RE = re.compile(r"""([\w.!?+*<>=_-]+/[\w.!?+*<>=_-]+)""")
+
+
+def _clojure_declared_deps(root: Path) -> list[str]:
+    path = root / "deps.edn"
+    if not path.is_file():
+        return []
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    deps_match = re.search(r":deps\s*\{", text)
+    if not deps_match:
+        return []
+    text_after_deps = text[deps_match.end() :]
+    out: list[str] = []
+    for key_match in _CLOJURE_DEP_KEY_RE.finditer(text_after_deps):
+        candidate = key_match.group(1)
+        if candidate.startswith(":"):
+            continue
+        out.append(candidate)
+        if len(out) > 500:
+            break
+    return out
+
+
+# --- Julia (Project.toml) -----------------------------------------------------
+
+
+def _read_julia_identity(root: Path) -> str | None:
+    path = root / "Project.toml"
+    if not path.is_file():
+        return None
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return None
+    name = data.get("name")
+    return name if isinstance(name, str) and name else None
+
+
+def _julia_declared_deps(root: Path) -> list[str]:
+    path = root / "Project.toml"
+    if not path.is_file():
+        return []
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return []
+    deps = data.get("deps")
+    if isinstance(deps, dict):
+        return [k for k in deps if isinstance(k, str) and k]
+    return []
+
+
+# --- Nimble (*.nimble) --------------------------------------------------------
+
+_NIMBLE_PKG_RE = re.compile(r"""packageName\s*=\s*["']([^"']+)["']""")
+_NIMBLE_REQUIRES_RE = re.compile(r"""requires\s+["']([^"']+)["']""")
+
+
+def _read_nimble_identity(root: Path) -> str | None:
+    nimble_file = _find_glob_file(root, "*.nimble")
+    if nimble_file is None:
+        return None
+    try:
+        text = nimble_file.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    match = _NIMBLE_PKG_RE.search(text)
+    if match:
+        return match.group(1)
+    stem = nimble_file.stem
+    return stem if stem else None
+
+
+def _nimble_declared_deps(root: Path) -> list[str]:
+    nimble_file = _find_glob_file(root, "*.nimble")
+    if nimble_file is None:
+        return []
+    try:
+        text = nimble_file.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    return [m.group(1) for m in _NIMBLE_REQUIRES_RE.finditer(text)]
 
 
 # --- External-dependency filtering -------------------------------------------
@@ -1247,6 +1665,17 @@ def read_declared_dependencies(root_path: str | Path) -> list[str]:
     package_swift = root / "Package.swift"
     if package_swift.is_file():
         out.extend(_package_swift_declared_deps(package_swift))
+
+    out.extend(_bazel_declared_deps(root))
+    out.extend(_conan_declared_deps(root))
+    out.extend(_sbt_declared_deps(root))
+    out.extend(_mix_declared_deps(root))
+    out.extend(_clojure_declared_deps(root))
+    out.extend(_julia_declared_deps(root))
+    out.extend(_nimble_declared_deps(root))
+    out.extend(_meson_declared_deps(root))
+    out.extend(_docker_declared_deps(root))
+    out.extend(_terraform_declared_deps(root))
 
     path_dep_aliases = {d.alias for d in read_path_dependencies(root_path)}
     return [dep for dep in out if dep not in path_dep_aliases]

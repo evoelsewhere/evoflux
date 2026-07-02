@@ -113,6 +113,58 @@ class SwiftParser(TreeSitterParser):
     def docstring(self, node: Node, source: bytes) -> str | None:
         return _preceding_comment(node, source)
 
+    def decorators(self, node: Node, source: bytes) -> list[str]:
+        out: list[str] = []
+        for child in node.children:
+            if child.type == "attribute":
+                name = _swift_attr_name(child, source)
+                if name:
+                    out.append(name)
+            elif child.type == "modifiers":
+                for mod in child.children:
+                    if mod.type == "attribute":
+                        name = _swift_attr_name(mod, source)
+                        if name:
+                            out.append(name)
+        # Also check preceding siblings
+        prev = node.prev_named_sibling
+        while prev is not None:
+            if prev.type == "attribute":
+                name = _swift_attr_name(prev, source)
+                if name:
+                    out.append(name)
+            elif prev.type not in ("comment", "multiline_comment"):
+                break
+            prev = prev.prev_named_sibling
+        return out
+
+    def type_refs(self, node: Node, source: bytes) -> list[str]:
+        if node.type not in {
+            "function_declaration",
+            "init_declaration",
+            "deinit_declaration",
+            "subscript_declaration",
+        }:
+            return []
+        out: list[str] = []
+        # Parameter types
+        for child in node.children:
+            if child.type == "parameter":
+                type_node = child.child_by_field_name("type")
+                if type_node is not None:
+                    _collect_swift_type_ids(type_node, source, out)
+            elif child.type == "function_value_parameters":
+                for param in child.children:
+                    if param.type == "parameter":
+                        type_node = param.child_by_field_name("type")
+                        if type_node is not None:
+                            _collect_swift_type_ids(type_node, source, out)
+        # Return type
+        ret = node.child_by_field_name("return_type")
+        if ret is not None:
+            _collect_swift_type_ids(ret, source, out)
+        return out
+
     def _name(self, node: Node, source: bytes) -> str | None:
         name_node = node.child_by_field_name("name")
         if name_node is not None:
@@ -159,6 +211,74 @@ def _inheritance_name(node: Node, source: bytes) -> str | None:
         if child.type == "type_identifier":
             return node_text(child, source)
     return None
+
+
+_SWIFT_BUILTIN_TYPES = frozenset(
+    {
+        "Bool",
+        "Character",
+        "Double",
+        "Float",
+        "Float32",
+        "Float64",
+        "Int",
+        "Int8",
+        "Int16",
+        "Int32",
+        "Int64",
+        "String",
+        "UInt",
+        "UInt8",
+        "UInt16",
+        "UInt32",
+        "UInt64",
+        "Void",
+        "Any",
+        "Self",
+    }
+)
+
+
+def _swift_attr_name(attr_node: Node, source: bytes) -> str | None:
+    """Extract attribute name from a Swift attribute node."""
+    for child in attr_node.children:
+        if child.type == "type_identifier":
+            return node_text(child, source)
+        if child.type == "simple_identifier":
+            return node_text(child, source)
+    return None
+
+
+def _collect_swift_type_ids(node: Node, source: bytes, out: list[str]) -> None:
+    """Recursively collect user-defined type identifiers from Swift type nodes."""
+    if node.type == "type_identifier":
+        name = node_text(node, source)
+        if name not in _SWIFT_BUILTIN_TYPES:
+            out.append(name)
+        return
+    if node.type == "simple_identifier":
+        name = node_text(node, source)
+        if name not in _SWIFT_BUILTIN_TYPES and name[0:1].isupper():
+            out.append(name)
+        return
+    if node.type in {
+        "array_type",
+        "dictionary_type",
+        "optional_type",
+        "tuple_type",
+        "function_type",
+        "protocol_composition_type",
+        "existential_type",
+    }:
+        for child in node.children:
+            _collect_swift_type_ids(child, source, out)
+        return
+    if node.type in ("user_type",):
+        for child in node.children:
+            _collect_swift_type_ids(child, source, out)
+        return
+    for child in node.children:
+        _collect_swift_type_ids(child, source, out)
 
 
 def _preceding_comment(node: Node, source: bytes) -> str | None:
