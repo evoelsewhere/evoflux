@@ -6,9 +6,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.db import get_session
+from app.core.db import async_session_factory, get_session
 from app.core.runtime_settings import load_runtime_settings, save_runtime_settings
-from app.services.dream import run_dream, run_dream_lint
+from app.services.dream import (
+    get_manual_dream_run_status,
+    run_dream_lint,
+    start_manual_dream_run,
+)
 
 router = APIRouter(prefix="/dream", tags=["dream"])
 
@@ -77,14 +81,28 @@ async def put_dream_config(
 
 
 @router.post("/run")
-async def run_dream_now(db: AsyncSession = Depends(get_session)) -> dict:
-    """Manually trigger the dream agent to process unprocessed sessions and notes.
+async def run_dream_now() -> dict:
+    """Kick off a manual dream drain in the background and return immediately.
 
-    Uses ``drain=True`` so a manual click processes every pending item in one
-    go, ignoring ``batch_size``.  ``batch_size`` still bounds the scheduler's
-    cron-driven fires.
+    Uses ``drain=True`` internally so the run processes every pending item in
+    one go, ignoring ``batch_size`` (which still bounds the scheduler's
+    cron-driven fires). A drain can take minutes across a large backlog — one
+    LLM call per item — so this no longer awaits completion inline; poll
+    ``GET /dream/run/status`` for progress and the final result.
     """
-    return await run_dream(db, drain=True)
+    return start_manual_dream_run(async_session_factory)
+
+
+@router.get("/run/status")
+async def get_dream_run_status_now() -> dict:
+    """Return the current/last manual dream run's progress.
+
+    ``running`` reflects whether a manual drain kicked off via ``POST /run``
+    is still in flight; ``result``/``error`` hold that run's outcome once it
+    finishes (``None`` while still running or before any manual run has
+    happened).
+    """
+    return get_manual_dream_run_status()
 
 
 @router.post("/lint")

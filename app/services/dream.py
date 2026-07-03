@@ -14,6 +14,7 @@ import hashlib
 import json
 import re
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -25,6 +26,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.db import DbFactory
 from app.models.chat import (
     ChatSession,
     DreamLog,
@@ -195,6 +197,21 @@ INDEX_CONTEXT_MAX_CHARS = 8_000
 # Serialise dream runs so manual /api/dream/run cannot race the scheduler fire
 # and crash on the dream_log.session_id UNIQUE constraint.
 _run_lock = asyncio.Lock()
+
+
+@dataclass(frozen=True, slots=True)
+class ManualDreamRunState:
+    """Snapshot of the latest ``start_manual_dream_run`` background task."""
+
+    running: bool = False
+    result: dict | None = None
+    error: str | None = None
+
+
+_manual_run_state = ManualDreamRunState()
+# Holds a strong reference to the in-flight task — asyncio only keeps a weak
+# one internally, so an unreferenced task can be garbage-collected mid-run.
+_manual_run_task: asyncio.Task | None = None
 
 
 class DreamAgentConfig(BaseModel):
@@ -1685,6 +1702,47 @@ async def _run_dream_lint_locked() -> dict:
         "duration_seconds": duration,
         "lint_md_written": lint_exists,
     }
+
+
+async def _execute_manual_dream_run(db_factory: DbFactory) -> None:
+    """Background task body for :func:`start_manual_dream_run`."""
+    global _manual_run_state
+    try:
+        async with db_factory() as db:
+            result = await run_dream(db, drain=True)
+        _manual_run_state = ManualDreamRunState(result=result)
+    except Exception as exc:  # noqa: BLE001 — surfaced via status, not raised
+        logger.exception("dream_manual_run_failed")
+        _manual_run_state = ManualDreamRunState(error=str(exc))
+
+
+def start_manual_dream_run(db_factory: DbFactory) -> dict:
+    """Kick off a manual drain run as a background task and return immediately.
+
+    ``POST /dream/run`` used to ``await run_dream(db, drain=True)`` directly
+    on the request's own DB session — a drain can process dozens of items,
+    each with its own LLM call (up to ``timeout_seconds`` long), so a large
+    backlog held the HTTP connection and a pooled DB connection open for
+    minutes with no progress feedback. Poll :func:`get_manual_dream_run_status`
+    for progress/result instead.
+
+    Only dedupes against another *manual* run in flight — a concurrent
+    scheduled fire is still serialised transparently by ``run_dream``'s own
+    ``_run_lock`` exactly as before this change; the background task just
+    waits its turn on that lock.
+    """
+    global _manual_run_state, _manual_run_task
+    if _manual_run_state.running:
+        return {"status": "already_running"}
+    _manual_run_state = ManualDreamRunState(running=True)
+    _manual_run_task = asyncio.create_task(_execute_manual_dream_run(db_factory))
+    return {"status": "started"}
+
+
+def get_manual_dream_run_status() -> dict:
+    """Return the current/last manual run's progress for polling clients."""
+    state = _manual_run_state
+    return {"running": state.running, "result": state.result, "error": state.error}
 
 
 async def run_dream(db: AsyncSession, *, drain: bool = False) -> dict:

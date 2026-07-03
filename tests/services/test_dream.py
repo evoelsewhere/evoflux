@@ -29,6 +29,7 @@ from app.services.dream import (
     _load_dream_agent,
     _synthesise_note,
     _synthesise_session,
+    get_manual_dream_run_status,
     get_pending_memory_sources,
     get_unprocessed_notes,
     get_unprocessed_sessions,
@@ -39,6 +40,7 @@ from app.services.dream import (
     parse_note_entries,
     process_memory_sources,
     run_dream,
+    start_manual_dream_run,
 )
 
 
@@ -767,6 +769,67 @@ async def test_run_dream_nothing_to_process(setup_db, _wiki_dir: Path):
     assert result["sessions_processed"] == 0
     assert result["notes_processed"] == 0
     assert result["failed"] == 0
+
+
+@pytest.mark.asyncio
+async def test_start_manual_dream_run_completes_and_reports_status(
+    setup_db, _wiki_dir: Path
+):
+    """POST /dream/run's background-task path returns immediately, then
+    ``get_manual_dream_run_status`` reflects completion with the real result.
+    """
+    import asyncio
+
+    from app.core.db import async_session_factory
+    from app.services import dream as dream_module
+
+    dream_module._manual_run_state = dream_module.ManualDreamRunState()
+
+    started = start_manual_dream_run(async_session_factory)
+    assert started == {"status": "started"}
+
+    status = get_manual_dream_run_status()
+    assert status["running"] is True
+    assert status["result"] is None
+    assert status["error"] is None
+
+    task = dream_module._manual_run_task
+    assert task is not None
+    await asyncio.wait_for(task, timeout=5)
+
+    status = get_manual_dream_run_status()
+    assert status["running"] is False
+    assert status["error"] is None
+    assert status["result"] == {
+        "sessions_processed": 0,
+        "notes_processed": 0,
+        "remaining": 0,
+        "failed": 0,
+    }
+
+
+@pytest.mark.asyncio
+async def test_start_manual_dream_run_dedupes_concurrent_manual_calls(
+    setup_db, _wiki_dir: Path
+):
+    """A second manual trigger while one is in flight reports already_running
+    instead of spawning a duplicate background task."""
+    import asyncio
+
+    from app.core.db import async_session_factory
+    from app.services import dream as dream_module
+
+    dream_module._manual_run_state = dream_module.ManualDreamRunState()
+
+    first = start_manual_dream_run(async_session_factory)
+    assert first == {"status": "started"}
+    second = start_manual_dream_run(async_session_factory)
+    assert second == {"status": "already_running"}
+
+    task = dream_module._manual_run_task
+    assert task is not None
+    await asyncio.wait_for(task, timeout=5)
+    assert get_manual_dream_run_status()["running"] is False
 
 
 @pytest.mark.asyncio
