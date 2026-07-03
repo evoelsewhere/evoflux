@@ -23,7 +23,7 @@ import { CompactionDivider } from './CompactionDivider'
 import { ImageAttachment } from './ImageAttachment'
 import { FileCard } from './FileCard'
 import { AssistantTurn } from './AssistantTurnFooter'
-import { partitionTurns } from '@/utils/turns'
+import { getVisibleTurnWindow, partitionTurns } from '@/utils/turns'
 import { latestDirectUserBlockId, mergeBlocks } from '@/utils/blocks'
 import { formatTokens, extractSleepPrefix, formatTime } from '@/utils/format'
 import { latestMCPAppResourceBlockIds } from '@/utils/mcp-app-artifacts'
@@ -38,6 +38,11 @@ import type { ContentBlock, MessageAttachment, TodoItem } from '@/api/types'
 
 const SCROLL_THRESHOLD = 40
 const USER_SCROLL_DETACH_DELTA = 4
+// Split view can show several panes at once, each rendering a full
+// transcript with no windowing — matches AgentView's cap so a long-lived
+// session doesn't mount thousands of DOM nodes per visible pane.
+const INITIAL_RENDERED_TURNS = 80
+const TURN_RENDER_STEP = 80
 
 interface AgentPaneProps {
   name: string
@@ -317,14 +322,14 @@ function BlockRenderer({ block, isStreaming, sessionId, onRevert, latestMCPAppBl
       if (sleepPrefix !== null) {
         return (
           <div>
-            {sleepPrefix && <LazyMarkdownBlock content={sleepPrefix} sessionId={sessionId} />}
+            {sleepPrefix && <LazyMarkdownBlock content={sleepPrefix} sessionId={sessionId} isStreaming={isStreaming} />}
             <p className="text-xs text-(--color-text-subtle) italic">— idle —</p>
           </div>
         )
       }
       return (
         <div>
-          <LazyMarkdownBlock content={block.content} sessionId={sessionId} />
+          <LazyMarkdownBlock content={block.content} sessionId={sessionId} isStreaming={isStreaming} />
         </div>
       )
     }
@@ -339,6 +344,9 @@ export function AgentPane({
 }: AgentPaneProps) {
   const [paneCollapsed, setPaneCollapsed] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const [renderedTurnCount, setRenderedTurnCount] = useState(INITIAL_RENDERED_TURNS)
+  const prevScrollHeightRef = useRef<number | null>(null)
+  const pendingRestoreRef = useRef(false)
   const sessionId = useTeamStore((s) => s.sessionId) ?? undefined
   const handleRevert = useCallback(() => {
     void useTeamStore.getState().undoTeam()
@@ -436,7 +444,28 @@ export function AgentPane({
   )
   const latestUserBlockId = useMemo(() => latestDirectUserBlockId(allBlocks), [allBlocks])
   const turnItems = useMemo(() => partitionTurns(allBlocks), [allBlocks])
+  const { hiddenTurnCount, visibleTurnItems } = useMemo(
+    () => getVisibleTurnWindow(turnItems, renderedTurnCount),
+    [renderedTurnCount, turnItems],
+  )
   const latestMCPAppBlockIds = useMemo(() => latestMCPAppResourceBlockIds(allBlocks), [allBlocks])
+
+  const showEarlierTurns = useCallback(() => {
+    const el = scrollRef.current
+    if (el) {
+      prevScrollHeightRef.current = el.scrollHeight
+      pendingRestoreRef.current = true
+    }
+    setRenderedTurnCount((count) => Math.min(turnItems.length, count + TURN_RENDER_STEP))
+  }, [turnItems.length])
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el || !pendingRestoreRef.current || prevScrollHeightRef.current === null) return
+    pendingRestoreRef.current = false
+    el.scrollTop = el.scrollHeight - prevScrollHeightRef.current
+    prevScrollHeightRef.current = null
+  }, [renderedTurnCount])
 
   // Me single scroll effect — block count or last block text changed
   const lastBlockContent = allBlocks[allBlocks.length - 1]?.content ?? ''
@@ -535,7 +564,20 @@ export function AgentPane({
 
          {allBlocks.length > 0 && (
             <div className="space-y-3 px-3 py-3">
-               {turnItems.map((item, k) => {
+               {hiddenTurnCount > 0 && (
+                 <div className="flex justify-center pb-1">
+                   <button
+                     type="button"
+                     onClick={showEarlierTurns}
+                     className="inline-flex min-h-8 items-center gap-1 rounded-full border border-(--color-border) bg-(--bg-card) px-2.5 py-1 text-xs text-(--color-text-2) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:ring-2 focus-visible:ring-(--focus-ring) focus-visible:outline-none"
+                     aria-label={`Show ${Math.min(TURN_RENDER_STEP, hiddenTurnCount)} earlier turns`}
+                   >
+                     <ChevronUp size={12} aria-hidden="true" />
+                     {hiddenTurnCount} earlier
+                   </button>
+                 </div>
+               )}
+               {visibleTurnItems.map((item, k) => {
                    if (item.kind === 'user') {
                      return (
                        <BlockRenderer
@@ -549,7 +591,7 @@ export function AgentPane({
                      )
                    }
                    // Me only the trailing turn (no user block after) can be "live"
-                    const isTrailingTurn = k === turnItems.length - 1
+                    const isTrailingTurn = hiddenTurnCount + k === turnItems.length - 1
                    return (
                      <AssistantTurn
                        key={`turn-${item.startIndex}-${item.blocks[0]?.id ?? k}`}

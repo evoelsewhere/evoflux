@@ -7,12 +7,13 @@ const MarkdownBlockImpl = lazy(() =>
 interface LazyMarkdownBlockProps {
   content: string
   sessionId?: string
+  isStreaming?: boolean
 }
 
-export function LazyMarkdownBlock({ content, sessionId }: LazyMarkdownBlockProps) {
+export function LazyMarkdownBlock({ content, sessionId, isStreaming }: LazyMarkdownBlockProps) {
   return (
     <Suspense fallback={<div className="oa-prose text-sm whitespace-pre-wrap">{content}</div>}>
-      <MarkdownBlockImpl content={content} sessionId={sessionId} />
+      <MarkdownBlockImpl content={content} sessionId={sessionId} isStreaming={isStreaming} />
     </Suspense>
   )
 }

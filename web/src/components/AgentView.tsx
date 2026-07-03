@@ -343,7 +343,7 @@ const BlockRenderer = memo(function BlockRenderer({ block, isStreaming, sessionI
       if (sleepPrefix !== null) {
         return (
           <div>
-            {sleepPrefix && <LazyMarkdownBlock content={sleepPrefix} sessionId={sessionId} />}
+            {sleepPrefix && <LazyMarkdownBlock content={sleepPrefix} sessionId={sessionId} isStreaming={isStreaming} />}
             <p className="text-xs text-(--color-text-subtle) italic">— idle —</p>
     </div>
   )
@@ -351,7 +351,7 @@ const BlockRenderer = memo(function BlockRenderer({ block, isStreaming, sessionI
 
       return (
         <div>
-          <LazyMarkdownBlock content={block.content} sessionId={sessionId} />
+          <LazyMarkdownBlock content={block.content} sessionId={sessionId} isStreaming={isStreaming} />
         </div>
       )
     }
