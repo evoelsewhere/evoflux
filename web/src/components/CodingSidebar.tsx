@@ -49,6 +49,7 @@ import {
 } from "lucide-react";
 import { queryKeys } from "@/queries";
 import {
+  useCodingWorkspaceSessionsQuery,
   useDeleteTeamSessionMutation,
   useProjectSessionsQuery,
   useTeamSessionsQuery,
@@ -57,7 +58,6 @@ import {
 import { apiBaseUrl } from "@/api/base-url";
 import {
   browseWorkspaces,
-  getCodingWorkspaceTree,
   listWorktrees,
   removeWorktree,
   resolveTeamSession,
@@ -72,7 +72,7 @@ import {
   prependWorkspaceSession,
 } from "@/stores/cache-invalidation-bridge";
 import { formatRelativeDate } from "@/utils/format";
-import { saveLastCodingWorkspace, workspaceLabel } from "@/utils/workspace";
+import { codingFocusId, saveLastCodingWorkspace, workspaceLabel } from "@/utils/workspace";
 import { isTransientNetworkError } from "@/utils/errors";
 import { useUIStore } from "@/stores/useUIStore";
 import { ThemeToggle } from "./ThemeToggle";
@@ -88,14 +88,13 @@ import {
 } from "@/components/ui/dialog";
 import type {
   CodingProject,
-  CodingWorkspaceTreeRepository,
   SessionResponse,
   WorktreeInfo,
 } from "@/api/types";
 import { LongPressButton } from "@/components/ui/long-press-button";
 import {
   useAddWorkspaceMutation,
-  useProjectsQuery,
+  useCodingOverviewQuery,
   useRemoveWorkspaceMutation,
 } from "@/queries/useProjectsQuery";
 import { ProjectSetupModal } from "@/components/ProjectSetupModal";
@@ -144,20 +143,7 @@ interface CodingSidebarProps {
   onMobileClose?: () => void;
 }
 
-function ProjectSessionList({
-  projectId,
-  currentSessionId,
-  mobileLongPressActions = false,
-  onSessionSelect,
-  onSessionDelete,
-  pendingDeleteId,
-  onCancelDelete,
-  onConfirmDelete,
-  onSessionEdit,
-  onSessionLongPress,
-  onSessionContextActions,
-}: {
-  projectId: string;
+interface SessionListActionProps {
   currentSessionId?: string;
   mobileLongPressActions?: boolean;
   onSessionSelect: (session: SessionResponse) => void;
@@ -168,8 +154,23 @@ function ProjectSessionList({
   onSessionEdit: (session: SessionResponse) => void;
   onSessionLongPress: (session: SessionResponse) => void;
   onSessionContextActions: (session: SessionResponse, event: React.MouseEvent) => void;
+}
+
+function SessionListPanel({
+  sessions,
+  currentSessionId,
+  mobileLongPressActions = false,
+  onSessionSelect,
+  onSessionDelete,
+  pendingDeleteId,
+  onCancelDelete,
+  onConfirmDelete,
+  onSessionEdit,
+  onSessionLongPress,
+  onSessionContextActions,
+}: SessionListActionProps & {
+  sessions: ReturnType<typeof useProjectSessionsQuery>;
 }) {
-  const sessions = useProjectSessionsQuery(projectId);
   const projectSessions = sessions.data?.pages.flatMap((page) => page.data) ?? [];
 
   return (
@@ -294,6 +295,22 @@ function ProjectSessionList({
   );
 }
 
+function ProjectSessionList({
+  projectId,
+  ...actions
+}: SessionListActionProps & { projectId: string }) {
+  const sessions = useProjectSessionsQuery(projectId);
+  return <SessionListPanel sessions={sessions} {...actions} />;
+}
+
+function WorkspaceSessionList({
+  workspace,
+  ...actions
+}: SessionListActionProps & { workspace: string }) {
+  const sessions = useCodingWorkspaceSessionsQuery(workspace);
+  return <SessionListPanel sessions={sessions} {...actions} />;
+}
+
 export function CodingSidebar({
   currentSessionId,
   workspace,
@@ -320,8 +337,11 @@ export function CodingSidebar({
   const sessions = useTeamSessionsQuery();
   const deleteSession = useDeleteTeamSessionMutation();
   const updateSessionTitle = useUpdateTeamSessionTitleMutation();
-  const projectsQuery = useProjectsQuery();
-  const projects = projectsQuery.data ?? [];
+  // One merged query for both Projects and standalone Workspaces — see
+  // useCodingOverviewQuery's doc comment for why this replaced two
+  // independently-fetched lists reconciled by path-string matching.
+  const overviewQuery = useCodingOverviewQuery();
+  const projects = overviewQuery.data?.projects ?? [];
   const addWorkspaceMutation = useAddWorkspaceMutation();
   const removeWorkspaceMutation = useRemoveWorkspaceMutation();
   const [showProjectModal, setShowProjectModal] = useState(false);
@@ -329,6 +349,11 @@ export function CodingSidebar({
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(
     () => new Set(),
   );
+  const [expandedWorkspaces, setExpandedWorkspaces] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [projectsSectionCollapsed, setProjectsSectionCollapsed] = useState(false);
+  const [workspacesSectionCollapsed, setWorkspacesSectionCollapsed] = useState(false);
   // Actions menu for a project's own repo row (create worktree / remove from
   // project) — never offers "new session", since sessions are project-scoped.
   const [projectRepoActions, setProjectRepoActions] = useState<{
@@ -360,10 +385,7 @@ export function CodingSidebar({
     codingSessions.find((s) => s.id === currentSessionId)?.project_id ??
     null;
 
-  const [workspaceTree, setWorkspaceTree] = useState<
-    CodingWorkspaceTreeRepository[]
-  >([]);
-  const visibleWorkspaces = (workspaceTree ?? []).map((repo) => repo.path);
+  const workspaceTree = overviewQuery.data?.repositories ?? [];
   const activeWorkspace = workspace ?? null;
   const worktreeSourceByDirectory = new Map<string, string>();
   for (const repo of workspaceTree) {
@@ -390,6 +412,25 @@ export function CodingSidebar({
       return next;
     });
   }, [currentProjectId]);
+
+  const toggleWorkspaceExpanded = (path: string) => {
+    setExpandedWorkspaces((current) => {
+      const next = new Set(current);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (!activeWorkspace) return;
+    setExpandedWorkspaces((current) => {
+      if (current.has(activeWorkspace)) return current;
+      const next = new Set(current);
+      next.add(activeWorkspace);
+      return next;
+    });
+  }, [activeWorkspace]);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(
@@ -522,12 +563,10 @@ export function CodingSidebar({
   }, [isTauri, isTauriMobile, openWebWorkspaceDialog]);
 
   const refreshWorkspaceTree = useCallback(async () => {
-    const tree = await getCodingWorkspaceTree();
-    setWorkspaceTree(tree.repositories);
-  }, []);
+    await queryClient.invalidateQueries({ queryKey: queryKeys.codingOverview() });
+  }, [queryClient]);
 
   useEffect(() => {
-    void refreshWorkspaceTree();
     const handler = () => {
       void refreshWorkspaceTree();
     };
@@ -597,7 +636,15 @@ export function CodingSidebar({
         prependWorkspaceSession(queryClient, path, session);
       }
       await refreshWorkspaceTree();
-      navigate({ to: "/coding/$sessionId", params: { sessionId: session.id } });
+      const focusId = codingFocusId({
+        project_id: session.project_id,
+        workspace: session.workspace ?? path,
+      });
+      navigate(
+        focusId
+          ? { to: "/coding/$focusId/$sessionId", params: { focusId, sessionId: session.id } }
+          : { to: "/coding" },
+      );
     } catch (err) {
       setPendingWorkspace(null);
       setError(err instanceof Error ? err.message : "Unable to create session");
@@ -642,7 +689,12 @@ export function CodingSidebar({
       if (resolvedWorkspace) {
         await refreshWorkspaceTree();
       }
-      navigate({ to: "/coding/$sessionId", params: { sessionId: session.id } });
+      const focusId = codingFocusId({ project_id: project.id, workspace: resolvedWorkspace });
+      navigate(
+        focusId
+          ? { to: "/coding/$focusId/$sessionId", params: { focusId, sessionId: session.id } }
+          : { to: "/coding" },
+      );
     } catch (err) {
       useToastStore.getState().push({
         tone: "error",
@@ -762,7 +814,12 @@ export function CodingSidebar({
       prependSession(queryClient, session);
       prependWorkspaceSession(queryClient, path, session);
       await refreshWorkspaceTree();
-      navigate({ to: "/coding/$sessionId", params: { sessionId: session.id } });
+      const focusId = codingFocusId({ project_id: session.project_id, workspace: path });
+      navigate(
+        focusId
+          ? { to: "/coding/$focusId/$sessionId", params: { focusId, sessionId: session.id } }
+          : { to: "/coding" },
+      );
       onMobileClose?.();
     } catch (err) {
       if (isTransientNetworkError(err) && worktreeTarget) {
@@ -789,18 +846,15 @@ export function CodingSidebar({
   };
 
   const deletedWorktreeSet = removedWorktreePaths;
-  const allSourceWorkspaces = visibleWorkspaces.filter(
-    (path) => !deletedWorktreeSet.has(path),
-  );
   // A repo that belongs to ANY project is managed from within that project's
   // "Repos" list, not here — Workspaces is standalone-only (business rule:
   // sessions on a project's repo must go through the project, never per-repo).
-  const projectWorkspacePaths = new Set(
-    projects.flatMap((p) => p.workspaces?.map((w) => w.path) ?? []),
-  );
-  const standaloneWorkspaces = allSourceWorkspaces.filter(
-    (path) => !projectWorkspacePaths.has(path),
-  );
+  // project_id comes straight off the repo (a real FK lookup server-side),
+  // so this is never at risk of drifting from a separately-fetched /projects
+  // list the way path-string matching against it would be.
+  const standaloneWorkspaces = workspaceTree
+    .filter((repo) => repo.project_id === null && !deletedWorktreeSet.has(repo.path))
+    .map((repo) => repo.path);
   const addRepoProject = addRepoDialogProjectId
     ? projects.find((p) => p.id === addRepoDialogProjectId) ?? null
     : null;
@@ -867,10 +921,15 @@ export function CodingSidebar({
     // Prime projectId immediately so CodingWorkspacePanel shows multi-repo context
     // without waiting for the async history load.
     useTeamStore.setState({ projectId: session.project_id ?? null });
-    navigate({
-      to: "/coding/$sessionId",
-      params: { sessionId: session.id },
+    const focusId = codingFocusId({
+      project_id: session.project_id,
+      workspace: session.workspace ?? workspacePath,
     });
+    navigate(
+      focusId
+        ? { to: "/coding/$focusId/$sessionId", params: { focusId, sessionId: session.id } }
+        : { to: "/coding" },
+    );
     onMobileClose?.();
   };
 
@@ -920,11 +979,15 @@ export function CodingSidebar({
         // Don't pin a project session to a single repo's last-workspace marker.
         if (fallbackSession.workspace && !fallbackSession.project_id)
           saveLastCodingWorkspace(fallbackSession.workspace);
-        navigate({
-          to: "/coding/$sessionId",
-          params: { sessionId: fallbackSession.id },
-          replace: true,
+        const focusId = codingFocusId({
+          project_id: fallbackSession.project_id,
+          workspace: fallbackSession.workspace,
         });
+        navigate(
+          focusId
+            ? { to: "/coding/$focusId/$sessionId", params: { focusId, sessionId: fallbackSession.id }, replace: true }
+            : { to: "/coding", replace: true },
+        );
       } else {
         navigate({ to: "/coding", replace: true });
       }
@@ -1137,27 +1200,40 @@ export function CodingSidebar({
           {/* PROJECTS */}
           <div className="px-2 pt-2 pb-1">
             <div className="flex items-center justify-between px-1 pb-1">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-(--color-text-muted)">
-                Projects
-              </span>
+              <button
+                type="button"
+                onClick={() => setProjectsSectionCollapsed((v) => !v)}
+                className="flex min-w-0 flex-1 items-center gap-1 rounded-xs py-0.5 text-left hover:bg-(--bg-key)"
+                aria-expanded={!projectsSectionCollapsed}
+                aria-label={`${projectsSectionCollapsed ? "Expand" : "Collapse"} Projects section`}
+              >
+                {projectsSectionCollapsed ? (
+                  <ChevronRight size={10} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
+                ) : (
+                  <ChevronDown size={10} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
+                )}
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-(--color-text-muted)">
+                  Projects
+                </span>
+              </button>
               <button
                 type="button"
                 onClick={() => setShowProjectModal(true)}
-                className="flex h-5 w-5 items-center justify-center rounded text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-text)"
+                className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-text)"
                 title="New multi-repo project"
               >
                 <Plus size={12} />
               </button>
             </div>
 
-            {projectsQuery.isLoading && (
+            {!projectsSectionCollapsed && overviewQuery.isLoading && (
               <div className="flex items-center gap-1.5 px-2 py-1.5">
                 <Loader2 size={11} className="animate-spin text-(--color-text-muted)" />
                 <span className="text-xs text-(--color-text-muted)">Loading…</span>
               </div>
             )}
 
-            {!projectsQuery.isLoading && projects.length === 0 && (
+            {!projectsSectionCollapsed && !overviewQuery.isLoading && projects.length === 0 && (
               <p className="px-2 py-1.5 text-xs text-(--color-text-subtle)">
                 No projects yet.{" "}
                 <button
@@ -1171,6 +1247,7 @@ export function CodingSidebar({
               </p>
             )}
 
+            {!projectsSectionCollapsed && (
             <div className="space-y-0.5">
               {projects.map((project) => {
                 const isActive = currentProjectId === project.id;
@@ -1312,6 +1389,7 @@ export function CodingSidebar({
                 );
               })}
             </div>
+            )}
           </div>
 
           {/* Divider between Projects and Workspaces */}
@@ -1321,13 +1399,26 @@ export function CodingSidebar({
               belongs to a project lives in that project's own "Repos" list
               above, not here (a project's repo has no standalone session). */}
           <div className="flex items-center justify-between px-3 pb-1">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-(--color-text-muted)">
-              Workspaces
-            </span>
+            <button
+              type="button"
+              onClick={() => setWorkspacesSectionCollapsed((v) => !v)}
+              className="flex min-w-0 flex-1 items-center gap-1 rounded-xs py-0.5 text-left hover:bg-(--bg-key)"
+              aria-expanded={!workspacesSectionCollapsed}
+              aria-label={`${workspacesSectionCollapsed ? "Expand" : "Collapse"} Workspaces section`}
+            >
+              {workspacesSectionCollapsed ? (
+                <ChevronRight size={10} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
+              ) : (
+                <ChevronDown size={10} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
+              )}
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-(--color-text-muted)">
+                Workspaces
+              </span>
+            </button>
             <button
               type="button"
               onClick={() => void openWorkspaceDialog()}
-              className="flex h-5 w-5 items-center justify-center rounded text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-text)"
+              className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-text)"
               title="Open a standalone folder (not part of a project)"
               aria-label="Open a standalone folder"
             >
@@ -1335,23 +1426,41 @@ export function CodingSidebar({
             </button>
           </div>
 
-          {standaloneWorkspaces.length === 0 && (
+          {!workspacesSectionCollapsed && standaloneWorkspaces.length === 0 && (
             <p className="px-3 py-3 text-xs text-(--color-text-subtle)">
               No standalone workspaces. Use the + above to open a folder
               outside any project.
             </p>
           )}
 
-          {standaloneWorkspaces.map((path) => {
+          {!workspacesSectionCollapsed && standaloneWorkspaces.map((path) => {
             const sourceIsActive = path === activeWorkspace;
             const sourceIsPending = pendingWorkspace === path;
             const sourceHasRunningSession = codingSessions.some(
               (s) => s.workspace === path && s.running === true,
             );
+            const isWorkspaceExpanded = expandedWorkspaces.has(path);
 
             return (
               <div key={path} className="relative">
                 <div className="group flex h-8 items-center pl-2 pr-2">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleWorkspaceExpanded(path);
+                    }}
+                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded-xs text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)"
+                    aria-expanded={isWorkspaceExpanded}
+                    aria-label={`${isWorkspaceExpanded ? "Collapse" : "Expand"} session history for ${workspaceLabel(path)}`}
+                    title={isWorkspaceExpanded ? "Hide session history" : "Show session history"}
+                  >
+                    {isWorkspaceExpanded ? (
+                      <ChevronDown size={10} aria-hidden="true" />
+                    ) : (
+                      <ChevronRight size={10} aria-hidden="true" />
+                    )}
+                  </button>
                   <LongPressButton
                     enabled={mobileLongPressActions}
                     onLongPress={() =>
@@ -1432,6 +1541,29 @@ export function CodingSidebar({
                     <Trash2 size={11} aria-hidden="true" />
                   </button>
                 </div>
+                {isWorkspaceExpanded && (
+                  <WorkspaceSessionList
+                    workspace={path}
+                    currentSessionId={currentSessionId}
+                    mobileLongPressActions={mobileLongPressActions}
+                    onSessionSelect={(session) =>
+                      handleSessionSelect(session, session.workspace ?? path)
+                    }
+                    onSessionDelete={handleSessionDelete}
+                    pendingDeleteId={pendingDeleteId}
+                    onCancelDelete={() => setPendingDeleteId(null)}
+                    onConfirmDelete={confirmSessionDelete}
+                    onSessionEdit={handleSessionEdit}
+                    onSessionLongPress={setMobileSessionActions}
+                    onSessionContextActions={(session, event) => {
+                      setDesktopSessionActions({
+                        session,
+                        x: event.clientX,
+                        y: event.clientY,
+                      });
+                    }}
+                  />
+                )}
               </div>
             );
           })}

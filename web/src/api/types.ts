@@ -115,13 +115,20 @@ export interface CodingWorkspaceTreeWorktree {
 }
 
 export interface CodingWorkspaceTreeRepository {
+  // null only for a worktree whose source repo is itself hidden/deleted.
+  workspace_id: string | null
   path: string
   name: string
   worktrees: CodingWorkspaceTreeWorktree[]
+  // The project this repo belongs to, if any — a real FK lookup done
+  // server-side, not something to reconstruct by matching paths against a
+  // separately-fetched project list.
+  project_id: string | null
 }
 
 export interface CodingWorkspaceTreeResponse {
   repositories: CodingWorkspaceTreeRepository[]
+  projects: CodingProject[]
 }
 
 export interface WorkspaceBrowseResponse {

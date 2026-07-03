@@ -118,6 +118,65 @@ export function shouldRestoreLastCodingWorkspace(
   return mode === 'coding' && !sessionId && pathname === '/coding'
 }
 
+const LAST_CODING_FOCUS_KEY = 'oa-last-coding-focus'
+
+/**
+ * Like saveLastCodingWorkspace, but project-aware: a project session spans
+ * every member repo, so persisting its representative repo's path (like
+ * saveLastCodingWorkspace alone would) silently drops back to a single-repo
+ * session next time bare /coding restores. Call this from the one place
+ * that observes every coding session generically (TeamLayoutBase) instead
+ * of saveLastCodingWorkspace directly.
+ */
+export function saveLastCodingFocus(session: {
+  project_id?: string | null
+  workspace?: string | null
+}): void {
+  if (session.project_id) {
+    try {
+      localStorage.setItem(LAST_CODING_FOCUS_KEY, session.project_id)
+    } catch {
+      // ignore storage failures
+    }
+    return
+  }
+  if (session.workspace) {
+    // Keeps the existing entries-list bookkeeping (recently opened
+    // workspaces, used by e.g. the scheduler's workspace picker) working
+    // exactly as before, since only the *last-focus* pointer is new here.
+    saveLastCodingWorkspace(session.workspace)
+    try {
+      localStorage.setItem(LAST_CODING_FOCUS_KEY, session.workspace)
+    } catch {
+      // ignore storage failures
+    }
+  }
+}
+
+/** The last-visited coding focus, as a /coding/$focusId-shaped string —
+ * either a project id or a workspace path. Falls back to the legacy
+ * workspace-only pointer for sessions saved before this key existed. */
+export function loadLastCodingFocusId(): string | null {
+  try {
+    const focus = localStorage.getItem(LAST_CODING_FOCUS_KEY)
+    if (focus) return focus
+    return loadLastCodingWorkspace()?.path ?? null
+  } catch {
+    return null
+  }
+}
+
+export function clearLastCodingFocus(focusId: string): void {
+  if (!isProjectFocusId(focusId)) removeCodingWorkspace(focusId)
+  try {
+    if (localStorage.getItem(LAST_CODING_FOCUS_KEY) === focusId) {
+      localStorage.removeItem(LAST_CODING_FOCUS_KEY)
+    }
+  } catch {
+    // ignore storage failures
+  }
+}
+
 export function workspaceFromSession(
   mode: 'normal' | 'coding',
   sessionId: string | undefined,
@@ -125,4 +184,29 @@ export function workspaceFromSession(
 ): string | null {
   if (mode !== 'coding' || !sessionId) return null
   return sessionWorkspace ?? null
+}
+
+const PROJECT_FOCUS_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * The /coding/$focusId route segment identifying which repo/project a
+ * session URL points at: a project's UUID takes priority (a project session
+ * spans repos, so its own id is the only stable anchor), otherwise the
+ * standalone workspace's filesystem path. Returned RAW (not URI-encoded) —
+ * the router's own param serialization already percent-encodes path params
+ * (including '/' and ':'), so encoding it here too would double-encode.
+ * Project ids are real UUIDs and a filesystem path never is, so
+ * isProjectFocusId can tell them apart on the way back in.
+ */
+export function codingFocusId(session: {
+  project_id?: string | null
+  workspace?: string | null
+}): string | null {
+  if (session.project_id) return session.project_id
+  if (session.workspace) return session.workspace
+  return null
+}
+
+export function isProjectFocusId(focusId: string): boolean {
+  return PROJECT_FOCUS_ID_RE.test(focusId)
 }

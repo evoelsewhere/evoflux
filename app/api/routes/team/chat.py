@@ -10,6 +10,7 @@ from uuid import uuid7
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from loguru import logger
 from pydantic import BaseModel
+from sqlmodel import select
 from sse_starlette.sse import EventSourceResponse
 
 from app.agent.agent_loop import Agent
@@ -28,6 +29,7 @@ from app.api.routes.team._helpers import (
     collect_mention_attachments,
 )
 from app.api.routes.agents import is_registered_model_id
+from app.api.routes.team.projects import list_project_responses
 from app.api.schemas.sessions import (
     CodingWorkspaceTreeRepository,
     CodingWorkspaceTreeResponse,
@@ -46,7 +48,7 @@ from app.api.routes.team.worktrees import (
     create_coding_workspace_worktree,
     find_managed_worktree_source,
 )
-from app.models.chat import ChatSession, SessionChapter
+from app.models.chat import ChatSession, CodingProjectWorkspace, SessionChapter
 from app.services import (
     agent_service,
     memory_stream_store as stream_store,
@@ -875,7 +877,16 @@ async def update_coding_workspace_visibility(
 
 @router.get("/workspace/tree", response_model=CodingWorkspaceTreeResponse)
 async def list_coding_workspace_tree(db: DbSession) -> CodingWorkspaceTreeResponse:
+    """Every visible repo (standalone or project-owned) plus the full
+    projects list, in one response — the sidebar renders both the Projects
+    and Workspaces sections from this alone. project_id per repo comes from
+    a real CodingProjectWorkspace lookup, not path-string matching against
+    a separately-fetched projects list."""
     rows = await list_visible_coding_workspaces(db)
+    membership = {
+        link.workspace_id: link.project_id
+        for link in (await db.exec(select(CodingProjectWorkspace))).all()
+    }
     repositories: dict[str, CodingWorkspaceTreeRepository] = {}
     pending_worktrees = []
     for row in rows:
@@ -883,9 +894,11 @@ async def list_coding_workspace_tree(db: DbSession) -> CodingWorkspaceTreeRespon
             pending_worktrees.append(row)
             continue
         repositories[row.path] = CodingWorkspaceTreeRepository(
+            workspace_id=row.id,
             path=row.path,
             name=row.name or Path(row.path).name,
             worktrees=[],
+            project_id=membership.get(row.id),
         )
     for row in pending_worktrees:
         source = row.source_path
@@ -904,7 +917,10 @@ async def list_coding_workspace_tree(db: DbSession) -> CodingWorkspaceTreeRespon
                 managed=row.managed,
             )
         )
-    return CodingWorkspaceTreeResponse(repositories=list(repositories.values()))
+    return CodingWorkspaceTreeResponse(
+        repositories=list(repositories.values()),
+        projects=await list_project_responses(db),
+    )
 
 
 @router.get("/sessions/{session_id}", response_model=SessionDetailResponse)

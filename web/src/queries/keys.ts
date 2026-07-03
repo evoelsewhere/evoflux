@@ -89,9 +89,13 @@ export const queryKeys = {
   chapters: {
     list: (sessionId: string) => ['chapters', sessionId] as const,
   },
+  // Merged workspace-tree + projects overview powering the coding sidebar —
+  // one query, one cache entry, so "which repos are standalone vs
+  // project-owned" never has to be reconciled client-side from two
+  // independently-fetched lists. See GET /team/workspace/tree.
+  codingOverview: () => ['coding-overview'] as const,
   projects: {
     all: () => ['projects'] as const,
-    list: () => ['projects', 'list'] as const,
     detail: (id: string) => ['projects', 'detail', id] as const,
     crossRepoEdges: (id: string) => ['projects', 'detail', id, 'cross-repo-edges'] as const,
     crossRepoStatus: (id: string) => ['projects', 'detail', id, 'cross-repo-status'] as const,

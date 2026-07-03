@@ -4,10 +4,10 @@
     {
       "name": "web",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": ["run", "dev", "--", "--port", "5180", "--strictPort"],
       "cwd": "web",
-      "port": 5173,
-      "autoPort": true
+      "port": 5180,
+      "autoPort": false
     }
   ]
 }

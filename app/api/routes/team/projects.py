@@ -28,6 +28,7 @@ from app.api.schemas.cross_repo import (
     CrossRepoResolveStatsOut,
     CrossRepoResolveStatusResponse,
 )
+from app.api.schemas.projects import ProjectResponse, ProjectWorkspaceItem
 from app.models.chat import CodingProjectWorkspace, CodingWorkspace
 from app.models.code_graph import CrossRepoEdge
 from app.services import code_graph_service as cg_svc
@@ -53,25 +54,8 @@ def _validate_path_or_422(path: str) -> str:
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
-
-
-class ProjectWorkspaceItem(BaseModel):
-    workspace_id: UUID
-    path: str
-    name: str | None
-    display_name: str | None
-    sort_order: int
-    kind: str
-
-
-class ProjectResponse(BaseModel):
-    id: UUID
-    name: str
-    description: str | None = None
-    settings: dict
-    workspaces: list[ProjectWorkspaceItem]
-    created_at: str
-    updated_at: str
+# ProjectWorkspaceItem / ProjectResponse live in app.api.schemas.projects —
+# chat.py's merged /workspace/tree endpoint needs them too.
 
 
 class ProjectCreateRequest(BaseModel):
@@ -127,11 +111,12 @@ async def _project_response(db: DbSession, project_id: UUID) -> ProjectResponse:
     )
 
 
-# ── Routes ────────────────────────────────────────────────────────────────────
+async def list_project_responses(db: DbSession) -> list[ProjectResponse]:
+    """All visible projects with their member workspaces, as ProjectResponse.
 
-
-@router.get("", response_model=list[ProjectResponse])
-async def list_projects(db: DbSession) -> list[ProjectResponse]:
+    Shared with chat.py's merged /workspace/tree endpoint so both surfaces
+    build the Projects list the same way instead of maintaining two copies.
+    """
     projects = await svc.list_visible_projects(db)
     result = []
     for project in projects:
@@ -148,6 +133,14 @@ async def list_projects(db: DbSession) -> list[ProjectResponse]:
             )
         )
     return result
+
+
+# ── Routes ────────────────────────────────────────────────────────────────────
+
+
+@router.get("", response_model=list[ProjectResponse])
+async def list_projects(db: DbSession) -> list[ProjectResponse]:
+    return await list_project_responses(db)
 
 
 @router.post("", response_model=ProjectResponse, status_code=201)
