@@ -66,7 +66,34 @@ There's no single "do everything" prompt. The lead decides when a task benefits 
 Agents are defined as plain Markdown files with YAML frontmatter (`name`, `role`, `model`, `temperature`, `thinking_level`) — human-readable, diffable, and versionable. A team has exactly one lead and any number of members; members aren't background loops, they're activated on demand when a message lands in their mailbox and go back to idle when done, so running three copies of the same blueprint in parallel (`executor#1`, `executor#2`, `executor#3`) is three mailbox activations, not three always-on processes.
 
 ### Code knowledge graph
-25 tree-sitter-backed parsers cover Python, TypeScript/TSX, JavaScript, Go, Rust, Java, C#, C, C++, Swift, Kotlin, PHP, Ruby, Scala, Dart, Objective-C, Lua, Luau, R, Pascal, Svelte, Vue, Astro, and Liquid. Indexing extracts symbols (functions, classes, methods, fields) and typed edges (`calls`, `inherits`, `implements`, `imports`, `references`), only linking a reference when it resolves unambiguously. Multi-repo projects get LLM-assisted cross-repo edge resolution so an agent can trace a call from one repository into a sibling one. Full reindexes run as batched, event-loop-friendly writes so the UI stays responsive while a large repo indexes in the background.
+25 tree-sitter-backed parsers cover Python, TypeScript/TSX, JavaScript, Go, Rust, Java, C#, C, C++, Swift, Kotlin, PHP, Ruby, Scala, Dart, Objective-C, Lua, Luau, R, Pascal, Svelte, Vue, Astro, and Liquid. Indexing extracts symbols (functions, classes, methods, fields) and typed edges (`calls`, `inherits`, `implements`, `imports`, `references`), only linking a reference when it resolves unambiguously. Agents query the graph through seven tools — `code_overview`, `code_search`, `code_symbol`, `code_references`, `code_neighbors`, `code_map`, `code_path` — that return symbol references instead of file bodies, so navigating a codebase costs a fraction of the tokens reading it would. Full reindexes run as batched, event-loop-friendly writes so the UI stays responsive while a large repo indexes in the background.
+
+#### Cross-repo, multi-project graphs
+A `CodingProject` can span several repositories, and every code graph tool accepts `scope="project"` to search, inspect, or path-find across all of them transparently — no separate cross-repo tool required. Resolving a reference that crosses a repo boundary runs through three tiers, cheapest first, entirely on-device:
+
+![Cross-repo resolution pipeline: three repos feed unresolved references through Tier 0 reattach of stale links, Tier A static manifest and Java fully-qualified-name matching, and Tier B FTS5 lexical search, none of which call an LLM](documents/images/code-graph-cross-repo.png)
+
+The project view in the UI renders the result two ways: a force-directed **spatial graph** clustering symbols by repo with cross-repo edges drawn between them, and a **matrix** heatmap of resolved/unresolved/rejected reference counts per repo pair — both live-updating as a reindex + resolution pass runs.
+
+#### Calling the graph without burning your context
+Because these tools are designed to be cheap, it's easy to accidentally call the expensive variant of a query that has a cheap equivalent. In practice, on a real multi-repo Java codebase, the difference between the deliberate call order below and the naive one is roughly an order of magnitude in tokens:
+
+![Optimal token-efficient call order for the code graph tools: code_overview, then code_search, then code_symbol which already includes a caller count, escalating to code_references, code_neighbors, or code_path only when the answer isn't already available, totaling about 1300 tokens for a full investigation](documents/images/code-graph-call-order.png)
+
+| Anti-pattern | Tokens wasted | Use instead |
+|---|---|---|
+| `code_symbol("Patient")` on a widely-used class | ~2,000 | `code_search("Patient", limit=1)` — ~125 tokens |
+| `code_neighbors("ConceptServiceImpl")` with no `edge_kind` | ~2,000 | add `edge_kind="calls"` — ~75 tokens |
+| `code_references("Patient", limit=30)` | ~1,250 | `limit=3` — ~750 tokens |
+| `code_map(budget=50)` | ~2,000 | `code_map(budget=10)` — ~400 tokens |
+| Calling `code_symbol` before `code_search` | a wasted round-trip, or a miss | always search first |
+
+| Question | Cheaper tool | More expensive tool | Savings |
+|---|---|---|---|
+| Does this symbol exist, and where? | `code_search` (~125 tok) | `code_symbol` on a popular hit (~2,000 tok) | ~16x |
+| Who calls symbol X — just a count? | `code_symbol` → its built-in "called by (N)" (~100 tok) | `code_references(limit=3)` (~750 tok) | ~7.5x |
+| What methods does class X have? | `code_search("X.", kind="method", limit=10)` (~500 tok) | `code_neighbors("X")` unfiltered (~2,000 tok) | ~4x |
+| What does X call? | `code_neighbors("X.method", edge_kind="calls")` (~75 tok) | the same call without `edge_kind` (~300 tok) | ~4x |
 
 ### Memory and the Dream engine
 A scheduled (or manually triggered) "Dream" agent reads unprocessed sessions and notes and consolidates them into a structured wiki — `topics/`, `entities/`, `notes/`, `imports/`, with an `INDEX.md` table of contents and an append-only `LOG.md` activity trail. Every page carries YAML frontmatter (sources, confidence, related pages) so memory stays inspectable and editable — not an opaque vector blob you have to trust blindly.
@@ -93,26 +120,26 @@ A headless-Chromium browser-automation tool (navigate, click, fill, extract, scr
 
 ## How EvoFlux compares
 
-The AI coding agent market moved fast through 2025–2026: Claude Code and Cursor lead adoption (roughly 62% and 35% respectively, per a Feb 2026 survey), Devin dropped from $500/mo to $20/mo and absorbed Windsurf into "Devin Desktop", and OpenAI's Codex now spans CLI, cloud, and IDE surfaces on one Rust-based harness. Almost all of them share two traits: you use their model, on their terms, and they assume a project already exists.
+The AI coding agent market moved fast through 2025–2026: in a Feb 2026 survey of 906 engineers, Claude Code was named the most-loved AI coding tool by 46% of respondents versus 19% for Cursor; Devin dropped from $500/mo to $20/mo, later broadening into a $0–200+/mo tiered lineup, and absorbed Windsurf into "Devin Desktop" in June 2026; and OpenAI's Codex now spans CLI, cloud, and IDE surfaces on one Rust-based harness. Almost all of them share two traits: you're on their model roadmap, on their terms, and they assume a project already exists.
 
 | | **EvoFlux** | Claude Code | Cursor | Devin / Devin Desktop | OpenAI Codex | OpenHands |
 |---|---|---|---|---|---|---|
-| Interface | Desktop app, web UI, REST API | CLI | IDE (VS Code fork) | Web + desktop IDE | CLI, cloud, IDE ext. | CLI / Docker |
-| Deployment | Self-hosted, on your machine | Local CLI | Local IDE | Cloud-hosted | Local + cloud sandbox | Self-hosted |
+| Interface | Desktop app, web UI, REST API | CLI, IDE extensions, desktop app, web | IDE (VS Code fork) | Cloud web + Devin Desktop (IDE) + CLI | CLI, cloud, IDE ext. | Web UI, CLI, headless/API |
+| Deployment | Self-hosted, on your machine | Local + optional Anthropic-hosted cloud | Local IDE + cloud agents (VMs) | Cloud-hosted (SaaS/VPC) + local via Desktop | Local + cloud sandbox | Self-hosted (OSS) or OpenHands Cloud |
 | Open source | Yes, Apache-2.0 | No | No | No | CLI only, Apache-2.0 | Yes, MIT |
-| Bring your own model | Yes, 12 providers | No, Claude only | Partial, Composer + curated | No, vendor-locked | No, OpenAI only | Yes, any model |
-| Non-project mode | Yes — Forge mode, no repo required | No | No | No | No | No |
-| Multi-agent | Lead + on-demand members, typed mailbox | Task-tool subagents | Cloud parallel agents + subagents | Specialized squads | Up to 6 subagents | Microagent delegation |
-| Code understanding | Structural code graph, 25 parsers, cross-repo resolution | Codebase search, no persistent graph | LSP integration | "Ask Devin" codebase Q&A | Repo-aware agent loop | Agent-Computer Interface |
-| Persistent memory | Wiki + Dream consolidation, inspectable markdown | `CLAUDE.md` only | None | Audit-log trail | 4-file memory system | None |
-| Sandboxing | Denylist filesystem sandbox + wildcard permissions | Deny-first permission rules | Human checkpoints | Cloud isolation | Bubblewrap sandbox | Docker container |
-| Pricing | Free — pay only your own model API costs | ~$17–20/mo | ~$20/mo | ~$20/mo | ~$20/mo (ChatGPT Plus) | Free, self-hosted |
+| Bring your own model | Yes, 12 providers | Partial, unofficial proxy setups only | Partial — BYOK for Chat only, not Agent | Partial — choice of OpenAI/Claude/Gemini | No, OpenAI only | Yes, any model |
+| Non-project mode | Yes — Forge mode, no repo required | Partial — ad hoc via CLI piping, no dedicated mode | No | No (narrow data-analysis exception) | No | Yes |
+| Multi-agent | Lead + on-demand members, typed mailbox | Subagents + background/parallel agent teams | Agents Window + async subagent fleets + worktrees | Parent-spawned sub-Devins + fleet management | Up to 6 subagents | Sub-agent delegation for parallel subtasks |
+| Code understanding | Structural code graph, 25 parsers, cross-repo resolution | Codebase search; optional opt-in LSP plugin | Embedding-based semantic search, not LSP | "Ask Devin" codebase Q&A | Repo-aware agent loop | Agent-Computer Interface |
+| Persistent memory | Wiki + Dream consolidation, inspectable markdown | `CLAUDE.md` + auto-saved memory | Per-project Memories + Rules, no cross-project | Org-wide knowledge base + DeepWiki docs | `AGENTS.md` (hierarchical) + session memories | Context condenser + `AGENTS.md`/skills |
+| Sandboxing | Denylist filesystem sandbox + wildcard permissions | Permission rules + OS-level sandbox, optional VM | OS-level sandbox + auto-review classifier | Per-session isolated VM/container; VPC option | Seatbelt/Bubblewrap/ACLs by OS; cloud microVM | Docker container |
+| Pricing | Free — pay only your own model API costs | ~$17–20/mo (Pro), up to $100–200/mo (Max) or metered API | $0–200+/mo (Hobby to Ultra tiers) | $0–200+/mo per seat, plus usage-based fees | ~$20/mo (ChatGPT Plus) | Free self-hosted; Cloud has free + paid tiers |
 
-*(Competitor figures reflect publicly reported information as of mid-2026 and may have changed.)*
+*(Competitor figures reflect publicly reported information as of mid-2026, verified via official docs and pricing pages where possible, and may have changed since.)*
 
-**Where EvoFlux leans in:** it isn't chasing a coding benchmark leaderboard — it's a general-purpose, self-hosted harness where coding is one deep mode alongside research, browser automation, scheduled automation, and long-term memory, with no vendor lock-in on the model layer, a real native app, and a mode built for work that doesn't have a project yet.
+**Where EvoFlux leans in:** it isn't chasing a coding benchmark leaderboard — it's a general-purpose, self-hosted harness where coding is one deep mode alongside research, browser automation, scheduled automation, and long-term memory, with no vendor lock-in on the model layer, a real native app, and a mode built for work that doesn't have a project yet. Every other tool above still assumes you'll use its vendor's model as the default path — EvoFlux treats the model as a swappable component.
 
-**Where the commercial players lead:** purpose-built coding models (Cursor's Composer, OpenAI's codex-1), heavily-funded cloud sandbox infrastructure for multi-hour unattended runs, and IDE-native LSP integration for live, per-keystroke diagnostics.
+**Where the commercial players lead:** purpose-built coding models (Cursor's Composer, OpenAI's GPT-5.5), heavily-funded cloud sandbox infrastructure for multi-hour unattended runs, and mature editor-native tooling inherited from full IDE forks (Cursor and Devin Desktop are both built on VS Code).
 
 ---
 
