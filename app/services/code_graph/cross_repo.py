@@ -31,6 +31,7 @@ from sqlalchemy import func as sa_func
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.db import sqlite_write_guard
 from app.models.code_graph import CodeNode, CrossRepoEdge
 from app.services.code_graph.manifest import (
     PackageManifest,
@@ -100,10 +101,11 @@ async def resolve_project(
     ``resolve_project_tier_b``. The caller controls whether it runs through
     the job registry in ``app/services/code_graph/cross_repo_jobs.py``.
     """
-    reattached = await _reattach_stale(db, project_id=project_id)
-    static_resolved = await _resolve_static(db, project_id=project_id)
-    remaining = await _count_unresolved(db, project_id=project_id)
-    await db.commit()
+    async with sqlite_write_guard():
+        reattached = await _reattach_stale(db, project_id=project_id)
+        static_resolved = await _resolve_static(db, project_id=project_id)
+        remaining = await _count_unresolved(db, project_id=project_id)
+        await db.commit()
     return CrossRepoResolveStats(
         reattached=reattached,
         static_resolved=static_resolved,
@@ -213,6 +215,19 @@ async def _resolve_static(db: AsyncSession, *, project_id: UUID) -> int:
             )
         )
     ).all()
+    if not rows:
+        return 0
+
+    # Built once per sibling and reused for every row below. The previous
+    # version rebuilt this (a full node fetch + compute_importable_id over
+    # every node) inside the per-row fallback, turning an O(siblings * nodes)
+    # cost into O(rows * siblings * nodes) — fine on test fixtures with a
+    # handful of nodes, but minutes-to-hours on a real project with thousands
+    # of unresolved rows against repos with tens of thousands of nodes each.
+    importable_indexes = {
+        ws_id: await _build_importable_index(db, sibling)
+        for ws_id, sibling in siblings.items()
+    }
 
     resolved = 0
     for row in rows:
@@ -233,7 +248,7 @@ async def _resolve_static(db: AsyncSession, *, project_id: UUID) -> int:
         ):
             resolved += 1
             continue
-        if await _try_resolve_fqn(db, row, others, siblings):
+        if await _try_resolve_fqn(db, row, others, importable_indexes):
             resolved += 1
             continue
         if await _try_resolve_manifest(db, row, others):
@@ -387,7 +402,7 @@ async def _try_resolve_fqn(
     db: AsyncSession,
     row: CrossRepoEdge,
     others: list[_SiblingRepo],
-    siblings: dict[UUID, _SiblingRepo] | None = None,
+    importable_indexes: dict[UUID, dict[str, CodeNode]] | None = None,
 ) -> bool:
     for candidate in _fqn_candidates(row.raw_reference):
         matches: list[tuple[_SiblingRepo, CodeNode]] = []
@@ -411,9 +426,10 @@ async def _try_resolve_fqn(
             return True
 
     # Fallback: try generalized importable_id for ecosystems without native
-    # FQN support (Python, JS/TS, Go, etc.).
-    if siblings is not None:
-        matches = await _find_by_importable_id(db, row, others, siblings)
+    # FQN support (Python, JS/TS, Go, etc.) — matched against indexes built
+    # once per resolve pass (see _resolve_static), not recomputed per row.
+    if importable_indexes is not None:
+        matches = _find_by_importable_id(row, others, importable_indexes)
         if len(matches) == 1:
             sibling, node = matches[0]
             _stamp_resolved(
@@ -430,38 +446,68 @@ async def _try_resolve_fqn(
     return False
 
 
-async def _find_by_importable_id(
-    db: AsyncSession,
+async def _build_importable_index(
+    db: AsyncSession, sibling: _SiblingRepo
+) -> dict[str, CodeNode]:
+    """Map every node of ``sibling`` to its importable_id, once per resolve pass.
+
+    Recomputing this per unresolved row (the previous shape of this code) is
+    what made ``_resolve_static`` scale with ``rows * siblings * nodes``
+    instead of ``siblings * nodes`` — see the comment in ``_resolve_static``.
+    """
+    root_prefix = _get_root_prefix(sibling)
+    if not root_prefix:
+        return {}
+    nodes = (
+        await db.exec(
+            select(CodeNode).where(
+                col(CodeNode.workspace_id) == sibling.workspace_id,
+                col(CodeNode.kind).in_(_ANY_SYMBOL_KINDS),
+            )
+        )
+    ).all()
+    index: dict[str, CodeNode] = {}
+    for node in nodes:
+        importable = compute_importable_id(
+            node.file_path,
+            node.qualified_name,
+            language=node.language,
+            root_prefix=root_prefix,
+        )
+        if importable:
+            # First node wins on a collision — same tie-break the old
+            # per-row DB scan applied (first match in fetch order).
+            index.setdefault(importable, node)
+    return index
+
+
+def _importable_id_candidates(raw_reference: str) -> list[str]:
+    """``raw_reference`` itself, then progressively shorter dotted prefixes.
+
+    A reference can point at a member of an importable symbol (e.g.
+    ``pkg.mod.Class.method`` when the indexed importable_id is
+    ``pkg.mod.Class``), so every prefix boundary is a candidate — most
+    specific (longest) first.
+    """
+    parts = raw_reference.split(".")
+    return [".".join(parts[:i]) for i in range(len(parts), 0, -1)]
+
+
+def _find_by_importable_id(
     row: CrossRepoEdge,
     others: list[_SiblingRepo],
-    siblings: dict[UUID, _SiblingRepo],
+    importable_indexes: dict[UUID, dict[str, CodeNode]],
 ) -> list[tuple[_SiblingRepo, CodeNode]]:
-    """Try to match via generalized importable_id (Phase 3)."""
+    """Match via each sibling's precomputed importable_id index (Phase 3)."""
     matches: list[tuple[_SiblingRepo, CodeNode]] = []
+    candidates = _importable_id_candidates(row.raw_reference)
     for sibling in others:
-        root_prefix = _get_root_prefix(sibling)
-        if not root_prefix:
+        index = importable_indexes.get(sibling.workspace_id)
+        if not index:
             continue
-        # Try the raw_reference as an importable_id directly.
-        nodes = (
-            await db.exec(
-                select(CodeNode).where(
-                    col(CodeNode.workspace_id) == sibling.workspace_id,
-                    col(CodeNode.kind).in_(_ANY_SYMBOL_KINDS),
-                )
-            )
-        ).all()
-        for node in nodes:
-            importable = compute_importable_id(
-                node.file_path,
-                node.qualified_name,
-                language=node.language,
-                root_prefix=root_prefix,
-            )
-            if importable and (
-                importable == row.raw_reference
-                or row.raw_reference.startswith(importable + ".")
-            ):
+        for candidate in candidates:
+            node = index.get(candidate)
+            if node is not None:
                 matches.append((sibling, node))
                 break
     return matches

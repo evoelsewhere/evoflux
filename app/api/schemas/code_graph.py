@@ -130,6 +130,24 @@ class ReindexStartedResponse(BaseModel):
     )
 
 
+class ProjectReindexStartedResponse(BaseModel):
+    """Result of triggering a project-wide reindex with a single call."""
+
+    indexing: bool = Field(
+        description="True when at least one repo's index run is now active."
+    )
+    repo_count: int = Field(description="Number of repos in the project targeted.")
+    already_running: int = Field(
+        description="How many of those repos already had an index job running.",
+    )
+    will_resolve: bool = Field(
+        description=(
+            "Whether a cross-repo resolve pass will auto-run once every repo "
+            "finishes indexing (projects with more than one repo only)."
+        ),
+    )
+
+
 class ProjectRepoStatus(BaseModel):
     """Per-repo index status, one entry per workspace in a CodingProject."""
 

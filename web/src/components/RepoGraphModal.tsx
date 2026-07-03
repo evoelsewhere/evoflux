@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Check, GitBranch, Loader2, Search, Sparkles, X } from 'lucide-react'
+import { Check, GitBranch, Grid3X3, Loader2, Network, Search, Sparkles, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { getProjectCodeGraphData } from '@/api/client'
 import { queryKeys } from '@/queries/keys'
 import { RepoGraphSpatial } from './RepoGraphSpatial'
+import { RepoGraphMatrix } from './RepoGraphMatrix'
 import { buildSpatialData } from './repoGraphSpatialData'
 import type { CodingProject, CrossRepoResolveJob, ProjectRepoStatus, CodeGraphNode } from '@/api/types'
 
@@ -28,6 +29,7 @@ export function RepoGraphModal({ open, onOpenChange, project, job }: RepoGraphMo
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [hiddenRepos, setHiddenRepos] = useState<Set<string>>(new Set())
+  const [view, setView] = useState<'spatial' | 'matrix'>('spatial')
 
   const graphQuery = useQuery({
     queryKey: queryKeys.projects.codeGraphData(project.id),
@@ -138,6 +140,32 @@ export function RepoGraphModal({ open, onOpenChange, project, job }: RepoGraphMo
         <div className="flex shrink-0 items-center gap-3 border-b border-(--color-border) px-4 py-3">
           <h2 className="truncate text-sm font-semibold text-(--color-text)">Code graph — {project.name}</h2>
           <div className="ml-auto flex items-center gap-2">
+            <div className="flex items-center rounded-md border border-(--color-border) bg-(--bg-key) p-0.5">
+              <button
+                type="button"
+                onClick={() => setView('spatial')}
+                className={cn(
+                  'flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition-colors',
+                  view === 'spatial'
+                    ? 'bg-(--bg-card) text-(--color-text) shadow-sm'
+                    : 'text-(--color-text-muted) hover:text-(--color-text)',
+                )}
+              >
+                <Network size={12} /> Graph
+              </button>
+              <button
+                type="button"
+                onClick={() => setView('matrix')}
+                className={cn(
+                  'flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition-colors',
+                  view === 'matrix'
+                    ? 'bg-(--bg-card) text-(--color-text) shadow-sm'
+                    : 'text-(--color-text-muted) hover:text-(--color-text)',
+                )}
+              >
+                <Grid3X3 size={12} /> Matrix
+              </button>
+            </div>
             <div className="flex items-center gap-1.5 rounded-md bg-(--bg-key) px-2 py-1.5">
               <Search size={13} className="shrink-0 text-(--color-text-subtle)" />
               <input
@@ -165,6 +193,8 @@ export function RepoGraphModal({ open, onOpenChange, project, job }: RepoGraphMo
             </div>
           ) : graphQuery.isError ? (
             <div className="flex h-full items-center justify-center text-xs text-(--color-error)">Failed to load code graph</div>
+          ) : view === 'matrix' && data ? (
+            <RepoGraphMatrix repos={data.repos} crossRepoEdges={data.cross_repo_edges} />
           ) : spatialData ? (
             <RepoGraphSpatial
               data={spatialData}

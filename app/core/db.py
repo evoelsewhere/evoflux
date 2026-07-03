@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncGenerator, Iterator
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -59,6 +60,14 @@ if _is_sqlite:
         cursor = dbapi_conn.cursor()
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA synchronous=NORMAL")
+        # WAL still serialises writers — without this, a second writer that
+        # arrives while another connection's transaction is mid-flight gets
+        # an immediate "database is locked" instead of waiting for the lock
+        # to free up. Bites exactly when it sounds like it would: reindexing
+        # every repo in a project concurrently (see CrossRepoLinksPanel's
+        # Promise.all) opens one writer connection per workspace against the
+        # same file.
+        cursor.execute("PRAGMA busy_timeout=30000")
         cursor.close()
 
 
@@ -67,6 +76,50 @@ async_session_factory = async_sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False,
 )
+
+# Backs sqlite_write_guard() below. A single process-wide lock, not per
+# workspace/project — busy_timeout alone isn't enough once a writer (a large
+# repo's full reindex, say) legitimately holds the transaction longer than
+# the timeout; another writer arriving mid-transaction still raises
+# "database is locked" instead of waiting for the first to finish. This lock
+# removes the race instead of racing the clock.
+#
+# Created lazily (not at module scope) and rebuilt if the running loop
+# changes: an asyncio.Lock binds to whatever loop first awaits it, and a
+# module-level instance would otherwise raise "bound to a different event
+# loop" the moment it's reused under a new loop — every pytest-asyncio test
+# gets its own, and a long-lived server could in principle recreate one too.
+_sqlite_write_lock: asyncio.Lock | None = None
+_sqlite_write_lock_loop: asyncio.AbstractEventLoop | None = None
+
+
+def _get_sqlite_write_lock() -> asyncio.Lock:
+    global _sqlite_write_lock, _sqlite_write_lock_loop
+    loop = asyncio.get_running_loop()
+    if _sqlite_write_lock is None or _sqlite_write_lock_loop is not loop:
+        _sqlite_write_lock = asyncio.Lock()
+        _sqlite_write_lock_loop = loop
+    return _sqlite_write_lock
+
+
+@asynccontextmanager
+async def sqlite_write_guard() -> AsyncGenerator[None, None]:
+    """Serialize the caller's DB writes against every other in-process
+    SQLite writer.
+
+    SQLite allows exactly one writer at a time. Reindexing several repos
+    concurrently (one click on a multi-repo project), a cross-repo resolve
+    pass, and the file watcher's own incremental reindex can all be mid
+    write-transaction at once — wrap whichever of those spans actually
+    issues writes (deletes/inserts/updates through the final ``commit()``)
+    in this guard so they queue instead of colliding. No-op on
+    Postgres/MySQL, which serialize concurrent writers natively.
+    """
+    if not _is_sqlite:
+        yield
+        return
+    async with _get_sqlite_write_lock():
+        yield
 
 # Type alias for a session factory callable.
 # async_sessionmaker[AsyncSession] satisfies this; so do @asynccontextmanager

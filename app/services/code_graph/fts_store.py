@@ -97,6 +97,33 @@ def update_workspace_fts(
         conn.commit()
 
 
+def _search_fts_conn(
+    conn: sqlite3.Connection, workspace_id: str, query: str, limit: int
+) -> list[str]:
+    try:
+        conn.execute(f"SELECT 1 FROM {_FTS_TABLE} LIMIT 0")
+    except sqlite3.OperationalError:
+        return []  # table doesn't exist yet
+
+    # Sanitize: strip FTS5 special chars, split into tokens, add prefix *
+    tokens = _tokenize_query(query)
+    if not tokens:
+        return []
+
+    fts_expr = " AND ".join(f'"{t}"*' for t in tokens)
+    try:
+        cursor = conn.execute(
+            f"SELECT node_id FROM {_FTS_TABLE} "
+            f"WHERE workspace_id = ? AND {_FTS_TABLE} MATCH ? "
+            f"ORDER BY rank LIMIT ?",
+            (workspace_id, fts_expr, limit),
+        )
+        return [row[0] for row in cursor.fetchall()]
+    except sqlite3.OperationalError as exc:
+        logger.debug("fts_search_error query={} err={}", query, exc)
+        return []
+
+
 def search_fts(
     db_path: str,
     workspace_id: str,
@@ -109,28 +136,29 @@ def search_fts(
     ``hello_world``. Multi-word queries use AND logic.
     """
     with _open(db_path) as conn:
-        try:
-            conn.execute(f"SELECT 1 FROM {_FTS_TABLE} LIMIT 0")
-        except sqlite3.OperationalError:
-            return []  # table doesn't exist yet
+        return _search_fts_conn(conn, workspace_id, query, limit)
 
-        # Sanitize: strip FTS5 special chars, split into tokens, add prefix *
-        tokens = _tokenize_query(query)
-        if not tokens:
-            return []
 
-        fts_expr = " AND ".join(f'"{t}"*' for t in tokens)
-        try:
-            cursor = conn.execute(
-                f"SELECT node_id FROM {_FTS_TABLE} "
-                f"WHERE workspace_id = ? AND {_FTS_TABLE} MATCH ? "
-                f"ORDER BY rank LIMIT ?",
-                (workspace_id, fts_expr, limit),
-            )
-            return [row[0] for row in cursor.fetchall()]
-        except sqlite3.OperationalError as exc:
-            logger.debug("fts_search_error query={} err={}", query, exc)
-            return []
+def search_fts_many(
+    db_path: str,
+    lookups: Sequence[tuple[str, str]],
+    limit: int = 50,
+) -> list[list[str]]:
+    """Run several ``search_fts`` lookups over one shared connection.
+
+    ``lookups`` is ``(workspace_id, query)`` pairs; results come back in the
+    same order. Cross-repo resolution calls this once per unresolved
+    reference (one lookup per sibling repo) instead of opening a fresh
+    connection per sibling — connection setup is the dominant cost for a
+    project with many sibling repos and many unresolved rows.
+    """
+    if not lookups:
+        return []
+    with _open(db_path) as conn:
+        return [
+            _search_fts_conn(conn, workspace_id, query, limit)
+            for workspace_id, query in lookups
+        ]
 
 
 def _tokenize_query(query: str) -> list[str]:

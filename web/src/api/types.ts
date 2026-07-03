@@ -210,6 +210,16 @@ export interface CodeGraphReindexResponse {
   already_running: boolean
 }
 
+// Result of triggering a project-wide reindex with a single call — the
+// backend starts every repo's index job and, for multi-repo projects, chains
+// into cross-repo resolve automatically once they all settle.
+export interface ProjectReindexStartedResponse {
+  indexing: boolean
+  repo_count: number
+  already_running: number
+  will_resolve: boolean
+}
+
 // Per-repo index status for a project-wide code graph view — one entry per
 // workspace, not an aggregate, so the UI can offer "Build index" for
 // whichever specific repo(s) haven't been indexed yet.

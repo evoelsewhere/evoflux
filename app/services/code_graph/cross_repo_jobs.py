@@ -23,6 +23,7 @@ from loguru import logger
 from app.core.db import DbFactory, resolve_db_factory
 from app.services.code_graph.cross_repo import CrossRepoResolveStats, resolve_project
 from app.services.code_graph.cross_repo_llm import resolve_project_tier_b
+from app.services.code_graph.jobs import index_jobs
 
 
 @dataclass(slots=True)
@@ -34,7 +35,7 @@ class CrossRepoResolveJob:
     status: str = "running"  # running | done | error
     finished_at: float | None = None
     error: str | None = None
-    phase: str = "starting"  # starting | reattach | static | lexical | done
+    phase: str = "starting"  # starting | indexing | reattach | static | lexical | done
     progress: float = 0.0
     message: str = ""
     stats: dict | None = None
@@ -53,8 +54,18 @@ class CrossRepoResolveJobRegistry:
         *,
         project_id: UUID,
         db_factory: DbFactory | None = None,
+        wait_for_workspaces: list[UUID] | None = None,
     ) -> tuple[CrossRepoResolveJob, bool]:
         """Start a background resolution pass for ``project_id``.
+
+        ``wait_for_workspaces``, when given, is a set of workspaces the job
+        should sit and wait on (polling ``index_jobs.is_running``) before
+        touching the database — used to chain a resolve pass onto an
+        in-flight project-wide reindex without resolving against half-parsed
+        repos. The job is registered as ``running`` immediately either way,
+        so ``GET .../cross-repo/status`` never has a gap between "reindex
+        accepted" and "resolve actually starts" where a poller could
+        mistake "hasn't started yet" for "already finished".
 
         Returns ``(job, started)``; ``started`` is ``False`` when a job was
         already running for this project (the existing job is returned).
@@ -74,6 +85,7 @@ class CrossRepoResolveJobRegistry:
                     job=job,
                     project_id=project_id,
                     db_factory=db_factory,
+                    wait_for_workspaces=wait_for_workspaces,
                 )
             )
             self._tasks.add(task)
@@ -86,9 +98,16 @@ class CrossRepoResolveJobRegistry:
         job: CrossRepoResolveJob,
         project_id: UUID,
         db_factory: DbFactory | None,
+        wait_for_workspaces: list[UUID] | None = None,
     ) -> None:
         factory = resolve_db_factory(db_factory)
         try:
+            if wait_for_workspaces:
+                job.phase = "indexing"
+                job.message = "Waiting for repos to finish indexing…"
+                while any(index_jobs.is_running(wid) for wid in wait_for_workspaces):
+                    await asyncio.sleep(0.5)
+
             job.phase = "reattach"
             job.progress = 0.0
             job.message = "Re-attaching stale links…"

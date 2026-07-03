@@ -130,7 +130,7 @@ export function repoPct(repo: ProjectRepoStatus | undefined): number {
 
 export function repoCountText(repo: ProjectRepoStatus | undefined): string {
   if (!repo) return '—'
-  if (repo.index_error) return 'err'
+  if (repo.index_error) return 'Error'
   if (repo.indexed) {
     if (repo.nodes > 0) return `${compactCount(repo.nodes)} syms`
     if (repo.files > 0) return `${compactCount(repo.files)} files`

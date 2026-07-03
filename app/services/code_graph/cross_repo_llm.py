@@ -21,7 +21,7 @@ from loguru import logger
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.db import current_sqlite_path
+from app.core.db import current_sqlite_path, sqlite_write_guard
 from app.core.runtime_settings import load_runtime_settings
 from app.models.code_graph import CodeNode, CrossRepoEdge
 from app.services.code_graph import cross_repo, fts_store
@@ -78,53 +78,65 @@ async def resolve_project_tier_b(
     db_path = current_sqlite_path()
     lexical_resolved = 0
 
-    for row in rows:
-        others = [wid for wid in workspace_ids if wid != row.src_workspace_id]
-        if not others or db_path is None:
-            continue
-
-        # Deliberately omit row.kind here (unlike the old embedding query) —
-        # FTS5 ANDs every token together, so an extra word like "import"
-        # could zero out real matches that don't literally contain it.
-        query_text = f"{row.raw_reference} {row.dst_name_hint or ''}".strip()
-        if not query_text:
-            continue
-
-        candidates: list[tuple[CodeNode, UUID]] = []
-        for ws_id in others:
-            node_ids = await asyncio.to_thread(
-                fts_store.search_fts, db_path, str(ws_id), query_text, cfg.candidate_k
-            )
-            if not node_ids:
+    # Guards the whole loop, not just the final commit — db.add(row) below
+    # stages a dirty row that the *next* iteration's db.exec(select(...))
+    # can autoflush as a real UPDATE, so the write can happen well before
+    # this function's own commit() call.
+    async with sqlite_write_guard():
+        for row in rows:
+            others = [wid for wid in workspace_ids if wid != row.src_workspace_id]
+            if not others or db_path is None:
                 continue
-            nodes = (
-                await db.exec(
-                    select(CodeNode).where(
-                        col(CodeNode.id).in_([UUID(nid) for nid in node_ids])
+
+            # Deliberately omit row.kind here (unlike the old embedding query) —
+            # FTS5 ANDs every token together, so an extra word like "import"
+            # could zero out real matches that don't literally contain it.
+            query_text = f"{row.raw_reference} {row.dst_name_hint or ''}".strip()
+            if not query_text:
+                continue
+
+            # One connection for every sibling lookup on this row, instead of
+            # one open/close per sibling — with several sibling repos this
+            # was the dominant cost of the loop (connection setup, not the
+            # query itself) and it's all done while holding sqlite_write_guard.
+            results = await asyncio.to_thread(
+                fts_store.search_fts_many,
+                db_path,
+                [(str(ws_id), query_text) for ws_id in others],
+                cfg.candidate_k,
+            )
+            candidates: list[tuple[CodeNode, UUID]] = []
+            for ws_id, node_ids in zip(others, results):
+                if not node_ids:
+                    continue
+                nodes = (
+                    await db.exec(
+                        select(CodeNode).where(
+                            col(CodeNode.id).in_([UUID(nid) for nid in node_ids])
+                        )
                     )
-                )
-            ).all()
-            candidates.extend((node, ws_id) for node in nodes)
+                ).all()
+                candidates.extend((node, ws_id) for node in nodes)
 
-        target_name = row.dst_name_hint or row.raw_reference.rsplit(".", 1)[-1]
-        exact = [
-            (node, ws_id)
-            for node, ws_id in candidates
-            if node.name == target_name or node.qualified_name == row.raw_reference
-        ]
+            target_name = row.dst_name_hint or row.raw_reference.rsplit(".", 1)[-1]
+            exact = [
+                (node, ws_id)
+                for node, ws_id in candidates
+                if node.name == target_name or node.qualified_name == row.raw_reference
+            ]
 
-        if len(exact) == 1:
-            node, ws_id = exact[0]
-            row.status = "resolved"
-            row.method = cross_repo.METHOD_LEXICAL
-            row.confidence = 0.8
-            row.dst_workspace_id = ws_id
-            row.dst_node_id = node.id
-            row.dst_qualified_name = node.qualified_name
-            db.add(row)
-            lexical_resolved += 1
+            if len(exact) == 1:
+                node, ws_id = exact[0]
+                row.status = "resolved"
+                row.method = cross_repo.METHOD_LEXICAL
+                row.confidence = 0.8
+                row.dst_workspace_id = ws_id
+                row.dst_node_id = node.id
+                row.dst_qualified_name = node.qualified_name
+                db.add(row)
+                lexical_resolved += 1
 
-    await db.commit()
+        await db.commit()
     return TierBStats(
         lexical_resolved=lexical_resolved,
         capped=capped,
