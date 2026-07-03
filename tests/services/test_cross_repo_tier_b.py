@@ -229,3 +229,63 @@ async def test_tier_b_row_cap(setup_db, tmp_path: Path, monkeypatch):
         stats = await resolve_project_tier_b(db, project_id=project_id)
 
     assert stats.capped == 3
+
+
+@pytest.mark.asyncio
+async def test_tier_b_rotates_through_capped_rows_across_runs(
+    setup_db, tmp_path: Path, monkeypatch
+):
+    """With more unresolved rows than max_rows_per_run, repeated calls must
+    eventually reach every row instead of always retrying the same leading
+    slice — a fixed ``[:max_rows_per_run]`` window would let rows past the
+    cap sit unresolved forever no matter how many times resolve runs."""
+    from app.core import runtime_settings as rs_module
+    from app.models.code_graph import CrossRepoEdge
+    from app.services.code_graph import cross_repo_llm
+
+    project_id, repo_a_id, repo_b_id = await _setup_project(tmp_path)
+
+    edge_ids = []
+    fts_rows = []
+    async with db_module.async_session_factory() as db:
+        for i in range(5):
+            target = await _seed_node(
+                db,
+                workspace_id=repo_b_id,
+                name=f"Target{i}",
+                qualified_name=f"com.example.gen.Target{i}",
+            )
+            edge = await _seed_unresolved_edge(
+                db,
+                project_id=project_id,
+                src_workspace_id=repo_a_id,
+                raw_reference=f"com.example.gen.Target{i}",
+                dst_name_hint=f"Target{i}",
+            )
+            edge_ids.append(edge.id)
+            fts_rows.append((str(target.id), f"Target{i}", f"com.example.gen.Target{i}"))
+        await db.commit()
+    _index_fts(repo_b_id, fts_rows)
+
+    original_load = rs_module.load_runtime_settings
+
+    def _capped_settings():
+        settings = original_load()
+        settings.cross_repo.max_rows_per_run = 2
+        return settings
+
+    monkeypatch.setattr(cross_repo_llm, "load_runtime_settings", _capped_settings)
+
+    total_resolved = 0
+    for _ in range(3):  # ceil(5 / 2) — enough rounds to sweep every row once
+        async with db_module.async_session_factory() as db:
+            stats = await resolve_project_tier_b(db, project_id=project_id)
+            total_resolved += stats.lexical_resolved
+
+    assert total_resolved == 5
+    async with db_module.async_session_factory() as db:
+        for edge_id in edge_ids:
+            refreshed = await db.get(CrossRepoEdge, edge_id)
+            assert refreshed.status == "resolved", (
+                f"edge {edge_id} never got a Tier B attempt across all rounds"
+            )

@@ -34,6 +34,17 @@ class TierBStats:
     capped: int = 0
 
 
+# Process-local rotation cursor, one per project — best-effort so a project
+# with more unresolved rows than max_rows_per_run eventually gets every row
+# tried across repeated resolve calls. A row that fails to match FTS keeps
+# its status "unresolved" (only successes are written), so without this a
+# plain ``[:max_rows_per_run]`` slice would re-examine the exact same leading
+# rows forever and never advance to the rest — anything past the cap would
+# never get a single Tier B attempt no matter how many times resolve runs.
+# Resets naturally on server restart, which just restarts the sweep at 0.
+_tier_b_cursor: dict[UUID, int] = {}
+
+
 async def resolve_project_tier_b(
     db: AsyncSession,
     *,
@@ -44,7 +55,9 @@ async def resolve_project_tier_b(
     Bounded by ``CrossRepoSettings.max_rows_per_run`` — even after the
     ``is_likely_external`` pre-filter, a very large or freshly-linked project
     could still have more unresolved rows than are sane to run through FTS5 in
-    one pass; the remainder is simply picked up on the next run.
+    one pass. The remainder is picked up on the next run, rotating through a
+    different window each time (see ``_tier_b_cursor``) rather than always
+    retrying the same leading slice.
     """
     cfg = load_runtime_settings().cross_repo
     if not cfg.enabled:
@@ -64,15 +77,24 @@ async def resolve_project_tier_b(
         )
     ).all()
     if not all_rows:
+        _tier_b_cursor.pop(project_id, None)
         return TierBStats()
-    rows = all_rows[: cfg.max_rows_per_run]
-    capped = len(all_rows) - len(rows)
-    if capped > 0:
+
+    if len(all_rows) <= cfg.max_rows_per_run:
+        rows = all_rows
+        capped = 0
+        _tier_b_cursor.pop(project_id, None)
+    else:
+        offset = _tier_b_cursor.get(project_id, 0) % len(all_rows)
+        rows = (all_rows[offset:] + all_rows[:offset])[: cfg.max_rows_per_run]
+        capped = len(all_rows) - len(rows)
+        _tier_b_cursor[project_id] = (offset + len(rows)) % len(all_rows)
         logger.info(
-            "cross_repo tier_b row cap project={} processed={} deferred={}",
+            "cross_repo tier_b row cap project={} processed={} deferred={} next_offset={}",
             project_id,
             len(rows),
             capped,
+            _tier_b_cursor[project_id],
         )
 
     db_path = current_sqlite_path()
