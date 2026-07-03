@@ -17,12 +17,17 @@ import asyncio
 from uuid import UUID, uuid7
 
 from loguru import logger
-from sqlalchemy import case as sa_case, delete as sa_delete, func as sa_func
-from sqlmodel import col, or_, select
+from sqlalchemy import (
+    case as sa_case,
+    delete as sa_delete,
+    func as sa_func,
+    insert as sa_insert,
+)
+from sqlmodel import SQLModel, col, or_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db import current_sqlite_path, sqlite_write_guard
-from app.models.chat import CodingWorkspace
+from app.models.chat import CodingWorkspace, _utcnow
 from app.models.code_graph import (
     CodeAmbiguousEdge,
     CodeEdge,
@@ -47,6 +52,42 @@ from app.services.code_graph.parsers.registry import ParserRegistry, build_regis
 
 # Cap how many errors we keep on the stats payload.
 _MAX_REPORTED_ERRORS = 20
+
+# Rows per Core executemany() batch during reindex saves, with an
+# ``asyncio.sleep(0)`` between batches. A full reindex of a large repo can
+# generate tens of thousands of node/edge rows; inserting them as one
+# ORM add_all()+flush() previously ran that many object constructions plus
+# unit-of-work bookkeeping as one uninterrupted synchronous stretch, freezing
+# every other coroutine (including unrelated GET /history reads) for the
+# whole save phase. Bulk Core inserts skip the ORM identity-map/dirty-tracking
+# overhead entirely, and yielding between batches lets other requests get
+# scheduler turns — WAL mode lets reads proceed against the last-committed
+# snapshot even while this write transaction is still open.
+_REINDEX_BATCH_SIZE = 2000
+
+
+async def _bulk_insert_chunked(
+    db: AsyncSession,
+    model: type[SQLModel],
+    rows: list[dict],
+    *,
+    batch_size: int = _REINDEX_BATCH_SIZE,
+) -> None:
+    """Insert ``rows`` (plain dicts) into ``model``'s table via Core executemany,
+    yielding the event loop between batches.
+
+    Bypasses the ORM identity map/unit-of-work — callers must supply every
+    column value explicitly (including ``id`` and ``created_at``), since Core
+    inserts do not resolve SQLModel ``default_factory`` values.
+    """
+    if not rows:
+        return
+    table = model.__table__  # type: ignore[attr-defined]
+    for start in range(0, len(rows), batch_size):
+        chunk = rows[start : start + batch_size]
+        await db.execute(sa_insert(table), chunk)
+        if start + batch_size < len(rows):
+            await asyncio.sleep(0)
 
 # Single-threaded executor for CPU-heavy indexing work (tree-sitter parsing,
 # file hashing). Serializes all code-graph computation to one thread so it
@@ -145,8 +186,8 @@ async def reindex_workspace(
 
     report("saving", 0.35, "Saving graph to database…")
     key_to_id: dict[str, UUID] = {}
-    node_rows: list[CodeNode] = []
-    edge_rows: list[CodeEdge] = []
+    node_rows: list[dict] = []
+    edge_rows: list[dict] = []
     async with sqlite_write_guard():
         await db.execute(
             sa_delete(CodeEdge).where(col(CodeEdge.workspace_id) == workspace_id)
@@ -165,25 +206,27 @@ async def reindex_workspace(
             )
         )
 
+        now = _utcnow()
         for node in index.nodes:
             node_id = uuid7()
             key_to_id[node.key] = node_id
             node_rows.append(
-                CodeNode(
-                    id=node_id,
-                    workspace_id=workspace_id,
-                    kind=node.kind,
-                    name=node.name,
-                    qualified_name=node.qualified_name,
-                    file_path=node.file_path,
-                    language=node.language,
-                    line_start=node.line_start,
-                    line_end=node.line_end,
-                    signature=node.signature,
-                    docstring=node.docstring,
-                )
+                {
+                    "id": node_id,
+                    "workspace_id": workspace_id,
+                    "kind": node.kind,
+                    "name": node.name,
+                    "qualified_name": node.qualified_name,
+                    "file_path": node.file_path,
+                    "language": node.language,
+                    "line_start": node.line_start,
+                    "line_end": node.line_end,
+                    "signature": node.signature,
+                    "docstring": node.docstring,
+                    "created_at": now,
+                }
             )
-        db.add_all(node_rows)
+        await _bulk_insert_chunked(db, CodeNode, node_rows)
 
         for edge in index.edges:
             src_id = key_to_id.get(edge.src_key)
@@ -191,16 +234,18 @@ async def reindex_workspace(
             if src_id is None or dst_id is None:
                 continue
             edge_rows.append(
-                CodeEdge(
-                    workspace_id=workspace_id,
-                    src_id=src_id,
-                    dst_id=dst_id,
-                    kind=edge.kind,
-                    file_path=edge.file_path,
-                    line=edge.line,
-                )
+                {
+                    "id": uuid7(),
+                    "workspace_id": workspace_id,
+                    "src_id": src_id,
+                    "dst_id": dst_id,
+                    "kind": edge.kind,
+                    "file_path": edge.file_path,
+                    "line": edge.line,
+                    "created_at": now,
+                }
             )
-        db.add_all(edge_rows)
+        await _bulk_insert_chunked(db, CodeEdge, edge_rows)
 
         # Persist ambiguous edges — targets that matched 2+ candidates.
         import json
@@ -216,33 +261,37 @@ async def reindex_workspace(
             if len(candidate_ids) < 2:
                 continue
             ambiguous_rows.append(
-                CodeAmbiguousEdge(
-                    workspace_id=workspace_id,
-                    src_id=src_id,
-                    dst_name=amb.dst_name,
-                    kind=amb.kind,
-                    candidate_node_ids=json.dumps(candidate_ids),
-                    file_path=amb.file_path,
-                    line=amb.line,
-                )
+                {
+                    "id": uuid7(),
+                    "workspace_id": workspace_id,
+                    "src_id": src_id,
+                    "dst_name": amb.dst_name,
+                    "kind": amb.kind,
+                    "candidate_node_ids": json.dumps(candidate_ids),
+                    "file_path": amb.file_path,
+                    "line": amb.line,
+                    "created_at": now,
+                }
             )
-        if ambiguous_rows:
-            db.add_all(ambiguous_rows)
+        await _bulk_insert_chunked(db, CodeAmbiguousEdge, ambiguous_rows)
 
-        db.add_all(
+        await _bulk_insert_chunked(
+            db,
+            CodeIndexState,
             [
-                CodeIndexState(
-                    workspace_id=workspace_id,
-                    file_path=f.file_path,
-                    language=f.language,
-                    content_hash=f.content_hash,
-                    node_count=f.node_count,
-                    edge_count=f.edge_count,
-                )
+                {
+                    "id": uuid7(),
+                    "workspace_id": workspace_id,
+                    "file_path": f.file_path,
+                    "language": f.language,
+                    "content_hash": f.content_hash,
+                    "node_count": f.node_count,
+                    "edge_count": f.edge_count,
+                    "indexed_at": now,
+                }
                 for f in index.files
-            ]
+            ],
         )
-        await db.flush()
 
         await _persist_unresolved_references(
             db,
@@ -534,7 +583,8 @@ async def _reindex_incremental(
         # deleting removed nodes — keeps foreign keys satisfied at every step.
         await db.flush()
 
-        edge_rows: list[CodeEdge] = []
+        now = _utcnow()
+        edge_rows: list[dict] = []
         for edge in index.edges:
             src_id = key_to_id.get(edge.src_key)
             if src_id is None:
@@ -543,16 +593,20 @@ async def _reindex_incremental(
             if dst_id is None or dst_id in removed_ids:
                 continue
             edge_rows.append(
-                CodeEdge(
-                    workspace_id=workspace_id,
-                    src_id=src_id,
-                    dst_id=dst_id,
-                    kind=edge.kind,
-                    file_path=edge.file_path,
-                    line=edge.line,
-                )
+                {
+                    "id": uuid7(),
+                    "workspace_id": workspace_id,
+                    "src_id": src_id,
+                    "dst_id": dst_id,
+                    "kind": edge.kind,
+                    "file_path": edge.file_path,
+                    "line": edge.line,
+                    "created_at": now,
+                }
             )
-        db.add_all(edge_rows)
+        # Nodes were flushed just above, so their ids already satisfy these
+        # edges' FKs — safe to bulk-insert via Core without an ORM flush.
+        await _bulk_insert_chunked(db, CodeEdge, edge_rows)
 
         if removed_ids:
             await db.execute(
@@ -569,18 +623,22 @@ async def _reindex_incremental(
                 col(CodeIndexState.file_path).in_(list(affected)),
             )
         )
-        db.add_all(
+        await _bulk_insert_chunked(
+            db,
+            CodeIndexState,
             [
-                CodeIndexState(
-                    workspace_id=workspace_id,
-                    file_path=f.file_path,
-                    language=f.language,
-                    content_hash=f.content_hash,
-                    node_count=f.node_count,
-                    edge_count=f.edge_count,
-                )
+                {
+                    "id": uuid7(),
+                    "workspace_id": workspace_id,
+                    "file_path": f.file_path,
+                    "language": f.language,
+                    "content_hash": f.content_hash,
+                    "node_count": f.node_count,
+                    "edge_count": f.edge_count,
+                    "indexed_at": now,
+                }
                 for f in index.files
-            ]
+            ],
         )
 
         await _persist_unresolved_references(
