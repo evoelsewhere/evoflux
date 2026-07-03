@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import Mapping
 
@@ -196,7 +197,15 @@ async def _codex_models() -> list[str]:
 
 
 async def _bedrock_models(overrides: Mapping[str, str] | None = None) -> list[str]:
+    # boto3 is synchronous — run the whole discovery in a worker thread so
+    # its network round-trips (list_foundation_models + paginated
+    # list_inference_profiles) never block the event loop.
+    return await asyncio.to_thread(_bedrock_models_sync, overrides)
+
+
+def _bedrock_models_sync(overrides: Mapping[str, str] | None = None) -> list[str]:
     import boto3
+    from botocore.config import Config as BotoConfig
 
     region = (
         _resolve(overrides, "AWS_BEDROCK_REGION")
@@ -205,7 +214,16 @@ async def _bedrock_models(overrides: Mapping[str, str] | None = None) -> list[st
         or os.getenv("AWS_DEFAULT_REGION")
         or "us-east-1"
     )
-    kwargs: dict[str, str] = {"region_name": region}
+    kwargs: dict[str, object] = {
+        "region_name": region,
+        # Match the httpx discovery budget — a stalled AWS endpoint must not
+        # pin the worker thread for botocore's default 60s × retries.
+        "config": BotoConfig(
+            connect_timeout=TIMEOUT_S,
+            read_timeout=TIMEOUT_S,
+            retries={"max_attempts": 1},
+        ),
+    }
     profile = (
         overrides["AWS_BEDROCK_PROFILE"]
         if overrides and "AWS_BEDROCK_PROFILE" in overrides

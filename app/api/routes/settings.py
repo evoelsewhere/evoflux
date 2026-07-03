@@ -72,6 +72,15 @@ _local_reachable_cache: dict[str, tuple[float, bool]] = {}
 # "Connected" should mean the daemon actually responds.
 _DAEMON_PROVIDER_IDS = frozenset({"ollama", "router9", "cliproxy"})
 
+# Live-discovered provider models cached per provider so ``GET /providers``
+# doesn't fan out to every configured backend on each render (mirrors
+# ``_registry_model_cache`` in app/api/routes/agents.py). Only successful
+# (non-empty) saved-credential discoveries are cached — failures stay live
+# so a just-fixed key shows as connected immediately, and per-request
+# credential overrides (POST /providers/{id}/models) never hit this cache.
+_PROVIDER_MODEL_CACHE_TTL_S = 60.0
+_provider_model_cache: dict[str, tuple[float, list[str]]] = {}
+
 
 @router.get("/sandbox")
 async def get_sandbox_settings() -> SandboxSettingsBody:
@@ -305,9 +314,23 @@ async def list_providers() -> ProvidersListBody:
     )
     from app.agent.providers.model_discovery import discover_provider_models
 
+    now = time.monotonic()
+
+    async def _discover_cached(entry: "ProviderEntry") -> list[str]:
+        provider_id = entry["id"]
+        cached = _provider_model_cache.get(provider_id)
+        if cached and now - cached[0] < _PROVIDER_MODEL_CACHE_TTL_S:
+            return cached[1]
+        models = await discover_provider_models(
+            entry, overrides=_provider_saved_overrides(entry)
+        )
+        if models:
+            _provider_model_cache[provider_id] = (now, models)
+        return models
+
     discovery_results = await asyncio.gather(
         *(
-            discover_provider_models(entry, overrides=_provider_saved_overrides(entry))
+            _discover_cached(entry)
             if is_configured
             else _empty_models()
             for entry, is_configured in zip(entries, reachability, strict=True)
@@ -574,7 +597,9 @@ async def install_seed_defaults(body: SeedInstallRequest) -> SeedInstallResponse
 
     provider_model = body.provider_model or PROVIDER_MODEL_TOKEN
     try:
-        result = install_seed(
+        # Downloads + extracts a tarball (up to ~40s) — keep it off the loop.
+        result = await asyncio.to_thread(
+            install_seed,
             Path(settings.EVOFLUX_CONFIG_DIR),
             provider_model=provider_model,
         )

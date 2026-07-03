@@ -297,7 +297,9 @@ async def get_or_start_team() -> "AgentTeam | None":
             result: "AgentTeam | None" = _team
         else:
             agents_dir = _resolve_agents_dir()
-            candidate = load_team_from_dir(agents_dir)
+            # Sync file IO (glob + md parsing + blueprint writes) — keep it
+            # off the event loop so concurrent requests aren't stalled.
+            candidate = await asyncio.to_thread(load_team_from_dir, agents_dir)
             if candidate is None:
                 logger.warning("team_manager_no_agents path={}", agents_dir)
                 result = None
@@ -334,7 +336,7 @@ async def get_or_start_team_for_session(session_id: str) -> "AgentTeam | None":
             result: "AgentTeam | None" = existing
         else:
             agents_dir = _resolve_agents_dir()
-            candidate = load_team_from_dir(agents_dir)
+            candidate = await asyncio.to_thread(load_team_from_dir, agents_dir)
             if candidate is None:
                 logger.warning("team_manager_no_agents path={}", agents_dir)
                 result = None
@@ -414,8 +416,11 @@ async def get_or_start_coding_team(
             team = existing
         else:
             agents_dir = _resolve_coding_agents_dir()
-            team = load_team_from_dir(
-                agents_dir, mode="coding", workspace=resolved_workspace
+            team = await asyncio.to_thread(
+                load_team_from_dir,
+                agents_dir,
+                mode="coding",
+                workspace=resolved_workspace,
             )
             if team is None:
                 raise ValueError(

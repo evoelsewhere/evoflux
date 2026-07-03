@@ -444,7 +444,14 @@ export const MarkdownBlock = memo(function MarkdownBlock({
 // identity across every ``MarkdownBlock`` instance and every render — it
 // shallow-compares plugins to decide whether to rebuild its processor.
 const _REMARK_PLUGINS = [remarkGfm, remarkMath]
+// ``subset`` bounds highlightAuto for unlabeled code blocks — without it
+// highlight.js tries every registered grammar per block, which is very slow
+// when a long history full of code blocks mounts at once.
+const _HIGHLIGHT_SUBSET = [
+  'python', 'typescript', 'javascript', 'tsx', 'json', 'bash', 'shell',
+  'yaml', 'html', 'css', 'sql', 'diff', 'markdown', 'go', 'rust', 'java',
+]
 const _REHYPE_PLUGINS: React.ComponentProps<typeof ReactMarkdown>['rehypePlugins'] = [
-  [rehypeHighlight, { detect: true }],
+  [rehypeHighlight, { detect: true, subset: _HIGHLIGHT_SUBSET }],
   rehypeKatex,
 ]

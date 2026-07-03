@@ -837,6 +837,11 @@ class AgentTeam:
         try:
             db_factory = resolve_db_factory(self.lead.db_factory)
             lead_uuid = UUID(session_id)
+            # Snapshot before opening the DB session: track() runs git
+            # subprocesses over the whole workspace and must not hold a
+            # SQLite write transaction open while it does.
+            workspace_path = session_workspace_dir(str(lead_uuid), self.workspace)
+            snapshot_hash = await snapshot_service.track(str(lead_uuid), workspace_path)
             async with db_factory() as db:
                 # Heal any tool_calls left orphaned by a previous crash /
                 # restart *before* persisting the new user message so the
@@ -870,10 +875,6 @@ class AgentTeam:
                     user_msg = HumanMessage(content=content)
                     msg_extra = None
 
-                workspace_path = session_workspace_dir(str(lead_uuid), self.workspace)
-                snapshot_hash = await snapshot_service.track(
-                    str(lead_uuid), workspace_path
-                )
                 if snapshot_hash:
                     extra_with_snapshot = dict(msg_extra or {})
                     extra_with_snapshot["snapshot"] = snapshot_hash

@@ -21,7 +21,7 @@ from app.agent.mode.team.team import (
     parse_loop_command,
 )
 from app.agent.tools.builtin.skill import discover_skills
-from app.api.deps import ChatFormDep, DbSession, TeamDep
+from app.api.deps import ChatFormDep, DbSession
 from app.api.routes.team._helpers import (
     _message_response,
     _read_upload_as_attachment,
@@ -114,16 +114,37 @@ def _serialize_agent(agent: Agent, *, is_lead: bool = False) -> dict:
     }
 
 
+# Serialized-blueprint payload cache keyed by (md path, mode), invalidated
+# by the .md's mtime. Rebuilding an Agent per blueprint on every GET
+# /team/agents re-parses the .md, tool registry, skills and provider —
+# expensive and pure, so cache the payload. Staleness note: edits to
+# SKILL.md descriptions or mcp.json alone won't bust the cache until the
+# blueprint .md is touched or the process restarts.
+_blueprint_payload_cache: dict[tuple[str, str], tuple[float, dict]] = {}
+
+
 def _serialize_blueprint(team_obj, bp) -> dict:
     from app.agent.loader import rebuild_agent_from_disk
 
-    agent = rebuild_agent_from_disk(
-        bp.source_path,
-        provider_factory=team_obj._provider_factory,
-        extra_tools=team_obj._extra_tools,
-        mode=team_obj.mode,
-    )
-    payload = _serialize_agent(agent)
+    key = (str(bp.source_path), team_obj.mode)
+    try:
+        mtime: float | None = bp.source_path.stat().st_mtime
+    except OSError:
+        mtime = None
+
+    cached = _blueprint_payload_cache.get(key) if mtime is not None else None
+    if cached is not None and cached[0] == mtime:
+        payload = dict(cached[1])
+    else:
+        agent = rebuild_agent_from_disk(
+            bp.source_path,
+            provider_factory=team_obj._provider_factory,
+            extra_tools=team_obj._extra_tools,
+            mode=team_obj.mode,
+        )
+        payload = _serialize_agent(agent)
+        if mtime is not None:
+            _blueprint_payload_cache[key] = (mtime, dict(payload))
     payload["live_instances"] = team_obj.live_instances_for_blueprint(bp.name)
     return payload
 
@@ -248,10 +269,11 @@ async def team_chat(
         # the workspace is changed between messages.
         if workspace is None and existing is not None and existing.workspace:
             workspace = existing.workspace
-        # Restore persisted permission mode so the in-memory team reflects the
-        # user's selection even after a server restart.
-        if existing is not None:
-            team_obj.permission_mode = existing.permission_mode
+
+    # Restore persisted permission mode so the in-memory team reflects the
+    # user's selection even after a server restart or a cold team boot.
+    if existing is not None:
+        team_obj.permission_mode = existing.permission_mode
 
     effective_request_model = (
         model
@@ -586,7 +608,6 @@ async def team_stream(session_id: str, request: Request):
 
 @router.get("/agents")
 async def list_team_agents(
-    team: TeamDep,
     workspace: str | None = Query(None, description="Coding workspace directory."),
 ) -> dict:
     """Return info on the lead, all live member instances, and spawnable blueprints.
@@ -621,7 +642,9 @@ async def list_team_agents(
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
     else:
-        team_obj = _require_team(team)
+        # Resolved lazily instead of via TeamDep so the coding branch above
+        # never pays for (or waits on) a default-team boot it won't use.
+        team_obj = _require_team(await team_manager.get_or_start_team())
     # Rediscover blueprint files from disk before serializing so newly
     # created members (Settings → Agents) appear without a server restart.
     team_manager.refresh_blueprints(team_obj)
@@ -988,9 +1011,17 @@ async def set_session_permission_mode(
         if session is None:
             raise HTTPException(status_code=404, detail="Session not found.")
         session.permission_mode = body.mode
+        session_mode = session.mode
+        session_workspace = session.workspace
 
     sid = str(session_id)
-    team_obj = await team_manager.get_or_start_team_for_session(sid)
+    # Peek only — the persisted mode is picked up at the next team boot, so
+    # starting a team here just to set an attribute wastes a full cold boot.
+    team_obj = team_manager.current_team_for_session(sid)
+    if team_obj is None and session_mode == "coding" and session_workspace:
+        team_obj = team_manager.current_coding_team_for_session(
+            session_workspace, sid
+        )
     if team_obj is not None:
         team_obj.permission_mode = body.mode
 
@@ -1008,7 +1039,6 @@ async def delete_team_session(session_id: UUID, db: DbSession) -> None:
 @router.get("/{session_id}/history")
 async def team_history(
     db: DbSession,
-    team: TeamDep,
     session_id: UUID,
     before: str | None = Query(default=None),
 ) -> TeamHistoryResponse:
@@ -1031,16 +1061,20 @@ async def team_history(
     history = await get_team_history(db, session_id, before=before_dt)
     if history is None:
         raise HTTPException(status_code=404, detail="Lead session not found.")
-    loop_team = team
+    # Loop status is an in-memory lookup on a live team. Only *peek* at the
+    # team cache here — booting a team just to read history blocked this GET
+    # (and, via the global team lock + sync file IO, every other request)
+    # for the whole cold-start. A team that isn't running can't have an
+    # active loop, so a cache miss is simply "no loop".
     if history.lead_session.mode == "coding" and history.lead_session.workspace:
-        try:
-            loop_team = await team_manager.get_or_start_coding_team(
-                history.lead_session.workspace, str(history.lead_session.id)
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        loop_team = team_manager.current_coding_team_for_session(
+            history.lead_session.workspace, str(history.lead_session.id)
+        )
     else:
-        _require_team(team)
+        loop_team = (
+            team_manager.current_team_for_session(str(history.lead_session.id))
+            or team_manager.current_team()
+        )
 
     lead_resp = SessionResponse.model_validate(history.lead_session).model_copy(
         update={

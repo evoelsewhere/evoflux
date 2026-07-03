@@ -98,6 +98,8 @@ export interface TeamStoreState {
   isTeamWorking: boolean
   isContinuing: boolean
   isConnected: boolean
+  /** True while ``loadSession`` is fetching history for the current session. */
+  isSessionLoading: boolean
   error: string | null
   activeLoop: ActiveLoop | null
   setupRequired: SetupRequiredNotice | null

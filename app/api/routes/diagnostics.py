@@ -144,16 +144,19 @@ async def diagnostics(tail: int = 200) -> dict[str, Any]:
     tail = max(0, min(tail, 2000))
 
     from app.agent.mcp import mcp_manager
+    from app.api.routes.health import validate_agents_dir_cached
     from app.services import team_manager
 
     state_dir = Path(settings.EVOFLUX_STATE_DIR)
     log_path = state_dir / "logs" / "app" / "app.log"
 
-    def _agents_dir_loadable() -> bool | None:
+    async def _agents_dir_loadable() -> bool | None:
         """``True`` if the agents directory parses, ``False`` if missing/empty,
         ``None`` if it raises (treated as a soft 'unknown' in diagnostics)."""
         try:
-            return team_manager.validate_agents_dir()
+            # Off-loop + shared 30s cache — the raw call globs and parses
+            # every agent .md on each poll.
+            return await validate_agents_dir_cached()
         except Exception:
             return None
 
@@ -189,7 +192,7 @@ async def diagnostics(tail: int = 200) -> dict[str, Any]:
             # directory parses (the useful indicator for "is the system
             # configured correctly?").
             "loaded": team_manager.current_team() is not None,
-            "loadable": _agents_dir_loadable(),
+            "loadable": await _agents_dir_loadable(),
         },
         "mcp": {
             "servers": len(mcp_manager.server_names()),

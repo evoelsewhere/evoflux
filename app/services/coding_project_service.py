@@ -198,33 +198,26 @@ async def remove_workspace_from_project(
 async def get_project_workspaces(
     db: AsyncSession, project_id: UUID
 ) -> list[tuple[CodingProjectWorkspace, CodingWorkspace]]:
-    links = list(
-        (
-            await db.exec(
-                select(CodingProjectWorkspace)
-                .where(CodingProjectWorkspace.project_id == project_id)
-                .order_by(col(CodingProjectWorkspace.sort_order).asc())
+    # Exclude soft-deleted and hidden member repos so a removed/hidden
+    # directory can never surface in the project's workspace list or
+    # become the derived primary workspace (paths[0]) used to launch a
+    # project session — mirrors the sidebar's own hidden-workspace filter.
+    rows = (
+        await db.exec(
+            select(CodingProjectWorkspace, CodingWorkspace)
+            .join(
+                CodingWorkspace,
+                col(CodingWorkspace.id) == col(CodingProjectWorkspace.workspace_id),
             )
-        ).all()
-    )
-    result = []
-    for link in links:
-        # Exclude soft-deleted and hidden member repos so a removed/hidden
-        # directory can never surface in the project's workspace list or
-        # become the derived primary workspace (paths[0]) used to launch a
-        # project session — mirrors the sidebar's own hidden-workspace filter.
-        ws = (
-            await db.exec(
-                select(CodingWorkspace).where(
-                    CodingWorkspace.id == link.workspace_id,
-                    col(CodingWorkspace.deleted_at).is_(None),
-                    ~col(CodingWorkspace.hidden),
-                )
+            .where(
+                CodingProjectWorkspace.project_id == project_id,
+                col(CodingWorkspace.deleted_at).is_(None),
+                ~col(CodingWorkspace.hidden),
             )
-        ).first()
-        if ws:
-            result.append((link, ws))
-    return result
+            .order_by(col(CodingProjectWorkspace.sort_order).asc())
+        )
+    ).all()
+    return [(link, ws) for link, ws in rows]
 
 
 async def get_project_workspace_paths(

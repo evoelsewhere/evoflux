@@ -7,7 +7,7 @@
  * label showing the block is a thinking trace.
  */
 import { ChevronRight, Brain } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { cn } from '@/lib/utils'
 import { splitSections } from '@/utils/thinking'
@@ -34,7 +34,12 @@ export function Thinking({ content, isStreaming }: ThinkingProps) {
     }
   }, [content, isStreaming])
 
-  const sections = splitSections(content)
+  // Sections are only rendered while open — skip the parse entirely when
+  // collapsed so streaming updates to collapsed blocks stay cheap.
+  const sections = useMemo(
+    () => (open ? splitSections(content) : []),
+    [content, open],
+  )
   const charCount = content.length
   const label = charCount > 0
     ? `Thinking · ${charCount.toLocaleString()} chars`
