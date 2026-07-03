@@ -114,7 +114,7 @@ _TOPIC_ALIASES = {
 _DOMAIN_PREFERENCE_RE = re.compile(
     r"\b(prefer|prefers|preferred|preference|favorite)\b", re.IGNORECASE
 )
-_USER_MEMORY_QUERY_RE = re.compile(r"\b(user)\b", re.IGNORECASE)
+_USER_MEMORY_QUERY_RE = re.compile(r"\buser\b", re.IGNORECASE)
 _CITATION_RE = re.compile(r"\[([^\]]+:[^\]]+)\]")
 _FACT_SECTIONS = {
     "## Facts": "active",

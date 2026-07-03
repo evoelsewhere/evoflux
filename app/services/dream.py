@@ -14,6 +14,7 @@ import hashlib
 import json
 import re
 import uuid
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -546,16 +547,14 @@ def _memory_metadata(source: dict[str, str], source_text: str) -> dict[str, obje
 
 
 def _memory_topics(text: str) -> list[str]:
-    counts: dict[str, int] = {}
-    for raw in re.findall(r"[a-z0-9]+", text.lower()):
+    counts: Counter[str] = Counter()
+    for match in re.finditer(r"[a-z0-9]+", text.lower()):
+        raw = match.group(0)
         token = _MEMORY_TOPIC_ALIASES.get(raw, raw)
-        if token in _MEMORY_TOPIC_STOPWORDS or len(token) < 3:
+        if len(token) < 3 or token in _MEMORY_TOPIC_STOPWORDS:
             continue
-        if raw in {"EvoFlux", "kubernetes"}:
-            token = raw
-        counts[token] = counts.get(token, 0) + 1
-    ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
-    return sorted(token for token, _count in ranked[:8])
+        counts[token] += 1
+    return sorted(token for token, _ in counts.most_common(8))
 
 
 def _fact_id(statement: str) -> str:
