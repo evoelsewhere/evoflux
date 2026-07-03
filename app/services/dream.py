@@ -551,7 +551,7 @@ def _memory_topics(text: str) -> list[str]:
         token = _MEMORY_TOPIC_ALIASES.get(raw, raw)
         if token in _MEMORY_TOPIC_STOPWORDS or len(token) < 3:
             continue
-        if raw in {"hoang", "EvoFlux", "kubernetes"}:
+        if raw in {"EvoFlux", "kubernetes"}:
             token = raw
         counts[token] = counts.get(token, 0) + 1
     ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
@@ -740,10 +740,6 @@ def _statement_lines(text: str) -> list[str]:
 
 def _curated_page_for_statement(statement: str) -> str | None:
     lower = statement.lower()
-    if "hoang" in lower and any(
-        term in lower for term in ("prefers", "prefer", "wants", "want")
-    ):
-        return "user"
     if "EvoFlux" in lower:
         if "memory v2" in lower or "dream" in lower or "karpathy" in lower:
             return "memory-v2"

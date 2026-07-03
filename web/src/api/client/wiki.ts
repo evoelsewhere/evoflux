@@ -68,17 +68,54 @@ export async function putDreamConfig(config: DreamConfig): Promise<DreamConfig> 
   return res.json()
 }
 
-export async function triggerDreamRun(): Promise<{
+export interface DreamRunResult {
   sessions_processed: number
   notes_processed: number
   remaining: number
   failed: number
   skipped?: string
-}> {
+}
+
+interface DreamRunStatus {
+  running: boolean
+  result: DreamRunResult | null
+  error: string | null
+}
+
+async function getDreamRunStatus(): Promise<DreamRunStatus> {
+  const res = await fetch(`${apiBaseUrl()}/dream/run/status`)
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '')
+    throw new Error(`GET /dream/run/status failed: ${res.status} ${detail}`)
+  }
+  return res.json()
+}
+
+const DREAM_RUN_POLL_INTERVAL_MS = 1200
+
+/**
+ * Kick off a dream drain and wait for it to finish.
+ *
+ * The backend runs the drain (one LLM call per pending session/note, can
+ * take minutes) as a background task and returns immediately — this polls
+ * ``GET /dream/run/status`` until it completes so callers keep the previous
+ * "await and get the final counts" contract without holding the HTTP
+ * connection open for the whole drain.
+ */
+export async function triggerDreamRun(): Promise<DreamRunResult> {
   const res = await fetch(`${apiBaseUrl()}/dream/run`, { method: 'POST' })
   if (!res.ok) {
     const detail = await res.text().catch(() => '')
     throw new Error(`POST /dream/run failed: ${res.status} ${detail}`)
   }
-  return res.json()
+  await res.json() // { status: 'started' | 'already_running' } — polling below covers both.
+
+  for (;;) {
+    const status = await getDreamRunStatus()
+    if (!status.running) {
+      if (status.error) throw new Error(status.error)
+      if (status.result) return status.result
+    }
+    await new Promise((resolve) => setTimeout(resolve, DREAM_RUN_POLL_INTERVAL_MS))
+  }
 }
