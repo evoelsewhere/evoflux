@@ -31,6 +31,7 @@ from __future__ import annotations
 import re
 import shlex
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 import yaml
@@ -220,15 +221,61 @@ def parse_slash_invocation(content: str) -> SlashInvocation | None:
 # ── Public API ──────────────────────────────────────────────────────────────
 
 
+def _md_tree_signature(root: Path) -> int:
+    """Cheap fingerprint that changes whenever any ``*.md`` under *root* changes.
+
+    Mirrors ``app.agent.tools.builtin.skill._skills_dir_signature``: the max
+    of the root's own mtime_ns, each subdirectory's mtime_ns, and every
+    ``*.md`` mtime_ns down to the one nested level ``_iter_md`` honours — so
+    in-place edits, additions, and removals all change the signature.
+    """
+    try:
+        max_mtime = root.stat().st_mtime_ns
+    except OSError:
+        return 0
+    try:
+        entries = list(root.iterdir())
+    except OSError:
+        return max_mtime
+    for entry in entries:
+        try:
+            mtime = entry.stat().st_mtime_ns
+        except OSError:
+            continue
+        if mtime > max_mtime:
+            max_mtime = mtime
+        if entry.is_dir():
+            for nested in entry.glob("*.md"):
+                try:
+                    nested_mtime = nested.stat().st_mtime_ns
+                except OSError:
+                    continue
+                if nested_mtime > max_mtime:
+                    max_mtime = nested_mtime
+    return max_mtime
+
+
 def discover_commands(workspace: Path | None = None) -> dict[str, Command]:
     """Return ``{name: Command}`` for every command across the four roots.
 
     First-source wins on conflict. ``workspace`` is exposed for tests and
     coding mode; callers pass nothing to list only global commands.
+
+    Uses an mtime-keyed cache (same pattern as skill discovery) so repeated
+    picker requests skip the rglob + read + YAML parse when nothing changed.
     """
+    roots = tuple((str(root), source) for root, source in _candidate_roots(workspace))
+    signature = tuple(_md_tree_signature(Path(root)) for root, _ in roots)
+    return _discover_commands_cached(roots, signature)
+
+
+@lru_cache(maxsize=16)
+def _discover_commands_cached(
+    roots: tuple[tuple[str, str], ...], signature: tuple[int, ...]
+) -> dict[str, Command]:
     commands: dict[str, Command] = {}
-    for root, source in _candidate_roots(workspace):
-        for path, name in _iter_md(root):
+    for root_str, source in roots:
+        for path, name in _iter_md(Path(root_str)):
             if name in commands:
                 continue  # earlier source wins
             try:

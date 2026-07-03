@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -379,19 +380,33 @@ def pathspec_args(paths: list[str] | None) -> list[str]:
     return []
 
 
+# Characters git forbids anywhere in a ref name: ASCII control chars,
+# space, and the metacharacters ~ ^ : ? * [ \ (gitcheck-ref-format(1)).
+_INVALID_REF_CHARS_RE = re.compile(r"[\000-\037\177 ~^:?*\[\\]")
+
+
 def validate_ref_name(name: str) -> bool:
-    """Check if a string is a valid git ref name."""
-    try:
-        result = subprocess.run(
-            ["git", "check-ref-format", "--branch", name],
-            capture_output=True,
-            text=True,
-            timeout=2.0,
-            check=False,
-        )
-        return result.returncode == 0
-    except (OSError, subprocess.TimeoutExpired):
+    """Check if a string is a valid git branch name.
+
+    Pure-Python port of the ``git check-ref-format --branch`` rules — this
+    is called synchronously from async handlers, so shelling out here would
+    block the event loop for every request.
+    """
+    if not name or name in ("@", "HEAD"):
         return False
+    # ``--branch`` additionally rejects dash-prefixed names (option lookalikes).
+    if name.startswith("-"):
+        return False
+    if name.startswith("/") or name.endswith("/") or name.endswith("."):
+        return False
+    if ".." in name or "@{" in name:
+        return False
+    if _INVALID_REF_CHARS_RE.search(name):
+        return False
+    for component in name.split("/"):
+        if not component or component.startswith(".") or component.endswith(".lock"):
+            return False
+    return True
 
 
 def detect_inprogress_operation(cwd: str) -> str | None:

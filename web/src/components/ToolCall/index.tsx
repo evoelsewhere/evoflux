@@ -16,7 +16,7 @@
  * this module owns only the chrome (collapse, copy, motion).
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronRight, Copy, Check, MonitorPlayIcon } from 'lucide-react'
 import { ToolResult } from '../ToolResult'
@@ -84,7 +84,7 @@ function formatDuration(ms: number): string {
   return `${minutes}m ${seconds}s`
 }
 
-export function ToolCall({ name, args, done, liveOutput, result, durationMs, startedAt }: ToolCallProps) {
+export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, result, durationMs, startedAt }: ToolCallProps) {
   // Hooks must be called unconditionally — before any early returns
   const [manualExpanded, setManualExpanded] = useState<boolean | null>(null)
   const [copiedArgs, setCopiedArgs] = useState(false)
@@ -103,13 +103,16 @@ export function ToolCall({ name, args, done, liveOutput, result, durationMs, sta
         ? 'failed'
         : 'success'
 
+  // getToolDisplay JSON.parses args and getDiffStats runs a line diff —
+  // memoized so parent re-renders (streaming ticks) don't redo the work.
   const { header, headerTitle, formattedArgs, language, suppressResult } =
-    getToolDisplay(name, args)
+    useMemo(() => getToolDisplay(name, args), [name, args])
   const usesDiffView = name === 'edit' || name === 'patch' || name === 'write'
   const usesReadView = name === 'read'
-  const diffStats = (usesDiffView || name === 'rm') && args
-    ? getDiffStats(name, args, result)
-    : null
+  const diffStats = useMemo(
+    () => ((usesDiffView || name === 'rm') && args ? getDiffStats(name, args, result) : null),
+    [name, args, result, usesDiffView],
+  )
   // Pending-state header comes from getToolDisplay's no-args branch
   // (e.g. ``recall`` → "Checking memory…", ``team_message`` →
   // "Preparing message…"). Tools without a custom pending header return
@@ -355,7 +358,7 @@ export function ToolCall({ name, args, done, liveOutput, result, durationMs, sta
       </AnimatePresence>
     </div>
   )
-}
+})
 
 function SeeBrowserButton() {
   const toggleBrowser = useUIStore((s) => s.toggleBrowser)

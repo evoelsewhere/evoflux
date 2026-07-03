@@ -17,7 +17,7 @@ import asyncio
 from uuid import UUID, uuid7
 
 from loguru import logger
-from sqlalchemy import delete as sa_delete, func as sa_func
+from sqlalchemy import case as sa_case, delete as sa_delete, func as sa_func
 from sqlmodel import col, or_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -693,19 +693,23 @@ async def get_index_status(db: AsyncSession, *, workspace_id: UUID) -> dict[str,
     """Return basic counts for a workspace's stored graph."""
     files = (
         await db.exec(
-            select(CodeIndexState).where(CodeIndexState.workspace_id == workspace_id)
+            select(sa_func.count()).where(CodeIndexState.workspace_id == workspace_id)
         )
-    ).all()
+    ).first() or 0
     nodes = (
-        await db.exec(select(CodeNode.id).where(CodeNode.workspace_id == workspace_id))
-    ).all()
+        await db.exec(
+            select(sa_func.count()).where(CodeNode.workspace_id == workspace_id)
+        )
+    ).first() or 0
     edges = (
-        await db.exec(select(CodeEdge.id).where(CodeEdge.workspace_id == workspace_id))
-    ).all()
+        await db.exec(
+            select(sa_func.count()).where(CodeEdge.workspace_id == workspace_id)
+        )
+    ).first() or 0
     return {
-        "files": len(files),
-        "nodes": len(nodes),
-        "edges": len(edges),
+        "files": files,
+        "nodes": nodes,
+        "edges": edges,
     }
 
 
@@ -747,13 +751,17 @@ async def get_workspace_graph_data(
     total_node_count = total_nodes_result.first() or 0
     total_edge_count = total_edges_result.first() or 0
 
-    # Step 1: fetch all edges, cap by occurrence order.
-    all_edges = list(
+    # Step 1: fetch edges capped in SQL, ordered by id for stable results.
+    edges = list(
         (
-            await db.exec(select(CodeEdge).where(CodeEdge.workspace_id == workspace_id))
+            await db.exec(
+                select(CodeEdge)
+                .where(CodeEdge.workspace_id == workspace_id)
+                .order_by(col(CodeEdge.id))
+                .limit(edge_limit)
+            )
         ).all()
     )
-    edges = all_edges[:edge_limit]
 
     # Step 2: collect every node id referenced by the edge set.
     edge_node_ids: set[UUID] = set()
@@ -761,25 +769,48 @@ async def get_workspace_graph_data(
         edge_node_ids.add(e.src_id)
         edge_node_ids.add(e.dst_id)
 
-    # Step 3: fetch all nodes, sort by priority, then build the final set.
-    all_nodes = list(
-        (
-            await db.exec(select(CodeNode).where(CodeNode.workspace_id == workspace_id))
-        ).all()
-    )
-    all_nodes.sort(
-        key=lambda n: (
+    def _priority_key(n: CodeNode) -> tuple[int, str]:
+        return (
             _GRAPH_NODE_KIND_PRIORITY.get(n.kind, 5),
             n.qualified_name or n.name,
         )
-    )
 
-    # Nodes referenced by edges must always be included so every edge renders.
-    edge_nodes = [n for n in all_nodes if n.id in edge_node_ids]
+    # Step 3: nodes referenced by edges must always be included so every
+    # edge renders; fetch just those instead of the whole workspace.
+    edge_nodes: list[CodeNode] = []
+    if edge_node_ids:
+        edge_nodes = list(
+            (
+                await db.exec(
+                    select(CodeNode).where(
+                        CodeNode.workspace_id == workspace_id,
+                        col(CodeNode.id).in_(edge_node_ids),
+                    )
+                )
+            ).all()
+        )
+        edge_nodes.sort(key=_priority_key)
+
+    # Step 4: top up to the node limit with the highest-priority standalone
+    # nodes, ranking in SQL via a CASE mirror of _GRAPH_NODE_KIND_PRIORITY.
     remaining_slots = max(0, node_limit - len(edge_nodes))
-    remaining_nodes = [n for n in all_nodes if n.id not in edge_node_ids][
-        :remaining_slots
-    ]
+    remaining_nodes: list[CodeNode] = []
+    if remaining_slots:
+        kind_priority = sa_case(
+            _GRAPH_NODE_KIND_PRIORITY, value=col(CodeNode.kind), else_=5
+        )
+        stmt = (
+            select(CodeNode)
+            .where(CodeNode.workspace_id == workspace_id)
+            .order_by(
+                kind_priority,
+                sa_func.coalesce(CodeNode.qualified_name, CodeNode.name),
+            )
+            .limit(remaining_slots)
+        )
+        if edge_node_ids:
+            stmt = stmt.where(col(CodeNode.id).notin_(edge_node_ids))
+        remaining_nodes = list((await db.exec(stmt)).all())
     nodes = edge_nodes + remaining_nodes
 
     return nodes, edges, total_node_count, total_edge_count

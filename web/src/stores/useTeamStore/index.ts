@@ -78,6 +78,7 @@ function resetSessionState(
   state.isTeamWorking = false
   state.isContinuing = false
   state.isConnected = false
+  state.isSessionLoading = false
   state.error = null
   state.activeLoop = null
   state.setupRequired = null
@@ -187,6 +188,7 @@ export const useTeamStore = create<TeamStore>()(
     isTeamWorking: false,
     isContinuing: false,
     isConnected: false,
+    isSessionLoading: false,
     error: null,
     activeLoop: null,
     setupRequired: null,
@@ -773,6 +775,7 @@ export const useTeamStore = create<TeamStore>()(
       set((draft) => {
         draft.isTeamWorking = false
         draft.isContinuing = false
+        draft.isSessionLoading = true
       })
       try {
         const existingLiveNames = get().liveAgentNames
@@ -873,12 +876,14 @@ export const useTeamStore = create<TeamStore>()(
           draft._workspace = workspace ?? null
           draft._loadingOlder = false
           draft._resolvedSessionReadyId = null
+          draft.isSessionLoading = false
         })
       } catch (err) {
         if (get()._sessionGeneration !== gen) return
         set((draft) => {
           draft.error = err instanceof Error ? err.message : 'Failed to load session'
           draft.isContinuing = false
+          draft.isSessionLoading = false
         })
       }
     },

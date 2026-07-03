@@ -7,7 +7,9 @@ from datetime import datetime, timedelta, timezone
 from typing import NamedTuple
 from uuid import UUID
 
+import sqlalchemy as sa
 from loguru import logger
+from sqlalchemy.orm import aliased
 from sqlmodel import and_, col, or_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -267,7 +269,6 @@ async def save_message(
         db_message = SessionMessage(**kwargs)
         db.add(db_message)
         await db.flush()
-        await db.refresh(db_message)
         logger.debug(
             "message_saved session_id={} message_id={} role={}",
             session_id,
@@ -1064,18 +1065,45 @@ async def get_team_history(
         )
     ).all()
 
-    # TODO: N+1 — issues one message query per sub-session.  Replace with a
-    # single ``WHERE session_id IN (...)`` query and group in Python once
-    # cursor semantics per sub-session are no longer needed.
+    # One query for all sub-sessions instead of a paginated SELECT each: a
+    # window function ranks messages per session (SQLite supports these),
+    # mirroring ``_fetch_page`` exactly — top ``PAGE_SIZE + 1`` rows per
+    # session by ``created_at DESC`` with the same ``before`` cursor filter.
     members: list[TeamHistoryMemberData] = []
-    for sub in sub_sessions:
-        raw_member = [
-            msg
-            for msg in (await db.exec(_fetch_page(sub.id))).all()
-            if not _is_hidden_from_user(msg)
-        ]
-        member_msgs = list(reversed(raw_member[:_HISTORY_PAGE_SIZE]))
-        members.append(TeamHistoryMemberData(session=sub, messages=member_msgs))
+    if sub_sessions:
+        rn = (
+            sa.func.row_number()
+            .over(
+                partition_by=col(SessionMessage.session_id),
+                order_by=col(SessionMessage.created_at).desc(),
+            )
+            .label("rn")
+        )
+        inner = select(SessionMessage, rn).where(
+            col(SessionMessage.session_id).in_([sub.id for sub in sub_sessions])
+        )
+        if before is not None:
+            inner = inner.where(col(SessionMessage.created_at) < before)
+        subq = inner.subquery()
+        ranked_msg = aliased(SessionMessage, subq)
+        rows = (
+            await db.exec(
+                select(ranked_msg)
+                .where(subq.c.rn <= _HISTORY_PAGE_SIZE + 1)
+                .order_by(subq.c.session_id, subq.c.created_at.desc())
+            )
+        ).all()
+        by_session: dict[UUID, list[SessionMessage]] = {}
+        for msg in rows:
+            by_session.setdefault(msg.session_id, []).append(msg)
+        for sub in sub_sessions:
+            raw_member = [
+                msg
+                for msg in by_session.get(sub.id, [])
+                if not _is_hidden_from_user(msg)
+            ]
+            member_msgs = list(reversed(raw_member[:_HISTORY_PAGE_SIZE]))
+            members.append(TeamHistoryMemberData(session=sub, messages=member_msgs))
 
     return TeamHistoryData(
         lead_session=lead_session,

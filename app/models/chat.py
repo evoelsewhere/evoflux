@@ -66,6 +66,11 @@ class TZDateTime(TypeDecorator):
 
 class ChatSession(SQLModel, table=True):
     __tablename__: str = "chat_sessions"  # type: ignore[reportIncompatibleVariableOverride]
+    __table_args__ = (
+        # Me cover ORDER BY created_at listings (list_sessions_page,
+        # get_latest_top_level_session filter on parent_session_id IS NULL)
+        sa.Index("ix_chat_sessions_parent_created", "parent_session_id", "created_at"),
+    )
 
     id: UUID = Field(default_factory=uuid7, primary_key=True)
     parent_session_id: UUID | None = Field(

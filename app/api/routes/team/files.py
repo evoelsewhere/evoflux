@@ -216,7 +216,8 @@ async def list_workspace_files(session_id: str) -> WorkspaceFilesResponse:
     # No boundary filtering needed — snapshot_service has restored the
     # workspace to the reverted-boundary state, so the on-disk file set
     # already reflects what should be visible.
-    return _list_workspace_files(
+    return await asyncio.to_thread(
+        _list_workspace_files,
         await _session_workspace(session_id),
         session_id,
     )
@@ -256,7 +257,9 @@ async def set_session_workspace(
         row.workspace = new_workspace
         await db.commit()
 
-    return _list_workspace_files(await _session_workspace(session_id), session_id)
+    return await asyncio.to_thread(
+        _list_workspace_files, await _session_workspace(session_id), session_id
+    )
 
 
 @router.post("/{session_id}/files/upload", response_model=WorkspaceFilesResponse)
@@ -301,12 +304,12 @@ async def upload_workspace_files(
         dest = target_dir / raw_name
         content = await upload.read()
         try:
-            dest.write_bytes(content)
+            await asyncio.to_thread(dest.write_bytes, content)
             written.append(raw_name)
         except OSError as exc:
             raise HTTPException(status_code=500, detail=f"Write failed for {raw_name}: {exc}")
 
-    return _list_workspace_files(workspace, session_id)
+    return await asyncio.to_thread(_list_workspace_files, workspace, session_id)
 
 
 class FileMoveRequest(BaseModel):
@@ -340,13 +343,13 @@ async def move_workspace_file(
     except ValueError:
         raise HTTPException(status_code=400, detail="Destination escapes workspace root.")
     if dest == src:
-        return _list_workspace_files(workspace, session_id)
+        return await asyncio.to_thread(_list_workspace_files, workspace, session_id)
     dest.parent.mkdir(parents=True, exist_ok=True)
     try:
         src.rename(dest)
     except OSError as exc:
         raise HTTPException(status_code=500, detail=f"Move failed: {exc}")
-    return _list_workspace_files(workspace, session_id)
+    return await asyncio.to_thread(_list_workspace_files, workspace, session_id)
 
 
 @router.delete("/{session_id}/files/{file_path:path}", response_model=WorkspaceFilesResponse)
@@ -368,7 +371,7 @@ async def delete_workspace_file(
         raise HTTPException(status_code=404, detail="File not found.")
     except OSError as exc:
         raise HTTPException(status_code=500, detail=f"Delete failed: {exc}")
-    return _list_workspace_files(workspace, session_id)
+    return await asyncio.to_thread(_list_workspace_files, workspace, session_id)
 
 
 def _list_workspace_files(root: Path, session_id: str) -> WorkspaceFilesResponse:
@@ -503,7 +506,7 @@ async def write_coding_workspace_file(
         raise HTTPException(status_code=400, detail="Path escapes workspace root.")
 
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(content, encoding="utf-8")
+    await asyncio.to_thread(target.write_text, content, encoding="utf-8")
     return {"ok": True}
 
 
@@ -513,7 +516,7 @@ async def list_coding_workspace_files(workspace: str) -> CodingWorkspaceFilesRes
         resolved = team_manager.validate_workspace(workspace)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    listing = _list_workspace_files(Path(resolved), "workspace")
+    listing = await asyncio.to_thread(_list_workspace_files, Path(resolved), "workspace")
     return CodingWorkspaceFilesResponse(
         workspace=resolved,
         files=listing.files,
@@ -591,7 +594,7 @@ async def get_coding_workspace_git_diff(
         scoped_set = set(scoped)
         untracked = [u for u in untracked if u in scoped_set]
     tracked_diff = str(result.stdout)
-    full_diff = tracked_diff + _untracked_diff(root, untracked)
+    full_diff = tracked_diff + await asyncio.to_thread(_untracked_diff, root, untracked)
     truncated = len(full_diff) > _MAX_GIT_DIFF_CHARS
     diff = full_diff[:_MAX_GIT_DIFF_CHARS]
     return {

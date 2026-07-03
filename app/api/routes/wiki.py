@@ -6,6 +6,8 @@ Path validation happens inside :mod:`app.services.wiki`.
 
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -91,7 +93,7 @@ async def get_wiki_tree(
     if unprocessed_only:
         unprocessed = set(await get_unprocessed_notes(db))
 
-    tree = list_tree(unprocessed_notes=unprocessed)
+    tree = await asyncio.to_thread(list_tree, unprocessed_notes=unprocessed)
     return WikiTreeResponse(
         system=[_info(i) for i in tree.system],
         notes=[_info(i) for i in tree.notes],
@@ -110,7 +112,7 @@ async def get_wiki_file(
 ) -> WikiFileResponse:
     """Return raw contents of a wiki file."""
     try:
-        f = read_file(path)
+        f = await asyncio.to_thread(read_file, path)
     except WikiPathError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except FileNotFoundError as exc:
@@ -130,7 +132,7 @@ async def get_wiki_file(
 async def put_wiki_file(body: WikiWriteRequest) -> WikiFileResponse:
     """Create or overwrite a wiki file."""
     try:
-        f = write_file(body.path, body.content)
+        f = await asyncio.to_thread(write_file, body.path, body.content)
     except WikiPathError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return WikiFileResponse(
@@ -150,7 +152,7 @@ async def delete_wiki_file(
 ) -> dict[str, str]:
     """Delete a wiki file."""
     try:
-        delete_file(path)
+        await asyncio.to_thread(delete_file, path)
     except WikiPathError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except FileNotFoundError as exc:

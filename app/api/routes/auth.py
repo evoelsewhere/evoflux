@@ -177,7 +177,7 @@ async def oauth_callback(provider_id: str, body: OAuthCallbackBody) -> dict[str,
         events.append((event, data))
 
     try:
-        plugin.oauth_callback(body.code, _sink)
+        await asyncio.to_thread(plugin.oauth_callback, body.code, _sink)
     except Exception as exc:  # noqa: BLE001 - return plugin auth failures to UI
         logger.warning("oauth_callback_failed provider={} error={}", provider_id, exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -5,6 +5,8 @@ All three endpoints read OTEL span JSONL files via DuckDB (a core dependency).
 
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException, Query, status
 
 from app.services.observability_service import (
@@ -20,7 +22,8 @@ router = APIRouter()
 @router.get("/summary")
 async def summary(days: int = Query(default=7, ge=1, le=90)) -> dict:
     """Return span-derived aggregates over the last ``days`` days."""
-    return summarize(days=days).to_dict()
+    result = await asyncio.to_thread(summarize, days=days)
+    return result.to_dict()
 
 
 @router.get("/traces")
@@ -34,8 +37,8 @@ async def traces(
     Each item identifies a trace (``trace_id``) plus summary metrics; the UI
     uses ``trace_id`` to fetch the full span tree via ``GET /traces/{id}``.
     """
-    items = list_traces(days=days, limit=limit, offset=offset)
-    total = count_traces(days=days)
+    items = await asyncio.to_thread(list_traces, days=days, limit=limit, offset=offset)
+    total = await asyncio.to_thread(count_traces, days=days)
     return {
         "traces": [t.to_dict() for t in items],
         "limit": limit,
@@ -56,7 +59,7 @@ async def trace_detail(
     a trace is expected to be old.  Returns 404 if the trace is not found
     in the window (expired by retention or typo).
     """
-    detail = get_trace(trace_id=trace_id, days=days)
+    detail = await asyncio.to_thread(get_trace, trace_id=trace_id, days=days)
     if detail is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

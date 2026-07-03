@@ -10,7 +10,9 @@ Three endpoints:
 
 from __future__ import annotations
 
+import asyncio
 import shutil
+import time
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +29,31 @@ from app.core.version import VERSION
 from app.services import team_manager
 
 router = APIRouter()
+
+# ``validate_agents_dir`` globs + parses every agent .md (and may write
+# blueprint files). Health/diagnostics endpoints are polled, so run it off
+# the loop and cache the outcome — including a ValueError — briefly.
+_VALIDATE_AGENTS_TTL_S = 30.0
+_validate_agents_cache: tuple[float, bool | ValueError] | None = None
+
+
+async def validate_agents_dir_cached() -> bool:
+    """Off-loop, briefly-cached wrapper around ``team_manager.validate_agents_dir``."""
+    global _validate_agents_cache
+    now = time.monotonic()
+    cached = _validate_agents_cache
+    if cached is not None and now - cached[0] < _VALIDATE_AGENTS_TTL_S:
+        outcome = cached[1]
+        if isinstance(outcome, ValueError):
+            raise outcome
+        return outcome
+    try:
+        result = await asyncio.to_thread(team_manager.validate_agents_dir)
+    except ValueError as exc:
+        _validate_agents_cache = (now, exc)
+        raise
+    _validate_agents_cache = (now, result)
+    return result
 
 
 @router.get("/live")
@@ -57,7 +84,7 @@ async def _check_ready(session: AsyncSession) -> dict:
     # readiness signal.  Report on whether the agents directory is loadable
     # (parses + has a lead) instead.
     try:
-        checks["team"] = "ok" if team_manager.validate_agents_dir() else "missing"
+        checks["team"] = "ok" if await validate_agents_dir_cached() else "missing"
     except ValueError as exc:
         logger.warning("health_ready_team_invalid error={}", exc)
         checks["team"] = "invalid"
@@ -203,7 +230,7 @@ async def health_diagnostics(session: AsyncSession = Depends(get_session)) -> di
 
     # ── 3. Team / agents ─────────────────────────────────────────────────────
     try:
-        agents_ok = team_manager.validate_agents_dir()
+        agents_ok = await validate_agents_dir_cached()
         if agents_ok:
             checks.append(_check("team", "Agents", "ok", "Agents directory is valid"))
         else:

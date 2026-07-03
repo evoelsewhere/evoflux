@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
@@ -38,9 +39,10 @@ async def list_commands(
     workspace: str | None = Query(None, description="Coding workspace directory."),
 ) -> CommandListResponse:
     workspace_path = _workspace_path(workspace)
+    commands = await asyncio.to_thread(discover_commands, workspace_path)
     rows = [
         CommandSummary(name=cmd.name, description=cmd.description, source=cmd.source)
-        for cmd in discover_commands(workspace_path).values()
+        for cmd in commands.values()
     ]
     rows.sort(key=lambda r: r.name)
     return CommandListResponse(commands=rows)
@@ -55,7 +57,8 @@ async def render(
     workspace_path = _workspace_path(workspace)
     # Disk-discovered user commands take precedence so a user can shadow a
     # built-in by dropping their own ``init.md`` into a commands root.
-    cmd = discover_commands(workspace_path).get(name) or get_builtin_command(name)
+    commands = await asyncio.to_thread(discover_commands, workspace_path)
+    cmd = commands.get(name) or get_builtin_command(name)
     if cmd is None:
         raise HTTPException(status_code=404, detail=f"Command '{name}' not found.")
     return CommandRenderResponse(

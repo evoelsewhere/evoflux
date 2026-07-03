@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import os
 import re
@@ -223,12 +224,12 @@ async def list_coding_workspace_worktrees(source_workspace: str) -> list[Worktre
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    _require_git_repo(source)
+    await asyncio.to_thread(_require_git_repo, source)
 
     source_real = os.path.realpath(source)
     managed_root = _managed_root(source)
     infos: list[WorktreeInfo] = []
-    for entry in _list_worktree_entries(source):
+    for entry in await asyncio.to_thread(_list_worktree_entries, source):
         directory = entry.get("directory")
         if not directory or os.path.realpath(directory) == source_real:
             continue
@@ -253,7 +254,7 @@ async def remove_coding_workspace_worktree(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    _require_git_repo(source)
+    await asyncio.to_thread(_require_git_repo, source)
     directory = Path(body.directory).expanduser().resolve()
     root = _managed_root(source)
     if root not in directory.parents:
@@ -261,14 +262,16 @@ async def remove_coding_workspace_worktree(
             status_code=403,
             detail="Only EvoFlux-managed worktrees can be removed.",
         )
-    entry = _entry_for_directory(source, directory)
+    entry = await asyncio.to_thread(_entry_for_directory, source, directory)
     if entry is None:
         async with db_module.async_session_factory() as db:
             async with db.begin():
                 await mark_coding_workspace_deleted(db, str(directory))
         return {"removed": True}
 
-    removed = _run_git(source, "worktree", "remove", "--force", str(directory))
+    removed = await asyncio.to_thread(
+        _run_git, source, "worktree", "remove", "--force", str(directory)
+    )
     if removed.returncode != 0:
         detail = (
             removed.stderr.strip()
@@ -279,7 +282,7 @@ async def remove_coding_workspace_worktree(
 
     branch = entry.get("branch")
     if branch and branch.startswith("EvoFlux/"):
-        _run_git(source, "branch", "-D", branch)
+        await asyncio.to_thread(_run_git, source, "branch", "-D", branch)
     async with db_module.async_session_factory() as db:
         async with db.begin():
             await mark_coding_workspace_deleted(db, str(directory))
@@ -295,17 +298,19 @@ async def create_coding_workspace_worktree(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    _require_git_repo(source)
+    await asyncio.to_thread(_require_git_repo, source)
     name = _validate_name(body.name)
-    branch = _validate_branch(source, body.branch, name=name, detached=body.detached)
-    info = _candidate(source, name, branch)
+    branch = await asyncio.to_thread(
+        _validate_branch, source, body.branch, name=name, detached=body.detached
+    )
+    info = await asyncio.to_thread(_candidate, source, name, branch)
 
     args = ["worktree", "add", "--no-checkout"]
     if info.branch:
         args.extend(["-b", info.branch, info.directory])
     else:
         args.extend(["--detach", info.directory, "HEAD"])
-    created = _run_git(source, *args)
+    created = await asyncio.to_thread(_run_git, source, *args)
     if created.returncode != 0:
         detail = (
             created.stderr.strip()
@@ -314,11 +319,15 @@ async def create_coding_workspace_worktree(
         )
         raise HTTPException(status_code=500, detail=detail)
 
-    populated = _run_git(Path(info.directory), "reset", "--hard")
+    populated = await asyncio.to_thread(
+        _run_git, Path(info.directory), "reset", "--hard"
+    )
     if populated.returncode != 0:
-        _run_git(source, "worktree", "remove", "--force", info.directory)
+        await asyncio.to_thread(
+            _run_git, source, "worktree", "remove", "--force", info.directory
+        )
         if info.branch:
-            _run_git(source, "branch", "-D", info.branch)
+            await asyncio.to_thread(_run_git, source, "branch", "-D", info.branch)
         detail = (
             populated.stderr.strip()
             or populated.stdout.strip()

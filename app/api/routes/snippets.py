@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
@@ -33,9 +34,10 @@ async def list_snippets(
     workspace: str | None = Query(None, description="Coding workspace directory."),
 ) -> SnippetListResponse:
     workspace_path = _workspace_path(workspace)
+    snippets = await asyncio.to_thread(discover_snippets, workspace_path)
     rows = [
         SnippetSummary(name=item.name, description=item.description, source=item.source)
-        for item in discover_snippets(workspace_path).values()
+        for item in snippets.values()
     ]
     rows.sort(key=lambda r: r.name)
     return SnippetListResponse(snippets=rows)
@@ -47,7 +49,8 @@ async def render_snippet(
     workspace: str | None = Query(None, description="Coding workspace directory."),
 ) -> SnippetRenderResponse:
     workspace_path = _workspace_path(workspace)
-    snippet = discover_snippets(workspace_path).get(name)
+    snippets = await asyncio.to_thread(discover_snippets, workspace_path)
+    snippet = snippets.get(name)
     if snippet is None:
         raise HTTPException(status_code=404, detail=f"Snippet '{name}' not found.")
     return SnippetRenderResponse(name=snippet.name, content=snippet.body)

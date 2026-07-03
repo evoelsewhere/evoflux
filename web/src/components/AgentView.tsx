@@ -15,7 +15,7 @@
  * `AgentPane` for split/unified modes.
  */
 
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { memo, useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
 
 import { LazyMarkdownBlock } from '@/utils/LazyMarkdownBlock'
@@ -32,10 +32,10 @@ import { AssistantTurnFooter } from './AssistantTurnFooter'
 import { groupConsecutiveToolCalls, ToolCallGroupCard } from './ToolCallGroup'
 import type { ToolBlockGroup } from './ToolCallGroup'
 import { PendingMessageQueue } from './PendingMessageQueue'
-import { getVisibleTurnWindow, partitionTurns } from '@/utils/turns'
-import { latestDirectUserBlockId, mergeBlocks } from '@/utils/blocks'
+import { getVisibleTurnWindow, partitionTurns, type TurnItem } from '@/utils/turns'
+import { latestDirectUserBlockId } from '@/utils/blocks'
 import { extractSleepPrefix, formatTime } from '@/utils/format'
-import { latestMCPAppResourceBlockIds } from '@/utils/mcp-app-artifacts'
+import { mcpAppResourceUri } from '@/utils/mcp-app-artifacts'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { findCommittedMentions } from './InputBar.mentions'
 import { resolveApiUrl } from '@/api/client'
@@ -263,7 +263,7 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell 
 }
 
 
-function BlockRenderer({ block, isStreaming, sessionId, onRevert, latestMCPAppBlockIds }: { block: ContentBlock; isStreaming: boolean; sessionId?: string; onRevert?: () => void; latestMCPAppBlockIds?: Set<string> }) {
+const BlockRenderer = memo(function BlockRenderer({ block, isStreaming, sessionId, onRevert, latestMCPAppBlockIds }: { block: ContentBlock; isStreaming: boolean; sessionId?: string; onRevert?: () => void; latestMCPAppBlockIds?: Set<string> }) {
   switch (block.type) {
     case 'user': {
       // Me check if this is an inbox message (from another agent, not real user)
@@ -358,7 +358,7 @@ function BlockRenderer({ block, isStreaming, sessionId, onRevert, latestMCPAppBl
     default:
       return null
   }
-}
+})
 
 export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError, isContinuing = false, onContinue, emptyState, onSuggestion, suggestions, chapters }: AgentViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -376,19 +376,92 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
     void useTeamStore.getState().undoTeam()
   }, [])
 
-  const allBlocks = useMemo(() => mergeBlocks(blocks, currentBlocks), [blocks, currentBlocks])
-  const visibleBlocks = useMemo(
-    () => allBlocks.filter((block) => block.type !== 'compaction'),
-    [allBlocks],
+  // Me: everything derived from the finalized ``blocks`` prop is memoized on
+  // [blocks] only (stable between SSE chunks); the live ``currentBlocks``
+  // tail — a fresh array on every streamed token — is merged in a cheap
+  // final step so per-chunk work is O(current turn), not O(whole history).
+  const totalLen = blocks.length + currentBlocks.length
+
+  const finalizedVisibleCount = useMemo(
+    () => blocks.reduce((n, block) => (block.type === 'compaction' ? n : n + 1), 0),
+    [blocks],
   )
-  const totalLen = allBlocks.length
-  const latestUserBlockId = useMemo(() => latestDirectUserBlockId(allBlocks), [allBlocks])
-  const turnItems = useMemo(() => partitionTurns(allBlocks), [allBlocks])
+  const visibleCount =
+    finalizedVisibleCount +
+    currentBlocks.reduce((n, block) => (block.type === 'compaction' ? n : n + 1), 0)
+
+  const finalizedLatestUserBlockId = useMemo(() => latestDirectUserBlockId(blocks), [blocks])
+  const latestUserBlockId = useMemo(
+    () => latestDirectUserBlockId(currentBlocks) ?? finalizedLatestUserBlockId,
+    [currentBlocks, finalizedLatestUserBlockId],
+  )
+
+  const finalizedTurnItems = useMemo(() => partitionTurns(blocks), [blocks])
+  const turnItems = useMemo(() => {
+    if (currentBlocks.length === 0) return finalizedTurnItems
+    const offset = blocks.length
+    const liveTurnItems = partitionTurns(currentBlocks).map((item): TurnItem =>
+      item.kind === 'user'
+        ? { ...item, index: item.index + offset }
+        : { ...item, startIndex: item.startIndex + offset },
+    )
+    const lastFinalized = finalizedTurnItems[finalizedTurnItems.length - 1]
+    const firstLive = liveTurnItems[0]
+    // A trailing finalized assistant turn and a leading live assistant run
+    // are one contiguous turn — merge them so keys/footers match what a
+    // full partition of the merged block list would produce.
+    if (lastFinalized?.kind === 'assistant' && firstLive?.kind === 'assistant') {
+      return [
+        ...finalizedTurnItems.slice(0, -1),
+        {
+          kind: 'assistant' as const,
+          blocks: [...lastFinalized.blocks, ...firstLive.blocks],
+          startIndex: lastFinalized.startIndex,
+        },
+        ...liveTurnItems.slice(1),
+      ]
+    }
+    return [...finalizedTurnItems, ...liveTurnItems]
+  }, [blocks.length, currentBlocks, finalizedTurnItems])
   const { hiddenTurnCount, visibleTurnItems } = useMemo(
     () => getVisibleTurnWindow(turnItems, renderedTurnCount),
     [renderedTurnCount, turnItems],
   )
-  const latestMCPAppBlockIds = useMemo(() => latestMCPAppResourceBlockIds(allBlocks), [allBlocks])
+
+  const finalizedMCPAppIdsByUri = useMemo(() => {
+    const byUri = new Map<string, string>()
+    for (const block of blocks) {
+      if (block.type !== 'tool' || !block.toolDone) continue
+      const uri = mcpAppResourceUri(block)
+      if (uri) byUri.set(uri, block.id)
+    }
+    return byUri
+  }, [blocks])
+  const mcpAppIdsRef = useRef<Set<string>>(new Set())
+  const latestMCPAppBlockIds = useMemo(() => {
+    let byUri = finalizedMCPAppIdsByUri
+    if (currentBlocks.length > 0) {
+      byUri = new Map(finalizedMCPAppIdsByUri)
+      for (const block of currentBlocks) {
+        if (block.type !== 'tool' || !block.toolDone) continue
+        const uri = mcpAppResourceUri(block)
+        if (uri) byUri.set(uri, block.id)
+      }
+    }
+    const next = new Set(byUri.values())
+    // Keep the previous Set identity when contents are unchanged so the
+    // memoized BlockRenderer isn't invalidated on every streamed chunk.
+    const prev = mcpAppIdsRef.current
+    if (prev.size === next.size) {
+      let same = true
+      for (const id of next) {
+        if (!prev.has(id)) { same = false; break }
+      }
+      if (same) return prev
+    }
+    mcpAppIdsRef.current = next
+    return next
+  }, [currentBlocks, finalizedMCPAppIdsByUri])
 
   const chapterByMessageId = useMemo(() => {
     const map = new Map<string, Chapter>()
@@ -494,13 +567,16 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
   }, [blocks.length, renderedTurnCount])
 
   // Me single scroll effect — block count or last block text changed
-  const lastContent = allBlocks[allBlocks.length - 1]?.content ?? ''
+  const lastContent =
+    currentBlocks[currentBlocks.length - 1]?.content ??
+    blocks[blocks.length - 1]?.content ??
+    ''
   useEffect(() => {
     if (pinnedRef.current) scrollToBottom()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [totalLen, lastContent])
 
-  const isEmpty = visibleBlocks.length === 0 && !isWorking
+  const isEmpty = visibleCount === 0 && !isWorking
 
   useEffect(() => {
     if (!isEmpty) return

@@ -48,6 +48,7 @@ import { useProvidersQuery, useRegistryQuery, useTriggerDreamMutation } from '@/
 import { useCommandsQuery } from '@/queries/useCommandsQuery'
 import { useSnippetsQuery } from '@/queries/useSnippetsQuery'
 import { renderCommand, renderSnippet, resolveApiUrl, resolveTeamSession, setSessionPermissionMode, getTeamSession } from '@/api/client'
+import { useShallow } from 'zustand/react/shallow'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { useToastStore } from '@/stores/useToastStore'
 import { prependSession, prependWorkspaceSession } from '@/stores/cache-invalidation-bridge'
@@ -89,6 +90,14 @@ interface TeamChatViewProps {
   workspace?: string | null
   codingSessionLoading?: boolean
 }
+
+type AgentStatus = AgentStream['status']
+
+// Stable fallbacks so narrowed selectors below never return a fresh
+// reference when the underlying stream field is absent.
+const EMPTY_AGENT_STREAMS: Record<string, AgentStream> = {}
+const EMPTY_BLOCKS: AgentStream['blocks'] = []
+const EMPTY_REVERTED_MESSAGES: Array<{ role: string; content: string }> = []
 
 async function attachmentToFile(att: MessageAttachment): Promise<File | null> {
   const url = resolveApiUrl(att.url)
@@ -163,7 +172,6 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
   const pushToast = useToastStore((s) => s.push)
 
   const activeAgent    = useTeamStore((s) => s.activeAgent)
-  const agentStreams   = useTeamStore((s) => s.agentStreams)
   const agentNames     = useTeamStore((s) => s.agentNames)
   const isTeamWorking  = useTeamStore((s) => s.isTeamWorking)
   const isContinuing   = useTeamStore((s) => s.isContinuing)
@@ -190,6 +198,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
   const leadName       = useTeamStore((s) => s.leadName)
   const activeLoop     = useTeamStore((s) => s.activeLoop)
   const isConnected    = useTeamStore((s) => s.isConnected)
+  const isSessionLoading = useTeamStore((s) => s.isSessionLoading)
   const promptSuggestions = useTeamStore((s) => s.promptSuggestions)
 
   // Utility modal state lives in useUIStore so only one can be open at a time.
@@ -210,16 +219,40 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
   const activeBlocks        = useTeamStore((s) => s.activeAgent ? s.agentStreams[s.activeAgent]?.blocks : undefined)
   const activeCurrentBlocks = useTeamStore((s) => s.activeAgent ? s.agentStreams[s.activeAgent]?.currentBlocks : undefined)
   const activeStatus        = useTeamStore((s) => s.activeAgent ? s.agentStreams[s.activeAgent]?.status : undefined)
+  const activeLastError     = useTeamStore((s) => s.activeAgent ? s.agentStreams[s.activeAgent]?.lastError : undefined)
+  const hasActiveStream     = useTeamStore((s) => Boolean(s.activeAgent && s.agentStreams[s.activeAgent]))
 
-  const splitAgentNames = agentNames.filter((name) => agentStreams[name]?.status !== 'offline')
+  // Per-purpose narrowed subscriptions — the full ``agentStreams`` map gets a
+  // new reference on every streamed token, so subscribing to it wholesale
+  // re-rendered this entire shell per SSE event. ``useShallow`` keeps the
+  // derived array/object identities stable while statuses are unchanged.
+  const splitAgentNames = useTeamStore(useShallow(
+    (s) => s.agentNames.filter((name) => s.agentStreams[name]?.status !== 'offline'),
+  ))
+  const agentStatuses = useTeamStore(useShallow((s) => {
+    const statuses: Record<string, AgentStatus | undefined> = {}
+    for (const name of s.agentNames) statuses[name] = s.agentStreams[name]?.status
+    return statuses
+  }))
+  // Only monitor/split views render every agent's stream — gate the
+  // whole-map subscription on the view mode so the default agent view
+  // stops re-rendering this shell on every token of every agent.
+  const gridAgentStreams = useTeamStore((s) =>
+    effectiveViewMode === 'split' || effectiveViewMode === 'monitor' ? s.agentStreams : null,
+  )
+  // Finalized lead blocks only change on turn boundaries — not per token.
+  const leadBlocks = useTeamStore((s) => (s.leadName ? s.agentStreams[s.leadName]?.blocks : undefined))
+  const leadRevertedCount = useTeamStore((s) => (s.leadName ? s.agentStreams[s.leadName]?.revertedCount ?? 0 : 0))
+  const leadRevertedMessages = useTeamStore(
+    (s) => (s.leadName ? s.agentStreams[s.leadName]?.revertedMessages ?? EMPTY_REVERTED_MESSAGES : EMPTY_REVERTED_MESSAGES),
+  )
   const historyPrompts = useMemo(() => {
-    const blocks = leadName ? agentStreams[leadName]?.blocks : undefined
-    if (!blocks) return []
-    return [...blocks]
+    if (!leadBlocks) return []
+    return [...leadBlocks]
       .reverse()
       .filter((block) => block.type === 'user' && block.content.trim())
       .map((block) => block.content)
-  }, [agentStreams, leadName])
+  }, [leadBlocks])
 
   const { data: todosData } = useTodosQuery(sessionIdState)
   const todos = todosData?.todos ?? []
@@ -965,6 +998,43 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
     : null
   const loopProgress = activeLoop ? `${activeLoop.used}/${activeLoop.limit}` : null
 
+  // While `loadSession` fetches history, the reset store has an (empty)
+  // stream for the lead, so the AgentView branch would win and render its
+  // empty state — a misleading blank chat / workspace card with no loading
+  // feedback. Show the skeleton instead until either history commits or
+  // live content arrives (never blank an already-visible transcript on the
+  // tab-refocus reload path).
+  const showHistorySkeleton =
+    !!sessionId &&
+    isSessionLoading &&
+    (activeBlocks?.length ?? 0) === 0 &&
+    (activeCurrentBlocks?.length ?? 0) === 0
+  const historySkeleton = (
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden" aria-hidden="true">
+      <div className="flex-1 overflow-hidden">
+        <div className="mx-auto max-w-4xl space-y-8 px-4 py-6">
+          <div className="flex justify-end">
+            <div className="h-9 w-44 animate-pulse rounded-2xl bg-(--bg-key)" />
+          </div>
+          <div className="space-y-2.5">
+            <div className="h-3.5 w-3/4 animate-pulse rounded-lg bg-(--bg-key)" />
+            <div className="h-3.5 w-full animate-pulse rounded-lg bg-(--bg-key)" />
+            <div className="h-3.5 w-2/3 animate-pulse rounded-lg bg-(--bg-key)" />
+            <div className="mt-1 h-3.5 w-5/6 animate-pulse rounded-lg bg-(--bg-key)" />
+          </div>
+          <div className="flex justify-end">
+            <div className="h-9 w-32 animate-pulse rounded-2xl bg-(--bg-key)" />
+          </div>
+          <div className="space-y-2.5">
+            <div className="h-3.5 w-1/2 animate-pulse rounded-lg bg-(--bg-key)" />
+            <div className="h-3.5 w-5/6 animate-pulse rounded-lg bg-(--bg-key)" />
+            <div className="h-3.5 w-3/4 animate-pulse rounded-lg bg-(--bg-key)" />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
@@ -1079,7 +1149,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
               <ActiveAgentSwitcher
                 activeAgent={activeAgent}
                 agents={agentNames}
-                streams={agentStreams}
+                statuses={agentStatuses}
                 onSelect={setActiveAgent}
               />
             )}
@@ -1140,7 +1210,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
                 codingIdentityLabel={codingIdentityLabel}
                 activeAgent={activeAgent}
                 agents={agentNames}
-                streams={agentStreams}
+                statuses={agentStatuses}
                 onSelectAgent={setActiveAgent}
                 onWiki={() => { toggleWiki(); closeMobileActionsMenu() }}
                 onScheduler={() => { toggleScheduler(); closeMobileActionsMenu() }}
@@ -1249,14 +1319,14 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
           <MonitorView
             agentNames={agentNames}
             leadName={leadName}
-            agentStreams={agentStreams}
+            agentStreams={gridAgentStreams ?? EMPTY_AGENT_STREAMS}
           />
         ) : effectiveViewMode === 'split' && splitAgentNames.length > 0 ? (
           <div className="min-h-0 flex-1 p-3">
             <SplitGrid
               agentNames={splitAgentNames}
               leadName={leadName}
-              agentStreams={agentStreams}
+              agentStreams={gridAgentStreams ?? EMPTY_AGENT_STREAMS}
               todos={todos}
               isContinuing={isContinuing}
               onContinue={continueTeam}
@@ -1293,13 +1363,15 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
               Open workspace
             </Button>
           </div>
-        ) : activeAgent && agentStreams[activeAgent] ? (
+        ) : showHistorySkeleton ? (
+          historySkeleton
+        ) : activeAgent && hasActiveStream ? (
           <AgentView
-            blocks={activeBlocks ?? agentStreams[activeAgent].blocks}
-            currentBlocks={activeCurrentBlocks ?? agentStreams[activeAgent].currentBlocks}
-            isWorking={(activeStatus ?? agentStreams[activeAgent].status) === 'working'}
-            isError={(activeStatus ?? agentStreams[activeAgent].status) === 'error'}
-            lastError={agentStreams[activeAgent].lastError}
+            blocks={activeBlocks ?? EMPTY_BLOCKS}
+            currentBlocks={activeCurrentBlocks ?? EMPTY_BLOCKS}
+            isWorking={activeStatus === 'working'}
+            isError={activeStatus === 'error'}
+            lastError={activeLastError}
             isContinuing={isContinuing && activeAgent === leadName}
             onContinue={activeAgent === leadName ? continueTeam : undefined}
             suggestions={activeAgent === leadName ? promptSuggestions : null}
@@ -1330,29 +1402,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
             )}
           </div>
         ) : sessionId && !isConnected ? (
-          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden" aria-hidden="true">
-            <div className="flex-1 overflow-hidden">
-              <div className="mx-auto max-w-4xl space-y-8 px-4 py-6">
-                <div className="flex justify-end">
-                  <div className="h-9 w-44 animate-pulse rounded-2xl bg-(--bg-key)" />
-                </div>
-                <div className="space-y-2.5">
-                  <div className="h-3.5 w-3/4 animate-pulse rounded-lg bg-(--bg-key)" />
-                  <div className="h-3.5 w-full animate-pulse rounded-lg bg-(--bg-key)" />
-                  <div className="h-3.5 w-2/3 animate-pulse rounded-lg bg-(--bg-key)" />
-                  <div className="mt-1 h-3.5 w-5/6 animate-pulse rounded-lg bg-(--bg-key)" />
-                </div>
-                <div className="flex justify-end">
-                  <div className="h-9 w-32 animate-pulse rounded-2xl bg-(--bg-key)" />
-                </div>
-                <div className="space-y-2.5">
-                  <div className="h-3.5 w-1/2 animate-pulse rounded-lg bg-(--bg-key)" />
-                  <div className="h-3.5 w-5/6 animate-pulse rounded-lg bg-(--bg-key)" />
-                  <div className="h-3.5 w-3/4 animate-pulse rounded-lg bg-(--bg-key)" />
-                </div>
-              </div>
-            </div>
-          </div>
+          historySkeleton
         ) : null}
 
         <PermissionApprovalModal />
@@ -1395,8 +1445,8 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
                     : 'Message the team…'
             }
             capabilities={effectiveCapabilities}
-            revertedCount={leadName ? agentStreams[leadName]?.revertedCount ?? 0 : 0}
-            revertedMessages={leadName ? agentStreams[leadName]?.revertedMessages ?? [] : []}
+            revertedCount={leadRevertedCount}
+            revertedMessages={leadRevertedMessages}
             onRedo={() => { void useTeamStore.getState().redoTeam() }}
             sessionModel={sessionModel}
             defaultModel={leadAgent?.model ?? null}
@@ -1603,7 +1653,7 @@ interface MobileChatActionsProps {
   codingIdentityLabel: string | null
   activeAgent: string | null
   agents: string[]
-  streams: Record<string, AgentStream>
+  statuses: Record<string, AgentStatus | undefined>
   onSelectAgent: (agent: string) => void
   onWiki: () => void
   onScheduler: () => void
@@ -1617,7 +1667,7 @@ function MobileChatActions({
   codingIdentityLabel,
   activeAgent,
   agents,
-  streams,
+  statuses,
   onSelectAgent,
   onWiki,
   onScheduler,
@@ -1699,7 +1749,7 @@ function MobileChatActions({
                         onClick={() => { onSelectAgent(name); onOpenChange(false) }}
                         className="flex min-h-10 w-full items-center gap-2 rounded-md px-2 text-left text-sm transition-colors hover:bg-(--bg-key)"
                       >
-                        <span className={`h-2 w-2 rounded-full ${dotClassFor(name, streams[name])}`} aria-hidden="true" />
+                        <span className={`h-2 w-2 rounded-full ${dotClassFor(name, statuses[name])}`} aria-hidden="true" />
                         <span className="min-w-0 flex-1 truncate font-mono text-xs">{name}</span>
                         {name === activeAgent && <Check size={13} className="text-(--color-accent)" aria-hidden="true" />}
                       </button>
@@ -1739,7 +1789,7 @@ function MobileChatActions({
 interface ActiveAgentSwitcherProps {
   activeAgent: string
   agents: string[]
-  streams: Record<string, AgentStream>
+  statuses: Record<string, AgentStatus | undefined>
   onSelect: (agent: string) => void
 }
 
@@ -1750,10 +1800,10 @@ const DOT_BY_ROLE: Record<AgentRole, string> = {
   explorer: 'bg-(--color-text-muted)',
 }
 
-function dotClassFor(agent: string, stream: AgentStream | undefined): string {
-  if (stream?.status === 'error') return 'bg-(--color-error)'
-  if (stream?.status === 'working') return 'animate-pulse bg-(--color-accent)'
-  if (stream?.status === 'offline') return 'bg-(--color-text-subtle) opacity-50'
+function dotClassFor(agent: string, status: AgentStatus | undefined): string {
+  if (status === 'error') return 'bg-(--color-error)'
+  if (status === 'working') return 'animate-pulse bg-(--color-accent)'
+  if (status === 'offline') return 'bg-(--color-text-subtle) opacity-50'
   if (isAgentRole(agent)) return DOT_BY_ROLE[agent]
   return 'bg-(--color-success)'
 }
@@ -1761,7 +1811,7 @@ function dotClassFor(agent: string, stream: AgentStream | undefined): string {
 function ActiveAgentSwitcher({
   activeAgent,
   agents,
-  streams,
+  statuses,
   onSelect,
 }: ActiveAgentSwitcherProps) {
   return (
@@ -1772,7 +1822,7 @@ function ActiveAgentSwitcher({
         aria-label={`Switch active agent (current: ${activeAgent})`}
       >
         <span
-          className={`h-2 w-2 shrink-0 rounded-full ${dotClassFor(activeAgent, streams[activeAgent])}`}
+          className={`h-2 w-2 shrink-0 rounded-full ${dotClassFor(activeAgent, statuses[activeAgent])}`}
           aria-hidden="true"
         />
         <span className="min-w-0 truncate">{activeAgent}</span>
@@ -1793,7 +1843,7 @@ function ActiveAgentSwitcher({
             className="flex min-w-40 items-center gap-2 font-mono text-xs whitespace-nowrap"
           >
             <span
-              className={`h-2 w-2 shrink-0 rounded-full ${dotClassFor(name, streams[name])}`}
+              className={`h-2 w-2 shrink-0 rounded-full ${dotClassFor(name, statuses[name])}`}
               aria-hidden="true"
             />
             <span>{name}</span>
