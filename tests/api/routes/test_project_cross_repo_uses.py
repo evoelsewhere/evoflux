@@ -52,8 +52,12 @@ async def _create_project(*repos: Path):
         return project.id
 
 
-async def _reindex(client, workspace: Path) -> None:
-    res = await client.post("/api/code-graph/reindex", params={"workspace": str(workspace)})
+async def _reindex(client, workspace: Path, *, full: bool = False) -> None:
+    res = await client.post(
+        "/api/code-graph/reindex",
+        params={"workspace": str(workspace)},
+        json={"full": full} if full else None,
+    )
     assert res.status_code == 202
     await _wait_until_indexed(client, workspace)
 
@@ -177,6 +181,70 @@ async def test_resolved_uses_edge_survives_incremental_reindex_after_field_remov
     # deleted/replaced on reindex.
     src.write_text("public class ConceptResource {\n}\n")
     await _reindex(client, repo_a)
+
+    edges = await _edges(client, project_id)
+    assert [e["id"] for e in edges] == [edge_id]
+    assert edges[0]["status"] == "resolved"
+
+
+@pytest.mark.asyncio
+async def test_reattach_survives_full_reindex_of_either_side(client, tmp_path: Path):
+    """A full reindex of EITHER repo in a resolved cross-repo edge assigns
+    fresh node ids (``reindex_workspace`` deletes-then-recreates unconditionally,
+    unlike the incremental path's id-preserving reconciliation). SQLite never
+    enforces the model's ``ondelete="SET NULL"`` (no ``PRAGMA foreign_keys=ON``
+    is set anywhere in this app), so the old id is left dangling in
+    ``dst_node_id``/``src_node_id`` instead of going NULL — the resolve pass
+    must detect and repair that, not just the NULL case."""
+    repo_a = tmp_path / "rest-module"
+    repo_a.mkdir()
+    (repo_a / "ConceptResource.java").write_text(
+        "public class ConceptResource {\n"
+        "    private final ConceptService conceptService;\n"
+        "    public ConceptResource(ConceptService conceptService) {\n"
+        "        this.conceptService = conceptService;\n"
+        "    }\n"
+        "}\n"
+    )
+
+    repo_b = tmp_path / "core"
+    repo_b.mkdir()
+    (repo_b / "ConceptService.java").write_text("public class ConceptService {}\n")
+
+    project_id = await _create_project(repo_a, repo_b)
+    await _reindex(client, repo_a)
+    await _reindex(client, repo_b)
+    await _resolve_static(client, project_id)
+
+    resolved = await _edges(client, project_id, status="resolved")
+    assert len(resolved) == 1
+    edge_id = resolved[0]["id"]
+    original_src_node_id = resolved[0]["src_node_id"]
+    original_dst_node_id = resolved[0]["dst_node_id"]
+    assert original_src_node_id is not None
+    assert original_dst_node_id is not None
+
+    # Full-reindex BOTH repos — every node (on both sides of the edge) gets a
+    # brand new id. The row itself survives (method IS NOT NULL), but its
+    # node references are now dangling, not NULL.
+    await _reindex(client, repo_a, full=True)
+    await _reindex(client, repo_b, full=True)
+
+    stale = await _edges(client, project_id, status="resolved")
+    assert [e["id"] for e in stale] == [edge_id]
+    assert stale[0]["src_node_id"] == original_src_node_id
+    assert stale[0]["dst_node_id"] == original_dst_node_id
+
+    stats = await _resolve_static(client, project_id)
+    assert stats["reattached"] == 2  # one dst-side, one src-side
+
+    repaired = await _edges(client, project_id, status="resolved")
+    assert [e["id"] for e in repaired] == [edge_id]
+    assert repaired[0]["src_node_id"] is not None
+    assert repaired[0]["src_node_id"] != original_src_node_id
+    assert repaired[0]["dst_node_id"] is not None
+    assert repaired[0]["dst_node_id"] != original_dst_node_id
+    assert repaired[0]["dst_qualified_name"] == "ConceptService"
 
     edges = await _edges(client, project_id)
     assert [e["id"] for e in edges] == [edge_id]

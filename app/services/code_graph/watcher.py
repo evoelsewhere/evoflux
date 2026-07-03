@@ -25,8 +25,13 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from app.core.runtime_settings import load_runtime_settings
+from app.services.code_graph.cross_repo_jobs import cross_repo_jobs
 from app.services.code_graph.parsers.registry import default_registry
 from app.services.code_graph_service import reindex_workspace, resolve_workspace_id
+from app.services.coding_project_service import (
+    get_project_workspaces,
+    get_projects_for_workspace,
+)
 from app.services.coding_workspace_service import list_workspace_paths_with_sessions
 from app.services.workspace_file_watcher import (
     FsChangeEvent,
@@ -247,6 +252,29 @@ class CodeGraphWatcher:
                             root_path=workspace,
                             incremental=True,
                         )
+
+                        # Chain into cross-repo resolve for every multi-repo
+                        # project this workspace belongs to — mirrors what the
+                        # manual reindex endpoint already does
+                        # (reindex_project_code_graph), now that a full resolve
+                        # pass is cheap enough (~15-20s on a real 4-repo,
+                        # 40k-node project, was hours before the Tier
+                        # A/reattach fixes) to run after every incremental
+                        # reindex instead of only on an explicit click.
+                        # cross_repo_jobs.start() is idempotent per project
+                        # (a no-op if a resolve is already running for it), so
+                        # firing it here on every save is safe even when
+                        # several repos in the same project are edited in
+                        # quick succession. Skipped when nothing actually
+                        # changed — a debounced no-op reindex can't have
+                        # introduced a new unresolved reference.
+                        if stats.changed_files or stats.deleted_files:
+                            for project_id in await get_projects_for_workspace(
+                                db, workspace_id
+                            ):
+                                pairs = await get_project_workspaces(db, project_id)
+                                if len(pairs) > 1:
+                                    await cross_repo_jobs.start(project_id=project_id)
                     logger.info(
                         "code_graph_watcher_reindexed workspace={} changed={} deleted={}",
                         workspace,

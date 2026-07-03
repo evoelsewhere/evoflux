@@ -384,8 +384,184 @@ async def test_code_tools_against_indexed_workspace(tmp_path):
         assert "Service.run" in symbol
         assert "helper" in symbol  # calls helper
 
-        neighbours = await code_neighbors(name="Service.run", direction="out")
+        neighbours = await code_neighbors(name="Service.run")
         assert "helper" in neighbours
+    finally:
+        _sandbox_ctx.reset(token)
+
+
+@pytest.mark.asyncio
+async def test_code_tools_scope_project_resolves_sibling_repo(tmp_path):
+    """scope='project' must resolve a symbol that only exists in a sibling
+    repo — the gap that motivated giving code_neighbors/code_references a
+    scope param instead of adding separate cross-repo tools."""
+    from app.core.db import async_session_factory
+    from app.services.code_graph_service import reindex_workspace
+    from app.services.coding_project_service import create_project
+    from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
+    from app.agent.tools.builtin.code_graph import (
+        code_neighbors,
+        code_references,
+        code_search,
+    )
+
+    repo_a = tmp_path / "repo-a"
+    repo_b = tmp_path / "repo-b"
+    repo_a.mkdir()
+    repo_b.mkdir()
+    (repo_a / "main.py").write_text("def caller():\n    pass\n", encoding="utf-8")
+    (repo_b / "lib.py").write_text(
+        "def shared_helper():\n    return support()\n\n"
+        "def support():\n    return 1\n\n"
+        "def other_caller():\n    shared_helper()\n",
+        encoding="utf-8",
+    )
+
+    async with async_session_factory() as db:
+        await create_project(
+            db, name="Scope Test", workspace_paths=[str(repo_a), str(repo_b)]
+        )
+        await db.commit()
+
+    async with async_session_factory() as db:
+        from app.services.code_graph_service import resolve_workspace_id
+
+        ws_a_id = await resolve_workspace_id(db, path=str(repo_a))
+        ws_b_id = await resolve_workspace_id(db, path=str(repo_b))
+        await reindex_workspace(db, workspace_id=ws_a_id, root_path=str(repo_a))
+        await reindex_workspace(db, workspace_id=ws_b_id, root_path=str(repo_b))
+        await db.commit()
+
+    token = set_sandbox(SandboxConfig(workspace=str(repo_a)))
+    try:
+        # code_search: symbol only exists in the sibling repo.
+        found = await code_search(query="shared_helper", scope="project")
+        assert "shared_helper" in found
+        assert "repo-b" in found
+
+        # code_neighbors: outbound from a symbol resolved in the sibling repo.
+        neighbours = await code_neighbors(name="shared_helper", scope="project")
+        assert "support" in neighbours
+        assert "repo-b" in neighbours
+
+        # code_references: inbound to a symbol resolved in the sibling repo.
+        refs = await code_references(name="shared_helper", scope="project")
+        assert "other_caller" in refs
+        assert "repo-b" in refs
+
+        # Without scope='project', the symbol isn't visible from repo_a.
+        local_only = await code_neighbors(name="shared_helper")
+        assert "No symbol named" in local_only
+    finally:
+        _sandbox_ctx.reset(token)
+
+
+@pytest.mark.asyncio
+async def test_code_path_resolves_pure_sibling_repo_path(tmp_path):
+    """code_path must find a path between two symbols that BOTH live in a
+    sibling repo, with neither in the active session's own workspace.
+
+    Regression test: _code_path used to discard the workspace_id that
+    _resolve_name_anywhere_in_project resolved each candidate to, and always
+    seeded find_shortest_path's BFS with the ACTIVE session's workspace_id
+    instead. When source and target both live in a sibling repo, that seed
+    was wrong from the very first BFS iteration, so the intra-repo edge
+    query looked in the wrong workspace and found nothing — even though a
+    direct edge existed. Confirmed against real OpenMRS data before this fix
+    (paths entirely within a non-active sibling repo always failed)."""
+    from app.core.db import async_session_factory
+    from app.services.code_graph_service import reindex_workspace
+    from app.services.coding_project_service import create_project
+    from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
+    from app.agent.tools.builtin.code_graph import code_path
+
+    active_repo = tmp_path / "active-repo"
+    repo_a = tmp_path / "repo-a"
+    active_repo.mkdir()
+    repo_a.mkdir()
+    (active_repo / "unrelated.py").write_text("def unrelated():\n    pass\n", encoding="utf-8")
+    (repo_a / "main.py").write_text(
+        "def foo():\n    return bar()\n\ndef bar():\n    return 1\n", encoding="utf-8"
+    )
+
+    async with async_session_factory() as db:
+        await create_project(
+            db, name="Path Scope Test", workspace_paths=[str(active_repo), str(repo_a)]
+        )
+        await db.commit()
+
+    async with async_session_factory() as db:
+        from app.services.code_graph_service import resolve_workspace_id
+
+        active_id = await resolve_workspace_id(db, path=str(active_repo))
+        repo_a_id = await resolve_workspace_id(db, path=str(repo_a))
+        await reindex_workspace(db, workspace_id=active_id, root_path=str(active_repo))
+        await reindex_workspace(db, workspace_id=repo_a_id, root_path=str(repo_a))
+        await db.commit()
+
+    # Active session is rooted at active_repo, which has neither foo nor bar.
+    token = set_sandbox(SandboxConfig(workspace=str(active_repo)))
+    try:
+        result = await code_path(source="foo", target="bar", max_hops=6)
+        assert "1 hops" in result, result
+        assert "foo" in result and "bar" in result
+    finally:
+        _sandbox_ctx.reset(token)
+
+
+@pytest.mark.asyncio
+async def test_code_path_tries_other_candidates_before_same_symbol(tmp_path):
+    """A degenerate same-node match among multiple fuzzy candidates must not
+    short-circuit a real path between two other, genuinely different
+    candidates.
+
+    Regression test: when source/target names are ambiguous enough that the
+    sibling-repo fallback search returns multiple candidates for each side,
+    _code_path used to try combinations in order and return immediately on
+    the first one — including a combination that degenerately resolved both
+    sides to the SAME node ("same symbol"), even when a different, correct
+    combination existed with a real path between two distinct symbols.
+    Confirmed against real OpenMRS data (RestHelperService -> "same symbol"
+    instead of the real 1-hop `implements` edge to RestHelperServiceImpl)."""
+    from app.core.db import async_session_factory
+    from app.services.code_graph_service import reindex_workspace
+    from app.services.coding_project_service import create_project
+    from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
+    from app.agent.tools.builtin.code_graph import code_path
+
+    active_repo = tmp_path / "active-repo"
+    repo_a = tmp_path / "repo-a"
+    active_repo.mkdir()
+    repo_a.mkdir()
+    (active_repo / "unrelated.py").write_text("def unrelated():\n    pass\n", encoding="utf-8")
+    # "Helper" is a substring of "HelperImpl" — the sibling fallback's
+    # lexical search can match a query for one against both.
+    (repo_a / "helper.py").write_text(
+        "class Helper:\n    pass\n\n"
+        "class HelperImpl(Helper):\n    pass\n",
+        encoding="utf-8",
+    )
+
+    async with async_session_factory() as db:
+        await create_project(
+            db, name="Same Symbol Test", workspace_paths=[str(active_repo), str(repo_a)]
+        )
+        await db.commit()
+
+    async with async_session_factory() as db:
+        from app.services.code_graph_service import resolve_workspace_id
+
+        active_id = await resolve_workspace_id(db, path=str(active_repo))
+        repo_a_id = await resolve_workspace_id(db, path=str(repo_a))
+        await reindex_workspace(db, workspace_id=active_id, root_path=str(active_repo))
+        await reindex_workspace(db, workspace_id=repo_a_id, root_path=str(repo_a))
+        await db.commit()
+
+    token = set_sandbox(SandboxConfig(workspace=str(active_repo)))
+    try:
+        result = await code_path(source="Helper", target="HelperImpl", max_hops=6)
+        assert "same symbol" not in result.lower(), result
+        assert "inherits" in result, result
     finally:
         _sandbox_ctx.reset(token)
 

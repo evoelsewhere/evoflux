@@ -297,7 +297,6 @@ def _default_tool_registry() -> dict[str, Tool]:
         code_search,
         code_symbol,
     )
-    from app.agent.tools.builtin.code_cross_repo import code_cross_repo_search
     from app.agent.tools.builtin.plan import enter_plan_mode, exit_plan_mode
     from app.agent.tools.builtin.chapter import mark_chapter
     from app.agent.tools.builtin.bg_tasks import (
@@ -338,7 +337,6 @@ def _default_tool_registry() -> dict[str, Tool]:
         "code_references": code_references,
         "code_map": code_map,
         "code_path": code_path,
-        "code_cross_repo_search": code_cross_repo_search,
         "enter_plan_mode": enter_plan_mode,
         "exit_plan_mode": exit_plan_mode,
         "shell_bg_start": shell_bg_start,

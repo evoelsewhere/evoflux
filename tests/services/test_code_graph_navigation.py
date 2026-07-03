@@ -147,7 +147,7 @@ async def test_find_shortest_path_direct_call(setup_db, tmp_path: Path):
 
         path = await find_shortest_path(
             db,
-            workspace_id=workspace_id,
+            src_workspace_id=workspace_id,
             src_id=src_nodes[0].id,
             dst_id=dst_nodes[0].id,
         )
@@ -174,7 +174,7 @@ async def test_find_shortest_path_multi_hop(setup_db, tmp_path: Path):
 
         path = await find_shortest_path(
             db,
-            workspace_id=workspace_id,
+            src_workspace_id=workspace_id,
             src_id=src_nodes[0].id,
             dst_id=dst_nodes[0].id,
         )
@@ -213,7 +213,7 @@ async def test_find_shortest_path_returns_none_when_unreachable(
 
         path = await find_shortest_path(
             db,
-            workspace_id=workspace_id,
+            src_workspace_id=workspace_id,
             src_id=src_nodes[0].id,
             dst_id=dst_nodes[0].id,
             max_hops=4,
@@ -234,8 +234,108 @@ async def test_find_shortest_path_same_node(setup_db, tmp_path: Path):
 
         path = await find_shortest_path(
             db,
-            workspace_id=workspace_id,
+            src_workspace_id=workspace_id,
             src_id=nodes[0].id,
             dst_id=nodes[0].id,
         )
         assert path == []
+
+
+@pytest.mark.asyncio
+async def test_find_shortest_path_continues_past_cross_repo_hop(
+    setup_db, tmp_path: Path
+):
+    """BFS must keep traversing a sibling repo's OWN edges after crossing into
+    it via a resolved CrossRepoEdge, not dead-end there.
+
+    Regression test: the query that fetches a frontier node's neighbours used
+    to be hardcoded to the *starting* workspace_id, so a node reached via a
+    cross-repo hop (living in a different workspace) could never have its own
+    outbound/inbound edges found on the next iteration."""
+    from app.core.db import async_session_factory
+    from app.models.code_graph import CrossRepoEdge
+    from app.services.code_graph_service import (
+        find_nodes_by_name,
+        find_shortest_path,
+        reindex_workspace,
+    )
+    from app.services.coding_project_service import create_project
+
+    repo_a = tmp_path / "repo-a"
+    repo_b = tmp_path / "repo-b"
+    repo_a.mkdir()
+    repo_b.mkdir()
+    (repo_a / "main.py").write_text("def entry():\n    pass\n", encoding="utf-8")
+    (repo_b / "lib.py").write_text(
+        "def shared_service():\n    return internal_helper()\n\n"
+        "def internal_helper():\n    return 1\n",
+        encoding="utf-8",
+    )
+
+    async with async_session_factory() as db:
+        project = await create_project(
+            db, name="Path Test", workspace_paths=[str(repo_a), str(repo_b)]
+        )
+        await db.commit()
+        project_id = project.id
+
+    async with async_session_factory() as db:
+        from app.services.code_graph_service import resolve_workspace_id
+
+        repo_a_id = await resolve_workspace_id(db, path=str(repo_a))
+        repo_b_id = await resolve_workspace_id(db, path=str(repo_b))
+        await reindex_workspace(db, workspace_id=repo_a_id, root_path=str(repo_a))
+        await reindex_workspace(db, workspace_id=repo_b_id, root_path=str(repo_b))
+        await db.commit()
+
+    async with async_session_factory() as db:
+        entry_node = (
+            await find_nodes_by_name(db, workspace_id=repo_a_id, name="entry")
+        )[0]
+        shared_service_node = (
+            await find_nodes_by_name(db, workspace_id=repo_b_id, name="shared_service")
+        )[0]
+        internal_helper_node = (
+            await find_nodes_by_name(db, workspace_id=repo_b_id, name="internal_helper")
+        )[0]
+
+        # Manually seed a resolved cross-repo edge, as the resolver pipeline
+        # would produce: repo-a's entry() "calls" repo-b's shared_service().
+        db.add(
+            CrossRepoEdge(
+                project_id=project_id,
+                src_workspace_id=repo_a_id,
+                src_node_id=entry_node.id,
+                src_file_path="main.py",
+                raw_reference="shared_service",
+                dst_name_hint="shared_service",
+                kind="calls",
+                status="resolved",
+                method="static_fqn",
+                confidence=1.0,
+                dst_workspace_id=repo_b_id,
+                dst_node_id=shared_service_node.id,
+                dst_qualified_name=shared_service_node.qualified_name,
+            )
+        )
+        await db.commit()
+
+        # entry (repo-a) --[cross-repo]--> shared_service (repo-b)
+        #   --[intra-repo-b calls]--> internal_helper (repo-b)
+        path = await find_shortest_path(
+            db,
+            src_workspace_id=repo_a_id,
+            src_id=entry_node.id,
+            dst_id=internal_helper_node.id,
+            max_hops=4,
+            project_id=project_id,
+        )
+        assert path is not None, (
+            "BFS should follow the intra-repo-b hop after crossing into "
+            "repo-b via the resolved CrossRepoEdge"
+        )
+        assert len(path) == 2
+        hop_node_ids = [path[0][0].id, path[0][2].id, path[1][0].id, path[1][2].id]
+        assert entry_node.id in hop_node_ids
+        assert shared_service_node.id in hop_node_ids
+        assert internal_helper_node.id in hop_node_ids
