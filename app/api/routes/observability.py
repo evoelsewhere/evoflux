@@ -1,0 +1,68 @@
+"""Observability endpoints — summary, trace list, and trace detail.
+
+All three endpoints read OTEL span JSONL files via DuckDB (a core dependency).
+"""
+
+from __future__ import annotations
+
+import asyncio
+
+from fastapi import APIRouter, HTTPException, Query, status
+
+from app.services.observability_service import (
+    count_traces,
+    get_trace,
+    list_traces,
+    summarize,
+)
+
+router = APIRouter()
+
+
+@router.get("/summary")
+async def summary(days: int = Query(default=7, ge=1, le=90)) -> dict:
+    """Return span-derived aggregates over the last ``days`` days."""
+    result = await asyncio.to_thread(summarize, days=days)
+    return result.to_dict()
+
+
+@router.get("/traces")
+async def traces(
+    days: int = Query(default=7, ge=1, le=90),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> dict:
+    """Return a newest-first list of ``agent_run`` spans (one row per turn).
+
+    Each item identifies a trace (``trace_id``) plus summary metrics; the UI
+    uses ``trace_id`` to fetch the full span tree via ``GET /traces/{id}``.
+    """
+    items = await asyncio.to_thread(list_traces, days=days, limit=limit, offset=offset)
+    total = await asyncio.to_thread(count_traces, days=days)
+    return {
+        "traces": [t.to_dict() for t in items],
+        "limit": limit,
+        "offset": offset,
+        "total": total,
+        "has_next": offset + limit < total,
+    }
+
+
+@router.get("/traces/{trace_id}")
+async def trace_detail(
+    trace_id: str,
+    days: int = Query(default=30, ge=1, le=90),
+) -> dict:
+    """Return every span belonging to ``trace_id`` (start-time ordered).
+
+    The ``days`` bound exists only to cap the JSONL scan — set it high when
+    a trace is expected to be old.  Returns 404 if the trace is not found
+    in the window (expired by retention or typo).
+    """
+    detail = await asyncio.to_thread(get_trace, trace_id=trace_id, days=days)
+    if detail is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"reason": "trace_not_found", "trace_id": trace_id},
+        )
+    return detail.to_dict()

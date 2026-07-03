@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "EvoFlux (dev)",
+  "mainBinaryName": "EvoFlux-dev",
+  "identifier": "com.evoflux.desktop.dev",
+  "bundle": {
+    "createUpdaterArtifacts": false,
+    "macOS": {
+      "infoPlist": "Info.plist"
+    }
+  }
+}

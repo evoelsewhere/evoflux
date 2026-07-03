@@ -1,0 +1,728 @@
+"""Workspace indexer — walks a coding workspace and builds an in-memory graph.
+
+This module is pure (no database, no async): it produces a :class:`WorkspaceIndex`
+that the service layer persists. Cross-file edges (``calls``, ``inherits``, …) are
+resolved by name with a high-precision heuristic: a name target is linked only
+when it resolves to a *single* definition in the workspace. Ambiguous or external
+targets are dropped, keeping the P1 graph clean. Scope-aware resolution is future
+work.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import os
+from collections.abc import Iterable, Iterator, Sequence
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from app.agent.tools.builtin.filesystem._ignore import (
+    _SKIPPED_DIR_NAMES,
+    is_gitignored,
+    load_gitignore_rules,
+)
+from app.services.code_graph.parsers.registry import ParserRegistry, default_registry
+from app.services.code_graph.types import (
+    EDGE_IMPLEMENTS,
+    EDGE_IMPORTS,
+    EDGE_INHERITS,
+    EDGE_REFERENCES,
+    EDGE_USES,
+    NODE_CLASS,
+    NODE_ENUM,
+    NODE_FIELD,
+    NODE_FUNCTION,
+    NODE_INTERFACE,
+    NODE_METHOD,
+    NODE_MODULE,
+    NODE_NAMESPACE,
+    NODE_PROPERTY,
+    NODE_STRUCT,
+    NODE_VARIABLE,
+)
+
+if TYPE_CHECKING:
+    from app.services.code_graph.path_resolve import ModuleResolution
+
+# Skip files larger than this — generated bundles/minified blobs aren't worth
+# parsing and can be huge.
+_MAX_FILE_BYTES = 1_500_000
+
+# Definition kinds a name-based call/reference may resolve to.
+_CALLABLE_KINDS = frozenset(
+    {NODE_FUNCTION, NODE_METHOD, NODE_CLASS, NODE_ENUM, NODE_STRUCT}
+)
+# Definition kinds an inherits/implements edge may resolve to.
+_TYPE_KINDS = frozenset({NODE_CLASS, NODE_INTERFACE, NODE_STRUCT})
+# Import targets can be any defined symbol.
+_ANY_KINDS = frozenset(
+    {
+        NODE_FUNCTION,
+        NODE_METHOD,
+        NODE_CLASS,
+        NODE_INTERFACE,
+        NODE_MODULE,
+        NODE_VARIABLE,
+        NODE_FIELD,
+        NODE_PROPERTY,
+        NODE_ENUM,
+        NODE_STRUCT,
+        NODE_NAMESPACE,
+    }
+)
+# Field/property access targets.
+_FIELD_KINDS = frozenset({NODE_FIELD, NODE_PROPERTY, NODE_VARIABLE})
+# Edge kinds worth keeping as cross-repo candidates when they don't resolve
+# locally at all (as opposed to same-workspace EDGE_IMPORTS, which already
+# gets this treatment separately). All three carry a type name — precise and
+# low-volume compared to e.g. every method signature's parameter/return
+# types (EDGE_REFERENCES) or a bare method-call name (EDGE_CALLS), which are
+# too ambiguous to resolve across repos without receiver-type inference.
+_CROSS_REPO_CANDIDATE_KINDS = frozenset({EDGE_USES, EDGE_INHERITS, EDGE_IMPLEMENTS})
+
+
+def _allowed_kinds_for(kind: str) -> frozenset[str]:
+    """Definition kinds a name-based edge of this ``kind`` may resolve to."""
+    if kind in {EDGE_INHERITS, EDGE_IMPLEMENTS, EDGE_REFERENCES}:
+        return _TYPE_KINDS
+    if kind == EDGE_IMPORTS:
+        return _ANY_KINDS
+    return _CALLABLE_KINDS
+
+
+@dataclass(frozen=True, slots=True)
+class IndexedNode:
+    key: str
+    kind: str
+    name: str
+    qualified_name: str
+    file_path: str
+    language: str
+    line_start: int
+    line_end: int
+    signature: str | None
+    docstring: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class IndexedEdge:
+    src_key: str
+    dst_key: str
+    kind: str
+    file_path: str
+    line: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class FileIndex:
+    file_path: str
+    language: str
+    content_hash: str
+    node_count: int
+    edge_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class UnresolvedReference:
+    """An edge that couldn't resolve within this workspace, with 0 local
+    name candidates — plausibly a sibling repo's symbol rather than a typo
+    or dead reference.
+
+    Persisted by the service layer as an unresolved ``CrossRepoEdge`` row
+    (only for workspaces that belong to a project) instead of being dropped
+    the way any other unresolved same-workspace edge is — the whole point is
+    that the target may be a sibling repo, resolvable later. Originally
+    EDGE_IMPORTS-only; also covers EDGE_USES/EDGE_INHERITS/EDGE_IMPLEMENTS
+    (see ``_CROSS_REPO_CANDIDATE_KINDS``).
+    """
+
+    src_key: str
+    kind: str
+    raw_reference: str
+    dst_name_hint: str | None
+    file_path: str
+    line: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class AmbiguousEdge:
+    """An edge whose target name matched 2+ candidates.
+
+    Stored so the UI and future resolution passes can surface these as
+    "ambiguous" rather than silently dropping them. The agent can use
+    ``code_references`` / ``code_neighbors`` to disambiguate manually.
+    """
+
+    src_key: str
+    dst_name: str
+    kind: str
+    candidate_keys: tuple[str, ...]
+    file_path: str
+    line: int | None
+
+
+@dataclass(slots=True)
+class WorkspaceIndex:
+    nodes: list[IndexedNode] = field(default_factory=list)
+    edges: list[IndexedEdge] = field(default_factory=list)
+    files: list[FileIndex] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    unresolved_references: list[UnresolvedReference] = field(default_factory=list)
+    ambiguous_edges: list[AmbiguousEdge] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class ExistingDef:
+    """A definition already stored in the graph, used as a resolution target.
+
+    During an incremental re-index only the changed files are re-parsed; the
+    nodes of *unchanged* files are passed in as ``ExistingDef`` so cross-file
+    edges (e.g. a re-parsed file calling a function defined elsewhere) still
+    resolve. ``key`` is the ``str(uuid)`` of the stored :class:`CodeNode`.
+    """
+
+    key: str
+    name: str
+    kind: str
+    file_path: str = ""
+
+
+def index_workspace(
+    root: str | Path, *, registry: ParserRegistry | None = None
+) -> WorkspaceIndex:
+    """Parse every supported file under ``root`` into a resolved graph."""
+    registry = registry or default_registry()
+    root_path = Path(root).expanduser().resolve()
+    return _build_index(
+        _iter_source_files(root_path, registry),
+        registry,
+        existing_defs=(),
+        known_file_paths=frozenset(),
+        root_path=root_path,
+    )
+
+
+def index_files(
+    root: str | Path,
+    rel_paths: Iterable[str],
+    *,
+    registry: ParserRegistry | None = None,
+    existing_defs: Sequence[ExistingDef] = (),
+    known_file_paths: frozenset[str] = frozenset(),
+) -> WorkspaceIndex:
+    """Parse only ``rel_paths`` (relative POSIX paths) into a resolved graph.
+
+    Cross-file edges resolve against the parsed nodes *plus* ``existing_defs``
+    (nodes of unchanged files already in the graph). The returned nodes/files
+    cover only the parsed files; edges may target an ``ExistingDef.key`` (a
+    stored node's ``str(uuid)``).
+    """
+    registry = registry or default_registry()
+    root_path = Path(root).expanduser().resolve()
+    return _build_index(
+        _iter_named_files(root_path, rel_paths, registry),
+        registry,
+        existing_defs=existing_defs,
+        known_file_paths=known_file_paths,
+        root_path=root_path,
+    )
+
+
+def hash_workspace_files(
+    root: str | Path, *, registry: ParserRegistry | None = None
+) -> dict[str, str]:
+    """Return ``{relative_path: sha256}`` for every indexable file under ``root``.
+
+    Cheap relative to parsing — used by incremental re-index to detect which
+    files actually changed before deciding what to re-parse.
+    """
+    registry = registry or default_registry()
+    root_path = Path(root).expanduser().resolve()
+    return {
+        rel: _hash_bytes(source)
+        for rel, source in _iter_source_files(root_path, registry)
+    }
+
+
+def _build_index(
+    files_iter: Iterator[tuple[str, bytes]],
+    registry: ParserRegistry,
+    *,
+    existing_defs: Sequence[ExistingDef],
+    known_file_paths: frozenset[str] = frozenset(),
+    root_path: Path | None = None,
+) -> WorkspaceIndex:
+    """Shared core: turn a stream of ``(rel_path, bytes)`` into a resolved graph."""
+    from app.services.code_graph.path_resolve import (
+        ModuleResolution,
+        build_repo_context,
+        resolve_module_paths,
+    )
+
+    index = WorkspaceIndex()
+
+    # Per-file raw extraction keyed by workspace-unique node key. Seed the name
+    # map and kind map with pre-existing definitions so cross-file edges from a
+    # re-parsed file can resolve to unchanged symbols.
+    name_to_keys: dict[str, list[str]] = {}
+    qname_to_keys: dict[str, list[str]] = {}
+    extra_kinds: dict[str, str] = {}
+    for definition in existing_defs:
+        name_to_keys.setdefault(definition.name, []).append(definition.key)
+        extra_kinds[definition.key] = definition.kind
+
+    raw_edges: list[
+        tuple[str, str | None, str | None, str, int | None, str | None]
+    ] = []
+    # (src_key, dst_local_id, dst_name, kind, line, module_path)
+    local_to_key: dict[tuple[str, str], str] = {}
+    files_by_path: dict[str, list[str]] = {}
+
+    # Seed files_by_path from existing defs so path-aware resolution can find
+    # symbols in unchanged files during incremental reindex.
+    for definition in existing_defs:
+        if definition.file_path:
+            files_by_path.setdefault(definition.file_path, []).append(definition.key)
+
+    for file_path, source in files_iter:
+        parser = registry.for_path(file_path)
+        if parser is None:
+            continue
+        try:
+            result = parser.parse(file_path=file_path, source=source)
+        except Exception as exc:  # noqa: BLE001 — never let one file break indexing
+            index.errors.append(f"{file_path}: {exc}")
+            continue
+
+        node_count = 0
+        for node in result.nodes:
+            key = f"{file_path}::{node.local_id}"
+            local_to_key[(file_path, node.local_id)] = key
+            index.nodes.append(
+                IndexedNode(
+                    key=key,
+                    kind=node.kind,
+                    name=node.name,
+                    qualified_name=node.qualified_name,
+                    file_path=file_path,
+                    language=result.language,
+                    line_start=node.line_start,
+                    line_end=node.line_end,
+                    signature=node.signature,
+                    docstring=node.docstring,
+                )
+            )
+            name_to_keys.setdefault(node.name, []).append(key)
+            if node.qualified_name != node.name:
+                qname_to_keys.setdefault(node.qualified_name, []).append(key)
+            files_by_path.setdefault(file_path, []).append(key)
+            node_count += 1
+
+        for edge in result.edges:
+            src_key = local_to_key.get((file_path, edge.src_local_id))
+            if src_key is None:
+                continue
+            raw_edges.append(
+                (
+                    src_key,
+                    edge.dst_local_id,
+                    edge.dst_name,
+                    edge.kind,
+                    edge.line,
+                    edge.module_path,
+                )
+            )
+
+        index.files.append(
+            FileIndex(
+                file_path=file_path,
+                language=result.language,
+                content_hash=_hash_bytes(source),
+                node_count=node_count,
+                edge_count=0,  # filled in after resolution
+            )
+        )
+
+    # Build path-aware module resolution.
+    module_resolution = ModuleResolution()
+    if root_path is not None:
+        all_known = frozenset(files_by_path.keys()) | known_file_paths
+        repo_ctx = build_repo_context(root_path)
+        module_resolution = resolve_module_paths(
+            raw_edges, files_by_path, all_known, repo_ctx
+        )
+
+    _resolve_edges(
+        index,
+        raw_edges,
+        local_to_key,
+        name_to_keys,
+        qname_to_keys,
+        extra_kinds,
+        module_resolution=module_resolution,
+    )
+    _backfill_edge_counts(index)
+    return index
+
+
+def _resolve_edges(
+    index: WorkspaceIndex,
+    raw_edges: list[tuple[str, str | None, str | None, str, int | None, str | None]],
+    local_to_key: dict[tuple[str, str], str],
+    name_to_keys: dict[str, list[str]],
+    qname_to_keys: dict[str, list[str]],
+    extra_kinds: dict[str, str] | None = None,
+    module_resolution: ModuleResolution | None = None,
+) -> None:
+    kind_by_key = {n.key: n.kind for n in index.nodes}
+    if extra_kinds:
+        kind_by_key.update(extra_kinds)
+    file_by_key = {n.key: n.file_path for n in index.nodes}
+    seen: set[tuple[str, str, str]] = set()
+
+    for src_key, dst_local_id, dst_name, kind, line, module_path in raw_edges:
+        dst_key: str | None = None
+        if dst_local_id is not None:
+            src_file = file_by_key.get(src_key, "")
+            dst_key = local_to_key.get((src_file, dst_local_id))
+        elif dst_name is not None:
+            allowed = _allowed_kinds_for(kind)
+            if kind == EDGE_IMPORTS:
+                # Try path-aware resolution first for import edges.
+                if module_resolution is not None and module_path:
+                    resolved = module_resolution.by_import_edge.get(
+                        (src_key, module_path)
+                    )
+                    if resolved is not None and resolved.dst_key is not None:
+                        dst_key = resolved.dst_key
+                        # Skip _resolve_qualified — we have a precise match.
+                    elif resolved is not None and resolved.dst_file_path is not None:
+                        # File resolved but specific symbol didn't disambiguate.
+                        # Leave as unresolved rather than guessing.
+                        pass
+                    else:
+                        dst_key = _resolve_qualified(
+                            dst_name,
+                            name_to_keys,
+                            qname_to_keys,
+                            kind_by_key,
+                            allowed,
+                        )
+                else:
+                    dst_key = _resolve_qualified(
+                        dst_name,
+                        name_to_keys,
+                        qname_to_keys,
+                        kind_by_key,
+                        allowed,
+                    )
+
+            if dst_key is None and kind != EDGE_IMPORTS:
+                # Try scope-aware resolution first (Phase 2): use import
+                # context to narrow the search to a specific file before
+                # falling back to the global name heuristic.
+                if module_resolution is not None:
+                    src_file = file_by_key.get(src_key, "")
+                    dst_key = _resolve_scoped(
+                        dst_name,
+                        src_file,
+                        module_resolution,
+                        name_to_keys,
+                        kind_by_key,
+                        allowed,
+                    )
+                if dst_key is None:
+                    dst_key = _resolve_qualified(
+                        dst_name, name_to_keys, qname_to_keys, kind_by_key, allowed
+                    )
+
+        if dst_key is None or dst_key == src_key:
+            # An import that doesn't resolve *within this workspace* may
+            # still resolve to a sibling repo in the same project — keep the
+            # raw reference instead of dropping it outright like every other
+            # unresolved edge kind.
+            if dst_key is None and kind == EDGE_IMPORTS and module_path:
+                index.unresolved_references.append(
+                    UnresolvedReference(
+                        src_key=src_key,
+                        kind=EDGE_IMPORTS,
+                        raw_reference=module_path,
+                        dst_name_hint=dst_name,
+                        file_path=file_by_key.get(src_key, ""),
+                        line=line,
+                    )
+                )
+            elif dst_key is None and dst_name is not None and kind != EDGE_IMPORTS:
+                # Check if the name matched multiple candidates (ambiguous)
+                # rather than matching nothing at all. Store these so the UI
+                # can surface them as "ambiguous" instead of silently dropping.
+                candidates = _collect_candidates(
+                    dst_name,
+                    name_to_keys,
+                    qname_to_keys,
+                    kind_by_key,
+                    _allowed_kinds_for(kind),
+                )
+                if len(candidates) >= 2:
+                    index.ambiguous_edges.append(
+                        AmbiguousEdge(
+                            src_key=src_key,
+                            dst_name=dst_name,
+                            kind=kind,
+                            candidate_keys=tuple(candidates),
+                            file_path=file_by_key.get(src_key, ""),
+                            line=line,
+                        )
+                    )
+                elif not candidates and kind in _CROSS_REPO_CANDIDATE_KINDS:
+                    # Zero local matches at all (not just ambiguous) — this
+                    # may be a sibling repo's symbol rather than a typo or
+                    # dead reference. Keep it as a candidate for cross-repo
+                    # resolution instead of dropping it, same idea as an
+                    # unresolved import but for a wired dependency/supertype.
+                    index.unresolved_references.append(
+                        UnresolvedReference(
+                            src_key=src_key,
+                            kind=kind,
+                            raw_reference=dst_name,
+                            dst_name_hint=dst_name,
+                            file_path=file_by_key.get(src_key, ""),
+                            line=line,
+                        )
+                    )
+            continue
+        dedupe = (src_key, dst_key, kind)
+        if dedupe in seen:
+            continue
+        seen.add(dedupe)
+        index.edges.append(
+            IndexedEdge(
+                src_key=src_key,
+                dst_key=dst_key,
+                kind=kind,
+                file_path=file_by_key.get(src_key, ""),
+                line=line,
+            )
+        )
+
+
+def _resolve_qualified(
+    name: str,
+    name_to_keys: dict[str, list[str]],
+    qname_to_keys: dict[str, list[str]],
+    kind_by_key: dict[str, str],
+    allowed_kinds: frozenset[str],
+) -> str | None:
+    """Resolve a name with qualified-name fallback.
+
+    Resolution order:
+    1. Exact match on simple ``name`` — if exactly 1 candidate, return it.
+    2. Exact match on ``qualified_name`` — handles ``Class.method`` calls.
+    3. If ``name`` contains ``.``, try the last segment as simple name.
+    """
+    # Step 1: direct name lookup
+    candidates = [
+        key
+        for key in name_to_keys.get(name, [])
+        if kind_by_key.get(key) in allowed_kinds
+    ]
+    if len(candidates) == 1:
+        return candidates[0]
+
+    # Step 2: try as qualified name (e.g. "Animal.run" → qualified_name "Animal.run")
+    qcandidates = [
+        key
+        for key in qname_to_keys.get(name, [])
+        if kind_by_key.get(key) in allowed_kinds
+    ]
+    if len(qcandidates) == 1:
+        return qcandidates[0]
+
+    # Step 3: for dotted names like "obj.method", fall back to last segment
+    if "." in name:
+        short = name.rsplit(".", 1)[1]
+        short_candidates = [
+            key
+            for key in name_to_keys.get(short, [])
+            if kind_by_key.get(key) in allowed_kinds
+        ]
+        if len(short_candidates) == 1:
+            return short_candidates[0]
+
+    return None
+
+
+def _collect_candidates(
+    dst_name: str,
+    name_to_keys: dict[str, list[str]],
+    qname_to_keys: dict[str, list[str]],
+    kind_by_key: dict[str, str],
+    allowed_kinds: frozenset[str],
+) -> list[str]:
+    """Collect all candidate keys that could match ``dst_name``.
+
+    Unlike ``_resolve_qualified`` which only returns when exactly 1 match,
+    this returns ALL matches across name, qualified-name, and last-segment
+    lookups so ambiguous edges can be stored rather than silently dropped.
+    """
+    candidates = [
+        key
+        for key in name_to_keys.get(dst_name, [])
+        if kind_by_key.get(key) in allowed_kinds
+    ]
+    if candidates:
+        return candidates
+
+    qcandidates = [
+        key
+        for key in qname_to_keys.get(dst_name, [])
+        if kind_by_key.get(key) in allowed_kinds
+    ]
+    if qcandidates:
+        return qcandidates
+
+    if "." in dst_name:
+        short = dst_name.rsplit(".", 1)[1]
+        short_candidates = [
+            key
+            for key in name_to_keys.get(short, [])
+            if kind_by_key.get(key) in allowed_kinds
+        ]
+        if short_candidates:
+            return short_candidates
+
+    return []
+
+
+def _resolve_scoped(
+    dst_name: str,
+    src_file: str,
+    module_resolution: ModuleResolution,
+    name_to_keys: dict[str, list[str]],
+    kind_by_key: dict[str, str],
+    allowed_kinds: frozenset[str],
+) -> str | None:
+    """Scope-aware resolution using import context.
+
+    For a ``dst_name``-based edge in originating file ``src_file``:
+    1. Split ``dst_name`` into ``head`` + optional ``rest`` (after first ``.``).
+    2. Look up ``head`` in ``module_resolution.imports_by_file[src_file]``.
+    3. If found and ``rest`` is empty: resolve to the import's ``dst_key`` if
+       set; else search only that import's target file for ``name == head``.
+    4. If found and ``rest`` is non-empty: search only that import's target
+       file for ``name == rest[-1]``.
+    5. Return ``None`` if no scope-aware match — caller falls through to
+       ``_resolve_qualified``.
+    """
+    file_imports = module_resolution.imports_by_file.get(src_file)
+    if not file_imports:
+        return None
+
+    if "." in dst_name:
+        head, rest = dst_name.split(".", 1)
+        rest_name = rest.rsplit(".", 1)[-1]
+    else:
+        head = dst_name
+        rest_name = None
+
+    resolved_import = file_imports.get(head)
+    if resolved_import is None:
+        return None
+
+    target_file = resolved_import.dst_file_path
+    if target_file is None:
+        return None
+
+    # Search only within the import's target file.
+    search_name = rest_name if rest_name else head
+    candidates = [
+        key
+        for key in name_to_keys.get(search_name, [])
+        if kind_by_key.get(key) in allowed_kinds
+        and key.rsplit("::", 1)[0] == target_file
+    ]
+    if len(candidates) == 1:
+        return candidates[0]
+
+    # If the import itself resolved to a specific key, use that.
+    if resolved_import.dst_key and not rest_name:
+        if kind_by_key.get(resolved_import.dst_key) in allowed_kinds:
+            return resolved_import.dst_key
+
+    return None
+
+
+def _backfill_edge_counts(index: WorkspaceIndex) -> None:
+    counts: dict[str, int] = {}
+    for edge in index.edges:
+        counts[edge.file_path] = counts.get(edge.file_path, 0) + 1
+    index.files = [
+        FileIndex(
+            file_path=f.file_path,
+            language=f.language,
+            content_hash=f.content_hash,
+            node_count=f.node_count,
+            edge_count=counts.get(f.file_path, 0),
+        )
+        for f in index.files
+    ]
+
+
+def _iter_named_files(
+    root: Path, rel_paths: Iterable[str], registry: ParserRegistry
+) -> Iterator[tuple[str, bytes]]:
+    """Yield ``(rel_path, bytes)`` for the given paths that are still readable."""
+    extensions = registry.supported_extensions()
+    for rel in rel_paths:
+        if Path(rel).suffix.lower() not in extensions:
+            continue
+        fpath = root / rel
+        try:
+            if not fpath.is_file() or fpath.stat().st_size > _MAX_FILE_BYTES:
+                continue
+            source = fpath.read_bytes()
+        except OSError:
+            continue
+        yield rel, source
+
+
+def _iter_source_files(
+    root: Path, registry: ParserRegistry
+) -> Iterator[tuple[str, bytes]]:
+    """Yield ``(relative_posix_path, bytes)`` for supported, non-ignored files."""
+    extensions = registry.supported_extensions()
+    gitignore_rules = load_gitignore_rules(root)
+    for current_root, dirs, files in os.walk(root):
+        current = Path(current_root)
+        dirs[:] = [
+            d
+            for d in dirs
+            if not d.startswith(".")
+            and d not in _SKIPPED_DIR_NAMES
+            and not is_gitignored(
+                (current / d).relative_to(root).as_posix(),
+                is_dir=True,
+                rules=gitignore_rules,
+            )
+        ]
+        for fname in files:
+            if fname.startswith("."):
+                continue
+            if Path(fname).suffix.lower() not in extensions:
+                continue
+            fpath = current / fname
+            rel = fpath.relative_to(root).as_posix()
+            if is_gitignored(rel, is_dir=False, rules=gitignore_rules):
+                continue
+            try:
+                if fpath.stat().st_size > _MAX_FILE_BYTES:
+                    continue
+                source = fpath.read_bytes()
+            except OSError:
+                continue
+            yield rel, source
+
+
+def _hash_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
