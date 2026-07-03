@@ -87,13 +87,13 @@ export function SettingsModal() {
     return () => window.removeEventListener('keydown', handler)
   }, [settingsOpen, closeSettings])
 
-  // Parse params from path (e.g. "agents/lead" → { name: "lead" })
+  // Parse params from path (e.g. "agents/lead" → { name: "lead" }, "agents/coding/lead" → { name: "coding/lead" })
   const params = useMemo((): Record<string, string> => {
     const parts = settingsPath.split('/')
     const section = parts[0] || ''
     const sub = parts[1] || ''
     if ((section === 'agents' || section === 'skills' || section === 'mcp') && sub && sub !== 'new') {
-      return { name: sub }
+      return { name: parts.slice(1).join('/') }
     }
     return {}
   }, [settingsPath])
