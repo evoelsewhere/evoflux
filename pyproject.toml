@@ -34,6 +34,9 @@ dependencies = [
     "rich>=14.3.3",
     "prompt-toolkit>=3.0.52",
     "ddgs>=9.12.0",
+    # Backport of uuid.uuid7(), which only lands in the stdlib `uuid` module
+    # in Python 3.14. Shimmed onto `uuid` in app/__init__.py for 3.12/3.13.
+    "uuid7>=0.1.0",
     # Document conversion ships with only the formats used by the slim sidecar:
     # PDF and DOCX via extras, plus HTML through markitdown core. Heavier
     # features stay behind optional extras to keep the desktop bundle small.
@@ -104,6 +107,12 @@ full = ["evoflux[azure-doc-intel]"]
 
 [tool.uv]
 package = true
+# onnxruntime dropped macOS x86_64 (Intel) wheels starting with 1.24; magika
+# (pulled in transitively by markitdown for MIME sniffing) puts no upper
+# bound on onnxruntime, so the resolver otherwise picks a version with no
+# installable artifact for Intel Macs. Pin to the last version with a
+# macosx x86_64 wheel.
+constraint-dependencies = ["onnxruntime<1.24"]
 
 [tool.ty.src]
 include = ["app"]
