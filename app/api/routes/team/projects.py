@@ -17,7 +17,9 @@ from app.api.schemas.code_graph import (
     ProjectCodeGraphOverviewResponse,
     ProjectCodeSearchResponse,
     ProjectCodeSearchResultOut,
+    ProjectReindexStartedResponse,
     ProjectRepoStatus,
+    ReindexRequest,
 )
 from app.api.schemas.cross_repo import (
     CrossRepoEdgeOut,
@@ -383,6 +385,57 @@ async def reject_cross_repo_edge(
     await db.refresh(edge)
 
     return _cross_repo_edge_out(edge)
+
+
+# ── Code graph indexing ──────────────────────────────────────────────────────
+
+
+@router.post("/{project_id}/code-graph/reindex", status_code=202)
+async def reindex_project_code_graph(
+    project_id: UUID,
+    db: DbSession,
+    body: ReindexRequest | None = None,
+) -> ProjectReindexStartedResponse:
+    """Reindex every repo in a project with a single call.
+
+    Starts (or joins) a background index job per repo. Projects with more
+    than one repo also start the cross-repo resolve job immediately —
+    ``cross_repo_jobs`` internally waits for these workspaces to settle
+    before it touches the database — so ``GET .../cross-repo/status`` reads
+    ``running`` continuously from this call through to "done" instead of
+    dipping back to "not running" while indexing is still in progress.
+    Callers never sequence "index" then "resolve" by hand.
+    """
+    project = await svc.get_project(db, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    pairs = await svc.get_project_workspaces(db, project_id)
+    workspace_ids: list[UUID] = []
+    already_running = 0
+    for _link, ws in pairs:
+        _, started = await index_jobs.start(
+            workspace_id=ws.id,
+            root_path=ws.path,
+            languages=body.languages if body else None,
+            full=body.full if body else False,
+        )
+        workspace_ids.append(ws.id)
+        if not started:
+            already_running += 1
+
+    will_resolve = len(workspace_ids) > 1
+    if will_resolve:
+        await cross_repo_jobs.start(
+            project_id=project_id, wait_for_workspaces=workspace_ids
+        )
+
+    return ProjectReindexStartedResponse(
+        indexing=bool(workspace_ids),
+        repo_count=len(workspace_ids),
+        already_running=already_running,
+        will_resolve=will_resolve,
+    )
 
 
 @router.get("/{project_id}/code-graph/status", response_model=list[ProjectRepoStatus])

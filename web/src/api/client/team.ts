@@ -35,6 +35,7 @@ import type {
   CrossRepoResolveJob,
   CrossRepoResolveStatusResponse,
   ProjectRepoStatus,
+  ProjectReindexStartedResponse,
   ProjectCodeSearchResponse,
   ProjectCodeGraphData,
 } from '../types'
@@ -677,6 +678,29 @@ export async function getCrossRepoResolveStatus(
     `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/cross-repo/status`,
   )
   if (!res.ok) await parseDetailOrThrow(res, 'getCrossRepoResolveStatus')
+  return res.json()
+}
+
+// Single entry point for the Graph tab's index/reindex button: starts every
+// repo's index job in one call, and (multi-repo projects) auto-chains into
+// cross-repo resolve server-side once they all finish — no per-repo looping
+// or client-side "wait then resolve" chaining needed.
+export async function reindexProjectCodeGraph(
+  projectId: string,
+  options?: { full?: boolean; languages?: string[] },
+): Promise<ProjectReindexStartedResponse> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/code-graph/reindex`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        full: options?.full ?? false,
+        languages: options?.languages ?? null,
+      }),
+    },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'reindexProjectCodeGraph')
   return res.json()
 }
 

@@ -21,7 +21,7 @@ from sqlalchemy import delete as sa_delete, func as sa_func
 from sqlmodel import col, or_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.db import current_sqlite_path
+from app.core.db import current_sqlite_path, sqlite_write_guard
 from app.models.chat import CodingWorkspace
 from app.models.code_graph import (
     CodeAmbiguousEdge,
@@ -144,118 +144,120 @@ async def reindex_workspace(
     )
 
     report("saving", 0.35, "Saving graph to database…")
-    await db.execute(
-        sa_delete(CodeEdge).where(col(CodeEdge.workspace_id) == workspace_id)
-    )
-    await db.execute(
-        sa_delete(CodeAmbiguousEdge).where(
-            col(CodeAmbiguousEdge.workspace_id) == workspace_id
-        )
-    )
-    await db.execute(
-        sa_delete(CodeNode).where(col(CodeNode.workspace_id) == workspace_id)
-    )
-    await db.execute(
-        sa_delete(CodeIndexState).where(
-            col(CodeIndexState.workspace_id) == workspace_id
-        )
-    )
-
     key_to_id: dict[str, UUID] = {}
     node_rows: list[CodeNode] = []
-    for node in index.nodes:
-        node_id = uuid7()
-        key_to_id[node.key] = node_id
-        node_rows.append(
-            CodeNode(
-                id=node_id,
-                workspace_id=workspace_id,
-                kind=node.kind,
-                name=node.name,
-                qualified_name=node.qualified_name,
-                file_path=node.file_path,
-                language=node.language,
-                line_start=node.line_start,
-                line_end=node.line_end,
-                signature=node.signature,
-                docstring=node.docstring,
-            )
-        )
-    db.add_all(node_rows)
-
     edge_rows: list[CodeEdge] = []
-    for edge in index.edges:
-        src_id = key_to_id.get(edge.src_key)
-        dst_id = key_to_id.get(edge.dst_key)
-        if src_id is None or dst_id is None:
-            continue
-        edge_rows.append(
-            CodeEdge(
-                workspace_id=workspace_id,
-                src_id=src_id,
-                dst_id=dst_id,
-                kind=edge.kind,
-                file_path=edge.file_path,
-                line=edge.line,
+    async with sqlite_write_guard():
+        await db.execute(
+            sa_delete(CodeEdge).where(col(CodeEdge.workspace_id) == workspace_id)
+        )
+        await db.execute(
+            sa_delete(CodeAmbiguousEdge).where(
+                col(CodeAmbiguousEdge.workspace_id) == workspace_id
             )
         )
-    db.add_all(edge_rows)
-
-    # Persist ambiguous edges — targets that matched 2+ candidates.
-    import json
-
-    ambiguous_rows = []
-    for amb in index.ambiguous_edges:
-        src_id = key_to_id.get(amb.src_key)
-        if src_id is None:
-            continue
-        candidate_ids = [
-            str(key_to_id[k]) for k in amb.candidate_keys if k in key_to_id
-        ]
-        if len(candidate_ids) < 2:
-            continue
-        ambiguous_rows.append(
-            CodeAmbiguousEdge(
-                workspace_id=workspace_id,
-                src_id=src_id,
-                dst_name=amb.dst_name,
-                kind=amb.kind,
-                candidate_node_ids=json.dumps(candidate_ids),
-                file_path=amb.file_path,
-                line=amb.line,
+        await db.execute(
+            sa_delete(CodeNode).where(col(CodeNode.workspace_id) == workspace_id)
+        )
+        await db.execute(
+            sa_delete(CodeIndexState).where(
+                col(CodeIndexState.workspace_id) == workspace_id
             )
         )
-    if ambiguous_rows:
-        db.add_all(ambiguous_rows)
 
-    db.add_all(
-        [
-            CodeIndexState(
-                workspace_id=workspace_id,
-                file_path=f.file_path,
-                language=f.language,
-                content_hash=f.content_hash,
-                node_count=f.node_count,
-                edge_count=f.edge_count,
+        for node in index.nodes:
+            node_id = uuid7()
+            key_to_id[node.key] = node_id
+            node_rows.append(
+                CodeNode(
+                    id=node_id,
+                    workspace_id=workspace_id,
+                    kind=node.kind,
+                    name=node.name,
+                    qualified_name=node.qualified_name,
+                    file_path=node.file_path,
+                    language=node.language,
+                    line_start=node.line_start,
+                    line_end=node.line_end,
+                    signature=node.signature,
+                    docstring=node.docstring,
+                )
             )
-            for f in index.files
-        ]
-    )
-    await db.flush()
+        db.add_all(node_rows)
 
-    await _persist_unresolved_references(
-        db,
-        workspace_id=workspace_id,
-        root_path=root_path,
-        unresolved_references=index.unresolved_references,
-        key_to_id=key_to_id,
-    )
+        for edge in index.edges:
+            src_id = key_to_id.get(edge.src_key)
+            dst_id = key_to_id.get(edge.dst_key)
+            if src_id is None or dst_id is None:
+                continue
+            edge_rows.append(
+                CodeEdge(
+                    workspace_id=workspace_id,
+                    src_id=src_id,
+                    dst_id=dst_id,
+                    kind=edge.kind,
+                    file_path=edge.file_path,
+                    line=edge.line,
+                )
+            )
+        db.add_all(edge_rows)
 
-    await db.commit()
-    report("saving", 0.5, f"Saved {len(node_rows)} nodes, {len(edge_rows)} edges")
+        # Persist ambiguous edges — targets that matched 2+ candidates.
+        import json
 
-    # Rebuild full-text search index (runs in indexer thread, separate sqlite conn).
-    await _rebuild_fts(workspace_id=workspace_id, index=index, key_to_id=key_to_id)
+        ambiguous_rows = []
+        for amb in index.ambiguous_edges:
+            src_id = key_to_id.get(amb.src_key)
+            if src_id is None:
+                continue
+            candidate_ids = [
+                str(key_to_id[k]) for k in amb.candidate_keys if k in key_to_id
+            ]
+            if len(candidate_ids) < 2:
+                continue
+            ambiguous_rows.append(
+                CodeAmbiguousEdge(
+                    workspace_id=workspace_id,
+                    src_id=src_id,
+                    dst_name=amb.dst_name,
+                    kind=amb.kind,
+                    candidate_node_ids=json.dumps(candidate_ids),
+                    file_path=amb.file_path,
+                    line=amb.line,
+                )
+            )
+        if ambiguous_rows:
+            db.add_all(ambiguous_rows)
+
+        db.add_all(
+            [
+                CodeIndexState(
+                    workspace_id=workspace_id,
+                    file_path=f.file_path,
+                    language=f.language,
+                    content_hash=f.content_hash,
+                    node_count=f.node_count,
+                    edge_count=f.edge_count,
+                )
+                for f in index.files
+            ]
+        )
+        await db.flush()
+
+        await _persist_unresolved_references(
+            db,
+            workspace_id=workspace_id,
+            root_path=root_path,
+            unresolved_references=index.unresolved_references,
+            key_to_id=key_to_id,
+        )
+
+        await db.commit()
+        report("saving", 0.5, f"Saved {len(node_rows)} nodes, {len(edge_rows)} edges")
+
+        # Rebuild full-text search index (separate sqlite conn) — inside the
+        # guard too, since it writes to the same on-disk file as the ORM.
+        await _rebuild_fts(workspace_id=workspace_id, index=index, key_to_id=key_to_id)
     report("saving", 1.0, "Index saved")
 
     logger.info(
@@ -416,145 +418,151 @@ async def _reindex_incremental(
     )
 
     # ── Reconcile nodes of changed files, preserving ids for stable symbols ──
-    rows_by_sig: dict[tuple[str, str, str], CodeNode] = {
-        (n.file_path, n.kind, n.qualified_name): n
-        for n in existing_nodes
-        if n.file_path in changed
-    }
-    key_to_id: dict[str, UUID] = {}
-    reused_ids: set[UUID] = set()
-    for node in index.nodes:
-        sig = (node.file_path, node.kind, node.qualified_name)
-        existing = rows_by_sig.get(sig)
-        if existing is not None and existing.id not in reused_ids:
-            existing.name = node.name
-            existing.language = node.language
-            existing.line_start = node.line_start
-            existing.line_end = node.line_end
-            existing.signature = node.signature
-            existing.docstring = node.docstring
-            node_id = existing.id
-            reused_ids.add(node_id)
-        else:
-            node_id = uuid7()
-            db.add(
-                CodeNode(
-                    id=node_id,
-                    workspace_id=workspace_id,
-                    kind=node.kind,
-                    name=node.name,
-                    qualified_name=node.qualified_name,
-                    file_path=node.file_path,
-                    language=node.language,
-                    line_start=node.line_start,
-                    line_end=node.line_end,
-                    signature=node.signature,
-                    docstring=node.docstring,
+    # Everything below mutates the graph, so it all runs under the write
+    # guard: the reconciliation loop stages dirty ``existing.*`` attributes
+    # that flush on the very first ``db.execute()``/autoflush below, not at
+    # the point they're assigned.
+    async with sqlite_write_guard():
+        rows_by_sig: dict[tuple[str, str, str], CodeNode] = {
+            (n.file_path, n.kind, n.qualified_name): n
+            for n in existing_nodes
+            if n.file_path in changed
+        }
+        key_to_id: dict[str, UUID] = {}
+        reused_ids: set[UUID] = set()
+        for node in index.nodes:
+            sig = (node.file_path, node.kind, node.qualified_name)
+            existing = rows_by_sig.get(sig)
+            if existing is not None and existing.id not in reused_ids:
+                existing.name = node.name
+                existing.language = node.language
+                existing.line_start = node.line_start
+                existing.line_end = node.line_end
+                existing.signature = node.signature
+                existing.docstring = node.docstring
+                node_id = existing.id
+                reused_ids.add(node_id)
+            else:
+                node_id = uuid7()
+                db.add(
+                    CodeNode(
+                        id=node_id,
+                        workspace_id=workspace_id,
+                        kind=node.kind,
+                        name=node.name,
+                        qualified_name=node.qualified_name,
+                        file_path=node.file_path,
+                        language=node.language,
+                        line_start=node.line_start,
+                        line_end=node.line_end,
+                        signature=node.signature,
+                        docstring=node.docstring,
+                    )
                 )
-            )
-        key_to_id[node.key] = node_id
+            key_to_id[node.key] = node_id
 
-    # Symbols that disappeared from changed files, plus all nodes of deleted
-    # files, get removed (and their incoming/outgoing edges below).
-    removed_ids: set[UUID] = {
-        row.id for row in rows_by_sig.values() if row.id not in reused_ids
-    }
-    removed_ids |= {n.id for n in existing_nodes if n.file_path in deleted}
+        # Symbols that disappeared from changed files, plus all nodes of deleted
+        # files, get removed (and their incoming/outgoing edges below).
+        removed_ids: set[UUID] = {
+            row.id for row in rows_by_sig.values() if row.id not in reused_ids
+        }
+        removed_ids |= {n.id for n in existing_nodes if n.file_path in deleted}
 
-    # Drop outgoing edges from affected files and every edge touching a removed
-    # node (covers incoming edges from unchanged files to vanished symbols).
-    await db.execute(
-        sa_delete(CodeEdge).where(
-            col(CodeEdge.workspace_id) == workspace_id,
-            col(CodeEdge.file_path).in_(list(affected)),
-        )
-    )
-    await db.execute(
-        sa_delete(CodeAmbiguousEdge).where(
-            col(CodeAmbiguousEdge.workspace_id) == workspace_id,
-            col(CodeAmbiguousEdge.file_path).in_(list(affected)),
-        )
-    )
-    if removed_ids:
-        rid = list(removed_ids)
+        # Drop outgoing edges from affected files and every edge touching a removed
+        # node (covers incoming edges from unchanged files to vanished symbols).
         await db.execute(
             sa_delete(CodeEdge).where(
                 col(CodeEdge.workspace_id) == workspace_id,
-                or_(col(CodeEdge.src_id).in_(rid), col(CodeEdge.dst_id).in_(rid)),
+                col(CodeEdge.file_path).in_(list(affected)),
             )
         )
-    # Persist node inserts/updates and edge deletes before adding new edges and
-    # deleting removed nodes — keeps foreign keys satisfied at every step.
-    await db.flush()
-
-    edge_rows: list[CodeEdge] = []
-    for edge in index.edges:
-        src_id = key_to_id.get(edge.src_key)
-        if src_id is None:
-            continue
-        dst_id = _resolve_incremental_dst(edge.dst_key, key_to_id)
-        if dst_id is None or dst_id in removed_ids:
-            continue
-        edge_rows.append(
-            CodeEdge(
-                workspace_id=workspace_id,
-                src_id=src_id,
-                dst_id=dst_id,
-                kind=edge.kind,
-                file_path=edge.file_path,
-                line=edge.line,
-            )
-        )
-    db.add_all(edge_rows)
-
-    if removed_ids:
         await db.execute(
-            sa_delete(CodeNode).where(
-                col(CodeNode.workspace_id) == workspace_id,
-                col(CodeNode.id).in_(list(removed_ids)),
+            sa_delete(CodeAmbiguousEdge).where(
+                col(CodeAmbiguousEdge.workspace_id) == workspace_id,
+                col(CodeAmbiguousEdge.file_path).in_(list(affected)),
             )
         )
-
-    # Refresh per-file index state for changed files; drop it for deleted ones.
-    await db.execute(
-        sa_delete(CodeIndexState).where(
-            col(CodeIndexState.workspace_id) == workspace_id,
-            col(CodeIndexState.file_path).in_(list(affected)),
-        )
-    )
-    db.add_all(
-        [
-            CodeIndexState(
-                workspace_id=workspace_id,
-                file_path=f.file_path,
-                language=f.language,
-                content_hash=f.content_hash,
-                node_count=f.node_count,
-                edge_count=f.edge_count,
+        if removed_ids:
+            rid = list(removed_ids)
+            await db.execute(
+                sa_delete(CodeEdge).where(
+                    col(CodeEdge.workspace_id) == workspace_id,
+                    or_(col(CodeEdge.src_id).in_(rid), col(CodeEdge.dst_id).in_(rid)),
+                )
             )
-            for f in index.files
-        ]
-    )
+        # Persist node inserts/updates and edge deletes before adding new edges and
+        # deleting removed nodes — keeps foreign keys satisfied at every step.
+        await db.flush()
 
-    await _persist_unresolved_references(
-        db,
-        workspace_id=workspace_id,
-        root_path=root_path,
-        unresolved_references=index.unresolved_references,
-        key_to_id=key_to_id,
-        affected_files=affected,
-    )
+        edge_rows: list[CodeEdge] = []
+        for edge in index.edges:
+            src_id = key_to_id.get(edge.src_key)
+            if src_id is None:
+                continue
+            dst_id = _resolve_incremental_dst(edge.dst_key, key_to_id)
+            if dst_id is None or dst_id in removed_ids:
+                continue
+            edge_rows.append(
+                CodeEdge(
+                    workspace_id=workspace_id,
+                    src_id=src_id,
+                    dst_id=dst_id,
+                    kind=edge.kind,
+                    file_path=edge.file_path,
+                    line=edge.line,
+                )
+            )
+        db.add_all(edge_rows)
 
-    await db.commit()
-    progress_cb("saving", 0.5, "Graph saved")
+        if removed_ids:
+            await db.execute(
+                sa_delete(CodeNode).where(
+                    col(CodeNode.workspace_id) == workspace_id,
+                    col(CodeNode.id).in_(list(removed_ids)),
+                )
+            )
 
-    # Update FTS index for changed/removed nodes.
-    await _update_fts(
-        workspace_id=workspace_id,
-        index=index,
-        key_to_id=key_to_id,
-        removed_ids=removed_ids,
-    )
+        # Refresh per-file index state for changed files; drop it for deleted ones.
+        await db.execute(
+            sa_delete(CodeIndexState).where(
+                col(CodeIndexState.workspace_id) == workspace_id,
+                col(CodeIndexState.file_path).in_(list(affected)),
+            )
+        )
+        db.add_all(
+            [
+                CodeIndexState(
+                    workspace_id=workspace_id,
+                    file_path=f.file_path,
+                    language=f.language,
+                    content_hash=f.content_hash,
+                    node_count=f.node_count,
+                    edge_count=f.edge_count,
+                )
+                for f in index.files
+            ]
+        )
+
+        await _persist_unresolved_references(
+            db,
+            workspace_id=workspace_id,
+            root_path=root_path,
+            unresolved_references=index.unresolved_references,
+            key_to_id=key_to_id,
+            affected_files=affected,
+        )
+
+        await db.commit()
+        progress_cb("saving", 0.5, "Graph saved")
+
+        # Update FTS index for changed/removed nodes — same guard, since it
+        # writes to the same on-disk file as the ORM.
+        await _update_fts(
+            workspace_id=workspace_id,
+            index=index,
+            key_to_id=key_to_id,
+            removed_ids=removed_ids,
+        )
     progress_cb("saving", 1.0, "Index saved")
 
     counts = await get_index_status(db, workspace_id=workspace_id)

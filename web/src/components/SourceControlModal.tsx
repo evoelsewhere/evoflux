@@ -66,7 +66,6 @@ export function SourceControlModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        key={open ? 'sc-open' : undefined}
         showCloseButton={false}
         className="flex !h-[90dvh] !max-h-[90dvh] !w-[90vw] !max-w-[90vw] flex-col gap-0 overflow-hidden !rounded-lg p-0"
       >
