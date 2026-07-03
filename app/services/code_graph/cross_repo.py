@@ -90,6 +90,16 @@ class _SiblingRepo:
     layout_hints: RepoContext
 
 
+@dataclass(frozen=True, slots=True)
+class _SiblingIndexes:
+    """Precomputed per-sibling lookup structures for Tier A's row loop —
+    built once per resolve pass from a single node fetch (see
+    ``_build_sibling_indexes``), not re-queried per unresolved row."""
+
+    by_qualified_name: dict[str, CodeNode | None]  # None = ambiguous (2+ share it)
+    by_importable_id: dict[str, CodeNode]
+
+
 async def resolve_project(
     db: AsyncSession,
     *,
@@ -103,6 +113,7 @@ async def resolve_project(
     """
     async with sqlite_write_guard():
         reattached = await _reattach_stale(db, project_id=project_id)
+        reattached += await _reattach_stale_src(db, project_id=project_id)
         static_resolved = await _resolve_static(db, project_id=project_id)
         remaining = await _count_unresolved(db, project_id=project_id)
         await db.commit()
@@ -126,33 +137,128 @@ async def _count_unresolved(db: AsyncSession, *, project_id: UUID) -> int:
 
 
 async def _reattach_stale(db: AsyncSession, *, project_id: UUID) -> int:
-    """Re-attach ``resolved`` rows whose ``dst_node_id`` went NULL because the
-    target repo reindexed — cheap name lookup, no re-matching."""
+    """Re-attach ``resolved`` rows whose ``dst_node_id`` went stale because the
+    target repo reindexed — cheap name lookup, no re-matching.
+
+    "Stale" covers both NULL (the FK's ``ondelete="SET NULL"`` fired) and
+    dangling (it didn't — SQLite only enforces foreign keys when
+    ``PRAGMA foreign_keys=ON`` is set per-connection, which this app doesn't
+    do, so a bulk delete during reindex leaves old ids sitting in
+    ``dst_node_id`` instead of nulling them out). The left join catches both
+    in one query: an unmatched ``CodeNode`` row means ``dst_node_id`` is
+    either NULL or doesn't reference anything that still exists.
+
+    Looks up each distinct ``dst_workspace_id``'s nodes once (building a
+    ``qualified_name -> id`` map) rather than one ``WHERE qualified_name = …``
+    query per stale row — ``CodeNode`` has no index on ``qualified_name``, so
+    that was an unindexed scan repeated per row (measured ~27ms/row on a
+    41k-node real project — 74s total for one project's worth of staleness).
+    """
     rows = (
         await db.exec(
-            select(CrossRepoEdge).where(
+            select(CrossRepoEdge)
+            .outerjoin(CodeNode, col(CrossRepoEdge.dst_node_id) == col(CodeNode.id))
+            .where(
                 col(CrossRepoEdge.project_id) == project_id,
                 col(CrossRepoEdge.status) == "resolved",
-                col(CrossRepoEdge.dst_node_id).is_(None),
                 col(CrossRepoEdge.dst_workspace_id).is_not(None),
                 col(CrossRepoEdge.dst_qualified_name).is_not(None),
+                col(CodeNode.id).is_(None),
             )
         )
     ).all()
-    count = 0
+    if not rows:
+        return 0
+
+    by_workspace: dict[UUID, list[CrossRepoEdge]] = {}
     for row in rows:
-        node = (
+        by_workspace.setdefault(row.dst_workspace_id, []).append(row)
+
+    count = 0
+    for ws_id, ws_rows in by_workspace.items():
+        nodes = (
             await db.exec(
-                select(CodeNode).where(
-                    col(CodeNode.workspace_id) == row.dst_workspace_id,
-                    col(CodeNode.qualified_name) == row.dst_qualified_name,
+                select(CodeNode.qualified_name, CodeNode.id).where(
+                    col(CodeNode.workspace_id) == ws_id
                 )
             )
-        ).first()
-        if node is not None:
-            row.dst_node_id = node.id
-            db.add(row)
-            count += 1
+        ).all()
+        # First node per qualified_name wins — same tie-break the old
+        # per-row query applied (`.first()` in DB fetch order).
+        id_by_qualified_name: dict[str, UUID] = {}
+        for qualified_name, node_id in nodes:
+            id_by_qualified_name.setdefault(qualified_name, node_id)
+
+        for row in ws_rows:
+            node_id = id_by_qualified_name.get(row.dst_qualified_name)
+            if node_id is not None:
+                row.dst_node_id = node_id
+                db.add(row)
+                count += 1
+    return count
+
+
+async def _reattach_stale_src(db: AsyncSession, *, project_id: UUID) -> int:
+    """Re-attach ``resolved`` rows whose ``src_node_id`` went stale because the
+    SOURCE repo reindexed (same staleness cause as ``_reattach_stale``).
+
+    Unlike ``dst_node_id``, there's no denormalized ``src_qualified_name`` to
+    look up by exact name — a resolved row only records where the reference
+    was written (``src_file_path``/``src_line``), not what encloses it. Best
+    effort: pick whichever node in that file has the tightest line range
+    containing ``src_line``, i.e. the most specific enclosing symbol (a
+    method inside a class inside a file — narrowest span wins over the class
+    or file). Rows without a usable ``src_line``, or with no candidate at
+    all, are left as-is; this only matters for ``code_path`` finding this row
+    as a cross-repo hop, not for any already-shipped read path.
+
+    Groups rows by ``(workspace_id, file_path)`` and fetches each file's
+    nodes once rather than one range query per stale row — same rationale as
+    the batching in ``_reattach_stale``, just keyed by file instead of
+    qualified_name since there's no exact-name index to look up by here.
+    """
+    rows = (
+        await db.exec(
+            select(CrossRepoEdge)
+            .outerjoin(CodeNode, col(CrossRepoEdge.src_node_id) == col(CodeNode.id))
+            .where(
+                col(CrossRepoEdge.project_id) == project_id,
+                col(CrossRepoEdge.status) == "resolved",
+                col(CrossRepoEdge.src_line).is_not(None),
+                col(CodeNode.id).is_(None),
+            )
+        )
+    ).all()
+    if not rows:
+        return 0
+
+    by_file: dict[tuple[UUID, str], list[CrossRepoEdge]] = {}
+    for row in rows:
+        by_file.setdefault((row.src_workspace_id, row.src_file_path), []).append(row)
+
+    count = 0
+    for (ws_id, file_path), file_rows in by_file.items():
+        file_nodes = (
+            await db.exec(
+                select(CodeNode).where(
+                    col(CodeNode.workspace_id) == ws_id,
+                    col(CodeNode.file_path) == file_path,
+                )
+            )
+        ).all()
+        for row in file_rows:
+            candidates = [
+                n
+                for n in file_nodes
+                if n.line_start <= row.src_line <= n.line_end
+            ]
+            if candidates:
+                tightest_enclosing = min(
+                    candidates, key=lambda n: n.line_end - n.line_start
+                )
+                row.src_node_id = tightest_enclosing.id
+                db.add(row)
+                count += 1
     return count
 
 
@@ -170,21 +276,6 @@ async def _load_sibling_repos(
         )
         for _, ws in pairs
     }
-
-
-async def _find_node_by_qualified_name(
-    db: AsyncSession, *, workspace_id: UUID, qualified_name: str
-) -> CodeNode | None:
-    candidates = (
-        await db.exec(
-            select(CodeNode).where(
-                col(CodeNode.workspace_id) == workspace_id,
-                col(CodeNode.qualified_name) == qualified_name,
-                col(CodeNode.kind).in_(_ANY_SYMBOL_KINDS),
-            )
-        )
-    ).all()
-    return candidates[0] if len(candidates) == 1 else None
 
 
 async def _find_node_by_name(
@@ -224,8 +315,14 @@ async def _resolve_static(db: AsyncSession, *, project_id: UUID) -> int:
     # cost into O(rows * siblings * nodes) — fine on test fixtures with a
     # handful of nodes, but minutes-to-hours on a real project with thousands
     # of unresolved rows against repos with tens of thousands of nodes each.
-    importable_indexes = {
-        ws_id: await _build_importable_index(db, sibling)
+    # Also folds in the exact-FQN lookup (see ``_try_resolve_fqn``): that used
+    # to run one ``WHERE qualified_name = ...`` query per row per sibling —
+    # doubly expensive since ``CodeNode`` has no index on ``qualified_name``
+    # (only ``file_path``/``name``/``kind`` do), so every one of those was an
+    # unindexed scan. Building both indexes from a single node fetch per
+    # sibling avoids fetching the same rows twice.
+    sibling_indexes = {
+        ws_id: await _build_sibling_indexes(db, sibling)
         for ws_id, sibling in siblings.items()
     }
 
@@ -248,7 +345,7 @@ async def _resolve_static(db: AsyncSession, *, project_id: UUID) -> int:
         ):
             resolved += 1
             continue
-        if await _try_resolve_fqn(db, row, others, importable_indexes):
+        if _try_resolve_fqn(db, row, others, sibling_indexes):
             resolved += 1
             continue
         if await _try_resolve_manifest(db, row, others):
@@ -398,18 +495,26 @@ def _fqn_candidates(raw_reference: str) -> list[str]:
     return candidates
 
 
-async def _try_resolve_fqn(
+def _try_resolve_fqn(
     db: AsyncSession,
     row: CrossRepoEdge,
     others: list[_SiblingRepo],
-    importable_indexes: dict[UUID, dict[str, CodeNode]] | None = None,
+    sibling_indexes: dict[UUID, _SiblingIndexes] | None,
 ) -> bool:
+    """Exact Java-style FQN match, then the generalized importable_id
+    fallback for ecosystems without native FQN support (Python, JS/TS, Go,
+    etc.) — both matched against indexes built once per resolve pass (see
+    ``_resolve_static``/``_build_sibling_indexes``), not re-queried per row.
+    Synchronous: everything it needs is already in ``sibling_indexes``.
+    """
+    if sibling_indexes is None:
+        return False
+
     for candidate in _fqn_candidates(row.raw_reference):
         matches: list[tuple[_SiblingRepo, CodeNode]] = []
         for sibling in others:
-            node = await _find_node_by_qualified_name(
-                db, workspace_id=sibling.workspace_id, qualified_name=candidate
-            )
+            idx = sibling_indexes.get(sibling.workspace_id)
+            node = idx.by_qualified_name.get(candidate) if idx is not None else None
             if node is not None:
                 matches.append((sibling, node))
         if len(matches) == 1:
@@ -425,39 +530,39 @@ async def _try_resolve_fqn(
             db.add(row)
             return True
 
-    # Fallback: try generalized importable_id for ecosystems without native
-    # FQN support (Python, JS/TS, Go, etc.) — matched against indexes built
-    # once per resolve pass (see _resolve_static), not recomputed per row.
-    if importable_indexes is not None:
-        matches = _find_by_importable_id(row, others, importable_indexes)
-        if len(matches) == 1:
-            sibling, node = matches[0]
-            _stamp_resolved(
-                row,
-                dst_workspace_id=sibling.workspace_id,
-                dst_node_id=node.id,
-                dst_qualified_name=node.qualified_name,
-                method=METHOD_STATIC_FQN,
-                confidence=0.9,
-            )
-            db.add(row)
-            return True
+    matches = _find_by_importable_id(row, others, sibling_indexes)
+    if len(matches) == 1:
+        sibling, node = matches[0]
+        _stamp_resolved(
+            row,
+            dst_workspace_id=sibling.workspace_id,
+            dst_node_id=node.id,
+            dst_qualified_name=node.qualified_name,
+            method=METHOD_STATIC_FQN,
+            confidence=0.9,
+        )
+        db.add(row)
+        return True
 
     return False
 
 
-async def _build_importable_index(
+async def _build_sibling_indexes(
     db: AsyncSession, sibling: _SiblingRepo
-) -> dict[str, CodeNode]:
-    """Map every node of ``sibling`` to its importable_id, once per resolve pass.
+) -> _SiblingIndexes:
+    """Fetch ``sibling``'s symbol nodes once and build both lookup structures
+    Tier A's row loop needs from that single fetch, instead of querying per
+    unresolved row.
 
-    Recomputing this per unresolved row (the previous shape of this code) is
-    what made ``_resolve_static`` scale with ``rows * siblings * nodes``
-    instead of ``siblings * nodes`` — see the comment in ``_resolve_static``.
+    Re-querying per row (the previous shape of both this and the exact-FQN
+    lookup — see ``_try_resolve_fqn``) turned an O(siblings * nodes) cost
+    into O(rows * siblings * nodes): minutes-to-hours on a real project with
+    thousands of unresolved rows against repos with tens of thousands of
+    nodes each. The FQN half was doubly expensive since ``CodeNode`` has no
+    index on ``qualified_name`` (only ``file_path``/``name``/``kind`` do —
+    see ``CodeNode.__table_args__``), so every one of those per-row queries
+    was also an unindexed scan.
     """
-    root_prefix = _get_root_prefix(sibling)
-    if not root_prefix:
-        return {}
     nodes = (
         await db.exec(
             select(CodeNode).where(
@@ -466,19 +571,33 @@ async def _build_importable_index(
             )
         )
     ).all()
-    index: dict[str, CodeNode] = {}
+
+    by_qualified_name: dict[str, CodeNode | None] = {}
     for node in nodes:
-        importable = compute_importable_id(
-            node.file_path,
-            node.qualified_name,
-            language=node.language,
-            root_prefix=root_prefix,
-        )
-        if importable:
-            # First node wins on a collision — same tie-break the old
-            # per-row DB scan applied (first match in fetch order).
-            index.setdefault(importable, node)
-    return index
+        qn = node.qualified_name
+        # A second node sharing the same qualified_name makes it ambiguous
+        # within this sibling — mirrors the old per-row lookup's uniqueness
+        # check (it returned None whenever more than one candidate matched).
+        by_qualified_name[qn] = None if qn in by_qualified_name else node
+
+    by_importable_id: dict[str, CodeNode] = {}
+    root_prefix = _get_root_prefix(sibling)
+    if root_prefix:
+        for node in nodes:
+            importable = compute_importable_id(
+                node.file_path,
+                node.qualified_name,
+                language=node.language,
+                root_prefix=root_prefix,
+            )
+            if importable:
+                # First node wins on a collision — same tie-break the old
+                # per-row DB scan applied (first match in fetch order).
+                by_importable_id.setdefault(importable, node)
+
+    return _SiblingIndexes(
+        by_qualified_name=by_qualified_name, by_importable_id=by_importable_id
+    )
 
 
 def _importable_id_candidates(raw_reference: str) -> list[str]:
@@ -496,13 +615,14 @@ def _importable_id_candidates(raw_reference: str) -> list[str]:
 def _find_by_importable_id(
     row: CrossRepoEdge,
     others: list[_SiblingRepo],
-    importable_indexes: dict[UUID, dict[str, CodeNode]],
+    sibling_indexes: dict[UUID, _SiblingIndexes],
 ) -> list[tuple[_SiblingRepo, CodeNode]]:
     """Match via each sibling's precomputed importable_id index (Phase 3)."""
     matches: list[tuple[_SiblingRepo, CodeNode]] = []
     candidates = _importable_id_candidates(row.raw_reference)
     for sibling in others:
-        index = importable_indexes.get(sibling.workspace_id)
+        idx = sibling_indexes.get(sibling.workspace_id)
+        index = idx.by_importable_id if idx is not None else None
         if not index:
             continue
         for candidate in candidates:

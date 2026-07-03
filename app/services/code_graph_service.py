@@ -304,6 +304,15 @@ async def _persist_unresolved_references(
     is scoped to those files — a deleted file's rows are dropped and never
     reinserted since it no longer appears in ``unresolved_references``.
 
+    The indexer has no notion of resolution state — it reports the same
+    reference as "unresolved" on every reparse regardless of whether a
+    resolver already stamped a row for it. Re-inserting one row per
+    ``unresolved_references`` entry unconditionally would duplicate that row
+    on every reindex of the file (the ``method IS NOT NULL`` row survives the
+    delete above, untouched, so nothing here would remove the duplicate
+    either). Skip inserting for any ``(file, raw reference, kind)`` that
+    already has a stamped row.
+
     Each candidate is pre-filtered with ``is_likely_external`` against this
     workspace's own manifest — a reference that's almost certainly to a
     third-party library (the JDK, a well-known package, something this
@@ -332,7 +341,38 @@ async def _persist_unresolved_references(
             )
         await db.execute(delete_stmt)
 
+        # A resolver may have already stamped a row for one of these exact
+        # call sites (method IS NOT NULL, so the delete above left it alone,
+        # by design — see docstring). The indexer re-derives
+        # unresolved_references from a fresh parse with no memory of that,
+        # so without this check every reindex of an unchanged reference
+        # would pile up a duplicate "unresolved" row next to the resolved
+        # one. Identity is (file, raw reference, kind) — line number isn't
+        # part of it since an edit elsewhere in the file can shift it
+        # without changing what the reference points at.
+        already_handled: set[tuple[str, str, str]] = set()
         if unresolved_references:
+            existing = (
+                await db.exec(
+                    select(
+                        CrossRepoEdge.src_file_path,
+                        CrossRepoEdge.raw_reference,
+                        CrossRepoEdge.kind,
+                    ).where(
+                        col(CrossRepoEdge.project_id) == project_id,
+                        col(CrossRepoEdge.src_workspace_id) == workspace_id,
+                        col(CrossRepoEdge.method).is_not(None),
+                    )
+                )
+            ).all()
+            already_handled = set(existing)
+
+        fresh_references = [
+            u
+            for u in unresolved_references
+            if (u.file_path, u.raw_reference, u.kind) not in already_handled
+        ]
+        if fresh_references:
             db.add_all(
                 [
                     CrossRepoEdge(
@@ -354,7 +394,7 @@ async def _persist_unresolved_references(
                             else "unresolved"
                         ),
                     )
-                    for u in unresolved_references
+                    for u in fresh_references
                 ]
             )
 
@@ -1026,7 +1066,7 @@ async def get_ranked_symbols(
 async def find_shortest_path(
     db: AsyncSession,
     *,
-    workspace_id: UUID,
+    src_workspace_id: UUID,
     src_id: UUID,
     dst_id: UUID,
     max_hops: int = 6,
@@ -1034,13 +1074,24 @@ async def find_shortest_path(
 ) -> list[tuple[CodeNode, str, CodeNode]] | None:
     """BFS shortest path from ``src_id`` to ``dst_id`` in the call/dependency graph.
 
+    ``src_workspace_id`` must be ``src_id``'s OWN workspace — not necessarily
+    the caller's "active"/session workspace. In a multi-repo project, a
+    caller that resolved ``src_id`` via a project-wide symbol search (rather
+    than assuming it lives in the caller's own workspace) MUST pass that
+    resolved workspace here, or the very first BFS iteration queries the
+    wrong workspace's edges and silently finds nothing.
+
     Returns a list of ``(from_node, edge_kind, to_node)`` hops, or ``None`` if
     no path exists within ``max_hops``. Only follows ``calls``, ``imports``,
     ``inherits``, ``implements``, and ``references`` edges (both directions).
 
     When ``project_id`` is set, the BFS can also hop across resolved
     ``CrossRepoEdge`` rows within that project, allowing paths that span sibling
-    repos in the same CodingProject.
+    repos in the same CodingProject. Once a hop lands in a sibling repo, later
+    intra-repo hops are scoped to *that* repo's own edges — each node's home
+    workspace is tracked as it's discovered (from the ``CrossRepoEdge`` row for
+    cross-repo hops, inherited from its frontier neighbour otherwise) so the
+    frontier can legitimately span more than one workspace at once.
     """
     if src_id == dst_id:
         return []
@@ -1052,6 +1103,7 @@ async def find_shortest_path(
     visited: dict[UUID, tuple[UUID | None, str | None, bool]] = {
         src_id: (None, None, True)
     }  # node_id -> (prev_id, edge_kind, is_forward)
+    node_workspace: dict[UUID, UUID] = {src_id: src_workspace_id}
     frontier: list[UUID] = [src_id]
 
     for _depth in range(max_hops):
@@ -1059,44 +1111,62 @@ async def find_shortest_path(
             break
         frontier_set = set(frontier)
 
-        # Batch-fetch all edges from/to the current frontier.
-        out_stmt = select(CodeEdge.src_id, CodeEdge.dst_id, CodeEdge.kind).where(
-            CodeEdge.workspace_id == workspace_id,
-            col(CodeEdge.src_id).in_(frontier),
-            col(CodeEdge.kind).in_(_REFERENCE_EDGE_KINDS),
-        )
-        in_stmt = select(CodeEdge.src_id, CodeEdge.dst_id, CodeEdge.kind).where(
-            CodeEdge.workspace_id == workspace_id,
-            col(CodeEdge.dst_id).in_(frontier),
-            col(CodeEdge.kind).in_(_REFERENCE_EDGE_KINDS),
-        )
-        out_rows = (await db.exec(out_stmt)).all()
-        in_rows = (await db.exec(in_stmt)).all()
+        # Group by each node's own workspace rather than filtering on the
+        # single starting `workspace_id` — once BFS has crossed into a
+        # sibling repo the frontier spans >1 workspace, and each group still
+        # hits the (workspace_id, src_id/dst_id, kind) index instead of
+        # forcing a cross-workspace table scan.
+        by_workspace: dict[UUID, list[UUID]] = {}
+        for node_id in frontier:
+            by_workspace.setdefault(node_workspace[node_id], []).append(node_id)
+
+        out_rows: list[tuple[UUID, UUID, str]] = []
+        in_rows: list[tuple[UUID, UUID, str]] = []
+        for ws_id, node_ids in by_workspace.items():
+            out_stmt = select(CodeEdge.src_id, CodeEdge.dst_id, CodeEdge.kind).where(
+                CodeEdge.workspace_id == ws_id,
+                col(CodeEdge.src_id).in_(node_ids),
+                col(CodeEdge.kind).in_(_REFERENCE_EDGE_KINDS),
+            )
+            in_stmt = select(CodeEdge.src_id, CodeEdge.dst_id, CodeEdge.kind).where(
+                CodeEdge.workspace_id == ws_id,
+                col(CodeEdge.dst_id).in_(node_ids),
+                col(CodeEdge.kind).in_(_REFERENCE_EDGE_KINDS),
+            )
+            out_rows.extend((await db.exec(out_stmt)).all())
+            in_rows.extend((await db.exec(in_stmt)).all())
 
         next_frontier: list[UUID] = []
 
-        def _visit(node_id: UUID, prev_id: UUID, kind: str, forward: bool) -> bool:
+        def _visit(
+            node_id: UUID, prev_id: UUID, kind: str, forward: bool, ws_id: UUID
+        ) -> bool:
             if node_id not in visited:
                 visited[node_id] = (prev_id, kind, forward)
+                node_workspace[node_id] = ws_id
                 next_frontier.append(node_id)
                 if node_id == dst_id:
                     return True
             return False
 
         for src, dst, kind in out_rows:
-            if _visit(dst, src, kind, True):
+            if _visit(dst, src, kind, True, node_workspace[src]):
                 return await _reconstruct_path(
-                    db, workspace_id, visited, dst_id, cross_repo=cross_repo
+                    db, src_workspace_id, visited, dst_id, cross_repo=cross_repo
                 )
         for src, dst, kind in in_rows:
-            if _visit(src, dst, kind, False):
+            if _visit(src, dst, kind, False, node_workspace[dst]):
                 return await _reconstruct_path(
-                    db, workspace_id, visited, dst_id, cross_repo=cross_repo
+                    db, src_workspace_id, visited, dst_id, cross_repo=cross_repo
                 )
 
         if cross_repo:
             cross_stmt = select(
-                CrossRepoEdge.src_node_id, CrossRepoEdge.dst_node_id, CrossRepoEdge.kind
+                CrossRepoEdge.src_node_id,
+                CrossRepoEdge.src_workspace_id,
+                CrossRepoEdge.dst_node_id,
+                CrossRepoEdge.dst_workspace_id,
+                CrossRepoEdge.kind,
             ).where(
                 col(CrossRepoEdge.project_id) == project_id,
                 col(CrossRepoEdge.status) == "resolved",
@@ -1108,16 +1178,16 @@ async def find_shortest_path(
                 ),
             )
             cross_rows = (await db.exec(cross_stmt)).all()
-            for src, dst, kind in cross_rows:
+            for src, src_ws, dst, dst_ws, kind in cross_rows:
                 if src in frontier_set and src is not None:
-                    if _visit(dst, src, kind, True):
+                    if _visit(dst, src, kind, True, dst_ws):
                         return await _reconstruct_path(
-                            db, workspace_id, visited, dst_id, cross_repo=cross_repo
+                            db, src_workspace_id, visited, dst_id, cross_repo=cross_repo
                         )
                 if dst in frontier_set and dst is not None:
-                    if _visit(src, dst, kind, False):
+                    if _visit(src, dst, kind, False, src_ws):
                         return await _reconstruct_path(
-                            db, workspace_id, visited, dst_id, cross_repo=cross_repo
+                            db, src_workspace_id, visited, dst_id, cross_repo=cross_repo
                         )
 
         frontier = next_frontier
@@ -1127,7 +1197,7 @@ async def find_shortest_path(
 
 async def _reconstruct_path(
     db: AsyncSession,
-    workspace_id: UUID,
+    src_workspace_id: UUID,
     visited: dict[UUID, tuple[UUID | None, str | None, bool]],
     target_id: UUID,
     cross_repo: bool = False,
@@ -1148,7 +1218,7 @@ async def _reconstruct_path(
         nodes_stmt = select(CodeNode).where(col(CodeNode.id).in_(path_ids))
     else:
         nodes_stmt = select(CodeNode).where(
-            CodeNode.workspace_id == workspace_id,
+            CodeNode.workspace_id == src_workspace_id,
             col(CodeNode.id).in_(path_ids),
         )
     all_nodes = list((await db.exec(nodes_stmt)).all())
@@ -1175,15 +1245,19 @@ async def search_across_workspaces(
     query: str,
     kind: str | None = None,
     limit_per_workspace: int = 10,
-) -> list[tuple[str, CodeNode]]:
+) -> list[tuple[str, UUID, CodeNode]]:
     """Fan-out search across multiple workspaces and return merged results.
 
-    Returns ``(workspace_path, CodeNode)`` tuples ordered by workspace order.
-    Results from each workspace are capped at ``limit_per_workspace``.
+    Returns ``(workspace_path, workspace_id, CodeNode)`` tuples ordered by
+    workspace order. Results from each workspace are capped at
+    ``limit_per_workspace``. ``workspace_id`` is included (not just the path)
+    so callers can run further workspace-scoped queries — e.g. neighbors or
+    references — against whichever sibling workspace a match came from.
     """
-    results: list[tuple[str, CodeNode]] = []
+    results: list[tuple[str, UUID, CodeNode]] = []
     coros = []
     valid_paths: list[str] = []
+    valid_ids: list[UUID] = []
     for path in workspace_paths:
         ws_id = await resolve_workspace_id(db, path=path)
         if ws_id is None:
@@ -1198,14 +1272,15 @@ async def search_across_workspaces(
             )
         )
         valid_paths.append(path)
+        valid_ids.append(ws_id)
 
     if not coros:
         return results
 
     per_workspace = await asyncio.gather(*coros)
-    for path, nodes in zip(valid_paths, per_workspace):
+    for path, ws_id, nodes in zip(valid_paths, valid_ids, per_workspace):
         for node in nodes:
-            results.append((path, node))
+            results.append((path, ws_id, node))
     return results
 
 

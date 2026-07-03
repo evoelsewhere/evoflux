@@ -30,6 +30,9 @@ class CodeNode(SQLModel, table=True):
         sa.Index("ix_code_nodes_workspace_file", "workspace_id", "file_path"),
         sa.Index("ix_code_nodes_workspace_name", "workspace_id", "name"),
         sa.Index("ix_code_nodes_workspace_kind", "workspace_id", "kind"),
+        sa.Index(
+            "ix_code_nodes_workspace_qualified_name", "workspace_id", "qualified_name"
+        ),
     )
 
     id: UUID = Field(default_factory=uuid7, primary_key=True)

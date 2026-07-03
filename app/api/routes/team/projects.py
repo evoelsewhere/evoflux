@@ -499,8 +499,8 @@ async def search_project_code_graph(
     """Search for a symbol across every repo in the project at once.
 
     Fans out via ``search_across_workspaces`` (already used by the agent
-    tool ``code_cross_repo_search``) so the frontend never has to make the
-    user pick one repo before searching.
+    tool ``code_search`` with ``scope='project'``) so the frontend never has
+    to make the user pick one repo before searching.
     """
     if not query.strip():
         raise HTTPException(status_code=422, detail="query must not be empty")
@@ -516,7 +516,7 @@ async def search_project_code_graph(
     return ProjectCodeSearchResponse(
         results=[
             ProjectCodeSearchResultOut(path=path, node=CodeNodeOut.from_model(node))
-            for path, node in results
+            for path, _ws_id, node in results
         ]
     )
 

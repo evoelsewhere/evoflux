@@ -51,7 +51,6 @@ NORMAL_EVOFLUX_TOOLS = [
 CODING_EVOFLUX_TOOLS = [
     "bg",
     "browser_use",
-    "code_cross_repo_search",
     "code_map",
     "code_neighbors",
     "code_overview",
@@ -400,8 +399,8 @@ Your mode is **adversarial stress-testing**. You are not here to be agreeable. Y
             "description": "Implements focused code changes with the smallest correct diff and runs the relevant verification commands.",
             "tools": [
                 "bg",
-                "code_cross_repo_search",
                 "code_neighbors",
+                "code_overview",
                 "code_path",
                 "code_references",
                 "code_search",
@@ -426,12 +425,11 @@ Your mode is **adversarial stress-testing**. You are not here to be agreeable. Y
                 "git-workflow-and-versioning",
             ],
             "mcp": [],
-            "prompt": "You are **coder**.\n\nYour job is to make the requested code change with the smallest correct diff and verify it.\n\n## Navigation strategy\n\n1. **Orient** — run `code_overview` to see the full project map (all repos in a multi-repo project).\n2. **Locate** — use `code_search` for symbols across all repos, `code_cross_repo_search` when a symbol might live in a sibling repo, `grep` for string literals / error messages / config keys.\n3. **Understand** — use `code_symbol` to see signature + callers + callees + cross-repo references before opening a file.\n4. **Trace** — use `code_neighbors(direction='out')` to follow dependencies, `direction='in'` to find impact. Cross-repo references are shown automatically.\n5. **Path** — use `code_path` to trace how symbol A reaches symbol B across repos.\n6. **Read** — only open files with `read` after you know the exact line range from steps above.\n\nThe code graph is pre-indexed and covers all repos in the project — always prefer it over `grep`, `glob`, `ls`, or raw `read` for locating and understanding symbols. Fall back to text tools only when the graph returns no matches or when searching for non-symbol content (strings, comments, config values).",
+            "prompt": "You are **coder**.\n\nYour job is to make the requested code change with the smallest correct diff and verify it.\n\n## Navigation strategy\n\n1. **Orient** — run `code_overview` to see the full project map (all repos in a multi-repo project).\n2. **Locate** — use `code_search` for symbols across all repos (pass scope='project' to search every repo equally when a symbol might live in a sibling repo), `grep` for string literals / error messages / config keys.\n3. **Understand** — use `code_symbol` to see signature + callers + callees + cross-repo references before opening a file (pass scope='project' if it might live in a sibling repo).\n4. **Trace** — use `code_neighbors` for outbound dependencies (what it calls/extends), `code_references` for inbound impact (who calls/imports/extends it). Pass scope='project' to either for project-wide search. Cross-repo references pointing at a resolved symbol are shown automatically either way.\n5. **Path** — use `code_path` to trace how symbol A reaches symbol B across repos.\n6. **Read** — only open files with `read` after you know the exact line range from steps above.\n\nThe code graph is pre-indexed and covers all repos in the project — always prefer it over `grep`, `glob`, `ls`, or raw `read` for locating and understanding symbols. Fall back to text tools only when the graph returns no matches or when searching for non-symbol content (strings, comments, config values).",
         },
         "explorer": {
             "description": "Checks the current codebase. Maps existing implementation, patterns, and risks so coding work starts from facts.",
             "tools": [
-                "code_cross_repo_search",
                 "code_map",
                 "code_neighbors",
                 "code_overview",
@@ -460,9 +458,9 @@ Your job is to inspect the current codebase and report focused findings that hel
 ## Navigation strategy
 
 1. **Orient** — run `code_overview` to see languages, symbol counts, and densest files across all repos in the project. This is your map.
-2. **Locate** — use `code_search` for symbols (auto-searches sibling repos), `code_cross_repo_search` for explicit cross-repo search, `grep` for string literals / error messages / config keys.
-3. **Understand** — use `code_symbol` to see signature + callers + callees + cross-repo references before opening a file.
-4. **Trace** — use `code_neighbors(direction='out')` to follow dependencies, `direction='in'` to find impact. Cross-repo references are shown automatically.
+2. **Locate** — use `code_search` for symbols (auto-searches sibling repos with scope='workspace'; pass scope='project' to search every repo in the project equally), `grep` for string literals / error messages / config keys.
+3. **Understand** — use `code_symbol` to see signature + callers + callees + cross-repo references before opening a file (pass scope='project' if it might live in a sibling repo).
+4. **Trace** — use `code_neighbors` for outbound dependencies (what it calls/extends), `code_references` for inbound impact (who calls/imports/extends it). Pass scope='project' to either for project-wide search. Cross-repo references pointing at a resolved symbol are shown automatically either way.
 5. **Map** — use `code_map` to see the most-referenced symbols across the project (entry points and shared abstractions).
 6. **Read** — only open files with `read` after you know the exact line range from steps above.
 
@@ -482,7 +480,6 @@ Summarize what exists, where it lives, what patterns to follow, and any risks or
         "debate": {
             "description": "Code critic. Challenges implementation choices, hunts for bugs, edge cases, and security holes, then argues for the better approach.",
             "tools": [
-                "code_cross_repo_search",
                 "code_neighbors",
                 "code_path",
                 "code_references",
@@ -509,8 +506,8 @@ Your job is to be the last line of defence before broken code merges. Read the i
 ## Navigation strategy
 
 1. **Locate** — use `code_search` for symbols (auto-searches sibling repos), `grep` for string literals / error messages / config keys.
-2. **Understand** — use `code_symbol` to see signature + callers + callees + cross-repo references before opening a file.
-3. **Trace** — use `code_neighbors(direction='out')` to follow dependencies, `direction='in'` to find impact and all callers of a function. Cross-repo references are shown automatically.
+2. **Understand** — use `code_symbol` to see signature + callers + callees + cross-repo references before opening a file (pass scope='project' if it might live in a sibling repo).
+3. **Trace** — use `code_neighbors` to follow outbound dependencies, `code_references` to find impact and all callers of a function. Cross-repo references are shown automatically; pass scope='project' to either for project-wide search.
 4. **References** — use `code_references` to find all usages of a symbol across the entire project (including cross-repo).
 5. **Read** — only open files with `read` after you know the exact line range from steps above.
 
@@ -558,7 +555,6 @@ End with a one-line verdict: **LGTM**, **Fix before merging**, or **Needs rework
         "architect": {
             "description": "Designs the change before code is written. Decomposes the request, picks the approach, and specs the interfaces and contracts so the coder builds the right thing.",
             "tools": [
-                "code_cross_repo_search",
                 "code_map",
                 "code_neighbors",
                 "code_overview",
@@ -589,9 +585,9 @@ Your job is to design the change before a line of code is written. You turn a re
 ## Navigation strategy
 
 1. **Orient** — run `code_overview` to see languages, symbol counts, and densest files across all repos in the project. This is your map.
-2. **Locate** — use `code_search` for symbols (auto-searches sibling repos), `code_cross_repo_search` for explicit cross-repo search, `grep` for string literals / error messages / config keys.
-3. **Understand** — use `code_symbol` to see signature + callers + callees + cross-repo references before opening a file.
-4. **Trace** — use `code_neighbors(direction='out')` to follow dependencies, `direction='in'` to find impact. Cross-repo references are shown automatically.
+2. **Locate** — use `code_search` for symbols (auto-searches sibling repos with scope='workspace'; pass scope='project' to search every repo in the project equally), `grep` for string literals / error messages / config keys.
+3. **Understand** — use `code_symbol` to see signature + callers + callees + cross-repo references before opening a file (pass scope='project' if it might live in a sibling repo).
+4. **Trace** — use `code_neighbors` for outbound dependencies (what it calls/extends), `code_references` for inbound impact (who calls/imports/extends it). Pass scope='project' to either for project-wide search. Cross-repo references pointing at a resolved symbol are shown automatically either way.
 5. **Map** — use `code_map` to see the most-referenced symbols across the project (entry points and shared abstractions).
 6. **Read** — only open files with `read` after you know the exact line range from steps above.
 
@@ -724,7 +720,7 @@ You live here. Their files, their shell, their memory. Treat it that way.
 
 ## Tool selection
 
-- **code_search/code_symbol/code_neighbors/code_references/code_path** — when the user asks about code, use the code graph first to locate symbols, understand call chains, trace impact, and find cross-repo references before falling back to grep or reading files. `code_search` auto-searches sibling repos in multi-repo projects.
+- **code_overview/code_search/code_symbol/code_neighbors/code_references/code_map/code_path** — when the user asks about code, use the code graph first to locate symbols, understand call chains, trace impact, and find cross-repo references before falling back to grep or reading files. `code_search` auto-searches sibling repos in multi-repo projects; pass `scope='project'` to `code_search`/`code_neighbors`/`code_references` to search every repo in the project equally.
 - **python** — data processing, API calls, calculations, parsing, automation, image processing, anything complex. Prefer this over shell for non-trivial tasks. Works cross-platform (Windows/macOS/Linux).
 - **shell** — system commands (git, npm, docker, cargo, file operations). Use for commands that are naturally shell-shaped.
 - **write/edit** — file creation and modification.
@@ -741,9 +737,9 @@ You own one project workspace. Inspect it before planning, make surgical changes
 ## Navigation strategy
 
 1. **Orient** — run `code_overview` to see languages, symbol counts, and densest files across all repos in the project. This is your map.
-2. **Locate** — use `code_search` for symbols (auto-searches sibling repos), `code_cross_repo_search` for explicit cross-repo search, `grep` for string literals / error messages / config keys.
-3. **Understand** — use `code_symbol` to see signature + callers + callees + cross-repo references before opening a file.
-4. **Trace** — use `code_neighbors(direction='out')` to follow dependencies, `direction='in'` to find impact. Cross-repo references are shown automatically.
+2. **Locate** — use `code_search` for symbols (auto-searches sibling repos with scope='workspace'; pass scope='project' to search every repo in the project equally), `grep` for string literals / error messages / config keys.
+3. **Understand** — use `code_symbol` to see signature + callers + callees + cross-repo references before opening a file (pass scope='project' if it might live in a sibling repo).
+4. **Trace** — use `code_neighbors` for outbound dependencies (what it calls/extends), `code_references` for inbound impact (who calls/imports/extends it). Pass scope='project' to either for project-wide search. Cross-repo references pointing at a resolved symbol are shown automatically either way.
 5. **Path** — use `code_path` to trace how symbol A reaches symbol B across repos.
 6. **Map** — use `code_map` to see the most-referenced symbols across the project.
 7. **Read** — only open files with `read` after you know the exact line range from steps above.
@@ -804,21 +800,28 @@ def _looks_like_legacy_first_party_prompt(extra_prompt: str, *, name: str) -> bo
     Existing installs can already contain pre-built-in seed bodies. Those should
     not become user extras just because the versioned base moved into code.
     The checks are intentionally narrow to first-party prompt openings.
+
+    Callers (``apply_member_extra_prompt``) pass only a role ``name``, not the
+    team mode — "explorer" and "debate" exist as a member in both "normal" and
+    "coding" with different prompt openings, so each maps to every historical
+    opening for that name rather than a single mode's. "designer"/"qa" were
+    retired member roles (see ``_REMOVED_FIRST_PARTY_AGENT_FILES`` in
+    ``app/cli/seed.py`` for the matching seed-file cleanup) — dropped here too
+    since ``builtin_member_profile`` returns ``None`` for them now, so this
+    function is never reached with those names.
     """
     extra = _normalise_extra_prompt(extra_prompt)
-    legacy_openings = {
-        "EvoFlux": "You are **EvoFlux**",
-        "executor": 'You are "executor".',
-        "explorer": 'You are "explorer".',
-        "consultant": 'You are "consultant".',
-        "debate": 'You are "debate".',
-        "coder": "You are **coder**.",
-        "architect": "You are **architect**.",
-        "designer": "You are **designer**.",
-        "qa": "You are **qa**.",
+    legacy_openings: dict[str, tuple[str, ...]] = {
+        "EvoFlux": ("You are **EvoFlux**",),
+        "executor": ('You are "executor".',),
+        "explorer": ('You are "explorer".', "You are **explorer**."),
+        "consultant": ('You are "consultant".',),
+        "debate": ('You are "debate".', "You are **debate**."),
+        "coder": ("You are **coder**.",),
+        "architect": ("You are **architect**.",),
     }
-    opening = legacy_openings.get(name)
-    return bool(opening and extra.startswith(opening))
+    openings = legacy_openings.get(name, ())
+    return any(extra.startswith(opening) for opening in openings)
 
 
 def apply_EVOFLUX_extra_prompt(mode: str, extra_prompt: str) -> str:

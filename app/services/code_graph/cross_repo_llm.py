@@ -127,18 +127,20 @@ async def resolve_project_tier_b(
                 [(str(ws_id), query_text) for ws_id in others],
                 cfg.candidate_k,
             )
+            # One fetch across every sibling's FTS hits instead of one query
+            # per sibling — a node's own `workspace_id` column tells us which
+            # sibling it came from, so there's nothing to track per-sibling.
+            all_node_ids = {nid for node_ids in results for nid in node_ids}
             candidates: list[tuple[CodeNode, UUID]] = []
-            for ws_id, node_ids in zip(others, results):
-                if not node_ids:
-                    continue
+            if all_node_ids:
                 nodes = (
                     await db.exec(
                         select(CodeNode).where(
-                            col(CodeNode.id).in_([UUID(nid) for nid in node_ids])
+                            col(CodeNode.id).in_([UUID(nid) for nid in all_node_ids])
                         )
                     )
                 ).all()
-                candidates.extend((node, ws_id) for node in nodes)
+                candidates = [(node, node.workspace_id) for node in nodes]
 
             target_name = row.dst_name_hint or row.raw_reference.rsplit(".", 1)[-1]
             exact = [
