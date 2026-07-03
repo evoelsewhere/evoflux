@@ -1,0 +1,55 @@
+import { useState } from 'react'
+import { ChevronDown, ChevronUp, RotateCcw } from 'lucide-react'
+
+interface RevertNoticeProps {
+  count: number
+  messages?: Array<{ role: string; content: string }>
+  onRedo?: () => void
+}
+
+export function RevertNotice({ count, messages = [], onRedo }: RevertNoticeProps) {
+  const [expanded, setExpanded] = useState(false)
+  if (count <= 0) return null
+  const label = count === 1 ? '1 message reverted' : `${count} messages reverted`
+
+  return (
+    <div className="my-2 flex justify-center">
+      <div className="flex w-full max-w-xl flex-col gap-1.5 text-xs text-(--color-text-muted)">
+        {expanded && messages.length > 0 && (
+          <div className="max-h-44 overflow-y-auto rounded-md border border-(--color-border) bg-(--color-surface) p-2 shadow-sm">
+            {messages.map((message, index) => (
+              <div
+                key={`${message.role}-${index}`}
+                className="px-2 py-1.5 not-last:border-b not-last:border-(--color-border)"
+              >
+                <div className="whitespace-pre-wrap text-(--color-text-muted)">{message.content}</div>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="rounded-md border border-(--color-border) bg-(--color-surface) p-1.5 shadow-sm">
+        <div className="flex items-center justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => setExpanded((value) => !value)}
+            className="flex items-center gap-1.5 rounded-xs px-2 py-1 transition-colors hover:text-(--color-text)"
+            aria-expanded={expanded}
+          >
+            {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+            <span>{label}</span>
+          </button>
+          <button
+            type="button"
+            onClick={onRedo}
+            className="group flex items-center gap-1.5 rounded-xs px-2 py-1 transition-colors hover:text-(--color-text)"
+            title="Restore all undone messages and return the workspace to the live tip"
+          >
+            <RotateCcw size={13} className="text-(--color-text-subtle) transition-colors group-hover:text-(--color-accent)" />
+            <span>/redo to restore</span>
+          </button>
+        </div>
+        </div>
+      </div>
+    </div>
+  )
+}

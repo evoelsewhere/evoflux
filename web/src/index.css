@@ -1,0 +1,930 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+@import "@fontsource/caveat";
+@import "highlight.js/styles/atom-one-dark.css";
+
+/* ─────────────────────────────────────────────────────────────
+ * EvoFlux — syntax highlighting (highlight.js)
+ * Each token category maps to a distinct semantic CSS variable.
+ * Dark: coral-red keywords, lavender functions, sky-blue strings,
+ *        amber variables, green types, cornflower numbers.
+ * Light: crimson keywords, purple functions, navy strings,
+ *        burnt-amber variables, forest-green types, royal-blue numbers.
+ * ───────────────────────────────────────────────────────────── */
+.hljs {
+  background: transparent;
+  color: var(--color-text);
+}
+.hljs-comment,
+.hljs-quote          { color: var(--color-syn-comment); font-style: italic; }
+
+/* Control-flow keywords */
+.hljs-keyword,
+.hljs-selector-tag   { color: var(--color-syn-keyword); }
+
+/* Built-ins and language primitives (treat as constants, not keywords) */
+.hljs-built_in       { color: var(--color-syn-number); }
+
+/* HTML/XML/JSX native tags */
+.hljs-tag            { color: var(--color-syn-tag); }
+
+/* Attribute names inside tags */
+.hljs-attr,
+.hljs-attribute      { color: var(--color-syn-variable); }
+
+/* String literals */
+.hljs-string         { color: var(--color-syn-string); }
+
+/* Numeric/boolean literals */
+.hljs-number,
+.hljs-literal        { color: var(--color-syn-number); }
+
+/* Function/method names */
+.hljs-title,
+.hljs-title.function_ { color: var(--color-syn-function); }
+
+/* Class / type names */
+.hljs-title.class_,
+.hljs-section        { color: var(--color-syn-type); }
+
+/* Variables and template expressions */
+.hljs-variable,
+.hljs-template-variable,
+.hljs-name           { color: var(--color-syn-variable); }
+
+/* Type annotations */
+.hljs-type,
+.hljs-class          { color: var(--color-syn-type); }
+
+/* Additions/deletions in diffs */
+.hljs-addition       { color: var(--color-syn-string); }
+.hljs-deletion       { color: var(--color-syn-variable); }
+
+/* Parameters */
+.hljs-params         { color: var(--color-text); }
+
+.hljs-emphasis       { font-style: italic; }
+.hljs-strong         { font-weight: bold; }
+
+@custom-variant dark (&:is(.dark *));
+
+/* ─────────────────────────────────────────────────────────────
+ * Tailwind @theme — expose design tokens as utilities.
+ * Tokens themselves are defined in :root.dark / :root.light below.
+ * ───────────────────────────────────────────────────────────── */
+@theme inline {
+    --font-heading: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --font-sans: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', 'Cascadia Code', 'Fira Code', 'Courier New', monospace;
+    --font-hand: 'Caveat', cursive;
+
+    /* shadcn semantic tokens */
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    --radius-xs: 6px;
+    --radius-sm: 8px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --radius-xl: 18px;
+    --radius-2xl: 24px;
+    --radius-3xl: 32px;
+    --radius-4xl: 40px;
+
+    --spacing-app-header: 2.75rem;
+    --spacing-mac-traffic-inset: 70px;
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * Dark mode — pure black/white/gray, single blue accent.
+ * ───────────────────────────────────────────────────────────── */
+:root.dark {
+    color-scheme: dark;
+
+    /* Surfaces — VSCode 2026 Dark hierarchy: editor=darkest, sidebar recedes, widgets elevated */
+    --bg-page:           #121314;
+    --bg-sidebar:        #191A1B;
+    --bg-card:           #202122;
+    --bg-input:          #191A1B;
+    --bg-key:            #282A2B;
+    --bg-muted:          #282A2B;
+    --bg-send:           #C8CACC;
+    --color-surface:     #202122;
+    --color-surface-2:   #282A2B;
+    --color-bg-elevated: #202122;
+
+    /* Borders — subtler steps, more air between surfaces */
+    --border-soft:         #2A2B2C;
+    --border-card:         #333536;
+    --color-border-subtle: #2A2B2C;
+    --color-border:        #333536;
+    --color-border-strong: #4A4B4D;
+
+    /* Text — softened foreground reduces glare on near-black bg */
+    --color-text:           #ffffff;
+    --color-text-2:         #d9d9d9;
+    --color-text-muted:     #b8b8bd;
+    --color-text-subtle:    #ababaf;
+    --color-text-on-accent: #494d52;
+
+    /* Accent */
+    --color-accent:  #C8CACC;
+    --color-overlay: #000000CC;
+
+    /* Arc gradients */
+    --color-gradient-primary: linear-gradient(135deg, #667eea 0%, #8B5CF6 100%);
+    --color-gradient-cyan:    linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    --color-gradient-rose:    linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    --color-gradient-amber:   linear-gradient(135deg, #f7971e 0%, #ffd200 100%);
+
+    /* Agent chips — muted monochrome with single accent hue */
+    --accent-blue:        #60A5FA;
+    --accent-blue-soft:   #1E293B;
+    --accent-blue-text:   #93C5FD;
+
+    --accent-green:       #4ADE80;
+    --accent-green-soft:  #14532D;
+    --accent-green-text:  #86EFAC;
+
+    --accent-orange:      #FB923C;
+    --accent-orange-soft: #431407;
+    --accent-orange-text: #FDBA74;
+
+    --accent-pink:        #F472B6;
+    --accent-pink-soft:   #500724;
+
+    --accent-purple:      #A78BFA;
+    --accent-purple-soft: #2E1065;
+
+    --accent-red:         #F87171;
+
+    /* Markers */
+    --color-marker-blue:   #60A5FA;
+    --color-marker-mint:   #4ADE80;
+    --color-marker-orange: #FB923C;
+    --color-marker-pink:   #F472B6;
+    --color-marker-yellow: #FBBF24;
+    --color-violet:        #A78BFA;
+    --color-tint-mint:     rgba(74, 222, 128, 0.12);
+    --color-tint-orange:   rgba(251, 146, 60, 0.12);
+    --color-tint-violet:   rgba(167, 139, 250, 0.12);
+
+    /* Semantic */
+    --color-success:        var(--accent-green);
+    --color-success-subtle: var(--accent-green-soft);
+    --color-warning:        var(--accent-orange);
+    --color-warning-subtle: var(--accent-orange-soft);
+    --color-error:          #F87171;
+    --color-error-subtle:   rgba(248, 113, 113, 0.10);
+    --color-info:           var(--accent-blue);
+    --color-info-subtle:    var(--accent-blue-soft);
+    --color-diff-add-bg:    rgba(74, 222, 128, 0.08);
+    --color-diff-add-text:  #86EFAC;
+    --color-diff-del-bg:    rgba(248, 113, 113, 0.08);
+    --color-diff-del-text:  #FCA5A5;
+
+    /* Syntax — VSCode 2026 Dark inspired: each token category gets a distinct hue */
+    /* Comment: warm-gray — de-emphasised but readable: 4.8:1 on page, 4.2:1 on card */
+    --color-syn-comment:  #7B828A;
+    /* Keyword/control-flow: coral-red — 7.4:1 AAA */
+    --color-syn-keyword:  #FF7B72;
+    /* Function call-site: lavender — 9.6:1 AAA, distinct from keyword red */
+    --color-syn-function: #D2A8FF;
+    /* Variable/parameter: amber-orange — 9.6:1 AAA, warm not error-red */
+    --color-syn-variable: #FFA657;
+    /* String literal: sky blue — 12.1:1 AAA, immediately recognisable */
+    --color-syn-string:   #A5D6FF;
+    /* Number/literal: cornflower blue — 9.6:1 AAA, distinct hue from string */
+    --color-syn-number:   #79C0FF;
+    /* Type/class: soft green — AAA, clear type signal */
+    --color-syn-type:     #7EE787;
+    /* HTML/JSX tag (new token): green-teal, distinct from component (lavender) */
+    --color-syn-tag:      #7EE787;
+    /* Operator: medium gray — intentionally de-emphasised */
+    --color-syn-operator: #8B949E;
+
+    /* Focus + depth — VSCode 2026 Dark blue-teal accent for interactive states */
+    --focus-ring:   #3994BC;
+    --shadow-depth: 0 2px 4px rgba(0, 0, 0, 0.40), 0 4px 16px rgba(0, 0, 0, 0.30);
+    --shadow-popover: 0 16px 48px rgba(0, 0, 0, 0.55), 0 6px 24px rgba(0, 0, 0, 0.38);
+
+    /* Motion */
+    --motion-instant: 80ms;
+    --motion-fast:    150ms;
+    --motion-base:    240ms;
+    --motion-slow:    400ms;
+    --motion-glacial: 800ms;
+
+    --ease-out:           cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-in-out:        cubic-bezier(0.4, 0, 0.2, 1);
+    --ease-spring-soft:   cubic-bezier(0.34, 1.2, 0.64, 1);
+    --ease-spring-snappy: cubic-bezier(0.22, 1.4, 0.36, 1);
+    --ease-linear:        linear;
+
+    /* shadcn base tokens */
+    --background:                 var(--bg-page);
+    --foreground:                 var(--color-text);
+    --card:                       var(--bg-card);
+    --card-foreground:            var(--color-text);
+    --popover:                    var(--bg-card);
+    --popover-foreground:         var(--color-text);
+    --primary:                    #2871A3;
+    --primary-foreground:         #FFFFFF;
+    --secondary:                  var(--bg-key);
+    --secondary-foreground:       var(--color-text);
+    --muted:                      var(--bg-key);
+    --muted-foreground:           var(--color-text-muted);
+    --accent:                     var(--bg-key);
+    --accent-foreground:          var(--color-text);
+    --destructive:                var(--color-error);
+    --border:                     var(--color-border);
+    --input:                      var(--color-border);
+    --ring:                       var(--focus-ring);
+    --radius:                     0.5rem;
+    --sidebar:                    var(--bg-sidebar);
+    --sidebar-foreground:         var(--color-text);
+    --sidebar-primary:            var(--color-accent);
+    --sidebar-primary-foreground: var(--bg-page);
+    --sidebar-accent:             var(--bg-key);
+    --sidebar-accent-foreground:  var(--color-text);
+    --sidebar-border:             var(--border-soft);
+    --sidebar-ring:               var(--focus-ring);
+    --chart-1:                    var(--color-marker-blue);
+    --chart-2:                    var(--color-marker-mint);
+    --chart-3:                    var(--color-marker-orange);
+    --chart-4:                    var(--color-violet);
+    --chart-5:                    var(--color-marker-pink);
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * Light mode — pure white/gray, single blue accent.
+ * ───────────────────────────────────────────────────────────── */
+:root,
+:root.light {
+    color-scheme: light;
+
+    /* Surfaces — warm off-white hierarchy, sidebar recedes from page */
+    --bg-page:           #FAF9F6;
+    --bg-sidebar:        #F3F1EB;
+    --bg-card:           #FFFFFF;
+    --bg-input:          #FFFFFF;
+    --bg-key:            #ECEAE3;
+    --bg-muted:          #ECEAE3;
+    --bg-send:           #111114;
+    --color-surface:     #FFFFFF;
+    --color-surface-2:   #ECEAE3;
+    --color-bg-elevated: #FFFFFF;
+
+    /* Borders — warm-tinted, airy */
+    --border-soft:         #EEECE5;
+    --border-card:         #E4E2DA;
+    --color-border-subtle: #EEECE5;
+    --color-border:        #E4E2DA;
+    --color-border-strong: #D5D3CB;
+
+    /* Text — ink-black primary, measured secondary scale */
+    --color-text:           #000000;
+    --color-text-2:         #1a1a1a;
+    --color-text-muted:     #3c3c3c;
+    --color-text-subtle:    #4d4d4d;
+    --color-text-on-accent: #FFFFFF;
+
+    /* Accent */
+    --color-accent:  #111114;
+    --color-overlay: rgba(0, 0, 0, 0.40);
+
+    /* Arc gradients */
+    --color-gradient-primary: linear-gradient(135deg, #667eea 0%, #8B5CF6 100%);
+    --color-gradient-cyan:    linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    --color-gradient-rose:    linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    --color-gradient-amber:   linear-gradient(135deg, #f7971e 0%, #ffd200 100%);
+
+    /* Agent chips — darker tones for AA contrast on light bg */
+    --accent-blue:        #2563EB;
+    --accent-blue-soft:   #DBEAFE;
+    --accent-blue-text:   #1E40AF;
+
+    --accent-green:       #15803D;
+    --accent-green-soft:  #DCFCE7;
+    --accent-green-text:  #166534;
+
+    --accent-orange:      #C2410C;
+    --accent-orange-soft: #FFEDD5;
+    --accent-orange-text: #9A3412;
+
+    --accent-pink:        #BE185D;
+    --accent-pink-soft:   #FCE7F3;
+
+    --accent-purple:      #7C3AED;
+    --accent-purple-soft: #EDE9FE;
+
+    --accent-red:         #DC2626;
+
+    /* Markers — AA-contrast on light bg */
+    --color-marker-blue:   #2563EB;
+    --color-marker-mint:   #15803D;
+    --color-marker-orange: #C2410C;
+    --color-marker-pink:   #BE185D;
+    --color-marker-yellow: #713F12;
+    --color-violet:        #7C3AED;
+    --color-tint-mint:     rgba(22, 163, 74, 0.08);
+    --color-tint-orange:   rgba(234, 88, 12, 0.08);
+    --color-tint-violet:   rgba(124, 58, 237, 0.08);
+
+    /* Semantic — AA-contrast on light bg */
+    --color-success:        var(--accent-green);
+    --color-success-subtle: var(--accent-green-soft);
+    --color-warning:        var(--accent-orange);
+    --color-warning-subtle: var(--accent-orange-soft);
+    --color-error:          #DC2626;
+    --color-error-subtle:   rgba(220, 38, 38, 0.06);
+    --color-info:           var(--accent-blue);
+    --color-info-subtle:    var(--accent-blue-soft);
+    --color-diff-add-bg:    rgba(22, 163, 74, 0.10);
+    --color-diff-add-text:  #166534;
+    --color-diff-del-bg:    rgba(220, 38, 38, 0.10);
+    --color-diff-del-text:  #991B1B;
+
+    /* Syntax — VSCode 2026 Light inspired: GitHub-flavoured ink palette */
+    /* Comment: medium gray — 4.6:1 AA on #FFFFFF (finally passes) */
+    --color-syn-comment:  #6B7280;
+    /* Keyword/control-flow: crimson-red — 5.4:1 AA */
+    --color-syn-keyword:  #CF222E;
+    /* Function call-site: purple — 5.1:1 AA, distinct hue from keyword */
+    --color-syn-function: #8250DF;
+    /* Variable/parameter: burnt amber — 7.4:1 AAA, warm; not error-red */
+    --color-syn-variable: #953800;
+    /* String literal: deep navy — 12.8:1 AAA, immediately recognisable */
+    --color-syn-string:   #0A3069;
+    /* Number/literal: royal blue — 7.6:1 AAA, distinct from string navy */
+    --color-syn-number:   #0550AE;
+    /* Type/class: forest green — 7.4:1 AAA */
+    --color-syn-type:     #116329;
+    /* HTML/JSX tag (new token): same as type for light; components keep purple */
+    --color-syn-tag:      #116329;
+    /* Operator: neutral gray — intentionally de-emphasised */
+    --color-syn-operator: #737373;
+
+    /* Focus + depth — VSCode 2026 Light blue for interactive states */
+    --focus-ring:   #0069CC;
+    --shadow-depth: 0 1px 3px rgba(10, 10, 30, 0.07), 0 4px 12px rgba(10, 10, 30, 0.10);
+    --shadow-popover: 0 8px 32px rgba(10, 10, 30, 0.20), 0 4px 16px rgba(10, 10, 30, 0.12);
+
+    /* shadcn base tokens — light mode */
+    --background:                 var(--bg-page);
+    --foreground:                 var(--color-text);
+    --card:                       var(--bg-card);
+    --card-foreground:            var(--color-text);
+    --popover:                    var(--bg-card);
+    --popover-foreground:         var(--color-text);
+    --primary:                    #111114;
+    --primary-foreground:         #FFFFFF;
+    --secondary:                  var(--bg-key);
+    --secondary-foreground:       var(--color-text);
+    --muted:                      var(--bg-key);
+    --muted-foreground:           var(--color-text-muted);
+    --accent:                     var(--bg-key);
+    --accent-foreground:          var(--color-text);
+    --destructive:                var(--color-error);
+    --border:                     var(--color-border);
+    --input:                      var(--color-border);
+    --ring:                       var(--focus-ring);
+    --radius:                     0.5rem;
+    --sidebar:                    var(--bg-sidebar);
+    --sidebar-foreground:         var(--color-text);
+    --sidebar-primary:            var(--color-accent);
+    --sidebar-primary-foreground: var(--bg-page);
+    --sidebar-accent:             var(--bg-key);
+    --sidebar-accent-foreground:  var(--color-text);
+    --sidebar-border:             var(--border-soft);
+    --sidebar-ring:               var(--focus-ring);
+    --chart-1:                    var(--color-marker-blue);
+    --chart-2:                    var(--color-marker-mint);
+    --chart-3:                    var(--color-marker-orange);
+    --chart-4:                    var(--color-violet);
+    --chart-5:                    var(--color-marker-pink);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+  body {
+    @apply bg-background text-foreground;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "cv01", "cv11", "ss01", "ss03", "ss07";
+    font-optical-sizing: auto;
+    letter-spacing: -0.006em;
+    line-height: 1.6;
+  }
+  html {
+    @apply font-sans;
+    /* Scale the entire UI ~12 % so it reads comfortably at 100 % browser zoom.
+       All Tailwind spacing / text / height utilities use rem and scale here. */
+    font-size: 18px;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * Safe-area helpers
+ * ───────────────────────────────────────────────────────────── */
+.pb-safe { padding-bottom: max(env(safe-area-inset-bottom, 0px), 8px); }
+.pt-safe { padding-top:    env(safe-area-inset-top,    0px); }
+.pl-safe { padding-left:   env(safe-area-inset-left,   0px); }
+.pr-safe { padding-right:  env(safe-area-inset-right,  0px); }
+
+html[data-mobile-shell] {
+  -webkit-text-size-adjust: 100%;
+  touch-action: pan-x pan-y;
+}
+
+html[data-mobile-shell] body {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+html[data-mobile-shell] input,
+html[data-mobile-shell] textarea,
+html[data-mobile-shell] [contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+html[data-mobile-shell] .text-\[9px\],
+html[data-mobile-shell] .text-\[10px\] {
+  font-size: 12px;
+}
+
+.mobile-safe-shell {
+  padding-right: env(safe-area-inset-right, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * Icon scaling — lift Lucide SVG icons to match the 17.6 px rem
+ * base.  The element selector (specificity 0,0,2) wins over HTML
+ * width/height attributes but loses to any Tailwind utility class
+ * (specificity 0,1,0), so explicitly-sized SVGs (TokenMeter ring,
+ * progress arcs, etc.) are unaffected.
+ * ───────────────────────────────────────────────────────────── */
+button svg[aria-hidden="true"],
+a svg[aria-hidden="true"],
+[role="menuitem"] svg[aria-hidden="true"],
+[role="option"] svg[aria-hidden="true"] {
+  width: 0.9em;
+  height: 0.9em;
+}
+
+.mobile-safe-header {
+  min-height: calc(var(--spacing-app-header) + env(safe-area-inset-top, 0px));
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.mobile-safe-top {
+  top: calc(var(--spacing-app-header) + env(safe-area-inset-top, 0px));
+}
+
+.mobile-safe-notch-top {
+  top: env(safe-area-inset-top, 0px);
+}
+
+.mobile-safe-overlay {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+}
+
+.mobile-safe-floating {
+  right: max(1rem, env(safe-area-inset-right, 0px));
+  bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+  left: max(1rem, env(safe-area-inset-left, 0px));
+}
+
+.mobile-safe-toast {
+  top: max(1rem, env(safe-area-inset-top, 0px));
+  right: max(1rem, env(safe-area-inset-right, 0px));
+  left: max(1rem, env(safe-area-inset-left, 0px));
+}
+
+@supports (height: 100svh) {
+  .mobile-viewport {
+    height: 100svh;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * Scrollbar — minimal Arc-style
+ * ───────────────────────────────────────────────────────────── */
+@layer base {
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border-strong);
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-text-muted);
+  }
+  .overflow-auto,
+  .overflow-x-auto,
+  .overflow-y-auto,
+  .overflow-y-scroll,
+  .overflow-scroll {
+    overscroll-behavior: none;
+  }
+}
+
+@layer utilities {
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * Focus ring
+ * ───────────────────────────────────────────────────────────── */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+    transition: outline-color var(--motion-fast) var(--ease-out);
+  }
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * Animations
+ * ───────────────────────────────────────────────────────────── */
+
+@keyframes thinking-dot {
+  0%, 100% { opacity: 0.4; }
+  50%      { opacity: 1; }
+}
+.thinking-dot {
+  animation: thinking-dot 1400ms var(--ease-in-out) infinite;
+}
+
+@keyframes tool-row-enter {
+  from { transform: translateY(8px); opacity: 0; }
+  to   { transform: translateY(0);   opacity: 1; }
+}
+.tool-row-enter {
+  animation: tool-row-enter var(--motion-base) var(--ease-spring-soft);
+}
+
+@keyframes done-pulse {
+  from { opacity: 0.6; }
+  to   { opacity: 1; }
+}
+.done-pulse {
+  animation: done-pulse var(--motion-base) var(--ease-out);
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * Claude-style loading verb
+ * ───────────────────────────────────────────────────────────── */
+.loading-verb {
+  /* Inline transition handles the opacity cross-fade; this just
+     adds the subtle upward drift so each new verb slides in from
+     below.  The `transition` shorthand is overridden by Tailwind
+     `duration-400` on the element, so we only set the transform
+     part here. */
+  transition-property: opacity, transform;
+  transition-timing-function: var(--ease-out);
+}
+.loading-verb-fade-out {
+  opacity: 0;
+  transform: translateY(2px);
+}
+.loading-verb-fade-in {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * Progressive block reveal — fade-in + slight slide-up
+ * ───────────────────────────────────────────────────────────── */
+@keyframes block-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.block-reveal {
+  animation: block-reveal var(--motion-base) var(--ease-out) both;
+}
+
+/* Staggered children — each child delays by 40ms * index.
+   Apply to a parent container; children inherit via CSS custom prop. */
+.stagger-children > * {
+  animation: block-reveal var(--motion-base) var(--ease-out) both;
+}
+.stagger-children > *:nth-child(1)  { animation-delay: 0ms; }
+.stagger-children > *:nth-child(2)  { animation-delay: 40ms; }
+.stagger-children > *:nth-child(3)  { animation-delay: 80ms; }
+.stagger-children > *:nth-child(4)  { animation-delay: 120ms; }
+.stagger-children > *:nth-child(5)  { animation-delay: 160ms; }
+.stagger-children > *:nth-child(6)  { animation-delay: 200ms; }
+.stagger-children > *:nth-child(7)  { animation-delay: 240ms; }
+.stagger-children > *:nth-child(8)  { animation-delay: 280ms; }
+.stagger-children > *:nth-child(9)  { animation-delay: 320ms; }
+.stagger-children > *:nth-child(10) { animation-delay: 360ms; }
+
+/* ─────────────────────────────────────────────────────────────
+ * Skeleton shimmer — reduced-motion-safe subtle pulse
+ * ───────────────────────────────────────────────────────────── */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--bg-card) 25%,
+    var(--bg-key) 50%,
+    var(--bg-card) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s var(--ease-in-out) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-shimmer {
+    animation: none;
+    background: var(--bg-key);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * Repo-graph edge flow pulse — cross-repo resolve job in flight
+ * ───────────────────────────────────────────────────────────── */
+@keyframes repo-graph-flow {
+  to { stroke-dashoffset: -6; }
+}
+.repo-graph-flow {
+  animation: repo-graph-flow 1s linear infinite;
+}
+/* Same pulse, slowed down — the modal's "always alive" synapse animation
+ * when no resolve job is actively running. */
+.repo-graph-flow-slow {
+  animation: repo-graph-flow 3.5s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .repo-graph-flow,
+  .repo-graph-flow-slow {
+    animation: none;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * Raised surface
+ * ───────────────────────────────────────────────────────────── */
+.surface-raised {
+  box-shadow: var(--shadow-depth);
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * Font-weight transition — signature interaction
+ * ───────────────────────────────────────────────────────────── */
+.interactive-weight {
+  font-weight: 400;
+  transition: font-weight var(--motion-fast) var(--ease-in-out);
+}
+.interactive-weight:hover  { font-weight: 500; }
+.interactive-weight:active { font-weight: 600; }
+
+/* ─────────────────────────────────────────────────────────────
+ * prefers-reduced-motion
+ * ───────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * Drag and drop
+ * ───────────────────────────────────────────────────────────── */
+.panel-dragging {
+  opacity: 0.45;
+  cursor: grabbing;
+}
+.panel-drop-target {
+  outline: 2px dashed color-mix(in srgb, var(--color-accent) 55%, transparent);
+  outline-offset: -2px;
+  background: color-mix(in srgb, var(--color-accent) 4%, transparent);
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * Arc gradient utilities
+ * ───────────────────────────────────────────────────────────── */
+.gradient-primary {
+  background: var(--color-gradient-primary);
+}
+.bg-gradient-primary {
+  background: var(--color-gradient-primary);
+}
+.gradient-cyan {
+  background: var(--color-gradient-cyan);
+}
+.gradient-rose {
+  background: var(--color-gradient-rose);
+}
+.gradient-amber {
+  background: var(--color-gradient-amber);
+}
+
+/* Gradient text */
+.text-gradient-primary {
+  background: var(--color-gradient-primary);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* Arc-style sidebar active indicator (left gradient bar) */
+.arc-active-indicator {
+  position: relative;
+}
+.arc-active-indicator::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 15%;
+  bottom: 15%;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--color-gradient-primary);
+}
+
+/* Subtle gradient glow on hover for interactive surfaces */
+.arc-hover-glow {
+  transition: box-shadow var(--motion-fast) var(--ease-out);
+}
+.arc-hover-glow:hover {
+  box-shadow: 0 0 0 1px rgba(102, 126, 234, 0.15), 0 4px 16px rgba(102, 126, 234, 0.08);
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * Markdown prose — .oa-prose
+ * ───────────────────────────────────────────────────────────── */
+.oa-prose {
+  color: var(--color-text);
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+  letter-spacing: -0.003em;
+}
+.oa-prose p { margin-bottom: 0.75em; }
+.oa-prose p:last-child { margin-bottom: 0; }
+.oa-prose h1, .oa-prose h2, .oa-prose h3 {
+  font-weight: 600;
+  margin-top: 1.25em;
+  margin-bottom: 0.5em;
+  color: var(--color-text);
+}
+.oa-prose h1 { font-size: 1.2em;  color: var(--color-text); }
+.oa-prose h2 { font-size: 1.08em; color: var(--color-text); }
+.oa-prose h3 { font-size: 1em;    color: var(--color-text-2); }
+.oa-prose ul, .oa-prose ol {
+  padding-left: 1.5em;
+  margin-bottom: 0.75em;
+}
+.oa-prose ol {
+  list-style-type: decimal;
+}
+.oa-prose ul {
+  list-style-type: disc;
+}
+.oa-prose li { margin-bottom: 0.25em; }
+.oa-prose code {
+  background: var(--bg-key);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 0.15em 0.4em;
+  font-size: 0.88em;
+  font-family: var(--font-mono);
+  color: var(--color-text);
+}
+.oa-prose pre {
+  overflow-x: auto;
+  margin: 0;
+}
+
+.oa-prose pre code {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-size: 0.85em;
+  color: var(--color-text);
+}
+.oa-prose a {
+  color: var(--color-text);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: var(--color-border-strong);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  transition: text-decoration-color 120ms ease, color 120ms ease;
+}
+.oa-prose a:hover {
+  color: var(--color-accent);
+  text-decoration-color: currentColor;
+}
+.oa-prose a:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.oa-prose blockquote {
+  border-left: 2px solid var(--color-border-strong);
+  padding-left: 0.75em;
+  color: var(--color-text-muted);
+  font-style: italic;
+  margin: 0.75em 0;
+}
+.oa-prose hr {
+  border-color: var(--color-border);
+  margin: 1em 0;
+}
+.oa-prose table {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.875em;
+}
+.oa-prose th, .oa-prose td {
+  border: 1px solid var(--color-border);
+  padding: 0.5em 0.75em;
+  text-align: left;
+}
+.oa-prose th {
+  color: var(--color-text-2);
+  background: var(--bg-key);
+}
+.oa-prose strong { color: var(--color-text); font-weight: 600; }
+.oa-prose em     { color: var(--color-text-2); font-style: italic; }
