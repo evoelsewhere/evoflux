@@ -1,4 +1,4 @@
-import { createRootRoute, createRoute, createRouter } from '@tanstack/react-router'
+import { createRootRoute, createRoute, createRouter, Outlet } from '@tanstack/react-router'
 import { Root, NotFound } from './routes/__root'
 import { TeamLayout, CodingLayout } from './routes/forge'
 import { TelemetryPage } from './routes/telemetry'
@@ -37,8 +37,26 @@ const codingIndexRoute = createRoute({
   path: '/',
   component: () => null,
 })
-const codingSessionRoute = createRoute({
+// /coding/$focusId[/​$sessionId] — $focusId anchors the sidebar/panel to a
+// specific workspace (URL-encoded path) or project (UUID) even before a
+// session is picked; see utils/workspace.ts's codingFocusId/isProjectFocusId.
+// NOTE: there is deliberately no separate /coding/$sessionId route anymore —
+// a single dynamic segment can't be split between two sibling routes (one
+// wins arbitrarily), so a bare old-style /coding/{sessionId} link is parsed
+// as $focusId too. TeamLayoutBase's resolve effect falls back to treating it
+// as a legacy session id when it doesn't resolve as a project/workspace.
+const codingFocusRoute = createRoute({
   getParentRoute: () => codingLayoutRoute,
+  path: '$focusId',
+  component: Outlet,
+})
+const codingFocusIndexRoute = createRoute({
+  getParentRoute: () => codingFocusRoute,
+  path: '/',
+  component: () => null,
+})
+const codingFocusSessionRoute = createRoute({
+  getParentRoute: () => codingFocusRoute,
   path: '$sessionId',
   component: () => null,
 })
@@ -59,7 +77,10 @@ const schedulerRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   teamLayoutRoute.addChildren([teamIndexRoute, teamSessionRoute]),
-  codingLayoutRoute.addChildren([codingIndexRoute, codingSessionRoute]),
+  codingLayoutRoute.addChildren([
+    codingIndexRoute,
+    codingFocusRoute.addChildren([codingFocusIndexRoute, codingFocusSessionRoute]),
+  ]),
   telemetryRoute,
   schedulerRoute,
 ])

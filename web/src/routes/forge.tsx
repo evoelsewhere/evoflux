@@ -7,7 +7,7 @@ import { useTeamStore } from '@/stores/useTeamStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { applyCacheInvalidations, patchSessionTitle } from '@/stores/cache-invalidation-bridge'
 import { queryKeys } from '@/queries'
-import { loadLastCodingWorkspace, removeCodingWorkspace, saveLastCodingWorkspace, shouldRestoreLastCodingWorkspace, workspaceFromSession } from '@/utils/workspace'
+import { clearLastCodingFocus, codingFocusId, isProjectFocusId, loadLastCodingFocusId, saveLastCodingFocus, saveLastCodingWorkspace, shouldRestoreLastCodingWorkspace, workspaceFromSession } from '@/utils/workspace'
 
 /**
  * Layout route for /, /coding, and their session routes.
@@ -17,6 +17,7 @@ import { loadLastCodingWorkspace, removeCodingWorkspace, saveLastCodingWorkspace
 function TeamLayoutBase({ forcedMode }: { forcedMode?: 'normal' | 'coding' }) {
   const params = useParams({ strict: false }) as Record<string, string>
   const sessionId = params.sessionId as string | undefined
+  const focusId = params.focusId as string | undefined
   const mode = forcedMode ?? 'normal'
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -36,54 +37,94 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'normal' | 'coding' }) {
     staleTime: 30_000,
   })
   const workspace = workspaceFromSession(mode, sessionId, cachedSession?.workspace ?? sessionQuery.data?.workspace)
+  const projectId = mode === 'coding' && sessionId
+    ? (cachedSession?.project_id ?? sessionQuery.data?.project_id ?? null)
+    : null
 
   useEffect(() => {
-    if (mode === 'coding' && workspace) saveLastCodingWorkspace(workspace)
-  }, [mode, workspace])
+    // project_id (when set) always wins inside saveLastCodingFocus — safe to
+    // call unconditionally once workspace is known, project or not. Doing
+    // this generically here (rather than at each call site that starts a
+    // session) is exactly why this needs to be project-aware: a project
+    // session's `workspace` is only its representative repo, and persisting
+    // that alone would silently drop the project context on restore.
+    if (mode === 'coding' && workspace) saveLastCodingFocus({ project_id: projectId, workspace })
+  }, [mode, workspace, projectId])
 
+  // Bare /coding (no focusId, no sessionId) — redirect to whatever focus
+  // (workspace or project) was last active; the /coding/$focusId effect
+  // below does the actual resolving, so this is just a pointer lookup.
   useEffect(() => {
-    if (mode !== 'coding' || sessionId) return
+    if (mode !== 'coding' || sessionId || focusId) return
+    if (!shouldRestoreLastCodingWorkspace(mode, sessionId, window.location.pathname)) return
+    const lastFocusId = loadLastCodingFocusId()
+    if (!lastFocusId) return
+    navigate({ to: '/coding/$focusId', params: { focusId: lastFocusId }, replace: true })
+  }, [mode, navigate, sessionId, focusId])
+
+  // /coding/$focusId (no sessionId yet) — the URL already names a workspace
+  // or project directly; resolve/create its session and append it to the URL.
+  // A bare old-style /coding/{sessionId} link (from before this route
+  // existed) also lands here, since it's structurally the same single
+  // segment — project ids and session ids are both plain UUIDs, so there's
+  // no way to tell them apart without asking the backend. If focusId
+  // doesn't resolve as a project/workspace, fall back to treating it as a
+  // legacy session id and upgrade the URL to the real focus once known.
+  useEffect(() => {
+    if (mode !== 'coding' || sessionId || !focusId) return
     let cancelled = false
-    const restore = window.setTimeout(() => {
-      if (!shouldRestoreLastCodingWorkspace(mode, sessionId, window.location.pathname)) return
-      const lastWorkspace = loadLastCodingWorkspace()
-      if (!lastWorkspace) return
-      ;(async () => {
-        const current = useTeamStore.getState()
+    ;(async () => {
+      const current = useTeamStore.getState()
+      try {
+        const session = await resolveTeamSession({
+          mode: 'coding',
+          ...(isProjectFocusId(focusId)
+            ? { project_id: focusId }
+            : { workspace: focusId }),
+          model: current.sessionModel,
+          thinkingLevel: current.sessionThinkingLevel,
+        })
+        if (cancelled || sessionIdRef.current) return
+        current.beginResolvedSession(session.id, {
+          mode: 'coding',
+          workspace: session.workspace ?? (isProjectFocusId(focusId) ? null : focusId),
+          model: session.model ?? current.sessionModel,
+          thinkingLevel: session.thinking_level ?? current.sessionThinkingLevel,
+        })
+        void queryClient.invalidateQueries({ queryKey: queryKeys.team.sessions.all() })
+        navigate({
+          to: '/coding/$focusId/$sessionId',
+          params: { focusId, sessionId: session.id },
+          replace: true,
+        })
+      } catch (err) {
+        if (cancelled) return
         try {
-          const session = await resolveTeamSession({
-            mode: 'coding',
-            workspace: lastWorkspace.path,
-            model: current.sessionModel,
-            thinkingLevel: current.sessionThinkingLevel,
-          })
+          const legacySession = await getTeamSession(focusId)
           if (cancelled || sessionIdRef.current) return
-          current.beginResolvedSession(session.id, {
-            mode: 'coding',
-            workspace: session.workspace ?? lastWorkspace.path,
-            model: session.model ?? current.sessionModel,
-            thinkingLevel: session.thinking_level ?? current.sessionThinkingLevel,
+          const realFocusId = codingFocusId({
+            project_id: legacySession.project_id,
+            workspace: legacySession.workspace,
           })
-          void queryClient.invalidateQueries({ queryKey: queryKeys.team.sessions.all() })
+          if (!realFocusId) throw err
           navigate({
-            to: '/coding/$sessionId',
-            params: { sessionId: session.id },
+            to: '/coding/$focusId/$sessionId',
+            params: { focusId: realFocusId, sessionId: legacySession.id },
             replace: true,
           })
         } catch {
           if (cancelled) return
-          removeCodingWorkspace(lastWorkspace.path)
+          clearLastCodingFocus(focusId)
           useTeamStore.setState((state) => {
-            state.error = null
+            state.error = err instanceof Error ? err.message : 'Failed to open workspace'
           })
         }
-      })()
-    }, 0)
+      }
+    })()
     return () => {
       cancelled = true
-      window.clearTimeout(restore)
     }
-  }, [mode, navigate, queryClient, sessionId])
+  }, [mode, navigate, queryClient, sessionId, focusId])
 
   const storeError = useTeamStore((s) => s.error)
   const [retryKey, setRetryKey] = useState(0)
@@ -181,12 +222,13 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'normal' | 'coding' }) {
         void queryClient.refetchQueries({ queryKey: queryKeys.team.sessions.infinite(), type: 'active' })
         if (modeRef.current === 'coding') {
           const workspace = workspaceRef.current
-          if (workspace) saveLastCodingWorkspace(workspace)
-          navigateRef.current({
-            to: '/coding/$sessionId',
-            params: { sessionId: state.sessionId },
-            replace: true,
-          })
+          if (workspace) saveLastCodingFocus({ project_id: state.projectId, workspace })
+          const newFocusId = codingFocusId({ project_id: state.projectId, workspace })
+          navigateRef.current(
+            newFocusId
+              ? { to: '/coding/$focusId/$sessionId', params: { focusId: newFocusId, sessionId: state.sessionId }, replace: true }
+              : { to: '/coding', replace: true },
+          )
         } else {
           navigateRef.current({
             to: '/$sessionId',
@@ -222,7 +264,11 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'normal' | 'coding' }) {
         sessionId={sessionId}
         mode={mode}
         workspace={workspace}
-        codingSessionLoading={mode === 'coding' && Boolean(sessionId) && !workspace && sessionQuery.isLoading}
+        codingSessionLoading={
+          mode === 'coding' &&
+          ((Boolean(sessionId) && !workspace && sessionQuery.isLoading) ||
+            (Boolean(focusId) && !sessionId))
+        }
       />
       <Outlet />
       {storeError && !sessionId && (

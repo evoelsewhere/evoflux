@@ -78,7 +78,7 @@ import type { AgentCapabilities as AgentCapabilitiesType, MessageAttachment, Wor
 import { SplitGrid } from './SplitGrid'
 import { useTeamCommands } from './useTeamCommands'
 import { VIEW_MODES, type ViewMode } from './types'
-import { saveLastCodingWorkspace, workspaceLabel } from '@/utils/workspace'
+import { codingFocusId, saveLastCodingWorkspace, workspaceLabel } from '@/utils/workspace'
 import { TokenMeter } from '@/components/ui/token-meter'
 import { setTraySession } from '@/lib/tray'
 import { parseLoopCommand } from '@/lib/parseLoopCommand'
@@ -315,7 +315,13 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
     const store = useTeamStore.getState()
     if (store.sessionId === sessionId && store.isConnected) return
 
-    useTeamStore.setState({ sessionId })
+    // Reset (not just re-point) on every genuine switch — a bare
+    // `setState({ sessionId })` left `isConnected`/`agentStreams` holding
+    // the PREVIOUS session's data, so the skeleton below (gated on
+    // `sessionId && !isConnected`) never got a chance to render: the old
+    // session's stale messages kept showing with no loading feedback while
+    // `loadSession` fetched the new one in the background.
+    beginResolvedSession(sessionId, { mode, workspace: agentWorkspace })
 
     // Clear the composer when switching sessions. The InputBar holds its
     // draft text and pending files in local state, so without an explicit
@@ -422,7 +428,12 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
         if (mode === 'coding' && workspace) {
           if (session.created) prependWorkspaceSession(queryClient, workspace, session)
           saveLastCodingWorkspace(workspace)
-          navigate({ to: '/coding/$sessionId', params: { sessionId: session.id } })
+          const focusId = codingFocusId({ project_id: session.project_id, workspace: session.workspace ?? workspace })
+          navigate(
+            focusId
+              ? { to: '/coding/$focusId/$sessionId', params: { focusId, sessionId: session.id } }
+              : { to: '/coding' },
+          )
         } else {
           navigate({ to: '/$sessionId', params: { sessionId: session.id } })
         }

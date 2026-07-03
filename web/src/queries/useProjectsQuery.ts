@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  listProjects,
+  getCodingWorkspaceTree,
   getProject,
   createProject,
   updateProject,
@@ -12,10 +12,10 @@ import {
 import type { CodingProject, ProjectCreateRequest, AddWorkspaceToProjectRequest } from '@/api/types'
 import { queryKeys } from './keys'
 
-export function useProjectsQuery() {
+export function useCodingOverviewQuery() {
   return useQuery({
-    queryKey: queryKeys.projects.list(),
-    queryFn: listProjects,
+    queryKey: queryKeys.codingOverview(),
+    queryFn: getCodingWorkspaceTree,
     staleTime: 10_000,
   })
 }
@@ -35,6 +35,7 @@ export function useCreateProjectMutation() {
     mutationFn: (body: ProjectCreateRequest) => createProject(body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.all() })
+      queryClient.invalidateQueries({ queryKey: queryKeys.codingOverview() })
     },
   })
 }
@@ -51,7 +52,7 @@ export function useUpdateProjectMutation() {
     }) => updateProject(id, body),
     onSuccess: (updated: CodingProject) => {
       queryClient.setQueryData(queryKeys.projects.detail(updated.id), updated)
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.list() })
+      queryClient.invalidateQueries({ queryKey: queryKeys.codingOverview() })
     },
   })
 }
@@ -62,6 +63,7 @@ export function useDeleteProjectMutation() {
     mutationFn: (id: string) => deleteProject(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.all() })
+      queryClient.invalidateQueries({ queryKey: queryKeys.codingOverview() })
     },
   })
 }
@@ -78,7 +80,7 @@ export function useAddWorkspaceMutation() {
     }) => addWorkspaceToProject(projectId, body),
     onSuccess: (_ws, { projectId }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.list() })
+      queryClient.invalidateQueries({ queryKey: queryKeys.codingOverview() })
     },
   })
 }
@@ -95,7 +97,7 @@ export function useRemoveWorkspaceMutation() {
     }) => removeWorkspaceFromProject(projectId, workspaceId),
     onSuccess: (_v, { projectId }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.list() })
+      queryClient.invalidateQueries({ queryKey: queryKeys.codingOverview() })
     },
   })
 }
@@ -114,7 +116,7 @@ export function useUpdateWorkspaceInProjectMutation() {
     }) => updateWorkspaceInProject(projectId, workspaceId, body),
     onSuccess: (_ws, { projectId }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.list() })
+      queryClient.invalidateQueries({ queryKey: queryKeys.codingOverview() })
     },
   })
 }

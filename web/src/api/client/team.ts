@@ -553,12 +553,11 @@ export async function deleteSessionChapter(
 }
 
 // ── Coding Projects API ───────────────────────────────────────────────────────
-
-export async function listProjects(): Promise<CodingProject[]> {
-  const res = await fetch(`${apiBaseUrl()}/team/projects`)
-  if (!res.ok) await parseDetailOrThrow(res, 'listProjects')
-  return res.json()
-}
+// Note: there's no listProjects() here — the coding sidebar gets the full
+// projects list bundled into getCodingWorkspaceTree()'s response instead
+// (see CodingWorkspaceTreeResponse.projects), so it never has to reconcile
+// two independently-fetched lists. GET /team/projects itself still exists
+// backend-side for any other consumer that just wants the bare list.
 
 export async function getProject(id: string): Promise<CodingProject> {
   const res = await fetch(`${apiBaseUrl()}/team/projects/${encodeURIComponent(id)}`)

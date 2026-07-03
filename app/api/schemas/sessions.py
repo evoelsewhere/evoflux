@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from app.api.schemas.base import _ExcludeNoneModel
+from app.api.schemas.projects import ProjectResponse
 
 
 class SessionCreate(BaseModel):
@@ -43,13 +44,24 @@ class CodingWorkspaceTreeWorktree(BaseModel):
 
 
 class CodingWorkspaceTreeRepository(BaseModel):
+    # None only for a worktree whose source repo is itself hidden/deleted —
+    # see list_coding_workspace_tree's synthesized fallback entry.
+    workspace_id: UUID | None = None
     path: str
     name: str
     worktrees: list[CodingWorkspaceTreeWorktree] = Field(default_factory=list)
+    # The project this repo belongs to, if any — a real FK lookup (see
+    # list_coding_workspace_tree), not something the frontend has to infer
+    # by cross-referencing this list against /projects on its own.
+    project_id: UUID | None = None
 
 
 class CodingWorkspaceTreeResponse(BaseModel):
     repositories: list[CodingWorkspaceTreeRepository]
+    # Merged in alongside repositories so the sidebar can render both
+    # Projects and standalone Workspaces from one fetch/one cache entry,
+    # instead of reconciling two independently-fetched lists by path string.
+    projects: list[ProjectResponse] = Field(default_factory=list)
 
 
 class SessionResponse(_ExcludeNoneModel):

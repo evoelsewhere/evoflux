@@ -345,9 +345,14 @@ def test_remove_missing_managed_worktree_cleans_registry(
     assert resp.json() == {"removed": True}
     tree = client.get("/api/team/workspace/tree")
     assert tree.status_code == 200
-    assert tree.json()["repositories"] == [
-        {"path": str(repo.resolve()), "name": "repo", "worktrees": []}
-    ]
+    repos = tree.json()["repositories"]
+    assert len(repos) == 1 and repos[0]["workspace_id"]
+    assert {k: v for k, v in repos[0].items() if k != "workspace_id"} == {
+        "path": str(repo.resolve()),
+        "name": "repo",
+        "worktrees": [],
+        "project_id": None,
+    }
 
 
 def test_find_managed_worktree_source_does_not_create_root(

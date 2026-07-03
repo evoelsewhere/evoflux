@@ -323,15 +323,16 @@ class TestResolveTeamSession:
 
         tree = client.get("/api/team/workspace/tree")
         assert tree.status_code == 200
-        assert tree.json()["repositories"] == [
-            {
-                "path": str(repo),
-                "name": "repo",
-                "worktrees": [
-                    {"path": str(worktree), "name": "task-a", "managed": True}
-                ],
-            }
-        ]
+        repos = tree.json()["repositories"]
+        assert len(repos) == 1 and repos[0]["workspace_id"]
+        assert {k: v for k, v in repos[0].items() if k != "workspace_id"} == {
+            "path": str(repo),
+            "name": "repo",
+            "worktrees": [
+                {"path": str(worktree), "name": "task-a", "managed": True}
+            ],
+            "project_id": None,
+        }
 
     @pytest.mark.asyncio
     async def test_workspace_tree_ignores_hidden_and_deleted_worktrees(
@@ -372,9 +373,14 @@ class TestResolveTeamSession:
         client = TestClient(app_with_team)
         tree = client.get("/api/team/workspace/tree")
         assert tree.status_code == 200
-        assert tree.json()["repositories"] == [
-            {"path": str(repo), "name": "repo", "worktrees": []}
-        ]
+        repos = tree.json()["repositories"]
+        assert len(repos) == 1 and repos[0]["workspace_id"]
+        assert {k: v for k, v in repos[0].items() if k != "workspace_id"} == {
+            "path": str(repo),
+            "name": "repo",
+            "worktrees": [],
+            "project_id": None,
+        }
 
     @pytest.mark.asyncio
     async def test_workspace_tree_keeps_visible_worktree_under_hidden_source(
@@ -406,15 +412,53 @@ class TestResolveTeamSession:
         client = TestClient(app_with_team)
         tree = client.get("/api/team/workspace/tree")
         assert tree.status_code == 200
+        # The source repo itself is hidden, so it has no row in `rows` to
+        # source a real workspace_id from — the synthesized fallback entry
+        # leaves it None (see list_coding_workspace_tree).
         assert tree.json()["repositories"] == [
             {
+                "workspace_id": None,
                 "path": str(repo),
                 "name": "repo",
                 "worktrees": [
                     {"path": str(worktree), "name": "task-a", "managed": True}
                 ],
+                "project_id": None,
             }
         ]
+
+    @pytest.mark.asyncio
+    async def test_workspace_tree_marks_project_membership_via_real_fk(
+        self, app_with_team, tmp_path
+    ):
+        """project_id on a tree entry must come from the CodingProjectWorkspace
+        FK, not be something the frontend has to reconstruct by matching
+        paths against a separately-fetched /projects list."""
+        import app.core.db as _db
+        from app.services.coding_project_service import create_project
+
+        in_project = tmp_path / "in-project"
+        standalone = tmp_path / "standalone"
+        in_project.mkdir()
+        standalone.mkdir()
+        async with _db.async_session_factory() as db:
+            project = await create_project(
+                db, name="Demo", workspace_paths=[str(in_project)]
+            )
+            await db.commit()
+            project_id = project.id
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                db.add(CodingWorkspace(path=str(standalone), kind="repo", name="standalone"))
+
+        client = TestClient(app_with_team)
+        tree = client.get("/api/team/workspace/tree")
+        assert tree.status_code == 200
+        body = tree.json()
+        by_path = {repo["path"]: repo for repo in body["repositories"]}
+        assert by_path[str(in_project)]["project_id"] == str(project_id)
+        assert by_path[str(standalone)]["project_id"] is None
+        assert [p["id"] for p in body["projects"]] == [str(project_id)]
 
     @pytest.mark.asyncio
     async def test_workspace_visibility_hides_all_workspace_sessions(
