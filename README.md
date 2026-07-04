@@ -24,7 +24,7 @@
 
 A **harness**, in the vocabulary the AI-agent field settled on through 2025–2026, is everything that sits between a language model and the real world: the code, configuration, and execution logic that decides what the model can see, what it's allowed to touch, how it recovers from its own mistakes, and whether anyone can tell what it actually did. The model generates text; the harness is what turns that text into safe, useful, repeatable action. It's also the reason the same underlying model performs differently in different products — harness quality has been shown to move a coding agent from the bottom of a benchmark leaderboard to the top five without touching the model at all.
 
-EvoFlux is a harness built to that standard, shipped as software you run yourself: a FastAPI backend orchestrating role-based multi-agent teams, a tree-sitter-powered code knowledge graph, a memory engine that consolidates conversations into a long-term wiki, and a React 19 UI wrapped in a real Tauri desktop shell — Apache-2.0, with any LLM provider a config away.
+EvoFlux is a harness built to that standard, shipped as software you run yourself: a FastAPI backend orchestrating role-based multi-agent teams that spawn members on demand from a shared mailbox rather than run them as always-on background loops, a tree-sitter-powered code knowledge graph, a memory engine that consolidates conversations into a long-term wiki, and a React 19 UI wrapped in a real Tauri desktop shell — Apache-2.0, with any LLM provider a config away.
 
 ## EvoFlux as an agent harness
 
