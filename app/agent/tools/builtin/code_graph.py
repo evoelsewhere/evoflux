@@ -346,10 +346,13 @@ async def _code_neighbors(
     implements, imports, or contains — one hop out.
 
     For INBOUND usage (who calls/imports/extends it), use code_references
-    instead. Optionally filter to a single edge_kind. In a multi-repo
-    project, resolved cross-repo references pointing at this symbol are
-    always shown; scope='project' additionally searches sibling repos to
-    resolve the symbol itself when it isn't found in the active workspace.
+    instead. Optionally filter to a single edge_kind. Imports are a
+    file-level concept: requesting edge_kind='imports' for a class or method
+    transparently reports the containing file's imports instead of an empty
+    result. In a multi-repo project, resolved cross-repo references pointing
+    at this symbol are always shown; scope='project' additionally searches
+    sibling repos to resolve the symbol itself when it isn't found in the
+    active workspace.
     """
     capped = max(1, min(limit, 100))
     async with async_session_factory() as db:
@@ -381,10 +384,23 @@ async def _code_neighbors(
         repo_labels = await _label_foreign_workspaces(db, workspace_id, matches)
         sections: list[str] = []
         for match_ws_id, node in matches:
+            query_node_id = node.id
+            note: str | None = None
+            if edge_kind == "imports" and node.kind != "file":
+                # Import edges are attached to the file node, not to whatever
+                # class/method textually contains the import statement — a
+                # class-level lookup would otherwise always report "no
+                # matching neighbours" even though the file plainly imports.
+                file_node = await svc.find_file_node(
+                    db, workspace_id=match_ws_id, file_path=node.file_path
+                )
+                if file_node is not None:
+                    query_node_id = file_node.id
+                    note = f"imports are file-level — showing {file_node.file_path}'s imports"
             neighbours = await svc.get_neighbors(
                 db,
                 workspace_id=match_ws_id,
-                node_id=node.id,
+                node_id=query_node_id,
                 direction="out",
                 edge_kind=edge_kind,
             )
@@ -396,6 +412,7 @@ async def _code_neighbors(
                     cross_repo,
                     repo_label=repo_labels.get(match_ws_id),
                     limit=capped,
+                    note=note,
                 )
             )
     return "\n\n".join(sections)
@@ -425,10 +442,13 @@ def _render_neighbors(
     cross_repo: Sequence[tuple[CrossRepoEdge, str]] = (),
     repo_label: str | None = None,
     limit: int = _MAX_NEIGHBORS,
+    note: str | None = None,
 ) -> str:
     head = f"[{node.kind}] {node.qualified_name} — {_loc(node)}"
     if repo_label:
         head = f"[{repo_label}] {head}"
+    if note:
+        head += f"\n  ({note})"
     if not neighbours and not cross_repo:
         return f"{head}\n  (no matching neighbours)"
     rows = [
@@ -540,8 +560,10 @@ code_neighbors = Tool(
         "symbol depends on. For INBOUND usage (who calls/imports/extends it), "
         "use code_references instead. `limit` caps how many neighbours are "
         "returned per symbol (default 40, max 100) — lower it for symbols "
-        "with a large fan-out. scope='project' also searches sibling repos "
-        "in a multi-repo project."
+        "with a large fan-out. edge_kind='imports' resolves to the "
+        "containing file's imports when the symbol itself isn't a file. "
+        "scope='project' also searches sibling repos in a multi-repo "
+        "project."
     ),
     concurrency_safe=True,
     read_only=True,

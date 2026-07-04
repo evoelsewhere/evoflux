@@ -423,6 +423,63 @@ async def test_code_neighbors_limit_param(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_code_neighbors_imports_falls_back_to_file_node(tmp_path):
+    """code_neighbors(name=<class>, edge_kind="imports") must not report
+    "no matching neighbours" just because import edges attach to the file
+    node rather than the class — regression test for edge_kind='imports'
+    silently returning nothing for any non-file symbol."""
+    from app.core.db import async_session_factory
+    from app.models.code_graph import CodeEdge
+    from app.services import code_graph_service as svc
+    from app.services.code_graph_service import reindex_workspace
+    from app.services.coding_workspace_service import upsert_coding_workspace
+    from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
+    from app.agent.tools.builtin.code_graph import code_neighbors
+
+    (tmp_path / "main.py").write_text(
+        "class Service:\n    def run(self):\n        pass\n", encoding="utf-8"
+    )
+    (tmp_path / "other.py").write_text("def target():\n    pass\n", encoding="utf-8")
+
+    async with async_session_factory() as db:
+        ws = await upsert_coding_workspace(db, path=str(tmp_path))
+        await db.commit()
+        await reindex_workspace(db, workspace_id=ws.id, root_path=str(tmp_path))
+        await db.commit()
+
+    async with async_session_factory() as db:
+        file_node = await svc.find_file_node(
+            db, workspace_id=ws.id, file_path="main.py"
+        )
+        assert file_node is not None
+        target_node = (
+            await svc.find_nodes_by_name(db, workspace_id=ws.id, name="target")
+        )[0]
+        db.add(
+            CodeEdge(
+                workspace_id=ws.id,
+                src_id=file_node.id,
+                dst_id=target_node.id,
+                kind="imports",
+                file_path="main.py",
+                line=1,
+            )
+        )
+        await db.commit()
+
+    token = set_sandbox(SandboxConfig(workspace=str(tmp_path)))
+    try:
+        # Class-level lookup used to report "no matching neighbours" here
+        # even though the containing file plainly has an import.
+        out = await code_neighbors(name="Service", edge_kind="imports")
+        assert "no matching neighbours" not in out
+        assert "target" in out
+        assert "imports are file-level" in out
+    finally:
+        _sandbox_ctx.reset(token)
+
+
+@pytest.mark.asyncio
 async def test_code_symbol_cross_repo_limit_param(tmp_path):
     """code_symbol must cap how many cross-repo refs it shows — regression
     test for unbounded cross-repo output (a heavily-referenced symbol could
