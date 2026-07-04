@@ -195,6 +195,10 @@ async def _code_symbol(
     name: Annotated[
         str, Field(description="Exact symbol name or fully qualified name.")
     ],
+    cross_repo_limit: Annotated[
+        int,
+        Field(description="Maximum cross-repo references to show per match (max 30)."),
+    ] = 10,
     scope: Annotated[
         Literal["workspace", "project"],
         Field(
@@ -216,12 +220,14 @@ async def _code_symbol(
     who calls it, what it inherits) — a preview, not the full list. For the
     full outbound list use code_neighbors; for the full inbound list use
     code_references. In a multi-repo project, resolved cross-repo references
-    pointing at this symbol are always shown; scope='project' additionally
-    searches sibling repos to resolve the symbol itself when it isn't found
-    in the active workspace — the default scope='workspace' cannot see a
-    symbol that lives only in a sibling repo, so "not found" under the
-    default scope does not mean the symbol doesn't exist in the project.
+    pointing at this symbol are always shown (capped by cross_repo_limit,
+    default 10, max 30); scope='project' additionally searches sibling repos
+    to resolve the symbol itself when it isn't found in the active workspace —
+    the default scope='workspace' cannot see a symbol that lives only in a
+    sibling repo, so "not found" under the default scope does not mean the
+    symbol doesn't exist in the project.
     """
+    capped_cross_repo = max(0, min(cross_repo_limit, 30))
     async with async_session_factory() as db:
         workspace_id = await _resolve_workspace(db)
         if workspace_id is None:
@@ -260,7 +266,12 @@ async def _code_symbol(
             cross_repo = await _find_cross_repo_references(db, project_ids, node.id)
             sections.append(
                 _render_symbol(
-                    node, out_edges, in_edges, cross_repo, repo_label=repo_labels.get(match_ws_id)
+                    node,
+                    out_edges,
+                    in_edges,
+                    cross_repo,
+                    repo_label=repo_labels.get(match_ws_id),
+                    cross_repo_limit=capped_cross_repo,
                 )
             )
     return "\n\n".join(sections)
@@ -272,6 +283,7 @@ def _render_symbol(
     in_edges: list[tuple[str, CodeNode]],
     cross_repo: Sequence[tuple[CrossRepoEdge, str]] = (),
     repo_label: str | None = None,
+    cross_repo_limit: int = 10,
 ) -> str:
     lines = [
         f"[{repo_label}] [{node.kind}] {node.qualified_name}"
@@ -297,13 +309,16 @@ def _render_symbol(
         lines.append(f"  extends/implements: {', '.join(bases[:15])}")
     if cross_repo:
         lines.append(f"  cross-repo refs ({len(cross_repo)}):")
-        for edge, repo_label in cross_repo[:10]:
+        for edge, repo_label in cross_repo[:cross_repo_limit]:
             loc = (
                 f"{edge.src_file_path}:{edge.src_line}"
                 if edge.src_line
                 else edge.src_file_path
             )
             lines.append(f"    ← {repo_label}/{loc} (`{edge.raw_reference}`)")
+        extra = len(cross_repo) - cross_repo_limit
+        if extra > 0:
+            lines.append(f"    … and {extra} more (raise cross_repo_limit to see more)")
     return "\n".join(lines)
 
 
@@ -508,7 +523,9 @@ code_symbol = Tool(
         "and a short preview of its direct callers/callees/base types (max 15 "
         "each). Use before opening a file. For the full outbound list use "
         "code_neighbors; for the full inbound list use code_references. "
-        "scope='project' also searches sibling repos in a multi-repo project."
+        "cross_repo_limit caps cross-repo references shown per match (default "
+        "10, max 30). scope='project' also searches sibling repos in a "
+        "multi-repo project."
     ),
     concurrency_safe=True,
     read_only=True,
