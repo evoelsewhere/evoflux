@@ -8611,6 +8611,15 @@
     "limits": {
       "context_length": 200000,
       "max_completion_tokens": 64000
+    },
+    "thinking": {
+      "levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ]
     }
   },
   "anthropic:claude-3-haiku-20240307": {
@@ -8710,6 +8719,15 @@
     "limits": {
       "context_length": 1000000,
       "max_completion_tokens": 128000
+    },
+    "thinking": {
+      "levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ]
     }
   },
   "anthropic:claude-haiku-4-5": {
@@ -8734,6 +8752,15 @@
     "limits": {
       "context_length": 200000,
       "max_completion_tokens": 64000
+    },
+    "thinking": {
+      "levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ]
     }
   },
   "anthropic:claude-haiku-4-5-20251001": {
@@ -8758,6 +8785,15 @@
     "limits": {
       "context_length": 200000,
       "max_completion_tokens": 64000
+    },
+    "thinking": {
+      "levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ]
     }
   },
   "anthropic:claude-opus-4-0": {
@@ -8782,6 +8818,15 @@
     "limits": {
       "context_length": 200000,
       "max_completion_tokens": 32000
+    },
+    "thinking": {
+      "levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ]
     }
   },
   "anthropic:claude-opus-4-1": {
@@ -8806,6 +8851,15 @@
     "limits": {
       "context_length": 200000,
       "max_completion_tokens": 32000
+    },
+    "thinking": {
+      "levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ]
     }
   },
   "anthropic:claude-opus-4-1-20250805": {
@@ -8830,6 +8884,15 @@
     "limits": {
       "context_length": 200000,
       "max_completion_tokens": 32000
+    },
+    "thinking": {
+      "levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ]
     }
   },
   "anthropic:claude-opus-4-20250514": {
@@ -8854,6 +8917,15 @@
     "limits": {
       "context_length": 200000,
       "max_completion_tokens": 32000
+    },
+    "thinking": {
+      "levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ]
     }
   },
   "anthropic:claude-opus-4-5": {
@@ -8878,6 +8950,15 @@
     "limits": {
       "context_length": 200000,
       "max_completion_tokens": 64000
+    },
+    "thinking": {
+      "levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ]
     }
   },
   "anthropic:claude-opus-4-5-20251101": {
@@ -8902,6 +8983,15 @@
     "limits": {
       "context_length": 200000,
       "max_completion_tokens": 64000
+    },
+    "thinking": {
+      "levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ]
     }
   },
   "anthropic:claude-opus-4-6": {
@@ -8926,6 +9016,16 @@
     "limits": {
       "context_length": 1000000,
       "max_completion_tokens": 128000
+    },
+    "thinking": {
+      "levels": [
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ]
     }
   },
   "anthropic:claude-opus-4-7": {
@@ -8950,6 +9050,16 @@
     "limits": {
       "context_length": 1000000,
       "max_completion_tokens": 128000
+    },
+    "thinking": {
+      "levels": [
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ]
     }
   },
   "anthropic:claude-opus-4-8": {
@@ -8974,6 +9084,16 @@
     "limits": {
       "context_length": 1000000,
       "max_completion_tokens": 128000
+    },
+    "thinking": {
+      "levels": [
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ]
     }
   },
   "anthropic:claude-sonnet-4-0": {
@@ -8998,6 +9118,15 @@
     "limits": {
       "context_length": 200000,
       "max_completion_tokens": 64000
+    },
+    "thinking": {
+      "levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ]
     }
   },
   "anthropic:claude-sonnet-4-20250514": {
@@ -9022,6 +9151,15 @@
     "limits": {
       "context_length": 200000,
       "max_completion_tokens": 64000
+    },
+    "thinking": {
+      "levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ]
     }
   },
   "anthropic:claude-sonnet-4-5": {
@@ -9046,6 +9184,15 @@
     "limits": {
       "context_length": 200000,
       "max_completion_tokens": 64000
+    },
+    "thinking": {
+      "levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ]
     }
   },
   "anthropic:claude-sonnet-4-5-20250929": {
@@ -9070,6 +9217,15 @@
     "limits": {
       "context_length": 200000,
       "max_completion_tokens": 64000
+    },
+    "thinking": {
+      "levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ]
     }
   },
   "anthropic:claude-sonnet-4-6": {
@@ -9094,6 +9250,16 @@
     "limits": {
       "context_length": 1000000,
       "max_completion_tokens": 64000
+    },
+    "thinking": {
+      "levels": [
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ]
     }
   },
   "anyapi:anthropic/claude-haiku-4-5": {
