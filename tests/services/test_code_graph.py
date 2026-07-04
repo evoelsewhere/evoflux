@@ -423,6 +423,83 @@ async def test_code_neighbors_limit_param(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_code_symbol_cross_repo_limit_param(tmp_path):
+    """code_symbol must cap how many cross-repo refs it shows — regression
+    test for unbounded cross-repo output (a heavily-referenced symbol could
+    dump ~100 lines with no way to reduce it)."""
+    from app.core.db import async_session_factory
+    from app.models.code_graph import CrossRepoEdge
+    from app.services.code_graph_service import (
+        find_nodes_by_name,
+        reindex_workspace,
+        resolve_workspace_id,
+    )
+    from app.services.coding_project_service import create_project
+    from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
+    from app.agent.tools.builtin.code_graph import code_symbol
+
+    repo_a = tmp_path / "repo-a"
+    repo_b = tmp_path / "repo-b"
+    repo_a.mkdir()
+    repo_b.mkdir()
+    (repo_a / "main.py").write_text(
+        "def caller_one(): pass\ndef caller_two(): pass\ndef caller_three(): pass\n",
+        encoding="utf-8",
+    )
+    (repo_b / "lib.py").write_text("def shared():\n    return 1\n", encoding="utf-8")
+
+    async with async_session_factory() as db:
+        project = await create_project(
+            db, name="Cross Repo Limit Test", workspace_paths=[str(repo_a), str(repo_b)]
+        )
+        await db.commit()
+        project_id = project.id
+
+    async with async_session_factory() as db:
+        repo_a_id = await resolve_workspace_id(db, path=str(repo_a))
+        repo_b_id = await resolve_workspace_id(db, path=str(repo_b))
+        await reindex_workspace(db, workspace_id=repo_a_id, root_path=str(repo_a))
+        await reindex_workspace(db, workspace_id=repo_b_id, root_path=str(repo_b))
+        await db.commit()
+
+    async with async_session_factory() as db:
+        shared_node = (
+            await find_nodes_by_name(db, workspace_id=repo_b_id, name="shared")
+        )[0]
+        for caller_name in ("caller_one", "caller_two", "caller_three"):
+            caller_node = (
+                await find_nodes_by_name(db, workspace_id=repo_a_id, name=caller_name)
+            )[0]
+            db.add(
+                CrossRepoEdge(
+                    project_id=project_id,
+                    src_workspace_id=repo_a_id,
+                    src_node_id=caller_node.id,
+                    src_file_path="main.py",
+                    raw_reference="shared",
+                    dst_name_hint="shared",
+                    kind="calls",
+                    status="resolved",
+                    method="static_fqn",
+                    confidence=1.0,
+                    dst_workspace_id=repo_b_id,
+                    dst_node_id=shared_node.id,
+                    dst_qualified_name=shared_node.qualified_name,
+                )
+            )
+        await db.commit()
+
+    token = set_sandbox(SandboxConfig(workspace=str(repo_b)))
+    try:
+        out = await code_symbol(name="shared", cross_repo_limit=1)
+        assert "cross-repo refs (3)" in out
+        assert out.count(" ← repo-a/") == 1
+        assert "and 2 more" in out
+    finally:
+        _sandbox_ctx.reset(token)
+
+
+@pytest.mark.asyncio
 async def test_code_tools_scope_project_resolves_sibling_repo(tmp_path):
     """scope='project' must resolve a symbol that only exists in a sibling
     repo — the gap that motivated giving code_neighbors/code_references a
