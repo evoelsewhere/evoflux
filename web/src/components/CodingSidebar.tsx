@@ -322,7 +322,7 @@ export function CodingSidebar({
   onMobileClose,
 }: CodingSidebarProps) {
   const isMobile = useIsMobile();
-  const { isTauri, os } = usePlatform();
+  const { isTauri, os, isMacOverlay } = usePlatform();
   const [nativeFolderPickerEnabled, setNativeFolderPickerEnabled] =
     useState(isTauri);
   const isTauriMobile = isTauri && (os === "ios" || os === "android");
@@ -1021,7 +1021,7 @@ export function CodingSidebar({
                 x: mobileOpen ? 0 : -280,
                 width: "min(272px, calc(100vw - 2rem))",
               }
-            : { width: desktopCollapsed ? 56 : resizable.width }
+            : { width: desktopCollapsed ? (isMacOverlay ? 70 : 56) : resizable.width }
         }
         transition={{
           duration: prefersReducedMotion ? 0.01 : 0.22,
@@ -1048,7 +1048,9 @@ export function CodingSidebar({
         {/* Collapsed icon strip — desktop only, mirrors Forge sidebar collapsed state */}
         {!isMobile && desktopCollapsed && (
           <div className="flex h-full flex-col items-center gap-1 overflow-hidden p-1">
-            <div className="flex w-full shrink-0 flex-col items-center gap-0.5 rounded-[10px] bg-(--bg-sidebar)/80 px-1 py-2 shadow-sm backdrop-blur-xl">
+            <div
+              className={`flex w-full shrink-0 flex-col items-center gap-0.5 rounded-[10px] bg-(--bg-sidebar)/80 px-1 pb-2 shadow-sm backdrop-blur-xl ${isMacOverlay ? 'pt-10' : 'pt-2'}`}
+            >
               <button
                 type="button"
                 onClick={() => navigate({ to: '/' })}
@@ -1146,7 +1148,9 @@ export function CodingSidebar({
 
         {/* Mode switch — desktop */}
         {!isMobile && (
-          <div className="shrink-0 rounded-[10px] bg-(--bg-sidebar)/80 px-2 py-2 shadow-sm backdrop-blur-xl">
+          <div
+            className={`shrink-0 rounded-[10px] bg-(--bg-sidebar)/80 px-2 pb-2 shadow-sm backdrop-blur-xl ${isMacOverlay ? 'pt-10' : 'pt-2'}`}
+          >
             <div className="flex h-8 items-center rounded-md border border-(--color-border) bg-(--bg-page) p-0.5">
               <button
                 type="button"
