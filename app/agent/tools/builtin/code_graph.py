@@ -589,9 +589,10 @@ async def _code_references(
     X?" — without grepping. Returns each reference as
     ``[edge_kind] source_symbol — file:line``. Resolves by exact name or
     qualified name. In a multi-repo project, resolved cross-repo references
-    pointing at this symbol are always shown; scope='project' additionally
-    searches sibling repos to resolve the symbol itself when it isn't found
-    in the active workspace.
+    pointing at this symbol are always shown, sharing the same ``limit``
+    budget as same-repo references (intra-repo hits are spent first);
+    scope='project' additionally searches sibling repos to resolve the
+    symbol itself when it isn't found in the active workspace.
     """
     capped = max(1, min(limit, 60))
     async with async_session_factory() as db:
@@ -630,10 +631,19 @@ async def _code_references(
             refs = await svc.find_references(
                 db, workspace_id=match_ws_id, node_id=node.id, limit=capped
             )
-            cross_repo = await _find_cross_repo_references(db, project_ids, node.id)
+            # limit is a combined budget across intra- and cross-repo refs —
+            # only spend what find_references' own limit left unused, so a
+            # low intra-repo count doesn't get topped off with an unbounded
+            # cross-repo dump.
+            cross_repo_all = await _find_cross_repo_references(db, project_ids, node.id)
+            cross_repo = cross_repo_all[: max(0, capped - len(refs))]
             sections.append(
                 _render_references(
-                    node, refs, cross_repo, repo_label=repo_labels.get(match_ws_id)
+                    node,
+                    refs,
+                    cross_repo,
+                    repo_label=repo_labels.get(match_ws_id),
+                    cross_repo_total=len(cross_repo_all),
                 )
             )
     return "\n\n".join(sections)
@@ -704,6 +714,7 @@ def _render_references(
     refs: list[tuple[str, CodeNode, int | None]],
     cross_repo: Sequence[tuple[CrossRepoEdge, str]] = (),
     repo_label: str | None = None,
+    cross_repo_total: int | None = None,
 ) -> str:
     head = f"References to [{node.kind}] {node.qualified_name} — {_loc(node)}"
     if repo_label:
@@ -728,6 +739,9 @@ def _render_references(
             rows.append(
                 f"    {edge.kind} ← {repo_label}/{loc} (`{edge.raw_reference}`)"
             )
+    hidden = (cross_repo_total or 0) - len(cross_repo)
+    if hidden > 0:
+        rows.append(f"  … and {hidden} more cross-repo ref(s) not shown (raise limit to see more)")
     return head + f" ({total} refs)\n" + "\n".join(rows)
 
 
@@ -737,8 +751,9 @@ code_references = Tool(
     description=(
         "Find all INBOUND usages of a symbol: callers, importers, subclasses, "
         "decorators. The canonical answer to 'where is X used?' / 'what breaks "
-        "if I change X?' — without grepping. scope='project' also searches "
-        "sibling repos in a multi-repo project."
+        "if I change X?' — without grepping. `limit` bounds the combined "
+        "intra-repo + cross-repo total, not just intra-repo. scope='project' "
+        "also searches sibling repos in a multi-repo project."
     ),
     concurrency_safe=True,
     read_only=True,
