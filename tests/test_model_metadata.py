@@ -61,3 +61,32 @@ def test_get_model_thinking_levels_returns_known_levels() -> None:
 
 def test_get_model_thinking_levels_unknown_model_returns_empty_tuple() -> None:
     assert get_model_thinking_levels("unknown:model") == ()
+
+
+def test_get_model_thinking_levels_covers_native_anthropic_reasoning_models() -> None:
+    """Regression test: the direct `anthropic:` provider models were missing
+    `thinking.levels` in the registry even though anthropic.py has always
+    known how to apply a thinking level to them — only the AWS Bedrock
+    listing of the same models (e.g. bedrock:anthropic.claude-opus-4-7) had
+    the data, so the frontend's ThinkingPill silently never appeared for
+    the native Anthropic provider."""
+    # Newer models route through anthropic.py's adaptive thinking mode
+    # (output_config.effort) and additionally support "minimal".
+    assert get_model_thinking_levels("anthropic:claude-opus-4-7") == (
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+    )
+    # Older reasoning-capable models use the budget_tokens mode instead.
+    assert get_model_thinking_levels("anthropic:claude-opus-4-5") == (
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+    )
+    # Pre-extended-thinking models must still report no levels at all.
+    assert get_model_thinking_levels("anthropic:claude-3-5-haiku-latest") == ()
