@@ -665,6 +665,20 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
         break
       }
 
+      case 'question_asked': {
+        set((draft) => {
+          draft.askUserQuestion = {
+            requestId: d.request_id as string,
+            sessionId: d.session_id as string,
+            questions: (d.questions as Array<Record<string, unknown>>).map((q) => ({
+              question: q.question as string,
+              options: (q.options as string[]) ?? [],
+            })),
+          }
+        })
+        break
+      }
+
       case 'prompt_suggestions': {
         const suggestions = Array.isArray(d.suggestions)
           ? (d.suggestions as string[]).filter((s) => typeof s === 'string' && s.trim())

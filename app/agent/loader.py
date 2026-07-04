@@ -298,6 +298,7 @@ def _default_tool_registry() -> dict[str, Tool]:
         code_symbol,
     )
     from app.agent.tools.builtin.plan import enter_plan_mode, exit_plan_mode
+    from app.agent.tools.builtin.ask_user import ask_user
     from app.agent.tools.builtin.chapter import mark_chapter
     from app.agent.tools.builtin.bg_tasks import (
         shell_bg_start,
@@ -339,6 +340,7 @@ def _default_tool_registry() -> dict[str, Tool]:
         "code_path": code_path,
         "enter_plan_mode": enter_plan_mode,
         "exit_plan_mode": exit_plan_mode,
+        "ask_user": ask_user,
         "shell_bg_start": shell_bg_start,
         "shell_bg_status": shell_bg_status,
         "shell_bg_wait": shell_bg_wait,

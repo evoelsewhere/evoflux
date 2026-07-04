@@ -27,6 +27,17 @@ export interface PlanApprovalPending {
   steps: PlanStep[]
 }
 
+export interface AskUserQuestionItem {
+  question: string
+  options: string[]
+}
+
+export interface AskUserQuestionPending {
+  requestId: string
+  sessionId: string
+  questions: AskUserQuestionItem[]
+}
+
 export type PermissionMode = 'ask' | 'accept-edits' | 'plan' | 'auto' | 'bypass'
 
 export interface PermissionRequestPending {
