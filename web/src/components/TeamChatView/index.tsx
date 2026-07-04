@@ -1114,9 +1114,13 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
       <header
         {...dragHandlers}
         className={`mobile-safe-header relative z-20 flex shrink-0 items-center gap-1.5 px-1.5 py-1.5 ${
-          isMacOverlay ? 'select-none' : ''
+          isMacOverlay && isMobile ? 'select-none' : ''
         }`}
-        style={isMacOverlay ? { paddingLeft: 'calc(var(--spacing-mac-traffic-inset) + 6px)' } : undefined}
+        style={
+          isMacOverlay && isMobile
+            ? { paddingLeft: 'calc(var(--spacing-mac-traffic-inset) + 6px)' }
+            : undefined
+        }
       >
           {/* Mobile only — hamburger + title */}
           {isMobile && (
