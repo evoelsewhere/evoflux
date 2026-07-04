@@ -18,6 +18,8 @@
 
 </div>
 
+> **Note — from 30 June 2026 onwards:** All fixes, optimizations, and new features shipped to EvoFlux are developed and delivered using **EvoFlux Coding mode**. The agents build, review, and ship themselves.
+
 ---
 
 ## What is EvoFlux?
