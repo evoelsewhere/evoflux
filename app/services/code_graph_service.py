@@ -1041,6 +1041,27 @@ async def get_node(
     ).first()
 
 
+async def find_file_node(
+    db: AsyncSession, *, workspace_id: UUID, file_path: str
+) -> CodeNode | None:
+    """Look up the file-level ``CodeNode`` for ``file_path`` in a workspace.
+
+    Import edges are attached to the file node rather than to whichever
+    class/method textually contains the import statement — callers wanting
+    a non-file symbol's imports must redirect to this node first (see
+    ``get_neighbors`` callers filtering on ``edge_kind="imports"``).
+    """
+    return (
+        await db.exec(
+            select(CodeNode).where(
+                CodeNode.workspace_id == workspace_id,
+                CodeNode.file_path == file_path,
+                CodeNode.kind == "file",
+            )
+        )
+    ).first()
+
+
 async def get_overview(
     db: AsyncSession, *, workspace_id: UUID, top_files: int = 10
 ) -> WorkspaceOverview:
