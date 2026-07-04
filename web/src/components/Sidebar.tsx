@@ -114,7 +114,7 @@ export function Sidebar({
   onMobileClose,
 }: SidebarProps) {
   const isMobile = useIsMobile();
-  const { isTauri, os } = usePlatform();
+  const { isTauri, os, isMacOverlay } = usePlatform();
   const isTauriMobile = isTauri && (os === "ios" || os === "android");
   const mobileLongPressActions = isMobile && isTauriMobile && mobileOpen;
   const prefersReducedMotion = useReducedMotion();
@@ -306,8 +306,11 @@ export function Sidebar({
 
   // On mobile the sidebar is a fixed overlay drawer: it slides in/out via
   // x transform and always stays 272px wide. The desktop version animates
-  // its inline width between 56px (icon-only) and the user-resized width.
-  const desktopWidth = collapsed ? 56 : resizable.width;
+  // its inline width between the icon-only width and the user-resized width.
+  // On macOS Tauri the icon-only rail widens to 70px (matching
+  // --spacing-mac-traffic-inset) so the traffic-light buttons land fully
+  // inside it instead of spilling into the main content.
+  const desktopWidth = collapsed ? (isMacOverlay ? 70 : 56) : resizable.width;
   // Computed here so both desktop and mobile branches can reference it.
   const showIconOnly = !isMobile && collapsed;
 
@@ -381,7 +384,7 @@ export function Sidebar({
                 }`}>
                   {/* Mode switch */}
                   {!ico && (
-                    <div className="px-2 pt-2">
+                    <div className={`px-2 ${isMacOverlay ? 'pt-10' : 'pt-2'}`}>
                       <div className="flex h-8 items-center rounded-md border border-(--color-border) bg-(--bg-page) p-0.5">
                         <button
                           type="button"
@@ -426,7 +429,7 @@ export function Sidebar({
                     </div>
                   )}
                   {ico && (
-                    <div className="flex flex-col items-center gap-0.5 pb-1">
+                    <div className={`flex flex-col items-center gap-0.5 pb-1 ${isMacOverlay ? 'pt-10' : ''}`}>
                       <button
                         type="button"
                         onClick={() => navigate({ to: '/' })}
