@@ -313,6 +313,9 @@ async def _code_neighbors(
         Literal["calls", "inherits", "implements", "contains", "imports"] | None,
         Field(description="Restrict to a single relationship kind."),
     ] = None,
+    limit: Annotated[
+        int, Field(description="Maximum neighbours to return per symbol (max 100).")
+    ] = _MAX_NEIGHBORS,
     scope: Annotated[
         Literal["workspace", "project"],
         Field(
@@ -333,6 +336,7 @@ async def _code_neighbors(
     always shown; scope='project' additionally searches sibling repos to
     resolve the symbol itself when it isn't found in the active workspace.
     """
+    capped = max(1, min(limit, 100))
     async with async_session_factory() as db:
         workspace_id = await _resolve_workspace(db)
         if workspace_id is None:
@@ -372,7 +376,11 @@ async def _code_neighbors(
             cross_repo = await _find_cross_repo_references(db, project_ids, node.id)
             sections.append(
                 _render_neighbors(
-                    node, neighbours, cross_repo, repo_label=repo_labels.get(match_ws_id)
+                    node,
+                    neighbours,
+                    cross_repo,
+                    repo_label=repo_labels.get(match_ws_id),
+                    limit=capped,
                 )
             )
     return "\n\n".join(sections)
@@ -401,6 +409,7 @@ def _render_neighbors(
     neighbours: list[tuple[str, CodeNode]],
     cross_repo: Sequence[tuple[CrossRepoEdge, str]] = (),
     repo_label: str | None = None,
+    limit: int = _MAX_NEIGHBORS,
 ) -> str:
     head = f"[{node.kind}] {node.qualified_name} — {_loc(node)}"
     if repo_label:
@@ -409,9 +418,9 @@ def _render_neighbors(
         return f"{head}\n  (no matching neighbours)"
     rows = [
         f"  {kind} → [{n.kind}] {n.qualified_name} — {_loc(n)}"
-        for kind, n in neighbours[:_MAX_NEIGHBORS]
+        for kind, n in neighbours[:limit]
     ]
-    extra = len(neighbours) - _MAX_NEIGHBORS
+    extra = len(neighbours) - limit
     if extra > 0:
         rows.append(f"  … and {extra} more")
     if cross_repo:
@@ -512,8 +521,10 @@ code_neighbors = Tool(
         "List a symbol's OUTBOUND graph neighbours — what it calls, extends, "
         "implements, imports, or contains — one hop out. Use to trace what a "
         "symbol depends on. For INBOUND usage (who calls/imports/extends it), "
-        "use code_references instead. scope='project' also searches sibling "
-        "repos in a multi-repo project."
+        "use code_references instead. `limit` caps how many neighbours are "
+        "returned per symbol (default 40, max 100) — lower it for symbols "
+        "with a large fan-out. scope='project' also searches sibling repos "
+        "in a multi-repo project."
     ),
     concurrency_safe=True,
     read_only=True,

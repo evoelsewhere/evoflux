@@ -391,6 +391,38 @@ async def test_code_tools_against_indexed_workspace(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_code_neighbors_limit_param(tmp_path):
+    """code_neighbors must accept a `limit` to cap output for symbols with a
+    large fan-out (e.g. an interface with 80+ methods) — regression test for
+    the bug where no such knob existed and callers had no way to control
+    output size."""
+    from app.core.db import async_session_factory
+    from app.services.code_graph_service import reindex_workspace
+    from app.services.coding_workspace_service import upsert_coding_workspace
+    from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
+    from app.agent.tools.builtin.code_graph import code_neighbors
+
+    (tmp_path / "main.py").write_text(
+        "def a(): pass\ndef b(): pass\ndef c(): pass\n"
+        "def caller():\n    a()\n    b()\n    c()\n",
+        encoding="utf-8",
+    )
+    async with async_session_factory() as db:
+        ws = await upsert_coding_workspace(db, path=str(tmp_path))
+        await db.commit()
+        await reindex_workspace(db, workspace_id=ws.id, root_path=str(tmp_path))
+        await db.commit()
+
+    token = set_sandbox(SandboxConfig(workspace=str(tmp_path)))
+    try:
+        out = await code_neighbors(name="caller", edge_kind="calls", limit=2)
+        assert out.count("calls → ") == 2
+        assert "and 1 more" in out
+    finally:
+        _sandbox_ctx.reset(token)
+
+
+@pytest.mark.asyncio
 async def test_code_tools_scope_project_resolves_sibling_repo(tmp_path):
     """scope='project' must resolve a symbol that only exists in a sibling
     repo — the gap that motivated giving code_neighbors/code_references a
