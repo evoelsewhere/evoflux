@@ -40,6 +40,7 @@ import { ActivityPanel } from '../ActivityPanel'
 import { BrowserViewer } from '../BrowserViewer'
 import { PlanApprovalModal } from '../PlanApprovalModal'
 import { PermissionApprovalModal } from '../PermissionApprovalModal'
+import { AskUserQuestionModal } from '../AskUserQuestionModal'
 import { MonitorView } from '../MonitorView'
 import { useTodosQuery } from '@/queries/useTodosQuery'
 import { useSessionChapters } from '@/hooks/useSessionChapters'
@@ -1410,6 +1411,7 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
         ) : null}
 
         <PermissionApprovalModal />
+        <AskUserQuestionModal />
         {(mode !== 'coding' || workspace) && (
           <FloatingInputBar
             ref={inputRef}

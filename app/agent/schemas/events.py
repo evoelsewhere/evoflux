@@ -215,6 +215,26 @@ class PermissionRepliedEvent(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class QuestionAskedEvent(BaseModel):
+    """Agent is asking the user one or more clarifying questions mid-task.
+
+    The frontend should display a question UI for the whole batch and POST
+    a reply to ``/api/team/{session_id}/questions/{request_id}/reply`` with
+    one answer per question, in order.
+
+    Each item in ``questions`` has ``question`` and ``options`` (empty for
+    a free-text question; when non-empty the frontend should offer those as
+    quick-pick buttons plus a free-text fallback, since the reply is always
+    taken verbatim as a string).
+    """
+
+    type: Literal["question_asked"] = "question_asked"
+    request_id: str  # unique ID — included in the reply POST
+    session_id: str
+    questions: list[dict[str, Any]]  # [{question, options}, ...]
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class SummarizationStartEvent(BaseModel):
     """Context-window compaction (summarisation) has begun.
 

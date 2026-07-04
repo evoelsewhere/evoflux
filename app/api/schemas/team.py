@@ -109,3 +109,14 @@ class PlanReplyRequest(BaseModel):
         description="ID returned in the plan_approval_requested event."
     )
     decision: str = Field(description="'approved' or 'rejected'")
+
+
+# ── Ask user ─────────────────────────────────────────────────────────────────
+
+
+class AskUserReplyRequest(BaseModel):
+    """Body for replying to a pending ask_user question batch."""
+
+    answers: list[str] = Field(
+        description="One answer per question, in the same order as asked."
+    )

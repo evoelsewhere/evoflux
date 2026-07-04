@@ -34,6 +34,7 @@ from app.agent.schemas.events import (
     PlanApprovalRequestedEvent,
     PromptSuggestionsEvent,
     ProviderStatusEvent,
+    QuestionAskedEvent,
     RateLimitEvent,
     SessionEvent,
     SummarizationContentEvent,
@@ -77,6 +78,7 @@ AnyStreamEvent = Union[
     PlanApprovalRequestedEvent,
     PromptSuggestionsEvent,
     ChapterCreatedEvent,
+    QuestionAskedEvent,
 ]
 
 

@@ -190,6 +190,25 @@ export async function replyPlanApproval(
   }
 }
 
+export async function replyAskUserQuestion(
+  sessionId: string,
+  requestId: string,
+  answers: string[],
+): Promise<void> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/${encodeURIComponent(sessionId)}/questions/${encodeURIComponent(requestId)}/reply`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ answers }),
+    },
+  )
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(body?.detail || `POST questions reply failed: ${res.status}`)
+  }
+}
+
 export function teamStream(sessionId: string, callbacks: SSECallbacks, signal?: AbortSignal): void {
   fetch(`${apiBaseUrl()}/team/${encodeURIComponent(sessionId)}/stream`, { signal })
     .then((res) => {

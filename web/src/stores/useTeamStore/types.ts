@@ -1,4 +1,4 @@
-import type { ContentBlock, AgentUsage, TeamCommandResponse, PlanApprovalPending, PermissionRequestPending, PermissionMode } from '@/api/types'
+import type { ContentBlock, AgentUsage, TeamCommandResponse, PlanApprovalPending, PermissionRequestPending, AskUserQuestionPending, PermissionMode } from '@/api/types'
 
 export type { PermissionMode }
 
@@ -106,6 +106,7 @@ export interface TeamStoreState {
   browserSession: BrowserSessionInfo | null
   planApproval: PlanApprovalPending | null
   permissionRequest: PermissionRequestPending | null
+  askUserQuestion: AskUserQuestionPending | null
   permissionMode: PermissionMode
   promptSuggestions: string[] | null
   _pendingMessages: PendingMessage[]

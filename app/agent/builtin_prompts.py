@@ -12,6 +12,7 @@ NORMAL_EVOFLUX_DESCRIPTION = "Your personal on-machine AI assistant. Lives on yo
 CODING_EVOFLUX_DESCRIPTION = "Lead coding agent. Plans the work, coordinates the team, and delivers a verified change with a concise handoff."
 
 NORMAL_EVOFLUX_TOOLS = [
+    "ask_user",
     "bg",
     "browser_use",
     "code_map",
@@ -49,6 +50,7 @@ NORMAL_EVOFLUX_TOOLS = [
     "lsp_references",
 ]
 CODING_EVOFLUX_TOOLS = [
+    "ask_user",
     "bg",
     "browser_use",
     "code_map",

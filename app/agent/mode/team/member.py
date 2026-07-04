@@ -68,6 +68,11 @@ from app.agent.plan import (
     reset_plan_mode_service,
     set_plan_mode_service,
 )
+from app.agent.ask_user import (
+    AskUserService,
+    reset_ask_user_service,
+    set_ask_user_service,
+)
 from app.agent.schemas.agent import RunConfig
 from app.agent.schemas.chat import HumanMessage
 from app.agent.mode.team.mailbox import Message
@@ -125,7 +130,7 @@ LEAD_COMMUNICATION_RULES = """\
 
 LEAD_PROTOCOL = """\
 ## Lead workflow
-1. Receive user request. **Assess scope first.** For small, quick requests, just handle them yourself — don't spin up members for trivia. For substantial work, plan delegation: break the request into pieces, match each to the right blueprint, and prefer reusing a live member over spawning a fresh one.
+1. Receive user request. **If it's genuinely ambiguous or has more than one reasonable interpretation, use `ask_user` before delegating or executing anything** — batch every clarifying question you need into a single call rather than guessing or asking one at a time. Reserve this for choices that would waste real work if guessed wrong (irreversible actions, large refactors, a fork between genuinely different approaches); don't ask about things you can reasonably infer or that are cheap to redo. **Assess scope next.** For small, quick requests, just handle them yourself — don't spin up members for trivia. For substantial work, plan delegation: break the request into pieces, match each to the right blueprint, and prefer reusing a live member over spawning a fresh one.
    - **Use task tiers** when creating todos: `trivial` (handle yourself), `simple` (one member, straightforward), `multi_step` (one member, multiple steps), `complex` (multi-member coordination). Tiers guide delegation — never delegate `trivial` tasks.
 2. **Before delegating, consult your skills.** If the user's request matches one of your declared skills (e.g. install/setup/configure/add a skill body → `skill-installer`; MCP server → `mcp-installer`; plugin → `plugin-installer`; agent config/model/tools → `self-healing`; brand or design work → relevant skill), call `skill(skill_name='<name>')` *before* spawning members. Skills carry canonical paths, file formats, and conventions members would otherwise guess wrong. Skipping this step is the #1 cause of members writing to the wrong location.
 3. When delegating:
@@ -1072,6 +1077,14 @@ class TeamMemberBase(abc.ABC):
         )
         plan_token = set_plan_mode_service(plan_service)
 
+        # Scope ask-user service — blocks the ask_user tool until the user
+        # answers, publishing to the same lead stream as plan approvals.
+        ask_user_service = AskUserService(
+            session_id=self.session_id,
+            stream_session_id=lead_session_id,
+        )
+        ask_user_token = set_ask_user_service(ask_user_service)
+
         # Scope agent role for plugin applies_to filtering ("lead"/"member").
         role_token = set_role(self._role_label)
 
@@ -1100,6 +1113,7 @@ class TeamMemberBase(abc.ABC):
             _sandbox_ctx.reset(token)
             _permission_ctx.reset(perm_token)
             reset_plan_mode_service(plan_token, self.session_id)
+            reset_ask_user_service(ask_user_token, self.session_id)
             # Always resume watcher — even on crash — so reindex runs once
             # with all accumulated changes.
             if watcher is not None:

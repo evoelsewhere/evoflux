@@ -195,6 +195,7 @@ export const useTeamStore = create<TeamStore>()(
     browserSession: null,
     planApproval: null,
     permissionRequest: null,
+    askUserQuestion: null,
     permissionMode: 'auto',
     promptSuggestions: null,
     _pendingMessages: [],
