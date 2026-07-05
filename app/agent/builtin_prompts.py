@@ -103,6 +103,7 @@ class BuiltinAgentBlueprint(TypedDict):
     description: str
     temperature: float
     thinking_level: str
+    skills: list[str]
 
 
 BUILTIN_MEMBER_PROFILES: dict[str, dict[str, BuiltinMemberProfile]] = {
@@ -626,6 +627,7 @@ BUILTIN_AGENT_BLUEPRINTS: dict[str, dict[str, BuiltinAgentBlueprint]] = {
             "description": BUILTIN_MEMBER_PROFILES["normal"]["executor"]["description"],
             "temperature": 0.5,
             "thinking_level": "low",
+            "skills": BUILTIN_MEMBER_PROFILES["normal"]["executor"]["skills"],
         },
         "explorer": {
             "name": "explorer",
@@ -634,6 +636,7 @@ BUILTIN_AGENT_BLUEPRINTS: dict[str, dict[str, BuiltinAgentBlueprint]] = {
             "description": BUILTIN_MEMBER_PROFILES["normal"]["explorer"]["description"],
             "temperature": 0.5,
             "thinking_level": "low",
+            "skills": BUILTIN_MEMBER_PROFILES["normal"]["explorer"]["skills"],
         },
         "consultant": {
             "name": "consultant",
@@ -644,6 +647,7 @@ BUILTIN_AGENT_BLUEPRINTS: dict[str, dict[str, BuiltinAgentBlueprint]] = {
             ],
             "temperature": 0.2,
             "thinking_level": "high",
+            "skills": BUILTIN_MEMBER_PROFILES["normal"]["consultant"]["skills"],
         },
         "debate": {
             "name": "debate",
@@ -652,6 +656,7 @@ BUILTIN_AGENT_BLUEPRINTS: dict[str, dict[str, BuiltinAgentBlueprint]] = {
             "description": BUILTIN_MEMBER_PROFILES["normal"]["debate"]["description"],
             "temperature": 0.6,
             "thinking_level": "medium",
+            "skills": BUILTIN_MEMBER_PROFILES["normal"]["debate"]["skills"],
         },
     },
     "coding": {
@@ -662,6 +667,7 @@ BUILTIN_AGENT_BLUEPRINTS: dict[str, dict[str, BuiltinAgentBlueprint]] = {
             "description": BUILTIN_MEMBER_PROFILES["coding"]["coder"]["description"],
             "temperature": 0.2,
             "thinking_level": "low",
+            "skills": BUILTIN_MEMBER_PROFILES["coding"]["coder"]["skills"],
         },
         "explorer": {
             "name": "explorer",
@@ -670,6 +676,7 @@ BUILTIN_AGENT_BLUEPRINTS: dict[str, dict[str, BuiltinAgentBlueprint]] = {
             "description": BUILTIN_MEMBER_PROFILES["coding"]["explorer"]["description"],
             "temperature": 0.2,
             "thinking_level": "low",
+            "skills": BUILTIN_MEMBER_PROFILES["coding"]["explorer"]["skills"],
         },
         "debate": {
             "name": "debate",
@@ -678,6 +685,7 @@ BUILTIN_AGENT_BLUEPRINTS: dict[str, dict[str, BuiltinAgentBlueprint]] = {
             "description": BUILTIN_MEMBER_PROFILES["coding"]["debate"]["description"],
             "temperature": 0.3,
             "thinking_level": "medium",
+            "skills": BUILTIN_MEMBER_PROFILES["coding"]["debate"]["skills"],
         },
         "architect": {
             "name": "architect",
@@ -688,6 +696,7 @@ BUILTIN_AGENT_BLUEPRINTS: dict[str, dict[str, BuiltinAgentBlueprint]] = {
             ],
             "temperature": 0.2,
             "thinking_level": "high",
+            "skills": BUILTIN_MEMBER_PROFILES["coding"]["architect"]["skills"],
         },
     },
 }

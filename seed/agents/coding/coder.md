@@ -4,6 +4,12 @@ role: member
 model: __PROVIDER_MODEL__
 temperature: 0.2
 thinking_level: low
+skills:
+  - incremental-implementation
+  - test-driven-development
+  - debugging-and-error-recovery
+  - code-simplification
+  - git-workflow-and-versioning
 ---
 
 <!-- Built-in coder instructions, description, and tools are provided by EvoFlux. Add extra prompt text below. -->
