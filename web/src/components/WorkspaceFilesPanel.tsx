@@ -829,7 +829,6 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
   const [pickerError, setPickerError] = useState<string | null>(null)
 
   // Directory browser state (web fallback when not on Tauri desktop)
-  const [browsePath, setBrowsePath] = useState<string | null>(null)
   const [browseDirs, setBrowseDirs] = useState<Array<{ name: string; path: string }>>([])
   const [browseParent, setBrowseParent] = useState<string | null>(null)
   const [browseLoading, setBrowseLoading] = useState(false)
@@ -952,7 +951,6 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
 
     // On web: open inline directory browser
     setPickerPath(workspaceRoot ?? '')
-    setBrowsePath(null)
     setBrowseDirs([])
     setBrowseParent(null)
     setIsPickerOpen(true)
@@ -965,7 +963,6 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
     setBrowseError(null)
     try {
       const result = await browseWorkspaces(path)
-      setBrowsePath(result.path)
       setBrowseParent(result.parent)
       setBrowseDirs(result.directories)
     } catch (err) {
