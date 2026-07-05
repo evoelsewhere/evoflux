@@ -44,7 +44,7 @@ import {
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
-import { workspaceMediaUrl, updateSessionWorkspace, uploadWorkspaceFiles, moveWorkspaceFile, deleteWorkspaceFile } from '@/api/client'
+import { workspaceMediaUrl, updateSessionWorkspace, uploadWorkspaceFiles, moveWorkspaceFile, deleteWorkspaceFile, browseWorkspaces } from '@/api/client'
 import { downloadWorkspaceFile } from '@/lib/workspace-download'
 import { useWorkspaceFilesQuery } from '@/queries'
 import { queryKeys } from '@/queries/keys'
@@ -828,6 +828,14 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
   const [isPickerSaving, setIsPickerSaving] = useState(false)
   const [pickerError, setPickerError] = useState<string | null>(null)
 
+  // Directory browser state (web fallback when not on Tauri desktop)
+  const [browsePath, setBrowsePath] = useState<string | null>(null)
+  const [browseDirs, setBrowseDirs] = useState<Array<{ name: string; path: string }>>([])
+  const [browseParent, setBrowseParent] = useState<string | null>(null)
+  const [browseLoading, setBrowseLoading] = useState(false)
+  const [browseError, setBrowseError] = useState<string | null>(null)
+  const { isTauri } = usePlatform()
+
   // Upload state
   const [isUploading, setIsUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
@@ -914,11 +922,58 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
 
   // ── Workspace picker ────────────────────────────────────────────────────────
 
-  const openPicker = () => {
-    setPickerPath(workspaceRoot ?? '')
+  const openPicker = async () => {
     setPickerError(null)
+    setBrowseError(null)
+
+    // On Tauri desktop: open native folder picker directly
+    if (isTauri) {
+      try {
+        const { open } = await import('@tauri-apps/plugin-dialog')
+        const selected = await open({ directory: true, multiple: false, title: 'Select workspace folder' })
+        if (typeof selected === 'string') {
+          // Apply immediately — no intermediate UI needed
+          if (!sessionId) return
+          setIsPickerSaving(true)
+          try {
+            const result = await updateSessionWorkspace(sessionId, selected)
+            queryClient.setQueryData(queryKeys.team.files(sessionId), result)
+          } catch (err) {
+            setPickerError((err as Error).message ?? 'Failed to update workspace')
+          } finally {
+            setIsPickerSaving(false)
+          }
+        }
+      } catch (err) {
+        setPickerError(err instanceof Error ? err.message : 'Failed to open folder picker')
+      }
+      return
+    }
+
+    // On web: open inline directory browser
+    setPickerPath(workspaceRoot ?? '')
+    setBrowsePath(null)
+    setBrowseDirs([])
+    setBrowseParent(null)
     setIsPickerOpen(true)
+    // Auto-load home directory
+    void handleBrowse(null)
   }
+
+  const handleBrowse = useCallback(async (path?: string | null) => {
+    setBrowseLoading(true)
+    setBrowseError(null)
+    try {
+      const result = await browseWorkspaces(path)
+      setBrowsePath(result.path)
+      setBrowseParent(result.parent)
+      setBrowseDirs(result.directories)
+    } catch (err) {
+      setBrowseError(err instanceof Error ? err.message : 'Failed to browse directories')
+    } finally {
+      setBrowseLoading(false)
+    }
+  }, [])
 
   const handleSaveWorkspace = async (pathOverride?: string | null) => {
     if (!sessionId) return
@@ -1186,25 +1241,61 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
                 </div>
                 {isPickerOpen && (
                   <div className="flex flex-col gap-2 border-t border-(--color-border) bg-(--bg-page) px-3 py-2">
+                    {/* Path input — type or paste a path manually */}
                     <input
                       type="text"
                       value={pickerPath}
                       onChange={(e) => setPickerPath(e.target.value)}
-                      placeholder="Absolute path, e.g. /home/user/project"
+                      placeholder="Type or browse to select a folder"
                       className="w-full rounded border border-(--color-border) bg-(--color-surface) px-2 py-1.5 font-mono text-xs text-(--color-text) outline-none focus:border-(--focus-ring) placeholder:text-(--color-text-subtle)"
                       onKeyDown={(e) => { if (e.key === 'Enter') void handleSaveWorkspace(); if (e.key === 'Escape') setIsPickerOpen(false) }}
-                      autoFocus
                     />
+                    {/* Directory browser — click a folder to select it */}
+                    <div className="max-h-48 overflow-y-auto rounded border border-(--color-border) bg-(--color-surface)">
+                      {browseLoading && (
+                        <div className="flex items-center justify-center gap-2 py-3 text-xs text-(--color-text-muted)">
+                          <Loader2 size={12} className="animate-spin" /> Loading…
+                        </div>
+                      )}
+                      {!browseLoading && browseParent && (
+                        <button
+                          onClick={() => void handleBrowse(browseParent)}
+                          className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs text-(--color-text-muted) hover:bg-(--bg-key)"
+                        >
+                          <FolderUp size={11} />
+                          ..
+                        </button>
+                      )}
+                      {!browseLoading && browseDirs.map((dir) => (
+                        <button
+                          key={dir.path}
+                          onClick={() => setPickerPath(dir.path)}
+                          className={cn(
+                            'flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs transition-colors hover:bg-(--bg-key)',
+                            pickerPath === dir.path ? 'text-(--color-accent) font-medium bg-(--bg-key)' : 'text-(--color-text)',
+                          )}
+                        >
+                          <Folder size={11} className="shrink-0 text-(--color-text-muted)" />
+                          <span className="truncate">{dir.name}</span>
+                        </button>
+                      ))}
+                      {!browseLoading && browseDirs.length === 0 && !browseParent && (
+                        <p className="px-2 py-3 text-center text-xs text-(--color-text-muted)">No subdirectories</p>
+                      )}
+                    </div>
+                    {browseError && (
+                      <p className="text-xs text-(--color-error)">{browseError}</p>
+                    )}
                     {pickerError && (
                       <p className="text-xs text-(--color-error)">{pickerError}</p>
                     )}
                     <div className="flex items-center gap-1.5">
                       <button
                         onClick={() => void handleSaveWorkspace()}
-                        disabled={isPickerSaving}
+                        disabled={isPickerSaving || !pickerPath.trim()}
                         className="rounded bg-(--color-accent) px-3 py-1 text-xs font-medium text-(--color-text-on-accent) transition-opacity hover:opacity-90 disabled:opacity-50"
                       >
-                        {isPickerSaving ? 'Applying…' : 'Apply'}
+                        {isPickerSaving ? 'Applying…' : 'Select'}
                       </button>
                       <button
                         onClick={() => void handleSaveWorkspace(null)}
