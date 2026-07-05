@@ -356,9 +356,10 @@ async def load_skill(
 ) -> str:
     """Load skill instructions into context."""
     if _state is not None:
-        loaded_skills = _state.metadata.setdefault(
-            "loaded_skills", _loaded_skills_from_messages(_state)
-        )
+        loaded_skills = _state.metadata.get("loaded_skills")
+        if loaded_skills is None:
+            loaded_skills = _loaded_skills_from_messages(_state)
+            _state.metadata["loaded_skills"] = loaded_skills
         if loaded_skills.get(skill_name):
             logger.info("skill_reused name={}", skill_name)
             return loaded_skills[skill_name]
@@ -367,6 +368,31 @@ async def load_skill(
     if not roots:
         return "Skills directory not found."
 
+    # Use the cached discover_skills() lookup to find the exact file path,
+    # avoiding a fresh filesystem walk on every on-demand load.
+    discovered = discover_skills()
+    skill_info = discovered.get(skill_name)
+    if skill_info is not None:
+        skill_dir = Path(skill_info["dir"])
+        skill_file = skill_dir / "SKILL.md"
+        if skill_file.is_file():
+            text = await asyncio.to_thread(
+                skill_file.read_text, encoding="utf-8"
+            )
+            _, body = _parse_frontmatter(text)
+            logger.info(
+                "skill_loaded name={} file={}",
+                skill_name,
+                skill_info.get("file", skill_file),
+            )
+            rendered = _render_tokens(body, skill_dir=skill_dir)
+            if _state is not None:
+                loaded_skills[skill_name] = rendered
+            return rendered
+
+    # Fallback: walk all roots for stem-based matches not captured by
+    # discover_skills (e.g. unreadable skills that are listed by stem
+    # but have no description).
     for skills_dir in roots:
         for path, stem in _iter_skill_paths(skills_dir):
             text = await asyncio.to_thread(path.read_text, encoding="utf-8")
@@ -375,11 +401,7 @@ async def load_skill(
             if name == skill_name or stem == skill_name:
                 rel = path.relative_to(skills_dir)
                 logger.info("skill_loaded name={} file={}", name, rel)
-                # Expand placeholders ({EVOFLUX_CONFIG_DIR}, {SKILL_DIR}, etc.)
-                # so the agent receives concrete paths it can hand to its
-                # file/shell tools without further interpretation.
                 rendered = _render_tokens(body, skill_dir=path.parent)
-                # Cache so within-turn duplicate calls don't re-read disk.
                 if _state is not None:
                     loaded_skills[skill_name] = rendered
                 return rendered

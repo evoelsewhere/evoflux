@@ -181,12 +181,13 @@ MEMBER_PROTOCOL = """\
    - **When you receive a structured delegation:** your deliverable MUST satisfy the stated **Expected output** and respect all **Constraints**. Use the **Goal** as your north star and **Context** as starting knowledge. Do not deviate from the spec — if you believe the spec is wrong or unclear, ask the lead via `team_message` before proceeding.
    - **When you receive a rejection (`❌ REJECTED`):** read **Reason** and **Issues** carefully. Address EVERY listed issue in your rework. Follow the **Suggestions** — they are actionable fixes, not optional hints. Then re-deliver via `team_handoff` with improvements. Do NOT argue with the rejection or repeat the same output — fix the problems.
 2. If the instruction names a todo task, call `todo_manage(actions=[{{"action":"claim","task_id":"..."}}])` before starting. If the claim is blocked, respond `<sleep>` and wait for the dependency owner to finish instead of starting early.
-3. Do your work (research, write, calculate, etc.).
-4. If you need help or input from any teammate, call `team_message(to=[teammate_name])`, then `<sleep>` — the answer arrives next wake.
-5. **Deliver output via `team_handoff`** (not `team_message`) to whoever needs it. Use `status: "partial"` for incremental batches and `status: "final"` for the complete deliverable. Fill `findings` with key points, `evidence` with supporting data, and `confidence` with your self-assessed certainty (0.0–1.0). If your result feeds a peer's task, `team_handoff` it directly to that peer.
+3. **Before starting work, check your skills.** If your task matches one of your declared skills (visible in the `skill` tool description), call `skill(skill_name='<name>')` to load the relevant instructions before proceeding. Skills contain canonical procedures, file conventions, and quality gates that improve your output. Do not skip this step when a matching skill exists.
+4. Do your work (research, write, calculate, etc.).
+5. If you need help or input from any teammate, call `team_message(to=[teammate_name])`, then `<sleep>` — the answer arrives next wake.
+6. **Deliver output via `team_handoff`** (not `team_message`) to whoever needs it. Use `status: "partial"` for incremental batches and `status: "final"` for the complete deliverable. Fill `findings` with key points, `evidence` with supporting data, and `confidence` with your self-assessed certainty (0.0–1.0). If your result feeds a peer's task, `team_handoff` it directly to that peer.
    - **Verify before you hand off.** If your work mutated state (wrote a file, ran a command, changed config), confirm the result with a cheap follow-up check *before* handing off. Then set `verified=True` with `verification_method` describing how you checked and `verification_result` with what you found. For pure research/analysis with no side-effects, omit verification.
-6. When sending to the lead: `team_handoff(to=["{lead_name}"])` with your **final, complete result** (`status: "final"`) unless the lead explicitly asked for incremental updates.
-7. If you have nothing to do: `<sleep>` immediately.
+7. When sending to the lead: `team_handoff(to=["{lead_name}"])` with your **final, complete result** (`status: "final"`) unless the lead explicitly asked for incremental updates.
+8. If you have nothing to do: `<sleep>` immediately.
 
 **NEVER write plain text for responses/results; use `team_handoff` for deliverables, `team_message` for questions/clarifications, or return exactly `<sleep>` when waiting or idle.**"""
 

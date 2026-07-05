@@ -165,6 +165,7 @@ def _builtin_agent_md(
     model: str | None,
     temperature: float,
     thinking_level: str,
+    skills: list[str] | None = None,
 ) -> str:
     frontmatter = {
         "name": name,
@@ -174,6 +175,8 @@ def _builtin_agent_md(
         "temperature": temperature,
         "thinking_level": thinking_level,
     }
+    if skills:
+        frontmatter["skills"] = skills
     return f"---\n{yaml.safe_dump(frontmatter, sort_keys=False)}---\n\n"
 
 
@@ -218,6 +221,7 @@ def ensure_builtin_agent_blueprints(agents_dir: Path, *, mode: str) -> list[str]
                 model=model,
                 temperature=blueprint["temperature"],
                 thinking_level=blueprint["thinking_level"],
+                skills=blueprint.get("skills"),
             ),
         )
         written.append(target.name)
