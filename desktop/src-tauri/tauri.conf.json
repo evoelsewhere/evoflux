@@ -98,15 +98,5 @@
       }
     }
   },
-  "plugins": {
-    "updater": {
-      "endpoints": [
-        "https://github.com/khuonghung/evoflux/releases/download/latest-desktop/latest.json"
-      ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZBODEyQUU4RjBFMjJFOEIKUldTTEx1THc2Q3FCYXE5L3VCTUlTZ1VwRHF2bXlIQ1BHdjVtZHpGUlBjZE1SaGkvYUFjclJJbEkK",
-      "windows": {
-        "installMode": "passive"
-      }
-    }
-  }
+  "plugins": {}
 }

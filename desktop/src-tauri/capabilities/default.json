@@ -24,7 +24,6 @@
     "notification:default",
     "opener:default",
     "log:default",
-    "updater:default",
     "allow-request-voice-permissions",
     "allow-save-workspace-file",
     "allow-backend-health",
@@ -36,10 +35,6 @@
     "allow-app-use-bundled-backend",
     "allow-app-new-window",
     "allow-app-open-browser-devtools",
-    "allow-set-tray-session",
-    "allow-updater-check",
-    "allow-updater-download",
-    "allow-updater-install",
-    "allow-updater-release-notes"
+    "allow-set-tray-session"
   ]
 }
