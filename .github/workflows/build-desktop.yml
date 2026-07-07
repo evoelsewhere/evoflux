@@ -1,0 +1,220 @@
+name: Build Desktop
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. 1.57.1). Leave empty for dev build."
+        required: false
+        type: string
+  pull_request:
+    paths:
+      - "desktop/**"
+      - "web/**"
+      - "scripts/build_sidecar.py"
+      - "pyproject.toml"
+      - ".github/workflows/build-desktop.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  BUN_VERSION: "latest"
+  # Tauri sidecar output directory (must match tauri.conf.json bundle.resources)
+  SIDECAR_DIR: desktop/sidecar-bundle
+
+jobs:
+  # ── Build sidecar (shared across platforms) ───────────────────────────
+  sidecar:
+    name: Sidecar (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            platform: macos
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            platform: linux
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            platform: windows
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Build sidecar
+        run: |
+          python scripts/build_sidecar.py \
+            --root . \
+            --out ${{ env.SIDECAR_DIR }} \
+            --python-version 3.12
+
+      - name: Upload sidecar artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sidecar-${{ matrix.platform }}
+          path: ${{ env.SIDECAR_DIR }}/
+          retention-days: 1
+          if-no-files-found: error
+
+  # ── Build desktop apps ────────────────────────────────────────────────
+  desktop:
+    name: Desktop (${{ matrix.name }})
+    needs: sidecar
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS (arm64)
+            os: macos-latest
+            platform: macos
+            targets: "app,dmg"
+            # macOS builds are universal by default on arm64 runners
+
+          - name: Linux (x64)
+            os: ubuntu-latest
+            platform: linux
+            targets: "appimage,deb"
+            extra_deps: "libwebkit2gtk-4.1-dev libgtk-3-dev libappindicator3-dev librsvg2-dev patchelf"
+
+          - name: Windows (x64)
+            os: windows-latest
+            platform: windows
+            targets: "msi"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Web frontend ─────────────────────────────────────────────────
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Build web frontend
+        working-directory: web
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+
+      # ── Rust toolchain ───────────────────────────────────────────────
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry & build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            desktop/src-tauri/target
+          key: tauri-${{ runner.os }}-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            tauri-${{ runner.os }}-
+
+      # ── Platform dependencies ────────────────────────────────────────
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.extra_deps }}
+
+      - name: Install Windows dependencies
+        if: runner.os == 'Windows'
+        uses: nuget/setup-nuget@v2
+
+      # ── Tauri CLI ────────────────────────────────────────────────────
+      - name: Install Tauri CLI
+        uses: dtolnay/install-tauri-cli@stable
+        with:
+          tauri-version: ">=2"
+
+      # ── Download sidecar ─────────────────────────────────────────────
+      - name: Download sidecar artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sidecar-${{ matrix.platform }}
+          path: ${{ env.SIDECAR_DIR }}/
+
+      # ── Build ────────────────────────────────────────────────────────
+      - name: Build Tauri app
+        working-directory: desktop/src-tauri
+        env:
+          # Skip the beforeBuildCommand (we already built the frontend)
+          TAURI_SKIP_FRONTEND_BUILD: "1"
+        run: |
+          # Build for the target platforms
+          cargo tauri build --bundles ${{ matrix.targets }}
+
+      # ── Upload artifacts ─────────────────────────────────────────────
+      - name: Upload macOS artifacts
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-macos
+          path: |
+            desktop/src-tauri/target/release/bundle/dmg/*.dmg
+            desktop/src-tauri/target/release/bundle/macos/*.app
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload Linux artifacts
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-linux
+          path: |
+            desktop/src-tauri/target/release/bundle/appimage/*.AppImage
+            desktop/src-tauri/target/release/bundle/deb/*.deb
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload Windows artifacts
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows
+          path: desktop/src-tauri/target/release/bundle/msi/*.msi
+          retention-days: 7
+          if-no-files-found: error
+
+  # ── Smoke test sidecar on Linux ───────────────────────────────────────
+  smoke-test:
+    name: Smoke Test Sidecar
+    needs: sidecar
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Download sidecar artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sidecar-linux
+          path: ${{ env.SIDECAR_DIR }}/
+
+      - name: Run smoke test
+        run: |
+          # The smoke test is part of build_sidecar.py and runs automatically
+          # Re-run with --no-smoke to skip, but we verify the bundle exists
+          ls -la ${{ env.SIDECAR_DIR }}/python/bin/
+          ls -la ${{ env.SIDECAR_DIR }}/site-packages/app/
