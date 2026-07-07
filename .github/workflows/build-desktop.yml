@@ -137,10 +137,17 @@ jobs:
         uses: nuget/setup-nuget@v2
 
       # ── Tauri CLI ────────────────────────────────────────────────────
-      - name: Install Tauri CLI
-        uses: dtolnay/install-tauri-cli@stable
+      - name: Cache Tauri CLI
+        id: cache-tauri-cli
+        uses: actions/cache@v4
         with:
-          tauri-version: ">=2"
+          path: ~/.cargo/bin/cargo-tauri*
+          key: tauri-cli-${{ runner.os }}-v2
+
+      - name: Install Tauri CLI
+        if: steps.cache-tauri-cli.outputs.cache-hit != 'true'
+        shell: bash
+        run: cargo install tauri-cli --version "^2" --locked
 
       # ── Download sidecar ─────────────────────────────────────────────
       - name: Download sidecar artifact
