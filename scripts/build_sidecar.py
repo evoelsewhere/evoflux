@@ -310,6 +310,20 @@ def smoke_test(python_bin: Path, site_packages: Path) -> None:
         "EVOFLUX_WORKSPACE_DIR": str(smoke_root / "workspace"),
     }
 
+    # Seed a minimal agents directory so the app's lifespan validation
+    # (which requires exactly one agent with role: lead) passes.
+    agents_dir = smoke_root / "config" / "agents"
+    agents_dir.mkdir(parents=True, exist_ok=True)
+    (agents_dir / "evoflux.md").write_text(
+        "---\n"
+        "name: evoflux\n"
+        "role: lead\n"
+        "model: __PROVIDER_MODEL__\n"
+        "---\n"
+        "# EvoFlux\n"
+        "Smoke-test lead agent.\n"
+    )
+
     # Use __main__.py path explicitly rather than ``-m app.cli`` so we
     # know *which* app.cli the interpreter finds — defends against a
     # vendored layout that buries app/ deeper later.
