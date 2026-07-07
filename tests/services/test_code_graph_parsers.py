@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from app.services.code_graph.parsers.csharp import CSharpParser
 from app.services.code_graph.parsers.go import GoParser
@@ -13,7 +12,6 @@ from app.services.code_graph.parsers.registry import default_registry
 from app.services.code_graph.parsers.rust import RustParser
 from app.services.code_graph.types import (
     EDGE_CALLS,
-    EDGE_CONTAINS,
     EDGE_IMPLEMENTS,
     EDGE_INHERITS,
     NODE_CLASS,

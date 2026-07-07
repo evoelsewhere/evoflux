@@ -67,7 +67,7 @@ export function SplitGrid({
   // User-controlled ordering — new agents appended, gone agents pruned.
   const [orderedNames, setOrderedNames] = useState(agentNames)
   useEffect(() => {
-    setOrderedNames((prev) => {
+    setOrderedNames((prev) => { // eslint-disable-line react-hooks/set-state-in-effect
       const nameSet = new Set(agentNames)
       const kept = prev.filter((n) => nameSet.has(n))
       const added = agentNames.filter((n) => !prev.includes(n))

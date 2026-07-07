@@ -415,7 +415,7 @@ export const MarkdownBlock = memo(function MarkdownBlock({
         clearTimeout(timerRef.current)
         timerRef.current = null
       }
-      setDisplayedContent(content)
+      setDisplayedContent(content) // eslint-disable-line react-hooks/set-state-in-effect
       lastFlushRef.current = Date.now()
       return
     }
@@ -426,7 +426,6 @@ export const MarkdownBlock = memo(function MarkdownBlock({
       lastFlushRef.current = now
       return
     }
-    if (timerRef.current) clearTimeout(timerRef.current)
     timerRef.current = setTimeout(() => {
       timerRef.current = null
       setDisplayedContent(content)

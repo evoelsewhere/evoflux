@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from app.services.code_graph.parsers.c_family import CParser, CppParser
 from app.services.code_graph.parsers.kotlin import KotlinParser

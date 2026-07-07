@@ -40,7 +40,7 @@ export function TaskProgressPill({ isWorking, chapters = [], className }: TaskPr
     if (isWorking) {
       if (!startRef.current) {
         startRef.current = Date.now()
-        setElapsed(0)
+        setElapsed(0) // eslint-disable-line react-hooks/set-state-in-effect
       }
     } else {
       startRef.current = null

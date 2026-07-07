@@ -6,8 +6,11 @@ mod sidecar;
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
 use std::path::{Path, PathBuf};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::time::Duration;
 use tauri::{
     menu::{AboutMetadataBuilder, Menu, MenuItem, PredefinedMenuItem, SubmenuBuilder},
@@ -17,9 +20,9 @@ use tauri::{
 };
 use tauri_plugin_dialog::DialogExt;
 
-use tauri_plugin_opener::OpenerExt;
 #[cfg(test)]
 use tauri_plugin_dialog::MessageDialogResult;
+use tauri_plugin_opener::OpenerExt;
 use tokio::sync::Mutex;
 
 use crate::sidecar::{Handshake, Sidecar};
@@ -152,7 +155,9 @@ const TRAY_SESSION_MAX_LEN: usize = 60;
 /// built via ``WebviewWindowBuilder``. ``y`` is a *bottom* inset (tao
 /// resizes the native title-bar to ``button_height + y`` — tao 0.35.x,
 /// macos/view.rs:1152); 22 pt centres against our 40 pt header.
-fn configure_window_chrome(builder: WebviewWindowBuilder<'_, tauri::Wry, AppHandle>) -> WebviewWindowBuilder<'_, tauri::Wry, AppHandle> {
+fn configure_window_chrome(
+    builder: WebviewWindowBuilder<'_, tauri::Wry, AppHandle>,
+) -> WebviewWindowBuilder<'_, tauri::Wry, AppHandle> {
     #[cfg(target_os = "macos")]
     {
         use tauri::{LogicalPosition, TitleBarStyle};
@@ -194,7 +199,9 @@ fn request_voice_permissions() -> Result<bool, String> {
     let microphone_status = unsafe { AVCaptureDevice::authorizationStatusForMediaType(audio_type) };
     let microphone_granted = if microphone_status == AVAuthorizationStatus::Authorized {
         true
-    } else if microphone_status == AVAuthorizationStatus::Denied || microphone_status == AVAuthorizationStatus::Restricted {
+    } else if microphone_status == AVAuthorizationStatus::Denied
+        || microphone_status == AVAuthorizationStatus::Restricted
+    {
         false
     } else {
         let (tx, rx) = mpsc::channel();
@@ -204,7 +211,8 @@ fn request_voice_permissions() -> Result<bool, String> {
         unsafe {
             AVCaptureDevice::requestAccessForMediaType_completionHandler(audio_type, &handler);
         }
-        rx.recv().map_err(|_| "microphone permission request was cancelled".to_string())?
+        rx.recv()
+            .map_err(|_| "microphone permission request was cancelled".to_string())?
     };
 
     let speech_status = unsafe { SFSpeechRecognizer::authorizationStatus() };
@@ -216,13 +224,15 @@ fn request_voice_permissions() -> Result<bool, String> {
         false
     } else {
         let (tx, rx) = mpsc::channel();
-        let handler: RcBlock<dyn Fn(SFSpeechRecognizerAuthorizationStatus)> = RcBlock::new(move |status: SFSpeechRecognizerAuthorizationStatus| {
-            let _ = tx.send(status == SFSpeechRecognizerAuthorizationStatus::Authorized);
-        });
+        let handler: RcBlock<dyn Fn(SFSpeechRecognizerAuthorizationStatus)> =
+            RcBlock::new(move |status: SFSpeechRecognizerAuthorizationStatus| {
+                let _ = tx.send(status == SFSpeechRecognizerAuthorizationStatus::Authorized);
+            });
         unsafe {
             SFSpeechRecognizer::requestAuthorization(&handler);
         }
-        rx.recv().map_err(|_| "speech recognition permission request was cancelled".to_string())?
+        rx.recv()
+            .map_err(|_| "speech recognition permission request was cancelled".to_string())?
     };
 
     Ok(microphone_granted && speech_granted)
@@ -241,7 +251,10 @@ struct SaveWorkspaceFileRequest {
 }
 
 #[tauri::command]
-async fn save_workspace_file(app: AppHandle, request: SaveWorkspaceFileRequest) -> Result<bool, String> {
+async fn save_workspace_file(
+    app: AppHandle,
+    request: SaveWorkspaceFileRequest,
+) -> Result<bool, String> {
     let filename = Path::new(&request.filename)
         .file_name()
         .and_then(|name| name.to_str())
@@ -293,13 +306,26 @@ async fn backend_logs_path(state: tauri::State<'_, AppState>) -> Result<String, 
 }
 
 #[tauri::command]
-async fn app_backend_status(app: AppHandle, window: tauri::WebviewWindow, state: tauri::State<'_, AppState>) -> Result<AppBackendStatus, String> {
+async fn app_backend_status(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, AppState>,
+) -> Result<AppBackendStatus, String> {
     app_backend_status_for_window(app, state, window.label()).await
 }
 
-async fn app_backend_status_for_window(app: AppHandle, state: tauri::State<'_, AppState>, window_label: &str) -> Result<AppBackendStatus, String> {
+async fn app_backend_status_for_window(
+    app: AppHandle,
+    state: tauri::State<'_, AppState>,
+    window_label: &str,
+) -> Result<AppBackendStatus, String> {
     let bundled_base_url = state.backend_base_url.lock().await.clone();
-    let window_base_url = state.window_backend_base_urls.lock().await.get(window_label).cloned();
+    let window_base_url = state
+        .window_backend_base_urls
+        .lock()
+        .await
+        .get(window_label)
+        .cloned();
     let external = window_base_url.is_some();
     let base_url = window_base_url
         .or(bundled_base_url)
@@ -335,24 +361,44 @@ async fn app_backend_status_for_window(app: AppHandle, state: tauri::State<'_, A
 }
 
 #[tauri::command]
-async fn app_save_backend_server(app: AppHandle, window: tauri::WebviewWindow, base_url: String, name: Option<String>) -> Result<AppBackendStatus, String> {
+async fn app_save_backend_server(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    base_url: String,
+    name: Option<String>,
+) -> Result<AppBackendStatus, String> {
     let normalized = normalize_external_base_url(&base_url).map_err(|e| format!("{e:#}"))?;
-    save_app_backend_config(&app, Some(&normalized), normalize_server_name(name).as_deref(), false)
-        .map_err(|e| format!("{e:#}"))?;
+    save_app_backend_config(
+        &app,
+        Some(&normalized),
+        normalize_server_name(name).as_deref(),
+        false,
+    )
+    .map_err(|e| format!("{e:#}"))?;
     app_backend_status_for_window(app.clone(), app.state(), window.label())
         .await
         .map_err(|e| format!("{e:#}"))
 }
 
 #[tauri::command]
-async fn app_use_external_backend(app: AppHandle, window: tauri::WebviewWindow, base_url: String, name: Option<String>, persist: Option<bool>) -> Result<AppBackendStatus, String> {
+async fn app_use_external_backend(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    base_url: String,
+    name: Option<String>,
+    persist: Option<bool>,
+) -> Result<AppBackendStatus, String> {
     let normalized = normalize_external_base_url(&base_url).map_err(|e| format!("{e:#}"))?;
     wait_for_health(&normalized, 8, Duration::from_millis(250))
         .await
         .map_err(|e| format!("External backend is not reachable: {e:#}"))?;
 
     let state: tauri::State<'_, AppState> = app.state();
-    state.window_backend_base_urls.lock().await.insert(window.label().to_string(), normalized.clone());
+    state
+        .window_backend_base_urls
+        .lock()
+        .await
+        .insert(window.label().to_string(), normalized.clone());
 
     if persist.unwrap_or(true) {
         save_app_backend_config(
@@ -365,19 +411,22 @@ async fn app_use_external_backend(app: AppHandle, window: tauri::WebviewWindow, 
     }
 
     let init_script = frontend_init_script(None, &normalized);
-    window.eval(&init_script).map_err(|e| format!("inject external backend config: {e:#}"))?;
+    window
+        .eval(&init_script)
+        .map_err(|e| format!("inject external backend config: {e:#}"))?;
     update_tray_status(&app, "Status: Running");
-    window.emit(
-        "backend-ready",
-        BackendReady {
-            port: 0,
-            version: "external".to_string(),
-            base_url: normalized,
-            token: None,
-            sidecar_running: false,
-        },
-    )
-    .ok();
+    window
+        .emit(
+            "backend-ready",
+            BackendReady {
+                port: 0,
+                version: "external".to_string(),
+                base_url: normalized,
+                token: None,
+                sidecar_running: false,
+            },
+        )
+        .ok();
 
     app_backend_status_for_window(app.clone(), app.state(), window.label())
         .await
@@ -385,18 +434,31 @@ async fn app_use_external_backend(app: AppHandle, window: tauri::WebviewWindow, 
 }
 
 #[tauri::command]
-async fn app_remove_backend_server(app: AppHandle, window: tauri::WebviewWindow, base_url: String) -> Result<AppBackendStatus, String> {
+async fn app_remove_backend_server(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    base_url: String,
+) -> Result<AppBackendStatus, String> {
     let normalized = normalize_external_base_url(&base_url).map_err(|e| format!("{e:#}"))?;
     remove_app_backend_server(&app, &normalized).map_err(|e| format!("{e:#}"))?;
     let state: tauri::State<'_, AppState> = app.state();
-    state.window_backend_base_urls.lock().await.retain(|_, active| normalize_external_base_url(active).map_or(true, |active| active != normalized));
+    state
+        .window_backend_base_urls
+        .lock()
+        .await
+        .retain(|_, active| {
+            normalize_external_base_url(active).map_or(true, |active| active != normalized)
+        });
     app_backend_status_for_window(app.clone(), app.state(), window.label())
         .await
         .map_err(|e| format!("{e:#}"))
 }
 
 #[tauri::command]
-async fn app_use_bundled_backend(app: AppHandle, window: tauri::WebviewWindow) -> Result<(), String> {
+async fn app_use_bundled_backend(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+) -> Result<(), String> {
     let state: tauri::State<'_, AppState> = app.state();
 
     let base = state
@@ -405,23 +467,29 @@ async fn app_use_bundled_backend(app: AppHandle, window: tauri::WebviewWindow) -
         .await
         .clone()
         .ok_or_else(|| "bundled backend is not ready".to_string())?;
-    state.window_backend_base_urls.lock().await.remove(window.label());
-    save_app_backend_config(&app, None, None, true)
-        .map_err(|e| format!("{e:#}"))?;
+    state
+        .window_backend_base_urls
+        .lock()
+        .await
+        .remove(window.label());
+    save_app_backend_config(&app, None, None, true).map_err(|e| format!("{e:#}"))?;
     let token = state.desktop_token.lock().await.clone();
     let init_script = frontend_init_script(token.as_deref(), &base);
-    window.eval(&init_script).map_err(|e| format!("inject bundled backend config: {e:#}"))?;
-    window.emit(
-        "backend-ready",
-        BackendReady {
-            port: 0,
-            version: "bundled".to_string(),
-            base_url: base,
-            token,
-            sidecar_running: true,
-        },
-    )
-    .ok();
+    window
+        .eval(&init_script)
+        .map_err(|e| format!("inject bundled backend config: {e:#}"))?;
+    window
+        .emit(
+            "backend-ready",
+            BackendReady {
+                port: 0,
+                version: "bundled".to_string(),
+                base_url: base,
+                token,
+                sidecar_running: true,
+            },
+        )
+        .ok();
     Ok(())
 }
 
@@ -477,7 +545,8 @@ fn show_main_window(app: &AppHandle) {
 
 fn target_webview_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
     let state: tauri::State<'_, AppState> = app.state();
-    let label = tauri::async_runtime::block_on(async { state.active_window_label.lock().await.clone() });
+    let label =
+        tauri::async_runtime::block_on(async { state.active_window_label.lock().await.clone() });
     app.get_webview_window(&label)
         .or_else(|| app.get_webview_window(MAIN_WINDOW))
 }
@@ -541,7 +610,11 @@ fn reveal_backend_log(app: &AppHandle) {
     let sidecar = state.sidecar.clone();
     let app_for_open = app.clone();
     tauri::async_runtime::spawn(async move {
-        let path = sidecar.lock().await.as_ref().map(|s| s.log_path().to_path_buf());
+        let path = sidecar
+            .lock()
+            .await
+            .as_ref()
+            .map(|s| s.log_path().to_path_buf());
         let Some(path) = path else {
             log::warn!("backend log path unavailable; sidecar not started");
             return;
@@ -636,18 +709,28 @@ async fn restart_sidecar_and_reload_window(app: &AppHandle) -> Result<()> {
     let external_windows = state.window_backend_base_urls.lock().await.clone();
     for window in existing_windows {
         if !external_windows.contains_key(window.label()) {
-            window.eval(&init_script).context("inject bundled backend config")?;
+            window
+                .eval(&init_script)
+                .context("inject bundled backend config")?;
         }
         if cfg!(debug_assertions) {
             window
-                .navigate("http://localhost:5173".parse().context("parse dev frontend url")?)
+                .navigate(
+                    "http://localhost:5173"
+                        .parse()
+                        .context("parse dev frontend url")?,
+                )
                 .context("navigate app window")?;
         }
     }
     show_target_window(app);
 
     let _ = state.desktop_token.lock().await.replace(token.clone());
-    let _ = state.backend_base_url.lock().await.replace(format!("http://127.0.0.1:{}", handshake.port));
+    let _ = state
+        .backend_base_url
+        .lock()
+        .await
+        .replace(format!("http://127.0.0.1:{}", handshake.port));
     *state.backend_mode.lock().await = BackendMode::Bundled;
     let _ = state.sidecar.lock().await.replace(sidecar);
     app.emit(
@@ -786,9 +869,7 @@ fn format_update_prompt(new_version: &str, current_version: &str, body: Option<&
         notes.to_string()
     };
     if trimmed.is_empty() {
-        format!(
-            "EvoFlux {new_version} is available (you have {current_version}).\n\nDownload now?"
-        )
+        format!("EvoFlux {new_version} is available (you have {current_version}).\n\nDownload now?")
     } else {
         format!(
             "EvoFlux {new_version} is available (you have {current_version}).\n\n{trimmed}\n\nDownload now?"
@@ -824,31 +905,66 @@ fn install_desktop_menus(app: &tauri::App) -> Result<()> {
         }
         builder.build()
     };
-    let app_about = PredefinedMenuItem::about(
-        app,
-        Some("About EvoFlux"),
-        Some(about_metadata),
-    )?;
+    let app_about = PredefinedMenuItem::about(app, Some("About EvoFlux"), Some(about_metadata))?;
 
     let app_show = MenuItem::with_id(app, MENU_SHOW, "Show EvoFlux", true, None::<&str>)?;
-    let app_new_window = MenuItem::with_id(app, MENU_NEW_WINDOW, "New Window", true, Some("CmdOrCtrl+N"))?;
+    let app_new_window = MenuItem::with_id(
+        app,
+        MENU_NEW_WINDOW,
+        "New Window",
+        true,
+        Some("CmdOrCtrl+N"),
+    )?;
     let app_home = MenuItem::with_id(app, MENU_HOME, "Home", true, None::<&str>)?;
     let app_settings = MenuItem::with_id(app, MENU_SETTINGS, "Settings", true, None::<&str>)?;
     let app_providers = MenuItem::with_id(app, MENU_PROVIDERS, "Providers", true, None::<&str>)?;
-    let app_notifications = MenuItem::with_id(app, MENU_NOTIFICATIONS, "Notifications", true, None::<&str>)?;
+    let app_notifications =
+        MenuItem::with_id(app, MENU_NOTIFICATIONS, "Notifications", true, None::<&str>)?;
     let app_telemetry = MenuItem::with_id(app, MENU_TELEMETRY, "Telemetry", true, None::<&str>)?;
-    let app_open_config_dir = MenuItem::with_id(app, MENU_OPEN_CONFIG_DIR, "View Config Folder", true, None::<&str>)?;
-    let app_reveal_backend_log = MenuItem::with_id(app, MENU_REVEAL_BACKEND_LOG, "View Backend Log", true, None::<&str>)?;
+    let app_open_config_dir = MenuItem::with_id(
+        app,
+        MENU_OPEN_CONFIG_DIR,
+        "View Config Folder",
+        true,
+        None::<&str>,
+    )?;
+    let app_reveal_backend_log = MenuItem::with_id(
+        app,
+        MENU_REVEAL_BACKEND_LOG,
+        "View Backend Log",
+        true,
+        None::<&str>,
+    )?;
     let app_quit = MenuItem::with_id(app, MENU_QUIT, "Quit EvoFlux", true, Some("CmdOrCtrl+Q"))?;
-    let file_new_window = MenuItem::with_id(app, MENU_NEW_WINDOW, "New Window", true, Some("CmdOrCtrl+N"))?;
+    let file_new_window = MenuItem::with_id(
+        app,
+        MENU_NEW_WINDOW,
+        "New Window",
+        true,
+        Some("CmdOrCtrl+N"),
+    )?;
     let file_home = MenuItem::with_id(app, MENU_HOME, "Home", true, Some("CmdOrCtrl+Shift+H"))?;
     let file_chat = MenuItem::with_id(app, MENU_CHAT, "Forge", true, Some("CmdOrCtrl+Shift+C"))?;
-    let file_coding = MenuItem::with_id(app, MENU_CODING, "Coding", true, Some("CmdOrCtrl+Shift+K"))?;
+    let file_coding =
+        MenuItem::with_id(app, MENU_CODING, "Coding", true, Some("CmdOrCtrl+Shift+K"))?;
     let file_quit = MenuItem::with_id(app, MENU_QUIT, "Quit EvoFlux", true, Some("CmdOrCtrl+Q"))?;
-    let view_command_palette = MenuItem::with_id(app, MENU_COMMAND_PALETTE, "Command Palette…", true, Some("Ctrl+P"))?;
+    let view_command_palette = MenuItem::with_id(
+        app,
+        MENU_COMMAND_PALETTE,
+        "Command Palette…",
+        true,
+        Some("Ctrl+P"),
+    )?;
     let view_wiki = MenuItem::with_id(app, MENU_WIKI, "Wiki", true, Some("Ctrl+M"))?;
-    let view_scheduler = MenuItem::with_id(app, MENU_SCHEDULER, "Scheduled Tasks", true, Some("Ctrl+S"))?;
-    let view_agent_capabilities = MenuItem::with_id(app, MENU_AGENT_CAPABILITIES, "Session Settings", true, Some("Ctrl+A"))?;
+    let view_scheduler =
+        MenuItem::with_id(app, MENU_SCHEDULER, "Scheduled Tasks", true, Some("Ctrl+S"))?;
+    let view_agent_capabilities = MenuItem::with_id(
+        app,
+        MENU_AGENT_CAPABILITIES,
+        "Session Settings",
+        true,
+        Some("Ctrl+A"),
+    )?;
     let view_settings = MenuItem::with_id(app, MENU_SETTINGS, "Settings", true, None::<&str>)?;
     let view_telemetry = MenuItem::with_id(app, MENU_TELEMETRY, "Telemetry", true, None::<&str>)?;
     let view_reload = MenuItem::with_id(app, MENU_RELOAD, "Reload", true, Some("CmdOrCtrl+R"))?;
@@ -862,20 +978,9 @@ fn install_desktop_menus(app: &tauri::App) -> Result<()> {
     // ``CmdOrCtrl+=`` (not ``CmdOrCtrl++``) so the shortcut fires from the
     // bare ``=`` key — matches Chrome/Safari/VS Code and avoids requiring
     // Shift on US layouts.
-    let view_zoom_in = MenuItem::with_id(
-        app,
-        MENU_ZOOM_IN,
-        "Zoom In",
-        true,
-        Some("CmdOrCtrl+="),
-    )?;
-    let view_zoom_out = MenuItem::with_id(
-        app,
-        MENU_ZOOM_OUT,
-        "Zoom Out",
-        true,
-        Some("CmdOrCtrl+-"),
-    )?;
+    let view_zoom_in = MenuItem::with_id(app, MENU_ZOOM_IN, "Zoom In", true, Some("CmdOrCtrl+="))?;
+    let view_zoom_out =
+        MenuItem::with_id(app, MENU_ZOOM_OUT, "Zoom Out", true, Some("CmdOrCtrl+-"))?;
     let view_zoom_reset = MenuItem::with_id(
         app,
         MENU_ZOOM_RESET,
@@ -895,7 +1000,13 @@ fn install_desktop_menus(app: &tauri::App) -> Result<()> {
     let edit_cut = MenuItem::with_id(app, MENU_EDIT_CUT, "Cut", true, Some("CmdOrCtrl+X"))?;
     let edit_copy = MenuItem::with_id(app, MENU_EDIT_COPY, "Copy", true, Some("CmdOrCtrl+C"))?;
     let edit_paste = MenuItem::with_id(app, MENU_EDIT_PASTE, "Paste", true, Some("CmdOrCtrl+V"))?;
-    let edit_select_all = MenuItem::with_id(app, MENU_EDIT_SELECT_ALL, "Select All", true, Some("CmdOrCtrl+A"))?;
+    let edit_select_all = MenuItem::with_id(
+        app,
+        MENU_EDIT_SELECT_ALL,
+        "Select All",
+        true,
+        Some("CmdOrCtrl+A"),
+    )?;
 
     let app_menu = SubmenuBuilder::new(app, "EvoFlux")
         .item(&app_about)
@@ -962,13 +1073,32 @@ fn install_desktop_menus(app: &tauri::App) -> Result<()> {
     // Informational only; updated from ``set_tray_session``.
     let session = MenuItem::with_id(app, MENU_SESSION, TRAY_SESSION_IDLE, false, None::<&str>)?;
     let tray_show = MenuItem::with_id(app, MENU_SHOW, "Show EvoFlux", true, None::<&str>)?;
-    let tray_new_window = MenuItem::with_id(app, MENU_NEW_WINDOW, "New Window", true, None::<&str>)?;
+    let tray_new_window =
+        MenuItem::with_id(app, MENU_NEW_WINDOW, "New Window", true, None::<&str>)?;
     let tray_chat = MenuItem::with_id(app, MENU_CHAT, "Forge", true, None::<&str>)?;
     let tray_coding = MenuItem::with_id(app, MENU_CODING, "Coding", true, None::<&str>)?;
-    let tray_command_palette = MenuItem::with_id(app, MENU_COMMAND_PALETTE, "Command Palette…", true, None::<&str>)?;
+    let tray_command_palette = MenuItem::with_id(
+        app,
+        MENU_COMMAND_PALETTE,
+        "Command Palette…",
+        true,
+        None::<&str>,
+    )?;
     let tray_settings = MenuItem::with_id(app, MENU_SETTINGS, "Settings", true, None::<&str>)?;
-    let tray_open_config_dir = MenuItem::with_id(app, MENU_OPEN_CONFIG_DIR, "View Config Folder", true, None::<&str>)?;
-    let tray_reveal_backend_log = MenuItem::with_id(app, MENU_REVEAL_BACKEND_LOG, "View Backend Log", true, None::<&str>)?;
+    let tray_open_config_dir = MenuItem::with_id(
+        app,
+        MENU_OPEN_CONFIG_DIR,
+        "View Config Folder",
+        true,
+        None::<&str>,
+    )?;
+    let tray_reveal_backend_log = MenuItem::with_id(
+        app,
+        MENU_REVEAL_BACKEND_LOG,
+        "View Backend Log",
+        true,
+        None::<&str>,
+    )?;
     let tray_reload = MenuItem::with_id(app, MENU_RELOAD, "Reload Window", true, None::<&str>)?;
     let tray_quit = MenuItem::with_id(app, MENU_QUIT, "Quit EvoFlux", true, None::<&str>)?;
     let tray_menu = Menu::with_items(
@@ -1068,7 +1198,9 @@ async fn wait_for_health(base: &str, attempts: u32, delay: Duration) -> Result<(
         }
         tokio::time::sleep(delay).await;
     }
-    Err(anyhow!("backend did not become healthy after {attempts} attempts"))
+    Err(anyhow!(
+        "backend did not become healthy after {attempts} attempts"
+    ))
 }
 
 fn normalize_external_base_url(base_url: &str) -> Result<String> {
@@ -1092,7 +1224,10 @@ fn normalize_server_name(name: Option<String>) -> Option<String> {
 }
 
 fn app_config_file(app: &AppHandle, name: &str) -> Result<PathBuf> {
-    let dir = app.path().app_config_dir().context("resolve app config dir")?;
+    let dir = app
+        .path()
+        .app_config_dir()
+        .context("resolve app config dir")?;
     std::fs::create_dir_all(&dir).context("create app config dir")?;
     Ok(dir.join(name))
 }
@@ -1111,8 +1246,8 @@ fn load_window_state(app: &AppHandle) -> Result<Option<SavedWindowState>> {
         return Ok(None);
     }
     let bytes = std::fs::read(&path).with_context(|| format!("read {}", path.display()))?;
-    let state: SavedWindowState = serde_json::from_slice(&bytes)
-        .with_context(|| format!("parse {}", path.display()))?;
+    let state: SavedWindowState =
+        serde_json::from_slice(&bytes).with_context(|| format!("parse {}", path.display()))?;
     if state.width < 760 || state.height < 560 {
         return Ok(None);
     }
@@ -1142,8 +1277,8 @@ fn load_app_backend_config(app: &AppHandle) -> Result<AppBackendConfig> {
         return Ok(AppBackendConfig::default());
     }
     let bytes = std::fs::read(&path).with_context(|| format!("read {}", path.display()))?;
-    let value: serde_json::Value = serde_json::from_slice(&bytes)
-        .with_context(|| format!("parse {}", path.display()))?;
+    let value: serde_json::Value =
+        serde_json::from_slice(&bytes).with_context(|| format!("parse {}", path.display()))?;
     let config = if value
         .get("servers")
         .and_then(|servers| servers.as_array())
@@ -1165,21 +1300,33 @@ fn load_app_backend_config(app: &AppHandle) -> Result<AppBackendConfig> {
                 name: None,
             })
             .collect();
-        AppBackendConfig { active_base_url, servers }
+        AppBackendConfig {
+            active_base_url,
+            servers,
+        }
     } else {
         serde_json::from_value(value).with_context(|| format!("parse {}", path.display()))?
     };
     Ok(config)
 }
 
-fn save_app_backend_config(app: &AppHandle, base_url: Option<&str>, name: Option<&str>, activate: bool) -> Result<()> {
+fn save_app_backend_config(
+    app: &AppHandle,
+    base_url: Option<&str>,
+    name: Option<&str>,
+    activate: bool,
+) -> Result<()> {
     let path = app_backend_config_path(app)?;
     let mut config = load_app_backend_config(app).unwrap_or_default();
     if activate {
         config.active_base_url = base_url.map(str::to_string);
     }
     if let Some(url) = base_url {
-        if let Some(saved) = config.servers.iter_mut().find(|saved| saved.base_url == url) {
+        if let Some(saved) = config
+            .servers
+            .iter_mut()
+            .find(|saved| saved.base_url == url)
+        {
             if let Some(name) = name {
                 saved.name = Some(name.to_string());
             }
@@ -1197,7 +1344,9 @@ fn save_app_backend_config(app: &AppHandle, base_url: Option<&str>, name: Option
 fn remove_app_backend_server(app: &AppHandle, base_url: &str) -> Result<()> {
     let path = app_backend_config_path(app)?;
     let mut config = load_app_backend_config(app).unwrap_or_default();
-    config.servers.retain(|server| normalize_external_base_url(&server.base_url).map_or(true, |saved| saved != base_url));
+    config.servers.retain(|server| {
+        normalize_external_base_url(&server.base_url).map_or(true, |saved| saved != base_url)
+    });
     if config
         .active_base_url
         .as_deref()
@@ -1213,7 +1362,11 @@ fn remove_app_backend_server(app: &AppHandle, base_url: &str) -> Result<()> {
 
 fn frontend_webview_url() -> Result<WebviewUrl> {
     if cfg!(debug_assertions) {
-        Ok(WebviewUrl::External("http://localhost:5173".parse().context("parse dev frontend url")?))
+        Ok(WebviewUrl::External(
+            "http://localhost:5173"
+                .parse()
+                .context("parse dev frontend url")?,
+        ))
     } else {
         Ok(WebviewUrl::App("index.html".into()))
     }
@@ -1246,7 +1399,11 @@ fn next_window_label(app: &AppHandle) -> String {
     unreachable!("unbounded window-label iterator should always return")
 }
 
-async fn build_app_window(app: &AppHandle, label: String, init_script: String) -> Result<tauri::WebviewWindow> {
+async fn build_app_window(
+    app: &AppHandle,
+    label: String,
+    init_script: String,
+) -> Result<tauri::WebviewWindow> {
     let url = frontend_webview_url()?;
     let saved_size = load_window_state(app).ok().flatten();
     let initial_size = saved_size.unwrap_or(SavedWindowState {
@@ -1255,14 +1412,18 @@ async fn build_app_window(app: &AppHandle, label: String, init_script: String) -
     });
     let builder = WebviewWindowBuilder::new(app, label, url)
         .title("EvoFlux")
-        .inner_size(f64::from(initial_size.width), f64::from(initial_size.height))
+        .inner_size(
+            f64::from(initial_size.width),
+            f64::from(initial_size.height),
+        )
         .min_inner_size(760.0, 560.0)
         .initialization_script(&init_script)
         .visible(false);
     let builder = configure_window_chrome(builder);
     let win = builder.build().context("build webview window")?;
     if let Some(size) = saved_size {
-        win.set_size(PhysicalSize::new(size.width, size.height)).ok();
+        win.set_size(PhysicalSize::new(size.width, size.height))
+            .ok();
     }
     let state: tauri::State<'_, AppState> = app.state();
     win.set_zoom(*state.zoom.lock().await).ok();
@@ -1283,7 +1444,9 @@ async fn create_app_window(app: &AppHandle, label: Option<&str>) -> Result<tauri
     let init_script = frontend_init_script(token.as_deref(), &base);
     build_app_window(
         app,
-        label.map(str::to_string).unwrap_or_else(|| next_window_label(app)),
+        label
+            .map(str::to_string)
+            .unwrap_or_else(|| next_window_label(app)),
         init_script,
     )
     .await
@@ -1292,7 +1455,12 @@ async fn create_app_window(app: &AppHandle, label: Option<&str>) -> Result<tauri
 async fn start_backend_and_window(app: AppHandle) -> Result<()> {
     let state: tauri::State<'_, AppState> = app.state();
     if app.get_webview_window(MAIN_WINDOW).is_none() {
-        build_app_window(&app, MAIN_WINDOW.to_string(), backend_unavailable_init_script()).await?;
+        build_app_window(
+            &app,
+            MAIN_WINDOW.to_string(),
+            backend_unavailable_init_script(),
+        )
+        .await?;
     }
 
     if let Some(active_base_url) = load_app_backend_config(&app)
@@ -1326,13 +1494,13 @@ async fn start_backend_and_window(app: AppHandle) -> Result<()> {
                     .ok();
                     return Ok(());
                 }
-                Err(e) => log::warn!(
-                    "desktop: saved external backend is not reachable at startup: {e:#}"
-                ),
+                Err(e) => {
+                    log::warn!("desktop: saved external backend is not reachable at startup: {e:#}")
+                }
             },
-            Err(e) => log::warn!(
-                "desktop: saved external backend URL is invalid at startup: {e:#}"
-            ),
+            Err(e) => {
+                log::warn!("desktop: saved external backend URL is invalid at startup: {e:#}")
+            }
         }
     }
 
@@ -1511,14 +1679,21 @@ fn main() {
                     } else if let Some(window) = app.get_webview_window(label.as_str()) {
                         let _ = window.destroy();
                         tauri::async_runtime::block_on(async {
-                            state.window_backend_base_urls.lock().await.remove(label.as_str());
+                            state
+                                .window_backend_base_urls
+                                .lock()
+                                .await
+                                .remove(label.as_str());
                             *state.active_window_label.lock().await = MAIN_WINDOW.to_string();
                         });
                     }
                 }
             }
             #[cfg(target_os = "macos")]
-            RunEvent::Reopen { has_visible_windows: _, .. } => {
+            RunEvent::Reopen {
+                has_visible_windows: _,
+                ..
+            } => {
                 show_main_window(app);
             }
             RunEvent::ExitRequested { .. } => {
@@ -1567,7 +1742,10 @@ mod tests {
     #[test]
     fn dialog_result_ok_and_yes_accept() {
         assert!(dialog_result_is_accept(&MessageDialogResult::Ok, "Install"));
-        assert!(dialog_result_is_accept(&MessageDialogResult::Yes, "Install"));
+        assert!(dialog_result_is_accept(
+            &MessageDialogResult::Yes,
+            "Install"
+        ));
     }
 
     #[test]
@@ -1576,7 +1754,10 @@ mod tests {
             &MessageDialogResult::Cancel,
             "Install"
         ));
-        assert!(!dialog_result_is_accept(&MessageDialogResult::No, "Install"));
+        assert!(!dialog_result_is_accept(
+            &MessageDialogResult::No,
+            "Install"
+        ));
     }
 
     #[test]
@@ -1585,7 +1766,10 @@ mod tests {
 
         assert!(script.contains("__OAD_API_BASE_URL__"));
         assert!(script.contains("__OAD_TOKEN__"));
-        assert_eq!(script.matches("writable: true, configurable: true").count(), 2);
+        assert_eq!(
+            script.matches("writable: true, configurable: true").count(),
+            2
+        );
     }
 
     #[test]

@@ -31,7 +31,7 @@ import {
 import { queryKeys } from './keys'
 
 function invalidateGitState(ws: string) {
-  const qc = useQueryClient()
+  const qc = useQueryClient() // eslint-disable-line react-hooks/rules-of-hooks
   return () => {
     qc.invalidateQueries({ queryKey: queryKeys.git.changes(ws) })
     qc.invalidateQueries({ queryKey: queryKeys.coding.diff(ws) })

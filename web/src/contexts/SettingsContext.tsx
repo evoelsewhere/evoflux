@@ -31,16 +31,19 @@ export function SettingsProvider({
 }
 
 /** Get parsed params from the current settings path. */
+// eslint-disable-next-line react-refresh/only-export-components
 export function useSettingsParams(): Record<string, string> {
   return useContext(SettingsContext).params
 }
 
 /** Get search params passed when opening settings. */
+// eslint-disable-next-line react-refresh/only-export-components
 export function useSettingsSearch(): Record<string, string> {
   return useContext(SettingsContext).search
 }
 
 /** Navigate within settings modal. Accepts full /settings/... paths or relative paths. */
+// eslint-disable-next-line react-refresh/only-export-components
 export function useSettingsNavigate() {
   const navigateSettings = useUIStore((s) => s.navigateSettings)
   return useMemo(

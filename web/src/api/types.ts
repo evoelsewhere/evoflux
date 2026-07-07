@@ -386,9 +386,8 @@ export interface CrossRepoEdge {
   dst_qualified_name: string | null
 }
 
-export interface CrossRepoResolveRequest {
-  // Empty: the backend always runs Tier 0 + Tier A + lexical Tier B.
-}
+export type CrossRepoResolveRequest = Record<string, never>
+// Empty: the backend always runs Tier 0 + Tier A + lexical Tier B.
 
 export interface CrossRepoResolveStats {
   reattached: number

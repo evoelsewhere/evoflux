@@ -8,7 +8,6 @@ from app.models.chat import (
     ChatSession,
     CodingProject,
     CodingProjectWorkspace,
-    CodingWorkspace,
 )
 from app.services.coding_workspace_service import (
     list_workspace_paths_with_sessions,

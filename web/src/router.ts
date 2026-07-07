@@ -37,7 +37,7 @@ const codingIndexRoute = createRoute({
   path: '/',
   component: () => null,
 })
-// /coding/$focusId[/​$sessionId] — $focusId anchors the sidebar/panel to a
+// /coding/$focusId[/$sessionId] — $focusId anchors the sidebar/panel to a
 // specific workspace (URL-encoded path) or project (UUID) even before a
 // session is picked; see utils/workspace.ts's codingFocusId/isProjectFocusId.
 // NOTE: there is deliberately no separate /coding/$sessionId route anymore —

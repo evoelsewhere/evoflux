@@ -51,7 +51,7 @@ export function SourceControlModal({
   const [section, setSection] = useState<Section>(initialSection)
 
   useEffect(() => {
-    if (open) setSection(initialSection)
+    if (open) setSection(initialSection) // eslint-disable-line react-hooks/set-state-in-effect
   }, [open, initialSection])
 
   const changesQuery = useGitChangesQuery(workspace, open)

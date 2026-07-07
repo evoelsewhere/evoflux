@@ -748,7 +748,7 @@ async def watch_session_files(session_id: str, request: Request):
     import json
     from typing import AsyncGenerator
 
-    resolved = await _get_workspace_root(session_id)
+    resolved = await _session_workspace(session_id)
     queue = await workspace_file_watcher.subscribe(resolved)
 
     async def _gen() -> AsyncGenerator[dict, None]:
