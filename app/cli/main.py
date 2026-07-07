@@ -6,7 +6,9 @@ only wires them up to ``argparse`` subparsers.
 
 from __future__ import annotations
 
-import truststore  # noqa: F401 — patches ssl to use OS cert store
+import truststore
+
+truststore.inject_into_ssl()  # Use OS certificate store instead of certifi
 
 import argparse
 
