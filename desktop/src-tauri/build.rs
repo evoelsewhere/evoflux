@@ -8,10 +8,7 @@ fn main() {
                 "backend_logs_path",
                 "app_new_window",
                 "set_tray_session",
-                "updater_check",
-                "updater_download",
-                "updater_install",
-                "updater_release_notes",
+
             ]),
         ),
     )

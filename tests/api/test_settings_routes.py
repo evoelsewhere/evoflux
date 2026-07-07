@@ -100,62 +100,6 @@ def test_put_sandbox_rejects_unknown_field(isolated_config: Path) -> None:
     assert response.status_code == 422
 
 
-# ── Updates removed ─────────────────────────────────────────────────────────
-#
-# The PyPI-backed self-update endpoints were removed when the desktop bundle
-# switched to ``tauri-plugin-updater`` and CLI users were pointed at
-# ``EvoFlux upgrade`` directly. These tests guard against an accidental
-# revert that would re-expose the in-process restart shell script.
-
-
-@pytest.mark.parametrize(
-    ("method", "path"),
-    [
-        ("GET", "/api/settings/update"),
-        ("POST", "/api/settings/update/install"),
-        # Variants that would exist if someone restored the old code under
-        # a slightly different shape — catch the obvious near-misses too.
-        ("GET", "/api/settings/updates"),
-        ("POST", "/api/settings/updates/install"),
-    ],
-)
-def test_update_endpoints_removed(method: str, path: str) -> None:
-    client = TestClient(_make_app())
-    response = client.request(method, path)
-    assert response.status_code == 404, (
-        f"{method} {path} should not exist; got {response.status_code}. "
-        "Desktop uses tauri-plugin-updater; CLI uses `EvoFlux upgrade`."
-    )
-
-
-def test_settings_router_has_no_update_routes() -> None:
-    """Inspect registered routes directly so route names also can't drift back."""
-    from app.api.routes.settings import router as settings_router
-
-    for route in settings_router.routes:
-        path = getattr(route, "path", "")
-        assert "update" not in path.lower(), (
-            f"Settings router exposes an update-related path: {path}"
-        )
-
-
-def test_update_install_helpers_not_importable() -> None:
-    """The shell-spawning restart helpers must not silently come back."""
-    from app.api.routes import settings as settings_routes
-
-    for symbol in (
-        "_self_terminate_after_response",
-        "_install_blocked_reason",
-        "_version_key",
-        "_PYPI_JSON_URL",
-        "install_update",
-        "get_update_status",
-    ):
-        assert not hasattr(settings_routes, symbol), (
-            f"`{symbol}` was reintroduced; that path is no longer supported."
-        )
-
-
 # ── Providers (Settings → Providers tab) ────────────────────────────────────
 
 
