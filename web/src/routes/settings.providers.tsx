@@ -320,6 +320,41 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
     }
   }
 
+  const handleClear = async () => {
+    try {
+      // Send empty api_key to clear the provider credentials.
+      // The backend's write_env_credentials drops lines with empty values.
+      const extraForClear =
+        provider.kind === 'cloud_creds'
+          ? Object.fromEntries(provider.credentials.map((c) => [c.name, '']))
+          : daemon !== undefined
+            ? { [daemon.var]: '' }
+            : undefined
+      await saveMutation.mutateAsync({
+        providerId: provider.id,
+        body: { api_key: '', extra: extraForClear },
+      })
+      setApiKey('')
+      setVerifiedKey('')
+      setVerifiedCloudSignature('')
+      setCloudValues({})
+      setHasReachabilityFailure(false)
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.providers })
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.providerModels(provider.id) })
+      push({
+        tone: 'success',
+        title: 'Provider cleared',
+        description: provider.label,
+      })
+    } catch (err) {
+      push({
+        tone: 'error',
+        title: 'Could not clear provider',
+        description: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
+
   const handleSaveVisibleModels = async (models: string[]) => {
     try {
       await saveVisibleModelsMutation.mutateAsync({ providerId: provider.id, models })
@@ -406,6 +441,18 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
                 {saveMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
                 Save
               </Button>
+              {provider.is_configured && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="destructive"
+                  onClick={handleClear}
+                  disabled={saveMutation.isPending}
+                >
+                  {saveMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
+                  Clear
+                </Button>
+              )}
             </div>
             {daemon && (
               <label className="block">
@@ -428,7 +475,7 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
             )}
             {!hasCandidateKey && provider.is_configured && (
               <p className="text-xs text-(--color-text-muted)">
-                Key saved. Type a new one above only if you want to replace it.
+                Key saved. Type a new one above to replace, or click <span className="font-medium">Clear</span> to remove.
               </p>
             )}
           </div>
