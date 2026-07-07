@@ -610,3 +610,80 @@ async def install_seed_defaults(body: SeedInstallRequest) -> SeedInstallResponse
         agents_removed=result.agents_removed,
         source=result.source,
     )
+
+
+@router.delete("/providers/{provider_id}")
+async def delete_provider(provider_id: str) -> dict[str, bool]:
+    """Remove all credentials for a provider.
+
+    Handles different credential storage mechanisms:
+    - api_key: Removes the env var from .env
+    - oauth: Deletes the token JSON file from cache
+    - cloud_creds: Removes env vars from .env
+    - local: No-op (local providers don't store credentials)
+    """
+    from app.agent.providers.catalog import find
+    from app.cli.seed import write_env_credentials
+
+    entry = find(provider_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail=f"Unknown provider '{provider_id}'")
+
+    kind = entry.get("kind")
+
+    # OAuth providers: delete the token file
+    if kind == "oauth":
+        cache_dir = Path(settings.EVOFLUX_CACHE_DIR or "")
+        token_files = {
+            "codex": cache_dir / "codex_oauth.json",
+            "copilot": cache_dir / "copilot_oauth.json",
+        }
+        token_file = token_files.get(provider_id)
+        if token_file and token_file.is_file():
+            token_file.unlink()
+            logger.info("oauth_token_deleted provider={} file={}", provider_id, token_file)
+        return {"deleted": True}
+
+    # Local providers: nothing to clear
+    if kind == "local":
+        return {"deleted": True}
+
+    # API key and cloud credential providers: remove from .env
+    env_file = Path(settings.EVOFLUX_CONFIG_DIR) / ".env"
+    if not env_file.exists():
+        return {"deleted": True}
+
+    # Collect all env vars to clear
+    creds_to_clear: dict[str, str] = {}
+    if kind == "api_key":
+        env_var = entry.get("env_var") or ""
+        if env_var:
+            creds_to_clear[env_var] = ""
+    elif kind == "cloud_creds":
+        for name in entry.get("env_vars") or []:
+            creds_to_clear[name] = ""
+
+    # Also clear any credentials from the plugin registry
+    from app.agent.providers.plugin_registry import (
+        ProviderCredentialStore,
+        find_provider_plugin,
+    )
+
+    plugin = find_provider_plugin(provider_id)
+    if plugin is not None:
+        store = ProviderCredentialStore(plugin.id)
+        for field in plugin.credentials:
+            store.delete(field.name)
+
+    if creds_to_clear:
+        write_env_credentials(env_file, creds_to_clear)
+        # Remove from os.environ
+        for key in creds_to_clear:
+            os.environ.pop(key, None)
+        logger.info(
+            "provider_credentials_deleted provider={} env_vars={}",
+            provider_id,
+            list(creds_to_clear.keys()),
+        )
+
+    return {"deleted": True}
