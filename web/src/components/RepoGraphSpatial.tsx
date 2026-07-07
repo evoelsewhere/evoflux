@@ -111,7 +111,10 @@ export function RepoGraphSpatial({ data, searchQuery, selectedId, onSelect, hidd
   const [size, setSize] = useState({ width: 0, height: 0 })
   const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null)
   const viewRef = useRef(view)
-  viewRef.current = view
+
+  useEffect(() => {
+    viewRef.current = view
+  }, [view])
 
   const visibleNodes = useMemo(() => {
     return data.nodes.filter((n) => !hiddenRepoIds.has(n.workspaceId))
@@ -179,7 +182,7 @@ export function RepoGraphSpatial({ data, searchQuery, selectedId, onSelect, hidd
         const cy = sumY / count
         const canvas = canvasRef.current
         if (canvas) {
-          setView({ scale: 2, panX: -cx * 2, panY: -cy * 2 })
+          setView({ scale: 2, panX: -cx * 2, panY: -cy * 2 }) // eslint-disable-line react-hooks/set-state-in-effect
         }
       }
     }

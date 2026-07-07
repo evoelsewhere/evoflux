@@ -50,19 +50,13 @@ impl Sidecar {
     }
 
     pub fn spawn_with_desktop_token(app: &AppHandle, desktop_token: Option<&str>) -> Result<Self> {
-        let resource_dir = app
-            .path()
-            .resource_dir()
-            .context("locate resource dir")?;
+        let resource_dir = app.path().resource_dir().context("locate resource dir")?;
         let sidecar_root = resource_dir.join("sidecar");
 
         let python_bin = resolve_python_bin(&sidecar_root)
             .with_context(|| format!("locate python binary under {}", sidecar_root.display()))?;
 
-        let log_dir = app
-            .path()
-            .app_log_dir()
-            .context("resolve app log dir")?;
+        let log_dir = app.path().app_log_dir().context("resolve app log dir")?;
         std::fs::create_dir_all(&log_dir).context("create app log dir")?;
         let log_path = log_dir.join("backend.log");
 
@@ -147,8 +141,7 @@ impl Sidecar {
         // terminal ``evoflux`` install). Dev-bundled runs can set
         // ``EVOFLUX_APP_ENV=development`` and explicit ``EVOFLUX_*_DIR``
         // roots so local desktop testing does not share production state.
-        let app_env = std::env::var("EVOFLUX_APP_ENV")
-            .unwrap_or_else(|_| "production".to_string());
+        let app_env = std::env::var("EVOFLUX_APP_ENV").unwrap_or_else(|_| "production".to_string());
 
         // Open backend.log up-front and hand it to the child as stderr.
         // ``Stdio::from(File)`` causes the kernel to write child stderr
@@ -266,11 +259,10 @@ impl Sidecar {
                     continue;
                 }
                 let json = trimmed.trim_start_matches(HANDSHAKE_PREFIX);
-                let hs: Handshake =
-                    serde_json::from_str(json).context("parse handshake JSON")?;
-                return Ok::<(Handshake, BufReader<tokio::process::ChildStdout>), anyhow::Error>(
-                    (hs, reader),
-                );
+                let hs: Handshake = serde_json::from_str(json).context("parse handshake JSON")?;
+                return Ok::<(Handshake, BufReader<tokio::process::ChildStdout>), anyhow::Error>((
+                    hs, reader,
+                ));
             }
         };
 
@@ -342,12 +334,19 @@ fn resolve_python_bin(sidecar_root: &Path) -> Result<PathBuf> {
     #[cfg(target_os = "windows")]
     let candidates = [
         sidecar_root.join("python").join("python.exe"),
-        sidecar_root.join("python").join("install").join("python.exe"),
+        sidecar_root
+            .join("python")
+            .join("install")
+            .join("python.exe"),
     ];
     #[cfg(not(target_os = "windows"))]
     let candidates = [
         sidecar_root.join("python").join("bin").join("python3"),
-        sidecar_root.join("python").join("install").join("bin").join("python3"),
+        sidecar_root
+            .join("python")
+            .join("install")
+            .join("bin")
+            .join("python3"),
     ];
     for c in candidates.iter() {
         if c.is_file() {
@@ -356,7 +355,10 @@ fn resolve_python_bin(sidecar_root: &Path) -> Result<PathBuf> {
     }
     Err(anyhow!(
         "no python binary found in sidecar bundle (looked in: {:?})",
-        candidates.iter().map(|p| p.display().to_string()).collect::<Vec<_>>()
+        candidates
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
     ))
 }
 
@@ -407,8 +409,8 @@ fn attach_to_job_object(child: &Child) -> Result<()> {
     use once_cell::sync::OnceCell;
     use windows::Win32::Foundation::HANDLE;
     use windows::Win32::System::JobObjects::{
-        AssignProcessToJobObject, CreateJobObjectW, SetInformationJobObject,
-        JobObjectExtendedLimitInformation, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+        SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
         JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     };
     use windows::Win32::System::Threading::{OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE};
@@ -473,8 +475,8 @@ fn resume_primary_thread(child: &Child) -> Result<()> {
     let pid = child.id().ok_or_else(|| anyhow!("child pid missing"))?;
 
     unsafe {
-        let snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0)
-            .context("CreateToolhelp32Snapshot")?;
+        let snap =
+            CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0).context("CreateToolhelp32Snapshot")?;
         let mut entry = THREADENTRY32 {
             dwSize: std::mem::size_of::<THREADENTRY32>() as u32,
             ..Default::default()
@@ -502,5 +504,3 @@ fn resume_primary_thread(child: &Child) -> Result<()> {
         }
     }
 }
-
-

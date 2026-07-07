@@ -42,7 +42,8 @@ const TOOL_ICON_MAP: Record<string, React.ElementType> = {
   python: Code2,
 }
 
-function getToolIcon(toolName: string): React.ElementType {
+// eslint-disable-next-line react-refresh/only-export-components
+export function getToolIcon(toolName: string): React.ElementType {
   const lower = toolName.toLowerCase()
   for (const [key, Icon] of Object.entries(TOOL_ICON_MAP)) {
     if (lower.includes(key)) return Icon
@@ -79,6 +80,7 @@ function getResourceLabel(toolName: string, count: number): string {
 
 const MIN_GROUP_SIZE = 3
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function groupConsecutiveToolCalls(blocks: ContentBlock[]): RenderBlock[] {
   const result: RenderBlock[] = []
   let i = 0
@@ -129,6 +131,7 @@ interface ToolCallGroupProps {
 
 export function ToolCallGroupCard({ group, className }: ToolCallGroupProps) {
   const [expanded, setExpanded] = useState(false)
+  /* eslint-disable react-hooks/static-components */
   const Icon = getToolIcon(group.toolName)
   const verb = getToolVerb(group.toolName)
   const resource = getResourceLabel(group.toolName, group.blocks.length)
@@ -145,6 +148,7 @@ export function ToolCallGroupCard({ group, className }: ToolCallGroupProps) {
         )}
       >
         <Icon className="h-3.5 w-3.5 shrink-0 text-(--color-text-muted)" />
+        {/* eslint-enable react-hooks/static-components */}
         <span className="flex-1 text-xs text-(--color-text-muted)">
           <span className="font-medium text-(--color-text)">{verb}</span>{' '}
           {group.blocks.length} {resource}

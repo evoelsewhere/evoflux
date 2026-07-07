@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from app.services.code_graph.parsers.ecmascript import TypeScriptParser, JavaScriptParser
 from app.services.code_graph.parsers.go import GoParser

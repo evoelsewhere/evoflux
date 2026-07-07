@@ -120,3 +120,9 @@ exclude = ["tests", "**/__pycache__", ".venv"]
 
 [tool.ruff]
 target-version = "py313"
+
+[tool.ruff.lint.per-file-ignores]
+# Imports after truststore.inject_into_ssl() / apply_ssl_patch() are intentional.
+"app/cli/main.py" = ["E402"]
+"app/server.py" = ["E402"]
+"scripts/download_embedding_model.py" = ["E402"]
