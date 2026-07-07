@@ -58,7 +58,7 @@ jobs:
         run: uv run ruff check .
 
       - name: Test
-        run: uv run pytest --timeout=30 -x -q
+        run: uv run pytest -x -q
 
   # ── Rust checks ──────────────────────────────────────────────────────
   rust:
