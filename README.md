@@ -180,7 +180,7 @@ Then open `http://localhost:5173`, connect your first LLM provider (any of the 1
 | Agent runtime | Async mailbox-based orchestration, 12 LLM provider integrations |
 | Observability | OpenTelemetry, Prometheus, DuckDB-backed aggregation |
 | Frontend | React 19, TypeScript 5.9, Vite 7, Tailwind CSS v4, Zustand, TanStack Query & Router |
-| Desktop | Tauri v2 (Rust) — macOS, Windows, Linux, with auto-update |
+| Desktop | Tauri v2 (Rust) — macOS, Windows, Linux |
 
 ## Project layout
 

@@ -20,7 +20,6 @@ use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 #[cfg(test)]
 use tauri_plugin_dialog::MessageDialogResult;
-use tauri_plugin_updater::UpdaterExt;
 use tokio::sync::Mutex;
 
 use crate::sidecar::{Handshake, Sidecar};
@@ -36,7 +35,6 @@ struct AppState {
     quitting: Arc<AtomicBool>,
     tray_status: Arc<Mutex<Option<MenuItem<Wry>>>>,
     tray_session: Arc<Mutex<Option<MenuItem<Wry>>>>,
-    update_state: Arc<Mutex<Option<CachedUpdateState>>>,
     active_window_label: Arc<Mutex<String>>,
     /// Current webview zoom factor, mutated by the View > Zoom menu
     /// items. Session-only — not persisted across restarts.
@@ -121,7 +119,6 @@ const MENU_FORCE_RELOAD: &str = "force_reload";
 const MENU_ZOOM_IN: &str = "zoom_in";
 const MENU_ZOOM_OUT: &str = "zoom_out";
 const MENU_ZOOM_RESET: &str = "zoom_reset";
-const MENU_CHECK_UPDATES: &str = "check_updates";
 const MENU_OPEN_CONFIG_DIR: &str = "open_config_dir";
 const MENU_REVEAL_BACKEND_LOG: &str = "reveal_backend_log";
 const MENU_QUIT: &str = "quit";
@@ -182,41 +179,6 @@ struct BackendReady {
 #[derive(Clone, Serialize)]
 struct BackendError {
     message: String,
-}
-
-#[derive(Clone)]
-struct CachedUpdateState {
-    version: String,
-    bytes_path: PathBuf,
-}
-
-#[derive(Clone, Serialize)]
-struct UpdateStatus {
-    status: String,
-    version: Option<String>,
-    current_version: String,
-    notes: Option<String>,
-    downloaded_bytes: Option<u64>,
-    total_bytes: Option<u64>,
-    message: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct UpdateStatusRequest {
-    silent: Option<bool>,
-}
-
-#[derive(Serialize)]
-struct ReleaseNotesResponse {
-    version: String,
-    url: String,
-    body: String,
-}
-
-#[derive(Deserialize)]
-struct GitHubRelease {
-    html_url: String,
-    body: Option<String>,
 }
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
@@ -737,7 +699,6 @@ fn handle_desktop_menu(app: &AppHandle, id: &str) {
         MENU_ZOOM_IN => adjust_zoom(app, ZOOM_STEP),
         MENU_ZOOM_OUT => adjust_zoom(app, 1.0 / ZOOM_STEP),
         MENU_ZOOM_RESET => set_zoom(app, ZOOM_DEFAULT),
-        MENU_CHECK_UPDATES => request_update_check(app),
         MENU_OPEN_CONFIG_DIR => open_config_dir(app),
         MENU_REVEAL_BACKEND_LOG => reveal_backend_log(app),
         MENU_QUIT => quit_app(app),
@@ -777,210 +738,6 @@ fn apply_zoom_to_main(app: &AppHandle, factor: f64) {
             log::warn!("set_zoom({factor}) failed for {}: {e}", window.label());
         }
     }
-}
-
-/// Manual "Check for Updates…" flow triggered from the menu bar.
-///
-/// The React shell owns updater UI. Rust keeps the menu working by focusing
-/// the main window and asking React to start a visible check.
-fn request_update_check(app: &AppHandle) {
-    show_target_window(app);
-    let _ = app.emit("updater-check-requested", ());
-}
-
-#[tauri::command]
-async fn updater_check(app: AppHandle, request: Option<UpdateStatusRequest>) -> Result<UpdateStatus, String> {
-    let silent = request.and_then(|r| r.silent).unwrap_or(false);
-    run_update_check(app, silent).await
-}
-
-#[tauri::command]
-async fn updater_download(app: AppHandle) -> Result<UpdateStatus, String> {
-    run_update_download(app).await
-}
-
-#[tauri::command]
-async fn updater_install(app: AppHandle) -> Result<(), String> {
-    run_update_install(app).await
-}
-
-#[tauri::command]
-async fn updater_release_notes(version: String) -> Result<ReleaseNotesResponse, String> {
-    fetch_release_notes(&version).await
-}
-
-async fn run_update_check(app: AppHandle, silent: bool) -> Result<UpdateStatus, String> {
-    let updater = app.updater().map_err(|e| format!("Updater unavailable: {e}"))?;
-    match updater.check().await {
-        Ok(Some(update)) => {
-            let state: tauri::State<'_, AppState> = app.state();
-            let cached = state.update_state.lock().await.clone();
-            let status = if cached.as_ref().is_some_and(|c| c.version == update.version && c.bytes_path.is_file()) {
-                UpdateStatus {
-                    status: "downloaded".into(),
-                    version: Some(update.version),
-                    current_version: env!("CARGO_PKG_VERSION").into(),
-                    notes: update.body,
-                    downloaded_bytes: None,
-                    total_bytes: None,
-                    message: None,
-                }
-            } else {
-                UpdateStatus {
-                    status: "available".into(),
-                    version: Some(update.version),
-                    current_version: env!("CARGO_PKG_VERSION").into(),
-                    notes: update.body,
-                    downloaded_bytes: None,
-                    total_bytes: None,
-                    message: None,
-                }
-            };
-            emit_update_status(&app, &status);
-            Ok(status)
-        }
-        Ok(None) => {
-            let status = UpdateStatus {
-                status: "up_to_date".into(),
-                version: None,
-                current_version: env!("CARGO_PKG_VERSION").into(),
-                notes: None,
-                downloaded_bytes: None,
-                total_bytes: None,
-                message: if silent { None } else { Some("EvoFlux is up to date.".into()) },
-            };
-            if !silent {
-                emit_update_status(&app, &status);
-            }
-            Ok(status)
-        }
-        Err(e) => Err(format!("Couldn't check for updates: {e}")),
-    }
-}
-
-async fn run_update_download(app: AppHandle) -> Result<UpdateStatus, String> {
-    let updater = app.updater().map_err(|e| format!("Updater unavailable: {e}"))?;
-    let update = updater
-        .check()
-        .await
-        .map_err(|e| format!("Couldn't check for updates: {e}"))?
-        .ok_or_else(|| "EvoFlux is already up to date.".to_string())?;
-
-    update_tray_status(&app, "Status: Downloading update…");
-    let version = update.version.clone();
-    let mut downloaded: u64 = 0;
-    let app_for_progress = app.clone();
-    let bytes = update
-        .download(
-            move |chunk, total| {
-                downloaded = downloaded.saturating_add(chunk as u64);
-                let progress = UpdateStatus {
-                    status: "downloading".into(),
-                    version: Some(version.clone()),
-                    current_version: env!("CARGO_PKG_VERSION").into(),
-                    notes: None,
-                    downloaded_bytes: Some(downloaded),
-                    total_bytes: total,
-                    message: None,
-                };
-                emit_update_status(&app_for_progress, &progress);
-                update_tray_status(
-                    &app_for_progress,
-                    &format_download_progress((downloaded / (1024 * 1024)) as usize, total),
-                );
-            },
-            {
-                let app_for_finish = app.clone();
-                move || update_tray_status(&app_for_finish, "Status: Update downloaded")
-            },
-        )
-        .await
-        .map_err(|e| {
-            update_tray_status(&app, "Status: Running");
-            format!("Failed to download update: {e}")
-        })?;
-
-    let path = cached_update_path(&app, &update.version).map_err(|e| format!("Cache update: {e}"))?;
-    std::fs::write(&path, bytes).map_err(|e| format!("Write cached update: {e}"))?;
-    let state: tauri::State<'_, AppState> = app.state();
-    *state.update_state.lock().await = Some(CachedUpdateState {
-        version: update.version.clone(),
-        bytes_path: path,
-    });
-
-    let status = UpdateStatus {
-        status: "downloaded".into(),
-        version: Some(update.version),
-        current_version: env!("CARGO_PKG_VERSION").into(),
-        notes: None,
-        downloaded_bytes: None,
-        total_bytes: None,
-        message: None,
-    };
-    emit_update_status(&app, &status);
-    Ok(status)
-}
-
-async fn run_update_install(app: AppHandle) -> Result<(), String> {
-    let updater = app.updater().map_err(|e| format!("Updater unavailable: {e}"))?;
-    let update = updater
-        .check()
-        .await
-        .map_err(|e| format!("Couldn't check for updates: {e}"))?
-        .ok_or_else(|| "EvoFlux is already up to date.".to_string())?;
-    let state: tauri::State<'_, AppState> = app.state();
-    let cached = state
-        .update_state
-        .lock()
-        .await
-        .clone()
-        .ok_or_else(|| "Update has not been downloaded yet.".to_string())?;
-    if cached.version != update.version || !cached.bytes_path.is_file() {
-        return Err("Downloaded update is stale. Download the update again.".into());
-    }
-    let bytes = std::fs::read(&cached.bytes_path).map_err(|e| format!("Read cached update: {e}"))?;
-    update_tray_status(&app, "Status: Installing update…");
-    update.install(bytes).map_err(|e| {
-        update_tray_status(&app, "Status: Running");
-        format!("Failed to install update: {e}")
-    })?;
-
-    update_tray_status(&app, "Status: Restarting…");
-    shutdown_sidecar_now(&app).await;
-
-    state.quitting.store(true, Ordering::SeqCst);
-    tauri::process::restart(&app.env());
-}
-
-async fn fetch_release_notes(version: &str) -> Result<ReleaseNotesResponse, String> {
-    let tag = if version.starts_with('v') { version.to_string() } else { format!("v{version}") };
-    let url = format!("https://api.github.com/repos/khuonghung/evoflux/releases/tags/{tag}");
-    let release = reqwest::Client::new()
-        .get(&url)
-        .header(reqwest::header::USER_AGENT, "EvoFlux updater")
-        .send()
-        .await
-        .map_err(|e| format!("Fetch release notes: {e}"))?
-        .error_for_status()
-        .map_err(|e| format!("Fetch release notes: {e}"))?
-        .json::<GitHubRelease>()
-        .await
-        .map_err(|e| format!("Read release notes: {e}"))?;
-    Ok(ReleaseNotesResponse {
-        version: version.to_string(),
-        url: release.html_url,
-        body: release.body.unwrap_or_else(|| "No release notes published for this version.".into()),
-    })
-}
-
-fn emit_update_status(app: &AppHandle, status: &UpdateStatus) {
-    let _ = app.emit("updater-status", status);
-}
-
-fn cached_update_path(app: &AppHandle, version: &str) -> Result<PathBuf> {
-    let dir = app.path().app_cache_dir()?.join("updater");
-    std::fs::create_dir_all(&dir)?;
-    Ok(dir.join(format!("evoflux-{version}.update")))
 }
 
 /// Cleanly stop the Python sidecar before a process re-exec.
@@ -1073,14 +830,6 @@ fn install_desktop_menus(app: &tauri::App) -> Result<()> {
         Some(about_metadata),
     )?;
 
-    // Per Apple HIG, "Check for Updates…" sits directly below About.
-    let app_check_updates = MenuItem::with_id(
-        app,
-        MENU_CHECK_UPDATES,
-        "Check for Updates…",
-        true,
-        None::<&str>,
-    )?;
     let app_show = MenuItem::with_id(app, MENU_SHOW, "Show EvoFlux", true, None::<&str>)?;
     let app_new_window = MenuItem::with_id(app, MENU_NEW_WINDOW, "New Window", true, Some("CmdOrCtrl+N"))?;
     let app_home = MenuItem::with_id(app, MENU_HOME, "Home", true, None::<&str>)?;
@@ -1150,7 +899,6 @@ fn install_desktop_menus(app: &tauri::App) -> Result<()> {
 
     let app_menu = SubmenuBuilder::new(app, "EvoFlux")
         .item(&app_about)
-        .item(&app_check_updates)
         .separator()
         .item(&app_show)
         .item(&app_new_window)
@@ -1683,7 +1431,6 @@ fn main() {
         quitting: Arc::new(AtomicBool::new(false)),
         tray_status: Arc::new(Mutex::new(None)),
         tray_session: Arc::new(Mutex::new(None)),
-        update_state: Arc::new(Mutex::new(None)),
         active_window_label: Arc::new(Mutex::new(MAIN_WINDOW.to_string())),
         zoom: Arc::new(Mutex::new(ZOOM_DEFAULT)),
     };
@@ -1697,11 +1444,6 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
-        // Updater config (endpoint, pubkey, install mode) lives in
-        // ``tauri.conf.json``'s ``plugins.updater`` block. ``process`` is
-        // required for ``tauri::process::restart`` after the new bundle
-        // is staged.
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_main_window(app);
@@ -1721,20 +1463,11 @@ fn main() {
             app_new_window,
             app_open_browser_devtools,
             set_tray_session,
-            updater_check,
-            updater_download,
-            updater_install,
-            updater_release_notes
         ])
         .setup(|app| {
             install_desktop_menus(app)?;
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                let updater_handle = handle.clone();
-                tauri::async_runtime::spawn(async move {
-                    tokio::time::sleep(Duration::from_secs(5)).await;
-                    let _ = run_update_check(updater_handle, true).await;
-                });
                 if let Err(e) = start_backend_and_window(handle.clone()).await {
                     log::error!("failed to start backend: {e:#}");
                     update_tray_status(&handle, "Status: Error");

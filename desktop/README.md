@@ -1,6 +1,6 @@
 # EvoFlux Desktop (Tauri v2)
 
-Native desktop shell for EvoFlux. Embeds the React Web UI, can spawn the Python backend as a sidecar or connect to an external server, and ships an auto-update + signing pipeline.
+Native desktop shell for EvoFlux. Embeds the React Web UI, can spawn the Python backend as a sidecar or connect to an external server, and owns desktop packaging.
 
 ## Architecture
 
@@ -67,4 +67,4 @@ cd desktop && make dev
 ## Packaging
 
 See [`../documents/docs/desktop.md`](../documents/docs/desktop.md) for the
-full release pipeline (matrix builds, signing, notarization, updater).
+full release pipeline (matrix builds, signing, notarization).

@@ -20,7 +20,7 @@ build.rs                     Tauri build integration
 - Sidecar startup/auth change: inspect Rust supervisor code, `app.cli serve`, `app.core.desktop_auth`, and desktop tests.
 - Bundle/config change: update all relevant Tauri config variants, not just production.
 - Permission/plugin change: update Tauri capabilities and verify frontend plugin usage.
-- Release/update change: check `desktop/Makefile`, `scripts/make_updater_manifest.py`, and `documents/docs/desktop.md`.
+- Release/update change: check `desktop/Makefile` and `documents/docs/desktop.md`.
 
 ## Commands
 
