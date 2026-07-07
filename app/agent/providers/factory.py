@@ -35,6 +35,7 @@ from app.agent.providers.router9 import Router9Provider
 from app.agent.providers.unconfigured import UnconfiguredProviderError
 from app.agent.providers.vertexai import VertexAIProvider
 from app.agent.providers.xai import XAIProvider
+from app.agent.providers.xiaomi import XiaomiProvider
 from app.agent.providers.zai import ZAIProvider
 
 # Sorted for stable error output. Keep in sync with the ``match`` below.
@@ -195,6 +196,16 @@ def build_provider(
             if name == "router9":
                 return _with_provider_name(
                     Router9Provider(
+                        api_key=cast(str | SecretStr, typed_api_key),
+                        model=model,
+                        base_url=base_url,
+                        model_kwargs=kwargs,
+                    ),
+                    name,
+                )
+            if name == "xiaomi":
+                return _with_provider_name(
+                    XiaomiProvider(
                         api_key=cast(str | SecretStr, typed_api_key),
                         model=model,
                         base_url=base_url,
