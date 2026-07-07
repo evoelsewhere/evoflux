@@ -1047,12 +1047,17 @@ async def get_team_history(
     # web UI keys off ``is_summary=True`` rows to render the inline
     # "Session compacted" marker + summary body; hiding them would make
     # the divider vanish on reload. Undo uses ``extra.hidden_from_user``.
+    all_lead_rows = list((await db.exec(_fetch_page(lead_session_id))).all())
+    # Me: ``has_more`` must be based on the *raw* row count returned by the
+    # DB query (before hidden_from_user filtering).  If we check the
+    # filtered count instead, sessions with many hidden messages silently
+    # stop paginating: the filter eats into the LIMIT+1 rows, the visible
+    # count drops below PAGE_SIZE, and has_more becomes False even though
+    # the DB has more rows.
+    has_more = len(all_lead_rows) > _HISTORY_PAGE_SIZE
     raw_lead = [
-        msg
-        for msg in (await db.exec(_fetch_page(lead_session_id))).all()
-        if not _is_hidden_from_user(msg)
+        msg for msg in all_lead_rows if not _is_hidden_from_user(msg)
     ]
-    has_more = len(raw_lead) > _HISTORY_PAGE_SIZE
     raw_lead = raw_lead[:_HISTORY_PAGE_SIZE]
     lead_msgs = list(reversed(raw_lead))
     next_cursor = lead_msgs[0].created_at if (has_more and lead_msgs) else None
