@@ -30,7 +30,9 @@ if sys.platform == "win32":
     _proactor_loop = asyncio.ProactorEventLoop()  # type: ignore[attr-defined]
     asyncio.set_event_loop(_proactor_loop)
 
-import truststore  # noqa: F401 — patches ssl to use OS cert store
+import truststore
+
+truststore.inject_into_ssl()  # Use OS certificate store instead of certifi
 
 import uvicorn
 
