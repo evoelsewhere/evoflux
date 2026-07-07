@@ -37,6 +37,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Build sidecar
+        shell: bash
         run: |
           python scripts/build_sidecar.py \
             --root . \
