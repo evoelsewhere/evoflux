@@ -67,6 +67,7 @@ export {
   useProviderUsageQuery,
   useSaveProviderMutation,
   useSaveProviderVisibleModelsMutation,
+  useDeleteProviderMutation,
   useTestProviderMutation,
   useInstallSeedMutation,
 } from './useProvidersQuery'

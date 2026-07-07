@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import {
+  deleteProvider,
   installSeed,
   getProviderUsage,
   listProviderModels,
@@ -89,4 +90,15 @@ export function useTestProviderMutation() {
 
 export function useInstallSeedMutation() {
   return useMutation({ mutationFn: installSeed })
+}
+
+export function useDeleteProviderMutation() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (providerId: string) => deleteProvider(providerId),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: queryKeys.settings.providers() })
+      void client.invalidateQueries({ queryKey: queryKeys.agentFiles.registry() })
+    },
+  })
 }

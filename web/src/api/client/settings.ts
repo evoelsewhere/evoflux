@@ -214,6 +214,14 @@ export async function saveProviderVisibleModels(
   return res.json()
 }
 
+export async function deleteProvider(providerId: string): Promise<{ deleted: boolean }> {
+  const res = await fetch(`${apiBaseUrl()}/settings/providers/${encodeURIComponent(providerId)}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) await parseDetailOrThrow(res, `DELETE /settings/providers/${providerId}`)
+  return res.json()
+}
+
 export async function getProviderUsage(providerId: string): Promise<ProviderUsageResponse> {
   const res = await fetch(`${apiBaseUrl()}/settings/providers/${encodeURIComponent(providerId)}/usage`)
   if (!res.ok) await parseDetailOrThrow(res, `GET /settings/providers/${providerId}/usage`)
