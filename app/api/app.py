@@ -123,6 +123,14 @@ async def lifespan(app: FastAPI):
     await team_manager.stop()
     await mcp_manager.stop()
 
+    # Headless Chromium sessions and preview dev servers run in their own
+    # process groups — they would outlive the sidecar without this.
+    from app.agent.tools.builtin.browser_use_tool import close_all_sessions
+    from app.agent.tools.builtin.preview import stop_all_servers
+
+    await close_all_sessions()
+    await stop_all_servers()
+
     await stream_store.close()
     await stop_otel_retention()
     shutdown_otel()
