@@ -23,6 +23,7 @@ import { ChevronDown, ChevronUp, Copy, Check, Undo2, Terminal, Lightbulb, Code2,
 import { Thinking } from './Thinking'
 import { ToolCall } from './ToolCall'
 import { MCPAppResult } from './MCPAppResult'
+import { WidgetRenderer } from './WidgetRenderer'
 import { InboxBubble } from './InboxBubble'
 import { HandoffCard } from './HandoffCard'
 import { CompactionDivider } from './CompactionDivider'
@@ -334,6 +335,20 @@ const BlockRenderer = memo(function BlockRenderer({ block, isStreaming, sessionI
               <MCPAppResult mcpApp={mcpApp as never} sessionId={sessionId} toolCallId={block.toolCallId} />
             </div>
           ) : null}
+        </div>
+      )
+    }
+    case 'widget': {
+      const widgetHtml = block.widgetHtml || ''
+      const isStreaming = block.isStreaming ?? false
+      const title = block.title || 'Widget'
+      return (
+        <div className="my-2">
+          <WidgetRenderer
+            html={widgetHtml}
+            isStreaming={isStreaming}
+            title={title}
+          />
         </div>
       )
     }
