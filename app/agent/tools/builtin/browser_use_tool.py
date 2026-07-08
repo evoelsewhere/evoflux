@@ -24,6 +24,7 @@ click     — Click an element by snapshot index or CSS selector.
 fill      — Type text into an element by snapshot index or CSS selector.
 select    — Select an option in a <select> element.
 extract   — Extract text content from the page (or a CSS selector), capped.
+resize    — Viewport presets / custom size + prefers-color-scheme emulation.
 screenshot — JPEG screenshot returned as a multimodal image part.
 evaluate  — Run JavaScript in the page context.
 scroll    — Scroll the page up/down.
@@ -291,9 +292,58 @@ def _get_sid(state: Any) -> str:
     return state.metadata.get("session_id", "default") if state else "default"
 
 
+# Sessions idle longer than this are closed opportunistically on the next
+# browser_use call (any session's) — a forgotten `stop` no longer leaks a
+# headless Chromium until app restart.
+_IDLE_TTL_SECONDS = 1800.0
+_last_used: dict[str, float] = {}
+
+
+async def _sweep_idle_sessions(active_sid: str) -> None:
+    now = time.monotonic()
+    for sid in list(_sessions):
+        if sid == active_sid:
+            continue
+        if now - _last_used.get(sid, now) > _IDLE_TTL_SECONDS:
+            session = _sessions.pop(sid, None)
+            _pages.pop(sid, None)
+            _cdp_info.pop(sid, None)
+            _console_logs.pop(sid, None)
+            _network_events.pop(sid, None)
+            _observed_cdp_sessions.pop(sid, None)
+            _last_used.pop(sid, None)
+            if session is not None:
+                try:
+                    await session.stop()
+                except Exception:
+                    pass
+                logger.info("browser_session_idle_closed session_id={}", sid)
+                await _emit_browser_event(sid, active=False, action="idle_closed")
+
+
+async def close_all_sessions() -> None:
+    """Stop every live browser session — called from app shutdown."""
+    for sid in list(_sessions):
+        session = _sessions.pop(sid, None)
+        _pages.pop(sid, None)
+        _cdp_info.pop(sid, None)
+        _console_logs.pop(sid, None)
+        _network_events.pop(sid, None)
+        _observed_cdp_sessions.pop(sid, None)
+        _last_used.pop(sid, None)
+        if session is not None:
+            try:
+                await session.stop()
+            except Exception:
+                pass
+    logger.info("browser_sessions_closed_on_shutdown")
+
+
 async def _get_session(state: Any) -> tuple[Any, Any]:
     """Return ``(BrowserSession, current Page)``, launching if needed."""
     sid = _get_sid(state)
+    _last_used[sid] = time.monotonic()
+    await _sweep_idle_sessions(sid)
     if sid in _sessions:
         session = _sessions[sid]
         page = _pages.get(sid) or await session.get_current_page()
@@ -335,6 +385,7 @@ async def _close_session(state: Any) -> str:
     _console_logs.pop(sid, None)
     _network_events.pop(sid, None)
     _observed_cdp_sessions.pop(sid, None)
+    _last_used.pop(sid, None)
     if session is None:
         return "No active browser session."
     try:
@@ -429,6 +480,20 @@ class SnapshotAction(BaseModel):
     )
 
 
+class ResizeAction(BaseModel):
+    action: Literal["resize"]
+    preset: Literal["mobile", "tablet", "desktop"] | None = Field(
+        default=None,
+        description="Viewport preset: mobile 375x812, tablet 768x1024, desktop 1280x800. Overrides width/height.",
+    )
+    width: int | None = Field(default=None, ge=200, le=4000)
+    height: int | None = Field(default=None, ge=200, le=4000)
+    color_scheme: Literal["light", "dark"] | None = Field(
+        default=None,
+        description="Emulate prefers-color-scheme for dark/light mode testing.",
+    )
+
+
 class ConsoleAction(BaseModel):
     action: Literal["console"]
     level: Literal["all", "error", "warn"] = Field(
@@ -458,7 +523,10 @@ class ScreenshotAction(BaseModel):
 class EvaluateAction(BaseModel):
     action: Literal["evaluate"]
     script: str = Field(
-        description="JavaScript to execute. Use 'return <expr>' for a value.",
+        description=(
+            "JavaScript arrow function to execute, e.g. "
+            "'() => document.title' or '(x) => {...; return y}'."
+        ),
     )
 
 
@@ -516,6 +584,7 @@ AnyAction = Annotated[
     | SnapshotAction
     | ConsoleAction
     | NetworkAction
+    | ResizeAction
     | ScreenshotAction
     | EvaluateAction
     | ScrollAction
@@ -550,7 +619,9 @@ screenshot — Image of page/element, returned as a real image for vision — us
 Interaction:
 navigate / click / fill / select / scroll / back / forward / wait —
 click and fill accept ``index`` (from snapshot, preferred) or ``selector``.
-evaluate   — Run JavaScript ("return <expr>" for a value); debugging only.
+resize     — Viewport preset (mobile/tablet/desktop) or width+height, and
+             color_scheme dark/light for responsive + dark-mode checks.
+evaluate   — Run a JS arrow function ('() => expr'); debugging only.
 
 Tabs: new_tab / close_tab / get_tabs / switch_tab.
 
@@ -623,6 +694,8 @@ async def _dispatch(act: Any, state: Any) -> str | ToolResult:
         return await _handle_navigate(act, page, state)
     if action == "snapshot":
         return await _handle_snapshot(act, session, page)
+    if action == "resize":
+        return await _handle_resize(act, session, page)
     if action == "click":
         return await _handle_click(act, page, state)
     if action == "fill":
@@ -798,6 +871,42 @@ async def _handle_snapshot(act: SnapshotAction, session: Any, page: Any) -> str:
     header = f"URL: {state_summary.url}\nTitle: {state_summary.title}\n"
     body = _truncate(dom_text, act.max_chars, hint="raise max_chars if needed")
     return header + "\nInteractive elements (use [index] with click/fill):\n" + body
+
+
+_VIEWPORT_PRESETS = {
+    "mobile": (375, 812),
+    "tablet": (768, 1024),
+    "desktop": (1280, 800),
+}
+
+
+async def _handle_resize(act: ResizeAction, session: Any, page: Any) -> str:
+    changes: list[str] = []
+
+    size: tuple[int, int] | None = None
+    if act.preset:
+        size = _VIEWPORT_PRESETS[act.preset]
+    elif act.width and act.height:
+        size = (act.width, act.height)
+    if size:
+        await page.set_viewport_size(size[0], size[1])
+        changes.append(f"viewport {size[0]}x{size[1]}")
+
+    if act.color_scheme:
+        cdp = await session.get_or_create_cdp_session()
+        await cdp.cdp_client.send.Emulation.setEmulatedMedia(
+            params={
+                "features": [
+                    {"name": "prefers-color-scheme", "value": act.color_scheme}
+                ]
+            },
+            session_id=cdp.session_id,
+        )
+        changes.append(f"prefers-color-scheme: {act.color_scheme}")
+
+    if not changes:
+        return "Nothing to change — pass preset, width+height, or color_scheme."
+    return "Resized: " + ", ".join(changes)
 
 
 def _handle_console(act: ConsoleAction, state: Any) -> str:

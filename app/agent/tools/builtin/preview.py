@@ -342,6 +342,22 @@ def _logs(name: str | None, workspace: Path, lines: int, search: str | None) -> 
     return "\n".join(out_lines)
 
 
+async def stop_all_servers() -> None:
+    """Stop every managed preview server — called from app shutdown.
+
+    Spawned servers run in their own process groups and would outlive the
+    sidecar otherwise. External (reused) servers are left alone.
+    """
+    for key, server in list(_servers.items()):
+        if server._bg is not None:
+            try:
+                await server._bg.stop()
+            except Exception:
+                pass
+        _servers.pop(key, None)
+    logger.info("preview_servers_stopped_on_shutdown")
+
+
 # ── Tool ──────────────────────────────────────────────────────────────────────
 
 
