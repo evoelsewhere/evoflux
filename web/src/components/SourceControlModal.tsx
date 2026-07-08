@@ -204,6 +204,11 @@ export function SourceControlModal({
   const continueMutation = useGitContinueMutation(workspace)
   const abortMutation = useGitAbortMutation(workspace)
 
+  // Fetch / Push / Pull
+  const fetchMutation = useGitFetchMutation(workspace)
+  const pushMutation = useGitPushMutation(workspace)
+  const pullMutation = useGitPullMutation(workspace)
+
   // Auto-select first file
   useEffect(() => {
     if (open && !selectedPath && files.length > 0) {
@@ -256,9 +261,32 @@ export function SourceControlModal({
           )}
           <ToolbarButton icon={<RefreshCw size={13} />} label="Refresh" onClick={() => changesQuery.refetch()} />
           <div className="mx-0.5 h-4 w-px bg-(--color-border)" />
-          <ToolbarButton icon={<CloudDownload size={13} />} label="Fetch" onClick={() => {}} />
-          <ToolbarButton icon={<CloudUpload size={13} />} label="Push" onClick={() => {}} badge={ahead > 0 ? String(ahead) : undefined} />
-          <ToolbarButton icon={<RefreshCw size={13} />} label="Pull" onClick={() => {}} badge={behind > 0 ? String(behind) : undefined} />
+          <ToolbarButton
+            icon={<CloudDownload size={13} />}
+            label="Fetch"
+            onClick={() => fetchMutation.mutate(undefined, {
+              onSuccess: () => useToastStore.getState().push({ tone: 'success', title: 'Fetched' }),
+              onError: () => useToastStore.getState().push({ tone: 'error', title: 'Fetch failed' }),
+            })}
+          />
+          <ToolbarButton
+            icon={<CloudUpload size={13} />}
+            label="Push"
+            onClick={() => pushMutation.mutate(undefined, {
+              onSuccess: () => useToastStore.getState().push({ tone: 'success', title: 'Pushed' }),
+              onError: () => useToastStore.getState().push({ tone: 'error', title: 'Push failed' }),
+            })}
+            badge={ahead > 0 ? String(ahead) : undefined}
+          />
+          <ToolbarButton
+            icon={<RefreshCw size={13} />}
+            label="Pull"
+            onClick={() => pullMutation.mutate(undefined, {
+              onSuccess: () => useToastStore.getState().push({ tone: 'success', title: 'Pulled' }),
+              onError: () => useToastStore.getState().push({ tone: 'error', title: 'Pull failed' }),
+            })}
+            badge={behind > 0 ? String(behind) : undefined}
+          />
           <div className="mx-0.5 h-4 w-px bg-(--color-border)" />
           <button type="button" onClick={() => onOpenChange(false)} className="flex h-6 w-6 items-center justify-center rounded text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)" aria-label="Close">
             <X size={14} />
