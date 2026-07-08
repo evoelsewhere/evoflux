@@ -187,20 +187,14 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'normal' | 'coding' }) {
           thinkingLevel: session.thinking_level ?? thinkingLevel,
         })
         void queryClient.invalidateQueries({ queryKey: queryKeys.team.sessions.all() })
-        if (mode === 'coding') {
-          if (workspace) saveLastCodingWorkspace(workspace)
-          navigate({
-            to: '/$sessionId',
-            params: { sessionId: session.id },
-            replace: true,
-          })
-        } else {
-          navigate({
-            to: '/$sessionId',
-            params: { sessionId: session.id },
-            replace: true,
-          })
+        if (mode === 'coding' && workspace) {
+          saveLastCodingWorkspace(workspace)
         }
+        navigate({
+          to: '/$sessionId',
+          params: { sessionId: session.id },
+          replace: true,
+        })
       } catch (err) {
         if (cancelled) return
         useTeamStore.setState((state) => {
