@@ -146,6 +146,17 @@ class TestCompletionsHandler:
         assert result[0].tool_calls[0].function.name == "get_weather"
         assert result[0].tool_calls[0].function.arguments == '{"city": "NYC"}'
 
+    def test_convert_messages_skips_empty_assistant_message(self, handler):
+        """Assistant with neither content nor tool_calls is dropped — some
+        providers (Xiaomi mimo) reject empty assistant turns with HTTP 400."""
+        messages = [
+            HumanMessage(content="hi"),
+            AssistantMessage(content=""),
+            HumanMessage(content="still there?"),
+        ]
+        result = handler.convert_messages(messages)
+        assert [m.role for m in result] == ["user", "user"]
+
     def test_convert_messages_tool_message_text_only(self, handler):
         """Convert ToolMessage with plain text."""
         messages = [

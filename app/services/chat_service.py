@@ -1231,7 +1231,13 @@ def _message_row_by_id(
 def _sanitize_tool_message_pairs(
     messages: list[ChatMessage], db_messages: Sequence[SessionMessage]
 ) -> list[ChatMessage]:
-    """Drop LLM-invalid tool outputs and strip incomplete assistant tool calls."""
+    """Drop LLM-invalid tool outputs and strip incomplete assistant tool calls.
+
+    Assistant messages left with neither content nor tool_calls are dropped
+    entirely: some providers (e.g. Xiaomi mimo) reject empty assistant turns
+    with HTTP 400 "assistant must provide content, reasoning_content or
+    tool_calls".
+    """
     rows_by_id = _message_row_by_id(db_messages)
     result: list[ChatMessage] = []
     expected_tool_ids: set[str] = set()
@@ -1240,7 +1246,15 @@ def _sanitize_tool_message_pairs(
         if isinstance(msg, AssistantMessage):
             expected_tool_ids.clear()
             if not msg.tool_calls:
-                result.append(msg)
+                if msg.content:
+                    result.append(msg)
+                else:
+                    row = rows_by_id.get(msg.db_id)
+                    logger.warning(
+                        "deserialize_drop_empty_assistant_message session_id={} message_id={}",
+                        row.session_id if row else None,
+                        msg.db_id,
+                    )
                 continue
 
             tool_call_ids = {tc.id for tc in msg.tool_calls if tc.id}
@@ -1258,12 +1272,14 @@ def _sanitize_tool_message_pairs(
             else:
                 row = rows_by_id.get(msg.db_id)
                 logger.warning(
-                    "deserialize_strip_incomplete_assistant_tool_calls session_id={} message_id={} missing_ids=[{}]",
+                    "deserialize_strip_incomplete_assistant_tool_calls session_id={} message_id={} missing_ids=[{}] dropped={}",
                     row.session_id if row else None,
                     msg.db_id,
                     ", ".join(sorted(missing or tool_call_ids)),
+                    not msg.content,
                 )
-                result.append(msg.model_copy(update={"tool_calls": None}))
+                if msg.content:
+                    result.append(msg.model_copy(update={"tool_calls": None}))
             continue
 
         if isinstance(msg, ToolMessage):
