@@ -527,6 +527,21 @@ async def team_command(
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     if body.command == "continue":
+        # Route to coding team for coding sessions (same as compact)
+        try:
+            session_uuid = UUID(body.session_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="Invalid session id.") from exc
+        async with db.begin():
+            existing = await db.get(ChatSession, session_uuid)
+        if existing and existing.mode == "coding" and existing.workspace:
+            try:
+                team_obj = await team_manager.get_or_start_coding_team(
+                    _validate_workspace_or_422(existing.workspace), body.session_id
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+
         try:
             sid = await team_obj.handle_continue(body.session_id)
         except ContinuePreconditionError as exc:
