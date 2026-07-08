@@ -598,3 +598,18 @@ class TestTeamChatFormValidation:
         client = TestClient(app_with_team)
         response = client.post("/api/team/chat", data={})
         assert response.status_code == 422
+
+    def test_legacy_normal_mode_coerces_to_forge(self):
+        """Older clients may still send mode=normal (renamed to forge)."""
+        from app.api.schemas.chat import ChatForm
+
+        form = ChatForm(message="hi", mode="normal")
+        assert form.mode == "forge"
+
+    def test_unknown_mode_rejected(self):
+        from pydantic import ValidationError
+
+        from app.api.schemas.chat import ChatForm
+
+        with pytest.raises(ValidationError, match="mode must be"):
+            ChatForm(message="hi", mode="bogus")
