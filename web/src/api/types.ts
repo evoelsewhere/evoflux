@@ -502,7 +502,7 @@ export interface SSEEvent {
 // Content Block Types
 export interface ContentBlock {
   id: string
-  type: 'thinking' | 'tool' | 'text' | 'user' | 'compaction' | 'provider_status'
+  type: 'thinking' | 'tool' | 'text' | 'user' | 'compaction' | 'provider_status' | 'widget'
   content: string
   toolName?: string
   toolArgs?: string
@@ -513,6 +513,10 @@ export interface ContentBlock {
   durationMs?: number   // completed tool duration from SSE/session logs
   startedAt?: number    // client timestamp for realtime elapsed display
   responseDurationMs?: number // assistant response duration shown in turn footer
+  /** Widget-specific fields */
+  widgetHtml?: string   // HTML content for widget blocks
+  isStreaming?: boolean // whether widget is still streaming
+  title?: string        // widget title
   /** Variant-specific metadata. ``user`` inbox blocks carry ``from_agent``;
    *  ``compaction`` blocks carry ``state: 'compacting' | 'compacted'`` and
    *  optional ``error: true``. Keeping this generic avoids one typed field
