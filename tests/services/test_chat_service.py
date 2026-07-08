@@ -727,7 +727,7 @@ async def test_get_messages_for_llm_drops_orphan_tool_message(session):
 
 @pytest.mark.asyncio
 async def test_get_messages_for_llm_drops_assistant_left_empty_after_strip(session):
-    """Tool-call-only assistant turn with no tool results → dropped entirely.
+    """Mid-history tool-call-only assistant with no tool results → dropped.
 
     Stripping the incomplete tool_calls would leave an empty assistant
     message, which some providers (Xiaomi mimo) reject with HTTP 400.
@@ -746,11 +746,12 @@ async def test_get_messages_for_llm_drops_assistant_left_empty_after_strip(sessi
             ],
         ),
     )
+    await save_message(session, chat_session.id, HumanMessage(content="next turn"))
     await session.commit()
 
     result = await get_messages_for_llm(session, chat_session.id)
 
-    assert [m.role for m in result] == ["user"]
+    assert [m.role for m in result] == ["user", "user"]
 
 
 @pytest.mark.asyncio
@@ -780,8 +781,28 @@ async def test_get_messages_for_llm_keeps_stripped_assistant_with_content(sessio
 
 
 @pytest.mark.asyncio
-async def test_get_messages_for_llm_drops_empty_assistant_message(session):
-    """Persisted assistant message with no content and no tool_calls → dropped."""
+async def test_get_messages_for_llm_drops_mid_history_empty_assistant(session):
+    """Mid-history assistant with no content and no tool_calls → dropped."""
+    chat_session = await create_chat_session(session)
+    await save_message(session, chat_session.id, HumanMessage(content="hello"))
+    await save_message(session, chat_session.id, AssistantMessage(content=""))
+    await save_message(session, chat_session.id, HumanMessage(content="next turn"))
+    await session.commit()
+
+    result = await get_messages_for_llm(session, chat_session.id)
+
+    assert [m.role for m in result] == ["user", "user"]
+
+
+@pytest.mark.asyncio
+async def test_get_messages_for_llm_keeps_trailing_empty_assistant(session):
+    """A trailing empty assistant row survives sanitization.
+
+    The team continue flow inspects the tail for an interrupted
+    thinking-only row and deletes it itself; dropping it here would make
+    the interruption invisible. Providers skip empty assistant turns at
+    serialization, so it never reaches a strict API.
+    """
     chat_session = await create_chat_session(session)
     await save_message(session, chat_session.id, HumanMessage(content="hello"))
     await save_message(session, chat_session.id, AssistantMessage(content=""))
@@ -789,7 +810,7 @@ async def test_get_messages_for_llm_drops_empty_assistant_message(session):
 
     result = await get_messages_for_llm(session, chat_session.id)
 
-    assert [m.role for m in result] == ["user"]
+    assert [m.role for m in result] == ["user", "assistant"]
 
 
 @pytest.mark.asyncio

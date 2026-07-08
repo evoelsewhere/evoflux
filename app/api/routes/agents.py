@@ -105,13 +105,9 @@ def _effective_config(cfg: AgentConfig, *, mode: str) -> AgentConfig:
         implicit_tools += ["todo_manage", "schedule_task", "note"]
     data.tools = [*implicit_tools, *data.tools]
     if data.role == "lead" and data.name.lower() == "evoflux":
-        from app.agent.builtin_prompts import (
-            EVOFLUX_description_for_mode,
-            EVOFLUX_tools_for_mode,
-        )
+        from app.agent.builtin_prompts import EVOFLUX_description_for_mode
 
         data.description = data.description or EVOFLUX_description_for_mode(mode)
-        data.tools = list(dict.fromkeys([*EVOFLUX_tools_for_mode(mode), *data.tools]))
         data.mcp = list(dict.fromkeys(data.mcp))
     elif data.role == "member":
         from app.agent.builtin_prompts import builtin_member_profile
@@ -119,9 +115,17 @@ def _effective_config(cfg: AgentConfig, *, mode: str) -> AgentConfig:
         profile = builtin_member_profile(mode, data.name)
         if profile is not None:
             data.description = data.description or profile["description"]
-            data.tools = list(dict.fromkeys([*profile["tools"], *data.tools]))
             data.skills = list(dict.fromkeys([*profile["skills"], *data.skills]))
             data.mcp = list(dict.fromkeys([*profile["mcp"], *data.mcp]))
+
+    # Mirror the loader's tier grant so the API shows the effective toolset.
+    from app.agent.builtin_prompts import tier_tools
+    from app.agent.loader import _default_tool_registry
+
+    data.tools = [
+        *data.tools,
+        *tier_tools(_default_tool_registry(), mode=mode, role=data.role),
+    ]
     data.tools = list(dict.fromkeys(data.tools))
     return data
 
