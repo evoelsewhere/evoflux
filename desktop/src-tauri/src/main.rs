@@ -882,6 +882,7 @@ fn format_update_prompt(new_version: &str, current_version: &str, body: Option<&
 /// ``total == Some(0)`` is treated the same as ``None`` — some HTTP
 /// responses omit ``Content-Length`` and our caller passes whatever it
 /// has — so we never produce a misleading ``"5/0 MB"`` label.
+#[cfg(test)]
 fn format_download_progress(downloaded_mb: usize, total_bytes: Option<u64>) -> String {
     match total_bytes {
         Some(total) if total > 0 => {
