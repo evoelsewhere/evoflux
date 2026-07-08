@@ -746,6 +746,10 @@ export interface TeamCommandResponse {
 export interface ToolCatalogEntry {
   name: string
   description: string
+  /** Tier membership: null = every tier; e.g. ['forge'] restricts to that mode. */
+  tiers: string[] | null
+  /** Lead-only tools are never granted to members — hidden from member pickers. */
+  lead_only: boolean
 }
 
 export interface SkillCatalogEntry {

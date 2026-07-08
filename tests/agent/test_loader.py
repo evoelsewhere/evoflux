@@ -237,6 +237,44 @@ def test_tier_tools_lead_only_and_tier_filters():
         assert name in member_normal
 
 
+def test_member_frontmatter_cannot_add_lead_only_tools(tmp_path):
+    """lead_only is an invariant: frontmatter extras can't bypass it."""
+    from app.agent.loader import rebuild_agent_from_disk
+
+    f = _write_agent_md(
+        tmp_path / "helper.md",
+        {
+            "name": "helper",
+            "role": "member",
+            "model": "zai:glm-5-turbo",
+            "tools": ["ask_user", "worktree_start"],
+        },
+        "You help.",
+    )
+    factory, _ = _make_provider_factory()
+    agent = rebuild_agent_from_disk(f, provider_factory=factory, mode="forge")
+
+    assert "ask_user" not in agent._tools
+    assert "worktree_start" not in agent._tools
+    # Tier grant unaffected
+    assert "read" in agent._tools
+
+
+def test_lead_frontmatter_keeps_lead_only_tools(tmp_path):
+    from app.agent.loader import rebuild_agent_from_disk
+
+    f = _write_agent_md(
+        tmp_path / "boss.md",
+        {"name": "boss", "role": "lead", "model": "zai:glm-5-turbo"},
+        "You lead.",
+    )
+    factory, _ = _make_provider_factory()
+    agent = rebuild_agent_from_disk(f, provider_factory=factory, mode="forge")
+
+    assert "ask_user" in agent._tools
+    assert "worktree_start" in agent._tools
+
+
 # ---------------------------------------------------------------------------
 # _build_agent
 # ---------------------------------------------------------------------------
