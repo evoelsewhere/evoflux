@@ -259,6 +259,26 @@ async def _handle_client_message(raw: str, session_id: str) -> None:
             except Exception:
                 pass
 
+    elif action == "resize":
+        # Viewport follows the viewer panel so frames fill it edge-to-edge
+        # instead of letterboxing a mismatched aspect ratio.
+        width = msg.get("width")
+        height = msg.get("height")
+        if isinstance(width, (int, float)) and isinstance(height, (int, float)):
+            page = _get_page(session_id)
+            if page:
+                try:
+                    await page.set_viewport_size(
+                        int(max(320, min(4000, width))),
+                        int(max(300, min(4000, height))),
+                    )
+                except Exception as e:
+                    logger.debug(
+                        "screencast_resize_error session_id={} error={}",
+                        session_id,
+                        e,
+                    )
+
     elif action == "switch_tab":
         index = msg.get("index")
         if isinstance(index, int):
