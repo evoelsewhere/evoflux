@@ -47,6 +47,7 @@ from app.agent.schemas.events import (
     ToolOutputDeltaEvent,
     ToolStartEvent,
     UsageEvent,
+    WidgetDeltaEvent,
 )
 
 # Me union of every event that can flow through the stream. ``from_event``
@@ -78,7 +79,7 @@ AnyStreamEvent = Union[
     PlanApprovalRequestedEvent,
     PromptSuggestionsEvent,
     ChapterCreatedEvent,
-    QuestionAskedEvent,
+    WidgetDeltaEvent,
 ]
 
 

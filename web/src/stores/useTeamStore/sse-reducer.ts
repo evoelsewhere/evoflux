@@ -212,6 +212,39 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
         break
       }
 
+      case 'widget_delta': {
+        const agent = d.agent as string
+        const toolCallId = d.tool_call_id as string
+        const html = d.html as string
+        const isFinal = d.is_final as boolean
+        const metadata = d.metadata as Record<string, unknown> | undefined
+        set((draft) => {
+          ensureAgent(draft, agent)
+          const stream = draft.agentStreams[agent]
+          // Find or create widget block
+          let widgetBlock = stream.currentBlocks.find(
+            (b) => b.type === 'widget' && b.toolCallId === toolCallId
+          )
+          if (!widgetBlock) {
+            widgetBlock = {
+              type: 'widget',
+              id: generateBlockId(),
+              toolCallId,
+              toolName: 'show_widget',
+              startedAt: Date.now(),
+              widgetHtml: '',
+              isStreaming: true,
+              title: (metadata?.title as string) || 'widget',
+            }
+            stream.currentBlocks.push(widgetBlock)
+          }
+          // Update HTML content
+          widgetBlock.widgetHtml += html
+          widgetBlock.isStreaming = !isFinal
+        })
+        break
+      }
+
       case 'tool_end': {
         const agent = d.agent as string
         const toolName = d.name as string

@@ -335,3 +335,19 @@ class ChapterCreatedEvent(BaseModel):
     title: str
     summary: str | None = None
     message_id: str | None = None
+
+
+class WidgetDeltaEvent(BaseModel):
+    """A live HTML chunk emitted while a widget is streaming.
+
+    Emitted by the ``show_widget`` tool as tokens arrive. The frontend
+    uses morphdom to diff and apply minimal DOM patches for smooth
+    progressive rendering.
+    """
+
+    type: Literal["widget_delta"] = "widget_delta"
+    agent: str
+    tool_call_id: str
+    html: str  # partial HTML content
+    is_final: bool = False  # True when streaming complete
+    metadata: dict[str, Any] = Field(default_factory=dict)
