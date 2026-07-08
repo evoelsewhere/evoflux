@@ -128,18 +128,32 @@ class _XiaomiCompletionsHandler(CompletionsHandler):
                         )
                         for tc in msg.tool_calls
                     ]
+                # Echo reasoning_content whenever present. Not gated on
+                # ``tool_calls`` being non-empty here: sanitize_openai_tool_pairs
+                # (called before this method — see build_request) strips
+                # tool_calls from a message whose tool turn was interrupted
+                # before the tool ever ran, leaving no matching tool result.
+                # Gating on (post-strip) tool_calls would silently drop real
+                # reasoning_content for exactly the messages most likely to
+                # otherwise end up with nothing to send at all.
+                echoed_reasoning = msg.reasoning_content or None
+                content = msg.content
+                # MiMo rejects an assistant message with none of content,
+                # reasoning_content, or tool_calls ("must provide content,
+                # reasoning_content or tool_calls") — a genuinely empty LLM
+                # turn (e.g. an empty reply that doesn't immediately follow a
+                # tool result, so core.py's empty-response retry guard never
+                # sees it) would otherwise serialize to a bare
+                # {"role": "assistant"} and get a 400 on every future request
+                # in this conversation, since history is resent every turn.
+                if not content and not tool_calls and not echoed_reasoning:
+                    content = " "
                 result.append(
                     XiaomiMessage(
                         role="assistant",
-                        content=msg.content,
+                        content=content,
                         tool_calls=tool_calls,
-                        # Echo reasoning_content only when tool_calls were present —
-                        # MiMo mandates this for thinking-mode tool turns.
-                        reasoning_content=(
-                            msg.reasoning_content
-                            if msg.tool_calls and msg.reasoning_content
-                            else None
-                        ),
+                        reasoning_content=echoed_reasoning,
                     )
                 )
 

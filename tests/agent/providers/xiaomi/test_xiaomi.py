@@ -234,7 +234,11 @@ class TestXiaomiReasoningContentEcho:
         assistant_msg = body["messages"][1]
         assert assistant_msg.get("reasoning_content") == "I should call the tool"
 
-    def test_reasoning_content_absent_from_wire_body_without_tool_calls(self):
+    def test_reasoning_content_echoed_even_without_tool_calls(self):
+        """Echo is not gated on tool_calls — see the orphaned-tool-call test below
+        for why: gating on tool_calls silently dropped real reasoning_content
+        for exactly the messages sanitize_openai_tool_pairs strips.
+        """
         from app.agent.schemas.chat import AssistantMessage
 
         p = self._make_provider()
@@ -244,7 +248,7 @@ class TestXiaomiReasoningContentEcho:
         body = p._completions.build_request(
             messages, None, stream=False, merged=p._merged_kwargs()
         )
-        assert "reasoning_content" not in body["messages"][0]
+        assert body["messages"][0].get("reasoning_content") == "some thoughts"
 
     def test_reasoning_content_absent_from_wire_body_when_none(self):
         from app.agent.schemas.chat import (
@@ -268,3 +272,51 @@ class TestXiaomiReasoningContentEcho:
             messages, None, stream=False, merged=p._merged_kwargs()
         )
         assert "reasoning_content" not in body["messages"][1]
+
+    def test_reasoning_content_echoed_when_tool_calls_stripped_by_sanitize(self):
+        """Reproduces a real production 400: an interrupted turn leaves an
+        assistant message with a tool_call that never got a tool result.
+        sanitize_openai_tool_pairs strips the orphaned tool_calls before this
+        handler sees the message — reasoning_content must still be echoed, or
+        the message ends up with nothing (content="") and MiMo rejects it:
+        "messages[N] assistant must provide content, reasoning_content or
+        tool_calls".
+        """
+        from app.agent.schemas.chat import AssistantMessage, FunctionCall, ToolCall
+
+        p = self._make_provider()
+        tool_call = ToolCall(
+            id="orphan", function=FunctionCall(name="browser_use", arguments="{}")
+        )
+        messages = [
+            AssistantMessage(
+                content="",
+                reasoning_content="Let me take a screenshot first.",
+                tool_calls=[tool_call],
+            ),
+            # No matching ToolMessage for "orphan" — the turn was interrupted
+            # before the tool ran.
+        ]
+        body = p._completions.build_request(
+            messages, None, stream=False, merged=p._merged_kwargs()
+        )
+        wire_msg = body["messages"][0]
+        assert "tool_calls" not in wire_msg  # confirms sanitize actually stripped it
+        assert wire_msg.get("reasoning_content") == "Let me take a screenshot first."
+
+    def test_fully_empty_assistant_message_gets_placeholder_content(self):
+        """Belt-and-suspenders: if content, reasoning_content, and tool_calls
+        are all genuinely empty, fall back to a non-empty placeholder rather
+        than serialize a bare {"role": "assistant"} MiMo would reject.
+        """
+        from app.agent.schemas.chat import AssistantMessage
+
+        p = self._make_provider()
+        messages = [AssistantMessage(content=None, reasoning_content=None)]
+        body = p._completions.build_request(
+            messages, None, stream=False, merged=p._merged_kwargs()
+        )
+        wire_msg = body["messages"][0]
+        assert wire_msg.get("content")
+        assert "reasoning_content" not in wire_msg
+        assert "tool_calls" not in wire_msg
