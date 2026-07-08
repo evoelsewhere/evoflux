@@ -485,6 +485,19 @@ def _build_agent(
             continue
         if tool_name in seen:
             continue
+        # lead_only is an invariant, not just a tier-grant default: a
+        # frontmatter extra cannot hand a member a user-interaction /
+        # session-structure tool (ask_user would deadlock a delegation).
+        if (
+            getattr(tool_registry[tool_name], "lead_only", False)
+            and cfg.role != "lead"
+        ):
+            logger.warning(
+                "agent_lead_only_tool_skipped agent={} tool={}",
+                cfg.name,
+                tool_name,
+            )
+            continue
         seen.add(tool_name)
         tools.append(tool_registry[tool_name])
 
