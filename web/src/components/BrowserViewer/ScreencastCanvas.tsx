@@ -174,6 +174,35 @@ export const ScreencastCanvas = forwardRef<ScreencastHandle, ScreencastCanvasPro
       e.preventDefault()
     }, [])
 
+    // ── Viewport follows the panel size ─────────────────────────────
+    // Match the remote browser viewport to the canvas element so frames
+    // fill the panel edge-to-edge instead of letterboxing a mismatched
+    // aspect ratio. Debounced so drag-resizing doesn't spam CDP. Note an
+    // agent `resize` action (e.g. mobile preset) stays in effect until
+    // the user actually resizes the panel again.
+    useEffect(() => {
+      const canvas = canvasRef.current
+      if (!canvas) return
+      let timer: ReturnType<typeof setTimeout> | null = null
+      const observer = new ResizeObserver((entries) => {
+        const rect = entries[0]?.contentRect
+        if (!rect || rect.width < 100 || rect.height < 100) return
+        if (timer) clearTimeout(timer)
+        timer = setTimeout(() => {
+          sendJson({
+            action: 'resize',
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+          })
+        }, 300)
+      })
+      observer.observe(canvas)
+      return () => {
+        observer.disconnect()
+        if (timer) clearTimeout(timer)
+      }
+    }, [sendJson])
+
     // ── WebSocket connection ────────────────────────────────────────
     useEffect(() => {
       let alive = true
@@ -207,6 +236,18 @@ export const ScreencastCanvas = forwardRef<ScreencastHandle, ScreencastCanvasPro
         ws.onopen = () => {
           if (!alive) return
           notifyConnected(true)
+          // Initial viewport sync — the ResizeObserver's first fire usually
+          // happens before the socket is open, so its send was a no-op.
+          const rect = canvasRef.current?.getBoundingClientRect()
+          if (rect && rect.width >= 100 && rect.height >= 100) {
+            ws.send(
+              JSON.stringify({
+                action: 'resize',
+                width: Math.round(rect.width),
+                height: Math.round(rect.height),
+              }),
+            )
+          }
         }
 
         ws.onmessage = (ev) => {
