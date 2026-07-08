@@ -323,7 +323,7 @@ async def get_diff_view(workspace: str, path: str) -> dict:
                 raise HTTPException(status_code=422, detail="Path outside workspace")
             content = resolved.read_text(errors="replace")
             diff_lines = [
-                f"--- /dev/null",
+                "--- /dev/null",
                 f"+++ b/{path}",
                 f"@@ -0,0 +1,{len(content.splitlines())} @@",
                 *[f"+{line}" for line in content.splitlines()],
