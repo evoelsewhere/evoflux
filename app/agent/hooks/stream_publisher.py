@@ -2,7 +2,7 @@
 
 Reuses the same stream_store.push_event() / mark_done() infrastructure as the
 single-agent chat route, so the team SSE stream is identical in shape to the
-single-agent stream.  The frontend can subscribe to GET /team/stream/{session_id}
+single-agent stream.  The frontend can subscribe to GET /team/{session_id}/stream
 and receive exactly the same event types it already handles.
 
 All events carry an ``agent`` field so the frontend can distinguish who is
