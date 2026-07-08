@@ -6,11 +6,13 @@ log, stash, merge, rebase, cherry-pick, and conflict handling.
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException
 
 from app.api.schemas.git import (
     BranchCreateRequest,
-    BranchDeleteRequest,
     ChangedFileOut,
     CheckoutRequest,
     CherryPickRequest,
@@ -39,6 +41,7 @@ from app.api.schemas.git import (
 from app.services import team_manager
 from app.services.git_ops import (
     GitResult,
+    _SHA_RE,
     detect_inprogress_operation,
     git_jobs,
     git_locks,
@@ -60,7 +63,7 @@ router = APIRouter(prefix="/workspace/git", tags=["git"])
 
 async def _validate(workspace: str) -> str:
     try:
-        return await team_manager.validate_workspace(workspace)
+        return team_manager.validate_workspace(workspace)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -78,14 +81,6 @@ def _check(result: GitResult) -> None:
             or result.stdout.strip()
             or "git command failed",
         )
-
-
-def _parse_commit_sha(stdout: str) -> str:
-    for line in stdout.splitlines():
-        if line.startswith("[") and "]" in line:
-            bracket = line.index("]")
-            return line[1:bracket].strip().split()[-1]
-    return ""
 
 
 def _changed_files_to_out(files):
@@ -170,12 +165,20 @@ async def discard_changes(body: StageRequest) -> dict:
             )
             if not result.ok:
                 _check(result)
-            await run_git(cwd, "clean", "-f", *pathspec_args(body.paths), timeout=30.0)
+            clean_result = await run_git(
+                cwd, "clean", "-f", *pathspec_args(body.paths), timeout=30.0
+            )
+            if not clean_result.ok:
+                _check(clean_result)
         else:
             result = await run_git(cwd, "restore", "--", ".", timeout=30.0)
             if not result.ok:
                 _check(result)
-            await run_git(cwd, "clean", "-f", "--", ".", timeout=30.0)
+            clean_result = await run_git(
+                cwd, "clean", "-f", "--", ".", timeout=30.0
+            )
+            if not clean_result.ok:
+                _check(clean_result)
     return {"ok": True}
 
 
@@ -199,14 +202,16 @@ async def commit(body: CommitRequest) -> GitCommitOut:
             if not body.message:
                 args.append("--no-edit")
         if body.message:
-            args.extend(["-F", "-"])
-        if not body.amend or body.message:
-            proc = await run_git(cwd, *args, timeout=30.0)
-        else:
-            proc = await run_git(cwd, *args, timeout=30.0)
+            args.extend(["-m", body.message])
+        proc = await run_git(cwd, *args, timeout=30.0)
         if not proc.ok and "nothing to commit" not in (proc.stderr + proc.stdout):
             _check(proc)
-    sha = _parse_commit_sha(proc.stdout)
+    # Deterministically get the SHA of the new commit
+    sha = ""
+    if proc.ok:
+        rev = await run_git(cwd, "rev-parse", "HEAD", timeout=5.0)
+        if rev.ok:
+            sha = rev.stdout.strip()
     return GitCommitOut(sha=sha, message=body.message or "")
 
 
@@ -271,14 +276,80 @@ async def create_branch(body: BranchCreateRequest) -> dict:
         _check(result)
         if body.checkout:
             result = await run_git(cwd, "switch", "--", body.name, timeout=30.0)
-            _check(result)
+    _check(result)
     return {"ok": True}
+
+
+# --- Diff view ---------------------------------------------------------------
+
+
+@router.get("/diff-view")
+async def get_diff_view(workspace: str, path: str) -> dict:
+    """Return unified diff for a single file.
+
+    Staged files → ``git diff --cached``, unstaged → ``git diff``,
+    untracked → full file content shown as additions.
+    """
+    cwd = await _validate(workspace)
+    if not is_git_repo(cwd):
+        return {"diff": ""}
+
+    # H1: Reject absolute paths and path traversal
+    if Path(path).is_absolute() or ".." in Path(path).parts:
+        raise HTTPException(status_code=422, detail="Invalid path")
+
+    # Determine whether the file is staged or unstaged
+    status_result = await run_git(cwd, "status", "--porcelain=v2", timeout=5.0)
+    staged = False
+    untracked = False
+    if status_result.ok:
+        for line in status_result.stdout.splitlines():
+            if line.startswith("1 ") or line.startswith("2 "):
+                parts = line.split(" ", 8)
+                if len(parts) >= 9 and parts[8] == path:
+                    xy = parts[1]
+                    if xy[0] != ".":
+                        staged = True
+                    break
+            elif line.startswith("? ") and line[2:].strip() == path:
+                untracked = True
+                break
+
+    if untracked:
+        # Show entire file as additions
+        try:
+            resolved = Path(cwd, path).resolve()
+            if not str(resolved).startswith(str(Path(cwd).resolve()) + os.sep) and resolved != Path(cwd).resolve():
+                raise HTTPException(status_code=422, detail="Path outside workspace")
+            content = resolved.read_text(errors="replace")
+            diff_lines = [
+                f"--- /dev/null",
+                f"+++ b/{path}",
+                f"@@ -0,0 +1,{len(content.splitlines())} @@",
+                *[f"+{line}" for line in content.splitlines()],
+            ]
+            return {"diff": "\n".join(diff_lines)}
+        except OSError:
+            return {"diff": ""}
+
+    if staged:
+        result = await run_git(cwd, "diff", "--cached", "--", path, timeout=10.0)
+    else:
+        result = await run_git(cwd, "diff", "--", path, timeout=10.0)
+        # If no unstaged diff, try staged (could be fully staged)
+        if not result.stdout.strip():
+            result = await run_git(cwd, "diff", "--cached", "--", path, timeout=10.0)
+
+    return {"diff": result.stdout if result.ok else ""}
+
 
 
 @router.post("/branches/checkout")
 async def checkout_branch(body: CheckoutRequest) -> dict:
     cwd = await _validate(body.workspace)
     _require_repo(cwd)
+    if not validate_ref_name(body.name):
+        raise HTTPException(status_code=422, detail=f"Invalid ref name: {body.name}")
     async with git_locks.acquire(cwd):
         result = await run_git(cwd, "switch", "--", body.name, timeout=30.0)
     _check(result)
@@ -286,10 +357,12 @@ async def checkout_branch(body: CheckoutRequest) -> dict:
 
 
 @router.delete("/branches")
-async def delete_branch(body: BranchDeleteRequest) -> dict:
-    cwd = await _validate(body.workspace)
+async def delete_branch(workspace: str, name: str, force: bool = False) -> dict:
+    cwd = await _validate(workspace)
     _require_repo(cwd)
-    args = ["branch", "-D" if body.force else "-d", "--", body.name]
+    if not validate_ref_name(name):
+        raise HTTPException(status_code=422, detail=f"Invalid ref name: {name}")
+    args = ["branch", "-D" if force else "-d", "--", name]
     async with git_locks.acquire(cwd):
         result = await run_git(cwd, *args, timeout=10.0)
     _check(result)
@@ -303,22 +376,24 @@ async def delete_branch(body: BranchDeleteRequest) -> dict:
 async def merge(body: MergeRequest) -> GitMergeOut:
     cwd = await _validate(body.workspace)
     _require_repo(cwd)
+    if not validate_ref_name(body.branch):
+        raise HTTPException(status_code=422, detail=f"Invalid ref name: {body.branch}")
     async with git_locks.acquire(cwd):
         result = await run_git(
             cwd, "merge", "--no-edit", "--", body.branch, timeout=60.0
         )
-    conflicts = detect_inprogress_operation(cwd)
-    conflicted_files = []
-    if conflicts:
-        status = await run_git(cwd, "status", "--porcelain=v2", timeout=10.0)
-        if status.ok:
-            parsed = parse_porcelain_v2_files(status.stdout)
-            conflicted_files = [
-                f.path
-                for f in parsed.files
-                if f.status
-                in ("both modified", "both added", "both deleted", "unmerged")
-            ]
+        conflicts = detect_inprogress_operation(cwd)
+        conflicted_files = []
+        if conflicts:
+            status = await run_git(cwd, "status", "--porcelain=v2", timeout=10.0)
+            if status.ok:
+                parsed = parse_porcelain_v2_files(status.stdout)
+                conflicted_files = [
+                    f.path
+                    for f in parsed.files
+                    if f.status
+                    in ("both modified", "both added", "both deleted", "unmerged")
+                ]
     return GitMergeOut(
         success=result.ok and not conflicts,
         conflicts=conflicted_files,
@@ -442,6 +517,8 @@ async def get_log(
         "--date=iso",
     ]
     if branch:
+        if not validate_ref_name(branch):
+            raise HTTPException(status_code=422, detail=f"Invalid ref name: {branch}")
         args.append(branch)
     if path:
         args.extend(["--", path])
@@ -471,7 +548,9 @@ async def get_log_files(workspace: str, sha: str) -> list[GitLogFileOut]:
     cwd = await _validate(workspace)
     if not is_git_repo(cwd):
         return []
-    result = await run_git(cwd, "show", "--name-status", "--format=", sha, timeout=10.0)
+    if not _SHA_RE.match(sha):
+        raise HTTPException(status_code=422, detail=f"Invalid SHA: {sha}")
+    result = await run_git(cwd, "show", "--name-status", "--format=", "--", sha, timeout=10.0)
     if not result.ok:
         return []
     files = parse_log_files(result.stdout)
@@ -486,7 +565,7 @@ async def list_stashes(workspace: str) -> list[GitStashOut]:
     cwd = await _validate(workspace)
     if not is_git_repo(cwd):
         return []
-    result = await run_git(cwd, "stash", "list", timeout=5.0)
+    result = await run_git(cwd, "stash", "list", "--format=%H\x1f%gD\x1f%s", timeout=5.0)
     if not result.ok:
         return []
     entries = parse_stash_list(result.stdout)
@@ -516,10 +595,21 @@ async def apply_stash(body: StashApplyRequest) -> GitMergeOut:
         result = await run_git(
             cwd, "stash", "apply", f"stash@{{{body.index}}}", timeout=30.0
         )
-    conflicts = detect_inprogress_operation(cwd) is not None
+        conflicts = detect_inprogress_operation(cwd) is not None
+        conflicted_files: list[str] = []
+        if conflicts:
+            status = await run_git(cwd, "status", "--porcelain=v2", timeout=10.0)
+            if status.ok:
+                parsed = parse_porcelain_v2_files(status.stdout)
+                conflicted_files = [
+                    f.path
+                    for f in parsed.files
+                    if f.status
+                    in ("both modified", "both added", "both deleted", "unmerged")
+                ]
     return GitMergeOut(
         success=result.ok and not conflicts,
-        conflicts=[],
+        conflicts=conflicted_files,
         message=result.stdout.strip()[:500]
         if result.ok
         else result.stderr.strip()[:500],
@@ -534,10 +624,21 @@ async def pop_stash(body: StashApplyRequest) -> GitMergeOut:
         result = await run_git(
             cwd, "stash", "pop", f"stash@{{{body.index}}}", timeout=30.0
         )
-    conflicts = detect_inprogress_operation(cwd) is not None
+        conflicts = detect_inprogress_operation(cwd) is not None
+        conflicted_files: list[str] = []
+        if conflicts:
+            status = await run_git(cwd, "status", "--porcelain=v2", timeout=10.0)
+            if status.ok:
+                parsed = parse_porcelain_v2_files(status.stdout)
+                conflicted_files = [
+                    f.path
+                    for f in parsed.files
+                    if f.status
+                    in ("both modified", "both added", "both deleted", "unmerged")
+                ]
     return GitMergeOut(
         success=result.ok and not conflicts,
-        conflicts=[],
+        conflicts=conflicted_files,
         message=result.stdout.strip()[:500]
         if result.ok
         else result.stderr.strip()[:500],
@@ -545,12 +646,12 @@ async def pop_stash(body: StashApplyRequest) -> GitMergeOut:
 
 
 @router.delete("/stash")
-async def drop_stash(body: StashApplyRequest) -> dict:
-    cwd = await _validate(body.workspace)
+async def drop_stash(workspace: str, index: int = 0) -> dict:
+    cwd = await _validate(workspace)
     _require_repo(cwd)
     async with git_locks.acquire(cwd):
         result = await run_git(
-            cwd, "stash", "drop", f"stash@{{{body.index}}}", timeout=10.0
+            cwd, "stash", "drop", f"stash@{{{index}}}", timeout=10.0
         )
     _check(result)
     return {"ok": True}
@@ -563,20 +664,22 @@ async def drop_stash(body: StashApplyRequest) -> dict:
 async def rebase(body: RebaseRequest) -> GitMergeOut:
     cwd = await _validate(body.workspace)
     _require_repo(cwd)
+    if not validate_ref_name(body.onto):
+        raise HTTPException(status_code=422, detail=f"Invalid ref name: {body.onto}")
     async with git_locks.acquire(cwd):
         result = await run_git(cwd, "rebase", "--", body.onto, timeout=120.0)
-    op = detect_inprogress_operation(cwd)
-    conflicted_files = []
-    if op:
-        status = await run_git(cwd, "status", "--porcelain=v2", timeout=10.0)
-        if status.ok:
-            parsed = parse_porcelain_v2_files(status.stdout)
-            conflicted_files = [
-                f.path
-                for f in parsed.files
-                if f.status
-                in ("both modified", "both added", "both deleted", "unmerged")
-            ]
+        op = detect_inprogress_operation(cwd)
+        conflicted_files = []
+        if op:
+            status = await run_git(cwd, "status", "--porcelain=v2", timeout=10.0)
+            if status.ok:
+                parsed = parse_porcelain_v2_files(status.stdout)
+                conflicted_files = [
+                    f.path
+                    for f in parsed.files
+                    if f.status
+                    in ("both modified", "both added", "both deleted", "unmerged")
+                ]
     return GitMergeOut(
         success=result.ok and op is None,
         conflicts=conflicted_files,
@@ -593,20 +696,24 @@ async def rebase(body: RebaseRequest) -> GitMergeOut:
 async def cherry_pick(body: CherryPickRequest) -> GitMergeOut:
     cwd = await _validate(body.workspace)
     _require_repo(cwd)
+    # H3: Validate each SHA
+    for sha in body.shas:
+        if not _SHA_RE.match(sha):
+            raise HTTPException(status_code=422, detail=f"Invalid SHA: {sha}")
     async with git_locks.acquire(cwd):
-        result = await run_git(cwd, "cherry-pick", *body.shas, timeout=60.0)
-    op = detect_inprogress_operation(cwd)
-    conflicted_files = []
-    if op:
-        status = await run_git(cwd, "status", "--porcelain=v2", timeout=10.0)
-        if status.ok:
-            parsed = parse_porcelain_v2_files(status.stdout)
-            conflicted_files = [
-                f.path
-                for f in parsed.files
-                if f.status
-                in ("both modified", "both added", "both deleted", "unmerged")
-            ]
+        result = await run_git(cwd, "cherry-pick", "--", *body.shas, timeout=60.0)
+        op = detect_inprogress_operation(cwd)
+        conflicted_files = []
+        if op:
+            status = await run_git(cwd, "status", "--porcelain=v2", timeout=10.0)
+            if status.ok:
+                parsed = parse_porcelain_v2_files(status.stdout)
+                conflicted_files = [
+                    f.path
+                    for f in parsed.files
+                    if f.status
+                    in ("both modified", "both added", "both deleted", "unmerged")
+                ]
     return GitMergeOut(
         success=result.ok and op is None,
         conflicts=conflicted_files,

@@ -25,6 +25,8 @@ export function SourceControlStash({ workspace }: SourceControlStashProps) {
 
   const stashes = stashesQuery.data ?? []
 
+  const busy = applyMutation.isPending || popMutation.isPending || dropMutation.isPending
+
   const handleCreate = () => {
     createMutation.mutate(
       { message: message.trim() || undefined, includeUntracked },
@@ -58,6 +60,13 @@ export function SourceControlStash({ workspace }: SourceControlStashProps) {
           })
         }
       },
+      onError: (err) => {
+        useToastStore.getState().push({
+          tone: 'error',
+          title: 'Apply failed',
+          description: err instanceof Error ? err.message : undefined,
+        })
+      },
     })
   }
 
@@ -73,6 +82,13 @@ export function SourceControlStash({ workspace }: SourceControlStashProps) {
             description: data.conflicts.join(', '),
           })
         }
+      },
+      onError: (err) => {
+        useToastStore.getState().push({
+          tone: 'error',
+          title: 'Pop failed',
+          description: err instanceof Error ? err.message : undefined,
+        })
       },
     })
   }
@@ -113,7 +129,10 @@ export function SourceControlStash({ workspace }: SourceControlStashProps) {
           <input
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleCreate()
+              if (e.key === 'Escape') { setShowCreate(false); setMessage('') }
+            }}
             placeholder="Stash message (optional)"
             className="w-full rounded border border-(--color-border) bg-(--bg-key) px-2 py-1.5 text-xs text-(--color-text) outline-none focus:border-(--color-accent)"
             autoFocus
@@ -167,7 +186,9 @@ export function SourceControlStash({ workspace }: SourceControlStashProps) {
                 <button
                   type="button"
                   onClick={() => handleApply(stash.index)}
-                  className="rounded p-1 text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)"
+                  disabled={busy}
+                  aria-label="Apply stash"
+                  className="rounded p-1 text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-50"
                   title="Apply"
                 >
                   <Play size={11} />
@@ -175,7 +196,9 @@ export function SourceControlStash({ workspace }: SourceControlStashProps) {
                 <button
                   type="button"
                   onClick={() => handlePop(stash.index)}
-                  className="rounded p-1 text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)"
+                  disabled={busy}
+                  aria-label="Pop stash"
+                  className="rounded p-1 text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-50"
                   title="Pop"
                 >
                   <ArrowUpFromLine size={11} />
@@ -183,7 +206,9 @@ export function SourceControlStash({ workspace }: SourceControlStashProps) {
                 <button
                   type="button"
                   onClick={() => handleDrop(stash.index)}
-                  className="rounded p-1 text-(--color-text-muted) hover:bg-(--color-error)/10 hover:text-(--color-error)"
+                  disabled={busy}
+                  aria-label="Drop stash"
+                  className="rounded p-1 text-(--color-text-muted) hover:bg-(--color-error)/10 hover:text-(--color-error) disabled:opacity-50"
                   title="Drop"
                 >
                   <Trash2 size={11} />
