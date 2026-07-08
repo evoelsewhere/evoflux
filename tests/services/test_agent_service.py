@@ -381,7 +381,7 @@ async def test_dispatch_passes_session_model_settings():
         session_id="my-sid-123",
         interrupt=False,
         attachment_metas=None,
-        mode="normal",
+        mode="forge",
         workspace=None,
         model="openai:gpt-5.5",
         model_provided=True,
