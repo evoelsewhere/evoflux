@@ -44,6 +44,12 @@ class AgentListResponse(BaseModel):
 class ToolCatalogEntry(BaseModel):
     name: str
     description: str
+    # Tier membership: None = available in every tier; an explicit list
+    # (e.g. ["forge"]) restricts the tool to those team modes.
+    tiers: list[str] | None = None
+    # Lead-only tools (user interaction / session structure) are never
+    # granted to members — UIs should hide them from member tool pickers.
+    lead_only: bool = False
 
 
 class SkillCatalogEntry(BaseModel):
