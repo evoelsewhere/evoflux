@@ -1632,11 +1632,11 @@ export function CodingSidebar({
               <>
                 <DialogHeader>
                   <DialogTitle>Trust this workspace?</DialogTitle>
-                  <DialogDescription>
+                <DialogDescription>
                     {addRepoProject
-                      ? `Coding mode grants agents filesystem and shell access inside this exact directory, once added to ${addRepoProject.name}.`
-                      : "Coding mode grants agents filesystem and shell access inside this exact directory."}
-                  </DialogDescription>
+                      ? `Coding mode grants agents filesystem and shell access. The workspace directory is the primary working area, but agents may access other paths outside it (excluding system directories). Once added to ${addRepoProject.name}.`
+                      : "Coding mode grants agents filesystem and shell access. The workspace directory is the primary working area, but agents may access other paths outside it (excluding system directories)."}
+                </DialogDescription>
                 </DialogHeader>
                 <div className="rounded-lg border border-(--color-border) bg-(--bg-page) px-3 py-2">
                   <p className="break-all font-mono text-xs text-(--color-text-muted)">
