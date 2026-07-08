@@ -311,6 +311,7 @@ def _default_tool_registry() -> dict[str, Tool]:
     )
     from app.agent.tools.builtin.worktree import worktree_start, worktree_finish
     from app.agent.tools.builtin.lsp import lsp_diagnostics, lsp_definition, lsp_references
+    from app.agent.tools.builtin.visualize import visualize_read_me, show_widget
 
     registry: dict[str, Tool] = {
         "web_search": web_search,
@@ -355,6 +356,8 @@ def _default_tool_registry() -> dict[str, Tool]:
         "lsp_definition": lsp_definition,
         "lsp_references": lsp_references,
         "mark_chapter": mark_chapter,
+        "visualize_read_me": visualize_read_me,
+        "show_widget": show_widget,
     }
     # Merge MCP tools from healthy servers. Names follow ``mcp_<server>_<tool>``
     # so they cannot collide with the builtins above.
