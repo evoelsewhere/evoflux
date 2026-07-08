@@ -2,12 +2,14 @@
  * WidgetRenderer — renders interactive HTML widgets inline.
  *
  * Uses morphdom for smooth DOM diffing during progressive streaming.
- * Supports dark mode via CSS variables.
+ * Supports dark mode via CSS variables and widget-to-chat communication.
  */
 
-import { useEffect, useRef, useCallback } from 'react'
-import { Loader2 } from 'lucide-react'
+import { useEffect, useRef, useCallback, useState } from 'react'
+import { Loader2, MessageSquare } from 'lucide-react'
+import morphdom from 'morphdom'
 import { cn } from '@/lib/utils'
+import { useTeamStore } from '@/stores/useTeamStore'
 
 interface WidgetRendererProps {
   /** HTML content to render */
@@ -24,6 +26,10 @@ interface WidgetRendererProps {
   loadingMessages?: string[]
   /** Additional CSS classes */
   className?: string
+  /** Callback when widget sends a prompt to chat */
+  onSendPrompt?: (prompt: string) => void
+  /** Session ID for sending prompts */
+  sessionId?: string
 }
 
 // CDN allowlist for scripts
@@ -56,28 +62,91 @@ function buildCsp(): string {
   ].join('; ')
 }
 
-// Wrap HTML in a full document with CSP and storage shim
-function wrapHtml(html: string): string {
+// Wrap HTML in a full document with CSP, storage shim, and sendPrompt
+function wrapHtml(html: string, onSendPrompt?: (prompt: string) => void): string {
   const csp = buildCsp()
   const cspMeta = `<meta http-equiv="Content-Security-Policy" content="${csp.replaceAll('"', '&quot;')}">`
   
   // Storage shim for iframe isolation
   const storageShim = `<script>(function(){function createStorage(){var data=new Map();return{get length(){return data.size},key:function(index){return Array.from(data.keys())[index]||null},getItem:function(key){key=String(key);return data.has(key)?data.get(key):null},setItem:function(key,value){data.set(String(key),String(value));},removeItem:function(key){data.delete(key);},clear:function(){data.clear()}}}['localStorage','sessionStorage'].forEach(function(name){try{void window[name]}catch{Object.defineProperty(window,name,{value:createStorage(),configurable:true})}})})();</script>`
   
+  // sendPrompt function for widget-to-chat communication
+  const sendPromptScript = `<script>
+    window.sendPrompt = function(prompt) {
+      if (typeof prompt !== 'string' || !prompt.trim()) return;
+      window.parent.postMessage({ type: 'widget_send_prompt', prompt: prompt.trim() }, '*');
+    };
+  </script>`
+  
   if (/<head\b[^>]*>/i.test(html)) {
-    return html.replace(/<head\b[^>]*>/i, (match) => `${match}${cspMeta}${storageShim}`)
+    return html.replace(/<head\b[^>]*>/i, (match) => `${match}${cspMeta}${storageShim}${sendPromptScript}`)
   }
-  return `<!doctype html><html><head>${cspMeta}${storageShim}</head><body>${html}</body></html>`
+  return `<!doctype html><html><head>${cspMeta}${storageShim}${sendPromptScript}</head><body>${html}</body></html>`
 }
 
-// Morphdom-like DOM diffing (simplified version)
-function updateDom(container: HTMLIFrameElement, html: string) {
+// Morphdom update with smooth diffing
+function updateDomWithMorphdom(
+  container: HTMLIFrameElement,
+  html: string,
+  onSendPrompt?: (prompt: string) => void
+) {
   const doc = container.contentDocument
   if (!doc) return
   
-  // For simplicity, we'll use srcdoc for now
-  // In production, use morphdom for smooth diffs
-  container.srcdoc = wrapHtml(html)
+  const fullHtml = wrapHtml(html, onSendPrompt)
+  
+  // Parse the new HTML
+  const parser = new DOMParser()
+  const newDoc = parser.parseFromString(fullHtml, 'text/html')
+  
+  // Get the body content
+  const newBody = newDoc.body
+  const currentBody = doc.body
+  
+  if (!currentBody || !newBody) {
+    // Fallback to srcdoc if morphdom fails
+    container.srcdoc = fullHtml
+    return
+  }
+  
+  // Use morphdom for smooth DOM diffing
+  try {
+    morphdom(currentBody, newBody, {
+      onBeforeElUpdated: function(fromEl, toEl) {
+        // Skip if elements are identical
+        if (fromEl.isEqualNode(toEl)) return false
+        return true
+      },
+      onNodeAdded: function(node) {
+        // Add fade-in animation to new nodes
+        if (node instanceof HTMLElement) {
+          node.style.animation = 'widgetFadeIn 0.3s ease both'
+        }
+        return node
+      },
+    })
+    
+    // Execute scripts in the updated content
+    executeScripts(doc)
+  } catch (e) {
+    // Fallback to srcdoc on error
+    console.warn('Morphdom update failed, falling back to srcdoc:', e)
+    container.srcdoc = fullHtml
+  }
+}
+
+// Execute scripts in a document
+function executeScripts(doc: Document) {
+  const scripts = doc.querySelectorAll('script')
+  scripts.forEach((oldScript) => {
+    const newScript = doc.createElement('script')
+    if (oldScript.src) {
+      newScript.src = oldScript.src
+    } else {
+      newScript.textContent = oldScript.textContent
+    }
+    oldScript.parentNode?.replaceChild(newScript, oldScript)
+  })
 }
 
 export function WidgetRenderer({
@@ -88,20 +157,49 @@ export function WidgetRenderer({
   height = 600,
   loadingMessages = ['Loading visualization...'],
   className,
+  onSendPrompt,
+  sessionId,
 }: WidgetRendererProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const [isInitialized, setIsInitialized] = useState(false)
+  const sendMessage = useTeamStore((s) => s.sendMessage)
+  
+  // Handle messages from iframe (sendPrompt)
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'widget_send_prompt' && event.data?.prompt) {
+        const prompt = event.data.prompt as string
+        if (onSendPrompt) {
+          onSendPrompt(prompt)
+        } else if (sessionId) {
+          // Default: send message to chat
+          sendMessage(prompt)
+        }
+      }
+    }
+    
+    window.addEventListener('message', handleMessage)
+    return () => window.removeEventListener('message', handleMessage)
+  }, [onSendPrompt, sessionId, sendMessage])
   
   // Update iframe content when html changes
   useEffect(() => {
     if (iframeRef.current && html) {
-      updateDom(iframeRef.current, html)
+      if (!isInitialized) {
+        // First render: use srcdoc
+        iframeRef.current.srcdoc = wrapHtml(html, onSendPrompt)
+        setIsInitialized(true)
+      } else {
+        // Subsequent renders: use morphdom for smooth diffing
+        updateDomWithMorphdom(iframeRef.current, html, onSendPrompt)
+      }
     }
-  }, [html])
+  }, [html, isInitialized, onSendPrompt])
   
   // Handle iframe load
   const handleLoad = useCallback(() => {
-    // Scripts execute automatically via srcdoc
+    // Scripts execute automatically
   }, [])
   
   // Handle errors
@@ -139,12 +237,20 @@ export function WidgetRenderer({
       {/* Title bar */}
       <div className="flex items-center justify-between border-b border-(--color-border) bg-(--color-background-secondary) px-3 py-1.5">
         <span className="text-xs font-medium text-(--color-text-muted)">{title}</span>
-        {isStreaming && (
-          <div className="flex items-center gap-1.5 text-xs text-((--color-text-muted))">
-            <Loader2 size={12} className="animate-spin" />
-            <span>Streaming...</span>
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          {isStreaming && (
+            <div className="flex items-center gap-1.5 text-xs text-(--color-text-muted)">
+              <Loader2 size={12} className="animate-spin" />
+              <span>Streaming...</span>
+            </div>
+          )}
+          {onSendPrompt && (
+            <div className="flex items-center gap-1 text-xs text-(--color-text-muted)">
+              <MessageSquare size={12} />
+              <span>Interactive</span>
+            </div>
+          )}
+        </div>
       </div>
       
       {/* Widget content */}
@@ -158,6 +264,14 @@ export function WidgetRenderer({
         onLoad={handleLoad}
         onError={handleError}
       />
+      
+      {/* CSS for animations */}
+      <style>{`
+        @keyframes widgetFadeIn {
+          from { opacity: 0; transform: translateY(4px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
     </div>
   )
 }
