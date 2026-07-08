@@ -81,6 +81,7 @@ from app.models.chat import ChatSession, SessionMessage
 from app.services.chat_service import get_messages_for_llm, save_message
 
 MAX_OPEN_TASK_NUDGES = 3
+MAX_LEAD_WAIT_NUDGES = 3
 
 if TYPE_CHECKING:
     from app.agent.mode.team.mailbox import TeamMailbox
@@ -123,6 +124,7 @@ LEAD_COMMUNICATION_RULES = """\
   - Multiple concerns → spawn / message multiple members in parallel
 - **Roster management — `team_manage`.** Members are spawned on demand. Use the `team_manage` tool description and schema for spawn/restore/dismiss usage and available blueprint discovery. Spawn what you need, address returned handles via `team_message`, and **keep useful members alive across turns** — reusing a live instance preserves its warm context and is faster and cheaper than dismiss-then-respawn. Dismiss only to free resources or clear clutter when an instance clearly won't be needed again.
 - Coordination with members must go through `team_delegate` (structured task assignments with goal + expected output + constraints), `team_message` (quick questions, instructions, status queries), or `team_handoff` (structured deliverables). Use `team_state` to share persistent key-value data (URLs, config, discoveries) across the team. Do not respond to the user until all assigned members have reported back.
+- **Waiting on a member? Respond with exactly `<sleep>`** — just the token, no tool calls and no plain text. After delegating you may send one brief "work is underway" note (see workflow step 3), but every wake after that where you're still waiting on outstanding delegations and have nothing new to verify or synthesise — no partial answer, no "here's what I have so far," no guessed conclusion — must be exactly `<sleep>`. Answering on your own before a member reports back defeats the delegation and shows the user an answer the team hasn't actually produced yet; your next real response after their handoff arrives is the answer.
 - **Structured delegation.** When assigning substantial work to a member, use `team_delegate` — it gives the member an explicit contract (goal, expected_output, constraints, context) so they know exactly what "done" looks like. Use `team_message` only for quick follow-ups, clarifications, or coordination that doesn't need a full task spec.
 - **Structured handoffs.** When a member delivers substantial work output, expect it via `team_handoff` with structured fields (summary, findings, evidence, confidence, next_actions). Use these fields to synthesise your response rather than re-parsing prose. If a handoff has `status: "partial"`, wait for the `"final"` handoff before synthesising.
 - Member capabilities come from their blueprint/root configuration at spawn time. If a member lacks a required capability, use an appropriately configured blueprint or update durable settings rather than mutating a live member.
@@ -142,7 +144,7 @@ LEAD_PROTOCOL = """\
    - **Once a task is delegated to a member, do not execute the same task in parallel yourself.** Stay in coordination/verification mode unless you explicitly reclaim or cancel the member task first.
    - For dependent workflows, delegate a peer handoff chain from the todo dependencies. Tell prerequisite owners to use `team_handoff` to deliver output directly to the owner of each unblocked downstream task; spawn/message downstream owners only after their dependencies are complete so they can claim the task and start.
    - Do not make yourself the default relay for member outputs. Use the lead as the synthesizer/final verifier, not as a message bus between members.
-   - Briefly let the user know work is underway (plain text — 1 sentence max).
+   - Briefly let the user know work is underway (plain text — 1 sentence max, and never a conclusion — you have not seen any results yet). After that, `<sleep>` until a member reports back (see communication protocol).
 4. When members report back:
    - **Expect structured handoffs.** Members deliver final work via `team_handoff` with `summary`, `findings`, `evidence`, `confidence`, and `next_actions`. Use these structured fields to synthesise efficiently — don't re-parse prose. A handoff with `status: "partial"` means more is coming; wait for the `"final"` handoff.
    - **BE CRITICAL — do not rubber-stamp.** Your job is quality control, not cheerleading. For EVERY handoff you receive, before accepting it:
@@ -282,6 +284,20 @@ def _open_task_nudge_content(open_todos: list[dict], lead_name: str) -> str:
     return "\n".join(lines)
 
 
+def _lead_wait_nudge_content(pending: list[str]) -> str:
+    """Build the hidden wait-reminder prompt for a lead that answered early."""
+    names = ", ".join(pending)
+    return (
+        "[system]: You just responded to the user, but you are still waiting "
+        f"on a team_handoff from: {names}. Answering on your own before they "
+        "report back is not the team's real answer — it shows the user a "
+        "conclusion the team hasn't actually produced yet.\n\n"
+        "Do not repeat, extend, or build on what you just said. Respond with "
+        f"exactly `<sleep>` now and wait. Once {names} report back via "
+        "`team_handoff`, synthesise your actual final response then."
+    )
+
+
 # =============================================================================
 def _make_permission_service(session_id: str, permission_mode: str) -> "PermissionService":
     """Return the PermissionService that corresponds to the session's mode."""
@@ -348,6 +364,7 @@ class TeamMemberBase(abc.ABC):
         self._team: AgentTeam | None = None
         self._mailbox: TeamMailbox | None = None
         self._open_task_nudge_counts: dict[str, int] = {}
+        self._lead_wait_nudge_counts: dict[str, int] = {}
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -1109,6 +1126,7 @@ class TeamMemberBase(abc.ABC):
             )
 
             await self._maybe_inject_open_task_nudge()
+            await self._maybe_inject_delegation_wait_nudge()
         finally:
             reset_role(role_token)
             _sandbox_ctx.reset(token)
@@ -1207,6 +1225,82 @@ class TeamMemberBase(abc.ABC):
 
         content = _open_task_nudge_content(open_todos, self._team.lead.name)
         logger.info("team_member_open_task_nudge name={} tasks={}", self.name, task_ids)
+        await self._mailbox.send(
+            to=self.name,
+            message=Message(
+                from_agent="system",
+                to_agent=self.name,
+                content=content,
+            ),
+        )
+
+    async def _maybe_inject_delegation_wait_nudge(self) -> None:
+        """Wake the lead if it answered while a delegated handoff is still pending.
+
+        System-level backstop for the ``LEAD_COMMUNICATION_RULES`` rule that
+        the lead must ``<sleep>`` instead of answering while team_delegate /
+        team_reject recipients haven't sent their final team_handoff yet.
+        Prompt compliance alone can't be guaranteed — this catches the
+        violation and forces a correction on the next wake, the same way
+        ``_maybe_inject_open_task_nudge`` catches members that stop with open
+        todos. Only the lead ever has entries in ``pending_delegations``
+        (team_delegate/team_reject are lead-only tools), so this is a no-op
+        for regular members.
+        """
+        if self._role_label != "lead" or self.db_factory is None:
+            return
+        assert self._team is not None
+        assert self._mailbox is not None
+
+        pending = self._team.pending_delegation_recipients(self.name)
+        if not pending:
+            return
+
+        try:
+            async with resolve_db_factory(self.db_factory)() as db:
+                rows = (
+                    await db.exec(
+                        select(SessionMessage)
+                        .where(
+                            col(SessionMessage.session_id) == uuid.UUID(self.session_id)
+                        )
+                        .order_by(col(SessionMessage.created_at).desc())
+                        .limit(1)
+                    )
+                ).all()
+        except Exception as exc:
+            logger.warning(
+                "team_lead_wait_nudge_history_failed name={} error={}", self.name, exc
+            )
+            return
+        if not rows:
+            return
+
+        last = rows[0]
+        if last.role != "assistant" or last.tool_calls:
+            return
+        if (last.content or "").strip() in {"<sleep>", "[sleep]"}:
+            return  # already complied
+
+        pending_sorted = sorted(pending)
+        nudge_key = f"{self.session_id}:{'|'.join(pending_sorted)}"
+        if self._lead_wait_nudge_counts.get(nudge_key, 0) >= MAX_LEAD_WAIT_NUDGES:
+            logger.info(
+                "team_lead_wait_nudge_suppressed name={} pending={}",
+                self.name,
+                pending_sorted,
+            )
+            return
+        self._lead_wait_nudge_counts[nudge_key] = (
+            self._lead_wait_nudge_counts.get(nudge_key, 0) + 1
+        )
+
+        logger.warning(
+            "team_lead_answered_with_pending_delegations name={} pending={}",
+            self.name,
+            pending_sorted,
+        )
+        content = _lead_wait_nudge_content(pending_sorted)
         await self._mailbox.send(
             to=self.name,
             message=Message(

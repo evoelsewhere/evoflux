@@ -301,6 +301,14 @@ class AgentTeam:
         self._loop_states: dict[str, LoopState] = {}
         self._loop_limits: dict[str, int] = {}
 
+        # Delegator name -> recipients whose team_delegate/team_reject has not
+        # yet been resolved by a "final" team_handoff back to that delegator.
+        # team_delegate/team_reject populate this; team_handoff clears it.
+        # Used to catch a delegator (in practice, the lead) answering the user
+        # on its own before delegated work actually reports back — see
+        # TeamMemberBase._maybe_inject_delegation_wait_nudge.
+        self._pending_delegations: dict[str, set[str]] = {}
+
         # Index agents by name for fast lookup in on_message.  Kept in sync
         # by spawn() / dismiss().
         self._members_by_name: dict[str, TeamMemberBase] = {lead.name: lead}
@@ -324,6 +332,35 @@ class AgentTeam:
     def has_active_user_turn(self) -> bool:
         """Return whether a user turn is active or the lead is already running."""
         return self._has_active_turn or self.lead.state == "working"
+
+    def register_delegation(self, delegator: str, recipients: list[str]) -> None:
+        """Record that *delegator* is now awaiting a final handoff from *recipients*.
+
+        Called by ``team_delegate`` and ``team_reject`` — both hand work to a
+        member and expect a ``team_handoff`` back before the delegator's
+        answer to the user can be considered final.
+        """
+        if not recipients:
+            return
+        self._pending_delegations.setdefault(delegator, set()).update(recipients)
+
+    def resolve_delegation(self, delegator: str, recipient: str) -> None:
+        """Clear *recipient* from *delegator*'s outstanding delegations.
+
+        Called by ``team_handoff`` when *recipient* is the delegator being
+        reported back to. A no-op if *recipient* wasn't actually pending —
+        e.g. an unsolicited handoff, or *delegator* never delegated to them.
+        """
+        pending = self._pending_delegations.get(delegator)
+        if not pending:
+            return
+        pending.discard(recipient)
+        if not pending:
+            self._pending_delegations.pop(delegator, None)
+
+    def pending_delegation_recipients(self, delegator: str) -> set[str]:
+        """Return the recipients *delegator* is still awaiting a handoff from."""
+        return set(self._pending_delegations.get(delegator, ()))
 
     def loop_status(self, session_id: str) -> dict[str, object] | None:
         """Return the current loop status for a session, if a loop is active."""
