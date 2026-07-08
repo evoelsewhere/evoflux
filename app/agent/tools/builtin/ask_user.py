@@ -65,6 +65,7 @@ async def _ask_user(questions: list[QuestionSpec]) -> str:
 ask_user = Tool(
     _ask_user,
     name="ask_user",
+    lead_only=True,
     description=(
         "Ask the user one or more clarifying questions mid-task and block "
         "until they answer all of them. Batch every question you need into "

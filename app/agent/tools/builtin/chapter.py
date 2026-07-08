@@ -82,6 +82,7 @@ async def _mark_chapter(
 mark_chapter = Tool(
     _mark_chapter,
     name="mark_chapter",
+    lead_only=True,
     description=(
         "Mark the start of a new chapter in the session with a short title. "
         "Adds a divider to the session table of contents so users can jump "

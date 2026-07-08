@@ -348,6 +348,7 @@ async def _worktree_finish(
 worktree_start = Tool(
     _worktree_start,
     name="worktree_start",
+    lead_only=True,
     description=(
         "Create an isolated git worktree + branch and switch the agent's workspace "
         "to it. All file/shell tools will operate in the worktree until worktree_finish."
@@ -357,6 +358,7 @@ worktree_start = Tool(
 worktree_finish = Tool(
     _worktree_finish,
     name="worktree_finish",
+    lead_only=True,
     description=(
         "Show the diff from the worktree, remove it, and restore the original workspace. "
         "Use action='discard' to skip the diff."
