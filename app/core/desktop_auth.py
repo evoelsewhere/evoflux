@@ -138,16 +138,8 @@ class DesktopTokenMiddleware(BaseHTTPMiddleware):
 
     def __init__(self, app: ASGIApp, *, expected_token: str | None = None) -> None:
         super().__init__(app)
-        self._token = (
-            expected_token
-            if expected_token is not None
-            else (
-                os.environ.get(_ENV_VAR, "")
-                or os.environ.get(_ACCESS_KEY_ENV_VAR, "")
-                or (load_runtime_settings().server.access_key or "")
-            )
-        )
-        self._enabled = bool(self._token)
+        self._token = ""
+        self._enabled = False
         if self._enabled:
             logger.info("desktop_token_auth_enabled token_len={}", len(self._token))
 
