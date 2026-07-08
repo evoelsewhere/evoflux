@@ -36,6 +36,7 @@ import { CommandPalette } from '../CommandPalette'
 import { WorkspaceFilesPanel } from '../WorkspaceFilesPanel'
 import { WikiPanel } from '../WikiPanel'
 import { SchedulerPanel } from '../SchedulerPanel'
+import { SessionScheduleIndicator } from '../SessionScheduleIndicator'
 import { ActivityPanel } from '../ActivityPanel'
 import { BrowserViewer } from '../BrowserViewer'
 import { PlanApprovalModal } from '../PlanApprovalModal'
@@ -1240,6 +1241,12 @@ export function TeamChatView({ sessionId, mode = 'normal', workspace = null, cod
                 ariaLabel: 'Session model settings',
                 className: agentCapabilitiesOpen ? 'mr-2 bg-(--bg-key) text-(--color-text)' : 'mr-2',
               }}
+              extraActions={
+                <SessionScheduleIndicator
+                  sessionId={sessionIdState}
+                  onOpenScheduler={toggleScheduler}
+                />
+              }
             />
             </>
           )}

@@ -171,7 +171,11 @@ function SessionListPanel({
 }: SessionListActionProps & {
   sessions: ReturnType<typeof useProjectSessionsQuery>;
 }) {
-  const projectSessions = sessions.data?.pages.flatMap((page) => page.data) ?? [];
+  const allSessions = sessions.data?.pages.flatMap((page) => page.data) ?? [];
+  // Filter out sessions created by scheduled tasks (title starts with "[Scheduled Task:")
+  const projectSessions = allSessions.filter(
+    (s) => !s.title?.startsWith('[Scheduled Task:'),
+  );
 
   return (
     <div className="space-y-0.5 pb-2 pl-4 pr-2">

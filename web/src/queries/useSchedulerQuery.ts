@@ -15,7 +15,19 @@ import { queryKeys } from './keys'
 export function useScheduledTasksQuery() {
   return useQuery({
     queryKey: queryKeys.scheduler.list(),
-    queryFn: listScheduledTasks,
+    queryFn: () => listScheduledTasks(),
+    staleTime: 10_000,
+  })
+}
+
+/** GET /scheduler/tasks?session_id=… — list tasks scoped to a session */
+export function useSessionScheduledTasksQuery(sessionId: string | null) {
+  return useQuery({
+    queryKey: sessionId
+      ? queryKeys.scheduler.sessionList(sessionId)
+      : queryKeys.scheduler.list(),
+    queryFn: () => listScheduledTasks(sessionId ?? undefined),
+    enabled: sessionId !== null,
     staleTime: 10_000,
   })
 }
