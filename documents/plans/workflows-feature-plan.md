@@ -389,7 +389,7 @@ Symptoms → diagnosis → action, e.g.: *run stuck `running`* → check diagnos
 
 | Subsystem | Integration |
 |---|---|
-| **Forge (normal) mode** | `mode: normal` runs; **optional** workspace binding mirroring the session opt-in (F10) — stamped on the run session like `PUT /{sid}/workspace` does; without it, the per-session sandbox dir applies. Default team via `get_or_start_team()`. Sidebar badges runs (pattern of the `sched` badge, `Sidebar.tsx:989,1031-1035`). |
+| **Forge mode** | `mode: forge` runs; **optional** workspace binding mirroring the session opt-in (F10) — stamped on the run session like `PUT /{sid}/workspace` does; without it, the per-session sandbox dir applies. Default team via `get_or_start_team()`. Sidebar badges runs (pattern of the `sched` badge, `Sidebar.tsx:989,1031-1035`). |
 | **Coding mode** | Workspace-pinned run sessions (409 contract preserved); coding roster for `agent:`; code-graph tools per step allowlists; `CodingSidebar` groups runs under workspace/project focus with a "Runs" filter. |
 | **Projects (multi-repo)** | `project_id` binding → primary repo + `extra_workspace_paths` (`chat.py:236-247`; direct runs get `MultiRepoContextHook`, `member.py:966-975`). Fanout over repo lists enables per-repo steps. |
 | **Worktrees** | `isolation: worktree` per run (service path of `worktrees.py:292-359`), registered `kind='worktree'`; merge-or-discard is a final gate+tool pair. The sanctioned rollback for automated changes (undo is disabled on run sessions, §7.2). |

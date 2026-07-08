@@ -6,6 +6,7 @@ from fastapi import Form, HTTPException
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from app.api.schemas.base import _validation_detail
+from app.models.chat import normalize_mode
 
 # ── Form models (multipart/form-data) ────────────────────────────────────────
 #
@@ -31,7 +32,7 @@ class ChatForm(BaseModel):
         False,
         description="Interrupt the running agent. Mutually exclusive with message.",
     )
-    mode: str = Field("normal", description="Chat mode: normal or coding.")
+    mode: str = Field("forge", description="Chat mode: forge or coding.")
     workspace: str | None = Field(
         None, description="Workspace directory for coding mode."
     )
@@ -54,7 +55,7 @@ class ChatForm(BaseModel):
         message: str | None = Form(None),
         session_id: str | None = Form(None),
         interrupt: bool = Form(False),
-        mode: str = Form("normal"),
+        mode: str = Form("forge"),
         workspace: str | None = Form(None),
         model: str | None = Form(None),
         thinking_level: str | None = Form(None),
@@ -88,8 +89,9 @@ class ChatForm(BaseModel):
             raise ValueError("message is required when interrupt=false.")
         if self.message is not None and len(self.message.strip()) == 0:
             raise ValueError("message must not be blank.")
-        if self.mode not in {"normal", "coding"}:
-            raise ValueError("mode must be 'normal' or 'coding'.")
+        self.mode = normalize_mode(self.mode)
+        if self.mode not in {"forge", "coding"}:
+            raise ValueError("mode must be 'forge' or 'coding'.")
         if self.mode == "coding" and not self.workspace:
             raise ValueError("workspace is required when mode='coding'.")
         if (

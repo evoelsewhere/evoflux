@@ -88,7 +88,7 @@ import { parseLoopCommand } from '@/lib/parseLoopCommand'
 
 interface TeamChatViewProps {
   sessionId?: string
-  mode?: 'normal' | 'coding'
+  mode?: 'forge' | 'coding'
   workspace?: string | null
   codingSessionLoading?: boolean
 }
@@ -114,7 +114,7 @@ async function attachmentToFile(att: MessageAttachment): Promise<File | null> {
   )
 }
 
-export function TeamChatView({ sessionId, mode = 'normal', workspace = null, codingSessionLoading = false }: TeamChatViewProps) {
+export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codingSessionLoading = false }: TeamChatViewProps) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()

@@ -46,10 +46,10 @@ async def test_ensure_db_session_sets_title_when_existing_session_is_empty():
     )
     lead.session_id = str(session_uuid)
 
-    await lead._ensure_db_session(title="Plan a trip to Japan", mode="normal")
+    await lead._ensure_db_session(title="Plan a trip to Japan", mode="forge")
 
     assert session_row.title == "Plan a trip to Japan"
-    assert session_row.mode == "normal"
+    assert session_row.mode == "forge"
     mock_db.add.assert_called()
     mock_db.commit.assert_awaited()
 

@@ -43,7 +43,7 @@ def ensure_workspace_initialized() -> None:
 
     from app.agent.loader import ensure_builtin_agent_blueprints
 
-    default_written = ensure_builtin_agent_blueprints(agents_dir, mode="normal")
+    default_written = ensure_builtin_agent_blueprints(agents_dir, mode="forge")
     coding_written = ensure_builtin_agent_blueprints(
         agents_dir / "coding", mode="coding"
     )

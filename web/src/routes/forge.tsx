@@ -14,11 +14,11 @@ import { clearLastCodingFocus, codingFocusId, isProjectFocusId, loadLastCodingFo
  * Stays mounted across URL changes — handles navigation when a new
  * team session_id arrives from POST /team/chat.
  */
-function TeamLayoutBase({ forcedMode }: { forcedMode?: 'normal' | 'coding' }) {
+function TeamLayoutBase({ forcedMode }: { forcedMode?: 'forge' | 'coding' }) {
   const params = useParams({ strict: false }) as Record<string, string>
   const sessionId = params.sessionId as string | undefined
   const focusId = params.focusId as string | undefined
-  const mode = forcedMode ?? 'normal'
+  const mode = forcedMode ?? 'forge'
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const workspaceRef = useRef<string | null>(null)
