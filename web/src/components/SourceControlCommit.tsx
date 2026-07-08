@@ -51,12 +51,38 @@ export function SourceControlCommit({ workspace }: SourceControlCommitProps) {
 
   const handleStageAll = () => {
     const paths = unstagedFiles.map((f) => f.path)
-    if (paths.length > 0) stageMutation.mutate(paths)
+    if (paths.length > 0) {
+      stageMutation.mutate(paths, {
+        onSuccess: () => {
+          useToastStore.getState().push({ tone: 'success', title: `Staged ${paths.length} file${paths.length > 1 ? 's' : ''}` })
+        },
+        onError: (err) => {
+          useToastStore.getState().push({
+            tone: 'error',
+            title: 'Stage failed',
+            description: err instanceof Error ? err.message : undefined,
+          })
+        },
+      })
+    }
   }
 
   const handleUnstageAll = () => {
     const paths = stagedFiles.map((f) => f.path)
-    if (paths.length > 0) unstageMutation.mutate(paths)
+    if (paths.length > 0) {
+      unstageMutation.mutate(paths, {
+        onSuccess: () => {
+          useToastStore.getState().push({ tone: 'success', title: `Unstaged ${paths.length} file${paths.length > 1 ? 's' : ''}` })
+        },
+        onError: (err) => {
+          useToastStore.getState().push({
+            tone: 'error',
+            title: 'Unstage failed',
+            description: err instanceof Error ? err.message : undefined,
+          })
+        },
+      })
+    }
   }
 
   const handleAmendToggle = () => {
@@ -126,12 +152,16 @@ export function SourceControlCommit({ workspace }: SourceControlCommitProps) {
           </button>
         </div>
         <div className="max-h-40 overflow-auto px-1 pb-1">
-          <SourceControlFileList
-            files={stagedFiles}
-            onUnstage={(path) => unstageMutation.mutate([path])}
-            showStageControls
-            showDiscard={false}
-          />
+          {changesQuery.isLoading ? (
+            <p className="px-2 py-4 text-xs text-(--color-text-subtle)">Loading files…</p>
+          ) : (
+            <SourceControlFileList
+              files={stagedFiles}
+              onUnstage={(path) => unstageMutation.mutate([path])}
+              showStageControls
+              showDiscard={false}
+            />
+          )}
         </div>
       </div>
 
@@ -152,12 +182,16 @@ export function SourceControlCommit({ workspace }: SourceControlCommitProps) {
           </button>
         </div>
         <div className="px-1 pb-1">
-          <SourceControlFileList
-            files={unstagedFiles}
-            onStage={(path) => stageMutation.mutate([path])}
-            showStageControls
-            showDiscard={false}
-          />
+          {changesQuery.isLoading ? (
+            <p className="px-2 py-4 text-xs text-(--color-text-subtle)">Loading files…</p>
+          ) : (
+            <SourceControlFileList
+              files={unstagedFiles}
+              onStage={(path) => stageMutation.mutate([path])}
+              showStageControls
+              showDiscard={false}
+            />
+          )}
         </div>
       </div>
     </div>

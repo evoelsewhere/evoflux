@@ -932,5 +932,5 @@ export interface GitStash {
 export interface GitConflictsResponse {
   conflicted: boolean
   operation: string | null
-  files: string[]
+  files: { path: string; status: string }[]
 }

@@ -30,8 +30,10 @@ import {
 } from '@/api/client'
 import { queryKeys } from './keys'
 
-function invalidateGitState(ws: string) {
-  const qc = useQueryClient() // eslint-disable-line react-hooks/rules-of-hooks
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function useInvalidateGitState(ws: string) {
+  const qc = useQueryClient()
   return () => {
     qc.invalidateQueries({ queryKey: queryKeys.git.changes(ws) })
     qc.invalidateQueries({ queryKey: queryKeys.coding.diff(ws) })
@@ -126,39 +128,43 @@ export function useGitDiffViewQuery(workspace: string, path: string | null, enab
 // ── Mutations ───────────────────────────────────────────────────────────────
 
 export function useGitStageMutation(workspace: string) {
+  const invalidateGitState = useInvalidateGitState(workspace)
   return useMutation({
     mutationFn: (paths?: string[]) => gitStage(workspace, paths),
     onSuccess: () => {
-      invalidateGitState(workspace)()
+      invalidateGitState()
     },
   })
 }
 
 export function useGitUnstageMutation(workspace: string) {
+  const invalidateGitState = useInvalidateGitState(workspace)
   return useMutation({
     mutationFn: (paths?: string[]) => gitUnstage(workspace, paths),
     onSuccess: () => {
-      invalidateGitState(workspace)()
+      invalidateGitState()
     },
   })
 }
 
 export function useGitDiscardMutation(workspace: string) {
+  const invalidateGitState = useInvalidateGitState(workspace)
   return useMutation({
     mutationFn: (paths?: string[]) => gitDiscard(workspace, paths),
     onSuccess: () => {
-      invalidateGitState(workspace)()
+      invalidateGitState()
     },
   })
 }
 
 export function useGitCommitMutation(workspace: string) {
   const qc = useQueryClient()
+  const invalidateGitState = useInvalidateGitState(workspace)
   return useMutation({
     mutationFn: ({ message, amend }: { message: string; amend?: boolean }) =>
       gitCommit(workspace, message, amend),
     onSuccess: () => {
-      invalidateGitState(workspace)()
+      invalidateGitState()
       qc.invalidateQueries({ queryKey: queryKeys.git.log(workspace, 0) })
     },
   })
@@ -166,10 +172,11 @@ export function useGitCommitMutation(workspace: string) {
 
 export function useGitCheckoutMutation(workspace: string) {
   const qc = useQueryClient()
+  const invalidateGitState = useInvalidateGitState(workspace)
   return useMutation({
     mutationFn: (name: string) => gitCheckout(workspace, name),
     onSuccess: () => {
-      invalidateGitState(workspace)()
+      invalidateGitState()
       qc.invalidateQueries({ queryKey: queryKeys.git.branches(workspace) })
     },
   })
@@ -198,10 +205,11 @@ export function useGitDeleteBranchMutation(workspace: string) {
 
 export function useGitMergeMutation(workspace: string) {
   const qc = useQueryClient()
+  const invalidateGitState = useInvalidateGitState(workspace)
   return useMutation({
     mutationFn: (branch: string) => gitMerge(workspace, branch),
     onSuccess: () => {
-      invalidateGitState(workspace)()
+      invalidateGitState()
       qc.invalidateQueries({ queryKey: queryKeys.git.branches(workspace) })
       qc.invalidateQueries({ queryKey: queryKeys.git.conflicts(workspace) })
     },
@@ -221,10 +229,11 @@ export function useGitFetchMutation(workspace: string) {
 
 export function useGitPullMutation(workspace: string) {
   const qc = useQueryClient()
+  const invalidateGitState = useInvalidateGitState(workspace)
   return useMutation({
     mutationFn: (rebase?: boolean) => gitPull(workspace, rebase),
     onSuccess: () => {
-      invalidateGitState(workspace)()
+      invalidateGitState()
       qc.invalidateQueries({ queryKey: queryKeys.git.branches(workspace) })
       qc.invalidateQueries({ queryKey: queryKeys.git.log(workspace, 0) })
     },
@@ -244,11 +253,12 @@ export function useGitPushMutation(workspace: string) {
 
 export function useGitStashCreateMutation(workspace: string) {
   const qc = useQueryClient()
+  const invalidateGitState = useInvalidateGitState(workspace)
   return useMutation({
     mutationFn: ({ message, includeUntracked }: { message?: string; includeUntracked?: boolean } = {}) =>
       gitStashCreate(workspace, message, includeUntracked),
     onSuccess: () => {
-      invalidateGitState(workspace)()
+      invalidateGitState()
       qc.invalidateQueries({ queryKey: queryKeys.git.stashes(workspace) })
     },
   })
@@ -256,10 +266,11 @@ export function useGitStashCreateMutation(workspace: string) {
 
 export function useGitStashApplyMutation(workspace: string) {
   const qc = useQueryClient()
+  const invalidateGitState = useInvalidateGitState(workspace)
   return useMutation({
     mutationFn: (index?: number) => gitStashApply(workspace, index),
     onSuccess: () => {
-      invalidateGitState(workspace)()
+      invalidateGitState()
       qc.invalidateQueries({ queryKey: queryKeys.git.conflicts(workspace) })
     },
   })
@@ -267,10 +278,11 @@ export function useGitStashApplyMutation(workspace: string) {
 
 export function useGitStashPopMutation(workspace: string) {
   const qc = useQueryClient()
+  const invalidateGitState = useInvalidateGitState(workspace)
   return useMutation({
     mutationFn: (index?: number) => gitStashPop(workspace, index),
     onSuccess: () => {
-      invalidateGitState(workspace)()
+      invalidateGitState()
       qc.invalidateQueries({ queryKey: queryKeys.git.stashes(workspace) })
       qc.invalidateQueries({ queryKey: queryKeys.git.conflicts(workspace) })
     },
@@ -283,16 +295,18 @@ export function useGitStashDropMutation(workspace: string) {
     mutationFn: (index?: number) => gitStashDrop(workspace, index),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.git.stashes(workspace) })
+      qc.invalidateQueries({ queryKey: queryKeys.git.changes(workspace) })
     },
   })
 }
 
 export function useGitRebaseMutation(workspace: string) {
   const qc = useQueryClient()
+  const invalidateGitState = useInvalidateGitState(workspace)
   return useMutation({
     mutationFn: (onto: string) => gitRebase(workspace, onto),
     onSuccess: () => {
-      invalidateGitState(workspace)()
+      invalidateGitState()
       qc.invalidateQueries({ queryKey: queryKeys.git.branches(workspace) })
       qc.invalidateQueries({ queryKey: queryKeys.git.conflicts(workspace) })
     },
@@ -301,10 +315,11 @@ export function useGitRebaseMutation(workspace: string) {
 
 export function useGitCherryPickMutation(workspace: string) {
   const qc = useQueryClient()
+  const invalidateGitState = useInvalidateGitState(workspace)
   return useMutation({
     mutationFn: (shas: string[]) => gitCherryPick(workspace, shas),
     onSuccess: () => {
-      invalidateGitState(workspace)()
+      invalidateGitState()
       qc.invalidateQueries({ queryKey: queryKeys.git.log(workspace, 0) })
       qc.invalidateQueries({ queryKey: queryKeys.git.conflicts(workspace) })
     },
@@ -313,10 +328,11 @@ export function useGitCherryPickMutation(workspace: string) {
 
 export function useGitContinueMutation(workspace: string) {
   const qc = useQueryClient()
+  const invalidateGitState = useInvalidateGitState(workspace)
   return useMutation({
     mutationFn: () => gitContinue(workspace),
     onSuccess: () => {
-      invalidateGitState(workspace)()
+      invalidateGitState()
       qc.invalidateQueries({ queryKey: queryKeys.git.conflicts(workspace) })
     },
   })
@@ -324,10 +340,11 @@ export function useGitContinueMutation(workspace: string) {
 
 export function useGitAbortMutation(workspace: string) {
   const qc = useQueryClient()
+  const invalidateGitState = useInvalidateGitState(workspace)
   return useMutation({
     mutationFn: () => gitAbort(workspace),
     onSuccess: () => {
-      invalidateGitState(workspace)()
+      invalidateGitState()
       qc.invalidateQueries({ queryKey: queryKeys.git.conflicts(workspace) })
     },
   })

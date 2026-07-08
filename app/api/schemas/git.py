@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class WorkspaceRequest(BaseModel):
@@ -16,7 +16,7 @@ class StageRequest(BaseModel):
 
 class CommitRequest(BaseModel):
     workspace: str
-    message: str
+    message: str = Field(max_length=10000)
     paths: list[str] | None = None
     amend: bool = False
 
@@ -66,7 +66,7 @@ class FetchRequest(BaseModel):
 
 class StashRequest(BaseModel):
     workspace: str
-    message: str | None = None
+    message: str | None = Field(default=None, max_length=10000)
     include_untracked: bool = False
 
 

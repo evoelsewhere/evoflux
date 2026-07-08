@@ -72,7 +72,7 @@ export async function gitBranches(workspace: string): Promise<GitBranch[]> {
 }
 
 export async function gitCheckout(workspace: string, name: string): Promise<void> {
-  const res = await fetch(`${apiBaseUrl()}/team/workspace/git/checkout`, {
+  const res = await fetch(`${apiBaseUrl()}/team/workspace/git/branches/checkout`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ workspace, name }),
@@ -81,7 +81,7 @@ export async function gitCheckout(workspace: string, name: string): Promise<void
 }
 
 export async function gitCreateBranch(workspace: string, name: string): Promise<void> {
-  const res = await fetch(`${apiBaseUrl()}/team/workspace/git/branch`, {
+  const res = await fetch(`${apiBaseUrl()}/team/workspace/git/branches`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ workspace, name }),
@@ -90,7 +90,7 @@ export async function gitCreateBranch(workspace: string, name: string): Promise<
 }
 
 export async function gitDeleteBranch(workspace: string, name: string, force?: boolean): Promise<void> {
-  const res = await fetch(`${apiBaseUrl()}/team/workspace/git/branch`, {
+  const res = await fetch(`${apiBaseUrl()}/team/workspace/git/branches`, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ workspace, name, force }),
@@ -167,7 +167,7 @@ export async function gitLogFiles(workspace: string, sha: string): Promise<GitLo
 
 export async function gitStashes(workspace: string): Promise<GitStash[]> {
   const params = wsParam(workspace)
-  const res = await fetch(`${apiBaseUrl()}/team/workspace/git/stashes?${params}`)
+  const res = await fetch(`${apiBaseUrl()}/team/workspace/git/stash?${params}`)
   if (!res.ok) await parseDetailOrThrow(res, 'gitStashes')
   return res.json()
 }

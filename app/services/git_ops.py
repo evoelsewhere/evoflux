@@ -315,14 +315,14 @@ def parse_branches(stdout: str) -> list[GitBranchInfo]:
 
 
 def parse_log(stdout: str) -> list[GitLogEntry]:
-    """Parse git log with custom format using \\x1f/\\x1e delimiters."""
+    """Parse git log with custom format using \\x1f field delimiter, newline entry separator."""
     entries: list[GitLogEntry] = []
-    for line in stdout.split("\x1e"):
+    for line in stdout.splitlines():
         line = line.strip()
         if not line:
             continue
         parts = line.split("\x1f")
-        if len(parts) >= 5:
+        if len(parts) >= 4:
             entries.append(
                 GitLogEntry(
                     sha=parts[0],
@@ -336,16 +336,27 @@ def parse_log(stdout: str) -> list[GitLogEntry]:
 
 
 def parse_stash_list(stdout: str) -> list[GitStashEntry]:
-    """Parse git stash list output."""
+    """Parse git stash list output (with --format=%H\\x1f%gD\\x1f%s)."""
     entries: list[GitStashEntry] = []
     for line in stdout.splitlines():
-        if line.startswith("stash@{"):
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split("\x1f")
+        if len(parts) >= 3:
+            sha = parts[0].strip()
+            gD = parts[1].strip()
+            message = parts[2].strip()
+            # Extract index from gD like "stash@{0}"
+            m = re.search(r"stash@\{(\d+)\}", gD)
+            index = int(m.group(1)) if m else 0
+            entries.append(GitStashEntry(index=index, message=message, sha=sha[:8]))
+        elif line.startswith("stash@{"):
+            # Fallback: parse legacy format without --format
             idx_end = line.index("}")
             index = int(line[len("stash@{") : idx_end])
             rest = line[idx_end + 2 :]
-            sha = rest[:8] if len(rest) >= 8 else ""
-            message = rest
-            entries.append(GitStashEntry(index=index, message=message, sha=sha))
+            entries.append(GitStashEntry(index=index, message=rest, sha=""))
     return entries
 
 
@@ -383,6 +394,9 @@ def pathspec_args(paths: list[str] | None) -> list[str]:
 # Characters git forbids anywhere in a ref name: ASCII control chars,
 # space, and the metacharacters ~ ^ : ? * [ \ (gitcheck-ref-format(1)).
 _INVALID_REF_CHARS_RE = re.compile(r"[\000-\037\177 ~^:?*\[\\]")
+
+# Valid short/long SHA-1 or SHA-256 hex string.
+_SHA_RE = re.compile(r"^[0-9a-f]{4,64}$")
 
 
 def validate_ref_name(name: str) -> bool:
@@ -423,20 +437,35 @@ def detect_inprogress_operation(cwd: str) -> str | None:
 # --- Lock registry -----------------------------------------------------------
 
 
+class _GitLockContext:
+    """Context manager wrapping an asyncio.Lock with refcount bookkeeping."""
+
+    def __init__(self, registry: "GitLockRegistry", resolved: str) -> None:
+        self._registry = registry
+        self._resolved = resolved
+
+    async def __aenter__(self) -> asyncio.Lock:
+        lock = self._registry._locks[self._resolved]
+        await lock.acquire()
+        return lock
+
+    async def __aexit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
+        lock = self._registry._locks[self._resolved]
+        lock.release()
+
+
 class GitLockRegistry:
-    """Per-workspace asyncio.Lock registry."""
+    """Per-workspace asyncio.Lock registry.  Locks are created once and kept
+    for the lifetime of the process to avoid race conditions with cleanup."""
 
     def __init__(self) -> None:
         self._locks: dict[str, asyncio.Lock] = {}
-        self._refcounts: dict[str, int] = {}
 
-    def acquire(self, path: str) -> asyncio.Lock:
+    def acquire(self, path: str) -> _GitLockContext:
         resolved = str(Path(path).resolve())
         if resolved not in self._locks:
             self._locks[resolved] = asyncio.Lock()
-            self._refcounts[resolved] = 0
-        self._refcounts[resolved] += 1
-        return self._locks[resolved]
+        return _GitLockContext(self, resolved)
 
     def is_locked(self, path: str) -> bool:
         resolved = str(Path(path).resolve())
@@ -497,6 +526,20 @@ class GitJobRegistry:
             logger.exception("git job failed op={} workspace={}", job.op, job.workspace)
         finally:
             job.finished_at = time.time()
+            self._cleanup_old_jobs()
+
+    def _cleanup_old_jobs(self, max_age_seconds: float = 600.0) -> None:
+        """Remove finished jobs older than *max_age_seconds* (default 10 min)."""
+        cutoff = time.time() - max_age_seconds
+        stale = [
+            key
+            for key, j in self._jobs.items()
+            if j.status != "running"
+            and j.finished_at is not None
+            and j.finished_at < cutoff
+        ]
+        for key in stale:
+            self._jobs.pop(key, None)
 
     def snapshot(self, workspace: str) -> GitJob | None:
         return self._jobs.get(str(Path(workspace).resolve()))

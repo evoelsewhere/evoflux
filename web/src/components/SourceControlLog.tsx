@@ -117,6 +117,7 @@ export function SourceControlLog({ workspace }: SourceControlLogProps) {
                       handleCherryPick(entry.sha)
                     }}
                     className="shrink-0 rounded p-1 text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)"
+                    aria-label="Cherry-pick commit"
                     title="Cherry-pick this commit"
                   >
                     <Cherry size={12} />

@@ -40,6 +40,19 @@ export function SourceControlBranches({ workspace }: SourceControlBranchesProps)
   const remoteBranches = branches.filter((b) => b.remote)
   const currentBranch = branches.find((b) => b.current)
 
+  const busy = checkoutMutation.isPending || createBranchMutation.isPending || deleteBranchMutation.isPending || mergeMutation.isPending || rebaseMutation.isPending
+
+  if (branchesQuery.isLoading) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-auto">
+        <div className="flex items-center justify-between border-b border-(--color-border) px-3 py-2">
+          <span className="text-xs font-medium text-(--color-text-muted)">Branches</span>
+        </div>
+        <p className="px-3 py-4 text-xs text-(--color-text-subtle)">Loading branches…</p>
+      </div>
+    )
+  }
+
   const handleCreate = () => {
     if (!newBranch.trim()) return
     createBranchMutation.mutate(newBranch.trim(), {
@@ -102,6 +115,13 @@ export function SourceControlBranches({ workspace }: SourceControlBranchesProps)
           })
         }
       },
+      onError: (err) => {
+        useToastStore.getState().push({
+          tone: 'error',
+          title: 'Merge failed',
+          description: err instanceof Error ? err.message : undefined,
+        })
+      },
     })
   }
 
@@ -117,6 +137,13 @@ export function SourceControlBranches({ workspace }: SourceControlBranchesProps)
             description: data.conflicts.join(', '),
           })
         }
+      },
+      onError: (err) => {
+        useToastStore.getState().push({
+          tone: 'error',
+          title: 'Rebase failed',
+          description: err instanceof Error ? err.message : undefined,
+        })
       },
     })
   }
@@ -142,7 +169,10 @@ export function SourceControlBranches({ workspace }: SourceControlBranchesProps)
           <input
             value={newBranch}
             onChange={(e) => setNewBranch(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleCreate()
+              if (e.key === 'Escape') { setShowCreate(false); setNewBranch('') }
+            }}
             placeholder="branch-name"
             className="flex-1 rounded border border-(--color-border) bg-(--bg-key) px-2 py-1 text-xs text-(--color-text) outline-none focus:border-(--color-accent)"
             autoFocus
@@ -168,7 +198,7 @@ export function SourceControlBranches({ workspace }: SourceControlBranchesProps)
         onDelete={handleDelete}
         onMerge={handleMerge}
         onRebase={handleRebase}
-        currentName={currentBranch?.name}
+        busy={busy}
       />
 
       {/* Remote branches */}
@@ -182,7 +212,7 @@ export function SourceControlBranches({ workspace }: SourceControlBranchesProps)
           onDelete={handleDelete}
           onMerge={handleMerge}
           onRebase={handleRebase}
-          currentName={currentBranch?.name}
+          busy={busy}
         />
       )}
     </div>
@@ -198,7 +228,7 @@ function BranchSection({
   onDelete,
   onMerge,
   onRebase,
-  currentName: _currentName,
+  busy,
 }: {
   title: string
   branches: Array<{ name: string; current: boolean; remote: string | null; ahead: number; behind: number }>
@@ -208,7 +238,7 @@ function BranchSection({
   onDelete: (name: string) => void
   onMerge: (branch: string) => void
   onRebase: (onto: string) => void
-  currentName?: string
+  busy?: boolean
 }) {
   const [expanded, setExpanded] = useState(true)
 
@@ -262,28 +292,36 @@ function BranchSection({
                     <button
                       type="button"
                       onClick={() => onCheckout(branch.name)}
-                      className="flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)"
+                      disabled={busy}
+                      aria-label={`Checkout branch ${branch.name}`}
+                      className="flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-50"
                     >
                       <ArrowRightLeft size={10} /> Checkout
                     </button>
                     <button
                       type="button"
                       onClick={() => onMerge(branch.name)}
-                      className="flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)"
+                      disabled={busy}
+                      aria-label={`Merge branch ${branch.name}`}
+                      className="flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-50"
                     >
                       <GitMerge size={10} /> Merge
                     </button>
                     <button
                       type="button"
                       onClick={() => onRebase(branch.name)}
-                      className="flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)"
+                      disabled={busy}
+                      aria-label={`Rebase onto ${branch.name}`}
+                      className="flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-50"
                     >
                       Rebase
                     </button>
                     <button
                       type="button"
                       onClick={() => onDelete(branch.name)}
-                      className="flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-(--color-text-muted) hover:bg-(--color-error)/10 hover:text-(--color-error)"
+                      disabled={busy}
+                      aria-label={`Delete branch ${branch.name}`}
+                      className="flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-(--color-text-muted) hover:bg-(--color-error)/10 hover:text-(--color-error) disabled:opacity-50"
                     >
                       <Trash2 size={10} /> Delete
                     </button>

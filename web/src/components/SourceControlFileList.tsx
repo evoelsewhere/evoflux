@@ -84,7 +84,10 @@ export function SourceControlFileList({
                   isConflict ? 'text-red-400' : 'text-(--color-text-subtle)',
                 )}
               />
-              <span className="min-w-0 flex-1 truncate font-mono text-xs text-(--color-text)">
+              <span
+                className="min-w-0 flex-1 truncate font-mono text-xs text-(--color-text)"
+                title={file.old_path ? `${file.old_path} → ${file.path}` : file.path}
+              >
                 {file.old_path ? `${file.old_path} → ${file.path}` : file.path}
               </span>
               <span
@@ -106,6 +109,7 @@ export function SourceControlFileList({
                   onDiscard?.(file.path)
                 }}
                 className="hidden shrink-0 rounded p-0.5 text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-error) group-hover:flex"
+                aria-label="Discard changes"
                 title="Discard changes"
               >
                 <RotateCcw size={11} />

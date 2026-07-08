@@ -3,5 +3,30 @@
     "value": "2026-07-03",
     "owner": "explorer#1",
     "updated_at": 1783065974.4304914
+  },
+  "providers_redesign_target": {
+    "value": "web/src/routes/settings.providers.tsx",
+    "owner": "evoflux",
+    "updated_at": 1783439678.533175
+  },
+  "design_tokens": {
+    "value": {
+      "bg_page": "#121314",
+      "bg_sidebar": "#191A1B",
+      "bg_card": "#202122",
+      "bg_key": "#282A2B",
+      "border": "#333536",
+      "text": "#ffffff",
+      "text_muted": "#b8b8bd",
+      "accent": "#C8CACC",
+      "success": "#4ADE80",
+      "success_subtle": "#14532D",
+      "error": "#F87171",
+      "error_subtle": "rgba(248,113,113,0.10)",
+      "accent_blue": "#60A5FA",
+      "accent_blue_soft": "#1E293B"
+    },
+    "owner": "evoflux",
+    "updated_at": 1783439678.5431192
   }
 }

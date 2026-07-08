@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { DiffEditor, useMonaco } from '@monaco-editor/react'
 import { useMonacoTheme, languageForExt } from '@/hooks/useMonacoTheme'
+import { useToastStore } from '@/stores/useToastStore'
 import { useGitChangesQuery, useGitDiffViewQuery, useGitDiscardMutation } from '@/queries/useGitQuery'
 import { SourceControlFileList } from './SourceControlFileList'
 
@@ -33,7 +34,18 @@ export function SourceControlLocalChanges({
   const parts = parseDiff(diffText)
 
   const handleDiscard = (path: string) => {
-    discardMutation.mutate([path])
+    discardMutation.mutate([path], {
+      onSuccess: () => {
+        useToastStore.getState().push({ tone: 'success', title: 'Changes discarded' })
+      },
+      onError: (err) => {
+        useToastStore.getState().push({
+          tone: 'error',
+          title: 'Discard failed',
+          description: err instanceof Error ? err.message : undefined,
+        })
+      },
+    })
     if (selectedPath === path) setSelectedPath(null)
   }
 
@@ -43,7 +55,7 @@ export function SourceControlLocalChanges({
       <div className="w-64 shrink-0 overflow-auto border-r border-(--color-border)">
         <div className="flex items-center justify-between border-b border-(--color-border) px-3 py-2">
           <span className="text-xs font-medium text-(--color-text-muted)">
-            {files.length} changed
+            {changesQuery.isLoading ? 'Loading…' : `${files.length} changed`}
           </span>
         </div>
         <div className="p-1">
