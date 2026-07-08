@@ -229,6 +229,7 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
             widgetBlock = {
               type: 'widget',
               id: generateBlockId(),
+              content: '',
               toolCallId,
               toolName: 'show_widget',
               startedAt: Date.now(),
