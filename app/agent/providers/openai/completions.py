@@ -117,6 +117,10 @@ class CompletionsHandler:
                         )
                         for tc in msg.tool_calls
                     ]
+                # Some providers (e.g. Xiaomi mimo) reject assistant turns
+                # with neither content nor tool_calls (HTTP 400).
+                if not msg.content and not openai_tool_calls:
+                    continue
                 result.append(
                     OpenAIMessage(
                         role="assistant",
