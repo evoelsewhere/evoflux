@@ -312,12 +312,14 @@ def _default_tool_registry() -> dict[str, Tool]:
     from app.agent.tools.builtin.worktree import worktree_start, worktree_finish
     from app.agent.tools.builtin.lsp import lsp_diagnostics, lsp_definition, lsp_references
     from app.agent.tools.builtin.visualize import visualize_read_me, show_widget
+    from app.agent.tools.builtin.preview import preview_tool
 
     registry: dict[str, Tool] = {
         "web_search": web_search,
         "web_fetch": web_fetch,
         "image_search": image_search,
         "browser_use": browser_use,
+        "preview": preview_tool,
         "date": get_date,
         "read": read_file,
         "write": write_file,
