@@ -103,7 +103,6 @@ def _effective_config(cfg: AgentConfig, *, mode: str) -> AgentConfig:
     implicit_tools = ["skill"]
     if data.role == "lead":
         implicit_tools += ["todo_manage", "schedule_task", "note"]
-    data.tools = [*implicit_tools, *data.tools]
     if data.role == "lead" and data.name.lower() == "evoflux":
         from app.agent.builtin_prompts import EVOFLUX_description_for_mode
 
@@ -118,13 +117,23 @@ def _effective_config(cfg: AgentConfig, *, mode: str) -> AgentConfig:
             data.skills = list(dict.fromkeys([*profile["skills"], *data.skills]))
             data.mcp = list(dict.fromkeys([*profile["mcp"], *data.mcp]))
 
-    # Mirror the loader's tier grant so the API shows the effective toolset.
+    # Mirror the loader's tier grant so the API shows the effective toolset:
+    # implicit + tier grant first, then frontmatter extras — with lead_only
+    # extras dropped for members exactly like ``_build_agent`` does.
     from app.agent.builtin_prompts import tier_tools
     from app.agent.loader import _default_tool_registry
 
+    registry = _default_tool_registry()
+    extras = [
+        name
+        for name in data.tools
+        if data.role == "lead"
+        or not getattr(registry.get(name), "lead_only", False)
+    ]
     data.tools = [
-        *data.tools,
-        *tier_tools(_default_tool_registry(), mode=mode, role=data.role),
+        *implicit_tools,
+        *tier_tools(registry, mode=mode, role=data.role),
+        *extras,
     ]
     data.tools = list(dict.fromkeys(data.tools))
     return data
@@ -251,7 +260,12 @@ async def get_registry() -> RegistryResponse:
     hidden_tools = {"skill", "todo_manage", "schedule_task", "note"}
     tools = sorted(
         (
-            ToolCatalogEntry(name=t.name, description=t.description or "")
+            ToolCatalogEntry(
+                name=t.name,
+                description=t.description or "",
+                tiers=sorted(t.tiers) if getattr(t, "tiers", None) else None,
+                lead_only=getattr(t, "lead_only", False),
+            )
             for t in tool_registry.values()
             if t.name not in hidden_tools
         ),
