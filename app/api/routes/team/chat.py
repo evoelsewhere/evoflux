@@ -191,7 +191,7 @@ async def team_chat(
     - **Interrupt + follow-up** (``interrupt=true``, ``message`` provided):
       Cancel working members, then deliver new message to the team lead.
 
-    Returns the session_id. Subscribe to GET /team/stream/{session_id} to
+    Returns the session_id. Subscribe to GET /team/{session_id}/stream to
     receive the SSE event stream (supports reconnect + replay).
     """
     message = body.message
@@ -502,7 +502,7 @@ async def team_command(
       forward without adding a user message.
 
     Returns 202 with the session_id.  Subscribe to
-    ``GET /team/stream/{session_id}`` for the SSE feed.
+    ``GET /team/{session_id}/stream`` for the SSE feed.
 
     Returns 409 with a human-readable ``detail`` when the session can't
     be continued (no assistant message, last message has unfinished tool

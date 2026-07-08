@@ -12,7 +12,7 @@ inbox, calls ``agent.run()``, and returns to ``idle`` state.
 
 Streaming is handled by StreamPublisherHook, which pushes every LLM delta
 directly to the shared in-memory stream store (keyed by the team lead's session_id).
-The frontend subscribes to GET /team/stream/{lead_session_id} and receives a
+The frontend subscribes to GET /team/{lead_session_id}/stream and receives a
 unified event feed tagged by agent name.
 """
 

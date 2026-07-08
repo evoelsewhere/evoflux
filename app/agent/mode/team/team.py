@@ -261,7 +261,7 @@ class AgentTeam:
     Handling a user message::
 
         session_id = await team.handle_user_message(content="...", session_id="...")
-        # client subscribes to GET /team/stream/{session_id}
+        # client subscribes to GET /team/{session_id}/stream
     """
 
     def __init__(
@@ -714,7 +714,7 @@ class AgentTeam:
         If interrupt=True, all working agents are cancelled immediately and
         all non-completed tasks are reset so the lead can re-plan.
 
-        The caller should subscribe to GET /team/stream/{session_id} to
+        The caller should subscribe to GET /team/{session_id}/stream to
         receive the SSE event stream.
         """
         # Update the lead's active session
@@ -954,7 +954,7 @@ class AgentTeam:
 
         # Initialise a fresh state blob for this turn synchronously before
         # delivering the message to the lead. This guarantees the state key
-        # exists by the time the client's GET /team/stream/{sid} arrives.
+        # exists by the time the client's GET /team/{sid}/stream arrives.
         try:
             await stream_store.init_turn(session_id)
         except Exception as exc:
@@ -1007,7 +1007,7 @@ class AgentTeam:
           call is unsafe — partial JSON args.
 
         Returns the session_id.  Caller subscribes to
-        ``GET /team/stream/{session_id}`` for the SSE feed.
+        ``GET /team/{session_id}/stream`` for the SSE feed.
         """
         try:
             lead_uuid = UUID(session_id)
