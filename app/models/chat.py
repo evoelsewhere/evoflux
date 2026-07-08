@@ -9,6 +9,17 @@ from sqlalchemy.types import TypeDecorator
 from sqlmodel import Field, SQLModel
 
 
+def normalize_mode(mode: str) -> str:
+    """Map the legacy team-mode name ``normal`` to ``forge``.
+
+    The default (non-coding) mode was renamed ``normal`` → ``forge``
+    (migration 00000019 rewrote persisted rows). Older UIs and external
+    API clients may still send ``normal`` — accept it at every input
+    boundary, but store and emit only ``forge``.
+    """
+    return "forge" if mode == "normal" else mode
+
+
 def _utcnow() -> datetime:
     """Return the current UTC time with microsecond precision.
 
@@ -93,9 +104,9 @@ class ChatSession(SQLModel, table=True):
         sa_column=Column(sa.String(100), nullable=True),
     )
     mode: str = Field(
-        default="normal",
+        default="forge",
         max_length=20,
-        sa_column=Column(sa.String(20), nullable=False, server_default="normal"),
+        sa_column=Column(sa.String(20), nullable=False, server_default="forge"),
     )
     permission_mode: str = Field(
         default="auto",

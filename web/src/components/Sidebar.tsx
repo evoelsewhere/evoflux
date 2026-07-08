@@ -97,8 +97,8 @@ interface SidebarProps {
   currentSessionId?: string;
   onCommandPalette?: () => void;
   onNewChat?: () => void;
-  /** Current mode — 'normal' (forge) or 'coding' */
-  mode?: 'normal' | 'coding';
+  /** Current mode — 'forge' or 'coding' */
+  mode?: 'forge' | 'coding';
   /** Mobile only: whether the overlay drawer is open */
   mobileOpen?: boolean;
   /** Mobile only: called when the drawer should close (backdrop tap, session select) */
@@ -109,7 +109,7 @@ export function Sidebar({
   currentSessionId,
   onCommandPalette,
   onNewChat,
-  mode = 'normal',
+  mode = 'forge',
   mobileOpen = false,
   onMobileClose,
 }: SidebarProps) {
@@ -390,7 +390,7 @@ export function Sidebar({
                           type="button"
                           onClick={() => navigate({ to: '/' })}
                           className={`flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 text-xs font-medium transition-colors ${
-                            mode === 'normal'
+                            mode === 'forge'
                               ? 'bg-(--bg-key) text-(--color-text) shadow-sm'
                               : 'text-(--color-text-muted) hover:text-(--color-text)'
                           }`}
@@ -435,7 +435,7 @@ export function Sidebar({
                         onClick={() => navigate({ to: '/' })}
                         title="Forge"
                         className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
-                          mode === 'normal'
+                          mode === 'forge'
                             ? 'bg-(--bg-key) text-(--color-accent)'
                             : 'text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-text-2)'
                         }`}
@@ -651,7 +651,7 @@ export function Sidebar({
                     type="button"
                     onClick={() => { navigate({ to: '/' }); onMobileClose?.(); }}
                     className={`flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 text-xs font-medium transition-colors ${
-                      mode === 'normal'
+                      mode === 'forge'
                         ? 'bg-(--bg-key) text-(--color-text) shadow-sm'
                         : 'text-(--color-text-muted) hover:text-(--color-text)'
                     }`}

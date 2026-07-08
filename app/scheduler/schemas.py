@@ -7,11 +7,16 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 _NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$")
 
-TaskMode = Literal["normal", "coding"]
+TaskMode = Literal["forge", "coding"]
+
+
+def _coerce_legacy_mode(value: object) -> object:
+    """Accept the pre-rename alias ``normal`` for ``forge`` (see migration 00000019)."""
+    return "forge" if value == "normal" else value
 
 
 class ScheduledTaskCreate(BaseModel):
@@ -19,10 +24,12 @@ class ScheduledTaskCreate(BaseModel):
 
     name: str = Field(description="Unique task name.")
     mode: TaskMode = Field(
-        default="normal",
-        description="'normal' delivers to the default team lead; "
+        default="forge",
+        description="'forge' delivers to the default team lead; "
         "'coding' delivers to the lead of the coding team for ``workspace``.",
     )
+
+    _mode_alias = field_validator("mode", mode="before")(_coerce_legacy_mode)
     workspace: str | None = Field(
         default=None,
         description="Absolute path to a workspace directory. "
@@ -49,8 +56,8 @@ class ScheduledTaskCreate(BaseModel):
 
         if self.mode == "coding" and not self.workspace:
             raise ValueError("workspace is required when mode='coding'")
-        if self.mode == "normal" and self.workspace:
-            raise ValueError("workspace must be empty when mode='normal'")
+        if self.mode == "forge" and self.workspace:
+            raise ValueError("workspace must be empty when mode='forge'")
 
         st = self.schedule_type
         if st == "at":
@@ -89,6 +96,8 @@ class ScheduledTaskUpdate(BaseModel):
 
     mode: TaskMode | None = None
     workspace: str | None = None
+
+    _mode_alias = field_validator("mode", mode="before")(_coerce_legacy_mode)
     schedule_type: str | None = None
     at_datetime: datetime | None = None
     every_seconds: int | None = Field(default=None, gt=0)
@@ -105,8 +114,8 @@ class ScheduledTaskUpdate(BaseModel):
         # service layer validates against the merged row state.
         if self.mode == "coding" and self.workspace == "":
             raise ValueError("workspace is required when mode='coding'")
-        if self.mode == "normal" and self.workspace:
-            raise ValueError("workspace must be empty when mode='normal'")
+        if self.mode == "forge" and self.workspace:
+            raise ValueError("workspace must be empty when mode='forge'")
 
         st = self.schedule_type
         if st is None:

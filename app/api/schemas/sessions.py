@@ -17,7 +17,7 @@ class SessionCreate(BaseModel):
 
 
 class TeamSessionResolveRequest(BaseModel):
-    mode: str = "normal"
+    mode: str = "forge"
     workspace: str | None = None
     project_id: UUID | None = None
     model: str | None = None
@@ -69,7 +69,7 @@ class SessionResponse(_ExcludeNoneModel):
     title: str | None = None
     agent_name: str | None = None
     scheduled_task_name: str | None = None
-    mode: str = "normal"
+    mode: str = "forge"
     workspace: str | None = None
     project_id: UUID | None = None
     permission_mode: str = "auto"

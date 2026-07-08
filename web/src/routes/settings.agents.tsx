@@ -14,7 +14,7 @@ import { SettingsListView, type ListViewRow } from '@/components/settings/Settin
 import { useAgentFilesQuery } from '@/queries'
 import { useSettingsParams, useSettingsNavigate } from '@/contexts/SettingsContext'
 
-type Tab = 'all' | 'normal' | 'coding'
+type Tab = 'all' | 'forge' | 'coding'
 
 export function AgentsListPage() {
   const { data, isLoading, isError } = useAgentFilesQuery()
@@ -24,7 +24,7 @@ export function AgentsListPage() {
   const [tab, setTab] = useState<Tab>('all')
 
   const agents = data?.agents ?? []
-  const normalAgents = agents.filter((a) => !a.name.startsWith('coding/'))
+  const forgeAgents = agents.filter((a) => !a.name.startsWith('coding/'))
   const codingAgents = agents.filter((a) => a.name.startsWith('coding/'))
 
   const rows: ListViewRow[] = (() => {
@@ -55,18 +55,18 @@ export function AgentsListPage() {
       }
     }
 
-    if (tab === 'normal') {
-      return normalAgents.sort(byLeadFirst).map(mapAgent)
+    if (tab === 'forge') {
+      return forgeAgents.sort(byLeadFirst).map(mapAgent)
     }
     if (tab === 'coding') {
       return codingAgents.sort(byLeadFirst).map(mapAgent)
     }
 
-    const normal = normalAgents.sort(byLeadFirst)
+    const forge = forgeAgents.sort(byLeadFirst)
     const coding = codingAgents.sort(byLeadFirst)
     return [
-      ...(normal.length > 0
-        ? [{ key: 'group-normal', kind: 'group' as const, title: 'Normal' }, ...normal.map(mapAgent)]
+      ...(forge.length > 0
+        ? [{ key: 'group-forge', kind: 'group' as const, title: 'Forge' }, ...forge.map(mapAgent)]
         : []),
       ...(coding.length > 0
         ? [{ key: 'group-coding', kind: 'group' as const, title: 'Coding' }, ...coding.map(mapAgent)]
@@ -78,7 +78,7 @@ export function AgentsListPage() {
     <>
     <SettingsListView
       title="Agents"
-      description="Markdown files with YAML frontmatter. Normal and Coding agents are separate teams."
+      description="Markdown files with YAML frontmatter. Forge and Coding agents are separate teams."
       newTo="/settings/agents/new"
       newLabel="New agent"
       newAction={
@@ -90,7 +90,7 @@ export function AgentsListPage() {
       filterPlaceholder="Filter agents…"
       tabs={
         <div className="flex gap-1 rounded-lg border border-(--color-border) bg-(--bg-key) p-0.5">
-          {(['all', 'normal', 'coding'] as const).map((t) => (
+          {(['all', 'forge', 'coding'] as const).map((t) => (
             <button
               key={t}
               type="button"
@@ -101,7 +101,7 @@ export function AgentsListPage() {
                   : 'text-(--color-text-muted) hover:text-(--color-text)'
               }`}
             >
-              {t === 'all' ? 'All' : t === 'normal' ? `Normal (${normalAgents.length})` : `Coding (${codingAgents.length})`}
+              {t === 'all' ? 'All' : t === 'forge' ? `Forge (${forgeAgents.length})` : `Coding (${codingAgents.length})`}
             </button>
           ))}
         </div>
@@ -119,8 +119,8 @@ export function AgentsListPage() {
           <DialogDescription>Choose which team directory receives the new agent file.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-2 sm:grid-cols-2">
-          <Button onClick={() => { setModeDialogOpen(false); navigate('agents/new', { search: { mode: 'normal' } }) }}>
-            Normal
+          <Button onClick={() => { setModeDialogOpen(false); navigate('agents/new', { search: { mode: 'forge' } }) }}>
+            Forge
           </Button>
           <Button onClick={() => { setModeDialogOpen(false); navigate('agents/new', { search: { mode: 'coding' } }) }}>
             Coding

@@ -22,7 +22,7 @@ class TestNameValidation:
     def test_valid_simple_name(self):
         body = ScheduledTaskCreate(
             name="hello",
-            mode="normal",
+            mode="forge",
             schedule_type="every",
             every_seconds=60,
             prompt="hi",
@@ -32,7 +32,7 @@ class TestNameValidation:
     def test_valid_with_dots_dashes_underscores(self):
         body = ScheduledTaskCreate(
             name="my.task-1_v2",
-            mode="normal",
+            mode="forge",
             schedule_type="every",
             every_seconds=60,
             prompt="hi",
@@ -56,7 +56,7 @@ class TestNameValidation:
         with pytest.raises(ValidationError) as excinfo:
             ScheduledTaskCreate(
                 name=bad,
-                mode="normal",
+                mode="forge",
                 schedule_type="every",
                 every_seconds=60,
                 prompt="hi",
@@ -74,7 +74,7 @@ class TestCreateAt:
         target = datetime(2030, 1, 1, 12, 0, tzinfo=_UTC)
         body = ScheduledTaskCreate(
             name="t1",
-            mode="normal",
+            mode="forge",
             schedule_type="at",
             at_datetime=target,
             prompt="hi",
@@ -85,7 +85,7 @@ class TestCreateAt:
         with pytest.raises(ValidationError, match="at_datetime is required"):
             ScheduledTaskCreate(
                 name="t1",
-                mode="normal",
+                mode="forge",
                 schedule_type="at",
                 prompt="hi",
             )
@@ -94,7 +94,7 @@ class TestCreateAt:
         with pytest.raises(ValidationError, match="Only at_datetime"):
             ScheduledTaskCreate(
                 name="t1",
-                mode="normal",
+                mode="forge",
                 schedule_type="at",
                 at_datetime=datetime(2030, 1, 1, tzinfo=_UTC),
                 every_seconds=60,
@@ -105,7 +105,7 @@ class TestCreateAt:
         with pytest.raises(ValidationError, match="Only at_datetime"):
             ScheduledTaskCreate(
                 name="t1",
-                mode="normal",
+                mode="forge",
                 schedule_type="at",
                 at_datetime=datetime(2030, 1, 1, tzinfo=_UTC),
                 cron_expression="* * * * *",
@@ -122,7 +122,7 @@ class TestCreateEvery:
     def test_valid_every(self):
         body = ScheduledTaskCreate(
             name="t",
-            mode="normal",
+            mode="forge",
             schedule_type="every",
             every_seconds=300,
             prompt="hi",
@@ -133,7 +133,7 @@ class TestCreateEvery:
         with pytest.raises(ValidationError, match="every_seconds is required"):
             ScheduledTaskCreate(
                 name="t",
-                mode="normal",
+                mode="forge",
                 schedule_type="every",
                 prompt="hi",
             )
@@ -142,7 +142,7 @@ class TestCreateEvery:
         with pytest.raises(ValidationError, match="Only every_seconds"):
             ScheduledTaskCreate(
                 name="t",
-                mode="normal",
+                mode="forge",
                 schedule_type="every",
                 every_seconds=60,
                 at_datetime=datetime(2030, 1, 1, tzinfo=_UTC),
@@ -153,7 +153,7 @@ class TestCreateEvery:
         with pytest.raises(ValidationError, match="Only every_seconds"):
             ScheduledTaskCreate(
                 name="t",
-                mode="normal",
+                mode="forge",
                 schedule_type="every",
                 every_seconds=60,
                 cron_expression="* * * * *",
@@ -164,7 +164,7 @@ class TestCreateEvery:
         with pytest.raises(ValidationError):
             ScheduledTaskCreate(
                 name="t",
-                mode="normal",
+                mode="forge",
                 schedule_type="every",
                 every_seconds=0,
                 prompt="hi",
@@ -180,7 +180,7 @@ class TestCreateCron:
     def test_valid_cron(self):
         body = ScheduledTaskCreate(
             name="t",
-            mode="normal",
+            mode="forge",
             schedule_type="cron",
             cron_expression="0 0 * * *",
             prompt="hi",
@@ -191,7 +191,7 @@ class TestCreateCron:
         with pytest.raises(ValidationError, match="cron_expression is required"):
             ScheduledTaskCreate(
                 name="t",
-                mode="normal",
+                mode="forge",
                 schedule_type="cron",
                 prompt="hi",
             )
@@ -200,7 +200,7 @@ class TestCreateCron:
         with pytest.raises(ValidationError, match="Only cron_expression"):
             ScheduledTaskCreate(
                 name="t",
-                mode="normal",
+                mode="forge",
                 schedule_type="cron",
                 cron_expression="* * * * *",
                 at_datetime=datetime(2030, 1, 1, tzinfo=_UTC),
@@ -211,7 +211,7 @@ class TestCreateCron:
         with pytest.raises(ValidationError, match="Only cron_expression"):
             ScheduledTaskCreate(
                 name="t",
-                mode="normal",
+                mode="forge",
                 schedule_type="cron",
                 cron_expression="* * * * *",
                 every_seconds=60,
@@ -222,7 +222,7 @@ class TestCreateCron:
         with pytest.raises(ValidationError, match="Invalid cron expression"):
             ScheduledTaskCreate(
                 name="t",
-                mode="normal",
+                mode="forge",
                 schedule_type="cron",
                 cron_expression="not a cron",
                 prompt="hi",
@@ -239,7 +239,7 @@ class TestCreateUnknown:
         with pytest.raises(ValidationError, match="schedule_type must be"):
             ScheduledTaskCreate(
                 name="t",
-                mode="normal",
+                mode="forge",
                 schedule_type="weekly",
                 prompt="hi",
             )
@@ -304,11 +304,11 @@ class TestUpdate:
 
 
 class TestModeWorkspace:
-    def test_normal_mode_default_no_workspace(self):
+    def test_forge_mode_default_no_workspace(self):
         body = ScheduledTaskCreate(
             name="n", schedule_type="every", every_seconds=60, prompt="hi"
         )
-        assert body.mode == "normal"
+        assert body.mode == "forge"
         assert body.workspace is None
 
     def test_coding_mode_requires_workspace(self):
@@ -321,11 +321,11 @@ class TestModeWorkspace:
                 prompt="hi",
             )
 
-    def test_normal_mode_rejects_workspace(self):
+    def test_forge_mode_rejects_workspace(self):
         with pytest.raises(ValidationError, match="workspace must be empty"):
             ScheduledTaskCreate(
                 name="c",
-                mode="normal",
+                mode="forge",
                 workspace="/tmp/foo",
                 schedule_type="every",
                 every_seconds=60,
@@ -344,12 +344,31 @@ class TestModeWorkspace:
         assert body.mode == "coding"
         assert body.workspace == "/tmp/foo"
 
-    def test_update_normal_mode_rejects_workspace(self):
+    def test_update_forge_mode_rejects_workspace(self):
         with pytest.raises(ValidationError, match="workspace must be empty"):
-            ScheduledTaskUpdate(mode="normal", workspace="/tmp/foo")
+            ScheduledTaskUpdate(mode="forge", workspace="/tmp/foo")
 
     def test_update_mode_alone_accepted(self):
         # Workspace not in payload — service layer merges with row state.
         body = ScheduledTaskUpdate(mode="coding")
         assert body.mode == "coding"
         assert body.workspace is None
+
+
+class TestLegacyModeAlias:
+    """``normal`` was renamed to ``forge`` (migration 00000019); older
+    clients may still send the old name — it must coerce, not 422."""
+
+    def test_create_accepts_legacy_normal(self):
+        body = ScheduledTaskCreate(
+            name="t",
+            mode="normal",
+            schedule_type="every",
+            every_seconds=60,
+            prompt="hi",
+        )
+        assert body.mode == "forge"
+
+    def test_update_accepts_legacy_normal(self):
+        body = ScheduledTaskUpdate(mode="normal")
+        assert body.mode == "forge"
