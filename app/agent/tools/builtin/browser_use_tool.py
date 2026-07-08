@@ -17,11 +17,14 @@ Actions
 start     — Launch a headless Chromium session (auto-called on first action).
 stop      — Close the browser and release resources.
 navigate  — Go to a URL.
-click     — Click an element by CSS selector.
-fill      — Type text into an element by CSS selector.
+snapshot  — Indexed map of interactive elements (browser-use selector map).
+console   — Recent console messages captured via CDP listeners.
+network   — Recent network requests with status, captured via CDP listeners.
+click     — Click an element by snapshot index or CSS selector.
+fill      — Type text into an element by snapshot index or CSS selector.
 select    — Select an option in a <select> element.
-extract   — Extract text content from the page (or a CSS selector).
-screenshot — Capture a PNG screenshot (full page or element).
+extract   — Extract text content from the page (or a CSS selector), capped.
+screenshot — JPEG screenshot returned as a multimodal image part.
 evaluate  — Run JavaScript in the page context.
 scroll    — Scroll the page up/down.
 back      — Navigate back in history.
@@ -36,11 +39,14 @@ switch_tab — Switch to a tab by index.
 from __future__ import annotations
 
 import asyncio
+import time
+from collections import deque
 from typing import Annotated, Any, Literal
 
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from app.agent.schemas.chat import ContentBlock, ImageDataBlock, TextBlock, ToolResult
 from app.agent.tools.registry import InjectedArg, tool
 
 # ---------------------------------------------------------------------------
@@ -50,6 +56,114 @@ from app.agent.tools.registry import InjectedArg, tool
 _sessions: dict[str, Any] = {}
 _pages: dict[str, Any] = {}
 _cdp_info: dict[str, dict[str, Any]] = {}
+
+# Observability buffers (console + network) — bounded per session so a chatty
+# page can't grow memory without limit. Populated by CDP event listeners
+# attached in :func:`_attach_observability`.
+_CONSOLE_BUFFER = 300
+_NETWORK_BUFFER = 400
+_console_logs: dict[str, deque[dict[str, Any]]] = {}
+_network_events: dict[str, deque[dict[str, Any]]] = {}
+# CDP session ids we already registered listeners on (per agent session) —
+# re-attaching after new_tab/switch_tab must not double-register.
+_observed_cdp_sessions: dict[str, set[str]] = {}
+
+_MAX_IMAGE_BYTES = 10_485_760  # 10 MB — matches the read tool's vision cap
+
+
+def _fmt_remote_object(obj: dict[str, Any]) -> str:
+    """Render a CDP RemoteObject as a short human string."""
+    if "value" in obj:
+        return str(obj["value"])
+    return str(obj.get("description") or obj.get("type") or "?")
+
+
+async def _attach_observability(sid: str, session: Any) -> None:
+    """Register CDP listeners that feed the console/network ring buffers.
+
+    Best-effort: a failure here must never break the action that triggered
+    it — observability degrades to "no data yet" instead.
+    """
+    try:
+        cdp = await session.get_or_create_cdp_session()
+        cdp_session_id = getattr(cdp, "session_id", None)
+        seen = _observed_cdp_sessions.setdefault(sid, set())
+        if cdp_session_id in seen:
+            return
+
+        console_buf = _console_logs.setdefault(sid, deque(maxlen=_CONSOLE_BUFFER))
+        network_buf = _network_events.setdefault(sid, deque(maxlen=_NETWORK_BUFFER))
+        # requestId → {method, url} so responses/failures can name their request.
+        pending: dict[str, dict[str, str]] = {}
+
+        async def on_console(event: dict[str, Any], session_id: str | None = None) -> None:
+            args = event.get("args", [])
+            console_buf.append(
+                {
+                    "ts": time.time(),
+                    "level": event.get("type", "log"),
+                    "text": " ".join(_fmt_remote_object(a) for a in args)[:2000],
+                }
+            )
+
+        async def on_exception(event: dict[str, Any], session_id: str | None = None) -> None:
+            details = event.get("exceptionDetails", {})
+            exc = details.get("exception") or {}
+            text = exc.get("description") or details.get("text") or "Uncaught exception"
+            console_buf.append(
+                {"ts": time.time(), "level": "error", "text": str(text)[:2000]}
+            )
+
+        async def on_request(event: dict[str, Any], session_id: str | None = None) -> None:
+            req = event.get("request", {})
+            rid = event.get("requestId", "")
+            if len(pending) > _NETWORK_BUFFER:
+                pending.clear()
+            pending[rid] = {
+                "method": req.get("method", "GET"),
+                "url": req.get("url", "?"),
+            }
+
+        async def on_response(event: dict[str, Any], session_id: str | None = None) -> None:
+            rid = event.get("requestId", "")
+            req = pending.pop(rid, None) or {}
+            resp = event.get("response", {})
+            network_events_url = resp.get("url") or req.get("url", "?")
+            network_buf.append(
+                {
+                    "ts": time.time(),
+                    "method": req.get("method", "GET"),
+                    "url": network_events_url,
+                    "status": resp.get("status", 0),
+                }
+            )
+
+        async def on_failed(event: dict[str, Any], session_id: str | None = None) -> None:
+            rid = event.get("requestId", "")
+            req = pending.pop(rid, None) or {}
+            network_buf.append(
+                {
+                    "ts": time.time(),
+                    "method": req.get("method", "GET"),
+                    "url": req.get("url", "?"),
+                    "status": 0,
+                    "error": event.get("errorText", "failed"),
+                }
+            )
+
+        client = cdp.cdp_client
+        await client.send.Runtime.enable(session_id=cdp_session_id)
+        await client.send.Network.enable(session_id=cdp_session_id)
+        client.register.Runtime.consoleAPICalled(on_console)
+        client.register.Runtime.exceptionThrown(on_exception)
+        client.register.Network.requestWillBeSent(on_request)
+        client.register.Network.responseReceived(on_response)
+        client.register.Network.loadingFailed(on_failed)
+        if cdp_session_id:
+            seen.add(cdp_session_id)
+        logger.debug("browser_observability_attached sid={}", sid)
+    except Exception as e:
+        logger.debug("browser_observability_attach_failed sid={} error={}", sid, e)
 
 
 def get_browser_info(session_id: str) -> dict[str, Any] | None:
@@ -208,6 +322,7 @@ async def _launch_session(
     _pages[sid] = page
 
     logger.info("browser_session_started session_id={}", sid)
+    await _attach_observability(sid, session)
     await _refresh_cdp_info(sid, session, page, action="started")
     return session, page
 
@@ -217,6 +332,9 @@ async def _close_session(state: Any) -> str:
     session = _sessions.pop(sid, None)
     _pages.pop(sid, None)
     _cdp_info.pop(sid, None)
+    _console_logs.pop(sid, None)
+    _network_events.pop(sid, None)
+    _observed_cdp_sessions.pop(sid, None)
     if session is None:
         return "No active browser session."
     try:
@@ -255,12 +373,24 @@ class NavigateAction(BaseModel):
 
 class ClickAction(BaseModel):
     action: Literal["click"]
-    selector: str = Field(description="CSS selector of the element to click.")
+    selector: str | None = Field(
+        default=None, description="CSS selector of the element to click."
+    )
+    index: int | None = Field(
+        default=None,
+        description="Element index from a prior `snapshot` action (preferred).",
+    )
 
 
 class FillAction(BaseModel):
     action: Literal["fill"]
-    selector: str = Field(description="CSS selector of the input element.")
+    selector: str | None = Field(
+        default=None, description="CSS selector of the input element."
+    )
+    index: int | None = Field(
+        default=None,
+        description="Element index from a prior `snapshot` action (preferred).",
+    )
     text: str = Field(description="Text to type into the element.")
     clear: bool = Field(default=True, description="Clear the field before typing.")
 
@@ -281,6 +411,40 @@ class ExtractAction(BaseModel):
         default=None,
         description="Extract an attribute instead of text (e.g. 'href', 'src').",
     )
+    max_chars: int = Field(
+        default=15_000,
+        ge=100,
+        le=100_000,
+        description="Truncate extracted text beyond this length.",
+    )
+
+
+class SnapshotAction(BaseModel):
+    action: Literal["snapshot"]
+    max_chars: int = Field(
+        default=15_000,
+        ge=500,
+        le=100_000,
+        description="Truncate the snapshot beyond this length.",
+    )
+
+
+class ConsoleAction(BaseModel):
+    action: Literal["console"]
+    level: Literal["all", "error", "warn"] = Field(
+        default="all",
+        description="'error' = errors only, 'warn' = warnings + errors.",
+    )
+    limit: int = Field(default=50, ge=1, le=200, description="Max entries, newest last.")
+
+
+class NetworkAction(BaseModel):
+    action: Literal["network"]
+    filter: Literal["all", "failed"] = Field(
+        default="all",
+        description="'failed' = only 4xx/5xx responses and network errors.",
+    )
+    limit: int = Field(default=50, ge=1, le=200, description="Max entries, newest last.")
 
 
 class ScreenshotAction(BaseModel):
@@ -349,6 +513,9 @@ AnyAction = Annotated[
     | FillAction
     | SelectAction
     | ExtractAction
+    | SnapshotAction
+    | ConsoleAction
+    | NetworkAction
     | ScreenshotAction
     | EvaluateAction
     | ScrollAction
@@ -368,37 +535,26 @@ AnyAction = Annotated[
 
 _DESCRIPTION = """\
 Control a headless Chromium browser. Pass one or more actions in a single call;
-they are executed in order.
+they are executed in order. The session persists across calls (auto-started on
+first action); close with ``stop`` when done.
 
-The browser session is persistent across calls — start it once (auto-started
-on first action) and reuse it.  Close with ``stop`` when done.
+Observation (prefer these over screenshots):
+snapshot   — Indexed map of interactive elements + page structure. Use the
+             returned [index] numbers with click/fill instead of guessing CSS.
+console    — Recent console messages (filter: error/warn) — check after loads.
+network    — Recent requests with status (filter: failed) — spot 4xx/5xx.
+extract    — Text content (full page or CSS selector; attribute="href" etc.).
+screenshot — Image of page/element, returned as a real image for vision — use
+             as final visual proof, not as the primary observation channel.
 
-Actions
--------
-start      — Launch browser (auto on first action; headless by default).
-stop       — Close browser and free resources.
-navigate   — Go to a URL.
-click      — Click element by CSS selector.
-fill       — Type text into input by CSS selector.
-select     — Choose a <select> option by value.
-extract    — Get text content (full page or CSS selector). Set attribute="href" etc. for attributes.
-screenshot — PNG screenshot (base64). Full page or element by selector.
-evaluate   — Run JavaScript. Use "return <expr>" to get a value.
-scroll     — Scroll up/down by N pixels.
-back       — Browser back.
-forward    — Browser forward.
-wait       — Wait for CSS selector or fixed seconds.
-new_tab    — Open URL in new tab.
-close_tab  — Close tab by index.
-get_tabs   — List open tabs [{url, title}].
-switch_tab — Switch to tab by index.
+Interaction:
+navigate / click / fill / select / scroll / back / forward / wait —
+click and fill accept ``index`` (from snapshot, preferred) or ``selector``.
+evaluate   — Run JavaScript ("return <expr>" for a value); debugging only.
 
-Tips
-----
-- Use ``extract`` after ``navigate`` to read page content.
-- Chain ``navigate`` → ``wait`` → ``extract`` for dynamic pages.
-- ``screenshot`` returns base64 PNG — useful for visual verification.
-- ``evaluate`` runs in page context; access DOM directly via JS.\
+Tabs: new_tab / close_tab / get_tabs / switch_tab.
+
+Verify workflow: navigate → wait → console + snapshot → interact → screenshot.\
 """
 
 
@@ -409,9 +565,12 @@ async def browser_use(
         Field(description="Ordered list of browser actions to execute."),
     ],
     _state: Annotated[Any, InjectedArg()] = None,
-) -> str:
+) -> str | ToolResult:
     """Control a headless Chromium browser for web automation."""
-    results: list[str] = []
+    # Handlers return ``str`` for text output or ``ToolResult`` for
+    # multimodal output (screenshots). Batches mixing both are folded into
+    # one ToolResult so vision models receive the images inline.
+    results: list[str | ToolResult] = []
 
     for act in actions:
         try:
@@ -421,22 +580,49 @@ async def browser_use(
             logger.debug("browser_use_error action={} error={}", act.action, e)
             results.append(f"Error ({act.action}): {e}")
 
-    return "\n---\n".join(results) if results else "No actions executed."
+    if not results:
+        return "No actions executed."
+
+    if not any(isinstance(r, ToolResult) for r in results):
+        return "\n---\n".join(r for r in results if isinstance(r, str))
+
+    parts: list[ContentBlock] = []
+    text_acc: list[str] = []
+
+    def _flush() -> None:
+        if text_acc:
+            parts.append(TextBlock(text="\n---\n".join(text_acc)))
+            text_acc.clear()
+
+    for r in results:
+        if isinstance(r, ToolResult):
+            _flush()
+            parts.extend(r.parts)
+        else:
+            text_acc.append(r)
+    _flush()
+    return ToolResult(parts=parts)
 
 
-async def _dispatch(act: Any, state: Any) -> str:
+async def _dispatch(act: Any, state: Any) -> str | ToolResult:
     action = act.action
 
     if action == "start":
         return await _handle_start(act, state)
     if action == "stop":
         return await _handle_stop(state)
+    if action == "console":
+        return _handle_console(act, state)
+    if action == "network":
+        return _handle_network(act, state)
 
     # All other actions require a live session
     session, page = await _get_session(state)
 
     if action == "navigate":
         return await _handle_navigate(act, page, state)
+    if action == "snapshot":
+        return await _handle_snapshot(act, session, page)
     if action == "click":
         return await _handle_click(act, page, state)
     if action == "fill":
@@ -503,26 +689,61 @@ async def _handle_navigate(act: NavigateAction, page: Any, state: Any) -> str:
     return f"Navigated to {url}\nTitle: {title}"
 
 
+async def _resolve_element(
+    page: Any,
+    state: Any,
+    *,
+    selector: str | None,
+    index: int | None,
+) -> tuple[Any | None, str, str | None]:
+    """Resolve an element by snapshot index (preferred) or CSS selector.
+
+    Returns ``(element, label, error)`` — exactly one of element/error is set.
+    """
+    if index is not None:
+        session = _sessions.get(_get_sid(state))
+        node = await session.get_dom_element_by_index(index) if session else None
+        if node is None:
+            return (
+                None,
+                "",
+                f"No element with index {index}. Run `snapshot` first — "
+                "indices are only valid after the latest snapshot.",
+            )
+        element = await page.get_element(node.backend_node_id)
+        return element, f"[{index}]", None
+    if selector:
+        elements = await page.get_elements_by_css_selector(selector)
+        if not elements:
+            return None, "", f"No element found for selector: {selector}"
+        return elements[0], selector, None
+    return None, "", "Provide either `index` (from snapshot) or `selector`."
+
+
 async def _handle_click(act: ClickAction, page: Any, state: Any) -> str:
-    elements = await page.get_elements_by_css_selector(act.selector)
-    if not elements:
-        return f"No element found for selector: {act.selector}"
-    await elements[0].click()
+    element, label, error = await _resolve_element(
+        page, state, selector=act.selector, index=act.index
+    )
+    if error:
+        return error
+    await element.click()
     session = _sessions.get(_get_sid(state))
     if session:
         await _refresh_cdp_info(_get_sid(state), session, page, action="clicked")
-    return f"Clicked: {act.selector}"
+    return f"Clicked: {label}"
 
 
 async def _handle_fill(act: FillAction, page: Any, state: Any) -> str:
-    elements = await page.get_elements_by_css_selector(act.selector)
-    if not elements:
-        return f"No element found for selector: {act.selector}"
-    await elements[0].fill(act.text, clear=act.clear)
+    element, label, error = await _resolve_element(
+        page, state, selector=act.selector, index=act.index
+    )
+    if error:
+        return error
+    await element.fill(act.text, clear=act.clear)
     session = _sessions.get(_get_sid(state))
     if session:
         await _refresh_cdp_info(_get_sid(state), session, page, action="filled")
-    return f"Filled {act.selector} with text ({len(act.text)} chars)."
+    return f"Filled {label} with text ({len(act.text)} chars)."
 
 
 async def _handle_select(act: SelectAction, page: Any) -> str:
@@ -531,6 +752,15 @@ async def _handle_select(act: SelectAction, page: Any) -> str:
         return f"No element found for selector: {act.selector}"
     await elements[0].select_option([act.value])
     return f"Selected '{act.value}' in {act.selector}"
+
+
+def _truncate(text: str, max_chars: int, *, hint: str) -> str:
+    if len(text) <= max_chars:
+        return text
+    return (
+        text[:max_chars]
+        + f"\n…[truncated {len(text) - max_chars:,} of {len(text):,} chars — {hint}]"
+    )
 
 
 async def _handle_extract(act: ExtractAction, page: Any) -> str:
@@ -545,25 +775,82 @@ async def _handle_extract(act: ExtractAction, page: Any) -> str:
         for el in elements:
             t = await el.evaluate("() => this.textContent")
             texts.append(t.strip() if t else "")
-        return "\n".join(texts) if texts else "(empty)"
+        joined = "\n".join(texts) if texts else "(empty)"
+        return _truncate(joined, act.max_chars, hint="narrow the selector")
 
     # Full page body text
     text = await page.evaluate("() => document.body.innerText")
-    return text if text else "(empty page)"
+    if not text:
+        return "(empty page)"
+    return _truncate(text, act.max_chars, hint="use a selector or raise max_chars")
 
 
-async def _handle_screenshot(act: ScreenshotAction, page: Any) -> str:
+async def _handle_snapshot(act: SnapshotAction, session: Any, page: Any) -> str:
+    """Indexed map of interactive elements — the primary observation action.
+
+    The [index] numbers in the output feed ``click``/``fill`` via ``index``;
+    they stay valid until the next snapshot or navigation.
+    """
+    state_summary = await session.get_browser_state_summary(
+        include_screenshot=False
+    )
+    dom_text = state_summary.dom_state.llm_representation()
+    header = f"URL: {state_summary.url}\nTitle: {state_summary.title}\n"
+    body = _truncate(dom_text, act.max_chars, hint="raise max_chars if needed")
+    return header + "\nInteractive elements (use [index] with click/fill):\n" + body
+
+
+def _handle_console(act: ConsoleAction, state: Any) -> str:
+    entries = list(_console_logs.get(_get_sid(state), ()))
+    if act.level == "error":
+        entries = [e for e in entries if e["level"] in ("error", "assert")]
+    elif act.level == "warn":
+        entries = [e for e in entries if e["level"] in ("error", "assert", "warning")]
+    entries = entries[-act.limit :]
+    if not entries:
+        return "(no console messages captured)"
+    return "\n".join(f"[{e['level']}] {e['text']}" for e in entries)
+
+
+def _handle_network(act: NetworkAction, state: Any) -> str:
+    entries = list(_network_events.get(_get_sid(state), ()))
+    if act.filter == "failed":
+        entries = [e for e in entries if e.get("error") or e.get("status", 0) >= 400]
+    entries = entries[-act.limit :]
+    if not entries:
+        return "(no network requests captured)"
+    lines = []
+    for e in entries:
+        status = e.get("error") or e.get("status", "?")
+        lines.append(f"{e['method']} {e['url']} → {status}")
+    return "\n".join(lines)
+
+
+async def _handle_screenshot(act: ScreenshotAction, page: Any) -> str | ToolResult:
     if act.selector:
         elements = await page.get_elements_by_css_selector(act.selector)
         if not elements:
             return f"No element found for selector: {act.selector}"
-        b64 = await elements[0].screenshot(format="png")
+        b64 = await elements[0].screenshot(format="jpeg", quality=80)
+        label = act.selector
     else:
-        b64 = await page.screenshot(format="png")
+        b64 = await page.screenshot(format="jpeg", quality=80)
+        label = "page"
 
-    # Return a summary; the base64 is available but too large for inline display
-    size_kb = len(b64) * 3 / 4 / 1024  # approximate decoded size
-    return f"Screenshot captured ({size_kb:.0f} KB, base64). Use the read tool with a .png file to view."
+    decoded_size = len(b64) * 3 // 4
+    if decoded_size > _MAX_IMAGE_BYTES:
+        return (
+            f"Screenshot too large for vision input ({decoded_size // 1024} KB > "
+            f"{_MAX_IMAGE_BYTES // 1024} KB). Screenshot a specific element instead."
+        )
+
+    url = await page.get_url()
+    return ToolResult(
+        parts=[
+            TextBlock(text=f"[Screenshot: {label} @ {url}]"),
+            ImageDataBlock(data=b64, media_type="image/jpeg"),
+        ]
+    )
 
 
 async def _handle_evaluate(act: EvaluateAction, page: Any) -> str:
@@ -603,6 +890,7 @@ async def _handle_new_tab(act: NewTabAction, state: Any) -> str:
     page = await session.new_page(act.url)
     sid = _get_sid(state)
     _pages[sid] = page
+    await _attach_observability(sid, session)
     await _refresh_cdp_info(sid, session, page, action="new_tab")
     url = await page.get_url()
     title = await page.get_title()
@@ -649,6 +937,7 @@ async def _handle_switch_tab(act: SwitchTabAction, state: Any) -> str:
     page = pages[act.index]
     sid = _get_sid(state)
     _pages[sid] = page
+    await _attach_observability(sid, session)
     await _refresh_cdp_info(sid, session, page, action="tab_switched")
     url = await page.get_url()
     title = await page.get_title()
