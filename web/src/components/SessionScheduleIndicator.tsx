@@ -6,7 +6,7 @@
  * with the full task list and action buttons.
  */
 
-import { useMemo, useCallback } from 'react'
+import { useCallback } from 'react'
 import { CalendarClock, Pause, Play, RotateCcw, Trash2, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -15,7 +15,7 @@ import {
   PopoverContent,
 } from '@/components/ui/popover'
 import {
-  useScheduledTasksQuery,
+  useSessionScheduledTasksQuery,
   usePauseScheduledTaskMutation,
   useResumeScheduledTaskMutation,
   useTriggerScheduledTaskMutation,
@@ -56,25 +56,19 @@ export function SessionScheduleIndicator({
   sessionId,
   onOpenScheduler,
 }: SessionScheduleIndicatorProps) {
-  const tasksQuery = useScheduledTasksQuery()
+  const tasksQuery = useSessionScheduledTasksQuery(sessionId)
   const pauseMutation = usePauseScheduledTaskMutation()
   const resumeMutation = useResumeScheduledTaskMutation()
   const triggerMutation = useTriggerScheduledTaskMutation()
   const deleteMutation = useDeleteScheduledTaskMutation()
 
-  // Filter tasks belonging to this session
-  const sessionTasks = useMemo(() => {
-    if (!sessionId || !tasksQuery.data?.tasks) return []
-    return tasksQuery.data.tasks.filter((t) => t.session_id === sessionId)
-  }, [sessionId, tasksQuery.data?.tasks])
+  // Tasks are already filtered server-side by session_id
+  const sessionTasks = tasksQuery.data?.tasks ?? []
 
   const handlePause = useCallback((id: string) => pauseMutation.mutate(id), [pauseMutation])
   const handleResume = useCallback((id: string) => resumeMutation.mutate(id), [resumeMutation])
   const handleTrigger = useCallback((id: string) => triggerMutation.mutate(id), [triggerMutation])
   const handleDelete = useCallback((id: string) => deleteMutation.mutate(id), [deleteMutation])
-
-  // Debug: log session and tasks
-  console.log('[SessionScheduleIndicator]', { sessionId, taskCount: sessionTasks.length, allTasks: tasksQuery.data?.tasks?.length })
 
   // Don't render if no session or no tasks
   if (!sessionId || sessionTasks.length === 0) return null
