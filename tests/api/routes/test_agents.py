@@ -268,6 +268,37 @@ async def test_registry_returns_catalog(
     assert {"skill", "todo_manage", "schedule_task", "note"}.isdisjoint(tool_names)
     assert isinstance(body["providers"], list) and body["providers"]
 
+    # Tier metadata so UIs can annotate/hide tools per role and mode.
+    by_name = {t["name"]: t for t in body["tools"]}
+    assert by_name["ask_user"]["lead_only"] is True
+    assert by_name["read"]["lead_only"] is False
+    assert by_name["wiki_search"]["tiers"] == ["forge"]
+    assert by_name["read"]["tiers"] is None
+
+
+@pytest.mark.asyncio
+async def test_member_effective_tools_exclude_lead_only_extras(
+    fs_dirs, client: AsyncClient
+):
+    """A member listing ask_user in frontmatter must not display it as
+    effective — mirrors the loader, which skips lead_only extras."""
+    agents_dir, _ = fs_dirs
+    (agents_dir / "lead.md").write_text(
+        "---\nname: lead\nrole: lead\nmodel: zai:glm-5-turbo\n---\nLead."
+    )
+    (agents_dir / "helper.md").write_text(
+        "---\nname: helper\nrole: member\nmodel: zai:glm-5-turbo\n"
+        "tools:\n  - ask_user\n  - browser_use\n---\nHelper."
+    )
+
+    res = await client.get("/api/agents")
+
+    assert res.status_code == 200
+    rows = {row["name"]: row for row in res.json()["agents"]}
+    helper = rows["helper"]
+    assert "ask_user" not in helper["tools"]
+    assert "browser_use" in helper["tools"]
+
 
 # ── GET /agents/{name} ───────────────────────────────────────────────────────
 

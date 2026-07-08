@@ -133,6 +133,12 @@ export function AgentForm({
         description: t.description,
       })) ?? []
 
+  // Lead-only tools (ask_user, plan mode, worktree…) are never granted to
+  // members — used below to hide them from a member agent's tool picker.
+  const leadOnlyTools = new Set(
+    registry.data?.tools.filter((t) => t.lead_only).map((t) => t.name) ?? [],
+  )
+
   const skillOptions: MultiSelectOption[] =
     registry.data?.skills.map((s) => ({
       value: s.name,
@@ -194,6 +200,7 @@ export function AgentForm({
           disabled={disabled}
           isNew={isNew}
           toolOptions={toolOptions}
+          leadOnlyTools={leadOnlyTools}
           skillOptions={skillOptions}
           mcpOptions={mcpOptions}
           modelOptions={modelOptions}
@@ -261,6 +268,7 @@ function FormFields({
   disabled,
   isNew,
   toolOptions,
+  leadOnlyTools,
   skillOptions,
   mcpOptions,
   modelOptions,
@@ -274,6 +282,7 @@ function FormFields({
   disabled?: boolean
   isNew?: boolean
   toolOptions: MultiSelectOption[]
+  leadOnlyTools: Set<string>
   skillOptions: MultiSelectOption[]
   mcpOptions: MultiSelectOption[]
   modelOptions: { id: string; provider: string; model: string; vision: boolean }[]
@@ -319,13 +328,19 @@ function FormFields({
   })
   const hasBuiltInProfile = isBuiltInProfile(fm.name, fm.role, agentPath)
   const implicitToolNames = new Set(['skill', 'todo_manage', 'schedule_task', 'note'])
-  const builtInTools = (effectiveTools ?? []).filter(
-    (tool) => implicitToolNames.has(tool) || hasBuiltInProfile,
-  ).filter((tool) => !(fm.tools ?? []).includes(tool))
-  const extraToolOptions = (hasBuiltInProfile
-    ? toolOptions.filter((option) => !builtInTools.includes(option.value))
-    : toolOptions
-  ).filter((option) => !implicitToolNames.has(option.value))
+  // Every agent gets its mode tier's tools — the server's effective
+  // toolset (tier grant + implicit adds) minus explicit frontmatter
+  // extras is what we show as always-included chips.
+  const grantedTools = (effectiveTools ?? []).filter(
+    (tool) => !(fm.tools ?? []).includes(tool),
+  )
+  const isMember = fm.role !== 'lead'
+  const extraToolOptions = toolOptions
+    .filter((option) => !grantedTools.includes(option.value))
+    .filter((option) => !implicitToolNames.has(option.value))
+    // Lead-only tools would be silently skipped by the loader for members
+    // — don't offer them in the first place.
+    .filter((option) => !(isMember && leadOnlyTools.has(option.value)))
   const builtInSkills = (effectiveSkills ?? [])
     .filter(() => hasBuiltInProfile)
     .filter((skill) => !(fm.skills ?? []).includes(skill))
@@ -507,22 +522,21 @@ function FormFields({
         <CardHeader>
           <CardTitle>Capabilities</CardTitle>
           <CardDescription>
-            {hasBuiltInProfile
-              ? 'Add extra tools, MCP servers, and skills on top of the built-in profile.'
-              : 'Tools the agent may invoke, MCP servers it has access to, and skills it can load on demand.'}
+            Tier tools are granted automatically. Add extra tools, MCP
+            servers, and skills on top.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <Field
             label="Tools"
             hint={
-              builtInTools.length > 0
-                ? `${(fm.tools ?? []).length} extra selected. Built-in tools are always included.`
+              grantedTools.length > 0
+                ? `${(fm.tools ?? []).length} extra selected. Tier tools are always included.`
                 : `${(fm.tools ?? []).length} selected of ${extraToolOptions.length} available.`
             }
           >
-            {builtInTools.length > 0 && (
-              <CapabilityChips label="Built-in tools" values={builtInTools} />
+            {grantedTools.length > 0 && (
+              <CapabilityChips label="Granted by tier" values={grantedTools} />
             )}
             <MultiSelect
               options={extraToolOptions}
