@@ -387,9 +387,12 @@ class TaskScheduler:
 
         asyncio.create_task(self._fire_task(task))
 
-    async def list_tasks(self) -> list[ScheduledTask]:
+    async def list_tasks(self, session_id: str | None = None) -> list[ScheduledTask]:
         async with self._db() as session:
-            result = await session.exec(select(ScheduledTask))
+            stmt = select(ScheduledTask)
+            if session_id is not None:
+                stmt = stmt.where(ScheduledTask.session_id == session_id)
+            result = await session.exec(stmt)
             return list(result.all())
 
     async def get_task(self, task_id: UUID) -> ScheduledTask | None:

@@ -10,8 +10,9 @@ import type {
   ScheduledTaskListResponse,
 } from '../types'
 
-export async function listScheduledTasks(): Promise<ScheduledTaskListResponse> {
-  const res = await fetch(`${apiBaseUrl()}/scheduler/tasks`)
+export async function listScheduledTasks(sessionId?: string | null): Promise<ScheduledTaskListResponse> {
+  const params = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''
+  const res = await fetch(`${apiBaseUrl()}/scheduler/tasks${params}`)
   if (!res.ok) await parseDetailOrThrow(res, 'listScheduledTasks')
   return res.json()
 }

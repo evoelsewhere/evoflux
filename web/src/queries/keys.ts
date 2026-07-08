@@ -84,6 +84,7 @@ export const queryKeys = {
   scheduler: {
     all: () => ['scheduler'] as const,
     list: () => ['scheduler', 'list'] as const,
+    sessionList: (sessionId: string) => ['scheduler', 'list', 'session', sessionId] as const,
   },
   todos: (sessionId: string) => ['todos', sessionId] as const,
   chapters: {

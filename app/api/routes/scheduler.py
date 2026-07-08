@@ -84,9 +84,10 @@ async def create_task(
     summary="List all scheduled tasks",
 )
 async def list_tasks(
+    session_id: str | None = None,
     scheduler: TaskScheduler = Depends(get_scheduler),
 ) -> ScheduledTaskListResponse:
-    tasks = await scheduler.list_tasks()
+    tasks = await scheduler.list_tasks(session_id=session_id)
     return ScheduledTaskListResponse(
         tasks=[ScheduledTaskResponse.model_validate(t) for t in tasks]
     )
