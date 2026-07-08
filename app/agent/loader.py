@@ -384,11 +384,9 @@ def _build_agent(
         from app.agent.builtin_prompts import (
             apply_EVOFLUX_extra_prompt,
             EVOFLUX_description_for_mode,
-            EVOFLUX_tools_for_mode,
         )
 
         cfg.description = cfg.description or EVOFLUX_description_for_mode(mode)
-        cfg.tools = [*EVOFLUX_tools_for_mode(mode), *cfg.tools]
         system_prompt = apply_EVOFLUX_extra_prompt(mode, cfg.system_prompt)
     elif cfg.role == "member":
         from app.agent.builtin_prompts import (
@@ -400,12 +398,18 @@ def _build_agent(
         if profile is not None:
             built_in_prompt = profile["prompt"]
             cfg.description = cfg.description or profile["description"]
-            cfg.tools = [*profile["tools"], *cfg.tools]
             cfg.skills = [*profile["skills"], *cfg.skills]
             cfg.mcp = [*profile["mcp"], *cfg.mcp]
             system_prompt = apply_member_extra_prompt(
                 cfg.name, built_in_prompt, cfg.system_prompt
             )
+
+    # Tier grant: every agent gets all tools of its mode's tier (filtered by
+    # role for lead_only tools). Frontmatter ``tools:`` entries remain as
+    # extras on top — useful for custom agents referencing MCP tools by name.
+    from app.agent.builtin_prompts import tier_tools
+
+    cfg.tools = [*tier_tools(tool_registry, mode=mode, role=cfg.role), *cfg.tools]
 
     if cfg.skills:
         cfg.skills = list(dict.fromkeys(cfg.skills))

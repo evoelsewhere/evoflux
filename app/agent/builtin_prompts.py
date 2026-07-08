@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import TypedDict
+from typing import Any, Mapping, TypedDict
 
 DEFAULT_EMPTY_PROMPT = "You are a helpful assistant."
 _EXTRA_PROMPT_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
@@ -11,86 +11,43 @@ _EXTRA_PROMPT_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 NORMAL_EVOFLUX_DESCRIPTION = "Your personal on-machine AI assistant. Lives on your laptop, reads your files, runs your shell, remembers what matters."
 CODING_EVOFLUX_DESCRIPTION = "Lead coding agent. Plans the work, coordinates the team, and delivers a verified change with a concise handoff."
 
-NORMAL_EVOFLUX_TOOLS = [
-    "ask_user",
-    "bg",
-    "browser_use",
-    "code_map",
-    "code_neighbors",
-    "code_overview",
-    "code_path",
-    "code_references",
-    "code_search",
-    "code_symbol",
-    "date",
-    "edit",
-    "enter_plan_mode",
-    "exit_plan_mode",
-    "glob",
-    "grep",
-    "ls",
-    "mark_chapter",
-    "patch",
-    "python",
-    "read",
-    "rm",
-    "shell",
-    "shell_bg_start",
-    "shell_bg_status",
-    "shell_bg_wait",
-    "web_fetch",
-    "web_search",
-    "memory_search",
-    "wiki_search",
-    "write",
-    "worktree_start",
-    "worktree_finish",
-    "lsp_diagnostics",
-    "lsp_definition",
-    "lsp_references",
-]
-CODING_EVOFLUX_TOOLS = [
-    "ask_user",
-    "bg",
-    "browser_use",
-    "code_map",
-    "code_neighbors",
-    "code_overview",
-    "code_path",
-    "code_references",
-    "code_search",
-    "code_symbol",
-    "date",
-    "edit",
-    "enter_plan_mode",
-    "exit_plan_mode",
-    "glob",
-    "grep",
-    "ls",
-    "mark_chapter",
-    "patch",
-    "python",
-    "read",
-    "rm",
-    "shell",
-    "shell_bg_start",
-    "shell_bg_status",
-    "shell_bg_wait",
-    "web_fetch",
-    "web_search",
-    "memory_search",
-    "write",
-    "worktree_start",
-    "worktree_finish",
-    "lsp_diagnostics",
-    "lsp_definition",
-    "lsp_references",
-]
+# ── Tool tiers ───────────────────────────────────────────────────────────────
+# Tools declare tier membership where they are registered
+# (``@tool(tiers=...)`` / ``Tool(tiers=...)``); ``None`` means every tier.
+# Agents no longer enumerate tools one by one — an agent gets every tool of
+# its mode's tier, so a newly registered tool is available everywhere without
+# per-agent wiring. ``lead_only`` tools (user interaction / session structure)
+# are filtered out for members.
+
+MODE_TO_TIER = {"normal": "forge", "coding": "coding"}
+
+# Wired explicitly by the loader / team runtime (implicit adds and per-role
+# variants) — never granted via tier membership.
+_LOADER_MANAGED_TOOLS = {"skill", "todo_manage", "schedule_task", "note"}
+
+
+def tier_tools(registry: Mapping[str, Any], *, mode: str, role: str) -> list[str]:
+    """Return registry keys available to an agent of *role* in *mode*'s tier.
+
+    MCP tools (``mcp_``-prefixed) are excluded — they are granted per-agent
+    via the ``mcp:`` frontmatter list, not by tier.
+    """
+    tier = MODE_TO_TIER.get(mode, mode)
+    names: list[str] = []
+    for key, t in registry.items():
+        if key in _LOADER_MANAGED_TOOLS or key.startswith("mcp_"):
+            continue
+        tiers = getattr(t, "tiers", None)
+        if tiers is not None and tier not in tiers:
+            continue
+        if getattr(t, "lead_only", False) and role != "lead":
+            continue
+        names.append(key)
+    return sorted(names)
 
 
 class BuiltinMemberProfile(TypedDict):
     description: str
-    tools: list[str]
     skills: list[str]
     mcp: list[str]
     prompt: str
@@ -110,20 +67,6 @@ BUILTIN_MEMBER_PROFILES: dict[str, dict[str, BuiltinMemberProfile]] = {
     "normal": {
         "executor": {
             "description": "Makes it real. Turns plans into artifacts on disk — files, documents, builds, commands, deliverables.",
-            "tools": [
-                "date",
-                "read",
-                "write",
-                "edit",
-                "patch",
-                "bg",
-                "ls",
-                "glob",
-                "grep",
-                "python",
-                "shell",
-                "web_fetch",
-            ],
             "skills": [
                 "writing-and-deliverables",
                 "documentation-and-adrs",
@@ -162,17 +105,6 @@ List exactly: which files were created or modified (with paths), which commands 
         },
         "explorer": {
             "description": "Goes and looks. Gathers raw material from the web, filesystem, and codebases; returns structured findings with sources. Informs the decision — does not make it.",
-            "tools": [
-                "web_search",
-                "web_fetch",
-                "date",
-                "read",
-                "ls",
-                "glob",
-                "grep",
-                "python",
-                "shell",
-            ],
             "skills": [
                 "research-and-fact-checking",
                 "source-driven-development",
@@ -222,21 +154,6 @@ Your mode is **deep reconnaissance**. You don't skim — you investigate until y
         },
         "consultant": {
             "description": "Deep analysis engine. Decomposes complex problems, quantifies trade-offs, and delivers evidence-backed recommendations with clear reasoning.",
-            "tools": [
-                "browser_use",
-                "date",
-                "read",
-                "ls",
-                "glob",
-                "grep",
-                "python",
-                "shell",
-                "web_search",
-                "web_fetch",
-                "memory_search",
-                "wiki_search",
-                "write",
-            ],
             "skills": [
                 "decision-analysis",
                 "idea-refine",
@@ -327,17 +244,6 @@ Assign explicit weights to the criteria based on the stated constraints. Score e
         },
         "debate": {
             "description": "Devil's advocate. Stress-tests proposals by attacking their weakest assumptions, exposing failure modes, and surfacing stronger alternatives.",
-            "tools": [
-                "date",
-                "read",
-                "ls",
-                "glob",
-                "grep",
-                "python",
-                "shell",
-                "web_search",
-                "web_fetch",
-            ],
             "skills": [
                 "red-team-and-critique",
                 "doubt-driven-development",
@@ -400,26 +306,6 @@ Your mode is **adversarial stress-testing**. You are not here to be agreeable. Y
     "coding": {
         "coder": {
             "description": "Implements focused code changes with the smallest correct diff and runs the relevant verification commands.",
-            "tools": [
-                "bg",
-                "code_neighbors",
-                "code_overview",
-                "code_path",
-                "code_references",
-                "code_search",
-                "code_symbol",
-                "date",
-                "edit",
-                "glob",
-                "grep",
-                "ls",
-                "patch",
-                "python",
-                "read",
-                "rm",
-                "shell",
-                "write",
-            ],
             "skills": [
                 "incremental-implementation",
                 "test-driven-development",
@@ -432,22 +318,6 @@ Your mode is **adversarial stress-testing**. You are not here to be agreeable. Y
         },
         "explorer": {
             "description": "Checks the current codebase. Maps existing implementation, patterns, and risks so coding work starts from facts.",
-            "tools": [
-                "code_map",
-                "code_neighbors",
-                "code_overview",
-                "code_path",
-                "code_references",
-                "code_search",
-                "code_symbol",
-                "date",
-                "glob",
-                "grep",
-                "ls",
-                "python",
-                "read",
-                "shell",
-            ],
             "skills": [
                 "context-engineering",
                 "source-driven-development",
@@ -482,20 +352,6 @@ Summarize what exists, where it lives, what patterns to follow, and any risks or
         },
         "debate": {
             "description": "Code critic. Challenges implementation choices, hunts for bugs, edge cases, and security holes, then argues for the better approach.",
-            "tools": [
-                "code_neighbors",
-                "code_path",
-                "code_references",
-                "code_search",
-                "code_symbol",
-                "date",
-                "glob",
-                "grep",
-                "ls",
-                "python",
-                "read",
-                "shell",
-            ],
             "skills": [
                 "code-review-and-quality",
                 "security-and-hardening",
@@ -557,23 +413,6 @@ End with a one-line verdict: **LGTM**, **Fix before merging**, or **Needs rework
         },
         "architect": {
             "description": "Designs the change before code is written. Decomposes the request, picks the approach, and specs the interfaces and contracts so the coder builds the right thing.",
-            "tools": [
-                "code_map",
-                "code_neighbors",
-                "code_overview",
-                "code_path",
-                "code_references",
-                "code_search",
-                "code_symbol",
-                "date",
-                "glob",
-                "grep",
-                "ls",
-                "python",
-                "read",
-                "shell",
-                "write",
-            ],
             "skills": [
                 "spec-driven-development",
                 "planning-and-task-breakdown",
@@ -779,11 +618,6 @@ def EVOFLUX_description_for_mode(mode: str) -> str:
     return (
         CODING_EVOFLUX_DESCRIPTION if mode == "coding" else NORMAL_EVOFLUX_DESCRIPTION
     )
-
-
-def EVOFLUX_tools_for_mode(mode: str) -> list[str]:
-    """Return built-in tool names for a team mode."""
-    return list(CODING_EVOFLUX_TOOLS if mode == "coding" else NORMAL_EVOFLUX_TOOLS)
 
 
 def EVOFLUX_prompt_for_mode(mode: str) -> str:

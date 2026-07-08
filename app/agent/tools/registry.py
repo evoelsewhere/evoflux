@@ -141,6 +141,8 @@ class Tool:
         description: str | Callable[[], str] | None = None,
         concurrency_safe: bool = False,
         read_only: bool = False,
+        tiers: tuple[str, ...] | None = None,
+        lead_only: bool = False,
     ) -> None:
         self._func = func
         # ``Callable`` is the abstract type; only function objects guarantee
@@ -158,6 +160,14 @@ class Tool:
         # future permission-system shortcuts (read-only tools can skip the
         # ``ask`` prompt in default mode).
         self.read_only = read_only
+        # Team-tier membership. ``None`` means the tool belongs to every tier
+        # ("forge", "coding", ...) — the default, so newly registered tools are
+        # available everywhere without extra wiring. Set an explicit tuple to
+        # restrict, e.g. ``tiers=("forge",)``.
+        self.tiers = frozenset(tiers) if tiers is not None else None
+        # Tools that talk to the user or restructure the session (ask_user,
+        # plan mode, worktree, ...) are lead-only: team members never get them.
+        self.lead_only = lead_only
 
         self._model, self._definition, self._injected_params = self._build()
         self._description_factory: Callable[[], str] | None = (
@@ -351,6 +361,8 @@ def tool(
     description: str | Callable[[], str] | None = None,
     concurrency_safe: bool = False,
     read_only: bool = False,
+    tiers: tuple[str, ...] | None = None,
+    lead_only: bool = False,
 ) -> Callable[[Callable], Tool]: ...
 
 
@@ -361,6 +373,8 @@ def tool(
     description: str | Callable[[], str] | None = None,
     concurrency_safe: bool = False,
     read_only: bool = False,
+    tiers: tuple[str, ...] | None = None,
+    lead_only: bool = False,
 ) -> Tool | Callable[[Callable], Tool]:
     """Decorator that converts a function into a :class:`Tool`.
 
@@ -400,6 +414,8 @@ def tool(
             description=description,
             concurrency_safe=concurrency_safe,
             read_only=read_only,
+            tiers=tiers,
+            lead_only=lead_only,
         )
 
     return decorator
