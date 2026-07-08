@@ -355,6 +355,7 @@ export function CodingWorkspacePanel({
         open={scOpen}
         onOpenChange={setScOpen}
         workspace={scWorkspace || workspace}
+        onWorkspaceChange={setScWorkspace}
         project={project}
       />
     </motion.aside>
