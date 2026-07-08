@@ -143,6 +143,9 @@ def make_tool_executor(
                     "_tool_output": s.metadata.get("_tool_output_callbacks", {}).get(
                         tc.id
                     ),
+                    "agent_name": agent_name,
+                    "tool_call_id": tc.id,
+                    "session_id": s.metadata.get("session_id", ""),
                 },
                 **args,
             )
