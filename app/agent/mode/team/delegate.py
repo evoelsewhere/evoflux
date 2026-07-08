@@ -252,14 +252,21 @@ def _emit_delegation_event(
     to_agents: list[str],
     spec: dict,
 ) -> None:
-    """Push a ``delegation`` SSE event to the stream store (fire-and-forget)."""
+    """Push a ``delegation`` SSE event to the stream store (fire-and-forget).
+
+    Uses ``from_parts`` because the delegation event carries team-specific
+    fields not worth a full typed event class in ``events.py`` — the same
+    pattern used for ``handoff`` and ``inbox`` events.
+    """
     if team is None:
         return
     try:
+        import asyncio
+
         from app.services import memory_stream_store as stream_store
         from app.services.stream_envelope import StreamEnvelope
 
-        stream_key = str(team.lead_session_id)
+        lead_session = team.lead.session_id
         envelope = StreamEnvelope.from_parts(
             event="delegation",
             data={
@@ -268,6 +275,7 @@ def _emit_delegation_event(
                 "spec": spec,
             },
         )
-        stream_store.push(stream_key, envelope)
+        # Use create_task so we don't block the tool return
+        asyncio.create_task(stream_store.push_event(lead_session, envelope))
     except Exception as exc:
         logger.debug("delegation_event_emit_failed error={}", exc)
