@@ -180,7 +180,7 @@ class TestListTeamSessionsWithData:
                 await _create_team_session(
                     db, other_workspace_id, mode="coding", workspace="/repo/other"
                 )
-                await _create_team_session(db, normal_id, mode="normal")
+                await _create_team_session(db, normal_id, mode="forge")
 
         client = TestClient(app_with_team)
         resp = client.get(
@@ -225,12 +225,12 @@ class TestResolveTeamSession:
     def test_resolve_creates_normal_session(self, app_with_team):
         client = TestClient(app_with_team)
 
-        resp = client.post("/api/team/sessions/resolve", json={"mode": "normal"})
+        resp = client.post("/api/team/sessions/resolve", json={"mode": "forge"})
 
         assert resp.status_code == 200
         data = resp.json()
         assert data["created"] is True
-        assert data["mode"] == "normal"
+        assert data["mode"] == "forge"
         assert "workspace" not in data
 
     @pytest.mark.asyncio
@@ -243,7 +243,7 @@ class TestResolveTeamSession:
                 await _create_team_session(db, lead_id)
 
         client = TestClient(app_with_team)
-        resp = client.post("/api/team/sessions/resolve", json={"mode": "normal"})
+        resp = client.post("/api/team/sessions/resolve", json={"mode": "forge"})
 
         assert resp.status_code == 200
         data = resp.json()
@@ -262,7 +262,7 @@ class TestResolveTeamSession:
         client = TestClient(app_with_team)
         resp = client.post(
             "/api/team/sessions/resolve",
-            json={"mode": "normal", "create": True},
+            json={"mode": "forge", "create": True},
         )
 
         assert resp.status_code == 200

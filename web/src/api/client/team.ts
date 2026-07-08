@@ -45,7 +45,7 @@ export async function postTeamChat(
   sessionId?: string | null,
   interrupt = false,
   files?: File[],
-  mode = 'normal',
+  mode = 'forge',
   workspace?: string | null,
   model?: string | null,
   thinkingLevel?: string | null,
@@ -62,7 +62,7 @@ export async function postTeamChat(
   if (interrupt) {
     formData.append('interrupt', 'true')
   }
-  if (mode !== 'normal') {
+  if (mode !== 'forge') {
     formData.append('mode', mode)
   }
   if (workspace) {
@@ -330,7 +330,7 @@ export async function getCodingWorkspaceStatus(workspace: string): Promise<Works
 export async function listTeamSessions(
   before?: string | null,
   limit = 20,
-  filters?: { mode?: 'normal' | 'coding'; workspace?: string | null; project_id?: string | null },
+  filters?: { mode?: 'forge' | 'coding'; workspace?: string | null; project_id?: string | null },
 ): Promise<SessionPageResponse> {
   const params = new URLSearchParams()
   if (before) params.set('before', before)
@@ -371,7 +371,7 @@ export async function resolveTeamSession(options: {
   worktreeBranch?: string | null
 }): Promise<TeamSessionResolveResponse> {
   const body: Record<string, string | boolean | null> = {
-    mode: options.mode ?? 'normal',
+    mode: options.mode ?? 'forge',
   }
   if (options.workspace !== undefined) body.workspace = options.workspace
   if (options.project_id !== undefined) body.project_id = options.project_id

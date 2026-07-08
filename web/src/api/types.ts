@@ -804,7 +804,7 @@ export interface WorkspaceFilesResponse {
 
 // ── Scheduler ───────────────────────────────────────────────────────────────
 
-export type ScheduledTaskMode = 'normal' | 'coding'
+export type ScheduledTaskMode = 'forge' | 'coding'
 
 export interface ScheduledTaskResponse {
   id: string

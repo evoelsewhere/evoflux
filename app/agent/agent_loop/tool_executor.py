@@ -126,8 +126,8 @@ def make_tool_executor(
             # tools (e.g. schedule_task) don't have to fish through
             # ``state.metadata`` themselves.  Falls back to defaults when the
             # caller did not populate ``RunConfig.metadata`` (non-team runs).
-            team_mode_raw = s.metadata.get("team_mode", "normal")
-            injected_mode = "coding" if team_mode_raw == "coding" else "normal"
+            team_mode_raw = s.metadata.get("team_mode", "forge")
+            injected_mode = "coding" if team_mode_raw == "coding" else "forge"
             team_workspace_raw = s.metadata.get("team_workspace")
             injected_workspace = (
                 str(team_workspace_raw)
