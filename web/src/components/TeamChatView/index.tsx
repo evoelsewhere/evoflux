@@ -1541,6 +1541,11 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
             isWorking={isTeamWorking}
           />
         )}
+        <BrowserViewer
+          sessionId={sessionIdState}
+          open={browserOpen}
+          onClose={closeBrowser}
+        />
       </div>
 
       <SessionSettingsPanel
@@ -1564,11 +1569,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
         onClose={closeScheduler}
         contextMode={mode}
         contextWorkspace={workspace ?? null}
-      />
-      <BrowserViewer
-        sessionId={sessionIdState}
-        open={browserOpen}
-        onClose={closeBrowser}
       />
       <PlanApprovalModal />
       {showPalette && (
