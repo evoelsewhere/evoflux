@@ -62,9 +62,23 @@ class _FakePage:
         return base64.b64encode(b"page-bytes").decode()
 
 
+class _FakeCdpClient:
+    def __init__(self) -> None:
+        self.emulated: list[dict] = []
+        outer = self
+
+        class _Emulation:
+            async def setEmulatedMedia(self, params, session_id=None):
+                outer.emulated.append(params)
+
+        self.send = SimpleNamespace(Emulation=_Emulation())
+
+
 class _FakeSession:
     def __init__(self, *, node: object | None = None) -> None:
         self._node = node
+        self.stopped = False
+        self.cdp_client_fake = _FakeCdpClient()
 
     async def get_dom_element_by_index(self, index: int):
         return self._node
@@ -76,6 +90,12 @@ class _FakeSession:
         return SimpleNamespace(
             dom_state=dom_state, url="http://localhost:5180/", title="Demo"
         )
+
+    async def get_or_create_cdp_session(self):
+        return SimpleNamespace(cdp_client=self.cdp_client_fake, session_id="cdp-1")
+
+    async def stop(self) -> None:
+        self.stopped = True
 
 
 @pytest.fixture(autouse=True)
@@ -254,3 +274,66 @@ async def test_batch_text_only_returns_string(monkeypatch):
     )
     assert isinstance(result, str)
     assert "no console messages" in result
+
+
+# ── resize ───────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_resize_preset_and_dark_mode():
+    session = _FakeSession()
+    page = _FakePage()
+    sized: list[tuple[int, int]] = []
+
+    async def set_viewport_size(w: int, h: int) -> None:
+        sized.append((w, h))
+
+    page.set_viewport_size = set_viewport_size
+
+    out = await bt._handle_resize(
+        bt.ResizeAction(action="resize", preset="mobile", color_scheme="dark"),
+        session,
+        page,
+    )
+    assert sized == [(375, 812)]
+    assert session.cdp_client_fake.emulated == [
+        {"features": [{"name": "prefers-color-scheme", "value": "dark"}]}
+    ]
+    assert "viewport 375x812" in out and "dark" in out
+
+
+@pytest.mark.asyncio
+async def test_resize_without_params_hints():
+    out = await bt._handle_resize(
+        bt.ResizeAction(action="resize"), _FakeSession(), _FakePage()
+    )
+    assert "Nothing to change" in out
+
+
+# ── cleanup ──────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_idle_sessions_are_swept():
+    stale = _FakeSession()
+    bt._sessions["stale-sid"] = stale
+    bt._last_used["stale-sid"] = -10_000.0  # long past the TTL
+
+    await bt._sweep_idle_sessions(active_sid="other-sid")
+
+    assert stale.stopped is True
+    assert "stale-sid" not in bt._sessions
+    assert "stale-sid" not in bt._last_used
+
+
+@pytest.mark.asyncio
+async def test_close_all_sessions_stops_everything():
+    a, b = _FakeSession(), _FakeSession()
+    bt._sessions.update({"sid-a": a, "sid-b": b})
+    bt._console_logs["sid-a"] = deque([{"ts": 1, "level": "log", "text": "x"}])
+
+    await bt.close_all_sessions()
+
+    assert a.stopped and b.stopped
+    assert not bt._sessions
+    assert "sid-a" not in bt._console_logs
