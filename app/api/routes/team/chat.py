@@ -48,7 +48,12 @@ from app.api.routes.team.worktrees import (
     create_coding_workspace_worktree,
     find_managed_worktree_source,
 )
-from app.models.chat import ChatSession, CodingProjectWorkspace, SessionChapter
+from app.models.chat import (
+    ChatSession,
+    CodingProjectWorkspace,
+    SessionChapter,
+    normalize_mode,
+)
 from app.services import (
     agent_service,
     memory_stream_store as stream_store,
@@ -738,8 +743,10 @@ async def list_team_sessions(
     Pass ``before=<created_at_iso>`` (the ``next_cursor`` from the previous
     page) to retrieve the next batch.  Omit to start from the newest.
     """
-    if mode is not None and mode not in {"normal", "coding"}:
-        raise HTTPException(status_code=422, detail="Invalid mode")
+    if mode is not None:
+        mode = normalize_mode(mode)
+        if mode not in {"forge", "coding"}:
+            raise HTTPException(status_code=422, detail="Invalid mode")
     if workspace is not None and mode != "coding":
         raise HTTPException(status_code=422, detail="workspace requires mode=coding")
 
@@ -776,9 +783,10 @@ async def resolve_team_session(
     body: TeamSessionResolveRequest, db: DbSession
 ) -> TeamSessionResolveResponse:
     """Return the newest matching top-level session, creating one if absent."""
-    if body.mode not in {"normal", "coding"}:
+    body.mode = normalize_mode(body.mode)
+    if body.mode not in {"forge", "coding"}:
         raise HTTPException(
-            status_code=422, detail="mode must be 'normal' or 'coding'."
+            status_code=422, detail="mode must be 'forge' or 'coding'."
         )
     model = body.model.strip() if body.model else None
     thinking_level = body.thinking_level.strip() if body.thinking_level else None
@@ -787,7 +795,7 @@ async def resolve_team_session(
 
     workspace = body.workspace
     project_id = body.project_id
-    if body.mode == "normal":
+    if body.mode == "forge":
         workspace = None
         project_id = None
         if body.worktree_from or body.worktree_name or body.worktree_branch:

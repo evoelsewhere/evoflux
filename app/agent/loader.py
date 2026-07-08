@@ -376,7 +376,7 @@ def _build_agent(
     provider_factory: ProviderFactory,
     *,
     source_path: Path | None = None,
-    mode: str = "normal",
+    mode: str = "forge",
 ) -> Agent:
     """Construct one Agent.  ``source_path`` enables drift detection."""
     system_prompt = cfg.system_prompt
@@ -616,7 +616,7 @@ def load_team_from_dir(
     provider_factory: ProviderFactory | None = None,
     extra_tools: dict[str, Tool] | None = None,
     db_factory: DbFactory | None = None,
-    mode: str = "normal",
+    mode: str = "forge",
     workspace: str | None = None,
 ) -> "AgentTeam | None":
     """Load an AgentTeam from a directory of per-agent ``.md`` files.
@@ -640,7 +640,7 @@ def load_team_from_dir(
     if not md_files:
         return None
 
-    if mode in ("normal", "coding"):
+    if mode in ("forge", "coding"):
         ensure_builtin_agent_blueprints(agents_dir, mode=mode)
         md_files = sorted(agents_dir.glob("*.md"))
 
@@ -765,7 +765,7 @@ def rebuild_agent_from_disk(
     *,
     provider_factory: ProviderFactory | None = None,
     extra_tools: dict[str, Tool] | None = None,
-    mode: str = "normal",
+    mode: str = "forge",
 ) -> Agent:
     """Re-parse one agent ``.md`` and return a fresh :class:`Agent`.
 

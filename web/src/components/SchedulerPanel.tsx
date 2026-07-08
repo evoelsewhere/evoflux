@@ -247,7 +247,7 @@ export function ModeWorkspaceFields({
   }, [workspace])
 
   const modeOptions: { key: ScheduledTaskMode; label: string }[] = [
-    { key: 'normal', label: 'Normal' },
+    { key: 'forge', label: 'Forge' },
     { key: 'coding', label: 'Coding' },
   ]
 
@@ -257,7 +257,7 @@ export function ModeWorkspaceFields({
       <div
         role="tablist"
         aria-label="Task mode"
-        // ``inline-flex`` so two short labels ("Normal" / "Coding") do not
+        // ``inline-flex`` so two short labels ("Forge" / "Coding") do not
         // sprawl across the full form width.
         className="mt-2 inline-flex gap-1 rounded-md border border-(--color-border) bg-(--bg-page) p-1"
       >
@@ -291,7 +291,7 @@ export function ModeWorkspaceFields({
         })}
       </div>
       <p className="mt-1 text-xs text-(--color-text-muted)">
-        {mode === 'normal'
+        {mode === 'forge'
           ? 'Delivers to the default team lead.'
           : 'Delivers to the lead of the coding team for the workspace below.'}
       </p>
@@ -333,7 +333,7 @@ export function ModeWorkspaceFields({
 export function SchedulerPanel({
   open,
   onClose,
-  contextMode = 'normal',
+  contextMode = 'forge',
   contextWorkspace = null,
 }: SchedulerPanelProps) {
   const prefersReducedMotion = useReducedMotion()
@@ -619,7 +619,7 @@ function CreateTaskForm({
     e.preventDefault()
     setError(null)
 
-    const mode: ScheduledTaskMode = formData.mode ?? 'normal'
+    const mode: ScheduledTaskMode = formData.mode ?? 'forge'
     const workspace = formData.workspace ?? null
 
     if (!formData.name.trim()) { setError('Task name is required'); return }
@@ -701,7 +701,7 @@ function CreateTaskForm({
               schedule_task tool when fired; here the user sets where the
               task should route once the timer fires). */}
           <ModeWorkspaceFields
-            mode={formData.mode ?? 'normal'}
+            mode={formData.mode ?? 'forge'}
             workspace={formData.workspace ?? null}
             onChange={(next) =>
               setFormData((prev) => ({
@@ -1117,7 +1117,7 @@ function EditTaskForm({
     e.preventDefault()
     setError(null)
 
-    const mode: ScheduledTaskMode = formData.mode ?? 'normal'
+    const mode: ScheduledTaskMode = formData.mode ?? 'forge'
     const workspace = formData.workspace ?? null
 
     if (mode === 'coding' && !workspace?.trim()) {
@@ -1165,7 +1165,7 @@ function EditTaskForm({
         <div className="space-y-4">
           {/* Routing — mode + workspace */}
           <ModeWorkspaceFields
-            mode={formData.mode ?? 'normal'}
+            mode={formData.mode ?? 'forge'}
             workspace={formData.workspace ?? null}
             onChange={(next) =>
               setFormData((prev) => ({

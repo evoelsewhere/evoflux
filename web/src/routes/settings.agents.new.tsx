@@ -9,7 +9,7 @@ import { EditorSubHeader } from '@/components/settings/EditorSubHeader'
 import { validateAgentDraft } from '@/components/settings/schema'
 import { useSettingsSearch, useSettingsNavigate } from '@/contexts/SettingsContext'
 
-type AgentMode = 'normal' | 'coding'
+type AgentMode = 'forge' | 'coding'
 
 const TEMPLATE = `---
 name: new_agent
@@ -32,7 +32,7 @@ You are "new_agent" — a helpful team member.
 
 export function NewAgentPage() {
   const search = useSettingsSearch()
-  const initialMode: AgentMode = search.mode === 'coding' ? 'coding' : 'normal'
+  const initialMode: AgentMode = search.mode === 'coding' ? 'coding' : 'forge'
   const [draft, setDraft] = useState(TEMPLATE)
   const [name, setName] = useState('new_agent')
   const [agentMode, setAgentMode] = useState<AgentMode>(initialMode)
@@ -101,10 +101,10 @@ export function NewAgentPage() {
                 type="button"
                 size="xs"
                 className="min-h-11 md:min-h-0"
-                variant={agentMode === 'normal' ? 'default' : 'outline'}
-                onClick={() => setAgentMode('normal')}
+                variant={agentMode === 'forge' ? 'default' : 'outline'}
+                onClick={() => setAgentMode('forge')}
               >
-                Normal
+                Forge
               </Button>
               <Button
                 type="button"
