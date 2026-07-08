@@ -204,6 +204,11 @@ def make_team_reject_tool(
         # Emit SSE rejection event for the UI
         _emit_rejection_event(team, agent_name, resolved, feedback_json)
 
+        # A rejection is a re-delegation: agent_name is awaiting an improved
+        # team_handoff from each recipient before its answer can be final.
+        if team is not None:
+            team.register_delegation(agent_name, resolved)
+
         for recipient in resolved:
             msg = Message(
                 from_agent=agent_name,

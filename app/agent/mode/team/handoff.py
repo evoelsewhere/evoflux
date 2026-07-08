@@ -342,6 +342,13 @@ def make_team_handoff_tool(
         # Emit SSE handoff event for the UI
         _emit_handoff_event(team, agent_name, resolved, artifact_json)
 
+        # A final handoff resolves whatever delegation/rejection *recipient*
+        # sent agent_name — partial handoffs leave the delegator still
+        # waiting for the eventual final one.
+        if team is not None and status == "final":
+            for recipient in resolved:
+                team.resolve_delegation(recipient, agent_name)
+
         for recipient in resolved:
             msg = Message(
                 from_agent=agent_name,

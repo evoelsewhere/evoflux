@@ -223,6 +223,11 @@ def make_team_delegate_tool(
         # Emit SSE delegation event for the UI
         _emit_delegation_event(team, agent_name, resolved, spec_json)
 
+        # Track: agent_name is now awaiting a final team_handoff from each
+        # recipient before its own answer to the user can be final.
+        if team is not None:
+            team.register_delegation(agent_name, resolved)
+
         for recipient in resolved:
             msg = Message(
                 from_agent=agent_name,
