@@ -12,7 +12,6 @@ from pydantic import Field
 from app.agent.tools import tool
 from app.agent.tools.builtin.visualize.guidelines import (
     AVAILABLE_MODULES,
-    WIDGET_GALLERY,
     get_guidelines,
 )
 

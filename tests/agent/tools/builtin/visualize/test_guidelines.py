@@ -1,7 +1,5 @@
 """Tests for visualize guidelines module."""
 
-import pytest
-
 from app.agent.tools.builtin.visualize.guidelines import (
     AVAILABLE_MODULES,
     CORE_GUIDELINES,

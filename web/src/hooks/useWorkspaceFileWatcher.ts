@@ -112,12 +112,14 @@ export function useWorkspaceFileWatcher(workspace: string | null) {
 
     void connect()
 
+    // Capture ref value at effect time for cleanup stability
+    const pendingPaths = pendingPathsRef.current
     return () => {
       stopped = true
       abortRef.current?.abort()
       if (reconnectTimeout) clearTimeout(reconnectTimeout)
       if (debounceRef.current) clearTimeout(debounceRef.current)
-      pendingPathsRef.current.clear()
+      pendingPaths.clear()
     }
   }, [workspace, queryClient])
 }

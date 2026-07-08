@@ -87,6 +87,15 @@ jobs:
           restore-keys: |
             rust-${{ runner.os }}-
 
+      - name: Install system dependencies (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev
+
+      - name: Create sidecar-bundle placeholder
+        run: mkdir -p desktop/sidecar-bundle/python desktop/sidecar-bundle/site-packages
+
       - name: Format check
         working-directory: desktop/src-tauri
         run: cargo fmt --check
