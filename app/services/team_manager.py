@@ -111,6 +111,12 @@ def _resolve_workspace(workspace: str) -> Path:
 
 
 def validate_workspace(workspace: str) -> str:
+    """Validate that workspace exists and is a directory.
+
+    Note: This only checks existence and type, not allowlist.
+    Any directory on the machine can be opened as a coding workspace.
+    Auth is handled by desktop-token middleware at the API layer.
+    """
     resolved = _resolve_workspace(workspace)
     if not resolved.is_dir():
         raise ValueError(f"Workspace does not exist or is not a directory: {resolved}")
