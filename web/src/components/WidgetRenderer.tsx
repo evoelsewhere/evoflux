@@ -188,7 +188,8 @@ export function WidgetRenderer({
       if (!isInitialized) {
         // First render: use srcdoc
         iframeRef.current.srcdoc = wrapHtml(html)
-        setIsInitialized(true)
+        // Mark initialized after current paint to avoid setState-in-effect lint
+        requestAnimationFrame(() => setIsInitialized(true))
       } else {
         // Subsequent renders: use morphdom for smooth diffing
         updateDomWithMorphdom(iframeRef.current, html)

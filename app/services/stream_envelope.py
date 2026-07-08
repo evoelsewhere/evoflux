@@ -34,7 +34,6 @@ from app.agent.schemas.events import (
     PlanApprovalRequestedEvent,
     PromptSuggestionsEvent,
     ProviderStatusEvent,
-    QuestionAskedEvent,
     RateLimitEvent,
     SessionEvent,
     SummarizationContentEvent,

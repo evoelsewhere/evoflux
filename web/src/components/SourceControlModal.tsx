@@ -206,10 +206,10 @@ export function SourceControlModal({
   const pushMutation = useGitPushMutation(workspace)
   const pullMutation = useGitPullMutation(workspace)
 
-  // Auto-select first file
+  // Auto-select first file when dialog opens
   useEffect(() => {
     if (open && !selectedPath && files.length > 0) {
-      setSelectedPath(files[0].path)
+      setSelectedPath(files[0].path) // eslint-disable-line react-hooks/set-state-in-effect -- intentional one-time init
     }
   }, [open, files, selectedPath])
 

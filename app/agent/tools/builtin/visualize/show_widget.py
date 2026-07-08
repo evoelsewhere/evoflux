@@ -112,7 +112,7 @@ async def show_widget(
             if not is_final:
                 await asyncio.sleep(0.05)
 
-    except Exception as e:
+    except Exception:
         # Log but don't fail — widget will render on final result
         pass
 
