@@ -1,7 +1,7 @@
 {
   "name": "evoflux-web",
   "private": true,
-  "version": "1.57.1",
+  "version": "0.0.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
