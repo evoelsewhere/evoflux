@@ -348,6 +348,7 @@ const BlockRenderer = memo(function BlockRenderer({ block, isStreaming, sessionI
             html={widgetHtml}
             isStreaming={isStreaming}
             title={title}
+            sessionId={sessionId}
           />
         </div>
       )
