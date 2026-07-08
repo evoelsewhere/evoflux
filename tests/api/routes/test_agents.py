@@ -166,7 +166,11 @@ async def test_list_materialized_coding_explorer_uses_builtin_tools(
     assert set(["date", "glob", "grep", "ls", "read", "shell", "skill"]).issubset(
         explorer["tools"]
     )
-    assert "write" not in explorer["tools"]
+    # Tier grant: members get every tier tool (write included) but never
+    # lead-only tools (user interaction / session structure).
+    assert "write" in explorer["tools"]
+    assert "ask_user" not in explorer["tools"]
+    assert "worktree_start" not in explorer["tools"]
 
 
 @pytest.mark.asyncio

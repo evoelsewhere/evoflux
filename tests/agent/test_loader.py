@@ -192,14 +192,49 @@ def test_default_tool_registry_keys():
     assert expected.issubset(registry.keys())
 
 
-def test_builtin_EVOFLUX_tools_exist_in_default_registry():
-    from app.agent.builtin_prompts import EVOFLUX_tools_for_mode
+def test_tier_tools_cover_default_registry():
+    """Every non-MCP, non-loader-managed registry tool belongs to some tier."""
+    from app.agent.builtin_prompts import _LOADER_MANAGED_TOOLS, tier_tools
 
     registry = _default_tool_registry()
 
+    lead_union: set[str] = set()
     for mode in ("normal", "coding"):
-        missing = set(EVOFLUX_tools_for_mode(mode)) - set(registry)
-        assert missing == set()
+        lead_union |= set(tier_tools(registry, mode=mode, role="lead"))
+
+    expected = {
+        name
+        for name in registry
+        if name not in _LOADER_MANAGED_TOOLS and not name.startswith("mcp_")
+    }
+    assert lead_union == expected
+
+
+def test_tier_tools_lead_only_and_tier_filters():
+    from app.agent.builtin_prompts import tier_tools
+
+    registry = _default_tool_registry()
+
+    member_normal = set(tier_tools(registry, mode="normal", role="member"))
+    lead_normal = set(tier_tools(registry, mode="normal", role="lead"))
+    lead_coding = set(tier_tools(registry, mode="coding", role="lead"))
+
+    # User-interaction / session-structure tools are lead-only
+    for name in ("ask_user", "enter_plan_mode", "exit_plan_mode",
+                 "mark_chapter", "worktree_start", "worktree_finish"):
+        assert name in lead_normal
+        assert name not in member_normal
+
+    # wiki_search belongs to the forge tier only
+    assert "wiki_search" in lead_normal
+    assert "wiki_search" not in lead_coding
+
+    # Newly registered tools default to every tier — the visualize pair
+    # regression: they must be available without per-agent wiring.
+    for name in ("visualize_read_me", "show_widget"):
+        assert name in lead_normal
+        assert name in lead_coding
+        assert name in member_normal
 
 
 # ---------------------------------------------------------------------------
@@ -793,7 +828,11 @@ def test_coding_explorer_builtin_member_profile_checks_codebase(tmp_path):
     assert coding_agent.system_prompt == profile["prompt"]
     assert "current codebase" in coding_agent.system_prompt
     assert "grep" in coding_agent._tools
-    assert "write" not in coding_agent._tools
+    # Tier grant: members get every tier tool, including write — but never
+    # lead-only tools (user interaction / session structure).
+    assert "write" in coding_agent._tools
+    assert "ask_user" not in coding_agent._tools
+    assert "worktree_start" not in coding_agent._tools
 
 
 def test_EVOFLUX_coding_lead_uses_coding_builtin_prompt(tmp_path):

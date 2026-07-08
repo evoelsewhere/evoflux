@@ -98,6 +98,7 @@ async def _exit_plan_mode(
 enter_plan_mode = Tool(
     _enter_plan_mode,
     name="enter_plan_mode",
+    lead_only=True,
     description=(
         "Activate plan mode: subsequent destructive tool calls (edit, write, "
         "patch, rm, shell, python, bg) are recorded instead of executed. "
@@ -108,6 +109,7 @@ enter_plan_mode = Tool(
 exit_plan_mode = Tool(
     _exit_plan_mode,
     name="exit_plan_mode",
+    lead_only=True,
     description=(
         "Present all recorded plan steps to the user for approval. "
         "Blocks until the user approves or rejects. "

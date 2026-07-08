@@ -1233,20 +1233,24 @@ def _sanitize_tool_message_pairs(
 ) -> list[ChatMessage]:
     """Drop LLM-invalid tool outputs and strip incomplete assistant tool calls.
 
-    Assistant messages left with neither content nor tool_calls are dropped
-    entirely: some providers (e.g. Xiaomi mimo) reject empty assistant turns
-    with HTTP 400 "assistant must provide content, reasoning_content or
-    tool_calls".
+    Mid-history assistant messages left with neither content nor tool_calls
+    are dropped: some providers (e.g. Xiaomi mimo) reject empty assistant
+    turns with HTTP 400 "assistant must provide content, reasoning_content
+    or tool_calls". A *trailing* empty assistant message is kept — the team
+    continue flow inspects the tail for an interrupted thinking-only row
+    (``_is_interrupted_thinking_only_tail``) and must be able to see it;
+    providers additionally skip empty assistant turns at serialization.
     """
     rows_by_id = _message_row_by_id(db_messages)
     result: list[ChatMessage] = []
     expected_tool_ids: set[str] = set()
+    last_idx = len(messages) - 1
 
     for idx, msg in enumerate(messages):
         if isinstance(msg, AssistantMessage):
             expected_tool_ids.clear()
             if not msg.tool_calls:
-                if msg.content:
+                if msg.content or idx == last_idx:
                     result.append(msg)
                 else:
                     row = rows_by_id.get(msg.db_id)
@@ -1271,14 +1275,15 @@ def _sanitize_tool_message_pairs(
                 result.append(msg)
             else:
                 row = rows_by_id.get(msg.db_id)
+                dropped = not msg.content and idx != last_idx
                 logger.warning(
                     "deserialize_strip_incomplete_assistant_tool_calls session_id={} message_id={} missing_ids=[{}] dropped={}",
                     row.session_id if row else None,
                     msg.db_id,
                     ", ".join(sorted(missing or tool_call_ids)),
-                    not msg.content,
+                    dropped,
                 )
-                if msg.content:
+                if not dropped:
                     result.append(msg.model_copy(update={"tool_calls": None}))
             continue
 
