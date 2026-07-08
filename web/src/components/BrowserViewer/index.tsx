@@ -144,16 +144,18 @@ export function BrowserViewer({
 
       <div
         className={cn(
-          'fixed z-50 flex flex-col overflow-hidden',
+          'flex flex-col overflow-hidden',
           'border-l-2 border-(--color-border-strong)',
           'bg-(--bg-page)',
-          // Mobile: full screen
-          'inset-x-0 bottom-0 top-[env(safe-area-inset-top,0px)]',
-          // Desktop: right-side panel
-          'sm:inset-y-0 sm:left-auto sm:right-0 sm:top-[env(safe-area-inset-top,0px)] sm:bottom-[env(safe-area-inset-bottom,0px)]',
+          // Mobile: full-screen fixed overlay
+          'fixed z-50 inset-x-0 bottom-0 top-[env(safe-area-inset-top,0px)]',
+          // Desktop: in-flow sibling of the chat column — the chat resizes
+          // instead of being covered. Width driven by the drag handle via
+          // a CSS var so the mobile overlay stays full-width.
+          'sm:relative sm:inset-auto sm:h-full sm:min-h-0 sm:shrink-0 sm:w-[var(--browser-viewer-width)]',
           className,
         )}
-        style={{ width: `${width}px` }}
+        style={{ '--browser-viewer-width': `${width}px` } as React.CSSProperties}
       >
         {/* ── Resize handle ───────────────────────────────────── */}
         <div
