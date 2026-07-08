@@ -14,8 +14,6 @@ import {
   History,
   Archive,
   X,
-  ChevronDown,
-  ChevronRight,
   CloudDownload,
   CloudUpload,
   RefreshCw,
@@ -169,7 +167,6 @@ export function SourceControlModal({
   workspace,
   onWorkspaceChange,
   project,
-  onFileOpenInEditor,
 }: SourceControlModalProps) {
   const [showDiff, setShowDiff] = useState(true)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
@@ -914,8 +911,8 @@ function HistoryPanel({ workspace }: { workspace: string }) {
 /* ── Single Commit Row with Graph ────────────────────────────────────────── */
 
 function CommitRow({
-  entry, idx, isHead, isExpanded, isLast, total,
-  onToggle, onCherryPick, filesQuery, isFilesLoading, files,
+  entry, idx, isHead, isExpanded, isLast,
+  onToggle, onCherryPick, isFilesLoading, files,
 }: {
   entry: { sha: string; short_sha: string; author: string; date: string; message: string }
   idx: number; isHead: boolean; isExpanded: boolean; isLast: boolean; total: number

@@ -63,7 +63,7 @@ function buildCsp(): string {
 }
 
 // Wrap HTML in a full document with CSP, storage shim, and sendPrompt
-function wrapHtml(html: string, onSendPrompt?: (prompt: string) => void): string {
+function wrapHtml(html: string): string {
   const csp = buildCsp()
   const cspMeta = `<meta http-equiv="Content-Security-Policy" content="${csp.replaceAll('"', '&quot;')}">`
   
@@ -88,12 +88,11 @@ function wrapHtml(html: string, onSendPrompt?: (prompt: string) => void): string
 function updateDomWithMorphdom(
   container: HTMLIFrameElement,
   html: string,
-  onSendPrompt?: (prompt: string) => void
 ) {
   const doc = container.contentDocument
   if (!doc) return
-  
-  const fullHtml = wrapHtml(html, onSendPrompt)
+
+  const fullHtml = wrapHtml(html)
   
   // Parse the new HTML
   const parser = new DOMParser()
@@ -188,14 +187,14 @@ export function WidgetRenderer({
     if (iframeRef.current && html) {
       if (!isInitialized) {
         // First render: use srcdoc
-        iframeRef.current.srcdoc = wrapHtml(html, onSendPrompt)
+        iframeRef.current.srcdoc = wrapHtml(html)
         setIsInitialized(true)
       } else {
         // Subsequent renders: use morphdom for smooth diffing
-        updateDomWithMorphdom(iframeRef.current, html, onSendPrompt)
+        updateDomWithMorphdom(iframeRef.current, html)
       }
     }
-  }, [html, isInitialized, onSendPrompt])
+  }, [html, isInitialized])
   
   // Handle iframe load
   const handleLoad = useCallback(() => {
