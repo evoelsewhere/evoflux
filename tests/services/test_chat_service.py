@@ -726,6 +726,73 @@ async def test_get_messages_for_llm_drops_orphan_tool_message(session):
 
 
 @pytest.mark.asyncio
+async def test_get_messages_for_llm_drops_assistant_left_empty_after_strip(session):
+    """Tool-call-only assistant turn with no tool results → dropped entirely.
+
+    Stripping the incomplete tool_calls would leave an empty assistant
+    message, which some providers (Xiaomi mimo) reject with HTTP 400.
+    """
+    chat_session = await create_chat_session(session)
+    await save_message(session, chat_session.id, HumanMessage(content="hello"))
+    await save_message(
+        session,
+        chat_session.id,
+        AssistantMessage(
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="c1", function=FunctionCall(name="search", arguments="{}")
+                )
+            ],
+        ),
+    )
+    await session.commit()
+
+    result = await get_messages_for_llm(session, chat_session.id)
+
+    assert [m.role for m in result] == ["user"]
+
+
+@pytest.mark.asyncio
+async def test_get_messages_for_llm_keeps_stripped_assistant_with_content(session):
+    """Assistant with text + incomplete tool_calls keeps its text after strip."""
+    chat_session = await create_chat_session(session)
+    await save_message(session, chat_session.id, HumanMessage(content="hello"))
+    await save_message(
+        session,
+        chat_session.id,
+        AssistantMessage(
+            content="Let me search for that.",
+            tool_calls=[
+                ToolCall(
+                    id="c1", function=FunctionCall(name="search", arguments="{}")
+                )
+            ],
+        ),
+    )
+    await session.commit()
+
+    result = await get_messages_for_llm(session, chat_session.id)
+
+    assert [m.role for m in result] == ["user", "assistant"]
+    assert result[1].content == "Let me search for that."
+    assert result[1].tool_calls is None
+
+
+@pytest.mark.asyncio
+async def test_get_messages_for_llm_drops_empty_assistant_message(session):
+    """Persisted assistant message with no content and no tool_calls → dropped."""
+    chat_session = await create_chat_session(session)
+    await save_message(session, chat_session.id, HumanMessage(content="hello"))
+    await save_message(session, chat_session.id, AssistantMessage(content=""))
+    await session.commit()
+
+    result = await get_messages_for_llm(session, chat_session.id)
+
+    assert [m.role for m in result] == ["user"]
+
+
+@pytest.mark.asyncio
 async def test_get_messages_for_llm_summary_window_drops_orphan_tool_message(session):
     """Summary + keep_last_n windows are sanitized after window selection."""
     chat_session = await create_chat_session(session)
