@@ -172,9 +172,9 @@ function SessionListPanel({
   sessions: ReturnType<typeof useProjectSessionsQuery>;
 }) {
   const allSessions = sessions.data?.pages.flatMap((page) => page.data) ?? [];
-  // Filter out sessions created by scheduled tasks (title starts with "[Scheduled Task:")
+  // Filter out sessions created by scheduled tasks (use scheduled_task_name field)
   const projectSessions = allSessions.filter(
-    (s) => !s.title?.startsWith('[Scheduled Task:'),
+    (s) => !s.scheduled_task_name,
   );
 
   return (
