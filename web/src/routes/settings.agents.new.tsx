@@ -17,10 +17,6 @@ role: member
 description: A helpful team member.
 model: googlegenai:gemini-3.1-flash-lite-preview
 temperature: 0.2
-tools:
-  - date
-  - read
-  - write
 ---
 
 You are "new_agent" — a helpful team member.
@@ -119,7 +115,7 @@ export function NewAgentPage() {
             <p className="mt-2 text-xs text-(--color-text-muted)">
               {agentMode === 'coding'
                 ? `Will create coding/${name}.md for coding sessions.`
-                : `Will create ${name}.md for normal sessions.`}
+                : `Will create ${name}.md for forge sessions.`}
             </p>
           </div>
           <AgentForm
