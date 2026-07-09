@@ -375,11 +375,13 @@ export function Sidebar({
           // Desktop: each logical group becomes its own floating region card.
           if (!isMobile) {
             const card = 'rounded-[10px] bg-(--bg-sidebar)/80 shadow-sm backdrop-blur-xl'
+            const divider = `shrink-0 h-px bg-(--color-border) ${ico ? 'mx-2' : 'mx-3'}`
             return (
-              <div className="flex h-full flex-col gap-1 overflow-hidden p-1">
+              <div className="flex h-full flex-col overflow-hidden p-1">
+                <div className={`flex h-full min-h-0 flex-col overflow-hidden ${card}`}>
 
                 {/* ─── Top section: search + nav ─── */}
-                <div className={`shrink-0 ${card} ${
+                <div className={`shrink-0 ${
                   ico ? 'flex flex-col items-center px-1 py-2' : ''
                 }`}>
                   {/* Mode switch */}
@@ -488,6 +490,8 @@ export function Sidebar({
                   </nav>
                 </div>
 
+                <div className={divider} />
+
                 {/* ─── Sessions / dots section ─── */}
                 {!ico ? (
                   <AnimatePresence>
@@ -497,7 +501,7 @@ export function Sidebar({
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
                       transition={{ duration: prefersReducedMotion ? 0.01 : 0.15 }}
-                      className={`flex min-h-0 flex-1 flex-col overflow-hidden ${card}`}
+                      className="flex min-h-0 flex-1 flex-col overflow-hidden"
                     >
                       <div className="flex items-center justify-between px-3 pb-1 pt-2.5">
                         <span className="text-xs font-medium text-(--color-text-subtle)">
@@ -560,7 +564,7 @@ export function Sidebar({
                     </motion.div>
                   </AnimatePresence>
                 ) : (
-                  <div className={`flex flex-1 flex-col items-center gap-1 overflow-y-auto py-2 ${card}`}>
+                  <div className="flex flex-1 flex-col items-center gap-1 overflow-y-auto py-2">
                     {sessions.isSuccess &&
                       normalSessions.slice(0, 8).map((session) => {
                         const isActive = session.id === currentSessionId;
@@ -582,8 +586,10 @@ export function Sidebar({
                   </div>
                 )}
 
+                <div className={divider} />
+
                 {/* ─── Footer section ─── */}
-                <div className={`shrink-0 ${card} ${
+                <div className={`shrink-0 ${
                   ico ? 'flex justify-center py-2 pb-safe px-1' : 'flex items-center justify-between gap-2 px-3 py-2 pb-safe'
                 }`}>
                   {ico ? (
@@ -620,6 +626,7 @@ export function Sidebar({
                   )}
                 </div>
 
+                </div>
               </div>
             )
           }

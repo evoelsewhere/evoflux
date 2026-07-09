@@ -153,9 +153,9 @@
 
     /* Text — softened foreground reduces glare on near-black bg */
     --color-text:           #ffffff;
-    --color-text-2:         #d9d9d9;
-    --color-text-muted:     #b8b8bd;
-    --color-text-subtle:    #ababaf;
+    --color-text-2:         #e2e2e4;
+    --color-text-muted:     #c6c6cb;
+    --color-text-subtle:    #b3b3b8;
     --color-text-on-accent: #494d52;
 
     /* Accent */
@@ -294,24 +294,24 @@
 :root.light {
     color-scheme: light;
 
-    /* Surfaces — warm off-white hierarchy, sidebar recedes from page */
-    --bg-page:           #FAF9F6;
-    --bg-sidebar:        #F3F1EB;
+    /* Surfaces — near-neutral off-white hierarchy, sidebar recedes from page */
+    --bg-page:           #FAFAF9;
+    --bg-sidebar:        #F5F5F3;
     --bg-card:           #FFFFFF;
     --bg-input:          #FFFFFF;
-    --bg-key:            #ECEAE3;
-    --bg-muted:          #ECEAE3;
+    --bg-key:            #ECECEA;
+    --bg-muted:          #ECECEA;
     --bg-send:           #111114;
     --color-surface:     #FFFFFF;
-    --color-surface-2:   #ECEAE3;
+    --color-surface-2:   #ECECEA;
     --color-bg-elevated: #FFFFFF;
 
-    /* Borders — warm-tinted, airy */
-    --border-soft:         #EEECE5;
-    --border-card:         #E4E2DA;
-    --color-border-subtle: #EEECE5;
-    --color-border:        #E4E2DA;
-    --color-border-strong: #D5D3CB;
+    /* Borders — near-neutral, airy */
+    --border-soft:         #EFEFED;
+    --border-card:         #E2E2DF;
+    --color-border-subtle: #EFEFED;
+    --color-border:        #E2E2DF;
+    --color-border-strong: #D3D3D0;
 
     /* Text — ink-black primary, measured secondary scale */
     --color-text:           #000000;
