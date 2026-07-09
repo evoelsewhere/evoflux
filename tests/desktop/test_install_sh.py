@@ -242,12 +242,12 @@ class TestLinuxBranch:
         assert proc.returncode == 0, proc.stderr
 
         # ── Binary was installed
-        installed = xdg_bin / "evoflux"
+        installed = xdg_bin / "EvoFlux"
         assert installed.is_file()
         assert installed.stat().st_mode & stat.S_IXUSR
 
         # ── .desktop entry was written
-        desktop_file = xdg_data / "applications" / "evoflux.desktop"
+        desktop_file = xdg_data / "applications" / "EvoFlux.desktop"
         assert desktop_file.is_file()
         content = desktop_file.read_text()
         assert "[Desktop Entry]" in content

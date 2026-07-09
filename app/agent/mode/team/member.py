@@ -349,6 +349,10 @@ class TeamMemberBase(abc.ABC):
         self._mailbox: TeamMailbox | None = None
         self._open_task_nudge_counts: dict[str, int] = {}
         self._lead_wait_nudge_counts: dict[str, int] = {}
+        # id of the last SessionMessage row a nudge was already sent for —
+        # guards against re-nudging the same stopping point on every idle
+        # check; a fresh nudge requires the member to have taken a new turn.
+        self._last_open_task_nudge_message_id: str | None = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -1179,6 +1183,11 @@ class TeamMemberBase(abc.ABC):
             return
         if (last.content or "").strip() in {"<sleep>", "[sleep]"}:
             return
+        if str(last.id) == self._last_open_task_nudge_message_id:
+            # Already nudged for this exact stopping point — re-checking on
+            # every idle tick without a new turn from the member would spam
+            # the mailbox instead of bounding the nudge.
+            return
 
         for row in rows:
             tool_calls = row.tool_calls or []
@@ -1210,6 +1219,7 @@ class TeamMemberBase(abc.ABC):
             self._open_task_nudge_counts[key] = (
                 self._open_task_nudge_counts.get(key, 0) + 1
             )
+        self._last_open_task_nudge_message_id = str(last.id)
 
         content = _open_task_nudge_content(open_todos, self._team.lead.name)
         logger.info("team_member_open_task_nudge name={} tasks={}", self.name, task_ids)

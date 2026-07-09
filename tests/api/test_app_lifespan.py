@@ -66,11 +66,6 @@ async def test_lifespan_skips_idle_startup_services(
         app_module.task_scheduler, "has_enabled_tasks", AsyncMock(return_value=False)
     )
     monkeypatch.setattr(app_module.task_scheduler, "start", AsyncMock())
-    monkeypatch.setattr(
-        app_module,
-        "load_runtime_settings",
-        Mock(return_value=SimpleNamespace(dream=SimpleNamespace(enabled=False))),
-    )
 
     app = await _run_lifespan()
 
@@ -97,7 +92,12 @@ async def test_lifespan_starts_configured_services(
     monkeypatch.setattr(
         app_module,
         "load_runtime_settings",
-        Mock(return_value=SimpleNamespace(dream=SimpleNamespace(enabled=True))),
+        Mock(
+            return_value=SimpleNamespace(
+                dream=SimpleNamespace(enabled=True),
+                code_graph=SimpleNamespace(watch_enabled=False),
+            )
+        ),
     )
 
     await _run_lifespan()
