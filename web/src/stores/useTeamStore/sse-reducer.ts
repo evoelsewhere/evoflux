@@ -663,6 +663,14 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
       }
 
       case 'permission_asked': {
+        // Backend fires this event in every permission mode so the UI can
+        // observe requests, but only 'ask' and 'accept-edits' (for tools
+        // outside its auto-accept set) actually block on a reply — in
+        // 'auto'/'plan'/'bypass' the call is already auto-approved and
+        // replying is a no-op (the request was never registered as
+        // pending), so surfacing a modal here would be a dead-end prompt.
+        const mode = get().permissionMode
+        if (mode !== 'ask' && mode !== 'accept-edits') break
         set((draft) => {
           draft.permissionRequest = {
             requestId: d.request_id as string,

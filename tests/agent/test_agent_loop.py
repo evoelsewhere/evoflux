@@ -134,7 +134,7 @@ def _finish_chunk() -> ChatCompletionChunk:
     )
 
 
-def _text_chunk(content: str) -> ChatCompletionChunk:
+def _text_chunk(content: str, *, finish: str | None = None) -> ChatCompletionChunk:
     """Return a chunk with text content (needed after tool calls)."""
     return ChatCompletionChunk(
         id="chunk-text",
@@ -144,7 +144,7 @@ def _text_chunk(content: str) -> ChatCompletionChunk:
             ChatCompletionChunkChoice(
                 index=0,
                 delta=ChatCompletionDelta(content=content),
-                finish_reason=None,
+                finish_reason=finish,
             )
         ],
     )
@@ -340,7 +340,17 @@ async def test_tool_calls_buffer_id_set_on_second_chunk():
         yield chunk4
 
     mock_provider = MagicMock()
-    mock_provider.stream.return_value = _gen()
+        # First call: tool chunks + text response. Subsequent: text only.
+    _first_call_done = [False]
+    def _stream_side_effect(**_kw):
+        if not _first_call_done[0]:
+            _first_call_done[0] = True
+            return _gen()
+        async def _text_only():
+            yield _text_chunk("Done")
+            yield _finish_chunk()
+        return _text_only()
+    mock_provider.stream.side_effect = _stream_side_effect
 
     agent = Agent(
         llm_provider=mock_provider,
@@ -424,7 +434,17 @@ async def test_tool_result_creates_tool_message_with_parts():
         yield _finish_chunk()
 
     mock_provider = MagicMock()
-    mock_provider.stream.return_value = _gen()
+        # First call: tool chunks + text response. Subsequent: text only.
+    _first_call_done = [False]
+    def _stream_side_effect(**_kw):
+        if not _first_call_done[0]:
+            _first_call_done[0] = True
+            return _gen()
+        async def _text_only():
+            yield _text_chunk("Done")
+            yield _finish_chunk()
+        return _text_only()
+    mock_provider.stream.side_effect = _stream_side_effect
 
     from app.agent.tools.registry import Tool
 
@@ -479,7 +499,17 @@ async def test_tool_result_content_derived_from_text_blocks():
         yield _finish_chunk()
 
     mock_provider = MagicMock()
-    mock_provider.stream.return_value = _gen()
+        # First call: tool chunks + text response. Subsequent: text only.
+    _first_call_done = [False]
+    def _stream_side_effect(**_kw):
+        if not _first_call_done[0]:
+            _first_call_done[0] = True
+            return _gen()
+        async def _text_only():
+            yield _text_chunk("Done")
+            yield _finish_chunk()
+        return _text_only()
+    mock_provider.stream.side_effect = _stream_side_effect
 
     from app.agent.tools.registry import Tool
 
@@ -593,7 +623,17 @@ async def test_complete_tool_call_with_empty_args_is_kept():
         yield _finish_chunk()
 
     mock_provider = MagicMock()
-    mock_provider.stream.return_value = _gen()
+        # First call: tool chunks + text response. Subsequent: text only.
+    _first_call_done = [False]
+    def _stream_side_effect(**_kw):
+        if not _first_call_done[0]:
+            _first_call_done[0] = True
+            return _gen()
+        async def _text_only():
+            yield _text_chunk("Done")
+            yield _finish_chunk()
+        return _text_only()
+    mock_provider.stream.side_effect = _stream_side_effect
 
     from app.agent.tools.registry import Tool
 
@@ -633,7 +673,17 @@ async def test_plain_string_tool_result_has_no_parts():
         yield _finish_chunk()
 
     mock_provider = MagicMock()
-    mock_provider.stream.return_value = _gen()
+        # First call: tool chunks + text response. Subsequent: text only.
+    _first_call_done = [False]
+    def _stream_side_effect(**_kw):
+        if not _first_call_done[0]:
+            _first_call_done[0] = True
+            return _gen()
+        async def _text_only():
+            yield _text_chunk("Done")
+            yield _finish_chunk()
+        return _text_only()
+    mock_provider.stream.side_effect = _stream_side_effect
 
     from app.agent.tools.registry import Tool
 
