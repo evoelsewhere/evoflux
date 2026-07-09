@@ -127,6 +127,12 @@ _BOILERPLATE_RE = re.compile(
 )
 _CITATION_RE = re.compile(r"\[(session:[^\]]+|note:[^\]]+|import:[^\]]+)\]")
 _FACT_ID_RE = re.compile(r"\bfact_id=([a-z0-9-]+)\b")
+# ``_fetch_session_transcript``'s ``Source-Slug:`` / ``Agent:`` / ``Date:``
+# header lines are transcript bookkeeping, not conversation content — left
+# in, their tokens (a session's short id, "agent", "date", a year) flood the
+# top-8 most_common() slots in ``_memory_topics`` and crowd out the actual
+# topic words from the message body.
+_TRANSCRIPT_HEADER_RE = re.compile(r"^(?:Source-Slug|Agent|Date):.*$", re.MULTILINE)
 
 if TYPE_CHECKING:
     import contextvars
@@ -547,6 +553,7 @@ def _memory_metadata(source: dict[str, str], source_text: str) -> dict[str, obje
 
 
 def _memory_topics(text: str) -> list[str]:
+    text = _TRANSCRIPT_HEADER_RE.sub("", text)
     counts: Counter[str] = Counter()
     for match in re.finditer(r"[a-z0-9]+", text.lower()):
         raw = match.group(0)
