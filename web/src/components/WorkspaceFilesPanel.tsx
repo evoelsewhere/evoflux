@@ -45,6 +45,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
 import { workspaceMediaUrl, updateSessionWorkspace, uploadWorkspaceFiles, moveWorkspaceFile, deleteWorkspaceFile, browseWorkspaces } from '@/api/client'
+import { isTauriAvailable, tauriReadWorkspaceFile } from '@/api/tauri-workspace'
 import { downloadWorkspaceFile } from '@/lib/workspace-download'
 import { useWorkspaceFilesQuery } from '@/queries'
 import { queryKeys } from '@/queries/keys'
@@ -535,7 +536,7 @@ function ImagePreview({ sessionId, file }: { sessionId: string; file: WorkspaceF
 // the browser.  Beyond this we show a notice + download button.
 const MAX_TEXT_PREVIEW_BYTES = 512 * 1024  // 512 KB
 
-function TextPreview({ sessionId, file }: { sessionId: string; file: WorkspaceFileInfo }) {
+function TextPreview({ sessionId, file, workspaceRoot }: { sessionId: string; file: WorkspaceFileInfo; workspaceRoot?: string | null }) {
   const tooLarge = file.size > MAX_TEXT_PREVIEW_BYTES
   // Start in a loading state *unless* the file is too large — the effect is
   // skipped in that case and flipping loading=false there would trigger the
@@ -547,27 +548,37 @@ function TextPreview({ sessionId, file }: { sessionId: string; file: WorkspaceFi
   useEffect(() => {
     if (tooLarge) return
     let cancelled = false
-    fetch(workspaceMediaUrl(sessionId, file.path))
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        return res.text()
-      })
-      .then((text) => {
+
+    async function loadFile() {
+      try {
+        let text: string
+        // Native Rust path — no HTTP round-trip.
+        if (isTauriAvailable() && workspaceRoot) {
+          const b64 = await tauriReadWorkspaceFile(workspaceRoot, file.path)
+          text = atob(b64)
+        } else {
+          // HTTP API fallback.
+          const res = await fetch(workspaceMediaUrl(sessionId, file.path))
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          text = await res.text()
+        }
         if (!cancelled) {
           setContent(text)
           setLoading(false)
         }
-      })
-      .catch((e) => {
+      } catch (e) {
         if (!cancelled) {
           setError(e instanceof Error ? e.message : String(e))
           setLoading(false)
         }
-      })
+      }
+    }
+    void loadFile()
+
     return () => {
       cancelled = true
     }
-  }, [sessionId, file.path, tooLarge])
+  }, [sessionId, file.path, tooLarge, workspaceRoot])
 
   if (tooLarge) {
     return (
@@ -689,9 +700,11 @@ export function DownloadWorkspaceFileButton({
 export function CopyContentsButton({
   sessionId,
   file,
+  workspaceRoot,
 }: {
   sessionId: string
   file: WorkspaceFileInfo
+  workspaceRoot?: string | null
 }) {
   const [copied, setCopied] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -701,9 +714,16 @@ export function CopyContentsButton({
     if (busy || tooLarge) return
     setBusy(true)
     try {
-      const res = await fetch(workspaceMediaUrl(sessionId, file.path))
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const text = await res.text()
+      let text: string
+      // Native Rust path — no HTTP round-trip.
+      if (isTauriAvailable() && workspaceRoot) {
+        const b64 = await tauriReadWorkspaceFile(workspaceRoot, file.path)
+        text = atob(b64)
+      } else {
+        const res = await fetch(workspaceMediaUrl(sessionId, file.path))
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        text = await res.text()
+      }
       await navigator.clipboard.writeText(text)
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1500)
@@ -745,6 +765,7 @@ export function CopyContentsButton({
 function PreviewArea({
   sessionId,
   file,
+  workspaceRoot,
 }: {
   sessionId: string
   file: WorkspaceFileInfo
@@ -771,14 +792,14 @@ function PreviewArea({
           >
             <Download size={12} />
           </DownloadWorkspaceFileButton>
-          {kind === 'text' && <CopyContentsButton sessionId={sessionId} file={file} />}
+          {kind === 'text' && <CopyContentsButton sessionId={sessionId} file={file} workspaceRoot={workspaceRoot} />}
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
         {kind === 'image' ? (
           <ImagePreview sessionId={sessionId} file={file} />
         ) : kind === 'text' ? (
-          <TextPreview sessionId={sessionId} file={file} />
+          <TextPreview sessionId={sessionId} file={file} workspaceRoot={workspaceRoot} />
         ) : (
           <BinaryPreview sessionId={sessionId} file={file} />
         )}

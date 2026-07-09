@@ -19,7 +19,7 @@ import { memo, useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
 
 import { LazyMarkdownBlock } from '@/utils/LazyMarkdownBlock'
-import { ChevronDown, ChevronUp, Copy, Check, Undo2, Terminal, Lightbulb, Code2, FileSearch, Bug, BookOpen } from 'lucide-react'
+import { ChevronDown, ChevronUp, Copy, Check, Undo2, Terminal } from 'lucide-react'
 import { Thinking } from './Thinking'
 import { ToolCall } from './ToolCall'
 import { MCPAppResult } from './MCPAppResult'
@@ -623,44 +623,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                  <h2 className="font-hand text-3xl font-bold text-(--color-text)">
                    what&rsquo;s on your mind?
                  </h2>
-                 <p className="mt-1.5 text-sm text-(--color-text-muted)">
-                   Start a conversation or pick a suggestion below
-                 </p>
                </div>
-               {onSuggestion && (
-                 <div className="grid w-full max-w-sm grid-cols-2 gap-2 sm:max-w-md sm:grid-cols-3">
-                   <SuggestionChip
-                     icon={Lightbulb}
-                     label="Explain this codebase"
-                     onClick={() => onSuggestion('Explain the architecture of this codebase')}
-                   />
-                   <SuggestionChip
-                     icon={Code2}
-                     label="Write a feature"
-                     onClick={() => onSuggestion('Help me write a new feature')}
-                   />
-                   <SuggestionChip
-                     icon={Bug}
-                     label="Fix a bug"
-                     onClick={() => onSuggestion('Help me find and fix a bug')}
-                   />
-                   <SuggestionChip
-                     icon={FileSearch}
-                     label="Review code"
-                     onClick={() => onSuggestion('Review my recent changes and suggest improvements')}
-                   />
-                   <SuggestionChip
-                     icon={BookOpen}
-                     label="Write docs"
-                     onClick={() => onSuggestion('Help me write documentation for this project')}
-                   />
-                   <SuggestionChip
-                     icon={Terminal}
-                     label="Run a command"
-                     onClick={() => onSuggestion('Help me set up and run this project')}
-                   />
-                 </div>
-               )}
              </div>
            )
          )}
@@ -818,26 +781,5 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
 
     )}
     </div>
-  )
-}
-
-function SuggestionChip({
-  icon: Icon,
-  label,
-  onClick,
-}: {
-  icon: React.ComponentType<{ size?: number; className?: string }>
-  label: string
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-(--color-border) bg-(--bg-card) px-3 py-1.5 text-xs text-(--color-text-2) transition-all hover:border-(--color-border-strong) hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:ring-2 focus-visible:ring-(--focus-ring) focus-visible:outline-none active:scale-[0.97]"
-    >
-      <Icon size={13} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
-      <span>{label}</span>
-    </button>
   )
 }

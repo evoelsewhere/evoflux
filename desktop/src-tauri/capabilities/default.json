@@ -21,6 +21,8 @@
     "core:event:default",
     "core:resources:default",
     "dialog:default",
+    "clipboard-manager:allow-read-text",
+    "clipboard-manager:allow-write-text",
     "notification:default",
     "opener:default",
     "log:default",
