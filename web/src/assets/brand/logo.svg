@@ -6,7 +6,7 @@
     </linearGradient>
   </defs>
 
-  <rect width="500" height="500" rx="100" ry="100" fill="#111111"/>
+  <rect width="500" height="500" fill="#111111"/>
 
   <g transform="rotate(45, 250, 250)">
     <rect x="110" y="110" width="280" height="280" rx="65" ry="65" 
