@@ -54,21 +54,29 @@ class TestReady:
 
     def test_ready_ok_when_db_healthy_but_team_missing(self):
         """Empty agents dir is tolerable — reported but still ready."""
+        import app.api.routes.health as health_mod
+
+        health_mod._validate_agents_cache = None  # clear cache
         with patch("app.services.team_manager.validate_agents_dir", return_value=False):
             client = TestClient(_make_app(db_ok=True))
             resp = client.get("/api/health/ready")
+        health_mod._validate_agents_cache = None
         assert resp.status_code == 200
         body = resp.json()
         assert body["checks"]["team"] == "missing"
 
     def test_ready_marks_team_invalid_on_parse_error(self):
         """A malformed agent .md surfaces as ``team=invalid``."""
+        import app.api.routes.health as health_mod
+
+        health_mod._validate_agents_cache = None  # clear cache
         with patch(
             "app.services.team_manager.validate_agents_dir",
             side_effect=ValueError("bad yaml"),
         ):
             client = TestClient(_make_app(db_ok=True))
             resp = client.get("/api/health/ready")
+        health_mod._validate_agents_cache = None
         # Team validation failure does not flip overall readiness — DB is
         # the gate.  But the per-check value must reflect the parse error.
         body = resp.json()

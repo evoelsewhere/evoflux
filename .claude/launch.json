@@ -8,6 +8,14 @@
       "cwd": "web",
       "port": 5180,
       "autoPort": false
+    },
+    {
+      "name": "web-session2",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--port", "5182"],
+      "cwd": "web",
+      "port": 5182,
+      "autoPort": true
     }
   ]
 }
