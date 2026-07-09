@@ -1,57 +1,78 @@
 # EvoFlux Workflows — Design & Implementation Plan
 
-> Status: PROPOSED (v2 — revised after 3-lens adversarial review: correctness, completeness, enterprise/security)
-> Date: 2026-07-08
-> Scope: User-authored deterministic workflows for both `forge` (normal) and `coding` modes
+> Status: PROPOSED (v5 — implementation audit: every mechanism the design leans on was traced to its exact function in the codebase by three parallel deep-dives; contradictions found in v4's self-audit are fixed; the doc now specifies integration points at function level, FE and BE, so it can be handed to an implementer as-is)
+> Date: 2026-07-09 (v5, v4, v3); 2026-07-08 (v2)
+> Scope: A visual node-graph builder for repeatable agent pipelines ("workflows"), scoped to `forge` (usable from any forge session) or `coding` (bound to a workspace/project), triggered by `/workflow` in chat, executed **inline in the current session**.
 > Companion: `documents/analysis/claude-code-vs-evoflux.md`
 
 ---
 
 ## 1. Executive summary
 
-Today, multi-step work in EvoFlux is decomposed by the **lead LLM at its own discretion** (via `team_delegate`). Users cannot define a repeatable, system-enforced pipeline such as *"receive ticket → pull Jira → fan out analysis agents → synthesize → human approval → fix"*. Skills describe processes but cannot enforce them; commands expand to a single message; `/loop` repeats one fixed prompt; the scheduler fires prompts on a timer but is completion-blind.
+Today, multi-step work in EvoFlux is decomposed by the **lead LLM at its own discretion** (via `team_delegate`). There is no way to save a repeatable shape for that decomposition — e.g. "analyze with the explorer + a debate second opinion, pause for my approval, then the coder fixes it" — and replay it with one command.
 
-This plan introduces **Workflows**: file-based, user-authored pipeline definitions executed by a deterministic engine, where **control flow lives in code and intelligence lives inside each step**. Every run is a first-class `ChatSession`, so streaming, history, sidebar, and notifications work unchanged.
+This plan introduces **Workflows**: a visual, node-based editor (React Flow canvas) for building a small pipeline out of pieces EvoFlux already has — agent turns with a delegation roster, direct tool/code calls, human-approval gates, branches — saved as a YAML file, and run with `/workflow` **inside whatever chat you're already in**. Execution plays out as ordinary turns in that session; there is no separate "run" screen, session, or durable run entity.
 
-Design maxim: **determinism at the orchestration layer, agency inside the step.**
+Design maxim: **the canvas configures what the lead would otherwise improvise; execution still looks like a normal conversation.**
 
 ### Goals
 
-- Users author workflows as YAML files (editable via UI or by agents themselves) scoped globally or per-workspace.
-- Steps: deterministic tool calls (incl. MCP, e.g. Jira), single-agent runs with typed outputs, parallel fan-outs, human approval gates, and conditionals.
-- Runs are durable: survive process restart and team eviction, with a step-level audit trail whose source of truth is the DB (never in-memory state).
-- Triggers: manual (UI/slash), scheduler (cron), inbound webhook (enterprise), agent-initiated (lead tool) — all gated by a server-enforced trust model from day one.
-- Full integration with every existing subsystem (§8 matrix).
+- Canvas-first authoring; YAML file is the source of truth (git-trackable, agent-editable); canvas and a raw-YAML Monaco view are two editors of the same file.
+- Node kinds mirror existing capabilities only: `agent` (a team turn with a per-node subagent roster), `tool` (direct registry/MCP call, incl. a "Code" preset for `python`/`shell`), `gate` (reuses `ask_user`), `switch` (branch on a templated value).
+- Two scopes: `forge` (no target anywhere) and `coding` (target = the triggering session's pinned workspace/project, or picked explicitly when started from the Workflows screen).
+- `/workflow` in the composer lists approved workflows for the current scope; picking one runs it in that session immediately.
+- Light per-node execution log for debugging + approve-once-per-hash; deliberately **no** durable runs, crash recovery, webhooks, schedules, or cost subsystem (see Non-goals).
 
-### Non-goals (this iteration)
+### Non-goals (unchanged from v4, restated for standalone reading)
 
-- Visual drag-and-drop DAG editor (Phase 4; the YAML schema is designed so a canvas can be layered on later).
-- Cross-machine distributed execution (the SSE store and team caches are single-process by design — `app/services/memory_stream_store.py:1-10`; we stay within that model).
-- A general-purpose scripting language in definitions (no user JS/Python in YAML; the escape hatch is a `tool` step calling a plugin-registered function).
-- Multi-tenant RBAC. EvoFlux is a single-user desktop product gated by the desktop-token middleware (`app/api/app.py:150`). "Enterprise-ready" here means durability, auditability, security hardening, cost control, and operational tooling — not user management.
-- Exactly-once side effects. Steps have **at-least-once** semantics on crash recovery (§6.5); the design mitigates but cannot eliminate this, and says so honestly.
+- No durable `WorkflowRun`: restart mid-execution = the workflow stops, like any in-flight turn today. `workflow_executions` rows are a debug log, never read back to resume.
+- No unattended triggers (webhook/schedule). Every trigger has a human present.
+- No cost/budget subsystem, no retention cascades, no audit export, no operator runbook.
+- No new scripting engine — the Code node runs through the existing sandboxed `python`/`shell` tools.
+- No multi-tenant RBAC; no exactly-once claims.
+- **No true parallel branches in Phase 1** (new, explicit — v4 was self-contradictory here): execution is one session's turn stream, so the graph executes **sequentially in topological order**; multiple outgoing edges mean "both branches will run, one after the other," not concurrently. Real concurrency arrives only with Phase 2 direct execution.
+- **No per-node custom lead in Phase 1** (new, explicit): an injected turn is always handled by *the session's* lead (`mailbox.send(to=self.lead.name)`, F4) — a different lead per node would require rebooting the team. The canvas still shows the lead card on every Agent node (the user's mental model), but it is locked to the session lead; a per-node `lead:` unlocks with Phase 2 direct execution.
 
 ---
 
-## 2. Current-state findings that shape the design
+## 2. Verified mechanics — the implementation anchors
 
-Verified against the codebase (file:line); these are the load-bearing constraints:
+Every claim below was verified against the live codebase on 2026-07-09 (three parallel deep-dives: team mechanics, service/tool invocation, frontend plumbing). These are not background findings; they are the exact functions the implementation plugs into.
 
-| # | Finding | Consequence for design |
+### 2.1 Turn injection and completion (backend core)
+
+| # | Fact | file:line |
 |---|---|---|
-| F1 | The team turn-completion barrier `_try_emit_done` (`app/agent/mode/team/team.py:455-486`) runs after **every** agent activation and dispatches a priority chain: queued user messages → `/loop` iteration → DoneEvent. | The workflow engine plugs in as a new branch in this chain — **after queued messages, before the `/loop` branch** (run sessions reject `/loop`, so the branch order is unambiguous). Output capture for the just-finished step runs unconditionally **before** yielding to queued messages (§6.2). |
-| F2 | `_activate_loop_message` (`team.py:621-689`) is a working template for injecting a synthetic user turn: `init_turn(keep_subscribers=True)` → persist `HumanMessage` → status SSE → `queued_turn_start` SSE → `mailbox.send`. | Step activation copies this sequence with a computed prompt. `keep_subscribers=True` keeps one continuous SSE stream across steps. |
-| F3 | `/loop` state is in-memory only and dies on restart **and** on 30-minute idle team eviction (`team.py:301-302`, `app/services/team_manager.py:93-96,120`). It treats agent `error` state as completion and re-fires blindly (`team.py:463-465`), and decrements budget before the iteration is guaranteed to start (`team.py:626` vs `630-649`). | Workflow run state is DB-persisted with startup rehydration (scheduler pattern), and must NOT inherit these warts: explicit failure branches, mark-running-before-advance, rehydrate-on-resurrection. |
-| F4 | The scheduler is the persistence blueprint: DB row status machine, overdue-fire-on-startup (`app/scheduler/scheduler.py:123-155`), deterministic session via `uuid5` (`scheduler.py:517`), post-hoc `ChatSession.scheduled_task_name` stamping used by the sidebar (`scheduler.py:576-592`). | `WorkflowRun` mirrors `ScheduledTask` lifecycle. Runs stamp `chat_sessions.workflow_run_id` (plain indexed column, no FK — see F13). |
-| F5 | `Agent.run()` is directly callable without a team — proven by the dream service (`app/services/dream.py:1454-1460`) — with per-run tools, model override, `interrupt_event`, hooks, and contextvar-scoped services wired as `member.py:1077-1139` demonstrates. Caveats: `max_iterations` is a constructor attribute, not a `run()` parameter (`core.py:312`); the loop exits only on no-tool-calls / `<sleep>` / interrupt. | Phase 2 `agent`/`fanout` steps run members directly via `Agent.run()` + `asyncio.gather`. Per-step `max_iterations` is set on the freshly materialized agent object (direct execution only; rejected at validation time for lead-driven steps). Step termination uses a **per-step-attempt** event, never the run-level cancel event (§6.3). |
-| F6 | There is **no forced structured output**: no `tool_choice`/`response_format` anywhere; provider request builders whitelist fields (`app/agent/providers/openai/completions.py:192-225`). The proven mechanism is pydantic-validated tool arguments with error-round-trip retry (`app/agent/tools/registry.py:229-235`), exemplified by `HandoffArtifact` + its server-side quality gate (`app/agent/mode/team/handoff.py:59-292`). | Step output contracts = a per-step `submit_result` tool generated from `output_schema`, validate-retry bounded. **Phase 2 only** — there is no per-turn tool-injection channel into lead-driven runs today (`member.py:1053` hardcodes `get_injected_tools`; `team.py:1704-1731` is workflow-unaware), so Phase 1 captures handoff artifacts / final text instead (§6.2). |
-| F7 | Human gates exist as SSE event + `asyncio.Future` + HTTP reply endpoint, interrupt-safe: `ask_user` (`app/agent/ask_user.py:66-118`) and plan approval (`app/agent/plan.py:97-156`). Pending futures are in-memory only. | `gate` steps get a `WorkflowGateService` with the same Future pattern **plus a DB row from Phase 1** (park/expiry must survive restart — the flagship exemplar contains a gate, so gate durability cannot be deferred). |
-| F8 | MCP tools are programmatically callable without an LLM: `mcp_manager.call_app_tool(server, tool, args)` returns structured `CallToolResult` (`app/agent/mcp/manager.py:391-412`); OAuth for remote servers is supported. There is **no inbound webhook surface** in `app/`. | `tool` steps call `call_app_tool` (structured; not the text-flattening `MCPTool._invoke`). The webhook trigger is net-new and gets its own hardening (§7.1). MCP has **no idempotency concept** — `call_app_tool` forwards arguments verbatim — so retry safety is a policy problem (§6.5), not a parameter. |
-| F9 | Permission approval is enforced in a `wrap_tool_call` hook (`app/agent/hooks/stream_publisher.py:201-264`), not in the executor — direct calls bypass user approval. Permission mode is a mutable per-session field (`PATCH /sessions/{id}/permission-mode`, `chat.py:993`). | Explicit execution-policy layer (§7.3), server-enforced from Phase 1. The PATCH endpoint is guarded on run sessions. |
-| F10 | Mode plumbing: coding sessions are workspace-pinned (409 on mismatch, `chat.py:220-233`); coding teams cached per `(workspace, session_id)`; projects fan `extra_workspace_paths` in (`chat.py:236-247`); **normal sessions may opt into a custom workspace** (`PUT /team/{sid}/workspace`, `app/api/routes/team/files.py:226-262`) without becoming coding sessions. | `mode` binding follows the scheduler contract (`app/scheduler/schemas.py:50-53`), except: normal-mode runs MAY carry an optional `workspace` binding mirroring the existing session opt-in (stamped on the run session the same way). |
-| F11 | File-based user-content stack (frontmatter parse, multi-root precedence discovery, mtime-cache, atomic CRUD, builtin read-only guard, settings UI) exists three times: skills, commands, snippets. Workspace roots take precedence and **shadow global names** (`app/agent/tools/builtin/skill.py:48-72`). | Workflow definitions are the fourth instantiation — but name-shadowing from a cloned repo is an attack vector, so the trust model (§7.3) shows provenance and gates workspace-root definitions server-side from Phase 1. |
-| F12 | The custom-SSE-event recipe is proven by `loop_status` — but its history hydration reads **live team state** and returns nothing when the team is evicted (`chat.py:1103`, "a cache miss is simply no loop" `chat.py:1068`). | `workflow_status` follows the push recipe, but **hydration is DB-derived** (runs/steps/gates rows), never from live runner/team objects. The run API is the source of truth the UI rehydrates from after restart/eviction. |
-| F13 | SQLite connections never enable `PRAGMA foreign_keys` (`app/core/db.py:56-71`) — FKs are declared but unenforced. The lead always gets `QueuedMessageInjectionHook`, which splices queued user messages **into the currently running turn** (`member.py:957-965`, `hooks/queued_injection.py:36-108`), and `_try_activate_queued_after_lead_turn` (`team.py:542-567`) activates queued messages while members are still busy. `TitleGenerationHook` fires on any first turn, with only a `[Scheduled Task:` prefix skip (`app/agent/hooks/title_generation.py:133-141`). | Schema avoids circular FKs (§5). Run sessions **suppress** mid-turn queued injection and early queued activation so user input lands at step boundaries, keeping step outputs uncontaminated (§6.1). Title hook gets a `workflow_run_id` skip (run titles are set at creation). |
+| F1 | Turn-completion barrier `_try_emit_done` fires from every member's `_run_activation` finally; "turn finished" = `_has_active_turn` is True AND lead + all live members are in `("idle","error")`. It resets the flag, then priority-chains: queued user messages → `/loop` → DoneEvent. | `app/agent/mode/team/team.py:455-486` |
+| F2 | Synthetic-turn injection recipe (from `_activate_loop_message`): ① `stream_store.init_turn(session_id, keep_subscribers=True)` ② `save_message(db, session_uuid, HumanMessage(content=prompt))` — plain message, no `extra` ③ set `_has_active_turn = True` ④ SSE status + `queued_turn_start` (carries message ids) ⑤ `mailbox.send(to=self.lead.name, Message(from_agent="user", content=f"[user]: {prompt}"))`, which wakes the lead. | `team.py:621-689` (steps at 631, 643-645, 651, 652-677, 678-683) |
+| F3 | **There is no turn id.** `SessionMessage` has only `id` (uuid7, time-ordered), `session_id`, `role`, `content`, `tool_calls`, `extra`, `created_at`. Output capture must use a **watermark**: record the last message id before injecting; afterwards query the lead session's messages with `created_at >` watermark. | `app/models/chat.py:188-244` |
+| F4 | Handoff artifacts are **not persisted structurally**: the JSON artifact lives on a transient mailbox-message attribute and on the `handoff` SSE event; the DB row is only formatted text (`… FINAL HANDOFF: …`). To capture structured output the runner must listen to the stream in-process (`memory_stream_store.attach(session_id)` returns an AsyncGenerator any server code can consume); fallback is the lead's last assistant text after the watermark. | `app/agent/mode/team/handoff.py:359, 343, 373-405`; `member.py:796-828`; `app/services/memory_stream_store.py:404` |
+| F5 | Members materialize **on demand**, not at boot: `AgentTeam.spawn(blueprint, *, instance_id=None)` is public, server-callable, roster-locked, and handles DB session creation, parenting, mailbox registration, and SSE itself. The lead's own path is the `team_manage` tool → `team.spawn()`. | `team.py:1336-1360` (spawn), `1366-1375` (`_spawn_locked`), `1401-1411` (rebuild+rename); `app/agent/mode/team/manage.py:37-95` |
+| F6 | `team_delegate`/`team_message`/`team_handoff`/`team_reject` all resolve recipients through one choke point, `AgentTeam.resolve_recipient` — live instances only, **no auto-spawn** (delegating to a non-live blueprint returns an error telling the lead to spawn first). **No allowlist mechanism exists**; the smallest insertion is a team field checked in `resolve_recipient` + `_spawn_locked`, with the error text in `_recipient_error`. | `team.py:1662-1688`; `app/agent/mode/team/tools.py:126-145, 148-166` |
+| F7 | Queued user messages are `SessionMessage` rows with `extra.queue_status="queued"`, appended by `save_queued_user_message` (chat route does this under `team_obj.user_message_lock` when `has_active_user_turn()` is True), drained FIFO by `_activate_queued_user_messages` from the F1 chain. **Do not put workflow starts in this queue** — `QueuedMessageInjectionHook` drains the same queue mid-turn, which would splice a workflow start into a running turn. | `app/services/chat_service.py:649-665, 694-716`; `app/api/routes/team/chat.py:374, 426-439`; `team.py:471, 569-619` |
+| F8 | `QueuedMessageInjectionHook` reads only its constructor args at fire time (no team reference), **but hooks are rebuilt on every activation** — so suppressing it per-activation with a flag check at the attach site is sufficient and cheap. | `app/agent/hooks/queued_injection.py:39-103`; attach site `member.py:946-953` (rebuild loop 911-953) |
+| F9 | User interrupt (Stop button) arrives as `interrupt=true` on `/team/chat` and is applied inside `handle_user_message`. | `team.py:756-765` |
+
+### 2.2 Direct service/tool invocation (no LLM)
+
+| # | Fact | file:line |
+|---|---|---|
+| F10 | `AskUserService(session_id, *, stream_session_id=None)` is callable from arbitrary server code: `await svc.ask(questions: list[QuestionSpec]) -> list[str]` pushes a `QuestionAskedEvent` to the stream store and awaits an `asyncio.Future`. `QuestionSpec` is `{question: str, options: list[str]}` — **no separate title/body**, so a gate node flattens `title\n\nbody` into `question`. The reply endpoint (`POST /{session_id}/questions/{request_id}/reply`) locates the service via a module-global registry keyed by session_id — the runner must call `set_ask_user_service(svc)` before asking and `reset_ask_user_service(...)` after. Plan approval works identically. | `app/agent/ask_user.py:59, 66, 41, 80-100, 108-118, 143-152`; `app/agent/tools/builtin/ask_user.py:16-27`; `app/api/routes/team/questions.py:13-39`; `app/agent/plan.py:97-156` |
+| F11 | Registry tools are invocable directly: the name→Tool map is `_default_tool_registry()` (`"python"`, `"shell"` keys), and `await tool.arun(**kwargs)` runs pydantic validation (`ToolArgumentError` on mismatch) then the function, wrapping failures in `ToolExecutionError`. | `app/agent/loader.py:268-360` (keys at 332-333); `app/agent/tools/registry.py:218, 239-245, 274-277` |
+| F12 | `python` tool params: `code` (required), `description=""`, `timeout_seconds` (default 120). `shell` tool params: `command` (required), `workdir=None` (relative anchored at sandbox root), `timeout_seconds` (default 60), `background=False`, plus a deny-scan via `sandbox.check_command()`. Both resolve cwd from the `_sandbox_ctx` contextvar, which **falls back to a default sandbox if unset** — the only required setup is `set_sandbox(SandboxConfig(workspace=...))` for coding scope. | `app/agent/tools/builtin/python.py:38, 54-89, 102, 207`; `shell.py:62, 236-249, 267-320, 337`; `app/agent/sandbox.py:56-66` |
+| F13 | The full contextvar recipe a team member sets before running (the superset a runner may need): `set_sandbox` → `set_permission_service` → `set_plan_mode_service` → `set_ask_user_service` → `set_role`, all reset in `finally`. Dream proves the minimal case (sandbox only). | `member.py:1065-1099, 1123-1127`; `app/services/dream.py:1168` |
+| F14 | MCP: `await mcp_manager.call_app_tool(server, tool, args) -> CallToolResult`. Errors: `KeyError` (unknown server), `RuntimeError` (state ≠ ready — covers `auth_required`), `ValueError` (tool not advertised; names compared **without** the `mcp_{server}_` prefix). Result `.content` is typed blocks; existing code flattens only `TextContent` — there is **no structured-json fast path**, so the tool-node output rule (§6.4) must define one. | `app/agent/mcp/manager.py:391-412` (errors 397-404), state 632/644/656; `app/agent/mcp/tools.py:138-144, 264-278` |
+| F15 | File-based content: `discover_commands()` (four roots, first-source-wins, mtime cache) is the discovery precedent; `render_command` (`$ARGUMENTS`) the templating seed; **CRUD lives in the skills routes** (atomic write, create/update/delete) — commands.py has no CRUD. `parse_slash_invocation` exists for slash parsing. | `app/services/commands.py:66-296` (discovery; note: *not* CRUD), `198`, `299-312`; `app/api/routes/skills.py:85-100, 240, 262, 302` |
+
+### 2.3 Frontend plumbing
+
+| # | Fact | file:line |
+|---|---|---|
+| F16 | Dynamic slash commands: `GET /api/commands?workspace=` → `listCommands()` → `useCommandsQuery` → merged **client-side** into a literal `slashCommands` array in `TeamChatView` (builtins, then coding-only `/loop` entries, then user commands with `keepInputOpen: true`). The `SlashCommand` interface supports `description`/`category`/`displayName`/`insertText`/`isSeparator` — **no `disabled` field**; gating is by omission. | `app/api/routes/commands.py:37-48`; `web/src/api/client/agents.ts:107-114`; `web/src/queries/useCommandsQuery.ts:8-15`; `web/src/components/TeamChatView/index.tsx:683-713, 1442`; `web/src/components/InputBar.tsx:23-53` |
+| F17 | `/loop` path: the FE intercepts in `onSubmit` (`tryHandleBuiltinLoopCommand` → store `sendLoopCommand`, optimistic state, then POSTs the raw text); the server re-parses in `handle_user_message`. User commands are different: FE calls `POST /api/commands/{name}/render` and sends the expanded body as an ordinary message — **the chat route never sees the slash text**, so "put `/workflow` in a command body" does NOT compose for free (v4's claim; dropped). | `TeamChatView/index.tsx:1424-1438, 814-849, 853-888`; `web/src/stores/useTeamStore/index.ts:559-659`; `app/api/routes/team/chat.py:300-312`; `team.py:104-124, 769-871` |
+| F18 | `LoopStatusPill` pattern (the pill recipe to clone): SSE `loop_status` → case in `sse-reducer.ts:489-501` → `activeLoop` field (`types.ts:102`) → rendered in `TeamChatView` (desktop 1162-1168, mobile 1604); hydration on load via `GET /api/team/{sid}/history` (`loop_status` field at `chat.py:1143`) applied at `useTeamStore/index.ts:801`. Server emits with `StreamEnvelope.from_parts("loop_status", payload)` — **no typed event model needed**. | cited inline; emitter `team.py:652-663`; `StreamEnvelope.from_parts` `app/services/stream_envelope.py:109` |
+| F19 | Session scope in FE: `mode` is route-derived (`forcedMode` prop, default `'forge'`); workspace/projectId live in `useTeamStore` (`_workspace`, `projectId`), synced from URL/session (`forge.tsx:39, 149-160`; `index.ts:794`). | `web/src/routes/forge.tsx:17-21, 310-311`; `TeamChatView/index.tsx:117, 274` |
+| F20 | Cache invalidation from SSE goes through the `cacheInvalidations` queue → `applyCacheInvalidations` bridge. | `web/src/stores/cache-invalidation-bridge.ts:12`; wired `forge.tsx:242-250` |
 
 ---
 
@@ -59,14 +80,13 @@ Verified against the codebase (file:line); these are the load-bearing constraint
 
 | Term | Definition |
 |---|---|
-| **WorkflowDefinition** | A YAML file describing inputs, triggers, defaults, and an ordered step graph. Identified by `name` per discovery root; identified for execution by **content hash**. |
-| **WorkflowRun** | One execution of a definition snapshot. DB-persisted. Owns exactly one run `ChatSession`. |
-| **Step** | A node: `kind ∈ {tool, agent, fanout, gate, switch}`, with `retry`/`timeout_s`/`on_error`, producing a JSON output persisted per attempt. |
-| **StepRun** | DB record of one step attempt (status, timestamps, rendered-prompt hash, output, error, usage). The audit trail. |
-| **Gate** | Human-in-the-loop step. Parks the run; DB-backed; survives restart; expires per policy. |
-| **Trigger** | `manual`, `slash`, `schedule`, `webhook`, `agent` (lead tool). |
-| **Binding** | Execution context: `mode` (+ `workspace`/`project_id`; optional workspace for normal per F10), optional `isolation: worktree`. |
-| **Capability manifest** | The statically resolved set of tools, MCP servers, skills, agents, env references, and destructive-tool presence for a definition hash. What the user approves. |
+| **WorkflowDefinition** | A YAML file: `scope`, `inputs`, `nodes`, `edges`, `outputs`, `ui`. Identified by `name` per discovery root; identified for approval by content hash (sha256 of file bytes). |
+| **Node** | `kind ∈ {agent, tool, gate, switch}`. Output referenced downstream as `{{nodes.<id>.output}}`. |
+| **Edge** | `{from, to, when?}`. Determines order and (with `when`) conditional firing. Execution is sequential-topological in Phase 1 (§6.3). |
+| **Roster** (of an `agent` node) | The subagent blueprints (`role: member`) the session lead may spawn/delegate to during that node's turn. The lead card on the canvas is the session lead, locked in Phase 1. Tool access is each blueprint's own configuration (Agents settings) — never a node-level choice; only `tool` nodes pick a tool. |
+| **Scope** | `forge` or `coding` (§6.2). |
+| **Execution** | One inline run inside a specific session. In-memory state drives it; two DB tables log it. One active execution per session, enforced with 409. |
+| **Approval** | Per-content-hash acknowledgment of the manifest (agents, tools, MCP servers, env refs) before a definition is runnable. |
 
 ---
 
@@ -74,13 +94,13 @@ Verified against the codebase (file:line); these are the load-bearing constraint
 
 ### 4.1 Storage and discovery
 
-Fourth instantiation of the user-content pattern (F11). Discovery roots, precedence order:
+Same roots/precedence as skills/commands/snippets (F15):
 
-1. `{workspace}/.EvoFlux/workflows/` — per-repo, travels with git. **Untrusted until approved** (§7.3): shadowing a global name never executes without a fresh per-hash approval that displays provenance.
-2. `{EVOFLUX_CONFIG_DIR}/workflows/` — global (`settings.WORKFLOWS_DIR`).
-3. `app/agent/builtin_workflows/` — bundled read-only examples (`bug-triage`, `pr-review`, `weekly-report`).
+1. `{workspace}/.EvoFlux/workflows/*.yaml` — per-repo. Shadows global names; needs its own approval regardless (§7).
+2. `{EVOFLUX_CONFIG_DIR}/workflows/*.yaml` — global.
+3. `app/agent/builtin_workflows/*.yaml` — bundled read-only examples.
 
-Implementation: `app/services/workflows_fs.py` cloning `app/services/commands.py:66-296`; `ensure_workspace_initialized` creates the global root.
+Implementation: `app/services/workflows_fs.py` — discovery/mtime-cache cloned from `commands.py:66-296`; atomic write + create/update/delete cloned from `routes/skills.py:85-100, 240-302` (commands.py has no CRUD to clone — F15).
 
 ### 4.2 Schema (v1)
 
@@ -88,445 +108,424 @@ Implementation: `app/services/workflows_fs.py` cloning `app/services/commands.py
 # .EvoFlux/workflows/bug-triage.yaml
 schema_version: 1
 name: bug-triage
-description: Triage a Jira bug end-to-end and open a fix PR
-mode: coding                    # normal | coding. Normal MAY add an optional
-                                # workspace binding at trigger time (F10).
-isolation: none                 # none | worktree (coding only)
+description: Triage a bug and open a fix PR
+scope: coding                      # forge | coding
 
 inputs:
   - name: ticket_id
-    type: string                # string | number | boolean | enum. File/attachment
-    required: true              # inputs are NOT supported in v1 (§8 Attachments row).
+    type: string                   # string | number | boolean | enum
+    required: true
+    # enum adds: options: [a, b, c]
 
-triggers:
-  manual: true
-  slash: true
-  schedule: false
-  webhook:
-    enabled: true
-    secret: ${JIRA_WEBHOOK_SECRET}   # MANDATORY when enabled (validation error
-                                     # otherwise); resolved via the existing
-                                     # ${VAR}/.env mechanism (mcp/config.py:94-114)
-    bind:
-      ticket_id: issue.key
-
-defaults:
-  model: null                   # validated against the model registry at save time
-  thinking_level: null          # per-step override below; null → session default
-  fast: false                   # service-tier fast mode where the provider supports it
-  permission_mode: auto         # ask | accept-edits | plan | auto. `bypass` is
-                                # FORBIDDEN in definitions (§7.3).
-  step_timeout_s: 900
-  max_run_duration_s: 7200
-  max_tokens: 2000000           # hard run budget; checked at step boundaries (§7.4)
-
-steps:
+nodes:
   - id: fetch
     kind: tool
-    tool: mcp_jira_get_issue
+    tool: mcp_jira_get_issue       # registry tool or mcp_<server>_<tool>
     args: { key: "{{inputs.ticket_id}}" }
-    retry: { attempts: 3, backoff_s: 5 }
-    on_error: fail              # fail | continue | goto:<forward_step_id>
 
   - id: analyze
-    kind: fanout
-    items: [explorer, debate]   # static lists only for agent selection; templated
-    as: agent_name              # item lists are allowed only when the inner step
-    step:                       # declares an explicit tools: allowlist (§7.3)
-      kind: agent
-      agent: "{{agent_name}}"
-      prompt: |
-        Analyze this bug from your specialty.
-        Ticket: {{steps.fetch.output.summary}}
-        Description: {{steps.fetch.output.description}}
-      output_schema:            # Phase 2+: submit_result tool (F6). Phase 1
-        type: object            # validates but does not enforce; capture falls
-        required: [root_cause_hypotheses, affected_files, confidence]
-        properties:
-          root_cause_hypotheses: { type: array, items: { type: string } }
-          affected_files: { type: array, items: { type: string } }
-          confidence: { type: number, minimum: 0, maximum: 1 }
-      tools: [code_search, code_overview, read, grep]
-      thinking_level: high
-      max_iterations: 40        # direct execution only (Phase 2+); validation
-                                # rejects it on lead-driven steps (F5 caveat)
-    join: all                   # all | any | first_success
-    concurrency: 4
-
-  - id: synthesize
     kind: agent
-    agent: architect
+    subagents: [debate]            # role:member blueprints; pre-spawned and
+                                   # allowlisted for this node's turn (§6.4).
+                                   # NOTE: no `lead:` field in v1 — the turn
+                                   # is handled by the session lead (F2/F6);
+                                   # the canvas shows the lead card locked.
+                                   # NOTE: no `tools:` field either — each
+                                   # agent uses its blueprint's own configured
+                                   # tools (Agents settings). There is no
+                                   # per-turn tool channel for lead-driven
+                                   # turns anyway; tool choice on a node
+                                   # exists only on `tool` nodes.
     prompt: |
-      Synthesize the analyses into one root-cause verdict and fix plan.
-      Analyses: {{steps.analyze.outputs | json}}
-    output_schema:
-      type: object
-      required: [verdict, fix_plan]
-      properties:
-        verdict: { type: string }
-        fix_plan: { type: array, items: { type: string } }
+      Analyze this bug. Delegate to `debate` for a second opinion if useful.
+      Ticket: {{nodes.fetch.output.summary}}
+      Description: {{nodes.fetch.output.description}}
+    timeout_s: 900                 # optional; default from settings
 
   - id: approve
     kind: gate
     title: "Approve fix plan for {{inputs.ticket_id}}"
-    body: "{{steps.synthesize.output.verdict}}"
-    choices:
-      - { label: approve, action: continue }
-      - { label: reject,  action: fail }      # continue | fail | goto:<step_id>
-    timeout_s: 86400
-    on_timeout: fail            # gates guarding destructive steps MUST fail on
-                                # timeout — enforced statically (§7.3)
+    body: "{{nodes.analyze.output.text | truncate:2000}}"
+    choices: [approve, reject]     # rendered via ask_user (F10): question =
+                                   # title + "\n\n" + body, options = choices
 
   - id: fix
     kind: agent
-    agent: coder
+    subagents: []                  # empty roster = the lead works solo
     prompt: |
       Implement the approved fix plan. Verify with tests before finishing.
-      Plan: {{steps.synthesize.output.fix_plan | json}}
-    tools: [read, grep, edit, write, patch, shell, python, code_search]
-    retry: { attempts: 1, on_interrupted: park }   # park (default for destructive
-                                                   # steps) | retry (§6.5)
+      Plan: {{nodes.analyze.output.text}}
+
+  - id: run_tests
+    kind: tool                     # the canvas "Code" node — same kind,
+    tool: python                   # tool: python | shell
+    args:
+      code: |
+        import subprocess
+        r = subprocess.run(["pytest", "-q"], capture_output=True, text=True)
+        print(r.stdout[-4000:])
+
+edges:
+  - { from: fetch,    to: analyze }
+  - { from: analyze,  to: approve }
+  - { from: approve,  to: fix,       when: approve }   # gate answer routing
+  - { from: fix,      to: run_tests }
+  # `when: reject` has no edge → reaching approve with "reject" ends the
+  # workflow gracefully (§6.3: no fired outgoing edge = flow ends there).
 
 outputs:
-  verdict: "{{steps.synthesize.output.verdict}}"
-  fixed: "{{steps.fix.output}}"
+  verdict: "{{nodes.analyze.output.text}}"
+  tests: "{{nodes.run_tests.output.text}}"
+
+ui:                                # canvas layout only; engine ignores it;
+  nodes:                           # preserved verbatim on round-trip. Missing
+    fetch:    { x: 0,   y: 80 }    # (e.g. agent-authored YAML) → auto-layout
+    analyze:  { x: 240, y: 80 }    # (simple layered columns by topo depth —
+    approve:  { x: 480, y: 80 }    # no extra dependency).
+    fix:      { x: 720, y: 80 }
+    run_tests:{ x: 960, y: 80 }
 ```
+
+`switch` nodes: `kind: switch, value: "{{nodes.analyze.output.severity}}"`; outgoing edges carry `when: critical` / `when: normal`. Equality and `in` (comma list) only in v1.
 
 ### 4.3 Templating
 
-- Mustache-style `{{ ... }}` over `inputs`, `steps.<id>.output(s)`, `run`, and `env` (globally allowlisted names only — the allowlist lives in **settings**, never in the definition). Filters: `json`, `truncate:N`. No arbitrary expressions.
-- Rendered step-by-step at activation time. The rendered prompt's hash is persisted on the `StepRun`; the full rendered text spills to the run's artifact dir (§5) for audit.
-- `env.*` interpolation is refused: (a) into anything persisted as step output, and (b) into `tool` step args targeting remote (HTTP) MCP servers, unless the specific reference was part of the approved capability manifest (§7.3) — closing the secret-exfiltration channel.
-- Implementation: `app/workflow/template.py` (~120 lines; generalizes the `$ARGUMENTS` discipline of `commands.py:299-312` to dotted paths).
+- `{{ ... }}` over `inputs.*`, `nodes.<id>.output(.dotted.path)`, `env.<ALLOWLISTED>`. Filters: `json`, `truncate:N`. No expressions.
+- **Node output shape rule** (needed because MCP results have no structured fast path, F14): every node's output is a JSON object. `tool` nodes: if the result has MCP `structuredContent`, use it; else if the flattened text parses as JSON, use that; else `{"text": <flattened text>}`. `python`/`shell`: `{"text": stdout, "exit_code": n}`. `agent` nodes: the handoff artifact JSON if captured (F4), else `{"text": <lead's final assistant text>}`. `gate` nodes: `{"choice": <answer string>}`. A dotted path that doesn't resolve → the node **fails loudly** at render time.
+- `env.*` refused into anything persisted in `workflow_node_runs` and into remote-egress content (remote-MCP tool args, agent prompts) unless the reference is in the approved manifest — same bar for both egress channels.
+- Implementation: `app/workflow/template.py` (~150 lines; generalizes `render_command`'s discipline, `commands.py:299-312`, to dotted paths + filters).
 
 ### 4.4 Validation (save time)
 
-Pydantic models in `app/api/schemas/workflows.py`:
+Pydantic models in `app/workflow/models.py` (definition) + `app/api/schemas/workflows.py` (API DTOs):
 
-- Cross-field rules per the scheduler contract (F10) + normal-mode optional workspace; `isolation: worktree` requires coding; unique step ids; `goto:` forward-only.
-- `output_schema` validated as JSON Schema; converted at run time via `create_model` (registry machinery, `registry.py:273-334`).
-- `model`/`defaults.model` names validated against the model registry; unknown → save-time error. Run-time provider-unconfigured failures name the provider (mirroring MCP `auth_required` treatment).
-- `permission_mode: bypass` rejected. `max_iterations` rejected on lead-driven steps.
-- **Path-sensitive destructive-gate analysis** (§7.3): every path from entry to a step whose tool allowlist intersects the destructive set (`{edit, write, patch, rm, shell, python, bg}` — the plan-mode intercept list, `tool_executor.py:39-41`) must pass through a `gate` whose `on_timeout` is `fail` and which cannot be bypassed via `goto`/`on_error: continue`. Required for `webhook`/`schedule`/`agent` triggers; warning-only for `manual`/`slash`.
-- Templated `agent:`/`tool:` names are rejected in definitions with unattended triggers (webhook/schedule); fanout inner steps must declare explicit `tools:`.
-- Definition **content hash** computed at save; the capability manifest (§7.3) is resolved and stored alongside.
+- DAG: unique node ids; every edge endpoint resolves; cycle detection; every node reachable from an entry node (in-degree 0). At least one entry node.
+- `agent` nodes: each `subagents[]` entry must resolve to a `role: member` blueprint in the current roster registry — unknown name → save error naming the available roster. A `lead:` key, if present, is **rejected in v1** with "custom leads require direct execution (Phase 2)".
+- `tool` nodes: `tool` must be a registry name (`_default_tool_registry()` keys, F11) or a ready-form `mcp_<server>_<tool>` name; `args` keys are not validated against the tool schema at save (runtime `arun` validation covers it, F11) except for `python`/`shell` where `code`/`command` presence is checked.
+- `gate` nodes: non-empty `choices`; every outgoing edge's `when` ∈ `choices`.
+- `switch` nodes: every outgoing edge has `when`; at most one default (`when: "*"`).
+- Destructive-path lint (advisory): entry→node paths whose **effective tools** intersect `{edit, write, patch, rm, shell, python, bg}` (`app/agent/agent_loop/tool_executor.py:38-41`) without an intervening gate get a builder-UI warning. Effective tools: for a `tool` node, the named tool; for an `agent` node, the union of the session lead's and roster blueprints' configured tools, resolved from blueprint files at save time (agent nodes have no `tools:` field of their own — a `tools:` key on an agent node is rejected with "tools are configured on the agent blueprint, not the node"). Advisory because all triggers are human-present.
+- Inputs: names unique; `enum` requires `options`.
+- Content hash (sha256 of canonical file bytes) + manifest (§7) computed at save and returned to the client.
+
+### 4.5 Node roadmap — beyond the four v1 kinds
+
+Grounded in what already exists (builtin tool inventory: `app/agent/tools/builtin/` — `web`, `browser_use_tool`, `memory_search`, `wiki_search`, `pr`, `worktree`, `date`, `lsp`, `preview`, `code_graph`, `todo`, plus the four v1 anchors) and in patterns proven by n8n/Dify/ComfyUI-class builders. Tiered by cost:
+
+**Tier A — ships with Phase 1, no engine change (FE-only or palette sugar):**
+
+| Node | What it is | Why free |
+|---|---|---|
+| **Start / End** | Pseudo-nodes rendering `inputs[]` (Start) and the `outputs:` mapping (End) on the canvas. | Pure FE render of existing definition-level fields; engine unchanged. Standard UX in every graph builder. |
+| **Note** | Sticky-note annotation. | Lives under `ui:` only; never in `nodes[]`; engine never sees it. |
+| **If** | Palette preset of `switch` with two fixed handles (true/false). | Sugar over an existing kind, like Code over Tool. |
+| **Tool presets**: Web, Browser, Knowledge, PR, Worktree… | Palette entries pre-filling `kind: tool, tool: <web\|browser_use\|wiki_search\|memory_search\|pr\|worktree_*>` with a tailored mini-form. | The tools are already registry tools (F11 invocation path); a preset is just palette metadata. |
+
+**Tier B — small new handlers, still inline-friendly (v1.x / early Phase 2):**
+
+| Node | What it is | Feasibility anchor |
+|---|---|---|
+| **Input** (`kind: input`) | Ask the user for **free-text** mid-flow (gates are choice-only). Output `{"text": answer}`. | Verified: `QuestionSpec.options` is optional and the UI always shows a free-text field alongside quick-picks (`app/agent/tools/builtin/ask_user.py:16-28`) — the gate handler with `options: []` is the entire implementation. |
+| **Notify** (`kind: notify`) | Push a desktop notification mid-flow ("analysis done, gate coming up"). | Existing `desktop_notification` push (`team.py:525, 970`); a few lines. |
+| **Transform** (`kind: transform`) | Pure template render into a new output object — pick/reshape fields without a sandbox or an LLM. | `template.py` reuse; safer than reaching for a Code node for data plumbing; zero destructive surface. |
+| **For-each** (`kind: foreach`) | Iterate a templated list, running a **single body node** per item, sequentially; output = array of item outputs. | Sequential iteration matches Phase 1 semantics exactly (§6.3); single-node body first, subgraph body later. |
+
+**Tier C — Phase 2+ (need direct execution or extra machinery):**
+
+| Node | Notes |
+|---|---|
+| **Parallel / fanout** | Already planned with Phase 2 direct execution. |
+| **Sub-workflow** (`kind: workflow`) | Call another approved workflow inline; recursion-depth guard; the sanctioned replacement for the dropped "put `/workflow` in a command body" composition idea (F17). |
+| **Wait / Delay** | Considered; fragile without durability — if added, hard-capped (≤10 min) or cut entirely. |
+
+Considered and rejected: a dedicated HTTP node (use Code/MCP/`web` tool — no new capability), webhook-in/schedule nodes (non-goal: unattended), attachment/file nodes (v1 inputs are scalars only).
 
 ---
 
-## 5. Data model and migrations
+## 5. Data model and migration
 
-New alembic revision `000000XX_create_workflows.py`. Note: FKs below are declarative only — SQLite FK enforcement is off (F13); integrity is maintained by the service layer, matching the existing codebase posture.
+Migration `00000020_create_workflows.py` (next in the existing 8-digit sequence; bump if more migrations land first). Two tables, no `chat_sessions` change:
 
 ```
-workflow_runs
-  id               UUID PK (uuid7)
-  definition_name  str, indexed
-  definition_hash  str, indexed
-  definition_snapshot JSON       -- full parsed definition at trigger time
-  session_id       UUID NULL, unique, indexed   -- set right after the run session
-                                                -- is created (creation order: run row
-                                                -- → session row → backfill session_id;
-                                                -- no circular FK)
-  mode / workspace / project_id
-  trigger          str           -- manual|slash|schedule|webhook|agent
-  trigger_meta     JSON          -- webhook delivery id, scheduler task id, raw-payload
-                                 -- artifact pointer (§7.2)
-  inputs           JSON
-  status           str           -- pending|running|waiting_gate|paused|interrupted|
-                                 -- completed|failed|cancelled|budget_exceeded
-  current_step_id  str NULL
-  outputs / error  JSON/str NULL
-  usage_totals     JSON NULL     -- aggregated tokens/cost across steps
-  control_log      JSON          -- append-only [{ts, action, actor, detail}] for
-                                 -- pause/resume/cancel/force-fail/permission-override
-  created_at / started_at / ended_at
-
-workflow_step_runs
-  id / run_id (indexed) / step_id / fanout_index / attempt
-  status           str           -- running|succeeded|failed|skipped|cancelled|
-                                 -- waiting|interrupted
-  agent_name       str NULL
-  member_session_id UUID NULL    -- child ChatSession for direct runs (Phase 2)
-  prompt_hash      str NULL      -- rendered prompt hash; full text in artifact spill
-  turn_span        JSON NULL     -- {first_message_id, last_message_id} of the step's
-                                 -- own turn — output capture resolves ONLY within
-                                 -- this span (§6.2)
-  output / error / usage JSON NULL
-  started_at / ended_at
-
-workflow_gates
-  id (request_id) / run_id / step_id
-  title / body / choices JSON
-  status           str           -- pending|replied|expired|cancelled
-  reply            JSON NULL     -- {choice, comment, replied_at}
-  expires_at       datetime NULL
-  created_at / replied_at
-
-workflow_definition_approvals
+workflow_approvals
   definition_hash  str PK
-  name / root      str           -- provenance: which discovery root & path
-  manifest         JSON          -- capability manifest as approved
+  name             str
+  root             str            -- "workspace" | "global" | "builtin" + path
+  manifest         JSON           -- {agents:[], tools:[], mcp_servers:[], env_refs:[]}
   approved_at      datetime
 
-workflow_webhook_deliveries
-  delivery_key     str PK        -- provider delivery id or body hash
-  definition_name  str, received_at datetime
-  -- swept by the retention task (§7.4)
+workflow_executions
+  id               UUID PK (uuid7)
+  definition_name  str, indexed
+  definition_hash  str
+  session_id       UUID, indexed  -- ordinary session it ran in; no FK (FK
+                                  -- enforcement is off anyway, app/core/db.py:56-71)
+  status           str            -- running|waiting_gate|completed|failed|stopped
+  error            str NULL
+  started_at / ended_at
+
+workflow_node_runs
+  id               UUID PK (uuid7)
+  execution_id     UUID, indexed
+  node_id          str
+  status           str            -- running|succeeded|failed|skipped
+  output / error   JSON NULL      -- capped 32 KB (debug log, not artifact store)
+  started_at / ended_at
 ```
 
-Plus `chat_sessions.workflow_run_id UUID NULL` — **plain indexed column, no FK** (the `scheduled_task_name` precedent). Member sub-sessions use `parent_session_id` = run session, as team members do today.
-
-Large values: step outputs capped (default 256 KB); oversized outputs, rendered prompts, and raw webhook payloads spill to `session_artifact_dir(run_session_id)/workflow/…` (`app/agent/artifacts.py:17-28`) with DB pointers — consistent with "artifacts under XDG data, never in the coding workspace".
+Rows are written best-effort as execution progresses and are **never read to resume anything**. All live state is the in-memory `ExecutionState` (§6.1).
 
 ---
 
 ## 6. Execution engine
 
-New package `app/workflow/` (`models`, `registry`, `runner`, `steps`, `template`, `gates`, `triggers`, `policy`).
+New package `app/workflow/`: `models.py`, `graph.py`, `registry.py`, `runner.py`, `nodes.py`, `template.py`, `policy.py`.
 
-### 6.1 Runner lifecycle (Phase 1 — lead-driven steps)
+### 6.1 Runner service and team wiring
 
-1. **Trigger** → `runner.start(...)`:
-   - Enforce trust: definition hash must be approved for its provenance (§7.3) — server-side, on every trigger path including slash/scheduler/agent.
-   - Validate binding like the scheduler (`scheduler.py:40-55`); project → `extra_workspace_paths` (`coding_project_service.py:223-227`); `isolation: worktree` → create via the worktree route's service path (`worktrees.py:292-359`).
-   - Insert `workflow_runs` (pending) → create the run `ChatSession` (title `"{name} · run #N"`, `workflow_run_id` stamped) → backfill `session_id`. Enforce concurrency caps (§7.4): over-cap runs stay `pending` in a bounded FIFO.
-   - Boot the team as the scheduler does: `get_or_start_coding_team(workspace, f"workflow:{run.id}", ...)` or `get_or_start_team()`.
-2. **Step advancement** — one new branch in `_try_emit_done`, placed **after** `_activate_queued_user_messages` and **before** `_activate_loop_message` (consistently; `/loop` is rejected on run sessions):
-   - The branch calls `WorkflowRunner.on_turn_complete(session_id)` which FIRST captures the just-finished step's output within its recorded `turn_span` (§6.2) and persists the `StepRun` — **before** any yield to queued user messages, so human steering can never be mis-captured as a step output.
-   - It then checks the interrupt flag (§6.4): an interrupted turn marks the attempt `interrupted` and applies policy instead of advancing.
-   - Then it advances: render next step, inject a synthetic turn via the F2 sequence, mark the new `StepRun` `running` **before** injection (F3 wart fixed); injection failure → attempt `failed` → `on_error`.
-3. **Run-session turn discipline** (F13 fixes — new, explicit engine edits):
-   - `QueuedMessageInjectionHook` is **not installed** on run sessions, and `_try_activate_queued_after_lead_turn` skips them: user messages posted mid-step queue normally and activate at the step boundary (after output capture), where they take priority over the next step. The run resumes after the user's turn. This preserves "human steering mid-run" with clean step outputs.
-   - **Inline steps** (`tool`/`gate`/`switch`) don't use the team, but the runner keeps the session logically busy for their duration (sets/restores the team's active-turn flag) so `has_active_user_turn()` (`team.py:332-334`) stays truthful — a user message during a slow MCP call queues instead of colliding; step injection re-checks the flag and parks behind any active user turn.
-4. **Completion**: render `outputs`, final `workflow_status`, DoneEvent, `desktop_notification` (mode-aware title branch, `team.py:512-519`), stamp `usage_totals`.
+`WorkflowRunner` is a process singleton holding `active: dict[session_id, ExecutionState]`.
 
-### 6.2 Step output capture
+```python
+@dataclass
+class ExecutionState:
+    execution_id: UUID
+    definition: WorkflowDefinition        # parsed snapshot
+    session_id: str
+    scope_workspace: str | None           # resolved coding target (None for forge)
+    node_outputs: dict[str, dict]         # templating source of truth (in-memory)
+    node_status: dict[str, str]
+    fired_edges: set[tuple[str, str]]
+    pending_node: str | None              # agent node whose turn is in flight
+    watermark: str | None                 # last SessionMessage id before injection (F3)
+    captured_artifact: dict | None        # from the in-process handoff listener (F4)
+    allowlist_token: object | None        # for restoring team.turn_allowed_blueprints
+    interrupted: bool
+    stop_requested: bool
+```
 
-Every `StepRun` records its `turn_span` at injection; capture resolves **only within that span**:
+**Team wiring — two hook points in `_try_emit_done`** (avoiding a circular import: `team.py` gets module-level `set_workflow_hooks(capture_cb, advance_cb)` called from `app/api/app.py` startup):
 
-- Phase 1 `agent` steps (lead-driven): (a) the final `team_handoff` artifact of the span, else (b) the lead's final assistant text. `output_schema`, if present, validates the parsed result and marks the attempt failed on mismatch (retry policy applies) — but cannot force schema-shaped output until Phase 2.
-- Phase 2 direct steps: the `submit_result` tool call (pydantic-validated, error-round-trip retried, F6), injected via `Agent.run(injected_tools=…)` — a channel that exists for direct runs (F5) but not for lead-driven ones (F6 caveat).
-- `tool` steps: the structured result (MCP `CallToolResult` content preserved).
-- `fanout`: array of per-item outputs + statuses, joined per `join:`.
+1. **Top of the barrier, before `_activate_queued_user_messages`**: `capture_cb(session_id)` — if this session has an execution with `pending_node` set, capture that node's output now (§6.4), persist the node run, clear `pending_node`. This runs unconditionally so a queued user message can never be mis-captured as node output.
+2. **After the queued-message branch declines (nothing queued), before the `/loop` branch**: `advance_cb(session_id) -> bool` — if an execution is active and not waiting on a gate, advance the graph (§6.3): run inline nodes until the next `agent` node, inject its turn, return True (consumed). Returns False when idle → the chain falls through to `/loop`/DoneEvent as today.
 
-Step outputs are **DB-authoritative**: later steps template from the DB rows, never from lead context — so mid-run summarization/compaction can never corrupt data flow (§8 Compaction row).
+**Interrupt visibility**: one line added where `interrupt=true` is applied (`team.py:756-765` region) calls `runner.notify_interrupt(session_id)` → sets `ExecutionState.interrupted`; the next `capture_cb` marks the node run `failed("interrupted")` and the execution `stopped` instead of advancing.
 
-### 6.3 Phase 2: direct member execution
+**Busy-flag for inline stretches**: while the runner is executing `tool`/`gate`/`switch` nodes (no team turn active), it sets `_has_active_turn` via a small team accessor so user messages queue (F7 path at `chat.py:374`) instead of colliding; before injecting the next agent turn it checks the queue — if non-empty, it releases the boundary to the normal chain (user turn runs; the runner resumes at that turn's completion via `advance_cb`).
 
-`agent`/`fanout` steps gain `execution: direct` (default flips in Phase 3):
+**Queued-injection suppression**: at the hook-attach site (`member.py:946-953`, rebuilt every activation per F8), skip attaching `QueuedMessageInjectionHook` when `runner.is_driving(session_id)` — user messages then land at node boundaries only.
 
-- Materialize the member via `rebuild_agent_from_disk(..., mode=team.mode)` (the spawn call, `team.py:1401-1408`); set `agent.max_iterations` on the instance; invoke `Agent.run()` with the F5 recipe (per-step tools, model, checkpointer on `member_session_id`, contextvar services from `member.py:1077-1139`).
-- **Interrupt topology**: each step attempt (each fanout child) gets its own `asyncio.Event`. A small watcher task sets it when either (a) the child's `submit_result` is accepted (terminal-tool hook) or (b) the run-level cancel event fires. Sibling fanout children and subsequent steps are unaffected by one child's completion; "step finished" and "run cancelled" are never conflated.
-- Fan-out = `asyncio.gather` bounded by `concurrency`; child sessions appear under the run session (`parent_session_id`) so member history endpoints and the monitor view work unchanged; streaming multiplexes onto the run session's stream key with the member label (`member.py:924-929` pattern).
+### 6.2 Trigger paths and scope resolution
 
-### 6.4 Failure, interrupt, and cancel semantics
+- **`/workflow` in a session** (§9/§10 detail the FE side): FE POSTs `POST /api/workflows/{name}/run {session_id, inputs}`. Server: 403 if the definition's current hash is unapproved; 409 if the session already has an active execution; 422 on input mismatch. Scope: `forge` definitions run in any session; `coding` definitions require the session to be a coding session — its pinned workspace/project **is** the target (no picker). A `coding` definition triggered from a forge session → 422 with "open it in a coding session or run from the Workflows screen".
+- **Workflows screen, no session**: FE resolves/creates a session first using the existing session-resolve endpoint (the same one the app uses on navigation), for `coding` scope after prompting for workspace/project, then calls the same `/run` with that `session_id` and navigates to the session. The runner itself never creates sessions.
+- If the session has an active user turn at `/run` time, the runner stores the execution in `active` with nothing pending; the next `advance_cb` at the natural boundary starts node 1. (Workflow starts never enter the user-message queue — F7 caveat.)
 
-- Per step: `retry {attempts, backoff_s}` → `on_error: fail | continue | goto:<forward>`. `continue` yields `null` output; templates referencing it fail loudly unless guarded.
-- **User interrupt** (the existing Stop button / `interrupt=true` on `/team/chat`, `team.py:756-763`): marks the current attempt `interrupted`, sets run status `interrupted` (a pause-like state), and the workflow branch refuses to advance past an interrupted turn. The interrupt's follow-up message (if any) runs as a normal user turn; the user then explicitly resumes, cancels, or force-fails the step via the run API/UI.
-- **Cancel API**: sets the run-level cancel event (propagates into `Agent.run()` mid-stream) and finalizes status `cancelled`.
-- Gate replies: per-choice `action: continue | fail | goto`. `on_timeout` fires via (a) an in-process timer while running and (b) a startup + periodic expiry sweep over `workflow_gates.expires_at` — so expiry works even across downtime.
-- Watchdogs: `step_timeout_s` is enforced by a runner-side task per activation (interrupts the turn, marks attempt failed); `max_run_duration_s` and `max_tokens` (§7.4) checked at every boundary.
+### 6.3 Graph semantics (Phase 1: sequential)
 
-### 6.5 Durability and crash recovery — at-least-once, stated honestly
+- At validation, compute a topological order. At runtime, maintain `fired_edges`.
+- A node is **ready** when every incoming edge is *resolved* (fired, or dead because its `from` node was skipped/its `when` didn't match) and ≥1 incoming edge fired (entry nodes: ready at start). A node all of whose incoming edges are dead is marked `skipped`, and all its outgoing edges are dead.
+- The runner always executes **one node at a time**, picking the first ready node in topological order. Multiple outgoing branches therefore interleave sequentially and deterministically. (Phase 2 direct execution may run branches concurrently; the semantics above are already branch-safe.)
+- Edge firing: unconditional edges fire when `from` succeeds. `when:`-edges fire when `from` is a gate whose answer equals `when`, or a switch whose value matches (`*` = default). A gate/switch whose answer matches **no** outgoing edge ends the flow gracefully at that node (`completed`, with a note in the node run).
+- Node failure: the execution is marked `failed`, remaining nodes `skipped`, marker cleared, `workflow_progress(failed)` emitted. No `on_error`/retry in v1 (kept out deliberately; the transcript already shows agent-node failures, and the node-run log shows tool-node errors).
+- Flow end: when no node is ready and none pending → render `outputs` (into the execution row + final SSE), status `completed`, clear the marker.
 
-- All transitions are DB-first. On startup (next to scheduler startup, `app.py:91-94`) `runner.rehydrate()`:
-  - `waiting_gate` → re-arm from the `workflow_gates` row (expired ones apply `on_timeout` immediately).
-  - `running` → the in-flight attempt is marked `interrupted`. **Default policy: steps whose toolset intersects the destructive set PARK the run (`interrupted`) for explicit operator resume; non-destructive steps may auto-retry only if the step opts in (`retry.on_interrupted: retry`).** This is deliberately conservative: a crash after a side effect (PR opened, shell run) but before the output write means a retry re-executes it — MCP offers no idempotency mechanism (F8), so at-least-once is the truth and the docs say so.
-  - Runs whose session row was deleted are marked `failed` and skipped.
-- Team idle eviction stays as-is; rehydration + lazy team re-boot (F4 cache key `workflow:{run.id}`) handle resurrection. Gates parked for days hold no team in memory.
-- **Run monitoring after restart** (F12): the run API and DB-derived `workflow_status` hydration are the UI's source of truth; the in-memory SSE store contributes only live deltas.
+### 6.4 Node handlers (`app/workflow/nodes.py`)
 
----
+**`agent`** —
+1. Pre-spawn each roster blueprint with no live instance: `await team.spawn(bp)` (F5 — server-callable; delegate does not auto-spawn, F6).
+2. Set the per-turn allowlist: `team.turn_allowed_blueprints = {node.subagents...}` — enforced by the new checks in `resolve_recipient` (`team.py:1662-1688`) and `_spawn_locked` (`team.py:1366-1375`), with error text in `_recipient_error` (`tools.py:148-166`). Cleared at capture.
+3. Record `watermark` = last message id of the lead session (F3). Start an in-process `attach(session_id)` listener task filtering for `handoff` events (F4) into `captured_artifact`.
+4. Inject the turn with the rendered prompt via the F2 recipe. Set `pending_node`.
+5. On `capture_cb`: stop the listener; output = `captured_artifact` if set, else `{"text": last assistant message with created_at > watermark}`; persist node run; clear allowlist.
+6. Per-node `timeout_s` (default from `settings.WORKFLOW_NODE_TIMEOUT_S`, 900): a runner-side timer that, on expiry, triggers the same interrupt path as F9 and marks the node failed.
 
-## 7. Enterprise readiness
+**`tool`** —
+1. Set contextvars (F12/F13): `set_sandbox(SandboxConfig(workspace=scope_workspace or default))`; nothing else needed for `python`/`shell` (permission enforcement is a hook-layer concern that direct calls bypass — acceptable here because the manifest was explicitly approved, §7).
+2. Registry tools: `await _default_tool_registry()[name].arun(**rendered_args)` (F11). MCP tools: `await mcp_manager.call_app_tool(server, bare_tool, rendered_args)` (F14; catch its `KeyError/RuntimeError/ValueError` into a node error naming the server).
+3. Output per the §4.3 shape rule. `background: true` on shell is rejected at validation (a workflow node must end when it ends).
 
-### 7.1 Webhook trigger (net-new, hardened)
+**`gate`** —
+1. `svc = AskUserService(session_id)`; `set_ask_user_service(svc)`; execution status → `waiting_gate`; emit `workflow_progress`.
+2. `answers = await svc.ask([QuestionSpec(question=f"{title}\n\n{body}", options=choices)])` (F10). The FE renders this through the **existing** question UI (event-driven; verify early in M4 that it renders with no turn active — fallback: a small `GateBanner` fed by `workflow_progress`, §10).
+3. Output `{"choice": answers[0]}`; fire the matching edge; `reset_ask_user_service`. Stop during a gate: `POST /executions/{id}/stop` cancels the awaited future (`CancelledError` cleanup exists, F10).
 
-- `POST /api/webhooks/workflows/{name}` on a dedicated router:
-  - **Secret is mandatory** whenever `webhook.enabled: true` (schema validation refuses otherwise). The route is exempt from desktop-token auth *only because* the HMAC is the auth — no secret, no exemption.
-  - HMAC-SHA256 over the raw body, constant-time compare. **Honest replay posture**: GitHub-style signatures cover only the body (no timestamp/nonce), and Jira Cloud webhooks lack native signing — so for those providers the dedup table (`workflow_webhook_deliveries`, keyed by delivery id or body hash, retention-swept) is *redelivery hygiene, not replay defense*. Replay within the retention window is mitigated by run-level effects (dedup key includes body hash → identical replays collapse) and by the destructive-gate rule below. Custom senders SHOULD sign a timestamp+nonce envelope; the docs specify the recommended scheme.
-  - Rate limit: token bucket per definition, default **6 runs/min** (run-creating endpoints deserve a conservative default), payload cap 256 KB, bounded pending-run queue (over-cap → 429).
-  - Raw payload spilled to the run artifact dir for forensics (pointer in `trigger_meta`).
-  - `bind:` failures on required inputs → 422, no run row.
-  - Definitions with unattended triggers must pass the **path-sensitive destructive-gate analysis** (§4.4) — every path to a destructive step passes a human gate that fails on timeout and cannot be `goto`-bypassed.
-- Deployment: localhost-first product; webhook use assumes a reverse proxy/tunnel that path-restricts exposure to `/api/webhooks/workflows/` only (documented).
+**`switch`** — render `value`, match edges, fire one. Pure function, no I/O.
 
-### 7.2 Audit trail and observability
+### 6.5 Stop / failure / SSE
 
-- `workflow_step_runs` + `workflow_runs.control_log` are the audit trail: per-attempt status/timestamps/prompt-hash/output/usage, plus every control action (pause/resume/cancel/force-fail/gate reply/permission override) with actor and timestamp.
-- **Undo on run sessions is disabled** (409 with reason): checkpoint restores would delete the conversational evidence backing step outputs. (Worktree isolation is the sanctioned rollback for automated changes.)
-- Per-step usage from existing `usage` events → `StepRun.usage`; run totals → `usage_totals`. Export bundle: `GET /api/workflows/runs/{id}/export` (run + steps + gates + control log + approval manifest + definition snapshot).
-- Telemetry: counters/durations via the observability route. **Diagnostics** (`app/api/routes/diagnostics.py`) gains a workflows section: active runs, pending/expired gates, last rehydration result, invalid/unapproved definitions — the first place an operator looks.
-
-### 7.3 Trust model and permission policy (server-enforced from Phase 1)
-
-1. **Per-hash approval is a Phase 1 hard gate** on every trigger path (manual, slash, scheduler, agent tool, webhook). Saving or discovering a definition computes its **capability manifest**: resolved tools, MCP servers, skills (with their content hashes — workspace skills shadow global ones, F11, so the manifest pins what was reviewed), agent blueprints, env references, destructive-tool presence, webhook exposure. Approval (UI or pre-approval via config for headless installs) records `(hash, provenance, manifest)`. Any file edit → new hash → re-approval. The approval UI displays provenance (root + path) to defeat name-shadowing from cloned repos. This is backend enforcement — the CodingSidebar trust dialog is UI-only and is NOT relied on.
-2. `permission_mode: bypass` is forbidden in definitions. Unapproved workspace-root definitions are inert (listed with an "approve to enable" state).
-3. **Unattended runs never park on invisible futures**: for webhook/schedule/agent triggers with `permission_mode: ask`, permission requests auto-escalate to workflow gates (DB-backed, notifying, expiring) instead of in-memory permission futures.
-4. `PATCH /sessions/{id}/permission-mode` on a run session is rejected while a run is non-terminal unless accompanied by an explicit override flag, which is recorded in `control_log` and voids the "runs as approved" property for that run (surfaced in the UI and export).
-5. Tool allowlists are mechanical (`injected_tools`/`excluded_tools`), not prompt-level. `tool` steps may only name registry tools or ready `mcp_<server>_<tool>` names (`manager.py:368-381`).
-6. Secrets: literal → `.env` + `${VAR}` conversion in the UI (MCP settings precedent, `routes/mcp.py:129-205`); template `env` allowlist lives in global settings; every env reference appears in the manifest; interpolation restrictions per §4.3.
-
-### 7.4 Operational and cost controls
-
-- Concurrency: `WORKFLOW_MAX_CONCURRENT_RUNS` (default 3), `WORKFLOW_MAX_CONCURRENT_STEPS_PER_RUN` (default 4), `WORKFLOW_MAX_FANOUT` (default 25), bounded pending FIFO.
-- **Token budgets**: `defaults.max_tokens` per run (aggregated from usage events at step boundaries; exceeding → status `budget_exceeded`, notification); optional per-definition daily budget for unattended triggers; global `WORKFLOWS_ENABLED` kill switch.
-- Pause/resume/cancel/re-run per run; `POST …/runs/{id}/steps/{step_id}/force-fail` admin action for stuck steps; staleness surfaced from `started_at` on the run API.
-- Retention with **explicit cascade**: cleanup (default 90 days / last 200 per definition) deletes runs **and** their run-session trees (run session + member child sessions + messages), artifact spill dirs, gate rows, and dedup rows; `chat_sessions.workflow_run_id` consistency maintained by deleting sessions in the same transaction. `DELETE /api/team/sessions/{id}` on a session with a non-terminal run returns 409 (cancel first); terminal-run sessions delete normally and mark the run's `session_id` NULL (run rows remain as audit).
-- Startup is fail-safe like MCP: a broken definition never blocks boot; it surfaces in diagnostics with triggers disabled.
-
-### 7.5 Versioning and reproducibility
-
-- `schema_version` with in-major backward compatibility; every run stores `definition_snapshot` + `definition_hash`; "re-run with same inputs" replays the snapshot (subject to current approval state). Builtin examples are read-only (builtin-skill guard precedent); "duplicate to edit" in the UI.
-
-### 7.6 Operator runbook (shipped as docs with Phase 1)
-
-Symptoms → diagnosis → action, e.g.: *run stuck `running`* → check diagnostics staleness + step `started_at` → `force-fail` step or `cancel` run; *run `interrupted` after crash* → inspect last attempt's spilled prompt/output → `resume` (retries per policy) or `cancel`; *gate never fired* → check `workflow_gates.expires_at` + notification log; *definition missing* → check approval state + validation errors in diagnostics.
+- **Stop**: the Stop button works during agent-node turns (F9 → `notify_interrupt`). During inline nodes/gates there is no turn, so the pill has an ✕ calling `POST /api/workflows/executions/{id}/stop` → cancels the current awaitable (gate future / tool task), marks execution `stopped`, clears the marker. (This is the one control endpoint v4 said it wouldn't need; gates/tools made it necessary.)
+- **SSE**: `workflow_progress`, emitted via `StreamEnvelope.from_parts` like `loop_status` (F18 — no typed model): `{type, session_id, execution_id, definition_name, status, node_id, node_index, total_nodes, error?}` on every transition.
+- **Hydration**: `GET /api/team/{sid}/history` gains a `workflow_execution` field (sibling of `loop_status` at `chat.py:1143`) read from `runner.active` — live-state semantics, gone after restart, consistent with the no-durability posture and with the loop precedent.
 
 ---
 
-## 8. Integration matrix — every existing feature
+## 7. Trust and safety (lightweight)
+
+1. **Approve once per hash.** Manifest = union over nodes of: subagent blueprint names (agent nodes — their tools are the blueprints' own config and are shown informationally in the dialog by resolving the blueprints at display time), tool/MCP names (`tool` nodes only), MCP server names, `env.*` references. Shown in an `ApprovalDialog`; `POST /approve {hash}` records it (409 if the file changed since — hash mismatch). Unapproved definitions are listed but not runnable and omitted from the slash menu (F16: gating by omission is the existing pattern). Workspace-root definitions never inherit a global name's approval.
+2. Direct tool-node calls bypass the permission-hook layer by construction (they don't go through an agent) — this is exactly what the manifest approval covers, and why it is mandatory rather than cosmetic.
+3. Destructive-path lint (§4.4), advisory.
+4. Per-node timeouts (§6.4) so a hung call can't wedge a session.
+
+---
+
+## 8. API surface (contracts)
+
+Router `app/api/routes/workflows.py`, mounted in `app/api/app.py` (next to `commands` at `:181`).
+
+```
+GET  /api/workflows?workspace=
+  → {workflows: [{name, description, scope, inputs[], hash, root, source_path,
+                  approved: bool, valid: bool, errors: [str], node_count}]}
+
+GET  /api/workflows/{name}?workspace=
+  → {raw_yaml, graph: {nodes[], edges[], ui}, hash, root, approved, manifest,
+     errors: []}
+
+PUT  /api/workflows/{name}            body: {graph} | {raw_yaml}; ?workspace= targets
+  → same as GET detail; 422 with per-field errors     the repo root
+DELETE /api/workflows/{name}
+POST /api/workflows/{name}/approve    body: {hash}    → 204 | 409 hash-mismatch
+
+POST /api/workflows/{name}/run        body: {session_id, inputs: {...}}
+  → {execution_id, session_id}
+  errors: 403 unapproved | 404 unknown | 409 execution-already-active
+          | 422 inputs/scope invalid
+POST /api/workflows/executions/{id}/stop → 204
+GET  /api/workflows/executions?definition=&cursor=   → debug-log list
+GET  /api/workflows/executions/{id}                  → {execution, node_runs[]}
+```
+
+Plus the `workflow_execution` field added to the existing team-history response (§6.5).
+
+---
+
+## 9. Frontend plan
+
+### 9.1 Trigger surface (chat)
+
+- **Client**: `web/src/api/client/workflows.ts` — `listWorkflows`, `getWorkflow`, `saveWorkflow`, `deleteWorkflow`, `approveWorkflow`, `runWorkflow`, `stopExecution`, `listExecutions`, `getExecution`. Types in `web/src/api/types.ts`.
+- **Query**: `useWorkflowsQuery(workspace)` cloning `useCommandsQuery` (F16).
+- **Slash menu**: in the `slashCommands` merge (`TeamChatView/index.tsx:683-713`), append one entry **per approved workflow** matching the current scope (`mode` prop + `_workspace`, F19): `displayName: "/workflow <name>"`, `insertText: "workflow <name>"`, `category: 'workflow'`, `description`, `keepInputOpen: true` (args may follow). Forge sessions list `scope: forge` only; coding sessions list both. Unapproved/invalid → omitted (F16).
+- **Submit intercept**: new `tryHandleWorkflowCommand` in `onSubmit` beside the `/loop` check (`index.tsx:1424-1438`, F17), backed by `web/src/lib/parseWorkflowCommand.ts` (clone of `parseLoopCommand.ts`): parses `/workflow <name> [arg1 arg2 …]`, maps positional args onto declared inputs (coerced by type), and if required inputs are still missing opens **`RunInputsDialog`** (small form generated from `inputs[]`). Then `runWorkflow(...)` — the raw slash text is **never sent as a chat message** (unlike `/loop`; no server-side slash parse exists or is needed).
+- **Progress pill**: `WorkflowProgressPill` cloning `LoopStatusPill` exactly (F18): SSE case `'workflow_progress'` in `sse-reducer.ts` (beside `loop_status` at `:489`), store field `activeWorkflowExecution` in `useTeamStore/types.ts`, hydration line beside `index.ts:801` from the new history field, rendered beside `TaskProgressPill` (`index.tsx:1162-1174` region; mobile card beside `:1604`). Pill shows `"<name>: <node_id> (i/n)"`, a red state with the error on failure, and an ✕ → `stopExecution`.
+- **Gate rendering**: expected to reuse the existing question UI (it's a real `QuestionAskedEvent`, F10). Verified early in M4; fallback is a `GateBanner` component fed by `workflow_progress(waiting_gate)` + `getExecution`.
+
+### 9.2 Builder (Workflows screen)
+
+- Route `/workflows` in `router.ts` (precedent `/scheduler`); screen layout: definition list (left) + editor (right).
+- **Canvas**: new dependency `@xyflow/react` (nothing suitable exists — `RepoGraphSpatial.tsx` is force-directed physics, not a node/port editor; Monaco is already present for the YAML view). `WorkflowCanvas.tsx` registers custom node types:
+  - `AgentNode` — header card = session lead (locked, tooltip "custom lead comes with direct execution"); subagent chips, added via a combobox cloned from `AgentForm.tsx`'s pattern and filtered to `role: member` blueprints (the `role` field at `AgentForm.tsx:407-418`); prompt edited in the side panel. **No tools picker** — each agent's tools come from its blueprint config; the side panel shows them read-only with a link to Agents settings.
+  - `ToolNode` — tool combobox (registry + ready MCP names from the manifest endpoint); args as a JSON/form editor.
+  - `CodeNode` — a `ToolNode` preset: language select `python | shell` (label notes JS runs via `shell` + `node`/`bun` — honest, F12) + a Monaco snippet editor bound to `args.code`/`args.command`.
+  - `GateNode` — title/body/choices; each choice materializes a labeled output handle (edge `when`).
+  - `SwitchNode` — value template; labeled output handles per case + default.
+- `NodePalette` (drag sources), `NodeSidePanel` (full editing form for the selected node), `EdgeLabel` (shows/edits `when`).
+- Tier-A additions from §4.5 ship with this milestone at near-zero cost: `StartNode`/`EndNode` (pseudo-nodes rendering `inputs[]`/`outputs:`), `NoteNode` (`ui:`-only sticky), the `If` preset, and tool presets (Web/Browser/Knowledge/PR/Worktree) as palette metadata over `ToolNode`.
+- **Save flow**: explicit Save → `PUT` with `{graph}` (positions included under `ui`); server validates, returns canonical detail or 422 field errors → rendered as red badges on the offending nodes. **YAML toggle** shows `raw_yaml` in Monaco; saving from YAML sends `{raw_yaml}`; switching back re-renders the canvas from the parsed graph (auto-layout fills missing `ui` positions).
+- **Approval**: after save, if unapproved, `ApprovalDialog` lists the manifest → `approveWorkflow(hash)`.
+- Mobile: read-only list + Run button; no canvas.
+
+---
+
+## 10. Integration matrix (touched surfaces only)
 
 | Subsystem | Integration |
 |---|---|
-| **Forge mode** | `mode: forge` runs; **optional** workspace binding mirroring the session opt-in (F10) — stamped on the run session like `PUT /{sid}/workspace` does; without it, the per-session sandbox dir applies. Default team via `get_or_start_team()`. Sidebar badges runs (pattern of the `sched` badge, `Sidebar.tsx:989,1031-1035`). |
-| **Coding mode** | Workspace-pinned run sessions (409 contract preserved); coding roster for `agent:`; code-graph tools per step allowlists; `CodingSidebar` groups runs under workspace/project focus with a "Runs" filter. |
-| **Projects (multi-repo)** | `project_id` binding → primary repo + `extra_workspace_paths` (`chat.py:236-247`; direct runs get `MultiRepoContextHook`, `member.py:966-975`). Fanout over repo lists enables per-repo steps. |
-| **Worktrees** | `isolation: worktree` per run (service path of `worktrees.py:292-359`), registered `kind='worktree'`; merge-or-discard is a final gate+tool pair. The sanctioned rollback for automated changes (undo is disabled on run sessions, §7.2). |
-| **Scheduler** | Two-way: `ScheduledTask.workflow`/`workflow_inputs` → `_fire_task` calls `runner.start()`; workflow UI can create the task for `triggers.schedule: true`. Shared mode/workspace validation. |
-| **`/loop`** | Untouched for interactive sessions; **rejected (422) on run sessions**. Workflow branch sits before the loop branch in `_try_emit_done` (§6.1). A `loop:` step kind supersedes it inside workflows (Phase 3). |
-| **Slash commands** | `/workflow run|cancel|status` parsed server-side (`parse_slash_invocation`), gated by approval state; composer menu next to the `/loop` family. |
-| **Queued messages** | Run sessions: no mid-turn splicing (hook suppressed, F13); messages land at step boundaries after output capture, taking priority over the next step (§6.1). Human steering with clean audit. |
-| **Interrupt / Stop button** | Defined semantics (§6.4): current attempt `interrupted`, run pauses, no phantom advancement; follow-up message becomes a normal user turn. |
-| **Attachments / @mentions** | **Not supported in v1** for workflow inputs/steps (typed scalar inputs only). Workaround: reference workspace file paths in prompts. `file` input type + mention expansion at activation time (reusing `collect_mention_attachments`, `chat.py:353-360`) is a Phase 3 item. Interactive user turns on run sessions keep full attachment support (they're normal turns). |
-| **Shell dispatch (`!`/shell)** | Allowed on run sessions — it bypasses the turn machinery (`chat.py:309-333`) and doesn't touch the step barrier; noted in docs. |
-| **Background tasks (`bg`)** | Hazard documented: bg processes outlive turns, so a step can "succeed" while its processes still mutate the workspace. Steps with `bg` in the allowlist get a boundary policy: `bg_wait: true` (default for steps followed by gates/worktree merges) waits-or-kills outstanding bg tasks before the attempt is marked succeeded. |
-| **Skills** | Per-step `skills:` preload via `SkillPreloadHook` (`loader.py:570-575`); skill content hashes pinned in the capability manifest (§7.3). |
-| **Commands** | Command bodies may contain `/workflow run …` (composition for free). |
-| **Snippets** | Unaffected: composer-side insertion works on run sessions as anywhere; the `workflows/` root sits beside `snippets/` in workspace init. |
-| **MCP** | `tool` steps via `call_app_tool` (structured, F8); per-step `mcp:` grants (merge pattern `loader.py:484-505`); readiness via `get_tools_for_server`/`wait_until_ready` with `auth_required` failing the step and naming the server. |
-| **Permissions / plan mode / ask_user** | §7.3. Gate steps reuse ask_user UI; unattended `ask` escalates to DB-backed gates; permission-mode PATCH guarded on run sessions. |
-| **Tier policy** | Step `tools:` allowlists are the workflow-native analogue; the same destructive-set constants drive the static gate analysis (§4.4). |
-| **Memory / wiki / dream** | `WikiInjectionHook` unchanged (both modes, `member.py:945-948`). Memory extraction fires on run sessions as usual. **Dream**: orthogonal — run sessions are eligible for dream ingestion like any session; the runner's concurrency caps do not model dream's own load (documented; both are bounded independently). |
-| **Code graph** | Coding-bound runs extend the watcher on trigger (as session resolve does, `chat.py:868-878`); `CodeOverviewHook` per its tool-presence rule. |
-| **Compaction / summarization** | Step outputs are DB-authoritative (§6.2), so auto-summarization mid-run cannot corrupt data flow. `compact`/`continue` commands: allowed between steps, 409 mid-step. Optional `compact_between_steps: true` for long pipelines. |
-| **Undo/redo** | **Disabled on run sessions** (409; §7.2). Snapshots still record (harmless); worktree isolation is the rollback story. |
-| **Chapters** | Runner writes a `SessionChapter` per step (`chapter.py:14-37` write path) → `TaskProgressPill` shows step progress free; the run monitor is the richer view. |
-| **Title generation** | Titles set at creation (`"{name} · run #N"`); `TitleGenerationHook` gains a `workflow_run_id` skip (F13) — file listed in §13. |
-| **Thinking levels / fast mode** | Per-step `thinking_level` and `fast` fields (§4.2) carried through injection extras (Phase 1 — the same per-message extras user turns use, `team.py:874-947`) and `RunConfig` for direct runs (Phase 2). |
-| **Model registry / providers** | Save-time model validation (§4.4); run-time provider-unconfigured errors name the provider. |
-| **Browser automation** | Direct steps key `BrowserSession` state by `member_session_id` (the tool's existing per-session keying); the run timeline links to the existing BrowserViewer/screencast for that session. Run cancel/eviction/rehydration closes live browser sessions for the run's session tree (cleanup registered with the runner). |
-| **Session deletion** | 409 on sessions with non-terminal runs; retention cascades (§7.4); rehydration marks session-less runs failed. |
-| **Desktop notifications** | Completion/failure/gate-waiting/budget-exceeded push `desktop_notification` (existing pipeline); gate notifications deep-link to the run. |
-| **Sidebar / session lists** | `workflow_run_id` badges in both sidebars (FK column beats the `[Scheduled Task:` title-prefix hack); "Runs" filter in CodingSidebar. |
-| **Stream/SSE** | `workflow_status` pushed on every transition (F12 push recipe); **hydration from DB rows** via the run API (F12 caveat) — the monitor is correct after restart/eviction. |
-| **Plugins** | Tool hooks fire inside steps as everywhere; new `workflow.step.before/after` plugin events (`plugins/events.py`) for org guardrails. |
-| **Agents CRUD / drift** | Blueprint references validated at save (roster listed on error); drift refresh applies at step boundaries for direct runs. |
-| **Diagnostics / health** | Workflows section in diagnostics (§7.2): active runs, stuck-step staleness, pending gates, rehydration result, invalid/unapproved definitions. |
-| **Telemetry UI** | Run/step metrics on `/telemetry`. |
-| **Desktop (Tauri)** | Tray label precedence gains `Workflow: <name> (step 3/5)` (`TeamChatView/index.tsx:659-670` pattern); tray menu item opens `/workflows`. |
-| **Mobile** | Gate reply banner, `WorkflowStatusPill`, and run status list are mobile-capable (reuse existing `isMobile` branches); the YAML/form editor is desktop-only with a mobile fallback of read-only list + manual trigger. |
+| Forge / Coding modes | Scope rules per §6.2; mode comes from the route (F19). |
+| Projects | A coding session bound to a project already carries `extra_workspace_paths` into its turns; tool nodes get the workspace via `set_sandbox` (F12). |
+| `/loop` | Untouched; the workflow `advance_cb` sits before the loop branch in the F1 chain. Both can't drive the same boundary: an active execution consumes it first. |
+| Slash commands | One new FE-intercepted family (§9.1). No server-side slash parse. Command-body composition does **not** work (F17) — dropped from claims. |
+| Queued messages | Suppressed mid-node via the attach-site skip (F8); land at node boundaries (§6.1). |
+| Stop button | Works as-is for agent nodes (F9); pill ✕ covers inline nodes/gates (§6.5). |
+| ask_user / plan mode | Gates are literal `ask_user` calls (F10). |
+| MCP | `call_app_tool` with mapped errors (F14). |
+| Skills/commands/snippets | Sibling file root (F15); no behavior change. |
+| Sidebar / notifications / undo / compaction / attachments | Deliberately untouched — no run entity, no run session, nothing to badge or guard. |
 
 ---
 
-## 9. API surface
+## 11. Phasing and build order
 
-`/api/workflows` (new router):
+### Phase 1 (MVP) — six milestones, each independently verifiable
 
-```
-GET    /api/workflows                          # definitions + validation + approval state + manifest
-GET    /api/workflows/{name}                   # detail (raw YAML + parsed + provenance)
-PUT    /api/workflows/{name}                   # create/update (global root; ?workspace= for repo root)
-DELETE /api/workflows/{name}
-POST   /api/workflows/{name}/approve           # approve current hash (manifest ack)
+- **M1 — Definition layer** (backend, no server changes): `workflows_fs.py`, `workflow/models.py`, `graph.py` (DAG + topo + edge semantics as pure functions), `template.py`, `policy.py` (hash + manifest + lint), builtin examples. *Done when*: unit tests validate/reject a corpus of YAMLs and the graph semantics table in §6.3 is covered by tests.
+- **M2 — API CRUD + approval**: `routes/workflows.py` (all but `/run`/`/stop`), migration `00000020`, `workflow_approvals` wiring. *Done when*: API tests cover list/get/put/delete/approve incl. hash-mismatch 409 and workspace-root shadowing.
+- **M3 — Runner core (headless nodes)**: `runner.py` + `nodes.py` for `tool`/`switch`, `ExecutionState`, execution/node-run rows, `workflow_progress` SSE, `/run` + `/stop` endpoints, busy-flag accessor. *Done when*: a 2-node tool workflow (`python` → `switch`) runs to completion via `POST /run` against a live session, rows + SSE verified.
+- **M4 — Agent + gate nodes**: `_try_emit_done` hook points + `set_workflow_hooks`, allowlist checks in `resolve_recipient`/`_spawn_locked`, pre-spawn, watermark capture + handoff listener, `QueuedMessageInjectionHook` skip, interrupt notify, gate via `AskUserService` (+ verify the question UI renders turn-less; else `GateBanner`), per-node timeout. *Done when*: sequential `bug-triage` runs e2e in a live coding session; a mid-node user message lands at the boundary; Stop during the agent node stops the execution; gate pauses/resumes.
+- **M5 — FE trigger surface**: client + queries, slash-menu entries, `parseWorkflowCommand` + `onSubmit` branch, `RunInputsDialog`, `WorkflowProgressPill` + reducer case + hydration field (BE: history field lands here too). *Done when*: `/workflow bug-triage TICKET-1` from the composer runs with live pill progress and ✕ works during a gate.
+- **M6 — FE canvas**: `@xyflow/react` dep, `WorkflowCanvas` + node components + side panel, `ui:` persistence + auto-layout, YAML toggle, `ApprovalDialog`, `/workflows` route/screen. *Done when*: build the §4.2 example on the canvas from scratch, save, approve, and run it — and a hand-written YAML with no `ui:` opens with sane auto-layout.
 
-POST   /api/workflows/{name}/runs              # trigger {inputs, workspace?, project_id?, isolation?}
-GET    /api/workflows/runs?definition=&status=&cursor=
-GET    /api/workflows/runs/{id}                # run + step runs + gates + control log
-POST   /api/workflows/runs/{id}/cancel | /pause | /resume | /rerun
-POST   /api/workflows/runs/{id}/steps/{step_id}/force-fail
-GET    /api/workflows/runs/{id}/export
+Exit criteria (Phase 1 overall): the four from v4 (canvas round-trip; inline run with no new session; unapproved not triggerable; coding-scope target prompt) **plus**: agent-node output capture demonstrably excludes a user message queued mid-node.
 
-POST   /api/workflows/gates/{gate_id}/reply    # {choice, comment?}
-POST   /api/webhooks/workflows/{name}          # §7.1, separate router/hardening
-```
+### Phase 2 — Execution quality
+`execution: direct` per agent node via `Agent.run()` (unlocks per-node `lead:`, true parallel branches, schema-enforced `submit_result` output); richer switch conditions; scheduler trigger (maybe).
 
-Lead tool `workflow_run` (lead-only, injected like `schedule_task`, `loader.py:452-459`) with `_mode`/`_workspace` InjectedArgs — same anti-cross-scope contract as `schedule.py:243-249`; can only trigger **approved** definitions in its own scope.
-
----
-
-## 10. Frontend plan
-
-| Piece | Approach |
-|---|---|
-| **Workflows screen** | Top-level route `/workflows` (precedent `/scheduler`, `router.ts:72-76`). List + editor cloned from `settings.skills.tsx`; form view (step cards) + Monaco YAML view; zod schema per `settings/schema.ts` style; agent/tool/MCP pickers from `AgentForm.tsx` MultiSelect. Capability manifest + approve flow on save; provenance shown for workspace-root definitions. Desktop-only editor; mobile gets read-only list + trigger. |
-| **Run monitor** | `WorkflowStatusPill` (clone `LoopStatusPill`); step timeline panel (new `CodingWorkspacePanel` tab for coding; right panel in forge) rendering from the run API + live `workflow_status` deltas — DB hydration first, SSE second (F12). Sub-agent rows link to the agent monitor and BrowserViewer where applicable. |
-| **Gate UI** | Reuse ask_user question components; `GateBanner` on the run session; desktop notification deep-link; mobile-capable. |
-| **Store/SSE** | `workflow_status` reducer case; `activeWorkflowRun` store field; hydration from `GET /runs/{id}` on session load; `workflow_runs` cache-invalidation kind + bridge mapping. |
-| **Sidebar / composer** | Badges + Runs filter; `/workflow` slash family with approval-state gating and disabled-reasons. |
-| **Queries** | `useWorkflowsQuery`, `useWorkflowRunsQuery` (cursor pagination per `useSessionsQuery.ts`), `useWorkflowRunQuery` with SSE-driven invalidation. |
-
----
-
-## 11. Phasing and milestones
-
-### Phase 1 — Deterministic sequencing, lead-driven steps (MVP)
-
-Backend: `workflows_fs` + registry + validation (incl. destructive-gate static analysis + model validation); migration (all five tables — approvals and webhook-deliveries included so the trust model ships day one); runner with `tool`/`agent`/`gate`/`switch` (no fanout), lead-driven activation; **DB-backed gates with park/expiry sweep**; **per-hash approval enforcement on all triggers**; run-session turn discipline (queued-hook suppression, inline-step busy flag, interrupt semantics, title-hook skip, undo/PATCH/delete guards); manual + slash triggers; `workflow_status` SSE with DB hydration; runs API incl. cancel/force-fail/export; rehydration; token budget enforcement.
-Frontend: `/workflows` list + YAML editor + approval flow; `WorkflowStatusPill`; run timeline; gate banner; sidebar badges.
-Tests: schema/static-analysis suite; runner state-machine unit tests incl. kill-and-rehydrate and gate-expiry-across-restart; API tests per `tests/api/routes/test_team_*` fixtures; e2e: a 4-step workflow (with a gate) completes; the same run **restarted while parked at the gate** resumes correctly; a run restarted mid-agent-step parks as `interrupted` when the step is destructive.
-Exit criteria (testable): (1) `bug-triage` (sequential explorer→debate variant) runs end-to-end on a real repo; (2) restart during the gate park and during a non-destructive step both recover per policy; (3) every step attempt has a `StepRun` row with status, timestamps, prompt hash, and output/error; (4) an unapproved repo-root definition cannot be triggered by any path.
-
-### Phase 2 — True determinism and enterprise surface
-
-`fanout` + direct `Agent.run()` execution (per-attempt interrupt topology §6.3) + `output_schema`/`submit_result` + per-step tool allowlists enforced mechanically; webhook trigger (§7.1) with dedup/rate-limit/payload spill; scheduler two-way integration; unattended-`ask`→gate escalation; per-step usage/cost attribution + daily budgets; form-view editor; browser-session cleanup wiring.
-
-### Phase 3 — Hardening and depth
-
-`execution: direct` by default; `tool_choice` plumbing per provider for hard schema guarantees; `loop:` step kind; `file` inputs + @mention expansion; `compact_between_steps`; retention/cleanup task with cascades; pause/resume polish; plugin `workflow.step.*` events; builtin workflow library.
-
-### Phase 4 — Visual builder
-
-React Flow canvas as an alternate renderer of the same YAML; run-timeline overlay.
+### Phase 3 — Unplanned / backlog
+Webhook trigger, durable runs, budgets — considered and deliberately not built.
 
 ---
 
 ## 12. Risks and open questions
 
-| Risk | Mitigation |
+| Risk | Mitigation / honest limitation |
 |---|---|
-| Phase-1 lead-driven steps are agentic inside (lead may not follow the step directive precisely) | By design for MVP; per-step directive prompts; Phase 2 direct execution closes it. Documented expectation. |
-| Schema outputs are probabilistic without `tool_choice` (F6) | Bounded retry then `on_error`; Phase 3 provider forcing. Outputs are validated-or-failed, never partially trusted. |
-| At-least-once side effects on crash recovery | Destructive steps park for operator resume by default (§6.5); worktree isolation; honest docs. No idempotency claims that MCP cannot honor. |
-| Malicious YAML in cloned repos (name shadowing, capability drift via skills/blueprints) | Server-enforced per-hash approval with provenance from Phase 1; manifest pins skill/blueprint hashes; templated agent/tool names rejected for unattended triggers (§7.3). |
-| Webhook replay (providers without signed timestamps) | Honest posture (§7.1): dedup = redelivery hygiene; body-hash collapse; destructive-gate rule; conservative rate default. |
-| Runaway cost on unattended triggers | Run token budget + daily caps + kill switch (§7.4). |
-| Gate parked while user chats on the run session | Gates hold no team (eviction + rehydration); user turns interleave at boundaries by the queue discipline (§6.1). |
-| Long outputs bloating the DB | Size caps + artifact spill (§5); retention cascades (§7.4). |
-| Open question | Per-definition environment pinning (model registry versions) for strict reproducibility — deferred; `definition_snapshot` records model names. |
-| Open question | Should `switch` support expression conditions beyond equality-on-template-values in v1? Proposal: equality + `in` only. |
+| Handoff capture depends on an in-process SSE listener (F4) | Fallback is always available (last assistant text after watermark); the listener is an optimization for structured output, not a correctness dependency. |
+| Question UI may assume an active turn (gate rendering) | Flagged as the first thing M4 verifies; `GateBanner` fallback specified (§9.1). |
+| No per-node lead in Phase 1 | Locked lead card keeps the canvas mental model intact; honest tooltip; Phase 2 unlocks it. |
+| Sequential-only branches may surprise users who drew "parallel" fan-outs | Canvas renders branches with an ordering hint ("runs sequentially in Phase 1"); semantics are already branch-safe for Phase 2 concurrency. |
+| MCP output shapes vary wildly | §4.3 shape rule (structuredContent → JSON-parse → `{"text": …}`) + fail-loudly dotted paths. |
+| No crash recovery / gate lost on restart | Stated cut; same posture as `ask_user` today (F10). |
+| Direct tool calls bypass the permission hook | By design, covered by mandatory manifest approval (§7.2). |
+| Blueprint tool config can change after approval | The manifest pins blueprint *names*, not their tool lists — editing a blueprint in Agents settings changes what an approved workflow's agent nodes can do without re-approval. Accepted for now (human-present triggers; the same person owns both settings); revisit if unattended triggers ever land. |
+| Open question | `switch`: equality + `in` only in v1 — revisit if real workflows need more. |
+| Open question | Should the slash menu show unapproved workflows greyed-out? Needs a `disabled` field added to `SlashCommand` (F16 — doesn't exist); deferred, omission is the existing pattern. |
 
 ---
 
 ## 13. File-by-file change list (Phase 1)
 
-Backend (new): `app/workflow/{__init__,models,registry,runner,steps,template,gates,triggers,policy}.py`, `app/services/workflows_fs.py`, `app/api/routes/workflows.py`, `app/api/schemas/workflows.py`, `app/agent/builtin_workflows/…`, migration `000000XX_create_workflows.py` (5 tables + `chat_sessions.workflow_run_id`).
-Backend (edits):
-- `app/agent/mode/team/team.py` — workflow branch in `_try_emit_done` (before `_activate_loop_message`); `/workflow` slash parse + `/loop` rejection on run sessions; run-session skip in `_try_activate_queued_after_lead_turn`; active-turn flag accessors for inline steps (~60 lines).
-- `app/agent/mode/team/member.py` — suppress `QueuedMessageInjectionHook` on run sessions; run-aware title-hook attachment (~15 lines).
-- `app/agent/hooks/title_generation.py` — `workflow_run_id` skip (~5 lines).
-- `app/models/chat.py` — `workflow_run_id` column.
-- `app/api/routes/team/chat.py` — undo/permission-PATCH/delete guards for run sessions (~25 lines).
-- `app/api/app.py` — router mounts, runner start/stop, rehydrate, gate-expiry sweep.
-- `app/core/{workspace_init,config}.py` — workflows root; `WORKFLOWS_DIR`, caps, kill switch.
-- `app/services/stream_envelope.py` — `workflow_status` event.
-- `app/agent/loader.py` — `workflow_run` lead tool (optional in Phase 1).
-Frontend (new): `web/src/routes/workflows.tsx`, `web/src/components/workflow/{WorkflowList,WorkflowEditor,ApprovalDialog,RunTimeline,WorkflowStatusPill,GateBanner}.tsx`, `web/src/queries/useWorkflowsQuery.ts`, `web/src/api/client/workflows.ts`.
-Frontend (edits): `router.ts`, `sse-reducer.ts`, `useTeamStore/{index,types}.ts`, `cache-invalidation-bridge.ts`, `Sidebar.tsx`/`CodingSidebar.tsx`, `TeamChatView/index.tsx`, `useTeamCommands.ts`.
-Tests: `tests/workflow/…`, `tests/api/routes/test_workflows.py`, extend `tests/agent/mode/team/test_team.py` (branch ordering, queued discipline, interrupt semantics).
+**Backend — new**
+- `app/workflow/__init__.py`, `models.py` (definition pydantic), `graph.py` (DAG/topo/edge semantics), `registry.py` (discovery + hash + manifest), `runner.py` (`WorkflowRunner`, `ExecutionState`, hooks, stop/interrupt), `nodes.py` (four handlers per §6.4), `template.py`, `policy.py` (manifest, lint, approval check).
+- `app/services/workflows_fs.py` (discovery per `commands.py:66-296`; atomic CRUD per `routes/skills.py:85-100,240-302`).
+- `app/api/routes/workflows.py`, `app/api/schemas/workflows.py`.
+- `app/agent/builtin_workflows/` (2 examples).
+- `app/migrations/versions/00000020_create_workflows.py`.
+
+**Backend — edits (function-level)**
+- `app/agent/mode/team/team.py` — ① two hook call sites in `_try_emit_done` (capture before `_activate_queued_user_messages` at ~`:471`; advance after the queued branch, before `_activate_loop_message`) + module-level `set_workflow_hooks`; ② `turn_allowed_blueprints` field + check in `resolve_recipient` (`:1662-1688`); ③ same check in `_spawn_locked` (`:1366-1375`); ④ `runner.notify_interrupt` call in the interrupt path (`:756-765`); ⑤ small public accessor to set/clear `_has_active_turn` for inline-node stretches. (~50 lines.)
+- `app/agent/mode/team/tools.py` — allowlist-aware message in `_recipient_error` (`:148-166`). (~5 lines.)
+- `app/agent/mode/team/member.py` — conditional skip of `QueuedMessageInjectionHook` at `:946-953` when `runner.is_driving(session_id)`. (~3 lines.)
+- `app/api/routes/team/chat.py` — `workflow_execution` field in the history response (beside `loop_status` at `:1143`). (~5 lines.)
+- `app/api/app.py` — mount router (beside `:181`); `set_workflow_hooks(...)` at startup.
+- `app/core/workspace_init.py` / `app/core/config.py` — workflows root; `WORKFLOWS_DIR`, `WORKFLOW_NODE_TIMEOUT_S`.
+
+**Frontend — new**
+- `web/src/api/client/workflows.ts`; types in `web/src/api/types.ts`.
+- `web/src/queries/useWorkflowsQuery.ts` (+ `useWorkflowQuery`, `useExecutionsQuery`).
+- `web/src/lib/parseWorkflowCommand.ts` (clone `parseLoopCommand.ts`).
+- `web/src/routes/workflows.tsx`; `web/src/components/workflow/{WorkflowCanvas,NodePalette,NodeSidePanel,nodes/AgentNode,nodes/ToolNode,nodes/CodeNode,nodes/GateNode,nodes/SwitchNode,ApprovalDialog,RunInputsDialog,WorkflowProgressPill,GateBanner}.tsx`.
+- Dependency: `@xyflow/react` (via bun — `bun.lock` is the only lockfile).
+
+**Frontend — edits (function-level)**
+- `web/src/components/TeamChatView/index.tsx` — ① workflow entries in the `slashCommands` merge (`:683-713`); ② `tryHandleWorkflowCommand` branch in `onSubmit` (`:1424-1438`); ③ pill render beside `TaskProgressPill` (`:1162-1174`; mobile `:1604`).
+- `web/src/stores/useTeamStore/sse-reducer.ts` — `case 'workflow_progress'` (beside `loop_status` at `:489`).
+- `web/src/stores/useTeamStore/types.ts` — `activeWorkflowExecution` field (beside `activeLoop` at `:102`).
+- `web/src/stores/useTeamStore/index.ts` — hydration from `history.workflow_execution` (beside `:801`).
+- `web/src/router.ts` — `/workflows` route.
+
+**Tests**
+- `tests/workflow/` — models/graph/template/policy units (M1); runner state machine incl. boundary/queued ordering, allowlist, watermark capture, stop/interrupt (M3/M4).
+- `tests/api/routes/test_workflows.py` — CRUD/approve/run/stop contracts (M2/M3).
+- Extend `tests/agent/mode/team/test_team.py` — hook ordering in `_try_emit_done`, `resolve_recipient` allowlist, spawn allowlist.
 
 ---
 
 ## Appendix A — Review provenance
 
-v2 incorporates a three-lens adversarial review (2026-07-08) that verified all file:line citations and surfaced: 3 correctness majors (queued-message splicing, missing lead-side tool-injection channel, shared-event interrupt conflation), 7 completeness majors (output capture vs queueing, interrupt semantics, attachments, browser sessions, session deletion, permission durability/PATCH, compaction), and 2 enterprise blockers (trust model phasing, webhook replay/unsigned access) plus cost controls, approval-hash loopholes, gate-rule bypasses, at-least-once honesty, and post-restart monitoring. All are addressed in the sections above.
+v2 (2026-07-08): three-lens adversarial review of the original durable-run design.
+v3 (2026-07-09): all citations re-verified after a same-day mode rename; six design gaps closed. Technically solid, but solving the wrong product per the user.
+v4 (2026-07-09): re-scope to the user's actual intent — canvas-first builder, inline in-chat execution, minimal footprint; enterprise apparatus cut on the user's explicit choice.
+
+**v5 (2026-07-09)** is the implementation audit of v4. Three parallel code deep-dives (team mechanics; direct service/tool invocation; frontend plumbing) traced every mechanism v4 assumed to its exact function and returned a feasible verdict with these corrections now baked in: **(1)** there is no turn id — agent-node output capture uses a message-id watermark, and structured handoff output requires an in-process stream listener because artifacts are never persisted structurally; **(2)** `team_delegate` does not auto-spawn — the runner pre-spawns each node's roster via the public `team.spawn()` and a new `turn_allowed_blueprints` check lands at the single recipient-resolution choke point plus the spawn lock; **(3)** a per-node `lead:` is not implementable inline (turns always go to the session lead) — the field is rejected in v1 and the canvas lead card is locked; **(4)** v4's "parallel outgoing edges" contradicted one-session-one-turn execution — Phase 1 is now explicitly sequential-topological with precise edge/join/skip semantics; **(5)** `/workflow` is FE-intercepted with a dedicated run endpoint (the `/loop` posts-raw-text pattern is unnecessary here), which also falsifies v4's "command-body composition for free" claim — dropped; **(6)** gates flatten title/body into `ask_user`'s `{question, options}` shape, and the runner must register the service in the module-global registry for the reply endpoint to find it; **(7)** MCP results have no structured fast path — a node-output shape rule (structuredContent → JSON-parse → text) was added; **(8)** one `stop` endpoint returned (v4 claimed none needed; gates and tool nodes have no turn for the Stop button to interrupt); **(9)** canvas positions now persist under an engine-ignored `ui:` block with auto-layout for hand-written files; **(10)** trigger-time input collection is specified (positional slash args + a generated form dialog). The v4 claim that `commands.py` provides CRUD was also corrected (discovery only; CRUD precedent is the skills routes). The plan now names function-level integration points on both sides and a six-milestone build order with per-milestone done-when criteria.
+
+Post-v5 additions: a tiered **node roadmap** (§4.5) grounded in the builtin-tool inventory — Tier A (Start/End/Note/If/tool-presets) ships with M6 as FE-only sugar; Tier B (Input/Notify/Transform/For-each) was feasibility-checked (notably: `ask_user` natively supports free-text answers, so a mid-flow Input node is the gate handler with empty options); Tier C defers parallel/sub-workflow/wait. Also folded in per user direction: **agent nodes carry no `tools:` field** — tools are each blueprint's own configuration (Agents settings), and node-level tool choice exists only on `tool`/MCP nodes. This matches the user's model and simultaneously removed a v5 latent gap: the schema had a `tools:` field on agent nodes that nothing in §6.4 could enforce (lead-driven turns have no per-turn tool channel until Phase 2 direct execution). The destructive lint now resolves agent-node effective tools from blueprint files at save time, and the manifest pins blueprint names with tools shown informationally.

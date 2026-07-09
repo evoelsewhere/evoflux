@@ -337,7 +337,12 @@ class TestWorkerErrorHandling:
 
         msg = Message(from_agent="lead", to_agent="worker", content="[lead]: task")
         await team.mailbox.send(to="worker", message=msg)
-        await asyncio.sleep(0.1)
+
+        deadline = asyncio.get_running_loop().time() + 5
+        while asyncio.get_running_loop().time() < deadline:
+            if worker.state == "error":
+                break
+            await asyncio.sleep(0.05)
 
         assert worker.state == "error"
 
@@ -428,7 +433,12 @@ class TestLeadErrorHandling:
 
         msg = Message(from_agent="user", to_agent="lead", content="[user]: hi")
         await team.mailbox.send(to="lead", message=msg)
-        await asyncio.sleep(0.1)
+
+        deadline = asyncio.get_running_loop().time() + 5
+        while asyncio.get_running_loop().time() < deadline:
+            if lead.state == "error":
+                break
+            await asyncio.sleep(0.05)
 
         assert lead.state == "error"
 
