@@ -18,7 +18,7 @@ Design maxim: **the canvas configures what the lead would otherwise improvise; e
 ### Goals
 
 - Canvas-first authoring; YAML file is the source of truth (git-trackable, agent-editable); canvas and a raw-YAML Monaco view are two editors of the same file.
-- Node kinds mirror existing capabilities only: `agent` (a team turn with a per-node subagent roster), `tool` (direct registry/MCP call, incl. a "Code" preset for `python`/`shell`), `gate` (reuses `ask_user`), `switch` (branch on a templated value).
+- Node kinds mirror existing capabilities only. Phase 1 engine kinds: `agent` (a team turn with a per-node subagent roster), `tool` (direct registry/MCP call, incl. the "Code" preset for `python`/`shell`), `gate` (choice pause via `ask_user`), `switch` (branch on a templated value), `input` (free-text pause via `ask_user`), `notify` (desktop notification), `transform` (pure template reshape), `foreach` (sequential iteration). Phase 2 kinds, schema pinned from v1: `workflow` (sub-workflow call), `wait` (capped delay). Assignment table in §4.5.
 - Two scopes: `forge` (no target anywhere) and `coding` (target = the triggering session's pinned workspace/project, or picked explicitly when started from the Workflows screen).
 - `/workflow` in the composer lists approved workflows for the current scope; picking one runs it in that session immediately.
 - Light per-node execution log for debugging + approve-once-per-hash; deliberately **no** durable runs, crash recovery, webhooks, schedules, or cost subsystem (see Non-goals).
@@ -81,7 +81,7 @@ Every claim below was verified against the live codebase on 2026-07-09 (three pa
 | Term | Definition |
 |---|---|
 | **WorkflowDefinition** | A YAML file: `scope`, `inputs`, `nodes`, `edges`, `outputs`, `ui`. Identified by `name` per discovery root; identified for approval by content hash (sha256 of file bytes). |
-| **Node** | `kind ∈ {agent, tool, gate, switch}`. Output referenced downstream as `{{nodes.<id>.output}}`. |
+| **Node** | v1 engine kinds: `kind ∈ {agent, tool, gate, switch, input, notify, transform, foreach}`; Phase 2 adds `{workflow, wait}` (§4.5). Output referenced downstream as `{{nodes.<id>.output}}`. Only `gate`/`switch` have conditional (`when:`) outgoing edges. |
 | **Edge** | `{from, to, when?}`. Determines order and (with `when`) conditional firing. Execution is sequential-topological in Phase 1 (§6.3). |
 | **Roster** (of an `agent` node) | The subagent blueprints (`role: member`) the session lead may spawn/delegate to during that node's turn. The lead card on the canvas is the session lead, locked in Phase 1. Tool access is each blueprint's own configuration (Agents settings) — never a node-level choice; only `tool` nodes pick a tool. |
 | **Scope** | `forge` or `coding` (§6.2). |
@@ -188,10 +188,53 @@ ui:                                # canvas layout only; engine ignores it;
 
 `switch` nodes: `kind: switch, value: "{{nodes.analyze.output.severity}}"`; outgoing edges carry `when: critical` / `when: normal`. Equality and `in` (comma list) only in v1.
 
+Compact specs for the remaining kinds (all first-class in v1 except where marked Phase 2):
+
+```yaml
+- id: ask_env
+  kind: input                      # free-text question mid-flow (gates are
+  question: "Deploy to which env?"  # choice-only). Output: {"text": "<answer>"}.
+                                   # No conditional edges — route with a
+                                   # switch on {{nodes.ask_env.output.text}}.
+
+- id: ping
+  kind: notify                     # desktop notification, non-blocking
+  title: "bug-triage"              # optional; defaults to the workflow name
+  message: "Analysis done — approval gate is next."
+
+- id: shape
+  kind: transform                  # pure template render — no sandbox, no LLM
+  set:
+    summary: "{{nodes.fetch.output.summary}}"
+    files: "{{nodes.analyze.output.affected_files | json}}"
+  # output = the rendered `set` object
+
+- id: per_repo
+  kind: foreach                    # SEQUENTIAL in Phase 1 (§6.3)
+  items: "{{nodes.plan.output.repos}}"   # must render to a JSON array
+  body:                            # exactly ONE inline node spec in v1 —
+    kind: tool                     # allowed body kinds: tool | transform |
+    tool: shell                    # notify | agent
+    args: { command: "git -C {{item.path}} status --short" }
+  # body templates additionally see {{item}}, {{item.<field>}}, {{index}}
+  # output: {"items": [<body outputs>...], "count": N}
+
+# ── Phase 2 kinds — schema pinned and validated from v1 so files don't churn:
+- id: triage_sub
+  kind: workflow                   # run another approved workflow inline
+  workflow: bug-triage
+  inputs: { ticket_id: "{{item.key}}" }
+
+- id: cool_down
+  kind: wait
+  seconds: 120                     # hard cap 600 (no durability → no long waits)
+```
+
 ### 4.3 Templating
 
 - `{{ ... }}` over `inputs.*`, `nodes.<id>.output(.dotted.path)`, `env.<ALLOWLISTED>`. Filters: `json`, `truncate:N`. No expressions.
-- **Node output shape rule** (needed because MCP results have no structured fast path, F14): every node's output is a JSON object. `tool` nodes: if the result has MCP `structuredContent`, use it; else if the flattened text parses as JSON, use that; else `{"text": <flattened text>}`. `python`/`shell`: `{"text": stdout, "exit_code": n}`. `agent` nodes: the handoff artifact JSON if captured (F4), else `{"text": <lead's final assistant text>}`. `gate` nodes: `{"choice": <answer string>}`. A dotted path that doesn't resolve → the node **fails loudly** at render time.
+- **Node output shape rule** (needed because MCP results have no structured fast path, F14): every node's output is a JSON object. `tool` nodes: if the result has MCP `structuredContent`, use it; else if the flattened text parses as JSON, use that; else `{"text": <flattened text>}`. `python`/`shell`: `{"text": stdout, "exit_code": n}`. `agent` nodes: the handoff artifact JSON if captured (F4), else `{"text": <lead's final assistant text>}`. `gate`: `{"choice": <answer>}`. `input`: `{"text": <answer>}`. `notify`: `{"sent": true}`. `transform`: the rendered `set` object. `foreach`: `{"items": [<body outputs>], "count": N}`. `workflow` (P2): the child's `outputs` object. `wait` (P2): `{"waited_s": N}`. A dotted path that doesn't resolve → the node **fails loudly** at render time.
+- Inside a `foreach` body, the template scope additionally binds `{{item}}`, `{{item.<field>}}`, `{{index}}`; outer `{{nodes.*}}`/`{{inputs.*}}` remain visible.
 - `env.*` refused into anything persisted in `workflow_node_runs` and into remote-egress content (remote-MCP tool args, agent prompts) unless the reference is in the approved manifest — same bar for both egress channels.
 - Implementation: `app/workflow/template.py` (~150 lines; generalizes `render_command`'s discipline, `commands.py:299-312`, to dotted paths + filters).
 
@@ -204,39 +247,33 @@ Pydantic models in `app/workflow/models.py` (definition) + `app/api/schemas/work
 - `tool` nodes: `tool` must be a registry name (`_default_tool_registry()` keys, F11) or a ready-form `mcp_<server>_<tool>` name; `args` keys are not validated against the tool schema at save (runtime `arun` validation covers it, F11) except for `python`/`shell` where `code`/`command` presence is checked.
 - `gate` nodes: non-empty `choices`; every outgoing edge's `when` ∈ `choices`.
 - `switch` nodes: every outgoing edge has `when`; at most one default (`when: "*"`).
+- `input` nodes: non-empty `question`. No conditional outgoing edges (only `gate`/`switch` route).
+- `notify` nodes: non-empty `message`; `title` optional (defaults to the workflow name).
+- `transform` nodes: `set` is a non-empty map of key → template string.
+- `foreach` nodes: `items` template present; `body` is exactly one inline node spec of kind `tool | transform | notify | agent` (no `gate`/`input`/`switch`/nested `foreach` in v1); `concurrency` rejected in v1 (Phase 2). The destructive lint counts the body's effective tools.
+- `workflow` nodes (Phase 2 kind, validated from v1 so files don't churn): target must exist; approval + scope checked again at run time (a `forge`-scope target is callable from any workflow; a `coding`-scope target only from a `coding` workflow); static cross-definition cycle check at save; runtime depth cap 3. Phase 1 **runs** reject definitions containing one (422 "sub-workflows arrive in Phase 2") while still validating them.
+- `wait` nodes (Phase 2 kind, same treatment): integer `seconds` in 1..600.
 - Destructive-path lint (advisory): entry→node paths whose **effective tools** intersect `{edit, write, patch, rm, shell, python, bg}` (`app/agent/agent_loop/tool_executor.py:38-41`) without an intervening gate get a builder-UI warning. Effective tools: for a `tool` node, the named tool; for an `agent` node, the union of the session lead's and roster blueprints' configured tools, resolved from blueprint files at save time (agent nodes have no `tools:` field of their own — a `tools:` key on an agent node is rejected with "tools are configured on the agent blueprint, not the node"). Advisory because all triggers are human-present.
 - Inputs: names unique; `enum` requires `options`.
 - Content hash (sha256 of canonical file bytes) + manifest (§7) computed at save and returned to the client.
 
-### 4.5 Node roadmap — beyond the four v1 kinds
+### 4.5 Full node palette — phase assignment
 
-Grounded in what already exists (builtin tool inventory: `app/agent/tools/builtin/` — `web`, `browser_use_tool`, `memory_search`, `wiki_search`, `pr`, `worktree`, `date`, `lsp`, `preview`, `code_graph`, `todo`, plus the four v1 anchors) and in patterns proven by n8n/Dify/ComfyUI-class builders. Tiered by cost:
+All three tiers are **committed scope** (user direction), not a wishlist. Grounded in the builtin-tool inventory (`app/agent/tools/builtin/` — `web`, `browser_use_tool`, `memory_search`, `wiki_search`, `pr`, `worktree`, `date`, `lsp`, `preview`, `code_graph`, `todo`, plus the four anchors) and in patterns proven by n8n/Dify/ComfyUI-class builders.
 
-**Tier A — ships with Phase 1, no engine change (FE-only or palette sugar):**
-
-| Node | What it is | Why free |
-|---|---|---|
-| **Start / End** | Pseudo-nodes rendering `inputs[]` (Start) and the `outputs:` mapping (End) on the canvas. | Pure FE render of existing definition-level fields; engine unchanged. Standard UX in every graph builder. |
-| **Note** | Sticky-note annotation. | Lives under `ui:` only; never in `nodes[]`; engine never sees it. |
-| **If** | Palette preset of `switch` with two fixed handles (true/false). | Sugar over an existing kind, like Code over Tool. |
-| **Tool presets**: Web, Browser, Knowledge, PR, Worktree… | Palette entries pre-filling `kind: tool, tool: <web\|browser_use\|wiki_search\|memory_search\|pr\|worktree_*>` with a tailored mini-form. | The tools are already registry tools (F11 invocation path); a preset is just palette metadata. |
-
-**Tier B — small new handlers, still inline-friendly (v1.x / early Phase 2):**
-
-| Node | What it is | Feasibility anchor |
-|---|---|---|
-| **Input** (`kind: input`) | Ask the user for **free-text** mid-flow (gates are choice-only). Output `{"text": answer}`. | Verified: `QuestionSpec.options` is optional and the UI always shows a free-text field alongside quick-picks (`app/agent/tools/builtin/ask_user.py:16-28`) — the gate handler with `options: []` is the entire implementation. |
-| **Notify** (`kind: notify`) | Push a desktop notification mid-flow ("analysis done, gate coming up"). | Existing `desktop_notification` push (`team.py:525, 970`); a few lines. |
-| **Transform** (`kind: transform`) | Pure template render into a new output object — pick/reshape fields without a sandbox or an LLM. | `template.py` reuse; safer than reaching for a Code node for data plumbing; zero destructive surface. |
-| **For-each** (`kind: foreach`) | Iterate a templated list, running a **single body node** per item, sequentially; output = array of item outputs. | Sequential iteration matches Phase 1 semantics exactly (§6.3); single-node body first, subgraph body later. |
-
-**Tier C — Phase 2+ (need direct execution or extra machinery):**
-
-| Node | Notes |
-|---|---|
-| **Parallel / fanout** | Already planned with Phase 2 direct execution. |
-| **Sub-workflow** (`kind: workflow`) | Call another approved workflow inline; recursion-depth guard; the sanctioned replacement for the dropped "put `/workflow` in a command body" composition idea (F17). |
-| **Wait / Delay** | Considered; fragile without durability — if added, hard-capped (≤10 min) or cut entirely. |
+| Tier | Node | `kind` | Phase | Cost / feasibility anchor |
+|---|---|---|---|---|
+| A | Start / End | — (pseudo) | 1 (M6) | Pure FE render of `inputs[]`/`outputs:`; engine unchanged |
+| A | Note | — (`ui:` only) | 1 (M6) | Never appears in `nodes[]` |
+| A | If | `switch` preset | 1 (M6) | Palette sugar, two fixed handles |
+| A | Web / Browser / Knowledge / PR / Worktree presets | `tool` presets | 1 (M6) | Palette metadata over existing registry tools (F11) |
+| B | Input | `input` | 1 (M3/M4) | `ask_user` free-text is native — `QuestionSpec.options` optional, UI always shows a free-text field (`app/agent/tools/builtin/ask_user.py:16-28`); = gate handler with `options: []` |
+| B | Notify | `notify` | 1 (M3) | Existing `desktop_notification` push (`team.py:525, 970`) |
+| B | Transform | `transform` | 1 (M3) | `template.py` only; no sandbox, no LLM, zero destructive surface |
+| B | For-each | `foreach` | 1 (M4) | Sequential per-item body run — matches §6.3 exactly; single-node inline body in v1 |
+| C | Sub-workflow | `workflow` | 2 | Inline child run in the same `ExecutionState` stack; static cross-definition cycle check + depth cap 3; scope rule in §4.4. Sanctioned replacement for the dropped command-body composition (F17) |
+| C | Wait | `wait` | 2 | `asyncio.sleep`, cancellable by stop, hard cap 600 s (no durability → no long waits) |
+| C | Parallel | — (not a kind) | 2 | Concurrency is an **execution upgrade**, not a node: branches run concurrently + `foreach.concurrency: N`, unlocked by direct execution; §6.3 semantics are already branch-safe |
 
 Considered and rejected: a dedicated HTTP node (use Code/MCP/`web` tool — no new capability), webhook-in/schedule nodes (non-goal: unattended), attachment/file nodes (v1 inputs are scalars only).
 
@@ -261,6 +298,8 @@ workflow_executions
   session_id       UUID, indexed  -- ordinary session it ran in; no FK (FK
                                   -- enforcement is off anyway, app/core/db.py:56-71)
   status           str            -- running|waiting_gate|completed|failed|stopped
+                                  -- waiting_gate covers ANY human pause
+                                  -- (gate or input node)
   error            str NULL
   started_at / ended_at
 
@@ -268,6 +307,7 @@ workflow_node_runs
   id               UUID PK (uuid7)
   execution_id     UUID, indexed
   node_id          str
+  iteration        int NULL       -- foreach item index (NULL for non-foreach)
   status           str            -- running|succeeded|failed|skipped
   output / error   JSON NULL      -- capped 32 KB (debug log, not artifact store)
   started_at / ended_at
@@ -325,7 +365,8 @@ class ExecutionState:
 - At validation, compute a topological order. At runtime, maintain `fired_edges`.
 - A node is **ready** when every incoming edge is *resolved* (fired, or dead because its `from` node was skipped/its `when` didn't match) and ≥1 incoming edge fired (entry nodes: ready at start). A node all of whose incoming edges are dead is marked `skipped`, and all its outgoing edges are dead.
 - The runner always executes **one node at a time**, picking the first ready node in topological order. Multiple outgoing branches therefore interleave sequentially and deterministically. (Phase 2 direct execution may run branches concurrently; the semantics above are already branch-safe.)
-- Edge firing: unconditional edges fire when `from` succeeds. `when:`-edges fire when `from` is a gate whose answer equals `when`, or a switch whose value matches (`*` = default). A gate/switch whose answer matches **no** outgoing edge ends the flow gracefully at that node (`completed`, with a note in the node run).
+- Edge firing: unconditional edges fire when `from` succeeds. `when:`-edges fire when `from` is a gate whose answer equals `when`, or a switch whose value matches (`*` = default). A gate/switch whose answer matches **no** outgoing edge ends the flow gracefully at that node (`completed`, with a note in the node run). All other kinds (`agent`/`tool`/`input`/`notify`/`transform`/`foreach`/`workflow`/`wait`) fire their unconditional edges on success — routing on an input's free-text answer is done by following it with a `switch`.
+- `foreach` bodies are **inline specs**, not top-level nodes — they never participate in the top-level topological order; the foreach node itself is one unit in the walk.
 - Node failure: the execution is marked `failed`, remaining nodes `skipped`, marker cleared, `workflow_progress(failed)` emitted. No `on_error`/retry in v1 (kept out deliberately; the transcript already shows agent-node failures, and the node-run log shows tool-node errors).
 - Flow end: when no node is ready and none pending → render `outputs` (into the execution row + final SSE), status `completed`, clear the marker.
 
@@ -350,6 +391,16 @@ class ExecutionState:
 3. Output `{"choice": answers[0]}`; fire the matching edge; `reset_ask_user_service`. Stop during a gate: `POST /executions/{id}/stop` cancels the awaited future (`CancelledError` cleanup exists, F10).
 
 **`switch`** — render `value`, match edges, fire one. Pure function, no I/O.
+
+**`input`** — the gate handler with `options: []` (free-text answer field is native to the question UI, §4.5); execution status `waiting_gate` while pending; output `{"text": answers[0]}`. Same service registration, reply endpoint, and stop-cancellation as gates.
+
+**`notify`** — push the existing `desktop_notification` envelope (the `team.py:525` payload shape) with rendered `title`/`message`; instant; output `{"sent": true}`.
+
+**`transform`** — render every value in `set` (dotted paths + filters); output is the rendered object. Pure function like `switch`; the safe alternative to a Code node for data plumbing.
+
+**`foreach`** — render `items` (must yield a JSON array, else the node fails); for each item run the inline `body` spec through its kind's handler with `{{item}}`/`{{index}}` bound into the template scope; **sequential in Phase 1** (an `agent` body injects one turn per item, each waiting for its boundary); one `workflow_node_runs` row per iteration (the `iteration` column); a failing iteration fails the whole node (remaining items skipped — no partial-continue in v1). Output `{"items": [...], "count": N}`.
+
+**Phase 2 — `workflow`**: resolve target + re-check approval/scope, then run the child definition inline within the same `ExecutionState` stack (depth cap 3); child node runs recorded with `sub.<child_node_id>` ids in the same execution. Output = the child's rendered `outputs`. **`wait`**: `asyncio.sleep(seconds)`, cancellable by stop; output `{"waited_s": N}`.
 
 ### 6.5 Stop / failure / SSE
 
@@ -419,6 +470,11 @@ Plus the `workflow_execution` field added to the existing team-history response 
   - `CodeNode` — a `ToolNode` preset: language select `python | shell` (label notes JS runs via `shell` + `node`/`bun` — honest, F12) + a Monaco snippet editor bound to `args.code`/`args.command`.
   - `GateNode` — title/body/choices; each choice materializes a labeled output handle (edge `when`).
   - `SwitchNode` — value template; labeled output handles per case + default.
+  - `InputNode` — question template; single output handle (no routing — pair with a Switch).
+  - `NotifyNode` — title/message templates; pass-through handle.
+  - `TransformNode` — key→template rows (add/remove row UI); pass-through handle.
+  - `ForEachNode` — an xyflow **container** (body rendered as a child node with `parentId` + `extent: 'parent'`, one slot in v1); `items` template on the frame; "runs sequentially" hint badge (Phase 1).
+  - Phase 2: `SubWorkflowNode` (workflow picker + inputs mapping), `WaitNode` (seconds, capped) — components land with Phase 2 but the YAML view already round-trips them from v1 (§4.4).
 - `NodePalette` (drag sources), `NodeSidePanel` (full editing form for the selected node), `EdgeLabel` (shows/edits `when`).
 - Tier-A additions from §4.5 ship with this milestone at near-zero cost: `StartNode`/`EndNode` (pseudo-nodes rendering `inputs[]`/`outputs:`), `NoteNode` (`ui:`-only sticky), the `If` preset, and tool presets (Web/Browser/Knowledge/PR/Worktree) as palette metadata over `ToolNode`.
 - **Save flow**: explicit Save → `PUT` with `{graph}` (positions included under `ui`); server validates, returns canonical detail or 422 field errors → rendered as red badges on the offending nodes. **YAML toggle** shows `raw_yaml` in Monaco; saving from YAML sends `{raw_yaml}`; switching back re-renders the canvas from the parsed graph (auto-layout fills missing `ui` positions).
@@ -450,15 +506,15 @@ Plus the `workflow_execution` field added to the existing team-history response 
 
 - **M1 — Definition layer** (backend, no server changes): `workflows_fs.py`, `workflow/models.py`, `graph.py` (DAG + topo + edge semantics as pure functions), `template.py`, `policy.py` (hash + manifest + lint), builtin examples. *Done when*: unit tests validate/reject a corpus of YAMLs and the graph semantics table in §6.3 is covered by tests.
 - **M2 — API CRUD + approval**: `routes/workflows.py` (all but `/run`/`/stop`), migration `00000020`, `workflow_approvals` wiring. *Done when*: API tests cover list/get/put/delete/approve incl. hash-mismatch 409 and workspace-root shadowing.
-- **M3 — Runner core (headless nodes)**: `runner.py` + `nodes.py` for `tool`/`switch`, `ExecutionState`, execution/node-run rows, `workflow_progress` SSE, `/run` + `/stop` endpoints, busy-flag accessor. *Done when*: a 2-node tool workflow (`python` → `switch`) runs to completion via `POST /run` against a live session, rows + SSE verified.
-- **M4 — Agent + gate nodes**: `_try_emit_done` hook points + `set_workflow_hooks`, allowlist checks in `resolve_recipient`/`_spawn_locked`, pre-spawn, watermark capture + handoff listener, `QueuedMessageInjectionHook` skip, interrupt notify, gate via `AskUserService` (+ verify the question UI renders turn-less; else `GateBanner`), per-node timeout. *Done when*: sequential `bug-triage` runs e2e in a live coding session; a mid-node user message lands at the boundary; Stop during the agent node stops the execution; gate pauses/resumes.
+- **M3 — Runner core (headless nodes)**: `runner.py` + `nodes.py` for `tool`/`switch`/`transform`/`notify`, `ExecutionState`, execution/node-run rows, `workflow_progress` SSE, `/run` + `/stop` endpoints, busy-flag accessor. *Done when*: a tool→transform→switch→notify workflow runs to completion via `POST /run` against a live session — rows, SSE, and the desktop notification all verified.
+- **M4 — Human + team nodes (`agent`/`gate`/`input`/`foreach`)**: `_try_emit_done` hook points + `set_workflow_hooks`, allowlist checks in `resolve_recipient`/`_spawn_locked`, pre-spawn, watermark capture + handoff listener, `QueuedMessageInjectionHook` skip, interrupt notify, gate + input via `AskUserService` (**first task: verify the question UI renders turn-less** — both choice and free-text; else `GateBanner`), `foreach` with per-iteration rows over both `tool` and `agent` bodies, per-node timeout. *Done when*: sequential `bug-triage` runs e2e in a live coding session; a mid-node user message lands at the boundary; Stop works during an agent node AND during a gate; an input node's free-text answer routes through a following switch; a 3-item foreach yields 3 iteration rows and an aggregated output.
 - **M5 — FE trigger surface**: client + queries, slash-menu entries, `parseWorkflowCommand` + `onSubmit` branch, `RunInputsDialog`, `WorkflowProgressPill` + reducer case + hydration field (BE: history field lands here too). *Done when*: `/workflow bug-triage TICKET-1` from the composer runs with live pill progress and ✕ works during a gate.
-- **M6 — FE canvas**: `@xyflow/react` dep, `WorkflowCanvas` + node components + side panel, `ui:` persistence + auto-layout, YAML toggle, `ApprovalDialog`, `/workflows` route/screen. *Done when*: build the §4.2 example on the canvas from scratch, save, approve, and run it — and a hand-written YAML with no `ui:` opens with sane auto-layout.
+- **M6 — FE canvas**: `@xyflow/react` dep, `WorkflowCanvas` + all Phase-1 node components (incl. the ForEach container and the Tier-A set: Start/End/Note/If/tool-presets) + side panel, `ui:` persistence + auto-layout, YAML toggle, `ApprovalDialog`, `/workflows` route/screen. *Done when*: build the §4.2 example on the canvas from scratch, save, approve, and run it; a foreach container round-trips canvas ⇄ YAML; a hand-written YAML with no `ui:` opens with sane auto-layout.
 
 Exit criteria (Phase 1 overall): the four from v4 (canvas round-trip; inline run with no new session; unapproved not triggerable; coding-scope target prompt) **plus**: agent-node output capture demonstrably excludes a user message queued mid-node.
 
-### Phase 2 — Execution quality
-`execution: direct` per agent node via `Agent.run()` (unlocks per-node `lead:`, true parallel branches, schema-enforced `submit_result` output); richer switch conditions; scheduler trigger (maybe).
+### Phase 2 — Execution quality + Tier C
+`execution: direct` per agent node via `Agent.run()` (unlocks per-node `lead:`, true parallel branches + `foreach.concurrency`, schema-enforced `submit_result` output); the two pinned Tier-C kinds — `workflow` (sub-workflow, §6.4) and `wait` — plus their canvas components; richer switch conditions; scheduler trigger (maybe).
 
 ### Phase 3 — Unplanned / backlog
 Webhook trigger, durable runs, budgets — considered and deliberately not built.
@@ -485,7 +541,7 @@ Webhook trigger, durable runs, budgets — considered and deliberately not built
 ## 13. File-by-file change list (Phase 1)
 
 **Backend — new**
-- `app/workflow/__init__.py`, `models.py` (definition pydantic), `graph.py` (DAG/topo/edge semantics), `registry.py` (discovery + hash + manifest), `runner.py` (`WorkflowRunner`, `ExecutionState`, hooks, stop/interrupt), `nodes.py` (four handlers per §6.4), `template.py`, `policy.py` (manifest, lint, approval check).
+- `app/workflow/__init__.py`, `models.py` (definition pydantic incl. all ten kinds — Phase 2 kinds validate but refuse to run, §4.4), `graph.py` (DAG/topo/edge semantics), `registry.py` (discovery + hash + manifest), `runner.py` (`WorkflowRunner`, `ExecutionState`, hooks, stop/interrupt), `nodes.py` (eight v1 handlers per §6.4: agent, tool, gate, switch, input, notify, transform, foreach), `template.py` (incl. `item`/`index` scope), `policy.py` (manifest, lint, approval check).
 - `app/services/workflows_fs.py` (discovery per `commands.py:66-296`; atomic CRUD per `routes/skills.py:85-100,240-302`).
 - `app/api/routes/workflows.py`, `app/api/schemas/workflows.py`.
 - `app/agent/builtin_workflows/` (2 examples).
@@ -503,7 +559,7 @@ Webhook trigger, durable runs, budgets — considered and deliberately not built
 - `web/src/api/client/workflows.ts`; types in `web/src/api/types.ts`.
 - `web/src/queries/useWorkflowsQuery.ts` (+ `useWorkflowQuery`, `useExecutionsQuery`).
 - `web/src/lib/parseWorkflowCommand.ts` (clone `parseLoopCommand.ts`).
-- `web/src/routes/workflows.tsx`; `web/src/components/workflow/{WorkflowCanvas,NodePalette,NodeSidePanel,nodes/AgentNode,nodes/ToolNode,nodes/CodeNode,nodes/GateNode,nodes/SwitchNode,ApprovalDialog,RunInputsDialog,WorkflowProgressPill,GateBanner}.tsx`.
+- `web/src/routes/workflows.tsx`; `web/src/components/workflow/{WorkflowCanvas,NodePalette,NodeSidePanel,ApprovalDialog,RunInputsDialog,WorkflowProgressPill,GateBanner}.tsx` + `nodes/{AgentNode,ToolNode,CodeNode,GateNode,SwitchNode,InputNode,NotifyNode,TransformNode,ForEachNode,StartNode,EndNode,NoteNode}.tsx` (If + Web/Browser/Knowledge/PR/Worktree are palette presets, not components).
 - Dependency: `@xyflow/react` (via bun — `bun.lock` is the only lockfile).
 
 **Frontend — edits (function-level)**
@@ -528,4 +584,4 @@ v4 (2026-07-09): re-scope to the user's actual intent — canvas-first builder, 
 
 **v5 (2026-07-09)** is the implementation audit of v4. Three parallel code deep-dives (team mechanics; direct service/tool invocation; frontend plumbing) traced every mechanism v4 assumed to its exact function and returned a feasible verdict with these corrections now baked in: **(1)** there is no turn id — agent-node output capture uses a message-id watermark, and structured handoff output requires an in-process stream listener because artifacts are never persisted structurally; **(2)** `team_delegate` does not auto-spawn — the runner pre-spawns each node's roster via the public `team.spawn()` and a new `turn_allowed_blueprints` check lands at the single recipient-resolution choke point plus the spawn lock; **(3)** a per-node `lead:` is not implementable inline (turns always go to the session lead) — the field is rejected in v1 and the canvas lead card is locked; **(4)** v4's "parallel outgoing edges" contradicted one-session-one-turn execution — Phase 1 is now explicitly sequential-topological with precise edge/join/skip semantics; **(5)** `/workflow` is FE-intercepted with a dedicated run endpoint (the `/loop` posts-raw-text pattern is unnecessary here), which also falsifies v4's "command-body composition for free" claim — dropped; **(6)** gates flatten title/body into `ask_user`'s `{question, options}` shape, and the runner must register the service in the module-global registry for the reply endpoint to find it; **(7)** MCP results have no structured fast path — a node-output shape rule (structuredContent → JSON-parse → text) was added; **(8)** one `stop` endpoint returned (v4 claimed none needed; gates and tool nodes have no turn for the Stop button to interrupt); **(9)** canvas positions now persist under an engine-ignored `ui:` block with auto-layout for hand-written files; **(10)** trigger-time input collection is specified (positional slash args + a generated form dialog). The v4 claim that `commands.py` provides CRUD was also corrected (discovery only; CRUD precedent is the skills routes). The plan now names function-level integration points on both sides and a six-milestone build order with per-milestone done-when criteria.
 
-Post-v5 additions: a tiered **node roadmap** (§4.5) grounded in the builtin-tool inventory — Tier A (Start/End/Note/If/tool-presets) ships with M6 as FE-only sugar; Tier B (Input/Notify/Transform/For-each) was feasibility-checked (notably: `ask_user` natively supports free-text answers, so a mid-flow Input node is the gate handler with empty options); Tier C defers parallel/sub-workflow/wait. Also folded in per user direction: **agent nodes carry no `tools:` field** — tools are each blueprint's own configuration (Agents settings), and node-level tool choice exists only on `tool`/MCP nodes. This matches the user's model and simultaneously removed a v5 latent gap: the schema had a `tools:` field on agent nodes that nothing in §6.4 could enforce (lead-driven turns have no per-turn tool channel until Phase 2 direct execution). The destructive lint now resolves agent-node effective tools from blueprint files at save time, and the manifest pins blueprint names with tools shown informationally.
+Post-v5 additions: a tiered node palette (§4.5) grounded in the builtin-tool inventory, then — per user direction — **all three tiers committed into scope**: Tier A (Start/End/Note/If/tool-presets) ships with M6 as FE-only sugar; Tier B became four first-class v1 engine kinds (`input`/`notify`/`transform`/`foreach` — feasibility-checked, notably `ask_user`'s native free-text answers making `input` the gate handler with empty options, and `foreach` fitting Phase 1's sequential semantics exactly, incl. a per-iteration `iteration` column on node runs); Tier C (`workflow`, `wait`) is pinned in the v1 schema (validated at save, refused at run until Phase 2) so definitions don't churn, with parallel confirmed as an execution upgrade rather than a node kind. Also folded in per user direction: **agent nodes carry no `tools:` field** — tools are each blueprint's own configuration (Agents settings), and node-level tool choice exists only on `tool`/MCP nodes. This matches the user's model and simultaneously removed a v5 latent gap: the schema had a `tools:` field on agent nodes that nothing in §6.4 could enforce (lead-driven turns have no per-turn tool channel until Phase 2 direct execution). The destructive lint now resolves agent-node effective tools from blueprint files at save time, and the manifest pins blueprint names with tools shown informationally.
