@@ -113,10 +113,7 @@ pub fn list_workspace_files(
             .to_string_lossy()
             .replace('\\', "/");
 
-        let name = entry
-            .file_name()
-            .to_string_lossy()
-            .into_owned();
+        let name = entry.file_name().to_string_lossy().into_owned();
 
         let meta = match entry.metadata() {
             Ok(m) => m,
