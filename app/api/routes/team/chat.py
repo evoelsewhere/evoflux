@@ -1020,8 +1020,9 @@ async def set_session_permission_mode(
     """Persist the agent permission mode for a session.
 
     ``mode`` must be one of: ``ask``, ``accept-edits``, ``plan``, ``auto``, ``bypass``.
-    The change takes effect on the next agent run.  The in-memory team is also
-    updated if one is loaded for this session.
+    The in-memory team is updated if one is loaded, and any *running* agent's
+    permission service switches immediately — pending requests the new mode
+    no longer gates are auto-resolved so a blocked agent resumes.
     """
     if body.mode not in _VALID_PERMISSION_MODES:
         raise HTTPException(
@@ -1047,6 +1048,22 @@ async def set_session_permission_mode(
         )
     if team_obj is not None:
         team_obj.permission_mode = body.mode
+
+    # Flip live permission services (agents mid-run) to the new mode.  Each
+    # service auto-resolves pending requests the new mode no longer gates and
+    # publishes permission_replied events that close open approval UIs.
+    from app.agent.permission import get_services_for_stream
+
+    auto_resolved: list[str] = []
+    for service in get_services_for_stream(sid):
+        auto_resolved.extend(service.set_mode(body.mode))  # type: ignore[arg-type]
+    if auto_resolved:
+        logger.info(
+            "permission_mode_switch_resolved session_id={} mode={} request_ids={}",
+            sid,
+            body.mode,
+            auto_resolved,
+        )
 
     return {"session_id": sid, "permission_mode": body.mode}
 
