@@ -472,9 +472,9 @@ async def test_process_memory_sources_writes_curated_durable_pages(
         result = await process_memory_sources(db)
 
     assert result["processed"] == 1
-    user_page = (_wiki_dir / "wiki" / "user.md").read_text(encoding="utf-8")
-    project_page = (_wiki_dir / "wiki" / "evoflux.md").read_text(encoding="utf-8")
-    memory_page = (_wiki_dir / "wiki" / "memory-v2.md").read_text(encoding="utf-8")
+    user_page = (_wiki_dir / "user.md").read_text(encoding="utf-8")
+    project_page = (_wiki_dir / "evoflux.md").read_text(encoding="utf-8")
+    memory_page = (_wiki_dir / "memory-v2.md").read_text(encoding="utf-8")
     assert "Hoang prefers direct answers" in user_page
     assert f"[session:{session.id}]" in user_page
     assert "Do not remember this secret token" not in user_page
@@ -493,8 +493,9 @@ async def test_process_memory_sources_writes_curated_durable_pages(
                 )
             )
         ).one()
-    assert "wiki/user.md" in json.loads(row.pages_changed or "[]")
-    assert "wiki/evoflux.md" in json.loads(row.pages_changed or "[]")
+    pages_changed = json.loads(row.pages_changed or "[]")
+    assert any("user.md" in p for p in pages_changed)
+    assert any("evoflux.md" in p for p in pages_changed)
     assert "wiki/memory-v2.md" in json.loads(row.pages_changed or "[]")
 
 

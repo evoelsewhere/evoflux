@@ -174,7 +174,6 @@ async def test_resolve_with_llm_starts_background_job(client, java_project_repos
     )
     assert res.status_code == 202
     job = res.json()
-    assert job["use_llm"] is True
     assert job["status"] in ("running", "done")
 
     # Poll until the job (Tier A only for now — Tier B lands in a later

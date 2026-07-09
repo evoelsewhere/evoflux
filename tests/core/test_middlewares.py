@@ -70,9 +70,9 @@ class TestRequestSizeLimitMiddleware:
         resp = client.post("/upload")
         assert resp.status_code == 200
 
-    def test_default_max_bytes_is_4mb(self):
+    def test_default_max_bytes_is_100mb(self):
         middleware = RequestSizeLimitMiddleware(app=FastAPI())
-        assert middleware._max_bytes == 4 * 1024 * 1024
+        assert middleware._max_bytes == 100 * 1024 * 1024
 
     def test_custom_max_bytes_stored(self):
         middleware = RequestSizeLimitMiddleware(app=FastAPI(), max_bytes=1024)

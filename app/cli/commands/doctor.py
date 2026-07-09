@@ -64,10 +64,10 @@ def cmd_doctor(_args: argparse.Namespace) -> None:
     # ── 1. Python version ───────────────────────────────────────────────────
     vi = sys.version_info
     ver_str = f"{vi.major}.{vi.minor}.{vi.micro}"
-    if (vi.major, vi.minor) >= (3, 14):
+    if (vi.major, vi.minor) >= (3, 12):
         _ok(f"Python {ver_str}")
     else:
-        _fail(f"Python {ver_str}  (need >= 3.14)")
+        _fail(f"Python {ver_str}  (need >= 3.12)")
 
     # ── 2. LLM provider API keys ────────────────────────────────────────────
     config_dir = _config_dir()

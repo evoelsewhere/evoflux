@@ -55,10 +55,15 @@ class PythonParser(TreeSitterParser):
         if func.type == "identifier":
             return node_text(func, source)
         if func.type == "attribute":
+            obj = func.child_by_field_name("object")
             attr = func.child_by_field_name("attribute")
             if attr is None:
                 return None
-            return node_text(attr, source)
+            attr_name = node_text(attr, source)
+            # Emit "Object.method" for qualified resolution
+            if obj is not None and obj.type == "identifier":
+                return f"{node_text(obj, source)}.{attr_name}"
+            return attr_name
         return None
 
     def supertypes(self, node: Node, source: bytes) -> list[SuperType]:

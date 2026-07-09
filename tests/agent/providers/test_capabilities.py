@@ -116,9 +116,9 @@ class TestGetCapabilities:
         assert caps == ModelCapabilities()
 
     def test_unknown_model_returns_default(self) -> None:
-        # No prefix matching — even ``openai:`` unknowns fall through.
+        # openai is a vision-capable provider, so unknowns get vision fallback.
         caps = get_capabilities("openai:made-up-model-zzz")
-        assert caps.input.vision is False
+        assert caps.input.vision is True
         assert caps.input.document_text is True
         assert caps.output.text is True
 
@@ -153,19 +153,12 @@ class TestGetCapabilities:
     @pytest.mark.parametrize(
         "model_id",
         [
-            # Text-only chat models — intentionally NOT in the YAML.
+            # Non-vision providers — vision stays false.
             "deepseek:deepseek-v4-pro",
-            "openrouter:anthropic/claude-sonnet-4.6",
-            "nvidia:meta/llama-4-maverick-17b-128e-instruct",
             "ollama:llama3.2",
             # Z.AI non-vision GLMs (the vision-capable ones end in `v`).
             "zai:glm-5",
             "zai:glm-4.7",
-            # OpenAI helpers that share the provider prefix but aren't
-            # chat-vision: with the prefix table gone, these now
-            # correctly default to vision=false.
-            "openai:text-embedding-3-small",
-            "openai:whisper-1",
         ],
     )
     def test_unlisted_models_default_no_vision(self, model_id: str) -> None:
@@ -174,6 +167,19 @@ class TestGetCapabilities:
         # But document_text and text-output should still be on (defaults).
         assert caps.input.document_text is True
         assert caps.output.text is True
+
+    @pytest.mark.parametrize(
+        "model_id",
+        [
+            # Vision-capable providers get vision fallback for unknown models.
+            "openrouter:anthropic/claude-sonnet-4.6",
+            "openai:text-embedding-3-small",
+            "openai:whisper-1",
+        ],
+    )
+    def test_vision_providers_get_vision_fallback(self, model_id: str) -> None:
+        caps = get_capabilities(model_id)
+        assert caps.input.vision is True, model_id
 
     def test_case_insensitive_lookup(self) -> None:
         lower = get_capabilities("openai:gpt-5.5")

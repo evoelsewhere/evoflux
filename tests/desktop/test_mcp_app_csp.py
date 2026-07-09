@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -14,6 +16,10 @@ def _security(path: str) -> dict:
 
 def _csp(path: str) -> dict[str, str]:
     return _security(path)["csp"]
+
+
+def _exists(path: str) -> bool:
+    return (ROOT / path).exists()
 
 
 def test_desktop_csp_allows_general_mcp_app_resources_in_production() -> None:
@@ -40,6 +46,10 @@ def test_desktop_csp_allows_general_mcp_app_resources_in_production() -> None:
     assert "https:" in csp["frame-src"]
 
 
+@pytest.mark.skipif(
+    not _exists("mobile/src-tauri/tauri.conf.json"),
+    reason="mobile/src-tauri not present",
+)
 def test_mobile_csp_allows_general_mcp_app_frames_in_production() -> None:
     csp = _csp("mobile/src-tauri/tauri.conf.json")
 
@@ -62,10 +72,10 @@ def test_prod_asset_csp_modification_keeps_unsafe_inline_effective() -> None:
     injection) keeps working.  Disabling asset CSP modification for
     script-src/style-src keeps 'unsafe-inline' effective in prod.
     """
-    for path in (
-        "desktop/src-tauri/tauri.conf.json",
-        "mobile/src-tauri/tauri.conf.json",
-    ):
+    paths = ["desktop/src-tauri/tauri.conf.json"]
+    if _exists("mobile/src-tauri/tauri.conf.json"):
+        paths.append("mobile/src-tauri/tauri.conf.json")
+    for path in paths:
         security = _security(path)
         disabled = security.get("dangerousDisableAssetCspModification")
         assert disabled is True or (
