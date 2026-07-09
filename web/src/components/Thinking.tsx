@@ -13,7 +13,7 @@
  *   • Finalized  — collapsed by default; clicking reveals full content at
  *                   slightly higher opacity (≈0.65) for readability.
  */
-import { ChevronRight, Sparkles } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { cn } from '@/lib/utils'
@@ -57,14 +57,9 @@ export function Thinking({ content, isStreaming }: ThinkingProps) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="group/my-2 flex items-center gap-1.5 py-0.5 text-[11px] leading-none text-(--color-text-subtle) opacity-50 transition-opacity hover:opacity-80"
+        className="group/my-2 flex items-center gap-1.5 py-0.5 text-[11px] leading-none text-(--color-text-subtle) opacity-75 transition-opacity hover:opacity-80"
         aria-expanded={false}
       >
-        <Sparkles
-          size={11}
-          className="shrink-0 text-(--accent-purple) opacity-60"
-          aria-hidden="true"
-        />
         <span className="italic">
           {isStreaming
             ? 'Thinking…'
@@ -90,20 +85,9 @@ export function Thinking({ content, isStreaming }: ThinkingProps) {
       <button
         type="button"
         onClick={() => setOpen(false)}
-        className="group/my-2 flex items-center gap-1.5 py-0.5 text-[11px] leading-none text-(--color-text-subtle) opacity-50 transition-opacity hover:opacity-80"
+        className="group/my-2 flex items-center gap-1.5 py-0.5 text-[11px] leading-none text-(--color-text-subtle) opacity-75 transition-opacity hover:opacity-100"
         aria-expanded={true}
       >
-        <Sparkles
-          size={11}
-          className={cn(
-            'shrink-0 text-(--accent-purple) opacity-60',
-            isStreaming && 'animate-pulse',
-          )}
-          aria-hidden="true"
-        />
-        <span className="italic">
-          {isStreaming ? 'Thinking…' : 'Thinking'}
-        </span>
         <ChevronRight
           size={10}
           className="shrink-0 rotate-90 text-(--color-text-subtle) opacity-0 transition-all group-hover/my-2:opacity-60"
