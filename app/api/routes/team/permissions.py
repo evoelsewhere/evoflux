@@ -22,14 +22,12 @@ async def list_permissions(session_id: str) -> dict:
 
     Permissions accumulate while a tool execution is blocked awaiting user
     approval.  Poll this endpoint or listen to ``permission_asked`` SSE events.
+
+    *session_id* is the stream (lead) session — pending requests from every
+    team member publishing to that stream are included.
     """
-    from app.agent.permission import get_permission_service
+    from app.agent.permission import get_services_for_stream
 
-    service = get_permission_service()
-    if service.session_id != session_id:
-        return {"permissions": []}
-
-    pending = service.list_pending()
     return {
         "permissions": [
             PermissionRequestResponse(
@@ -39,7 +37,8 @@ async def list_permissions(session_id: str) -> dict:
                 patterns=req.patterns,
                 metadata=req.metadata,
             ).model_dump()
-            for req in pending
+            for service in get_services_for_stream(session_id)
+            for req in service.list_pending()
         ]
     }
 
@@ -56,8 +55,12 @@ async def reply_permission(
     - ``"once"``   — allow this single invocation
     - ``"always"`` — allow this command pattern for the rest of the session
     - ``"reject"`` — deny this invocation and raise an error to the agent
+
+    *session_id* is the stream (lead) session; the request is resolved on
+    whichever member service owns it.  The service publishes the
+    ``permission_replied`` SSE event that closes the approval UI.
     """
-    from app.agent.permission import get_permission_service
+    from app.agent.permission import get_services_for_stream
 
     valid_replies = {"once", "always", "reject"}
     if body.reply not in valid_replies:
@@ -66,10 +69,11 @@ async def reply_permission(
             detail=f"Invalid reply '{body.reply}'. Must be one of: {sorted(valid_replies)}",
         )
 
-    service = get_permission_service()
     # Validation above guarantees ``body.reply`` is one of the literal values.
-    resolved = service.reply(
-        request_id, cast(Literal["once", "always", "reject"], body.reply)
+    reply = cast(Literal["once", "always", "reject"], body.reply)
+    resolved = any(
+        service.reply(request_id, reply)
+        for service in get_services_for_stream(session_id)
     )
     if not resolved:
         raise HTTPException(
@@ -83,25 +87,6 @@ async def reply_permission(
         request_id,
         body.reply,
     )
-
-    # Push SSE so the frontend closes the permission modal immediately.
-    import contextlib as _cl
-    from app.agent.schemas.events import PermissionRepliedEvent
-    from app.services import memory_stream_store as stream_store
-    from app.services.stream_envelope import StreamEnvelope
-
-    with _cl.suppress(Exception):
-        await stream_store.push_event(
-            session_id,
-            StreamEnvelope.from_event(
-                PermissionRepliedEvent(
-                    request_id=request_id,
-                    session_id=session_id,
-                    reply=body.reply,
-                )
-            ),
-        )
-
     return {"status": "ok", "request_id": request_id, "reply": body.reply}
 
 

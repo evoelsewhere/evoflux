@@ -20,7 +20,6 @@ from app.agent.tool_id_resolver import ToolIdResolver
 from app.services import memory_stream_store as stream_store
 from app.agent.schemas.events import (
     MessageEvent,
-    PermissionAskedEvent,
     ProviderStatusEvent,
     RateLimitEvent,
     ThinkingEvent,
@@ -199,8 +198,7 @@ class StreamPublisherHook(BaseAgentHook):
         import json as _json
 
         from app.agent.permission import (
-            PermissionDeniedError,
-            PermissionRejectedError,
+            command_always_pattern,
             get_permission_service,
         )
 
@@ -219,59 +217,34 @@ class StreamPublisherHook(BaseAgentHook):
         except Exception:
             args_dict = {}
 
-        # Build patterns: use the command/path argument if present, else tool name
+        # Build patterns: use the command/path argument if present, else tool
+        # name.  ``always_patterns`` is the broader glob whitelisted when the
+        # user replies "always allow" (e.g. "git status -sb" → "git status *").
         patterns: list[str] = []
+        always_patterns: list[str] = []
         if "command" in args_dict:
-            # Extract the command prefix (first 1-3 tokens, matching opencode's BashArity)
             cmd_str = str(args_dict["command"]).strip()
             patterns.append(cmd_str[:200] if cmd_str else fn_name)
+            always_patterns.append(
+                command_always_pattern(cmd_str) if cmd_str else fn_name
+            )
         elif "path" in args_dict or "file_path" in args_dict:
             p = args_dict.get("path") or args_dict.get("file_path") or fn_name
             patterns.append(str(p))
+            always_patterns.append(str(p))
         else:
             patterns.append(fn_name)
+            always_patterns.append(fn_name)
 
-        permission_service = get_permission_service()
-
-        # Fire SSE events for ask/reply (even in auto-allow mode)
-        def _on_ask_callback(req):
-            """Fire-and-forget SSE event when permission is requested."""
-            import asyncio as _asyncio
-            import contextlib as _contextlib
-
-            async def _emit():
-                with _contextlib.suppress(Exception):
-                    await stream_store.push_event(
-                        self._session_id,
-                        StreamEnvelope.from_event(
-                            PermissionAskedEvent(
-                                request_id=req.id,
-                                session_id=self._session_id,
-                                tool=fn_name,
-                                patterns=req.patterns,
-                                metadata=req.metadata,
-                            )
-                        ),
-                    )
-
-            # Schedule without blocking wrap_tool_call
-            _asyncio.create_task(_emit())
-
-        # Temporarily attach SSE callback for this call
-        original_on_ask = permission_service._on_ask
-        permission_service._on_ask = _on_ask_callback
-        try:
-            await permission_service.ask(
-                tool=fn_name,
-                patterns=patterns,
-                always_patterns=patterns,
-                metadata={"tool_call_id": tc_id, "agent": self._agent_name},
-            )
-        except (PermissionDeniedError, PermissionRejectedError):
-            permission_service._on_ask = original_on_ask
-            raise
-        finally:
-            permission_service._on_ask = original_on_ask
+        # The service owns the whole flow: rule evaluation, mode handling,
+        # SSE publishing, and blocking on the user's reply.  A deny/reject
+        # raises here and surfaces to the LLM as a tool error result.
+        await get_permission_service().ask(
+            tool=fn_name,
+            patterns=patterns,
+            always_patterns=always_patterns,
+            metadata={"tool_call_id": tc_id, "agent": self._agent_name},
+        )
 
         # ── Execute tool ──────────────────────────────────────────────
         started = time.monotonic()

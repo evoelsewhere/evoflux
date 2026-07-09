@@ -56,12 +56,9 @@ from app.agent.plugins.role import reset_role, set_role
 from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
 from app.core.paths import session_workspace_dir
 from app.agent.permission import (
-    AcceptEditsPermissionService,
-    AutoAllowPermissionService,
-    BypassPermissionService,
     PermissionService,
+    reset_permission_service,
     set_permission_service,
-    _permission_ctx,
 )
 from app.agent.plan import (
     PlanModeService,
@@ -299,19 +296,6 @@ def _lead_wait_nudge_content(pending: list[str]) -> str:
 
 
 # =============================================================================
-def _make_permission_service(session_id: str, permission_mode: str) -> "PermissionService":
-    """Return the PermissionService that corresponds to the session's mode."""
-    if permission_mode == "ask":
-        return PermissionService(session_id=session_id)
-    if permission_mode == "accept-edits":
-        return AcceptEditsPermissionService(session_id=session_id)
-    if permission_mode == "bypass":
-        return BypassPermissionService(session_id=session_id)
-    # "plan" and "auto" both use AutoAllowPermissionService; plan is handled
-    # separately by PlanModeService (the agent calls enter_plan_mode itself).
-    return AutoAllowPermissionService(session_id=session_id)
-
-
 # TeamMemberBase — shared worker infrastructure
 # =============================================================================
 
@@ -1081,10 +1065,14 @@ class TeamMemberBase(abc.ABC):
         )
         token = set_sandbox(session_sandbox)
 
-        # Scope permission service — instantiate based on the session's
-        # persisted permission_mode (ask | accept-edits | plan | auto | bypass).
-        permission_service: PermissionService = _make_permission_service(
-            self.session_id, self._team.permission_mode
+        # Scope permission service — mode comes from the session's persisted
+        # permission_mode (ask | accept-edits | plan | auto | bypass).  Events
+        # publish to the lead's stream; the service registers globally so the
+        # reply endpoint can resolve requests from its own request context.
+        permission_service = PermissionService(
+            session_id=self.session_id,
+            mode=self._team.permission_mode,  # type: ignore[arg-type]
+            stream_session_id=lead_session_id,
         )
         perm_token = set_permission_service(permission_service)
 
@@ -1130,7 +1118,7 @@ class TeamMemberBase(abc.ABC):
         finally:
             reset_role(role_token)
             _sandbox_ctx.reset(token)
-            _permission_ctx.reset(perm_token)
+            reset_permission_service(perm_token, self.session_id)
             reset_plan_mode_service(plan_token, self.session_id)
             reset_ask_user_service(ask_user_token, self.session_id)
             # Always resume watcher — even on crash — so reindex runs once
