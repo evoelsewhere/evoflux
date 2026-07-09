@@ -6,18 +6,20 @@
     </linearGradient>
   </defs>
 
-  <rect width="500" height="500" fill="#111111"/>
+  <g transform="translate(250, 250) scale(0.84) translate(-250, -250)">
+    <rect width="500" height="500" fill="#111111"/>
 
-  <g transform="rotate(45, 250, 250)">
-    <rect x="110" y="110" width="280" height="280" rx="65" ry="65" 
-          fill="url(#whiteGradient)" stroke="#ffffff" stroke-width="20"/>
-    
-    <circle cx="250" cy="250" r="18" fill="#111111"/>
-    
-    <path d="M 160,200 L 310,200 A 25,25 0 0,1 335,225 L 335,230" 
-          fill="none" stroke="#111111" stroke-width="38" stroke-linecap="round" stroke-linejoin="round"/>
-          
-    <path d="M 340,300 L 190,300 A 25,25 0 0,1 165,275 L 165,270" 
-          fill="none" stroke="#111111" stroke-width="38" stroke-linecap="round" stroke-linejoin="round"/>
+    <g transform="rotate(45, 250, 250)">
+      <rect x="110" y="110" width="280" height="280" rx="65" ry="65"
+            fill="url(#whiteGradient)" stroke="#ffffff" stroke-width="20"/>
+
+      <circle cx="250" cy="250" r="18" fill="#111111"/>
+
+      <path d="M 160,200 L 310,200 A 25,25 0 0,1 335,225 L 335,230"
+            fill="none" stroke="#111111" stroke-width="38" stroke-linecap="round" stroke-linejoin="round"/>
+
+      <path d="M 340,300 L 190,300 A 25,25 0 0,1 165,275 L 165,270"
+            fill="none" stroke="#111111" stroke-width="38" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
   </g>
 </svg>
