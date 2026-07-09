@@ -31,6 +31,41 @@ function execCommand(command: string): void {
   document.execCommand(command, false, undefined)
 }
 
+function insertTextAtCursor(text: string): void {
+  const active = document.activeElement
+
+  if (active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement) {
+    const proto = active instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
+    const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set
+    const start = active.selectionStart ?? active.value.length
+    const end = active.selectionEnd ?? active.value.length
+    setter?.call(active, active.value.slice(0, start) + text + active.value.slice(end))
+    // Native setter bypasses React's value tracker, so React only notices the
+    // change once a real 'input' event fires (same trick RTL/Enzyme use).
+    active.dispatchEvent(new Event('input', { bubbles: true }))
+    const caret = start + text.length
+    active.setSelectionRange(caret, caret)
+    return
+  }
+
+  if (active instanceof HTMLElement && active.isContentEditable) {
+    document.execCommand('insertText', false, text)
+  }
+}
+
+async function pasteFromClipboard(): Promise<void> {
+  // Chromium (WebView2) and WebKit (WKWebView) both no-op
+  // document.execCommand('paste') for security, so reading the clipboard has
+  // to go through Tauri's native clipboard-manager plugin instead.
+  try {
+    const { readText } = await import('@tauri-apps/plugin-clipboard-manager')
+    const text = await readText()
+    if (text) insertTextAtCursor(text)
+  } catch {
+    // Clipboard empty, non-text content, or read denied — nothing to paste.
+  }
+}
+
 function runDesktopCommand(command: unknown): void {
   switch (command) {
     case 'command_palette':
@@ -58,7 +93,7 @@ function runDesktopCommand(command: unknown): void {
       execCommand('copy')
       break
     case 'edit_paste':
-      execCommand('paste')
+      void pasteFromClipboard()
       break
     case 'edit_select_all':
       execCommand('selectAll')

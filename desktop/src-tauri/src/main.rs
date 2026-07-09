@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod sidecar;
+mod workspace;
 
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -1611,6 +1612,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(log_plugin)
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
@@ -1632,6 +1634,8 @@ fn main() {
             app_new_window,
             app_open_browser_devtools,
             set_tray_session,
+            workspace::list_workspace_files,
+            workspace::read_workspace_file,
         ])
         .setup(|app| {
             install_desktop_menus(app)?;

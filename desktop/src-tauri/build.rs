@@ -7,6 +7,8 @@ fn main() {
             "backend_logs_path",
             "app_new_window",
             "set_tray_session",
+            "list_workspace_files",
+            "read_workspace_file",
         ]),
     ))
     .expect("failed to build Tauri application");
