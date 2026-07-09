@@ -298,6 +298,16 @@ class AutoAllowPermissionService(PermissionService):
                     tool, pattern, self.base_ruleset + self.session_ruleset
                 )
 
+        # Notify observer (UI can still display the request).
+        req = PermissionRequest.create(
+            session_id=self.session_id,
+            tool=tool,
+            patterns=patterns,
+            always_patterns=always_patterns or patterns,
+        )
+        if self._on_ask is not None:
+            self._on_ask(req)
+
         # Auto-allow — add to session ruleset silently (no SSE, no modal).
         for p in (always_patterns or patterns):
             self.session_ruleset.append(

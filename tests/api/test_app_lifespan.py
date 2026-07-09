@@ -43,6 +43,11 @@ def slim_lifespan(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(
         app_module, "DreamScheduler", Mock(return_value=dream_scheduler)
     )
+    # Mock runtime_settings referenced by lifespan
+    from app.core import runtime_settings as rs_mod
+
+    rt_settings = SimpleNamespace(code_graph=SimpleNamespace(watch_enabled=False))
+    monkeypatch.setattr(rs_mod, "load_runtime_settings", Mock(return_value=rt_settings))
     return dream_scheduler
 
 

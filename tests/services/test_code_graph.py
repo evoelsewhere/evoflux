@@ -68,7 +68,7 @@ def test_python_method_call_resolves_attribute_name():
     source = b"def top():\n    obj.run()\n"
     result = PythonParser().parse(file_path="a.py", source=source)
     calls = [e for e in result.edges if e.kind == EDGE_CALLS]
-    assert calls[0].dst_name == "run"
+    assert calls[0].dst_name == "obj.run"
 
 
 # ── TypeScript parser ─────────────────────────────────────────────────────────

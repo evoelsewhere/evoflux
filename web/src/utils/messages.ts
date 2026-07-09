@@ -67,13 +67,34 @@ function assistantBlocks(
 
   for (const tool of (msg.tool_calls ?? []).filter((t) => t.function?.name !== 'todo_manage')) {
     const name = tool.function?.name ?? tool.id
+    let parsedArgs: Record<string, unknown> | undefined
     let args: string | undefined
     try {
-      const parsed = JSON.parse(tool.function?.arguments ?? '{}')
-      args = JSON.stringify(parsed, null, 2)
+      parsedArgs = JSON.parse(tool.function?.arguments ?? '{}')
+      args = JSON.stringify(parsedArgs, null, 2)
     } catch {
       args = tool.function?.arguments ?? undefined
     }
+
+    // show_widget's own arguments carry the full widget HTML — reconstruct
+    // the widget block from history instead of falling back to a generic
+    // collapsed tool-call chip (the streamed widgetHtml never persists).
+    if (name === 'show_widget' && typeof parsedArgs?.widget_code === 'string') {
+      const block: ContentBlock = {
+        id: generateBlockId(),
+        type: 'widget',
+        content: '',
+        toolCallId: tool.id,
+        widgetHtml: parsedArgs.widget_code,
+        isStreaming: false,
+        title: typeof parsedArgs.title === 'string' ? parsedArgs.title : 'Widget',
+        timestamp,
+      }
+      blocks.push(block)
+      if (tool.id) pendingToolBlocks.set(tool.id, block)
+      continue
+    }
+
     const block: ContentBlock = {
       id: generateBlockId(),
       type: 'tool',

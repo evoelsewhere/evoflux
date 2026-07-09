@@ -179,7 +179,7 @@ class TestMissingBundle:
         # Run in an empty directory with no evoflux.app in sight.
         proc = _run([], cwd=tmp_path)
         assert proc.returncode == 1
-        assert "Cannot find evoflux.app" in (proc.stdout + proc.stderr)
+        assert "Cannot find EvoFlux.app" in (proc.stdout + proc.stderr)
 
     def test_macos_explicit_missing_path_exits_one(self, tmp_path: Path):
         if platform.system() != "Darwin":

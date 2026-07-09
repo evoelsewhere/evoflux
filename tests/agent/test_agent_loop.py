@@ -134,6 +134,22 @@ def _finish_chunk() -> ChatCompletionChunk:
     )
 
 
+def _text_chunk(content: str) -> ChatCompletionChunk:
+    """Return a chunk with text content (needed after tool calls)."""
+    return ChatCompletionChunk(
+        id="chunk-text",
+        created=1,
+        model="mock",
+        choices=[
+            ChatCompletionChunkChoice(
+                index=0,
+                delta=ChatCompletionDelta(content=content),
+                finish_reason=None,
+            )
+        ],
+    )
+
+
 # ---------------------------------------------------------------------------
 # Line 235: before_model hook returns non-None updated request
 # ---------------------------------------------------------------------------
@@ -403,6 +419,9 @@ async def test_tool_result_creates_tool_message_with_parts():
     async def _gen():
         yield _tool_chunk(0, "call_1", "get_image", "")
         yield _finish_chunk()
+        # Text response after tool call
+        yield _text_chunk("Done")
+        yield _finish_chunk()
 
     mock_provider = MagicMock()
     mock_provider.stream.return_value = _gen()
@@ -454,6 +473,9 @@ async def test_tool_result_content_derived_from_text_blocks():
 
     async def _gen():
         yield _tool_chunk(0, "call_1", "process", "")
+        yield _finish_chunk()
+        # Text response after tool call
+        yield _text_chunk("Done")
         yield _finish_chunk()
 
     mock_provider = MagicMock()
@@ -566,6 +588,9 @@ async def test_complete_tool_call_with_empty_args_is_kept():
     async def _gen():
         yield _tool_chunk(0, "fc_xyz", "noop", "")
         yield _finish_chunk()
+        # Text response after tool call
+        yield _text_chunk("Done")
+        yield _finish_chunk()
 
     mock_provider = MagicMock()
     mock_provider.stream.return_value = _gen()
@@ -602,6 +627,9 @@ async def test_plain_string_tool_result_has_no_parts():
 
     async def _gen():
         yield _tool_chunk(0, "call_1", "simple", "")
+        yield _finish_chunk()
+        # Text response after tool call
+        yield _text_chunk("Done")
         yield _finish_chunk()
 
     mock_provider = MagicMock()

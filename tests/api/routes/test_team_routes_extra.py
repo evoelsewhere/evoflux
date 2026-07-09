@@ -280,7 +280,7 @@ class TestTeamAgentsRouteExtra:
         test_team.handle_user_message = AsyncMock(return_value=str(session_id))
 
         async def fake_get_or_start_coding_team(
-            requested_workspace: str, requested_session_id: str
+            requested_workspace: str, requested_session_id: str, **kwargs
         ):
             test_team.mode = "coding"
             test_team.workspace = requested_workspace
