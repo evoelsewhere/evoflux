@@ -604,7 +604,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
     <div ref={scrollRef} className="flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-4xl px-4 py-6">
+      <div className="mx-auto max-w-3xl px-4 py-6">
         {isEmpty && (
            emptyState ?? (
              <div className="flex select-none flex-col items-center justify-center gap-6 py-20">
