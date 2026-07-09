@@ -7,13 +7,16 @@ import asyncio
 import pytest
 
 from app.agent.permission import (
-    AutoAllowPermissionService,
     PermissionDeniedError,
     PermissionRejectedError,
     PermissionService,
     Rule,
+    command_always_pattern,
     evaluate,
     get_permission_service,
+    get_service_for_session,
+    get_services_for_stream,
+    reset_permission_service,
     ruleset_from_config,
     set_permission_service,
 )
@@ -175,23 +178,25 @@ async def test_reply_unknown_request_returns_false():
 
 
 # ---------------------------------------------------------------------------
-# AutoAllowPermissionService
+# Mode-aware behaviour
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_auto_allow_service_allows_without_blocking():
-    service = AutoAllowPermissionService(session_id="s1")
-    # Should return immediately without any reply
+async def test_auto_mode_allows_without_blocking():
+    service = PermissionService(session_id="s1", mode="auto")
+    # Should return immediately without any reply and register nothing pending
     await service.ask("shell", ["git status"])
     await service.ask("shell", ["rm file.txt"])
+    assert service.list_pending() == []
 
 
 @pytest.mark.asyncio
-async def test_auto_allow_service_still_denies_deny_rules():
-    service = AutoAllowPermissionService(
+async def test_auto_mode_still_denies_deny_rules():
+    service = PermissionService(
         session_id="s1",
         base_ruleset=[Rule(permission="shell", pattern="sudo *", action="deny")],
+        mode="auto",
     )
     with pytest.raises(PermissionDeniedError):
         await service.ask("shell", ["sudo rm -rf /"])
@@ -201,17 +206,133 @@ async def test_auto_allow_service_still_denies_deny_rules():
 
 
 @pytest.mark.asyncio
-async def test_auto_allow_service_fires_on_ask_callback():
+async def test_bypass_mode_skips_even_deny_rules():
+    service = PermissionService(
+        session_id="s1",
+        base_ruleset=[Rule(permission="*", pattern="*", action="deny")],
+        mode="bypass",
+    )
+    await service.ask("shell", ["rm -rf /"])  # no raise, no pending
+    assert service.list_pending() == []
+
+
+@pytest.mark.asyncio
+async def test_accept_edits_mode_allows_edit_tools_but_blocks_shell():
+    service = PermissionService(session_id="s1", mode="accept-edits")
+    # Edit tools pass without a reply
+    await service.ask("edit", ["/tmp/file.py"])
+    await service.ask("write", ["/tmp/file.py"])
+    await service.ask("patch", ["/tmp/file.py"])
+
+    # Shell still blocks until replied
+    async def _reply_later():
+        await asyncio.sleep(0.01)
+        reqs = service.list_pending()
+        assert len(reqs) == 1
+        service.reply(reqs[0].id, "once")
+
+    asyncio.create_task(_reply_later())
+    await service.ask("shell", ["rm file.txt"])
+
+
+@pytest.mark.asyncio
+async def test_ask_mode_allows_safe_read_only_tools():
+    """read/grep/team coordination tools never block, even in ask mode."""
+    service = PermissionService(session_id="s1", mode="ask")
+    await service.ask("read", ["/etc/hosts"])
+    await service.ask("grep", ["pattern"])
+    await service.ask("team_handoff", ["team_handoff"])
+    assert service.list_pending() == []
+
+
+@pytest.mark.asyncio
+async def test_blocking_ask_fires_on_ask_callback():
     fired = []
 
     def callback(req):
         fired.append(req)
 
-    service = AutoAllowPermissionService(session_id="s1", on_ask=callback)
+    service = PermissionService(session_id="s1", mode="ask", on_ask=callback)
+
+    async def _reply_later():
+        await asyncio.sleep(0.01)
+        service.reply(service.list_pending()[0].id, "once")
+
+    asyncio.create_task(_reply_later())
     await service.ask("shell", ["git status"])
     assert len(fired) == 1
     assert fired[0].tool == "shell"
     assert "git status" in fired[0].patterns
+
+
+# ---------------------------------------------------------------------------
+# set_mode — live mode switching
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_set_mode_to_auto_resolves_pending():
+    """Switching ask → auto unblocks a waiting tool call."""
+    service = PermissionService(session_id="s1", mode="ask")
+    task = asyncio.create_task(service.ask("shell", ["rm file.txt"]))
+    await asyncio.sleep(0.01)
+    assert len(service.list_pending()) == 1
+
+    resolved = service.set_mode("auto")
+    assert len(resolved) == 1
+    await task  # completes without raising
+    assert service.mode == "auto"
+
+
+@pytest.mark.asyncio
+async def test_set_mode_to_accept_edits_resolves_only_edit_tools():
+    service = PermissionService(session_id="s1", mode="ask")
+    edit_task = asyncio.create_task(service.ask("edit", ["/tmp/f.py"]))
+    shell_task = asyncio.create_task(service.ask("shell", ["rm -rf /tmp"]))
+    await asyncio.sleep(0.01)
+    assert len(service.list_pending()) == 2
+
+    resolved = service.set_mode("accept-edits")
+    assert len(resolved) == 1
+    await edit_task  # unblocked
+
+    # shell request still pending — resolve it to let the task finish
+    assert len(service.list_pending()) == 1
+    service.reply(service.list_pending()[0].id, "reject")
+    with pytest.raises(PermissionRejectedError):
+        await shell_task
+
+
+# ---------------------------------------------------------------------------
+# Session registry — HTTP endpoints resolve services out-of-context
+# ---------------------------------------------------------------------------
+
+
+def test_registry_set_and_reset():
+    service = PermissionService(session_id="member-1", stream_session_id="lead-1")
+    token = set_permission_service(service)
+    try:
+        assert get_service_for_session("member-1") is service
+        assert get_services_for_stream("lead-1") == [service]
+        assert get_services_for_stream("member-1") == [service]
+        assert get_services_for_stream("other") == []
+    finally:
+        reset_permission_service(token, "member-1")
+    assert get_service_for_session("member-1") is None
+    assert get_services_for_stream("lead-1") == []
+
+
+# ---------------------------------------------------------------------------
+# command_always_pattern
+# ---------------------------------------------------------------------------
+
+
+def test_command_always_pattern_arity():
+    assert command_always_pattern("git status -sb") == "git status *"
+    assert command_always_pattern("git status") == "git status"
+    assert command_always_pattern("rm -rf /tmp/x") == "rm *"
+    assert command_always_pattern("ls") == "ls"
+    assert command_always_pattern("npm run build") == "npm run *"
 
 
 # ---------------------------------------------------------------------------
@@ -267,15 +388,13 @@ def test_get_permission_service_returns_default():
 
 def test_set_permission_service_sets_context():
     """set_permission_service() makes the service accessible via get_permission_service()."""
-    custom = AutoAllowPermissionService(session_id="test-ctx")
+    custom = PermissionService(session_id="test-ctx", mode="auto")
     token = set_permission_service(custom)
     try:
         retrieved = get_permission_service()
         assert retrieved is custom
     finally:
-        from app.agent.permission import _permission_ctx
-
-        _permission_ctx.reset(token)
+        reset_permission_service(token, "test-ctx")
 
 
 # ---------------------------------------------------------------------------

@@ -191,9 +191,11 @@ class TitleUpdateEvent(BaseModel):
 
 
 class PermissionAskedEvent(BaseModel):
-    """An agent is requesting permission to run a tool call.
+    """An agent is blocked awaiting permission to run a tool call.
 
-    The frontend should display an approval UI and POST a reply to
+    Only emitted when the tool call is actually waiting on a reply (mode
+    handling is done backend-side) — the frontend should always display an
+    approval UI and POST a reply to
     ``/team/{session_id}/permissions/{request_id}/reply``.
     """
 
