@@ -319,7 +319,12 @@ class TestWorkerErrorHandling:
 
         msg = Message(from_agent="lead", to_agent="worker", content="[lead]: task")
         await team.mailbox.send(to="worker", message=msg)
-        await asyncio.sleep(0.1)
+
+        deadline = asyncio.get_running_loop().time() + 5
+        while asyncio.get_running_loop().time() < deadline:
+            if worker.state == "error":
+                break
+            await asyncio.sleep(0.05)
 
         # Should have emitted an agent_status error event
         events = [c.args[1].event for c in mock_stream_store.call_args_list]
