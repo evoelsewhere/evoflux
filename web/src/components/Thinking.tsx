@@ -101,7 +101,7 @@ export function Thinking({ content, isStreaming }: ThinkingProps) {
         className={cn(
           'ml-2 max-h-60 overflow-y-auto border-l border-(--color-border) pl-3',
           // Streaming: very faded (watermark feel). Finalized: slightly more readable.
-          isStreaming ? 'opacity-40' : 'opacity-60',
+          isStreaming ? 'opacity-60' : 'opacity-80',
         )}
       >
         <div className="min-w-0 space-y-1.5 font-mono text-[11px] leading-relaxed text-(--color-text-muted) [overflow-wrap:anywhere]">

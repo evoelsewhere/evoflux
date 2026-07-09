@@ -77,11 +77,32 @@ function wrapHtml(html: string): string {
       window.parent.postMessage({ type: 'widget_send_prompt', prompt: prompt.trim() }, '*');
     };
   </script>`
-  
+
+  // Reports content height to the parent so the iframe can grow to fit
+  // instead of clipping content behind an internal scrollbar
+  const resizeScript = `<script>(function(){
+    function postHeight(){
+      var h = Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0);
+      window.parent.postMessage({ type: 'widget_resize', height: h }, '*');
+    }
+    function init(){
+      postHeight();
+      if (window.ResizeObserver) {
+        var ro = new ResizeObserver(postHeight);
+        ro.observe(document.documentElement);
+        if (document.body) ro.observe(document.body);
+      }
+      window.addEventListener('load', postHeight);
+      setTimeout(postHeight, 50);
+      setTimeout(postHeight, 300);
+    }
+    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', init); } else { init(); }
+  })();</script>`
+
   if (/<head\b[^>]*>/i.test(html)) {
-    return html.replace(/<head\b[^>]*>/i, (match) => `${match}${cspMeta}${storageShim}${sendPromptScript}`)
+    return html.replace(/<head\b[^>]*>/i, (match) => `${match}${cspMeta}${storageShim}${sendPromptScript}${resizeScript}`)
   }
-  return `<!doctype html><html><head>${cspMeta}${storageShim}${sendPromptScript}</head><body>${html}</body></html>`
+  return `<!doctype html><html><head>${cspMeta}${storageShim}${sendPromptScript}${resizeScript}</head><body>${html}</body></html>`
 }
 
 // Morphdom update with smooth diffing
@@ -148,6 +169,10 @@ function executeScripts(doc: Document) {
   })
 }
 
+// Bounds for auto-sizing the iframe to its actual content height
+const MIN_CONTENT_HEIGHT = 120
+const MAX_CONTENT_HEIGHT = 2400
+
 export function WidgetRenderer({
   html,
   isStreaming = false,
@@ -162,9 +187,10 @@ export function WidgetRenderer({
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [isInitialized, setIsInitialized] = useState(false)
+  const [contentHeight, setContentHeight] = useState<number | null>(null)
   const sendMessage = useTeamStore((s) => s.sendMessage)
-  
-  // Handle messages from iframe (sendPrompt)
+
+  // Handle messages from iframe (sendPrompt, resize)
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'widget_send_prompt' && event.data?.prompt) {
@@ -175,12 +201,17 @@ export function WidgetRenderer({
           // Default: send message to chat
           sendMessage(prompt)
         }
+      } else if (event.data?.type === 'widget_resize' && typeof event.data?.height === 'number') {
+        const measured = event.data.height as number
+        setContentHeight(Math.min(Math.max(measured, MIN_CONTENT_HEIGHT), MAX_CONTENT_HEIGHT))
       }
     }
-    
+
     window.addEventListener('message', handleMessage)
     return () => window.removeEventListener('message', handleMessage)
   }, [onSendPrompt, sessionId, sendMessage])
+
+  const effectiveHeight = contentHeight ?? height
   
   // Update iframe content when html changes
   useEffect(() => {
@@ -258,9 +289,9 @@ export function WidgetRenderer({
         ref={iframeRef}
         title={title}
         width={width}
-        height={height - 32} // Account for title bar
+        height={effectiveHeight - 32} // Account for title bar
         sandbox="allow-scripts allow-same-origin"
-        className="border-0"
+        className="border-0 transition-[height] duration-150"
         onLoad={handleLoad}
         onError={handleError}
       />
