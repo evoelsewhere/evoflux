@@ -118,7 +118,7 @@ export function SettingsListView({
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-4xl px-4 pt-8 pb-12 sm:px-8">
+      <div className="mx-auto max-w-3xl px-4 pt-8 pb-12 sm:px-8">
         {/* ── Title row ─────────────────────────────────────────────────── */}
         <header className="flex items-start gap-4">
           <div className="min-w-0 flex-1">
