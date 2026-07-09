@@ -1179,10 +1179,8 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
             )}
           </div>
 
-          {/* RIGHT PILL — action cluster */}
-          <div className={`flex shrink-0 items-center gap-0.5 ${
-            !isMobile ? 'rounded-[10px] bg-(--bg-sidebar)/80 px-1 shadow-sm backdrop-blur-xl' : ''
-          }`}>
+          {/* RIGHT — action cluster */}
+          <div className="flex shrink-0 items-center gap-0.5">
           {isMobile ? (
             <>
               {headerTokens && (
