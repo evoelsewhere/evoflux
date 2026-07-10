@@ -159,27 +159,26 @@ class _XiaomiCompletionsHandler(CompletionsHandler):
 
             elif isinstance(msg, ToolMessage):
                 if msg.parts:
-                    parts = []
-                    for part in msg.parts:
-                        if isinstance(part, TextBlock):
-                            parts.append({"type": "text", "text": part.text})
-                        elif isinstance(part, ImageUrlBlock):
-                            img = {"url": part.url}
-                            if part.detail:
-                                img["detail"] = part.detail
-                            parts.append({"type": "image_url", "image_url": img})
-                        elif isinstance(part, ImageDataBlock):
-                            data_url = f"data:{part.media_type};base64,{part.data}"
-                            parts.append(
-                                {
-                                    "type": "image_url",
-                                    "image_url": {"url": data_url, "detail": "auto"},
-                                }
-                            )
+                    # MiMo API does not support image_url content in tool
+                    # messages — only user messages accept multimodal parts.
+                    # Strip image blocks and keep only text content so the
+                    # request doesn't get rejected with 400 Invalid Format.
+                    text_parts = [
+                        part for part in msg.parts
+                        if isinstance(part, TextBlock)
+                    ]
+                    if text_parts:
+                        content: str | list[dict[str, Any]] = [
+                            {"type": "text", "text": p.text} for p in text_parts
+                        ]
+                    else:
+                        # No text in parts (e.g. screenshot-only result) —
+                        # fall back to the plain-text content string.
+                        content = msg.content or ""
                     result.append(
                         XiaomiMessage(
                             role="tool",
-                            content=parts,
+                            content=content,
                             tool_call_id=msg.tool_call_id,
                             name=msg.name,
                         )
