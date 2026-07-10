@@ -576,8 +576,8 @@ export function UnifiedSidebar({
   const mobileLongPressActions = isMobile && isTauriMobile && mobileOpen;
   const prefersReducedMotion = useReducedMotion();
   const navigate = useNavigate();
-   const toggleScheduler = useUIStore((s) => s.toggleScheduler);
-   const openSettings = useUIStore((s) => s.openSettings);
+  const toggleScheduler = useUIStore((s) => s.toggleScheduler);
+  const openSettings = useUIStore((s) => s.openSettings);
 
   // ── Forge mode state ───────────────────────────────────────────────────
 
