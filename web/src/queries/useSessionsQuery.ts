@@ -5,7 +5,7 @@ import { queryKeys } from './keys'
 import { patchSessionInPageData } from './session-cache'
 
 const PAGE_SIZE = 20
-const CODING_WORKSPACE_PAGE_SIZE = 5
+const CODING_WORKSPACE_PAGE_SIZE = 10
 const CODING_WORKSPACE_SMOOTHING_MS = 5000
 
 export function useTeamSessionsQuery() {
