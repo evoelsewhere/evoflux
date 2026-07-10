@@ -28,10 +28,9 @@ import { AgentView } from '../AgentView'
 import { WorkspaceInfoCard } from '../WorkspaceInfoCard'
 import { ProjectInfoCard } from '../ProjectInfoCard'
 import { useProjectQuery } from '@/queries/useProjectsQuery'
-import { CodingSidebar } from '../CodingSidebar'
+import { UnifiedSidebar } from '../UnifiedSidebar'
 import { CodingWorkspacePanel } from '../CodingWorkspacePanel'
 import { CodingFileViewerPanel } from '../CodingFileViewerPanel'
-import { Sidebar } from '../Sidebar'
 import { CommandPalette } from '../CommandPalette'
 import { WorkspaceFilesPanel } from '../WorkspaceFilesPanel'
 import { WikiPanel } from '../WikiPanel'
@@ -1060,33 +1059,19 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
         handleMobileActionsSwipeEnd()
       }}
     >
-      {/* Sidebar — full height on desktop. Both sidebars stay mounted to avoid
-          remount jitter on mode switch; CSS hides the inactive one. */}
+      {/* Unified Sidebar — works for both forge and coding modes */}
       {!isMobile && (
-        <>
-          <div className={mode !== 'coding' ? 'contents' : 'hidden'}>
-            <Sidebar
-              currentSessionId={sessionIdState || undefined}
-              onCommandPalette={() => setShowPalette(true)}
-              onNewChat={handleNewSession}
-              mode={mode}
-              mobileOpen={false}
-              onMobileClose={() => {}}
-            />
-          </div>
-          <div className={mode === 'coding' ? 'contents' : 'hidden'}>
-            <CodingSidebar
-              currentSessionId={sessionIdState || undefined}
-              workspace={workspace}
-              onCollapse={() => setCodingSidebarCollapsed(true)}
-              openWorkspaceDialogKey={openWorkspaceDialogKey}
-              onCommandPalette={() => setShowPalette(true)}
-              desktopCollapsed={codingSidebarCollapsed}
-              mobileOpen={false}
-              onMobileClose={() => {}}
-            />
-          </div>
-        </>
+        <UnifiedSidebar
+          currentSessionId={sessionIdState || undefined}
+          onCommandPalette={() => setShowPalette(true)}
+          onNewChat={handleNewSession}
+          mode={mode}
+          workspace={workspace}
+          openWorkspaceDialogKey={openWorkspaceDialogKey}
+          desktopCollapsed={codingSidebarCollapsed}
+          mobileOpen={false}
+          onMobileClose={() => {}}
+        />
       )}
 
       {/* Sidebar toggle — positioned between sidebar and main content on desktop */}
@@ -1094,13 +1079,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
         <div className="flex shrink-0 flex-col items-center pt-2">
           <button
             type="button"
-            onClick={() => {
-              if (mode === 'coding') {
-                handleCodingSidebarToggle()
-              } else {
-                window.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', ctrlKey: true, metaKey: false, bubbles: true }))
-              }
-            }}
+            onClick={() => handleCodingSidebarToggle()}
             aria-label="Toggle sidebar"
             title="Toggle sidebar (Ctrl+B)"
             className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
@@ -1129,13 +1108,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
             <div className="flex flex-1 shrink-0 items-center gap-1.5">
               <button
                 type="button"
-                onClick={() => {
-                  if (mode === 'coding') {
-                    handleCodingSidebarToggle()
-                  } else {
-                    setMobileSidebarOpen(true)
-                  }
-                }}
+                onClick={() => handleCodingSidebarToggle()}
                 aria-label="Toggle sidebar"
                 title="Toggle sidebar (Ctrl+B)"
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
@@ -1254,32 +1227,19 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
       {/* Body — main content column. On mobile the Sidebar is
           position:fixed (overlay drawer), rendered here for z-stacking. */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        {/* Mobile sidebar overlay. Both sidebars stay mounted; CSS hides inactive one. */}
+        {/* Mobile sidebar overlay — single unified sidebar */}
         {isMobile && (
-          <>
-            <div className={mode !== 'coding' ? 'contents' : 'hidden'}>
-              <Sidebar
-                currentSessionId={sessionIdState || undefined}
-                onCommandPalette={() => setShowPalette(true)}
-                onNewChat={handleNewSession}
-                mode={mode}
-                mobileOpen={mobileSidebarOpen}
-                onMobileClose={() => setMobileSidebarOpen(false)}
-              />
-            </div>
-            <div className={mode === 'coding' ? 'contents' : 'hidden'}>
-              <CodingSidebar
-                currentSessionId={sessionIdState || undefined}
-                workspace={workspace}
-                onCollapse={() => setCodingSidebarCollapsed(true)}
-                openWorkspaceDialogKey={openWorkspaceDialogKey}
-                onCommandPalette={() => setShowPalette(true)}
-                desktopCollapsed={codingSidebarCollapsed}
-                mobileOpen={mobileSidebarOpen}
-                onMobileClose={() => setMobileSidebarOpen(false)}
-              />
-            </div>
-          </>
+          <UnifiedSidebar
+            currentSessionId={sessionIdState || undefined}
+            onCommandPalette={() => setShowPalette(true)}
+            onNewChat={handleNewSession}
+            mode={mode}
+            workspace={workspace}
+            openWorkspaceDialogKey={openWorkspaceDialogKey}
+            desktopCollapsed={false}
+            mobileOpen={mobileSidebarOpen}
+            onMobileClose={() => setMobileSidebarOpen(false)}
+          />
         )}
 
         <main id="main" ref={mainColumnRef} className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-[10px] bg-(--bg-page) shadow-sm">
