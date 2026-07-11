@@ -493,10 +493,46 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
         const used = Number(d.used) || Math.max(limit - remaining, 0)
         const paused = Boolean(d.paused)
         set((draft) => {
-          draft.activeLoop = prompt || limit > 0
-            ? { prompt, limit, remaining, used, paused }
-            : null
+          if (prompt || limit > 0) {
+            draft.activeLoop = {
+              prompt,
+              limit,
+              remaining,
+              used,
+              paused,
+              // Loop Engine v2 fields — map snake_case server data to camelCase
+              ...(d.current_iteration !== undefined ? { currentIteration: Number(d.current_iteration) } : {}),
+              ...(d.total_tokens_used !== undefined ? { totalTokensUsed: Number(d.total_tokens_used) } : {}),
+              ...(d.goal !== undefined ? { goal: d.goal as string | null } : {}),
+              ...(d.goal_met !== undefined ? { goalMet: Boolean(d.goal_met) } : {}),
+              ...(d.consecutive_errors !== undefined ? { consecutiveErrors: Number(d.consecutive_errors) } : {}),
+              ...(d.no_progress_warning !== undefined ? { noProgressWarning: Boolean(d.no_progress_warning) } : {}),
+              ...(Array.isArray(d.turn_history) ? { turnHistory: d.turn_history.map((t: Record<string, unknown>) => ({
+                iteration: Number(t.iteration) || 0,
+                success: t.success as boolean | null,
+                tokensUsed: Number(t.tokens_used) || 0,
+                durationMs: t.duration_ms != null ? Number(t.duration_ms) : null,
+                error: (t.error as string) ?? null,
+                errorCategory: (t.error_category as string) ?? null,
+              })) } : {}),
+              ...(d.config && typeof d.config === 'object' ? { config: d.config as import('./types').LoopConfigSummary } : {}),
+            }
+          } else {
+            draft.activeLoop = null
+          }
         })
+        break
+      }
+
+      case 'loop_turn_complete': {
+        // Individual turn result — already reflected in next loop_status,
+        // but available for toast/notification consumers.
+        break
+      }
+
+      case 'loop_stopped': {
+        // Loop terminated — already clears activeLoop via the final
+        // loop_status event, but available for notification consumers.
         break
       }
 

@@ -7,6 +7,8 @@ export type ParsedLoopCommand =
   | { kind: 'pause' }
   | { kind: 'resume' }
   | { kind: 'stop' }
+  | { kind: 'status' }
+  | { kind: 'config'; args: string }
   | { kind: 'unknown_subcommand'; subcommand: string }
 
 const LOOP_LIMITS = new Set([5, 10, 20, 50])
@@ -39,6 +41,10 @@ export function parseLoopCommand(content: string): ParsedLoopCommand {
       return args ? { kind: 'unknown_subcommand', subcommand } : { kind: 'resume' }
     case 'stop':
       return args ? { kind: 'unknown_subcommand', subcommand } : { kind: 'stop' }
+    case 'status':
+      return args ? { kind: 'unknown_subcommand', subcommand } : { kind: 'status' }
+    case 'config':
+      return { kind: 'config', args }
     default:
       return { kind: 'unknown_subcommand', subcommand }
   }

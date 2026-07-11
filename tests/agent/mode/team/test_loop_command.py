@@ -46,8 +46,16 @@ def test_parse_loop_set_rejects_extra_arguments() -> None:
     assert parse_loop_command("/loop:set 10 now") is None
 
 
+def test_parse_loop_status_command() -> None:
+    command = parse_loop_command("/loop:status")
+    assert command is not None
+    assert command.action == "status"
+    assert command.prompt is None
+    assert command.limit is None
+
+
 def test_parse_loop_rejects_unknown_subcommand() -> None:
-    assert parse_loop_command("/loop:status") is None
+    assert parse_loop_command("/loop:foo") is None
 
 
 def test_parse_loop_controls() -> None:
@@ -59,4 +67,5 @@ def test_parse_loop_controls() -> None:
 def test_is_loop_command_matches_loop_namespace_and_prompt_form() -> None:
     assert is_loop_command('/loop "prompt"')
     assert is_loop_command("/loop:pause")
+    assert is_loop_command("/loop:status")
     assert not is_loop_command("/init")

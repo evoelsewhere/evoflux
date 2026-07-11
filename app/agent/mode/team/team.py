@@ -29,6 +29,11 @@ from loguru import logger
 from sqlmodel import col, select
 
 from app.agent.hooks.continuation import CONTINUATION_DIRECTIVE
+from app.agent.mode.team.loop_engine import (
+    LoopConfig,
+    LoopEngine,
+    LoopState,
+)
 from app.agent.mode.team.mailbox import Message, TeamMailbox
 from app.agent.mode.team.member import (
     AlreadyWorkingError,
@@ -48,6 +53,7 @@ from app.agent.schemas.events import DoneEvent
 from app.agent.tools.registry import Tool
 from app.core.db import DbFactory, resolve_db_factory
 from app.core.paths import session_workspace_dir
+from app.core.runtime_settings import load_runtime_settings
 from app.models.chat import ChatSession, SessionMessage
 from app.services import memory_stream_store as stream_store
 from app.services import snapshot_service
@@ -70,18 +76,16 @@ if TYPE_CHECKING:
 _LOOP_LIMITS = {5, 10, 20, 50}
 
 
-@dataclass
-class LoopState:
-    prompt: str
-    remaining: int
-    paused: bool = False
+# Re-export for backward compatibility with existing imports
+__all_loop_compat = ["LoopState", "LoopConfig", "LoopEngine"]
 
-
+# The old LoopCommand is a thin parse-result; kept frozen for safety.
 @dataclass(frozen=True)
 class LoopCommand:
-    action: Literal["start", "set", "pause", "resume", "stop"]
+    action: Literal["start", "set", "pause", "resume", "stop", "status", "config"]
     prompt: str | None = None
     limit: int | None = None
+    config_overrides: dict[str, str] | None = None
 
 
 def _loop_status_payload(
@@ -117,6 +121,24 @@ def parse_loop_command(content: str) -> LoopCommand | None:
         if limit not in _LOOP_LIMITS:
             return None
         return LoopCommand(action="set", limit=limit)
+
+    if invocation.subcommand == "status":
+        return LoopCommand(action="status")
+
+    if invocation.subcommand == "config":
+        # Parse key=value pairs from arguments
+        # e.g. /loop:config goal="all tests pass" verify="uv run pytest -q" evolve=true
+        raw = invocation.arguments.strip()
+        if not raw:
+            return LoopCommand(action="config", config_overrides={})
+        overrides: dict[str, str] = {}
+        # Simple key=value parser — handles quoted values
+        import re as _re
+        for match in _re.finditer(r'(\w+)=(?:"([^"]*)"|([\S]+))', raw):
+            key = match.group(1)
+            value = match.group(2) if match.group(2) is not None else match.group(3)
+            overrides[key] = value
+        return LoopCommand(action="config", config_overrides=overrides) if overrides else None
 
     if invocation.subcommand not in {"pause", "resume", "stop"} or invocation.argv:
         return None
@@ -298,7 +320,7 @@ class AgentTeam:
 
         # Guard: only emit done after at least one user turn has started
         self._has_active_turn: bool = False
-        self._loop_states: dict[str, LoopState] = {}
+        self._loop_engines: dict[str, LoopEngine] = {}
         self._loop_limits: dict[str, int] = {}
 
         # Delegator name -> recipients whose team_delegate/team_reject has not
@@ -364,18 +386,13 @@ class AgentTeam:
 
     def loop_status(self, session_id: str) -> dict[str, object] | None:
         """Return the current loop status for a session, if a loop is active."""
-        loop = self._loop_states.get(session_id)
-        if loop is None:
+        engine = self._loop_engines.get(session_id)
+        if engine is None:
             limit = self._loop_limits.get(session_id)
             if limit is None:
                 return None
             return _loop_status_payload(prompt=None, limit=limit, remaining=limit)
-        return _loop_status_payload(
-            prompt=loop.prompt,
-            limit=self._loop_limits.get(session_id, 10),
-            remaining=loop.remaining,
-            paused=loop.paused,
-        )
+        return engine.status_payload()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -470,6 +487,83 @@ class AgentTeam:
 
             if await self._activate_queued_user_messages(session_id):
                 return
+
+            # ── Loop iteration result bookkeeping ────────────────────────
+            engine = self._loop_engines.get(session_id)
+            if engine is not None:
+                # Determine if this iteration had any errors (lead or member).
+                had_error = self.lead.state == "error" or any(
+                    m.state == "error" for m in self.members.values()
+                )
+                if had_error:
+                    engine.record_error("Agent reported error state.")
+                else:
+                    engine.record_success()
+
+                # Run verifier if configured
+                if engine.config.verify_command:
+                    passed, output = await self._run_loop_verifier(
+                        engine.config.verify_command
+                    )
+                    if passed:
+                        engine.check_goal_met(verifier_passed=True)
+                    else:
+                        engine.record_error(
+                            f"Verifier failed: {output}",
+                            category="recoverable",
+                        )
+
+                # Emit turn_complete SSE event
+                last_record = (
+                    engine.state.turn_history[-1]
+                    if engine.state.turn_history
+                    else None
+                )
+                if last_record is not None:
+                    await stream_store.push_event(
+                        session_id,
+                        StreamEnvelope.from_parts(
+                            "loop_turn_complete",
+                            engine.turn_complete_payload(last_record),
+                        ),
+                    )
+
+                # Re-check termination after recording results
+                if not engine.should_continue():
+                    reason = engine.stop_reason or "user_stop"
+                    logger.info(
+                        "team_loop_terminated session_id={} reason={}",
+                        session_id,
+                        reason,
+                    )
+                    await stream_store.push_event(
+                        session_id,
+                        StreamEnvelope.from_parts(
+                            "loop_stopped", engine.stopped_payload()
+                        ),
+                    )
+                    await stream_store.push_event(
+                        session_id,
+                        StreamEnvelope.from_parts(
+                            "loop_status",
+                            {
+                                "prompt": None,
+                                "limit": 0,
+                                "remaining": 0,
+                                "used": 0,
+                                "paused": False,
+                            },
+                        ),
+                    )
+                    self._loop_engines.pop(session_id, None)
+                else:
+                    # Emit updated loop_status with new turn history
+                    await stream_store.push_event(
+                        session_id,
+                        StreamEnvelope.from_parts(
+                            "loop_status", engine.status_payload()
+                        ),
+                    )
 
             if await self._activate_loop_message(session_id):
                 return
@@ -619,18 +713,58 @@ class AgentTeam:
         return True
 
     async def _activate_loop_message(self, session_id: str) -> bool:
-        loop = self._loop_states.get(session_id)
-        if loop is None or loop.paused or loop.remaining <= 0:
+        engine = self._loop_engines.get(session_id)
+        if engine is None:
             return False
 
-        loop.remaining -= 1
-        if loop.remaining <= 0:
-            self._loop_states.pop(session_id, None)
+        # Check termination conditions via the engine
+        if not engine.should_continue():
+            reason = engine.stop_reason or "user_stop"
+            logger.info(
+                "team_loop_terminated session_id={} reason={}",
+                session_id,
+                reason,
+            )
+            # Emit loop_stopped event before clearing
+            await stream_store.push_event(
+                session_id,
+                StreamEnvelope.from_parts(
+                    "loop_stopped",
+                    engine.stopped_payload(),
+                ),
+            )
+            # Emit final loop_status (empty) so frontend clears the indicator
+            await stream_store.push_event(
+                session_id,
+                StreamEnvelope.from_parts(
+                    "loop_status",
+                    {
+                        "prompt": None,
+                        "limit": 0,
+                        "remaining": 0,
+                        "used": 0,
+                        "paused": False,
+                    },
+                ),
+            )
+            self._loop_engines.pop(session_id, None)
+            return False
+
+        # Enforce delay between iterations if configured
+        if engine.config.delay_between_iterations > 0:
+            import asyncio as _asyncio_delay
+            await _asyncio_delay.sleep(engine.config.delay_between_iterations)
+
+        # Begin iteration — records start time, decrements remaining, and
+        # returns the turn record (which carries the effective prompt).
+        record = engine.begin_iteration()
+        prompt = record.prompt
 
         try:
             await stream_store.init_turn(session_id, keep_subscribers=True)
         except Exception as exc:
             logger.warning("team_init_loop_turn_failed error={}", exc)
+            engine.record_error(f"init_turn failed: {exc}", category="fatal")
             return False
 
         try:
@@ -641,26 +775,15 @@ class AgentTeam:
             db_factory = resolve_db_factory(self.lead.db_factory)
             async with db_factory() as db:
                 row = await save_message(
-                    db, session_uuid, HumanMessage(content=loop.prompt)
+                    db, session_uuid, HumanMessage(content=prompt)
                 )
                 await db.commit()
         except Exception as exc:
             logger.warning("team_save_loop_message_failed error={}", exc)
+            engine.record_error(f"save_message failed: {exc}", category="fatal")
             return False
 
         self._has_active_turn = True
-        await stream_store.push_event(
-            session_id,
-            StreamEnvelope.from_parts(
-                "loop_status",
-                _loop_status_payload(
-                    prompt=loop.prompt,
-                    limit=self._loop_limits.get(session_id, 10),
-                    remaining=loop.remaining,
-                    paused=loop.paused,
-                ),
-            ),
-        )
         await stream_store.push_event(
             session_id,
             StreamEnvelope.from_parts(
@@ -670,7 +793,7 @@ class AgentTeam:
                     "agent": self.lead.name,
                     "message_ids": [str(row.id)],
                     "messages": [
-                        {"id": str(row.id), "content": loop.prompt},
+                        {"id": str(row.id), "content": prompt},
                     ],
                 },
             ),
@@ -678,15 +801,54 @@ class AgentTeam:
         msg = Message(
             from_agent="user",
             to_agent=self.lead.name,
-            content=f"[user]: {loop.prompt}",
+            content=f"[user]: {prompt}",
         )
         await self.mailbox.send(to=self.lead.name, message=msg)
         logger.info(
-            "team_loop_message_activated session_id={} remaining={}",
+            "team_loop_message_activated session_id={} iteration={}/{} remaining={}",
             session_id,
-            loop.remaining,
+            engine.state.current_iteration,
+            engine.config.max_iterations,
+            engine.state.remaining,
         )
         return True
+
+    async def _run_loop_verifier(
+        self, verify_command: str
+    ) -> tuple[bool, str]:
+        """Run the loop verifier command in the workspace.
+
+        Returns ``(passed, output)`` where *passed* is ``True`` when the
+        subprocess exits with code 0.  On timeout or other failure the
+        output contains whatever was captured (stderr preferred over stdout).
+
+        Runs in a thread executor so the event loop stays responsive.
+        """
+        import asyncio as _asyncio
+
+        def _run_sync() -> tuple[bool, str]:
+            import subprocess
+            try:
+                result = subprocess.run(
+                    verify_command,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    cwd=self.workspace or ".",
+                )
+                output = result.stderr.strip() or result.stdout.strip()
+                passed = result.returncode == 0
+                if not passed and len(output) > 500:
+                    output = output[:500] + "…"
+                return passed, output
+            except subprocess.TimeoutExpired:
+                return False, f"Verifier timed out after 60s: {verify_command}"
+            except Exception as exc:
+                return False, f"Verifier execution error: {exc}"
+
+        loop = _asyncio.get_running_loop()
+        return await loop.run_in_executor(None, _run_sync)
 
     # ------------------------------------------------------------------
     # User message entry point
@@ -754,7 +916,15 @@ class AgentTeam:
             await self._restore_or_drop_members_for_lead(session_id)
 
         if interrupt:
-            self._loop_states.pop(session_id, None)
+            engine = self._loop_engines.pop(session_id, None)
+            if engine is not None:
+                engine.stop(reason="user_stop")
+                await stream_store.push_event(
+                    session_id,
+                    StreamEnvelope.from_parts(
+                        "loop_stopped", engine.stopped_payload()
+                    ),
+                )
             cancelled = [m for m in self.all_members if m.state == "working"]
             for member in cancelled:
                 member._cancel_event.set()
@@ -775,26 +945,45 @@ class AgentTeam:
             if loop_command.action == "start":
                 assert loop_command.prompt is not None
                 content = loop_command.prompt
-                limit = self._loop_limits.get(session_id, 10)
+                loop_defaults = load_runtime_settings().loop
+                default_limit = loop_defaults.default_max_iterations
+                limit = self._loop_limits.get(session_id, default_limit)
                 remaining = max(limit - 1, 0)
                 if remaining > 0:
-                    self._loop_states[session_id] = LoopState(
+                    config = LoopConfig(
                         prompt=loop_command.prompt,
-                        remaining=remaining,
+                        max_iterations=limit,
+                        evolve_prompt=loop_defaults.default_evolve_prompt,
+                        verify_command=loop_defaults.default_verify_command,
+                        max_total_tokens=loop_defaults.default_max_total_tokens,
+                        no_progress_threshold=loop_defaults.default_no_progress_threshold,
+                        max_consecutive_errors=loop_defaults.default_max_consecutive_errors,
+                        delay_between_iterations=loop_defaults.default_delay_between_iterations,
+                    )
+                    self._loop_engines[session_id] = LoopEngine(config)
+                else:
+                    self._loop_engines.pop(session_id, None)
+                # Emit status from the engine if present
+                engine = self._loop_engines.get(session_id)
+                if engine is not None:
+                    await stream_store.push_event(
+                        session_id,
+                        StreamEnvelope.from_parts(
+                            "loop_status", engine.status_payload()
+                        ),
                     )
                 else:
-                    self._loop_states.pop(session_id, None)
-                await stream_store.push_event(
-                    session_id,
-                    StreamEnvelope.from_parts(
-                        "loop_status",
-                        _loop_status_payload(
-                            prompt=loop_command.prompt,
-                            limit=limit,
-                            remaining=remaining,
+                    await stream_store.push_event(
+                        session_id,
+                        StreamEnvelope.from_parts(
+                            "loop_status",
+                            _loop_status_payload(
+                                prompt=loop_command.prompt,
+                                limit=limit,
+                                remaining=remaining,
+                            ),
                         ),
-                    ),
-                )
+                    )
             elif loop_command.action == "set":
                 assert loop_command.limit is not None
                 self._loop_limits[session_id] = loop_command.limit
@@ -811,40 +1000,37 @@ class AgentTeam:
                     ),
                 )
             elif loop_command.action == "pause":
-                if session_id in self._loop_states:
-                    self._loop_states[session_id].paused = True
-                    state = self._loop_states[session_id]
+                engine = self._loop_engines.get(session_id)
+                if engine is not None:
+                    engine.pause()
                     await stream_store.push_event(
                         session_id,
                         StreamEnvelope.from_parts(
-                            "loop_status",
-                            _loop_status_payload(
-                                prompt=state.prompt,
-                                limit=self._loop_limits.get(session_id, 10),
-                                remaining=state.remaining,
-                                paused=True,
-                            ),
+                            "loop_status", engine.status_payload()
                         ),
                     )
                 skip_delivery = True
             elif loop_command.action == "resume":
-                if session_id in self._loop_states:
-                    self._loop_states[session_id].paused = False
-                    state = self._loop_states[session_id]
+                engine = self._loop_engines.get(session_id)
+                if engine is not None:
+                    engine.resume()
                     await stream_store.push_event(
                         session_id,
                         StreamEnvelope.from_parts(
-                            "loop_status",
-                            _loop_status_payload(
-                                prompt=state.prompt,
-                                limit=self._loop_limits.get(session_id, 10),
-                                remaining=state.remaining,
-                            ),
+                            "loop_status", engine.status_payload()
                         ),
                     )
                 skip_delivery = True
             elif loop_command.action == "stop":
-                self._loop_states.pop(session_id, None)
+                engine = self._loop_engines.pop(session_id, None)
+                if engine is not None:
+                    engine.stop(reason="user_stop")
+                    await stream_store.push_event(
+                        session_id,
+                        StreamEnvelope.from_parts(
+                            "loop_stopped", engine.stopped_payload()
+                        ),
+                    )
                 await stream_store.push_event(
                     session_id,
                     StreamEnvelope.from_parts(
@@ -858,6 +1044,85 @@ class AgentTeam:
                         },
                     ),
                 )
+                skip_delivery = True
+            elif loop_command.action == "status":
+                engine = self._loop_engines.get(session_id)
+                if engine is not None:
+                    await stream_store.push_event(
+                        session_id,
+                        StreamEnvelope.from_parts(
+                            "loop_status", engine.status_payload()
+                        ),
+                    )
+                else:
+                    limit = self._loop_limits.get(session_id)
+                    if limit is not None:
+                        await stream_store.push_event(
+                            session_id,
+                            StreamEnvelope.from_parts(
+                                "loop_status",
+                                _loop_status_payload(
+                                    prompt=None, limit=limit, remaining=limit
+                                ),
+                            ),
+                        )
+                    else:
+                        await stream_store.push_event(
+                            session_id,
+                            StreamEnvelope.from_parts(
+                                "loop_status",
+                                {
+                                    "prompt": None,
+                                    "limit": 0,
+                                    "remaining": 0,
+                                    "used": 0,
+                                    "paused": False,
+                                },
+                            ),
+                        )
+                skip_delivery = True
+            elif loop_command.action == "config":
+                overrides = loop_command.config_overrides or {}
+                engine = self._loop_engines.get(session_id)
+                if engine is not None:
+                    # Apply overrides to the live engine's config
+                    cfg = engine.config
+                    if "goal" in overrides:
+                        cfg.goal = overrides["goal"] if overrides["goal"] else None
+                    if "verify" in overrides:
+                        cfg.verify_command = overrides["verify"] if overrides["verify"] else None
+                    if "evolve" in overrides:
+                        cfg.evolve_prompt = overrides["evolve"].lower() in ("true", "1", "yes")
+                    if "budget" in overrides:
+                        try:
+                            cfg.max_total_tokens = int(overrides["budget"])
+                        except ValueError:
+                            pass
+                    if "threshold" in overrides:
+                        try:
+                            cfg.no_progress_threshold = int(overrides["threshold"])
+                        except ValueError:
+                            pass
+                    if "errors" in overrides:
+                        try:
+                            cfg.max_consecutive_errors = int(overrides["errors"])
+                        except ValueError:
+                            pass
+                    if "delay" in overrides:
+                        try:
+                            cfg.delay_between_iterations = float(overrides["delay"])
+                        except ValueError:
+                            pass
+                    await stream_store.push_event(
+                        session_id,
+                        StreamEnvelope.from_parts(
+                            "loop_status", engine.status_payload()
+                        ),
+                    )
+                else:
+                    # No active loop — store overrides for next loop start
+                    # (applied when /loop <prompt> creates the engine)
+                    pass
                 skip_delivery = True
 
         if skip_delivery:

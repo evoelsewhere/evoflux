@@ -24,6 +24,7 @@ import { McpServerDetailPage } from '@/routes/settings.mcp.$name'
 import { SandboxSettingsPage } from '@/routes/settings.sandbox'
 import { ProvidersSettingsPage } from '@/routes/settings.providers'
 import { DreamSettingsPage } from '@/routes/settings.dream'
+import { LoopSettingsPage } from '@/routes/settings.loop'
 import { NotificationSettingsPage } from '@/routes/settings.notifications'
 import { BackendConnectionPage } from '@/routes/settings.connection'
 import { DiagnosticsPage } from '@/routes/settings.diagnostics'
@@ -36,6 +37,7 @@ function pageTitleFor(path: string): string {
   if (path === 'providers') return 'Providers'
   if (path === 'sandbox') return 'Sandbox'
   if (path === 'dream') return 'Dream'
+  if (path === 'loop') return 'Loop'
   if (path === 'notifications') return 'Notifications'
   if (path === 'diagnostics') return 'Diagnostics'
   return 'Settings'
@@ -60,6 +62,7 @@ function SettingsContent({ path }: { path: string }) {
   if (section === 'providers') return <ProvidersSettingsPage />
   if (section === 'sandbox') return <SandboxSettingsPage />
   if (section === 'dream') return <DreamSettingsPage />
+  if (section === 'loop') return <LoopSettingsPage />
   if (section === 'notifications') return <NotificationSettingsPage />
   if (section === 'diagnostics') return <DiagnosticsPage />
   return <SettingsHubPage />
