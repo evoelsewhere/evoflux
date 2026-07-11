@@ -13,7 +13,6 @@ import {
   KeyRound,
   Moon,
   Plug,
-  Repeat,
   Server,
   Shield,
   Sparkles,
@@ -40,7 +39,6 @@ type SidebarPath =
   | '/settings/sandbox'
   | '/settings/connection'
   | '/settings/dream'
-  | '/settings/loop'
   | '/settings/notifications'
   | '/settings/diagnostics'
   | '/telemetry'
@@ -199,12 +197,6 @@ export function SettingsSidebar({ currentPath, onNavigate }: SettingsSidebarProp
         label: 'Dream',
         icon: Moon,
         matchPrefix: '/settings/dream',
-      },
-      {
-        to: '/settings/loop',
-        label: 'Loop',
-        icon: Repeat,
-        matchPrefix: '/settings/loop',
       },
       {
         to: '/settings/notifications',

@@ -56,9 +56,6 @@ export const queryKeys = {
   dream: {
     config: () => ['dream', 'config'] as const,
   },
-  loop: {
-    config: () => ['loop', 'config'] as const,
-  },
   agentFiles: {
     all: () => ['agentFiles'] as const,
     list: () => ['agentFiles', 'list'] as const,

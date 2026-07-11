@@ -56,40 +56,12 @@ export interface AgentStream {
   _revertedSuffix?: ContentBlock[]
 }
 
-export interface LoopTurnSummary {
-  iteration: number
-  success: boolean | null
-  tokensUsed: number
-  durationMs: number | null
-  error: string | null
-  errorCategory: string | null
-}
-
-export interface LoopConfigSummary {
-  goal: string | null
-  evolve_prompt: boolean
-  max_total_tokens: number | null
-  no_progress_threshold: number
-  verify_command: string | null
-  max_consecutive_errors: number
-  delay_between_iterations: number
-}
-
 export interface ActiveLoop {
   prompt: string | null
   limit: number
   remaining: number
   used: number
   paused: boolean
-  // Loop Engine v2 fields (optional for backward compat)
-  currentIteration?: number
-  totalTokensUsed?: number
-  goal?: string | null
-  goalMet?: boolean
-  consecutiveErrors?: number
-  noProgressWarning?: boolean
-  turnHistory?: LoopTurnSummary[]
-  config?: LoopConfigSummary
 }
 
 export interface BrowserTabInfo {
