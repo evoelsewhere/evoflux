@@ -108,17 +108,6 @@ class MemoryExtractionSettings(BaseModel):
     model: str | None = None
 
 
-class PromptSuggestionsSettings(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    # Enable contextual follow-up suggestion chips after each response.
-    enabled: bool = True
-    # Maximum number of suggestions to generate (1–5).
-    count: int = 3
-    # Override the suggestions model ('provider:model'). Null = use the chat model.
-    model: str | None = None
-
-
 class RuntimeSettings(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -128,9 +117,6 @@ class RuntimeSettings(BaseModel):
     dream: DreamSettings = Field(default_factory=DreamSettings)
     memory_extraction: MemoryExtractionSettings = Field(
         default_factory=MemoryExtractionSettings
-    )
-    prompt_suggestions: PromptSuggestionsSettings = Field(
-        default_factory=PromptSuggestionsSettings
     )
     memory_vector: MemoryVectorSettings = Field(default_factory=MemoryVectorSettings)
     server: ServerSettings = Field(default_factory=ServerSettings)

@@ -105,8 +105,7 @@ export interface TeamStoreState {
   planApproval: PlanApprovalPending | null
   permissionRequest: PermissionRequestPending | null
   askUserQuestion: AskUserQuestionPending | null
-  promptSuggestions: string[] | null
-  _pendingMessages: PendingMessage[]
+    _pendingMessages: PendingMessage[]
   _sessionGeneration: number
   hasMore: boolean
   nextCursor: string | null

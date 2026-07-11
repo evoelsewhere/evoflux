@@ -201,8 +201,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const activeLoop     = useTeamStore((s) => s.activeLoop)
   const isConnected    = useTeamStore((s) => s.isConnected)
   const isSessionLoading = useTeamStore((s) => s.isSessionLoading)
-  const promptSuggestions = useTeamStore((s) => s.promptSuggestions)
-
+  const leadName       = useTeamStore((s) => s.leadName)
   // Utility modal state lives in useUIStore so only one can be open at a time.
   const wikiOpen = useUIStore((s) => s.wikiOpen)
   const schedulerOpen = useUIStore((s) => s.schedulerOpen)
@@ -1384,13 +1383,8 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
             lastError={activeLastError}
             isContinuing={isContinuing && activeAgent === leadName}
             onContinue={activeAgent === leadName ? continueTeam : undefined}
-            suggestions={activeAgent === leadName ? promptSuggestions : null}
+            suggestions={null}
             chapters={activeAgent === leadName ? chapters : undefined}
-            onSuggestion={(text) => {
-              useTeamStore.setState({ promptSuggestions: null })
-              inputRef.current?.setValue(text)
-              inputRef.current?.focus()
-            }}
             emptyState={
               mode === 'coding' && workspace ? (
                 <div className="flex flex-col items-center justify-center py-16">

@@ -70,10 +70,6 @@ interface AgentViewProps {
   onContinue?: () => void
   /** Optional slot rendered in place of the default mascot empty state. */
   emptyState?: React.ReactNode
-  /** Called when the user clicks a suggestion chip in the empty state. */
-  onSuggestion?: (text: string) => void
-  /** Contextual follow-up suggestions from the last agent response. */
-  suggestions?: string[] | null
   /** Session chapters for anchor markers and TOC dividers. */
   chapters?: Chapter[]
 }
@@ -376,7 +372,7 @@ const BlockRenderer = memo(function BlockRenderer({ block, isStreaming, sessionI
   }
 })
 
-export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError, isContinuing = false, onContinue, emptyState, onSuggestion, suggestions, chapters }: AgentViewProps) {
+export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError, isContinuing = false, onContinue, emptyState, chapters }: AgentViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const pinnedRef = useRef(true)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
@@ -752,21 +748,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
              </div>
            )}
 
-            {/* Contextual follow-up suggestions — shown when agent is idle */}
-            {!isWorking && !isError && suggestions && suggestions.length > 0 && onSuggestion && (
-              <div className="flex flex-wrap gap-2 pt-2">
-                {suggestions.map((s, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => onSuggestion(s)}
-                    className="inline-flex max-w-[280px] truncate rounded-full border border-(--color-border) bg-(--bg-card) px-3 py-1.5 text-xs text-(--color-text-2) transition-colors hover:border-(--color-accent)/40 hover:bg-(--bg-key) hover:text-(--color-text)"
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            )}
+            </div>
          </div>
       </div>
     </div>
