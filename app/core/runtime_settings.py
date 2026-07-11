@@ -119,6 +119,27 @@ class PromptSuggestionsSettings(BaseModel):
     model: str | None = None
 
 
+class LoopSettings(BaseModel):
+    """Default configuration for the Loop Engine v2."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    # Default max iterations when /loop starts
+    default_max_iterations: int = 10
+    # Enable prompt evolution by default
+    default_evolve_prompt: bool = True
+    # Default verifier command (null = no verifier)
+    default_verify_command: str | None = None
+    # Default token budget per loop (null = unlimited)
+    default_max_total_tokens: int | None = None
+    # No-progress threshold
+    default_no_progress_threshold: int = 3
+    # Max consecutive errors before stopping
+    default_max_consecutive_errors: int = 3
+    # Delay between iterations in seconds
+    default_delay_between_iterations: float = 0.0
+
+
 class RuntimeSettings(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -126,6 +147,7 @@ class RuntimeSettings(BaseModel):
         default_factory=TitleGenerationSettings
     )
     dream: DreamSettings = Field(default_factory=DreamSettings)
+    loop: LoopSettings = Field(default_factory=LoopSettings)
     memory_extraction: MemoryExtractionSettings = Field(
         default_factory=MemoryExtractionSettings
     )

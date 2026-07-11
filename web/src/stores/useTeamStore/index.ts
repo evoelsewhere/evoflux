@@ -127,6 +127,7 @@ export type {
   ActivityKind,
   AgentStream,
   CacheInvalidation,
+  LoopTurnSummary,
   PendingMessage,
   TeamStoreState,
   TeamStoreActions,
@@ -559,7 +560,7 @@ export const useTeamStore = create<TeamStore>()(
     sendLoopCommand: async (command, prompt, options) => {
       const sessionId = get().sessionId
       const isStart = prompt !== undefined
-      const canCreateSession = isStart || command.startsWith('/loop:set ')
+      const canCreateSession = isStart || command.startsWith('/loop:set ') || command === '/loop:status' || command.startsWith('/loop:config ')
       if (!sessionId && !canCreateSession) {
         set((draft) => { draft.error = 'No active session for loop command' })
         return

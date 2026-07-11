@@ -16,6 +16,10 @@ export {
   useUpdateDreamConfigMutation,
   useTriggerDreamMutation,
 } from './useWikiQuery'
+export {
+  useLoopConfigQuery,
+  useUpdateLoopConfigMutation,
+} from './useLoopConfigQuery'
 export { useQuoteQuery } from './useQuoteQuery'
 export { useWorkspaceFilesQuery } from './useWorkspaceFilesQuery'
 export {
