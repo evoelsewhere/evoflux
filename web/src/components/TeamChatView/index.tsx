@@ -72,9 +72,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { isAgentRole, type AgentRole } from '@/lib/agent-roles'
-import type { ActiveLoop, AgentStream, LoopTurnSummary } from '@/stores/useTeamStore'
+import type { ActiveLoop, AgentStream } from '@/stores/useTeamStore'
 import { AgentTopbar } from '@/components/AgentTopbar'
-import { formatTokens } from '@/utils/format'
 import { TaskProgressPill } from '@/components/TaskProgressPill'
 import { type InputBarHandle, type SlashCommand, type SnippetCommand } from '../InputBar'
 import { FloatingInputBar } from '../FloatingInputBar'
@@ -697,8 +696,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
           { id: 'loop:pause', label: 'loop:pause', displayName: 'loop:pause', description: 'Pause the active coding loop' },
           { id: 'loop:resume', label: 'loop:resume', displayName: 'loop:resume', description: 'Resume the paused coding loop' },
           { id: 'loop:stop', label: 'loop:stop', displayName: 'loop:stop', description: 'Stop the active coding loop' },
-          { id: 'loop:status', label: 'loop:status', displayName: 'loop:status', description: 'Show loop status and history' },
-          { id: 'loop:config', label: 'loop:config <key=value>', displayName: 'loop:config', insertText: 'loop:config', description: 'Set loop config: goal, verify, evolve, budget, threshold, errors, delay', keepInputOpen: true },
         ]
       : []),
     ...(commandsQ.data?.commands ?? []).map((c) => {
@@ -793,14 +790,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
           pushToast({ tone: 'success', title: verb === 'stop' ? 'Loop stopped' : `Loop ${verb}d` })
         })
         break
-      case 'loop:status':
-        void runLoopCommand('/loop:status')
-        break
-      case 'loop:config':
-        // For config, we need the full command with args from the input
-        // The id is just 'loop:config', actual args come from the input field
-        void runLoopCommand('/loop:config')
-        break
       case 'init':
         // Prompt body lives on the backend so it can be tweaked without a
         // web rebuild and stays the single source of truth.
@@ -855,12 +844,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
       case 'stop':
         await runLoopCommand(`/loop:${parsed.kind}`)
         pushToast({ tone: 'success', title: parsed.kind === 'stop' ? 'Loop stopped' : `Loop ${parsed.kind}d` })
-        return true
-      case 'status':
-        await runLoopCommand('/loop:status')
-        return true
-      case 'config':
-        await runLoopCommand(content)
         return true
     }
   }, [pushToast, runLoopCommand])
@@ -1015,16 +998,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const loopLabel = activeLoop
     ? `${activeLoop.paused ? 'Loop paused' : activeLoop.prompt ? 'Loop active' : 'Loop ready'}${activeLoop.prompt ? `: "${activeLoop.prompt}"` : ''}`
     : null
-  const loopProgressParts = activeLoop
-    ? [
-        `${activeLoop.used}/${activeLoop.limit}`,
-        activeLoop.totalTokensUsed ? `${formatTokens(activeLoop.totalTokensUsed)} tokens` : null,
-      ].filter(Boolean)
-    : null
-  const loopProgress = loopProgressParts ? loopProgressParts.join(' | ') : null
-  const loopGoal = activeLoop?.goal ?? null
-  const loopNoProgress = activeLoop?.noProgressWarning ?? false
-  const loopRecentTurns = activeLoop?.turnHistory?.slice(-2) ?? []
+  const loopProgress = activeLoop ? `${activeLoop.used}/${activeLoop.limit}` : null
 
   // While `loadSession` fetches history, the reset store has an (empty)
   // stream for the lead, so the AgentView branch would win and render its
@@ -1190,9 +1164,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
                 label={loopLabel}
                 progress={loopProgress}
                 compact={false}
-                goal={loopGoal}
-                noProgressWarning={loopNoProgress}
-                recentTurns={loopRecentTurns}
               />
             )}
             {!isMobile && mode === 'coding' && (
@@ -1612,42 +1583,19 @@ function LoopStatusPill({
   label,
   progress,
   compact,
-  goal,
-  noProgressWarning,
-  recentTurns,
 }: {
   label: string
   progress: string
   compact: boolean
-  goal?: string | null
-  noProgressWarning?: boolean
-  recentTurns?: LoopTurnSummary[]
 }) {
-  const titleParts = [label, progress, goal ? `Goal: ${goal}` : null].filter(Boolean)
   return (
     <div
       className="mx-1 flex max-w-[46vw] shrink-0 items-center gap-1 rounded-full border border-(--color-border) bg-(--bg-card) px-2 py-1 text-xs text-(--color-text) shadow-sm md:max-w-sm"
-      title={titleParts.join(' · ')}
+      title={`${label} · ${progress} turns`}
     >
       <span className="min-w-0 truncate font-medium">
         {compact ? 'Loop' : label}
       </span>
-      {noProgressWarning && (
-        <span className="shrink-0 text-(--color-warning)" title="No progress detected">⚠</span>
-      )}
-      {recentTurns && recentTurns.length > 0 && (
-        <span className="flex shrink-0 gap-0.5">
-          {recentTurns.map((t) => (
-            <span
-              key={t.iteration}
-              className={t.success === true ? 'text-green-500' : t.success === false ? 'text-red-500' : 'text-(--color-text-muted)'}
-              title={t.error ?? `Turn ${t.iteration}`}
-            >
-              {t.success === true ? '✓' : t.success === false ? '✗' : '…'}
-            </span>
-          ))}
-        </span>
-      )}
       <span className="shrink-0 font-mono text-xs text-(--color-text-muted)">{progress}</span>
     </div>
   )
@@ -1655,39 +1603,12 @@ function LoopStatusPill({
 
 function MobileLoopStatusCard({ activeLoop }: { activeLoop: ActiveLoop }) {
   const state = activeLoop.paused ? 'Paused' : activeLoop.prompt ? 'Active' : 'Ready'
-  const progressParts = [
-    `${activeLoop.used}/${activeLoop.limit}`,
-    activeLoop.totalTokensUsed ? `${formatTokens(activeLoop.totalTokensUsed)} tokens` : null,
-  ].filter(Boolean)
-  const recentTurns = activeLoop.turnHistory?.slice(-3) ?? []
   return (
     <div className="mb-1 rounded-md border border-(--color-border) bg-(--bg-card) px-2 py-2 text-sm">
       <div className="flex items-center justify-between gap-2">
         <span className="font-medium text-(--color-text)">Loop {state.toLowerCase()}</span>
-        <span className="font-mono text-xs text-(--color-text-muted)">{progressParts.join(' | ')}</span>
+        <span className="font-mono text-xs text-(--color-text-muted)">{activeLoop.used}/{activeLoop.limit}</span>
       </div>
-      {activeLoop.goal && (
-        <p className="mt-1 text-xs text-(--color-text-muted)" title={activeLoop.goal}>
-          Goal: {activeLoop.goal}{activeLoop.goalMet ? ' ✓' : ''}
-        </p>
-      )}
-      {activeLoop.noProgressWarning && (
-        <p className="mt-1 text-xs text-(--color-warning)">⚠ No progress detected</p>
-      )}
-      {recentTurns.length > 0 && (
-        <div className="mt-1 flex gap-1">
-          {recentTurns.map((t) => (
-            <span
-              key={t.iteration}
-              className={`font-mono text-xs ${t.success === true ? 'text-green-500' : t.success === false ? 'text-red-500' : 'text-(--color-text-muted)'}`}
-              title={t.error ?? `Turn ${t.iteration}`}
-            >
-              {t.success === true ? '✓' : t.success === false ? '✗' : '…'}
-              {t.iteration}
-            </span>
-          ))}
-        </div>
-      )}
       {activeLoop.prompt && (
         <p className="mt-1 line-clamp-2 text-xs text-(--color-text-muted)" title={activeLoop.prompt}>
           {activeLoop.prompt}

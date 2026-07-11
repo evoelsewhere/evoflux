@@ -21,7 +21,6 @@ from app.api.routes.mcp import router as mcp_router
 from app.api.routes.observability import router as observability_router
 from app.api.routes.quote import router as quote_router
 from app.api.routes.scheduler import router as scheduler_router
-from app.api.routes.loop import router as loop_router
 from app.api.routes.settings import router as settings_router
 from app.api.routes.skills import router as skills_router
 from app.api.routes.snippets import router as snippets_router
@@ -188,7 +187,6 @@ def create_app() -> FastAPI:
     app.include_router(scheduler_router, prefix="/api/scheduler", tags=["scheduler"])
     app.include_router(mcp_router, prefix="/api/mcp", tags=["mcp"])
     app.include_router(settings_router, prefix="/api/settings", tags=["settings"])
-    app.include_router(loop_router, prefix="/api", tags=["loop"])
     app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
     app.include_router(dream_router, prefix="/api", tags=["dream"])
     app.include_router(

@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.agent.mode.team.loop_engine import LoopConfig, LoopEngine
+from app.agent.mode.team.team import LoopState
 from app.models.chat import ChatSession, SessionMessage
 
 
@@ -302,16 +302,15 @@ class TestAgentTeamUserMessage:
         team.lead.db_factory = db_factory
         team.mailbox.send = AsyncMock()
         session_id = str(uuid.uuid7())
-        config = LoopConfig(prompt="keep going", max_iterations=3)
-        team._loop_engines[session_id] = LoopEngine(config)
+        team._loop_states[session_id] = LoopState(prompt="keep going", remaining=2)
 
         try:
             await team.handle_user_message("/loop:pause", session_id=session_id)
-            assert team._loop_engines[session_id].state.paused is True
+            assert team._loop_states[session_id].paused is True
             await team.handle_user_message("/loop:resume", session_id=session_id)
-            assert team._loop_engines[session_id].state.paused is False
+            assert team._loop_states[session_id].paused is False
             await team.handle_user_message("/loop:stop", session_id=session_id)
-            assert session_id not in team._loop_engines
+            assert session_id not in team._loop_states
             team.mailbox.send.assert_not_awaited()
             async with db_factory() as db:
                 messages = (await db.exec(select(SessionMessage))).all()

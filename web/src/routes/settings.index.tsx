@@ -14,7 +14,6 @@ import {
   KeyRound,
   Moon,
   Plug,
-  Repeat,
   Shield,
   Sparkles,
   Wrench,
@@ -212,14 +211,6 @@ export function SettingsHubPage() {
                   icon={Moon}
                   title="Dream"
                   description="Cron agent that synthesises sessions into wiki topics"
-                  count={null}
-                  countLabel=""
-                />
-                <SettingsNavCard
-                  to="/settings/loop"
-                  icon={Repeat}
-                  title="Loop"
-                  description="Configure default loop behaviour — iterations, evolution, verification"
                   count={null}
                   countLabel=""
                 />
