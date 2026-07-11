@@ -716,15 +716,7 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
         break
       }
 
-      case 'prompt_suggestions': {
-        const suggestions = Array.isArray(d.suggestions)
-          ? (d.suggestions as string[]).filter((s) => typeof s === 'string' && s.trim())
-          : []
-        if (suggestions.length > 0) {
-          set((draft) => { draft.promptSuggestions = suggestions })
-        }
-        break
-      }
+
     }
   }
 }

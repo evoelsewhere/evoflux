@@ -311,19 +311,6 @@ class PlanApprovalRequestedEvent(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class PromptSuggestionsEvent(BaseModel):
-    """Contextual follow-up suggestions for the user after an agent response.
-
-    Delivered after ``done`` so the frontend can render 2–3 clickable chips
-    below the latest assistant message.  Suggestions are short enough to fit
-    in a chip (≤ 60 chars each).
-    """
-
-    type: Literal["prompt_suggestions"] = "prompt_suggestions"
-    suggestions: list[str]  # 1–3 short follow-up prompts
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
 class ChapterCreatedEvent(BaseModel):
     """An agent called mark_chapter — a new session chapter was persisted.
 

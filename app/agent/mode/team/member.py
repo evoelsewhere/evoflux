@@ -45,7 +45,6 @@ from app.agent.hooks.stream_publisher import StreamPublisherHook
 from app.agent.hooks.summarization import build_team_summarization_hook
 from app.agent.hooks.title_generation import build_title_generation_hook
 from app.agent.hooks.memory_extraction import build_memory_extraction_hook
-from app.agent.hooks.prompt_suggestions import build_prompt_suggestions_hook
 from app.agent.mode.team.hooks.queued_injection import QueuedMessageInjectionHook
 from app.agent.mode.team.hooks.team_inbox import TeamInboxHook
 from app.agent.mode.team.hooks.team_prompt import AgentTeamProtocolHook
@@ -981,14 +980,6 @@ class TeamMemberBase(abc.ABC):
             )
             if mem_hook is not None:
                 hooks.append(mem_hook)
-
-        # Prompt suggestion chips after each response (lead only, fire-and-forget).
-        if self._role_label == "lead":
-            sugg_hook = build_prompt_suggestions_hook(
-                provider=runtime_provider or self.agent.llm_provider,
-            )
-            if sugg_hook is not None:
-                hooks.append(sugg_hook)
 
         # Continuation stamp — one-shot, flags the first assistant message
         # of this run as a continuation of the prior assistant turn so the
