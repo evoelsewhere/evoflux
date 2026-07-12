@@ -100,23 +100,41 @@ async def _resolve_name_anywhere(
     return matches
 
 
-async def _find_cross_repo_references(db, project_ids, node_id):
-    """Find cross-repo references pointing at this node."""
+async def _find_cross_repo_references(
+    db, project_ids, node_id, *, direction: str = "both"
+):
+    """Find cross-repo references for this node.
+
+    Args:
+        direction: 'in' (who references me), 'out' (what I reference), 'both'
+    """
     if not project_ids:
         return []
 
     from app.models.code_graph import CrossRepoEdge
     from sqlmodel import col, select
 
-    refs = (
-        await db.exec(
-            select(CrossRepoEdge)
-            .where(
-                col(CrossRepoEdge.project_id).in_(project_ids),
+    conditions = [
+        col(CrossRepoEdge.project_id).in_(project_ids),
+        col(CrossRepoEdge.status) == "resolved",
+    ]
+
+    # Add direction filter
+    if direction == "in":
+        conditions.append(col(CrossRepoEdge.dst_node_id) == node_id)
+    elif direction == "out":
+        conditions.append(col(CrossRepoEdge.src_node_id) == node_id)
+    else:  # both
+        from sqlmodel import or_
+        conditions.append(
+            or_(
                 col(CrossRepoEdge.dst_node_id) == node_id,
-                col(CrossRepoEdge.status) == "resolved",
+                col(CrossRepoEdge.src_node_id) == node_id,
             )
         )
+
+    refs = (
+        await db.exec(select(CrossRepoEdge).where(*conditions))
     ).all()
     return refs
 
@@ -290,8 +308,10 @@ async def _code_graph(
                     db, workspace_id=match_ws_id, node_id=node.id, direction="in"
                 )
 
-            # Get cross-repo references
-            cross_repo = await _find_cross_repo_references(db, project_ids, node.id)
+            # Get cross-repo references (both directions)
+            cross_repo = await _find_cross_repo_references(
+                db, project_ids, node.id, direction="both"
+            )
 
             sections.append(
                 _render_graph(
@@ -348,16 +368,33 @@ def _render_graph(
         if importers:
             lines.append(f"  imported by ({len(importers)}): {', '.join(importers[:10])}")
 
-    # Cross-repo
-    if cross_repo:
-        lines.append(f"  cross-repo refs ({len(cross_repo)}):")
-        for edge in cross_repo[:10]:
+    # Cross-repo inbound (who references me from other repos)
+    cross_in = [e for e in cross_repo if e.dst_node_id == node.id]
+    cross_out = [e for e in cross_repo if e.src_node_id == node.id]
+
+    if cross_in:
+        lines.append(f"  referenced by ({len(cross_in)} cross-repo):")
+        for edge in cross_in[:10]:
             loc = (
                 f"{edge.src_file_path}:{edge.src_line}"
                 if edge.src_line
                 else edge.src_file_path
             )
             lines.append(f"    ← {loc} (`{edge.raw_reference}`)")
+        if len(cross_in) > 10:
+            lines.append(f"    … and {len(cross_in) - 10} more")
+
+    if cross_out:
+        lines.append(f"  references ({len(cross_out)} cross-repo):")
+        for edge in cross_out[:10]:
+            loc = (
+                f"{edge.src_file_path}:{edge.src_line}"
+                if edge.src_line
+                else edge.src_file_path
+            )
+            lines.append(f"    → {loc} (`{edge.raw_reference}`)")
+        if len(cross_out) > 10:
+            lines.append(f"    … and {len(cross_out) - 10} more")
 
     return "\n".join(lines)
 
