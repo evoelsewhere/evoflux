@@ -9,9 +9,11 @@
  * - No file count limit
  * - Better performance for large repositories
  * - Native filesystem access (no HTTP proxy)
+ * - Virtual scrolling for directories with >100 files
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { FixedSizeList as VirtualList } from 'react-window'
 import {
   ChevronRight,
   FileText,
@@ -22,6 +24,9 @@ import {
 import { cn } from '@/lib/utils'
 import { isTauriAvailable, tauriListDirectory, type DirEntry } from '@/api/tauri-workspace'
 import { formatBytes } from '@/utils/format'
+
+// Threshold for enabling virtual scrolling
+const VIRTUAL_SCROLL_THRESHOLD = 100
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -279,6 +284,34 @@ export function NativeFileTree({
   }
 
   const treeNodes = buildTreeNodes(rootEntries)
+
+  // Use virtual scrolling for large directories
+  if (treeNodes.length > VIRTUAL_SCROLL_THRESHOLD) {
+    const ITEM_HEIGHT = 28 // px per row
+    return (
+      <div className={cn('overflow-auto', className)}>
+        <VirtualList
+          height={Math.min(600, treeNodes.length * ITEM_HEIGHT)} // max 600px
+          itemCount={treeNodes.length}
+          itemSize={ITEM_HEIGHT}
+          width="100%"
+        >
+          {({ index, style }) => (
+            <div style={style}>
+              <TreeNodeItem
+                node={treeNodes[index]}
+                depth={0}
+                selectedPath={selectedPath}
+                onFileSelect={onFileSelect}
+                onToggle={handleToggle}
+                workspaceRoot={workspaceRoot}
+              />
+            </div>
+          )}
+        </VirtualList>
+      </div>
+    )
+  }
 
   return (
     <div className={cn('overflow-auto', className)}>
