@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-start-file-watcher"
+description = "Enables the start_file_watcher command without any pre-configured scope."
+commands.allow = ["start_file_watcher"]
+
+[[permission]]
+identifier = "deny-start-file-watcher"
+description = "Denies the start_file_watcher command without any pre-configured scope."
+commands.deny = ["start_file_watcher"]
