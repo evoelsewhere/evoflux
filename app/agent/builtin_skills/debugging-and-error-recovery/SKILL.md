@@ -18,6 +18,10 @@ Systematic debugging with structured triage. When something breaks, stop adding 
 - An error appears in logs or console
 - Something worked before and stopped working
 
+
+## When NOT to Use
+
+- When the issue is clearly understood and doesn't require investigation
 ## The Stop-the-Line Rule
 
 When anything unexpected happens:

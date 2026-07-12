@@ -136,6 +136,14 @@ Tag every finding so the reader knows how far to trust it:
 <2–4 sentence direct answer to the original question, with overall confidence level>
 ```
 
+
+
+## Verification
+
+- # Research & Fact-Checking
+- - A claim that needs verifying before someone acts on it
+- Copy this checklist when applying the skill:
+
 ## Common Rationalizations
 
 | Rationalization | Reality |

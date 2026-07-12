@@ -3,7 +3,11 @@ name: idea-refine
 description: Refines raw ideas into sharp, actionable concepts through structured divergent and convergent thinking. Use when an idea is still vague, when you need to stress-test assumptions before committing to a plan, or when you want to expand options before converging on one. Triggers on "ideate", "refine this idea", or "stress-test my plan".
 ---
 
-# Idea Refine
+
+
+## When to Use
+
+- Use when An idea is still vague, when you need to stress-test assumptions before committing to a plan, or when you want to expand options before converging on one# Idea Refine
 
 Refines raw ideas into sharp, actionable concepts worth building through structured divergent and convergent thinking.
 
@@ -176,3 +180,8 @@ After completing an ideation session:
 - [ ] A "Not Doing" list makes trade-offs explicit
 - [ ] The output is a concrete artifact (markdown one-pager), not just conversation
 - [ ] The user confirmed the final direction before any implementation work
+
+## When NOT to Use
+
+- When the task doesn't match this skill's domain
+- For simple tasks that don't require structured workflows

@@ -4,7 +4,11 @@ description: "Use this skill any time a .pptx file is involved in any way — as
 license: Proprietary. LICENSE.txt has complete terms
 ---
 
-# PPTX Skill
+
+
+## When to Use
+
+- Use this skill any time a# PPTX Skill
 
 ## Quick Reference
 
@@ -230,3 +234,8 @@ pdftoppm -jpeg -r 150 -f N -l N output.pdf slide-fixed
 - `npm install -g pptxgenjs` - creating from scratch
 - LibreOffice (`soffice`) - PDF conversion (auto-configured for sandboxed environments via `{SKILL_DIR}/scripts/office/soffice.py`)
 - Poppler (`pdftoppm`) - PDF to images
+
+## When NOT to Use
+
+- When the task doesn't match this skill's domain
+- For simple tasks that don't require structured workflows

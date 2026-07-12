@@ -19,6 +19,10 @@ Multi-dimensional code review with quality gates. Every change gets reviewed bef
 - When refactoring existing code
 - After any bug fix (review both the fix and the regression test)
 
+
+## When NOT to Use
+
+- During initial implementation (review comes after)
 ## The Five-Axis Review
 
 Every review evaluates code across these dimensions:

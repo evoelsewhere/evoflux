@@ -7,7 +7,11 @@ description: >-
   X", "make yourself faster/smarter".
 ---
 
-# Self-Healing Skill
+
+
+## When to Use
+
+- See skill description for trigger conditions# Self-Healing Skill
 
 This skill lets the agent modify its own on-disk configuration in
 response to a user request. All changes are surgical edits to files
@@ -285,6 +289,14 @@ Read the lead's `.md` (current `temperature: 0.4`), nudge by `+0.2`:
 Show the user the absolute numbers, not just "+0.2", so the cap (1.0)
 and floor (0.0) are obvious. Apply and confirm "Active on my next turn."
 
+
+
+## Verification
+
+- For those, follow the read → diff → confirm → edit recipe.
+- 5. **Wait for confirmation** — do NOT write until the user says "go" /
+- ### Provider sanity check before swapping `model`
+
 ## Failure modes — bail out instead of guessing
 
 - Target file not found → ask the user to confirm the path / agent name.
@@ -294,3 +306,8 @@ and floor (0.0) are obvious. Apply and confirm "Active on my next turn."
   provider) → explain why and suggest the nearest valid alternative.
 - Env var for a new provider isn't set → refuse to switch; tell the user
   what key is needed and where to put it (`{EVOFLUX_CONFIG_DIR}/.env`).
+
+## When NOT to Use
+
+- When the task doesn't match this skill's domain
+- For simple tasks that don't require structured workflows

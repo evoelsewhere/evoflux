@@ -4,7 +4,11 @@ description: Use this skill whenever the user wants to do anything with PDF file
 license: Proprietary. LICENSE.txt has complete terms
 ---
 
-# PDF Processing Guide
+
+
+## When to Use
+
+- Use this skill whenever the user wants to do anything with PDF files# PDF Processing Guide
 
 ## Overview
 
@@ -306,9 +310,20 @@ with open("encrypted.pdf", "wb") as output:
 | OCR scanned PDFs | pytesseract | Convert to image first |
 | Fill PDF forms | pdf-lib or pypdf (see FORMS.md) | See FORMS.md |
 
+
+
+## Verification
+
+- if table:  # Check if table is not empty
+
 ## Next Steps
 
 - For advanced pypdfium2 usage, see REFERENCE.md
 - For JavaScript libraries (pdf-lib), see REFERENCE.md
 - If you need to fill out a PDF form, follow the instructions in FORMS.md
 - For troubleshooting guides, see REFERENCE.md
+
+## When NOT to Use
+
+- When the task doesn't match this skill's domain
+- For simple tasks that don't require structured workflows

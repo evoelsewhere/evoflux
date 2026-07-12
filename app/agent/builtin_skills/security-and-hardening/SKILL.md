@@ -18,6 +18,10 @@ Security-first development practices for web applications. Treat every external 
 - Adding file uploads, webhooks, or callbacks
 - Handling payment or PII data
 
+
+## When NOT to Use
+
+- For non-security-related code changes
 ## Process: Threat Model First
 
 Controls bolted on without a threat model are guesses. Before hardening, spend five minutes thinking like an attacker:

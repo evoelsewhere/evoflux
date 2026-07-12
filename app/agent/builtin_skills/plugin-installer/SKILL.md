@@ -5,7 +5,11 @@ description: >-
   Use when the user provides a URL and asks to add / install a plugin.
 ---
 
-# Plugin Installer
+
+
+## When to Use
+
+- See skill description for trigger conditions# Plugin Installer
 
 A plugin is a single `.py` file in `{EVOFLUX_CONFIG_DIR}/plugins/` that
 hooks into the agent loop. Two contracts are valid:
@@ -89,9 +93,22 @@ Plugin installs are global in `{EVOFLUX_CONFIG_DIR}/plugins/`.
 - **One file, no dependencies.** Refuse multi-file packages.
 - **Never silently overwrite.** Always diff and confirm.
 
+
+
+## Verification
+
+- 2. **Validate** the body contains `async def plugin(` or `class Plugin(`.
+- 4. **Collision** → read existing, show diff, confirm before overwrite.
+- - **Never silently overwrite.** Always diff and confirm.
+
 ## Failure modes
 
 - **HTML instead of Python** → user pasted a `blob` URL; ask for raw.
 - **Validation fails** → not a plugin; show first 200 chars and stop.
 - **Plugin missing after restart** → check EvoFlux log for
   `plugin_load_failed` (the loader skips broken files defensively).
+
+## When NOT to Use
+
+- When the task doesn't match this skill's domain
+- For simple tasks that don't require structured workflows

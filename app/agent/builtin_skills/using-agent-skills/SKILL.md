@@ -3,7 +3,11 @@ name: using-agent-skills
 description: Discovers and invokes agent skills. Use when starting a session or when you need to discover which skill applies to the current task. This is the meta-skill that governs how all other skills are discovered and invoked.
 ---
 
-# Using Agent Skills
+
+
+## When to Use
+
+- Use when Starting a session or when you need to discover which skill applies to the current task# Using Agent Skills
 
 ## Overview
 
@@ -160,6 +164,14 @@ For a complete feature, the typical skill sequence is:
 
 Not every task needs every skill. A bug fix might only need: `debugging-and-error-recovery` → `test-driven-development` → `code-review-and-quality`.
 
+
+
+## Verification
+
+- Don't silently fill in ambiguous requirements. The most common failure mode is making wrong assumptions and running with them unchecked. Surface uncertainty early — it's cheaper than rework.
+- ### 6. Verify, Don't Assume
+- 1. Making wrong assumptions without checking
+
 ## Quick Reference
 
 | Phase | Skill | One-Line Summary |
@@ -187,3 +199,8 @@ Not every task needs every skill. A bug fix might only need: `debugging-and-erro
 | Ship | documentation-and-adrs | Document the why, not just the what |
 | Ship | observability-and-instrumentation | Structured logs, RED metrics, traces, symptom-based alerts |
 | Ship | shipping-and-launch | Pre-launch checklist, monitoring, rollback plan |
+
+## When NOT to Use
+
+- When the task doesn't match this skill's domain
+- For simple tasks that don't require structured workflows

@@ -5,7 +5,11 @@ license: Complete terms in LICENSE.txt
 ---
 
 
-# Theme Factory Skill
+
+
+## When to Use
+
+- Toolkit for styling artifacts with a theme# Theme Factory Skill
 
 This skill provides a curated collection of professional font and color themes themes, each with carefully selected color palettes and font pairings. Once a theme is chosen, it can be applied to any artifact.
 
@@ -55,5 +59,16 @@ After a preferred theme is selected:
 3. Ensure proper contrast and readability
 4. Maintain the theme's visual identity across all slides
 
+
+
+## Verification
+
+- 3. **Wait for selection**: Get explicit confirmation about the chosen theme
+
 ## Create your Own Theme
 To handle cases where none of the existing themes work for an artifact, create a custom theme. Based on provided inputs, generate a new theme similar to the ones above. Give the theme a similar name describing what the font/color combinations represent. Use any basic description provided to choose appropriate colors/fonts. After generating the theme, show it for review and verification. Following that, apply the theme as described above.
+
+## When NOT to Use
+
+- When the task doesn't match this skill's domain
+- For simple tasks that don't require structured workflows

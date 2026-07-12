@@ -20,6 +20,11 @@ Most engineering organizations are good at building things. Few are good at remo
 - Planning the lifecycle of a new system (deprecation planning starts at design time)
 - Deciding whether to maintain a legacy system or invest in migration
 
+
+## When NOT to Use
+
+- When the task doesn't match this skill's domain
+- For simple tasks that don't require structured workflows
 ## Core Principles
 
 ### Code Is a Liability

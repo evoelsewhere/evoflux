@@ -4,7 +4,11 @@ description: Applies Anthropic's official brand colors and typography to any sor
 license: Complete terms in LICENSE.txt
 ---
 
-# Anthropic Brand Styling
+
+
+## When to Use
+
+- Use when Brand colors or style guidelines, visual formatting, or company design standards apply# Anthropic Brand Styling
 
 ## Overview
 
@@ -57,6 +61,13 @@ To access Anthropic's official brand identity and style resources, use this skil
 - Cycles through orange, blue, and green accents
 - Maintains visual interest while staying on-brand
 
+
+
+## Verification
+
+- Read back the output to verify quality
+- Confirm all requirements are met
+
 ## Technical Details
 
 ### Font Management
@@ -71,3 +82,8 @@ To access Anthropic's official brand identity and style resources, use this skil
 - Uses RGB color values for precise brand matching
 - Applied via python-pptx's RGBColor class
 - Maintains color fidelity across different systems
+
+## When NOT to Use
+
+- When the task doesn't match this skill's domain
+- For simple tasks that don't require structured workflows
