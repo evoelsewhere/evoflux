@@ -45,7 +45,8 @@ import {
 import { useQueryClient } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
 import { workspaceMediaUrl, updateSessionWorkspace, uploadWorkspaceFiles, moveWorkspaceFile, deleteWorkspaceFile, browseWorkspaces } from '@/api/client'
-import { isTauriAvailable, tauriReadWorkspaceFile, tauriOpenWorkspaceFile } from '@/api/tauri-workspace'
+import { isTauriAvailable, tauriReadWorkspaceFile, tauriOpenWorkspaceFile, tauriListDirectory } from '@/api/tauri-workspace'
+import { NativeFileTree } from './NativeFileTree'
 import { downloadWorkspaceFile } from '@/lib/workspace-download'
 import { useWorkspaceFilesQuery } from '@/queries'
 import { queryKeys } from '@/queries/keys'
@@ -1466,7 +1467,29 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
                       <p className="px-2 py-4 text-xs italic text-(--color-text-subtle)">
                         No files match "{searchQuery}"
                       </p>
+                    ) : isTauri && workspaceRoot && !visiblePaths ? (
+                      // Native file tree for Tauri desktop (lazy loading, no HTTP proxy)
+                      <NativeFileTree
+                        workspaceRoot={workspaceRoot}
+                        selectedPath={selectedPath}
+                        onFileSelect={(entry) => {
+                          if (!entry) {
+                            handleSelectFile(null)
+                            return
+                          }
+                          // Convert DirEntry to WorkspaceFileInfo for compatibility
+                          handleSelectFile({
+                            path: entry.path,
+                            name: entry.name,
+                            size: entry.size,
+                            mtime: entry.mtime,
+                            mime: entry.mime,
+                          })
+                        }}
+                        className="flex-1 overflow-auto"
+                      />
                     ) : (
+                      // Fallback: HTTP-based tree for web browser or when search is active
                       <TreeNodeView
                         node={tree}
                         depth={0}
