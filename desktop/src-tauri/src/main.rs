@@ -1637,6 +1637,7 @@ fn main() {
             workspace::list_workspace_files,
             workspace::read_workspace_file,
             workspace::open_workspace_file_with_handle,
+            workspace::list_directory,
         ])
         .setup(|app| {
             install_desktop_menus(app)?;

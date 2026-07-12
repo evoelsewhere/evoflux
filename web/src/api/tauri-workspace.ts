@@ -108,3 +108,34 @@ export async function tauriWorkspaceFileDataUrl(
 export async function tauriOpenWorkspaceFile(root: string, path: string): Promise<void> {
   return tauriInvoke<void>('open_workspace_file_with_handle', { root, path })
 }
+
+/** A single directory entry from list_directory. */
+export interface DirEntry {
+  name: string
+  path: string
+  is_dir: boolean
+  size: number
+  mtime: number
+  mime: string
+}
+
+/** Response from list_directory. */
+export interface DirListingResult {
+  path: string
+  parent: string | null
+  entries: DirEntry[]
+}
+
+/**
+ * List immediate children of a directory (lazy loading).
+ *
+ * Unlike tauriListWorkspaceFiles which recursively walks the entire tree,
+ * this only lists the immediate children. Directories are expanded on-demand.
+ *
+ * @param root - Absolute path to the workspace root directory.
+ * @param path - POSIX-relative path within the workspace (empty string for root).
+ * @returns Directory listing with entries sorted: dirs first, then alphabetically.
+ */
+export async function tauriListDirectory(root: string, path: string): Promise<DirListingResult> {
+  return tauriInvoke<DirListingResult>('list_directory', { root, path })
+}
