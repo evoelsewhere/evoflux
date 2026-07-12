@@ -748,7 +748,6 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
              </div>
            )}
 
-            </div>
          </div>
       </div>
     </div>
