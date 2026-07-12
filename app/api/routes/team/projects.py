@@ -398,29 +398,46 @@ async def reindex_project_code_graph(
     ``running`` continuously from this call through to "done" instead of
     dipping back to "not running" while indexing is still in progress.
     Callers never sequence "index" then "resolve" by hand.
+
+    Repos are indexed in parallel for better performance on multi-repo projects.
     """
     project = await svc.get_project(db, project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
 
     pairs = await svc.get_project_workspaces(db, project_id)
-    workspace_ids: list[UUID] = []
-    already_running = 0
-    for _link, ws in pairs:
+
+    # Start all index jobs in parallel
+    async def start_index_job(ws):
         _, started = await index_jobs.start(
             workspace_id=ws.id,
             root_path=ws.path,
             languages=body.languages if body else None,
             full=body.full if body else False,
         )
-        workspace_ids.append(ws.id)
+        return ws.id, started
+
+    # Run all index job starts concurrently
+    import asyncio
+    results = await asyncio.gather(*[start_index_job(ws) for _, ws in pairs])
+
+    workspace_ids: list[UUID] = []
+    already_running = 0
+    for ws_id, started in results:
+        workspace_ids.append(ws_id)
         if not started:
             already_running += 1
+
+    # For incremental resolution, track which workspaces actually need re-indexing
+    # If full=True, all workspaces are considered changed
+    changed_workspaces = set(workspace_ids) if (body and body.full) else None
 
     will_resolve = len(workspace_ids) > 1
     if will_resolve:
         await cross_repo_jobs.start(
-            project_id=project_id, wait_for_workspaces=workspace_ids
+            project_id=project_id,
+            wait_for_workspaces=workspace_ids,
+            changed_workspaces=changed_workspaces,
         )
 
     return ProjectReindexStartedResponse(

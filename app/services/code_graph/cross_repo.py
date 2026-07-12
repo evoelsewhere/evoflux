@@ -104,17 +104,38 @@ async def resolve_project(
     db: AsyncSession,
     *,
     project_id: UUID,
+    changed_workspaces: set[UUID] | None = None,
 ) -> CrossRepoResolveStats:
     """Run Tier 0 (reattach) + Tier A (static) resolution for a project.
 
     Tier B (FTS5 lexical matching) is a separate pass — see
     ``resolve_project_tier_b``. The caller controls whether it runs through
     the job registry in ``app/services/code_graph/cross_repo_jobs.py``.
+
+    If ``changed_workspaces`` is provided, only edges involving those workspaces
+    are re-resolved. This enables incremental cross-repo resolution when only
+    some repos have changed.
     """
+    # Quick check: if no workspaces changed and we have a set, skip resolution
+    if changed_workspaces is not None and len(changed_workspaces) == 0:
+        # No repos changed, just return current stats
+        remaining = await _count_unresolved(db, project_id=project_id)
+        return CrossRepoResolveStats(
+            reattached=0,
+            static_resolved=0,
+            still_unresolved=remaining,
+        )
+
     async with sqlite_write_guard():
-        reattached = await _reattach_stale(db, project_id=project_id)
-        reattached += await _reattach_stale_src(db, project_id=project_id)
-        static_resolved = await _resolve_static(db, project_id=project_id)
+        reattached = await _reattach_stale(
+            db, project_id=project_id, changed_workspaces=changed_workspaces
+        )
+        reattached += await _reattach_stale_src(
+            db, project_id=project_id, changed_workspaces=changed_workspaces
+        )
+        static_resolved = await _resolve_static(
+            db, project_id=project_id, changed_workspaces=changed_workspaces
+        )
         remaining = await _count_unresolved(db, project_id=project_id)
         await db.commit()
     return CrossRepoResolveStats(
@@ -136,7 +157,12 @@ async def _count_unresolved(db: AsyncSession, *, project_id: UUID) -> int:
     return int(result)
 
 
-async def _reattach_stale(db: AsyncSession, *, project_id: UUID) -> int:
+async def _reattach_stale(
+    db: AsyncSession,
+    *,
+    project_id: UUID,
+    changed_workspaces: set[UUID] | None = None,
+) -> int:
     """Re-attach ``resolved`` rows whose ``dst_node_id`` went stale because the
     target repo reindexed — cheap name lookup, no re-matching.
 
@@ -153,20 +179,28 @@ async def _reattach_stale(db: AsyncSession, *, project_id: UUID) -> int:
     query per stale row — ``CodeNode`` has no index on ``qualified_name``, so
     that was an unindexed scan repeated per row (measured ~27ms/row on a
     41k-node real project — 74s total for one project's worth of staleness).
+
+    If ``changed_workspaces`` is provided, only re-attach edges targeting
+    those workspaces (incremental optimization).
     """
-    rows = (
-        await db.exec(
-            select(CrossRepoEdge)
-            .outerjoin(CodeNode, col(CrossRepoEdge.dst_node_id) == col(CodeNode.id))
-            .where(
-                col(CrossRepoEdge.project_id) == project_id,
-                col(CrossRepoEdge.status) == "resolved",
-                col(CrossRepoEdge.dst_workspace_id).is_not(None),
-                col(CrossRepoEdge.dst_qualified_name).is_not(None),
-                col(CodeNode.id).is_(None),
-            )
+    # Build base query
+    query = (
+        select(CrossRepoEdge)
+        .outerjoin(CodeNode, col(CrossRepoEdge.dst_node_id) == col(CodeNode.id))
+        .where(
+            col(CrossRepoEdge.project_id) == project_id,
+            col(CrossRepoEdge.status) == "resolved",
+            col(CrossRepoEdge.dst_workspace_id).is_not(None),
+            col(CrossRepoEdge.dst_qualified_name).is_not(None),
+            col(CodeNode.id).is_(None),
         )
-    ).all()
+    )
+
+    # If we know which workspaces changed, only process those
+    if changed_workspaces is not None and len(changed_workspaces) > 0:
+        query = query.where(col(CrossRepoEdge.dst_workspace_id).in_(changed_workspaces))
+
+    rows = (await db.exec(query)).all()
     if not rows:
         return 0
 
