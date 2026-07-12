@@ -292,14 +292,12 @@ def _default_tool_registry() -> dict[str, Tool]:
     )
     from app.agent.tools.builtin.note import note_tool
     from app.agent.tools.builtin.wiki_search import wiki_search
-    from app.agent.tools.builtin.code_graph import (
-        code_map,
-        code_neighbors,
-        code_overview,
-        code_path,
-        code_references,
-        code_search,
-        code_symbol,
+    # Consolidated code graph tools (4 tools instead of 7)
+    from app.agent.tools.builtin.code_graph_consolidated import (
+        search_tool as code_search,
+        graph_tool as code_graph,
+        overview_tool as code_overview,
+        path_tool as code_path,
     )
     from app.agent.tools.builtin.plan import enter_plan_mode, exit_plan_mode
     from app.agent.tools.builtin.ask_user import ask_user
@@ -339,11 +337,8 @@ def _default_tool_registry() -> dict[str, Tool]:
         "memory_search": memory_search,
         "note": note_tool,
         "code_search": code_search,
-        "code_symbol": code_symbol,
-        "code_neighbors": code_neighbors,
+        "code_graph": code_graph,
         "code_overview": code_overview,
-        "code_references": code_references,
-        "code_map": code_map,
         "code_path": code_path,
         "enter_plan_mode": enter_plan_mode,
         "exit_plan_mode": exit_plan_mode,
