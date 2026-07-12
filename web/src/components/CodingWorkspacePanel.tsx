@@ -144,7 +144,7 @@ export function CodingWorkspacePanel({
   isWorking?: boolean
 }) {
   const prefersReducedMotion = useReducedMotion()
-  const { isMacOverlay, isTauri } = usePlatform()
+  const { isMacOverlay } = usePlatform()
   const [tab, setTab] = useState<'files' | 'changed' | 'graph' | 'progress'>(initialTab)
   const [scOpen, setScOpen] = useState(false)
   const [scWorkspace, setScWorkspace] = useState('')
@@ -339,8 +339,8 @@ export function CodingWorkspacePanel({
               <p className="px-2 py-4 text-xs text-(--color-error)">Failed to load files</p>
             ) : files.data?.files.length === 0 ? (
               <p className="px-2 py-4 text-xs text-(--color-text-subtle)">No files shown</p>
-            ) : isTauri ? (
-              // Native file tree for Tauri desktop (lazy loading, no HTTP proxy)
+            ) : (
+              // Native file tree (desktop-only, lazy loading)
               <NativeFileTree
                 workspaceRoot={workspace}
                 selectedPath={selectedFilePath}
@@ -360,12 +360,6 @@ export function CodingWorkspacePanel({
                 }}
                 className="flex-1 overflow-auto"
               />
-            ) : (
-              // Fallback: HTTP-based tree for web browser
-              <>
-                {files.data?.truncated && <p className="mb-2 rounded bg-(--color-warning)/10 px-2 py-1 text-xs text-(--color-warning)">File list truncated — some files may not be shown.</p>}
-                <TreeNodeView node={tree} depth={0} selectedPath={selectedFilePath} onFileSelect={onFileSelect} changedPaths={changedPaths} />
-              </>
             )
           )}
         </div>

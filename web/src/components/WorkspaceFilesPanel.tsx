@@ -45,7 +45,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
 import { workspaceMediaUrl, updateSessionWorkspace, uploadWorkspaceFiles, moveWorkspaceFile, deleteWorkspaceFile, browseWorkspaces } from '@/api/client'
-import { isTauriAvailable, tauriReadWorkspaceFile, tauriOpenWorkspaceFile, tauriListDirectory } from '@/api/tauri-workspace'
+import { tauriReadWorkspaceFile, tauriOpenWorkspaceFile } from '@/api/tauri-workspace'
 import { NativeFileTree } from './NativeFileTree'
 import { downloadWorkspaceFile } from '@/lib/workspace-download'
 import { useWorkspaceFilesQuery } from '@/queries'
@@ -553,17 +553,10 @@ function TextPreview({ sessionId, file, workspaceRoot }: { sessionId: string; fi
 
     async function loadFile() {
       try {
-        let text: string
-        // Native Rust path — no HTTP round-trip.
-        if (isTauriAvailable() && workspaceRoot) {
-          const b64 = await tauriReadWorkspaceFile(workspaceRoot, file.path)
-          text = atob(b64)
-        } else {
-          // HTTP API fallback.
-          const res = await fetch(workspaceMediaUrl(sessionId, file.path))
-          if (!res.ok) throw new Error(`HTTP ${res.status}`)
-          text = await res.text()
-        }
+        // Native Rust path — desktop-only, no HTTP round-trip.
+        if (!workspaceRoot) throw new Error('No workspace root available')
+        const b64 = await tauriReadWorkspaceFile(workspaceRoot, file.path)
+        const text = atob(b64)
         if (!cancelled) {
           setContent(text)
           setError(null)
@@ -658,9 +651,6 @@ function TextPreview({ sessionId, file, workspaceRoot }: { sessionId: string; fi
 }
 
 function BinaryPreview({ sessionId, file, workspaceRoot }: { sessionId: string; file: WorkspaceFileInfo; workspaceRoot?: string | null }) {
-  const url = workspaceMediaUrl(sessionId, file.path)
-  const canOpenNatively = isTauriAvailable() && workspaceRoot
-
   const handleOpenInApp = async () => {
     if (!workspaceRoot) return
     try {
@@ -680,7 +670,7 @@ function BinaryPreview({ sessionId, file, workspaceRoot }: { sessionId: string; 
         </p>
       </div>
       <div className="flex items-center gap-2">
-        {canOpenNatively && (
+        {workspaceRoot && (
           <button
             type="button"
             onClick={() => void handleOpenInApp()}
@@ -808,7 +798,6 @@ function PreviewArea({
   workspaceRoot: string | null
 }) {
   const kind = kindOf(file)
-  const canOpenNatively = isTauriAvailable() && workspaceRoot
 
   const handleOpenInApp = async () => {
     if (!workspaceRoot) return
@@ -832,7 +821,7 @@ function PreviewArea({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          {canOpenNatively && (
+          {workspaceRoot && (
             <button
               type="button"
               onClick={() => void handleOpenInApp()}
@@ -1467,8 +1456,8 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
                       <p className="px-2 py-4 text-xs italic text-(--color-text-subtle)">
                         No files match "{searchQuery}"
                       </p>
-                    ) : isTauri && workspaceRoot && !visiblePaths ? (
-                      // Native file tree for Tauri desktop (lazy loading, no HTTP proxy)
+                    ) : workspaceRoot ? (
+                      // Native file tree (desktop-only, lazy loading)
                       <NativeFileTree
                         workspaceRoot={workspaceRoot}
                         selectedPath={selectedPath}
@@ -1489,19 +1478,10 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
                         className="flex-1 overflow-auto"
                       />
                     ) : (
-                      // Fallback: HTTP-based tree for web browser or when search is active
-                      <TreeNodeView
-                        node={tree}
-                        depth={0}
-                        selectedPath={selectedPath}
-                        sessionId={sessionId}
-                        workspaceRoot={workspaceRoot}
-                        onSelect={handleSelectFile}
-                        onRename={handleRenameFile}
-                        onDelete={handleDeleteFile}
-                        visiblePaths={visiblePaths}
-                        defaultOpen
-                      />
+                      // Fallback when no workspaceRoot (shouldn't happen in desktop-only mode)
+                      <p className="px-2 py-4 text-xs text-(--color-text-subtle)">
+                        No workspace root available
+                      </p>
                     )}
                   </div>
                 </nav>
