@@ -32,18 +32,18 @@ export function useWorkspaceFileWatcher(workspace: string | null) {
     async function startWatching() {
       try {
         // Start the native file watcher
-        await tauriStartFileWatcher(workspace)
+        await tauriStartFileWatcher(workspace!)
 
         if (cancelled) return
 
         // Listen for file change events
-        unlistenRef.current = tauriOnFileChange((events: FileChangeEvent[]) => {
+        unlistenRef.current = tauriOnFileChange((_events: FileChangeEvent[]) => {
           // Invalidate file list and status
-          queryClient.invalidateQueries({ queryKey: queryKeys.coding.files(workspace) })
-          queryClient.invalidateQueries({ queryKey: queryKeys.coding.status(workspace) })
+          queryClient.invalidateQueries({ queryKey: queryKeys.coding.files(workspace!) })
+          queryClient.invalidateQueries({ queryKey: queryKeys.coding.status(workspace!) })
 
           // Invalidate diff for changed paths
-          queryClient.invalidateQueries({ queryKey: queryKeys.coding.diff(workspace) })
+          queryClient.invalidateQueries({ queryKey: queryKeys.coding.diff(workspace!) })
         })
       } catch (err) {
         console.error('Failed to start file watcher:', err)
