@@ -544,6 +544,7 @@ function TextPreview({ sessionId, file, workspaceRoot }: { sessionId: string; fi
   const [content, setContent] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(!tooLarge)
+  const [retryCount, setRetryCount] = useState(0)
 
   useEffect(() => {
     if (tooLarge) return
@@ -564,6 +565,7 @@ function TextPreview({ sessionId, file, workspaceRoot }: { sessionId: string; fi
         }
         if (!cancelled) {
           setContent(text)
+          setError(null)
           setLoading(false)
         }
       } catch (e) {
@@ -578,7 +580,13 @@ function TextPreview({ sessionId, file, workspaceRoot }: { sessionId: string; fi
     return () => {
       cancelled = true
     }
-  }, [sessionId, file.path, tooLarge, workspaceRoot])
+  }, [sessionId, file.path, tooLarge, workspaceRoot, retryCount])
+
+  const handleRetry = () => {
+    setError(null)
+    setLoading(true)
+    setRetryCount((c) => c + 1)
+  }
 
   if (tooLarge) {
     return (
@@ -600,8 +608,15 @@ function TextPreview({ sessionId, file, workspaceRoot }: { sessionId: string; fi
   }
   if (error) {
     return (
-      <div className="flex h-full items-center justify-center px-4 text-center text-xs text-(--color-error)">
-        Failed to load: {error}
+      <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
+        <p className="text-xs text-(--color-error)">Failed to load: {error}</p>
+        <button
+          type="button"
+          onClick={handleRetry}
+          className="flex items-center gap-1 rounded px-2 py-1 text-xs text-(--color-accent) transition-colors hover:bg-(--bg-key)"
+        >
+          <RefreshCw size={12} /> Retry
+        </button>
       </div>
     )
   }

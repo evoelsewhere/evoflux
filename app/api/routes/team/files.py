@@ -183,7 +183,7 @@ async def get_workspace_media(
 #   - Size cap on the walk to avoid pathological workspaces blowing up the
 #     response.  Beyond the cap we truncate and flag it.
 
-_MAX_FILES_LISTED = 2_000
+_MAX_FILES_LISTED = 10_000
 _MAX_GIT_DIFF_CHARS = 512 * 1024
 _MAX_UNTRACKED_DIFF_BYTES = 256 * 1024
 

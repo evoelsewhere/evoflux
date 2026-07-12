@@ -339,7 +339,10 @@ export function CodingWorkspacePanel({
             ) : files.data?.files.length === 0 ? (
               <p className="px-2 py-4 text-xs text-(--color-text-subtle)">No files shown</p>
             ) : (
-              <TreeNodeView node={tree} depth={0} selectedPath={selectedFilePath} onFileSelect={onFileSelect} changedPaths={changedPaths} />
+              <>
+                {files.data?.truncated && <p className="mb-2 rounded bg-(--color-warning)/10 px-2 py-1 text-xs text-(--color-warning)">File list truncated — some files may not be shown.</p>}
+                <TreeNodeView node={tree} depth={0} selectedPath={selectedFilePath} onFileSelect={onFileSelect} changedPaths={changedPaths} />
+              </>
             )
           )}
         </div>
