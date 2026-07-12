@@ -1636,6 +1636,7 @@ fn main() {
             set_tray_session,
             workspace::list_workspace_files,
             workspace::read_workspace_file,
+            workspace::open_workspace_file_with_handle,
         ])
         .setup(|app| {
             install_desktop_menus(app)?;

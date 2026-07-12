@@ -95,3 +95,16 @@ export async function tauriWorkspaceFileDataUrl(
   const b64 = await tauriReadWorkspaceFile(root, path)
   return `data:${mimeType};base64,${b64}`
 }
+
+/**
+ * Open a workspace file with the system's default application.
+ *
+ * Uses the OS default app for the file type (e.g. Excel for .xlsx,
+ * Preview for .png, VS Code for .py).
+ *
+ * @param root - Absolute path to the workspace root directory.
+ * @param path - POSIX-relative path within the workspace.
+ */
+export async function tauriOpenWorkspaceFile(root: string, path: string): Promise<void> {
+  return tauriInvoke<void>('open_workspace_file_with_handle', { root, path })
+}

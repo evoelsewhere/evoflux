@@ -157,6 +157,48 @@ pub fn list_workspace_files(
     })
 }
 
+/// Open a workspace file with the system's default application.
+///
+/// Uses `tauri_plugin_opener` to launch the file in whatever app the OS
+/// associates with its MIME type / extension (e.g. Excel for `.xlsx`,
+/// Preview for `.png`, VS Code for `.py`).
+#[tauri::command]
+pub fn open_workspace_file_with_handle(
+    app: tauri::AppHandle,
+    root: String,
+    path: String,
+) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+
+    let root_path = Path::new(&root);
+    if !root_path.is_dir() {
+        return Err("Workspace root does not exist".into());
+    }
+
+    let root_resolved = root_path
+        .canonicalize()
+        .unwrap_or_else(|_| root_path.to_path_buf());
+
+    let target = root_path.join(&path);
+    let target_resolved = match target.canonicalize() {
+        Ok(r) => r,
+        Err(_) => return Err("File not found".into()),
+    };
+    if !target_resolved.starts_with(&root_resolved) {
+        return Err("Path escapes workspace root".into());
+    }
+    if !target_resolved.is_file() {
+        return Err("Not a file".into());
+    }
+
+    app.opener()
+        .open_path(
+            target_resolved.to_string_lossy().into_owned(),
+            None::<&str>,
+        )
+        .map_err(|e| format!("Failed to open file: {e}"))
+}
+
 /// Read a single workspace file and return its content as a base64 string.
 ///
 /// The caller should decode the base64 to get the raw bytes. This avoids
