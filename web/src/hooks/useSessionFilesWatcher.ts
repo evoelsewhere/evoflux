@@ -32,12 +32,12 @@ export function useSessionFilesWatcher(sessionId: string | null, workspaceRoot?:
     async function startWatching() {
       try {
         // Start the native file watcher
-        await tauriStartFileWatcher(workspaceRoot)
+        await tauriStartFileWatcher(workspaceRoot!)
 
         if (cancelled) return
 
         // Listen for file change events
-        unlistenRef.current = tauriOnFileChange((events: FileChangeEvent[]) => {
+        unlistenRef.current = tauriOnFileChange((_events: FileChangeEvent[]) => {
           // Invalidate the files query to trigger a refetch
           queryClient.invalidateQueries({ queryKey: queryKeys.team.files(sessionId) })
         })
