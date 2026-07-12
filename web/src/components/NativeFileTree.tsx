@@ -1,9 +1,8 @@
 /**
  * NativeFileTree — lazy-loading file tree using Tauri native filesystem.
  *
- * Unlike the existing file tree which fetches all files at once,
- * this component loads directory contents on-demand when the user
- * clicks to expand a folder. This provides:
+ * Desktop-only component that loads directory contents on-demand when
+ * the user clicks to expand a folder. This provides:
  *
  * - Instant initial load (only root directory)
  * - No file count limit
@@ -12,7 +11,7 @@
  * - Virtual scrolling for directories with >100 files
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { FixedSizeList as VirtualList } from 'react-window'
 import {
   ChevronRight,
@@ -22,7 +21,7 @@ import {
   Loader2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { isTauriAvailable, tauriListDirectory, type DirEntry } from '@/api/tauri-workspace'
+import { tauriListDirectory, type DirEntry } from '@/api/tauri-workspace'
 import { formatBytes } from '@/utils/format'
 
 // Threshold for enabling virtual scrolling
@@ -55,16 +54,13 @@ function TreeNodeItem({
   selectedPath,
   onFileSelect,
   onToggle,
-  workspaceRoot,
 }: {
   node: TreeNode
   depth: number
   selectedPath?: string | null
   onFileSelect?: (entry: DirEntry | null) => void
   onToggle: (path: string) => void
-  workspaceRoot: string
 }) {
-  const [loading, setLoading] = useState(false)
   const { entry, children, isExpanded } = node
   const isSelected = entry.path === selectedPath
 
@@ -76,11 +72,15 @@ function TreeNodeItem({
     }
   }, [entry, isSelected, onFileSelect, onToggle])
 
-  const handleExpand = useCallback(() => {
-    if (entry.is_dir) {
-      onToggle(entry.path)
-    }
-  }, [entry.path, onToggle])
+  const handleExpand = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation()
+      if (entry.is_dir) {
+        onToggle(entry.path)
+      }
+    },
+    [entry.is_dir, entry.path, onToggle],
+  )
 
   return (
     <div>
@@ -100,18 +100,12 @@ function TreeNodeItem({
           <>
             <button
               type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                handleExpand()
-              }}
+              onClick={handleExpand}
               className="flex shrink-0 items-center justify-center w-4 h-4"
             >
               <ChevronRight
                 size={12}
-                className={cn(
-                  'transition-transform',
-                  isExpanded && 'rotate-90',
-                )}
+                className={cn('transition-transform', isExpanded && 'rotate-90')}
               />
             </button>
             {isExpanded ? (
@@ -144,13 +138,12 @@ function TreeNodeItem({
               selectedPath={selectedPath}
               onFileSelect={onFileSelect}
               onToggle={onToggle}
-              workspaceRoot={workspaceRoot}
             />
           ))}
         </div>
       )}
 
-      {entry.is_dir && isExpanded && loading && (
+      {entry.is_dir && isExpanded && node.children === null && (
         <div
           className="flex items-center gap-1.5 px-2 py-1 text-xs text-(--color-text-subtle)"
           style={{ paddingLeft: 8 + (depth + 1) * 16 }}
@@ -176,16 +169,9 @@ export function NativeFileTree({
   const [error, setError] = useState<string | null>(null)
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set())
   const [dirChildren, setDirChildren] = useState<Map<string, DirEntry[]>>(new Map())
-  const [loadingDirs, setLoadingDirs] = useState<Set<string>>(new Set())
 
   // Load root directory on mount
   useEffect(() => {
-    if (!isTauriAvailable()) {
-      setError('Native file tree requires Tauri desktop app')
-      setLoading(false)
-      return
-    }
-
     let cancelled = false
 
     async function loadRoot() {
@@ -228,18 +214,11 @@ export function NativeFileTree({
 
       // Load children if not cached
       if (!dirChildren.has(dirPath)) {
-        setLoadingDirs((prev) => new Set(prev).add(dirPath))
         try {
           const result = await tauriListDirectory(workspaceRoot, dirPath)
           setDirChildren((prev) => new Map(prev).set(dirPath, result.entries))
         } catch (e) {
           console.error('Failed to load directory:', e)
-        } finally {
-          setLoadingDirs((prev) => {
-            const next = new Set(prev)
-            next.delete(dirPath)
-            return next
-          })
         }
       }
     },
@@ -304,7 +283,6 @@ export function NativeFileTree({
                 selectedPath={selectedPath}
                 onFileSelect={onFileSelect}
                 onToggle={handleToggle}
-                workspaceRoot={workspaceRoot}
               />
             </div>
           )}
@@ -323,7 +301,6 @@ export function NativeFileTree({
           selectedPath={selectedPath}
           onFileSelect={onFileSelect}
           onToggle={handleToggle}
-          workspaceRoot={workspaceRoot}
         />
       ))}
     </div>
