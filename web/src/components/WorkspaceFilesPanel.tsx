@@ -45,7 +45,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
 import { workspaceMediaUrl, updateSessionWorkspace, uploadWorkspaceFiles, moveWorkspaceFile, deleteWorkspaceFile, browseWorkspaces } from '@/api/client'
-import { isTauriAvailable, tauriReadWorkspaceFile } from '@/api/tauri-workspace'
+import { isTauriAvailable, tauriReadWorkspaceFile, tauriOpenWorkspaceFile } from '@/api/tauri-workspace'
 import { downloadWorkspaceFile } from '@/lib/workspace-download'
 import { useWorkspaceFilesQuery } from '@/queries'
 import { queryKeys } from '@/queries/keys'
@@ -641,8 +641,19 @@ function TextPreview({ sessionId, file, workspaceRoot }: { sessionId: string; fi
   )
 }
 
-function BinaryPreview({ sessionId, file }: { sessionId: string; file: WorkspaceFileInfo }) {
+function BinaryPreview({ sessionId, file, workspaceRoot }: { sessionId: string; file: WorkspaceFileInfo; workspaceRoot?: string | null }) {
   const url = workspaceMediaUrl(sessionId, file.path)
+  const canOpenNatively = isTauriAvailable() && workspaceRoot
+
+  const handleOpenInApp = async () => {
+    if (!workspaceRoot) return
+    try {
+      await tauriOpenWorkspaceFile(workspaceRoot, file.path)
+    } catch (err) {
+      console.error('Failed to open file:', err)
+    }
+  }
+
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
       <FileIcon size={28} className="text-(--color-text-subtle)" />
@@ -653,6 +664,15 @@ function BinaryPreview({ sessionId, file }: { sessionId: string; file: Workspace
         </p>
       </div>
       <div className="flex items-center gap-2">
+        {canOpenNatively && (
+          <button
+            type="button"
+            onClick={() => void handleOpenInApp()}
+            className="flex items-center gap-1.5 rounded-md bg-(--color-accent) px-3 py-1.5 text-xs text-white transition-colors hover:opacity-90"
+          >
+            <FolderOpen size={12} /> Open in App
+          </button>
+        )}
         <a
           href={url}
           target="_blank"
@@ -772,6 +792,17 @@ function PreviewArea({
   workspaceRoot: string | null
 }) {
   const kind = kindOf(file)
+  const canOpenNatively = isTauriAvailable() && workspaceRoot
+
+  const handleOpenInApp = async () => {
+    if (!workspaceRoot) return
+    try {
+      await tauriOpenWorkspaceFile(workspaceRoot, file.path)
+    } catch (err) {
+      console.error('Failed to open file:', err)
+    }
+  }
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-4 py-2">
@@ -785,6 +816,16 @@ function PreviewArea({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          {canOpenNatively && (
+            <button
+              type="button"
+              onClick={() => void handleOpenInApp()}
+              className="flex items-center gap-1 rounded px-2 py-1 text-xs text-(--color-accent) transition-colors hover:bg-(--bg-key)"
+              title="Open in default application"
+            >
+              <FolderOpen size={12} />
+            </button>
+          )}
           <DownloadWorkspaceFileButton
             sessionId={sessionId}
             file={file}
@@ -801,7 +842,7 @@ function PreviewArea({
         ) : kind === 'text' ? (
           <TextPreview sessionId={sessionId} file={file} workspaceRoot={workspaceRoot} />
         ) : (
-          <BinaryPreview sessionId={sessionId} file={file} />
+          <BinaryPreview sessionId={sessionId} file={file} workspaceRoot={workspaceRoot} />
         )}
       </div>
     </div>
