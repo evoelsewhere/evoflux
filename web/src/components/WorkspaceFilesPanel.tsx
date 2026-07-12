@@ -882,7 +882,6 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
   const { data, isLoading, isError, refetch, isFetching } = useWorkspaceFilesQuery(sessionId)
   const prefersReducedMotion = useReducedMotion()
   const queryClient = useQueryClient()
-  useSessionFilesWatcher(sessionId)
 
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -982,6 +981,9 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
   // when the query returns the same cache entry — otherwise downstream
   // memoised derivations (``tree``) would recompute every render.
   const workspaceRoot = data?.workspace_root ?? null
+
+  // Watch for file changes using native Tauri watcher
+  useSessionFilesWatcher(sessionId, workspaceRoot)
   const files = useMemo<WorkspaceFileInfo[]>(() => data?.files ?? [], [data])
   const tree = useMemo(() => buildTree(files), [files])
   const visiblePaths = useMemo(() => matchingPaths(files, searchQuery), [files, searchQuery])

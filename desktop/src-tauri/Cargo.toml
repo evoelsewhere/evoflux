@@ -32,6 +32,7 @@ url = "2.5.8"
 walkdir = "2"
 mime_guess = "2"
 base64 = "0.22"
+notify = "7"
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 block2 = "0.6"

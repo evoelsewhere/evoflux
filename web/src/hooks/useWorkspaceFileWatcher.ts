@@ -1,125 +1,66 @@
 /**
- * useWorkspaceFileWatcher — subscribes to the backend file-watch SSE endpoint
- * and invalidates TanStack Query caches when workspace files change externally.
+ * useWorkspaceFileWatcher — watches for file changes using native Tauri filesystem watcher.
  *
- * Connects when `workspace` is non-null, auto-reconnects on disconnect.
- * Debounces bursts into a single invalidation per 200ms window.
+ * Desktop-only implementation that:
+ * 1. Starts the native file watcher when workspace is provided
+ * 2. Listens for file-change events
+ * 3. Invalidates TanStack Query caches (files, diff, status)
+ *
+ * Replaces the HTTP SSE-based watcher for desktop-only mode.
  */
 import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { apiUrl } from '@/api/base-url'
 import { queryKeys } from '@/queries'
-
-interface FsChangeEvent {
-  type: 'added' | 'modified' | 'deleted'
-  path: string
-}
+import {
+  isTauriAvailable,
+  tauriStartFileWatcher,
+  tauriStopFileWatcher,
+  tauriOnFileChange,
+  type FileChangeEvent,
+} from '@/api/tauri-workspace'
 
 export function useWorkspaceFileWatcher(workspace: string | null) {
   const queryClient = useQueryClient()
-  const abortRef = useRef<AbortController | null>(null)
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const pendingPathsRef = useRef<Set<string>>(new Set())
+  const unlistenRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     if (!workspace) return
+    if (!isTauriAvailable()) return
 
-    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
-    let stopped = false
+    let cancelled = false
 
-    function flush() {
-      if (!workspace) return
-      const paths = [...pendingPathsRef.current]
-      pendingPathsRef.current.clear()
-
-      if (paths.length === 0) return
-
-      // Invalidate file list + status
-      queryClient.invalidateQueries({ queryKey: queryKeys.coding.files(workspace) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.coding.status(workspace) })
-
-      // Invalidate diff for changed paths
-      queryClient.invalidateQueries({ queryKey: queryKeys.coding.diff(workspace) })
-    }
-
-    function scheduleBatch(paths: string[]) {
-      for (const p of paths) pendingPathsRef.current.add(p)
-      if (debounceRef.current) clearTimeout(debounceRef.current)
-      debounceRef.current = setTimeout(flush, 200)
-    }
-
-    async function connect() {
-      if (stopped) return
-
-      const params = new URLSearchParams({ workspace: workspace! })
-      const url = apiUrl(`/team/workspace/watch?${params}`)
-
-      const controller = new AbortController()
-      abortRef.current = controller
-
+    async function startWatching() {
       try {
-        const res = await fetch(url, { signal: controller.signal })
-        if (!res.ok || !res.body) {
-          throw new Error(`Watch stream HTTP ${res.status}`)
-        }
+        // Start the native file watcher
+        await tauriStartFileWatcher(workspace)
 
-        const reader = res.body.getReader()
-        const decoder = new TextDecoder()
-        let buffer = ''
+        if (cancelled) return
 
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
+        // Listen for file change events
+        unlistenRef.current = tauriOnFileChange((events: FileChangeEvent[]) => {
+          // Invalidate file list and status
+          queryClient.invalidateQueries({ queryKey: queryKeys.coding.files(workspace) })
+          queryClient.invalidateQueries({ queryKey: queryKeys.coding.status(workspace) })
 
-          buffer += decoder.decode(value, { stream: true })
-          const lines = buffer.split('\n')
-          buffer = lines.pop() ?? ''
-
-          let eventType = ''
-          let dataLines: string[] = []
-
-          for (const line of lines) {
-            if (line.startsWith('event:')) {
-              eventType = line.slice(6).trim()
-            } else if (line.startsWith('data:')) {
-              dataLines.push(line.slice(5).trim())
-            } else if (line === '') {
-              // End of event
-              if (eventType === 'fs_change' && dataLines.length > 0) {
-                try {
-                  const events: FsChangeEvent[] = JSON.parse(dataLines.join('\n'))
-                  scheduleBatch(events.map((e) => e.path))
-                } catch {
-                  // Malformed JSON — skip
-                }
-              }
-              eventType = ''
-              dataLines = []
-            }
-          }
-        }
+          // Invalidate diff for changed paths
+          queryClient.invalidateQueries({ queryKey: queryKeys.coding.diff(workspace) })
+        })
       } catch (err) {
-        if (stopped || (err instanceof DOMException && err.name === 'AbortError')) {
-          return
-        }
-      }
-
-      // Reconnect after delay (exponential backoff capped at 10s)
-      if (!stopped) {
-        reconnectTimeout = setTimeout(connect, 3000)
+        console.error('Failed to start file watcher:', err)
       }
     }
 
-    void connect()
+    void startWatching()
 
-    // Capture ref value at effect time for cleanup stability
-    const pendingPaths = pendingPathsRef.current
     return () => {
-      stopped = true
-      abortRef.current?.abort()
-      if (reconnectTimeout) clearTimeout(reconnectTimeout)
-      if (debounceRef.current) clearTimeout(debounceRef.current)
-      pendingPaths.clear()
+      cancelled = true
+      unlistenRef.current?.()
+      unlistenRef.current = null
+
+      // Stop the watcher (best-effort)
+      if (workspace) {
+        void tauriStopFileWatcher(workspace).catch(() => {})
+      }
     }
   }, [workspace, queryClient])
 }
