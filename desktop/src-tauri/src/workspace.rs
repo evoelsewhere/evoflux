@@ -9,6 +9,34 @@ use serde::Serialize;
 use std::path::Path;
 use walkdir::WalkDir;
 
+/// A single directory entry for lazy loading.
+#[derive(Serialize, Clone)]
+pub struct DirEntry {
+    /// Entry name (filename or dirname).
+    pub name: String,
+    /// POSIX-relative path from workspace root.
+    pub path: String,
+    /// Whether this entry is a directory.
+    pub is_dir: bool,
+    /// File size in bytes (0 for directories).
+    pub size: u64,
+    /// Last-modified timestamp (Unix seconds, fractional).
+    pub mtime: f64,
+    /// MIME type (best-effort guess from extension).
+    pub mime: String,
+}
+
+/// Response payload for `list_directory`.
+#[derive(Serialize)]
+pub struct DirListingResult {
+    /// The directory path that was listed.
+    pub path: String,
+    /// Parent path (None if at root).
+    pub parent: Option<String>,
+    /// Immediate children entries.
+    pub entries: Vec<DirEntry>,
+}
+
 /// Maximum number of files to return from a listing.
 const MAX_FILES: usize = 10_000;
 
@@ -154,6 +182,134 @@ pub fn list_workspace_files(
         files,
         truncated,
         workspace_root: root,
+    })
+}
+
+/// List immediate children of a directory (lazy loading).
+///
+/// Unlike `list_workspace_files` which recursively walks the entire tree,
+/// this only lists the immediate children of the specified directory.
+/// This enables lazy loading — directories are only expanded when clicked.
+///
+/// - Directories come first (sorted alphabetically), then files.
+/// - Skips `.git/` and common build/cache directories.
+/// - Returns at most 500 entries per directory.
+#[tauri::command]
+pub fn list_directory(root: String, path: String) -> Result<DirListingResult, String> {
+    let root_path = Path::new(&root);
+    if !root_path.is_dir() {
+        return Err("Workspace root does not exist".into());
+    }
+
+    let root_resolved = root_path
+        .canonicalize()
+        .unwrap_or_else(|_| root_path.to_path_buf());
+
+    // Build target directory path
+    let target = if path.is_empty() {
+        root_path.to_path_buf()
+    } else {
+        root_path.join(&path)
+    };
+
+    let target_resolved = match target.canonicalize() {
+        Ok(r) => r,
+        Err(_) => return Err("Directory not found".into()),
+    };
+
+    if !target_resolved.starts_with(&root_resolved) {
+        return Err("Path escapes workspace root".into());
+    }
+
+    if !target_resolved.is_dir() {
+        return Err("Not a directory".into());
+    }
+
+    let mut entries: Vec<DirEntry> = Vec::new();
+    let max_entries = 500;
+
+    // Read directory contents
+    let dir_entries = match std::fs::read_dir(&target_resolved) {
+        Ok(e) => e,
+        Err(e) => return Err(format!("Failed to read directory: {e}")),
+    };
+
+    for entry in dir_entries {
+        if entries.len() >= max_entries {
+            break;
+        }
+
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        let file_name = entry.file_name().to_string_lossy().into_owned();
+
+        // Skip hidden files and common build/cache directories
+        if file_name.starts_with('.') || SKIPPED_DIRS.contains(&file_name.as_str()) {
+            continue;
+        }
+
+        let metadata = match entry.metadata() {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+
+        let is_dir = metadata.is_dir();
+        let size = if is_dir { 0 } else { metadata.len() };
+        let mtime = metadata
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs_f64())
+            .unwrap_or(0.0);
+
+        let entry_path = entry.path();
+        let rel = entry_path
+            .strip_prefix(root_path)
+            .unwrap_or(&entry_path)
+            .to_string_lossy()
+            .replace('\\', "/");
+
+        let mime = if is_dir {
+            "inode/directory".to_string()
+        } else {
+            mime_guess::from_path(&entry_path)
+                .first_or_octet_stream()
+                .to_string()
+        };
+
+        entries.push(DirEntry {
+            name: file_name,
+            path: rel,
+            is_dir,
+            size,
+            mtime,
+            mime,
+        });
+    }
+
+    // Sort: directories first, then alphabetically
+    entries.sort_by(|a, b| {
+        if a.is_dir != b.is_dir {
+            return a.is_dir.cmp(&b.is_dir).reverse(); // dirs first
+        }
+        a.name.to_lowercase().cmp(&b.name.to_lowercase())
+    });
+
+    let parent = if path.is_empty() {
+        None
+    } else {
+        Path::new(&path)
+            .parent()
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+    };
+
+    Ok(DirListingResult {
+        path,
+        parent,
+        entries,
     })
 }
 
