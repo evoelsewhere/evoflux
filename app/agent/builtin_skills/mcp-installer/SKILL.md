@@ -92,6 +92,11 @@ always proceed to wiring after these commands regardless of daemon state.
 | Check what's running                         | `status`                                     |
 | Attach server tools to an agent              | **Call `skill("self-healing")`** after add   |
 
+
+## When NOT to Use
+
+- When the task doesn't match this skill's domain
+- For simple tasks that don't require structured workflows
 ## Workflow — install / update
 
 1. **Handle secrets safely** before installing servers that need them:
@@ -211,6 +216,14 @@ always proceed to wiring after these commands regardless of daemon state.
 | slack        | `--http https://mcp.slack.com/mcp --oauth-client-id <id> --oauth-client-secret <secret>`, then `connect-oauth slack` |
 
 Verify package names with the user — npm names drift.
+
+
+
+## Verification
+
+- # Check state of one or all servers
+- | Check what's running                         | `status`                                     |
+- - For stdio servers that read env vars directly, confirm the env var exists with `printenv KEY | head -c 4`. Empty → use the `${VAR}` pattern above so the user can fill it in Settings.
 
 ## Failure modes
 

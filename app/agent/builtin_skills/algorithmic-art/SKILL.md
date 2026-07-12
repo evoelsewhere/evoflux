@@ -4,7 +4,11 @@ description: Creating algorithmic art using p5.js with seeded randomness and int
 license: Complete terms in LICENSE.txt
 ---
 
-Algorithmic philosophies are computational aesthetic movements that are then expressed through code. Output .md files (philosophy), .html files (interactive viewer), and .js files (generative algorithms).
+
+
+## When to Use
+
+- Use when Users request creating art using code, generative art, algorithmic art, flow fields, or particle systemsAlgorithmic philosophies are computational aesthetic movements that are then expressed through code. Output .md files (philosophy), .html files (interactive viewer), and .js files (generative algorithms).
 
 This happens in two steps:
 1. Algorithmic Philosophy Creation (.md file)
@@ -383,6 +387,13 @@ To achieve the best results, trust creativity and let the philosophy guide the i
 
 ---
 
+
+
+## Verification
+
+- Read back the output to verify quality
+- Confirm all requirements are met
+
 ## RESOURCES
 
 This skill includes helpful templates and documentation:
@@ -403,3 +414,8 @@ This skill includes helpful templates and documentation:
 - The **algorithm is where to create** something unique
 - Don't copy the flow field example - build what the philosophy demands
 - But DO keep the exact UI structure and Anthropic branding from the template
+
+## When NOT to Use
+
+- When the task doesn't match this skill's domain
+- For simple tasks that don't require structured workflows

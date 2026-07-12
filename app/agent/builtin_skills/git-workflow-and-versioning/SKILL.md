@@ -13,6 +13,11 @@ Git is your safety net. Treat commits as save points, branches as sandboxes, and
 
 Always. Every code change flows through git.
 
+
+## When NOT to Use
+
+- When the task doesn't match this skill's domain
+- For simple tasks that don't require structured workflows
 ## Core Principles
 
 ### Trunk-Based Development (Recommended)

@@ -4,7 +4,11 @@ description: "Use this skill whenever the user wants to create, read, edit, or m
 license: Proprietary. LICENSE.txt has complete terms
 ---
 
-# DOCX creation, editing, and analysis
+
+
+## When to Use
+
+- Use when Extracting or reorganizing content from# DOCX creation, editing, and analysis
 
 ## Overview
 
@@ -582,9 +586,22 @@ After running `comment.py` (see Step 2), add markers to document.xml. For replie
 
 ---
 
+
+
+## Verification
+
+- Generate .docx files with JavaScript, then validate. Install: `npm install -g docx`
+- After creating the file, validate it. If validation fails, unpack, fix the XML, and repack.
+- python scripts/office/validate.py doc.docx
+
 ## Dependencies
 
 - **pandoc**: Text extraction
 - **docx**: `npm install -g docx` (new documents)
 - **LibreOffice**: PDF conversion (auto-configured for sandboxed environments via `scripts/office/soffice.py`)
 - **Poppler**: `pdftoppm` for images
+
+## When NOT to Use
+
+- When the task doesn't match this skill's domain
+- For simple tasks that don't require structured workflows

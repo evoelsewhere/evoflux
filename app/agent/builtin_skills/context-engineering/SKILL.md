@@ -17,6 +17,11 @@ Feed agents the right information at the right time. Context is the single bigge
 - Setting up a new project for AI-assisted development
 - The agent is not following project conventions
 
+
+## When NOT to Use
+
+- When the task doesn't match this skill's domain
+- For simple tasks that don't require structured workflows
 ## The Context Hierarchy
 
 Structure context from most persistent to most transient:

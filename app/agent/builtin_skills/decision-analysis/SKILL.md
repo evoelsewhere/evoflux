@@ -131,6 +131,14 @@ The matrix makes the reasoning auditable: anyone can challenge a weight or a sco
 **Revisit if:** <metric or event that means this was the wrong call>
 ```
 
+
+
+## Verification
+
+- - The user wants raw research/facts, not a recommendation (use research-and-fact-checking)
+- Copy this checklist when applying the skill:
+- State every assumption and label it `ASSUMED` until confirmed.
+
 ## Common Rationalizations
 
 | Rationalization | Reality |

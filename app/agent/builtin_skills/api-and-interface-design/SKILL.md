@@ -17,6 +17,11 @@ Design stable, well-documented interfaces that are hard to misuse. Good interfac
 - Establishing database schema that informs API shape
 - Changing existing public interfaces
 
+
+## When NOT to Use
+
+- When the task doesn't match this skill's domain
+- For simple tasks that don't require structured workflows
 ## Core Principles
 
 ### Hyrum's Law

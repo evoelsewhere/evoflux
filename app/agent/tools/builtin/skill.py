@@ -122,6 +122,86 @@ def _parse_frontmatter(text: str) -> tuple[dict, str]:
     return meta, body
 
 
+def extract_triggers(skill_dir: Path) -> list[str]:
+    """Extract trigger keywords from a skill's description.
+
+    Parses the ``description`` field in YAML frontmatter and returns a
+    list of concise keyword triggers suitable for intent-matching.  Two
+    sources are used:
+
+    1. **Explicit trigger items** from ``"Triggers on / Triggers include /
+       Trigger when"`` lists — each comma- or ``or``-separated item
+       becomes one trigger.
+    2. **Action-verb keywords** (``implement``, ``fix``, ``debug``,
+       ``test``, ``review``, ``deploy``, ``refactor``, ``write``,
+       ``create``, ``design``, ``build``, ``optimize``) found via
+       prefix-boundary regex (so ``fix`` matches ``fixing`` but not
+       ``suffix``).
+
+    Long "Use when ..." phrases are intentionally NOT extracted as
+    individual triggers because they are too specific for reliable
+    intent matching — their semantic content is already captured by the
+    action verbs and (where present) explicit trigger lists.
+
+    Returns a de-duplicated list of lowercase keyword strings.
+    """
+    skill_file = skill_dir / "SKILL.md"
+    try:
+        text = skill_file.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    meta, _ = _parse_frontmatter(text)
+    description = meta.get("description", "")
+    if not description:
+        return []
+
+    triggers: list[str] = []
+
+    # --- 1. "Trigger(s) on / include / when" explicit lists -------------
+    for m in re.finditer(
+        r"Trigger[s]?\s+(?:on|include|for|when)\s*[:\-]?\s*",
+        description,
+        re.IGNORECASE,
+    ):
+        rest = description[m.end():].strip()
+        chunk = re.split(r"\.\s|$", rest, maxsplit=1)[0]
+        for item in re.split(r",\s*|\s+or\s+", chunk):
+            cleaned = item.strip().strip('"').strip("'").strip(",; ")
+            # Skip overly long items (likely sentence fragments, not
+            # keyword triggers) and very short ones.
+            if 1 < len(cleaned) <= 50 and cleaned.count(" ") <= 4:
+                triggers.append(cleaned.lower())
+
+    # --- 2. Action-verb keywords (prefix-boundary matched) ---------------
+    _action_verbs = {
+        "implement",
+        "fix",
+        "debug",
+        "test",
+        "review",
+        "deploy",
+        "refactor",
+        "write",
+        "create",
+        "design",
+        "build",
+        "optimize",
+    }
+    desc_lower = description.lower()
+    for verb in _action_verbs:
+        if re.search(r"\b" + verb, desc_lower):
+            triggers.append(verb)
+
+    # De-duplicate while preserving order.
+    seen: set[str] = set()
+    unique: list[str] = []
+    for t in triggers:
+        if t not in seen:
+            seen.add(t)
+            unique.append(t)
+    return unique
+
+
 def discover_skills(
     skills_dir: Path | None = None,
 ) -> dict[str, dict]:

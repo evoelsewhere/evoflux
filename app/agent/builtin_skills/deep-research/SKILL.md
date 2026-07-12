@@ -9,7 +9,11 @@ description: |
   V6 adds: source-type governance, AS_OF freshness checks, mandatory counter-review, and citation registry. V6.1 adds: source accessibility (circular verification forbidden, exclusive advantage encouraged).
 ---
 
-# Deep Research
+
+
+## When to Use
+
+- See skill description for trigger conditions# Deep Research
 
 Create high-fidelity research reports with strict format control, evidence mapping, source governance, and multi-pass synthesis.
 
@@ -529,6 +533,14 @@ Report: `[P7 complete] {N} spot-checks, {M} violations fixed.`
 - **CIRCULAR VERIFICATION** — never use user's private data to "discover" what they already know about themselves
 - **IGNORING EXCLUSIVE SOURCES** — when user provides Crunchbase Pro etc. for competitor research, USE IT
 
+
+
+## Verification
+
+- P6: Verify (every [n] in registry, traceability check)
+- Check capabilities before starting:
+- | Check | Requirement | Impact if Missing |
+
 ## Next Step: Verify and Deliver
 
 After completing research, suggest verification and output:
@@ -542,3 +554,7 @@ B) Create slides — run /daymade-docs:ppt-creator from the findings
 C) Export as PDF — run /daymade-docs:pdf-creator for formal delivery
 D) No thanks — the report is ready as-is
 ```
+
+## When NOT to Use
+
+- For quick factual questions (use simpler search instead)

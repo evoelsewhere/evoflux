@@ -115,6 +115,12 @@ Run the proposal past each:
 <Proceed | proceed with changes | reconsider> — <one-line rationale>
 ```
 
+
+
+## Verification
+
+- Copy this checklist when applying the skill:
+
 ## Common Rationalizations
 
 | Rationalization | Reality |

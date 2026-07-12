@@ -3,7 +3,11 @@ name: browser-use
 description: Automates browser interactions for web testing, form filling, screenshots, and data extraction. Use when the user needs to navigate websites, interact with web pages, fill forms, take screenshots, or extract information from web pages.
 ---
 
-# Browser Automation with browser-use CLI
+
+
+## When to Use
+
+- Use when The user needs to navigate websites, interact with web pages, fill forms, take screenshots, or extract information from web pages# Browser Automation with browser-use CLI
 
 Use `browser-use` when `web_fetch`/`web_search` are insufficient because the task requires clicking, typing, JavaScript-rendered UI state, visual verification, screenshots, or browser-visible data extraction.
 
@@ -162,6 +166,13 @@ For local dev servers, use the explicit localhost URL the user provides. If the 
 - Authentication needed: stop and ask the user
 - CAPTCHA/anti-bot blocks the flow: report blocked; do not bypass
 
+
+
+## Verification
+
+- Check availability:
+- 4. Verify with `browser-use state` or `browser-use screenshot`
+
 ## Reporting
 
 Report:
@@ -171,3 +182,8 @@ Report:
 - observed result
 - screenshot/artifact paths
 - anything not verified
+
+## When NOT to Use
+
+- When the task doesn't match this skill's domain
+- For simple tasks that don't require structured workflows

@@ -4,7 +4,11 @@ description: "Use this skill any time a spreadsheet file is the primary input or
 license: Proprietary. LICENSE.txt has complete terms
 ---
 
-# Requirements for Outputs
+
+
+## When to Use
+
+- Use this skill any time a spreadsheet file is the primary input or output# Requirements for Outputs
 
 ## All Excel files
 
@@ -280,6 +284,14 @@ The script returns JSON with error details:
 - For large files, read specific columns: `pd.read_excel('file.xlsx', usecols=['A', 'C', 'E'])`
 - Handle dates properly: `pd.read_excel('file.xlsx', parse_dates=['date_column'])`
 
+
+
+## Verification
+
+- - Verify all cell references are correct
+- - Check for off-by-one errors in ranges
+- - Verify no unintended circular references
+
 ## Code Style Guidelines
 **IMPORTANT**: When generating Python code for Excel operations:
 - Write minimal, concise Python code without unnecessary comments
@@ -290,3 +302,8 @@ The script returns JSON with error details:
 - Add comments to cells with complex formulas or important assumptions
 - Document data sources for hardcoded values
 - Include notes for key calculations and model sections
+
+## When NOT to Use
+
+- When the task doesn't match this skill's domain
+- For simple tasks that don't require structured workflows

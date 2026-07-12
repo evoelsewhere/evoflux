@@ -5,7 +5,11 @@ description: >-
   or writing from scratch.
 ---
 
-# Skill Installer
+
+
+## When to Use
+
+- See skill description for trigger conditions# Skill Installer
 
 Use this skill when the user wants to add a **new skill body**. Do not use it
 for changing models, tools, MCP servers, plugins, or other agent configuration.
@@ -50,6 +54,14 @@ Rules:
 - Never overwrite an existing skill without reading it first and confirming with
   the user.
 
+
+
+## Verification
+
+- - Never overwrite an existing skill without reading it first and confirming with
+- 5. Read it back to verify the file landed correctly.
+- 6. Confirm the exact path and skill name.
+
 ## How to install
 
 ### From a URL
@@ -72,3 +84,8 @@ Rules:
 
 A new skill can be loaded by exact name immediately. If a UI catalog looks stale,
 refresh the Skills page or restart as a fallback.
+
+## When NOT to Use
+
+- When the task doesn't match this skill's domain
+- For simple tasks that don't require structured workflows

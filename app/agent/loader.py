@@ -596,6 +596,12 @@ def _build_agent(
 
         agent.hooks.append(SkillPreloadHook(preloaded_skills))
 
+    # Attach skill auto-routing hook — matches user intent to unloaded skills
+    # and injects relevant ones automatically on each turn.
+    from app.agent.hooks.skill_auto_routing import SkillAutoRoutingHook
+
+    agent.hooks.append(SkillAutoRoutingHook())
+
     # Attach code overview hook — auto-injects a compact workspace map on first
     # turn so the agent starts oriented without wasting a round-trip.
     if "code_overview" in {t.name for t in tools}:
