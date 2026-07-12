@@ -10,7 +10,7 @@ use std::path::Path;
 use walkdir::WalkDir;
 
 /// Maximum number of files to return from a listing.
-const MAX_FILES: usize = 2_000;
+const MAX_FILES: usize = 10_000;
 
 /// Directories to skip during workspace traversal (matches Python's `_SKIPPED_DIR_NAMES`).
 const SKIPPED_DIRS: &[&str] = &[
