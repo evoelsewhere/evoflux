@@ -21,7 +21,6 @@ import { ProjectCodeGraphPanel } from './ProjectCodeGraphPanel'
 import { TaskTimelinePanel } from './TaskTimelinePanel'
 import type { WorkspaceFileInfo } from '@/api/types'
 import {
-  buildTree,
   collectChangedFiles,
   type ChangedFileStatus,
   type TreeNode,
@@ -168,7 +167,6 @@ export function CodingWorkspacePanel({
     enabled: open && !isProjectMode,
     staleTime: 5_000,
   })
-  const tree = buildTree(files.data?.files ?? [])
   const changedFiles = collectChangedFiles(diff.data)
   const changedPaths = new Set(changedFiles.map((file) => file.path))
   const fileByPath = new Map((files.data?.files ?? []).map((file) => [file.path, file]))

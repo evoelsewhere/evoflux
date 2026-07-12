@@ -12,7 +12,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
-import { FixedSizeList as VirtualList } from 'react-window'
+import { List as VirtualList } from 'react-window'
 import {
   ChevronRight,
   FileText,
@@ -230,7 +230,15 @@ export function NativeFileTree({
     (entries: DirEntry[]): TreeNode[] => {
       return entries.map((entry) => ({
         entry,
-        children: entry.is_dir ? (dirChildren.get(entry.path) ?? null) : null,
+        children: entry.is_dir ? (dirChildren.get(entry.path)?.map((e) => ({
+          entry: e,
+          children: e.is_dir ? (dirChildren.get(e.path)?.map((e2) => ({
+            entry: e2,
+            children: null,
+            isExpanded: expandedDirs.has(e2.path),
+          })) ?? null) : null,
+          isExpanded: expandedDirs.has(e.path),
+        })) ?? null) : null,
         isExpanded: expandedDirs.has(entry.path),
       }))
     },
@@ -270,12 +278,11 @@ export function NativeFileTree({
     return (
       <div className={cn('overflow-auto', className)}>
         <VirtualList
-          height={Math.min(600, treeNodes.length * ITEM_HEIGHT)} // max 600px
-          itemCount={treeNodes.length}
-          itemSize={ITEM_HEIGHT}
-          width="100%"
-        >
-          {({ index, style }) => (
+          defaultHeight={Math.min(600, treeNodes.length * ITEM_HEIGHT)} // max 600px
+          rowCount={treeNodes.length}
+          rowHeight={ITEM_HEIGHT}
+          rowProps={{}}
+          rowComponent={({ index, style }) => (
             <div style={style}>
               <TreeNodeItem
                 node={treeNodes[index]}
@@ -286,7 +293,7 @@ export function NativeFileTree({
               />
             </div>
           )}
-        </VirtualList>
+        />
       </div>
     )
   }
