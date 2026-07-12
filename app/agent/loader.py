@@ -292,12 +292,11 @@ def _default_tool_registry() -> dict[str, Tool]:
     )
     from app.agent.tools.builtin.note import note_tool
     from app.agent.tools.builtin.wiki_search import wiki_search
-    # Consolidated code graph tools (4 tools instead of 7)
-    from app.agent.tools.builtin.code_graph_consolidated import (
-        search_tool as code_search,
-        graph_tool as code_graph,
-        overview_tool as code_overview,
-        path_tool as code_path,
+    from app.agent.tools.builtin.code_graph import (
+        code_search,
+        code_graph,
+        code_overview,
+        code_path,
     )
     from app.agent.tools.builtin.plan import enter_plan_mode, exit_plan_mode
     from app.agent.tools.builtin.ask_user import ask_user
