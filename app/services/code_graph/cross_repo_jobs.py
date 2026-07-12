@@ -55,6 +55,7 @@ class CrossRepoResolveJobRegistry:
         project_id: UUID,
         db_factory: DbFactory | None = None,
         wait_for_workspaces: list[UUID] | None = None,
+        changed_workspaces: set[UUID] | None = None,
     ) -> tuple[CrossRepoResolveJob, bool]:
         """Start a background resolution pass for ``project_id``.
 
@@ -66,6 +67,10 @@ class CrossRepoResolveJobRegistry:
         so ``GET .../cross-repo/status`` never has a gap between "reindex
         accepted" and "resolve actually starts" where a poller could
         mistake "hasn't started yet" for "already finished".
+
+        ``changed_workspaces``, when given, enables incremental resolution —
+        only edges involving those workspaces are re-resolved. This avoids
+        redundant work when only some repos in a project have changed.
 
         Returns ``(job, started)``; ``started`` is ``False`` when a job was
         already running for this project (the existing job is returned).
@@ -86,6 +91,7 @@ class CrossRepoResolveJobRegistry:
                     project_id=project_id,
                     db_factory=db_factory,
                     wait_for_workspaces=wait_for_workspaces,
+                    changed_workspaces=changed_workspaces,
                 )
             )
             self._tasks.add(task)
@@ -99,6 +105,7 @@ class CrossRepoResolveJobRegistry:
         project_id: UUID,
         db_factory: DbFactory | None,
         wait_for_workspaces: list[UUID] | None = None,
+        changed_workspaces: set[UUID] | None = None,
     ) -> None:
         factory = resolve_db_factory(db_factory)
         try:
@@ -113,7 +120,7 @@ class CrossRepoResolveJobRegistry:
             job.message = "Re-attaching stale links…"
             async with factory() as db:
                 stats: CrossRepoResolveStats = await resolve_project(
-                    db, project_id=project_id
+                    db, project_id=project_id, changed_workspaces=changed_workspaces
                 )
 
             job.phase = "static"
