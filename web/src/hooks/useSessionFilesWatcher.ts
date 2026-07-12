@@ -1,88 +1,62 @@
 /**
- * useSessionFilesWatcher — subscribes to the session-specific file-watch SSE
- * endpoint and invalidates the team files query cache when the workspace
- * changes (agent writes, uploads, renames, deletes).
+ * useSessionFilesWatcher — watches for file changes using native Tauri filesystem watcher.
  *
- * Mirrors useWorkspaceFileWatcher but targets the team session API so the
- * caller only needs the session ID — no workspace path required.
+ * Desktop-only implementation that:
+ * 1. Starts the native file watcher when the component mounts
+ * 2. Listens for file-change events
+ * 3. Invalidates the team files query cache when workspace changes
+ *
+ * Replaces the HTTP SSE-based watcher for desktop-only mode.
  */
 import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { apiUrl } from '@/api/base-url'
 import { queryKeys } from '@/queries'
+import {
+  isTauriAvailable,
+  tauriStartFileWatcher,
+  tauriStopFileWatcher,
+  tauriOnFileChange,
+  type FileChangeEvent,
+} from '@/api/tauri-workspace'
 
-export function useSessionFilesWatcher(sessionId: string | null) {
+export function useSessionFilesWatcher(sessionId: string | null, workspaceRoot?: string | null) {
   const queryClient = useQueryClient()
-  const abortRef = useRef<AbortController | null>(null)
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const unlistenRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
-    if (!sessionId) return
+    if (!sessionId || !workspaceRoot) return
+    if (!isTauriAvailable()) return
 
-    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
-    let stopped = false
+    let cancelled = false
 
-    function flush() {
-      if (!sessionId) return
-      queryClient.invalidateQueries({ queryKey: queryKeys.team.files(sessionId) })
-    }
-
-    function scheduleBatch() {
-      if (debounceRef.current) clearTimeout(debounceRef.current)
-      debounceRef.current = setTimeout(flush, 200)
-    }
-
-    async function connect() {
-      if (stopped) return
-
-      const url = apiUrl(`/team/${sessionId}/files/watch`)
-      const controller = new AbortController()
-      abortRef.current = controller
-
+    async function startWatching() {
       try {
-        const res = await fetch(url, { signal: controller.signal })
-        if (!res.ok || !res.body) {
-          throw new Error(`Watch stream HTTP ${res.status}`)
-        }
+        // Start the native file watcher
+        await tauriStartFileWatcher(workspaceRoot)
 
-        const reader = res.body.getReader()
-        const decoder = new TextDecoder()
-        let buffer = ''
-        let eventType = ''
+        if (cancelled) return
 
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-
-          buffer += decoder.decode(value, { stream: true })
-          const lines = buffer.split('\n')
-          buffer = lines.pop() ?? ''
-
-          for (const line of lines) {
-            if (line.startsWith('event:')) {
-              eventType = line.slice(6).trim()
-            } else if (line === '') {
-              if (eventType === 'fs_change') scheduleBatch()
-              eventType = ''
-            }
-          }
-        }
+        // Listen for file change events
+        unlistenRef.current = tauriOnFileChange((events: FileChangeEvent[]) => {
+          // Invalidate the files query to trigger a refetch
+          queryClient.invalidateQueries({ queryKey: queryKeys.team.files(sessionId) })
+        })
       } catch (err) {
-        if (stopped || (err instanceof DOMException && err.name === 'AbortError')) return
-      }
-
-      if (!stopped) {
-        reconnectTimeout = setTimeout(connect, 3000)
+        console.error('Failed to start file watcher:', err)
       }
     }
 
-    void connect()
+    void startWatching()
 
     return () => {
-      stopped = true
-      abortRef.current?.abort()
-      if (reconnectTimeout) clearTimeout(reconnectTimeout)
-      if (debounceRef.current) clearTimeout(debounceRef.current)
+      cancelled = true
+      unlistenRef.current?.()
+      unlistenRef.current = null
+
+      // Stop the watcher (best-effort)
+      if (workspaceRoot) {
+        void tauriStopFileWatcher(workspaceRoot).catch(() => {})
+      }
     }
-  }, [sessionId, queryClient])
+  }, [sessionId, workspaceRoot, queryClient])
 }

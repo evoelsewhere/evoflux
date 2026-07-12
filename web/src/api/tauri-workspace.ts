@@ -139,3 +139,55 @@ export interface DirListingResult {
 export async function tauriListDirectory(root: string, path: string): Promise<DirListingResult> {
   return tauriInvoke<DirListingResult>('list_directory', { root, path })
 }
+
+// ── Native File Watcher ──────────────────────────────────────────────────────
+
+/** A file change event from the native watcher. */
+export interface FileChangeEvent {
+  change_type: 'added' | 'modified' | 'deleted'
+  path: string
+}
+
+/**
+ * Start watching a workspace directory for file changes.
+ *
+ * Emits `file-change` events via Tauri's event system.
+ * Events are debounced (50ms) and filtered (skips .git, node_modules, etc.).
+ *
+ * @param root - Absolute path to the workspace root directory.
+ */
+export async function tauriStartFileWatcher(root: string): Promise<void> {
+  return tauriInvoke<void>('start_file_watcher', { root })
+}
+
+/**
+ * Stop watching a workspace directory.
+ *
+ * @param root - Absolute path to the workspace root directory.
+ */
+export async function tauriStopFileWatcher(root: string): Promise<void> {
+  return tauriInvoke<void>('stop_file_watcher', { root })
+}
+
+/**
+ * Listen for file change events from the native watcher.
+ *
+ * @param callback - Called with an array of FileChangeEvent when files change.
+ * @returns Unlisten function to stop listening.
+ */
+export function tauriOnFileChange(callback: (events: FileChangeEvent[]) => void): () => void {
+  // Dynamic import to avoid issues in non-Tauri environments
+  let unlisten: (() => void) | null = null
+
+  import('@tauri-apps/api/event').then(({ listen }) => {
+    listen<FileChangeEvent[]>('file-change', (event) => {
+      callback(event.payload)
+    }).then((fn) => {
+      unlisten = fn
+    })
+  })
+
+  return () => {
+    unlisten?.()
+  }
+}

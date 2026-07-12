@@ -386,3 +386,182 @@ pub fn read_workspace_file(root: String, path: String) -> Result<String, String>
     let bytes = std::fs::read(&target_resolved).map_err(|e| format!("Read failed: {e}"))?;
     Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
 }
+
+// ── Native File Watcher ──────────────────────────────────────────────────────
+
+use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use std::sync::{Arc, Mutex};
+use tauri::{AppHandle, Emitter};
+use tokio::sync::mpsc;
+
+/// A file change event emitted to the frontend.
+#[derive(Serialize, Clone)]
+pub struct FileChangeEvent {
+    /// Type of change: "added", "modified", or "deleted".
+    pub change_type: String,
+    /// POSIX-relative path of the changed file.
+    pub path: String,
+}
+
+/// Shared state for the file watcher.
+struct WatcherState {
+    watcher: RecommendedWatcher,
+}
+
+/// Active watchers keyed by workspace root path.
+static WATCHERS: once_cell::sync::Lazy<Arc<Mutex<Vec<(String, WatcherState)>>>> =
+    once_cell::sync::Lazy::new(|| Arc::new(Mutex::new(Vec::new())));
+
+/// Start watching a workspace directory for file changes.
+///
+/// Emits `file-change` events to the frontend via Tauri's event system.
+/// Each event contains `{ change_type: "added"|"modified"|"deleted", path: string }`.
+///
+/// - Deduplicates rapid changes (50ms debounce).
+/// - Skips `.git/`, `node_modules/`, etc.
+/// - Only watches regular files (not directories).
+#[tauri::command]
+pub fn start_file_watcher(app: AppHandle, root: String) -> Result<(), String> {
+    let root_path = Path::new(&root);
+    if !root_path.is_dir() {
+        return Err("Workspace root does not exist".into());
+    }
+
+    let root_resolved = root_path
+        .canonicalize()
+        .unwrap_or_else(|_| root_path.to_path_buf());
+    let root_str = root_resolved.to_string_lossy().to_string();
+
+    // Check if already watching this path
+    {
+        let watchers = WATCHERS.lock().map_err(|e| format!("Lock error: {e}"))?;
+        if watchers.iter().any(|(r, _)| r == &root_str) {
+            return Ok(()); // Already watching
+        }
+    }
+
+    let (tx, rx) = mpsc::channel(256);
+
+    let mut watcher = RecommendedWatcher::new(
+        move |result: notify::Result<Event>| {
+            let _ = tx.blocking_send(result);
+        },
+        notify::Config::default()
+            .with_compare_contents(false)
+            .with_poll_interval(std::time::Duration::from_secs(2)),
+    )
+    .map_err(|e| format!("Failed to create watcher: {e}"))?;
+
+    // Start watching recursively
+    watcher
+        .watch(root_path, RecursiveMode::Recursive)
+        .map_err(|e| format!("Failed to start watching: {e}"))?;
+
+    // Spawn a task to process events and emit to frontend
+    let app_clone = app.clone();
+    let root_clone = root_str.clone();
+    tokio::spawn(async move {
+        let mut rx = rx;
+        let mut pending_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut debounce_timer: Option<tokio::time::Instant> = None;
+
+        while let Some(result) = rx.recv().await {
+            if let Ok(event) = result {
+                match event.kind {
+                    EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_) => {
+                        for path in &event.paths {
+                            let path_str = path.to_string_lossy().to_string();
+
+                            // Skip directories and common ignored paths
+                            if path.is_dir() {
+                                continue;
+                            }
+                            if path_str.contains("/.git/")
+                                || path_str.contains("/node_modules/")
+                                || path_str.contains("/__pycache__/")
+                                || path_str.contains("/.venv/")
+                                || path_str.contains("/venv/")
+                                || path_str.contains("/.ruff_cache/")
+                                || path_str.contains("/.pytest_cache/")
+                                || path_str.contains("/dist/")
+                                || path_str.contains("/build/")
+                            {
+                                continue;
+                            }
+
+                            // Get relative path
+                            let rel = if let Some(relative) = path.strip_prefix(&root_clone).ok() {
+                                relative.to_string_lossy().replace('\\', "/")
+                            } else {
+                                continue;
+                            };
+
+                            // Determine change type
+                            let change_type = match event.kind {
+                                EventKind::Create(_) => "added",
+                                EventKind::Remove(_) => "deleted",
+                                _ => "modified",
+                            };
+
+                            pending_paths.insert(format!("{}:{}", change_type, rel));
+                        }
+
+                        // Debounce: emit after 50ms of no changes
+                        debounce_timer = Some(tokio::time::Instant::now());
+                    }
+                    _ => {}
+                }
+            }
+
+            // Check if we should flush
+            if let Some(timer) = debounce_timer {
+                if timer.elapsed() >= std::time::Duration::from_millis(50) {
+                    let events: Vec<FileChangeEvent> = pending_paths
+                        .drain()
+                        .filter_map(|entry| {
+                            let parts: Vec<&str> = entry.splitn(2, ':').collect();
+                            if parts.len() == 2 {
+                                Some(FileChangeEvent {
+                                    change_type: parts[0].to_string(),
+                                    path: parts[1].to_string(),
+                                })
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+
+                    if !events.is_empty() {
+                        let _ = app_clone.emit("file-change", events);
+                    }
+                    debounce_timer = None;
+                }
+            }
+        }
+    });
+
+    // Store the watcher
+    {
+        let mut watchers = WATCHERS.lock().map_err(|e| format!("Lock error: {e}"))?;
+        watchers.push((root_str, WatcherState { watcher }));
+    }
+
+    Ok(())
+}
+
+/// Stop watching a workspace directory.
+#[tauri::command]
+pub fn stop_file_watcher(root: String) -> Result<(), String> {
+    let root_path = Path::new(&root);
+    let root_resolved = root_path
+        .canonicalize()
+        .unwrap_or_else(|_| root_path.to_path_buf());
+    let root_str = root_resolved.to_string_lossy().to_string();
+
+    let mut watchers = WATCHERS.lock().map_err(|e| format!("Lock error: {e}"))?;
+    if let Some(pos) = watchers.iter().position(|(r, _)| r == &root_str) {
+        watchers.remove(pos);
+    }
+
+    Ok(())
+}
