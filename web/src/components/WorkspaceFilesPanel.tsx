@@ -45,8 +45,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
 import { workspaceMediaUrl, updateSessionWorkspace, uploadWorkspaceFiles, moveWorkspaceFile, deleteWorkspaceFile, browseWorkspaces } from '@/api/client'
-import { tauriReadWorkspaceFile, tauriOpenWorkspaceFile } from '@/api/tauri-workspace'
-import { NativeFileTree } from './NativeFileTree'
+import { isTauriAvailable, tauriReadWorkspaceFile } from '@/api/tauri-workspace'
 import { downloadWorkspaceFile } from '@/lib/workspace-download'
 import { useWorkspaceFilesQuery } from '@/queries'
 import { queryKeys } from '@/queries/keys'
@@ -545,7 +544,6 @@ function TextPreview({ sessionId, file, workspaceRoot }: { sessionId: string; fi
   const [content, setContent] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(!tooLarge)
-  const [retryCount, setRetryCount] = useState(0)
 
   useEffect(() => {
     if (tooLarge) return
@@ -553,13 +551,19 @@ function TextPreview({ sessionId, file, workspaceRoot }: { sessionId: string; fi
 
     async function loadFile() {
       try {
-        // Native Rust path — desktop-only, no HTTP round-trip.
-        if (!workspaceRoot) throw new Error('No workspace root available')
-        const b64 = await tauriReadWorkspaceFile(workspaceRoot, file.path)
-        const text = atob(b64)
+        let text: string
+        // Native Rust path — no HTTP round-trip.
+        if (isTauriAvailable() && workspaceRoot) {
+          const b64 = await tauriReadWorkspaceFile(workspaceRoot, file.path)
+          text = atob(b64)
+        } else {
+          // HTTP API fallback.
+          const res = await fetch(workspaceMediaUrl(sessionId, file.path))
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          text = await res.text()
+        }
         if (!cancelled) {
           setContent(text)
-          setError(null)
           setLoading(false)
         }
       } catch (e) {
@@ -574,13 +578,7 @@ function TextPreview({ sessionId, file, workspaceRoot }: { sessionId: string; fi
     return () => {
       cancelled = true
     }
-  }, [sessionId, file.path, tooLarge, workspaceRoot, retryCount])
-
-  const handleRetry = () => {
-    setError(null)
-    setLoading(true)
-    setRetryCount((c) => c + 1)
-  }
+  }, [sessionId, file.path, tooLarge, workspaceRoot])
 
   if (tooLarge) {
     return (
@@ -602,15 +600,8 @@ function TextPreview({ sessionId, file, workspaceRoot }: { sessionId: string; fi
   }
   if (error) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
-        <p className="text-xs text-(--color-error)">Failed to load: {error}</p>
-        <button
-          type="button"
-          onClick={handleRetry}
-          className="flex items-center gap-1 rounded px-2 py-1 text-xs text-(--color-accent) transition-colors hover:bg-(--bg-key)"
-        >
-          <RefreshCw size={12} /> Retry
-        </button>
+      <div className="flex h-full items-center justify-center px-4 text-center text-xs text-(--color-error)">
+        Failed to load: {error}
       </div>
     )
   }
@@ -650,16 +641,8 @@ function TextPreview({ sessionId, file, workspaceRoot }: { sessionId: string; fi
   )
 }
 
-function BinaryPreview({ sessionId, file, workspaceRoot }: { sessionId: string; file: WorkspaceFileInfo; workspaceRoot?: string | null }) {
-  const handleOpenInApp = async () => {
-    if (!workspaceRoot) return
-    try {
-      await tauriOpenWorkspaceFile(workspaceRoot, file.path)
-    } catch (err) {
-      console.error('Failed to open file:', err)
-    }
-  }
-
+function BinaryPreview({ sessionId, file }: { sessionId: string; file: WorkspaceFileInfo }) {
+  const url = workspaceMediaUrl(sessionId, file.path)
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
       <FileIcon size={28} className="text-(--color-text-subtle)" />
@@ -670,15 +653,6 @@ function BinaryPreview({ sessionId, file, workspaceRoot }: { sessionId: string; 
         </p>
       </div>
       <div className="flex items-center gap-2">
-        {workspaceRoot && (
-          <button
-            type="button"
-            onClick={() => void handleOpenInApp()}
-            className="flex items-center gap-1.5 rounded-md bg-(--color-accent) px-3 py-1.5 text-xs text-white transition-colors hover:opacity-90"
-          >
-            <FolderOpen size={12} /> Open in App
-          </button>
-        )}
         <a
           href={url}
           target="_blank"
@@ -798,16 +772,6 @@ function PreviewArea({
   workspaceRoot: string | null
 }) {
   const kind = kindOf(file)
-
-  const handleOpenInApp = async () => {
-    if (!workspaceRoot) return
-    try {
-      await tauriOpenWorkspaceFile(workspaceRoot, file.path)
-    } catch (err) {
-      console.error('Failed to open file:', err)
-    }
-  }
-
   return (
     <div className="flex h-full flex-col">
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-4 py-2">
@@ -821,16 +785,6 @@ function PreviewArea({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          {workspaceRoot && (
-            <button
-              type="button"
-              onClick={() => void handleOpenInApp()}
-              className="flex items-center gap-1 rounded px-2 py-1 text-xs text-(--color-accent) transition-colors hover:bg-(--bg-key)"
-              title="Open in default application"
-            >
-              <FolderOpen size={12} />
-            </button>
-          )}
           <DownloadWorkspaceFileButton
             sessionId={sessionId}
             file={file}
@@ -847,7 +801,7 @@ function PreviewArea({
         ) : kind === 'text' ? (
           <TextPreview sessionId={sessionId} file={file} workspaceRoot={workspaceRoot} />
         ) : (
-          <BinaryPreview sessionId={sessionId} file={file} workspaceRoot={workspaceRoot} />
+          <BinaryPreview sessionId={sessionId} file={file} />
         )}
       </div>
     </div>
@@ -882,6 +836,7 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
   const { data, isLoading, isError, refetch, isFetching } = useWorkspaceFilesQuery(sessionId)
   const prefersReducedMotion = useReducedMotion()
   const queryClient = useQueryClient()
+  useSessionFilesWatcher(sessionId)
 
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -981,9 +936,6 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
   // when the query returns the same cache entry — otherwise downstream
   // memoised derivations (``tree``) would recompute every render.
   const workspaceRoot = data?.workspace_root ?? null
-
-  // Watch for file changes using native Tauri watcher
-  useSessionFilesWatcher(sessionId, workspaceRoot)
   const files = useMemo<WorkspaceFileInfo[]>(() => data?.files ?? [], [data])
   const tree = useMemo(() => buildTree(files), [files])
   const visiblePaths = useMemo(() => matchingPaths(files, searchQuery), [files, searchQuery])
@@ -1458,32 +1410,19 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
                       <p className="px-2 py-4 text-xs italic text-(--color-text-subtle)">
                         No files match "{searchQuery}"
                       </p>
-                    ) : workspaceRoot ? (
-                      // Native file tree (desktop-only, lazy loading)
-                      <NativeFileTree
-                        workspaceRoot={workspaceRoot}
-                        selectedPath={selectedPath}
-                        onFileSelect={(entry) => {
-                          if (!entry) {
-                            handleSelectFile(null)
-                            return
-                          }
-                          // Convert DirEntry to WorkspaceFileInfo for compatibility
-                          handleSelectFile({
-                            path: entry.path,
-                            name: entry.name,
-                            size: entry.size,
-                            mtime: entry.mtime,
-                            mime: entry.mime,
-                          })
-                        }}
-                        className="flex-1 overflow-auto"
-                      />
                     ) : (
-                      // Fallback when no workspaceRoot (shouldn't happen in desktop-only mode)
-                      <p className="px-2 py-4 text-xs text-(--color-text-subtle)">
-                        No workspace root available
-                      </p>
+                      <TreeNodeView
+                        node={tree}
+                        depth={0}
+                        selectedPath={selectedPath}
+                        sessionId={sessionId}
+                        workspaceRoot={workspaceRoot}
+                        onSelect={handleSelectFile}
+                        onRename={handleRenameFile}
+                        onDelete={handleDeleteFile}
+                        visiblePaths={visiblePaths}
+                        defaultOpen
+                      />
                     )}
                   </div>
                 </nav>

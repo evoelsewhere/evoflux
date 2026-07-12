@@ -201,7 +201,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const activeLoop     = useTeamStore((s) => s.activeLoop)
   const isConnected    = useTeamStore((s) => s.isConnected)
   const isSessionLoading = useTeamStore((s) => s.isSessionLoading)
-  const leadName       = useTeamStore((s) => s.leadName)
   // Utility modal state lives in useUIStore so only one can be open at a time.
   const wikiOpen = useUIStore((s) => s.wikiOpen)
   const schedulerOpen = useUIStore((s) => s.schedulerOpen)
@@ -1383,7 +1382,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
             lastError={activeLastError}
             isContinuing={isContinuing && activeAgent === leadName}
             onContinue={activeAgent === leadName ? continueTeam : undefined}
-            suggestions={null}
             chapters={activeAgent === leadName ? chapters : undefined}
             emptyState={
               mode === 'coding' && workspace ? (

@@ -39,7 +39,7 @@ export function useSessionFilesWatcher(sessionId: string | null, workspaceRoot?:
         // Listen for file change events
         unlistenRef.current = tauriOnFileChange((_events: FileChangeEvent[]) => {
           // Invalidate the files query to trigger a refetch
-          queryClient.invalidateQueries({ queryKey: queryKeys.team.files(sessionId) })
+          queryClient.invalidateQueries({ queryKey: queryKeys.team.files(sessionId!) })
         })
       } catch (err) {
         console.error('Failed to start file watcher:', err)
