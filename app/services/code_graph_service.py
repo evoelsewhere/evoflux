@@ -913,10 +913,13 @@ async def _lexical_search(
             if kind:
                 stmt = stmt.where(CodeNode.kind == kind)
             nodes = list((await db.exec(stmt)).all())
-            # Preserve FTS rank order
-            id_order = {UUID(nid): i for i, nid in enumerate(fts_ids)}
-            nodes.sort(key=lambda n: id_order.get(n.id, limit))
-            return nodes[:limit]
+            if nodes:
+                # Preserve FTS rank order
+                id_order = {UUID(nid): i for i, nid in enumerate(fts_ids)}
+                nodes.sort(key=lambda n: id_order.get(n.id, limit))
+                return nodes[:limit]
+            # If FTS returned IDs but kind filter removed them all,
+            # fall through to ILIKE fallback below.
 
     # Fallback: ILIKE substring search (no FTS table yet, or in-memory DB)
     pattern = f"%{query}%"
@@ -1103,7 +1106,10 @@ async def get_overview(
 
 # Edge kinds that represent a "usage" of the target symbol.
 _REFERENCE_EDGE_KINDS = frozenset(
-    {"calls", "references", "imports", "inherits", "implements", "decorated_by"}
+    {
+        "calls", "references", "imports", "inherits", "implements",
+        "decorated_by", "uses", "overrides", "reads", "writes", "throws",
+    }
 )
 
 

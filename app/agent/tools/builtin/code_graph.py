@@ -466,7 +466,7 @@ def _render_neighbors(
                 if edge.src_line
                 else edge.src_file_path
             )
-            rows.append(f"    ← {repo_label}/{loc} (`{edge.raw_reference}`)")
+            rows.append(f"    → {repo_label}/{loc} (`{edge.raw_reference}`)")
     return head + "\n" + "\n".join(rows)
 
 
@@ -792,12 +792,21 @@ async def _code_map(
         int,
         Field(description="How many top symbols to include (max 50, default 25)."),
     ] = 25,
+    scope: Annotated[
+        Literal["workspace", "project"],
+        Field(
+            description=(
+                "'workspace' (default) shows ranked symbols from the active repo only. "
+                "'project' aggregates across all repos in a multi-repo project."
+            )
+        ),
+    ] = "workspace",
 ) -> str:
     """Produce a ranked map of the most-referenced symbols in the codebase.
 
     Symbols are ranked by usage count (in-degree) — the more a function/class
     is called or referenced, the higher it ranks. In a multi-repo project,
-    ranks across all repos in the project.
+    ``scope='project'`` ranks across all repos in the project.
     """
     capped = max(1, min(budget, 50))
     async with async_session_factory() as db:
@@ -806,7 +815,7 @@ async def _code_map(
             return _NOT_INDEXED
 
         project_ids = await proj_svc.get_projects_for_workspace(db, workspace_id)
-        if project_ids:
+        if scope == "project" and project_ids:
             project_id = project_ids[0]
             pairs = await proj_svc.get_project_workspaces(db, project_id)
             all_ranked: list[tuple[CodeNode, int]] = []
