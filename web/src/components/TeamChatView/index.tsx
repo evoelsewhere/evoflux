@@ -24,6 +24,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { SessionSettingsPanel } from '../SessionSettingsPanel'
+import { FloatingTodosPanel } from '../FloatingTodosPanel'
 import { AgentView } from '../AgentView'
 import { WorkspaceInfoCard } from '../WorkspaceInfoCard'
 import { ProjectInfoCard } from '../ProjectInfoCard'
@@ -135,7 +136,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   // Coding-mode sidebar is expanded by default so it's always visible on entry.
   const [codingSidebarCollapsed, setCodingSidebarCollapsed] = useState(false)
   const [openWorkspaceDialogKey, setOpenWorkspaceDialogKey] = useState(0)
-  const [showTodos, setShowTodos] = useState(false)
   const [showActivity, setShowActivity] = useState(false)
   const [permissionMode, setPermissionMode] = useState<import('@/api/types').PermissionMode>('auto')
   const [showMobileActions, setShowMobileActions] = useState(false)
@@ -256,12 +256,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
 
   const { data: todosData } = useTodosQuery(sessionIdState)
   const todos = todosData?.todos ?? []
-  const prevTodosLen = useRef(todos.length)
-  useEffect(() => {
-    if (prevTodosLen.current === 0 && todos.length > 0) setShowTodos(true)
-    if (todos.length === 0) setShowTodos(false)
-    prevTodosLen.current = todos.length
-  }, [todos.length])
   const { data: chapters = [] } = useSessionChapters(sessionIdState)
   const providersQ = useProvidersQuery()
   const hasConfiguredModelProvider = providersQ.data?.providers.some(
@@ -899,7 +893,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
     cycleViewMode,
     setViewMode,
     toggleAgentCapabilities,
-    setShowTodos,
     handleWorkspaceFiles,
     handleCodingSidebarToggle,
     mode,
@@ -918,7 +911,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
     v: isMobile ? undefined : cycleViewMode,
     a: toggleAgentCapabilities,
     f: handleWorkspaceFiles,
-    t: () => { if (sessionIdState) setShowTodos((v) => !v) },
     p: isMobile ? undefined : () => setShowPalette((v) => !v),
     b: mode === 'coding' ? handleCodingSidebarToggle : undefined,
     // Ctrl+M / Ctrl+S — open the wiki / scheduler drawers (state in useUIStore).
@@ -1459,8 +1451,8 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
             agentNames={agentNames}
             agentWorkspace={agentWorkspace}
             todos={todos}
-            todosOpen={showTodos}
-            onTodosOpenChange={setShowTodos}
+            todosOpen={false}
+            onTodosOpenChange={() => {}}
             sessionId={sessionIdState}
             onWiki={toggleWiki}
             wikiActive={wikiOpen}
@@ -1564,6 +1556,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
       {showPalette && (
         <CommandPalette commands={paletteCommands} onClose={() => setShowPalette(false)} />
       )}
+      <FloatingTodosPanel todos={todos} />
       </div>{/* end right column */}
     </div>
   )
