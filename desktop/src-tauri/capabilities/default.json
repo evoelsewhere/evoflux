@@ -37,6 +37,12 @@
     "allow-app-use-bundled-backend",
     "allow-app-new-window",
     "allow-app-open-browser-devtools",
-    "allow-set-tray-session"
+    "allow-set-tray-session",
+    "allow-list-workspace-files",
+    "allow-read-workspace-file",
+    "allow-list-directory",
+    "allow-open-workspace-file-with-handle",
+    "allow-start-file-watcher",
+    "allow-stop-file-watcher"
   ]
 }
