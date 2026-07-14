@@ -1,11 +1,15 @@
 /**
- * WorkspaceFilesPanel — right-side drawer listing every file the agent has
+ * WorkspaceFilesPanel — docked side panel listing every file the agent has
  * written into the session workspace (``.EvoFlux/team/{sid}``).
  *
- * Layout: drawer from the right (mirrors ``AgentCapabilities``).  Inside, a
- * two-pane split — tree grouped by directory on the left, preview on the
- * right.  Images render inline via the ``/media/`` proxy (with lightbox on
- * click).  Text/code files render as-is in a plain monospace view.
+ * Layout: docked panel that shrinks the chat column (mirrors
+ * ``CodingWorkspacePanel``) — a flex sibling of ``<main>``, not an overlay,
+ * so opening it resizes the layout instead of covering it. Fixed-position
+ * full-screen only below the ``md`` breakpoint (mobile). Inside, a two-pane
+ * split — tree grouped by directory on the left, preview on the right.
+ * Images render inline via the ``/media/`` proxy (with lightbox on click).
+ * Text/code files render as-is in a plain monospace view. Office documents
+ * (.docx/.xlsx/.pptx) render via docx-preview / xlsx / pptx-renderer.
  * Everything else shows a "Download" fallback.
  *
  * Data flow:
@@ -17,12 +21,14 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import {
   X,
   FileText,
   FileImage,
   FileCode,
+  FileSpreadsheet,
+  Presentation as PresentationIcon,
   File as FileIcon,
   Folder,
   Download,
@@ -51,13 +57,14 @@ import { useWorkspaceFilesQuery } from '@/queries'
 import { queryKeys } from '@/queries/keys'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useSessionFilesWatcher } from '@/hooks/useSessionFilesWatcher'
-import { useModalFocus } from '@/hooks/useModalFocus'
+import { useResizableWidth } from '@/hooks/use-resizable-width'
 import { useReducedMotion } from '@/hooks/useReducedMotion'
 import { usePlatform } from '@/hooks/use-platform'
 import { mediumHapticFeedback } from '@/lib/haptics'
 import { formatBytes } from '@/utils/format'
 import { MarkdownBlock } from '@/utils/markdown'
 import { ImageLightbox } from './ImageLightbox'
+import { DocxPreview, XlsxPreview, PptxPreview } from './workspace-office-preview'
 import type { WorkspaceFileInfo } from '@/api/types'
 
 // ── File-type helpers ─────────────────────────────────────────────────────────
@@ -78,19 +85,25 @@ const TEXT_EXTENSIONS = new Set([
 ])
 
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'])
+const DOCX_EXTENSIONS = new Set(['docx'])
+const XLSX_EXTENSIONS = new Set(['xlsx', 'xlsm'])
+const PPTX_EXTENSIONS = new Set(['pptx'])
 
 function extOf(name: string): string {
   const i = name.lastIndexOf('.')
   return i >= 0 ? name.slice(i + 1).toLowerCase() : ''
 }
 
-type FileKind = 'image' | 'text' | 'binary'
+type FileKind = 'image' | 'text' | 'docx' | 'xlsx' | 'pptx' | 'binary'
 
 function kindOf(file: WorkspaceFileInfo): FileKind {
   const ext = extOf(file.name)
   // SVG is both an image (for preview) and text — prefer the visual preview.
   if (IMAGE_EXTENSIONS.has(ext)) return 'image'
   if (file.mime.startsWith('image/')) return 'image'
+  if (DOCX_EXTENSIONS.has(ext)) return 'docx'
+  if (XLSX_EXTENSIONS.has(ext)) return 'xlsx'
+  if (PPTX_EXTENSIONS.has(ext)) return 'pptx'
   if (!ext) return 'text'
   if (TEXT_EXTENSIONS.has(ext)) return 'text'
   if (file.mime.startsWith('text/')) return 'text'
@@ -102,6 +115,9 @@ function FileTypeIcon({ file, size = 12 }: { file: WorkspaceFileInfo; size?: num
   const kind = kindOf(file)
   const cls = 'shrink-0 text-(--color-text-muted)'
   if (kind === 'image') return <FileImage size={size} className={cls} />
+  if (kind === 'xlsx') return <FileSpreadsheet size={size} className={cls} />
+  if (kind === 'pptx') return <PresentationIcon size={size} className={cls} />
+  if (kind === 'docx') return <FileText size={size} className={cls} />
   if (kind === 'text') {
     // Code files get the code icon; plain text/markdown use the document icon.
     const ext = extOf(file.name)
@@ -800,6 +816,12 @@ function PreviewArea({
           <ImagePreview sessionId={sessionId} file={file} />
         ) : kind === 'text' ? (
           <TextPreview sessionId={sessionId} file={file} workspaceRoot={workspaceRoot} />
+        ) : kind === 'docx' ? (
+          <DocxPreview sessionId={sessionId} file={file} workspaceRoot={workspaceRoot} />
+        ) : kind === 'xlsx' ? (
+          <XlsxPreview sessionId={sessionId} file={file} workspaceRoot={workspaceRoot} />
+        ) : kind === 'pptx' ? (
+          <PptxPreview sessionId={sessionId} file={file} workspaceRoot={workspaceRoot} />
         ) : (
           <BinaryPreview sessionId={sessionId} file={file} />
         )}
@@ -863,36 +885,22 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dragCounterRef = useRef(0)
 
-  // Resizable widths — persisted in localStorage.
-  const [panelWidth, setPanelWidth] = useState(() =>
-    readStoredWidth(PANEL_WIDTH_KEY, Math.min(960, Math.round(window.innerWidth * 0.6)), PANEL_WIDTH_MIN),
-  )
+  // Outer panel width — docked, resizable from the left edge (mirrors
+  // CodingWorkspacePanel). Tree/preview split width is a separate, internal
+  // resize handled by its own hand-rolled drag below.
+  const resizablePanel = useResizableWidth({
+    storageKey: PANEL_WIDTH_KEY,
+    defaultWidth: Math.min(960, Math.round((typeof window === 'undefined' ? 1280 : window.innerWidth) * 0.6)),
+    minWidth: PANEL_WIDTH_MIN,
+    maxWidth: Math.round((typeof window === 'undefined' ? 1280 : window.innerWidth) * 0.95),
+    edge: 'left',
+    disabled: isMobile,
+  })
+  const panelWidth = resizablePanel.width
+
   const [treeWidth, setTreeWidth] = useState(() =>
     readStoredWidth(TREE_WIDTH_KEY, 260, TREE_WIDTH_MIN),
   )
-
-  const startPanelResize = (e: React.PointerEvent) => {
-    e.preventDefault()
-    const startX = e.clientX
-    const startW = panelWidth
-    const maxW = Math.round(window.innerWidth * 0.95)
-    const onMove = (ev: PointerEvent) => {
-      const newW = Math.max(PANEL_WIDTH_MIN, Math.min(maxW, startW + startX - ev.clientX))
-      setPanelWidth(newW)
-    }
-    const onUp = (ev: PointerEvent) => {
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', onUp)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-      const finalW = Math.max(PANEL_WIDTH_MIN, Math.min(maxW, startW + startX - ev.clientX))
-      try { localStorage.setItem(PANEL_WIDTH_KEY, String(finalW)) } catch { /* ignore */ }
-    }
-    document.body.style.cursor = 'ew-resize'
-    document.body.style.userSelect = 'none'
-    window.addEventListener('pointermove', onMove)
-    window.addEventListener('pointerup', onUp)
-  }
 
   const startTreeResize = (e: React.PointerEvent) => {
     e.preventDefault()
@@ -917,14 +925,6 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
     window.addEventListener('pointerup', onUp)
   }
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const handleModalClose = useCallback(() => {
-    if (isMobile && mobilePane === 'preview') {
-      setMobilePane('tree')
-      return
-    }
-    onClose()
-  }, [isMobile, mobilePane, onClose])
-  useModalFocus(open, handleModalClose)
 
   // Refresh on open so the list is fresh even if query was stale.
   useEffect(() => {
@@ -1126,369 +1126,349 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
     return () => window.removeEventListener('keydown', handler)
   }, [open, showTree])
 
+  if (!open) return null
+
   return (
-    <AnimatePresence>
-      {open && (
-        <>
-          <motion.div
-            key="backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-            onClick={onClose}
-            className="fixed inset-0 z-40 bg-(--color-overlay) [[data-mobile-shell]_&]:top-[calc(var(--spacing-app-header)+env(safe-area-inset-top,0px))]"
-          />
-
-          <motion.aside
-            key="drawer"
-            initial={prefersReducedMotion ? { opacity: 0 } : { x: '100%', opacity: 0 }}
-            animate={prefersReducedMotion ? { opacity: 1 } : { x: 0, opacity: 1 }}
-            exit={prefersReducedMotion ? { opacity: 0 } : { x: '100%', opacity: 0 }}
-            transition={{ duration: prefersReducedMotion ? 0.01 : 0.22, ease: [0.4, 0, 0.2, 1] }}
-            className={cn(
-              'fixed bottom-0 right-0 top-[env(safe-area-inset-top,0px)] z-50 flex flex-col overflow-hidden border-l border-(--color-border) bg-(--bg-card) shadow-2xl',
-              '[[data-mobile-shell]_&]:top-[calc(var(--spacing-app-header)+env(safe-area-inset-top,0px))] [[data-mobile-shell]_&]:right-[env(safe-area-inset-right,0px)] [[data-mobile-shell]_&]:w-[min(960px,calc(100vw-env(safe-area-inset-left,0px)-env(safe-area-inset-right,0px)))]',
-              isMacOverlay && 'top-(--spacing-app-header)',
-            )}
-            style={!isMobile ? { width: panelWidth } : undefined}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Workspace files"
-            data-modal-focus="true"
+    <motion.aside
+      initial={prefersReducedMotion ? { opacity: 0 } : isMobile ? { opacity: 0 } : { width: 0 }}
+      animate={prefersReducedMotion ? { opacity: 1 } : isMobile ? { opacity: 1 } : { width: panelWidth }}
+      transition={{ duration: prefersReducedMotion ? 0.01 : 0.22, ease: [0.4, 0, 0.2, 1] }}
+      className={cn(
+        'fixed bottom-0 right-0 z-40 flex w-full min-h-0 flex-col overflow-hidden border-l border-(--color-border) bg-(--bg-card) shadow-xl md:relative md:inset-y-auto md:right-auto md:z-auto md:w-auto md:shrink-0 md:shadow-none',
+        isMobile ? 'mobile-safe-top max-w-none' : isMacOverlay && 'top-(--spacing-app-header)',
+      )}
+      aria-label="Workspace files"
+    >
+      {/* Left-edge drag handle to resize the panel */}
+      {!isMobile && (
+        <div
+          className="absolute bottom-0 left-0 top-0 z-10 w-1 cursor-ew-resize transition-colors hover:bg-(--color-accent)/20"
+          onPointerDown={resizablePanel.startResize}
+          onDoubleClick={resizablePanel.resetWidth}
+          title="Drag to resize · double-click to reset"
+        />
+      )}
+      {/* Header */}
+      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-4 py-3">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          {/* Mobile back button — only shown in preview pane */}
+          {isMobile && mobilePane === 'preview' && (
+            <button
+              onClick={handleBackToTree}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+              aria-label="Back to file list"
+            >
+              <ArrowLeft size={14} />
+            </button>
+          )}
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold text-(--color-text)">Workspace</h2>
+            <p className="truncate text-xs text-(--color-text-subtle)">
+              {isMobile && mobilePane === 'preview' && selected
+                ? selected.name
+                : <>Files the agent has written into this session{data?.truncated ? ' · list truncated' : ''}</>
+              }
+            </p>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {workspaceRoot && (
+            <a
+              href={vscodeWorkspaceUrl(workspaceRoot)}
+              title="Open in VS Code"
+              aria-label="Open in VS Code"
+              className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+            >
+              <VscodeIcon size={14} />
+            </a>
+          )}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={!sessionId || isUploading}
+            className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-50"
+            title="Upload files"
+            aria-label="Upload files"
           >
-            {/* Left-edge drag handle to resize the panel */}
-            {!isMobile && (
-              <div
-                className="absolute bottom-0 left-0 top-0 z-10 w-1 cursor-ew-resize transition-colors hover:bg-(--color-accent)/20"
-                onPointerDown={startPanelResize}
-                title="Drag to resize"
-              />
-            )}
-            {/* Header */}
-            <header className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-4 py-3">
-              <div className="flex min-w-0 flex-1 items-center gap-2">
-                {/* Mobile back button — only shown in preview pane */}
-                {isMobile && mobilePane === 'preview' && (
-                  <button
-                    onClick={handleBackToTree}
-                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-                    aria-label="Back to file list"
-                  >
-                    <ArrowLeft size={14} />
-                  </button>
-                )}
-                <div className="min-w-0">
-                  <h2 className="text-sm font-semibold text-(--color-text)">Workspace</h2>
-                  <p className="truncate text-xs text-(--color-text-subtle)">
-                    {isMobile && mobilePane === 'preview' && selected
-                      ? selected.name
-                      : <>Files the agent has written into this session{data?.truncated ? ' · list truncated' : ''}</>
-                    }
-                  </p>
-                </div>
-              </div>
-              <div className="flex shrink-0 items-center gap-1">
-                {workspaceRoot && (
-                  <a
-                    href={vscodeWorkspaceUrl(workspaceRoot)}
-                    title="Open in VS Code"
-                    aria-label="Open in VS Code"
-                    className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-                  >
-                    <VscodeIcon size={14} />
-                  </a>
-                )}
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={!sessionId || isUploading}
-                  className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-50"
-                  title="Upload files"
-                  aria-label="Upload files"
-                >
-                  {isUploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                </button>
-                <button
-                  onClick={() => folderInputRef.current?.click()}
-                  disabled={!sessionId || isUploading}
-                  className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-50"
-                  title="Import folder"
-                  aria-label="Import folder"
-                >
-                  <FolderUp size={14} />
-                </button>
-                <button
-                  onClick={() => refetch()}
-                  disabled={!sessionId || isFetching}
-                  className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-50"
-                  title="Refresh"
-                  aria-label="Refresh"
-                >
-                  <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} />
-                </button>
-                <button
-                  onClick={onClose}
-                  className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-                  title="Close (Esc)"
-                  aria-label="Close"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-            </header>
+            {isUploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+          </button>
+          <button
+            onClick={() => folderInputRef.current?.click()}
+            disabled={!sessionId || isUploading}
+            className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-50"
+            title="Import folder"
+            aria-label="Import folder"
+          >
+            <FolderUp size={14} />
+          </button>
+          <button
+            onClick={() => refetch()}
+            disabled={!sessionId || isFetching}
+            className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-50"
+            title="Refresh"
+            aria-label="Refresh"
+          >
+            <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} />
+          </button>
+          <button
+            onClick={onClose}
+            className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+            title="Close (Esc)"
+            aria-label="Close"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      </header>
 
-            {/* Workspace path bar + inline picker */}
-            {sessionId && (
-              <div className="shrink-0 border-b border-(--color-border)">
-                <div className="flex items-center gap-2 px-3 py-1.5">
-                  <FolderOpen size={12} className="shrink-0 text-(--color-text-muted)" />
-                  <span className="flex-1 truncate font-mono text-xs text-(--color-text-subtle)" title={workspaceRoot ?? undefined}>
-                    {workspaceRoot ?? 'Session sandbox (default)'}
-                  </span>
-                  <button
-                    onClick={openPicker}
-                    className={cn(
-                      'shrink-0 rounded px-2 py-0.5 text-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)',
-                      isPickerOpen && 'bg-(--bg-key) text-(--color-text)',
-                    )}
-                    title="Change workspace folder"
-                    aria-label="Change workspace folder"
-                  >
-                    <Edit2 size={11} className="inline-block" />
-                  </button>
-                </div>
-                {isPickerOpen && (
-                  <div className="flex flex-col gap-2 border-t border-(--color-border) bg-(--bg-page) px-3 py-2">
-                    {/* Path input — type or paste a path manually */}
-                    <input
-                      type="text"
-                      value={pickerPath}
-                      onChange={(e) => setPickerPath(e.target.value)}
-                      placeholder="Type or browse to select a folder"
-                      className="w-full rounded border border-(--color-border) bg-(--color-surface) px-2 py-1.5 font-mono text-xs text-(--color-text) outline-none focus:border-(--focus-ring) placeholder:text-(--color-text-subtle)"
-                      onKeyDown={(e) => { if (e.key === 'Enter') void handleSaveWorkspace(); if (e.key === 'Escape') setIsPickerOpen(false) }}
-                    />
-                    {/* Directory browser — click a folder to select it */}
-                    <div className="max-h-48 overflow-y-auto rounded border border-(--color-border) bg-(--color-surface)">
-                      {browseLoading && (
-                        <div className="flex items-center justify-center gap-2 py-3 text-xs text-(--color-text-muted)">
-                          <Loader2 size={12} className="animate-spin" /> Loading…
-                        </div>
-                      )}
-                      {!browseLoading && browseParent && (
-                        <button
-                          onClick={() => void handleBrowse(browseParent)}
-                          className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs text-(--color-text-muted) hover:bg-(--bg-key)"
-                        >
-                          <FolderUp size={11} />
-                          ..
-                        </button>
-                      )}
-                      {!browseLoading && browseDirs.map((dir) => (
-                        <button
-                          key={dir.path}
-                          onClick={() => setPickerPath(dir.path)}
-                          className={cn(
-                            'flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs transition-colors hover:bg-(--bg-key)',
-                            pickerPath === dir.path ? 'text-(--color-accent) font-medium bg-(--bg-key)' : 'text-(--color-text)',
-                          )}
-                        >
-                          <Folder size={11} className="shrink-0 text-(--color-text-muted)" />
-                          <span className="truncate">{dir.name}</span>
-                        </button>
-                      ))}
-                      {!browseLoading && browseDirs.length === 0 && !browseParent && (
-                        <p className="px-2 py-3 text-center text-xs text-(--color-text-muted)">No subdirectories</p>
-                      )}
-                    </div>
-                    {browseError && (
-                      <p className="text-xs text-(--color-error)">{browseError}</p>
-                    )}
-                    {pickerError && (
-                      <p className="text-xs text-(--color-error)">{pickerError}</p>
-                    )}
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => void handleSaveWorkspace()}
-                        disabled={isPickerSaving || !pickerPath.trim()}
-                        className="rounded bg-(--color-accent) px-3 py-1 text-xs font-medium text-(--color-text-on-accent) transition-opacity hover:opacity-90 disabled:opacity-50"
-                      >
-                        {isPickerSaving ? 'Applying…' : 'Select'}
-                      </button>
-                      <button
-                        onClick={() => void handleSaveWorkspace(null)}
-                        disabled={isPickerSaving}
-                        className="flex items-center gap-1 rounded px-2 py-1 text-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-50"
-                        title="Reset to session sandbox"
-                      >
-                        <RotateCcw size={11} />
-                        Reset
-                      </button>
-                      <button
-                        onClick={() => setIsPickerOpen(false)}
-                        className="ml-auto rounded px-2 py-1 text-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-key)"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
-                {uploadError && (
-                  <div className="flex items-center justify-between border-t border-(--color-border) bg-(--bg-page) px-3 py-1.5">
-                    <span className="text-xs text-(--color-error)">{uploadError}</span>
-                    <button onClick={() => setUploadError(null)} className="text-(--color-text-muted) hover:text-(--color-text)"><X size={12} /></button>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Body: tree + preview split (desktop) / master-detail (mobile) */}
-            <div className="flex min-h-0 flex-1 overflow-hidden">
-              {/* Tree — full width on mobile tree pane, resizable on desktop */}
-              {showTree && (
-                <nav
-                  className={cn(
-                    'relative flex flex-col overflow-hidden',
-                    isMobile ? 'w-full' : 'shrink-0',
-                  )}
-                  style={!isMobile ? { width: treeWidth } : undefined}
-                  onDragEnter={handleDragEnter}
-                  onDragLeave={handleDragLeave}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={handleDrop}
-                >
-                  {isDragging && (
-                    <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded border-2 border-dashed border-(--color-accent) bg-(--color-accent)/8">
-                      <Upload size={22} className="text-(--color-accent)" />
-                      <span className="text-xs font-medium text-(--color-accent)">Drop to upload</span>
-                    </div>
-                  )}
-                  {/* Search bar */}
-                  {sessionId && files.length > 0 && (
-                    <div className="shrink-0 border-b border-(--color-border) px-2 py-1.5">
-                      <div className="flex items-center gap-1.5 rounded-md border border-(--color-border) bg-(--bg-page) px-2 py-1">
-                        <Search size={12} className="shrink-0 text-(--color-text-subtle)" />
-                        <input
-                          ref={searchInputRef}
-                          type="text"
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          placeholder="Search files…"
-                          className="w-full bg-transparent text-xs text-(--color-text) outline-none placeholder:text-(--color-text-subtle)"
-                        />
-                        {searchQuery && (
-                          <button
-                            type="button"
-                            onClick={() => setSearchQuery('')}
-                            className="shrink-0 rounded p-0.5 text-(--color-text-subtle) hover:text-(--color-text)"
-                            aria-label="Clear search"
-                          >
-                            <X size={10} />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                  <div className="flex-1 overflow-y-auto px-2 py-3">
-                    {!sessionId ? (
-                      <p className="px-2 py-4 text-xs italic text-(--color-text-subtle)">
-                        No active session.
-                      </p>
-                    ) : isLoading ? (
-                      <div className="px-2 py-6 text-center text-xs text-(--color-text-subtle)">
-                        <Loader2 size={14} className="mx-auto animate-spin" />
-                      </div>
-                    ) : isError ? (
-                      <p className="px-2 py-4 text-xs text-(--color-error)">
-                        Failed to load workspace files
-                      </p>
-                    ) : files.length === 0 ? (
-                      <p className="px-2 py-4 text-xs italic text-(--color-text-subtle)">
-                        No files yet.  Anything the agent writes will appear here.
-                      </p>
-                    ) : visiblePaths && visiblePaths.size === 0 ? (
-                      <p className="px-2 py-4 text-xs italic text-(--color-text-subtle)">
-                        No files match "{searchQuery}"
-                      </p>
-                    ) : (
-                      <TreeNodeView
-                        node={tree}
-                        depth={0}
-                        selectedPath={selectedPath}
-                        sessionId={sessionId}
-                        workspaceRoot={workspaceRoot}
-                        onSelect={handleSelectFile}
-                        onRename={handleRenameFile}
-                        onDelete={handleDeleteFile}
-                        visiblePaths={visiblePaths}
-                        defaultOpen
-                      />
-                    )}
-                  </div>
-                </nav>
+      {/* Workspace path bar + inline picker */}
+      {sessionId && (
+        <div className="shrink-0 border-b border-(--color-border)">
+          <div className="flex items-center gap-2 px-3 py-1.5">
+            <FolderOpen size={12} className="shrink-0 text-(--color-text-muted)" />
+            <span className="flex-1 truncate font-mono text-xs text-(--color-text-subtle)" title={workspaceRoot ?? undefined}>
+              {workspaceRoot ?? 'Session sandbox (default)'}
+            </span>
+            <button
+              onClick={openPicker}
+              className={cn(
+                'shrink-0 rounded px-2 py-0.5 text-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)',
+                isPickerOpen && 'bg-(--bg-key) text-(--color-text)',
               )}
+              title="Change workspace folder"
+              aria-label="Change workspace folder"
+            >
+              <Edit2 size={11} className="inline-block" />
+            </button>
+          </div>
+          {isPickerOpen && (
+            <div className="flex flex-col gap-2 border-t border-(--color-border) bg-(--bg-page) px-3 py-2">
+              {/* Path input — type or paste a path manually */}
+              <input
+                type="text"
+                value={pickerPath}
+                onChange={(e) => setPickerPath(e.target.value)}
+                placeholder="Type or browse to select a folder"
+                className="w-full rounded border border-(--color-border) bg-(--color-surface) px-2 py-1.5 font-mono text-xs text-(--color-text) outline-none focus:border-(--focus-ring) placeholder:text-(--color-text-subtle)"
+                onKeyDown={(e) => { if (e.key === 'Enter') void handleSaveWorkspace(); if (e.key === 'Escape') setIsPickerOpen(false) }}
+              />
+              {/* Directory browser — click a folder to select it */}
+              <div className="max-h-48 overflow-y-auto rounded border border-(--color-border) bg-(--color-surface)">
+                {browseLoading && (
+                  <div className="flex items-center justify-center gap-2 py-3 text-xs text-(--color-text-muted)">
+                    <Loader2 size={12} className="animate-spin" /> Loading…
+                  </div>
+                )}
+                {!browseLoading && browseParent && (
+                  <button
+                    onClick={() => void handleBrowse(browseParent)}
+                    className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs text-(--color-text-muted) hover:bg-(--bg-key)"
+                  >
+                    <FolderUp size={11} />
+                    ..
+                  </button>
+                )}
+                {!browseLoading && browseDirs.map((dir) => (
+                  <button
+                    key={dir.path}
+                    onClick={() => setPickerPath(dir.path)}
+                    className={cn(
+                      'flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs transition-colors hover:bg-(--bg-key)',
+                      pickerPath === dir.path ? 'text-(--color-accent) font-medium bg-(--bg-key)' : 'text-(--color-text)',
+                    )}
+                  >
+                    <Folder size={11} className="shrink-0 text-(--color-text-muted)" />
+                    <span className="truncate">{dir.name}</span>
+                  </button>
+                ))}
+                {!browseLoading && browseDirs.length === 0 && !browseParent && (
+                  <p className="px-2 py-3 text-center text-xs text-(--color-text-muted)">No subdirectories</p>
+                )}
+              </div>
+              {browseError && (
+                <p className="text-xs text-(--color-error)">{browseError}</p>
+              )}
+              {pickerError && (
+                <p className="text-xs text-(--color-error)">{pickerError}</p>
+              )}
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => void handleSaveWorkspace()}
+                  disabled={isPickerSaving || !pickerPath.trim()}
+                  className="rounded bg-(--color-accent) px-3 py-1 text-xs font-medium text-(--color-text-on-accent) transition-opacity hover:opacity-90 disabled:opacity-50"
+                >
+                  {isPickerSaving ? 'Applying…' : 'Select'}
+                </button>
+                <button
+                  onClick={() => void handleSaveWorkspace(null)}
+                  disabled={isPickerSaving}
+                  className="flex items-center gap-1 rounded px-2 py-1 text-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-50"
+                  title="Reset to session sandbox"
+                >
+                  <RotateCcw size={11} />
+                  Reset
+                </button>
+                <button
+                  onClick={() => setIsPickerOpen(false)}
+                  className="ml-auto rounded px-2 py-1 text-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-key)"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+          {uploadError && (
+            <div className="flex items-center justify-between border-t border-(--color-border) bg-(--bg-page) px-3 py-1.5">
+              <span className="text-xs text-(--color-error)">{uploadError}</span>
+              <button onClick={() => setUploadError(null)} className="text-(--color-text-muted) hover:text-(--color-text)"><X size={12} /></button>
+            </div>
+          )}
+        </div>
+      )}
 
-              {/* Tree/preview drag divider — desktop only */}
-              {!isMobile && showTree && showPreview && (
-                <div
-                  className="relative w-px shrink-0 cursor-ew-resize bg-(--color-border) transition-colors hover:bg-(--color-accent)/40"
-                  onPointerDown={startTreeResize}
-                  title="Drag to resize"
+      {/* Body: tree + preview split (desktop) / master-detail (mobile) */}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        {/* Tree — full width on mobile tree pane, resizable on desktop */}
+        {showTree && (
+          <nav
+            className={cn(
+              'relative flex flex-col overflow-hidden',
+              isMobile ? 'w-full' : 'shrink-0',
+            )}
+            style={!isMobile ? { width: treeWidth } : undefined}
+            onDragEnter={handleDragEnter}
+            onDragLeave={handleDragLeave}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={handleDrop}
+          >
+            {isDragging && (
+              <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded border-2 border-dashed border-(--color-accent) bg-(--color-accent)/8">
+                <Upload size={22} className="text-(--color-accent)" />
+                <span className="text-xs font-medium text-(--color-accent)">Drop to upload</span>
+              </div>
+            )}
+            {/* Search bar */}
+            {sessionId && files.length > 0 && (
+              <div className="shrink-0 border-b border-(--color-border) px-2 py-1.5">
+                <div className="flex items-center gap-1.5 rounded-md border border-(--color-border) bg-(--bg-page) px-2 py-1">
+                  <Search size={12} className="shrink-0 text-(--color-text-subtle)" />
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search files…"
+                    className="w-full bg-transparent text-xs text-(--color-text) outline-none placeholder:text-(--color-text-subtle)"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="shrink-0 rounded p-0.5 text-(--color-text-subtle) hover:text-(--color-text)"
+                      aria-label="Clear search"
+                    >
+                      <X size={10} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+            <div className="flex-1 overflow-y-auto px-2 py-3">
+              {!sessionId ? (
+                <p className="px-2 py-4 text-xs italic text-(--color-text-subtle)">
+                  No active session.
+                </p>
+              ) : isLoading ? (
+                <div className="px-2 py-6 text-center text-xs text-(--color-text-subtle)">
+                  <Loader2 size={14} className="mx-auto animate-spin" />
+                </div>
+              ) : isError ? (
+                <p className="px-2 py-4 text-xs text-(--color-error)">
+                  Failed to load workspace files
+                </p>
+              ) : files.length === 0 ? (
+                <p className="px-2 py-4 text-xs italic text-(--color-text-subtle)">
+                  No files yet.  Anything the agent writes will appear here.
+                </p>
+              ) : visiblePaths && visiblePaths.size === 0 ? (
+                <p className="px-2 py-4 text-xs italic text-(--color-text-subtle)">
+                  No files match "{searchQuery}"
+                </p>
+              ) : (
+                <TreeNodeView
+                  node={tree}
+                  depth={0}
+                  selectedPath={selectedPath}
+                  sessionId={sessionId}
+                  workspaceRoot={workspaceRoot}
+                  onSelect={handleSelectFile}
+                  onRename={handleRenameFile}
+                  onDelete={handleDeleteFile}
+                  visiblePaths={visiblePaths}
+                  defaultOpen
                 />
               )}
-
-              {/* Preview — full width on mobile preview pane, flex-1 on desktop */}
-              {showPreview && (
-                <div className="min-w-0 flex-1">
-                  {selected && sessionId ? (
-                    <PreviewArea key={selected.path} sessionId={sessionId} file={selected} workspaceRoot={workspaceRoot} />
-                  ) : (
-                    <EmptyState
-                      message="Select a file"
-                      hint="Images, markdown, and code files render inline. Other formats offer download."
-                    />
-                  )}
-                </div>
-              )}
             </div>
+          </nav>
+        )}
 
-            {/* Footer */}
-            <div className="shrink-0 border-t border-(--color-border) px-4 py-2 text-xs text-(--color-text-muted) pb-safe">
-              {files.length > 0 && (
-                <span>
-                  {visiblePaths
-                    ? `${Array.from(visiblePaths).filter((p) => files.some((f) => f.path === p)).length} of ${files.length} file${files.length === 1 ? '' : 's'}`
-                    : `${files.length} file${files.length === 1 ? '' : 's'}`
-                  }
-                  {' · '}
-                </span>
-              )}
-              {isMobile ? 'Tap a file to preview' : 'Esc or click outside to close'}
-            </div>
+        {/* Tree/preview drag divider — desktop only */}
+        {!isMobile && showTree && showPreview && (
+          <div
+            className="relative w-px shrink-0 cursor-ew-resize bg-(--color-border) transition-colors hover:bg-(--color-accent)/40"
+            onPointerDown={startTreeResize}
+            title="Drag to resize"
+          />
+        )}
 
-            {/* Hidden file input for upload button */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              className="hidden"
-              aria-hidden="true"
-              onChange={handleFileInput}
-            />
-            {/* Hidden folder input for import folder button */}
-            <input
-              ref={folderInputRef}
-              type="file"
-              multiple
-              // @ts-expect-error webkitdirectory is not in TS types
-              webkitdirectory=""
-              className="hidden"
-              aria-hidden="true"
-              onChange={handleFolderInput}
-            />
-          </motion.aside>
-        </>
-      )}
-    </AnimatePresence>
+        {/* Preview — full width on mobile preview pane, flex-1 on desktop */}
+        {showPreview && (
+          <div className="min-w-0 flex-1">
+            {selected && sessionId ? (
+              <PreviewArea key={selected.path} sessionId={sessionId} file={selected} workspaceRoot={workspaceRoot} />
+            ) : (
+              <EmptyState
+                message="Select a file"
+                hint="Images, markdown, and code files render inline. Other formats offer download."
+              />
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="shrink-0 border-t border-(--color-border) px-4 py-2 text-xs text-(--color-text-muted) pb-safe">
+        {files.length > 0 && (
+          <span>
+            {visiblePaths
+              ? `${Array.from(visiblePaths).filter((p) => files.some((f) => f.path === p)).length} of ${files.length} file${files.length === 1 ? '' : 's'}`
+              : `${files.length} file${files.length === 1 ? '' : 's'}`
+            }
+            {' · '}
+          </span>
+        )}
+        {isMobile && 'Tap a file to preview'}
+      </div>
+
+      {/* Hidden file input for upload button */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        aria-hidden="true"
+        onChange={handleFileInput}
+      />
+      {/* Hidden folder input for import folder button */}
+      <input
+        ref={folderInputRef}
+        type="file"
+        multiple
+        // @ts-expect-error webkitdirectory is not in TS types
+        webkitdirectory=""
+        className="hidden"
+        aria-hidden="true"
+        onChange={handleFolderInput}
+      />
+    </motion.aside>
   )
 }

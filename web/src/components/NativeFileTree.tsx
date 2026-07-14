@@ -229,21 +229,26 @@ export function NativeFileTree({
   // has data for — a folder is only ever missing children because it
   // hasn't been expanded yet (handleToggle fetches on demand), never
   // because of a hardcoded nesting limit here.
-  const buildTreeNode = useCallback(
-    (entry: DirEntry): TreeNode => ({
+  //
+  // Plain function declarations (not useCallback) so the recursive
+  // self-reference in buildTreeNode is a normal hoisted binding — wrapping
+  // it in useCallback while referencing itself in its own body trips the
+  // "accessed before declared" lint rule, since the memoized closure can't
+  // safely close over a not-yet-assigned const. Re-created each render,
+  // which is fine: this tree isn't large enough to need memoization here.
+  function buildTreeNode(entry: DirEntry): TreeNode {
+    return {
       entry,
       children: entry.is_dir
         ? (dirChildren.get(entry.path)?.map(buildTreeNode) ?? null)
         : null,
       isExpanded: expandedDirs.has(entry.path),
-    }),
-    [dirChildren, expandedDirs],
-  )
+    }
+  }
 
-  const buildTreeNodes = useCallback(
-    (entries: DirEntry[]): TreeNode[] => entries.map(buildTreeNode),
-    [buildTreeNode],
-  )
+  function buildTreeNodes(entries: DirEntry[]): TreeNode[] {
+    return entries.map(buildTreeNode)
+  }
 
   if (loading) {
     return (
