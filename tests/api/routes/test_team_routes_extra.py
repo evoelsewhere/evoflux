@@ -90,6 +90,54 @@ def app_without_team():
 
 
 # ---------------------------------------------------------------------------
+# _dedupe_named_paths — GET /team/workspace/browse dedup helper
+#
+# Windows ships legacy compatibility junctions ("My Documents", "My
+# Pictures", ...) that resolve to the same target as their modern
+# counterpart. Real symlinks/junctions aren't reliably creatable in this
+# sandboxed test environment (symlink creation requires a privilege this
+# CI/dev user doesn't have — see the skipped/failing symlink tests
+# elsewhere), so the dedup logic is exercised directly against synthetic
+# (name, resolved_path) pairs instead of real filesystem junctions.
+# ---------------------------------------------------------------------------
+
+
+def test_dedupe_named_paths_collapses_shared_resolved_path():
+    from app.api.routes.team.chat import _dedupe_named_paths
+
+    result = _dedupe_named_paths(
+        [
+            ("Documents", "C:\\Users\\alice\\Documents"),
+            ("My Documents", "C:\\Users\\alice\\Documents"),
+            ("Pictures", "C:\\Users\\alice\\Pictures"),
+        ]
+    )
+
+    assert result == [
+        {"name": "Documents", "path": "C:\\Users\\alice\\Documents"},
+        {"name": "Pictures", "path": "C:\\Users\\alice\\Pictures"},
+    ]
+
+
+def test_dedupe_named_paths_no_duplicates_passthrough():
+    from app.api.routes.team.chat import _dedupe_named_paths
+
+    pairs = [("a", "/root/a"), ("b", "/root/b"), ("c", "/root/c")]
+
+    assert _dedupe_named_paths(pairs) == [
+        {"name": "a", "path": "/root/a"},
+        {"name": "b", "path": "/root/b"},
+        {"name": "c", "path": "/root/c"},
+    ]
+
+
+def test_dedupe_named_paths_empty():
+    from app.api.routes.team.chat import _dedupe_named_paths
+
+    assert _dedupe_named_paths([]) == []
+
+
+# ---------------------------------------------------------------------------
 # GET /team/agents (lines 143-160)
 # ---------------------------------------------------------------------------
 
