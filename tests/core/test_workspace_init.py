@@ -148,6 +148,61 @@ def test_ensure_workspace_initialized_materializes_builtins_without_seed(
     assert (config / "agents" / "explorer.md").is_file()
     assert (config / "agents" / "coding" / "coder.md").is_file()
     assert (config / "agents" / "coding" / "explorer.md").is_file()
+    # Regression: a failed seed download must not leave the workspace
+    # without a lead agent (the seed bundle normally supplies it).
+    assert (config / "agents" / "evoflux.md").is_file()
+    assert (config / "agents" / "coding" / "evoflux.md").is_file()
+
+
+def test_ensure_workspace_initialized_heals_preexisting_leadless_workspace(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: a workspace left without a lead by a past failed seed
+    download (only member blueprints on disk) must self-heal on the *next*
+    startup too, not just when the agents dir starts out empty."""
+    import app.core.workspace_init as workspace_init
+
+    config = tmp_path / "config"
+    agents = config / "agents"
+    agents.mkdir(parents=True)
+    # Simulate the broken state: builtin member blueprints materialized by
+    # an earlier run whose seed download failed, but no lead agent.
+    (agents / "executor.md").write_text(
+        "---\nname: executor\nrole: member\nmodel: __PROVIDER_MODEL__\n---\n"
+    )
+
+    monkeypatch.setattr(
+        workspace_init.settings, "EVOFLUX_DATA_DIR", str(tmp_path / "data")
+    )
+    monkeypatch.setattr(workspace_init.settings, "EVOFLUX_CONFIG_DIR", str(config))
+    monkeypatch.setattr(
+        workspace_init.settings, "EVOFLUX_STATE_DIR", str(tmp_path / "state")
+    )
+    monkeypatch.setattr(
+        workspace_init.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache")
+    )
+    monkeypatch.setattr(
+        workspace_init.settings, "EVOFLUX_WORKSPACE_DIR", str(tmp_path / "workspace")
+    )
+    monkeypatch.setattr(
+        workspace_init.settings, "EVOFLUX_WIKI_DIR", str(tmp_path / "wiki")
+    )
+    monkeypatch.setattr(workspace_init.settings, "AGENTS_DIR", str(agents))
+    monkeypatch.setattr(workspace_init.settings, "SKILLS_DIR", str(config / "skills"))
+    monkeypatch.setattr(
+        workspace_init.settings, "EVOFLUX_PLUGINS_DIRS", str(config / "plugins")
+    )
+    monkeypatch.setattr(
+        "app.cli.seed.install_seed",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("unexpected seed: agents dir already has files")
+        ),
+    )
+
+    ensure_workspace_initialized()
+
+    assert (agents / "evoflux.md").is_file()
 
 
 def test_replace_placeholder_updates_only_seed_model(tmp_path: Path) -> None:
