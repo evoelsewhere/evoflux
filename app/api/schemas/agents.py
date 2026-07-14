@@ -38,6 +38,21 @@ class AgentListResponse(BaseModel):
     agents: list[AgentSummary]
 
 
+class AgentBulkModelRequest(BaseModel):
+    names: list[str] = Field(description="Agent names (filename stems) to update.")
+    model: str = Field(description="New model id, e.g. 'anthropic:claude-sonnet-5'.")
+
+
+class AgentBulkModelResult(BaseModel):
+    name: str
+    ok: bool
+    error: str | None = None
+
+
+class AgentBulkModelResponse(BaseModel):
+    results: list[AgentBulkModelResult]
+
+
 # ── Registry ────────────────────────────────────────────────────────────────
 
 

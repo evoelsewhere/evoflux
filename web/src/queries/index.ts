@@ -25,6 +25,7 @@ export {
   useCreateAgentMutation,
   useUpdateAgentMutation,
   useDeleteAgentMutation,
+  useBulkUpdateAgentModelMutation,
 } from './useAgentFilesQuery'
 export {
   useSkillFilesQuery,

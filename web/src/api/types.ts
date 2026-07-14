@@ -649,6 +649,16 @@ export interface AgentListResponse {
   agents: AgentSummary[]
 }
 
+export interface AgentBulkModelResult {
+  name: string
+  ok: boolean
+  error: string | null
+}
+
+export interface AgentBulkModelResponse {
+  results: AgentBulkModelResult[]
+}
+
 // ── Skill management ────────────────────────────────────────────────────────
 
 export interface SkillSummary {
