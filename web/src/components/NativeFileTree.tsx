@@ -225,24 +225,24 @@ export function NativeFileTree({
     [expandedDirs, dirChildren, workspaceRoot],
   )
 
-  // Build tree nodes from entries
-  const buildTreeNodes = useCallback(
-    (entries: DirEntry[]): TreeNode[] => {
-      return entries.map((entry) => ({
-        entry,
-        children: entry.is_dir ? (dirChildren.get(entry.path)?.map((e) => ({
-          entry: e,
-          children: e.is_dir ? (dirChildren.get(e.path)?.map((e2) => ({
-            entry: e2,
-            children: null,
-            isExpanded: expandedDirs.has(e2.path),
-          })) ?? null) : null,
-          isExpanded: expandedDirs.has(e.path),
-        })) ?? null) : null,
-        isExpanded: expandedDirs.has(entry.path),
-      }))
-    },
+  // Build tree nodes from entries. Recurses to whatever depth dirChildren
+  // has data for — a folder is only ever missing children because it
+  // hasn't been expanded yet (handleToggle fetches on demand), never
+  // because of a hardcoded nesting limit here.
+  const buildTreeNode = useCallback(
+    (entry: DirEntry): TreeNode => ({
+      entry,
+      children: entry.is_dir
+        ? (dirChildren.get(entry.path)?.map(buildTreeNode) ?? null)
+        : null,
+      isExpanded: expandedDirs.has(entry.path),
+    }),
     [dirChildren, expandedDirs],
+  )
+
+  const buildTreeNodes = useCallback(
+    (entries: DirEntry[]): TreeNode[] => entries.map(buildTreeNode),
+    [buildTreeNode],
   )
 
   if (loading) {
