@@ -47,6 +47,8 @@ import {
   Trash2,
   Pencil,
   FolderUp,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
@@ -147,6 +149,9 @@ function vscodeWorkspaceUrl(workspaceRoot: string): string {
 const PANEL_WIDTH_KEY = 'workspace-panel-width'
 const TREE_WIDTH_KEY = 'workspace-tree-width'
 const PANEL_WIDTH_MIN = 320
+// Modest — this panel is docked (shares the row with sidebar + chat), not
+// floating above them, so it shouldn't claim most of the window by default.
+const PANEL_WIDTH_DEFAULT = 520
 const TREE_WIDTH_MIN = 160
 const TREE_WIDTH_MAX_RATIO = 0.55
 
@@ -888,15 +893,23 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
   // Outer panel width — docked, resizable from the left edge (mirrors
   // CodingWorkspacePanel). Tree/preview split width is a separate, internal
   // resize handled by its own hand-rolled drag below.
+  //
+  // Default is modest (not the old 60vw) — this panel now shares the row
+  // with the sidebar and chat instead of floating above them, so a large
+  // default starves both by default. The "Expand" toggle below covers the
+  // case where someone genuinely wants a full-width look at a big file
+  // without dragging the handle every time.
   const resizablePanel = useResizableWidth({
     storageKey: PANEL_WIDTH_KEY,
-    defaultWidth: Math.min(960, Math.round((typeof window === 'undefined' ? 1280 : window.innerWidth) * 0.6)),
+    defaultWidth: PANEL_WIDTH_DEFAULT,
     minWidth: PANEL_WIDTH_MIN,
     maxWidth: Math.round((typeof window === 'undefined' ? 1280 : window.innerWidth) * 0.95),
     edge: 'left',
     disabled: isMobile,
   })
-  const panelWidth = resizablePanel.width
+  const [expanded, setExpanded] = useState(false)
+  const expandedWidth = Math.min(1400, Math.round((typeof window === 'undefined' ? 1280 : window.innerWidth) * 0.9))
+  const panelWidth = expanded ? expandedWidth : resizablePanel.width
 
   const [treeWidth, setTreeWidth] = useState(() =>
     readStoredWidth(TREE_WIDTH_KEY, 260, TREE_WIDTH_MIN),
@@ -1139,8 +1152,10 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
       )}
       aria-label="Workspace files"
     >
-      {/* Left-edge drag handle to resize the panel */}
-      {!isMobile && (
+      {/* Left-edge drag handle to resize the panel — hidden while expanded,
+          since the displayed width is pinned to expandedWidth then and
+          dragging wouldn't visibly do anything. */}
+      {!isMobile && !expanded && (
         <div
           className="absolute bottom-0 left-0 top-0 z-10 w-1 cursor-ew-resize transition-colors hover:bg-(--color-accent)/20"
           onPointerDown={resizablePanel.startResize}
@@ -1209,10 +1224,21 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
           >
             <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} />
           </button>
+          {!isMobile && (
+            <button
+              onClick={() => setExpanded((v) => !v)}
+              className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+              title={expanded ? 'Collapse' : 'Expand'}
+              aria-label={expanded ? 'Collapse panel' : 'Expand panel'}
+              aria-pressed={expanded}
+            >
+              {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            </button>
+          )}
           <button
             onClick={onClose}
             className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-            title="Close (Esc)"
+            title="Close"
             aria-label="Close"
           >
             <X size={16} />
