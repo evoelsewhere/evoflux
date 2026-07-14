@@ -12,6 +12,7 @@ import {
   Info,
   KeyRound,
   Moon,
+  Palette,
   Plug,
   Server,
   Shield,
@@ -40,6 +41,7 @@ type SidebarPath =
   | '/settings/connection'
   | '/settings/dream'
   | '/settings/notifications'
+  | '/settings/appearance'
   | '/settings/diagnostics'
   | '/telemetry'
   | '/settings'
@@ -203,6 +205,12 @@ export function SettingsSidebar({ currentPath, onNavigate }: SettingsSidebarProp
         label: 'Notifications',
         icon: Bell,
         matchPrefix: '/settings/notifications',
+      },
+      {
+        to: '/settings/appearance',
+        label: 'Appearance',
+        icon: Palette,
+        matchPrefix: '/settings/appearance',
       },
       {
         to: '/settings/diagnostics',

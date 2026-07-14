@@ -33,6 +33,7 @@ function pageTitleFor(pathname: string): string {
   if (pathname === '/settings/sandbox') return 'Sandbox'
   if (pathname === '/settings/dream') return 'Dream'
   if (pathname === '/settings/notifications') return 'Notifications'
+  if (pathname === '/settings/appearance') return 'Appearance'
   return 'Settings'
 }
 

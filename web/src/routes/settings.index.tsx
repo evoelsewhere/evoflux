@@ -13,6 +13,7 @@ import {
   Image,
   KeyRound,
   Moon,
+  Palette,
   Plug,
   Shield,
   Sparkles,
@@ -219,6 +220,14 @@ export function SettingsHubPage() {
                   icon={Bell}
                   title="Notifications"
                   description="Control desktop notifications and send a test notification"
+                  count={null}
+                  countLabel=""
+                />
+                <SettingsNavCard
+                  to="/settings/appearance"
+                  icon={Palette}
+                  title="Appearance"
+                  description="Theme, accent color, font, and UI scale"
                   count={null}
                   countLabel=""
                 />
