@@ -694,6 +694,26 @@ async def validate_coding_workspace(
     return {"workspace": resolved}
 
 
+def _dedupe_named_paths(pairs: list[tuple[str, str]]) -> list[dict[str, str]]:
+    """Collapse ``(name, resolved_path)`` pairs sharing a resolved path.
+
+    Windows ships legacy compatibility junctions (e.g. "My Documents", "My
+    Pictures") that resolve to the same target as their modern counterpart
+    ("Documents", "Pictures"). Left unfiltered, both show up as distinct
+    directory entries with an identical ``path`` — the frontend uses that
+    as a React list key, so a duplicate collides. First-seen name wins;
+    input order (and thus the caller's sort) is preserved.
+    """
+    seen_paths: set[str] = set()
+    result: list[dict[str, str]] = []
+    for name, resolved_path in pairs:
+        if resolved_path in seen_paths:
+            continue
+        seen_paths.add(resolved_path)
+        result.append({"name": name, "path": resolved_path})
+    return result
+
+
 @router.get("/workspace/browse")
 async def browse_coding_workspace(
     path: str | None = Query(None, description="Directory to list."),
@@ -702,7 +722,6 @@ async def browse_coding_workspace(
     if not root.is_dir():
         raise HTTPException(status_code=422, detail=f"Not a directory: {root}")
 
-    directories: list[dict[str, str]] = []
     try:
         entries = sorted(root.iterdir(), key=lambda entry: entry.name.lower())
     except OSError as exc:
@@ -710,14 +729,18 @@ async def browse_coding_workspace(
             status_code=403, detail=f"Cannot read directory: {root}"
         ) from exc
 
+    named_paths: list[tuple[str, str]] = []
     for entry in entries:
         if entry.name.startswith("."):
             continue
         try:
-            if entry.is_dir():
-                directories.append({"name": entry.name, "path": str(entry.resolve())})
+            if not entry.is_dir():
+                continue
+            named_paths.append((entry.name, str(entry.resolve())))
         except OSError:
             continue
+
+    directories = _dedupe_named_paths(named_paths)
 
     return {
         "path": str(root),
