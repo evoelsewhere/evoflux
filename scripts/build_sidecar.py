@@ -12,11 +12,15 @@ Layout produced under ``<out>/``::
         fastapi/
         pydantic/
         …
+      bin/
+        officecli(.exe)      ← xlsx/pptx skills shell out to this
 
 The Tauri shell runs a tiny bootstrap that adds
 ``sidecar-bundle/site-packages`` with ``site.addsitedir()`` so platform
 ``.pth`` files are processed, then runs
 ``app/cli/__main__.py serve --handshake --generate-token --parent-pid …``.
+At startup the app (see ``app/core/officecli.py``) finds ``bin/officecli``
+next to the running interpreter and prepends its directory to ``PATH``.
 
 We deliberately do NOT use ``uv tool install`` — that produces an
 isolated venv with absolute paths inside it, which won't survive being
@@ -27,7 +31,9 @@ copied into ``Contents/Resources/``. Instead we:
 2. ``uv pip install --target <site-packages> --python <python-bin>``
    the local project + chosen extras.
 3. Strip the ``site-packages/`` of caches, tests, docs.
-4. Smoke-test the bundle by invoking ``serve --port 0 --handshake``.
+4. Download the OfficeCLI binary (https://github.com/iOfficeAI/OfficeCLI)
+   for the host platform, verified against its release's SHA256SUMS.
+5. Smoke-test the bundle by invoking ``serve --port 0 --handshake``.
 
 Usage::
 
@@ -71,6 +77,74 @@ STRIP_GLOBS = (
 )
 
 IS_WINDOWS = platform.system() == "Windows"
+
+# OfficeCLI (https://github.com/iOfficeAI/OfficeCLI) — the xlsx/pptx skills
+# shell out to this single-binary CLI instead of openpyxl/python-pptx.
+# Pinned (not "latest") for reproducible builds; bump deliberately.
+OFFICECLI_VERSION = "v1.0.136"
+OFFICECLI_RELEASE_BASE = "https://github.com/iOfficeAI/OfficeCLI/releases/download"
+
+
+def officecli_bin_name() -> str:
+    return "officecli.exe" if IS_WINDOWS else "officecli"
+
+
+def detect_officecli_asset() -> str:
+    """Return the OfficeCLI release asset filename for the current host."""
+    system = platform.system()
+    machine = platform.machine().lower()
+    arch = "arm64" if machine in ("arm64", "aarch64") else "x64"
+    if system == "Darwin":
+        return f"officecli-mac-{arch}"
+    if system == "Linux":
+        return f"officecli-linux-{arch}"
+    if system == "Windows":
+        return f"officecli-win-{arch}.exe"
+    raise SystemExit(f"unsupported host for officecli: {system}/{machine}")
+
+
+def fetch_officecli(out: Path, version: str) -> Path:
+    """Download the OfficeCLI binary for this host into ``<out>/bin/``.
+
+    Verifies the download's SHA256 against the release's ``SHA256SUMS``
+    file before trusting it. Returns the path to the installed binary.
+    """
+    import hashlib
+    import urllib.request
+
+    asset_name = detect_officecli_asset()
+    base_url = f"{OFFICECLI_RELEASE_BASE}/{version}"
+    bin_dir = out / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    dest = bin_dir / officecli_bin_name()
+
+    print(f">> downloading officecli {version} ({asset_name})")
+    urllib.request.urlretrieve(f"{base_url}/{asset_name}", dest)
+
+    sums_path = bin_dir / "SHA256SUMS"
+    urllib.request.urlretrieve(f"{base_url}/SHA256SUMS", sums_path)
+    expected = None
+    for line in sums_path.read_text().splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[1].lstrip("*") == asset_name:
+            expected = parts[0]
+            break
+    sums_path.unlink()
+    if expected is None:
+        raise SystemExit(f"officecli: no checksum entry for {asset_name} in SHA256SUMS")
+
+    actual = hashlib.sha256(dest.read_bytes()).hexdigest()
+    if actual != expected:
+        dest.unlink()
+        raise SystemExit(
+            f"officecli: checksum mismatch for {asset_name} "
+            f"(expected {expected}, got {actual})"
+        )
+
+    if not IS_WINDOWS:
+        dest.chmod(dest.stat().st_mode | 0o111)
+
+    return dest
 
 
 def detect_target_triple() -> str:
@@ -542,6 +616,16 @@ def main() -> int:
         action="store_true",
         help="Skip the post-build smoke test (not recommended).",
     )
+    ap.add_argument(
+        "--skip-officecli",
+        action="store_true",
+        help="Skip bundling the OfficeCLI binary (xlsx/pptx skills fall back to PATH lookup).",
+    )
+    ap.add_argument(
+        "--officecli-version",
+        default=OFFICECLI_VERSION,
+        help=f"OfficeCLI release tag to bundle (default: {OFFICECLI_VERSION}).",
+    )
     args = ap.parse_args()
 
     root = Path(args.root).resolve()
@@ -575,14 +659,22 @@ def main() -> int:
     saved = strip_bundle(site_packages)
     print(f"stripped: {human_bytes(saved)}")
 
-    # ── 4. Smoke test ───────────────────────────────────────────────────
+    # ── 4. Bundle OfficeCLI (xlsx/pptx skills shell out to it) ──────────
+    officecli_bin: Path | None = None
+    if not args.skip_officecli:
+        officecli_bin = fetch_officecli(out, args.officecli_version)
+        print(f"officecli binary: {officecli_bin}")
+
+    # ── 5. Smoke test ───────────────────────────────────────────────────
     if not args.no_smoke:
         smoke_test(python_bin, site_packages)
 
-    # ── 5. Report ────────────────────────────────────────────────────────
+    # ── 6. Report ────────────────────────────────────────────────────────
     print("\n=== bundle summary ===")
     report_size(python_target, "python runtime")
     report_size(site_packages, "site-packages")
+    if officecli_bin is not None:
+        print(f"  officecli: {human_bytes(officecli_bin.stat().st_size)}")
     report_size(out, "TOTAL")
     return 0
 
