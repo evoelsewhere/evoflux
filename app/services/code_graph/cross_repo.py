@@ -232,7 +232,12 @@ async def _reattach_stale(
     return count
 
 
-async def _reattach_stale_src(db: AsyncSession, *, project_id: UUID) -> int:
+async def _reattach_stale_src(
+    db: AsyncSession,
+    *,
+    project_id: UUID,
+    changed_workspaces: set[UUID] | None = None,
+) -> int:
     """Re-attach ``resolved`` rows whose ``src_node_id`` went stale because the
     SOURCE repo reindexed (same staleness cause as ``_reattach_stale``).
 
@@ -250,19 +255,24 @@ async def _reattach_stale_src(db: AsyncSession, *, project_id: UUID) -> int:
     nodes once rather than one range query per stale row — same rationale as
     the batching in ``_reattach_stale``, just keyed by file instead of
     qualified_name since there's no exact-name index to look up by here.
+
+    If ``changed_workspaces`` is provided, only re-attach edges whose source
+    is in one of those workspaces (incremental optimization).
     """
-    rows = (
-        await db.exec(
-            select(CrossRepoEdge)
-            .outerjoin(CodeNode, col(CrossRepoEdge.src_node_id) == col(CodeNode.id))
-            .where(
-                col(CrossRepoEdge.project_id) == project_id,
-                col(CrossRepoEdge.status) == "resolved",
-                col(CrossRepoEdge.src_line).is_not(None),
-                col(CodeNode.id).is_(None),
-            )
+    query = (
+        select(CrossRepoEdge)
+        .outerjoin(CodeNode, col(CrossRepoEdge.src_node_id) == col(CodeNode.id))
+        .where(
+            col(CrossRepoEdge.project_id) == project_id,
+            col(CrossRepoEdge.status) == "resolved",
+            col(CrossRepoEdge.src_line).is_not(None),
+            col(CodeNode.id).is_(None),
         )
-    ).all()
+    )
+    if changed_workspaces is not None and len(changed_workspaces) > 0:
+        query = query.where(col(CrossRepoEdge.src_workspace_id).in_(changed_workspaces))
+
+    rows = (await db.exec(query)).all()
     if not rows:
         return 0
 
@@ -327,19 +337,26 @@ async def _find_node_by_name(
     return candidates[0] if len(candidates) == 1 else None
 
 
-async def _resolve_static(db: AsyncSession, *, project_id: UUID) -> int:
+async def _resolve_static(
+    db: AsyncSession,
+    *,
+    project_id: UUID,
+    changed_workspaces: set[UUID] | None = None,
+) -> int:
+    """If ``changed_workspaces`` is provided, only (re-)resolve edges whose
+    source is in one of those workspaces (incremental optimization)."""
     siblings = await _load_sibling_repos(db, project_id=project_id)
     if len(siblings) < 2:
         return 0  # nothing to link against
 
-    rows = (
-        await db.exec(
-            select(CrossRepoEdge).where(
-                col(CrossRepoEdge.project_id) == project_id,
-                col(CrossRepoEdge.status) == "unresolved",
-            )
-        )
-    ).all()
+    query = select(CrossRepoEdge).where(
+        col(CrossRepoEdge.project_id) == project_id,
+        col(CrossRepoEdge.status) == "unresolved",
+    )
+    if changed_workspaces is not None and len(changed_workspaces) > 0:
+        query = query.where(col(CrossRepoEdge.src_workspace_id).in_(changed_workspaces))
+
+    rows = (await db.exec(query)).all()
     if not rows:
         return 0
 
