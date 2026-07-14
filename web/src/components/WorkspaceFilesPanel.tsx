@@ -836,7 +836,7 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
   const { data, isLoading, isError, refetch, isFetching } = useWorkspaceFilesQuery(sessionId)
   const prefersReducedMotion = useReducedMotion()
   const queryClient = useQueryClient()
-  useSessionFilesWatcher(sessionId)
+  useSessionFilesWatcher(sessionId, data?.workspace_root)
 
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')

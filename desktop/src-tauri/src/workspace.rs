@@ -460,12 +460,43 @@ pub fn start_file_watcher(app: AppHandle, root: String) -> Result<(), String> {
     // Spawn a task to process events and emit to frontend
     let app_clone = app.clone();
     let root_clone = root_str.clone();
-    tokio::spawn(async move {
+    tauri::async_runtime::spawn(async move {
         let mut rx = rx;
         let mut pending_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
-        let mut debounce_timer: Option<tokio::time::Instant> = None;
+        let debounce = std::time::Duration::from_millis(50);
 
-        while let Some(result) = rx.recv().await {
+        loop {
+            let next = if pending_paths.is_empty() {
+                rx.recv().await
+            } else {
+                match tokio::time::timeout(debounce, rx.recv()).await {
+                    Ok(msg) => msg,
+                    Err(_) => {
+                        let events: Vec<FileChangeEvent> = pending_paths
+                            .drain()
+                            .filter_map(|entry| {
+                                let parts: Vec<&str> = entry.splitn(2, ':').collect();
+                                if parts.len() == 2 {
+                                    Some(FileChangeEvent {
+                                        change_type: parts[0].to_string(),
+                                        path: parts[1].to_string(),
+                                    })
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect();
+                        if !events.is_empty() {
+                            let _ = app_clone.emit("file-change", events);
+                        }
+                        continue;
+                    }
+                }
+            };
+            let Some(result) = next else {
+                break;
+            };
+
             if let Ok(event) = result {
                 match event.kind {
                     EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_) => {
@@ -505,36 +536,8 @@ pub fn start_file_watcher(app: AppHandle, root: String) -> Result<(), String> {
 
                             pending_paths.insert(format!("{}:{}", change_type, rel));
                         }
-
-                        // Debounce: emit after 50ms of no changes
-                        debounce_timer = Some(tokio::time::Instant::now());
                     }
                     _ => {}
-                }
-            }
-
-            // Check if we should flush
-            if let Some(timer) = debounce_timer {
-                if timer.elapsed() >= std::time::Duration::from_millis(50) {
-                    let events: Vec<FileChangeEvent> = pending_paths
-                        .drain()
-                        .filter_map(|entry| {
-                            let parts: Vec<&str> = entry.splitn(2, ':').collect();
-                            if parts.len() == 2 {
-                                Some(FileChangeEvent {
-                                    change_type: parts[0].to_string(),
-                                    path: parts[1].to_string(),
-                                })
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
-
-                    if !events.is_empty() {
-                        let _ = app_clone.emit("file-change", events);
-                    }
-                    debounce_timer = None;
                 }
             }
         }
