@@ -13,6 +13,7 @@ import {
   updateAgent,
   deleteAgent,
   getRegistry,
+  bulkUpdateAgentModel,
 } from '@/api/client'
 import { queryKeys } from './keys'
 
@@ -75,6 +76,15 @@ export function useDeleteAgentMutation() {
   const client = useQueryClient()
   return useMutation({
     mutationFn: (name: string) => deleteAgent(name),
+    onSuccess: () => invalidateTeam(client),
+  })
+}
+
+export function useBulkUpdateAgentModelMutation() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ names, model }: { names: string[]; model: string }) =>
+      bulkUpdateAgentModel(names, model),
     onSuccess: () => invalidateTeam(client),
   })
 }

@@ -8,6 +8,7 @@ import type {
   AgentListResponse,
   AgentDetail,
   AgentDeleteResponse,
+  AgentBulkModelResponse,
   RegistryResponse,
   SkillListResponse,
   SkillDetail,
@@ -59,6 +60,19 @@ export async function deleteAgent(name: string): Promise<AgentDeleteResponse> {
 export async function getRegistry(): Promise<RegistryResponse> {
   const res = await fetch(`${apiBaseUrl()}/agents/registry`)
   if (!res.ok) await parseDetailOrThrow(res, 'getRegistry')
+  return res.json()
+}
+
+export async function bulkUpdateAgentModel(
+  names: string[],
+  model: string,
+): Promise<AgentBulkModelResponse> {
+  const res = await fetch(`${apiBaseUrl()}/agents/model`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ names, model }),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'PATCH /agents/model')
   return res.json()
 }
 

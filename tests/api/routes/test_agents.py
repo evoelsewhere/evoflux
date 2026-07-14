@@ -485,6 +485,66 @@ async def test_update_missing_agent_404(client: AsyncClient):
     assert res.status_code == 404
 
 
+# ── PATCH /agents/model (bulk) ───────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_bulk_update_model_patches_every_agent(fs_dirs, client: AsyncClient):
+    agents_dir, _ = fs_dirs
+    _seed_files(agents_dir)
+    (agents_dir / "worker.md").write_text(MEMBER_MD)
+
+    res = await client.patch(
+        "/api/agents/model",
+        json={"names": ["lead", "worker"], "model": "anthropic:claude-sonnet-5"},
+    )
+
+    assert res.status_code == 200, res.text
+    results = {r["name"]: r for r in res.json()["results"]}
+    assert results["lead"]["ok"] is True
+    assert results["worker"]["ok"] is True
+    assert "model: anthropic:claude-sonnet-5" in (agents_dir / "lead.md").read_text()
+    assert "model: anthropic:claude-sonnet-5" in (agents_dir / "worker.md").read_text()
+    # Everything else in the file is preserved.
+    assert "You are the lead." in (agents_dir / "lead.md").read_text()
+
+
+@pytest.mark.asyncio
+async def test_bulk_update_model_reports_missing_agent(fs_dirs, client: AsyncClient):
+    agents_dir, _ = fs_dirs
+    _seed_files(agents_dir)
+
+    res = await client.patch(
+        "/api/agents/model",
+        json={"names": ["lead", "ghost"], "model": "anthropic:claude-sonnet-5"},
+    )
+
+    assert res.status_code == 200, res.text
+    results = {r["name"]: r for r in res.json()["results"]}
+    assert results["lead"]["ok"] is True
+    assert results["ghost"]["ok"] is False
+    assert results["ghost"]["error"]
+
+
+@pytest.mark.asyncio
+async def test_bulk_update_model_bad_model_leaves_file_untouched(
+    fs_dirs, client: AsyncClient
+):
+    agents_dir, _ = fs_dirs
+    _seed_files(agents_dir)
+    original = (agents_dir / "lead.md").read_text()
+
+    res = await client.patch(
+        "/api/agents/model",
+        json={"names": ["lead"], "model": "notavalidmodelstring"},
+    )
+
+    assert res.status_code == 200, res.text
+    results = {r["name"]: r for r in res.json()["results"]}
+    assert results["lead"]["ok"] is False
+    assert (agents_dir / "lead.md").read_text() == original
+
+
 # ── DELETE /agents/{name} ────────────────────────────────────────────────────
 
 

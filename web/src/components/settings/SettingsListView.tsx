@@ -26,6 +26,7 @@ import { AlertCircle, Plus, Search } from 'lucide-react'
 import { useId, useMemo, useState, type ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useSettingsNavigate } from '@/contexts/SettingsContext'
@@ -56,6 +57,12 @@ export interface ListViewRow {
   invalidReason?: string
   /** Optional trailing content (e.g. status dot). */
   trailing?: ReactNode
+  /**
+   * Selection checkbox shown before the title. Omit both to render no
+   * checkbox at all (the default — most list pages don't need selection).
+   */
+  selected?: boolean
+  onToggleSelect?: () => void
 }
 
 type NewRoute =
@@ -74,6 +81,8 @@ export interface SettingsListViewProps {
   filterPlaceholder: string
   /** Optional tab strip rendered above the filter input. */
   tabs?: ReactNode
+  /** Optional content rendered between the tabs and the filter input (e.g. a bulk-action bar). */
+  headerExtra?: ReactNode
   rows: ListViewRow[]
   isLoading: boolean
   isError: boolean
@@ -92,6 +101,7 @@ export function SettingsListView({
   newAction,
   filterPlaceholder,
   tabs,
+  headerExtra,
   rows,
   isLoading,
   isError,
@@ -136,6 +146,9 @@ export function SettingsListView({
 
         {/* ── Optional tabs ─────────────────────────────────────────────── */}
         {tabs && <div className="mt-6">{tabs}</div>}
+
+        {/* ── Optional header extra (e.g. bulk-action bar) ─────────────── */}
+        {headerExtra && <div className="mt-3">{headerExtra}</div>}
 
         {/* ── Filter ────────────────────────────────────────────────────── */}
         {(isLoading || rows.length > 0) && (
@@ -230,7 +243,7 @@ function ListCardLink({ row }: { row: ListViewRow }) {
     )
   }
 
-  return (
+  const card = (
     <button
       type="button"
       onClick={() => { if (row.to) navigate(row.to, { params: row.params }) }}
@@ -280,5 +293,20 @@ function ListCardLink({ row }: { row: ListViewRow }) {
       </div>
       {row.trailing && <div className="shrink-0">{row.trailing}</div>}
     </button>
+  )
+
+  if (!row.onToggleSelect) return card
+
+  return (
+    <div className="flex items-start gap-2">
+      <label className="flex h-11 shrink-0 cursor-pointer items-center pl-0.5">
+        <Checkbox
+          checked={!!row.selected}
+          onCheckedChange={() => row.onToggleSelect?.()}
+          aria-label={`Select ${row.title}`}
+        />
+      </label>
+      <div className="min-w-0 flex-1">{card}</div>
+    </div>
   )
 }

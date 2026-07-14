@@ -28,6 +28,9 @@ from app.agent.providers.model_metadata import get_model_thinking_levels
 from app.core.runtime_settings import provider_visible_models
 from app.agent.tools.builtin.skill import discover_skills
 from app.api.schemas.agents import (
+    AgentBulkModelRequest,
+    AgentBulkModelResponse,
+    AgentBulkModelResult,
     AgentDeleteResponse,
     AgentDetail,
     AgentListResponse,
@@ -397,6 +400,76 @@ async def is_registered_model_id(model_id: str) -> bool:
         discovered = await _discover_configured_registry_models()
         return any(p == provider and m == model for p, m in discovered)
     return False
+
+
+@router.patch("/model")
+async def bulk_update_model(body: AgentBulkModelRequest) -> AgentBulkModelResponse:
+    """Set ``model:`` on many agent files in one round trip.
+
+    Each agent is patched and validated independently — one bad file
+    doesn't block the rest. A model-field edit can't violate the
+    "exactly one lead" invariant, so this skips the whole-team-reload
+    rollback ``update_agent`` uses and just restores that single file's
+    previous content on failure.
+    """
+    import yaml
+
+    from app.agent.loader import _FRONTMATTER_RE
+
+    results: list[AgentBulkModelResult] = []
+    for name in body.names:
+        try:
+            previous = agent_fs.read_agent(name)
+        except (AgentFsNotFoundError, AgentFsPathError) as exc:
+            results.append(AgentBulkModelResult(name=name, ok=False, error=str(exc)))
+            continue
+
+        m = _FRONTMATTER_RE.match(previous.content)
+        if not m:
+            results.append(
+                AgentBulkModelResult(
+                    name=name, ok=False, error="Missing YAML frontmatter."
+                )
+            )
+            continue
+
+        try:
+            meta = yaml.safe_load(m.group(1)) or {}
+        except yaml.YAMLError as exc:
+            results.append(
+                AgentBulkModelResult(
+                    name=name, ok=False, error=f"Invalid YAML frontmatter: {exc}"
+                )
+            )
+            continue
+        if not isinstance(meta, dict):
+            results.append(
+                AgentBulkModelResult(
+                    name=name, ok=False, error="Frontmatter must be a YAML mapping."
+                )
+            )
+            continue
+
+        meta["model"] = body.model
+        new_content = (
+            f"---\n{yaml.safe_dump(meta, sort_keys=False).strip()}\n---\n{m.group(2)}"
+        )
+
+        try:
+            _parse_content(name, new_content)
+        except ValueError as exc:
+            results.append(AgentBulkModelResult(name=name, ok=False, error=str(exc)))
+            continue
+
+        try:
+            agent_fs.write_agent(name, new_content, create=False)
+        except AgentFsPathError as exc:
+            results.append(AgentBulkModelResult(name=name, ok=False, error=str(exc)))
+            continue
+
+        results.append(AgentBulkModelResult(name=name, ok=True))
+
+    return AgentBulkModelResponse(results=results)
 
 
 @router.get("/{name}")
