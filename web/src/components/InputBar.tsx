@@ -1360,8 +1360,11 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                   {messageSlot}
                 </div>
 
-                {/* Bottom action bar — action buttons left · config selectors right · send */}
-                <div className="flex items-center gap-1.5 px-3 pb-3 pt-1">
+                {/* Bottom action bar — action buttons left · config selectors right · send.
+                    flex-wrap so the right-hand group (model pills / mode / send) drops to its
+                    own line instead of overflowing the card when the column narrows (docked
+                    workspace panel open, or mobile). */}
+                <div className="flex flex-wrap items-center gap-1.5 px-3 pb-3 pt-1">
                   {/* Left: content & navigation actions */}
                   {!shellMode && attachEl}
                   {onFiles && (
