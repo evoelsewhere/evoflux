@@ -248,6 +248,60 @@ def _lead_model_for_dir(agents_dir: Path) -> str | None:
     return None
 
 
+def _dir_has_lead(agents_dir: Path) -> bool:
+    """Return whether *agents_dir* already contains any ``role: lead`` agent."""
+    if not agents_dir.exists():
+        return False
+    for path in sorted(agents_dir.glob("*.md")):
+        try:
+            cfg = parse_agent_md(path)
+        except Exception:
+            continue
+        if cfg.role == "lead":
+            return True
+    return False
+
+
+def ensure_builtin_lead_blueprint(agents_dir: Path, *, mode: str) -> str | None:
+    """Materialise a builtin ``evoflux.md`` lead file if *agents_dir* has none.
+
+    This is a first-run/self-heal safety net for ``ensure_workspace_initialized``:
+    normally the lead agent comes from the downloaded seed bundle, but if that
+    download fails (offline, 404, ...) only member blueprints get backfilled by
+    ``ensure_builtin_agent_blueprints`` and the workspace is left without a lead.
+    Callers that validate team invariants (e.g. the agents CRUD API rejecting a
+    delete that would leave zero leads) must not call this — it is only safe to
+    run at workspace bootstrap, before any user-driven CRUD has happened.
+    """
+    from app.agent.builtin_prompts import (
+        CODING_EVOFLUX_DESCRIPTION,
+        FORGE_EVOFLUX_DESCRIPTION,
+    )
+    from app.cli.seed import PROVIDER_MODEL_TOKEN
+
+    agents_dir.mkdir(parents=True, exist_ok=True)
+    if _dir_has_lead(agents_dir):
+        return None
+
+    model = PROVIDER_MODEL_TOKEN
+    description = (
+        CODING_EVOFLUX_DESCRIPTION if mode == "coding" else FORGE_EVOFLUX_DESCRIPTION
+    )
+    target = agents_dir / "evoflux.md"
+    _atomic_write_text(
+        target,
+        _builtin_agent_md(
+            name="evoflux",
+            role="lead",
+            description=description,
+            model=model,
+            temperature=0.2,
+            thinking_level="low",
+        ),
+    )
+    return target.name
+
+
 def _is_retired_builtin_member(mode: str, name: str) -> bool:
     """Return whether a first-party member should be hidden for *mode*.
 

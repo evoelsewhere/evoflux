@@ -555,6 +555,36 @@ def test_load_team_from_dir_no_lead_raises(tmp_path):
         load_team_from_dir(d, provider_factory=factory)
 
 
+def test_ensure_builtin_lead_blueprint_writes_evoflux_when_missing(tmp_path):
+    """Workspace bootstrap self-heal: no lead at all -> writes evoflux.md."""
+    from app.agent.loader import ensure_builtin_lead_blueprint
+
+    d = _make_agents_dir(
+        tmp_path,
+        [
+            {"name": "worker", "role": "member", "model": "zai:glm-5-turbo"},
+        ],
+    )
+    written = ensure_builtin_lead_blueprint(d, mode="forge")
+    assert written == "evoflux.md"
+    assert (d / "evoflux.md").exists()
+
+
+def test_ensure_builtin_lead_blueprint_skips_existing_lead(tmp_path):
+    """A dir with a lead under any name is left untouched (no duplicate lead)."""
+    from app.agent.loader import ensure_builtin_lead_blueprint
+
+    d = _make_agents_dir(
+        tmp_path,
+        [
+            {"name": "lead", "role": "lead", "model": "zai:glm-5-turbo"},
+        ],
+    )
+    written = ensure_builtin_lead_blueprint(d, mode="forge")
+    assert written is None
+    assert not (d / "evoflux.md").exists()
+
+
 def test_load_team_from_dir_multiple_leads_raises(tmp_path):
     from app.agent.loader import load_team_from_dir
 
