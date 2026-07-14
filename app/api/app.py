@@ -31,6 +31,7 @@ from app.core.desktop_auth import DesktopTokenMiddleware
 from app.core.exception_handlers import EXCEPTION_HANDLERS
 from app.core.metrics import HTTPMetricsMiddleware, metrics_endpoint
 from app.core.middlewares import RequestSizeLimitMiddleware, SecurityHeadersMiddleware
+from app.core.officecli import ensure_officecli_on_path
 from app.core.otel import setup_otel, shutdown_otel
 from app.core.otel_retention import start_otel_retention, stop_otel_retention
 from app.core.runtime_settings import load_runtime_settings
@@ -49,6 +50,7 @@ async def lifespan(app: FastAPI):
     logger.info("server_starting version={}", VERSION)
 
     ensure_workspace_initialized()
+    ensure_officecli_on_path()
 
     # ── Auto-migrate DB in production ───────────────────────────────
     if settings.APP_ENV == "production":
