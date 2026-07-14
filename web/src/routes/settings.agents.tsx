@@ -1,5 +1,5 @@
 import { Crown, Plus, Wrench } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -38,12 +38,15 @@ export function AgentsListPage() {
   // won't silently re-check something they unchecked).
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const [bulkModel, setBulkModel] = useState('')
-  const initializedRef = useRef(false)
-  useEffect(() => {
-    if (initializedRef.current || !data) return
-    initializedRef.current = true
+  // Seed `checked` once from the first successful load — adjust state
+  // during render (same "adopt external value" pattern as ModelCombobox's
+  // lastValue latch below) rather than an effect, so there's no extra
+  // render pass where the list flashes as fully unchecked first.
+  const [seeded, setSeeded] = useState(false)
+  if (!seeded && data) {
+    setSeeded(true)
     setChecked(new Set(data.agents.map((a) => a.name)))
-  }, [data])
+  }
 
   const toggleChecked = (name: string) => {
     setChecked((prev) => {

@@ -1523,6 +1523,13 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
             isWorking={isTeamWorking}
           />
         )}
+        {mode !== 'coding' && showFilesPanel && (
+          <WorkspaceFilesPanel
+            open
+            sessionId={sessionIdState}
+            onClose={() => setShowFilesPanel(false)}
+          />
+        )}
         <BrowserViewer
           sessionId={sessionIdState}
           open={browserOpen}
@@ -1539,11 +1546,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
         sessionFastMode={sessionFastMode}
         onSessionModelSettingsChange={setSessionModelSettings}
         onClose={closeAgentCapabilities}
-      />
-      <WorkspaceFilesPanel
-        open={mode !== 'coding' && showFilesPanel}
-        sessionId={sessionIdState}
-        onClose={() => setShowFilesPanel(false)}
       />
       <WikiPanel open={wikiOpen} onClose={closeWiki} />
       <SchedulerPanel
