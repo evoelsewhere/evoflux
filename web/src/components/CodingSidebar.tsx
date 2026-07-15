@@ -615,24 +615,30 @@ export function CodingSidebar({
     saveLastCodingWorkspace(path);
     setPendingWorkspace(path);
     try {
+      // Only carry the current model/thinking-level over when there's an
+      // existing session to carry them FROM — otherwise a stale value left
+      // over from a different mode's session gets sent here and can be
+      // rejected as "Choose a model from the registry." (see forge.tsx).
+      const carryModel = state.sessionId ? state.sessionModel : null;
+      const carryThinkingLevel = state.sessionId ? state.sessionThinkingLevel : null;
       state.beginResolvedSession(null, {
         mode: "coding",
         workspace: path,
-        model: state.sessionModel,
-        thinkingLevel: state.sessionThinkingLevel,
+        model: carryModel,
+        thinkingLevel: carryThinkingLevel,
       });
       const session = await resolveTeamSession({
         mode: "coding",
         workspace: path,
-        model: state.sessionModel,
-        thinkingLevel: state.sessionThinkingLevel,
+        model: carryModel,
+        thinkingLevel: carryThinkingLevel,
         create,
       });
       state.beginResolvedSession(session.id, {
         mode: "coding",
         workspace: session.workspace ?? path,
-        model: session.model ?? state.sessionModel,
-        thinkingLevel: session.thinking_level ?? state.sessionThinkingLevel,
+        model: session.model ?? carryModel,
+        thinkingLevel: session.thinking_level ?? carryThinkingLevel,
         skipInitialRestore: create && session.created,
       });
       if (create && session.created) {
@@ -661,20 +667,24 @@ export function CodingSidebar({
     try {
       const state = useTeamStore.getState();
       state.beginResolvedSession(null, { mode: "coding" });
+      // Only carry the current model/thinking-level over when there's an
+      // existing session to carry them FROM — see selectWorkspace above.
+      const carryModel = state.sessionId ? state.sessionModel : null;
+      const carryThinkingLevel = state.sessionId ? state.sessionThinkingLevel : null;
       // Backend derives workspace from project — no primaryPath passed from UI.
       const session = await resolveTeamSession({
         mode: "coding",
         project_id: project.id,
-        model: state.sessionModel,
-        thinkingLevel: state.sessionThinkingLevel,
+        model: carryModel,
+        thinkingLevel: carryThinkingLevel,
         create: true,
       });
       const resolvedWorkspace = session.workspace ?? null;
       state.beginResolvedSession(session.id, {
         mode: "coding",
         workspace: resolvedWorkspace,
-        model: session.model ?? state.sessionModel,
-        thinkingLevel: session.thinking_level ?? state.sessionThinkingLevel,
+        model: session.model ?? carryModel,
+        thinkingLevel: session.thinking_level ?? carryThinkingLevel,
         skipInitialRestore: session.created,
       });
       // beginResolvedSession resets projectId to null — restore it immediately.
@@ -795,13 +805,17 @@ export function CodingSidebar({
     setError(null);
     try {
       const state = useTeamStore.getState();
+      // Only carry the current model/thinking-level over when there's an
+      // existing session to carry them FROM — see selectWorkspace above.
+      const carryModel = state.sessionId ? state.sessionModel : null;
+      const carryThinkingLevel = state.sessionId ? state.sessionThinkingLevel : null;
       const session = await resolveTeamSession({
         mode: "coding",
         worktreeFrom: worktreeTarget,
         worktreeName: worktreeName || "session",
         worktreeBranch: worktreeBranch || null,
-        model: state.sessionModel,
-        thinkingLevel: state.sessionThinkingLevel,
+        model: carryModel,
+        thinkingLevel: carryThinkingLevel,
       });
       const path = session.workspace;
       if (!path) throw new Error("Worktree session did not return a workspace");
@@ -811,8 +825,8 @@ export function CodingSidebar({
       nextState.beginResolvedSession(session.id, {
         mode: "coding",
         workspace: path,
-        model: session.model ?? nextState.sessionModel,
-        thinkingLevel: session.thinking_level ?? nextState.sessionThinkingLevel,
+        model: session.model ?? carryModel,
+        thinkingLevel: session.thinking_level ?? carryThinkingLevel,
         skipInitialRestore: session.created,
       });
       prependSession(queryClient, session);
