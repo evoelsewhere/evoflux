@@ -40,7 +40,7 @@ import { SchedulerPanel } from '../SchedulerPanel'
 import { SessionScheduleIndicator } from '../SessionScheduleIndicator'
 import { ActivityPanel } from '../ActivityPanel'
 import { BrowserViewer } from '../BrowserViewer'
-import { PlanApprovalModal } from '../PlanApprovalModal'
+import { PlanActionBar, PlanReviewPanel } from '../PlanReviewPanel'
 import { PermissionApprovalModal } from '../PermissionApprovalModal'
 import { AskUserQuestionModal } from '../AskUserQuestionModal'
 import { MonitorView } from '../MonitorView'
@@ -50,7 +50,7 @@ import { SessionTOC } from '@/components/SessionTOC'
 import { useProvidersQuery, useRegistryQuery, useTriggerDreamMutation } from '@/queries'
 import { useCommandsQuery } from '@/queries/useCommandsQuery'
 import { useSnippetsQuery } from '@/queries/useSnippetsQuery'
-import { renderCommand, renderSnippet, resolveApiUrl, resolveTeamSession, setSessionPermissionMode, getTeamSession } from '@/api/client'
+import { renderCommand, renderSnippet, replyPlanApproval, resolveApiUrl, resolveTeamSession, setSessionPermissionMode, getTeamSession } from '@/api/client'
 import { useShallow } from 'zustand/react/shallow'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { useToastStore } from '@/stores/useToastStore'
@@ -586,6 +586,17 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const handleAddFileComment = useCallback((path: string, startLine: number, endLine: number) => {
     const ref = startLine === endLine ? `@${path}#L${startLine}` : `@${path}#L${startLine}-L${endLine}`
     inputRef.current?.appendValue(`${ref} `)
+    inputRef.current?.focus()
+  }, [])
+
+  /** Plan panel → composer: quote the selected plan text with the user's comment. */
+  const handlePlanQuoteComment = useCallback((quote: string, comment: string) => {
+    const quoted = quote
+      .trim()
+      .split('\n')
+      .map((line) => `> ${line}`)
+      .join('\n')
+    inputRef.current?.appendValue(`${quoted}\n${comment}\n`)
     inputRef.current?.focus()
   }, [])
 
@@ -1272,6 +1283,8 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
           </>
         )}
 
+        <PlanReviewPanel onQuoteComment={handlePlanQuoteComment} />
+
         <main id="main" ref={mainColumnRef} className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-[10px] bg-(--bg-page) shadow-sm">
         {setupRequired && (
           <div className="mx-3 mt-3 flex flex-col gap-3 rounded-xl border border-(--accent-blue)/35 bg-(--accent-blue-soft) p-3 text-sm text-(--color-text) shadow-sm sm:flex-row sm:items-center sm:justify-between">
@@ -1401,11 +1414,33 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
 
         <PermissionApprovalModal />
         <AskUserQuestionModal />
+        <PlanActionBar onRevise={() => inputRef.current?.focus()} />
         {(mode !== 'coding' || workspace) && (
           <FloatingInputBar
             ref={inputRef}
             boundsRef={mainColumnRef}
             onSubmit={async (content, files) => {
+              // While a plan is pending review, a text-only message is the
+              // revision feedback — a normal send would just queue behind
+              // the blocked agent turn and never reach it.
+              const pendingPlan = useTeamStore.getState().planApproval
+              if (pendingPlan && (!files || files.length === 0)) {
+                const planSessionId = useTeamStore.getState().sessionId
+                if (planSessionId) {
+                  try {
+                    await replyPlanApproval(planSessionId, pendingPlan.requestId, 'revise', content)
+                    useTeamStore.setState({ planApproval: null })
+                    pushToast({ tone: 'info', title: 'Revision sent — agent is updating the plan' })
+                  } catch (err) {
+                    pushToast({
+                      tone: 'error',
+                      title: 'Failed to send revision',
+                      description: err instanceof Error ? err.message : undefined,
+                    })
+                  }
+                  return
+                }
+              }
               if (mode === 'coding' && (await tryHandleBuiltinLoopCommand(content))) return
               const shell = content.startsWith('!')
               const command = shell ? content.slice(1).trim() : content
@@ -1554,7 +1589,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
         contextMode={mode}
         contextWorkspace={workspace ?? null}
       />
-      <PlanApprovalModal />
       {showPalette && (
         <CommandPalette commands={paletteCommands} onClose={() => setShowPalette(false)} />
       )}

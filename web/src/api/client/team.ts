@@ -177,12 +177,13 @@ export async function setSessionPermissionMode(
 export async function replyPlanApproval(
   sessionId: string,
   requestId: string,
-  decision: 'approved' | 'rejected',
+  decision: 'approved' | 'rejected' | 'revise',
+  feedback?: string,
 ): Promise<void> {
   const res = await fetch(`${apiBaseUrl()}/team/${encodeURIComponent(sessionId)}/plan/reply`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ request_id: requestId, decision }),
+    body: JSON.stringify({ request_id: requestId, decision, feedback: feedback ?? null }),
   })
   if (!res.ok) {
     const body = await res.json().catch(() => null)

@@ -16,7 +16,11 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-PlanDecision = Literal["approved", "rejected"]
+PlanDecision = Literal["approved", "rejected", "revise"]
+
+#: (decision, feedback) — feedback is empty unless the user typed revision
+#: notes (``revise``) or an optional rejection reason.
+PlanReply = tuple[PlanDecision, str]
 
 
 @dataclass
@@ -34,12 +38,17 @@ class PlanApprovalRequest:
 
     id: str
     session_id: str
+    plan: str
     steps: list[PlanStep]
     _future: asyncio.Future | None = field(default=None, compare=False, repr=False)
 
     @classmethod
-    def create(cls, session_id: str, steps: list[PlanStep]) -> "PlanApprovalRequest":
-        req = cls(id=str(uuid.uuid4()), session_id=session_id, steps=list(steps))
+    def create(
+        cls, session_id: str, plan: str, steps: list[PlanStep]
+    ) -> "PlanApprovalRequest":
+        req = cls(
+            id=str(uuid.uuid4()), session_id=session_id, plan=plan, steps=list(steps)
+        )
         req._future = asyncio.get_running_loop().create_future()
         return req
 
@@ -94,20 +103,23 @@ class PlanModeService:
         idx = len(self._steps)
         return f"[PLAN] Step {idx} recorded: {tool_name} — {summary}"
 
-    async def request_approval(self) -> PlanDecision:
-        """Exit plan mode, push SSE event, and block until user replies.
+    async def request_approval(self, plan: str = "") -> PlanReply:
+        """Push the plan for user review and block until they reply.
 
-        Returns ``"approved"`` or ``"rejected"``.  If there are no recorded
-        steps, returns ``"approved"`` immediately without prompting.
+        Returns ``(decision, feedback)``. On ``approved``/``rejected`` plan
+        mode ends and recorded steps are cleared; on ``revise`` plan mode
+        stays active and the recorded steps are kept so the agent can
+        adjust the plan and call again. If there is neither a plan document
+        nor any recorded steps, returns ``("approved", "")`` immediately
+        without prompting.
         """
-        self._active = False
         steps = list(self._steps)
-        self._steps = []
 
-        if not steps:
-            return "approved"
+        if not steps and not plan.strip():
+            self._active = False
+            return ("approved", "")
 
-        req = PlanApprovalRequest.create(self.session_id, steps)
+        req = PlanApprovalRequest.create(self.session_id, plan, steps)
         self._pending[req.id] = req
 
         try:
@@ -121,6 +133,7 @@ class PlanModeService:
                     PlanApprovalRequestedEvent(
                         request_id=req.id,
                         session_id=self.session_id,
+                        plan=plan,
                         steps=[
                             {"tool": s.tool_name, "args": s.args, "summary": s.summary}
                             for s in steps
@@ -135,15 +148,50 @@ class PlanModeService:
 
         assert req._future is not None
         try:
-            result: PlanDecision = await req._future
+            decision, feedback = await req._future
         except asyncio.CancelledError:
-            # Agent was interrupted while waiting — clean up and re-raise.
+            # Agent was interrupted while waiting — clean up, tell the UI,
+            # and re-raise.
             self._pending.pop(req.id, None)
+            await self._push_replied(req.id, "cancelled")
             raise
         self._pending.pop(req.id, None)
-        return result
+        await self._push_replied(req.id, decision)
 
-    def reply(self, request_id: str, decision: PlanDecision) -> bool:
+        if decision == "revise":
+            # Stay in plan mode: keep recorded steps so the agent can add
+            # to them and re-submit a revised plan.
+            self._active = True
+        else:
+            self._active = False
+            self._steps = []
+        return (decision, feedback)
+
+    async def _push_replied(self, request_id: str, decision: str) -> None:
+        """Best-effort ``plan_approval_replied`` so every client closes."""
+        try:
+            from app.agent.schemas.events import PlanApprovalRepliedEvent
+            from app.services import memory_stream_store as stream_store
+            from app.services.stream_envelope import StreamEnvelope
+
+            await stream_store.push_event(
+                self.stream_session_id,
+                StreamEnvelope.from_event(
+                    PlanApprovalRepliedEvent(
+                        request_id=request_id,
+                        session_id=self.session_id,
+                        decision=decision,
+                    )
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001
+            from loguru import logger
+
+            logger.warning("plan_replied_sse_push_failed error={}", exc)
+
+    def reply(
+        self, request_id: str, decision: PlanDecision, feedback: str = ""
+    ) -> bool:
         """Resolve a pending approval.  Called by the API reply endpoint.
 
         Returns ``True`` if the request was found and resolved, ``False``
@@ -152,7 +200,7 @@ class PlanModeService:
         req = self._pending.get(request_id)
         if req is None or req._future is None or req._future.done():
             return False
-        req._future.set_result(decision)
+        req._future.set_result((decision, feedback))
         return True
 
 
