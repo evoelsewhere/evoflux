@@ -46,6 +46,7 @@ _PROVIDER_KEYS: tuple[str, ...] = (
     "NVIDIA_API_KEY",
     "XAI_API_KEY",
     "DEEPSEEK_API_KEY",
+    "FOUNDRY_API_KEY",
     "ROUTER9_API_KEY",
     "CLIPROXY_API_KEY",
     # OAuth-based providers don't expose env vars — initialisation will

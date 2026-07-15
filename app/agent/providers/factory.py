@@ -27,6 +27,7 @@ from app.agent.providers.bedrock import BedrockProvider
 from app.agent.providers.codex import CodexProvider
 from app.agent.providers.copilot import CopilotProvider
 from app.agent.providers.deepseek import DeepSeekProvider
+from app.agent.providers.foundry import FoundryClaudeProvider, FoundryProvider
 from app.agent.providers.googlegenai import GoogleGenAIProvider
 from app.agent.providers.ollama import OllamaProvider
 from app.agent.providers.openai import ChatCompletionsOnlyProvider, OpenAIProvider
@@ -46,6 +47,7 @@ SUPPORTED_PROVIDERS: tuple[str, ...] = (
     "codex",
     "copilot",
     "deepseek",
+    "foundry",
     "googlegenai",
     "nvidia",
     "ollama",
@@ -275,6 +277,35 @@ def build_provider(
                 ZAIProvider(
                     api_key=require_api_key(s.ZAI_API_KEY, "ZAI_API_KEY", "ZAI"),
                     model=model,
+                    model_kwargs=kwargs,
+                ),
+                name,
+            )
+        case "foundry":
+            foundry_key = require_api_key(
+                s.FOUNDRY_API_KEY, "FOUNDRY_API_KEY", "Microsoft Foundry"
+            )
+            resource = (
+                os.getenv("FOUNDRY_RESOURCE_NAME") or s.FOUNDRY_RESOURCE_NAME or ""
+            ).strip()
+            if not resource:
+                raise ValueError(
+                    "Microsoft Foundry resource name is required. "
+                    "Set FOUNDRY_RESOURCE_NAME in your .env file."
+                )
+            # Claude deployments only answer the Anthropic Messages surface;
+            # everything else goes through the OpenAI-compatible v1 surface.
+            # ``anthropic_api`` in model_kwargs overrides the name heuristic
+            # for Claude deployments not named after the model.
+            use_anthropic = bool(
+                kwargs.get("anthropic_api", "claude" in model.lower())
+            )
+            foundry_cls = FoundryClaudeProvider if use_anthropic else FoundryProvider
+            return _with_provider_name(
+                foundry_cls(
+                    api_key=foundry_key,
+                    model=model,
+                    resource=resource,
                     model_kwargs=kwargs,
                 ),
                 name,

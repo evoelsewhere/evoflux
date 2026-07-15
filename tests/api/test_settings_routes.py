@@ -1223,3 +1223,22 @@ def test_registry_survives_discovery_errors(monkeypatch: pytest.MonkeyPatch) -> 
     # are added without a working live discovery call.
     assert response.status_code == 200
     assert response.json()["models"] == []
+
+
+def test_build_overrides_skips_blank_candidate_values() -> None:
+    """A blank form field must not clobber a saved credential.
+
+    The cloud_creds UI echoes non-secret values but leaves saved secrets
+    empty; discovery merges these overrides over the saved ones, so empty
+    strings would erase the saved API key and fail verification.
+    """
+    from app.agent.providers.catalog import find
+
+    entry = find("foundry")
+    assert entry is not None
+
+    overrides = settings_routes._build_overrides(
+        entry, "", {"FOUNDRY_RESOURCE_NAME": "evollm", "FOUNDRY_API_KEY": ""}
+    )
+
+    assert overrides == {"FOUNDRY_RESOURCE_NAME": "evollm"}

@@ -86,6 +86,11 @@ class Settings(BaseSettings):
     XIAOMI_BASE_URL: str = ""
     MOONSHOT_API_KEY: SecretStr | None = None
     MOONSHOT_BASE_URL: str = ""
+
+    # Microsoft Foundry (Azure AI Foundry) — resource API key plus the
+    # resource name (or a full endpoint URL) the base URL is derived from.
+    FOUNDRY_API_KEY: SecretStr | None = None
+    FOUNDRY_RESOURCE_NAME: str = ""
     NINJA_API_KEY: SecretStr | None = None
 
     # AWS Bedrock — region and optional named profile.

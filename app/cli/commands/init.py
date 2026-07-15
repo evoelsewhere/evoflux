@@ -23,6 +23,7 @@ _PROVIDER_KEY_VAR: dict[str, str] = {
     "nvidia": "NVIDIA_API_KEY",
     "xai": "XAI_API_KEY",
     "deepseek": "DEEPSEEK_API_KEY",
+    "foundry": "FOUNDRY_API_KEY",
     "router9": "ROUTER9_API_KEY",
     "cliproxy": "CLIPROXY_API_KEY",
     "ollama": "OLLAMA_API_KEY",
