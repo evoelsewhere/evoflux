@@ -17,8 +17,8 @@
 
 import { memo, useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
-
 import { LazyMarkdownBlock } from '@/utils/LazyMarkdownBlock'
+import { ChatWelcome } from './ChatWelcome'
 import { ChevronDown, ChevronUp, Copy, Check, Undo2, Terminal } from 'lucide-react'
 import { Thinking } from './Thinking'
 import { ToolCall } from './ToolCall'
@@ -602,26 +602,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
     <div ref={scrollRef} className="flex-1 overflow-y-auto">
       <div className="mx-auto max-w-3xl px-4 py-6">
         {isEmpty && (
-           emptyState ?? (
-             <div className="flex select-none flex-col items-center justify-center gap-6 py-20">
-               <div className="relative">
-                 <div className="absolute inset-0 rounded-2xl bg-(--bg-key) blur-xl" />
-                 <img
-                   src={EvoFluxLogo}
-                   className="relative opacity-90"
-                   width={80}
-                   height={80}
-                   alt=""
-                   aria-hidden="true"
-                 />
-               </div>
-               <div className="text-center">
-                 <h2 className="font-hand text-3xl font-bold text-(--color-text)">
-                   what&rsquo;s on your mind?
-                 </h2>
-               </div>
-             </div>
-           )
+           emptyState ?? <ChatWelcome />
          )}
 
          <div className="space-y-6">
@@ -751,7 +732,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
          </div>
       </div>
     </div>
-    {showScrollBtn && (
+    {showScrollBtn && !isEmpty && (
         <button
           onClick={() => scrollToBottom(true)}
           className="absolute bottom-16 left-1/2 z-10 -translate-x-1/2 rounded-full border border-(--color-border) bg-(--bg-card) p-1 text-(--color-text-muted) transition-colors hover:text-(--color-text-2)"

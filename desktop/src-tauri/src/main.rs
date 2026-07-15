@@ -167,7 +167,11 @@ fn configure_window_chrome(
             .hidden_title(true)
             .traffic_light_position(LogicalPosition::new(12.0, 22.0))
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        builder.decorations(false)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         builder
     }
