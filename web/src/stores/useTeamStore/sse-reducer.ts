@@ -692,11 +692,23 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
           draft.planApproval = {
             requestId: d.request_id as string,
             sessionId: d.session_id as string,
+            plan: (d.plan as string) ?? '',
             steps: (d.steps as Array<Record<string, unknown>>).map((s) => ({
               tool: s.tool as string,
               args: (s.args as Record<string, unknown>) ?? {},
               summary: s.summary as string,
             })),
+          }
+        })
+        break
+      }
+
+      case 'plan_approval_replied': {
+        // Another tab replied, or the request was cancelled by an
+        // interrupt — close the plan-review UI everywhere.
+        set((draft) => {
+          if (draft.planApproval?.requestId === (d.request_id as string)) {
+            draft.planApproval = null
           }
         })
         break

@@ -295,19 +295,37 @@ class BrowserSessionEvent(BaseModel):
 
 
 class PlanApprovalRequestedEvent(BaseModel):
-    """Agent has finished recording a plan and requests user approval.
+    """Agent has authored a plan and requests user review.
 
-    The frontend should display a plan-approval modal and POST a reply to
-    ``/api/team/{session_id}/plan/{request_id}/reply``.
+    The frontend should display a plan-review UI and POST a reply to
+    ``/api/team/{session_id}/plan/reply`` with the ``request_id`` in the
+    body and a ``decision`` of ``approved``, ``rejected`` or ``revise``
+    (``revise`` carries free-text ``feedback`` back to the agent).
 
-    Each step in ``steps`` has ``tool``, ``args`` (JSON-serialisable dict),
-    and ``summary`` (one-line description for the user).
+    ``plan`` is the agent-authored markdown plan document. Each step in
+    ``steps`` has ``tool``, ``args`` (JSON-serialisable dict), and
+    ``summary`` (one-line description for the user).
     """
 
     type: Literal["plan_approval_requested"] = "plan_approval_requested"
     request_id: str  # unique ID — included in the reply POST
     session_id: str  # agent session that owns the plan
+    plan: str = ""  # markdown plan document authored by the agent
     steps: list[dict[str, Any]]  # [{tool, args, summary}, ...]
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class PlanApprovalRepliedEvent(BaseModel):
+    """A plan-approval request was resolved (or cancelled by interrupt).
+
+    Lets every connected client close its plan-review UI and stops the
+    stream store from replaying the pending request on reconnect.
+    """
+
+    type: Literal["plan_approval_replied"] = "plan_approval_replied"
+    request_id: str
+    session_id: str
+    decision: str  # "approved" | "rejected" | "revise" | "cancelled"
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

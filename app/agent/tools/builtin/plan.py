@@ -26,9 +26,9 @@ async def _enter_plan_mode(
     ``rm``, ``shell``, ``python``, and ``bg`` are **recorded** instead of
     executed.  Each call returns a ``[PLAN]`` acknowledgement.
 
-    Call ``exit_plan_mode`` when you have finished planning to present the
-    full list of steps to the user.  They may approve (run all steps) or
-    reject (abandon the plan).
+    Call ``exit_plan_mode`` with a markdown plan document when you have
+    finished planning.  The user may approve (run all steps), request
+    revisions (you stay in plan mode and adjust), or reject (abandon).
 
     Use plan mode whenever a task involves multiple risky file or shell
     operations so the user can review the full scope before any changes land
@@ -49,42 +49,64 @@ async def _enter_plan_mode(
 
 
 async def _exit_plan_mode(
+    plan: str,
     _state: Annotated[Any, InjectedArg()] = None,
 ) -> str:
-    """Present the recorded plan to the user for approval and wait for their decision.
+    """Present the plan to the user for review and wait for their decision.
 
-    Sends all recorded steps to the user as a plan-approval request and
-    blocks until they respond.
+    Sends the markdown plan document plus all recorded steps to the user
+    as a plan-review request and blocks until they respond.
 
-    Returns one of:
-    - ``"approved"`` — user accepted the plan; execute each step in order now.
-    - ``"rejected"`` — user declined; do NOT execute any steps; explain and
-      ask the user how they want to proceed.
+    The user can reply in three ways:
+    - ``approved`` — execute the plan; run each recorded step in order now.
+    - ``revise`` — the user requests changes; their feedback is returned to
+      you. You remain in plan mode: revise the plan (record additional
+      steps if needed) and call ``exit_plan_mode`` again with the updated
+      plan.
+    - ``rejected`` — abandon the plan; do NOT execute any steps; explain
+      and ask the user how they want to proceed.
 
-    If no steps were recorded, exits plan mode silently and returns
-    ``"approved"`` immediately.
+    If the plan is empty and no steps were recorded, exits plan mode
+    silently and returns approved immediately.
+
+    Args:
+        plan: The full plan as a markdown document shown to the user for
+            review — goal, approach, and the concrete changes you intend
+            to make. Write it for the user, not for yourself.
     """
     from app.agent.plan import get_plan_mode_service
 
     svc = get_plan_mode_service()
-    if _state is not None:
-        _state.metadata["_plan_mode"] = False
 
     n = svc.step_count
     logger.info("plan_mode_exit_requested session={} steps={}", svc.session_id, n)
 
-    decision = await svc.request_approval()
+    decision, feedback = await svc.request_approval(plan)
+
+    if _state is not None:
+        # ``revise`` keeps recording; approved/rejected end plan mode.
+        _state.metadata["_plan_mode"] = decision == "revise"
 
     if decision == "approved":
         msg = (
             f"Plan approved by user. {n} step(s) are ready to execute. "
             "Proceed with executing each recorded step in order now."
         )
+    elif decision == "revise":
+        msg = (
+            "User requested changes to the plan:\n\n"
+            f"{feedback.strip() or '(no details provided)'}\n\n"
+            "You are still in plan mode. Revise the plan (record additional "
+            "steps if needed) and call exit_plan_mode again with the "
+            "updated plan."
+        )
     else:
         msg = (
             "Plan rejected by user. Do not execute any of the recorded steps. "
             "Inform the user and ask what they would like to do instead."
         )
+        if feedback.strip():
+            msg += f"\n\nUser's note: {feedback.strip()}"
 
     logger.info(
         "plan_mode_decision session={} steps={} decision={}",
@@ -102,7 +124,8 @@ enter_plan_mode = Tool(
     description=(
         "Activate plan mode: subsequent destructive tool calls (edit, write, "
         "patch, rm, shell, python, bg) are recorded instead of executed. "
-        "Call exit_plan_mode when ready to present the plan for approval."
+        "Call exit_plan_mode with a markdown plan document when ready to "
+        "present the plan for review."
     ),
 )
 
@@ -111,8 +134,9 @@ exit_plan_mode = Tool(
     name="exit_plan_mode",
     lead_only=True,
     description=(
-        "Present all recorded plan steps to the user for approval. "
-        "Blocks until the user approves or rejects. "
-        "Returns 'approved' (execute steps) or 'rejected' (abandon plan)."
+        "Present your markdown plan (plus all recorded steps) to the user "
+        "for review. Blocks until they respond: approved (execute steps), "
+        "revise (their feedback is returned — update the plan and call "
+        "again), or rejected (abandon the plan)."
     ),
 )

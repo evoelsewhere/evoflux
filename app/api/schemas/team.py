@@ -108,7 +108,14 @@ class PlanReplyRequest(BaseModel):
     request_id: str = Field(
         description="ID returned in the plan_approval_requested event."
     )
-    decision: str = Field(description="'approved' or 'rejected'")
+    decision: str = Field(description="'approved', 'rejected' or 'revise'")
+    feedback: str | None = Field(
+        default=None,
+        description=(
+            "Free-text notes returned to the agent — the requested changes "
+            "for 'revise', or an optional reason for 'rejected'."
+        ),
+    )
 
 
 # ── Ask user ─────────────────────────────────────────────────────────────────

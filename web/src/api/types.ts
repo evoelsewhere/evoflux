@@ -24,8 +24,12 @@ export interface PlanStep {
 export interface PlanApprovalPending {
   requestId: string
   sessionId: string
+  /** Agent-authored markdown plan document (may be empty for legacy plans). */
+  plan: string
   steps: PlanStep[]
 }
+
+export type PlanDecision = 'approved' | 'rejected' | 'revise'
 
 export interface AskUserQuestionItem {
   question: string

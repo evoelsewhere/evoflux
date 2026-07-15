@@ -52,6 +52,7 @@ class _TurnState:
         "error",
         "agent_not_configured",
         "browser_session",
+        "plan_approval",
         "subscribers",
         "_cleanup_handle",
     )
@@ -85,6 +86,11 @@ class _TurnState:
         # every ``browser_session`` SSE event; replayed in ``attach()`` so
         # a mid-turn reconnect shows the correct "See Browser" button state.
         self.browser_session: dict[str, Any] | None = None
+        # Pending plan-approval request for reconnect replay.  The agent
+        # stays blocked on its future while the user reviews, so a page
+        # refresh must be able to rediscover the pending plan.  Cleared by
+        # ``plan_approval_replied``.
+        self.plan_approval: dict[str, Any] | None = None
         # Me keep list of queues — one per SSE client
         self.subscribers: list[asyncio.Queue] = []
         self._cleanup_handle: asyncio.TimerHandle | None = None
@@ -100,6 +106,7 @@ class _TurnState:
         self.usage = None
         self.error = None
         self.agent_not_configured = None
+        self.plan_approval = None
         # Preserve browser_session across turns — the browser may still be
         # active and the next turn needs to know about it.
 
@@ -277,6 +284,14 @@ async def push_event(session_id: str, envelope: StreamEnvelope) -> None:
             # Only the most recent snapshot matters — intermediate states
             # (navigated, clicked, etc.) are not worth replaying.
             state.browser_session = data
+
+        elif event_type == "plan_approval_requested":
+            # The agent blocks on this until the user replies — keep the
+            # request so a reconnect can rediscover the pending plan.
+            state.plan_approval = data
+
+        elif event_type == "plan_approval_replied":
+            state.plan_approval = None
 
         # Me refresh TTL on every write
         _schedule_cleanup(session_id, state)
@@ -487,6 +502,14 @@ async def attach(session_id: str) -> AsyncGenerator[dict[str, str], None]:
             if state.browser_session is not None:
                 yield StreamEnvelope.from_parts(
                     event="browser_session", data=state.browser_session
+                ).to_wire()
+
+            # Me replay a pending plan-approval request — the agent is
+            # still blocked on it, so a page refresh must reopen the
+            # plan-review UI (cleared when plan_approval_replied lands).
+            if state.plan_approval is not None:
+                yield StreamEnvelope.from_parts(
+                    event="plan_approval_requested", data=state.plan_approval
                 ).to_wire()
 
             # Me replay accumulated thinking per-agent so the frontend can

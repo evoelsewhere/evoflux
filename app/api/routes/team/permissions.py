@@ -97,14 +97,17 @@ async def reply_permission(
 async def reply_plan_approval(session_id: str, body: PlanReplyRequest) -> dict:
     """Reply to a pending plan-approval request.
 
-    ``decision`` must be ``"approved"`` or ``"rejected"``.
+    ``decision`` must be ``"approved"``, ``"rejected"`` or ``"revise"``.
 
     - ``"approved"`` — unblocks the agent; it will execute the recorded steps.
-    - ``"rejected"`` — unblocks the agent; it will abandon the plan.
+    - ``"revise"`` — unblocks the agent with the user's ``feedback``; it
+      stays in plan mode and submits a revised plan.
+    - ``"rejected"`` — unblocks the agent; it will abandon the plan
+      (``feedback`` optionally carries the reason).
     """
     from app.agent.plan import get_service_for_session
 
-    valid = {"approved", "rejected"}
+    valid = {"approved", "rejected", "revise"}
     if body.decision not in valid:
         raise HTTPException(
             status_code=422,
@@ -122,7 +125,8 @@ async def reply_plan_approval(session_id: str, body: PlanReplyRequest) -> dict:
 
     resolved = svc.reply(
         body.request_id,
-        _cast(Literal["approved", "rejected"], body.decision),  # type: ignore[arg-type]
+        _cast(Literal["approved", "rejected", "revise"], body.decision),  # type: ignore[arg-type]
+        body.feedback or "",
     )
     if not resolved:
         raise HTTPException(
