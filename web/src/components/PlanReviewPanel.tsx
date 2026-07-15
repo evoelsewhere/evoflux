@@ -156,7 +156,7 @@ export function PlanReviewPanel({
     defaultWidth: 380,
     minWidth: 300,
     maxWidth: 640,
-    edge: 'right',
+    edge: 'left',
     disabled: isMobile,
   })
   const bodyRef = useRef<HTMLDivElement | null>(null)
@@ -211,7 +211,7 @@ export function PlanReviewPanel({
           exit={prefersReducedMotion || isMobile ? { opacity: 0 } : { width: 0 }}
           transition={{ duration: prefersReducedMotion ? 0.01 : 0.22, ease: [0.4, 0, 0.2, 1] }}
           className={cn(
-            'fixed bottom-0 left-0 z-40 min-h-0 w-full overflow-hidden border-r border-(--color-border) bg-(--bg-card) shadow-xl md:relative md:inset-y-auto md:left-auto md:z-auto md:w-auto md:shrink-0 md:shadow-none',
+            'fixed bottom-0 right-0 z-40 min-h-0 w-full overflow-hidden border-l border-(--color-border) bg-(--bg-card) shadow-xl md:relative md:inset-y-auto md:right-auto md:z-auto md:w-auto md:shrink-0 md:shadow-none',
             isMobile ? 'mobile-safe-top max-w-none' : '',
           )}
           aria-label="Plan review"
@@ -223,7 +223,7 @@ export function PlanReviewPanel({
                 aria-orientation="vertical"
                 aria-label="Resize plan panel"
                 title="Drag to resize · double-click to reset"
-                className="absolute right-0 top-0 z-20 h-full w-1 cursor-col-resize transition-colors hover:bg-(--color-accent)/40"
+                className="absolute left-0 top-0 z-20 h-full w-1 cursor-col-resize transition-colors hover:bg-(--color-accent)/40"
                 onPointerDown={resizable.startResize}
                 onDoubleClick={resizable.resetWidth}
               />
