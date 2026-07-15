@@ -308,6 +308,35 @@ _CATALOG: list[ProviderEntry] = [
         "docs_url": "https://docs.aws.amazon.com/bedrock/latest/userguide/setting-up.html",
     },
     {
+        "id": "foundry",
+        "label": "Microsoft Foundry",
+        "description": "Azure AI Foundry — OpenAI, DeepSeek, Grok, Claude and more on your Azure resource.",
+        "kind": "cloud_creds",
+        "env_var": "",
+        "models_dev_provider_id": "azure-cognitive-services",
+        "env_vars": [
+            "FOUNDRY_API_KEY",
+            "FOUNDRY_RESOURCE_NAME",
+        ],
+        "credentials": [
+            {
+                "name": "FOUNDRY_RESOURCE_NAME",
+                "label": "Resource name or endpoint URL",
+                "secret": False,
+                "required": True,
+                "placeholder": "my-resource or https://my-resource.services.ai.azure.com",
+            },
+            {
+                "name": "FOUNDRY_API_KEY",
+                "label": "API key",
+                "secret": True,
+                "required": True,
+                "placeholder": "••••••••",
+            },
+        ],
+        "docs_url": "https://ai.azure.com",
+    },
+    {
         "id": "vertexai",
         "label": "Google Vertex AI",
         "description": "Google Cloud's enterprise-grade Gemini.",

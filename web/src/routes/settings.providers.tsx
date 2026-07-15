@@ -73,6 +73,7 @@ const PROVIDER_BRANDS: Record<string, ProviderBrand> = {
   cliproxy: { iconClass: 'bg-[#F59E0B]/15 text-[#F59E0B] ring-[#F59E0B]/20', tagline: 'CLI proxy' },
   xiaomi: { iconClass: 'bg-[#FF6900]/15 text-[#FF6900] ring-[#FF6900]/20', tagline: 'MiLM models' },
   kimi: { iconClass: 'bg-[#7C3AED]/15 text-[#7C3AED] ring-[#7C3AED]/20', tagline: 'Moonshot AI' },
+  foundry: { iconClass: 'bg-[#0078D4]/15 text-[#0078D4] ring-[#0078D4]/20', tagline: 'Azure AI Foundry' },
 }
 
 function getProviderBrand(id: string): ProviderBrand {
@@ -279,6 +280,12 @@ function ProviderBrandIcon({ provider, size = 'md' }: { provider: ProviderInfo; 
         return (
           <svg width={s} height={s} viewBox="0 0 24 24" fill="currentColor">
             <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+          </svg>
+        )
+      case 'foundry':
+        return (
+          <svg width={s} height={s} viewBox="0 0 24 24" fill="currentColor">
+            <path d="M2 2h9.5v9.5H2V2zm10.5 0H22v9.5h-9.5V2zM2 12.5h9.5V22H2v-9.5zm10.5 0H22V22h-9.5v-9.5z"/>
           </svg>
         )
       default:

@@ -118,7 +118,7 @@ _DEFAULT = ModelCapabilities()
 
 # Providers whose models generally support vision — used as a fallback
 # when a model isn't explicitly listed in the registry.
-_VISION_PROVIDERS = frozenset({"copilot", "openai", "codex", "googlegenai"})
+_VISION_PROVIDERS = frozenset({"copilot", "openai", "codex", "googlegenai", "foundry"})
 
 
 # ── YAML loader ──────────────────────────────────────────────────────────────

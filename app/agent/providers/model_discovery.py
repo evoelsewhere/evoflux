@@ -73,8 +73,11 @@ async def _openai_compatible_models(
     provider_id: str,
     base_url: str,
     api_key: str,
+    extra_headers: Mapping[str, str] | None = None,
 ) -> list[str]:
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    if extra_headers:
+        headers.update(extra_headers)
     async with httpx.AsyncClient(timeout=TIMEOUT_S) as client:
         response = await client.get(f"{base_url.rstrip('/')}/models", headers=headers)
         response.raise_for_status()
@@ -87,6 +90,60 @@ async def _openai_compatible_models(
     )
     logger.debug(
         "provider_models_discovered provider={} count={}", provider_id, len(models)
+    )
+    return models
+
+
+# The v1 surface has no deployments listing; this legacy data-plane route
+# still answers with api-key auth on both Foundry resource domains.
+FOUNDRY_DEPLOYMENTS_API_VERSION = "2023-03-15-preview"
+
+
+async def _foundry_models(overrides: Mapping[str, str] | None) -> list[str]:
+    """Return the deployment names on a Microsoft Foundry resource.
+
+    ``GET {base}/models`` on the v1 surface lists the *region catalog*
+    (hundreds of deployable models), not what the resource actually
+    serves — only deployment names are invocable. Prefer the legacy
+    deployments route; fall back to the catalog if it is ever retired
+    so discovery (and the UI's save gate) keeps working.
+    """
+    from app.agent.providers.foundry import foundry_base_url
+
+    api_key = _resolve(overrides, "FOUNDRY_API_KEY")
+    resource = _resolve(overrides, "FOUNDRY_RESOURCE_NAME")
+    if not (api_key and resource):
+        return []
+    base_url = foundry_base_url(resource)
+    headers = {"Authorization": f"Bearer {api_key}", "api-key": api_key}
+    deployments_url = f"{base_url.removesuffix('/v1')}/deployments"
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT_S) as client:
+            response = await client.get(
+                deployments_url,
+                params={"api-version": FOUNDRY_DEPLOYMENTS_API_VERSION},
+                headers=headers,
+            )
+            response.raise_for_status()
+    except httpx.HTTPError:
+        return await _openai_compatible_models(
+            provider_id="foundry",
+            base_url=base_url,
+            api_key=api_key,
+            extra_headers={"api-key": api_key},
+        )
+    data = response.json()
+    items = data.get("data", []) if isinstance(data, dict) else []
+    models = sorted(
+        {
+            str(item["id"])
+            for item in items
+            if isinstance(item, dict) and isinstance(item.get("id"), str)
+        }
+    )
+    logger.debug(
+        "provider_models_discovered provider=foundry count={} source=deployments",
+        len(models),
     )
     return models
 
@@ -310,6 +367,8 @@ async def discover_provider_models(
                     base_url="https://api.z.ai/api/paas/v4",
                     api_key=_resolve(overrides, "ZAI_API_KEY"),
                 )
+            case "foundry":
+                models = await _foundry_models(overrides)
             case "googlegenai":
                 models = await _google_genai_models(overrides)
             case "anthropic":

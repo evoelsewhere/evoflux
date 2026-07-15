@@ -163,6 +163,14 @@ def _provider_is_configured(entry: "ProviderEntry") -> bool:
         token_file = token_files.get(entry["id"])
         return bool(token_file and token_file.is_file())
     if kind == "cloud_creds":
+        if entry["id"] == "foundry":
+            # The generic env_vars check below only reads os.environ, which
+            # loses saved credentials after a daemon restart — the store
+            # also consults the saved .env file.
+            store = ProviderCredentialStore(entry["id"])
+            return bool(
+                store.get("FOUNDRY_API_KEY") and store.get("FOUNDRY_RESOURCE_NAME")
+            )
         if entry["id"] == "bedrock":
             store = ProviderCredentialStore(entry["id"])
             profile = os.environ.get("AWS_BEDROCK_PROFILE") or store.get(
@@ -374,7 +382,10 @@ def _build_overrides(
         name = str(credentials[0].get("name", ""))
         if name:
             overrides[name] = body_api_key
-    overrides.update(body_extra)
+    # Blank form fields are not candidate credentials — the UI echoes
+    # non-secret values but leaves saved secrets empty, and an empty
+    # override must not clobber the saved value during discovery.
+    overrides.update({name: value for name, value in body_extra.items() if value})
     return overrides
 
 
