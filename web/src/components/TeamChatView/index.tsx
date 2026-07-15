@@ -1283,8 +1283,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
           </>
         )}
 
-        <PlanReviewPanel onQuoteComment={handlePlanQuoteComment} />
-
         <main id="main" ref={mainColumnRef} className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-[10px] bg-(--bg-page) shadow-sm">
         {setupRequired && (
           <div className="mx-3 mt-3 flex flex-col gap-3 rounded-xl border border-(--accent-blue)/35 bg-(--accent-blue-soft) p-3 text-sm text-(--color-text) shadow-sm sm:flex-row sm:items-center sm:justify-between">
@@ -1504,6 +1502,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
           />
         )}
         </main>
+        <PlanReviewPanel onQuoteComment={handlePlanQuoteComment} />
         <AnimatePresence>
           {showActivity && (
             <motion.aside
