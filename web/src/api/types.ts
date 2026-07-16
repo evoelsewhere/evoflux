@@ -339,10 +339,97 @@ export interface CodingProject {
   id: string
   name: string
   description: string | null
+  // "coding" (default) or "aim" — the two kinds never see each other's
+  // projects (GET /team/projects?kind= filter).
+  kind: string
   settings: Record<string, unknown>
   workspaces: ProjectWorkspaceItem[]
   created_at: string
   updated_at: string
+}
+
+// ── AIM mode (documents/plans/aim-mode-shell-ux-spec.md v2.2) ────────────────
+
+export interface AimUnitOut {
+  id: string
+  module: string
+  name: string
+  kind: string
+  phase: string
+  wave: number | null
+  assignee: string | null
+  depends_on: string[]
+  complexity: Record<string, unknown>
+  kb_doc_path: string | null
+  updated_at: string
+}
+
+export interface AimPhaseCounts {
+  inventory: number
+  understood: number
+  designed: number
+  converted: number
+  equivalent: number
+  cutover: number
+}
+
+export interface AimProjectSummary {
+  project_id: string
+  total_units: number
+  phase_counts: AimPhaseCounts
+  equivalent_pct: number
+  latest_run_at: string | null
+}
+
+export interface AimRunOut {
+  id: string
+  unit_id: string
+  kind: string
+  verdict: string
+  case_set: string | null
+  stats: Record<string, unknown>
+  report_path: string | null
+  created_at: string
+  // Parsed report.json contents — only populated by GET .../aim/runs/{id}.
+  report: Record<string, unknown> | null
+}
+
+export interface AimProjectCreateRequest {
+  name: string
+  rulebook_id: string
+  rulebook_version?: string
+  source_paths: string[]
+  target_path: string
+  kb_path: string
+}
+
+export interface AimManifestPreview {
+  rulebook_id: string
+  rulebook_version: string
+  source_identities: string[]
+  target_identities: string[]
+  phase: string
+}
+
+export interface AimProjectJoinRequest {
+  name: string
+  kb_path: string
+  source_paths: string[]
+  target_path: string
+}
+
+// Result of POST /team/projects/aim/detect on a conventional project root
+// (<name>/{aim_source_base/*, aim_<name>_document, aim_target_source}).
+export interface AimLayoutDetection {
+  root: string
+  project_name: string
+  source_paths: string[]
+  kb_path: string
+  target_path: string
+  has_manifest: boolean
+  source_identity_map: Record<string, string | null>
+  target_identity_map: Record<string, string | null>
+  warnings: string[]
 }
 
 export interface ProjectCreateRequest {

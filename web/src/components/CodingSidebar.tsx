@@ -30,6 +30,7 @@ import { usePlatform } from "@/hooks/use-platform";
 import { useResizableWidth } from "@/hooks/use-resizable-width";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import {
+  ArrowRightLeft,
   ChevronDown,
   ChevronRight,
   Code2,
@@ -1160,6 +1161,14 @@ export function CodingSidebar({
                 <Code2 size={12} aria-hidden="true" />
                 Coding
               </button>
+              <button
+                type="button"
+                onClick={() => { navigate({ to: "/aim" }); onMobileClose?.(); }}
+                className="flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 text-xs font-medium text-(--color-text-muted) transition-colors hover:text-(--color-text)"
+              >
+                <ArrowRightLeft size={12} aria-hidden="true" />
+                AIM
+              </button>
             </div>
           </div>
         )}
@@ -1185,6 +1194,14 @@ export function CodingSidebar({
               >
                 <Code2 size={12} aria-hidden="true" />
                 Coding
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate({ to: "/aim" })}
+                className="flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 text-xs font-medium text-(--color-text-muted) transition-colors hover:text-(--color-text)"
+              >
+                <ArrowRightLeft size={12} aria-hidden="true" />
+                AIM
               </button>
             </div>
           </div>

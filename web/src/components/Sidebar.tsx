@@ -11,6 +11,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 
 import {
+  ArrowRightLeft,
   CalendarClock,
   Code2,
   Gauge,
@@ -412,6 +413,14 @@ export function Sidebar({
                           <Code2 size={12} aria-hidden="true" />
                           Coding
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => navigate({ to: '/aim' })}
+                          className="flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 text-xs font-medium text-(--color-text-muted) transition-colors hover:text-(--color-text)"
+                        >
+                          <ArrowRightLeft size={12} aria-hidden="true" />
+                          AIM
+                        </button>
                       </div>
                     </div>
                   )}
@@ -455,6 +464,14 @@ export function Sidebar({
                         }`}
                       >
                         <Code2 size={16} aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => navigate({ to: '/aim' })}
+                        title="AIM"
+                        className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
+                      >
+                        <ArrowRightLeft size={16} aria-hidden="true" />
                       </button>
                     </div>
                   )}
@@ -677,6 +694,14 @@ export function Sidebar({
                   >
                     <Code2 size={12} aria-hidden="true" />
                     Coding
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { navigate({ to: '/aim' }); onMobileClose?.(); }}
+                    className="flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 text-xs font-medium text-(--color-text-muted) transition-colors hover:text-(--color-text)"
+                  >
+                    <ArrowRightLeft size={12} aria-hidden="true" />
+                    AIM
                   </button>
                 </div>
               </div>

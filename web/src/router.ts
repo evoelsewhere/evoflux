@@ -1,6 +1,7 @@
 import { createRootRoute, createRoute, createRouter, Outlet } from '@tanstack/react-router'
 import { Root, NotFound } from './routes/__root'
 import { TeamLayout, CodingLayout } from './routes/forge'
+import { AimLayout } from './routes/aim'
 import { TelemetryPage } from './routes/telemetry'
 import { SchedulerPage } from './routes/scheduler'
 
@@ -61,6 +62,36 @@ const codingFocusSessionRoute = createRoute({
   component: () => null,
 })
 
+// /aim layout — AIM mode: sidebar → project → feature → main content
+// (documents/plans/aim-mode-shell-ux-spec.md v2.2). The layout component
+// reads $projectId/$feature itself via useParams(strict: false); the child
+// routes exist to shape the URL space.
+const aimLayoutRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/aim',
+  component: AimLayout,
+})
+const aimIndexRoute = createRoute({
+  getParentRoute: () => aimLayoutRoute,
+  path: '/',
+  component: () => null,
+})
+const aimProjectRoute = createRoute({
+  getParentRoute: () => aimLayoutRoute,
+  path: '$projectId',
+  component: Outlet,
+})
+const aimProjectIndexRoute = createRoute({
+  getParentRoute: () => aimProjectRoute,
+  path: '/',
+  component: () => null,
+})
+const aimFeatureRoute = createRoute({
+  getParentRoute: () => aimProjectRoute,
+  path: '$feature',
+  component: () => null,
+})
+
 // /telemetry — standalone observability page (span aggregates & latency)
 const telemetryRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -80,6 +111,10 @@ const routeTree = rootRoute.addChildren([
   codingLayoutRoute.addChildren([
     codingIndexRoute,
     codingFocusRoute.addChildren([codingFocusIndexRoute, codingFocusSessionRoute]),
+  ]),
+  aimLayoutRoute.addChildren([
+    aimIndexRoute,
+    aimProjectRoute.addChildren([aimProjectIndexRoute, aimFeatureRoute]),
   ]),
   telemetryRoute,
   schedulerRoute,
