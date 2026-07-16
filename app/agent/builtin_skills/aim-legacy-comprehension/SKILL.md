@@ -27,6 +27,16 @@ Legacy comprehension for a migration project fails the same way almost every tim
 4. **Flag ambiguity instead of resolving it silently.** Dead code, unreachable branches, rules that seem to contradict something you already documented — write it down as a flag, don't quietly pick an interpretation. Ambiguity caught here is cheap; ambiguity discovered later during test compare is expensive.
 5. **Extract candidate business rules as you go** (see the `aim-business-rule-extraction` skill) rather than treating comprehension and rule extraction as separate passes over the same code.
 
+## Deriving the bottom-up order
+
+The order comes from the graph, not from judgment calls:
+
+1. **Index the estate first.** Reindex the source workspace so the graph is current. In an AIM project the source repos load their rulebook's structural extractors automatically (COBOL divisions/sections/paragraphs, JCL steps, VB6 procedures become nodes; `PERFORM`/`CALL`/`COPY`/`PGM=` become edges) — if `code_search` on a known legacy symbol returns nothing, the index hasn't run; fix that before proceeding, don't fall back to reading files in directory order.
+2. **Leaves first.** A unit whose outgoing `calls`/`imports` edges all point at already-documented units (or at nothing) is ready. Start from units with no outgoing dependencies at all — utility paragraphs, copybooks, leaf procedures — and work upward. `code_path` between a unit and a suspected dependency confirms ordering questions cheaply.
+3. **Cycles are one unit of work.** Legacy code cycles (A `PERFORM`s B, B `PERFORM`s A). Don't ping-pong: treat the whole cycle as a single documentation task, read its members together, and write their docs in one pass that cross-references within the cycle.
+4. **Unresolved edges are leads, not blockers.** A `CALL 'XYZ'` whose target isn't in the graph means a dynamic call, a missing repo, or an external system. Flag it in the unit's doc and move on — don't stall the whole order hunting for it.
+5. **Record progress in `aim_units`**, not in your head: set a unit's phase forward when its doc lands, so the next session (or the next teammate on a cloned KB) resumes the walk instead of re-deriving it.
+
 ## Verification
 
 Before considering a unit's documentation done, check: does it cite what it calls and what calls it (not just describe the unit in isolation)? Does every non-obvious business decision in the source have a corresponding candidate rule, or an explicit note that none was found? Would a converter agent be able to implement this unit correctly from the doc alone, without re-reading the legacy source? If any answer is no, the doc isn't finished yet.

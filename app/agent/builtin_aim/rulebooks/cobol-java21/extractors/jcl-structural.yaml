@@ -1,0 +1,48 @@
+# Structural extractor config — JCL
+# Consumed by app/services/code_graph/parsers/structural.py. Per
+# aim-framework.md §3.9: job steps = nodes; PGM=/PROC references and DD
+# DSN= datasets = edges. DD statements belong to the step they follow,
+# which the flat block model captures naturally (a step's span runs until
+# the next step card).
+
+id: jcl-structural
+description: >
+  Extracts the job and its EXEC steps as graph nodes, and the programs,
+  procedures, and datasets each step touches as graph edges, from JCL
+  without a grammar.
+
+file_extensions: [".jcl", ".prc", ".proc"]
+
+ignore_case: true
+
+node_rules:
+  - kind: job
+    scope: file
+    match: '^//(?P<name>[A-Z0-9@#$]+)\s+JOB\b'
+  - kind: step
+    scope: block
+    match: '^//(?P<name>[A-Z0-9@#$]+)\s+EXEC\b'
+
+edge_rules:
+  # EXEC PGM=IEFBR14 — the program a step runs.
+  - kind: calls
+    from: step
+    match: '\bPGM=(?P<target>[A-Z0-9@#$]+)'
+  # EXEC PROC=MYPROC / EXEC MYPROC — cataloged procedure invocation. The
+  # bare form uses a lookahead so "EXEC PGM=..." can't match PGM as a proc.
+  - kind: imports
+    from: step
+    match: '\bPROC=(?P<target>[A-Z0-9@#$]+)'
+  - kind: imports
+    from: step
+    match: '\bEXEC\s+(?P<target>[A-Z0-9@#$]+)(?![=A-Z0-9@#$])'
+  # DD DSN=... — datasets the step reads/writes (direction is not knowable
+  # from the card alone, so a neutral references edge).
+  - kind: references
+    from: step
+    match: '\bDSN=(?P<target>[A-Z0-9.@#$&+-]+)'
+
+keyword_denylist:
+  # Bare-proc rule guards: EXEC PGM=/PROC= handled by their own rules.
+  - PGM
+  - PROC
