@@ -104,7 +104,7 @@ A scheduled (or manually triggered) "Dream" agent reads unprocessed sessions and
 Twelve provider integrations ship in the box — Anthropic, OpenAI, Google Gemini, AWS Bedrock, Ollama, DeepSeek, xAI, Vertex AI, GitHub Copilot, and more — behind one streaming abstraction. Pick a different model per agent: a fast, cheap model for the executor, a stronger reasoning model for the architect or lead.
 
 ### Skills and MCP
-44 built-in skills cover research, security review, TDD, debugging, CI/CD, documentation, browser testing, and more, invocable by name. For anything not built in, EvoFlux is an MCP client — point it at any stdio, HTTP, or SSE MCP server and its tools become available to every agent, gated by the same permission rules as native tools.
+50 built-in skills cover research, security review, TDD, debugging, CI/CD, documentation, browser testing, legacy-migration methodology, and more, invocable by name. For anything not built in, EvoFlux is an MCP client — point it at any stdio, HTTP, or SSE MCP server and its tools become available to every agent, gated by the same permission rules as native tools.
 
 ### Permissions and sandboxing
 Tool calls are gated by wildcard `(tool, pattern) → allow | deny | ask` rules with last-match-wins evaluation. The filesystem sandbox is a denylist, not an allowlist: EvoFlux's own data, state, and cache directories are blocked, symlinks into denied roots are rejected, and shell commands are tokenized and scanned for denied paths.

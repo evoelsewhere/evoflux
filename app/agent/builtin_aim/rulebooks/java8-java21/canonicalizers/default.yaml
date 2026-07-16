@@ -1,0 +1,30 @@
+# Canonicalizer profile — java8-java21 / default
+# Consumed by the aim_compare tool (AIM-1). This profile is deliberately
+# light: same-language upgrade means far less noise than a cross-language
+# migration (no EBCDIC, no fixed-width records to reason about).
+
+id: default
+description: Default canonicalization for a same-language Java 8 → 21 upgrade.
+
+encoding:
+  default: utf-8   # no EBCDIC conversion needed for this pack
+
+mask:
+  # Volatile fields that legitimately differ between runs and should never
+  # cause a diff on their own.
+  - pattern: '"timestamp"\s*:\s*"[^"]*"'
+    replace: '"timestamp":"<masked>"'
+  - pattern: '"requestId"\s*:\s*"[^"]*"'
+    replace: '"requestId":"<masked>"'
+  - pattern: '"traceId"\s*:\s*"[^"]*"'
+    replace: '"traceId":"<masked>"'
+
+whitespace: normalize   # collapse insignificant whitespace differences before diffing
+
+sort_before_diff:
+  # JSON array outputs that are semantically sets/bags, not ordered lists —
+  # add path globs here per unit as they're discovered.
+  paths: []
+
+number_format:
+  decimal_tolerance: 0.0   # exact match by default; loosen per-unit only with a cited reason
