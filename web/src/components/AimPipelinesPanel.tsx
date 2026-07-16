@@ -57,6 +57,9 @@ const PIPELINES: PipelineDef[] = [
   { key: 'cutover', workflow: 'aim-cutover-check', label: 'Cutover check (wave)', needs: 'wave' },
 ]
 
+// §9.3: pipelines that write to the target repo — require confirm before run.
+const CONVERT_KEYS = new Set(['convert-unit', 'convert-wave'])
+
 export function AimPipelinesPanel({ project }: { project: CodingProject }) {
   const queryClient = useQueryClient()
   const targetWorkspace = resolveAimRolePath(project, 'target')
@@ -115,8 +118,6 @@ export function AimPipelinesPanel({ project }: { project: CodingProject }) {
     return {}
   }, [pipeline, unitInput, caseSet, waveInput])
 
-  const CONVERT_KEYS = new Set(['convert-unit', 'convert-wave'])
-
   const doRun = useCallback(async () => {
     if (!selectedWorkflow) return
     setStarting(true)
@@ -160,7 +161,7 @@ export function AimPipelinesPanel({ project }: { project: CodingProject }) {
     } else {
       void doRun()
     }
-  }, [pipelineKey, doRun, CONVERT_KEYS])
+  }, [pipelineKey, doRun])
 
   return (
     <div className="relative flex h-full min-h-0">
