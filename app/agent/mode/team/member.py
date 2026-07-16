@@ -941,15 +941,25 @@ class TeamMemberBase(abc.ABC):
         # Splice user-queued messages into the running turn — lead only, since
         # the user-facing queue lives on the lead's session.  Must precede
         # summarization so a freshly-injected message participates in window
-        # accounting on the same iteration.
+        # accounting on the same iteration. Suppressed while a workflow
+        # drives the session (plan v5 §6.1): queued messages then land at
+        # node boundaries only, never mid-node.
         if self._role_label == "lead" and self.db_factory:
-            hooks.append(
-                QueuedMessageInjectionHook(
-                    session_id=self.session_id,
-                    agent_name=self.name,
-                    db_factory=self.db_factory,
+            workflow_driving = False
+            try:
+                from app.workflow.runner import runner as workflow_runner
+
+                workflow_driving = workflow_runner.is_driving(self.session_id)
+            except Exception:  # noqa: BLE001 — hook attach must never fail
+                workflow_driving = False
+            if not workflow_driving:
+                hooks.append(
+                    QueuedMessageInjectionHook(
+                        session_id=self.session_id,
+                        agent_name=self.name,
+                        db_factory=self.db_factory,
+                    )
                 )
-            )
         if self._team.mode in ("coding", "aim"):
             if self._team.extra_workspace_paths:
                 hooks.append(

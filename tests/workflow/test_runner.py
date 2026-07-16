@@ -152,16 +152,16 @@ nodes:
 
 
 @pytest.mark.asyncio
-async def test_m4_kinds_refused_for_now(setup_db):
+async def test_phase2_kinds_refused(setup_db):
     from app.core import db as db_module
     from app.models.workflow import WorkflowExecution
 
     runner = WorkflowRunner()
     definition = parse_definition("""
 schema_version: 1
-name: needs-team
+name: phase2
 nodes:
-  - { id: a, kind: agent, subagents: [], prompt: p }
+  - { id: w, kind: wait, seconds: 5 }
 """)
     session_id = "06a58f00-0000-7000-8000-000000000003"
     state = await runner.start(
@@ -175,7 +175,7 @@ nodes:
     async with db_module.async_session_factory() as db:
         execution = await db.get(WorkflowExecution, state.execution_id)
         assert execution.status == "failed"
-        assert "M4" in (execution.error or "")
+        assert "Phase 2" in (execution.error or "")
 
 
 @pytest.mark.asyncio
