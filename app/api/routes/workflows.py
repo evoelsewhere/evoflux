@@ -12,11 +12,18 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from uuid import UUID
+
 from app.api.schemas.workflows import (
     WorkflowApproveRequest,
     WorkflowDetailResponse,
+    WorkflowExecutionDetailResponse,
+    WorkflowExecutionOut,
     WorkflowListItem,
     WorkflowListResponse,
+    WorkflowNodeRunOut,
+    WorkflowRunRequest,
+    WorkflowRunResponse,
     WorkflowSaveRequest,
 )
 from app.models.workflow import WorkflowApproval
@@ -245,3 +252,157 @@ async def is_approved(db: AsyncSession, raw_yaml: str) -> bool:
         )
     )
     return row.first() is not None
+
+
+# ── run / stop / executions (M3, plan §6.2, §6.5, §8) ────────────────────────
+
+
+def _coerce_inputs(definition: WorkflowDefinition, provided: dict) -> dict:
+    """Validate + coerce trigger inputs against the declared schema.
+    Raises HTTPException 422 listing every problem."""
+    errors: list[str] = []
+    values: dict = {}
+    declared = {inp.name: inp for inp in definition.inputs}
+    for name in provided:
+        if name not in declared:
+            errors.append(f"unknown input '{name}'.")
+    for name, spec in declared.items():
+        raw = provided.get(name, spec.default)
+        if raw is None:
+            if spec.required:
+                errors.append(f"input '{name}' is required.")
+            continue
+        try:
+            if spec.type == "number":
+                values[name] = float(raw) if "." in str(raw) else int(raw)
+            elif spec.type == "boolean":
+                values[name] = (
+                    raw
+                    if isinstance(raw, bool)
+                    else str(raw).lower() in ("1", "true", "yes")
+                )
+            elif spec.type == "enum":
+                if str(raw) not in (spec.options or []):
+                    errors.append(
+                        f"input '{name}': '{raw}' not in {spec.options}."
+                    )
+                    continue
+                values[name] = str(raw)
+            else:
+                values[name] = str(raw)
+        except (TypeError, ValueError):
+            errors.append(f"input '{name}': can't coerce '{raw}' to {spec.type}.")
+    if errors:
+        raise HTTPException(status_code=422, detail=errors)
+    return values
+
+
+@router.post("/{name}/run", response_model=WorkflowRunResponse)
+async def run_workflow_route(
+    name: str,
+    body: WorkflowRunRequest,
+    db: DbSession,
+    workspace: str | None = None,
+) -> WorkflowRunResponse:
+    from uuid import UUID as _UUID
+
+    from app.models.chat import ChatSession
+    from app.workflow.runner import runner
+
+    try:
+        session_uuid = _UUID(body.session_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="session_id must be a UUID.")
+    session = await db.get(ChatSession, session_uuid)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    # Discovery is workspace-relative: prefer the caller's explicit
+    # workspace, else the session's own (so coding/aim sessions see their
+    # repo-local definitions).
+    found = workflows_fs.get_workflow(name, workspace or session.workspace)
+    if found is None:
+        raise HTTPException(status_code=404, detail=f"No workflow named '{name}'.")
+    errors = _full_errors(found)
+    if found.definition is None or errors:
+        raise HTTPException(status_code=422, detail=errors or ["invalid definition"])
+    definition = found.definition
+
+    if definition.has_phase2_nodes():
+        raise HTTPException(
+            status_code=422, detail="sub-workflows/wait arrive in Phase 2."
+        )
+
+    file_hash = content_hash(found.raw_yaml.encode("utf-8"))
+    if file_hash not in await _approved_hashes(db):
+        raise HTTPException(
+            status_code=403,
+            detail=f"'{name}' is not approved — review and approve it first.",
+        )
+
+    # Scope rules (§6.2 + aim extension): forge runs anywhere; coding/aim
+    # definitions require a session of that mode, whose pinned workspace IS
+    # the target.
+    scope_workspace: str | None = None
+    if definition.scope in ("coding", "aim"):
+        if session.mode != definition.scope:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"'{name}' is a {definition.scope}-scope workflow — open "
+                    f"it in a {definition.scope} session."
+                ),
+            )
+        if not session.workspace:
+            raise HTTPException(
+                status_code=422, detail="The session has no workspace bound."
+            )
+        scope_workspace = session.workspace
+
+    if runner.is_driving(body.session_id):
+        raise HTTPException(
+            status_code=409, detail="An execution is already active in this session."
+        )
+
+    inputs = _coerce_inputs(definition, body.inputs)
+    state = await runner.start(
+        definition,
+        definition_hash=file_hash,
+        session_id=body.session_id,
+        inputs=inputs,
+        scope_workspace=scope_workspace,
+    )
+    return WorkflowRunResponse(
+        execution_id=state.execution_id, session_id=body.session_id
+    )
+
+
+@router.post("/executions/{execution_id}/stop", status_code=204)
+async def stop_execution_route(execution_id: UUID) -> None:
+    from app.workflow.runner import runner
+
+    if not await runner.stop(execution_id):
+        raise HTTPException(status_code=404, detail="No active execution with that id.")
+
+
+@router.get("/executions/{execution_id}", response_model=WorkflowExecutionDetailResponse)
+async def get_execution_route(
+    execution_id: UUID, db: DbSession
+) -> WorkflowExecutionDetailResponse:
+    from app.models.workflow import WorkflowExecution, WorkflowNodeRun
+
+    execution = await db.get(WorkflowExecution, execution_id)
+    if execution is None:
+        raise HTTPException(status_code=404, detail="Execution not found.")
+    rows = await db.exec(
+        select(WorkflowNodeRun)
+        .where(col(WorkflowNodeRun.execution_id) == execution_id)
+        .order_by(col(WorkflowNodeRun.started_at))
+    )
+    return WorkflowExecutionDetailResponse(
+        execution=WorkflowExecutionOut.model_validate(execution, from_attributes=True),
+        node_runs=[
+            WorkflowNodeRunOut.model_validate(row, from_attributes=True)
+            for row in rows.all()
+        ],
+    )

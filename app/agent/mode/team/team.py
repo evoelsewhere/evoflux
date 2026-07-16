@@ -340,6 +340,14 @@ class AgentTeam:
         """Return whether a user turn is active or the lead is already running."""
         return self._has_active_turn or self.lead.state == "working"
 
+    def set_inline_busy(self, busy: bool) -> None:
+        """Workflow-runner accessor (plan v5 §6.1): while the runner executes
+        inline nodes (tool/gate/switch/...) there is no team turn, but user
+        messages must still queue rather than splice in — so the runner
+        raises the same busy flag a turn would, and lowers it before handing
+        the boundary back."""
+        self._has_active_turn = busy
+
     def register_delegation(self, delegator: str, recipients: list[str]) -> None:
         """Record that *delegator* is now awaiting a final handoff from *recipients*.
 
