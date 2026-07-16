@@ -7,6 +7,7 @@ from .chat import (
     SessionMessage,
 )
 from .code_graph import CodeEdge, CodeIndexState, CodeNode
+from .workflow import WorkflowApproval, WorkflowExecution, WorkflowNodeRun
 
 __all__ = [
     "AimLink",
@@ -20,4 +21,7 @@ __all__ = [
     "DreamNotesLog",
     "MemoryProcessedSource",
     "SessionMessage",
+    "WorkflowApproval",
+    "WorkflowExecution",
+    "WorkflowNodeRun",
 ]

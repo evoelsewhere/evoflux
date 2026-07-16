@@ -26,6 +26,7 @@ from app.api.routes.skills import router as skills_router
 from app.api.routes.snippets import router as snippets_router
 from app.api.routes.team import router as team_router
 from app.api.routes.wiki import router as wiki_router
+from app.api.routes.workflows import router as workflows_router
 from app.core.config import settings
 from app.core.desktop_auth import DesktopTokenMiddleware
 from app.core.exception_handlers import EXCEPTION_HANDLERS
@@ -181,6 +182,7 @@ def create_app() -> FastAPI:
     app.include_router(agents_router, prefix="/api/agents", tags=["agents"])
     app.include_router(skills_router, prefix="/api/skills", tags=["skills"])
     app.include_router(commands_router, prefix="/api/commands", tags=["commands"])
+    app.include_router(workflows_router, prefix="/api/workflows", tags=["workflows"])
     app.include_router(code_graph_router, prefix="/api/code-graph", tags=["code-graph"])
     app.include_router(snippets_router, prefix="/api/snippets", tags=["snippets"])
     app.include_router(
