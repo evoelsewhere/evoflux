@@ -101,6 +101,20 @@ class AimProjectJoinRequest(BaseModel):
     target_path: str
 
 
+class AimRulebookFile(BaseModel):
+    path: str
+    content: str
+
+
+class AimRulebookResponse(BaseModel):
+    """Read-only view of the project's rulebook pack (Rulebook screen) —
+    the parsed manifest plus every small text artifact in the pack."""
+
+    id: str
+    manifest: dict
+    files: list[AimRulebookFile]
+
+
 class AimLayoutDetectionResponse(BaseModel):
     """Result of detecting the AIM folder convention on one root folder
     (``<name>/{aim_source_base/*, aim_<name>_document, aim_target_source}``

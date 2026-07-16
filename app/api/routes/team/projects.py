@@ -38,6 +38,8 @@ from app.api.schemas.aim import (
     AimProjectJoinRequest,
     AimProjectSummaryOut,
     AimReindexResponse,
+    AimRulebookFile,
+    AimRulebookResponse,
     AimRunListItem,
     AimRunOut,
     AimUnitOut,
@@ -921,6 +923,57 @@ async def reindex_aim_project(project_id: UUID, db: DbSession) -> AimReindexResp
     return AimReindexResponse(
         created=result.created, updated=result.updated, unchanged=result.unchanged
     )
+
+
+_RULEBOOK_TEXT_SUFFIXES = {".yaml", ".yml", ".md", ".sh"}
+_RULEBOOK_MAX_FILE_BYTES = 64 * 1024
+_RULEBOOK_MAX_FILES = 60
+
+
+@router.get("/{project_id}/aim/rulebook", response_model=AimRulebookResponse)
+async def get_aim_rulebook(project_id: UUID, db: DbSession) -> AimRulebookResponse:
+    """The project's rulebook pack, read-only — answers "what rules does
+    this line convert by?" without opening the EvoFlux repo (spec v2.2 J5).
+    """
+    import yaml
+
+    from app.agent.tools.builtin.aim import _builtin_rulebooks_dir
+
+    project = await _get_aim_project_or_404(db, project_id)
+    rulebook_id = ((project.settings.get("aim") or {}).get("rulebook") or {}).get("id")
+    pack_dir = _builtin_rulebooks_dir() / rulebook_id if rulebook_id else None
+    if not rulebook_id or pack_dir is None or not pack_dir.is_dir():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Rulebook pack '{rulebook_id}' is not installed here.",
+        )
+
+    manifest: dict = {}
+    manifest_path = pack_dir / "rulebook.yaml"
+    if manifest_path.is_file():
+        try:
+            loaded = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                manifest = loaded
+        except yaml.YAMLError:
+            manifest = {}
+
+    files: list[AimRulebookFile] = []
+    for path in sorted(pack_dir.rglob("*")):
+        if len(files) >= _RULEBOOK_MAX_FILES:
+            break
+        if not path.is_file() or path.suffix.lower() not in _RULEBOOK_TEXT_SUFFIXES:
+            continue
+        try:
+            if path.stat().st_size > _RULEBOOK_MAX_FILE_BYTES:
+                continue
+            content = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        files.append(
+            AimRulebookFile(path=str(path.relative_to(pack_dir)), content=content)
+        )
+    return AimRulebookResponse(id=rulebook_id, manifest=manifest, files=files)
 
 
 @router.get("/{project_id}/aim/runs/{run_id}", response_model=AimRunOut)

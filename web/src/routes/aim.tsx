@@ -6,6 +6,7 @@ import { AimOverviewPanel } from '@/components/AimOverviewPanel'
 import { AimPipelinesPanel } from '@/components/AimPipelinesPanel'
 import { AimKbPanel } from '@/components/AimKbPanel'
 import { AimRunsPanel } from '@/components/AimRunsPanel'
+import { AimRulebookPanel } from '@/components/AimRulebookPanel'
 import { useAimProjectsQuery } from '@/queries/useAimProjectsQuery'
 import type { AimFeature } from '@/components/AimSidebar'
 import type { CodingProject } from '@/api/types'
@@ -140,19 +141,8 @@ function FeaturePanel({ project, feature }: { project: CodingProject; feature: A
     case 'runs':
       return <AimRunsPanel project={project} />
     case 'rulebook':
-      return <ComingSoon title="Rulebook" note="Read-only pack manifest, mappings, and extractor configs (FE-4)." />
+      return <AimRulebookPanel project={project} />
   }
-}
-
-function ComingSoon({ title, note }: { title: string; note: string }) {
-  return (
-    <div className="flex h-full items-center justify-center">
-      <div className="max-w-sm text-center">
-        <p className="text-sm font-medium text-(--color-text)">{title}</p>
-        <p className="mt-1 text-xs text-(--color-text-muted)">{note}</p>
-      </div>
-    </div>
-  )
 }
 
 export function AimLayout() {

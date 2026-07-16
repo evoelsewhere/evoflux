@@ -14,6 +14,7 @@ import type {
   AimProjectJoinRequest,
   AimProjectSummary,
   AimReindexResponse,
+  AimRulebook,
   AimRunListItem,
   AimRunOut,
   AimUnitOut,
@@ -106,6 +107,14 @@ export async function reindexAimProject(projectId: string): Promise<AimReindexRe
     { method: 'POST' },
   )
   if (!res.ok) await parseDetailOrThrow(res, 'reindexAimProject')
+  return res.json()
+}
+
+export async function getAimRulebook(projectId: string): Promise<AimRulebook> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/aim/rulebook`,
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'getAimRulebook')
   return res.json()
 }
 

@@ -436,6 +436,17 @@ export interface AimReindexResponse {
   unchanged: number
 }
 
+export interface AimRulebookFile {
+  path: string
+  content: string
+}
+
+export interface AimRulebook {
+  id: string
+  manifest: Record<string, unknown>
+  files: AimRulebookFile[]
+}
+
 // Result of POST /team/projects/aim/detect on a conventional project root
 // (<name>/{aim_source_base/*, aim_<name>_document, aim_target_source}).
 export interface AimLayoutDetection {

@@ -122,6 +122,54 @@ async def test_reindex_aim_project_rebuilds_units_from_kb(client, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_get_aim_rulebook_returns_manifest_and_files(client, tmp_path):
+    source = _make_local_repo(tmp_path, "src-rb")
+    target = _make_local_repo(tmp_path, "tgt-rb")
+    create_resp = await client.post(
+        "/api/team/projects/aim",
+        json={
+            "name": "rb-view",
+            "rulebook_id": "cobol-java21",
+            "source_paths": [str(source)],
+            "target_path": str(target),
+            "kb_path": str(tmp_path / "kb-rb"),
+        },
+    )
+    assert create_resp.status_code == 201
+    project_id = create_resp.json()["id"]
+
+    resp = await client.get(f"/api/team/projects/{project_id}/aim/rulebook")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["id"] == "cobol-java21"
+    assert body["manifest"]["parser_strategy"] == "structural"
+    paths = [f["path"] for f in body["files"]]
+    assert "rulebook.yaml" in paths
+    assert "extractors/cobol-structural.yaml" in paths
+
+
+@pytest.mark.asyncio
+async def test_get_aim_rulebook_404_for_unknown_pack(client, tmp_path):
+    source = _make_local_repo(tmp_path, "src-rb2")
+    target = _make_local_repo(tmp_path, "tgt-rb2")
+    create_resp = await client.post(
+        "/api/team/projects/aim",
+        json={
+            "name": "rb-missing",
+            "rulebook_id": "not-a-real-pack",
+            "source_paths": [str(source)],
+            "target_path": str(target),
+            "kb_path": str(tmp_path / "kb-rb2"),
+        },
+    )
+    assert create_resp.status_code == 201
+    project_id = create_resp.json()["id"]
+
+    resp = await client.get(f"/api/team/projects/{project_id}/aim/rulebook")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_summary_returns_phase_counts_and_equivalent_pct(client, tmp_path):
     project, *_ = await _make_aim_project_with_units(tmp_path)
 
