@@ -9,7 +9,7 @@ import { EditorSubHeader } from '@/components/settings/EditorSubHeader'
 import { validateAgentDraft } from '@/components/settings/schema'
 import { useSettingsSearch, useSettingsNavigate } from '@/contexts/SettingsContext'
 
-type AgentMode = 'forge' | 'coding'
+type AgentMode = 'forge' | 'coding' | 'aim'
 
 const TEMPLATE = `---
 name: new_agent
@@ -28,7 +28,8 @@ You are "new_agent" — a helpful team member.
 
 export function NewAgentPage() {
   const search = useSettingsSearch()
-  const initialMode: AgentMode = search.mode === 'coding' ? 'coding' : 'forge'
+  const initialMode: AgentMode =
+    search.mode === 'coding' ? 'coding' : search.mode === 'aim' ? 'aim' : 'forge'
   const [draft, setDraft] = useState(TEMPLATE)
   const [name, setName] = useState('new_agent')
   const [agentMode, setAgentMode] = useState<AgentMode>(initialMode)
@@ -58,7 +59,8 @@ export function NewAgentPage() {
       return
     }
     try {
-      const agentName = agentMode === 'coding' ? `coding/${name}` : name
+      const agentName =
+        agentMode === 'coding' ? `coding/${name}` : agentMode === 'aim' ? `aim/${name}` : name
       await createMut.mutateAsync({ name: agentName, content: draft })
       push({
         tone: 'success',
@@ -111,10 +113,21 @@ export function NewAgentPage() {
               >
                 Coding
               </Button>
+              <Button
+                type="button"
+                size="xs"
+                className="min-h-11 md:min-h-0"
+                variant={agentMode === 'aim' ? 'default' : 'outline'}
+                onClick={() => setAgentMode('aim')}
+              >
+                AIM
+              </Button>
             </div>
             <p className="mt-2 text-xs text-(--color-text-muted)">
               {agentMode === 'coding'
                 ? `Will create coding/${name}.md for coding sessions.`
+                : agentMode === 'aim'
+                ? `Will create aim/${name}.md for AIM sessions.`
                 : `Will create ${name}.md for forge sessions.`}
             </p>
           </div>

@@ -17,7 +17,7 @@ import { useAgentFilesQuery, useRegistryQuery, useBulkUpdateAgentModelMutation }
 import { useToastStore } from '@/stores/useToastStore'
 import { useSettingsParams, useSettingsNavigate } from '@/contexts/SettingsContext'
 
-type Tab = 'all' | 'forge' | 'coding'
+type Tab = 'all' | 'forge' | 'coding' | 'aim'
 
 export function AgentsListPage() {
   const { data, isLoading, isError } = useAgentFilesQuery()
@@ -30,8 +30,11 @@ export function AgentsListPage() {
   const [tab, setTab] = useState<Tab>('all')
 
   const agents = data?.agents ?? []
-  const forgeAgents = agents.filter((a) => !a.name.startsWith('coding/'))
+  const aimAgents = agents.filter((a) => a.name.startsWith('aim/'))
   const codingAgents = agents.filter((a) => a.name.startsWith('coding/'))
+  const forgeAgents = agents.filter(
+    (a) => !a.name.startsWith('coding/') && !a.name.startsWith('aim/'),
+  )
 
   // Bulk model selection — defaults to "every agent" on first load; after
   // that the user's checkbox choices are authoritative (a later refetch
@@ -93,7 +96,7 @@ export function AgentsListPage() {
         to: '/settings/agents/$name',
         params: { name: a.name },
         active: selectedName === a.name,
-        title: a.name.replace(/^coding\//, ''),
+        title: a.name.replace(/^(?:coding|aim)\//, ''),
         badge: isLead ? 'lead' : undefined,
         description: a.description || a.model || 'No description',
         meta: a.description && a.model ? a.model : undefined,
@@ -117,15 +120,22 @@ export function AgentsListPage() {
     if (tab === 'coding') {
       return codingAgents.sort(byLeadFirst).map(mapAgent)
     }
+    if (tab === 'aim') {
+      return aimAgents.sort(byLeadFirst).map(mapAgent)
+    }
 
     const forge = forgeAgents.sort(byLeadFirst)
     const coding = codingAgents.sort(byLeadFirst)
+    const aim = aimAgents.sort(byLeadFirst)
     return [
       ...(forge.length > 0
         ? [{ key: 'group-forge', kind: 'group' as const, title: 'Forge' }, ...forge.map(mapAgent)]
         : []),
       ...(coding.length > 0
         ? [{ key: 'group-coding', kind: 'group' as const, title: 'Coding' }, ...coding.map(mapAgent)]
+        : []),
+      ...(aim.length > 0
+        ? [{ key: 'group-aim', kind: 'group' as const, title: 'AIM' }, ...aim.map(mapAgent)]
         : []),
     ]
   })()
@@ -134,7 +144,7 @@ export function AgentsListPage() {
     <>
     <SettingsListView
       title="Agents"
-      description="Markdown files with YAML frontmatter. Forge and Coding agents are separate teams."
+      description="Markdown files with YAML frontmatter. Forge, Coding, and AIM agents are separate teams."
       newTo="/settings/agents/new"
       newLabel="New agent"
       newAction={
@@ -146,7 +156,7 @@ export function AgentsListPage() {
       filterPlaceholder="Filter agents…"
       tabs={
         <div className="flex gap-1 rounded-lg border border-(--color-border) bg-(--bg-key) p-0.5">
-          {(['all', 'forge', 'coding'] as const).map((t) => (
+          {(['all', 'forge', 'coding', 'aim'] as const).map((t) => (
             <button
               key={t}
               type="button"
@@ -157,7 +167,13 @@ export function AgentsListPage() {
                   : 'text-(--color-text-muted) hover:text-(--color-text)'
               }`}
             >
-              {t === 'all' ? 'All' : t === 'forge' ? `Forge (${forgeAgents.length})` : `Coding (${codingAgents.length})`}
+              {t === 'all'
+                ? 'All'
+                : t === 'forge'
+                ? `Forge (${forgeAgents.length})`
+                : t === 'coding'
+                ? `Coding (${codingAgents.length})`
+                : `AIM (${aimAgents.length})`}
             </button>
           ))}
         </div>
@@ -199,12 +215,15 @@ export function AgentsListPage() {
           <DialogTitle>Create agent</DialogTitle>
           <DialogDescription>Choose which team directory receives the new agent file.</DialogDescription>
         </DialogHeader>
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid gap-2 sm:grid-cols-3">
           <Button onClick={() => { setModeDialogOpen(false); navigate('agents/new', { search: { mode: 'forge' } }) }}>
             Forge
           </Button>
           <Button onClick={() => { setModeDialogOpen(false); navigate('agents/new', { search: { mode: 'coding' } }) }}>
             Coding
+          </Button>
+          <Button onClick={() => { setModeDialogOpen(false); navigate('agents/new', { search: { mode: 'aim' } }) }}>
+            AIM
           </Button>
         </div>
         <DialogFooter className="p-3">

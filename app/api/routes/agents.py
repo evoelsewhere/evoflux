@@ -92,7 +92,12 @@ def _parse_summary(name: str, content: str) -> AgentSummary:
 
 
 def _mode_for_agent_path(name: str) -> str:
-    return "coding" if Path(name).parts[:1] == ("coding",) else "forge"
+    first = Path(name).parts[:1]
+    if first == ("coding",):
+        return "coding"
+    if first == ("aim",):
+        return "aim"
+    return "forge"
 
 
 def _effective_config(cfg: AgentConfig, *, mode: str) -> AgentConfig:
