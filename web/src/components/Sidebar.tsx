@@ -11,10 +11,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 
 import {
-  ArrowRightLeft,
   CalendarClock,
-  Code2,
-  Gauge,
   Plus,
   Trash2,
   RefreshCw,
@@ -24,6 +21,7 @@ import {
   Loader2,
   Pencil,
 } from "lucide-react";
+import { ModeSwitchTabs, ModeSwitchRail } from "@/components/ModeSwitchTabs";
 import { isToday, isYesterday } from "date-fns";
 import {
   useTeamSessionsQuery,
@@ -121,7 +119,9 @@ export function Sidebar({
   const prefersReducedMotion = useReducedMotion();
   const navigate = useNavigate();
   const toggleScheduler = useUIStore((s) => s.toggleScheduler);
-  const sessions = useTeamSessionsQuery();
+  // Server-filtered to forge — coding/aim sessions live in their own
+  // sidebars (per-run aim sessions would otherwise flood this list).
+  const sessions = useTeamSessionsQuery("forge");
   const deleteSession = useDeleteTeamSessionMutation();
   const updateSessionTitle = useUpdateTeamSessionTitleMutation();
   const sessionListRef = useRef<HTMLDivElement>(null);
@@ -129,8 +129,7 @@ export function Sidebar({
   const editTitleInputRef = useRef<HTMLInputElement>(null);
 
   // Flatten pages into a single list of sessions
-  const allSessions = sessions.data?.pages.flatMap((p) => p.data) ?? [];
-  const normalSessions = allSessions.filter((s) => s.mode !== "coding");
+  const normalSessions = sessions.data?.pages.flatMap((p) => p.data) ?? [];
 
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     try {
@@ -261,7 +260,7 @@ export function Sidebar({
 
   const confirmDelete = () => {
     if (!pendingDeleteId) return;
-    const target = allSessions.find((s) => s.id === pendingDeleteId);
+    const target = normalSessions.find((s) => s.id === pendingDeleteId);
     if (!target) return;
     const fallbackSession =
       target.id === currentSessionId
@@ -388,40 +387,7 @@ export function Sidebar({
                   {/* Mode switch */}
                   {!ico && (
                     <div className={`px-2 ${isMacOverlay ? 'pt-10' : 'pt-2'}`}>
-                      <div className="flex h-8 items-center rounded-md border border-(--color-border) bg-(--bg-page) p-0.5">
-                        <button
-                          type="button"
-                          onClick={() => navigate({ to: '/' })}
-                          className={`flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 text-xs font-medium transition-colors ${
-                            mode === 'forge'
-                              ? 'bg-(--bg-key) text-(--color-text) shadow-sm'
-                              : 'text-(--color-text-muted) hover:text-(--color-text)'
-                          }`}
-                        >
-                          <Gauge size={12} aria-hidden="true" />
-                          Forge
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => navigate({ to: '/coding' })}
-                          className={`flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 text-xs font-medium transition-colors ${
-                            mode === 'coding'
-                              ? 'bg-(--bg-key) text-(--color-text) shadow-sm'
-                              : 'text-(--color-text-muted) hover:text-(--color-text)'
-                          }`}
-                        >
-                          <Code2 size={12} aria-hidden="true" />
-                          Coding
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => navigate({ to: '/aim' })}
-                          className="flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 text-xs font-medium text-(--color-text-muted) transition-colors hover:text-(--color-text)"
-                        >
-                          <ArrowRightLeft size={12} aria-hidden="true" />
-                          AIM
-                        </button>
-                      </div>
+                      <ModeSwitchTabs active={mode} />
                     </div>
                   )}
                   {!ico && onCommandPalette && (
@@ -440,40 +406,10 @@ export function Sidebar({
                     </div>
                   )}
                   {ico && (
-                    <div className={`flex flex-col items-center gap-0.5 pb-1 ${isMacOverlay ? 'pt-10' : ''}`}>
-                      <button
-                        type="button"
-                        onClick={() => navigate({ to: '/' })}
-                        title="Forge"
-                        className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
-                          mode === 'forge'
-                            ? 'bg-(--bg-key) text-(--color-accent)'
-                            : 'text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-text-2)'
-                        }`}
-                      >
-                        <Gauge size={16} aria-hidden="true" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => navigate({ to: '/coding' })}
-                        title="Coding"
-                        className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
-                          mode === 'coding'
-                            ? 'bg-(--bg-key) text-(--color-accent)'
-                            : 'text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-text-2)'
-                        }`}
-                      >
-                        <Code2 size={16} aria-hidden="true" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => navigate({ to: '/aim' })}
-                        title="AIM"
-                        className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
-                      >
-                        <ArrowRightLeft size={16} aria-hidden="true" />
-                      </button>
-                    </div>
+                    <ModeSwitchRail
+                      active={mode}
+                      className={`pb-1 ${isMacOverlay ? 'pt-10' : ''}`}
+                    />
                   )}
                   <nav
                     aria-label="Primary"
@@ -670,40 +606,7 @@ export function Sidebar({
 
               {/* Mode switch */}
               <div className="px-3 pt-2">
-                <div className="flex h-8 items-center rounded-md border border-(--color-border) bg-(--bg-page) p-0.5">
-                  <button
-                    type="button"
-                    onClick={() => { navigate({ to: '/' }); onMobileClose?.(); }}
-                    className={`flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 text-xs font-medium transition-colors ${
-                      mode === 'forge'
-                        ? 'bg-(--bg-key) text-(--color-text) shadow-sm'
-                        : 'text-(--color-text-muted) hover:text-(--color-text)'
-                    }`}
-                  >
-                    <Gauge size={12} aria-hidden="true" />
-                    Forge
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { navigate({ to: '/coding' }); onMobileClose?.(); }}
-                    className={`flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 text-xs font-medium transition-colors ${
-                      mode === 'coding'
-                        ? 'bg-(--bg-key) text-(--color-text) shadow-sm'
-                        : 'text-(--color-text-muted) hover:text-(--color-text)'
-                    }`}
-                  >
-                    <Code2 size={12} aria-hidden="true" />
-                    Coding
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { navigate({ to: '/aim' }); onMobileClose?.(); }}
-                    className="flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 text-xs font-medium text-(--color-text-muted) transition-colors hover:text-(--color-text)"
-                  >
-                    <ArrowRightLeft size={12} aria-hidden="true" />
-                    AIM
-                  </button>
-                </div>
+                <ModeSwitchTabs active={mode} onNavigate={onMobileClose} />
               </div>
 
               {/* Nav */}

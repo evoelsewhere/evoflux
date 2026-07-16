@@ -610,6 +610,8 @@ interface SessionSettingsPanelProps {
   /** For team mode: ordered agent names (lead first). Empty = single-agent. */
   agentNames?: string[]
   workspace?: string | null
+  /** Roster mode for the workspace team ('coding' | 'aim'). */
+  mode?: 'coding' | 'aim' | null
   sessionModel?: string | null
   sessionThinkingLevel?: string | null
   sessionFastMode?: boolean
@@ -621,13 +623,14 @@ export function SessionSettingsPanel({
   open,
   agentNames = [],
   workspace = null,
+  mode = null,
   sessionModel = null,
   sessionThinkingLevel = null,
   sessionFastMode = false,
   onSessionModelSettingsChange,
   onClose,
 }: SessionSettingsPanelProps) {
-  const { data, isLoading, refetch } = useTeamAgentsQuery(workspace)
+  const { data, isLoading, refetch } = useTeamAgentsQuery(workspace, true, mode)
   const mcpServersQuery = useMcpServersQuery()
   const updateMcpServer = useUpdateMcpServerMutation()
   const connectMcpOAuth = useConnectMcpOAuthMutation()

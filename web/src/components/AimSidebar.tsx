@@ -13,18 +13,16 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import {
-  ArrowRightLeft,
   BookMarked,
   BookOpen,
   ChevronDown,
   ChevronRight,
   ClipboardList,
-  Code2,
-  Gauge,
   LayoutDashboard,
   Plus,
   Workflow,
 } from 'lucide-react'
+import { ModeSwitchTabs } from '@/components/ModeSwitchTabs'
 import { useAimProjectsQuery } from '@/queries/useAimProjectsQuery'
 import { usePlatform } from '@/hooks/use-platform'
 import { cn } from '@/lib/utils'
@@ -86,34 +84,9 @@ export function AimSidebar({ activeProjectId, activeFeature, onNewProject }: Aim
   return (
     <div className="flex h-full w-60 shrink-0 flex-col overflow-hidden p-1">
       <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[10px] bg-(--bg-sidebar)/80 shadow-sm backdrop-blur-xl">
-        {/* Mode switch */}
+        {/* Mode switch — shared tab strip, same as forge/coding sidebars */}
         <div className={`shrink-0 px-2 ${isMacOverlay ? 'pt-10' : 'pt-2'}`}>
-          <div className="flex h-8 items-center rounded-md border border-(--color-border) bg-(--bg-page) p-0.5">
-            <button
-              type="button"
-              onClick={() => navigate({ to: '/' })}
-              className="flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 text-xs font-medium text-(--color-text-muted) transition-colors hover:text-(--color-text)"
-            >
-              <Gauge size={12} aria-hidden="true" />
-              Forge
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate({ to: '/coding' })}
-              className="flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 text-xs font-medium text-(--color-text-muted) transition-colors hover:text-(--color-text)"
-            >
-              <Code2 size={12} aria-hidden="true" />
-              Coding
-            </button>
-            <button
-              type="button"
-              onClick={() => {}}
-              className="flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] bg-(--bg-key) px-2 text-xs font-medium text-(--color-text) shadow-sm"
-            >
-              <ArrowRightLeft size={12} aria-hidden="true" />
-              AIM
-            </button>
-          </div>
+          <ModeSwitchTabs active="aim" />
         </div>
 
         {/* Project list */}

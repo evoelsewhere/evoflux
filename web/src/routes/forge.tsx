@@ -24,7 +24,7 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'forge' | 'coding' }) {
   const workspaceRef = useRef<string | null>(null)
   const cachedSessionPages = queryClient.getQueryData<{
     pages: Array<{ data: Array<{ id: string; workspace?: string | null; project_id?: string | null }> }>
-  }>(queryKeys.team.sessions.infinite())
+  }>(queryKeys.team.sessions.infinite(mode === 'coding' ? 'coding' : 'forge'))
   const cachedSession = sessionId
     ? cachedSessionPages?.pages
       .flatMap((page) => page.data)

@@ -232,9 +232,15 @@ export function teamStream(sessionId: string, callbacks: SSECallbacks, signal?: 
     .catch((err) => { if (err.name !== 'AbortError') callbacks.onError?.(err) })
 }
 
-export async function listTeamAgents(workspace?: string | null): Promise<TeamAgentsResponse> {
+export async function listTeamAgents(
+  workspace?: string | null,
+  mode?: 'coding' | 'aim' | null,
+): Promise<TeamAgentsResponse> {
   const params = new URLSearchParams()
   if (workspace) params.set('workspace', workspace)
+  // Which roster the workspace team uses — without it the backend assumes
+  // coding, which would show the wrong lead/blueprints for aim sessions.
+  if (workspace && mode) params.set('mode', mode)
   const query = params.toString()
   const res = await fetch(`${apiBaseUrl()}/team/agents${query ? `?${query}` : ''}`)
   if (!res.ok) await parseDetailOrThrow(res, 'listTeamAgents')

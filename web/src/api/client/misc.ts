@@ -26,9 +26,13 @@ export async function getDiagnostics(): Promise<DiagnosticsResponse> {
 // ── Compat: team status via /team/agents ─────────────────────────────────────
 // HomePage uses this to determine if team mode is available
 
-export async function teamStatus(workspace?: string | null): Promise<TeamStatusResponse | null> {
+export async function teamStatus(
+  workspace?: string | null,
+  mode?: 'coding' | 'aim' | null,
+): Promise<TeamStatusResponse | null> {
   const params = new URLSearchParams()
   if (workspace) params.set('workspace', workspace)
+  if (workspace && mode) params.set('mode', mode)
   const query = params.toString()
   const res = await fetch(`${apiBaseUrl()}/team/agents${query ? `?${query}` : ''}`)
   if (res.status === 404) return null

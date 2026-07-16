@@ -556,31 +556,69 @@ class WorkflowRunner:
         with the same wiring the chat route uses."""
         from app.services import team_manager
 
+        scope = state.definition.scope
         team = team_manager.find_team_for_session(state.session_id)
         if team is not None:
-            return team
-        scope = state.definition.scope
-        try:
-            if scope == "forge":
-                return await team_manager.get_or_start_team_for_session(
-                    state.session_id
-                )
-            if not state.scope_workspace:
-                return None
-            extra_paths: list[str] = []
-            read_only: list[str] = []
-            if scope == "aim":
-                extra_paths, read_only = await self._aim_session_paths(state)
-            return await team_manager.get_or_start_coding_team(
-                state.scope_workspace,
+            # A coding/aim definition must run on a team with that roster —
+            # a stray default-mode team bound to this session id (e.g. by an
+            # old, pre-fix /commands call) would silently swap the lead.
+            if scope == "forge" or getattr(team, "mode", scope) == scope:
+                return team
+            logger.warning(
+                "workflow_team_mode_mismatch session_id={} team_mode={} scope={}"
+                " — booting the {}-mode team instead",
                 state.session_id,
-                extra_workspace_paths=extra_paths or None,
-                mode=scope,
-                read_only_paths=read_only or None,
+                getattr(team, "mode", None),
+                scope,
+                scope,
+            )
+        # Boot by the SESSION's mode, not the definition scope: a forge-scope
+        # workflow in a coding/aim session must still run on that session's
+        # own team (M3: "forge runs anywhere" means anywhere, with the
+        # session's lead). For coding/aim scopes the run endpoint already
+        # guaranteed session.mode == scope and a bound workspace.
+        session_mode, session_workspace = await self._session_mode_workspace(state)
+        try:
+            if session_mode in ("coding", "aim") and session_workspace:
+                extra_paths: list[str] = []
+                read_only: list[str] = []
+                if session_mode == "aim":
+                    extra_paths, read_only = await self._aim_session_paths(state)
+                return await team_manager.get_or_start_coding_team(
+                    session_workspace,
+                    state.session_id,
+                    extra_workspace_paths=extra_paths or None,
+                    mode=session_mode,
+                    read_only_paths=read_only or None,
+                )
+            if scope != "forge":
+                # coding/aim definition but the session lost its
+                # mode/workspace — refuse rather than run on the wrong team.
+                return None
+            return await team_manager.get_or_start_team_for_session(
+                state.session_id
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("workflow_team_boot_failed error={}", exc)
             return None
+
+    async def _session_mode_workspace(
+        self, state: ExecutionState
+    ) -> tuple[str | None, str | None]:
+        """(mode, workspace) of the session row, with the definition scope /
+        scope_workspace as fallback when the row can't be read."""
+        from app.core import db as db_module
+        from app.models.chat import ChatSession, normalize_mode
+
+        try:
+            async with db_module.async_session_factory() as db:
+                session = await db.get(ChatSession, UUID(state.session_id))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("workflow_session_lookup_failed error={}", exc)
+            session = None
+        if session is None:
+            return state.definition.scope, state.scope_workspace
+        return normalize_mode(session.mode), session.workspace or state.scope_workspace
 
     async def _aim_session_paths(
         self, state: ExecutionState

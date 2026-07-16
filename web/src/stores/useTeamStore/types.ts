@@ -139,7 +139,10 @@ export interface TeamStoreActions {
   sendLoopCommand: (command: string, prompt?: string, options?: { mode?: string; workspace?: string | null; model?: string | null; thinkingLevel?: string | null; fastMode?: boolean }) => Promise<void>
   stopTeam: () => Promise<void>
   connectStream: () => AbortController
-  loadTeamStatus: (workspace?: string | null) => Promise<void>
+  loadTeamStatus: (
+    workspace?: string | null,
+    mode?: 'coding' | 'aim' | null,
+  ) => Promise<void>
   loadSession: (sessionId: string, workspace?: string | null) => Promise<void>
   beginResolvedSession: (sessionId: string | null, options?: { mode?: string; workspace?: string | null; model?: string | null; thinkingLevel?: string | null; fastMode?: boolean; skipInitialRestore?: boolean }) => void
   loadOlderMessages: () => Promise<void>
