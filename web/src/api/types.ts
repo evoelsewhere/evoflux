@@ -574,8 +574,85 @@ export interface TeamHistoryResponse {
     used: number
     paused: boolean
   } | null
+  // Live workflow snapshot from the runner — same live-state semantics as
+  // loop_status (gone after restart).
+  workflow_execution?: {
+    execution_id: string
+    definition_name: string
+    status: string
+    node_id: string | null
+    node_index: number | null
+    total_nodes: number
+  } | null
   has_more: boolean
   next_cursor: string | null
+}
+
+// ── Workflows (documents/plans/workflows-feature-plan.md) ────────────────────
+
+export interface WorkflowInputSpec {
+  name: string
+  type: 'string' | 'number' | 'boolean' | 'enum'
+  required: boolean
+  default?: unknown
+  options?: string[] | null
+  description: string
+}
+
+export interface WorkflowListItem {
+  name: string
+  description: string
+  scope: 'forge' | 'coding' | 'aim'
+  inputs: WorkflowInputSpec[]
+  hash: string
+  root: string
+  source_path: string
+  approved: boolean
+  valid: boolean
+  errors: string[]
+  node_count: number
+}
+
+export interface WorkflowDetail {
+  name: string
+  raw_yaml: string
+  graph: Record<string, unknown>
+  hash: string
+  root: string
+  scope: string | null
+  approved: boolean
+  manifest: Record<string, unknown>
+  lint_warnings: string[]
+  errors: string[]
+}
+
+export interface WorkflowRunResult {
+  execution_id: string
+  session_id: string
+}
+
+export interface WorkflowExecutionDetail {
+  execution: {
+    id: string
+    definition_name: string
+    definition_hash: string
+    session_id: string
+    status: string
+    error: string | null
+    outputs: Record<string, unknown>
+    started_at: string
+    ended_at: string | null
+  }
+  node_runs: Array<{
+    id: string
+    node_id: string
+    iteration: number | null
+    status: string
+    output: Record<string, unknown> | null
+    error: string | null
+    started_at: string
+    ended_at: string | null
+  }>
 }
 
 export interface Chapter {

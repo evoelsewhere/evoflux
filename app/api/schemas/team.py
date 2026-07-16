@@ -23,6 +23,10 @@ class TeamHistoryResponse(BaseModel):
     lead: SessionDetailResponse
     members: list[TeamHistoryMember]
     loop_status: dict[str, object] | None = None
+    # Live workflow execution snapshot from the runner's in-memory state —
+    # gone after restart, consistent with the no-durability posture (plan
+    # v5 §6.5). Same live-state semantics as loop_status.
+    workflow_execution: dict[str, object] | None = None
     has_more: bool = False
     next_cursor: str | None = None
 
