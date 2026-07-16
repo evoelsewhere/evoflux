@@ -1,0 +1,23 @@
+# AIM project manifest — the single shared source of truth for this
+# migration project. Lives at the root of the KB repo, git-tracked, read
+# by every team member's EvoFlux instance. See documents/research/
+# aim-framework.md §3.5 in the EvoFlux repo for the full design.
+#
+# Repos are identified by a shared identity (remote URL or logical name),
+# never by a local workspace_id — those differ per machine.
+
+rulebook:
+  id: REPLACE_ME               # e.g. cobol-java, vb6-dotnet, java8-java21
+  version: "0.1"
+
+roles:
+  source:                      # base (legacy) repos — mounted read-only
+    - REPLACE_ME_SOURCE_REPO
+  target:                      # target repo(s) — already scaffolded with the base
+    - REPLACE_ME_TARGET_REPO
+  # kb: this repo (implicit — the file you're reading)
+
+golden_dir: golden              # relative to this KB repo
+compare_default_profile: default
+
+phase: assess                   # project-level phase: assess | understand | design | convert | test | cutover

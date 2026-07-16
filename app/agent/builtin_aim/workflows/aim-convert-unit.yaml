@@ -1,0 +1,64 @@
+# Draft — inert until the Workflows engine exists (see aim-assess.yaml header).
+schema_version: 1
+name: aim-convert-unit
+description: AIM Phase 2+3 — design and, once approved, implement one migration unit.
+scope: aim
+inputs:
+  - name: unit
+    type: string
+    required: true
+
+nodes:
+  - id: ctx
+    kind: tool
+    tool: aim_units
+    args: {action: get, unit: "{{inputs.unit}}"}
+
+  - id: design
+    kind: agent
+    subagents: [aim-target-architect]
+    prompt: |
+      Produce or refresh mapping/{{inputs.unit}}.md in the KB. Cite the
+      confirmed business rules and the rulebook's mapping tables; conform
+      to target-conventions.md and, if this unit has a UI, ui-conventions.md.
+      Unit context: {{nodes.ctx.output | json | truncate:3000}}
+
+  - id: design_gate
+    kind: gate
+    title: "Approve target mapping for {{inputs.unit}}"
+    body: "{{nodes.design.output.text | truncate:2000}}"
+    choices: [approve, rework]
+
+  - id: convert
+    kind: agent
+    subagents: [aim-converter]
+    prompt: |
+      Implement {{inputs.unit}} in the target repo per the approved mapping.
+      Work in a worktree (worktree_start/finish); write unit tests; run
+      aim_compare against golden smoke cases and fix until they pass or you
+      exhaust 3 rounds. The base (legacy) source is read-only.
+
+  - id: smoke
+    kind: tool
+    tool: shell
+    args:
+      command: "./run_smoke_tests.sh {{inputs.unit}}"   # replace with the
+                                                          # target base's real
+                                                          # test invocation
+
+  - id: mark
+    kind: tool
+    tool: aim_units
+    args: {action: set_phase, unit: "{{inputs.unit}}", phase: converted}
+
+  - id: ping
+    kind: notify
+    message: "{{inputs.unit}} converted — ready for test-compare."
+
+edges:
+  - {from: ctx, to: design}
+  - {from: design, to: design_gate}
+  - {from: design_gate, to: convert, when: approve}
+  - {from: convert, to: smoke}
+  - {from: smoke, to: mark}
+  - {from: mark, to: ping}

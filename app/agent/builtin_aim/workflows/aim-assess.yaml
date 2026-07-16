@@ -1,0 +1,49 @@
+# Draft — inert until the Workflows engine (documents/plans/
+# workflows-feature-plan.md, M1-M6) exists AND its scope enum gains "aim"
+# (documents/research/aim-framework.md §3.11). Written now so the pipeline
+# is fully specified ahead of AIM-4 implementation, not invented then.
+schema_version: 1
+name: aim-assess
+description: AIM Phase 0 — build the migration-unit inventory and get the wave plan approved.
+scope: aim
+inputs:
+  - name: wave_size
+    type: number
+    required: false
+
+nodes:
+  - id: overview
+    kind: tool
+    tool: code_overview
+    args: {}
+
+  - id: inventory
+    kind: agent
+    subagents: [aim-appraiser]
+    prompt: |
+      Build or refresh the migration-unit inventory for this project.
+      Use code_search/code_graph for dependencies; record units, complexity,
+      and a wave plan (target wave size {{inputs.wave_size}}) via the
+      aim_units tool, and write inventory/units.md in the KB repo.
+      Graph overview: {{nodes.overview.output.text | truncate:4000}}
+
+  - id: wave_gate
+    kind: gate
+    title: "Approve migration wave plan"
+    body: "{{nodes.inventory.output.text | truncate:2000}}"
+    choices: [approve, rework]
+
+  - id: mark
+    kind: tool
+    tool: aim_units
+    args: {action: set_project_phase, phase: assessed}
+
+  - id: ping
+    kind: notify
+    message: "Assessment complete — wave plan approved."
+
+edges:
+  - {from: overview, to: inventory}
+  - {from: inventory, to: wave_gate}
+  - {from: wave_gate, to: mark, when: approve}   # "rework" ends the flow gracefully (v5 §6.3)
+  - {from: mark, to: ping}

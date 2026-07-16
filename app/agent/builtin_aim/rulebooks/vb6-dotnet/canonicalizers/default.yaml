@@ -1,0 +1,35 @@
+# Canonicalizer profile — vb6-dotnet / default
+# Consumed by the aim_compare tool (AIM-1).
+
+id: default
+description: Default canonicalization for a VB6 → .NET migration.
+
+encoding:
+  default: utf-8
+  # VB6 source/output is often Windows-1252; legacy captures may need an
+  # explicit codepage — override per case_set in meta.yaml if so.
+  legacy_fallback: windows-1252
+
+mask:
+  - pattern: '\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}'   # locale-formatted timestamps
+    replace: '<masked-datetime>'
+  - pattern: 'requestId=[a-f0-9-]+'
+    replace: 'requestId=<masked>'
+
+whitespace: normalize
+
+number_format:
+  decimal_tolerance: 0.0   # Currency/decimal rounding differences need a cited
+                           # reason (see vb6-dotnet-idioms) before loosening this
+  trim_trailing_zeros: true
+
+sort_before_diff:
+  paths: []   # add per-unit globs for unordered report/grid output as discovered
+
+fixed_width:
+  # Fields carried over from fixed-length VB6 strings — declare per case_set
+  # once a unit's data format is known, e.g.:
+  # - field: customer_code
+  #   width: 10
+  #   pad: right
+  fields: []

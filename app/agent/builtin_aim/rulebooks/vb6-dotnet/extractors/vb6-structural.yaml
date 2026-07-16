@@ -1,0 +1,44 @@
+# Structural extractor config — vb6
+# Draft config for the structural fallback parser (parsers/structural.py,
+# AIM-2/3 — not yet implemented). Schema per documents/research/
+# aim-framework.md §3.9: a LanguageParser that doesn't need tree-sitter,
+# just node_rules (what becomes a graph node) and edge_rules (what becomes
+# a graph edge), matched line-by-line / block-by-block against source text.
+
+id: vb6-structural
+description: >
+  Extracts modules, forms, classes, and procedures as graph nodes, and
+  calls/error-handler targets/member references as graph edges, from VB6
+  source text without a full parser.
+
+file_extensions: [".frm", ".bas", ".cls", ".ctl"]
+
+node_rules:
+  - kind: module
+    scope: file
+    match: 'Attribute VB_Name = "(?P<name>[^"]+)"'
+  - kind: procedure
+    scope: block
+    match: '^\s*(Public\s+|Private\s+|Friend\s+)?(Sub|Function|Property\s+(Get|Let|Set))\s+(?P<name>\w+)\s*\('
+    end_match: '^\s*End\s+(Sub|Function|Property)\s*$'
+
+edge_rules:
+  - kind: calls
+    from: procedure
+    match: '\b(?P<callee>[A-Za-z_]\w*)\s*\('
+    # Excludes VB6 keywords (If, For, Select, ...) at the config-consumer
+    # level, not in this regex — see parsers/structural.py's keyword denylist.
+  - kind: error_handler
+    from: procedure
+    match: 'On\s+Error\s+GoTo\s+(?P<label>\w+)'
+  - kind: references
+    from: procedure
+    match: '\b(?P<name>[A-Za-z_]\w*)\.(?P<member>[A-Za-z_]\w*)'
+
+notes: >
+  This is a draft config, not yet executable — parsers/structural.py
+  (AIM-2/3) is what will actually consume this schema. Tune the regexes
+  against a real sample estate before trusting extraction recall; per the
+  design doc's risk #1, measure recall before committing to Tier 1 (a real
+  tree-sitter grammar, if one becomes viable) vs. staying on this
+  structural Tier 2 approach.
