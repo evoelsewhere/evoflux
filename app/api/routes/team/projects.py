@@ -898,6 +898,7 @@ async def list_aim_runs(
             verdict=run.verdict,
             case_set=run.case_set,
             report_path=run.report_path,
+            session_id=run.session_id,
             created_at=run.created_at,
         )
         for run, unit in rows
@@ -1007,6 +1008,7 @@ async def get_aim_run(project_id: UUID, run_id: UUID, db: DbSession) -> AimRunOu
         case_set=run.case_set,
         stats=run.stats,
         report_path=run.report_path,
+        session_id=run.session_id,
         created_at=run.created_at,
         report=report,
     )

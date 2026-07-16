@@ -91,6 +91,12 @@ const aimFeatureRoute = createRoute({
   path: '$feature',
   component: () => null,
 })
+// §3.2 — deep-link to a specific run (report + Discussion)
+const aimRunRoute = createRoute({
+  getParentRoute: () => aimProjectRoute,
+  path: 'runs/$runId',
+  component: () => null,
+})
 
 // /telemetry — standalone observability page (span aggregates & latency)
 const telemetryRoute = createRoute({
@@ -114,7 +120,7 @@ const routeTree = rootRoute.addChildren([
   ]),
   aimLayoutRoute.addChildren([
     aimIndexRoute,
-    aimProjectRoute.addChildren([aimProjectIndexRoute, aimFeatureRoute]),
+    aimProjectRoute.addChildren([aimProjectIndexRoute, aimFeatureRoute, aimRunRoute]),
   ]),
   telemetryRoute,
   schedulerRoute,

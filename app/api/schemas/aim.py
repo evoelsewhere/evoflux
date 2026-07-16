@@ -33,6 +33,7 @@ class AimRunOut(BaseModel):
     case_set: str | None
     stats: dict
     report_path: str | None
+    session_id: UUID | None = None
     created_at: datetime
     report: dict | None = None
 
@@ -48,6 +49,7 @@ class AimRunListItem(BaseModel):
     verdict: str
     case_set: str | None
     report_path: str | None
+    session_id: UUID | None = None
     created_at: datetime
 
 
