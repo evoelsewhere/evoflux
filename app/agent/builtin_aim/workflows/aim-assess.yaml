@@ -1,49 +1,49 @@
-# Draft — inert until the Workflows engine (documents/plans/
-# workflows-feature-plan.md, M1-M6) exists AND its scope enum gains "aim"
-# (documents/research/aim-framework.md §3.11). Written now so the pipeline
-# is fully specified ahead of AIM-4 implementation, not invented then.
+# AIM pipeline — assess: inventory the estate, propose waves, human gate.
+# Conforms to workflow schema v1 (documents/plans/workflows-feature-plan.md §4.2).
 schema_version: 1
 name: aim-assess
-description: AIM Phase 0 — build the migration-unit inventory and get the wave plan approved.
+description: Index the source estate, build the unit inventory in the KB, and propose waves
 scope: aim
-inputs:
-  - name: wave_size
-    type: number
-    required: false
 
 nodes:
-  - id: overview
-    kind: tool
-    tool: code_overview
-    args: {}
-
-  - id: inventory
+  - id: assess
     kind: agent
     subagents: [aim-appraiser]
     prompt: |
-      Build or refresh the migration-unit inventory for this project.
-      Use code_search/code_graph for dependencies; record units, complexity,
-      and a wave plan (target wave size {{inputs.wave_size}}) via the
-      aim_units tool, and write inventory/units.md in the KB repo.
-      Graph overview: {{nodes.overview.output.text | truncate:4000}}
+      Run the ASSESS phase for this AIM project. Delegate to `aim-appraiser`:
+      index the source estate (code graph), build the unit inventory into the
+      KB repo (modules/<module>/<unit>.md stubs with frontmatter
+      phase=inventory plus inventory/units.md), score complexity, and propose
+      waves bottom-up (shared leaves = wave 0). Record every unit via the
+      aim_units tool. Finish with a wave-plan summary.
+    timeout_s: 1800
 
-  - id: wave_gate
+  - id: approve_plan
     kind: gate
-    title: "Approve migration wave plan"
-    body: "{{nodes.inventory.output.text | truncate:2000}}"
+    title: "Approve the wave plan"
+    body: "{{nodes.assess.output.text | truncate:2000}}"
     choices: [approve, rework]
 
-  - id: mark
-    kind: tool
-    tool: aim_units
-    args: {action: set_project_phase, phase: assessed}
+  - id: rework
+    kind: agent
+    subagents: [aim-appraiser]
+    prompt: |
+      The wave plan was NOT approved. Revisit the inventory and wave
+      assignments with `aim-appraiser`, addressing likely objections
+      (oversized waves, missed shared dependencies), update the KB and
+      aim_units, and produce a revised summary.
+    timeout_s: 1800
 
-  - id: ping
+  - id: done
     kind: notify
-    message: "Assessment complete — wave plan approved."
+    title: "aim-assess"
+    message: "Inventory and wave plan are in the KB — review them on the Overview board."
 
 edges:
-  - {from: overview, to: inventory}
-  - {from: inventory, to: wave_gate}
-  - {from: wave_gate, to: mark, when: approve}   # "rework" ends the flow gracefully (v5 §6.3)
-  - {from: mark, to: ping}
+  - { from: assess, to: approve_plan }
+  - { from: approve_plan, to: done, when: approve }
+  - { from: approve_plan, to: rework, when: rework }
+  - { from: rework, to: done }
+
+outputs:
+  summary: "{{nodes.assess.output.text}}"

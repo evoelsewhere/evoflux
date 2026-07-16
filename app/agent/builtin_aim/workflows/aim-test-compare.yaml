@@ -1,84 +1,70 @@
-# Draft — inert until the Workflows engine exists (see aim-assess.yaml header).
-# The repair loop deliberately lives inside the `repair` agent node's own
-# turn (fix -> aim_compare -> fix, iterated by the agent itself), not as a
-# graph cycle — Workflows v5 Phase 1 forbids cycles in the DAG.
+# AIM pipeline — the differentiator: deterministic equivalence compare
+# with a human certification gate and a triage branch. The repair loop
+# lives inside the triage/convert agents\' own turns — Phase 1 forbids
+# graph cycles.
 schema_version: 1
 name: aim-test-compare
-description: AIM Phase 4 — run functional-equivalence compare, triage diffs, repair, and certify.
+description: Run legacy vs target for one unit, compare canonically, certify or triage
 scope: aim
+
 inputs:
   - name: unit
     type: string
     required: true
+    description: "module/UNIT to compare"
   - name: case_set
     type: enum
-    required: true
     options: [smoke, full]
+    default: smoke
+    description: "golden case set to run"
 
 nodes:
-  - id: run_target
-    kind: tool
-    tool: shell
-    args:
-      command: "./.evoflux/aim/runners/run_target.sh {{inputs.unit}} {{inputs.case_set}}"
-
   - id: compare
-    kind: tool
-    tool: aim_compare
-    args: {unit: "{{inputs.unit}}", case_set: "{{inputs.case_set}}"}
+    kind: agent
+    subagents: [aim-test-engineer]
+    prompt: |
+      Run the TEST-COMPARE phase for unit {{inputs.unit}} with the
+      '{{inputs.case_set}}' golden case set. Delegate to `aim-test-engineer`:
+      execute the legacy and target runners from the rulebook for each golden
+      case, canonicalize both outputs, then diff with the aim_compare tool
+      (which records the AimRun). Report the verdict with the diff summary.
+    timeout_s: 3600
 
-  - id: verdict
-    kind: switch
-    value: "{{nodes.compare.output.verdict}}"
+  - id: certify
+    kind: gate
+    title: "Certify {{inputs.unit}} as equivalent?"
+    body: "{{nodes.compare.output.text | truncate:2000}}"
+    choices: [certify, triage]
+
+  - id: mark_equivalent
+    kind: agent
+    subagents: []
+    prompt: |
+      The compare result for {{inputs.unit}} is certified. Set the unit phase
+      to equivalent via aim_units, citing the latest compare run.
 
   - id: triage
     kind: agent
     subagents: [aim-triage-analyst]
     prompt: |
-      Triage the compare report at {{nodes.compare.output.report_path}}.
-      Classify each diff cluster: defect | acceptable_difference (cite a
-      rule or ADR) | golden_suspect. Record dispositions via aim_units;
-      propose canonicalizer profile changes as a YAML diff if differences
-      are acceptable.
+      The compare result for {{inputs.unit}} needs triage. Delegate to
+      `aim-triage-analyst`: follow the aim-diff-triage skill — classify each
+      difference (target bug / legacy quirk / accepted difference / harness
+      artifact), cite business rules, and propose the next fix or an ADR for
+      accepted differences.
+    timeout_s: 1800
 
-  - id: repair
-    kind: agent
-    subagents: [aim-converter]
-    prompt: |
-      Fix the defects from the triage below in the target repo. Re-run
-      aim_compare for {{inputs.unit}}/{{inputs.case_set}} after each fix
-      until pass or 3 rounds.
-      Triage: {{nodes.triage.output.text | truncate:3000}}
-
-  - id: final_compare
-    kind: tool
-    tool: aim_compare
-    args: {unit: "{{inputs.unit}}", case_set: "{{inputs.case_set}}"}
-
-  - id: equiv_gate
-    kind: gate
-    title: "Accept functional equivalence for {{inputs.unit}} ({{inputs.case_set}})?"
-    body: "Final verdict: {{nodes.final_compare.output.verdict}} — report: {{nodes.final_compare.output.report_path}}"
-    choices: [accept, reject]
-
-  - id: mark
-    kind: tool
-    tool: aim_units
-    args: {action: set_phase, unit: "{{inputs.unit}}", phase: equivalent}
-
-  - id: ping
+  - id: done
     kind: notify
-    message: "{{inputs.unit}} certified equivalent on {{inputs.case_set}} cases."
+    title: "aim-test-compare"
+    message: "{{inputs.unit}} compare finished — see Runs & Reports."
 
 edges:
-  - {from: run_target, to: compare}
-  - {from: compare, to: verdict}
-  - {from: verdict, to: mark, when: pass}          # straight-through pass
-  - {from: verdict, to: triage, when: fail}
-  - {from: triage, to: repair}
-  - {from: repair, to: final_compare}
-  - {from: final_compare, to: equiv_gate}
-  - {from: equiv_gate, to: mark, when: accept}     # "reject" ends the flow
-                                                     # gracefully; the run
-                                                     # stays failed in aim_runs
-  - {from: mark, to: ping}
+  - { from: compare, to: certify }
+  - { from: certify, to: mark_equivalent, when: certify }
+  - { from: certify, to: triage, when: triage }
+  - { from: mark_equivalent, to: done }
+  - { from: triage, to: done }
+
+outputs:
+  verdict: "{{nodes.compare.output.text}}"

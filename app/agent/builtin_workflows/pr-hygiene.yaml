@@ -1,0 +1,40 @@
+# Builtin example — a coding workflow mixing a direct tool call, an agent
+# turn, a gate, and a notification (one of every basic ingredient).
+schema_version: 1
+name: pr-hygiene
+description: Check working-tree hygiene and get a commit-readiness review
+scope: coding
+
+nodes:
+  - id: status
+    kind: tool
+    tool: shell
+    args: { command: "git status --short && git diff --stat | tail -5" }
+
+  - id: review
+    kind: agent
+    subagents: []
+    prompt: |
+      Review the working tree for commit readiness. Current status:
+
+      {{nodes.status.output.text | truncate:3000}}
+
+      Flag debug leftovers, unrelated changes mixed into the diff, and
+      anything that should be split into a separate commit. End with a
+      one-line verdict: ready / not ready.
+
+  - id: proceed
+    kind: gate
+    title: "Working tree reviewed"
+    body: "{{nodes.review.output.text | truncate:2000}}"
+    choices: [done]
+
+  - id: ping
+    kind: notify
+    title: "pr-hygiene"
+    message: "Hygiene review finished."
+
+edges:
+  - { from: status, to: review }
+  - { from: review, to: proceed }
+  - { from: proceed, to: ping, when: done }
