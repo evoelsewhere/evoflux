@@ -1,6 +1,6 @@
-"""Response schemas for /team/projects/{id}/aim/* — read-only summary/units/
-runs endpoints for an AIM migration project, per
-``documents/research/aim-framework.md`` §3.8(e).
+"""Schemas for AIM migration projects: read-only summary/units/runs
+endpoints (``documents/research/aim-framework.md`` §3.8(e)) and the
+create/join wizard endpoints (§3.12).
 """
 
 from __future__ import annotations
@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class AimUnitOut(BaseModel):
@@ -52,3 +52,30 @@ class AimProjectSummaryOut(BaseModel):
     phase_counts: AimPhaseCounts
     equivalent_pct: float
     latest_run_at: datetime | None
+
+
+# ── Setup wizard: create / preview / join ───────────────────────────────────
+
+
+class AimProjectCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    rulebook_id: str = Field(min_length=1)
+    rulebook_version: str = "0.1"
+    source_paths: list[str] = Field(min_length=1)
+    target_path: str
+    kb_path: str
+
+
+class AimManifestPreviewResponse(BaseModel):
+    rulebook_id: str
+    rulebook_version: str
+    source_identities: list[str]
+    target_identities: list[str]
+    phase: str
+
+
+class AimProjectJoinRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    kb_path: str
+    source_paths: list[str] = Field(min_length=1)
+    target_path: str

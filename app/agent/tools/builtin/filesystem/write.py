@@ -28,7 +28,7 @@ async def _write_file(
 ) -> str:
     """Create or overwrite a file with text content. Parent directories are created automatically."""
     sandbox = get_sandbox()
-    resolved = sandbox.validate_path(path)
+    resolved = sandbox.validate_path(path, is_write=True)
     rel = sandbox.display_path(resolved)
     if not overwrite and resolved.exists():
         raise FileExistsError(f"File already exists: {rel}")

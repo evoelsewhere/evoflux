@@ -164,8 +164,12 @@ async def _patch_file(
     ] = []
 
     for patch in patches:
-        resolved = sandbox.validate_path(patch.path)
-        target = sandbox.validate_path(patch.move_to) if patch.move_to else None
+        resolved = sandbox.validate_path(patch.path, is_write=True)
+        target = (
+            sandbox.validate_path(patch.move_to, is_write=True)
+            if patch.move_to
+            else None
+        )
 
         if patch.kind == "add":
             planned.append(

@@ -38,7 +38,7 @@ async def _remove_path(
 ) -> str:
     """Delete a file or directory from the workspace. Use recursive=true to remove a directory tree."""
     sandbox = get_sandbox()
-    resolved = sandbox.validate_path(path)
+    resolved = sandbox.validate_path(path, is_write=True)
     rel = sandbox.display_path(resolved)
 
     if not resolved.exists():

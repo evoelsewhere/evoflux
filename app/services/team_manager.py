@@ -106,6 +106,40 @@ def _resolve_coding_agents_dir() -> Path:
     return _resolve_agents_dir() / "coding"
 
 
+def _resolve_aim_agents_dir() -> Path:
+    return _resolve_agents_dir() / "aim"
+
+
+def _ensure_aim_agents_installed(agents_dir: Path) -> None:
+    """Self-heal: backfill ``agents_dir`` from ``seed/agents/aim/`` if it
+    has no lead file yet.
+
+    Unlike forge/coding, AIM blueprints have no Python-templated builtin
+    counterpart (``BUILTIN_AGENT_BLUEPRINTS`` has no "aim" key) — they ship
+    as complete .md files under ``seed/agents/aim/``, already covered by
+    ``install_seed``'s generic ``agents/`` tree copy (app/cli/seed.py). A
+    fresh install picks them up automatically; this only matters for an
+    *existing* config dir that predates AIM-2 and never got the new
+    ``agents/aim/`` subtree. Safe to call repeatedly — install_seed only
+    fills gaps, never overwrites.
+    """
+    if any(agents_dir.glob("*.md")):
+        return
+    from app.agent.loader import _lead_model_for_dir
+    from app.cli.seed import PROVIDER_MODEL_TOKEN, SeedDownloadError, install_seed
+
+    # By the time this backfill runs (lazily, on first aim team load) the
+    # user has typically already configured a provider — unlike a genuine
+    # first-run install, where deferring to the placeholder is correct.
+    # Reuse whatever the forge lead already resolved to, so aim blueprints
+    # don't ship unconfigured while every other mode already works.
+    provider_model = _lead_model_for_dir(_resolve_agents_dir()) or PROVIDER_MODEL_TOKEN
+    try:
+        install_seed(Path(settings.EVOFLUX_CONFIG_DIR), provider_model=provider_model)
+    except SeedDownloadError as exc:
+        logger.warning("aim_agents_seed_backfill_failed error={}", exc)
+
+
 def _resolve_workspace(workspace: str) -> Path:
     return Path(workspace).expanduser().resolve()
 
@@ -407,7 +441,20 @@ async def get_or_start_coding_team(
     workspace: str,
     session_id: str,
     extra_workspace_paths: list[str] | None = None,
+    *,
+    mode: str = "coding",
+    read_only_paths: list[str] | None = None,
 ) -> "AgentTeam":
+    """Build (or return the cached) project-scoped team for *workspace*.
+
+    Despite the name, this also serves AIM sessions (``mode="aim"``) — an
+    AIM session is workspace/project-scoped exactly like a coding one (its
+    primary workspace is the target repo; source/KB repos ride along in
+    ``extra_workspace_paths``), so the cache, idle-eviction, and
+    extra-workspace-paths plumbing are shared rather than duplicated into a
+    parallel ``_aim_teams`` dict. ``read_only_paths`` (AIM-only) marks
+    base-source repos as write-denied — see ``SandboxConfig.read_only_paths``.
+    """
     resolved_workspace = validate_workspace(workspace)
     key = (resolved_workspace, session_id)
     async with _lock:
@@ -416,30 +463,39 @@ async def get_or_start_coding_team(
         existing = _coding_teams.get(key)
         if existing is not None:
             _coding_team_last_used[key] = now
-            # Update extra paths if the project config changed
+            # Update extra/read-only paths if the project config changed
             if extra_workspace_paths is not None:
                 existing.extra_workspace_paths = extra_workspace_paths
+            if read_only_paths is not None:
+                existing.read_only_paths = read_only_paths
             team = existing
         else:
-            agents_dir = _resolve_coding_agents_dir()
+            if mode == "aim":
+                agents_dir = _resolve_aim_agents_dir()
+                _ensure_aim_agents_installed(agents_dir)
+            else:
+                agents_dir = _resolve_coding_agents_dir()
             team = await asyncio.to_thread(
                 load_team_from_dir,
                 agents_dir,
-                mode="coding",
+                mode=mode,
                 workspace=resolved_workspace,
             )
             if team is None:
                 raise ValueError(
-                    f"No coding agents found in '{agents_dir}'. "
+                    f"No {mode} agents found in '{agents_dir}'. "
                     "Create at least one .md file with 'role: lead'."
                 )
             if extra_workspace_paths:
                 team.extra_workspace_paths = extra_workspace_paths
+            if read_only_paths:
+                team.read_only_paths = read_only_paths
             await team.start()
             _coding_teams[key] = team
             _coding_team_last_used[key] = now
             logger.info(
-                "coding_team_started workspace={} session_id={} lead={}",
+                "coding_team_started mode={} workspace={} session_id={} lead={}",
+                mode,
                 resolved_workspace,
                 session_id,
                 team.lead.name,
@@ -599,9 +655,11 @@ def refresh_blueprints(team: "AgentTeam") -> None:
     from app.agent.loader import member_model_is_configured, parse_agent_md
     from app.agent.mode.team.team import MemberBlueprint
 
-    agents_dir = (
-        _resolve_coding_agents_dir() if team.mode == "coding" else _resolve_agents_dir()
-    )
+    agents_dir_by_mode = {
+        "coding": _resolve_coding_agents_dir,
+        "aim": _resolve_aim_agents_dir,
+    }
+    agents_dir = agents_dir_by_mode.get(team.mode, _resolve_agents_dir)()
     if not agents_dir.exists():
         return
 

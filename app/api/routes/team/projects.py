@@ -31,7 +31,10 @@ from app.api.schemas.cross_repo import (
     CrossRepoResolveStatusResponse,
 )
 from app.api.schemas.aim import (
+    AimManifestPreviewResponse,
     AimPhaseCounts,
+    AimProjectCreateRequest,
+    AimProjectJoinRequest,
     AimProjectSummaryOut,
     AimRunOut,
     AimUnitOut,
@@ -43,6 +46,7 @@ from app.models.code_graph import CrossRepoEdge
 from app.services import code_graph_service as cg_svc
 from app.services import coding_project_service as svc
 from app.services import team_manager
+from app.services.aim import project_setup as aim_project_setup
 from app.services.code_graph.cross_repo import METHOD_MANUAL_REJECT
 from app.services.code_graph.cross_repo_jobs import cross_repo_jobs
 from app.services.code_graph.jobs import index_jobs
@@ -114,19 +118,26 @@ async def _project_response(db: DbSession, project_id: UUID) -> ProjectResponse:
         name=project.name,
         description=project.description,
         settings=project.settings,
+        kind=project.kind,
         workspaces=[_ws_item(link, ws) for link, ws in pairs],
         created_at=project.created_at.isoformat(),
         updated_at=project.updated_at.isoformat(),
     )
 
 
-async def list_project_responses(db: DbSession) -> list[ProjectResponse]:
+async def list_project_responses(
+    db: DbSession, *, kind: str | None = None
+) -> list[ProjectResponse]:
     """All visible projects with their member workspaces, as ProjectResponse.
 
     Shared with chat.py's merged /workspace/tree endpoint so both surfaces
     build the Projects list the same way instead of maintaining two copies.
+    ``kind`` (optional) filters to "coding" or "aim" — see
+    ``svc.list_visible_projects``. Left unfiltered by default so existing
+    callers are unaffected; the Coding sidebar and AIM Board should each
+    pass their own ``kind`` explicitly.
     """
-    projects = await svc.list_visible_projects(db)
+    projects = await svc.list_visible_projects(db, kind=kind)
     result = []
     for project in projects:
         pairs = await svc.get_project_workspaces(db, project.id)
@@ -136,6 +147,7 @@ async def list_project_responses(db: DbSession) -> list[ProjectResponse]:
                 name=project.name,
                 description=project.description,
                 settings=project.settings,
+                kind=project.kind,
                 workspaces=[_ws_item(link, ws) for link, ws in pairs],
                 created_at=project.created_at.isoformat(),
                 updated_at=project.updated_at.isoformat(),
@@ -148,8 +160,10 @@ async def list_project_responses(db: DbSession) -> list[ProjectResponse]:
 
 
 @router.get("", response_model=list[ProjectResponse])
-async def list_projects(db: DbSession) -> list[ProjectResponse]:
-    return await list_project_responses(db)
+async def list_projects(
+    db: DbSession, kind: str | None = None
+) -> list[ProjectResponse]:
+    return await list_project_responses(db, kind=kind)
 
 
 @router.post("", response_model=ProjectResponse, status_code=201)
@@ -666,11 +680,80 @@ async def get_project_code_graph_data(
     )
 
 
-# ── AIM (documents/research/aim-framework.md §3.8(e)) ──────────────────────
+# ── AIM (documents/research/aim-framework.md §3.8(e), §3.12) ────────────────
 #
-# Read-only: these serve the `aim_units`/`aim_runs` local index for a
-# dashboard. Every write to that index goes through the aim_units/aim_compare
-# tools (app/agent/tools/builtin/aim.py), never through this router.
+# /aim/create, /aim/preview, /aim/join are the AimSetupWizard's backend
+# (§3.12) — the only routes in this section that write. Everything else
+# here is read-only: they serve the `aim_units`/`aim_runs` local index for
+# a dashboard. Every write to THAT index goes through the aim_units/
+# aim_compare tools (app/agent/tools/builtin/aim.py), never through this
+# router.
+
+
+@router.post("/aim/preview", response_model=AimManifestPreviewResponse)
+async def preview_aim_project(kb_path: str) -> AimManifestPreviewResponse:
+    """Read an existing KB repo's aim.yaml — the "Join existing" wizard
+    step's preview, before asking the user for local repo path mappings.
+    """
+    try:
+        manifest = await aim_project_setup.preview_aim_manifest(kb_path)
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=422, detail=f"No aim.yaml found at '{kb_path}'."
+        )
+    return AimManifestPreviewResponse(
+        rulebook_id=manifest.rulebook.id,
+        rulebook_version=manifest.rulebook.version,
+        source_identities=manifest.roles.source,
+        target_identities=manifest.roles.target,
+        phase=manifest.phase,
+    )
+
+
+@router.post("/aim", response_model=ProjectResponse, status_code=201)
+async def create_aim_project_route(
+    body: AimProjectCreateRequest, db: DbSession
+) -> ProjectResponse:
+    source_paths = [_validate_path_or_422(p) for p in body.source_paths]
+    target_path = _validate_path_or_422(body.target_path)
+    kb_root = Path(body.kb_path).expanduser().resolve()
+    if kb_root.exists() and any(kb_root.iterdir()):
+        raise HTTPException(
+            status_code=422,
+            detail=f"KB path already exists and is not empty: {kb_root}",
+        )
+    project = await aim_project_setup.create_aim_project(
+        db,
+        name=body.name,
+        rulebook_id=body.rulebook_id,
+        rulebook_version=body.rulebook_version,
+        source_paths=source_paths,
+        target_path=target_path,
+        kb_path=str(kb_root),
+    )
+    await db.commit()
+    return await _project_response(db, project.id)
+
+
+@router.post("/aim/join", response_model=ProjectResponse, status_code=201)
+async def join_aim_project_route(
+    body: AimProjectJoinRequest, db: DbSession
+) -> ProjectResponse:
+    kb_path = _validate_path_or_422(body.kb_path)
+    try:
+        project = await aim_project_setup.join_aim_project(
+            db,
+            name=body.name,
+            kb_path=kb_path,
+            source_paths=[_validate_path_or_422(p) for p in body.source_paths],
+            target_path=_validate_path_or_422(body.target_path),
+        )
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=422, detail=f"No aim.yaml found at '{kb_path}'."
+        )
+    await db.commit()
+    return await _project_response(db, project.id)
 
 
 async def _get_aim_project_or_404(db: DbSession, project_id: UUID):

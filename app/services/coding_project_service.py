@@ -71,19 +71,24 @@ async def get_project(db: AsyncSession, project_id: UUID) -> CodingProject | Non
     ).first()
 
 
-async def list_visible_projects(db: AsyncSession) -> list[CodingProject]:
-    return list(
-        (
-            await db.exec(
-                select(CodingProject)
-                .where(
-                    ~col(CodingProject.hidden),
-                    col(CodingProject.deleted_at).is_(None),
-                )
-                .order_by(col(CodingProject.created_at).asc())
-            )
-        ).all()
+async def list_visible_projects(
+    db: AsyncSession, *, kind: str | None = None
+) -> list[CodingProject]:
+    """List non-hidden, non-deleted projects.
+
+    ``kind`` filters to "coding" or "aim" — Forge/Coding UIs should always
+    pass ``kind="coding"`` and the AIM Board's project picker
+    ``kind="aim"``, so the two modes never surface each other's projects
+    (documents/research/aim-framework.md §3.3).
+    """
+    stmt = select(CodingProject).where(
+        ~col(CodingProject.hidden),
+        col(CodingProject.deleted_at).is_(None),
     )
+    if kind is not None:
+        stmt = stmt.where(CodingProject.kind == kind)
+    stmt = stmt.order_by(col(CodingProject.created_at).asc())
+    return list((await db.exec(stmt)).all())
 
 
 async def update_project(

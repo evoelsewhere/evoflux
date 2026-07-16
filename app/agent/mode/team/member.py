@@ -950,7 +950,7 @@ class TeamMemberBase(abc.ABC):
                     db_factory=self.db_factory,
                 )
             )
-        if self._team.mode == "coding":
+        if self._team.mode in ("coding", "aim"):
             if self._team.extra_workspace_paths:
                 hooks.append(
                     MultiRepoContextHook(
@@ -1051,12 +1051,13 @@ class TeamMemberBase(abc.ABC):
             run_metadata["team_workspace"] = self._team.workspace
         config = RunConfig(session_id=self.session_id, metadata=run_metadata)
 
-        # Coding mode uses the exact project workspace for every team member.
+        # Coding/AIM modes use the exact project workspace for every team member.
         workspace = str(session_workspace_dir(lead_session_id, self._team.workspace))
         session_sandbox = SandboxConfig(
             workspace=workspace,
             session_id=lead_session_id,
             extra_workspace_paths=self._team.extra_workspace_paths or None,
+            read_only_paths=self._team.read_only_paths or None,
         )
         token = set_sandbox(session_sandbox)
 

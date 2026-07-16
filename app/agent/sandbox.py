@@ -93,6 +93,11 @@ class SandboxConfig:
         # see the full repo set without a model-facing "workspace_paths"
         # argument on every one of them.
         extra_workspace_paths: list[str] | None = None,
+        # AIM mode only: paths (typically base-source repos) that remain
+        # readable — they are NOT in denied_roots, so read/search/grep tools
+        # still work — but are rejected by write-path tools (write/edit/
+        # patch/rm). See validate_path's is_write param.
+        read_only_paths: list[str] | None = None,
         # Kept for backward compatibility — ignored.
         memory: str | None = None,
     ):
@@ -104,6 +109,9 @@ class SandboxConfig:
         self.workspace_root: Path = Path(workspace).resolve()
         self.session_id = session_id
         self.extra_workspace_paths: list[str] = list(extra_workspace_paths or [])
+        self.read_only_paths: list[Path] = [
+            Path(p).resolve() for p in (read_only_paths or [])
+        ]
         self.workspace_root.mkdir(parents=True, exist_ok=True)
 
         if denied_roots is None:
@@ -156,13 +164,28 @@ class SandboxConfig:
                 return pattern
         return None
 
-    def validate_path(self, path: str | Path) -> Path:
+    def _is_read_only(self, resolved: Path) -> Path | None:
+        for ro_root in self.read_only_paths:
+            if _path_is_under(resolved, ro_root):
+                return ro_root
+        return None
+
+    def validate_path(self, path: str | Path, *, is_write: bool = False) -> Path:
         """Resolve *path* and verify it's not inside a denied root.
+
+        Args:
+            is_write: pass ``True`` from write-path tools (write/edit/patch/
+                rm) so a path under ``read_only_paths`` is rejected even
+                though it's readable — the AIM base-source read-only rule
+                (documents/research/aim-framework.md §3.3): agents may read
+                the base source but must never modify it, while ordinary
+                read/search tools stay unaffected.
 
         Raises:
             PermissionError: if the resolved path falls under a denied
-                root, contains a symlink whose target is denied, or uses
-                tilde expansion.
+                root, contains a symlink whose target is denied, uses
+                tilde expansion, or (when ``is_write``) falls under a
+                read-only root.
         """
         if str(path).startswith("~"):
             raise PermissionError(
@@ -214,18 +237,42 @@ class SandboxConfig:
                 f"Path '{resolved}' is inside a denied sandbox root: {denied}"
             )
 
+        if is_write:
+            read_only_root = self._is_read_only(resolved)
+            if read_only_root is not None:
+                logger.warning(
+                    "sandbox_write_denied_read_only path={} read_only_root={}",
+                    resolved,
+                    read_only_root,
+                )
+                raise PermissionError(
+                    f"Path '{resolved}' is read-only in this session (base "
+                    f"source, never written to): {read_only_root}"
+                )
+
         return resolved
 
     # ── Command validation (best-effort) ─────────────────────────────────
 
     def check_command(self, command: str) -> tuple[Path, str] | None:
-        """Best-effort scan of *command* for arguments inside denied paths."""
+        """Best-effort scan of *command* for arguments inside denied paths,
+        plus (if ``read_only_paths`` is set) shell redirection targets
+        (``>``/``>>``) landing inside one of them.
+
+        The redirect check is deliberately narrow — it catches the most
+        common accidental/naive write pattern with no false positives
+        (a redirect is unambiguously a write), not every way a shell
+        command could modify a read-only file (``sed -i``, a script's own
+        file-write flags, etc. are not caught). OS-level permissions on the
+        base-source repo remain the last line of defence, same caveat the
+        denied-root scan below already carries.
+        """
         try:
             tokens = shlex.split(command, posix=True)
         except ValueError:
             return None
 
-        for tok in tokens:
+        for index, tok in enumerate(tokens):
             if not _looks_path_like(tok):
                 continue
             expanded = os.path.expanduser(tok)
@@ -244,6 +291,20 @@ class SandboxConfig:
                     denied,
                 )
                 return resolved, str(denied)
+            if (
+                self.read_only_paths
+                and index > 0
+                and tokens[index - 1] in (">", ">>")
+            ):
+                read_only_root = self._is_read_only(resolved)
+                if read_only_root is not None:
+                    logger.warning(
+                        "sandbox_command_write_denied_read_only token={} resolved={} read_only_root={}",
+                        tok,
+                        resolved,
+                        read_only_root,
+                    )
+                    return resolved, str(read_only_root)
         return None
 
     # ── Display helpers ──────────────────────────────────────────────────

@@ -222,44 +222,60 @@ async def team_chat(
         async with db.begin():
             existing = await db.get(ChatSession, session_uuid)
 
-    if existing and existing.mode == "coding" and existing.workspace:
+    if existing and existing.mode in ("coding", "aim") and existing.workspace:
         persisted_workspace = _validate_workspace_or_422(existing.workspace)
-        if mode == "coding" and workspace is not None:
+        if mode == existing.mode and workspace is not None:
             requested_workspace = _validate_workspace_or_422(workspace)
             if requested_workspace != persisted_workspace:
                 raise HTTPException(
                     status_code=409,
                     detail=(
-                        "Session belongs to a different coding workspace: "
+                        f"Session belongs to a different {existing.mode} workspace: "
                         f"{persisted_workspace}"
                     ),
                 )
-        mode = "coding"
+        mode = existing.mode
         workspace = persisted_workspace
         assert session_id is not None
         extra_ws_paths: list[str] = []
+        read_only_paths: list[str] = []
         if existing.project_id is not None:
-            from app.services.coding_project_service import get_project_workspace_paths
+            from app.services.coding_project_service import (
+                get_project,
+                get_project_workspace_paths,
+            )
 
             async with db.begin():
+                project = await get_project(db, existing.project_id)
                 all_paths = await get_project_workspace_paths(
                     db, existing.project_id
                 )
             extra_ws_paths = [p for p in all_paths if p != workspace]
+            if project is not None and project.kind == "aim":
+                from app.services.aim.project import resolve_source_workspace_paths
+
+                async with db.begin():
+                    read_only_paths = await resolve_source_workspace_paths(
+                        db, project
+                    )
         try:
             team_obj = await team_manager.get_or_start_coding_team(
-                workspace, session_id, extra_workspace_paths=extra_ws_paths or None
+                workspace,
+                session_id,
+                extra_workspace_paths=extra_ws_paths or None,
+                mode=mode,
+                read_only_paths=read_only_paths or None,
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-    elif mode == "coding":
+    elif mode in ("coding", "aim"):
         if session_id is None:
             session_id = str(uuid7())
         assert workspace is not None
         workspace = _validate_workspace_or_422(workspace)
         try:
             team_obj = await team_manager.get_or_start_coding_team(
-                workspace, session_id
+                workspace, session_id, mode=mode
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -523,10 +539,12 @@ async def team_command(
             raise HTTPException(status_code=422, detail="Invalid session id.") from exc
         async with db.begin():
             existing = await db.get(ChatSession, session_uuid)
-        if existing and existing.mode == "coding" and existing.workspace:
+        if existing and existing.mode in ("coding", "aim") and existing.workspace:
             try:
                 team_obj = await team_manager.get_or_start_coding_team(
-                    _validate_workspace_or_422(existing.workspace), body.session_id
+                    _validate_workspace_or_422(existing.workspace),
+                    body.session_id,
+                    mode=existing.mode,
                 )
             except ValueError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -539,10 +557,12 @@ async def team_command(
             raise HTTPException(status_code=422, detail="Invalid session id.") from exc
         async with db.begin():
             existing = await db.get(ChatSession, session_uuid)
-        if existing and existing.mode == "coding" and existing.workspace:
+        if existing and existing.mode in ("coding", "aim") and existing.workspace:
             try:
                 team_obj = await team_manager.get_or_start_coding_team(
-                    _validate_workspace_or_422(existing.workspace), body.session_id
+                    _validate_workspace_or_422(existing.workspace),
+                    body.session_id,
+                    mode=existing.mode,
                 )
             except ValueError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -768,10 +788,12 @@ async def list_team_sessions(
     """
     if mode is not None:
         mode = normalize_mode(mode)
-        if mode not in {"forge", "coding"}:
+        if mode not in {"forge", "coding", "aim"}:
             raise HTTPException(status_code=422, detail="Invalid mode")
-    if workspace is not None and mode != "coding":
-        raise HTTPException(status_code=422, detail="workspace requires mode=coding")
+    if workspace is not None and mode not in ("coding", "aim"):
+        raise HTTPException(
+            status_code=422, detail="workspace requires mode=coding or mode=aim"
+        )
 
     try:
         sessions, next_cursor, has_more = await list_sessions_page(
@@ -807,9 +829,9 @@ async def resolve_team_session(
 ) -> TeamSessionResolveResponse:
     """Return the newest matching top-level session, creating one if absent."""
     body.mode = normalize_mode(body.mode)
-    if body.mode not in {"forge", "coding"}:
+    if body.mode not in {"forge", "coding", "aim"}:
         raise HTTPException(
-            status_code=422, detail="mode must be 'forge' or 'coding'."
+            status_code=422, detail="mode must be 'forge', 'coding', or 'aim'."
         )
     model = body.model.strip() if body.model else None
     thinking_level = body.thinking_level.strip() if body.thinking_level else None
@@ -826,20 +848,38 @@ async def resolve_team_session(
                 status_code=422, detail="worktree options require mode='coding'."
             )
     elif project_id is not None:
-        # Project-mode: derive the primary workspace from the project (paths[0]).
-        # A project session spans all repos; it is matched/reused by project_id,
-        # never by this derived path (see get_latest_top_level_session).
-        from app.services.coding_project_service import get_project_workspace_paths
+        # Project-mode: derive the primary workspace from the project. A
+        # project session spans all repos; it is matched/reused by
+        # project_id, never by this derived path (see
+        # get_latest_top_level_session). For an AIM project the primary
+        # workspace is specifically the *target* repo (roles.target in
+        # settings["aim"]) — not just "whichever repo was added first" —
+        # since that's where aim-converter writes code; source/kb repos
+        # ride along as extra_workspace_paths (source enforced read-only,
+        # see member.py's sandbox construction).
+        from app.services.coding_project_service import (
+            get_project,
+            get_project_workspace_paths,
+        )
 
         async with db.begin():
+            project = await get_project(db, project_id)
             paths = await get_project_workspace_paths(db, project_id)
         if not paths:
             raise HTTPException(
                 status_code=422,
                 detail="Project has no workspaces configured.",
             )
+        primary_path = paths[0]
+        if project is not None and project.kind == "aim":
+            from app.services.aim.project import resolve_target_workspace_path
+
+            async with db.begin():
+                target_path = await resolve_target_workspace_path(db, project)
+            if target_path:
+                primary_path = target_path
         # Fail fast with a clear 422 if the primary repo path is stale/missing.
-        workspace = _validate_workspace_or_422(paths[0])
+        workspace = _validate_workspace_or_422(primary_path)
     elif body.worktree_from or body.worktree_name or body.worktree_branch:
         if not body.worktree_from or not body.worktree_name:
             raise HTTPException(
@@ -859,7 +899,8 @@ async def resolve_team_session(
         body.create = True
     elif not workspace:
         raise HTTPException(
-            status_code=422, detail="workspace is required when mode='coding'."
+            status_code=422,
+            detail=f"workspace is required when mode='{body.mode}'.",
         )
     else:
         workspace = _validate_workspace_or_422(workspace)
@@ -1065,7 +1106,7 @@ async def set_session_permission_mode(
     # Peek only — the persisted mode is picked up at the next team boot, so
     # starting a team here just to set an attribute wastes a full cold boot.
     team_obj = team_manager.current_team_for_session(sid)
-    if team_obj is None and session_mode == "coding" and session_workspace:
+    if team_obj is None and session_mode in ("coding", "aim") and session_workspace:
         team_obj = team_manager.current_coding_team_for_session(
             session_workspace, sid
         )
@@ -1129,7 +1170,7 @@ async def team_history(
     # (and, via the global team lock + sync file IO, every other request)
     # for the whole cold-start. A team that isn't running can't have an
     # active loop, so a cache miss is simply "no loop".
-    if history.lead_session.mode == "coding" and history.lead_session.workspace:
+    if history.lead_session.mode in ("coding", "aim") and history.lead_session.workspace:
         loop_team = team_manager.current_coding_team_for_session(
             history.lead_session.workspace, str(history.lead_session.id)
         )

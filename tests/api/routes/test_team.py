@@ -112,7 +112,7 @@ def app_with_team(test_team, monkeypatch):
     async def get_session_team(_session_id: str):
         return test_team
 
-    async def get_coding_team(_workspace: str, _session_id: str):
+    async def get_coding_team(_workspace: str, _session_id: str, **_kwargs):
         return test_team
 
     monkeypatch.setattr(
