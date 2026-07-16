@@ -76,6 +76,11 @@ import { isAgentRole, type AgentRole } from '@/lib/agent-roles'
 import type { ActiveLoop, AgentStream } from '@/stores/useTeamStore'
 import { AgentTopbar } from '@/components/AgentTopbar'
 import { TaskProgressPill } from '@/components/TaskProgressPill'
+import { WorkflowProgressPill } from '@/components/WorkflowProgressPill'
+import { RunInputsDialog, type RunInputsRequest } from '@/components/RunInputsDialog'
+import { useWorkflowsQuery } from '@/queries/useWorkflowsQuery'
+import { runWorkflow } from '@/api/client'
+import { mapWorkflowArgs, parseWorkflowCommand } from '@/lib/parseWorkflowCommand'
 import { type InputBarHandle, type SlashCommand, type SnippetCommand } from '../InputBar'
 import { FloatingInputBar } from '../FloatingInputBar'
 import type { AgentCapabilities as AgentCapabilitiesType, MessageAttachment, WorkspaceFileInfo } from '@/api/types'
@@ -205,6 +210,8 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const sessionFastMode = useTeamStore((s) => s.sessionFastMode)
   const leadName       = useTeamStore((s) => s.leadName)
   const activeLoop     = useTeamStore((s) => s.activeLoop)
+  const activeWorkflowExecution = useTeamStore((s) => s.activeWorkflowExecution)
+  const [runInputsRequest, setRunInputsRequest] = useState<RunInputsRequest | null>(null)
   const isConnected    = useTeamStore((s) => s.isConnected)
   const isSessionLoading = useTeamStore((s) => s.isSessionLoading)
   // Utility modal state lives in useUIStore so only one can be open at a time.
@@ -695,6 +702,22 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
     () => new Set<string>((commandsQ.data?.commands ?? []).map((c) => c.name)),
     [commandsQ.data],
   )
+  const workflowsQ = useWorkflowsQuery(
+    mode === 'coding' || mode === 'aim' ? workspace : null,
+  )
+  // Approved + valid definitions matching the session scope (plan §9.1):
+  // forge sessions list forge-scope only; coding/aim sessions additionally
+  // list their own scope. Unapproved/invalid → omitted (gating by omission).
+  const runnableWorkflows = useMemo(
+    () =>
+      (workflowsQ.data?.workflows ?? []).filter(
+        (wf) =>
+          wf.approved &&
+          wf.valid &&
+          (wf.scope === 'forge' || wf.scope === mode),
+      ),
+    [workflowsQ.data, mode],
+  )
   const slashCommands: SlashCommand[] = [
     { id: 'stop', label: 'Stop', description: 'Stop all working agents' },
     { id: 'continue', label: 'Continue', description: 'Continue the last assistant response' },
@@ -713,6 +736,15 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
           { id: 'loop:stop', label: 'loop:stop', displayName: 'loop:stop', description: 'Stop the active coding loop' },
         ]
       : []),
+    ...runnableWorkflows.map((wf) => ({
+      id: `workflow-${wf.name}`,
+      label: `workflow ${wf.name}`,
+      displayName: `workflow ${wf.name}`,
+      insertText: `workflow ${wf.name}`,
+      description: wf.description || `Run the ${wf.name} workflow`,
+      category: 'workflow',
+      keepInputOpen: true,
+    })),
     ...(commandsQ.data?.commands ?? []).map((c) => {
       const displayName = c.name.replace('/', ':')
       return {
@@ -862,6 +894,63 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
         return true
     }
   }, [pushToast, runLoopCommand])
+
+  const startWorkflowRun = useCallback(
+    async (name: string, values: Record<string, unknown>) => {
+      const sid = sessionIdState ?? sessionId
+      if (!sid) throw new Error('No session yet — send a message first.')
+      await runWorkflow(name, sid, values, agentWorkspace)
+    },
+    [sessionIdState, sessionId, agentWorkspace],
+  )
+
+  /** FE-intercepted /workflow (plan §9.1, F17): the raw slash text is never
+   *  sent as a chat message; positional args map onto declared inputs and
+   *  missing required ones open RunInputsDialog. */
+  const tryHandleWorkflowCommand = useCallback(
+    async (content: string): Promise<boolean> => {
+      const parsed = parseWorkflowCommand(content)
+      if (parsed.kind === 'none') return false
+      if (parsed.kind === 'missing_name') {
+        pushToast({
+          tone: 'error',
+          title: '/workflow needs a name',
+          description: 'e.g. "/workflow bug-triage TICKET-1".',
+        })
+        return true
+      }
+      const wf = runnableWorkflows.find((w) => w.name === parsed.name)
+      if (!wf) {
+        pushToast({
+          tone: 'error',
+          title: `No runnable workflow '${parsed.name}'`,
+          description: 'It may be unapproved, invalid, or out of scope here.',
+        })
+        return true
+      }
+      const mapped = mapWorkflowArgs(wf.inputs, parsed.args)
+      if (mapped.errors.length > 0) {
+        pushToast({ tone: 'error', title: 'Bad workflow arguments', description: mapped.errors.join('; ') })
+        return true
+      }
+      if (mapped.missing.length > 0) {
+        setRunInputsRequest({ name: wf.name, inputs: wf.inputs, prefilled: mapped.values })
+        return true
+      }
+      try {
+        await startWorkflowRun(wf.name, mapped.values)
+        pushToast({ tone: 'success', title: `${wf.name} started` })
+      } catch (err) {
+        pushToast({
+          tone: 'error',
+          title: `Failed to start ${wf.name}`,
+          description: err instanceof Error ? err.message : String(err),
+        })
+      }
+      return true
+    },
+    [runnableWorkflows, pushToast, startWorkflowRun],
+  )
 
   /** If *content* starts with a known user-defined command, render server-side
    *  and return the expanded body; otherwise return *content* unchanged. */
@@ -1180,6 +1269,16 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
                 compact={false}
               />
             )}
+            {!isMobile && activeWorkflowExecution && (
+              <WorkflowProgressPill
+                execution={activeWorkflowExecution}
+                onDismissFailed={() =>
+                  useTeamStore.setState((state) => {
+                    state.activeWorkflowExecution = null
+                  })
+                }
+              />
+            )}
             {!isMobile && mode === 'coding' && (
               <TaskProgressPill
                 isWorking={isTeamWorking}
@@ -1452,6 +1551,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
                   return
                 }
               }
+              if (await tryHandleWorkflowCommand(content)) return
               if (mode === 'coding' && (await tryHandleBuiltinLoopCommand(content))) return
               const shell = content.startsWith('!')
               const command = shell ? content.slice(1).trim() : content
@@ -1603,6 +1703,17 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
       />
       {showPalette && (
         <CommandPalette commands={paletteCommands} onClose={() => setShowPalette(false)} />
+      )}
+      {runInputsRequest && (
+        <RunInputsDialog
+          request={runInputsRequest}
+          onCancel={() => setRunInputsRequest(null)}
+          onRun={async (values) => {
+            await startWorkflowRun(runInputsRequest.name, values)
+            setRunInputsRequest(null)
+            pushToast({ tone: 'success', title: `${runInputsRequest.name} started` })
+          }}
+        />
       )}
       <FloatingTodosPanel todos={todos} />
       </div>{/* end right column */}

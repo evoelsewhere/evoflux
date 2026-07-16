@@ -486,6 +486,39 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
         break
       }
 
+      case 'workflow_progress': {
+        const status = String(d.status ?? '')
+        set((draft) => {
+          if (status === 'completed' || status === 'failed' || status === 'stopped') {
+            // Keep the terminal state visible briefly is a UI concern; the
+            // store simply clears on terminal, mirroring loop_status.
+            draft.activeWorkflowExecution =
+              status === 'failed'
+                ? {
+                    executionId: String(d.execution_id ?? ''),
+                    definitionName: String(d.definition_name ?? ''),
+                    status,
+                    nodeId: (d.node_id as string | null) ?? null,
+                    nodeIndex: (d.node_index as number | null) ?? null,
+                    totalNodes: Number(d.total_nodes) || 0,
+                    error: (d.error as string | undefined) ?? null,
+                  }
+                : null
+          } else {
+            draft.activeWorkflowExecution = {
+              executionId: String(d.execution_id ?? ''),
+              definitionName: String(d.definition_name ?? ''),
+              status,
+              nodeId: (d.node_id as string | null) ?? null,
+              nodeIndex: (d.node_index as number | null) ?? null,
+              totalNodes: Number(d.total_nodes) || 0,
+              error: null,
+            }
+          }
+        })
+        break
+      }
+
       case 'loop_status': {
         const limit = Number(d.limit) || 0
         const remaining = Number(d.remaining) || 0

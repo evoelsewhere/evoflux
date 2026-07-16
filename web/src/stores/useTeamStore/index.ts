@@ -81,6 +81,7 @@ function resetSessionState(
   state.isSessionLoading = false
   state.error = null
   state.activeLoop = null
+  state.activeWorkflowExecution = null
   state.setupRequired = null
   state.planApproval = null
   state.permissionRequest = null
@@ -191,6 +192,7 @@ export const useTeamStore = create<TeamStore>()(
     isSessionLoading: false,
     error: null,
     activeLoop: null,
+    activeWorkflowExecution: null,
     setupRequired: null,
     browserSession: null,
     planApproval: null,
@@ -797,6 +799,17 @@ export const useTeamStore = create<TeamStore>()(
           draft.isContinuing = false
           draft.error = null
           draft.activeLoop = history.loop_status ?? null
+          draft.activeWorkflowExecution = history.workflow_execution
+            ? {
+                executionId: String(history.workflow_execution.execution_id),
+                definitionName: history.workflow_execution.definition_name,
+                status: history.workflow_execution.status,
+                nodeId: history.workflow_execution.node_id,
+                nodeIndex: history.workflow_execution.node_index,
+                totalNodes: history.workflow_execution.total_nodes,
+                error: null,
+              }
+            : null
 
           Object.values(draft.agentStreams).forEach((stream) => {
             stream.revertedCount = 0

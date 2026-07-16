@@ -753,6 +753,23 @@ class AgentTeam:
         /loop activation uses, exposed for the workflow runner's agent
         nodes. Returns the saved message row id (the caller's watermark
         anchor) or None on failure."""
+        # Bind the lead to this session first — a freshly-booted team's lead
+        # has no session yet, and /loop's recipe assumes handle_user_message
+        # already did this binding (session pointer, DB row, member restore).
+        if self.lead.session_id != session_id:
+            self.lead.session_id = session_id
+            try:
+                await self.lead._ensure_db_session(
+                    title=prompt[:100] if prompt else None,
+                    mode=self.mode,
+                    workspace=self.workspace,
+                )
+                for bp in self.blueprints.values():
+                    bp.counter_reconciled_for = None
+                await self._restore_or_drop_members_for_lead(session_id)
+            except Exception as exc:
+                logger.warning("workflow_lead_bind_failed error={}", exc)
+                return None
         try:
             await stream_store.init_turn(session_id, keep_subscribers=True)
         except Exception as exc:

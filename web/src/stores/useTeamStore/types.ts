@@ -64,6 +64,16 @@ export interface ActiveLoop {
   paused: boolean
 }
 
+export interface ActiveWorkflowExecution {
+  executionId: string
+  definitionName: string
+  status: string
+  nodeId: string | null
+  nodeIndex: number | null
+  totalNodes: number
+  error: string | null
+}
+
 export interface BrowserTabInfo {
   index: number
   url: string
@@ -100,6 +110,7 @@ export interface TeamStoreState {
   isSessionLoading: boolean
   error: string | null
   activeLoop: ActiveLoop | null
+  activeWorkflowExecution: ActiveWorkflowExecution | null
   setupRequired: SetupRequiredNotice | null
   browserSession: BrowserSessionInfo | null
   planApproval: PlanApprovalPending | null

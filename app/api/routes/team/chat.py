@@ -1201,12 +1201,33 @@ async def team_history(
     ]
 
     next_cursor = history.next_cursor.isoformat() if history.next_cursor else None
+
+    workflow_execution: dict | None = None
+    try:
+        from app.workflow.runner import runner as workflow_runner
+
+        wf_state = workflow_runner.get(str(history.lead_session.id))
+        if wf_state is not None:
+            order = wf_state.graph.order
+            current = wf_state.current_node_id or wf_state.pending_node
+            workflow_execution = {
+                "execution_id": str(wf_state.execution_id),
+                "definition_name": wf_state.definition.name,
+                "status": wf_state.status,
+                "node_id": current,
+                "node_index": (order.index(current) + 1) if current in order else None,
+                "total_nodes": len(order),
+            }
+    except Exception:  # noqa: BLE001 — history must never fail on this
+        workflow_execution = None
+
     return TeamHistoryResponse(
         lead=lead_detail,
         members=member_histories,
         loop_status=loop_team.loop_status(str(history.lead_session.id))
         if loop_team
         else None,
+        workflow_execution=workflow_execution,
         has_more=history.has_more,
         next_cursor=next_cursor,
     )
