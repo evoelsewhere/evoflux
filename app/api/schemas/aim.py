@@ -34,6 +34,7 @@ class AimRunOut(BaseModel):
     stats: dict
     report_path: str | None
     session_id: UUID | None = None
+    workflow_execution_id: str | None = None
     created_at: datetime
     report: dict | None = None
 
@@ -50,6 +51,7 @@ class AimRunListItem(BaseModel):
     case_set: str | None
     report_path: str | None
     session_id: UUID | None = None
+    workflow_execution_id: str | None = None
     created_at: datetime
 
 

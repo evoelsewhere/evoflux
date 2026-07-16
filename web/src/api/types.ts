@@ -390,6 +390,7 @@ export interface AimRunOut {
   stats: Record<string, unknown>
   report_path: string | null
   session_id: string | null
+  workflow_execution_id: string | null
   created_at: string
   // Parsed report.json contents — only populated by GET .../aim/runs/{id}.
   report: Record<string, unknown> | null
@@ -429,6 +430,7 @@ export interface AimRunListItem {
   case_set: string | null
   report_path: string | null
   session_id: string | null
+  workflow_execution_id: string | null
   created_at: string
 }
 
@@ -633,28 +635,38 @@ export interface WorkflowRunResult {
   session_id: string
 }
 
+export interface WorkflowExecutionSummary {
+  id: string
+  definition_name: string
+  definition_hash: string
+  session_id: string
+  // running | waiting_gate | completed | failed | stopped
+  status: string
+  error: string | null
+  outputs: Record<string, unknown>
+  started_at: string
+  ended_at: string | null
+}
+
+export interface WorkflowNodeRun {
+  id: string
+  node_id: string
+  iteration: number | null
+  // running | succeeded | failed | skipped
+  status: string
+  output: Record<string, unknown> | null
+  error: string | null
+  started_at: string
+  ended_at: string | null
+}
+
 export interface WorkflowExecutionDetail {
-  execution: {
-    id: string
-    definition_name: string
-    definition_hash: string
-    session_id: string
-    status: string
-    error: string | null
-    outputs: Record<string, unknown>
-    started_at: string
-    ended_at: string | null
-  }
-  node_runs: Array<{
-    id: string
-    node_id: string
-    iteration: number | null
-    status: string
-    output: Record<string, unknown> | null
-    error: string | null
-    started_at: string
-    ended_at: string | null
-  }>
+  execution: WorkflowExecutionSummary
+  node_runs: WorkflowNodeRun[]
+}
+
+export interface WorkflowExecutionListResponse {
+  executions: WorkflowExecutionSummary[]
 }
 
 export interface Chapter {

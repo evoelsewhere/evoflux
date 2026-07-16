@@ -8,6 +8,7 @@ import { parseDetailOrThrow } from './_shared'
 import type {
   WorkflowDetail,
   WorkflowExecutionDetail,
+  WorkflowExecutionListResponse,
   WorkflowListItem,
   WorkflowRunResult,
 } from '../types'
@@ -117,5 +118,17 @@ export async function getExecution(
     `${apiBaseUrl()}/workflows/executions/${encodeURIComponent(executionId)}`,
   )
   if (!res.ok) await parseDetailOrThrow(res, 'getExecution')
+  return res.json()
+}
+
+/** Newest-first executions for a set of sessions — the AIM Pipelines run
+ * table joins its per-run sessions with real workflow status in one call. */
+export async function listWorkflowExecutions(
+  sessionIds: string[],
+): Promise<WorkflowExecutionListResponse> {
+  if (sessionIds.length === 0) return { executions: [] }
+  const params = new URLSearchParams({ session_ids: sessionIds.join(',') })
+  const res = await fetch(`${apiBaseUrl()}/workflows/executions?${params}`)
+  if (!res.ok) await parseDetailOrThrow(res, 'listWorkflowExecutions')
   return res.json()
 }

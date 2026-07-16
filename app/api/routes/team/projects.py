@@ -899,6 +899,7 @@ async def list_aim_runs(
             case_set=run.case_set,
             report_path=run.report_path,
             session_id=run.session_id,
+            workflow_execution_id=run.workflow_execution_id,
             created_at=run.created_at,
         )
         for run, unit in rows
@@ -1009,6 +1010,7 @@ async def get_aim_run(project_id: UUID, run_id: UUID, db: DbSession) -> AimRunOu
         stats=run.stats,
         report_path=run.report_path,
         session_id=run.session_id,
+        workflow_execution_id=run.workflow_execution_id,
         created_at=run.created_at,
         report=report,
     )

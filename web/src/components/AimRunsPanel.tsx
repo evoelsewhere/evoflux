@@ -1,25 +1,76 @@
 /**
  * AimRunsPanel — Runs & Reports: the project-wide compare/run history
  * (aim_runs) with the report viewer (aim-mode-shell-ux-spec.md v2.2 §5.3).
- * Post-run Discussion opens when the selected run has a session_id —
+ * Deep-linkable: /aim/$projectId/runs/$runId preselects a run, and picking
+ * one keeps the URL in sync. Each run can open its workflow's node log
+ * (Run Monitor) and — when it has a session — the post-run Discussion.
  * TeamChatView is a singleton, exactly one instance mounted at a time.
  */
 
 import { useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { CircleCheck, CircleX, Loader2, MessageSquareText, X } from 'lucide-react'
+import {
+  Activity,
+  CircleAlert,
+  CircleCheck,
+  CircleX,
+  Loader2,
+  MessageSquareText,
+  X,
+} from 'lucide-react'
 import { getAimRun, listAimRuns } from '@/api/client'
 import { queryKeys } from '@/queries/keys'
 import { cn } from '@/lib/utils'
 import { resolveAimRolePath } from '@/components/AimKbPanel'
+import { RunMonitorPanel } from '@/components/AimPipelinesPanel'
 import { TeamChatView } from '@/components/TeamChatView'
 import type { AimRunListItem, CodingProject } from '@/api/types'
 
-export function AimRunsPanel({ project }: { project: CodingProject }) {
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
+function VerdictIcon({ verdict, size = 12 }: { verdict: string; size?: number }) {
+  switch (verdict) {
+    case 'pass':
+      return <CircleCheck size={size} className="shrink-0 text-(--color-success)" />
+    case 'acceptable_diff':
+      return <CircleCheck size={size} className="shrink-0 text-(--color-warning,orange)" />
+    case 'error':
+      return <CircleAlert size={size} className="shrink-0 text-(--color-error)" />
+    default:
+      return <CircleX size={size} className="shrink-0 text-(--color-error)" />
+  }
+}
+
+function verdictBadgeTone(verdict: string | undefined): string {
+  switch (verdict) {
+    case 'pass':
+      return 'bg-(--color-success-bg,var(--bg-key)) text-(--color-success,inherit)'
+    case 'acceptable_diff':
+      return 'bg-(--bg-key) text-(--color-warning,orange)'
+    default:
+      return 'bg-(--color-error-subtle,var(--bg-key)) text-(--color-error)'
+  }
+}
+
+export function AimRunsPanel({ project, runId }: { project: CodingProject; runId?: string }) {
+  const navigate = useNavigate()
+  // URL is the source of truth when deep-linked; local state covers plain
+  // /aim/$projectId/runs (no run picked yet → null).
+  const [localRunId, setLocalRunId] = useState<string | null>(null)
+  const selectedRunId = runId ?? localRunId
   const [discussion, setDiscussion] = useState<AimRunListItem | null>(null)
+  const [monitorRun, setMonitorRun] = useState<AimRunListItem | null>(null)
 
   const targetWorkspace = resolveAimRolePath(project, 'target')
+
+  const selectRun = (id: string) => {
+    setLocalRunId(id)
+    // §3.2 — keep the run's URL shareable.
+    navigate({
+      to: '/aim/$projectId/runs/$runId',
+      params: { projectId: project.id, runId: id },
+      replace: true,
+    })
+  }
 
   const runsQuery = useQuery({
     queryKey: [...queryKeys.projects.detail(project.id), 'aim-runs-list'],
@@ -55,7 +106,7 @@ export function AimRunsPanel({ project }: { project: CodingProject }) {
                 <button
                   key={run.id}
                   type="button"
-                  onClick={() => setSelectedRunId(run.id)}
+                  onClick={() => selectRun(run.id)}
                   className={cn(
                     'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors',
                     selectedRunId === run.id
@@ -63,11 +114,7 @@ export function AimRunsPanel({ project }: { project: CodingProject }) {
                       : 'text-(--color-text-2) hover:bg-(--bg-key) hover:text-(--color-text)',
                   )}
                 >
-                  {run.verdict === 'pass' ? (
-                    <CircleCheck size={12} className="shrink-0 text-(--color-success)" />
-                  ) : (
-                    <CircleX size={12} className="shrink-0 text-(--color-error)" />
-                  )}
+                  <VerdictIcon verdict={run.verdict} />
                   <span className="min-w-0 flex-1 truncate">
                     {run.unit}
                     <span className="text-(--color-text-subtle)"> · {run.kind}</span>
@@ -99,9 +146,7 @@ export function AimRunsPanel({ project }: { project: CodingProject }) {
                   <span
                     className={cn(
                       'rounded px-2 py-0.5 text-xs font-medium',
-                      detailQuery.data?.verdict === 'pass'
-                        ? 'bg-(--color-success-bg,var(--bg-key)) text-(--color-success,inherit)'
-                        : 'bg-(--color-error-subtle,var(--bg-key)) text-(--color-error)',
+                      verdictBadgeTone(detailQuery.data?.verdict),
                     )}
                   >
                     {detailQuery.data?.verdict}
@@ -110,25 +155,52 @@ export function AimRunsPanel({ project }: { project: CodingProject }) {
                     {detailQuery.data?.kind}
                     {detailQuery.data?.case_set ? ` · ${detailQuery.data.case_set}` : ''}
                   </span>
-                  {/* §5.3 — Discussion button only when run has a session */}
-                  {detailQuery.data?.session_id && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const run = runs.find((r) => r.id === selectedRunId)
-                        if (run) setDiscussion(discussion?.id === run.id ? null : run)
-                      }}
-                      className={cn(
-                        'ml-auto flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium transition-colors',
-                        discussion?.id === selectedRunId
-                          ? 'bg-(--bg-key) text-(--color-accent)'
-                          : 'text-(--color-text-muted) hover:text-(--color-text)',
-                      )}
-                    >
-                      <MessageSquareText size={12} />
-                      Discussion
-                    </button>
-                  )}
+                  <span className="ml-auto flex items-center gap-1">
+                    {/* Node-level log of the workflow that produced this run */}
+                    {(detailQuery.data?.workflow_execution_id ||
+                      detailQuery.data?.session_id) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const run = runs.find((r) => r.id === selectedRunId)
+                          if (!run) return
+                          setDiscussion(null)
+                          setMonitorRun(monitorRun?.id === run.id ? null : run)
+                        }}
+                        className={cn(
+                          'flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium transition-colors',
+                          monitorRun?.id === selectedRunId
+                            ? 'bg-(--bg-key) text-(--color-accent)'
+                            : 'text-(--color-text-muted) hover:text-(--color-text)',
+                        )}
+                        title="This run's workflow nodes and per-node log"
+                      >
+                        <Activity size={12} />
+                        Nodes
+                      </button>
+                    )}
+                    {/* §5.3 — Discussion button only when run has a session */}
+                    {detailQuery.data?.session_id && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const run = runs.find((r) => r.id === selectedRunId)
+                          if (!run) return
+                          setMonitorRun(null)
+                          setDiscussion(discussion?.id === run.id ? null : run)
+                        }}
+                        className={cn(
+                          'flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium transition-colors',
+                          discussion?.id === selectedRunId
+                            ? 'bg-(--bg-key) text-(--color-accent)'
+                            : 'text-(--color-text-muted) hover:text-(--color-text)',
+                        )}
+                      >
+                        <MessageSquareText size={12} />
+                        Discussion
+                      </button>
+                    )}
+                  </span>
                 </div>
                 {Object.keys(detailQuery.data?.stats ?? {}).length > 0 && (
                   <div className="flex flex-wrap gap-2">
@@ -156,9 +228,20 @@ export function AimRunsPanel({ project }: { project: CodingProject }) {
         </div>
       </div>
 
+      {/* Workflow node log for the selected (finished) run. */}
+      {monitorRun && (monitorRun.session_id || monitorRun.workflow_execution_id) && !discussion && (
+        <RunMonitorPanel
+          sessionId={monitorRun.session_id ?? ''}
+          title={`${monitorRun.unit} · ${monitorRun.kind}`}
+          sessionRunning={false}
+          executionId={monitorRun.workflow_execution_id}
+          onClose={() => setMonitorRun(null)}
+        />
+      )}
+
       {/* Post-run Discussion — singleton TeamChatView, only when run has a session.
           Shares the same constraint as AimPipelinesPanel: exactly one instance mounted. */}
-      {discussion?.session_id && (
+      {discussion?.session_id && !monitorRun && (
         <div className="flex w-96 shrink-0 flex-col border-l border-(--color-border)">
           <div className="flex items-center justify-between gap-2 border-b border-(--color-border) px-3 py-2">
             <p className="min-w-0 truncate text-xs font-medium text-(--color-text)">

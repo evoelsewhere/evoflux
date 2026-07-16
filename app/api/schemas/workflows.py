@@ -94,3 +94,7 @@ class WorkflowExecutionOut(BaseModel):
 class WorkflowExecutionDetailResponse(BaseModel):
     execution: WorkflowExecutionOut
     node_runs: list[WorkflowNodeRunOut]
+
+
+class WorkflowExecutionListResponse(BaseModel):
+    executions: list[WorkflowExecutionOut]
