@@ -1,0 +1,59 @@
+# AIM pipeline — convert every designed unit in one wave, gated up front.
+# The unit list comes from a direct aim_units tool call (format: json), so
+# the foreach iterates deterministic data — not an agent's prose.
+schema_version: 1
+name: aim-convert-wave
+description: List a wave's designed units, approve the batch, convert each sequentially
+scope: aim
+
+inputs:
+  - name: wave
+    type: number
+    required: true
+    description: "wave number to convert"
+
+nodes:
+  - id: list_units
+    kind: tool
+    tool: aim_units
+    args: { action: list, phase: designed, wave: "{{inputs.wave}}", format: json }
+
+  - id: batch_summary
+    kind: transform
+    set:
+      units: "{{nodes.list_units.output.units | json}}"
+      count: "{{nodes.list_units.output.count}}"
+
+  - id: approve_batch
+    kind: gate
+    title: "Convert wave {{inputs.wave}}?"
+    body: "{{nodes.batch_summary.output.count}} designed unit(s) will be implemented in the target repo: {{nodes.batch_summary.output.units | truncate:1500}}"
+    choices: [approve, cancel]
+
+  - id: convert_each
+    kind: foreach
+    items: "{{nodes.list_units.output.units}}"
+    body:
+      kind: agent
+      subagents: [aim-converter]
+      prompt: |
+        Convert unit {{item.module}}/{{item.name}} (wave {{inputs.wave}},
+        item {{index}}): delegate to `aim-converter` — implement it in the
+        target repo per its KB mapping and target-conventions (base source is
+        read-only), verify the target builds, then set its phase to converted
+        via aim_units.
+      timeout_s: 3600
+
+  - id: done
+    kind: notify
+    title: "aim-convert-wave"
+    message: "Wave {{inputs.wave}}: {{nodes.convert_each.output.count}} unit(s) converted — run aim-test-compare per unit next."
+
+edges:
+  - { from: list_units, to: batch_summary }
+  - { from: batch_summary, to: approve_batch }
+  - { from: approve_batch, to: convert_each, when: approve }
+  - { from: convert_each, to: done }
+
+outputs:
+  converted: "{{nodes.convert_each.output.count}}"

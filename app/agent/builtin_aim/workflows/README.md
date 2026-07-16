@@ -1,7 +1,21 @@
-# AIM core workflows (draft — inert)
+# AIM pipeline library (builtin, scope: aim)
 
-Three generic (stack-agnostic) AIM pipeline definitions, per `documents/research/aim-framework.md` §3.11: `aim-assess`, `aim-convert-unit`, `aim-test-compare`. Written against the Workflows v5 schema (`documents/plans/workflows-feature-plan.md`) so the pipeline shape is fully specified ahead of time, not invented during implementation.
+Six stack-agnostic AIM pipelines per `documents/research/aim-framework.md`
+§3.11/§4.1 (AIM-4), conforming to the live Workflows v1 schema
+(`documents/plans/workflows-feature-plan.md` §4.2) and discovered as a
+builtin root by `app/services/workflows_fs.py`:
 
-**Status: not executable yet.** Two things have to exist first: the Workflows engine itself (M1-M6, not yet implemented) and a one-line extension to its `scope` enum to add `"aim"` alongside `forge`/`coding`. Until then these files are documentation of intent, validated by hand against the v5 spec (node kinds, edge/`when` semantics, no cycles) rather than by a running engine.
+| Workflow | What it drives |
+|---|---|
+| `aim-assess` | inventory + wave plan, gated |
+| `aim-understand` | one unit → KB doc + candidate rules |
+| `aim-convert-unit` | plan → approval gate → implement in target |
+| `aim-convert-wave` | deterministic unit list → batch gate → foreach convert |
+| `aim-test-compare` | runners + aim_compare → certify/triage gate |
+| `aim-cutover-check` | readiness query → confirm → phase flip |
 
-These reference two tools that don't exist yet either: `aim_units` and `aim_compare` (AIM-1). Once AIM-1 and Workflows M1-M6+scope-aim both land, these become the seed for AIM-4.
+They run only in `mode="aim"` sessions (scope rule) and, like every
+workflow, require manifest approval per content hash before triggering —
+the manifest covers the `aim_units` tool calls, agent rosters, and shell
+access these pipelines use. Repair loops live *inside* agent turns, never
+as graph cycles (Phase 1 DAG rule).

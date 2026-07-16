@@ -1,0 +1,62 @@
+# AIM pipeline — cutover readiness for one wave: deterministic unit query,
+# human confirmation, then the phase flip.
+schema_version: 1
+name: aim-cutover-check
+description: Verify a wave's units are all equivalent, confirm, and mark them cutover
+scope: aim
+
+inputs:
+  - name: wave
+    type: number
+    required: true
+    description: "wave number to cut over"
+
+nodes:
+  - id: equivalents
+    kind: tool
+    tool: aim_units
+    args: { action: list, phase: equivalent, wave: "{{inputs.wave}}", format: json }
+
+  - id: pending
+    kind: tool
+    tool: aim_units
+    args: { action: list, wave: "{{inputs.wave}}", format: json }
+
+  - id: readiness
+    kind: transform
+    set:
+      equivalent_count: "{{nodes.equivalents.output.count}}"
+      total_count: "{{nodes.pending.output.count}}"
+      units: "{{nodes.equivalents.output.units | json}}"
+
+  - id: confirm
+    kind: gate
+    title: "Cut over wave {{inputs.wave}}?"
+    body: "{{nodes.readiness.output.equivalent_count}} of {{nodes.readiness.output.total_count}} unit(s) in wave {{inputs.wave}} are certified equivalent. Cutting over marks them as live-on-target."
+    choices: [cutover, hold]
+
+  - id: mark_cutover
+    kind: foreach
+    items: "{{nodes.equivalents.output.units}}"
+    body:
+      kind: tool
+      tool: aim_units
+      args:
+        action: set_phase
+        unit: "{{item.module}}/{{item.name}}"
+        phase: cutover
+
+  - id: done
+    kind: notify
+    title: "aim-cutover-check"
+    message: "Wave {{inputs.wave}} cut over: {{nodes.mark_cutover.output.count}} unit(s) now live on target."
+
+edges:
+  - { from: equivalents, to: pending }
+  - { from: pending, to: readiness }
+  - { from: readiness, to: confirm }
+  - { from: confirm, to: mark_cutover, when: cutover }
+  - { from: mark_cutover, to: done }
+
+outputs:
+  cutover_count: "{{nodes.mark_cutover.output.count}}"
