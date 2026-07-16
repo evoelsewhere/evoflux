@@ -315,6 +315,15 @@ class CodingProject(SQLModel, table=True):
             server_default="{}",
         ),
     )
+    # "coding" (default) | "aim" — discriminates a plain multi-repo Coding
+    # project from an AIM migration project. AIM-specific config (rulebook,
+    # local workspace-role mapping) lives in ``settings["aim"]``; the
+    # shareable project manifest (roles by repo identity, not local
+    # workspace_id) lives in the KB repo's own ``aim.yaml``, not here.
+    kind: str = Field(
+        default="coding",
+        sa_column=Column(sa.String(20), nullable=False, server_default="coding"),
+    )
     hidden: bool = Field(
         default=False,
         sa_column=Column(sa.Boolean, nullable=False, server_default=sa.false()),

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Response
@@ -28,7 +30,14 @@ from app.api.schemas.cross_repo import (
     CrossRepoResolveStatsOut,
     CrossRepoResolveStatusResponse,
 )
+from app.api.schemas.aim import (
+    AimPhaseCounts,
+    AimProjectSummaryOut,
+    AimRunOut,
+    AimUnitOut,
+)
 from app.api.schemas.projects import ProjectResponse, ProjectWorkspaceItem
+from app.models.aim import AimRun, AimUnit
 from app.models.chat import CodingProjectWorkspace, CodingWorkspace
 from app.models.code_graph import CrossRepoEdge
 from app.services import code_graph_service as cg_svc
@@ -654,4 +663,125 @@ async def get_project_code_graph_data(
         edge_limit_per_repo=edge_limit_per_repo,
         total_node_count=total_node_count,
         total_edge_count=total_edge_count,
+    )
+
+
+# ── AIM (documents/research/aim-framework.md §3.8(e)) ──────────────────────
+#
+# Read-only: these serve the `aim_units`/`aim_runs` local index for a
+# dashboard. Every write to that index goes through the aim_units/aim_compare
+# tools (app/agent/tools/builtin/aim.py), never through this router.
+
+
+async def _get_aim_project_or_404(db: DbSession, project_id: UUID):
+    project = await svc.get_project(db, project_id)
+    if project is None or project.kind != "aim":
+        raise HTTPException(status_code=404, detail="AIM project not found")
+    return project
+
+
+def _aim_unit_out(row: AimUnit) -> AimUnitOut:
+    return AimUnitOut(
+        id=row.id,
+        module=row.module,
+        name=row.name,
+        kind=row.kind,
+        phase=row.phase,
+        wave=row.wave,
+        assignee=row.assignee,
+        depends_on=row.depends_on,
+        complexity=row.complexity,
+        kb_doc_path=row.kb_doc_path,
+        updated_at=row.updated_at,
+    )
+
+
+@router.get("/{project_id}/aim/summary", response_model=AimProjectSummaryOut)
+async def get_aim_project_summary(
+    project_id: UUID, db: DbSession
+) -> AimProjectSummaryOut:
+    await _get_aim_project_or_404(db, project_id)
+
+    units = (
+        await db.exec(select(AimUnit).where(AimUnit.project_id == project_id))
+    ).all()
+    counts = AimPhaseCounts()
+    for unit in units:
+        if hasattr(counts, unit.phase):
+            setattr(counts, unit.phase, getattr(counts, unit.phase) + 1)
+    total = len(units)
+    equivalent_pct = (
+        round(100 * (counts.equivalent + counts.cutover) / total, 1) if total else 0.0
+    )
+
+    latest_run = (
+        await db.exec(
+            select(AimRun)
+            .join(AimUnit, col(AimRun.unit_id) == col(AimUnit.id))
+            .where(AimUnit.project_id == project_id)
+            .order_by(col(AimRun.created_at).desc())
+            .limit(1)
+        )
+    ).first()
+
+    return AimProjectSummaryOut(
+        project_id=project_id,
+        total_units=total,
+        phase_counts=counts,
+        equivalent_pct=equivalent_pct,
+        latest_run_at=latest_run.created_at if latest_run else None,
+    )
+
+
+@router.get("/{project_id}/aim/units", response_model=list[AimUnitOut])
+async def list_aim_units(
+    project_id: UUID,
+    db: DbSession,
+    phase: str | None = None,
+    wave: int | None = None,
+) -> list[AimUnitOut]:
+    await _get_aim_project_or_404(db, project_id)
+
+    stmt = select(AimUnit).where(AimUnit.project_id == project_id)
+    if phase is not None:
+        stmt = stmt.where(AimUnit.phase == phase)
+    if wave is not None:
+        stmt = stmt.where(AimUnit.wave == wave)
+    rows = (await db.exec(stmt.order_by(AimUnit.module, AimUnit.name))).all()
+    return [_aim_unit_out(row) for row in rows]
+
+
+@router.get("/{project_id}/aim/runs/{run_id}", response_model=AimRunOut)
+async def get_aim_run(project_id: UUID, run_id: UUID, db: DbSession) -> AimRunOut:
+    await _get_aim_project_or_404(db, project_id)
+
+    run = (
+        await db.exec(
+            select(AimRun)
+            .join(AimUnit, col(AimRun.unit_id) == col(AimUnit.id))
+            .where(AimRun.id == run_id, AimUnit.project_id == project_id)
+        )
+    ).first()
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    report: dict | None = None
+    if run.report_path:
+        report_file = Path(run.report_path)
+        if report_file.is_file():
+            try:
+                report = json.loads(report_file.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                report = None
+
+    return AimRunOut(
+        id=run.id,
+        unit_id=run.unit_id,
+        kind=run.kind,
+        verdict=run.verdict,
+        case_set=run.case_set,
+        stats=run.stats,
+        report_path=run.report_path,
+        created_at=run.created_at,
+        report=report,
     )
