@@ -86,11 +86,19 @@ than the 50-row list now open Nodes/Discussion (targets built from run
 detail), monitor lookup stops after ~30s with a clear message, executions
 join keeps previous data across key changes.
 
+### R2-P6 — KB tree + preview (user feedback) ✅ a0c26f1
+
+"KB chưa hiển thị tree folder và preview chưa đáp ứng": replaced the flat
+.md/.yaml list with the coding workspace's real tree (buildTree +
+TreeNodeView, all files) and a kind-aware preview — markdown frontmatter
+lifted into a key/value strip + rich body, yaml/json in CodeBlock,
+images inline, per-file path+size bar. Verified live on the COBOL KB
+(50 files; modules/course2/ADDAMT.md chips + headings; aim.yaml block).
+
 **Known gaps (deliberate, log for next round):**
 - AIM sidebar has no mobile slide-in drawer (desktop-first surface).
 - No command-palette/search entry in AIM sidebar.
 - No project context menu (rename/delete/leave) on AIM project rows.
-- KB browser is a flat file list, not a tree (fine while KB layout is shallow).
 - Gate detection is poll-based (5s) — Run Monitor SSE remains AIM-5.
 - GateSection answers only the first item of a question batch (fine for
   workflow gate nodes, which ask exactly one).
