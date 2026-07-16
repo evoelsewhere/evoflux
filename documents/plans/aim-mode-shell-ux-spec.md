@@ -1,11 +1,11 @@
-# UX Spec — AIM Mode Shell (v2.1)
+# UX Spec — AIM Mode Shell (v2.2)
 
 | | |
 |---|---|
-| **Phiên bản** | v2.1 — 2026-07-16. v2 = IA sidebar → project → feature → main content. **v2.1 = sửa theo chỉ đạo user: KHÔNG hướng chat trong mode này — pipeline trigger bằng UI thuần; chat chỉ là tuỳ chọn SAU KHI pipeline chạy xong** (supersede mọi mô tả "chat drawer là đường trigger" của v1/v2) |
+| **Phiên bản** | v2.2 — 2026-07-16. v2 = IA sidebar → project → feature → main content. v2.1 = KHÔNG hướng chat — pipeline trigger UI thuần, chat chỉ tuỳ chọn SAU khi run xong. **v2.2 = wizard đổi thành "chọn 1 folder gốc" theo convention thư mục `<project_name>/{aim_source_base/*, aim_<project_name>_document, aim_target_source}` — hệ thống tự detect 3 role, tự phân biệt create/join** |
 | **Trạng thái** | CHỜ DUYỆT (§3.13B R7: spec + wireframe duyệt xong mới code) |
 | **Phạm vi** | Toàn bộ shell FE của AIM mode, chia lớp FE-1→FE-4 bên dưới. Approval Inbox / Run Monitor SSE vẫn là AIM-5 (sau Workflows) |
-| **Backend đã sẵn** | `GET /team/projects?kind=aim` · `POST /team/projects/aim` + `/aim/preview` + `/aim/join` · `GET /team/projects/{id}/aim/{summary,units,runs/{id}}` · session `mode="aim"` + roster + read-only base source (e13f4ef) · legacy graph structural parser (7a7c476) |
+| **Backend đã sẵn** | `GET /team/projects?kind=aim` · `POST /team/projects/aim/detect` (layout auto-detection) · `POST /team/projects/aim` + `/aim/preview` + `/aim/join` · `GET /team/projects/{id}/aim/{summary,units,runs/{id}}` · session `mode="aim"` + roster + read-only base source (e13f4ef) · legacy graph structural parser (7a7c476) |
 
 ## 1. Định vị mode
 
@@ -44,7 +44,7 @@ AIM (mode tab thứ 3 trong Sidebar switch — icon ArrowRightLeft)
 │
 ├─ ▸ billing-vb6 migration
 │
-└─ [+ New / Join project]          ← AimSetupWizard 4 bước (giữ nguyên v1)
+└─ [+ New / Join project]          ← AimSetupWizard: chọn 1 folder gốc → auto-detect (§3.4)
 ```
 
 ### 3.2 URL scheme
@@ -68,11 +68,34 @@ URL đủ để khôi phục đúng chỗ đang làm việc sau reload/share lin
 
 **Ràng buộc kỹ thuật giữ nguyên**: `TeamChatView` là singleton toàn cục (useTeamStore, h-dvh, global shortcuts) — Discussion đặt đúng MỘT instance, ẩn/hiện bằng CSS, KHÔNG mount instance thứ hai.
 
+### 3.4 Setup — chọn MỘT folder gốc theo convention, hệ thống tự detect
+
+Convention thư mục (user chốt 2026-07-16; backend: `app/services/aim/layout.py`, `POST /team/projects/aim/detect`):
+
+```
+<project_name>/
+├─ aim_source_base/               ← gồm NHIỀU repository con (legacy sources)
+│   ├─ repo-a/
+│   └─ repo-b/
+├─ aim_<project_name>_document/   ← repo CHUNG của dự án (KB) — teammates clone repo này;
+│                                    mang aim.yaml khi project đã tồn tại
+└─ aim_target_source/             ← target repo (đã dựng base)
+```
+
+Wizard vì thế chỉ còn 2 bước:
+
+1. **Chọn folder gốc** (picker Tauri/web). FE gọi `POST .../aim/detect` — pattern đúng thì trả về đủ: `project_name` (lấy từ tên repo document — authoritative; root khác tên chỉ warning), danh sách source repos, kb_path, target_path, và `has_manifest`.
+2. **Review & xác nhận**:
+   - `has_manifest=false` → **CREATE**: hiện tên project + N source *(badge read-only)* + target + KB, chọn rulebook, bấm Create (`POST .../aim` — KB dir đã tồn tại vẫn OK, scaffold gap-fill; chỉ từ chối khi đã có aim.yaml).
+   - `has_manifest=true` → **JOIN**: hiện rulebook từ manifest + bảng identity→local path đã **auto-map** (identity trùng thì tự điền; identity nào `null` mới hỏi user), bấm Join (`POST .../aim/join`).
+
+Pattern sai ở đâu, message 422 nói đúng chỗ đó ("Missing 'aim_source_base/'…") — wizard hiện verbatim. Nhập path thủ công từng repo (flow 4 bước cũ) giữ làm **Advanced fallback** cho layout không theo convention.
+
 ## 4. Journeys
 
-**J1 — Tạo project mới (operator)**: switch AIM → sidebar trống → `+ New / Join` → wizard 4 bước (tên+rulebook → source repos *(badge read-only ngay khi thêm)* → target repo *(đã dựng base)* → KB path + review) → điều hướng `/aim/<id>/overview`.
+**J1 — Tạo project mới (operator)**: chuẩn bị folder theo convention (§3.4) → switch AIM → `+ New / Join` → chọn folder gốc → detect hiện review (create) → chọn rulebook → Create → điều hướng `/aim/<id>/overview`.
 
-**J2 — Join project có sẵn (contributor thứ 2)**: clone KB repo bằng git → wizard tab Join → nhập KB path → wizard đọc `aim.yaml` hiện rulebook + danh sách identity → chỉ map identity → local path → xong, không hỏi lại config nào khác.
+**J2 — Join project có sẵn (contributor thứ 2)**: tạo folder gốc, clone repo `aim_<project_name>_document` của team vào + đặt source/target đúng chỗ → wizard chọn folder gốc → detect thấy `aim.yaml` → tự nhận là JOIN, identity đã auto-map (chỉ hỏi phần lệch) → Join. Không hỏi lại bất kỳ config nào khác.
 
 **J3 — Vòng làm việc hằng ngày**: mở `/aim/<project>` → Overview thấy kanban phase/wave + metric → thấy unit fail → Runs & Reports xem diff report → đủ hiểu thì thôi; chưa đủ thì (tuỳ chọn) mở **Discussion** của run đó hỏi thêm → quay lại Pipelines bấm Run compare lại → Overview cập nhật (poll 10s).
 
@@ -130,13 +153,31 @@ URL đủ để khôi phục đúng chỗ đang làm việc sau reload/share lin
 └──────────┴───────────────────────────┴──────────────────┘
 ```
 
-(Wizard 4 bước giữ nguyên wireframe v1 — không vẽ lại. Discussion đóng mặc định; run đang chạy KHÔNG có nút này.)
+### 5.4 Wizard: chọn folder gốc → review (create/join tự phân biệt)
+
+```
+┌────────────────────────────────────────────┐
+│ New / Join migration project        [1●─○2]│
+│ Chọn folder gốc của dự án (convention §3.4)│
+│ [/Users/x/work/core-batch      ] [Browse…] │
+│────────────────────────────────────────────│
+│ ✓ Detected: core-batch          (CREATE)   │
+│   Sources (2, read-only): repo-a, repo-b   │
+│   Document/KB: aim_core-batch_document     │
+│   Target:      aim_target_source           │
+│   Rulebook: [cobol-java21 ▾]               │
+│                        [Cancel] [Create ▸] │
+└────────────────────────────────────────────┘
+```
+
+(JOIN khác đúng một chỗ: thay dropdown rulebook bằng rulebook đọc từ manifest + bảng identity→path auto-map. Discussion đóng mặc định; run đang chạy KHÔNG có nút Discussion.)
 
 ## 6. Interaction contract
 
 | Sự kiện | Vùng cập nhật | Nguồn dữ liệu | Ghi chú |
 |---|---|---|---|
 | Switch mode AIM | Sidebar list project | `GET /team/projects?kind=aim` | Forge/Coding không thấy project aim (đã enforce backend) |
+| Wizard chọn folder gốc | Bước review (create/join tự phân biệt) | `POST .../aim/detect?root_path=` | 422 hiện verbatim message thiếu gì; auto-map identity khi join (§3.4) |
 | Click project | Expand feature items + điều hướng `/aim/$id/overview` | — (client state `expandedProjects`, giống CodingSidebar) | Nhớ project mở lần cuối (localStorage, giống `oa-last-coding-focus`) |
 | Overview mount / đổi wave | Metric row + 6 cột kanban | `GET .../aim/summary`, `GET .../aim/units?wave=` | **Poll 10s** — SSE là AIM-5 |
 | Bấm **Run** trong Pipelines | Thêm row ● running vào bảng run; KHÔNG mở chat | FE: resolve session per-run (`POST /team/sessions/resolve` mode=aim, project_id, create=true) → POST command vào session (pipeline chat hiện có, fire-and-forget) | **Đã chốt: auto-send, không prefill composer.** Pipeline ghi target (convert) có confirm dialog. Cùng substrate — AIM-4 chỉ đổi call thành workflows run |
@@ -163,7 +204,7 @@ URL đủ để khôi phục đúng chỗ đang làm việc sau reload/share lin
 
 | Lớp | Nội dung | Cần backend thêm? |
 |---|---|---|
-| **FE-1 Shell** | Tab AIM + sidebar list/expand + routes `/aim/...` + empty state + AimSetupWizard (create/join) + localStorage last-project | Không — API đủ |
+| **FE-1 Shell** | Tab AIM + sidebar list/expand + routes `/aim/...` + empty state + AimSetupWizard 2 bước (chọn folder gốc → detect → review create/join, §3.4; manual 4 bước là Advanced fallback) + localStorage last-project | Không — API đủ (detect đã ship) |
 | **FE-2 Overview + Pipelines** | Board kanban + metrics (poll 10s); Pipelines form trigger (auto-send vào session per-run) + bảng run status | Không |
 | **FE-3 KB + Runs + Discussion** | KB browser (tree+markdown, read-only) + Runs & Reports (bảng + report viewer) + Discussion panel hậu-run (kèm `_workspace` plumbing mode aim trong TeamChatView — fix đã biết từ đợt trước) | Không |
 | **FE-4 Rulebook** | Rulebook viewer read-only | **1 endpoint** `GET .../aim/rulebook` |
