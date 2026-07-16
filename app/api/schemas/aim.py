@@ -37,6 +37,26 @@ class AimRunOut(BaseModel):
     report: dict | None = None
 
 
+class AimRunListItem(BaseModel):
+    """One row of the project-wide run history (Runs & Reports table) —
+    the run plus its unit's display name, no report payload."""
+
+    id: UUID
+    unit_id: UUID
+    unit: str
+    kind: str
+    verdict: str
+    case_set: str | None
+    report_path: str | None
+    created_at: datetime
+
+
+class AimReindexResponse(BaseModel):
+    created: int
+    updated: int
+    unchanged: int
+
+
 class AimPhaseCounts(BaseModel):
     inventory: int = 0
     understood: int = 0

@@ -74,6 +74,54 @@ async def _make_aim_project_with_units(tmp_path: Path):
 
 
 @pytest.mark.asyncio
+async def test_list_aim_runs_returns_history_with_unit_names(client, tmp_path):
+    project, _unit_a, unit_b, run = await _make_aim_project_with_units(tmp_path)
+
+    resp = await client.get(f"/api/team/projects/{project.id}/aim/runs")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body) == 1
+    assert body[0]["id"] == str(run.id)
+    assert body[0]["unit"] == f"{unit_b.module}/{unit_b.name}"
+    assert body[0]["verdict"] == "pass"
+    # No report payload on the list — that's the detail endpoint's job.
+    assert "report" not in body[0]
+
+
+@pytest.mark.asyncio
+async def test_reindex_aim_project_rebuilds_units_from_kb(client, tmp_path):
+    from app.services.aim.kb_store import write_unit
+
+    source = _make_local_repo(tmp_path, "source-r")
+    target = _make_local_repo(tmp_path, "target-r")
+    kb_path = tmp_path / "kb-r"
+    create_resp = await client.post(
+        "/api/team/projects/aim",
+        json={
+            "name": "reindex-me",
+            "rulebook_id": "cobol-java21",
+            "source_paths": [str(source)],
+            "target_path": str(target),
+            "kb_path": str(kb_path),
+        },
+    )
+    assert create_resp.status_code == 201
+    project_id = create_resp.json()["id"]
+
+    # Simulate a teammate's contribution arriving via git pull.
+    write_unit(
+        kb_path, "core-batch", "EODCLOSE", kind="program", phase="understood", wave=1
+    )
+
+    resp = await client.post(f"/api/team/projects/{project_id}/aim/reindex")
+    assert resp.status_code == 200
+    assert resp.json()["created"] == 1
+
+    units = await client.get(f"/api/team/projects/{project_id}/aim/units")
+    assert [u["name"] for u in units.json()] == ["EODCLOSE"]
+
+
+@pytest.mark.asyncio
 async def test_summary_returns_phase_counts_and_equivalent_pct(client, tmp_path):
     project, *_ = await _make_aim_project_with_units(tmp_path)
 

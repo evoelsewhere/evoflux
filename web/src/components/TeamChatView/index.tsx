@@ -89,7 +89,7 @@ import { parseLoopCommand } from '@/lib/parseLoopCommand'
 
 interface TeamChatViewProps {
   sessionId?: string
-  mode?: 'forge' | 'coding'
+  mode?: 'forge' | 'coding' | 'aim'
   workspace?: string | null
   codingSessionLoading?: boolean
 }
@@ -116,6 +116,12 @@ async function attachmentToFile(att: MessageAttachment): Promise<File | null> {
 }
 
 export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codingSessionLoading = false }: TeamChatViewProps) {
+  // A handful of child components/hooks (file refs, command palette,
+  // scheduler) only distinguish forge vs. coding — aim (the post-run
+  // Discussion panel) behaves like forge for them: session-keyed, no
+  // workspace-file chrome. Everywhere else in this file aim falls through
+  // the non-coding branch of each `mode === 'coding'` check.
+  const forgeOrCodingMode: 'forge' | 'coding' = mode === 'coding' ? 'coding' : 'forge'
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
@@ -263,7 +269,9 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   ) ?? true
 
   // Lead capabilities — used to drive composer affordances (slash menu).
-  const agentWorkspace = mode === 'coding' ? workspace : null
+  // aim sessions are workspace-bound like coding (primary workspace = the
+  // target repo) — the backend requires a workspace on every aim message.
+  const agentWorkspace = mode === 'coding' || mode === 'aim' ? workspace : null
   const hasCodingWorkspace = mode !== 'coding' || Boolean(workspace)
   const isCodingSessionLoading = mode === 'coding' && codingSessionLoading
 
@@ -305,7 +313,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   // lazily — the query is keyed on workspace/session so coding and normal
   // modes don't share cache entries.
   const { refs: fileRefs } = useFileRefsQuery({
-    mode,
+    mode: forgeOrCodingMode,
     sessionId: sessionIdState,
     workspace,
     enabled: fileRefsEnabled && (mode === 'coding' ? Boolean(workspace) : Boolean(sessionIdState)),
@@ -424,6 +432,10 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const isEmptyIdleSession = useCallback(() => useTeamStore.getState().isEmptyIdleSession(), [])
 
   const handleNewSession = useCallback(() => {
+    // aim sessions are per-run, created by the Pipelines Run button —
+    // there is no "new chat" concept in the Discussion panel, and this
+    // flow doesn't thread project_id through resolveTeamSession.
+    if (mode === 'aim') return
     if (isEmptyIdleSession()) return
     abortRef.current?.abort()
     abortRef.current = null
@@ -906,7 +918,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
     toggleAgentCapabilities,
     handleWorkspaceFiles,
     handleCodingSidebarToggle,
-    mode,
+    mode: forgeOrCodingMode,
     handleNewSession,
     handleDreamRun,
     agentNames,
@@ -1065,7 +1077,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
           remount jitter on mode switch; CSS hides the inactive one. */}
       {!isMobile && (
         <>
-          <div className={mode !== 'coding' ? 'contents' : 'hidden'}>
+          <div className={mode === 'forge' ? 'contents' : 'hidden'}>
             <Sidebar
               currentSessionId={sessionIdState || undefined}
               onCommandPalette={() => setShowPalette(true)}
@@ -1090,8 +1102,9 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
         </>
       )}
 
-      {/* Sidebar toggle — positioned between sidebar and main content on desktop */}
-      {!isMobile && (
+      {/* Sidebar toggle — positioned between sidebar and main content on desktop.
+          aim has no in-chat sidebar (AimSidebar lives in the AIM layout). */}
+      {!isMobile && mode !== 'aim' && (
         <div className="flex shrink-0 flex-col items-center pt-2">
           <button
             type="button"
@@ -1133,7 +1146,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
                 onClick={() => {
                   if (mode === 'coding') {
                     handleCodingSidebarToggle()
-                  } else {
+                  } else if (mode !== 'aim') {
                     setMobileSidebarOpen(true)
                   }
                 }}
@@ -1258,7 +1271,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
         {/* Mobile sidebar overlay. Both sidebars stay mounted; CSS hides inactive one. */}
         {isMobile && (
           <>
-            <div className={mode !== 'coding' ? 'contents' : 'hidden'}>
+            <div className={mode === 'forge' ? 'contents' : 'hidden'}>
               <Sidebar
                 currentSessionId={sessionIdState || undefined}
                 onCommandPalette={() => setShowPalette(true)}
@@ -1585,7 +1598,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
       <SchedulerPanel
         open={schedulerOpen}
         onClose={closeScheduler}
-        contextMode={mode}
+        contextMode={forgeOrCodingMode}
         contextWorkspace={workspace ?? null}
       />
       {showPalette && (
