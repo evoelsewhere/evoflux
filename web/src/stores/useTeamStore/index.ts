@@ -92,7 +92,8 @@ function resetSessionState(
   state.hasMore = false
   state.nextCursor = null
   state._leadRevertTime = null
-  state._workspace = options.mode === 'coding' ? (options.workspace ?? null) : null
+  state._workspace =
+    options.mode === 'coding' || options.mode === 'aim' ? (options.workspace ?? null) : null
   state._loadingOlder = false
   state._resolvedSessionReadyId = null
   state.agentNames = leadName ? [leadName] : []

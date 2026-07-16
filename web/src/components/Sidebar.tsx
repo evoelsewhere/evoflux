@@ -98,8 +98,8 @@ interface SidebarProps {
   currentSessionId?: string;
   onCommandPalette?: () => void;
   onNewChat?: () => void;
-  /** Current mode — 'forge' or 'coding' */
-  mode?: 'forge' | 'coding';
+  /** Current mode — 'forge', 'coding', or 'aim' */
+  mode?: 'forge' | 'coding' | 'aim';
   /** Mobile only: whether the overlay drawer is open */
   mobileOpen?: boolean;
   /** Mobile only: called when the drawer should close (backdrop tap, session select) */

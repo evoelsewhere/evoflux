@@ -37,6 +37,8 @@ from app.api.schemas.aim import (
     AimProjectCreateRequest,
     AimProjectJoinRequest,
     AimProjectSummaryOut,
+    AimReindexResponse,
+    AimRunListItem,
     AimRunOut,
     AimUnitOut,
 )
@@ -867,6 +869,58 @@ async def list_aim_units(
         stmt = stmt.where(AimUnit.wave == wave)
     rows = (await db.exec(stmt.order_by(AimUnit.module, AimUnit.name))).all()
     return [_aim_unit_out(row) for row in rows]
+
+
+@router.get("/{project_id}/aim/runs", response_model=list[AimRunListItem])
+async def list_aim_runs(
+    project_id: UUID, db: DbSession, limit: int = 50
+) -> list[AimRunListItem]:
+    """Newest-first compare/run history across the project's units — the
+    Runs & Reports table (spec v2.2 §5.3)."""
+    await _get_aim_project_or_404(db, project_id)
+    rows = (
+        await db.exec(
+            select(AimRun, AimUnit)
+            .join(AimUnit, col(AimRun.unit_id) == col(AimUnit.id))
+            .where(AimUnit.project_id == project_id)
+            .order_by(col(AimRun.created_at).desc())
+            .limit(max(1, min(limit, 200)))
+        )
+    ).all()
+    return [
+        AimRunListItem(
+            id=run.id,
+            unit_id=run.unit_id,
+            unit=f"{unit.module}/{unit.name}",
+            kind=run.kind,
+            verdict=run.verdict,
+            case_set=run.case_set,
+            report_path=run.report_path,
+            created_at=run.created_at,
+        )
+        for run, unit in rows
+    ]
+
+
+@router.post("/{project_id}/aim/reindex", response_model=AimReindexResponse)
+async def reindex_aim_project(project_id: UUID, db: DbSession) -> AimReindexResponse:
+    """Rebuild the local aim_units index from the KB repo's frontmatter —
+    the KB screen's Reindex button, for after a manual ``git pull`` (the
+    KB is the system of record; this table is only a local projection)."""
+    from app.services.aim.project import resolve_kb_workspace_path
+    from app.services.aim.reindex import reindex_project
+
+    project = await _get_aim_project_or_404(db, project_id)
+    kb_path = await resolve_kb_workspace_path(db, project)
+    if not kb_path or not Path(kb_path).is_dir():
+        raise HTTPException(
+            status_code=422, detail="Project has no KB repo on this machine."
+        )
+    result = await reindex_project(db, project_id, Path(kb_path))
+    await db.commit()
+    return AimReindexResponse(
+        created=result.created, updated=result.updated, unchanged=result.unchanged
+    )
 
 
 @router.get("/{project_id}/aim/runs/{run_id}", response_model=AimRunOut)

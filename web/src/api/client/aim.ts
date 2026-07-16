@@ -13,6 +13,8 @@ import type {
   AimProjectCreateRequest,
   AimProjectJoinRequest,
   AimProjectSummary,
+  AimReindexResponse,
+  AimRunListItem,
   AimRunOut,
   AimUnitOut,
   CodingProject,
@@ -84,6 +86,26 @@ export async function listAimUnits(
     `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/aim/units${query ? `?${query}` : ''}`,
   )
   if (!res.ok) await parseDetailOrThrow(res, 'listAimUnits')
+  return res.json()
+}
+
+export async function listAimRuns(
+  projectId: string,
+  limit = 50,
+): Promise<AimRunListItem[]> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/aim/runs?limit=${limit}`,
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'listAimRuns')
+  return res.json()
+}
+
+export async function reindexAimProject(projectId: string): Promise<AimReindexResponse> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/aim/reindex`,
+    { method: 'POST' },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'reindexAimProject')
   return res.json()
 }
 

@@ -418,6 +418,24 @@ export interface AimProjectJoinRequest {
   target_path: string
 }
 
+// One row of the project-wide run history (Runs & Reports table).
+export interface AimRunListItem {
+  id: string
+  unit_id: string
+  unit: string
+  kind: string
+  verdict: string
+  case_set: string | null
+  report_path: string | null
+  created_at: string
+}
+
+export interface AimReindexResponse {
+  created: number
+  updated: number
+  unchanged: number
+}
+
 // Result of POST /team/projects/aim/detect on a conventional project root
 // (<name>/{aim_source_base/*, aim_<name>_document, aim_target_source}).
 export interface AimLayoutDetection {

@@ -4,6 +4,8 @@ import { AimSidebar, AIM_FEATURES, loadLastAimProject, saveLastAimProject } from
 import { AimSetupWizard } from '@/components/AimSetupWizard'
 import { AimOverviewPanel } from '@/components/AimOverviewPanel'
 import { AimPipelinesPanel } from '@/components/AimPipelinesPanel'
+import { AimKbPanel } from '@/components/AimKbPanel'
+import { AimRunsPanel } from '@/components/AimRunsPanel'
 import { useAimProjectsQuery } from '@/queries/useAimProjectsQuery'
 import type { AimFeature } from '@/components/AimSidebar'
 import type { CodingProject } from '@/api/types'
@@ -134,9 +136,9 @@ function FeaturePanel({ project, feature }: { project: CodingProject; feature: A
     case 'pipelines':
       return <AimPipelinesPanel project={project} />
     case 'kb':
-      return <ComingSoon title="Knowledge Base" note="Tree + markdown viewer of the document repo (FE-3)." />
+      return <AimKbPanel project={project} />
     case 'runs':
-      return <ComingSoon title="Runs & Reports" note="Run table, report viewer, and post-run Discussion (FE-3)." />
+      return <AimRunsPanel project={project} />
     case 'rulebook':
       return <ComingSoon title="Rulebook" note="Read-only pack manifest, mappings, and extractor configs (FE-4)." />
   }

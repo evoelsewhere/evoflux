@@ -14,10 +14,18 @@
 
 import { useCallback, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { CircleCheck, CircleX, Loader2, Play, TriangleAlert } from 'lucide-react'
+import {
+  CircleCheck,
+  Loader2,
+  MessageSquareText,
+  Play,
+  TriangleAlert,
+  X,
+} from 'lucide-react'
 import { listAimUnits, listTeamSessions, postTeamChat, resolveTeamSession } from '@/api/client'
 import { queryKeys } from '@/queries/keys'
 import { Button } from '@/components/ui/button'
+import { TeamChatView } from '@/components/TeamChatView'
 import { cn } from '@/lib/utils'
 import type { CodingProject, SessionResponse } from '@/api/types'
 
@@ -84,6 +92,9 @@ export function AimPipelinesPanel({ project }: { project: CodingProject }) {
   const [confirmArmed, setConfirmArmed] = useState(false)
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // The one chat surface in the whole mode: a finished run's transcript
+  // (spec §3.3 — Discussion is only offered once running=false).
+  const [discussion, setDiscussion] = useState<SessionResponse | null>(null)
 
   const pipeline = PIPELINES.find((p) => p.key === pipelineKey) ?? PIPELINES[0]
 
@@ -142,7 +153,8 @@ export function AimPipelinesPanel({ project }: { project: CodingProject }) {
   }, [pipeline, unitInput, confirmArmed, project.id, queryClient])
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0">
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
       <div className="border-b border-(--color-border) px-4 py-3">
         <p className="text-sm font-medium text-(--color-text)">Pipelines</p>
       </div>
@@ -226,21 +238,66 @@ export function AimPipelinesPanel({ project }: { project: CodingProject }) {
                 <th className="pb-2 font-medium">Run</th>
                 <th className="pb-2 font-medium">Status</th>
                 <th className="pb-2 font-medium">Started</th>
+                <th className="pb-2" />
               </tr>
             </thead>
             <tbody>
               {runs.map((run) => (
-                <RunRow key={run.id} run={run} />
+                <RunRow
+                  key={run.id}
+                  run={run}
+                  isOpen={discussion?.id === run.id}
+                  onDiscuss={() => setDiscussion(run)}
+                />
               ))}
             </tbody>
           </table>
         )}
       </div>
     </div>
+
+    {/* Post-run Discussion — TeamChatView is a global singleton; exactly one
+        instance, mounted only while a finished run's transcript is open. */}
+    {discussion && (
+      <div className="flex w-96 shrink-0 flex-col border-l border-(--color-border)">
+        <div className="flex items-center justify-between gap-2 border-b border-(--color-border) px-3 py-2">
+          <p className="min-w-0 truncate text-xs font-medium text-(--color-text)">
+            Discussion
+            <span className="ml-1.5 font-normal text-(--color-text-subtle)">
+              {discussion.title ?? discussion.id.slice(0, 8)}
+            </span>
+          </p>
+          <button
+            type="button"
+            onClick={() => setDiscussion(null)}
+            aria-label="Close discussion"
+            className="shrink-0 rounded p-0.5 text-(--color-text-muted) hover:text-(--color-text)"
+          >
+            <X size={13} />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <TeamChatView
+            sessionId={discussion.id}
+            mode="aim"
+            workspace={discussion.workspace ?? null}
+          />
+        </div>
+      </div>
+    )}
+    </div>
   )
 }
 
-function RunRow({ run }: { run: SessionResponse }) {
+function RunRow({
+  run,
+  isOpen,
+  onDiscuss,
+}: {
+  run: SessionResponse
+  isOpen: boolean
+  onDiscuss: () => void
+}) {
   return (
     <tr className="border-t border-(--color-border)">
       <td className="max-w-0 truncate py-2 pr-3 text-(--color-text)" title={run.title ?? run.id}>
@@ -257,10 +314,6 @@ function RunRow({ run }: { run: SessionResponse }) {
             <>
               <Loader2 size={11} className="animate-spin" /> running
             </>
-          ) : run.title?.toLowerCase().includes('fail') ? (
-            <>
-              <CircleX size={11} className="text-(--color-error)" /> done
-            </>
           ) : (
             <>
               <CircleCheck size={11} className="text-(--color-success)" /> done
@@ -268,8 +321,26 @@ function RunRow({ run }: { run: SessionResponse }) {
           )}
         </span>
       </td>
-      <td className="py-2 text-(--color-text-muted)">
+      <td className="py-2 pr-3 text-(--color-text-muted)">
         {run.created_at ? new Date(run.created_at).toLocaleString() : '—'}
+      </td>
+      <td className="py-2 text-right">
+        {!run.running && (
+          <button
+            type="button"
+            onClick={onDiscuss}
+            className={cn(
+              'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] transition-colors',
+              isOpen
+                ? 'bg-(--bg-key) text-(--color-accent)'
+                : 'text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)',
+            )}
+            title="Open this run's transcript (post-run only)"
+          >
+            <MessageSquareText size={11} />
+            Discussion
+          </button>
+        )}
       </td>
     </tr>
   )
