@@ -276,6 +276,19 @@ def current_team_for_session(session_id: str) -> "AgentTeam | None":
     return _session_teams.get(session_id)
 
 
+def find_team_for_session(session_id: str) -> "AgentTeam | None":
+    """Any live team currently bound to *session_id*, regardless of mode —
+    forge teams key by session id, coding/aim teams by (workspace, session).
+    Used by the workflow runner, which only has a session id."""
+    team = _session_teams.get(session_id)
+    if team is not None:
+        return team
+    for (_workspace, stored_session), coding_team in _coding_teams.items():
+        if stored_session == session_id:
+            return coding_team
+    return None
+
+
 def set_team(team: "AgentTeam | None") -> None:
     """Replace the current team reference without running the lifecycle.
 
