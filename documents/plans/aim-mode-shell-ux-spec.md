@@ -1,148 +1,179 @@
-# AIM Mode Shell — UX Spec (AIM-2)
+# UX Spec — AIM Mode Shell (v2)
 
 | | |
 |---|---|
-| **Trạng thái** | PROPOSED — chờ duyệt (theo §3.13 R7 của [`aim-framework.md`](../research/aim-framework.md): không code UI khi spec chưa duyệt) |
-| **Ngày** | 2026-07-16 |
-| **Phạm vi** | Chỉ 3 surface AIM-2 cần: **AIM Board (skeleton)**, **chat drawer**, **AimSetupWizard**. Approval Inbox / Run Monitor / Unit detail đầy đủ là AIM-5 — không nằm trong spec này |
-| **Người duyệt** | _(điền tên khi duyệt — SME/lead UX nội bộ hoặc chính user)_ |
+| **Phiên bản** | v2 — 2026-07-16 (supersede v1 Board-first). Đổi theo chỉ đạo user sau khi backend core AIM-0→3 hoàn tất: AIM là mode riêng điều hướng **sidebar → project → tính năng con → main content**, không phải một Board đơn lẻ |
+| **Trạng thái** | CHỜ DUYỆT (§3.13B R7: spec + wireframe duyệt xong mới code) |
+| **Phạm vi** | Toàn bộ shell FE của AIM mode, chia lớp FE-1→FE-4 bên dưới. Approval Inbox / Run Monitor SSE vẫn là AIM-5 (sau Workflows) |
+| **Backend đã sẵn** | `GET /team/projects?kind=aim` · `POST /team/projects/aim` + `/aim/preview` + `/aim/join` · `GET /team/projects/{id}/aim/{summary,units,runs/{id}}` · session `mode="aim"` + roster + read-only base source (e13f4ef) · legacy graph structural parser (7a7c476) |
 
----
+## 1. Định vị mode
 
-## 1. Vì sao có tài liệu này
+AIM hướng tới **vận hành một dây chuyền migration**: setup rulebook, chạy pipeline phân tích source base → KB, rồi chạy pipeline convert/test-compare vào target source. Người dùng sống trong **một project tại một thời điểm**, nhảy giữa các tính năng con của project đó — giống cách một IDE mở một solution rồi chuyển giữa các panel, KHÔNG giống chat-first của Forge/Coding.
 
-`aim-framework.md` §3.13B (R7) đặt luật: **"mỗi surface UI mới có user journey theo persona + wireframe + interaction contract, duyệt xong mới implement."** AIM-2 là lần đầu tiên AIM mode có UI thật — route `/aim`, wizard, board. Tài liệu này là spec đó cho đúng 3 surface AIM-2 cần build, để không lặp lại đúng lỗi mà §3.13A đang cấm ở phía app đích: "chạy luôn" mà không thống nhất thiết kế trước.
-
-## 2. Persona
-
-- **Delivery lead / operator** (chính) — mở board mỗi sáng, hỏi "cái gì blocked, cái gì cần tôi", trigger việc tiếp theo. Không cần biết chi tiết kỹ thuật của agent.
-- **Solution architect** — chạy wizard một lần khi khởi tạo project, hiếm khi quay lại.
-- **Contributor kỹ thuật** (archaeologist/converter/test-engineer role, nhưng vận hành bởi người) — chủ yếu dùng chat drawer để trực tiếp trò chuyện với agent khi cần debug hoặc bổ sung ngữ cảnh.
-
-## 3. Journey
-
-### J1 — Tạo project mới (Solution architect)
-1. Vào `/aim` (chưa có project nào) → thấy empty state, nút "Create migration project".
-2. Wizard 4 bước (xem wireframe §4.2):
-   - **Bước 1**: Tên project + chọn rulebook (dropdown liệt kê rulebook đã cài, vd `java8-java21`, `vb6-dotnet`).
-   - **Bước 2**: Add base source repo(s) — mỗi repo thêm vào hiển thị badge **"read-only"** ngay lập tức (không chờ tạo xong project mới biết) — đây là tín hiệu UX quan trọng nhất của bước này: người dùng phải thấy rõ ràng những repo này sẽ không bao giờ bị agent ghi vào.
-   - **Bước 3**: Add target repo (đã dựng base) — nếu rulebook có `target-base/checklist.md`, hiển thị checklist đó dưới dạng danh sách tick-off tham khảo (không block Continue nếu chưa tick hết — đây là gợi ý, không phải validation cứng).
-   - **Bước 4**: KB repo — "Create new from template" (mặc định) hoặc "Use existing path". Review toàn bộ lựa chọn trước khi "Create project".
-3. Sau khi tạo: điều hướng thẳng vào AIM Board của project vừa tạo (rỗng, đang ở phase "assess").
-
-### J2 — Tham gia project có sẵn (Contributor khác máy)
-1. Chọn "Join existing" ngay từ bước 1 của wizard thay vì "Create new".
-2. Chọn/clone KB repo có sẵn → wizard đọc `aim.yaml` → chỉ hỏi mapping repo local (source/target nằm ở đâu trên máy này) — **không hỏi lại** rulebook/tên project vì đã có trong `aim.yaml`.
-3. Vào thẳng Board — thấy đúng state mà người tạo project đã thấy (đọc từ cùng KB).
-
-### J3 — Xem tiến độ hằng ngày (Delivery lead)
-1. Mở `/aim/<project>` → Board hiện ngay (không phải chat) — xem wireframe §4.1.
-2. Đọc nhanh 4 metric card đầu (tổng số unit, % equivalent, wave đang chạy, lần chạy gần nhất) rồi lướt 6 cột theo phase.
-3. Unit card màu vàng (nhạt) = run gần nhất fail; xanh (nhạt) = pass — không cần mở gì thêm để biết "cái gì đang cháy".
-4. Muốn hiểu sâu một unit / hỏi vì sao fail → mở chat drawer (xem J4).
-
-### J4 — Hỏi/trigger qua chat drawer
-1. Bấm nút "Chat" ở header Board → drawer trượt ra bên phải, Board co lại (xem wireframe §4.3) — **không rời khỏi route `/aim/<project>`**.
-2. Drawer hiển thị đúng transcript của session gắn với unit/run đang xem (nếu mở từ context một unit) hoặc một session project-level mới (nếu mở từ header chung).
-3. Gõ câu hỏi hoặc lệnh (`/aim-convert-unit core-batch/EODCLOSE`) — hành xử y hệt `TeamChatView` bình thường, không có gì "đặc biệt cho AIM" ở tầng chat.
-4. Đóng drawer — Board trở lại full width, không mất state.
-
-## 4. Wireframe
-
-*(3 mockup HTML đã render trong chat — mô tả lại bằng ASCII/prose dưới đây để lưu trong git, vì ảnh render không tồn tại ngoài phiên chat.)*
-
-### 4.1 AIM Board — main view
+Hệ quả IA (chỉ đạo user 2026-07-16):
 
 ```
-┌───────────────────────────────────────────────────────────────────┐
-│ core-batch migration [java8-java21]      [Wave: all ▾] [💬 Chat]   │
-├───────────────────────────────────────────────────────────────────┤
-│ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐                   │
-│ │Total 42 │ │Equiv 62%│ │Wave  2  │ │Run  4m  │  ← metric cards   │
-│ └─────────┘ └─────────┘ └─────────┘ └─────────┘                   │
-├───────────────────────────────────────────────────────────────────┤
-│ Inventory  Understood  Designed  Converted  Equivalent  Cutover    │
-│   ·8          ·6          ·5        ·4          ·18        ·1     │
-│ [card]      [card]      [card]   [card‼fail] [card✓pass] [card]   │
-│ [card]                                                             │
-└───────────────────────────────────────────────────────────────────┘
+Switch mode [Forge | Coding | AIM]
+  └─ Sidebar: danh sách AIM project (+ New/Join)
+       └─ Click project → expand các tính năng con (dropdown trong sidebar)
+            └─ Click tính năng → main content đổi surface, làm việc tại đó
 ```
-- Mỗi unit card: `<module>/<name>` + kind + wave; nếu có run gần nhất → nền vàng nhạt (fail) hoặc xanh nhạt (pass), không cần biểu tượng phụ.
-- Cột không cuộn dọc bên trong card list ở bản skeleton — nếu một cột vượt quá ~6 card, hiện "+N khác" (đủ dùng cho pilot; virtualized list là cải tiến AIM-5).
-- Không có drag-and-drop giữa cột ở AIM-2 (đổi phase là việc của agent qua `aim_units`, không phải người kéo-thả card).
 
-### 4.2 AimSetupWizard — bước 2/4 (mẫu đại diện)
+## 2. Personas (giữ từ v1)
+
+- **Operator/lead kỹ thuật** — theo dõi tiến độ wave, trigger pipeline, triage fail.
+- **Contributor** (archaeologist/converter/test-engineer vai người) — làm việc trên KB, chạy convert/compare từng unit, cần chat với agent khi debug.
+- **Architect/BA/SME** — đọc KB, business rules, báo cáo equivalence; ít trigger.
+
+## 3. Information Architecture
+
+### 3.1 Cây điều hướng
 
 ```
-┌──────────────────────────────────┐
-│ ▓▓▓▓ ▓▓▓▓ ░░░░ ░░░░   Step 2 of 4│
-│ Add base source repos             │
-│ Mounted read-only for this project│
-│ ┌──────────────────────────────┐ │
-│ │ 📁 ~/repos/core-batch  [read-only]│
-│ ├──────────────────────────────┤ │
-│ │ 📁 ~/repos/common-copybooks [read-only]│
-│ └──────────────────────────────┘ │
-│ [+ Add another repo]              │
-│                    [Back] [Continue]│
-└──────────────────────────────────┘
+AIM (mode tab thứ 3 trong Sidebar switch — icon ArrowRightLeft)
+│
+├─ ▾ core-batch migration          ← project (kind=aim)
+│    ├─ Overview                   ← Board kanban theo phase + 4 metric (mặc định khi mở project)
+│    ├─ Knowledge Base             ← file-tree + markdown viewer của KB repo
+│    ├─ Rulebook                   ← manifest pack + mappings/canonicalizers/extractors (read-only)
+│    ├─ Pipelines                  ← trigger assess/understand/convert/compare (per-run session) + danh sách session
+│    └─ Runs & Reports             ← aim_runs + report.json/md viewer
+│
+├─ ▸ billing-vb6 migration
+│
+└─ [+ New / Join project]          ← AimSetupWizard 4 bước (giữ nguyên v1)
 ```
-- Progress bar 4 đoạn ở trên cùng, luôn hiển thị dù đang ở bước nào.
-- Badge "read-only" xuất hiện NGAY khi thêm repo — không chờ submit, để người dùng tin tưởng ngay từ lúc nhập.
-- Bước 3 (target repo) và bước 4 (KB) dùng cùng khung layout, chỉ đổi nội dung form giữa progress bar và nút Back/Continue.
 
-### 4.3 Board + chat drawer
+### 3.2 URL scheme
+
+| Route | Nội dung |
+|---|---|
+| `/aim` | Empty state (chưa có project) hoặc redirect project mở lần cuối |
+| `/aim/$projectId` | Redirect `/aim/$projectId/overview` |
+| `/aim/$projectId/$feature` | `feature ∈ overview \| kb \| rulebook \| pipelines \| runs` |
+| `/aim/$projectId/$feature/$sessionId` | Feature + chat drawer đang mở session cụ thể (per-run) |
+
+Giống `/coding/$focusId/$sessionId` về tinh thần: URL đủ để khôi phục đúng chỗ đang làm việc sau reload/share link.
+
+### 3.3 Chat — vẫn là drawer, không phải surface chính (giữ quyết định v1)
+
+- Nút Chat ở header main content mở **drawer trượt phải** (~300-360px, CSS grid co main content — không overlay).
+- Session model **per-run** (đã chốt): trigger từ Pipelines tạo session ngầm tên `<unit>/<pipeline>/<n>`; mở từ header dùng session project-level mặc định.
+- **Ràng buộc kỹ thuật giữ nguyên**: `TeamChatView` là singleton toàn cục (useTeamStore, h-dvh, global shortcuts) — drawer đặt đúng MỘT instance trong grid column, ẩn/hiện bằng CSS, KHÔNG mount instance thứ hai.
+
+## 4. Journeys
+
+**J1 — Tạo project mới (operator)**: switch AIM → sidebar trống → `+ New / Join` → wizard 4 bước (tên+rulebook → source repos *(badge read-only ngay khi thêm)* → target repo *(đã dựng base)* → KB path + review) → điều hướng `/aim/<id>/overview`.
+
+**J2 — Join project có sẵn (contributor thứ 2)**: clone KB repo bằng git → wizard tab Join → nhập KB path → wizard đọc `aim.yaml` hiện rulebook + danh sách identity → chỉ map identity → local path → xong, không hỏi lại config nào khác.
+
+**J3 — Vòng làm việc hằng ngày**: mở `/aim/<project>` → Overview thấy kanban phase/wave + metric → click card unit fail → chuyển Runs & Reports xem diff report → mở drawer chat hỏi `aim-triage-analyst` / trigger `/aim-compare-unit` → đóng drawer, Overview cập nhật (poll 10s).
+
+**J4 — Phân tích source ra KB**: Pipelines → chọn `assess` hoặc `understand-unit` → chạy trong per-run session (drawer mở hiện transcript) → kết quả ghi vào KB repo → xem lại ở Knowledge Base (tree + markdown), unit chuyển phase trên Overview.
+
+**J5 — Soi rulebook (architect)**: Rulebook → xem manifest (id/version/parser_strategy/unit_kinds), mappings, canonicalizer profiles, extractor configs — trả lời "dây chuyền này convert theo luật nào?" không cần đọc repo EvoFlux.
+
+## 5. Wireframes
+
+### 5.1 Shell: sidebar + Overview (mặc định)
 
 ```
-┌───────────────────────────┬───────────────┐
-│ core-batch migration   [x]│ Session:      │
-│ Designed·5 Converted·4 ...│ EODCLOSE/...  │
-│ [card]     [card‼fail]    │ ┌───────────┐ │
-│                            │ │agent msg  │ │
-│                            │ └───────────┘ │
-│                            │        ┌────┐ │
-│                            │        │you │ │
-│                            │        └────┘ │
-│                            │ [Message...]  │
-└───────────────────────────┴───────────────┘
+┌──────────┬────────────────────────────────────────────┬─────────┐
+│ F|C|AIM  │ core-batch migration   [java8-java21] [Chat]│         │
+│──────────│─────────────────────────────────────────────│ (drawer │
+│ ▾ core-  │ Total 128 │ Equiv 62% │ Waves 4 │ Run 09:12 │  đóng)  │
+│   batch  │─────────────────────────────────────────────│         │
+│  ·Overvw │ Inventory Understood Designed Conv Equiv Cut│         │
+│  ·KB     │ ┌──────┐  ┌──────┐   ┌──────┐ ┌────┐ ┌────┐│         │
+│  ·Rulebk │ │ EOD1 │  │ PAY2 │   │ RPT3 │ │BAT4│ │GL5 ││         │
+│  ·Pipeln │ └──────┘  └──────┘   └──────┘ └────┘ └────┘│         │
+│  ·Runs   │ ┌──────┐  ...                              │         │
+│ ▸ billing│ │ EOD2 │                                    │         │
+│          │ └──────┘                                    │         │
+│ + New/Jn │  [Wave: all ▾]                              │         │
+└──────────┴────────────────────────────────────────────┴─────────┘
 ```
-- Drawer chiếm ~220-320px bên phải (tuỳ viewport), Board co lại bằng CSS grid (không overlay che Board — cả hai cùng nhìn thấy, đúng tinh thần "một việc, một nơi" của R9: trigger/xem ở Board, hội thoại ở drawer, cả hai đồng thời).
-- Nút đóng `[x]` ở góc trái header Board (không phải trên drawer) — nhất quán vị trí toggle.
 
-## 5. Interaction contract
+### 5.2 Sidebar expand + Knowledge Base
 
-| Sự kiện | Vùng cập nhật | Nguồn dữ liệu |
+```
+┌──────────┬────────────────────────────────────────────┐
+│ ▾ core-  │ Knowledge Base — core-batch-kb              │
+│   batch  │──────────────┬──────────────────────────────│
+│  ·Overvw │ modules/     │ # EODCLOSE                   │
+│  ·KB   ◀ │  core-batch/ │ Phase: understood · Wave 1   │
+│  ·Rulebk │   EODCLOSE.md│ ## Purpose                   │
+│  ·Pipeln │   PAYROLL.md │ Đóng ngày giao dịch, ghi sổ  │
+│  ·Runs   │ business-    │ ## Calls                     │
+│          │  rules/      │ - PAYROLL01 (BR-CORE-0007)   │
+│          │ runs/        │ ...                          │
+└──────────┴──────────────┴──────────────────────────────┘
+```
+
+### 5.3 Pipelines + drawer per-run
+
+```
+┌──────────┬───────────────────────────┬────────────────┐
+│  ·Pipeln◀│ Pipelines                 │ EODCLOSE/      │
+│          │ [Assess] [Understand unit]│ compare/3      │
+│          │ [Convert unit] [Compare]  │ ┌────────────┐ │
+│          │───────────────────────────│ │aim-test-eng│ │
+│          │ Sessions gần đây          │ │ running... │ │
+│          │ · EODCLOSE/compare/3  ● │ └────────────┘ │
+│          │ · PAYROLL/convert/1   ✓ │ [Message...]   │
+└──────────┴───────────────────────────┴────────────────┘
+```
+
+(Wizard 4 bước giữ nguyên wireframe v1 — không vẽ lại.)
+
+## 6. Interaction contract
+
+| Sự kiện | Vùng cập nhật | Nguồn dữ liệu | Ghi chú |
+|---|---|---|---|
+| Switch mode AIM | Sidebar list project | `GET /team/projects?kind=aim` | Forge/Coding không thấy project aim (đã enforce backend) |
+| Click project | Expand feature items + điều hướng `/aim/$id/overview` | — (client state `expandedProjects`, giống CodingSidebar) | Nhớ project mở lần cuối (localStorage, giống `oa-last-coding-focus`) |
+| Overview mount / đổi wave | Metric row + 6 cột kanban | `GET .../aim/summary`, `GET .../aim/units?wave=` | **Poll 10s** (giữ v1) — SSE là AIM-5 |
+| Click item KB | Tree + markdown viewer | Workspace-files API trên KB repo path (roles.kb) | Tái dùng `CodingWorkspacePanel`/`CodingFileViewerPanel` |
+| Mở Rulebook | Manifest + file configs read-only | **GAP: cần endpoint nhỏ** `GET /team/projects/{id}/aim/rulebook` trả rulebook.yaml + danh sách file pack | Backend ~1 route đọc từ `app/agent/builtin_aim/rulebooks/` |
+| Bấm pipeline button | Mở drawer với session per-run mới, prefill slash command (vd `/aim-compare-unit core-batch/EODCLOSE`) | `POST /team/sessions/resolve` (mode=aim, project_id, create=true) + pipeline chat | Pre-Workflows: pipeline = per-run session + command; nút chỉ là "trigger có ngữ cảnh". AIM-4 nâng thành `POST /api/workflows/{name}/run` — **không tạo execution path riêng** |
+| Danh sách session per project | Sessions gần đây trong Pipelines | `GET /team/sessions?project_id=` (đã có) | |
+| Mở run trong Runs & Reports | Bảng aim_runs + viewer report | `GET .../aim/runs/{id}` + đọc file report từ KB repo | report_path đã lưu trong AimRun |
+| Đóng/mở drawer | Grid column 0px ↔ ~320px | Zustand `useAimUIStore.drawerOpen` (1 boolean) | Session không mất — chỉ CSS |
+
+## 7. Tái sử dụng component (R8 — không sáng chế design system riêng)
+
+| Cần | Dùng lại | Bằng chứng |
 |---|---|---|
-| Board mount / đổi wave filter | 4 metric card + 6 cột unit | `GET /team/projects/{id}/aim/summary`, `GET /team/projects/{id}/aim/units?wave=` |
-| Unit card có run mới (fail/pass) | Màu nền card đó | Poll lại `aim/units` theo interval ngắn (AIM-2: polling đơn giản, ví dụ 10s — **chưa dùng SSE**; nâng cấp SSE là AIM-5 khi có `workflow_progress`) |
-| Bấm "Chat" ở header | Mở drawer, giữ nguyên route `/aim/{focusId}` | Tạo/tái dùng session theo model **per-run đã chốt** (mục 3.12 của aim-framework.md) nếu mở từ context một run đang chạy; session project-level mặc định nếu mở từ header chung |
-| Gõ trong drawer | Transcript trong drawer | Pipeline chat/SSE y hệt `TeamChatView` hiện có — **không có cơ chế riêng cho AIM** |
-| Đóng drawer | Board full width | Chỉ CSS/layout state, không mất session — session vẫn chạy nền, mở lại drawer là thấy tiếp |
-| Wizard "Continue" mỗi bước | Validate tối thiểu (path tồn tại, tên không rỗng) rồi sang bước kế | Không gọi API tạo project cho đến bước cuối "Create project" — bước 1-3 chỉ giữ state client-side |
-| Wizard "Create project" | Điều hướng `/aim/<project_id>` | `POST` tạo `CodingProject(kind="aim")` + workspace mapping + sinh `aim.yaml` (theo §3.5); AIM-2 chỉ cần route đích tồn tại, backend tạo project đã có sẵn service pattern từ `svc.create_project` — cần mở rộng nhỏ để set `kind` + `settings["aim"]` |
+| Sidebar project + expand feature | Pattern `CodingSidebar` (expandedProjects Set, section collapse, resizable width, collapsed icon strip) | `web/src/components/CodingSidebar.tsx:318-360,1042-1067` |
+| Mode switch 3 tab | `Sidebar.tsx` mode switch hiện có, thêm tab AIM (ArrowRightLeft) | đã build thử trước khi discard — pattern OK |
+| Kanban/metric panel | Pattern `ProjectCodeGraphPanel` (flex shell + inline useQuery) | v1 đã xác minh |
+| KB browser | `CodingWorkspacePanel` (TreeNodeView) + `CodingFileViewerPanel` | có sẵn, nhận workspace path |
+| Wizard | Pattern `ProjectSetupModal` (StepIndicator, RepoRow, pickFolder Tauri/web) | v1 đã xác minh |
+| Chat drawer | `TeamChatView` nguyên vẹn trong 1 grid column (singleton!) | v1 đã xác minh + test live |
+| Query keys | mở rộng `queryKeys.projects.aim*` | đã có sẵn từ đợt FE bị discard (viết lại nhanh) |
 
-## 6. Tái sử dụng component (đúng R8 — không sáng chế design system riêng)
+## 8. Thứ tự build (mỗi lớp ship được độc lập)
 
-- Panel/card pattern: theo đúng `ProjectCodeGraphPanel.tsx` (đã có data-fetch + panel skeleton pattern) — `AimBoardPanel` clone cấu trúc này, không viết CSS mới.
-- Wizard: theo đúng bố cục nhiều bước của `ProjectSetupModal.tsx` (đã có 3-bước tương tự) — mở rộng thành 4 bước, tái dùng modal shell/progress-indicator nếu có sẵn.
-- Chat drawer: `TeamChatView` nguyên vẹn, chỉ đặt trong một container slide-over (Zustand store thêm 1 boolean `aimDrawerOpen`, không có state mới nào khác).
-- Metric card, badge, button: dùng đúng token Tailwind v4 + component shadcn/base-ui hiện có trong `web/src/components/` — không thêm thư viện UI mới ngoài `@xyflow/react` đã plan riêng cho workflow canvas (không liên quan AIM-2).
+| Lớp | Nội dung | Cần backend thêm? |
+|---|---|---|
+| **FE-1 Shell** | Tab AIM + sidebar list/expand + routes `/aim/...` + empty state + AimSetupWizard (create/join) + localStorage last-project | Không — API đủ |
+| **FE-2 Overview + Chat** | Board kanban + metrics (poll 10s) + chat drawer per-run + `_workspace` plumbing cho mode aim (fix đã biết từ đợt trước: `resetSessionState` + `agentWorkspace` trong TeamChatView) | Không |
+| **FE-3 KB + Runs** | KB browser (tree+markdown) + Runs & Reports (bảng + report viewer) + Pipelines (nút trigger prefill command + session list) | Không |
+| **FE-4 Rulebook** | Rulebook viewer read-only | **1 endpoint** `GET .../aim/rulebook` |
+| **AIM-5** (sau Workflows) | Approval Inbox + Run Monitor SSE + wave burn-up | Workflows M1-M6 |
 
-## 7. Quy ước copy (ngắn, áp dụng chung)
+## 9. Câu hỏi mở (cần chốt khi duyệt)
 
-- Sentence case cho mọi label/nút/tiêu đề — không Title Case, không ALL CAPS.
-- Nút hành động bắt đầu bằng động từ: "Create project", "Add another repo", "Continue" — không "Submit"/"OK".
-- Badge trạng thái ngắn gọn, không câu: "read-only", "fail", "pass" — không "This repo is read-only.".
-- Rỗng (chưa có project) là lời mời, không phải xin lỗi: tiêu đề đặt tên không gian ("Start a migration project"), một dòng mô tả, nút hành động là động từ.
+1. **Pipelines pre-Workflows**: nút trigger = mở drawer với command prefill (đề xuất, đơn giản, không đường chạy riêng) — hay tự động gửi command luôn? Đề xuất: **prefill, user bấm gửi** — giữ human-in-the-loop trước khi có approval-manifest của Workflows.
+2. **KB browser edit hay read-only?** Đề xuất: read-only ở FE-3 (sửa KB là việc của agent/git); edit inline để sau.
+3. **Vị trí danh sách session AIM trong sidebar**: KHÔNG list session theo ngày như Forge (per-run session rất nhiều, auto-archive) — chỉ hiện trong Pipelines của từng project. Xác nhận?
 
-## 8. Câu hỏi mở (cần quyết trước khi code)
+## 10. Sign-off
 
-1. Polling interval cho Board (đề xuất 10s) có chấp nhận được không, hay cần WebSocket/SSE ngay từ AIM-2? (Đề xuất: polling đủ dùng cho pilot quy mô nhỏ, tránh xây SSE integration sớm khi chưa có `workflow_progress` thật.)
-2. Cột phase khi >~6 unit: "+N khác" (link mở view riêng) có đủ cho AIM-2, hay cần scroll/virtualize ngay? (Đề xuất: đủ, hoãn virtualize sang AIM-5.)
-3. Route Join existing nằm ở đâu trong UI — nút riêng trên trang chọn project, hay một toggle trong bước 1 của wizard? (Đề xuất trong wireframe: toggle trong bước 1, xem J2.)
-
-## 9. Duyệt
-
-- [ ] Người duyệt xác nhận 3 wireframe + interaction contract khớp kỳ vọng.
-- [ ] 3 câu hỏi mở ở mục 8 đã có quyết định.
-- [ ] Sau khi tick xong, AIM-2 mới được phép bắt đầu code theo đúng §3.13 R7.
+- [ ] IA sidebar → project → feature → main content (mục 3)
+- [ ] 5 feature: Overview / KB / Rulebook / Pipelines / Runs (mục 3.1)
+- [ ] URL scheme (mục 3.2)
+- [ ] Chat drawer + per-run giữ nguyên (mục 3.3)
+- [ ] Thứ tự build FE-1→FE-4 (mục 8)
+- [ ] 3 câu hỏi mở (mục 9)
