@@ -276,6 +276,12 @@ class AgentTeam:
         workspace: str | None = None,
         permission_mode: str = "auto",
         extra_workspace_paths: list[str] | None = None,
+        # AIM mode only: paths (base-source repos) the team's filesystem
+        # tools must never write to, even though they sit alongside the
+        # writable target/KB repos in extra_workspace_paths. Threaded into
+        # SandboxConfig.read_only_paths (app/agent/sandbox.py) the same way
+        # extra_workspace_paths already is.
+        read_only_paths: list[str] | None = None,
         # Back-compat: callers (especially older tests) can still pass a
         # pre-built members map.  These instances are registered as if they
         # were spawned by name; their handles stay verbatim (no ``#1``
@@ -293,6 +299,7 @@ class AgentTeam:
         self.workspace = workspace
         self.permission_mode = permission_mode
         self.extra_workspace_paths: list[str] = extra_workspace_paths or []
+        self.read_only_paths: list[str] = read_only_paths or []
 
         self.mailbox = TeamMailbox(on_message=self._on_message)
 
@@ -510,7 +517,7 @@ class AgentTeam:
             )
 
         workspace_name = (
-            Path(workspace).name if mode == "coding" and workspace else None
+            Path(workspace).name if mode in ("coding", "aim") and workspace else None
         )
         notification_title = (
             f"Session completed - {workspace_name}"

@@ -148,3 +148,155 @@ async def test_get_run_404_when_run_belongs_to_other_project(client, tmp_path):
 
     resp = await client.get(f"/api/team/projects/{project2.id}/aim/runs/{run.id}")
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Setup wizard: create / preview / join
+# ---------------------------------------------------------------------------
+
+
+def _make_local_repo(tmp_path: Path, name: str) -> Path:
+    repo = tmp_path / name
+    repo.mkdir()
+    return repo
+
+
+@pytest.mark.asyncio
+async def test_create_aim_project_route_end_to_end(client, tmp_path):
+    source = _make_local_repo(tmp_path, "source-repo")
+    target = _make_local_repo(tmp_path, "target-repo")
+    kb_path = tmp_path / "kb-repo"
+
+    resp = await client.post(
+        "/api/team/projects/aim",
+        json={
+            "name": "core-batch migration",
+            "rulebook_id": "java8-java21",
+            "rulebook_version": "0.1",
+            "source_paths": [str(source)],
+            "target_path": str(target),
+            "kb_path": str(kb_path),
+        },
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["kind"] == "aim"
+    assert body["settings"]["aim"]["rulebook"]["id"] == "java8-java21"
+    assert len(body["workspaces"]) == 3
+    assert (kb_path / "aim.yaml").exists()
+
+
+@pytest.mark.asyncio
+async def test_create_aim_project_rejects_missing_source_path(client, tmp_path):
+    resp = await client.post(
+        "/api/team/projects/aim",
+        json={
+            "name": "p",
+            "rulebook_id": "default",
+            "source_paths": [str(tmp_path / "does-not-exist")],
+            "target_path": str(_make_local_repo(tmp_path, "target")),
+            "kb_path": str(tmp_path / "kb"),
+        },
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_aim_project_rejects_non_empty_kb_path(client, tmp_path):
+    kb_path = _make_local_repo(tmp_path, "kb-already-exists")
+    (kb_path / "stray.txt").write_text("x")
+
+    resp = await client.post(
+        "/api/team/projects/aim",
+        json={
+            "name": "p",
+            "rulebook_id": "default",
+            "source_paths": [str(_make_local_repo(tmp_path, "source"))],
+            "target_path": str(_make_local_repo(tmp_path, "target")),
+            "kb_path": str(kb_path),
+        },
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_preview_aim_project_route(client, tmp_path):
+    source = _make_local_repo(tmp_path, "source-repo")
+    target = _make_local_repo(tmp_path, "target-repo")
+    kb_path = tmp_path / "kb-repo"
+    await client.post(
+        "/api/team/projects/aim",
+        json={
+            "name": "p",
+            "rulebook_id": "vb6-dotnet",
+            "rulebook_version": "0.2",
+            "source_paths": [str(source)],
+            "target_path": str(target),
+            "kb_path": str(kb_path),
+        },
+    )
+
+    resp = await client.post(
+        "/api/team/projects/aim/preview", params={"kb_path": str(kb_path)}
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["rulebook_id"] == "vb6-dotnet"
+    assert body["rulebook_version"] == "0.2"
+    assert body["source_identities"] == ["source-repo"]
+
+
+@pytest.mark.asyncio
+async def test_preview_aim_project_missing_kb_returns_422(client, tmp_path):
+    resp = await client.post(
+        "/api/team/projects/aim/preview",
+        params={"kb_path": str(tmp_path / "nope")},
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_join_aim_project_route_end_to_end(client, tmp_path):
+    source1 = _make_local_repo(tmp_path, "source-a")
+    target1 = _make_local_repo(tmp_path, "target-a")
+    kb_path = tmp_path / "shared-kb"
+    await client.post(
+        "/api/team/projects/aim",
+        json={
+            "name": "original",
+            "rulebook_id": "java8-java21",
+            "source_paths": [str(source1)],
+            "target_path": str(target1),
+            "kb_path": str(kb_path),
+        },
+    )
+
+    source2 = _make_local_repo(tmp_path, "source-b-local")
+    target2 = _make_local_repo(tmp_path, "target-b-local")
+    resp = await client.post(
+        "/api/team/projects/aim/join",
+        json={
+            "name": "joined",
+            "kb_path": str(kb_path),
+            "source_paths": [str(source2)],
+            "target_path": str(target2),
+        },
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["kind"] == "aim"
+    assert body["settings"]["aim"]["rulebook"]["id"] == "java8-java21"
+
+
+@pytest.mark.asyncio
+async def test_join_aim_project_missing_kb_returns_422(client, tmp_path):
+    resp = await client.post(
+        "/api/team/projects/aim/join",
+        json={
+            "name": "x",
+            "kb_path": str(tmp_path / "no-such-kb"),
+            "source_paths": [str(_make_local_repo(tmp_path, "s"))],
+            "target_path": str(_make_local_repo(tmp_path, "t")),
+        },
+    )
+    assert resp.status_code == 422

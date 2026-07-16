@@ -250,7 +250,7 @@ async def _edit_file(
     Fails if the match is ambiguous (multiple occurrences) unless replace_all=true.
     """
     sandbox = get_sandbox()
-    resolved = sandbox.validate_path(path)
+    resolved = sandbox.validate_path(path, is_write=True)
     rel = sandbox.display_path(resolved)
 
     if not resolved.exists():

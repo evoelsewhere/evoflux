@@ -41,6 +41,54 @@ def write_manifest_phase(kb_root: Path, phase: str) -> None:
     )
 
 
+_KB_TEMPLATE_DIR = (
+    Path(__file__).resolve().parents[3] / "seed" / "aim-kb-template"
+)
+
+
+def scaffold_kb_from_template(kb_root: Path) -> None:
+    """Copy ``seed/aim-kb-template/`` into a fresh (or empty) *kb_root*.
+
+    Only fills gaps — an existing file at the target is left untouched,
+    same philosophy as ``install_seed`` (app/cli/seed.py).
+    """
+    import shutil
+
+    kb_root.mkdir(parents=True, exist_ok=True)
+    for src in sorted(_KB_TEMPLATE_DIR.rglob("*")):
+        if not src.is_file():
+            continue
+        rel = src.relative_to(_KB_TEMPLATE_DIR)
+        target = kb_root / rel
+        if target.exists():
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(src, target)
+
+
+def create_manifest(
+    kb_root: Path,
+    *,
+    rulebook_id: str,
+    rulebook_version: str,
+    source_identities: list[str],
+    target_identities: list[str],
+) -> None:
+    """Write a brand-new ``aim.yaml`` — the shareable project manifest a
+    "join existing" teammate reads (identity strings, not local paths).
+    """
+    data = {
+        "rulebook": {"id": rulebook_id, "version": rulebook_version},
+        "roles": {"source": source_identities, "target": target_identities},
+        "golden_dir": "golden",
+        "compare_default_profile": "default",
+        "phase": "assess",
+    }
+    (kb_root / "aim.yaml").write_text(
+        yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8"
+    )
+
+
 def read_unit(kb_root: Path, module: str, name: str) -> tuple[UnitFrontmatter, str] | None:
     """Read a unit's frontmatter + body. ``None`` if the doc doesn't exist yet."""
     path = _unit_doc_path(kb_root, module, name)

@@ -217,7 +217,7 @@ class TestPostTeamCommands:
         await coding_team.start()
         called: dict[str, object] = {}
 
-        async def fake_get_or_start_coding_team(requested_workspace, session_id):
+        async def fake_get_or_start_coding_team(requested_workspace, session_id, **_kwargs):
             called["workspace"] = requested_workspace
             called["session_id"] = session_id
             return coding_team
