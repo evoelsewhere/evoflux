@@ -2,7 +2,75 @@
 
 Tracking against backlog from scheduled task `aim-fix-audit-loop` (2026-07-17).
 
-## Status: IN PROGRESS
+## Status: ROUND 2 — UI parity + run observability (2026-07-17)
+
+User feedback driving round 2: (1) AIM UI chưa match 2 mode còn lại,
+(2) thông tin trong 1 project thiếu, (3) pipeline running không có log.
+
+### R2-P1 — Run observability (pipeline "không có log") ✅
+
+**Backend:**
+- NEW `GET /api/workflows/executions?session_ids=a,b,c` (registered before
+  `/{name}` so the literal path wins) → newest-first `WorkflowExecutionOut[]`.
+  Test: `test_list_executions_by_session_ids`.
+- `AimRunOut` + `AimRunListItem` now expose `workflow_execution_id` (was on
+  the model, never serialized).
+
+**Frontend (`AimPipelinesPanel`):**
+- Run table joins per-run sessions ↔ executions in one call (poll 5s):
+  real status ● running / ⏸ needs input / ✓ pass / ✗ fail / ◼ stopped /
+  ⚠ interrupted (DB says running but no live stream — backend restarted),
+  plus a Pipeline column (definition_name).
+- Per-run sessions get a readable title (`<unit|wave> · <pipeline>`) via
+  PATCH right after resolve — table rows no longer show UUIDs/prompt text.
+- NEW **Run Monitor** side panel (opens automatically on Run, or from any
+  row): execution summary + error, node-by-node progress with durations
+  and expandable per-node debug output, **Activity log** (read-only
+  transcript tail, poll 4s while active — the "log" the user asked for),
+  inline **Gate** answerer when status=waiting_gate, and a **Stop** button.
+  Replaces the old blind "Gate" button. Still zero chat surface.
+- `RunMonitorPanel` is exported and reused by Runs & Reports ("Nodes").
+
+### R2-P2 — Overview thiếu thông tin ✅
+
+- Info strip: N source repos (names, read-only badge), target repo, KB repo
+  (`resolveAimRoleWorkspaces` helper).
+- Phase distribution bar + legend from `summary.phase_counts` (global,
+  unaffected by wave filter).
+- Recent-runs strip (last 6 aim_runs) deep-linking to `runs/$runId`.
+- Unit cards: KB-doc icon, complexity (loc/score), deps count, assignee,
+  full tooltip.
+
+### R2-P3 — Shell parity với Forge/Coding ✅
+
+- `AimSidebar`: resizable (`useResizableWidth`, storageKey
+  `oa.aimSidebar.width`), collapse-to-icon-rail (`ModeSwitchRail`, state in
+  layout + localStorage, Ctrl+B), footer trio Settings·HealthDot·ThemeToggle,
+  "Projects" section header with "+" (wizard), running dot per project +
+  on the Pipelines feature row (one polled query, 10s).
+- `aim.tsx` shell: `mobile-safe-shell mobile-viewport … md:flex-row` wrapper,
+  main panel `rounded-[10px] bg-(--bg-page) shadow-sm` (was border+bg-card —
+  visibly different from the other modes), PanelLeft toggle button between
+  sidebar and content (same as TeamChatView's).
+- FIXED: deep-link `/aim/$projectId/runs/$runId` was redirected to overview
+  by the feature-normalizing effect (runId param has no $feature); now maps
+  to feature='runs', preselects the run, and run selection keeps the URL in
+  sync. Verdict icons are tri-state (pass / acceptable_diff / fail / error).
+
+**Verified live (browser, real backend):** run table with real statuses,
+title patch, monitor auto-open, node list + durations, activity log
+streaming agent output, sidebar running dots, collapse rail, resize handle,
+deep-link no longer redirects. New endpoint returns correct rows (tested +
+curl). tsc clean; pytest workflow+aim routes green (81).
+
+**Known gaps (deliberate, log for next round):**
+- AIM sidebar has no mobile slide-in drawer (desktop-first surface).
+- No command-palette/search entry in AIM sidebar.
+- No project context menu (rename/delete/leave) on AIM project rows.
+- KB browser is a flat file list, not a tree (fine while KB layout is shallow).
+- Gate detection is poll-based (5s) — Run Monitor SSE remains AIM-5.
+
+## Status round 1: DONE (P1–P5 below)
 
 ---
 

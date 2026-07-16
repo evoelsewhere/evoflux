@@ -18,6 +18,7 @@ from app.api.schemas.workflows import (
     WorkflowApproveRequest,
     WorkflowDetailResponse,
     WorkflowExecutionDetailResponse,
+    WorkflowExecutionListResponse,
     WorkflowExecutionOut,
     WorkflowListItem,
     WorkflowListResponse,
@@ -129,6 +130,46 @@ def _detail(found: DiscoveredWorkflow, approved: set[str]) -> WorkflowDetailResp
         manifest=manifest,
         lint_warnings=lint,
         errors=errors,
+    )
+
+
+# NOTE: registered before ``GET /{name}`` so the literal path wins the match.
+@router.get("/executions", response_model=WorkflowExecutionListResponse)
+async def list_executions_route(
+    db: DbSession, session_ids: str = ""
+) -> WorkflowExecutionListResponse:
+    """Latest-first executions for a comma-separated list of session ids.
+
+    Powers the AIM Pipelines run table: the FE joins its per-run sessions
+    with real execution status (running/waiting_gate/completed/failed)
+    in one call instead of N polls.
+    """
+    from app.models.workflow import WorkflowExecution
+
+    ids: list[UUID] = []
+    for raw in session_ids.split(","):
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            ids.append(UUID(raw))
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422, detail=f"Invalid session id: {raw}"
+            ) from exc
+    if not ids:
+        return WorkflowExecutionListResponse(executions=[])
+    rows = await db.exec(
+        select(WorkflowExecution)
+        .where(col(WorkflowExecution.session_id).in_(ids))
+        .order_by(col(WorkflowExecution.started_at).desc())
+        .limit(200)
+    )
+    return WorkflowExecutionListResponse(
+        executions=[
+            WorkflowExecutionOut.model_validate(row, from_attributes=True)
+            for row in rows.all()
+        ]
     )
 
 

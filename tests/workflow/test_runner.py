@@ -287,6 +287,75 @@ async def test_run_endpoint_contract(setup_db, tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_list_executions_by_session_ids(setup_db, tmp_path, monkeypatch):
+    """GET /executions?session_ids= returns newest-first rows for exactly the
+    requested sessions (the AIM Pipelines table's status join)."""
+    from uuid import uuid4
+
+    from fastapi import FastAPI
+    from httpx import ASGITransport, AsyncClient
+
+    from app.api.routes.workflows import router as workflows_router
+    from app.core import db as db_module
+    from app.core.config import settings as app_settings
+    from app.models.workflow import WorkflowExecution
+
+    monkeypatch.setattr(app_settings, "EVOFLUX_CONFIG_DIR", str(tmp_path / "config"))
+    app = FastAPI()
+    app.include_router(workflows_router, prefix="/api/workflows")
+    transport = ASGITransport(app=app)
+
+    session_a, session_b, session_other = uuid4(), uuid4(), uuid4()
+    async with db_module.async_session_factory() as db:
+        db.add(
+            WorkflowExecution(
+                definition_name="aim-assess",
+                definition_hash="0" * 64,
+                session_id=session_a,
+                status="completed",
+            )
+        )
+        db.add(
+            WorkflowExecution(
+                definition_name="aim-convert-unit",
+                definition_hash="0" * 64,
+                session_id=session_b,
+                status="failed",
+                error="boom",
+            )
+        )
+        db.add(
+            WorkflowExecution(
+                definition_name="unrelated",
+                definition_hash="0" * 64,
+                session_id=session_other,
+                status="running",
+            )
+        )
+        await db.commit()
+
+    async with AsyncClient(transport=transport, base_url="http://t") as client:
+        res = await client.get(
+            f"/api/workflows/executions?session_ids={session_a},{session_b}"
+        )
+        assert res.status_code == 200
+        rows = res.json()["executions"]
+        assert {r["session_id"] for r in rows} == {str(session_a), str(session_b)}
+        by_session = {r["session_id"]: r for r in rows}
+        assert by_session[str(session_b)]["status"] == "failed"
+        assert by_session[str(session_b)]["error"] == "boom"
+
+        # Empty / whitespace-only list short-circuits to [].
+        empty = await client.get("/api/workflows/executions?session_ids=")
+        assert empty.status_code == 200
+        assert empty.json()["executions"] == []
+
+        # Malformed uuid → 422, not 500.
+        bad = await client.get("/api/workflows/executions?session_ids=not-a-uuid")
+        assert bad.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_run_scope_mismatch_rejected(setup_db, tmp_path, monkeypatch):
     from fastapi import FastAPI
     from httpx import ASGITransport, AsyncClient

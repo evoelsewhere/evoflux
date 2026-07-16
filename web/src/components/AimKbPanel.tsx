@@ -20,21 +20,31 @@ import {
 import { queryKeys } from '@/queries/keys'
 import { MarkdownBlock } from '@/utils/markdown'
 import { cn } from '@/lib/utils'
-import type { CodingProject } from '@/api/types'
+import type { CodingProject, ProjectWorkspaceItem } from '@/api/types'
 
 export function resolveAimRolePath(
   project: CodingProject,
   role: 'kb' | 'target' | 'source',
 ): string | null {
+  return resolveAimRoleWorkspaces(project, role)[0]?.path ?? null
+}
+
+/** Every workspace mapped to an AIM role on this machine — `source` may
+ * hold several repos, kb/target normally exactly one. */
+export function resolveAimRoleWorkspaces(
+  project: CodingProject,
+  role: 'kb' | 'target' | 'source',
+): ProjectWorkspaceItem[] {
   const aim = project.settings?.aim as
     | { roles?: Record<string, string[]> }
     | undefined
   const ids = aim?.roles?.[role] ?? []
+  const found: ProjectWorkspaceItem[] = []
   for (const id of ids) {
     const workspace = project.workspaces.find((w) => w.workspace_id === id)
-    if (workspace) return workspace.path
+    if (workspace) found.push(workspace)
   }
-  return null
+  return found
 }
 
 export function AimKbPanel({ project }: { project: CodingProject }) {
