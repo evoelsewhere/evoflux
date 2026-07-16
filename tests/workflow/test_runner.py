@@ -306,6 +306,12 @@ async def test_list_executions_by_session_ids(setup_db, tmp_path, monkeypatch):
     transport = ASGITransport(app=app)
 
     session_a, session_b, session_other = uuid4(), uuid4(), uuid4()
+    running_execution = WorkflowExecution(
+        definition_name="aim-convert-unit",
+        definition_hash="0" * 64,
+        session_id=session_b,
+        status="running",
+    )
     async with db_module.async_session_factory() as db:
         db.add(
             WorkflowExecution(
@@ -315,15 +321,7 @@ async def test_list_executions_by_session_ids(setup_db, tmp_path, monkeypatch):
                 status="completed",
             )
         )
-        db.add(
-            WorkflowExecution(
-                definition_name="aim-convert-unit",
-                definition_hash="0" * 64,
-                session_id=session_b,
-                status="failed",
-                error="boom",
-            )
-        )
+        db.add(running_execution)
         db.add(
             WorkflowExecution(
                 definition_name="unrelated",
@@ -333,26 +331,40 @@ async def test_list_executions_by_session_ids(setup_db, tmp_path, monkeypatch):
             )
         )
         await db.commit()
+        running_id = running_execution.id
 
-    async with AsyncClient(transport=transport, base_url="http://t") as client:
-        res = await client.get(
-            f"/api/workflows/executions?session_ids={session_a},{session_b}"
-        )
-        assert res.status_code == 200
-        rows = res.json()["executions"]
-        assert {r["session_id"] for r in rows} == {str(session_a), str(session_b)}
-        by_session = {r["session_id"]: r for r in rows}
-        assert by_session[str(session_b)]["status"] == "failed"
-        assert by_session[str(session_b)]["error"] == "boom"
+    # `live` reflects the in-memory runner, not the DB status — session_b's
+    # row is driven, session_other's identical 'running' row is an orphan.
+    import types
 
-        # Empty / whitespace-only list short-circuits to [].
-        empty = await client.get("/api/workflows/executions?session_ids=")
-        assert empty.status_code == 200
-        assert empty.json()["executions"] == []
+    from app.workflow.runner import runner as global_runner
 
-        # Malformed uuid → 422, not 500.
-        bad = await client.get("/api/workflows/executions?session_ids=not-a-uuid")
-        assert bad.status_code == 422
+    global_runner.active[str(session_b)] = types.SimpleNamespace(
+        execution_id=running_id
+    )
+    try:
+        async with AsyncClient(transport=transport, base_url="http://t") as client:
+            res = await client.get(
+                f"/api/workflows/executions?session_ids={session_a},{session_b}"
+            )
+            assert res.status_code == 200
+            rows = res.json()["executions"]
+            assert {r["session_id"] for r in rows} == {str(session_a), str(session_b)}
+            by_session = {r["session_id"]: r for r in rows}
+            assert by_session[str(session_b)]["status"] == "running"
+            assert by_session[str(session_b)]["live"] is True
+            assert by_session[str(session_a)]["live"] is False
+
+            # Empty / whitespace-only list short-circuits to [].
+            empty = await client.get("/api/workflows/executions?session_ids=")
+            assert empty.status_code == 200
+            assert empty.json()["executions"] == []
+
+            # Malformed uuid → 422, not 500.
+            bad = await client.get("/api/workflows/executions?session_ids=not-a-uuid")
+            assert bad.status_code == 422
+    finally:
+        global_runner.active.pop(str(session_b), None)
 
 
 @pytest.mark.asyncio
