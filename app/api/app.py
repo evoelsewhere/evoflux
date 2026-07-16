@@ -53,6 +53,17 @@ async def lifespan(app: FastAPI):
     ensure_workspace_initialized()
     ensure_officecli_on_path()
 
+    # ── Workflow runner ↔ team turn-boundary hooks (plan v5 §6.1) ─────────
+    # Registered here rather than imported by team.py to avoid a circular
+    # import between the team package and app.workflow.
+    from app.agent.mode.team.team import set_workflow_hooks
+    from app.workflow.runner import runner as workflow_runner
+
+    set_workflow_hooks(
+        workflow_runner.on_turn_boundary_capture,
+        workflow_runner.on_turn_boundary_advance,
+    )
+
     # ── Auto-migrate DB in production ───────────────────────────────
     if settings.APP_ENV == "production":
         # Alembic's ``env.py`` calls ``asyncio.run(run_migrations_online())``

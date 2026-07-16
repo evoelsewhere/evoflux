@@ -156,6 +156,19 @@ def _recipient_error(
         available = [a for a in mailbox.registered_agents if a != sender]
         return f"Agent '{name}' not found. Available: {', '.join(available)}"
 
+    # Workflow agent node in flight: the node's roster is the law.
+    if team.turn_allowed_blueprints is not None:
+        from app.agent.mode.team.team import parse_instance_handle
+
+        parsed = parse_instance_handle(name)
+        blueprint = parsed[0] if parsed is not None else name
+        if not team.blueprint_allowed_this_turn(blueprint):
+            allowed = sorted(team.turn_allowed_blueprints)
+            return (
+                f"'{name}' is not on this workflow node's roster. "
+                f"Allowed this turn: {allowed or ['(lead only)']}."
+            )
+
     # Bare blueprint name? Surface ambiguity vs. not-spawned distinctly.
     if name in team.blueprints:
         live = team.live_instances_for_blueprint(name)

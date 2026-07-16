@@ -241,6 +241,27 @@ def _is_hidden_continuation_directive(message: object) -> bool:
     )
 
 
+# ── Workflow hooks (plan v5 §6.1) ────────────────────────────────────────────
+# Registered from app startup via set_workflow_hooks to avoid a circular
+# import between team.py and app.workflow.runner. Both are optional; when
+# unset the turn-completion chain behaves exactly as before.
+#
+# capture_cb(session_id): runs unconditionally at the top of the barrier —
+#   if a workflow agent-node turn was in flight, capture its output NOW so
+#   a queued user message can never be mis-captured as node output.
+# advance_cb(session_id) -> bool: runs after the queued-message branch
+#   declines; True = an active execution consumed this boundary (the chain
+#   stops; the runner drives on), False = fall through to /loop/DoneEvent.
+_workflow_capture_cb = None
+_workflow_advance_cb = None
+
+
+def set_workflow_hooks(capture_cb, advance_cb) -> None:
+    global _workflow_capture_cb, _workflow_advance_cb
+    _workflow_capture_cb = capture_cb
+    _workflow_advance_cb = advance_cb
+
+
 class AgentTeam:
     """Singleton team: one lead, N member blueprints, dynamic instance roster.
 
@@ -307,6 +328,12 @@ class AgentTeam:
         self._has_active_turn: bool = False
         self._loop_states: dict[str, LoopState] = {}
         self._loop_limits: dict[str, int] = {}
+
+        # Workflow-node roster allowlist (plan v5 §6.4 step 2): while an
+        # agent node's turn is in flight, delegation/spawn is limited to
+        # that node's declared subagents. None = no restriction (normal
+        # turns). Set/cleared by the workflow runner.
+        self.turn_allowed_blueprints: set[str] | None = None
 
         # Delegator name -> recipients whose team_delegate/team_reject has not
         # yet been resolved by a "final" team_handoff back to that delegator.
@@ -483,8 +510,26 @@ class AgentTeam:
             self._has_active_turn = False  # reset for next turn
             session_id = self.lead.session_id
 
+            # Workflow hook ① (capture): unconditional, BEFORE queued
+            # messages, so a queued user turn can never be mis-captured as
+            # an agent node's output.
+            if _workflow_capture_cb is not None:
+                try:
+                    await _workflow_capture_cb(session_id)
+                except Exception as exc:  # noqa: BLE001 — never break the chain
+                    logger.warning("workflow_capture_hook_failed error={}", exc)
+
             if await self._activate_queued_user_messages(session_id):
                 return
+
+            # Workflow hook ② (advance): an active execution consumes the
+            # boundary before /loop gets a look-in.
+            if _workflow_advance_cb is not None:
+                try:
+                    if await _workflow_advance_cb(session_id):
+                        return
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("workflow_advance_hook_failed error={}", exc)
 
             if await self._activate_loop_message(session_id):
                 return
@@ -703,6 +748,60 @@ class AgentTeam:
         )
         return True
 
+    async def inject_synthetic_turn(self, session_id: str, prompt: str) -> str | None:
+        """Start a synthetic lead turn with *prompt* — the F2 recipe the
+        /loop activation uses, exposed for the workflow runner's agent
+        nodes. Returns the saved message row id (the caller's watermark
+        anchor) or None on failure."""
+        try:
+            await stream_store.init_turn(session_id, keep_subscribers=True)
+        except Exception as exc:
+            logger.warning("workflow_init_turn_failed error={}", exc)
+            return None
+        try:
+            session_uuid = UUID(session_id)
+        except ValueError:
+            return None
+        try:
+            db_factory = resolve_db_factory(self.lead.db_factory)
+            async with db_factory() as db:
+                row = await save_message(db, session_uuid, HumanMessage(content=prompt))
+                await db.commit()
+        except Exception as exc:
+            logger.warning("workflow_save_turn_message_failed error={}", exc)
+            return None
+
+        self._has_active_turn = True
+        await stream_store.push_event(
+            session_id,
+            StreamEnvelope.from_parts(
+                "queued_turn_start",
+                {
+                    "type": "queued_turn_start",
+                    "agent": self.lead.name,
+                    "message_ids": [str(row.id)],
+                    "messages": [{"id": str(row.id), "content": prompt}],
+                },
+            ),
+        )
+        await self.mailbox.send(
+            to=self.lead.name,
+            message=Message(
+                from_agent="user",
+                to_agent=self.lead.name,
+                content=f"[user]: {prompt}",
+            ),
+        )
+        return str(row.id)
+
+    def interrupt_turn(self) -> list[str]:
+        """Cancel every working member — the F9 interrupt effect without a
+        user message. Used by the workflow runner's per-node timeout."""
+        cancelled = [m for m in self.all_members if m.state == "working"]
+        for member in cancelled:
+            member._cancel_event.set()
+        return [m.name for m in cancelled]
+
     # ------------------------------------------------------------------
     # User message entry point
     # ------------------------------------------------------------------
@@ -773,6 +872,15 @@ class AgentTeam:
             cancelled = [m for m in self.all_members if m.state == "working"]
             for member in cancelled:
                 member._cancel_event.set()
+
+            # Stop button also stops an in-flight workflow (plan §6.1):
+            # the runner marks the pending node failed instead of advancing.
+            try:
+                from app.workflow.runner import runner as workflow_runner
+
+                workflow_runner.notify_interrupt(session_id)
+            except Exception as exc:  # noqa: BLE001 — never break interrupts
+                logger.debug("workflow_interrupt_notify_failed error={}", exc)
 
             logger.info(
                 "team_interrupted cancelled={}",
@@ -1388,6 +1496,12 @@ class AgentTeam:
         if bp is None:
             idle = sorted(self.blueprints.keys())
             raise KeyError(f"Unknown blueprint '{blueprint}'. Available: {idle}.")
+        if not self.blueprint_allowed_this_turn(blueprint):
+            allowed = sorted(self.turn_allowed_blueprints or [])
+            raise KeyError(
+                f"'{blueprint}' is not on this workflow node's roster "
+                f"(allowed this turn: {allowed or 'lead only'})."
+            )
 
         # Reconcile counter for this lead session if not yet done.  This
         # ensures auto-assigned ``#N`` values are restart-safe and don't
@@ -1674,6 +1788,14 @@ class AgentTeam:
     # Recipient resolution (for team_message)
     # ------------------------------------------------------------------
 
+    def blueprint_allowed_this_turn(self, blueprint: str) -> bool:
+        """Whether *blueprint* may be spawned/addressed during the current
+        turn — unrestricted unless a workflow agent node set an allowlist."""
+        return (
+            self.turn_allowed_blueprints is None
+            or blueprint in self.turn_allowed_blueprints
+        )
+
     def resolve_recipient(self, name: str) -> str | None:
         """Resolve a recipient name to a live mailbox key.
 
@@ -1683,12 +1805,19 @@ class AgentTeam:
           ambiguity (caller should produce a tailored error) when zero or
           multiple live instances exist.
         - Lead name → returned as-is.
+        - During a workflow agent node, recipients outside the node's
+          allowlist resolve to ``None`` (plan v5 §6.4).
 
         Returns the live name to address, or ``None`` if there is no
         unambiguous match.
         """
         if name == self.lead.name:
             return name
+        if self.turn_allowed_blueprints is not None:
+            parsed = parse_instance_handle(name)
+            blueprint = parsed[0] if parsed is not None else name
+            if not self.blueprint_allowed_this_turn(blueprint):
+                return None
         if name in self.members:
             return name
         # Bare blueprint name: collect all live ``blueprint#N`` instances.

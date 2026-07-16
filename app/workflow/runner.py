@@ -61,14 +61,29 @@ class ExecutionState:
     status: str = "running"  # running | waiting_gate | completed | failed | stopped
     error: str | None = None
     pending_node: str | None = None
+    pending_node_run_id: UUID | None = None
+    pending_iteration: int | None = None
     watermark: str | None = None
     captured_artifact: dict | None = None
+    #: Output the boundary-capture hook computed for the pending agent node;
+    #: consumed by the drive task when advance resumes it.
+    captured_output: dict | None = None
+    captured_failed: bool = False
     interrupted: bool = False
     stop_requested: bool = False
     #: The asyncio task driving inline execution; cancelled by stop.
     drive_task: asyncio.Task | None = None
     #: Current cancellable awaitable owner (gate future / tool task).
     current_node_id: str | None = None
+    #: True while the drive task awaits a turn boundary (agent node turn in
+    #: flight). advance only resumes when this is set — a user turn that ran
+    #: mid-workflow must not spuriously wake the walk.
+    awaiting_boundary: bool = False
+    resume_event: asyncio.Event = field(default_factory=asyncio.Event)
+    #: How many synthetic turns this execution injected — terminal DoneEvent
+    #: is only owed when > 0 (headless-only runs never opened a turn).
+    injected_turns: int = 0
+    listener_task: asyncio.Task | None = None
 
     def template_scope(self, extra: dict | None = None) -> dict:
         import os
@@ -170,17 +185,19 @@ class WorkflowRunner:
                         error=f"'{node.kind}' nodes arrive in Phase 2.",
                     )
                     return
-                if node.kind not in HEADLESS_KINDS:
+                if node.kind in HEADLESS_KINDS:
+                    await self._run_headless_node(state, node)
+                elif node.kind == "agent":
+                    await self._run_agent_node(state, node)
+                elif node.kind in ("gate", "input"):
+                    await self._run_question_node(state, node)
+                elif node.kind == "foreach":
+                    await self._run_foreach_node(state, node)
+                else:  # pragma: no cover — kinds are closed by the schema
                     await self._fail(
-                        state,
-                        node_id=node_id,
-                        error=(
-                            f"'{node.kind}' nodes need the team runner (M4) — "
-                            f"not available yet."
-                        ),
+                        state, node_id=node_id, error=f"unknown kind '{node.kind}'."
                     )
                     return
-                await self._run_headless_node(state, node)
                 if state.graph.node_status[node.id] == "failed":
                     return
         finally:
@@ -230,6 +247,444 @@ class WorkflowRunner:
         await self._persist_node_end(node_run_id, status="succeeded", output=output)
         state.current_node_id = None
 
+    # -- M4: team + human nodes ---------------------------------------------------
+
+    async def _run_agent_node(self, state: ExecutionState, node) -> None:
+        state.current_node_id = node.id
+        state.graph.mark_running(node.id)
+        await self._emit_progress(state, node_id=node.id)
+        try:
+            prompt = render(node.prompt, state.template_scope())
+        except TemplateError as exc:
+            node_run_id = await self._persist_node_start(state, node.id)
+            await self._persist_node_end(node_run_id, status="failed", error=str(exc))
+            await self._fail(state, node_id=node.id, error=str(exc))
+            return
+        output = await self._run_agent_turn(
+            state, node, node_id=node.id, prompt=str(prompt), iteration=None
+        )
+        if output is None:
+            return  # _run_agent_turn already failed the execution
+        state.node_outputs[node.id] = output
+        state.graph.mark_succeeded(node.id)
+        state.current_node_id = None
+
+    async def _run_agent_turn(
+        self,
+        state: ExecutionState,
+        node_like,
+        *,
+        node_id: str,
+        prompt: str,
+        iteration: int | None,
+    ) -> dict | None:
+        """One injected lead turn for an agent node (plan §6.4). Returns the
+        captured output, or None after failing the execution."""
+        team = await self._ensure_team(state)
+        if team is None:
+            error = "no team could be started for this session."
+            node_run_id = await self._persist_node_start(state, node_id, iteration)
+            await self._persist_node_end(node_run_id, status="failed", error=error)
+            await self._fail(state, node_id=node_id, error=error)
+            return None
+
+        # 1. Pre-spawn roster blueprints with no live instance (F5/F6).
+        subagents = list(getattr(node_like, "subagents", None) or [])
+        try:
+            for blueprint in subagents:
+                if not team.live_instances_for_blueprint(blueprint):
+                    await team.spawn(blueprint)
+        except KeyError as exc:
+            error = f"roster spawn failed: {exc}"
+            node_run_id = await self._persist_node_start(state, node_id, iteration)
+            await self._persist_node_end(node_run_id, status="failed", error=error)
+            await self._fail(state, node_id=node_id, error=error)
+            return None
+
+        # 2. Per-turn allowlist — cleared at capture.
+        team.turn_allowed_blueprints = set(subagents)
+
+        # 3. Watermark + in-process handoff listener (F3/F4).
+        state.watermark = await self._last_message_created_at(state.session_id)
+        state.captured_artifact = None
+        state.captured_output = None
+        state.captured_failed = False
+        state.listener_task = asyncio.create_task(self._listen_for_handoff(state))
+
+        # 4. Inject the turn (F2 recipe via the team method).
+        node_run_id = await self._persist_node_start(state, node_id, iteration)
+        state.pending_node = node_id
+        state.pending_node_run_id = node_run_id
+        state.pending_iteration = iteration
+        state.awaiting_boundary = True
+        state.resume_event = asyncio.Event()
+        injected = await team.inject_synthetic_turn(state.session_id, prompt)
+        if injected is None:
+            state.pending_node = None
+            state.awaiting_boundary = False
+            error = "turn injection failed."
+            await self._persist_node_end(node_run_id, status="failed", error=error)
+            await self._fail(state, node_id=node_id, error=error)
+            return None
+        state.injected_turns += 1
+
+        # 5. Wait for the boundary (capture_cb stores the output, advance_cb
+        #    resumes us). Per-node timeout interrupts the team (F9 path).
+        timeout = getattr(node_like, "timeout_s", None) or 900
+        try:
+            await asyncio.wait_for(state.resume_event.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            team.interrupt_turn()
+            error = f"agent node '{node_id}' timed out after {timeout}s."
+            await self._persist_node_end(node_run_id, status="failed", error=error)
+            await self._fail(state, node_id=node_id, error=error)
+            return None
+        finally:
+            state.awaiting_boundary = False
+            if state.listener_task is not None:
+                state.listener_task.cancel()
+                state.listener_task = None
+
+        if state.stop_requested or state.interrupted or state.captured_failed:
+            error = "interrupted."
+            await self._persist_node_end(node_run_id, status="failed", error=error)
+            if self.active.get(state.session_id) is state:
+                await self._finish(state, status="stopped")
+            return None
+        output = state.captured_output or {"text": ""}
+        await self._persist_node_end(node_run_id, status="succeeded", output=output)
+        return output
+
+    async def _run_question_node(self, state: ExecutionState, node) -> None:
+        """gate + input (plan §6.4): a literal ask_user round trip, no turn."""
+        from app.agent.ask_user import (
+            AskUserService,
+            reset_ask_user_service,
+            set_ask_user_service,
+        )
+        from app.agent.tools.builtin.ask_user import QuestionSpec
+
+        state.current_node_id = node.id
+        state.graph.mark_running(node.id)
+        node_run_id = await self._persist_node_start(state, node.id)
+        try:
+            scope = state.template_scope()
+            if node.kind == "gate":
+                title = str(render(node.title, scope))
+                body = str(render(node.body, scope)) if node.body else ""
+                question = f"{title}\n\n{body}".strip()
+                options = list(node.choices or [])
+            else:  # input
+                question = str(render(node.question, scope))
+                options = []
+        except TemplateError as exc:
+            await self._persist_node_end(node_run_id, status="failed", error=str(exc))
+            await self._fail(state, node_id=node.id, error=str(exc))
+            return
+
+        state.status = "waiting_gate"
+        await self._emit_progress(state, node_id=node.id)
+        svc = AskUserService(state.session_id)
+        token = set_ask_user_service(svc)
+        try:
+            answers = await svc.ask([QuestionSpec(question=question, options=options)])
+        finally:
+            reset_ask_user_service(token, state.session_id)
+        state.status = "running"
+
+        answer = answers[0] if answers else ""
+        if node.kind == "gate":
+            output = {"choice": answer}
+            state.node_outputs[node.id] = output
+            state.graph.mark_succeeded(node.id, answer=answer)
+        else:
+            output = {"text": answer}
+            state.node_outputs[node.id] = output
+            state.graph.mark_succeeded(node.id)
+        await self._persist_node_end(node_run_id, status="succeeded", output=output)
+        await self._emit_progress(state, node_id=node.id)
+        state.current_node_id = None
+
+    async def _run_foreach_node(self, state: ExecutionState, node) -> None:
+        """Sequential per-item body run (plan §6.4) — one node-run row per
+        iteration; a failing iteration fails the whole node."""
+        state.current_node_id = node.id
+        state.graph.mark_running(node.id)
+        await self._emit_progress(state, node_id=node.id)
+        try:
+            items = render(node.items, state.template_scope())
+        except TemplateError as exc:
+            node_run_id = await self._persist_node_start(state, node.id)
+            await self._persist_node_end(node_run_id, status="failed", error=str(exc))
+            await self._fail(state, node_id=node.id, error=str(exc))
+            return
+        if isinstance(items, str):
+            try:
+                items = json.loads(items)
+            except json.JSONDecodeError:
+                items = None
+        if not isinstance(items, list):
+            error = f"foreach '{node.id}': items must render to a JSON array."
+            node_run_id = await self._persist_node_start(state, node.id)
+            await self._persist_node_end(node_run_id, status="failed", error=error)
+            await self._fail(state, node_id=node.id, error=error)
+            return
+
+        body = node.foreach_body
+        outputs: list[dict] = []
+        for index, item in enumerate(items):
+            if state.stop_requested or state.interrupted:
+                await self._finish(state, status="stopped")
+                return
+            item_scope = state.template_scope({"item": item, "index": index})
+            try:
+                if body.kind == "tool":
+                    node_run_id = await self._persist_node_start(
+                        state, node.id, iteration=index
+                    )
+                    output, _ = await asyncio.wait_for(
+                        run_tool_node(
+                            body, item_scope, workspace=state.scope_workspace
+                        ),
+                        timeout=body.timeout_s or 900,
+                    )
+                    await self._persist_node_end(
+                        node_run_id, status="succeeded", output=output
+                    )
+                elif body.kind == "transform":
+                    node_run_id = await self._persist_node_start(
+                        state, node.id, iteration=index
+                    )
+                    output, _ = run_transform_node(body, item_scope)
+                    await self._persist_node_end(
+                        node_run_id, status="succeeded", output=output
+                    )
+                elif body.kind == "notify":
+                    node_run_id = await self._persist_node_start(
+                        state, node.id, iteration=index
+                    )
+                    output, _ = await run_notify_node(
+                        body,
+                        item_scope,
+                        session_id=state.session_id,
+                        workflow_name=state.definition.name,
+                    )
+                    await self._persist_node_end(
+                        node_run_id, status="succeeded", output=output
+                    )
+                elif body.kind == "agent":
+                    prompt = render(body.prompt, item_scope)
+                    result = await self._run_agent_turn(
+                        state,
+                        body,
+                        node_id=node.id,
+                        prompt=str(prompt),
+                        iteration=index,
+                    )
+                    if result is None:
+                        return  # execution already failed/stopped
+                    output = result
+                else:  # pragma: no cover — schema restricts body kinds
+                    raise WorkflowNodeError(f"bad body kind '{body.kind}'")
+            except (WorkflowNodeError, TemplateError, asyncio.TimeoutError) as exc:
+                error = (
+                    f"iteration {index} failed: {exc}"
+                    if not isinstance(exc, asyncio.TimeoutError)
+                    else f"iteration {index} timed out."
+                )
+                node_run_id = await self._persist_node_start(
+                    state, node.id, iteration=index
+                )
+                await self._persist_node_end(node_run_id, status="failed", error=error)
+                await self._fail(state, node_id=node.id, error=error)
+                return
+            outputs.append(output)
+
+        result_output = {"items": outputs, "count": len(outputs)}
+        state.node_outputs[node.id] = result_output
+        state.graph.mark_succeeded(node.id)
+        await self._emit_progress(state, node_id=node.id)
+        state.current_node_id = None
+
+    # -- turn-boundary hooks (registered via team.set_workflow_hooks) -----------
+
+    async def on_turn_boundary_capture(self, session_id: str) -> None:
+        """Hook ① — top of the barrier: capture the pending agent node's
+        output before queued user messages can run (plan §6.1)."""
+        state = self.active.get(session_id)
+        if state is None or state.pending_node is None:
+            return
+        team = self._find_team(session_id)
+        if team is not None:
+            team.turn_allowed_blueprints = None
+        if state.listener_task is not None:
+            state.listener_task.cancel()
+            state.listener_task = None
+        if state.interrupted:
+            state.captured_failed = True
+        elif state.captured_artifact is not None:
+            state.captured_output = state.captured_artifact
+        else:
+            text = await self._last_assistant_text_after(session_id, state.watermark)
+            state.captured_output = {"text": text or ""}
+        state.pending_node = None
+
+    async def on_turn_boundary_advance(self, session_id: str) -> bool:
+        """Hook ② — after the queued branch declines: resume the walk. True
+        = this boundary is consumed by the workflow."""
+        state = self.active.get(session_id)
+        if state is None:
+            return False
+        if not state.awaiting_boundary:
+            # The workflow wasn't waiting on this boundary (a user turn ran
+            # mid-workflow, or the walk is inside inline nodes/a gate) —
+            # let the normal chain emit its DoneEvent.
+            return False
+        team = self._find_team(session_id)
+        if team is not None:
+            # Hold the boundary so a user message arriving in the gap
+            # queues instead of colliding with the imminent next node.
+            team.set_inline_busy(True)
+        state.resume_event.set()
+        return True
+
+    # -- team + message helpers ---------------------------------------------------
+
+    async def _ensure_team(self, state: ExecutionState):
+        """Find (or boot) the live team for this session — forge sessions
+        via the session team map, coding/aim via the workspace-keyed map
+        with the same wiring the chat route uses."""
+        from app.services import team_manager
+
+        team = team_manager.find_team_for_session(state.session_id)
+        if team is not None:
+            return team
+        scope = state.definition.scope
+        try:
+            if scope == "forge":
+                return await team_manager.get_or_start_team_for_session(
+                    state.session_id
+                )
+            if not state.scope_workspace:
+                return None
+            extra_paths: list[str] = []
+            read_only: list[str] = []
+            if scope == "aim":
+                extra_paths, read_only = await self._aim_session_paths(state)
+            return await team_manager.get_or_start_coding_team(
+                state.scope_workspace,
+                state.session_id,
+                extra_workspace_paths=extra_paths or None,
+                mode=scope,
+                read_only_paths=read_only or None,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("workflow_team_boot_failed error={}", exc)
+            return None
+
+    async def _aim_session_paths(
+        self, state: ExecutionState
+    ) -> tuple[list[str], list[str]]:
+        """extra_workspace_paths + read_only_paths for an aim session — the
+        same resolution the chat dispatch does (source read-only, source+kb
+        ride along)."""
+        from app.core import db as db_module
+        from app.models.chat import ChatSession
+        from app.services.coding_project_service import get_project
+        from app.services.aim.project import (
+            resolve_kb_workspace_path,
+            resolve_source_workspace_paths,
+        )
+
+        try:
+            async with db_module.async_session_factory() as db:
+                session = await db.get(ChatSession, UUID(state.session_id))
+                if session is None or session.project_id is None:
+                    return [], []
+                project = await get_project(db, session.project_id)
+                if project is None:
+                    return [], []
+                sources = await resolve_source_workspace_paths(db, project)
+                kb = await resolve_kb_workspace_path(db, project)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("workflow_aim_paths_failed error={}", exc)
+            return [], []
+        extra = [p for p in [*sources, kb] if p]
+        return extra, list(sources)
+
+    async def _last_message_created_at(self, session_id: str) -> str | None:
+        from sqlmodel import col, select
+
+        from app.core import db as db_module
+        from app.models.chat import SessionMessage
+
+        try:
+            async with db_module.async_session_factory() as db:
+                row = (
+                    await db.exec(
+                        select(SessionMessage)
+                        .where(col(SessionMessage.session_id) == UUID(session_id))
+                        .order_by(col(SessionMessage.created_at).desc())
+                        .limit(1)
+                    )
+                ).first()
+                return row.created_at.isoformat() if row is not None else None
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("workflow_watermark_failed error={}", exc)
+            return None
+
+    async def _last_assistant_text_after(
+        self, session_id: str, watermark: str | None
+    ) -> str | None:
+        from datetime import datetime as dt
+
+        from sqlmodel import col, select
+
+        from app.core import db as db_module
+        from app.models.chat import SessionMessage
+
+        try:
+            async with db_module.async_session_factory() as db:
+                query = (
+                    select(SessionMessage)
+                    .where(col(SessionMessage.session_id) == UUID(session_id))
+                    .where(col(SessionMessage.role) == "assistant")
+                    .order_by(col(SessionMessage.created_at).desc())
+                    .limit(20)
+                )
+                rows = (await db.exec(query)).all()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("workflow_capture_query_failed error={}", exc)
+            return None
+        boundary = dt.fromisoformat(watermark) if watermark else None
+        for row in rows:
+            if boundary is not None and row.created_at <= boundary:
+                continue
+            if row.content and row.content.strip():
+                return row.content
+        return None
+
+    async def _listen_for_handoff(self, state: ExecutionState) -> None:
+        """Best-effort structured-output capture (F4): watch the session's
+        SSE stream for handoff events while the agent turn runs."""
+        from app.services import memory_stream_store as stream_store
+
+        try:
+            async for event in stream_store.attach(state.session_id):
+                if event.get("event") != "handoff":
+                    continue
+                try:
+                    data = json.loads(event.get("data") or "{}")
+                except json.JSONDecodeError:
+                    continue
+                artifact = data.get("artifact")
+                if isinstance(artifact, dict):
+                    state.captured_artifact = artifact
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — optimization only
+            logger.debug("workflow_handoff_listener_stopped error={}", exc)
+
     # -- terminal transitions ---------------------------------------------------
     async def _complete(self, state: ExecutionState) -> None:
         outputs: dict[str, Any] = {}
@@ -249,6 +704,7 @@ class WorkflowRunner:
         await self._persist_execution_end(state, outputs=outputs)
         await self._emit_progress(state, node_id=None)
         self.active.pop(state.session_id, None)
+        await self._emit_done_if_owned(state)
 
     async def _fail(
         self, state: ExecutionState, *, node_id: str | None, error: str
@@ -260,6 +716,7 @@ class WorkflowRunner:
         await self._persist_execution_end(state, error=error)
         await self._emit_progress(state, node_id=node_id, error=error)
         self.active.pop(state.session_id, None)
+        await self._emit_done_if_owned(state)
 
     async def _finish(self, state: ExecutionState, *, status: str) -> None:
         if self.active.get(state.session_id) is not state:
@@ -271,6 +728,7 @@ class WorkflowRunner:
         team = self._find_team(state.session_id)
         if team is not None:
             team.set_inline_busy(False)
+        await self._emit_done_if_owned(state)
 
     # -- side channels ------------------------------------------------------------
     @staticmethod
@@ -278,6 +736,24 @@ class WorkflowRunner:
         from app.services import team_manager
 
         return team_manager.find_team_for_session(session_id)
+
+    async def _emit_done_if_owned(self, state: ExecutionState) -> None:
+        """Close the SSE turn at workflow end. Owed only when this execution
+        injected turns — the boundary DoneEvents of those turns were
+        consumed by advance, so the stream is still open."""
+        if state.injected_turns <= 0:
+            return
+        try:
+            from app.agent.schemas.events import DoneEvent
+            from app.services import memory_stream_store as stream_store
+            from app.services.stream_envelope import StreamEnvelope
+
+            await stream_store.push_event(
+                state.session_id, StreamEnvelope.from_event(DoneEvent())
+            )
+            await stream_store.mark_done(state.session_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("workflow_done_emit_failed error={}", exc)
 
     async def _emit_progress(
         self,
