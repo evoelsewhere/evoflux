@@ -91,6 +91,19 @@ Wizard vì thế chỉ còn 2 bước:
 
 Pattern sai ở đâu, message 422 nói đúng chỗ đó ("Missing 'aim_source_base/'…") — wizard hiện verbatim. Nhập path thủ công từng repo (flow 4 bước cũ) giữ làm **Advanced fallback** cho layout không theo convention.
 
+### 3.5 Knowledge Base — scan & contribute hoạt động thế nào
+
+Hai loại knowledge, hai đường đi (không lẫn):
+
+- **Deterministic (code graph)** — mỗi máy tự scan cục bộ: reindex source repos (tree-sitter / structural parser cho legacy) → `code_nodes`/`code_edges`/FTS. Là index rebuild được, KHÔNG commit vào KB; member mới `git pull` xong tự reindex trên máy mình.
+- **Human-readable (markdown trong repo `aim_<project_name>_document`)** — do agent + người VIẾT qua pipeline, không parse ra được:
+  1. `assess` (aim-appraiser đọc graph) → sinh `modules/<module>/<unit>.md` stub + frontmatter (phase=inventory, wave đề xuất) + `inventory/units.md`;
+  2. `understand-unit` per unit theo thứ tự bottom-up (aim-archaeologist đọc source unit + doc của dependency đã viết) → doc unit + `business-rules/BR-<MOD>-####.md` (candidate) + set phase → understood.
+
+Contribute multi-member = **git thuần trên repo document**: claim unit bằng frontmatter `assignee`, BR ID prefix theo module (chống trùng số), chia việc theo module/wave (wave 0 = shared leaves trước), **SME confirm rule = PR review** → merge → member khác pull + reindex.
+
+Hệ quả UI: màn **Knowledge Base là cửa sổ ĐỌC** (tree + markdown viewer, read-only) + đúng một nút **Reindex** (chạy lại index cục bộ sau khi pull — watcher auto-reindex sau pull là gap đã ghi nhận, chưa làm). Mọi hành động SINH knowledge nằm ở **Pipelines** — một việc một nơi (R9).
+
 ## 4. Journeys
 
 **J1 — Tạo project mới (operator)**: chuẩn bị folder theo convention (§3.4) → switch AIM → `+ New / Join` → chọn folder gốc → detect hiện review (create) → chọn rulebook → Create → điều hướng `/aim/<id>/overview`.
