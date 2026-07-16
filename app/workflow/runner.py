@@ -383,6 +383,10 @@ class WorkflowRunner:
             return
 
         state.status = "waiting_gate"
+        # Mirror the pause into the DB row: REST readers (the AIM Pipelines
+        # table polls GET /workflows/executions) only see the persisted
+        # status, and a gate can stay open for hours.
+        await self._persist_execution_status(state)
         await self._emit_progress(state, node_id=node.id)
         svc = AskUserService(state.session_id)
         token = set_ask_user_service(svc)
@@ -391,6 +395,7 @@ class WorkflowRunner:
         finally:
             reset_ask_user_service(token, state.session_id)
         state.status = "running"
+        await self._persist_execution_status(state)
 
         answer = answers[0] if answers else ""
         if node.kind == "gate":
@@ -843,6 +848,22 @@ class WorkflowRunner:
                     )
                 )
                 await db.commit()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("workflow_execution_persist_failed error={}", exc)
+
+    async def _persist_execution_status(self, state: ExecutionState) -> None:
+        """Best-effort mid-run status mirror (running ⇄ waiting_gate) so REST
+        readers see a paused gate without the in-memory runner state."""
+        from app.core import db as db_module
+        from app.models.workflow import WorkflowExecution
+
+        try:
+            async with db_module.async_session_factory() as db:
+                row = await db.get(WorkflowExecution, state.execution_id)
+                if row is not None:
+                    row.status = state.status
+                    db.add(row)
+                    await db.commit()
         except Exception as exc:  # noqa: BLE001
             logger.warning("workflow_execution_persist_failed error={}", exc)
 
