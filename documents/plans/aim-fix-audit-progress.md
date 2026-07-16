@@ -63,12 +63,40 @@ streaming agent output, sidebar running dots, collapse rail, resize handle,
 deep-link no longer redirects. New endpoint returns correct rows (tested +
 curl). tsc clean; pytest workflow+aim routes green (81).
 
+### R2-P4 — Gate visibility (found live) ✅ c90ae45
+
+Runner only flipped waiting_gate in memory → REST rows said 'running' for
+the whole pause AND the monitor's gate box was keyed on that status, so a
+pending gate was unreachable. Fixed both sides: `_persist_execution_status`
+mirrors running ⇄ waiting_gate into the DB row (asserted in
+test_gate_round_trip_via_ask_user_service); GateSection renders whenever
+the run is live and materializes from the pending-questions poll.
+Verified live twice (assess run #1 approve→completed; run #2 showed row
+badge '⏸ needs input' + Answer → approve → pass).
+
+### R2-P5 — Cross-review findings ✅ 0d0cd11
+
+Independent review of 65a3adc found the interrupted heuristic broken for
+non-streaming pipelines (cutover-check = tool/gate only; convert-wave
+gates before agents): session streaming flag never turns on → gate
+mislabeled 'interrupted' after 20s, Answer/Stop hidden. Fix:
+`WorkflowExecutionOut.live` (true while runner.active drives it) is the
+liveness source; FE drops the age heuristic. Also: deep-linked runs older
+than the 50-row list now open Nodes/Discussion (targets built from run
+detail), monitor lookup stops after ~30s with a clear message, executions
+join keeps previous data across key changes.
+
 **Known gaps (deliberate, log for next round):**
 - AIM sidebar has no mobile slide-in drawer (desktop-first surface).
 - No command-palette/search entry in AIM sidebar.
 - No project context menu (rename/delete/leave) on AIM project rows.
 - KB browser is a flat file list, not a tree (fine while KB layout is shallow).
 - Gate detection is poll-based (5s) — Run Monitor SSE remains AIM-5.
+- GateSection answers only the first item of a question batch (fine for
+  workflow gate nodes, which ask exactly one).
+- List endpoint returns `outputs` (≤32KB/row) the table doesn't use; a
+  workflow literally named "executions" can't be fetched by name (shadowed
+  by the literal route) — both harmless at current scale, noted.
 
 ## Status round 1: DONE (P1–P5 below)
 
