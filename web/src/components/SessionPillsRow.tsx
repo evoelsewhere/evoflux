@@ -281,6 +281,8 @@ export interface SessionPillsRowProps {
   /** Agent names for the info popover. */
   agentNames?: string[]
   workspace?: string | null
+  /** Roster mode for the workspace team ('coding' | 'aim'). */
+  mode?: 'coding' | 'aim' | null
 }
 
 export function SessionPillsRow({
@@ -291,6 +293,7 @@ export function SessionPillsRow({
   onSessionModelSettingsChange,
   agentNames,
   workspace,
+  mode,
 }: SessionPillsRowProps) {
   const registry = useRegistryQuery()
   const effectiveModel = sessionModel ?? defaultModel ?? ''
@@ -342,6 +345,7 @@ export function SessionPillsRow({
         agentNames={agentNames}
         workspace={workspace}
         sessionModel={sessionModel ?? null}
+        mode={mode}
       />
     </div>
   )

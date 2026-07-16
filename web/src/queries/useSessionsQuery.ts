@@ -8,11 +8,15 @@ const PAGE_SIZE = 20
 const CODING_WORKSPACE_PAGE_SIZE = 5
 const CODING_WORKSPACE_SMOOTHING_MS = 5000
 
-export function useTeamSessionsQuery() {
+/** Paged session list, server-filtered by mode. Pass the surface's own
+ * mode ('forge' for the forge sidebar, 'coding' for the coding sidebar) —
+ * without the filter, per-run aim sessions flood the forge list and
+ * pagination pages fill with rows the caller immediately drops. */
+export function useTeamSessionsQuery(mode: 'forge' | 'coding' | 'aim' = 'forge') {
   return useInfiniteQuery({
-    queryKey: queryKeys.team.sessions.infinite(),
+    queryKey: queryKeys.team.sessions.infinite(mode),
     queryFn: ({ pageParam }: { pageParam: string | null }) =>
-      listTeamSessions(pageParam, PAGE_SIZE),
+      listTeamSessions(pageParam, PAGE_SIZE, { mode }),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage: SessionPageResponse) =>
       lastPage.has_more ? lastPage.next_cursor : undefined,

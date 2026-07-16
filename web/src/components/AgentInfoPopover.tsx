@@ -199,16 +199,19 @@ export interface AgentInfoPopoverProps {
   agentNames?: string[]
   workspace?: string | null
   sessionModel?: string | null
+  /** Roster for the workspace team — 'aim' sessions have their own. */
+  mode?: 'coding' | 'aim' | null
 }
 
 export function AgentInfoPopover({
   agentNames = [],
   workspace = null,
+  mode = null,
 }: AgentInfoPopoverProps) {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const { data, isLoading, refetch } = useTeamAgentsQuery(workspace, open)
+  const { data, isLoading, refetch } = useTeamAgentsQuery(workspace, open, mode)
   const mcpServersQuery = useMcpServersQuery()
 
   useEffect(() => {

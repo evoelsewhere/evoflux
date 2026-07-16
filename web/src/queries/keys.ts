@@ -2,12 +2,19 @@ export const queryKeys = {
   health: () => ['health'] as const,
   diagnostics: () => ['diagnostics'] as const,
   agents: () => ['agents'] as const,
-  teamAgents: (workspace?: string | null) => workspace ? ['agents', 'team', workspace] as const : ['agents', 'team'] as const,
+  teamAgents: (workspace?: string | null, mode?: string | null) =>
+    workspace
+      ? (['agents', 'team', workspace, mode ?? 'coding'] as const)
+      : (['agents', 'team'] as const),
   team: {
     status: () => ['team', 'status'] as const,
     sessions: {
       all: () => ['team', 'sessions'] as const,
-      infinite: () => ['team', 'sessions', 'infinite'] as const,
+      // No-arg form is the invalidation prefix covering every mode variant.
+      infinite: (mode?: string | null) =>
+        mode
+          ? (['team', 'sessions', 'infinite', mode] as const)
+          : (['team', 'sessions', 'infinite'] as const),
       workspace: (workspace: string) => ['team', 'sessions', 'workspace', workspace] as const,
       project: (projectId: string) => ['team', 'sessions', 'project', projectId] as const,
       list: (offset: number, limit: number) =>

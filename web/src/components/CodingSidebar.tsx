@@ -30,13 +30,10 @@ import { usePlatform } from "@/hooks/use-platform";
 import { useResizableWidth } from "@/hooks/use-resizable-width";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import {
-  ArrowRightLeft,
   ChevronDown,
   ChevronRight,
-  Code2,
   Folder,
   FolderPlus,
-  Gauge,
   GitBranch,
   HelpCircle,
   CircleHelp,
@@ -48,6 +45,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { ModeSwitchTabs, ModeSwitchRail } from "@/components/ModeSwitchTabs";
 import { queryKeys } from "@/queries";
 import {
   useCodingWorkspaceSessionsQuery,
@@ -339,7 +337,7 @@ export function CodingSidebar({
   void onCollapse;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const sessions = useTeamSessionsQuery();
+  const sessions = useTeamSessionsQuery("coding");
   const deleteSession = useDeleteTeamSessionMutation();
   const updateSessionTitle = useUpdateTeamSessionTitleMutation();
   // One merged query for both Projects and standalone Workspaces — see
@@ -1070,21 +1068,7 @@ export function CodingSidebar({
             <div
               className={`flex w-full shrink-0 flex-col items-center gap-0.5 rounded-[10px] bg-(--bg-sidebar)/80 px-1 pb-2 shadow-sm backdrop-blur-xl ${isMacOverlay ? 'pt-10' : 'pt-2'}`}
             >
-              <button
-                type="button"
-                onClick={() => navigate({ to: '/' })}
-                title="Forge"
-                className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
-              >
-                <Gauge size={16} aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                title="Coding"
-                className="flex h-8 w-8 items-center justify-center rounded-md bg-(--bg-key) text-(--color-accent)"
-              >
-                <Code2 size={16} aria-hidden="true" />
-              </button>
+              <ModeSwitchRail active="coding" />
               {onCommandPalette && (
                 <button
                   type="button"
@@ -1144,32 +1128,7 @@ export function CodingSidebar({
         >
         {isMobile && (
           <div className="px-3 pt-3">
-            <div className="flex h-8 items-center rounded-md border border-(--color-border) bg-(--bg-page) p-0.5">
-              <button
-                type="button"
-                onClick={() => { navigate({ to: "/" }); onMobileClose?.(); }}
-                className="flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 text-xs font-medium text-(--color-text-muted) transition-colors hover:text-(--color-text)"
-              >
-                <Gauge size={12} aria-hidden="true" />
-                Forge
-              </button>
-              <button
-                type="button"
-                onClick={() => {}}
-                className="flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 text-xs font-medium bg-(--bg-key) text-(--color-text) shadow-sm transition-colors"
-              >
-                <Code2 size={12} aria-hidden="true" />
-                Coding
-              </button>
-              <button
-                type="button"
-                onClick={() => { navigate({ to: "/aim" }); onMobileClose?.(); }}
-                className="flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 text-xs font-medium text-(--color-text-muted) transition-colors hover:text-(--color-text)"
-              >
-                <ArrowRightLeft size={12} aria-hidden="true" />
-                AIM
-              </button>
-            </div>
+            <ModeSwitchTabs active="coding" onNavigate={onMobileClose} />
           </div>
         )}
 
@@ -1178,32 +1137,7 @@ export function CodingSidebar({
           <div
             className={`shrink-0 rounded-[10px] bg-(--bg-sidebar)/80 px-2 pb-2 shadow-sm backdrop-blur-xl ${isMacOverlay ? 'pt-10' : 'pt-2'}`}
           >
-            <div className="flex h-8 items-center rounded-md border border-(--color-border) bg-(--bg-page) p-0.5">
-              <button
-                type="button"
-                onClick={() => navigate({ to: "/" })}
-                className="flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 text-xs font-medium text-(--color-text-muted) transition-colors hover:text-(--color-text)"
-              >
-                <Gauge size={12} aria-hidden="true" />
-                Forge
-              </button>
-              <button
-                type="button"
-                onClick={() => {}}
-                className="flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 text-xs font-medium bg-(--bg-key) text-(--color-text) shadow-sm transition-colors"
-              >
-                <Code2 size={12} aria-hidden="true" />
-                Coding
-              </button>
-              <button
-                type="button"
-                onClick={() => navigate({ to: "/aim" })}
-                className="flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 text-xs font-medium text-(--color-text-muted) transition-colors hover:text-(--color-text)"
-              >
-                <ArrowRightLeft size={12} aria-hidden="true" />
-                AIM
-              </button>
-            </div>
+            <ModeSwitchTabs active="coding" />
           </div>
         )}
 

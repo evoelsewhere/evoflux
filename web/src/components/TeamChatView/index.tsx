@@ -284,7 +284,11 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
 
   // Watch workspace for external file changes (other editors, git, etc.)
   useWorkspaceFileWatcher(agentWorkspace)
-  const { data: teamAgentsData, isLoading: teamAgentsLoading } = useTeamAgentsQuery(agentWorkspace, hasCodingWorkspace)
+  const { data: teamAgentsData, isLoading: teamAgentsLoading } = useTeamAgentsQuery(
+    agentWorkspace,
+    hasCodingWorkspace,
+    mode === 'aim' ? 'aim' : 'coding',
+  )
   const leadAgent = teamAgentsData?.agents?.find((a) => a.is_lead)
   const leadCapabilities: AgentCapabilitiesType | undefined = leadAgent?.capabilities
   const selectedModel = sessionModel ?? ''
@@ -351,7 +355,8 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   // ── Init / reconnect ───────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (hasCodingWorkspace) loadTeamStatus(agentWorkspace)
+    if (hasCodingWorkspace)
+      loadTeamStatus(agentWorkspace, mode === 'aim' ? 'aim' : 'coding')
     if (isCodingSessionLoading) return
     if (!sessionId) return
     const store = useTeamStore.getState()
@@ -1596,6 +1601,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
             onSessionModelSettingsChange={setSessionModelSettings}
             agentNames={agentNames}
             agentWorkspace={agentWorkspace}
+            agentMode={mode === 'aim' ? 'aim' : 'coding'}
             todos={todos}
             todosOpen={false}
             onTodosOpenChange={() => {}}
@@ -1688,6 +1694,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
         open={agentCapabilitiesOpen}
         agentNames={agentNames}
         workspace={agentWorkspace}
+        mode={mode === 'aim' ? 'aim' : 'coding'}
         sessionModel={sessionModel}
         sessionThinkingLevel={sessionThinkingLevel}
         sessionFastMode={sessionFastMode}

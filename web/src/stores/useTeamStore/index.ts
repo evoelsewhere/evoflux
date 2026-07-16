@@ -732,9 +732,12 @@ export const useTeamStore = create<TeamStore>()(
       return abort
     },
 
-    loadTeamStatus: async (workspace?: string | null) => {
+    loadTeamStatus: async (
+      workspace?: string | null,
+      mode?: 'coding' | 'aim' | null,
+    ) => {
       try {
-        const status = await teamStatus(workspace)
+        const status = await teamStatus(workspace, mode)
         if (status) {
           const allAgents = [status.lead, ...status.members]
           const liveNames = allAgents.map((a) => a.name)

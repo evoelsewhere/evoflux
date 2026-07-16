@@ -161,6 +161,66 @@ def _validate_workspace_or_422(workspace: str) -> str:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+async def _project_paths_for_session(
+    db: DbSession, existing: ChatSession, workspace: str
+) -> tuple[list[str], list[str]]:
+    """(extra_workspace_paths, read_only_paths) for a project-bound session.
+
+    AIM projects additionally mark their base-source repos read-only —
+    see ``SandboxConfig.read_only_paths``.
+    """
+    extra_ws_paths: list[str] = []
+    read_only_paths: list[str] = []
+    if existing.project_id is not None:
+        from app.services.coding_project_service import (
+            get_project,
+            get_project_workspace_paths,
+        )
+
+        async with db.begin():
+            project = await get_project(db, existing.project_id)
+            all_paths = await get_project_workspace_paths(db, existing.project_id)
+        extra_ws_paths = [p for p in all_paths if p != workspace]
+        if project is not None and project.kind == "aim":
+            from app.services.aim.project import resolve_source_workspace_paths
+
+            async with db.begin():
+                read_only_paths = await resolve_source_workspace_paths(db, project)
+    return extra_ws_paths, read_only_paths
+
+
+async def _team_for_session_mode(db: DbSession, session_id: str):
+    """Resolve the live team that matches *session_id*'s persisted mode.
+
+    Never binds a default-mode (forge) team to a coding/aim session id:
+    ``_session_teams`` wins in ``find_team_for_session`` (the workflow
+    runner's lookup), so one stray forge boot would make every later
+    pipeline in that session run with the forge lead.
+    """
+    try:
+        session_uuid = UUID(session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Invalid session id.") from exc
+    async with db.begin():
+        existing = await db.get(ChatSession, session_uuid)
+    if existing and existing.mode in ("coding", "aim") and existing.workspace:
+        workspace = _validate_workspace_or_422(existing.workspace)
+        extra_ws_paths, read_only_paths = await _project_paths_for_session(
+            db, existing, workspace
+        )
+        try:
+            return await team_manager.get_or_start_coding_team(
+                workspace,
+                session_id,
+                extra_workspace_paths=extra_ws_paths or None,
+                mode=existing.mode,
+                read_only_paths=read_only_paths or None,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _require_team(await team_manager.get_or_start_team_for_session(session_id))
+
+
 def _changed_paths_payload(shift: BoundaryShift) -> dict:
     """Serialise the A/M/D path partition from a /undo or /redo restore.
 
@@ -237,27 +297,9 @@ async def team_chat(
         mode = existing.mode
         workspace = persisted_workspace
         assert session_id is not None
-        extra_ws_paths: list[str] = []
-        read_only_paths: list[str] = []
-        if existing.project_id is not None:
-            from app.services.coding_project_service import (
-                get_project,
-                get_project_workspace_paths,
-            )
-
-            async with db.begin():
-                project = await get_project(db, existing.project_id)
-                all_paths = await get_project_workspace_paths(
-                    db, existing.project_id
-                )
-            extra_ws_paths = [p for p in all_paths if p != workspace]
-            if project is not None and project.kind == "aim":
-                from app.services.aim.project import resolve_source_workspace_paths
-
-                async with db.begin():
-                    read_only_paths = await resolve_source_workspace_paths(
-                        db, project
-                    )
+        extra_ws_paths, read_only_paths = await _project_paths_for_session(
+            db, existing, workspace
+        )
         try:
             team_obj = await team_manager.get_or_start_coding_team(
                 workspace,
@@ -529,44 +571,13 @@ async def team_command(
     be continued (no assistant message, last message has unfinished tool
     calls, lead is already working, etc.).
     """
-    team_obj = await team_manager.get_or_start_team_for_session(body.session_id)
-    team_obj = _require_team(team_obj)
-
-    if body.command == "compact":
-        try:
-            session_uuid = UUID(body.session_id)
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail="Invalid session id.") from exc
-        async with db.begin():
-            existing = await db.get(ChatSession, session_uuid)
-        if existing and existing.mode in ("coding", "aim") and existing.workspace:
-            try:
-                team_obj = await team_manager.get_or_start_coding_team(
-                    _validate_workspace_or_422(existing.workspace),
-                    body.session_id,
-                    mode=existing.mode,
-                )
-            except ValueError as exc:
-                raise HTTPException(status_code=422, detail=str(exc)) from exc
+    # Resolve by the session's persisted mode — booting the default
+    # (forge) team here for a coding/aim session would poison the
+    # session→team lookup for the rest of the process (see
+    # _team_for_session_mode).
+    team_obj = await _team_for_session_mode(db, body.session_id)
 
     if body.command == "continue":
-        # Route to coding team for coding sessions (same as compact)
-        try:
-            session_uuid = UUID(body.session_id)
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail="Invalid session id.") from exc
-        async with db.begin():
-            existing = await db.get(ChatSession, session_uuid)
-        if existing and existing.mode in ("coding", "aim") and existing.workspace:
-            try:
-                team_obj = await team_manager.get_or_start_coding_team(
-                    _validate_workspace_or_422(existing.workspace),
-                    body.session_id,
-                    mode=existing.mode,
-                )
-            except ValueError as exc:
-                raise HTTPException(status_code=422, detail=str(exc)) from exc
-
         try:
             sid = await team_obj.handle_continue(body.session_id)
         except ContinuePreconditionError as exc:
@@ -649,6 +660,11 @@ async def team_stream(session_id: str, request: Request):
 @router.get("/agents")
 async def list_team_agents(
     workspace: str | None = Query(None, description="Coding workspace directory."),
+    mode: str = Query(
+        "coding",
+        description="Which roster the workspace team uses: 'coding' or 'aim'. "
+        "Ignored without a workspace (the default forge team has one roster).",
+    ),
 ) -> dict:
     """Return info on the lead, all live member instances, and spawnable blueprints.
 
@@ -675,9 +691,16 @@ async def list_team_agents(
         }
     """
     if workspace:
+        mode = normalize_mode(mode)
+        if mode not in ("coding", "aim"):
+            raise HTTPException(
+                status_code=422, detail="mode must be 'coding' or 'aim'."
+            )
         try:
+            # Keyed per mode so an aim project's target repo doesn't get
+            # (or reuse) a coding-roster team under the same probe key.
             team_obj = await team_manager.get_or_start_coding_team(
-                workspace, "__agents__"
+                workspace, f"__agents_{mode}__", mode=mode
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc

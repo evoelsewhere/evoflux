@@ -182,8 +182,13 @@ export function prependSession(
   queryClient: Pick<QueryClient, 'setQueryData'>,
   session: SessionResponse,
 ): void {
+  // Normalize: undefined/null/'normal' → 'forge'; 'coding'/'aim' stay as-is.
+  // Must write to the mode-keyed cache entry that each sidebar reads.
+  const raw = session.mode ?? 'forge'
+  const mode: 'forge' | 'coding' | 'aim' =
+    raw === 'coding' ? 'coding' : raw === 'aim' ? 'aim' : 'forge'
   queryClient.setQueryData<InfiniteData<SessionPageResponse>>(
-    queryKeys.team.sessions.infinite(),
+    queryKeys.team.sessions.infinite(mode),
     (old) => prependSessionToInfiniteData(old, session),
   )
 }

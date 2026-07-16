@@ -134,6 +134,8 @@ interface InputBarProps {
   onSessionModelSettingsChange?: SessionPillsRowProps['onSessionModelSettingsChange']
   agentNames?: string[]
   agentWorkspace?: string | null
+  /** Roster mode for the workspace team ('coding' | 'aim'). */
+  agentMode?: 'coding' | 'aim' | null
   /**
    * Inline task list shown above the textarea. ``todosOpen`` controls
    * visibility and ``onTodosOpenChange`` is fired by the tasks toggle
@@ -201,6 +203,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   onSessionModelSettingsChange,
   agentNames,
   agentWorkspace,
+  agentMode,
   todos,
   todosOpen = false,
   onTodosOpenChange,
@@ -1414,6 +1417,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                       onSessionModelSettingsChange={onSessionModelSettingsChange}
                       agentNames={agentNames}
                       workspace={agentWorkspace}
+                      mode={agentMode}
                     />
                   )}
                   {permissionMode && onPermissionModeChange && (
