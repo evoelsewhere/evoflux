@@ -95,6 +95,16 @@ lifted into a key/value strip + rich body, yaml/json in CodeBlock,
 images inline, per-file path+size bar. Verified live on the COBOL KB
 (50 files; modules/course2/ADDAMT.md chips + headings; aim.yaml block).
 
+### R2-P7 — Rulebook overview + tree + preview (user feedback) ✅ d008ba6
+
+Panel showed only id/version/parser over a flat list with raw-pre
+previews. Now: Overview default view renders the whole manifest legibly
+(identity card with source→target + description; rows for file
+extensions, unit_kinds, parser, extractors, overlays, runners, compare
+profile — all optional-tolerant), file list is the same KB folder tree,
+and previews are kind-aware (frontmatter strip + markdown / CodeBlock).
+Verified live on cobol-java21 (overview card + extractors yaml block).
+
 **Known gaps (deliberate, log for next round):**
 - AIM sidebar has no mobile slide-in drawer (desktop-first surface).
 - No command-palette/search entry in AIM sidebar.
