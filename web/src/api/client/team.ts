@@ -331,7 +331,7 @@ export async function getCodingWorkspaceStatus(workspace: string): Promise<Works
 export async function listTeamSessions(
   before?: string | null,
   limit = 20,
-  filters?: { mode?: 'forge' | 'coding'; workspace?: string | null; project_id?: string | null },
+  filters?: { mode?: 'forge' | 'coding' | 'aim'; workspace?: string | null; project_id?: string | null },
 ): Promise<SessionPageResponse> {
   const params = new URLSearchParams()
   if (before) params.set('before', before)
