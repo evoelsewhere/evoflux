@@ -126,6 +126,10 @@ class AimRun(SQLModel, table=True):
     # run predates AIM-4/the Workflows engine entirely when triggered by a
     # plain slash command.
     workflow_execution_id: str | None = Field(default=None, sa_column=Column(sa.String()))
+    # The AIM session that produced this run — NOT a DB foreign key (runs
+    # recorded by plain slash commands predate the workflow engine, and the
+    # chat_sessions table may live in a different DB shard eventually).
+    session_id: UUID | None = Field(default=None, sa_column=Column(sa.Uuid(), nullable=True))
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=Column(TZDateTime(), nullable=False)
     )

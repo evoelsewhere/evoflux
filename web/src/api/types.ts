@@ -389,6 +389,7 @@ export interface AimRunOut {
   case_set: string | null
   stats: Record<string, unknown>
   report_path: string | null
+  session_id: string | null
   created_at: string
   // Parsed report.json contents — only populated by GET .../aim/runs/{id}.
   report: Record<string, unknown> | null
@@ -427,6 +428,7 @@ export interface AimRunListItem {
   verdict: string
   case_set: string | null
   report_path: string | null
+  session_id: string | null
   created_at: string
 }
 

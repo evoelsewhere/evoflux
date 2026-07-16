@@ -26,7 +26,8 @@ from pydantic import Field
 from sqlmodel import select
 
 from app.agent.sandbox import get_sandbox
-from app.agent.tools.registry import Tool
+from app.agent.tools.registry import InjectedArg, Tool
+from app.agent.state import AgentState
 from app.core import db as db_module
 from app.models.aim import AimLink, AimRun, AimUnit
 from app.models.chat import CodingProject, CodingWorkspace
@@ -186,6 +187,7 @@ async def _aim_units(
     note: Annotated[
         str | None, Field(description="For action='add_link' — free text.")
     ] = None,
+    _state: Annotated[AgentState | None, InjectedArg()] = None,
 ) -> str:
     """Read and update AIM migration-project state.
 
@@ -313,6 +315,7 @@ async def _aim_units(
                     f"Cannot record a run: unit {unit} is not indexed yet "
                     "(run action='set_phase' first)."
                 )
+            raw_sid = _state.metadata.get("session_id") if _state else None
             run = AimRun(
                 unit_id=row.id,
                 kind=run_kind,
@@ -320,6 +323,7 @@ async def _aim_units(
                 case_set=case_set,
                 stats=stats or {},
                 report_path=report_path,
+                session_id=UUID(raw_sid) if raw_sid else None,
             )
             db.add(run)
             await db.commit()
@@ -424,6 +428,7 @@ async def _aim_compare(
             description="Override path to the rulebook directory containing canonicalizers/ (defaults to the bundled AIM rulebook named in aim.yaml)."
         ),
     ] = None,
+    _state: Annotated[AgentState | None, InjectedArg()] = None,
 ) -> str:
     """Deterministically compare a migration unit's actual output against its
     golden master, canonicalizing both sides first per the project's
@@ -477,6 +482,7 @@ async def _aim_compare(
             ).first()
             if row is not None:
                 run_verdict = report.verdict if report.verdict in ("pass", "fail") else "error"
+                raw_sid = _state.metadata.get("session_id") if _state else None
                 run = AimRun(
                     unit_id=row.id,
                     kind="compare",
@@ -484,6 +490,7 @@ async def _aim_compare(
                     case_set=case_set,
                     stats={"diff_count": report.diff_count},
                     report_path=str(json_path),
+                    session_id=UUID(raw_sid) if raw_sid else None,
                 )
                 db.add(run)
                 await db.commit()

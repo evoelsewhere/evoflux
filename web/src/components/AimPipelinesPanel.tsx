@@ -14,6 +14,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  AlertTriangle,
   CircleCheck,
   CirclePause,
   Loader2,
@@ -65,6 +66,8 @@ export function AimPipelinesPanel({ project }: { project: CodingProject }) {
   const [caseSet, setCaseSet] = useState<'smoke' | 'full'>('smoke')
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // §9.3: convert pipelines write to the target repo — confirm before run.
+  const [confirmOpen, setConfirmOpen] = useState(false)
   // The one chat surface in the whole mode: a finished run's transcript.
   const [discussion, setDiscussion] = useState<SessionResponse | null>(null)
   // A running run whose gate the user opened.
@@ -112,7 +115,9 @@ export function AimPipelinesPanel({ project }: { project: CodingProject }) {
     return {}
   }, [pipeline, unitInput, caseSet, waveInput])
 
-  const handleRun = useCallback(async () => {
+  const CONVERT_KEYS = new Set(['convert-unit', 'convert-wave'])
+
+  const doRun = useCallback(async () => {
     if (!selectedWorkflow) return
     setStarting(true)
     setError(null)
@@ -148,8 +153,17 @@ export function AimPipelinesPanel({ project }: { project: CodingProject }) {
     }
   }, [selectedWorkflow, targetWorkspace, project.id, buildInputs, queryClient])
 
+  // §9.3: convert pipelines write to the target repo — require explicit confirm.
+  const handleRun = useCallback(() => {
+    if (CONVERT_KEYS.has(pipelineKey)) {
+      setConfirmOpen(true)
+    } else {
+      void doRun()
+    }
+  }, [pipelineKey, doRun, CONVERT_KEYS])
+
   return (
-    <div className="flex h-full min-h-0">
+    <div className="relative flex h-full min-h-0">
       <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
         <div className="flex items-center gap-2 border-b border-(--color-border) px-4 py-3">
           <p className="text-sm font-medium text-(--color-text)">Pipelines</p>
@@ -231,7 +245,7 @@ export function AimPipelinesPanel({ project }: { project: CodingProject }) {
               </select>
             </label>
           )}
-          <Button size="sm" onClick={() => void handleRun()} disabled={!canRun}>
+          <Button size="sm" onClick={() => handleRun()} disabled={!canRun || starting}>
             {starting ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
             Run
           </Button>
@@ -303,6 +317,41 @@ export function AimPipelinesPanel({ project }: { project: CodingProject }) {
               mode="aim"
               workspace={discussion.workspace ?? null}
             />
+          </div>
+        </div>
+      )}
+
+      {/* §9.3 — Confirm dialog for convert pipelines (write to target repo) */}
+      {confirmOpen && (
+        <div
+          className="absolute inset-0 z-50 flex items-center justify-center bg-black/40"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="w-80 rounded-xl border border-(--color-border) bg-(--bg-card) p-5 shadow-xl">
+            <div className="mb-3 flex items-start gap-2">
+              <AlertTriangle size={16} className="mt-0.5 shrink-0 text-(--color-warning,orange)" />
+              <div>
+                <p className="text-sm font-medium text-(--color-text)">
+                  Write to target repo?
+                </p>
+                <p className="mt-1 text-xs text-(--color-text-muted)">
+                  <strong>{pipeline.label}</strong> will write converted output to the target
+                  source directory. This cannot be undone automatically.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button size="sm" variant="outline" onClick={() => setConfirmOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => { setConfirmOpen(false); void doRun() }}
+              >
+                Run anyway
+              </Button>
+            </div>
           </div>
         </div>
       )}
