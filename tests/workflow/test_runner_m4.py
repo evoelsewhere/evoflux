@@ -214,6 +214,20 @@ edges:
     )
 
     await _wait(lambda: state.status == "waiting_gate")
+
+    # The pause is mirrored to the DB row — REST readers (AIM Pipelines
+    # table) never see the in-memory state, only workflow_executions.
+    async def _db_status() -> str:
+        async with db_module.async_session_factory() as db:
+            execution = await db.get(WorkflowExecution, state.execution_id)
+            return execution.status if execution else ""
+
+    for _ in range(100):
+        if await _db_status() == "waiting_gate":
+            break
+        await asyncio.sleep(0.05)
+    assert await _db_status() == "waiting_gate"
+
     svc = get_service_for_session(session_id)
     assert svc is not None
     request_id = next(iter(svc._pending))

@@ -99,7 +99,12 @@ function displayStatus(
 ): RunDisplayStatus {
   if (!execution) return sessionRunning ? 'running' : 'done'
   if (execution.status === 'running' || execution.status === 'waiting_gate') {
-    if (!sessionRunning) return 'interrupted'
+    // The sessions list and the executions list poll independently (5s) — a
+    // just-started run can briefly show a live execution before its session
+    // reads running=true. Only call it interrupted once it's old enough
+    // that the polls must have converged.
+    const ageMs = Date.now() - new Date(execution.started_at).getTime()
+    if (!sessionRunning && ageMs > 20_000) return 'interrupted'
     return execution.status as RunDisplayStatus
   }
   return execution.status as RunDisplayStatus
@@ -579,8 +584,11 @@ export function RunMonitorPanel({
           </div>
         )}
 
-        {/* Inline gate — answer without a chat surface (spec §3.3). */}
-        {status === 'waiting_gate' && <GateSection sessionId={sessionId} />}
+        {/* Inline gate — answer without a chat surface (spec §3.3). Rendered
+            whenever the run is live: the execution row only says
+            waiting_gate while the runner holds it in memory, so the gate is
+            detected by polling pending questions, not by status alone. */}
+        {active && <GateSection sessionId={sessionId} />}
 
         {/* Node-by-node progress + debug output. */}
         {nodeRuns.length > 0 && (
@@ -766,56 +774,50 @@ function GateSection({ sessionId }: { sessionId: string }) {
     }
   }
 
+  // Quiet until a question is actually pending — the section polls in the
+  // background and materializes the amber box only when the run needs you.
+  if (!item) return null
+
   return (
     <div className="space-y-2 rounded-md border border-(--color-warning,orange)/40 bg-(--bg-key) px-3 py-2">
       <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-(--color-warning,orange)">
         <CirclePause size={11} />
         Waiting for you
       </p>
-      {pendingQ.isLoading ? (
-        <p className="text-xs text-(--color-text-subtle)">Loading the gate question…</p>
-      ) : !item ? (
-        <p className="text-xs text-(--color-text-subtle)">
-          The gate question hasn't surfaced yet — it appears here within a few seconds.
-        </p>
+      <p className="whitespace-pre-wrap text-xs leading-5 text-(--color-text)">
+        {item.question}
+      </p>
+      {item.options.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {item.options.map((option) => (
+            <Button
+              key={option}
+              size="sm"
+              variant="secondary"
+              disabled={replying}
+              onClick={() => void answer(option)}
+            >
+              {option}
+            </Button>
+          ))}
+        </div>
       ) : (
-        <>
-          <p className="whitespace-pre-wrap text-xs leading-5 text-(--color-text)">
-            {item.question}
-          </p>
-          {item.options.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {item.options.map((option) => (
-                <Button
-                  key={option}
-                  size="sm"
-                  variant="secondary"
-                  disabled={replying}
-                  onClick={() => void answer(option)}
-                >
-                  {option}
-                </Button>
-              ))}
-            </div>
-          ) : (
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={freeText}
-                onChange={(e) => setFreeText(e.target.value)}
-                placeholder="Your answer…"
-                className="flex-1 rounded-md border border-(--color-border) bg-(--bg-subtle) px-2 py-1.5 text-xs text-(--color-text)"
-              />
-              <Button
-                size="sm"
-                disabled={replying || !freeText.trim()}
-                onClick={() => void answer(freeText.trim())}
-              >
-                Send
-              </Button>
-            </div>
-          )}
-        </>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={freeText}
+            onChange={(e) => setFreeText(e.target.value)}
+            placeholder="Your answer…"
+            className="flex-1 rounded-md border border-(--color-border) bg-(--bg-subtle) px-2 py-1.5 text-xs text-(--color-text)"
+          />
+          <Button
+            size="sm"
+            disabled={replying || !freeText.trim()}
+            onClick={() => void answer(freeText.trim())}
+          >
+            Send
+          </Button>
+        </div>
       )}
     </div>
   )
