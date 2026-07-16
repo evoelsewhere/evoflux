@@ -16,7 +16,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Activity,
   AlertTriangle,
@@ -99,13 +99,11 @@ function displayStatus(
 ): RunDisplayStatus {
   if (!execution) return sessionRunning ? 'running' : 'done'
   if (execution.status === 'running' || execution.status === 'waiting_gate') {
-    // The sessions list and the executions list poll independently (5s) — a
-    // just-started run can briefly show a live execution before its session
-    // reads running=true. Only call it interrupted once it's old enough
-    // that the polls must have converged.
-    const ageMs = Date.now() - new Date(execution.started_at).getTime()
-    if (!sessionRunning && ageMs > 20_000) return 'interrupted'
-    return execution.status as RunDisplayStatus
+    // `live` comes straight from the in-memory runner — the one truthful
+    // liveness source. The session's streaming flag can't be used here:
+    // pipelines whose nodes never open a chat turn (e.g. cutover-check is
+    // all tool/gate nodes) never read as "running" on the sessions list.
+    return execution.live ? (execution.status as RunDisplayStatus) : 'interrupted'
   }
   return execution.status as RunDisplayStatus
 }
@@ -159,6 +157,9 @@ export function AimPipelinesPanel({ project }: { project: CodingProject }) {
     queryFn: () => listWorkflowExecutions(runIdsKey.split(',').filter(Boolean)),
     enabled: runIdsKey.length > 0,
     refetchInterval: 5_000,
+    // A new run changes the key — keep showing the old join instead of
+    // flashing every row to the no-execution fallback for one render.
+    placeholderData: keepPreviousData,
   })
   const executionBySession = useMemo(() => {
     // Newest-first from the API — keep the latest execution per session.
@@ -485,14 +486,21 @@ export function RunMonitorPanel({
   onDiscuss?: () => void
 }) {
   // The table's 5s join may not have caught a just-started run — resolve the
-  // session's newest execution ourselves until one shows up.
+  // session's newest execution ourselves until one shows up. Give up after
+  // ~30s: a session with no execution by then never ran a workflow (e.g. an
+  // aim_runs row written outside the pipeline path).
   const lookupQ = useQuery({
     queryKey: ['aim-monitor-execution', sessionId],
     queryFn: () => listWorkflowExecutions([sessionId]),
     enabled: !knownExecutionId && sessionId.length > 0,
-    refetchInterval: 2_500,
+    refetchInterval: (query) =>
+      query.state.data?.executions.length === 0 && query.state.dataUpdateCount >= 12
+        ? false
+        : 2_500,
   })
   const executionId = knownExecutionId ?? lookupQ.data?.executions[0]?.id
+  const lookupExhausted =
+    !knownExecutionId && !executionId && lookupQ.dataUpdateCount >= 12
 
   const detailQ = useQuery({
     queryKey: ['workflow-execution', executionId ?? ''],
@@ -558,10 +566,16 @@ export function RunMonitorPanel({
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {/* Execution summary */}
         {!execution ? (
-          <p className="flex items-center gap-1.5 text-xs text-(--color-text-subtle)">
-            <Loader2 size={12} className="animate-spin" />
-            Waiting for the execution to register…
-          </p>
+          lookupExhausted ? (
+            <p className="text-xs text-(--color-text-subtle)">
+              No workflow execution is recorded for this run.
+            </p>
+          ) : (
+            <p className="flex items-center gap-1.5 text-xs text-(--color-text-subtle)">
+              <Loader2 size={12} className="animate-spin" />
+              Waiting for the execution to register…
+            </p>
+          )
         ) : (
           <div className="space-y-1 rounded-md bg-(--bg-key) px-3 py-2">
             <div className="flex items-center justify-between gap-2">

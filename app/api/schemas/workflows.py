@@ -89,6 +89,10 @@ class WorkflowExecutionOut(BaseModel):
     outputs: dict
     started_at: datetime
     ended_at: datetime | None
+    # True while the in-memory runner is actually driving this execution.
+    # A 'running'/'waiting_gate' row without it means the backend restarted
+    # mid-run and the DB row is orphaned — readers should show "interrupted".
+    live: bool = False
 
 
 class WorkflowExecutionDetailResponse(BaseModel):

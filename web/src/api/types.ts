@@ -646,6 +646,9 @@ export interface WorkflowExecutionSummary {
   outputs: Record<string, unknown>
   started_at: string
   ended_at: string | null
+  // True while the in-memory runner is driving this execution; a running
+  // row without it is an orphan from a backend restart ("interrupted").
+  live: boolean
 }
 
 export interface WorkflowNodeRun {

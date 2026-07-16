@@ -162,15 +162,25 @@ async def list_executions_route(
     rows = await db.exec(
         select(WorkflowExecution)
         .where(col(WorkflowExecution.session_id).in_(ids))
-        .order_by(col(WorkflowExecution.started_at).desc())
+        .order_by(
+            col(WorkflowExecution.started_at).desc(),
+            col(WorkflowExecution.id).desc(),
+        )
         .limit(200)
     )
     return WorkflowExecutionListResponse(
-        executions=[
-            WorkflowExecutionOut.model_validate(row, from_attributes=True)
-            for row in rows.all()
-        ]
+        executions=[_execution_out(row) for row in rows.all()]
     )
+
+
+def _execution_out(row) -> WorkflowExecutionOut:  # noqa: ANN001 — WorkflowExecution
+    from app.workflow.runner import runner as workflow_runner
+
+    out = WorkflowExecutionOut.model_validate(row, from_attributes=True)
+    out.live = any(
+        state.execution_id == row.id for state in workflow_runner.active.values()
+    )
+    return out
 
 
 @router.get("/{name}", response_model=WorkflowDetailResponse)
@@ -441,7 +451,7 @@ async def get_execution_route(
         .order_by(col(WorkflowNodeRun.started_at))
     )
     return WorkflowExecutionDetailResponse(
-        execution=WorkflowExecutionOut.model_validate(execution, from_attributes=True),
+        execution=_execution_out(execution),
         node_runs=[
             WorkflowNodeRunOut.model_validate(row, from_attributes=True)
             for row in rows.all()

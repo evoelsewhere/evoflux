@@ -25,7 +25,7 @@ import { cn } from '@/lib/utils'
 import { resolveAimRolePath } from '@/components/AimKbPanel'
 import { RunMonitorPanel } from '@/components/AimPipelinesPanel'
 import { TeamChatView } from '@/components/TeamChatView'
-import type { AimRunListItem, CodingProject } from '@/api/types'
+import type { CodingProject } from '@/api/types'
 
 function VerdictIcon({ verdict, size = 12 }: { verdict: string; size?: number }) {
   switch (verdict) {
@@ -57,8 +57,19 @@ export function AimRunsPanel({ project, runId }: { project: CodingProject; runId
   // /aim/$projectId/runs (no run picked yet → null).
   const [localRunId, setLocalRunId] = useState<string | null>(null)
   const selectedRunId = runId ?? localRunId
-  const [discussion, setDiscussion] = useState<AimRunListItem | null>(null)
-  const [monitorRun, setMonitorRun] = useState<AimRunListItem | null>(null)
+  // Side-panel targets are built from the run DETAIL, not the list — a
+  // deep-linked run older than the list page must still open both panels.
+  const [discussion, setDiscussion] = useState<{
+    runId: string
+    sessionId: string
+    title: string
+  } | null>(null)
+  const [monitorRun, setMonitorRun] = useState<{
+    runId: string
+    sessionId: string
+    executionId: string | null
+    title: string
+  } | null>(null)
 
   const targetWorkspace = resolveAimRolePath(project, 'target')
 
@@ -84,6 +95,15 @@ export function AimRunsPanel({ project, runId }: { project: CodingProject; runId
     queryFn: () => getAimRun(project.id, selectedRunId as string),
     enabled: Boolean(selectedRunId),
   })
+
+  // Display name for the side panels — the list row when we have it, else
+  // the detail's kind (deep-linked runs can be older than the list page).
+  const panelTitle = (): string => {
+    const listRun = runs.find((r) => r.id === selectedRunId)
+    if (listRun) return `${listRun.unit} · ${listRun.kind}`
+    const detail = detailQuery.data
+    return detail ? `${detail.kind} · ${String(selectedRunId).slice(0, 8)}` : ''
+  }
 
   return (
     <div className="flex h-full min-h-0">
@@ -162,14 +182,23 @@ export function AimRunsPanel({ project, runId }: { project: CodingProject; runId
                       <button
                         type="button"
                         onClick={() => {
-                          const run = runs.find((r) => r.id === selectedRunId)
-                          if (!run) return
+                          const detail = detailQuery.data
+                          if (!detail || !selectedRunId) return
                           setDiscussion(null)
-                          setMonitorRun(monitorRun?.id === run.id ? null : run)
+                          setMonitorRun(
+                            monitorRun?.runId === selectedRunId
+                              ? null
+                              : {
+                                  runId: selectedRunId,
+                                  sessionId: detail.session_id ?? '',
+                                  executionId: detail.workflow_execution_id,
+                                  title: panelTitle(),
+                                },
+                          )
                         }}
                         className={cn(
                           'flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium transition-colors',
-                          monitorRun?.id === selectedRunId
+                          monitorRun?.runId === selectedRunId
                             ? 'bg-(--bg-key) text-(--color-accent)'
                             : 'text-(--color-text-muted) hover:text-(--color-text)',
                         )}
@@ -184,14 +213,22 @@ export function AimRunsPanel({ project, runId }: { project: CodingProject; runId
                       <button
                         type="button"
                         onClick={() => {
-                          const run = runs.find((r) => r.id === selectedRunId)
-                          if (!run) return
+                          const detail = detailQuery.data
+                          if (!detail?.session_id || !selectedRunId) return
                           setMonitorRun(null)
-                          setDiscussion(discussion?.id === run.id ? null : run)
+                          setDiscussion(
+                            discussion?.runId === selectedRunId
+                              ? null
+                              : {
+                                  runId: selectedRunId,
+                                  sessionId: detail.session_id,
+                                  title: panelTitle(),
+                                },
+                          )
                         }}
                         className={cn(
                           'flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium transition-colors',
-                          discussion?.id === selectedRunId
+                          discussion?.runId === selectedRunId
                             ? 'bg-(--bg-key) text-(--color-accent)'
                             : 'text-(--color-text-muted) hover:text-(--color-text)',
                         )}
@@ -229,25 +266,25 @@ export function AimRunsPanel({ project, runId }: { project: CodingProject; runId
       </div>
 
       {/* Workflow node log for the selected (finished) run. */}
-      {monitorRun && (monitorRun.session_id || monitorRun.workflow_execution_id) && !discussion && (
+      {monitorRun && (monitorRun.sessionId || monitorRun.executionId) && !discussion && (
         <RunMonitorPanel
-          sessionId={monitorRun.session_id ?? ''}
-          title={`${monitorRun.unit} · ${monitorRun.kind}`}
+          sessionId={monitorRun.sessionId}
+          title={monitorRun.title}
           sessionRunning={false}
-          executionId={monitorRun.workflow_execution_id}
+          executionId={monitorRun.executionId}
           onClose={() => setMonitorRun(null)}
         />
       )}
 
       {/* Post-run Discussion — singleton TeamChatView, only when run has a session.
           Shares the same constraint as AimPipelinesPanel: exactly one instance mounted. */}
-      {discussion?.session_id && !monitorRun && (
+      {discussion && !monitorRun && (
         <div className="flex w-96 shrink-0 flex-col border-l border-(--color-border)">
           <div className="flex items-center justify-between gap-2 border-b border-(--color-border) px-3 py-2">
             <p className="min-w-0 truncate text-xs font-medium text-(--color-text)">
               Discussion
               <span className="ml-1.5 font-normal text-(--color-text-subtle)">
-                {discussion.unit} · {discussion.kind}
+                {discussion.title}
               </span>
             </p>
             <button
@@ -261,7 +298,7 @@ export function AimRunsPanel({ project, runId }: { project: CodingProject; runId
           </div>
           <div className="min-h-0 flex-1 overflow-hidden">
             <TeamChatView
-              sessionId={discussion.session_id}
+              sessionId={discussion.sessionId}
               mode="aim"
               workspace={targetWorkspace}
             />
