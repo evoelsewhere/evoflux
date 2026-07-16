@@ -202,7 +202,11 @@ async def test_create_aim_project_rejects_missing_source_path(client, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_create_aim_project_rejects_non_empty_kb_path(client, tmp_path):
+async def test_create_aim_project_accepts_pre_existing_kb_dir(client, tmp_path):
+    # The folder convention creates/clones the aim_<name>_document repo
+    # BEFORE the project exists (a .git dir, a README...). Scaffolding is
+    # gap-fill-only, so a non-empty KB dir without aim.yaml is fine — the
+    # pre-existing file must survive.
     kb_path = _make_local_repo(tmp_path, "kb-already-exists")
     (kb_path / "stray.txt").write_text("x")
 
@@ -216,7 +220,63 @@ async def test_create_aim_project_rejects_non_empty_kb_path(client, tmp_path):
             "kb_path": str(kb_path),
         },
     )
+    assert resp.status_code == 201
+    assert (kb_path / "aim.yaml").exists()
+    assert (kb_path / "stray.txt").read_text() == "x"
+
+
+@pytest.mark.asyncio
+async def test_create_aim_project_rejects_kb_that_is_already_an_aim_kb(
+    client, tmp_path
+):
+    kb_path = _make_local_repo(tmp_path, "kb-existing-project")
+    (kb_path / "aim.yaml").write_text("rulebook:\n  id: x\n")
+
+    resp = await client.post(
+        "/api/team/projects/aim",
+        json={
+            "name": "p",
+            "rulebook_id": "default",
+            "source_paths": [str(_make_local_repo(tmp_path, "source"))],
+            "target_path": str(_make_local_repo(tmp_path, "target")),
+            "kb_path": str(kb_path),
+        },
+    )
     assert resp.status_code == 422
+    assert "join" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_detect_aim_layout_route(client, tmp_path):
+    root = tmp_path / "core-batch"
+    (root / "aim_source_base" / "repo-a").mkdir(parents=True)
+    (root / "aim_core-batch_document").mkdir(parents=True)
+    (root / "aim_target_source").mkdir(parents=True)
+
+    resp = await client.post(
+        "/api/team/projects/aim/detect", params={"root_path": str(root)}
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["project_name"] == "core-batch"
+    assert body["has_manifest"] is False
+    assert [Path(p).name for p in body["source_paths"]] == ["repo-a"]
+    assert Path(body["kb_path"]).name == "aim_core-batch_document"
+    assert Path(body["target_path"]).name == "aim_target_source"
+
+
+@pytest.mark.asyncio
+async def test_detect_aim_layout_route_rejects_nonconforming_folder(
+    client, tmp_path
+):
+    plain = tmp_path / "plain"
+    plain.mkdir()
+
+    resp = await client.post(
+        "/api/team/projects/aim/detect", params={"root_path": str(plain)}
+    )
+    assert resp.status_code == 422
+    assert "aim_source_base" in resp.json()["detail"]
 
 
 @pytest.mark.asyncio

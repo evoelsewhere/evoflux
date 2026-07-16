@@ -79,3 +79,19 @@ class AimProjectJoinRequest(BaseModel):
     kb_path: str
     source_paths: list[str] = Field(min_length=1)
     target_path: str
+
+
+class AimLayoutDetectionResponse(BaseModel):
+    """Result of detecting the AIM folder convention on one root folder
+    (``<name>/{aim_source_base/*, aim_<name>_document, aim_target_source}``
+    — see app/services/aim/layout.py)."""
+
+    root: str
+    project_name: str
+    source_paths: list[str]
+    kb_path: str
+    target_path: str
+    has_manifest: bool
+    source_identity_map: dict[str, str | None] = {}
+    target_identity_map: dict[str, str | None] = {}
+    warnings: list[str] = []

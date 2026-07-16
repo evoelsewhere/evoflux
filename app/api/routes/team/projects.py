@@ -31,6 +31,7 @@ from app.api.schemas.cross_repo import (
     CrossRepoResolveStatusResponse,
 )
 from app.api.schemas.aim import (
+    AimLayoutDetectionResponse,
     AimManifestPreviewResponse,
     AimPhaseCounts,
     AimProjectCreateRequest,
@@ -690,6 +691,33 @@ async def get_project_code_graph_data(
 # router.
 
 
+@router.post("/aim/detect", response_model=AimLayoutDetectionResponse)
+async def detect_aim_layout_route(root_path: str) -> AimLayoutDetectionResponse:
+    """Inspect one folder for the AIM layout convention
+    (``<name>/{aim_source_base/*, aim_<name>_document, aim_target_source}``)
+    — the wizard's single-folder-pick path. ``has_manifest`` tells the
+    caller whether the follow-up is a join (aim.yaml already in the
+    document repo) or a create.
+    """
+    from app.services.aim.layout import detect_aim_layout
+
+    try:
+        detection = detect_aim_layout(root_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return AimLayoutDetectionResponse(
+        root=detection.root,
+        project_name=detection.project_name,
+        source_paths=detection.source_paths,
+        kb_path=detection.kb_path,
+        target_path=detection.target_path,
+        has_manifest=detection.has_manifest,
+        source_identity_map=detection.source_identity_map,
+        target_identity_map=detection.target_identity_map,
+        warnings=detection.warnings,
+    )
+
+
 @router.post("/aim/preview", response_model=AimManifestPreviewResponse)
 async def preview_aim_project(kb_path: str) -> AimManifestPreviewResponse:
     """Read an existing KB repo's aim.yaml — the "Join existing" wizard
@@ -717,10 +745,17 @@ async def create_aim_project_route(
     source_paths = [_validate_path_or_422(p) for p in body.source_paths]
     target_path = _validate_path_or_422(body.target_path)
     kb_root = Path(body.kb_path).expanduser().resolve()
-    if kb_root.exists() and any(kb_root.iterdir()):
+    # The KB dir may legitimately pre-exist (the aim_<name>_document repo of
+    # the folder convention is created/cloned before the project — see
+    # app/services/aim/layout.py) and scaffolding is gap-fill-only. The one
+    # thing create must refuse is a dir that is ALREADY an AIM KB.
+    if (kb_root / "aim.yaml").is_file():
         raise HTTPException(
             status_code=422,
-            detail=f"KB path already exists and is not empty: {kb_root}",
+            detail=(
+                f"'{kb_root}' already contains an aim.yaml — this is an "
+                f"existing AIM project; join it instead of creating."
+            ),
         )
     project = await aim_project_setup.create_aim_project(
         db,

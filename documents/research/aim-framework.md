@@ -247,6 +247,15 @@ Watcher file (pattern có sẵn — code graph đã có watcher per-workspace) r
 
 ### 3.6 Knowledge Base — repo git riêng
 
+> **Rev 2026-07-16 — convention thư mục project (user chốt):** repo chung (KB/document) của một dự án đặt tên theo điều kiện **`aim_{project_name}_document`**, và toàn bộ dự án nằm dưới MỘT folder gốc theo pattern:
+> ```
+> <project_name>/
+> ├─ aim_source_base/               # gồm NHIỀU repository con (legacy sources)
+> ├─ aim_<project_name>_document/   # repo chung — chính là KB repo, mang aim.yaml
+> └─ aim_target_source/             # target repo (đã dựng base)
+> ```
+> Chọn đúng folder gốc này là hệ thống **tự detect** đủ 3 role + danh sách source repos (service `app/services/aim/layout.py`, endpoint `POST /team/projects/aim/detect`): `project_name` lấy từ tên repo document (authoritative — root folder khác tên chỉ warning); document repo đã có `aim.yaml` → là JOIN (auto-map identity → local path bằng `resolve_repo_identity`), chưa có → là CREATE (scaffold gap-fill vào folder đã tồn tại). Tên `<project>-aim-kb` bên dưới là ví dụ cũ — convention mới thay bằng `aim_{project_name}_document`; layout BÊN TRONG repo giữ nguyên như dưới.
+
 **Quyết định: KB là một repo git riêng** (`<project>-aim-kb`), add vào project như một `CodingWorkspace` bình thường — **không** dùng wiki toàn cục (wiki bị khoá cấu trúc 2 cấp và pin subdirs tại `app/services/wiki.py:158-201`; hợp đồng của Dream là session→wiki, không phải codebase comprehension). Lợi ích: git-trackable (KB chính là **deliverable giao khách hàng**), agent ghi bằng fs tools thường, FTS/code-graph index được, cross-repo link với source/target.
 
 ```
