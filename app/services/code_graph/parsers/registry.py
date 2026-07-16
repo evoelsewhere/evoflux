@@ -89,13 +89,24 @@ class ParserRegistry:
         return tuple(self._by_language)
 
 
-def build_registry(languages: list[str] | None = None) -> ParserRegistry:
-    """Build a registry, optionally restricted to ``languages`` by name."""
+def build_registry(
+    languages: list[str] | None = None,
+    extra_parsers: list[LanguageParser] | None = None,
+) -> ParserRegistry:
+    """Build a registry, optionally restricted to ``languages`` by name.
+
+    ``extra_parsers`` are appended after the builtins, so on an extension
+    collision the extra parser wins — a workspace-scoped structural parser
+    (an AIM rulebook's ``extractors/*.yaml``, see parsers/structural.py) can
+    take over an extension a builtin would otherwise claim. They are never
+    filtered by ``languages``: the caller opted in explicitly.
+    """
     parsers: list[LanguageParser] = []
     for parser_type in _BUILTIN_PARSER_TYPES:
         parser = parser_type()
         if languages is None or parser.name in languages:
             parsers.append(parser)
+    parsers.extend(extra_parsers or [])
     return ParserRegistry(parsers)
 
 
