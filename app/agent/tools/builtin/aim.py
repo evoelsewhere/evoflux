@@ -49,13 +49,16 @@ async def _resolve_project_and_kb_root(db) -> tuple[UUID | None, Path]:
             project = await db.get(CodingProject, project_id)
             if project is None or project.kind != "aim":
                 continue
-            kb_workspace_id = (project.settings.get("aim") or {}).get(
-                "roles", {}
-            ).get("kb")
-            if kb_workspace_id:
-                kb_workspace = await db.get(
-                    CodingWorkspace, UUID(str(kb_workspace_id))
-                )
+            kb_ids = (project.settings.get("aim") or {}).get("roles", {}).get("kb")
+            # AIM-2's project_setup stores role ids as lists; earlier
+            # projects may carry a bare string. Accept both.
+            if isinstance(kb_ids, str):
+                kb_ids = [kb_ids]
+            for kb_id in kb_ids or []:
+                try:
+                    kb_workspace = await db.get(CodingWorkspace, UUID(str(kb_id)))
+                except ValueError:
+                    continue
                 if kb_workspace is not None:
                     return project_id, Path(kb_workspace.path)
             return project_id, sandbox.workspace_root
@@ -134,6 +137,19 @@ async def _aim_units(
     phase_filter: Annotated[
         str | None, Field(description="For action='list' — only units in this phase.")
     ] = None,
+    wave_filter: Annotated[
+        int | None, Field(description="For action='list' — only units in this wave.")
+    ] = None,
+    format: Annotated[
+        Literal["text", "json"] | None,
+        Field(
+            description=(
+                "For action='list' — 'json' returns "
+                '{"units": [...], "count": N} for machine consumers '
+                "(workflow tool nodes); default 'text' stays human-readable."
+            )
+        ),
+    ] = None,
     run_kind: Annotated[
         Literal["compare", "convert", "test"] | None,
         Field(description="For action='record_run'."),
@@ -198,8 +214,32 @@ async def _aim_units(
             units = kb_store.list_units(kb_root)
             if phase_filter:
                 units = [u for u in units if u[2].phase == phase_filter]
+            if wave_filter is not None:
+                units = [u for u in units if u[2].wave == wave_filter]
+            if format == "json":
+                return json.dumps(
+                    {
+                        "units": [
+                            {
+                                "module": u_module,
+                                "name": u_name,
+                                "kind": fm.kind,
+                                "phase": fm.phase,
+                                "wave": fm.wave,
+                                "assignee": fm.assignee,
+                            }
+                            for u_module, u_name, fm, _ in units
+                        ],
+                        "count": len(units),
+                    }
+                )
             if not units:
-                suffix = f" (filter: phase={phase_filter})" if phase_filter else ""
+                filters = []
+                if phase_filter:
+                    filters.append(f"phase={phase_filter}")
+                if wave_filter is not None:
+                    filters.append(f"wave={wave_filter}")
+                suffix = f" (filter: {', '.join(filters)})" if filters else ""
                 return f"No units found in the KB.{suffix}"
             lines = [f"{len(units)} unit(s):"]
             for u_module, u_name, fm, _ in units:

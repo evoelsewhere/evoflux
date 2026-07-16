@@ -15,12 +15,12 @@ nodes:
   - id: equivalents
     kind: tool
     tool: aim_units
-    args: { action: list, phase: equivalent, wave: "{{inputs.wave}}", format: json }
+    args: { action: list, phase_filter: equivalent, wave_filter: "{{inputs.wave}}", format: json }
 
   - id: pending
     kind: tool
     tool: aim_units
-    args: { action: list, wave: "{{inputs.wave}}", format: json }
+    args: { action: list, wave_filter: "{{inputs.wave}}", format: json }
 
   - id: readiness
     kind: transform

@@ -191,6 +191,19 @@ export async function replyPlanApproval(
   }
 }
 
+export async function getPendingQuestions(sessionId: string): Promise<{
+  questions: Array<{
+    request_id: string
+    items: Array<{ question: string; options: string[] }>
+  }>
+}> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/${encodeURIComponent(sessionId)}/questions/pending`,
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'getPendingQuestions')
+  return res.json()
+}
+
 export async function replyAskUserQuestion(
   sessionId: string,
   requestId: string,

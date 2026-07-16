@@ -1,29 +1,39 @@
 /**
- * AimPipelinesPanel — trigger pipelines with plain UI and watch run status
- * (aim-mode-shell-ux-spec.md v2.2 §3.3/§5.2). NO chat: the Run button
- * resolves a fresh per-run session (mode="aim", project-scoped) and posts
- * the pipeline instruction into it under the hood — the same execution
- * substrate the composer/scheduler use, never a second path. Run status is
- * a polled table; the post-run Discussion entry point lives in
- * Runs & Reports (FE-3), not here.
+ * AimPipelinesPanel — trigger the AIM workflow library with plain UI and
+ * watch run status (aim-mode-shell-ux-spec.md v2.2 §3.3/§5.2 + AIM-4).
  *
- * Pre-Workflows the "pipeline" is a well-formed instruction to the aim
- * roster; AIM-4 swaps the send for POST /api/workflows/{name}/run without
- * touching this surface's shape.
+ * Since AIM-4 the Run button executes the REAL workflow definitions
+ * (POST /api/workflows/{name}/run against a fresh per-run session) — same
+ * execution substrate as the composer's /workflow, no second path. Gates
+ * inside a pipeline surface here as a "waiting for you" row action that
+ * opens the question inline (polled from the pending-questions endpoint),
+ * so the whole loop — trigger, gate, result — never needs a chat surface.
+ * Post-run Discussion stays the mode's only chat entry point.
  */
 
 import { useCallback, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   CircleCheck,
+  CirclePause,
   Loader2,
   MessageSquareText,
   Play,
-  TriangleAlert,
+  ShieldCheck,
   X,
 } from 'lucide-react'
-import { listAimUnits, listTeamSessions, postTeamChat, resolveTeamSession } from '@/api/client'
+import {
+  approveWorkflow,
+  getPendingQuestions,
+  listAimUnits,
+  listTeamSessions,
+  replyAskUserQuestion,
+  resolveTeamSession,
+  runWorkflow,
+} from '@/api/client'
 import { queryKeys } from '@/queries/keys'
+import { useWorkflowsQuery } from '@/queries/useWorkflowsQuery'
+import { resolveAimRolePath } from '@/components/AimKbPanel'
 import { Button } from '@/components/ui/button'
 import { TeamChatView } from '@/components/TeamChatView'
 import { cn } from '@/lib/utils'
@@ -31,72 +41,43 @@ import type { CodingProject, SessionResponse } from '@/api/types'
 
 interface PipelineDef {
   key: string
+  workflow: string
   label: string
-  needsUnit: boolean
-  /** Writes into the target repo → extra confirmation before running. */
-  mutatesTarget: boolean
-  instruction: (unit: string | null) => string
+  needs: 'none' | 'unit' | 'wave'
+  hasCaseSet?: boolean
 }
 
 const PIPELINES: PipelineDef[] = [
-  {
-    key: 'assess',
-    label: 'Assess (inventory + waves)',
-    needsUnit: false,
-    mutatesTarget: false,
-    instruction: () =>
-      'Run the ASSESS pipeline for this AIM project: index the source estate, ' +
-      'build the unit inventory into the KB repo (modules/<module>/<unit>.md stubs ' +
-      'with frontmatter phase=inventory plus inventory/units.md), score complexity, ' +
-      'and propose waves. Record every unit via the aim_units tool.',
-  },
-  {
-    key: 'understand-unit',
-    label: 'Understand unit',
-    needsUnit: true,
-    mutatesTarget: false,
-    instruction: (unit) =>
-      `Run the UNDERSTAND-UNIT pipeline for unit ${unit}: follow the ` +
-      'aim-legacy-comprehension skill (bottom-up — document dependencies first if ' +
-      'their docs are missing), write the unit doc into the KB, extract candidate ' +
-      'business rules, then set the unit phase to understood via aim_units.',
-  },
-  {
-    key: 'convert-unit',
-    label: 'Convert unit',
-    needsUnit: true,
-    mutatesTarget: true,
-    instruction: (unit) =>
-      `Run the CONVERT-UNIT pipeline for unit ${unit}: implement it in the target ` +
-      'repo following the KB mapping and target-conventions, respecting the rulebook ' +
-      'mappings. The base source is read-only. Set the unit phase to converted via ' +
-      'aim_units when the target builds.',
-  },
-  {
-    key: 'compare-unit',
-    label: 'Compare unit',
-    needsUnit: true,
-    mutatesTarget: false,
-    instruction: (unit) =>
-      `Run the COMPARE-UNIT pipeline for unit ${unit}: execute the legacy and target ` +
-      'runners for its golden cases, canonicalize both outputs, then diff them with the ' +
-      'aim_compare tool (which records the AimRun). If equivalent, set the phase to ' +
-      'equivalent; if not, summarize the diff for triage.',
-  },
+  { key: 'assess', workflow: 'aim-assess', label: 'Assess (inventory + waves)', needs: 'none' },
+  { key: 'understand', workflow: 'aim-understand', label: 'Understand unit', needs: 'unit' },
+  { key: 'convert-unit', workflow: 'aim-convert-unit', label: 'Convert unit', needs: 'unit' },
+  { key: 'convert-wave', workflow: 'aim-convert-wave', label: 'Convert wave', needs: 'wave' },
+  { key: 'compare', workflow: 'aim-test-compare', label: 'Test-compare unit', needs: 'unit', hasCaseSet: true },
+  { key: 'cutover', workflow: 'aim-cutover-check', label: 'Cutover check (wave)', needs: 'wave' },
 ]
 
 export function AimPipelinesPanel({ project }: { project: CodingProject }) {
   const queryClient = useQueryClient()
+  const targetWorkspace = resolveAimRolePath(project, 'target')
   const [pipelineKey, setPipelineKey] = useState(PIPELINES[0].key)
   const [unitInput, setUnitInput] = useState('')
-  const [confirmArmed, setConfirmArmed] = useState(false)
+  const [waveInput, setWaveInput] = useState('0')
+  const [caseSet, setCaseSet] = useState<'smoke' | 'full'>('smoke')
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // The one chat surface in the whole mode: a finished run's transcript
-  // (spec §3.3 — Discussion is only offered once running=false).
+  // The one chat surface in the whole mode: a finished run's transcript.
   const [discussion, setDiscussion] = useState<SessionResponse | null>(null)
+  // A running run whose gate the user opened.
+  const [gateSession, setGateSession] = useState<string | null>(null)
 
   const pipeline = PIPELINES.find((p) => p.key === pipelineKey) ?? PIPELINES[0]
+
+  const workflowsQ = useWorkflowsQuery(targetWorkspace)
+  const workflowByName = useMemo(
+    () => new Map((workflowsQ.data?.workflows ?? []).map((wf) => [wf.name, wf])),
+    [workflowsQ.data],
+  )
+  const selectedWorkflow = workflowByName.get(pipeline.workflow)
 
   const unitsQuery = useQuery({
     queryKey: queryKeys.projects.aimUnits(project.id, undefined),
@@ -115,34 +96,49 @@ export function AimPipelinesPanel({ project }: { project: CodingProject }) {
   })
   const runs = sessionsQuery.data?.data ?? []
 
-  const canRun = !starting && (!pipeline.needsUnit || unitInput.trim().length > 0)
+  const canRun =
+    !starting &&
+    Boolean(selectedWorkflow?.valid) &&
+    (pipeline.needs !== 'unit' || unitInput.trim().length > 0) &&
+    (pipeline.needs !== 'wave' || waveInput.trim().length > 0)
+
+  const buildInputs = useCallback((): Record<string, unknown> => {
+    if (pipeline.needs === 'unit') {
+      const inputs: Record<string, unknown> = { unit: unitInput.trim() }
+      if (pipeline.hasCaseSet) inputs.case_set = caseSet
+      return inputs
+    }
+    if (pipeline.needs === 'wave') return { wave: Number(waveInput) }
+    return {}
+  }, [pipeline, unitInput, caseSet, waveInput])
 
   const handleRun = useCallback(async () => {
-    if (pipeline.mutatesTarget && !confirmArmed) {
-      // Writing into the target repo gets a second, explicit click.
-      setConfirmArmed(true)
-      setTimeout(() => setConfirmArmed(false), 4000)
-      return
-    }
-    setConfirmArmed(false)
+    if (!selectedWorkflow) return
     setStarting(true)
     setError(null)
     try {
-      const unit = pipeline.needsUnit ? unitInput.trim() : null
-      // A fresh per-run session — never reuse: parallel unit runs, and each
-      // transcript stays a self-contained audit artifact (spec §3.3).
+      // Unapproved definitions get a one-click approve — the manifest is
+      // the builtin pipeline's declared agents/tools (plan §7).
+      if (!selectedWorkflow.approved) {
+        await approveWorkflow(
+          selectedWorkflow.name,
+          selectedWorkflow.hash,
+          targetWorkspace,
+        )
+        void queryClient.invalidateQueries({ queryKey: ['workflows'] })
+      }
+      // A fresh per-run session — parallel unit runs, self-contained
+      // transcripts (spec §3.3).
       const session = await resolveTeamSession({
         mode: 'aim',
         project_id: project.id,
         create: true,
       })
-      await postTeamChat(
-        pipeline.instruction(unit),
+      await runWorkflow(
+        selectedWorkflow.name,
         session.id,
-        false,
-        undefined,
-        'aim',
-        session.workspace ?? null,
+        buildInputs(),
+        targetWorkspace,
       )
       void queryClient.invalidateQueries({ queryKey: queryKeys.team.sessions.project(project.id) })
     } catch (err) {
@@ -150,141 +146,254 @@ export function AimPipelinesPanel({ project }: { project: CodingProject }) {
     } finally {
       setStarting(false)
     }
-  }, [pipeline, unitInput, confirmArmed, project.id, queryClient])
+  }, [selectedWorkflow, targetWorkspace, project.id, buildInputs, queryClient])
 
   return (
     <div className="flex h-full min-h-0">
-    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
-      <div className="border-b border-(--color-border) px-4 py-3">
-        <p className="text-sm font-medium text-(--color-text)">Pipelines</p>
-      </div>
+      <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
+        <div className="flex items-center gap-2 border-b border-(--color-border) px-4 py-3">
+          <p className="text-sm font-medium text-(--color-text)">Pipelines</p>
+          {selectedWorkflow && !selectedWorkflow.approved && (
+            <span
+              className="flex items-center gap-1 rounded bg-(--bg-key) px-1.5 py-0.5 text-[10px] text-(--color-text-subtle)"
+              title="First run approves this pipeline's manifest (its agents and tools)."
+            >
+              <ShieldCheck size={10} />
+              approves on first run
+            </span>
+          )}
+        </div>
 
-      {/* Trigger form */}
-      <div className="flex flex-wrap items-end gap-2 border-b border-(--color-border) p-4">
-        <label className="flex flex-col gap-1 text-xs text-(--color-text-muted)">
-          Pipeline
-          <select
-            value={pipelineKey}
-            onChange={(e) => {
-              setPipelineKey(e.target.value)
-              setConfirmArmed(false)
-            }}
-            className="rounded-md border border-(--color-border) bg-(--bg-subtle) px-2 py-1.5 text-xs text-(--color-text)"
-          >
-            {PIPELINES.map((p) => (
-              <option key={p.key} value={p.key}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        {pipeline.needsUnit && (
-          <label className="flex min-w-48 flex-col gap-1 text-xs text-(--color-text-muted)">
-            Unit
-            {unitOptions.length > 0 ? (
+        {/* Trigger form */}
+        <div className="flex flex-wrap items-end gap-2 border-b border-(--color-border) p-4">
+          <label className="flex flex-col gap-1 text-xs text-(--color-text-muted)">
+            Pipeline
+            <select
+              value={pipelineKey}
+              onChange={(e) => setPipelineKey(e.target.value)}
+              className="rounded-md border border-(--color-border) bg-(--bg-subtle) px-2 py-1.5 text-xs text-(--color-text)"
+            >
+              {PIPELINES.map((p) => (
+                <option key={p.key} value={p.key}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {pipeline.needs === 'unit' && (
+            <label className="flex min-w-48 flex-col gap-1 text-xs text-(--color-text-muted)">
+              Unit
+              {unitOptions.length > 0 ? (
+                <select
+                  value={unitInput}
+                  onChange={(e) => setUnitInput(e.target.value)}
+                  className="rounded-md border border-(--color-border) bg-(--bg-subtle) px-2 py-1.5 text-xs text-(--color-text)"
+                >
+                  <option value="">Select a unit…</option>
+                  {unitOptions.map((unit) => (
+                    <option key={unit} value={unit}>
+                      {unit}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={unitInput}
+                  onChange={(e) => setUnitInput(e.target.value)}
+                  placeholder="module/UNIT (run assess first)"
+                  className="rounded-md border border-(--color-border) bg-(--bg-subtle) px-2 py-1.5 text-xs text-(--color-text) placeholder:text-(--color-text-muted)"
+                />
+              )}
+            </label>
+          )}
+          {pipeline.needs === 'wave' && (
+            <label className="flex w-24 flex-col gap-1 text-xs text-(--color-text-muted)">
+              Wave
+              <input
+                type="number"
+                value={waveInput}
+                onChange={(e) => setWaveInput(e.target.value)}
+                className="rounded-md border border-(--color-border) bg-(--bg-subtle) px-2 py-1.5 text-xs text-(--color-text)"
+              />
+            </label>
+          )}
+          {pipeline.hasCaseSet && (
+            <label className="flex flex-col gap-1 text-xs text-(--color-text-muted)">
+              Case set
               <select
-                value={unitInput}
-                onChange={(e) => setUnitInput(e.target.value)}
+                value={caseSet}
+                onChange={(e) => setCaseSet(e.target.value as 'smoke' | 'full')}
                 className="rounded-md border border-(--color-border) bg-(--bg-subtle) px-2 py-1.5 text-xs text-(--color-text)"
               >
-                <option value="">Select a unit…</option>
-                {unitOptions.map((unit) => (
-                  <option key={unit} value={unit}>
-                    {unit}
-                  </option>
-                ))}
+                <option value="smoke">smoke</option>
+                <option value="full">full</option>
               </select>
-            ) : (
-              <input
-                type="text"
-                value={unitInput}
-                onChange={(e) => setUnitInput(e.target.value)}
-                placeholder="module/UNIT (run assess first)"
-                className="rounded-md border border-(--color-border) bg-(--bg-subtle) px-2 py-1.5 text-xs text-(--color-text) placeholder:text-(--color-text-muted)"
-              />
-            )}
-          </label>
-        )}
-        <Button
-          size="sm"
-          variant={confirmArmed ? 'destructive' : 'default'}
-          onClick={() => void handleRun()}
-          disabled={!canRun}
-        >
-          {starting ? (
-            <Loader2 size={12} className="animate-spin" />
-          ) : confirmArmed ? (
-            <TriangleAlert size={12} />
-          ) : (
-            <Play size={12} />
+            </label>
           )}
-          {confirmArmed ? 'Confirm — writes to target' : 'Run'}
-        </Button>
-        {error && <p className="basis-full text-[11px] text-(--color-error)">{error}</p>}
+          <Button size="sm" onClick={() => void handleRun()} disabled={!canRun}>
+            {starting ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+            Run
+          </Button>
+          {error && <p className="basis-full text-[11px] text-(--color-error)">{error}</p>}
+        </div>
+
+        {/* Run table */}
+        <div className="min-h-0 flex-1 overflow-auto p-4">
+          {sessionsQuery.isLoading ? (
+            <p className="text-xs text-(--color-text-subtle)">Loading runs…</p>
+          ) : runs.length === 0 ? (
+            <p className="text-xs text-(--color-text-subtle)">
+              No runs yet — pick a pipeline and hit Run.
+            </p>
+          ) : (
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="text-[10px] uppercase text-(--color-text-subtle)">
+                  <th className="pb-2 font-medium">Run</th>
+                  <th className="pb-2 font-medium">Status</th>
+                  <th className="pb-2 font-medium">Started</th>
+                  <th className="pb-2" />
+                </tr>
+              </thead>
+              <tbody>
+                {runs.map((run) => (
+                  <RunRow
+                    key={run.id}
+                    run={run}
+                    isOpen={discussion?.id === run.id}
+                    onDiscuss={() => setDiscussion(run)}
+                    onOpenGate={() => setGateSession(run.id)}
+                  />
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       </div>
 
-      {/* Run table */}
-      <div className="min-h-0 flex-1 overflow-auto p-4">
-        {sessionsQuery.isLoading ? (
-          <p className="text-xs text-(--color-text-subtle)">Loading runs…</p>
-        ) : runs.length === 0 ? (
+      {/* Gate banner — answer a workflow gate without any chat surface. */}
+      {gateSession && (
+        <GatePanel sessionId={gateSession} onClose={() => setGateSession(null)} />
+      )}
+
+      {/* Post-run Discussion — TeamChatView is a global singleton; exactly one
+          instance, mounted only while a finished run's transcript is open. */}
+      {discussion && !gateSession && (
+        <div className="flex w-96 shrink-0 flex-col border-l border-(--color-border)">
+          <div className="flex items-center justify-between gap-2 border-b border-(--color-border) px-3 py-2">
+            <p className="min-w-0 truncate text-xs font-medium text-(--color-text)">
+              Discussion
+              <span className="ml-1.5 font-normal text-(--color-text-subtle)">
+                {discussion.title ?? discussion.id.slice(0, 8)}
+              </span>
+            </p>
+            <button
+              type="button"
+              onClick={() => setDiscussion(null)}
+              aria-label="Close discussion"
+              className="shrink-0 rounded p-0.5 text-(--color-text-muted) hover:text-(--color-text)"
+            >
+              <X size={13} />
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <TeamChatView
+              sessionId={discussion.id}
+              mode="aim"
+              workspace={discussion.workspace ?? null}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function GatePanel({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
+  const queryClient = useQueryClient()
+  const [replying, setReplying] = useState(false)
+  const [freeText, setFreeText] = useState('')
+  const pendingQ = useQuery({
+    queryKey: ['aim-pending-questions', sessionId],
+    queryFn: () => getPendingQuestions(sessionId),
+    refetchInterval: 3_000,
+  })
+  const batch = pendingQ.data?.questions[0]
+  const item = batch?.items[0]
+
+  const answer = async (value: string) => {
+    if (!batch) return
+    setReplying(true)
+    try {
+      await replyAskUserQuestion(sessionId, batch.request_id, [value])
+      void queryClient.invalidateQueries({ queryKey: ['aim-pending-questions', sessionId] })
+      onClose()
+    } finally {
+      setReplying(false)
+    }
+  }
+
+  return (
+    <div className="flex w-96 shrink-0 flex-col border-l border-(--color-border)">
+      <div className="flex items-center justify-between gap-2 border-b border-(--color-border) px-3 py-2">
+        <p className="text-xs font-medium text-(--color-text)">Gate</p>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close gate"
+          className="shrink-0 rounded p-0.5 text-(--color-text-muted) hover:text-(--color-text)"
+        >
+          <X size={13} />
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+        {pendingQ.isLoading ? (
+          <p className="text-xs text-(--color-text-subtle)">Checking for a pending gate…</p>
+        ) : !item ? (
           <p className="text-xs text-(--color-text-subtle)">
-            No runs yet — pick a pipeline and hit Run.
+            No gate is waiting on this run right now.
           </p>
         ) : (
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="text-[10px] uppercase text-(--color-text-subtle)">
-                <th className="pb-2 font-medium">Run</th>
-                <th className="pb-2 font-medium">Status</th>
-                <th className="pb-2 font-medium">Started</th>
-                <th className="pb-2" />
-              </tr>
-            </thead>
-            <tbody>
-              {runs.map((run) => (
-                <RunRow
-                  key={run.id}
-                  run={run}
-                  isOpen={discussion?.id === run.id}
-                  onDiscuss={() => setDiscussion(run)}
+          <>
+            <p className="whitespace-pre-wrap text-xs leading-5 text-(--color-text)">
+              {item.question}
+            </p>
+            {item.options.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {item.options.map((option) => (
+                  <Button
+                    key={option}
+                    size="sm"
+                    variant="secondary"
+                    disabled={replying}
+                    onClick={() => void answer(option)}
+                  >
+                    {option}
+                  </Button>
+                ))}
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={freeText}
+                  onChange={(e) => setFreeText(e.target.value)}
+                  placeholder="Your answer…"
+                  className="flex-1 rounded-md border border-(--color-border) bg-(--bg-subtle) px-2 py-1.5 text-xs text-(--color-text)"
                 />
-              ))}
-            </tbody>
-          </table>
+                <Button
+                  size="sm"
+                  disabled={replying || !freeText.trim()}
+                  onClick={() => void answer(freeText.trim())}
+                >
+                  Send
+                </Button>
+              </div>
+            )}
+          </>
         )}
       </div>
-    </div>
-
-    {/* Post-run Discussion — TeamChatView is a global singleton; exactly one
-        instance, mounted only while a finished run's transcript is open. */}
-    {discussion && (
-      <div className="flex w-96 shrink-0 flex-col border-l border-(--color-border)">
-        <div className="flex items-center justify-between gap-2 border-b border-(--color-border) px-3 py-2">
-          <p className="min-w-0 truncate text-xs font-medium text-(--color-text)">
-            Discussion
-            <span className="ml-1.5 font-normal text-(--color-text-subtle)">
-              {discussion.title ?? discussion.id.slice(0, 8)}
-            </span>
-          </p>
-          <button
-            type="button"
-            onClick={() => setDiscussion(null)}
-            aria-label="Close discussion"
-            className="shrink-0 rounded p-0.5 text-(--color-text-muted) hover:text-(--color-text)"
-          >
-            <X size={13} />
-          </button>
-        </div>
-        <div className="min-h-0 flex-1 overflow-hidden">
-          <TeamChatView
-            sessionId={discussion.id}
-            mode="aim"
-            workspace={discussion.workspace ?? null}
-          />
-        </div>
-      </div>
-    )}
     </div>
   )
 }
@@ -293,10 +402,12 @@ function RunRow({
   run,
   isOpen,
   onDiscuss,
+  onOpenGate,
 }: {
   run: SessionResponse
   isOpen: boolean
   onDiscuss: () => void
+  onOpenGate: () => void
 }) {
   return (
     <tr className="border-t border-(--color-border)">
@@ -325,7 +436,17 @@ function RunRow({
         {run.created_at ? new Date(run.created_at).toLocaleString() : '—'}
       </td>
       <td className="py-2 text-right">
-        {!run.running && (
+        {run.running ? (
+          <button
+            type="button"
+            onClick={onOpenGate}
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+            title="Answer this run's gate, if one is waiting"
+          >
+            <CirclePauseIcon />
+            Gate
+          </button>
+        ) : (
           <button
             type="button"
             onClick={onDiscuss}
@@ -344,4 +465,8 @@ function RunRow({
       </td>
     </tr>
   )
+}
+
+function CirclePauseIcon() {
+  return <CirclePause size={11} />
 }
