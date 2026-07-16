@@ -16,7 +16,7 @@ nodes:
   - id: list_units
     kind: tool
     tool: aim_units
-    args: { action: list, phase: designed, wave: "{{inputs.wave}}", format: json }
+    args: { action: list, phase_filter: designed, wave_filter: "{{inputs.wave}}", format: json }
 
   - id: batch_summary
     kind: transform
