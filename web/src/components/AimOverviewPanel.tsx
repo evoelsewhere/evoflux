@@ -40,6 +40,7 @@ import { resolveAimRoleWorkspaces } from '@/components/AimKbPanel'
 import { AimSidePanel } from '@/components/AimSidePanel'
 import { setAimKbOpenPath, setAimPipelinePrefill } from '@/lib/aimHandoff'
 import { Button } from '@/components/ui/button'
+import { Combobox } from '@/components/ui/combobox'
 import { cn } from '@/lib/utils'
 import type { AimPhaseCounts, AimRunListItem, AimUnitOut, CodingProject } from '@/api/types'
 
@@ -223,18 +224,18 @@ export function AimOverviewPanel({ project }: { project: CodingProject }) {
               </span>
             )}
             {modules.length > 1 && (
-              <select
-                value={moduleFilter}
-                onChange={(e) => setModuleFilter(e.target.value)}
-                className="rounded bg-(--bg-key) px-2 py-1 text-xs text-(--color-text)"
-              >
-                <option value="all">Module: all</option>
-                {modules.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
+              <Combobox
+                size="sm"
+                value={moduleFilter === 'all' ? null : moduleFilter}
+                onValueChange={(v) => setModuleFilter(v ?? 'all')}
+                items={[
+                  { value: 'all', label: 'Module: all' },
+                  ...modules.map((m) => ({ value: m, label: m })),
+                ]}
+                placeholder="Module: all"
+                emptyText="No module matches."
+                className="w-40"
+              />
             )}
             {waves.length > 0 && (
               <select

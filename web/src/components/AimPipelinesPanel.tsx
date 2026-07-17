@@ -61,6 +61,7 @@ import { useWorkflowsQuery } from '@/queries/useWorkflowsQuery'
 import { resolveAimRolePath } from '@/components/AimKbPanel'
 import { AimSidePanel } from '@/components/AimSidePanel'
 import { Button } from '@/components/ui/button'
+import { Combobox } from '@/components/ui/combobox'
 import { TeamChatView } from '@/components/TeamChatView'
 import { MarkdownBlock } from '@/utils/markdown'
 import { formatRelativeDate } from '@/utils/format'
@@ -332,18 +333,17 @@ export function AimPipelinesPanel({ project }: { project: CodingProject }) {
             <label className="flex min-w-48 flex-col gap-1 text-xs text-(--color-text-muted)">
               Unit
               {unitOptions.length > 0 ? (
-                <select
-                  value={unitInput}
-                  onChange={(e) => setUnitInput(e.target.value)}
-                  className="rounded-md border border-(--color-border) bg-(--bg-subtle) px-2 py-1.5 text-xs text-(--color-text)"
-                >
-                  <option value="">Select a unit…</option>
-                  {unitOptions.map((unit) => (
-                    <option key={unit.key} value={unit.key}>
-                      {unit.key} · {unit.phase}
-                    </option>
-                  ))}
-                </select>
+                <Combobox
+                  size="sm"
+                  value={unitInput || null}
+                  onValueChange={(v) => setUnitInput(v ?? '')}
+                  items={unitOptions.map((unit) => ({
+                    value: unit.key,
+                    label: `${unit.key} · ${unit.phase}`,
+                  }))}
+                  placeholder="Select a unit…"
+                  emptyText="No unit matches."
+                />
               ) : (
                 <input
                   type="text"
