@@ -98,6 +98,39 @@ async def test_set_phase_and_get_without_a_project(sandbox_workspace):
 
 
 @pytest.mark.asyncio
+async def test_set_phase_accepts_json_encoded_list_and_dict_args(sandbox_workspace):
+    """Regression: smaller models send list/dict args as JSON strings
+    (observed live: aim-lead stuck retrying set_phase with
+    target_paths='["…"]'). The validated arun() path must coerce them."""
+    result = await aim_units.arun(
+        action="set_phase",
+        unit="core-batch/STRARGS",
+        kind="program",
+        phase="converted",
+        target_paths='["app/src/main/java/com/example/Addamt.java"]',
+        depends_on='["core-batch/DATEUTIL"]',
+        complexity='{"score": "low"}',
+    )
+    assert "STRARGS" in result
+
+    got = await aim_units(action="get", unit="core-batch/STRARGS")
+    data = json.loads(got)
+    assert data["target_paths"] == ["app/src/main/java/com/example/Addamt.java"]
+    assert data["depends_on"] == ["core-batch/DATEUTIL"]
+    assert data["complexity"] == {"score": "low"}
+
+    # A string that isn't JSON still fails validation loudly.
+    from app.agent.errors import ToolArgumentError
+
+    with pytest.raises(ToolArgumentError):
+        await aim_units.arun(
+            action="set_phase",
+            unit="core-batch/STRARGS",
+            target_paths="not-a-list",
+        )
+
+
+@pytest.mark.asyncio
 async def test_get_missing_unit_returns_message(sandbox_workspace):
     result = await aim_units(action="get", unit="core-batch/NOPE")
     assert "No unit doc found" in result
