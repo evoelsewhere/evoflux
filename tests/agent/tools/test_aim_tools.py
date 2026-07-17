@@ -277,7 +277,8 @@ async def test_compare_pass_without_project(sandbox_workspace):
     data = json.loads(result)
     assert data["verdict"] == "pass"
     assert data["diff_count"] == 0
-    assert Path(data["report_path"]).exists()
+    assert not Path(data["report_path"]).is_absolute()
+    assert (sandbox_workspace / data["report_path"]).exists()
 
 
 @pytest.mark.asyncio

@@ -13,7 +13,8 @@ from httpx import ASGITransport, AsyncClient
 import app.core.db as db_module
 from app.api.routes.team.projects import router as projects_router
 from app.models.aim import AimRun, AimUnit
-from app.models.chat import CodingProject
+from app.models.chat import CodingProject, CodingProjectWorkspace
+from app.services.coding_workspace_service import upsert_coding_workspace
 
 
 @pytest.fixture
@@ -292,6 +293,64 @@ async def test_get_run_embeds_report_json(client, tmp_path):
     assert resp.status_code == 200
     body = resp.json()
     assert body["verdict"] == "pass"
+    assert body["report"]["verdict"] == "pass"
+    assert body["report"]["diff_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_get_run_resolves_kb_relative_report_path(client, tmp_path):
+    """aim_compare records report_path KB-relative (portable — the KB's
+    checkout location is a per-machine detail); the detail endpoint must
+    join it against the project's *current* KB workspace path rather than
+    the server process's own cwd, or every such run 404s into "no report
+    file on this machine" even though the file is right there in the KB."""
+    kb_path = tmp_path / "kb-relpath"
+    kb_path.mkdir()
+
+    async with db_module.async_session_factory() as db:
+        ws = await upsert_coding_workspace(db, path=str(kb_path), kind="repo")
+        project = CodingProject(
+            name="aim-relpath",
+            kind="aim",
+            settings={"aim": {"roles": {"kb": [str(ws.id)]}}},
+        )
+        db.add(project)
+        await db.flush()
+        db.add(CodingProjectWorkspace(project_id=project.id, workspace_id=ws.id))
+
+        unit = AimUnit(
+            project_id=project.id,
+            module="m",
+            name="A",
+            kind="program",
+            phase="equivalent",
+            wave=0,
+        )
+        db.add(unit)
+        await db.flush()
+
+        report_dir = kb_path / "runs" / "m" / "A" / "somehash"
+        report_dir.mkdir(parents=True)
+        (report_dir / "report.json").write_text(
+            json.dumps({"verdict": "pass", "diff_count": 0})
+        )
+
+        run = AimRun(
+            unit_id=unit.id,
+            kind="compare",
+            verdict="pass",
+            case_set="smoke",
+            stats={"diff_count": 0},
+            report_path="runs/m/A/somehash/report.json",
+        )
+        db.add(run)
+        await db.commit()
+        await db.refresh(project)
+        await db.refresh(run)
+
+    resp = await client.get(f"/api/team/projects/{project.id}/aim/runs/{run.id}")
+    assert resp.status_code == 200
+    body = resp.json()
     assert body["report"]["verdict"] == "pass"
     assert body["report"]["diff_count"] == 0
 

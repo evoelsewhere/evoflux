@@ -995,7 +995,9 @@ async def get_aim_rulebook(project_id: UUID, db: DbSession) -> AimRulebookRespon
 
 @router.get("/{project_id}/aim/runs/{run_id}", response_model=AimRunOut)
 async def get_aim_run(project_id: UUID, run_id: UUID, db: DbSession) -> AimRunOut:
-    await _get_aim_project_or_404(db, project_id)
+    from app.services.aim.project import resolve_kb_workspace_path
+
+    project = await _get_aim_project_or_404(db, project_id)
 
     run = (
         await db.exec(
@@ -1010,6 +1012,13 @@ async def get_aim_run(project_id: UUID, run_id: UUID, db: DbSession) -> AimRunOu
     report: dict | None = None
     if run.report_path:
         report_file = Path(run.report_path)
+        # report_path is stored KB-relative (see aim_compare) — resolve
+        # against the project's current KB checkout. Older rows recorded
+        # an absolute path; still honor those as-is.
+        if not report_file.is_absolute():
+            kb_path = await resolve_kb_workspace_path(db, project)
+            if kb_path:
+                report_file = Path(kb_path) / report_file
         if report_file.is_file():
             try:
                 report = json.loads(report_file.read_text(encoding="utf-8"))

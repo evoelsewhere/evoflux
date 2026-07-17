@@ -500,6 +500,11 @@ async def _aim_compare(
 
         report_dir = kb_root / "runs" / module / name / uuid7().hex
         json_path, _md_path = write_report(report, report_dir)
+        # Stored KB-relative, not absolute: the KB workspace's checkout path
+        # is a per-machine/per-session detail, but "runs/.../report.json"
+        # inside it is stable — record_run readers resolve it against
+        # whatever the project's KB path is *now* (see get_aim_run).
+        report_rel_path = str(json_path.relative_to(kb_root))
 
         if project_id is not None:
             row = (
@@ -520,14 +525,14 @@ async def _aim_compare(
                     verdict=run_verdict,
                     case_set=case_set,
                     stats={"diff_count": report.diff_count},
-                    report_path=str(json_path),
+                    report_path=report_rel_path,
                     session_id=UUID(raw_sid) if raw_sid else None,
                 )
                 db.add(run)
                 await db.commit()
 
         result = report.to_dict()
-        result["report_path"] = str(json_path)
+        result["report_path"] = report_rel_path
         return json.dumps(result)
 
 
