@@ -126,7 +126,7 @@ function AimLayoutBase() {
         </button>
       </div>
 
-      <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[10px] bg-(--bg-page) shadow-sm">
+      <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {!projectId || !project ? (
           <EmptyState
             loading={projectsQuery.isLoading}

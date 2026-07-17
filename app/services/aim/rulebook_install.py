@@ -10,6 +10,16 @@ immediately. The builtin AIM pipeline library needs no installation (it
 is itself a discovery root); this covers per-stack additions like a
 pack's ``java-modernization-idioms`` skill or its ``aim-converter``
 prompt overlay.
+
+Pack resolution is KB-first (:func:`resolve_rulebook_dir`): a project
+whose KB repo carries its own ``rulebook/`` directory uses that content
+instead of a builtin pack — the same "KB is system of record" principle
+already applied to ``aim.yaml``, unit frontmatter, and business rules,
+extended to the rulebook itself so a bespoke migration's rules travel
+with the engagement's KB repo rather than requiring an EvoFlux code
+change. The three shipped packs (java8-java21, vb6-dotnet, cobol-java21)
+remain available as reusable starting points for projects that don't
+need to customize anything.
 """
 
 from __future__ import annotations
@@ -22,11 +32,35 @@ from loguru import logger
 
 from app.core.config import settings
 
+#: Convention: a KB-local override lives at ``<kb_root>/rulebook/`` —
+#: exactly one directory, since a KB belongs to exactly one AIM project
+#: with exactly one active rulebook_id (no need to nest by id).
+_PROJECT_RULEBOOK_DIRNAME = "rulebook"
+
 
 def _pack_dir(rulebook_id: str) -> Path:
     from app.agent.tools.builtin.aim import _builtin_rulebooks_dir
 
     return _builtin_rulebooks_dir() / rulebook_id
+
+
+def resolve_rulebook_dir(kb_root: Path, rulebook_id: str) -> Path | None:
+    """The project's rulebook pack directory: ``<kb_root>/rulebook/`` if
+    the KB carries a local override, else the matching builtin pack.
+    ``None`` if neither exists (a real 404/no-op case for callers, not an
+    error — an unrecognized ``rulebook_id`` with no KB override)."""
+    project_dir = kb_root / _PROJECT_RULEBOOK_DIRNAME
+    if project_dir.is_dir():
+        return project_dir
+    builtin_dir = _pack_dir(rulebook_id)
+    return builtin_dir if builtin_dir.is_dir() else None
+
+
+def is_project_rulebook(kb_root: Path) -> bool:
+    """Whether *kb_root* carries a KB-local rulebook override — the
+    Rulebook screen uses this to label the source (project vs. shared
+    pack) without re-deriving the resolution logic."""
+    return (kb_root / _PROJECT_RULEBOOK_DIRNAME).is_dir()
 
 
 def _overlay_marker(rulebook_id: str, overlay_name: str) -> str:
@@ -73,13 +107,14 @@ def _merge_agent_overlay(
     return True
 
 
-def install_rulebook_content(rulebook_id: str) -> dict[str, list[str]]:
+def install_rulebook_content(kb_root: Path, rulebook_id: str) -> dict[str, list[str]]:
     """Copy the pack's workflows + skills into the editable discovery
-    roots and merge its agent overlays onto the AIM roster. Returns what
-    was installed (paths relative to their roots)."""
+    roots and merge its agent overlays onto the AIM roster. Resolves the
+    pack KB-first (see :func:`resolve_rulebook_dir`). Returns what was
+    installed (paths relative to their roots)."""
     installed: dict[str, list[str]] = {"workflows": [], "skills": [], "agents": []}
-    pack = _pack_dir(rulebook_id)
-    if not pack.is_dir():
+    pack = resolve_rulebook_dir(kb_root, rulebook_id)
+    if pack is None:
         return installed
 
     workflows_src = pack / "workflows"

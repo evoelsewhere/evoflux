@@ -79,6 +79,16 @@ export function AimRulebookPanel({ project }: { project: CodingProject }) {
                 ? ` v${rulebook.manifest.version}`
                 : ''}
             </span>
+            <span
+              className="rounded bg-(--bg-key) px-2 py-0.5 text-[10px] text-(--color-text-subtle)"
+              title={
+                rulebook.source === 'project'
+                  ? 'Defined in this project’s KB repo (rulebook/) — edit it there, not in EvoFlux.'
+                  : 'One of the shared packs bundled with EvoFlux.'
+              }
+            >
+              {rulebook.source === 'project' ? 'project rulebook' : 'shared pack'}
+            </span>
             <span className="text-[10px] text-(--color-text-subtle)">read-only</span>
           </>
         )}

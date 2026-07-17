@@ -447,6 +447,9 @@ export interface AimRulebookFile {
 
 export interface AimRulebook {
   id: string
+  // 'project' = resolved from the KB repo's own rulebook/ override;
+  // 'builtin' = one of the shared packs shipped with EvoFlux.
+  source: 'project' | 'builtin'
   manifest: Record<string, unknown>
   files: AimRulebookFile[]
 }

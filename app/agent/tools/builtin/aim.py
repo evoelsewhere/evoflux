@@ -411,11 +411,16 @@ async def _resolve_canonical_profile(
         except FileNotFoundError:
             profile_id = "default"
 
-    rulebook_dir = (
-        Path(rulebook_dir_override)
-        if rulebook_dir_override
-        else (_builtin_rulebooks_dir() / rulebook_id if rulebook_id else None)
-    )
+    rulebook_dir: Path | None
+    if rulebook_dir_override:
+        rulebook_dir = Path(rulebook_dir_override)
+    elif rulebook_id:
+        from app.services.aim.rulebook_install import resolve_rulebook_dir
+
+        rulebook_dir = resolve_rulebook_dir(kb_root, rulebook_id)
+    else:
+        rulebook_dir = None
+
     if rulebook_dir is not None:
         canonicalizer_path = rulebook_dir / "canonicalizers" / f"{profile_id}.yaml"
         if canonicalizer_path.exists():

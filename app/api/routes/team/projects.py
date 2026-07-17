@@ -936,19 +936,34 @@ _RULEBOOK_MAX_FILES = 60
 async def get_aim_rulebook(project_id: UUID, db: DbSession) -> AimRulebookResponse:
     """The project's rulebook pack, read-only — answers "what rules does
     this line convert by?" without opening the EvoFlux repo (spec v2.2 J5).
+    Resolved KB-first: a project whose KB carries its own rulebook/
+    override uses that instead of a shared builtin pack.
     """
     import yaml
 
-    from app.agent.tools.builtin.aim import _builtin_rulebooks_dir
+    from app.services.aim.project import resolve_kb_workspace_path
+    from app.services.aim.rulebook_install import (
+        is_project_rulebook,
+        resolve_rulebook_dir,
+    )
 
     project = await _get_aim_project_or_404(db, project_id)
     rulebook_id = ((project.settings.get("aim") or {}).get("rulebook") or {}).get("id")
-    pack_dir = _builtin_rulebooks_dir() / rulebook_id if rulebook_id else None
+    kb_path = await resolve_kb_workspace_path(db, project)
+    kb_root = Path(kb_path) if kb_path else None
+    pack_dir = (
+        resolve_rulebook_dir(kb_root, rulebook_id)
+        if rulebook_id and kb_root is not None
+        else None
+    )
     if not rulebook_id or pack_dir is None or not pack_dir.is_dir():
         raise HTTPException(
             status_code=404,
             detail=f"Rulebook pack '{rulebook_id}' is not installed here.",
         )
+    source: Literal["project", "builtin"] = (
+        "project" if kb_root is not None and is_project_rulebook(kb_root) else "builtin"
+    )
 
     manifest: dict = {}
     manifest_path = pack_dir / "rulebook.yaml"
@@ -975,7 +990,7 @@ async def get_aim_rulebook(project_id: UUID, db: DbSession) -> AimRulebookRespon
         files.append(
             AimRulebookFile(path=str(path.relative_to(pack_dir)), content=content)
         )
-    return AimRulebookResponse(id=rulebook_id, manifest=manifest, files=files)
+    return AimRulebookResponse(id=rulebook_id, source=source, manifest=manifest, files=files)
 
 
 @router.get("/{project_id}/aim/runs/{run_id}", response_model=AimRunOut)

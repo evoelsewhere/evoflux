@@ -6,6 +6,7 @@ create/join wizard endpoints (§3.12).
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -115,6 +116,9 @@ class AimRulebookResponse(BaseModel):
     the parsed manifest plus every small text artifact in the pack."""
 
     id: str
+    #: 'project' when resolved from the KB repo's own rulebook/ override,
+    #: 'builtin' when it's one of the shared packs shipped with EvoFlux.
+    source: Literal["project", "builtin"]
     manifest: dict
     files: list[AimRulebookFile]
 

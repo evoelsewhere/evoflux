@@ -170,6 +170,72 @@ async def test_get_aim_rulebook_404_for_unknown_pack(client, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_get_aim_rulebook_reports_builtin_source(client, tmp_path):
+    source = _make_local_repo(tmp_path, "src-rb3")
+    target = _make_local_repo(tmp_path, "tgt-rb3")
+    create_resp = await client.post(
+        "/api/team/projects/aim",
+        json={
+            "name": "rb-builtin",
+            "rulebook_id": "cobol-java21",
+            "source_paths": [str(source)],
+            "target_path": str(target),
+            "kb_path": str(tmp_path / "kb-rb3"),
+        },
+    )
+    assert create_resp.status_code == 201
+    project_id = create_resp.json()["id"]
+
+    resp = await client.get(f"/api/team/projects/{project_id}/aim/rulebook")
+    assert resp.status_code == 200
+    assert resp.json()["source"] == "builtin"
+
+
+@pytest.mark.asyncio
+async def test_get_aim_rulebook_prefers_kb_override(client, tmp_path):
+    """A KB-local rulebook/ directory wins over the builtin pack of the
+    same id, and the endpoint reports source='project' — the flexibility
+    the user asked for: a project's rulebook lives in its own KB repo,
+    not hardcoded into EvoFlux."""
+    source = _make_local_repo(tmp_path, "src-rb4")
+    target = _make_local_repo(tmp_path, "tgt-rb4")
+    kb_path = tmp_path / "kb-rb4"
+    create_resp = await client.post(
+        "/api/team/projects/aim",
+        json={
+            "name": "rb-override",
+            # A real builtin pack id -- proves the KB override wins even
+            # when a same-named builtin pack also exists.
+            "rulebook_id": "cobol-java21",
+            "source_paths": [str(source)],
+            "target_path": str(target),
+            "kb_path": str(kb_path),
+        },
+    )
+    assert create_resp.status_code == 201
+    project_id = create_resp.json()["id"]
+
+    # A KB-local override, added after project creation (git pull of a
+    # teammate's customization, in practice).
+    override_dir = kb_path / "rulebook"
+    override_dir.mkdir(parents=True)
+    (override_dir / "rulebook.yaml").write_text(
+        "id: cobol-java21\nversion: '0.1'\ndescription: project-specific override\n"
+        "parser_strategy: tree_sitter\n",
+        encoding="utf-8",
+    )
+
+    resp = await client.get(f"/api/team/projects/{project_id}/aim/rulebook")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["source"] == "project"
+    assert body["manifest"]["description"] == "project-specific override"
+    # Not the builtin cobol-java21 pack's structural extractors.
+    paths = [f["path"] for f in body["files"]]
+    assert "extractors/cobol-structural.yaml" not in paths
+
+
+@pytest.mark.asyncio
 async def test_summary_returns_phase_counts_and_equivalent_pct(client, tmp_path):
     project, *_ = await _make_aim_project_with_units(tmp_path)
 
