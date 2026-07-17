@@ -61,6 +61,7 @@ import { useWorkflowsQuery } from '@/queries/useWorkflowsQuery'
 import { resolveAimRolePath } from '@/components/AimKbPanel'
 import { Button } from '@/components/ui/button'
 import { TeamChatView } from '@/components/TeamChatView'
+import { MarkdownBlock } from '@/utils/markdown'
 import { cn } from '@/lib/utils'
 import type {
   AimUnitOut,
@@ -858,6 +859,36 @@ function AgentName({ agent }: { agent: string }) {
   )
 }
 
+/** Message body rendered as real markdown (headings, tables, code — the
+ * lead's certify summaries are full markdown), collapsed to a faded
+ * preview until clicked. line-clamp can't truncate nested block elements,
+ * so the collapse is max-height + a bottom fade mask. */
+function LogMarkdown({
+  text,
+  expanded,
+  onToggle,
+}: {
+  text: string
+  expanded: boolean
+  onToggle: () => void
+}) {
+  return (
+    <div
+      className={cn(
+        'cursor-pointer overflow-hidden',
+        !expanded &&
+          'max-h-28 [mask-image:linear-gradient(to_bottom,black_65%,transparent)]',
+      )}
+      title="Click to expand / collapse"
+      onClick={onToggle}
+    >
+      <div className="prose prose-sm max-w-none overflow-x-auto text-xs leading-4 text-(--color-text-2) [&_h1]:text-xs [&_h2]:text-xs [&_h3]:text-[11px] [&_h4]:text-[11px] [&_li]:my-0 [&_ol]:my-1 [&_p]:my-1 [&_pre]:my-1 [&_table]:my-1 [&_table]:text-[10px] [&_ul]:my-1">
+        <MarkdownBlock content={text} />
+      </div>
+    </div>
+  )
+}
+
 interface LogLine {
   key: string
   at: string
@@ -881,6 +912,13 @@ function parseCallArgs(raw: unknown): Record<string, unknown> {
 
 function snippet(value: unknown, max: number): string {
   const text = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : ''
+  return text.length > max ? `${text.slice(0, max)}…` : text
+}
+
+/** Like snippet() but newline-preserving — message bodies render as
+ * markdown, so collapsing whitespace would destroy headings/tables. */
+function clip(value: unknown, max: number): string {
+  const text = typeof value === 'string' ? value.trim() : ''
   return text.length > max ? `${text.slice(0, max)}…` : text
 }
 
@@ -940,7 +978,7 @@ function ActivityLogSection({ sessionId, active }: { sessionId: string; active: 
             agent,
             kind: 'handoff',
             status: typeof args.status === 'string' ? args.status : undefined,
-            text: snippet(args.summary, 240),
+            text: clip(args.summary, 600),
             tools: [],
           })
         } else {
@@ -948,7 +986,7 @@ function ActivityLogSection({ sessionId, active }: { sessionId: string; active: 
         }
       }
 
-      const text = snippet(msg.content, 700)
+      const text = clip(msg.content, 1200)
       if (text || plainTools.length > 0) {
         out.push({
           key: msg.id,
@@ -1047,9 +1085,11 @@ function ActivityLogSection({ sessionId, active }: { sessionId: string; active: 
                     )}
                   </p>
                   {line.text && (
-                    <p className="whitespace-pre-wrap text-[11px] leading-4 text-(--color-text)">
-                      {line.text}
-                    </p>
+                    <LogMarkdown
+                      text={line.text}
+                      expanded={expanded.has(line.key)}
+                      onToggle={() => toggleExpand(line.key)}
+                    />
                   )}
                 </div>
               </div>
@@ -1092,16 +1132,11 @@ function ActivityLogSection({ sessionId, active }: { sessionId: string; active: 
                   )}
                 </p>
                 {line.text && (
-                  <p
-                    className={cn(
-                      'cursor-pointer whitespace-pre-wrap text-[11px] leading-4 text-(--color-text-2)',
-                      !expanded.has(line.key) && 'line-clamp-4',
-                    )}
-                    title="Click to expand / collapse"
-                    onClick={() => toggleExpand(line.key)}
-                  >
-                    {line.text}
-                  </p>
+                  <LogMarkdown
+                    text={line.text}
+                    expanded={expanded.has(line.key)}
+                    onToggle={() => toggleExpand(line.key)}
+                  />
                 )}
                 {line.tools.length > 0 && (
                   <p className={cn('flex flex-wrap items-center gap-1', line.text && 'mt-1')}>
