@@ -62,6 +62,8 @@ import { resolveAimRolePath } from '@/components/AimKbPanel'
 import { Button } from '@/components/ui/button'
 import { TeamChatView } from '@/components/TeamChatView'
 import { MarkdownBlock } from '@/utils/markdown'
+import { formatRelativeDate } from '@/utils/format'
+import { takeAimPipelinePrefill } from '@/lib/aimHandoff'
 import { cn } from '@/lib/utils'
 import type {
   AimUnitOut,
@@ -104,6 +106,21 @@ type RunDisplayStatus =
   | 'interrupted'
   | 'done'
 
+/** Wall-clock of a run, compact: "34s", "12m 05s", "1h 22m". Live runs
+ * show elapsed-so-far (refreshed by the 5s poll re-render). */
+function executionDuration(execution: WorkflowExecutionSummary | undefined): string {
+  if (!execution) return '—'
+  const start = new Date(execution.started_at).getTime()
+  const end = execution.ended_at ? new Date(execution.ended_at).getTime() : Date.now()
+  const totalSeconds = Math.max(0, Math.round((end - start) / 1000))
+  if (totalSeconds < 60) return `${totalSeconds}s`
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  if (minutes < 60) return `${minutes}m ${String(seconds).padStart(2, '0')}s`
+  const hours = Math.floor(minutes / 60)
+  return `${hours}h ${String(minutes % 60).padStart(2, '0')}m`
+}
+
 function displayStatus(
   sessionRunning: boolean,
   execution: WorkflowExecutionSummary | undefined,
@@ -122,9 +139,18 @@ function displayStatus(
 export function AimPipelinesPanel({ project }: { project: CodingProject }) {
   const queryClient = useQueryClient()
   const targetWorkspace = resolveAimRolePath(project, 'target')
-  const [pipelineKey, setPipelineKey] = useState(PIPELINES[0].key)
-  const [unitInput, setUnitInput] = useState('')
-  const [waveInput, setWaveInput] = useState('0')
+  // A unit card's quick action lands here with the form pre-filled —
+  // consumed once, then this screen behaves as if hand-opened.
+  const [prefill] = useState(() => takeAimPipelinePrefill())
+  const [pipelineKey, setPipelineKey] = useState(() =>
+    prefill && PIPELINES.some((p) => p.key === prefill.pipeline)
+      ? prefill.pipeline
+      : PIPELINES[0].key,
+  )
+  const [unitInput, setUnitInput] = useState(prefill?.unit ?? '')
+  const [waveInput, setWaveInput] = useState(
+    prefill?.wave != null ? String(prefill.wave) : '0',
+  )
   const [caseSet, setCaseSet] = useState<'smoke' | 'full'>('smoke')
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -384,6 +410,7 @@ export function AimPipelinesPanel({ project }: { project: CodingProject }) {
                   <th className="pb-2 font-medium">Pipeline</th>
                   <th className="pb-2 font-medium">Status</th>
                   <th className="pb-2 font-medium">Started</th>
+                  <th className="pb-2 font-medium">Took</th>
                   <th className="pb-2" />
                 </tr>
               </thead>
@@ -1395,8 +1422,14 @@ function RunRow({
       <td className="py-2 pr-3" title={execution?.error ?? undefined}>
         <StatusBadge status={status} />
       </td>
+      <td
+        className="py-2 pr-3 text-(--color-text-muted)"
+        title={run.created_at ? new Date(run.created_at).toLocaleString() : undefined}
+      >
+        {formatRelativeDate(run.created_at)}
+      </td>
       <td className="py-2 pr-3 text-(--color-text-muted)">
-        {run.created_at ? new Date(run.created_at).toLocaleString() : '—'}
+        {executionDuration(execution)}
       </td>
       <td className="py-2 text-right">
         <span className="inline-flex items-center gap-1">
