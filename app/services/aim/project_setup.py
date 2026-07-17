@@ -100,19 +100,19 @@ async def create_aim_project(
         rulebook_id=rulebook_id,
         rulebook_version=rulebook_version,
     )
-    _install_rulebook_best_effort(rulebook_id)
+    _install_rulebook_best_effort(kb_root, rulebook_id)
     await db.refresh(project)
     return project
 
 
-def _install_rulebook_best_effort(rulebook_id: str) -> None:
+def _install_rulebook_best_effort(kb_root: Path, rulebook_id: str) -> None:
     """Pack content installation must never fail project setup."""
     from loguru import logger
 
     try:
         from app.services.aim.rulebook_install import install_rulebook_content
 
-        install_rulebook_content(rulebook_id)
+        install_rulebook_content(kb_root, rulebook_id)
     except Exception as exc:  # noqa: BLE001
         logger.warning("aim_rulebook_install_failed rulebook={} error={}", rulebook_id, exc)
 
@@ -153,6 +153,6 @@ async def join_aim_project(
         rulebook_id=manifest.rulebook.id,
         rulebook_version=manifest.rulebook.version,
     )
-    _install_rulebook_best_effort(manifest.rulebook.id)
+    _install_rulebook_best_effort(kb_root, manifest.rulebook.id)
     await db.refresh(project)
     return project

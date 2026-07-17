@@ -29,8 +29,9 @@ def test_installs_pack_workflows_and_skills_gap_fill(config_dirs, monkeypatch, t
         "---\nname: demo-skill\ndescription: d\n---\nbody", encoding="utf-8"
     )
     monkeypatch.setattr(rulebook_install, "_pack_dir", lambda _rid: pack)
+    kb_root = tmp_path / "kb"  # no rulebook/ override -- resolves to the builtin fake pack
 
-    installed = rulebook_install.install_rulebook_content("demo-pack")
+    installed = rulebook_install.install_rulebook_content(kb_root, "demo-pack")
     assert installed == {
         "workflows": ["demo-flow.yaml"],
         "skills": ["demo-skill"],
@@ -42,7 +43,7 @@ def test_installs_pack_workflows_and_skills_gap_fill(config_dirs, monkeypatch, t
 
     target = global_workflows_dir() / "demo-flow.yaml"
     target.write_text("user edited", encoding="utf-8")
-    installed2 = rulebook_install.install_rulebook_content("demo-pack")
+    installed2 = rulebook_install.install_rulebook_content(kb_root, "demo-pack")
     assert installed2 == {"workflows": [], "skills": [], "agents": []}
     assert target.read_text(encoding="utf-8") == "user edited"
 
@@ -50,7 +51,8 @@ def test_installs_pack_workflows_and_skills_gap_fill(config_dirs, monkeypatch, t
 def test_unknown_pack_installs_nothing(config_dirs):
     from app.services.aim.rulebook_install import install_rulebook_content
 
-    assert install_rulebook_content("not-a-pack") == {
+    kb_root = config_dirs / "kb"
+    assert install_rulebook_content(kb_root, "not-a-pack") == {
         "workflows": [],
         "skills": [],
         "agents": [],
@@ -71,6 +73,7 @@ def test_agent_overlay_merges_skills_and_prompt(config_dirs, monkeypatch, tmp_pa
         encoding="utf-8",
     )
     monkeypatch.setattr(rulebook_install, "_pack_dir", lambda _rid: pack)
+    kb_root = tmp_path / "kb"
 
     # Pre-install a minimal base blueprint (so the seed backfill is a no-op).
     agents_dir = _resolve_aim_agents_dir()
@@ -82,7 +85,7 @@ def test_agent_overlay_merges_skills_and_prompt(config_dirs, monkeypatch, tmp_pa
         encoding="utf-8",
     )
 
-    installed = rulebook_install.install_rulebook_content("java-pack")
+    installed = rulebook_install.install_rulebook_content(kb_root, "java-pack")
     assert installed["agents"] == ["aim-converter.md"]
 
     from app.agent.tools.builtin.skill import _parse_frontmatter
@@ -97,7 +100,7 @@ def test_agent_overlay_merges_skills_and_prompt(config_dirs, monkeypatch, tmp_pa
     assert "rulebook-overlay: java-pack/aim-converter.md" in body
 
     # Idempotent: a second create/join doesn't append twice.
-    installed2 = rulebook_install.install_rulebook_content("java-pack")
+    installed2 = rulebook_install.install_rulebook_content(kb_root, "java-pack")
     assert installed2["agents"] == []
     assert base.read_text(encoding="utf-8").count("## Java specifics") == 1
 
@@ -119,7 +122,7 @@ def test_agent_overlay_without_base_is_skipped(config_dirs, monkeypatch, tmp_pat
         "---\nname: aim-lead\nrole: lead\n---\nlead", encoding="utf-8"
     )
 
-    installed = rulebook_install.install_rulebook_content("orphan-pack")
+    installed = rulebook_install.install_rulebook_content(tmp_path / "kb", "orphan-pack")
     assert installed["agents"] == []
 
 
@@ -140,3 +143,68 @@ def test_builtin_packs_have_no_conflicting_workflow_names(config_dirs):
                 "aim-test-compare",
                 "aim-cutover-check",
             }
+
+
+# ---------------------------------------------------------------------------
+# KB-first resolution — resolve_rulebook_dir / is_project_rulebook.
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_rulebook_dir_prefers_kb_override_over_builtin(tmp_path, monkeypatch):
+    from app.services.aim import rulebook_install
+
+    builtin_pack = tmp_path / "builtin" / "some-id"
+    builtin_pack.mkdir(parents=True)
+    monkeypatch.setattr(rulebook_install, "_pack_dir", lambda _rid: builtin_pack)
+
+    kb_root = tmp_path / "kb"
+    project_rulebook = kb_root / "rulebook"
+    project_rulebook.mkdir(parents=True)
+
+    # Both a KB override AND a matching builtin pack exist -- KB wins.
+    resolved = rulebook_install.resolve_rulebook_dir(kb_root, "some-id")
+    assert resolved == project_rulebook
+    assert rulebook_install.is_project_rulebook(kb_root) is True
+
+
+def test_resolve_rulebook_dir_falls_back_to_builtin_without_override(tmp_path, monkeypatch):
+    from app.services.aim import rulebook_install
+
+    builtin_pack = tmp_path / "builtin" / "some-id"
+    builtin_pack.mkdir(parents=True)
+    monkeypatch.setattr(rulebook_install, "_pack_dir", lambda _rid: builtin_pack)
+
+    kb_root = tmp_path / "kb"  # no rulebook/ subdirectory
+    resolved = rulebook_install.resolve_rulebook_dir(kb_root, "some-id")
+    assert resolved == builtin_pack
+    assert rulebook_install.is_project_rulebook(kb_root) is False
+
+
+def test_resolve_rulebook_dir_returns_none_when_neither_exists(tmp_path, monkeypatch):
+    from app.services.aim import rulebook_install
+
+    monkeypatch.setattr(rulebook_install, "_pack_dir", lambda _rid: tmp_path / "no-such-pack")
+    assert rulebook_install.resolve_rulebook_dir(tmp_path / "kb", "ghost-id") is None
+
+
+def test_install_rulebook_content_reads_from_kb_override(config_dirs, tmp_path):
+    """End to end: a KB-local rulebook/ pack's workflows/skills install
+    exactly like a builtin pack would, with no _pack_dir monkeypatching —
+    proving the KB override path is actually wired, not just resolved."""
+    from app.services.aim.rulebook_install import install_rulebook_content
+
+    kb_root = tmp_path / "kb"
+    project_pack = kb_root / "rulebook"
+    (project_pack / "skills" / "custom-idiom").mkdir(parents=True)
+    (project_pack / "skills" / "custom-idiom" / "SKILL.md").write_text(
+        "---\nname: custom-idiom\ndescription: d\n---\nbody", encoding="utf-8"
+    )
+
+    installed = install_rulebook_content(kb_root, "whatever-id-the-project-chose")
+    assert installed["skills"] == ["custom-idiom"]
+
+    from pathlib import Path
+
+    from app.core.config import settings as app_settings
+
+    assert (Path(app_settings.SKILLS_DIR) / "custom-idiom" / "SKILL.md").is_file()
