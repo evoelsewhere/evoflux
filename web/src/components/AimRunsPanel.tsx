@@ -23,6 +23,7 @@ import { getAimRun, listAimRuns } from '@/api/client'
 import { queryKeys } from '@/queries/keys'
 import { cn } from '@/lib/utils'
 import { resolveAimRolePath } from '@/components/AimKbPanel'
+import { AimSidePanel } from '@/components/AimSidePanel'
 import { RunMonitorPanel } from '@/components/AimPipelinesPanel'
 import { TeamChatView } from '@/components/TeamChatView'
 import type { CodingProject } from '@/api/types'
@@ -279,7 +280,7 @@ export function AimRunsPanel({ project, runId }: { project: CodingProject; runId
       {/* Post-run Discussion — singleton TeamChatView, only when run has a session.
           Shares the same constraint as AimPipelinesPanel: exactly one instance mounted. */}
       {discussion && !monitorRun && (
-        <div className="flex w-96 shrink-0 flex-col border-l border-(--color-border)">
+        <AimSidePanel storageKey="oa.aimDiscussion.width" defaultWidth={420}>
           <div className="flex items-center justify-between gap-2 border-b border-(--color-border) px-3 py-2">
             <p className="min-w-0 truncate text-xs font-medium text-(--color-text)">
               Discussion
@@ -303,7 +304,7 @@ export function AimRunsPanel({ project, runId }: { project: CodingProject; runId
               workspace={targetWorkspace}
             />
           </div>
-        </div>
+        </AimSidePanel>
       )}
     </div>
   )

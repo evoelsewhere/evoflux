@@ -244,7 +244,14 @@ export function AimSidebar({
                       ) : (
                         <ChevronRight size={12} className="shrink-0 text-(--color-text-subtle)" />
                       )}
-                      <span className="min-w-0 flex-1 truncate">{project.name}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-medium">{project.name}</span>
+                        {rulebook?.id && (
+                          <span className="block truncate font-mono text-[10px] font-normal text-(--color-text-subtle)">
+                            {rulebook.id}
+                          </span>
+                        )}
+                      </span>
                       {hasRunning && (
                         <span
                           className="h-1.5 w-1.5 shrink-0 rounded-full bg-(--color-accent)"
@@ -254,7 +261,10 @@ export function AimSidebar({
                       )}
                     </button>
                     {isExpanded && (
-                      <div className="ml-3 space-y-0.5 border-l border-(--color-border) pl-2 pt-0.5">
+                      // Feature rows read as children: tighter, smaller, and
+                      // quieter than the project row, hung off an indent guide
+                      // aligned under the chevron.
+                      <div className="mb-1 ml-[13px] space-y-px border-l border-(--color-border) pl-1.5 pt-0.5">
                         {AIM_FEATURES.map(({ key, label, Icon }) => (
                           <button
                             key={key}
@@ -267,13 +277,13 @@ export function AimSidebar({
                               })
                             }}
                             className={cn(
-                              'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs transition-colors',
+                              'flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[11px] transition-colors',
                               isActive && activeFeature === key
-                                ? 'bg-(--bg-key) text-(--color-accent)'
+                                ? 'bg-(--bg-key) font-medium text-(--color-accent)'
                                 : 'text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)',
                             )}
                           >
-                            <Icon size={12} className="shrink-0" aria-hidden="true" />
+                            <Icon size={11} className="shrink-0" aria-hidden="true" />
                             <span className="truncate">{label}</span>
                             {key === 'pipelines' && hasRunning && (
                               <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-(--color-accent)" />

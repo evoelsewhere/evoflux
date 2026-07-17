@@ -59,6 +59,7 @@ import {
 import { queryKeys } from '@/queries/keys'
 import { useWorkflowsQuery } from '@/queries/useWorkflowsQuery'
 import { resolveAimRolePath } from '@/components/AimKbPanel'
+import { AimSidePanel } from '@/components/AimSidePanel'
 import { Button } from '@/components/ui/button'
 import { TeamChatView } from '@/components/TeamChatView'
 import { MarkdownBlock } from '@/utils/markdown'
@@ -460,7 +461,7 @@ export function AimPipelinesPanel({ project }: { project: CodingProject }) {
       {/* Post-run Discussion — TeamChatView is a global singleton; exactly one
           instance, mounted only while a finished run's transcript is open. */}
       {discussion && !monitorSession && (
-        <div className="flex w-96 shrink-0 flex-col border-l border-(--color-border)">
+        <AimSidePanel storageKey="oa.aimDiscussion.width" defaultWidth={420}>
           <div className="flex items-center justify-between gap-2 border-b border-(--color-border) px-3 py-2">
             <p className="min-w-0 truncate text-xs font-medium text-(--color-text)">
               Discussion
@@ -484,7 +485,7 @@ export function AimPipelinesPanel({ project }: { project: CodingProject }) {
               workspace={discussion.workspace ?? null}
             />
           </div>
-        </div>
+        </AimSidePanel>
       )}
 
       {/* §9.3 — Confirm dialog for convert pipelines (write to target repo) */}
@@ -766,7 +767,7 @@ export function RunMonitorPanel({
   }
 
   return (
-    <div className="flex w-96 shrink-0 flex-col border-l border-(--color-border)">
+    <AimSidePanel storageKey="oa.aimMonitor.width" defaultWidth={420}>
       <div className="flex items-center justify-between gap-2 border-b border-(--color-border) px-3 py-2">
         <p className="min-w-0 truncate text-xs font-medium text-(--color-text)">
           Run monitor
@@ -863,7 +864,7 @@ export function RunMonitorPanel({
           </Button>
         )}
       </div>
-    </div>
+    </AimSidePanel>
   )
 }
 
