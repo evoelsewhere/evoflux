@@ -15,7 +15,7 @@
  * render inline; anything else falls back to plain text.
  */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { FileText, Loader2, RefreshCw } from 'lucide-react'
 import {
@@ -23,6 +23,7 @@ import {
   listCodingWorkspaceFiles,
   reindexAimProject,
 } from '@/api/client'
+import { takeAimKbOpenPath } from '@/lib/aimHandoff'
 import { queryKeys } from '@/queries/keys'
 import { MarkdownBlock, CodeBlock } from '@/utils/markdown'
 import { buildTree } from '@/utils/workspaceFileTree'
@@ -107,6 +108,11 @@ export function AimKbPanel({ project }: { project: CodingProject }) {
   const queryClient = useQueryClient()
   const kbPath = resolveAimRolePath(project, 'kb')
   const [selected, setSelected] = useState<WorkspaceFileInfo | null>(null)
+  // A unit's "KB doc" quick action lands here with a doc to open — held
+  // until the file listing arrives, then consumed.
+  const [pendingOpenPath, setPendingOpenPath] = useState<string | null>(
+    () => takeAimKbOpenPath(),
+  )
 
   const filesQuery = useQuery({
     queryKey: ['aim-kb-files', kbPath ?? ''],
@@ -114,6 +120,13 @@ export function AimKbPanel({ project }: { project: CodingProject }) {
     enabled: Boolean(kbPath),
     staleTime: 15_000,
   })
+
+  useEffect(() => {
+    if (!pendingOpenPath || !filesQuery.data) return
+    const file = filesQuery.data.files.find((f) => f.path === pendingOpenPath)
+    if (file) setSelected(file)
+    setPendingOpenPath(null)
+  }, [pendingOpenPath, filesQuery.data])
 
   const tree = useMemo(
     () => buildTree(filesQuery.data?.files ?? []),
