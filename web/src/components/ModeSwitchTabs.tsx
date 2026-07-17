@@ -29,32 +29,33 @@ export function ModeSwitchTabs({
 }) {
   const navigate = useNavigate()
   return (
-    <div
-      className={cn(
-        'flex h-8 items-center rounded-md border border-(--color-border) bg-(--bg-page) p-0.5',
-        className,
-      )}
-    >
-      {TABS.map(({ mode, label, Icon, to }) => (
-        <button
-          key={mode}
-          type="button"
-          onClick={() => {
-            if (mode === active) return
-            navigate({ to })
-            onNavigate?.()
-          }}
-          className={cn(
-            'flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 text-xs font-medium transition-colors',
-            mode === active
-              ? 'bg-(--bg-key) text-(--color-text) shadow-sm'
-              : 'text-(--color-text-muted) hover:text-(--color-text)',
-          )}
-        >
-          <Icon size={12} aria-hidden="true" />
-          {label}
-        </button>
-      ))}
+    // The strip is a size container: labels only render when there's room
+    // for all three (below ~12.5rem the resizable sidebars would otherwise
+    // clip the text), collapsing gracefully to icons + tooltips.
+    <div className={cn('@container/modeswitch', className)}>
+      <div className="flex h-8 items-center rounded-md border border-(--color-border) bg-(--bg-page) p-0.5">
+        {TABS.map(({ mode, label, Icon, to }) => (
+          <button
+            key={mode}
+            type="button"
+            onClick={() => {
+              if (mode === active) return
+              navigate({ to })
+              onNavigate?.()
+            }}
+            title={label}
+            className={cn(
+              'flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] px-1 text-xs font-medium transition-colors @[12.5rem]/modeswitch:px-2',
+              mode === active
+                ? 'bg-(--bg-key) text-(--color-text) shadow-sm'
+                : 'text-(--color-text-muted) hover:text-(--color-text)',
+            )}
+          >
+            <Icon size={13} className="shrink-0" aria-hidden="true" />
+            <span className="hidden truncate @[12.5rem]/modeswitch:inline">{label}</span>
+          </button>
+        ))}
+      </div>
     </div>
   )
 }

@@ -37,6 +37,7 @@ import {
 import { getAimProjectSummary, listAimRuns, listAimUnits } from '@/api/client'
 import { queryKeys } from '@/queries/keys'
 import { resolveAimRoleWorkspaces } from '@/components/AimKbPanel'
+import { AimSidePanel } from '@/components/AimSidePanel'
 import { setAimKbOpenPath, setAimPipelinePrefill } from '@/lib/aimHandoff'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -491,7 +492,7 @@ function UnitDetailPanel({
   )
 
   return (
-    <div className="flex w-80 shrink-0 flex-col border-l border-(--color-border)">
+    <AimSidePanel storageKey="oa.aimUnitDetail.width" defaultWidth={320} minWidth={280} maxWidth={560}>
       <div className="flex items-center justify-between gap-2 border-b border-(--color-border) px-3 py-2">
         <p className="min-w-0 truncate font-mono text-xs font-medium text-(--color-text)">
           {unitKey}
@@ -602,7 +603,7 @@ function UnitDetailPanel({
           </p>
         )}
       </div>
-    </div>
+    </AimSidePanel>
   )
 }
 
