@@ -6,7 +6,6 @@ import { AimSetupWizard } from '@/components/AimSetupWizard'
 import { AimOverviewPanel } from '@/components/AimOverviewPanel'
 import { AimPipelinesPanel } from '@/components/AimPipelinesPanel'
 import { AimKbPanel } from '@/components/AimKbPanel'
-import { AimRunsPanel } from '@/components/AimRunsPanel'
 import { AimRulebookPanel } from '@/components/AimRulebookPanel'
 import { useAimProjectsQuery } from '@/queries/useAimProjectsQuery'
 import type { AimFeature } from '@/components/AimSidebar'
@@ -29,6 +28,8 @@ function AimLayoutBase() {
   const projectId = params.projectId as string | undefined
   const rawFeature = params.feature as string | undefined
   // /aim/$projectId/runs/$runId — deep link to one run's report (§3.2).
+  // Runs & Reports folded into Pipelines: this URL still works, it just
+  // opens the Report side panel on the Pipelines screen now.
   const runId = params.runId as string | undefined
   const navigate = useNavigate()
   const [wizardOpen, setWizardOpen] = useState(false)
@@ -70,7 +71,7 @@ function AimLayoutBase() {
   const project = projects?.find((p) => p.id === projectId)
 
   const feature: AimFeature = runId
-    ? 'runs'
+    ? 'pipelines'
     : AIM_FEATURES.some((f) => f.key === rawFeature)
       ? (rawFeature as AimFeature)
       : 'overview'
@@ -200,11 +201,9 @@ function FeaturePanel({
     case 'overview':
       return <AimOverviewPanel project={project} />
     case 'pipelines':
-      return <AimPipelinesPanel project={project} />
+      return <AimPipelinesPanel project={project} runId={runId} />
     case 'kb':
       return <AimKbPanel project={project} />
-    case 'runs':
-      return <AimRunsPanel project={project} runId={runId} />
     case 'rulebook':
       return <AimRulebookPanel project={project} />
   }

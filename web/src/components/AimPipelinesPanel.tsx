@@ -31,6 +31,7 @@ import {
   CirclePause,
   CircleX,
   CornerDownLeft,
+  FileText,
   Loader2,
   MessageSquareText,
   OctagonX,
@@ -43,9 +44,11 @@ import {
 } from 'lucide-react'
 import {
   approveWorkflow,
+  getAimRun,
   getExecution,
   getPendingQuestions,
   getWorkflow,
+  listAimRuns,
   listAimUnits,
   listTeamSessions,
   listWorkflowExecutions,
@@ -68,6 +71,7 @@ import { formatRelativeDate } from '@/utils/format'
 import { takeAimPipelinePrefill } from '@/lib/aimHandoff'
 import { cn } from '@/lib/utils'
 import type {
+  AimRunListItem,
   AimUnitOut,
   CodingProject,
   MessageResponse,
@@ -138,7 +142,15 @@ function displayStatus(
   return execution.status as RunDisplayStatus
 }
 
-export function AimPipelinesPanel({ project }: { project: CodingProject }) {
+export function AimPipelinesPanel({
+  project,
+  runId,
+}: {
+  project: CodingProject
+  /** Deep-link from Overview's recent-runs strip or a shared
+   * /aim/$projectId/runs/$runId URL — opens that run's Report panel. */
+  runId?: string
+}) {
   const queryClient = useQueryClient()
   const targetWorkspace = resolveAimRolePath(project, 'target')
   // A unit card's quick action lands here with the form pre-filled —
@@ -159,9 +171,34 @@ export function AimPipelinesPanel({ project }: { project: CodingProject }) {
   // §9.3: convert pipelines write to the target repo — confirm before run.
   const [confirmOpen, setConfirmOpen] = useState(false)
   // The one chat surface in the whole mode: a finished run's transcript.
-  const [discussion, setDiscussion] = useState<SessionResponse | null>(null)
+  // Narrowed for the same reason as monitorSession — Discussion (below)
+  // only ever reads id/title/workspace, and opening it from a Monitor
+  // panel that resolved a session outside the current table page (a
+  // report-originated deep link) doesn't have a full SessionResponse.
+  const [discussion, setDiscussion] = useState<Pick<
+    SessionResponse,
+    'id' | 'title' | 'workspace'
+  > | null>(null)
   // Run Monitor: node progress + log + inline gate for one run's session.
-  const [monitorSession, setMonitorSession] = useState<SessionResponse | null>(null)
+  // Narrowed to what RunMonitorPanel actually needs (not the full
+  // SessionResponse) so opening it from the Report panel — which only
+  // knows a session_id, not a table row — doesn't need a fake object;
+  // RunMonitorPanel resolves its own execution from sessionId alone.
+  const [monitorSession, setMonitorSession] = useState<Pick<
+    SessionResponse,
+    'id' | 'title' | 'running'
+  > | null>(null)
+  // Report: the aim_runs verdict + stats + JSON report for a run that has
+  // one (Runs & Reports folded in here — see ReportPanel below).
+  const [reportRun, setReportRun] = useState<{ runId: string; title?: string } | null>(null)
+
+  // Deep-link: open the report panel for the linked run, once per runId.
+  useEffect(() => {
+    if (!runId) return
+    setMonitorSession(null)
+    setDiscussion(null)
+    setReportRun({ runId })
+  }, [runId])
 
   const pipeline = PIPELINES.find((p) => p.key === pipelineKey) ?? PIPELINES[0]
 
@@ -220,6 +257,26 @@ export function AimPipelinesPanel({ project }: { project: CodingProject }) {
     }
     return map
   }, [executionsQuery.data])
+
+  // Runs & Reports folded in here: not every pipeline run produces an
+  // aim_runs verdict (only compare/convert/test-kind calls do — assess,
+  // understand, and a convert-unit's plan step never do), so this is a
+  // side lookup keyed by session_id, not the table's row source. 100 is
+  // generous relative to the sessions list's own limit below — a verdict
+  // older than that won't show inline, but is still reachable by its own
+  // deep link (getAimRun doesn't depend on this list).
+  const aimRunsQuery = useQuery({
+    queryKey: [...queryKeys.projects.detail(project.id), 'aim-runs-list'],
+    queryFn: () => listAimRuns(project.id, 100),
+    refetchInterval: 10_000,
+  })
+  const runBySessionId = useMemo(() => {
+    const map = new Map<string, AimRunListItem>()
+    for (const run of aimRunsQuery.data ?? []) {
+      if (run.session_id) map.set(run.session_id, run)
+    }
+    return map
+  }, [aimRunsQuery.data])
 
   const canRun =
     !starting &&
@@ -280,6 +337,7 @@ export function AimPipelinesPanel({ project }: { project: CodingProject }) {
       void queryClient.invalidateQueries({ queryKey: ['aim-run-executions', project.id] })
       // Open the monitor right away — the whole point is watching it run.
       setDiscussion(null)
+      setReportRun(null)
       setMonitorSession({ ...session, title, running: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start the pipeline run.')
@@ -416,23 +474,40 @@ export function AimPipelinesPanel({ project }: { project: CodingProject }) {
                 </tr>
               </thead>
               <tbody>
-                {runs.map((run) => (
-                  <RunRow
-                    key={run.id}
-                    run={run}
-                    execution={executionBySession.get(run.id)}
-                    monitorOpen={monitorSession?.id === run.id}
-                    discussionOpen={discussion?.id === run.id}
-                    onMonitor={() => {
-                      setDiscussion(null)
-                      setMonitorSession((prev) => (prev?.id === run.id ? null : run))
-                    }}
-                    onDiscuss={() => {
-                      setMonitorSession(null)
-                      setDiscussion((prev) => (prev?.id === run.id ? null : run))
-                    }}
-                  />
-                ))}
+                {runs.map((run) => {
+                  const aimRun = runBySessionId.get(run.id)
+                  return (
+                    <RunRow
+                      key={run.id}
+                      run={run}
+                      execution={executionBySession.get(run.id)}
+                      aimRun={aimRun}
+                      monitorOpen={monitorSession?.id === run.id}
+                      reportOpen={reportRun?.runId === aimRun?.id}
+                      discussionOpen={discussion?.id === run.id}
+                      onMonitor={() => {
+                        setDiscussion(null)
+                        setReportRun(null)
+                        setMonitorSession((prev) => (prev?.id === run.id ? null : run))
+                      }}
+                      onReport={() => {
+                        if (!aimRun) return
+                        setMonitorSession(null)
+                        setDiscussion(null)
+                        setReportRun((prev) =>
+                          prev?.runId === aimRun.id
+                            ? null
+                            : { runId: aimRun.id, title: `${aimRun.unit} · ${aimRun.kind}` },
+                        )
+                      }}
+                      onDiscuss={() => {
+                        setMonitorSession(null)
+                        setReportRun(null)
+                        setDiscussion((prev) => (prev?.id === run.id ? null : run))
+                      }}
+                    />
+                  )
+                })}
               </tbody>
             </table>
           )}
@@ -440,7 +515,7 @@ export function AimPipelinesPanel({ project }: { project: CodingProject }) {
       </div>
 
       {/* Run Monitor — node progress + per-node log + inline gate. Not chat. */}
-      {monitorSession && !discussion && (() => {
+      {monitorSession && !discussion && !reportRun && (() => {
         // Prefer the live row over the snapshot taken when the panel opened.
         const liveRun = runs.find((r) => r.id === monitorSession.id) ?? monitorSession
         return (
@@ -452,15 +527,44 @@ export function AimPipelinesPanel({ project }: { project: CodingProject }) {
             onClose={() => setMonitorSession(null)}
             onDiscuss={() => {
               setMonitorSession(null)
-              setDiscussion(liveRun)
+              setReportRun(null)
+              // liveRun may be the narrow monitor-only shape (opened from a
+              // report deep link) — it never carries workspace either way,
+              // so build the Discussion target explicitly rather than
+              // reusing it as-is.
+              setDiscussion({
+                id: liveRun.id,
+                title: liveRun.title,
+                // liveRun's narrow-fallback branch has no workspace field at
+                // all (undefined at runtime) — the cast just names that.
+                workspace: (liveRun as SessionResponse).workspace ?? null,
+              })
             }}
           />
         )
       })()}
 
+      {/* Report — the aim_runs verdict/stats/JSON for a run that has one
+          (Runs & Reports folded in here). Same singleton constraint. */}
+      {reportRun && !discussion && !monitorSession && (
+        <ReportPanel
+          projectId={project.id}
+          runId={reportRun.runId}
+          title={reportRun.title}
+          onClose={() => setReportRun(null)}
+          onOpenNodes={(sessionId) => {
+            setReportRun(null)
+            setDiscussion(null)
+            // No known executionId here — RunMonitorPanel resolves one
+            // from sessionId alone (same fallback a just-started run uses).
+            setMonitorSession({ id: sessionId, title: reportRun.title ?? null, running: false })
+          }}
+        />
+      )}
+
       {/* Post-run Discussion — TeamChatView is a global singleton; exactly one
           instance, mounted only while a finished run's transcript is open. */}
-      {discussion && !monitorSession && (
+      {discussion && !monitorSession && !reportRun && (
         <AimSidePanel storageKey="oa.aimDiscussion.width" defaultWidth={420}>
           <div className="flex items-center justify-between gap-2 border-b border-(--color-border) px-3 py-2">
             <p className="min-w-0 truncate text-xs font-medium text-(--color-text)">
@@ -734,9 +838,17 @@ export function RunMonitorPanel({
         ? false
         : 2_500,
   })
+  // UseQueryResult doesn't expose the internal Query's dataUpdateCount, only
+  // dataUpdatedAt (a timestamp) — count fetch completions ourselves off that.
+  const lookupFetchCountRef = useRef(0)
+  const lastLookupUpdateRef = useRef<number | null>(null)
+  if (lookupQ.dataUpdatedAt && lookupQ.dataUpdatedAt !== lastLookupUpdateRef.current) {
+    lastLookupUpdateRef.current = lookupQ.dataUpdatedAt
+    lookupFetchCountRef.current += 1
+  }
   const executionId = knownExecutionId ?? lookupQ.data?.executions[0]?.id
   const lookupExhausted =
-    !knownExecutionId && !executionId && lookupQ.dataUpdateCount >= 12
+    !knownExecutionId && !executionId && lookupFetchCountRef.current >= 12
 
   const detailQ = useQuery({
     queryKey: ['workflow-execution', executionId ?? ''],
@@ -1395,19 +1507,47 @@ function NodeStatusIcon({ status }: { status: string }) {
   }
 }
 
+/** The domain-level compare/convert/test verdict, distinct from the
+ * workflow's own running/pass/fail status — a pipeline can complete
+ * successfully while its compare verdict is `fail` (that's exactly why
+ * aim-test-compare has a certify/triage gate). Shown as a small chip
+ * next to StatusBadge, not folded into it. */
+function VerdictChip({ verdict }: { verdict: string }) {
+  const tone =
+    verdict === 'pass'
+      ? 'text-(--color-success)'
+      : verdict === 'acceptable_diff'
+        ? 'text-(--color-warning,orange)'
+        : 'text-(--color-error)'
+  const Icon = verdict === 'pass' || verdict === 'acceptable_diff' ? CircleCheck : CircleX
+  return (
+    <span className={cn('inline-flex items-center gap-0.5', tone)} title={`Verdict: ${verdict}`}>
+      <Icon size={10} />
+      {verdict}
+    </span>
+  )
+}
+
 function RunRow({
   run,
   execution,
+  aimRun,
   monitorOpen,
+  reportOpen,
   discussionOpen,
   onMonitor,
+  onReport,
   onDiscuss,
 }: {
   run: SessionResponse
   execution?: WorkflowExecutionSummary
+  /** The linked aim_runs verdict/report, when this session produced one. */
+  aimRun?: AimRunListItem
   monitorOpen: boolean
+  reportOpen: boolean
   discussionOpen: boolean
   onMonitor: () => void
+  onReport: () => void
   onDiscuss: () => void
 }) {
   const status = displayStatus(Boolean(run.running), execution)
@@ -1421,7 +1561,10 @@ function RunRow({
         {execution?.definition_name ?? '—'}
       </td>
       <td className="py-2 pr-3" title={execution?.error ?? undefined}>
-        <StatusBadge status={status} />
+        <span className="flex items-center gap-2">
+          <StatusBadge status={status} />
+          {aimRun && <VerdictChip verdict={aimRun.verdict} />}
+        </span>
       </td>
       <td
         className="py-2 pr-3 text-(--color-text-muted)"
@@ -1450,6 +1593,22 @@ function RunRow({
             {status === 'waiting_gate' ? <CirclePause size={11} /> : <Activity size={11} />}
             {status === 'waiting_gate' ? 'Answer' : 'Monitor'}
           </button>
+          {aimRun && (
+            <button
+              type="button"
+              onClick={onReport}
+              className={cn(
+                'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] transition-colors',
+                reportOpen
+                  ? 'bg-(--bg-key) text-(--color-accent)'
+                  : 'text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)',
+              )}
+              title="Verdict, stats, and the full report for this run"
+            >
+              <FileText size={11} />
+              Report
+            </button>
+          )}
           {finished && (
             <button
               type="button"
@@ -1469,5 +1628,116 @@ function RunRow({
         </span>
       </td>
     </tr>
+  )
+}
+
+// ── Report panel (Runs & Reports, folded in) ─────────────────────────────────
+
+/** The aim_runs verdict + stats + full report.json for one run — what
+ * used to be Runs & Reports' right column, now a side panel matching
+ * Monitor/Discussion. Self-fetches from just a runId, so it works both
+ * from a table row (which knows the summary already) and from the
+ * /aim/$projectId/runs/$runId deep link (which only has the id). */
+function ReportPanel({
+  projectId,
+  runId,
+  title,
+  onClose,
+  onOpenNodes,
+}: {
+  projectId: string
+  runId: string
+  title?: string
+  onClose: () => void
+  onOpenNodes: (sessionId: string) => void
+}) {
+  const detailQuery = useQuery({
+    queryKey: queryKeys.projects.aimRun(projectId, runId),
+    queryFn: () => getAimRun(projectId, runId),
+  })
+  const detail = detailQuery.data
+  const resolvedTitle = title ?? (detail ? `${detail.kind} · ${runId.slice(0, 8)}` : runId.slice(0, 8))
+
+  return (
+    <AimSidePanel storageKey="oa.aimReport.width" defaultWidth={420}>
+      <div className="flex items-center justify-between gap-2 border-b border-(--color-border) px-3 py-2">
+        <p className="min-w-0 truncate text-xs font-medium text-(--color-text)">
+          Report
+          <span className="ml-1.5 truncate font-normal text-(--color-text-subtle)">
+            {resolvedTitle}
+          </span>
+        </p>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close report"
+          className="shrink-0 rounded p-0.5 text-(--color-text-muted) hover:text-(--color-text)"
+        >
+          <X size={13} />
+        </button>
+      </div>
+
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+        {detailQuery.isLoading ? (
+          <p className="flex items-center gap-1.5 text-xs text-(--color-text-subtle)">
+            <Loader2 size={12} className="animate-spin" /> Loading report…
+          </p>
+        ) : detailQuery.isError || !detail ? (
+          <p className="text-xs text-(--color-error)">Failed to load the run.</p>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span
+                className={cn(
+                  'rounded px-2 py-0.5 text-xs font-medium',
+                  detail.verdict === 'pass'
+                    ? 'bg-(--color-success-bg,var(--bg-key)) text-(--color-success,inherit)'
+                    : detail.verdict === 'acceptable_diff'
+                      ? 'bg-(--bg-key) text-(--color-warning,orange)'
+                      : 'bg-(--color-error-subtle,var(--bg-key)) text-(--color-error)',
+                )}
+              >
+                {detail.verdict}
+              </span>
+              <span className="text-xs text-(--color-text-muted)">
+                {detail.kind}
+                {detail.case_set ? ` · ${detail.case_set}` : ''}
+              </span>
+              {(detail.workflow_execution_id || detail.session_id) && (
+                <button
+                  type="button"
+                  onClick={() => detail.session_id && onOpenNodes(detail.session_id)}
+                  className="ml-auto flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium text-(--color-text-muted) transition-colors hover:text-(--color-text)"
+                  title="This run's workflow nodes and per-node log"
+                >
+                  <Activity size={12} />
+                  Nodes
+                </button>
+              )}
+            </div>
+            {Object.keys(detail.stats ?? {}).length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(detail.stats).map(([key, value]) => (
+                  <div key={key} className="rounded bg-(--bg-key) px-2.5 py-1.5">
+                    <p className="text-[10px] text-(--color-text-subtle)">{key}</p>
+                    <p className="text-xs font-medium text-(--color-text)">{String(value)}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            {detail.report ? (
+              <pre className="overflow-x-auto rounded bg-(--bg-key) p-3 font-mono text-[11px] leading-4 text-(--color-text-2)">
+                {JSON.stringify(detail.report, null, 2)}
+              </pre>
+            ) : (
+              <p className="text-xs text-(--color-text-subtle)">
+                No report file on this machine
+                {detail.report_path ? ` (${detail.report_path})` : ''}.
+              </p>
+            )}
+          </>
+        )}
+      </div>
+    </AimSidePanel>
   )
 }

@@ -22,7 +22,6 @@ import {
   BookOpen,
   ChevronDown,
   ChevronRight,
-  ClipboardList,
   LayoutDashboard,
   Plus,
   Settings,
@@ -40,14 +39,17 @@ import { useUIStore } from '@/stores/useUIStore'
 import { cn } from '@/lib/utils'
 import type { LucideIcon } from 'lucide-react'
 
-export type AimFeature = 'overview' | 'kb' | 'rulebook' | 'pipelines' | 'runs'
+// Runs & Reports folded into Pipelines (its run table now shows the
+// aim_runs verdict inline via a Report side panel) — one less place to
+// look for "what happened", since every compare/convert/test verdict
+// already traces back to a pipeline run.
+export type AimFeature = 'overview' | 'kb' | 'rulebook' | 'pipelines'
 
 export const AIM_FEATURES: { key: AimFeature; label: string; Icon: LucideIcon }[] = [
   { key: 'overview', label: 'Overview', Icon: LayoutDashboard },
   { key: 'kb', label: 'Knowledge Base', Icon: BookOpen },
   { key: 'rulebook', label: 'Rulebook', Icon: BookMarked },
   { key: 'pipelines', label: 'Pipelines', Icon: Workflow },
-  { key: 'runs', label: 'Runs & Reports', Icon: ClipboardList },
 ]
 
 const LAST_AIM_PROJECT_KEY = 'oa-last-aim-project'
