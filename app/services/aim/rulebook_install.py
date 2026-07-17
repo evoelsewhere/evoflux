@@ -1,13 +1,15 @@
 """Install a rulebook pack's shareable content into discovery roots
 (aim-framework.md §4.1 AIM-4: ``aim_rulebook_service``).
 
-A pack may ship pack-specific ``workflows/*.yaml`` and ``skills/<name>/``
-directories. Creating or joining an AIM project installs them — gap-fill
-only, never overwriting user-edited files — into the global discovery
-roots so `/workflow` and the skill loader see them immediately. The
-builtin AIM pipeline library needs no installation (it is itself a
-discovery root); this covers per-stack additions like a pack's
-``java-modernization-idioms`` skill.
+A pack may ship pack-specific ``workflows/*.yaml``, ``skills/<name>/``
+directories, and ``agents/<name>.md`` overlays. Creating or joining an
+AIM project installs them — gap-fill only for workflows/skills (never
+overwriting user-edited files), marker-guarded merge for agent overlays
+— so `/workflow`, the skill loader, and the AIM roster see them
+immediately. The builtin AIM pipeline library needs no installation (it
+is itself a discovery root); this covers per-stack additions like a
+pack's ``java-modernization-idioms`` skill or its ``aim-converter``
+prompt overlay.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+import yaml
 from loguru import logger
 
 from app.core.config import settings
@@ -26,10 +29,55 @@ def _pack_dir(rulebook_id: str) -> Path:
     return _builtin_rulebooks_dir() / rulebook_id
 
 
+def _overlay_marker(rulebook_id: str, overlay_name: str) -> str:
+    return f"<!-- rulebook-overlay: {rulebook_id}/{overlay_name} -->"
+
+
+def _merge_agent_overlay(
+    base_path: Path, overlay_path: Path, rulebook_id: str
+) -> bool:
+    """Merge one pack agent overlay onto the installed blueprint.
+
+    Overlay semantics (documented in the packs themselves): frontmatter
+    ``skills`` are appended (deduped), everything else in the overlay
+    frontmatter is ignored, and the overlay body is appended to the base
+    system prompt. A marker comment keeps the merge idempotent across
+    repeated create/join calls. Returns True when the file changed.
+    """
+    from app.agent.tools.builtin.skill import _parse_frontmatter
+
+    marker = _overlay_marker(rulebook_id, overlay_path.name)
+    base_text = base_path.read_text(encoding="utf-8")
+    if marker in base_text:
+        return False
+
+    overlay_meta, overlay_body = _parse_frontmatter(
+        overlay_path.read_text(encoding="utf-8")
+    )
+    base_meta, base_body = _parse_frontmatter(base_text)
+
+    overlay_skills = overlay_meta.get("skills") or []
+    if overlay_skills:
+        merged_skills = list(base_meta.get("skills") or [])
+        for skill in overlay_skills:
+            if skill not in merged_skills:
+                merged_skills.append(skill)
+        base_meta["skills"] = merged_skills
+
+    frontmatter_yaml = yaml.safe_dump(
+        base_meta, sort_keys=False, allow_unicode=True
+    ).strip()
+    appended = f"\n\n{marker}\n\n{overlay_body.strip()}\n" if overlay_body.strip() else f"\n\n{marker}\n"
+    content = f"---\n{frontmatter_yaml}\n---\n\n{base_body.strip()}{appended}"
+    base_path.write_text(content, encoding="utf-8")
+    return True
+
+
 def install_rulebook_content(rulebook_id: str) -> dict[str, list[str]]:
     """Copy the pack's workflows + skills into the editable discovery
-    roots. Returns what was installed (paths relative to their roots)."""
-    installed: dict[str, list[str]] = {"workflows": [], "skills": []}
+    roots and merge its agent overlays onto the AIM roster. Returns what
+    was installed (paths relative to their roots)."""
+    installed: dict[str, list[str]] = {"workflows": [], "skills": [], "agents": []}
     pack = _pack_dir(rulebook_id)
     if not pack.is_dir():
         return installed
@@ -60,11 +108,45 @@ def install_rulebook_content(rulebook_id: str) -> dict[str, list[str]]:
             shutil.copytree(skill_dir, target)
             installed["skills"].append(skill_dir.name)
 
-    if installed["workflows"] or installed["skills"]:
+    # Agent overlays — merged onto the installed AIM roster, not copied.
+    # The roster must exist first (an old config dir may predate AIM);
+    # the same self-heal the team loader uses backfills it from seed.
+    agents_src = pack / "agents"
+    if agents_src.is_dir():
+        from app.services.team_manager import (
+            _ensure_aim_agents_installed,
+            _resolve_aim_agents_dir,
+        )
+
+        agents_dir = _resolve_aim_agents_dir()
+        _ensure_aim_agents_installed(agents_dir)
+        for overlay in sorted(agents_src.glob("*.md")):
+            base = agents_dir / overlay.name
+            if not base.is_file():
+                logger.warning(
+                    "aim_rulebook_agent_overlay_skipped rulebook={} agent={} "
+                    "reason=no-base-blueprint",
+                    rulebook_id,
+                    overlay.name,
+                )
+                continue
+            try:
+                if _merge_agent_overlay(base, overlay, rulebook_id):
+                    installed["agents"].append(overlay.name)
+            except Exception as exc:  # noqa: BLE001 — best-effort, never block create/join
+                logger.warning(
+                    "aim_rulebook_agent_overlay_failed rulebook={} agent={} error={}",
+                    rulebook_id,
+                    overlay.name,
+                    exc,
+                )
+
+    if installed["workflows"] or installed["skills"] or installed["agents"]:
         logger.info(
-            "aim_rulebook_content_installed rulebook={} workflows={} skills={}",
+            "aim_rulebook_content_installed rulebook={} workflows={} skills={} agents={}",
             rulebook_id,
             installed["workflows"],
             installed["skills"],
+            installed["agents"],
         )
     return installed

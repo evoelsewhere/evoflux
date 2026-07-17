@@ -222,12 +222,23 @@ function ManifestOverview({
         )}
         {manifest.overlays?.agents && manifest.overlays.agents.length > 0 && (
           <OverviewRow label="Agent overlays">
-            <Chips values={manifest.overlays.agents} />
+            <span className="flex flex-col gap-1">
+              <Chips values={manifest.overlays.agents} />
+              <span className="text-[10px] text-(--color-text-subtle)">
+                Merged onto the AIM roster (skills appended, prompt extended) when a
+                project installs this pack — see the pack's agents/ files below.
+              </span>
+            </span>
           </OverviewRow>
         )}
         {manifest.overlays?.skills && manifest.overlays.skills.length > 0 && (
           <OverviewRow label="Skill overlays">
-            <Chips values={manifest.overlays.skills} />
+            <span className="flex flex-col gap-1">
+              <Chips values={manifest.overlays.skills} />
+              <span className="text-[10px] text-(--color-text-subtle)">
+                Installed into the skill library (gap-fill) at project create/join.
+              </span>
+            </span>
           </OverviewRow>
         )}
         {manifest.runners && Object.keys(manifest.runners).length > 0 && (

@@ -20,6 +20,9 @@ import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-quer
 import {
   Activity,
   AlertTriangle,
+  ArrowRight,
+  Bell,
+  Bot,
   ChevronDown,
   ChevronRight,
   CircleAlert,
@@ -31,13 +34,17 @@ import {
   MessageSquareText,
   OctagonX,
   Play,
+  Repeat,
   ShieldCheck,
+  Shuffle,
+  Wrench,
   X,
 } from 'lucide-react'
 import {
   approveWorkflow,
   getExecution,
   getPendingQuestions,
+  getWorkflow,
   listAimUnits,
   listTeamSessions,
   listWorkflowExecutions,
@@ -55,10 +62,12 @@ import { Button } from '@/components/ui/button'
 import { TeamChatView } from '@/components/TeamChatView'
 import { cn } from '@/lib/utils'
 import type {
+  AimUnitOut,
   CodingProject,
   MessageResponse,
   SessionResponse,
   WorkflowExecutionSummary,
+  WorkflowListItem,
   WorkflowNodeRun,
 } from '@/api/types'
 
@@ -138,10 +147,22 @@ export function AimPipelinesPanel({ project }: { project: CodingProject }) {
     queryFn: () => listAimUnits(project.id),
     staleTime: 30_000,
   })
+  const units = useMemo(() => unitsQuery.data ?? [], [unitsQuery.data])
   const unitOptions = useMemo(
-    () => (unitsQuery.data ?? []).map((u) => `${u.module}/${u.name}`).sort(),
-    [unitsQuery.data],
+    () =>
+      units
+        .map((u) => ({ key: `${u.module}/${u.name}`, phase: u.phase }))
+        .sort((a, b) => a.key.localeCompare(b.key)),
+    [units],
   )
+
+  // Node chain + graph detail for the selected pipeline's info card.
+  const detailQ = useQuery({
+    queryKey: ['workflow-detail', pipeline.workflow, targetWorkspace ?? ''],
+    queryFn: () => getWorkflow(pipeline.workflow, targetWorkspace),
+    enabled: Boolean(selectedWorkflow),
+    staleTime: 60_000,
+  })
 
   const sessionsQuery = useQuery({
     queryKey: [...queryKeys.team.sessions.project(project.id), 'aim-runs'],
@@ -289,8 +310,8 @@ export function AimPipelinesPanel({ project }: { project: CodingProject }) {
                 >
                   <option value="">Select a unit…</option>
                   {unitOptions.map((unit) => (
-                    <option key={unit} value={unit}>
-                      {unit}
+                    <option key={unit.key} value={unit.key}>
+                      {unit.key} · {unit.phase}
                     </option>
                   ))}
                 </select>
@@ -335,6 +356,15 @@ export function AimPipelinesPanel({ project }: { project: CodingProject }) {
           </Button>
           {error && <p className="basis-full text-[11px] text-(--color-error)">{error}</p>}
         </div>
+
+        {/* What this pipeline does — description, node chain, readiness. */}
+        <PipelineInfoCard
+          workflow={selectedWorkflow}
+          graph={detailQ.data?.graph}
+          pipelineKey={pipeline.key}
+          units={units}
+          wave={pipeline.needs === 'wave' ? Number(waveInput) : null}
+        />
 
         {/* Run table */}
         <div className="min-h-0 flex-1 overflow-auto p-4">
@@ -461,6 +491,182 @@ export function AimPipelinesPanel({ project }: { project: CodingProject }) {
             </div>
           </div>
         </div>
+      )}
+    </div>
+  )
+}
+
+// ── Pipeline info card ────────────────────────────────────────────────────────
+
+function NodeKindIcon({ kind }: { kind: string }) {
+  switch (kind) {
+    case 'agent':
+      return <Bot size={11} className="shrink-0 text-(--color-accent)" />
+    case 'gate':
+    case 'input':
+      return <CirclePause size={11} className="shrink-0 text-(--color-warning,orange)" />
+    case 'tool':
+      return <Wrench size={11} className="shrink-0 text-(--color-text-subtle)" />
+    case 'foreach':
+      return <Repeat size={11} className="shrink-0 text-(--color-text-subtle)" />
+    case 'notify':
+      return <Bell size={11} className="shrink-0 text-(--color-text-subtle)" />
+    default:
+      return <Shuffle size={11} className="shrink-0 text-(--color-text-subtle)" />
+  }
+}
+
+/** Readiness line: which units the selected pipeline can actually act on
+ * right now — surfaced up front so an empty wave or a phase gap is visible
+ * before hitting Run, not after a confusing no-op. */
+function eligibility(
+  pipelineKey: string,
+  units: AimUnitOut[],
+  wave: number | null,
+): { text: string; warn: boolean } | null {
+  const count = (phase: string, w?: number | null) =>
+    units.filter((u) => u.phase === phase && (w == null || u.wave === w)).length
+  switch (pipelineKey) {
+    case 'assess':
+      return {
+        text:
+          units.length === 0
+            ? 'Builds the unit inventory from the source estate — the KB has no units yet.'
+            : `Refreshes the inventory — ${units.length} unit(s) currently indexed.`,
+        warn: false,
+      }
+    case 'understand': {
+      const n = count('inventory')
+      return {
+        text: `${n} unit(s) at phase inventory await documentation.`,
+        warn: n === 0 && units.length > 0,
+      }
+    }
+    case 'convert-unit': {
+      const n = count('designed')
+      return {
+        text: `${n} unit(s) at phase designed (plan → gate → implement; the plan step designs first if needed).`,
+        warn: false,
+      }
+    }
+    case 'convert-wave': {
+      if (wave == null || Number.isNaN(wave)) return null
+      const n = count('designed', wave)
+      return {
+        text:
+          n === 0
+            ? `No designed unit(s) in wave ${wave} — this pipeline selects by phase=designed; run aim-convert-unit's plan step (or aim-understand) first.`
+            : `${n} designed unit(s) in wave ${wave} will be converted sequentially.`,
+        warn: n === 0,
+      }
+    }
+    case 'compare': {
+      const n = count('converted')
+      return {
+        text: `${n} unit(s) at phase converted awaiting an equivalence verdict.`,
+        warn: false,
+      }
+    }
+    case 'cutover': {
+      if (wave == null || Number.isNaN(wave)) return null
+      const eq = count('equivalent', wave)
+      const total = units.filter((u) => u.wave === wave).length
+      return {
+        text: `${eq} of ${total} unit(s) in wave ${wave} are certified equivalent.`,
+        warn: total > 0 && eq < total,
+      }
+    }
+    default:
+      return null
+  }
+}
+
+function PipelineInfoCard({
+  workflow,
+  graph,
+  pipelineKey,
+  units,
+  wave,
+}: {
+  workflow: WorkflowListItem | undefined
+  graph: Record<string, unknown> | undefined
+  pipelineKey: string
+  units: AimUnitOut[]
+  wave: number | null
+}) {
+  if (!workflow) return null
+  const nodes = Array.isArray(graph?.nodes)
+    ? (graph.nodes as Array<{ id?: string; kind?: string }>).filter(
+        (n) => typeof n?.id === 'string' && typeof n?.kind === 'string',
+      )
+    : []
+  const gateCount = nodes.filter((n) => n.kind === 'gate' || n.kind === 'input').length
+  const hint = eligibility(pipelineKey, units, wave)
+
+  return (
+    <div className="space-y-2 border-b border-(--color-border) px-4 py-3">
+      <p className="text-xs leading-5 text-(--color-text-muted)">
+        {workflow.description}
+        {gateCount > 0 && (
+          <span className="ml-1.5 text-(--color-warning,orange)">
+            · {gateCount} human gate{gateCount > 1 ? 's' : ''}
+          </span>
+        )}
+      </p>
+
+      {/* Node chain — declared order; gates in amber. */}
+      {nodes.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1">
+          {nodes.map((node, index) => (
+            <span key={node.id} className="flex items-center gap-1">
+              {index > 0 && (
+                <ArrowRight size={10} className="text-(--color-text-subtle)" aria-hidden="true" />
+              )}
+              <span
+                className={cn(
+                  'flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[10px]',
+                  node.kind === 'gate' || node.kind === 'input'
+                    ? 'border-(--color-warning,orange)/40 text-(--color-warning,orange)'
+                    : 'border-(--color-border) text-(--color-text-2)',
+                )}
+                title={`${node.kind} node`}
+              >
+                <NodeKindIcon kind={node.kind as string} />
+                {node.id}
+              </span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Inputs + readiness */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+        {workflow.inputs.length > 0 && (
+          <span className="flex items-center gap-1.5 text-[11px] text-(--color-text-subtle)">
+            inputs:
+            {workflow.inputs.map((input) => (
+              <span key={input.name} className="rounded bg-(--bg-key) px-1.5 py-0.5 font-mono text-[10px] text-(--color-text-2)">
+                {input.name}: {input.type}
+                {input.required ? '' : '?'}
+              </span>
+            ))}
+          </span>
+        )}
+        {!workflow.valid && (
+          <span className="text-[11px] text-(--color-error)" title={workflow.errors.join('\n')}>
+            definition invalid — {workflow.errors[0] ?? 'see errors'}
+          </span>
+        )}
+      </div>
+      {hint && (
+        <p
+          className={cn(
+            'text-[11px]',
+            hint.warn ? 'text-(--color-warning,orange)' : 'text-(--color-text-subtle)',
+          )}
+        >
+          {hint.text}
+        </p>
       )}
     </div>
   )
