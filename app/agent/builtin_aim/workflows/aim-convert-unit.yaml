@@ -18,8 +18,10 @@ nodes:
       Prepare the conversion plan for unit {{inputs.unit}}: read its KB doc
       and business rules, consult the rulebook mappings and
       target-conventions.md, and produce mapping/<unit>.md in the KB — the
-      target design this unit will be implemented against. Do NOT write any
-      code in the target repo yet.
+      target design this unit will be implemented against. When the mapping
+      is written, set the unit phase to designed via aim_units (the wave
+      pipeline selects by phase=designed). Do NOT write any code in the
+      target repo yet.
     timeout_s: 1800
 
   - id: approve

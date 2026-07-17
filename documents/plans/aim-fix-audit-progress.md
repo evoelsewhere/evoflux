@@ -105,6 +105,40 @@ profile — all optional-tolerant), file list is the same KB folder tree,
 and previews are kind-aware (frontmatter strip + markdown / CodeBlock).
 Verified live on cobol-java21 (overview card + extractors yaml block).
 
+### R2-P8 — Agents + skills depth pass (user feedback) ✅
+
+"Conf agents sơ sài, skills sơ sài": all 7 blueprints (seed/agents/aim)
+and all 6 builtin skills rewritten from principle-only prose into
+operational runbooks tied to the shipped surface:
+
+- **Runtime context** everywhere: members know they run as workflow-node
+  delegates (team_delegate, roster restricted to the node's subagents),
+  that the lead's final text becomes the gate body truncated to ~2000
+  chars (summary-first reporting), and that no human is in the chat
+  mid-run.
+- **Exact `aim_units` contract** (6 actions + args, unit key format,
+  KB-frontmatter-first semantics) and **`aim_compare` contract** (golden
+  layout `golden/units/<m>/<n>/cases/<set>/expected` + meta.yaml
+  provenance, actuals `.aim-actuals/...`, canonicalizer profile, report →
+  `runs/<m>/<n>/<id>/report.{json,md}`, auto AimRun row).
+- **Phase-ownership table** in aim-lead (who sets which transition on what
+  evidence); lead also covers the subagent-less `mark_equivalent` node.
+- **BUG FIX found by audit**: nothing ever set phase `designed` —
+  aim-convert-wave filters phase=designed so wave conversion always saw 0
+  units. aim-target-architect now owns the flip + the aim-convert-unit
+  `plan` node prompt instructs it (YAML hash changed → one-click
+  re-approve on next run).
+- Skills gained schema blocks: UnitFrontmatter fields, BR file
+  frontmatter (id/status/unit/source), record_run/add_link triage recipe,
+  runner/actuals paths; ui-conventions Part B renamed to the real
+  surfaces (Pipelines / Run Monitor / Runs & Reports / Discussion).
+- Installed copies at `~/.config/evoflux/agents/aim/` synced (install_seed
+  never overwrites, so seed edits alone don't reach existing installs) —
+  model value preserved per file.
+
+Verified: validate_skills 50/50 PASS, all 6 workflow YAMLs parse, roster
+integration + agent suite + aim services/API green.
+
 **Known gaps (deliberate, log for next round):**
 - AIM sidebar has no mobile slide-in drawer (desktop-first surface).
 - No command-palette/search entry in AIM sidebar.
