@@ -30,6 +30,7 @@ import {
   CircleDashed,
   CirclePause,
   CircleX,
+  CornerDownLeft,
   Loader2,
   MessageSquareText,
   OctagonX,
@@ -838,8 +839,58 @@ export function RunMonitorPanel({
   )
 }
 
-/** One line per transcript event, newest at the bottom — the run's "log".
- * Read-only on purpose: chat stays post-run only (Discussion). */
+// ── Activity log ──────────────────────────────────────────────────────────────
+
+/** Agent name rendered with design-system tokens only: the lead reads in
+ * the accent color (same as active items everywhere else in the shell),
+ * members read as regular emphasized text — identity comes from the name
+ * itself, exactly like the real chat, not from invented colors. */
+function AgentName({ agent }: { agent: string }) {
+  return (
+    <span
+      className={cn(
+        'font-semibold tracking-wide',
+        agent === 'lead' ? 'text-(--color-accent)' : 'text-(--color-text-2)',
+      )}
+    >
+      {agent}
+    </span>
+  )
+}
+
+interface LogLine {
+  key: string
+  at: string
+  agent: string
+  kind: 'prompt' | 'say' | 'delegate' | 'handoff'
+  text: string
+  tools: string[]
+  to?: string
+  status?: string
+}
+
+function parseCallArgs(raw: unknown): Record<string, unknown> {
+  if (typeof raw !== 'string') return {}
+  try {
+    const parsed = JSON.parse(raw)
+    return typeof parsed === 'object' && parsed !== null ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function snippet(value: unknown, max: number): string {
+  const text = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : ''
+  return text.length > max ? `${text.slice(0, max)}…` : text
+}
+
+/** The run's live transcript, laid out like a streaming chat: one block
+ * per message with the agent's name + timestamp as a header, the text as
+ * readable multi-line prose (click to expand long ones), tool calls as
+ * their own sub-rows, and delegation/handoff rendered as explicit event
+ * rows between blocks. Subagent activity is first-class — every agent
+ * keeps a stable color across its dot, name, and message rail. Read-only
+ * on purpose: chat stays post-run only (Discussion). */
 function ActivityLogSection({ sessionId, active }: { sessionId: string; active: boolean }) {
   const historyQ = useQuery({
     queryKey: ['aim-monitor-history', sessionId],
@@ -847,8 +898,9 @@ function ActivityLogSection({ sessionId, active }: { sessionId: string; active: 
     refetchInterval: active ? 4_000 : false,
   })
   const scrollRef = useRef<HTMLDivElement>(null)
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
 
-  const lines = useMemo(() => {
+  const lines = useMemo<LogLine[]>(() => {
     const data = historyQ.data
     if (!data) return []
     const tagged: Array<{ agent: string; msg: MessageResponse }> = [
@@ -857,62 +909,232 @@ function ActivityLogSection({ sessionId, active }: { sessionId: string; active: 
         member.messages.map((msg) => ({ agent: member.name, msg })),
       ),
     ]
-    return tagged
-      .filter(({ msg }) => !msg.is_summary && !msg.is_hidden)
-      .map(({ agent, msg }) => {
-        const toolNames = (msg.tool_calls ?? [])
-          .map((call) => call.function?.name)
-          .filter((name): name is string => Boolean(name))
-        const text = (msg.content ?? '').replace(/\s+/g, ' ').trim()
-        if (!text && toolNames.length === 0) return null
-        if (msg.role === 'tool') return null
-        return {
-          key: msg.id,
-          at: msg.created_at ?? '',
-          agent,
-          role: msg.role,
-          tools: toolNames,
-          text: text.length > 200 ? `${text.slice(0, 200)}…` : text,
+    const out: LogLine[] = []
+    for (const { agent, msg } of tagged) {
+      if (msg.is_summary || msg.is_hidden || msg.role === 'tool') continue
+      // A member session's user-role rows are the injected delegation brief —
+      // already rendered as the lead's → line; repeating them as prompt
+      // noise is what made subagent threads unreadable.
+      if (msg.role === 'user' && agent !== 'lead') continue
+      const at = msg.created_at ?? ''
+
+      const plainTools: string[] = []
+      for (const call of msg.tool_calls ?? []) {
+        const name = call.function?.name
+        if (!name) continue
+        const args = parseCallArgs(call.function?.arguments)
+        if (name === 'team_delegate') {
+          out.push({
+            key: `${msg.id}-${call.id}`,
+            at,
+            agent,
+            kind: 'delegate',
+            to: typeof args.to === 'string' ? args.to : '?',
+            text: snippet(args.goal, 240),
+            tools: [],
+          })
+        } else if (name === 'team_handoff') {
+          out.push({
+            key: `${msg.id}-${call.id}`,
+            at,
+            agent,
+            kind: 'handoff',
+            status: typeof args.status === 'string' ? args.status : undefined,
+            text: snippet(args.summary, 240),
+            tools: [],
+          })
+        } else {
+          plainTools.push(name)
         }
-      })
-      .filter((line): line is NonNullable<typeof line> => line !== null)
-      .sort((a, b) => a.at.localeCompare(b.at))
-      .slice(-40)
+      }
+
+      const text = snippet(msg.content, 700)
+      if (text || plainTools.length > 0) {
+        out.push({
+          key: msg.id,
+          at,
+          agent,
+          kind: msg.role === 'user' ? 'prompt' : 'say',
+          text,
+          tools: plainTools,
+        })
+      }
+    }
+    return out.sort((a, b) => a.at.localeCompare(b.at)).slice(-60)
   }, [historyQ.data])
 
-  // Keep the newest line in view as the log grows.
+  const agents = useMemo(
+    () => [...new Set(lines.map((line) => line.agent))],
+    [lines],
+  )
+  const lastAgent = lines.length > 0 ? lines[lines.length - 1].agent : null
+
+  // Keep the newest message in view as the transcript grows.
   useEffect(() => {
     const el = scrollRef.current
     if (el) el.scrollTop = el.scrollHeight
-  }, [lines.length])
+  }, [lines.length, active])
 
   if (historyQ.isLoading || lines.length === 0) return null
 
+  const timeOf = (at: string): string => {
+    const date = new Date(at)
+    return Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString()
+  }
+
+  const toggleExpand = (key: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+
   return (
     <div>
-      <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-(--color-text-subtle)">
-        Activity log
-      </p>
+      <div className="mb-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-(--color-text-subtle)">
+          Activity log
+        </p>
+        {/* Who's on this run. */}
+        <span className="text-[10px] text-(--color-text-subtle)">
+          {agents.join(' · ')}
+        </span>
+      </div>
+
       <div
         ref={scrollRef}
-        className="max-h-64 space-y-1 overflow-y-auto rounded-md bg-(--bg-key) p-2"
+        className="max-h-80 space-y-2 overflow-y-auto rounded-md bg-(--bg-key) p-2.5"
       >
-        {lines.map((line) => (
-          <div key={line.key} className="text-[11px] leading-4">
-            <span
-              className={cn(
-                'font-mono',
-                line.role === 'user' ? 'text-(--color-text-subtle)' : 'text-(--color-accent)',
-              )}
-            >
-              {line.role === 'user' ? '»' : line.agent}
-            </span>{' '}
-            {line.text && <span className="text-(--color-text-2)">{line.text}</span>}
-            {line.tools.length > 0 && (
-              <span className="text-(--color-text-subtle)"> ⚙ {line.tools.join(', ')}</span>
+        {lines.map((line) => {
+          // Delegation — a system row between bubbles, like the chat's
+          // inter-agent events: centered, quiet, names carry the meaning.
+          if (line.kind === 'delegate') {
+            return (
+              <div key={line.key} className="px-1 py-0.5 text-center text-[11px] leading-4">
+                <span className="text-(--color-text-subtle)">
+                  <AgentName agent={line.agent} />{' '}
+                  <ArrowRight size={10} className="inline text-(--color-text-subtle)" aria-hidden="true" />{' '}
+                  <AgentName agent={line.to ?? '?'} />
+                </span>
+                {line.text && (
+                  <span className="mx-auto mt-0.5 block max-w-[92%] truncate text-(--color-text-subtle)" title={line.text}>
+                    {line.text}
+                  </span>
+                )}
+              </div>
+            )
+          }
+
+          // Handoff — a compact echo of the chat's HandoffCard: left bubble
+          // with an accent border and a status badge.
+          if (line.kind === 'handoff') {
+            return (
+              <div key={line.key} className="flex justify-start">
+                <div className="max-w-[92%] rounded-lg rounded-bl-sm border border-(--color-accent)/30 bg-(--bg-page) px-2.5 py-1.5 shadow-sm">
+                  <p className="mb-0.5 flex items-center gap-1.5 text-[10px]">
+                    <CornerDownLeft size={10} className="shrink-0 text-(--color-accent)" aria-hidden="true" />
+                    <span className="font-semibold tracking-wide text-(--color-text-2)">
+                      Handoff from {line.agent}
+                    </span>
+                    {line.status && (
+                      <span className="rounded bg-(--bg-key) px-1 py-px text-[10px] text-(--color-text-muted)">
+                        {line.status}
+                      </span>
+                    )}
+                    {line.at && (
+                      <span className="ml-auto text-(--color-text-subtle)">{timeOf(line.at)}</span>
+                    )}
+                  </p>
+                  {line.text && (
+                    <p className="whitespace-pre-wrap text-[11px] leading-4 text-(--color-text)">
+                      {line.text}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )
+          }
+
+          // The pipeline prompt — right-aligned like a user message.
+          if (line.kind === 'prompt') {
+            return (
+              <div key={line.key} className="flex justify-end">
+                <div className="max-w-[92%] rounded-lg rounded-br-sm border border-(--color-border) bg-(--bg-page) px-2.5 py-1.5">
+                  <p className="mb-0.5 flex items-center justify-between gap-2 text-[10px] text-(--color-text-subtle)">
+                    <span className="font-semibold uppercase tracking-wider">run prompt</span>
+                    {line.at && <span>{timeOf(line.at)}</span>}
+                  </p>
+                  <p
+                    className={cn(
+                      'cursor-pointer whitespace-pre-wrap text-[11px] leading-4 text-(--color-text-muted)',
+                      !expanded.has(line.key) && 'line-clamp-3',
+                    )}
+                    title="Click to expand / collapse"
+                    onClick={() => toggleExpand(line.key)}
+                  >
+                    {line.text}
+                  </p>
+                </div>
+              </div>
+            )
+          }
+
+          // Agent message — a left chat bubble: name + time header, prose
+          // body (click to expand), tool calls as chips inside the bubble.
+          return (
+            <div key={line.key} className="flex justify-start">
+              <div className="max-w-[92%] rounded-lg rounded-bl-sm border border-(--color-border) bg-(--bg-page) px-2.5 py-1.5">
+                <p className="mb-0.5 flex items-center gap-2 text-[10px]">
+                  <AgentName agent={line.agent} />
+                  {line.at && (
+                    <span className="text-(--color-text-subtle)">{timeOf(line.at)}</span>
+                  )}
+                </p>
+                {line.text && (
+                  <p
+                    className={cn(
+                      'cursor-pointer whitespace-pre-wrap text-[11px] leading-4 text-(--color-text-2)',
+                      !expanded.has(line.key) && 'line-clamp-4',
+                    )}
+                    title="Click to expand / collapse"
+                    onClick={() => toggleExpand(line.key)}
+                  >
+                    {line.text}
+                  </p>
+                )}
+                {line.tools.length > 0 && (
+                  <p className={cn('flex flex-wrap items-center gap-1', line.text && 'mt-1')}>
+                    {line.tools.map((tool, index) => (
+                      <span
+                        key={`${line.key}-${tool}-${index}`}
+                        className="flex items-center gap-1 rounded bg-(--bg-key) px-1.5 py-0.5 font-mono text-[10px] text-(--color-text-muted)"
+                      >
+                        <Wrench size={9} aria-hidden="true" />
+                        {tool}
+                      </span>
+                    ))}
+                  </p>
+                )}
+              </div>
+            </div>
+          )
+        })}
+
+        {/* Typing-style indicator — the run is live; more is coming. */}
+        {active && (
+          <div className="flex items-center gap-1.5 px-1 text-[11px] text-(--color-text-subtle)">
+            <Loader2 size={10} className="animate-spin" aria-hidden="true" />
+            {lastAgent ? (
+              <>
+                <AgentName agent={lastAgent} />
+                <span>is working…</span>
+              </>
+            ) : (
+              'working…'
             )}
           </div>
-        ))}
+        )}
       </div>
     </div>
   )
