@@ -152,6 +152,31 @@ roster (skills append+dedup, prompt append, marker-guarded idempotence,
 seed backfill first); 5 install tests incl. merge + orphan-skip.
 Verified live: info card + convert-wave amber hint on COBOL project.
 
+### R2-P10 — Activity log chat-style + markdown (user feedback ×3) ✅ 3aa7abf/a57afdc
+
+Flat gray log → real chat: bubbles per agent message (name+time header,
+click-to-expand), team_delegate/team_handoff as event rows, member brief
+noise filtered, agents legend + typing indicator. First redesign's
+hashed-HSL colors (pink) violated the design system — replaced with
+token-only identity. Bodies render as markdown (clip preserves newlines;
+max-height+fade instead of line-clamp for nested blocks).
+
+### R2-P11 — aim_units arg coercion (live bug from user log) ✅ 9289ed5
+
+Weak model sent target_paths as a JSON string and retried identically
+forever. BeforeValidator(_json_coerce) on list/dict params; regression
+test through arun(). Registry-level generalization spun off as a
+separate session (task_40ddb861).
+
+### R2-P12 — E2E UX: unit-centric flow (user directive) ✅ 2c05dd9
+
+Units had no hub: UnitDetailPanel on every kanban card (frontmatter,
+per-unit run history, phase-aware primary action + all-pipeline chips,
+KB-doc jump); sessionStorage handoffs prefill Pipelines and open the
+exact KB doc; Overview gets unit search + module filter + 'Run assess'
+CTA; run table gets relative Started + Took (live elapsed). Verified
+e2e in browser on the COBOL project.
+
 **Known gaps (deliberate, log for next round):**
 - AIM sidebar has no mobile slide-in drawer (desktop-first surface).
 - No command-palette/search entry in AIM sidebar.
