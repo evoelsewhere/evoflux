@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 from uuid import UUID, uuid7
 
-from pydantic import Field
+from pydantic import BeforeValidator, Field
 from sqlmodel import select
 
 from app.agent.sandbox import get_sandbox
@@ -38,6 +38,26 @@ from app.services.aim.canonicalize import load_profile
 from app.services.aim.compare import compare_dirs, write_report
 from app.services.aim.models import CanonicalProfile
 from app.services.aim.reindex import upsert_unit
+
+
+def _json_coerce(value: object) -> object:
+    """Accept a JSON-encoded string where a list/dict parameter is expected.
+
+    Smaller models routinely serialize array/object tool arguments as a
+    string (``"[\\"a.java\\"]"`` instead of ``["a.java"]``) and then retry
+    the identical malformed call forever when validation bounces it —
+    observed live with aim-lead stuck on ``set_phase`` ``target_paths``.
+    Parsing the obvious case costs nothing and unsticks the loop; anything
+    that doesn't parse falls through to normal validation.
+    """
+    if isinstance(value, str):
+        text = value.strip()
+        if text.startswith(("[", "{")):
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                return value
+    return value
 
 
 async def _resolve_project_and_kb_root(db) -> tuple[UUID | None, Path]:
@@ -117,20 +137,24 @@ async def _aim_units(
     ] = None,
     source_paths: Annotated[
         list[str] | None,
+        BeforeValidator(_json_coerce),
         Field(description="Source file paths for this unit (set_phase)."),
     ] = None,
     target_paths: Annotated[
         list[str] | None,
+        BeforeValidator(_json_coerce),
         Field(description="Target file paths for this unit (set_phase)."),
     ] = None,
     depends_on: Annotated[
         list[str] | None,
+        BeforeValidator(_json_coerce),
         Field(
             description="Other unit keys ('module/name') this one depends on (set_phase)."
         ),
     ] = None,
     complexity: Annotated[
         dict | None,
+        BeforeValidator(_json_coerce),
         Field(
             description='Free-form complexity info, e.g. {"score": "medium"} (set_phase).'
         ),
@@ -168,7 +192,9 @@ async def _aim_units(
         Field(description="For action='record_run' — path to the compare report."),
     ] = None,
     stats: Annotated[
-        dict | None, Field(description="For action='record_run' — free-form run stats.")
+        dict | None,
+        BeforeValidator(_json_coerce),
+        Field(description="For action='record_run' — free-form run stats."),
     ] = None,
     from_ref: Annotated[
         str | None,
