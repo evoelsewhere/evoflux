@@ -177,6 +177,17 @@ exact KB doc; Overview gets unit search + module filter + 'Run assess'
 CTA; run table gets relative Started + Took (live elapsed). Verified
 e2e in browser on the COBOL project.
 
+### R2-P13 — Responsive mode switch + sidebar hierarchy + resizable panels ✅ 2901a60
+
+User feedback: mode-switch labels clipped on narrow sidebars, project
+list read flat, Discussion not resizable. ModeSwitchTabs became a
+container-query component (labels → icons+tooltips below ~12.5rem —
+shared by all three sidebars); AimSidebar got name+rulebook two-line
+rows with tighter 11px feature children on a chevron-aligned guide;
+new AimSidePanel (drag handle + persisted width) adopted by Discussion
+(shared key across Pipelines/Runs), Run Monitor, unit detail. Verified
+live at 200px/280px + width persistence.
+
 **Known gaps (deliberate, log for next round):**
 - AIM sidebar has no mobile slide-in drawer (desktop-first surface).
 - No command-palette/search entry in AIM sidebar.
