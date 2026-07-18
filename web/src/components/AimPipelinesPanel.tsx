@@ -1484,6 +1484,7 @@ function GateSection({ sessionId }: { sessionId: string }) {
   const queryClient = useQueryClient()
   const [replying, setReplying] = useState(false)
   const [freeText, setFreeText] = useState('')
+  const [error, setError] = useState<string | null>(null)
   const pendingQ = useQuery({
     queryKey: ['aim-pending-questions', sessionId],
     queryFn: () => getPendingQuestions(sessionId),
@@ -1495,9 +1496,15 @@ function GateSection({ sessionId }: { sessionId: string }) {
   const answer = async (value: string) => {
     if (!batch) return
     setReplying(true)
+    setError(null)
     try {
       await replyAskUserQuestion(sessionId, batch.request_id, [value])
       void queryClient.invalidateQueries({ queryKey: ['aim-pending-questions', sessionId] })
+    } catch (err) {
+      // The backend rejects an off-menu answer to a gate (strict choices) or
+      // an already-resolved request — surface it instead of silently
+      // re-enabling the buttons.
+      setError(err instanceof Error ? err.message : 'Failed to submit your answer.')
     } finally {
       setReplying(false)
     }
@@ -1547,6 +1554,9 @@ function GateSection({ sessionId }: { sessionId: string }) {
             Send
           </Button>
         </div>
+      )}
+      {error && (
+        <p className="text-[11px] leading-4 text-(--color-danger,red)">{error}</p>
       )}
     </div>
   )
