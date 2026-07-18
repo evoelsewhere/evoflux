@@ -39,6 +39,7 @@ import { SchedulerPanel } from '../SchedulerPanel'
 import { SessionScheduleIndicator } from '../SessionScheduleIndicator'
 import { ActivityPanel } from '../ActivityPanel'
 import { BrowserViewer } from '../BrowserViewer'
+import { TerminalPanel } from '../TerminalPanel'
 import { PlanActionBar, PlanReviewPanel } from '../PlanReviewPanel'
 import { PermissionApprovalModal } from '../PermissionApprovalModal'
 import { AskUserQuestionModal } from '../AskUserQuestionModal'
@@ -216,11 +217,14 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const wikiOpen = useUIStore((s) => s.wikiOpen)
   const schedulerOpen = useUIStore((s) => s.schedulerOpen)
   const browserOpen = useUIStore((s) => s.browserOpen)
+  const terminalOpen = useUIStore((s) => s.terminalOpen)
   const toggleWiki = useUIStore((s) => s.toggleWiki)
   const toggleScheduler = useUIStore((s) => s.toggleScheduler)
+  const toggleTerminal = useUIStore((s) => s.toggleTerminal)
   const closeWiki = useUIStore((s) => s.closeWiki)
   const closeScheduler = useUIStore((s) => s.closeScheduler)
   const closeBrowser = useUIStore((s) => s.closeBrowser)
+  const closeTerminal = useUIStore((s) => s.closeTerminal)
 
   // Subscribe to active-agent stream fields directly to avoid recomputing on
   // every other agent's tick.
@@ -1026,6 +1030,8 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
     // Ctrl+M / Ctrl+S — open the wiki / scheduler drawers (state in useUIStore).
     m: toggleWiki,
     s: toggleScheduler,
+    // Ctrl+` — toggle the AI Terminal (conventional terminal shortcut).
+    '`': toggleTerminal,
     // Ctrl+I — focus the chat input (dispatched via CustomEvent so future
     // callers don't need a ref to the input).
     'i': () => window.dispatchEvent(new CustomEvent('focus-chat-input')),
@@ -1588,6 +1594,8 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
             sessionId={sessionIdState}
             onWiki={toggleWiki}
             wikiActive={wikiOpen}
+            onTerminal={toggleTerminal}
+            terminalActive={terminalOpen}
             onFiles={
               mode === 'coding'
                 ? workspace ? handleWorkspaceFiles : undefined
@@ -1668,6 +1676,15 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
           open={browserOpen}
           onClose={closeBrowser}
         />
+        {terminalOpen && (
+          <aside className="flex h-full w-[480px] shrink-0 flex-col border-l border-(--color-border)">
+            <TerminalPanel
+              sessionId={sessionIdState}
+              mode={mode}
+              onClose={closeTerminal}
+            />
+          </aside>
+        )}
       </div>
 
       <WikiPanel open={wikiOpen} onClose={closeWiki} />
