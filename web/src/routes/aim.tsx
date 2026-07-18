@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import { PanelLeft } from 'lucide-react'
 import { AimSidebar, AIM_FEATURES, loadLastAimProject, saveLastAimProject } from '@/components/AimSidebar'
@@ -7,7 +7,10 @@ import { AimOverviewPanel } from '@/components/AimOverviewPanel'
 import { AimPipelinesPanel } from '@/components/AimPipelinesPanel'
 import { AimKbPanel } from '@/components/AimKbPanel'
 import { AimRulebookPanel } from '@/components/AimRulebookPanel'
+import { CommandPalette, type Command } from '@/components/CommandPalette'
 import { useAimProjectsQuery } from '@/queries/useAimProjectsQuery'
+import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
+import { useUIStore } from '@/stores/useUIStore'
 import type { AimFeature } from '@/components/AimSidebar'
 import type { CodingProject } from '@/api/types'
 
@@ -33,6 +36,7 @@ function AimLayoutBase() {
   const runId = params.runId as string | undefined
   const navigate = useNavigate()
   const [wizardOpen, setWizardOpen] = useState(false)
+  const [showPalette, setShowPalette] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     try {
       return localStorage.getItem(AIM_SIDEBAR_COLLAPSE_KEY) === 'true'
@@ -53,22 +57,38 @@ function AimLayoutBase() {
     })
   }, [])
 
-  // Ctrl+B — same collapse shortcut as the other two modes.
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (!e.ctrlKey || e.metaKey) return
-      if (e.key === 'b') {
-        e.preventDefault()
-        toggleSidebar()
-      }
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [toggleSidebar])
+  // Ctrl+B / Ctrl+P — same shortcuts as the other two modes (shared hook).
+  useKeyboardShortcuts({
+    b: toggleSidebar,
+    p: () => setShowPalette((v) => !v),
+  })
 
   const projectsQuery = useAimProjectsQuery()
   const projects = projectsQuery.data
   const project = projects?.find((p) => p.id === projectId)
+
+  // Command palette — jump straight to any project's feature screen, or
+  // open/toggle the same actions the sidebar itself exposes (§ search).
+  const commands = useMemo<Command[]>(() => {
+    const projectCommands = (projects ?? []).flatMap((p) =>
+      AIM_FEATURES.map((f) => ({
+        id: `${p.id}-${f.key}`,
+        group: 'Navigation',
+        label: `${p.name} · ${f.label}`,
+        description: 'AIM project',
+        action: () => {
+          saveLastAimProject(p.id)
+          navigate({ to: '/aim/$projectId/$feature', params: { projectId: p.id, feature: f.key } })
+        },
+      })),
+    )
+    return [
+      ...projectCommands,
+      { id: 'new-project', group: 'AIM', label: 'New / Join Project', description: 'Set up a migration project', action: () => setWizardOpen(true) },
+      { id: 'toggle-sidebar', group: 'View', label: 'Toggle Sidebar', description: '', shortcut: 'Ctrl+B', action: toggleSidebar },
+      { id: 'go-settings', group: 'Settings', label: 'Open Settings', description: 'Manage agents & skills', action: () => useUIStore.getState().openSettings('agents') },
+    ]
+  }, [projects, navigate, toggleSidebar])
 
   const feature: AimFeature = runId
     ? 'pipelines'
@@ -111,6 +131,7 @@ function AimLayoutBase() {
         activeProjectId={projectId}
         activeFeature={projectId ? feature : undefined}
         onNewProject={() => setWizardOpen(true)}
+        onCommandPalette={() => setShowPalette(true)}
         collapsed={sidebarCollapsed}
       />
 
@@ -147,6 +168,10 @@ function AimLayoutBase() {
           navigate({ to: '/aim/$projectId/$feature', params: { projectId: id, feature: 'overview' } })
         }
       />
+
+      {showPalette && (
+        <CommandPalette commands={commands} onClose={() => setShowPalette(false)} />
+      )}
     </div>
   )
 }
