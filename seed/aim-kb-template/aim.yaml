@@ -7,7 +7,7 @@
 # never by a local workspace_id — those differ per machine.
 
 rulebook:
-  id: REPLACE_ME               # e.g. cobol-java, vb6-dotnet, java8-java21
+  id: REPLACE_ME               # e.g. cobol-java21, vb6-dotnet, java8-java21
   version: "0.1"
 
 roles:

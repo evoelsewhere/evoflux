@@ -1,10 +1,13 @@
-# AIM pipeline — the differentiator: deterministic equivalence compare
-# with a human certification gate and a triage branch. The repair loop
-# lives inside the triage/convert agents\' own turns — Phase 1 forbids
-# graph cycles.
+# AIM pipeline — the differentiator: deterministic equivalence compare.
+# The official verdict is the aim_compare TOOL node (§3.8(b)/(d)), not an
+# agent's prose: the agent only produces the target's actual output, then a
+# deterministic node compares it and a switch routes on that verdict. A human
+# can only certify a unit the compare already PASSED; a fail/error routes
+# straight to triage. The repair loop lives inside the triage/convert agents'
+# own turns — v1 forbids graph cycles.
 schema_version: 1
 name: aim-test-compare
-description: Run legacy vs target for one unit, compare canonically, certify or triage
+description: Run legacy vs target for one unit, compare deterministically, certify or triage
 scope: aim
 
 inputs:
@@ -19,52 +22,75 @@ inputs:
     description: "golden case set to run"
 
 nodes:
-  - id: compare
+  - id: run
     kind: agent
     subagents: [aim-test-engineer]
     prompt: |
-      Run the TEST-COMPARE phase for unit {{inputs.unit}} with the
-      '{{inputs.case_set}}' golden case set. Delegate to `aim-test-engineer`:
-      execute the legacy and target runners from the rulebook for each golden
-      case, canonicalize both outputs, then diff with the aim_compare tool
-      (which records the AimRun). Report the verdict with the diff summary.
+      Run the TEST phase for unit {{inputs.unit}} with the '{{inputs.case_set}}'
+      golden case set. Delegate to `aim-test-engineer`: for each golden case,
+      execute the rulebook's legacy and target runners (runners/run_legacy and
+      runners/run_target — contract: UNIT CASE_SET OUT_DIR) and write the
+      TARGET output into .aim-actuals/{{inputs.unit}}/{{inputs.case_set}}/ under
+      the KB root. Do NOT call aim_compare yourself — the pipeline compares
+      deterministically in the next node. Report which cases you produced
+      actuals for and any runner failures.
     timeout_s: 3600
+
+  - id: compare
+    kind: tool
+    tool: aim_compare
+    args:
+      unit: "{{inputs.unit}}"
+      case_set: "{{inputs.case_set}}"
+
+  - id: verdict
+    kind: switch
+    value: "{{nodes.compare.output.verdict}}"
 
   - id: certify
     kind: gate
     title: "Certify {{inputs.unit}} as equivalent?"
-    body: "{{nodes.compare.output.text | truncate:2000}}"
-    choices: [certify, triage]
+    body: "Deterministic compare PASSED for {{inputs.unit}} ({{nodes.compare.output.diff_count}} diff(s)). Report: {{nodes.compare.output.report_path}}. Certifying marks the unit equivalent."
+    choices: [certify, hold]
 
   - id: mark_equivalent
-    kind: agent
-    subagents: []
-    prompt: |
-      The compare result for {{inputs.unit}} is certified. Set the unit phase
-      to equivalent via aim_units, citing the latest compare run.
+    kind: tool
+    tool: aim_units
+    args:
+      action: set_phase
+      unit: "{{inputs.unit}}"
+      phase: equivalent
 
   - id: triage
     kind: agent
     subagents: [aim-triage-analyst]
     prompt: |
-      The compare result for {{inputs.unit}} needs triage. Delegate to
-      `aim-triage-analyst`: follow the aim-diff-triage skill — classify each
-      difference (target bug / legacy quirk / accepted difference / harness
-      artifact), cite business rules, and propose the next fix or an ADR for
-      accepted differences.
+      The deterministic compare for {{inputs.unit}} did NOT pass
+      (verdict={{nodes.compare.output.verdict}},
+      {{nodes.compare.output.diff_count}} diff cluster(s); report at
+      {{nodes.compare.output.report_path}}). Delegate to `aim-triage-analyst`:
+      follow the aim-diff-triage skill — classify each difference (target bug /
+      legacy quirk / accepted difference / harness artifact), cite business
+      rules, record the triage verdict via aim_units record_run, and propose
+      the next fix or an ADR for accepted differences.
     timeout_s: 1800
 
   - id: done
     kind: notify
     title: "aim-test-compare"
-    message: "{{inputs.unit}} compare finished — see Runs & Reports."
+    message: "{{inputs.unit}} compare finished (verdict {{nodes.compare.output.verdict}}) — see Runs & Reports."
 
 edges:
-  - { from: compare, to: certify }
+  - { from: run, to: compare }
+  - { from: compare, to: verdict }
+  - { from: verdict, to: certify, when: pass }
+  - { from: verdict, to: triage, when: "*" }
   - { from: certify, to: mark_equivalent, when: certify }
-  - { from: certify, to: triage, when: triage }
+  - { from: certify, to: done, when: hold }
   - { from: mark_equivalent, to: done }
   - { from: triage, to: done }
 
 outputs:
-  verdict: "{{nodes.compare.output.text}}"
+  verdict: "{{nodes.compare.output.verdict}}"
+  diff_count: "{{nodes.compare.output.diff_count}}"
+  report_path: "{{nodes.compare.output.report_path}}"

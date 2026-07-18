@@ -1,0 +1,77 @@
+# Canonicalizer profile — cobol-java21 / default
+# Consumed by the aim_compare tool (AIM-1). A COBOL → Java 21 re-platform is
+# the noisy end of the spectrum: EBCDIC captures, fixed-width records, COMP-3
+# packed decimals, and batch reports stamped with run dates / job ids. This
+# profile stays strict on the numbers and masks only run-scoped metadata —
+# widen it per unit, never by loosening these defaults without a cited reason.
+
+id: default
+description: Default canonicalization for a COBOL/JCL → Java 21 re-platform.
+
+encoding:
+  default: utf-8
+  # Legacy mainframe captures are typically EBCDIC. cp037 (US/Canada) is the
+  # common default; a given estate may instead be cp273 (Germany), cp500
+  # (International) or cp1140 (euro) — name the exact codepage per case_set in
+  # meta.yaml when a unit differs.
+  legacy_fallback: cp037
+
+mask:
+  # COBOL batch reports and spool output carry run-scoped header fields that
+  # legitimately change every execution. Mask them so they never drive a diff
+  # on their own. Keep these conservative — they should hit obvious run
+  # metadata, not the business columns underneath.
+
+  # Run/report dates: the classic slash form (DD/MM/YYYY or MM/DD/YYYY) and the
+  # ISO form both appear depending on the report writer.
+  - pattern: '\b\d{2}/\d{2}/\d{4}\b'
+    replace: '<DATE>'
+  - pattern: '\b\d{4}-\d{2}-\d{2}\b'
+    replace: '<DATE>'
+
+  # Wall-clock times (HH:MM:SS) — report "as of" / run times.
+  - pattern: '\b\d{2}:\d{2}:\d{2}\b'
+    replace: '<TIME>'
+
+  # Page-header run-date label, e.g. "RUN DATE: 01/01/2024" or "RUN-DATE 01-01-24".
+  # Anchored on the label so it can't touch data cells that merely look datey,
+  # and it also covers the 2-digit-year form the generic date rules above skip.
+  - pattern: 'RUN[-\s]?DATE\s*[:\s]\s*\d{2}[/-]\d{2}[/-]\d{2,4}'
+    replace: 'RUN DATE: <DATE>'
+
+  # JES spool / job identifiers, e.g. "JOB01234" ... "JOB1234567".
+  - pattern: '\bJOB\d{4,8}\b'
+    replace: '<JOBID>'
+
+# Fixed-width record layouts make column positions — and therefore the spaces
+# between fields — significant, so compare byte-for-byte by default. Units that
+# emit free-form reports can override this to "normalize" per case_set.
+whitespace: exact
+
+number_format:
+  decimal_tolerance: 0.0   # exact by default; COMP-3 packed-decimal rounding
+                           # differences must be justified per-unit with a
+                           # cited business rule before this is loosened.
+  trim_trailing_zeros: true
+
+sort_before_diff:
+  # Batch usually writes records in a deterministic key order, but reports
+  # aggregated from unordered VSAM/DB2 reads can vary — add path globs here per
+  # unit once an output is confirmed to be an unordered set/bag.
+  paths: []
+
+fixed_width:
+  # Declare carried-over fixed-length record fields per case_set once a unit's
+  # copybook layout is known, so the comparer can align columns, e.g.:
+  # - field: acct_no
+  #   width: 10
+  #   pad: left
+  fields: []
+
+ignore:
+  # Whole files to skip before comparison (glob, matched against the case's
+  # output tree). Nothing is skipped by default — add patterns per project so
+  # every skip stays a deliberate, reviewable choice. Examples to uncomment:
+  # - "*.log"        # scheduler / job-step logs — operational noise, not output
+  # - "SYSOUT/*"     # spooled JES output, not the deliverable dataset
+  []

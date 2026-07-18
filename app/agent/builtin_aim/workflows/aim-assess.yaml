@@ -34,6 +34,13 @@ nodes:
       aim_units, and produce a revised summary.
     timeout_s: 1800
 
+  - id: advance_phase
+    kind: tool
+    tool: aim_units
+    args:
+      action: set_project_phase
+      phase: understand
+
   - id: done
     kind: notify
     title: "aim-assess"
@@ -41,8 +48,9 @@ nodes:
 
 edges:
   - { from: assess, to: approve_plan }
-  - { from: approve_plan, to: done, when: approve }
+  - { from: approve_plan, to: advance_phase, when: approve }
   - { from: approve_plan, to: rework, when: rework }
+  - { from: advance_phase, to: done }
   - { from: rework, to: done }
 
 outputs:
