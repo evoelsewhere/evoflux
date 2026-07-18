@@ -14,7 +14,7 @@
   [![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white)](app/)
   [![BYOM](https://img.shields.io/badge/BYOM-12%20providers-6E56CF)](#bring-your-own-model)
 
-  [Quick Start](#quick-start) · [The Harness](#evoflux-as-an-agent-harness) · [Forge & Coding](#one-app-two-modes-forge-and-coding) · [Architecture](#architecture) · [Comparison](#how-evoflux-compares)
+  [Quick Start](#quick-start) · [The Harness](#evoflux-as-an-agent-harness) · [Three Modes](#one-app-three-modes-forge-coding-and-aim) · [Architecture](#architecture) · [Comparison](#how-evoflux-compares)
 
 </div>
 
@@ -34,9 +34,9 @@ Every capability below maps to a subsystem that ships today, not a roadmap slide
 
 ![The five layers of the EvoFlux agent harness — tool orchestration, guardrails, context and memory, verification loops, and observability — sitting between any LLM provider and your local machine](documents/images/harness-anatomy.png)
 
-## One app, two modes: Forge and Coding
+## One app, three modes: Forge, Coding, and AIM
 
-Most agent products assume every conversation is about a codebase. EvoFlux doesn't: it splits into two modes at the top level, each with its own workspace model and its own agent roster.
+Most agent products assume every conversation is about a codebase. EvoFlux doesn't: it splits into three modes at the top level, each with its own workspace model and its own agent roster.
 
 | | **Forge** | **Coding** |
 |---|---|---|
@@ -47,6 +47,8 @@ Most agent products assume every conversation is about a codebase. EvoFlux doesn
 | Session lifetime | Ephemeral — gone when the session ends | Persistent — reopen the same workspace weeks later |
 
 Both modes share the same lead-and-mailbox core, the same streaming UI, the same permission model. Ask Forge to "explain this codebase" or "fix a bug" and it will — the distinction isn't what kind of task, it's whether the work needs a permanent, git-aware workspace or a scratch space that disappears when you're done.
+
+The third mode, **AIM (AI Innovation Modernization)**, is a different shape again: a factory for migrating a legacy codebase to a new stack — COBOL to Java 21, VB6 to .NET, Java 8 to 17+ — and proving the result behaves identically to what it replaces. Its workspace is three repos instead of one (a read-only legacy **base source**, a pre-scaffolded **target source**, and a **KB repo** that doubles as the client deliverable and the team's git-based collaboration plane), its roster is seven migration-specialized agents instead of a general-purpose one, and its UI is flow-first rather than chat-first — the main surface is a project's unit inventory and pipeline runs, with chat as an optional drawer, not the primary surface. More in [Feature deep-dive](#aim-legacy-migration-mode) below.
 
 ---
 
@@ -115,6 +117,9 @@ A full git surface — diff review, commit, branch create/delete/checkout, merge
 ### Session UX
 Long sessions get chapters (agent-markable dividers with a live table of contents), revert/undo with a movable boundary, and automatic context compaction. Split view tiles up to four agent panes with resize and reorder; Monitor view gives a mission-control strip of every agent's status plus a unified activity feed.
 
+### AIM: legacy migration mode
+The third mode turns a legacy-to-modern migration into a factory. A project's workspace is a read-only **base source** (the legacy estate), a pre-scaffolded **target source**, and a **KB repo** that's the system of record for both — unit inventory, phase, business rules, and rulebook all resolve KB-first, so a project can override or extend the shared defaults without touching EvoFlux's own code. Seven specialized agents (`aim-lead`, `aim-archaeologist`, `aim-target-architect`, `aim-converter`, `aim-appraiser`, `aim-test-engineer`, `aim-triage-analyst`) carry each migration unit through six pipelines — deterministic, human-gated graphs of agent/tool/approval steps, not open-ended chat: `aim-assess` (inventory + wave plan), `aim-understand` (one unit → KB doc + candidate business rules), `aim-convert-unit` / `aim-convert-wave` (implement into the target base, unit-by-unit or as a batch), `aim-test-compare` (certify or triage), and `aim-cutover-check` (phase flip). Equivalence is deterministic, not vibes: `aim_compare` canonicalizes actual and golden-master output per a stack-specific rulebook — encoding, sort order, date/number formatting, the "harmless" differences that hide real defects — and records a pass/fail/acceptable-diff verdict with a full diff report, closing a gap most published reference implementations in this space (including Microsoft's own open-source one) leave unsolved. Rulebook packs (`cobol-java21`, `vb6-dotnet`, `java8-java21` ship built in) bundle the conversion mappings, canonicalizer profiles, and agent-blueprint overlays for one source→target stack pair; a project's KB repo can carry its own to override or extend any of them.
+
 ### Beyond coding
 A headless-Chromium browser-automation tool (navigate, click, fill, extract, screenshot, live CDP screencasting) ships built in — no external Playwright server to run. Document intake handles PDF, DOCX, and HTML via `markitdown`. Observability is OpenTelemetry and Prometheus, aggregated through DuckDB into UI-friendly summaries. A cron scheduler fires prompts at agents on a schedule, reusing the exact same chat pipeline a human message would use.
 
@@ -139,7 +144,7 @@ The AI coding agent market moved fast through 2025–2026: in a Feb 2026 survey 
 
 *(Competitor figures reflect publicly reported information as of mid-2026, verified via official docs and pricing pages where possible, and may have changed since.)*
 
-**Where EvoFlux leans in:** it isn't chasing a coding benchmark leaderboard — it's a general-purpose, self-hosted harness where coding is one deep mode alongside research, browser automation, scheduled automation, and long-term memory, with no vendor lock-in on the model layer, a real native app, and a mode built for work that doesn't have a project yet. Every other tool above still assumes you'll use its vendor's model as the default path — EvoFlux treats the model as a swappable component.
+**Where EvoFlux leans in:** it isn't chasing a coding benchmark leaderboard — it's a general-purpose, self-hosted harness where coding is one deep mode alongside research, browser automation, scheduled automation, and long-term memory, with no vendor lock-in on the model layer, a real native app, a mode built for work that doesn't have a project yet, and a mode purpose-built for legacy-system migration with deterministic equivalence testing that none of the tools above attempt. Every other tool above still assumes you'll use its vendor's model as the default path — EvoFlux treats the model as a swappable component.
 
 **Where the commercial players lead:** purpose-built coding models (Cursor's Composer, OpenAI's GPT-5.5), heavily-funded cloud sandbox infrastructure for multi-hour unattended runs, and mature editor-native tooling inherited from full IDE forks (Cursor and Devin Desktop are both built on VS Code).
 
@@ -166,7 +171,7 @@ cd web && bun install && cd .. # frontend deps (requires bun)
 make dev                       # backend :8000 (reload) + frontend :5173, together
 ```
 
-Then open `http://localhost:5173`, connect your first LLM provider (any of the 12 supported), and start chatting in Forge mode — or open a folder to switch to Coding.
+Then open `http://localhost:5173`, connect your first LLM provider (any of the 12 supported), and start chatting in Forge mode — open a folder to switch to Coding, or set up a base/target/KB project to switch to AIM.
 
 ---
 
@@ -188,7 +193,7 @@ Then open `http://localhost:5173`, connect your first LLM provider (any of the 1
 app/        FastAPI backend — agent runtime, code graph, dream/wiki, scheduler, MCP client
 web/        React 19 + Vite frontend
 desktop/    Tauri v2 desktop shell + Python sidecar bundling
-seed/       Default agent blueprints (Forge + Coding rosters), skills, and config
+seed/       Default agent blueprints (Forge, Coding, and AIM rosters), skills, and config
 tests/      Backend test suite (pytest)
 documents/  Design notes, internal analyses, and README image assets
 ```
