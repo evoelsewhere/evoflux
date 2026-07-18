@@ -17,6 +17,7 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
+import { AnimatePresence, motion } from 'framer-motion'
 import {
   BookMarked,
   BookOpen,
@@ -307,39 +308,49 @@ export function AimSidebar({
                         />
                       )}
                     </button>
-                    {isExpanded && (
-                      // Feature rows read as children: quieter than the
-                      // project row, hung off an indent guide aligned under
-                      // the chevron — same text-xs/rounded-md/px-2 sizing as
-                      // Coding's nested repo/session rows, just indented.
-                      <div className="mb-1 ml-[13px] space-y-px border-l border-(--color-border) pl-1.5 pt-0.5">
-                        {AIM_FEATURES.map(({ key, label, Icon }) => (
-                          <button
-                            key={key}
-                            type="button"
-                            onClick={() => {
-                              saveLastAimProject(project.id)
-                              navigate({
-                                to: '/aim/$projectId/$feature',
-                                params: { projectId: project.id, feature: key },
-                              })
-                            }}
-                            className={cn(
-                              'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs transition-colors',
-                              isActive && activeFeature === key
-                                ? 'bg-(--bg-key) font-medium text-(--color-accent)'
-                                : 'text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)',
-                            )}
-                          >
-                            <Icon size={11} className="shrink-0" aria-hidden="true" />
-                            <span className="truncate">{label}</span>
-                            {key === 'pipelines' && hasRunning && (
-                              <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-(--color-accent)" />
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                    <AnimatePresence initial={false}>
+                      {isExpanded && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.14 }}
+                          className="overflow-hidden"
+                        >
+                          {/* Feature rows read as children: quieter than the
+                              project row, hung off an indent guide aligned
+                              under the chevron — same text-xs/rounded-md/px-2
+                              sizing as Coding's nested repo/session rows. */}
+                          <div className="mb-1 ml-[13px] space-y-px border-l border-(--color-border) pl-1.5 pt-0.5">
+                            {AIM_FEATURES.map(({ key, label, Icon }) => (
+                              <button
+                                key={key}
+                                type="button"
+                                onClick={() => {
+                                  saveLastAimProject(project.id)
+                                  navigate({
+                                    to: '/aim/$projectId/$feature',
+                                    params: { projectId: project.id, feature: key },
+                                  })
+                                }}
+                                className={cn(
+                                  'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs transition-colors',
+                                  isActive && activeFeature === key
+                                    ? 'bg-(--bg-key) font-medium text-(--color-accent)'
+                                    : 'text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)',
+                                )}
+                              >
+                                <Icon size={11} className="shrink-0" aria-hidden="true" />
+                                <span className="truncate">{label}</span>
+                                {key === 'pipelines' && hasRunning && (
+                                  <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-(--color-accent)" />
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
                 )
               })}
