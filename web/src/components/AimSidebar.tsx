@@ -22,8 +22,10 @@ import {
   BookOpen,
   ChevronDown,
   ChevronRight,
+  HelpCircle,
   LayoutDashboard,
   Plus,
+  Search,
   Settings,
   Workflow,
 } from 'lucide-react'
@@ -74,6 +76,9 @@ interface AimSidebarProps {
   activeProjectId?: string
   activeFeature?: AimFeature
   onNewProject: () => void
+  /** Opens the command palette (search input + footer help), same as
+   * the forge/coding sidebars. */
+  onCommandPalette?: () => void
   /** Desktop icon-rail state — owned by the AIM layout so its toggle
    * button (between sidebar and content) can flip it, like coding. */
   collapsed: boolean
@@ -83,6 +88,7 @@ export function AimSidebar({
   activeProjectId,
   activeFeature,
   onNewProject,
+  onCommandPalette,
   collapsed,
 }: AimSidebarProps) {
   const navigate = useNavigate()
@@ -138,6 +144,16 @@ export function AimSidebar({
           className={`flex w-full shrink-0 flex-col items-center gap-0.5 rounded-[10px] bg-(--bg-sidebar)/80 px-1 pb-2 shadow-sm backdrop-blur-xl ${isMacOverlay ? 'pt-10' : 'pt-2'}`}
         >
           <ModeSwitchRail active="aim" />
+          {onCommandPalette && (
+            <button
+              type="button"
+              onClick={onCommandPalette}
+              title="Search (Ctrl+P)"
+              className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
+            >
+              <Search size={15} aria-hidden="true" />
+            </button>
+          )}
           <button
             type="button"
             onClick={onNewProject}
@@ -158,6 +174,17 @@ export function AimSidebar({
           >
             <Settings size={14} aria-hidden="true" />
           </button>
+          {onCommandPalette && (
+            <button
+              type="button"
+              onClick={onCommandPalette}
+              className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+              aria-label="Help and shortcuts"
+              title="Help and shortcuts (Ctrl+P)"
+            >
+              <HelpCircle size={14} aria-hidden="true" />
+            </button>
+          )}
           <ThemeToggle collapsed />
           <HealthDot />
         </div>
@@ -187,6 +214,24 @@ export function AimSidebar({
           <ModeSwitchTabs active="aim" />
         </div>
 
+        {/* Search trigger — opens the command palette (Ctrl+P), same
+            placement + markup as the forge/coding sidebars. */}
+        {onCommandPalette && (
+          <div className="shrink-0 px-2 pt-2">
+            <button
+              type="button"
+              onClick={onCommandPalette}
+              className="flex h-8 w-full items-center gap-2 rounded-md border border-(--color-border) bg-(--bg-page) px-2.5 text-left text-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
+              aria-label="Open command palette"
+              title="Open command palette (Ctrl+P)"
+            >
+              <Search size={13} aria-hidden="true" />
+              <span className="flex-1">Search…</span>
+              <kbd className="font-mono text-xs text-(--color-text-subtle)">^P</kbd>
+            </button>
+          </div>
+        )}
+
         {/* Project list */}
         <nav aria-label="AIM projects" className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
           <div className="flex items-center justify-between px-1 pb-1">
@@ -196,11 +241,11 @@ export function AimSidebar({
             <button
               type="button"
               onClick={onNewProject}
-              className="flex h-4 w-4 items-center justify-center rounded text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-text)"
+              className="flex h-5 w-5 items-center justify-center rounded text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-text)"
               title="New / Join migration project"
               aria-label="New / Join migration project"
             >
-              <Plus size={10} aria-hidden="true" />
+              <Plus size={12} aria-hidden="true" />
             </button>
           </div>
           {projectsQuery.isLoading ? (
@@ -234,7 +279,7 @@ export function AimSidebar({
                         }
                       }}
                       className={cn(
-                        'flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-xs transition-colors',
+                        'flex w-full items-center gap-1.5 rounded-xs px-2 py-1.5 text-left text-xs transition-colors',
                         isActive
                           ? 'bg-(--bg-key) font-medium text-(--color-text)'
                           : 'text-(--color-text-2) hover:bg-(--bg-key) hover:text-(--color-text)',
@@ -263,9 +308,10 @@ export function AimSidebar({
                       )}
                     </button>
                     {isExpanded && (
-                      // Feature rows read as children: tighter, smaller, and
-                      // quieter than the project row, hung off an indent guide
-                      // aligned under the chevron.
+                      // Feature rows read as children: quieter than the
+                      // project row, hung off an indent guide aligned under
+                      // the chevron — same text-xs/rounded-md/px-2 sizing as
+                      // Coding's nested repo/session rows, just indented.
                       <div className="mb-1 ml-[13px] space-y-px border-l border-(--color-border) pl-1.5 pt-0.5">
                         {AIM_FEATURES.map(({ key, label, Icon }) => (
                           <button
@@ -279,7 +325,7 @@ export function AimSidebar({
                               })
                             }}
                             className={cn(
-                              'flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[11px] transition-colors',
+                              'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs transition-colors',
                               isActive && activeFeature === key
                                 ? 'bg-(--bg-key) font-medium text-(--color-accent)'
                                 : 'text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)',
@@ -304,15 +350,28 @@ export function AimSidebar({
         {/* Footer trio — mirrors the forge/coding sidebars so all three
             modes feel like the same shell. */}
         <div className="flex shrink-0 items-center justify-between gap-2 border-t border-(--color-border) px-3 py-2 pb-safe">
-          <button
-            type="button"
-            onClick={() => useUIStore.getState().openSettings()}
-            className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-            aria-label="Settings"
-            title="Settings"
-          >
-            <Settings size={14} aria-hidden="true" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => useUIStore.getState().openSettings()}
+              className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+              aria-label="Settings"
+              title="Settings"
+            >
+              <Settings size={14} aria-hidden="true" />
+            </button>
+            {onCommandPalette && (
+              <button
+                type="button"
+                onClick={onCommandPalette}
+                className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+                aria-label="Help and shortcuts"
+                title="Help and shortcuts (Ctrl+P)"
+              >
+                <HelpCircle size={14} aria-hidden="true" />
+              </button>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             <HealthDot />
             <ThemeToggle collapsed />
