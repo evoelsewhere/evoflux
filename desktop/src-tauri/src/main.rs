@@ -111,7 +111,6 @@ const MENU_CODING: &str = "coding";
 const MENU_COMMAND_PALETTE: &str = "command_palette";
 const MENU_WIKI: &str = "wiki";
 const MENU_SCHEDULER: &str = "scheduler";
-const MENU_AGENT_CAPABILITIES: &str = "agent_capabilities";
 const MENU_SETTINGS: &str = "settings";
 const MENU_PROVIDERS: &str = "providers";
 const MENU_NOTIFICATIONS: &str = "notifications";
@@ -771,7 +770,6 @@ fn handle_desktop_menu(app: &AppHandle, id: &str) {
         MENU_COMMAND_PALETTE => emit_frontend_command(app, "command_palette"),
         MENU_WIKI => emit_frontend_command(app, "wiki"),
         MENU_SCHEDULER => emit_frontend_command(app, "scheduler"),
-        MENU_AGENT_CAPABILITIES => emit_frontend_command(app, "agent_capabilities"),
         MENU_EDIT_UNDO => emit_frontend_command(app, "edit_undo"),
         MENU_EDIT_REDO => emit_frontend_command(app, "edit_redo"),
         MENU_EDIT_CUT => emit_frontend_command(app, "edit_cut"),
@@ -964,13 +962,6 @@ fn install_desktop_menus(app: &tauri::App) -> Result<()> {
     let view_wiki = MenuItem::with_id(app, MENU_WIKI, "Wiki", true, Some("Ctrl+M"))?;
     let view_scheduler =
         MenuItem::with_id(app, MENU_SCHEDULER, "Scheduled Tasks", true, Some("Ctrl+S"))?;
-    let view_agent_capabilities = MenuItem::with_id(
-        app,
-        MENU_AGENT_CAPABILITIES,
-        "Session Settings",
-        true,
-        Some("Ctrl+A"),
-    )?;
     let view_settings = MenuItem::with_id(app, MENU_SETTINGS, "Settings", true, None::<&str>)?;
     let view_telemetry = MenuItem::with_id(app, MENU_TELEMETRY, "Telemetry", true, None::<&str>)?;
     let view_reload = MenuItem::with_id(app, MENU_RELOAD, "Reload", true, Some("CmdOrCtrl+R"))?;
@@ -1060,7 +1051,6 @@ fn install_desktop_menus(app: &tauri::App) -> Result<()> {
         .item(&view_command_palette)
         .item(&view_wiki)
         .item(&view_scheduler)
-        .item(&view_agent_capabilities)
         .separator()
         .item(&view_settings)
         .item(&view_telemetry)

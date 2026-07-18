@@ -42,7 +42,6 @@ interface UseTeamCommandsArgs {
   viewMode: ViewMode
   cycleViewMode: () => void
   setViewMode: (m: ViewMode) => void
-  toggleAgentCapabilities: () => void
   handleWorkspaceFiles: () => void
   handleCodingSidebarToggle: () => void
   mode?: 'forge' | 'coding'
@@ -67,7 +66,6 @@ export function useTeamCommands({
   viewMode,
   cycleViewMode,
   setViewMode,
-  toggleAgentCapabilities,
   handleWorkspaceFiles,
   handleCodingSidebarToggle,
   mode = 'forge',
@@ -88,7 +86,6 @@ export function useTeamCommands({
       label: viewMode === 'agent' ? 'Switch to Split View' : 'Switch to Agent View',
       description: 'Cycle: Agent → Split', shortcut: 'Ctrl+V', action: cycleViewMode,
     },
-    { id: 'agent-info',       group: 'View',       label: 'Session Settings', description: 'Show session model settings and lead context', shortcut: 'Ctrl+A', action: toggleAgentCapabilities },
     { id: 'todos',            group: 'View',       label: 'Task List',          description: 'View agent todos and progress', shortcut: 'Ctrl+T', action: () => {} },
     { id: 'workspace-files',  group: 'View',       label: mode === 'coding' ? 'Open Changed & Files' : 'Toggle Workspace Files', description: mode === 'coding' ? 'Browse changed files and workspace files' : 'Browse files the agent has produced', shortcut: 'Ctrl+F', action: handleWorkspaceFiles },
     mode === 'coding'

@@ -28,7 +28,7 @@ import type {
   TeamAgentInfo,
 } from '@/api/types'
 
-// ── Shared sub-components (extracted from SessionSettingsPanel) ──────────────
+// ── Shared sub-components (from the retired Session Settings modal) ──────────
 
 interface CapabilityChip {
   key: string

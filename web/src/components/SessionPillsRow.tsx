@@ -6,8 +6,10 @@
  * how Gemini and Grok surface model selection: always-visible, one-tap,
  * no modal popup.
  *
- * Props mirror the slice of SessionSettingsPanel that the pills own.
- * Agent-info (capabilities + tools) is delegated to AgentInfoPopover.
+ * This row replaced the old Session Settings modal outright — model,
+ * thinking level, and fast mode live here; agent-info (capabilities +
+ * tools) is delegated to AgentInfoPopover; MCP server management lives
+ * in Settings.
  */
 
 import { useState, useEffect, useMemo, useRef } from 'react'
