@@ -77,9 +77,6 @@ function runDesktopCommand(command: unknown): void {
     case 'scheduler':
       useUIStore.getState().toggleScheduler()
       break
-    case 'agent_capabilities':
-      useUIStore.getState().toggleAgentCapabilities()
-      break
     case 'edit_undo':
       execCommand('undo')
       break

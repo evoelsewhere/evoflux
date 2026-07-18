@@ -13,18 +13,15 @@ import { immer } from 'zustand/middleware/immer'
 interface UIStore {
   wikiOpen: boolean
   schedulerOpen: boolean
-  agentCapabilitiesOpen: boolean
   browserOpen: boolean
   settingsOpen: boolean
   settingsPath: string
   settingsSearch: Record<string, string>
   toggleWiki: () => void
   toggleScheduler: () => void
-  toggleAgentCapabilities: () => void
   toggleBrowser: () => void
   closeWiki: () => void
   closeScheduler: () => void
-  closeAgentCapabilities: () => void
   closeBrowser: () => void
   openSettings: (path?: string, search?: Record<string, string>) => void
   closeSettings: () => void
@@ -35,14 +32,12 @@ export const useUIStore = create<UIStore>()(
   immer((set) => ({
     wikiOpen: false,
     schedulerOpen: false,
-    agentCapabilitiesOpen: false,
     browserOpen: false,
     toggleWiki: () => set((state) => {
       const nextOpen = !state.wikiOpen
       state.wikiOpen = nextOpen
       if (nextOpen) {
         state.schedulerOpen = false
-        state.agentCapabilitiesOpen = false
         state.browserOpen = false
       }
     }),
@@ -51,16 +46,6 @@ export const useUIStore = create<UIStore>()(
       state.schedulerOpen = nextOpen
       if (nextOpen) {
         state.wikiOpen = false
-        state.agentCapabilitiesOpen = false
-        state.browserOpen = false
-      }
-    }),
-    toggleAgentCapabilities: () => set((state) => {
-      const nextOpen = !state.agentCapabilitiesOpen
-      state.agentCapabilitiesOpen = nextOpen
-      if (nextOpen) {
-        state.wikiOpen = false
-        state.schedulerOpen = false
         state.browserOpen = false
       }
     }),
@@ -70,12 +55,10 @@ export const useUIStore = create<UIStore>()(
       if (nextOpen) {
         state.wikiOpen = false
         state.schedulerOpen = false
-        state.agentCapabilitiesOpen = false
       }
     }),
     closeWiki: () => set((state) => { state.wikiOpen = false }),
     closeScheduler: () => set((state) => { state.schedulerOpen = false }),
-    closeAgentCapabilities: () => set((state) => { state.agentCapabilitiesOpen = false }),
     closeBrowser: () => set((state) => { state.browserOpen = false }),
     settingsOpen: false,
     settingsPath: '',

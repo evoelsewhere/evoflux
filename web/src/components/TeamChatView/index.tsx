@@ -3,8 +3,8 @@
  *
  * Owns:
  *   - View-mode state (``agent`` / ``split``).
- *   - Side panels (``Sidebar``, ``WorkspaceFilesPanel``, ``SessionSettingsPanel``,
- *     inline task list, command palette).
+ *   - Side panels (``Sidebar``, ``WorkspaceFilesPanel``, inline task list,
+ *     command palette).
  *   - The header (token totals, view toggle, panel toggles, agent tabs).
  *   - Mount-time SSE connect + session restore (carefully sequenced so
  *     ``loadSession`` runs *before* ``connectStream`` to avoid wiping
@@ -23,7 +23,6 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { SessionSettingsPanel } from '../SessionSettingsPanel'
 import { FloatingTodosPanel } from '../FloatingTodosPanel'
 import { AgentView } from '../AgentView'
 import { WorkspaceInfoCard } from '../WorkspaceInfoCard'
@@ -59,7 +58,7 @@ import { useUIStore } from '@/stores/useUIStore'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useTeamAgentsQuery } from '@/queries/useAgentsQuery'
 import { useFileRefsQuery } from '@/queries/useFileRefsQuery'
-import { AlertCircle, Brain, CalendarClock, Check, ChevronDown, FolderOpen, FolderCode, Menu, Minimize2, MoreHorizontal, PanelLeft, SlidersHorizontal, X } from 'lucide-react'
+import { AlertCircle, Brain, CalendarClock, Check, ChevronDown, FolderOpen, FolderCode, Menu, Minimize2, MoreHorizontal, PanelLeft, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { usePlatform } from '@/hooks/use-platform'
@@ -163,7 +162,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
 
   useEffect(() => {
     if (isMobile) {
-      useUIStore.getState().closeAgentCapabilities()
       setShowFilesPanel(false)
     }
   }, [isMobile])
@@ -217,14 +215,11 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   // Utility modal state lives in useUIStore so only one can be open at a time.
   const wikiOpen = useUIStore((s) => s.wikiOpen)
   const schedulerOpen = useUIStore((s) => s.schedulerOpen)
-  const agentCapabilitiesOpen = useUIStore((s) => s.agentCapabilitiesOpen)
   const browserOpen = useUIStore((s) => s.browserOpen)
   const toggleWiki = useUIStore((s) => s.toggleWiki)
   const toggleScheduler = useUIStore((s) => s.toggleScheduler)
-  const toggleAgentCapabilities = useUIStore((s) => s.toggleAgentCapabilities)
   const closeWiki = useUIStore((s) => s.closeWiki)
   const closeScheduler = useUIStore((s) => s.closeScheduler)
-  const closeAgentCapabilities = useUIStore((s) => s.closeAgentCapabilities)
   const closeBrowser = useUIStore((s) => s.closeBrowser)
 
   // Subscribe to active-agent stream fields directly to avoid recomputing on
@@ -1009,7 +1004,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
     viewMode,
     cycleViewMode,
     setViewMode,
-    toggleAgentCapabilities,
     handleWorkspaceFiles,
     handleCodingSidebarToggle,
     mode: forgeOrCodingMode,
@@ -1026,7 +1020,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   useKeyboardShortcuts({
     n: handleNewSession,
     v: isMobile ? undefined : cycleViewMode,
-    a: toggleAgentCapabilities,
     f: handleWorkspaceFiles,
     p: isMobile ? undefined : () => setShowPalette((v) => !v),
     b: mode === 'coding' ? handleCodingSidebarToggle : undefined,
@@ -1320,12 +1313,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
                 active={mode === 'coding' ? codingPanel !== null : showFilesPanel}
                 disabled={mode === 'coding' ? !workspace : !sessionIdState}
               />
-              <MobileHeaderAction
-                Icon={SlidersHorizontal}
-                label="Agent settings"
-                onClick={toggleAgentCapabilities}
-                active={agentCapabilitiesOpen}
-              />
               <MobileChatActions
                 open={showMobileActions}
                 onOpenChange={setShowMobileActions}
@@ -1350,13 +1337,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
               dreamRunning={dreamMutation.isPending}
               viewMode={viewMode}
               onViewModeChange={setViewMode}
-              agentsAction={{
-                Icon: SlidersHorizontal,
-                onClick: toggleAgentCapabilities,
-                title: 'Session model settings (Ctrl+A)',
-                ariaLabel: 'Session model settings',
-                className: agentCapabilitiesOpen ? 'mr-2 bg-(--bg-key) text-(--color-text)' : 'mr-2',
-              }}
               extraActions={
                 <SessionScheduleIndicator
                   sessionId={sessionIdState}
@@ -1690,17 +1670,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
         />
       </div>
 
-      <SessionSettingsPanel
-        open={agentCapabilitiesOpen}
-        agentNames={agentNames}
-        workspace={agentWorkspace}
-        mode={mode === 'aim' ? 'aim' : 'coding'}
-        sessionModel={sessionModel}
-        sessionThinkingLevel={sessionThinkingLevel}
-        sessionFastMode={sessionFastMode}
-        onSessionModelSettingsChange={setSessionModelSettings}
-        onClose={closeAgentCapabilities}
-      />
       <WikiPanel open={wikiOpen} onClose={closeWiki} />
       <SchedulerPanel
         open={schedulerOpen}
