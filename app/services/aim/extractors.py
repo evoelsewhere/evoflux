@@ -9,9 +9,11 @@ and every existing code-graph tool works on it unchanged.
 
 Only source-role workspaces get extractors: the target repo is written in
 a modern stack the builtin parsers already cover, and the KB repo is
-markdown. Rulebooks resolve from the builtin packs directory
-(``app/agent/builtin_aim/rulebooks/``) by the id recorded in
-``project.settings["aim"]["rulebook"]`` at project setup.
+markdown. Rulebooks resolve KB-first (:func:`resolve_rulebook_dir`) by
+the id recorded in ``project.settings["aim"]["rulebook"]`` at project
+setup — the same resolution ``aim_compare``'s canonicalizer lookup and
+the Rulebook screen already use, so a KB-local rulebook override's own
+``extractors/`` is honored here too, not just its canonicalizers.
 """
 
 from __future__ import annotations
@@ -26,13 +28,7 @@ from sqlmodel import col, select
 from app.models.chat import CodingProject, CodingProjectWorkspace, CodingWorkspace
 
 
-def _builtin_rulebooks_dir() -> Path:
-    from app.agent.tools.builtin import aim as aim_tools
-
-    return aim_tools._builtin_rulebooks_dir()
-
-
-def extractor_config_paths(rulebook_id: str) -> list[Path]:
+def extractor_config_paths(rulebook_id: str, kb_root: Path | None = None) -> list[Path]:
     """Extractor config files a rulebook declares, in manifest order.
 
     Reads the pack's ``rulebook.yaml`` ``extractors:`` list; falls back to
@@ -40,10 +36,23 @@ def extractor_config_paths(rulebook_id: str) -> list[Path]:
     Unknown rulebook ids resolve to an empty list — a project created
     against a rulebook this install doesn't ship simply indexes with the
     builtin parsers only.
+
+    Resolves KB-first when *kb_root* is given (a KB-local ``rulebook/``
+    override wins over the builtin pack of the same id); falls back to
+    the builtin-only lookup when it isn't, for callers that haven't
+    resolved a KB workspace path.
     """
     import yaml
 
-    pack_dir = _builtin_rulebooks_dir() / rulebook_id
+    from app.services.aim.rulebook_install import _pack_dir, resolve_rulebook_dir
+
+    pack_dir = (
+        resolve_rulebook_dir(kb_root, rulebook_id)
+        if kb_root is not None
+        else _pack_dir(rulebook_id)
+    )
+    if pack_dir is None:
+        return []
     manifest_path = pack_dir / "rulebook.yaml"
     if not manifest_path.is_file():
         return []
@@ -73,6 +82,7 @@ async def structural_parsers_for_workspace(
     rulebook first — extension collisions resolve to the later parser via
     registry ordering, which is as good a tiebreak as any.
     """
+    from app.services.aim.project import resolve_kb_workspace_path
     from app.services.code_graph.parsers.structural import load_structural_parsers
 
     memberships = await db.execute(
@@ -95,7 +105,9 @@ async def structural_parsers_for_workspace(
         if not rulebook_id or rulebook_id in seen:
             continue
         seen.add(rulebook_id)
-        config_paths.extend(extractor_config_paths(rulebook_id))
+        kb_path = await resolve_kb_workspace_path(db, project)
+        kb_root = Path(kb_path) if kb_path else None
+        config_paths.extend(extractor_config_paths(rulebook_id, kb_root))
     if not config_paths:
         return []
     parsers = load_structural_parsers(config_paths)

@@ -73,6 +73,7 @@ def create_manifest(
     rulebook_version: str,
     source_identities: list[str],
     target_identities: list[str],
+    compare_default_profile: str = "default",
 ) -> None:
     """Write a brand-new ``aim.yaml`` — the shareable project manifest a
     "join existing" teammate reads (identity strings, not local paths).
@@ -81,7 +82,7 @@ def create_manifest(
         "rulebook": {"id": rulebook_id, "version": rulebook_version},
         "roles": {"source": source_identities, "target": target_identities},
         "golden_dir": "golden",
-        "compare_default_profile": "default",
+        "compare_default_profile": compare_default_profile,
         "phase": "assess",
     }
     (kb_root / "aim.yaml").write_text(

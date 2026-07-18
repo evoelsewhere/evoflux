@@ -65,6 +65,39 @@ def test_extractor_config_paths_empty_for_unknown_rulebook():
     assert extractor_config_paths("not-a-rulebook") == []
 
 
+def test_extractor_config_paths_prefers_kb_override_over_builtin(tmp_path):
+    kb_root = tmp_path / "kb"
+    override = kb_root / "rulebook" / "extractors"
+    override.mkdir(parents=True)
+    (kb_root / "rulebook" / "rulebook.yaml").write_text(
+        "id: cobol-java21\nversion: '0.1'\n"
+        "extractors:\n  - extractors/only.yaml\n",
+        encoding="utf-8",
+    )
+    (override / "only.yaml").write_text("id: only\n", encoding="utf-8")
+
+    # No kb_root -> builtin-only lookup, unaffected by the override.
+    assert [p.name for p in extractor_config_paths("cobol-java21")] == [
+        "cobol-structural.yaml",
+        "jcl-structural.yaml",
+    ]
+    # With kb_root -> the KB-local override wins.
+    assert [p.name for p in extractor_config_paths("cobol-java21", kb_root)] == [
+        "only.yaml",
+    ]
+
+
+def test_extractor_config_paths_kb_root_falls_back_to_builtin_without_override(
+    tmp_path,
+):
+    kb_root = tmp_path / "kb-no-override"
+    kb_root.mkdir()
+    assert [p.name for p in extractor_config_paths("cobol-java21", kb_root)] == [
+        "cobol-structural.yaml",
+        "jcl-structural.yaml",
+    ]
+
+
 # ── structural_parsers_for_workspace (isolated in-memory DB) ─────────────────
 
 
@@ -126,6 +159,39 @@ async def test_source_workspace_gets_structural_parsers(db, tmp_path):
     # Target and KB repos are modern/markdown — no extractors.
     assert await structural_parsers_for_workspace(db, UUID(roles["target"][0])) == []
     assert await structural_parsers_for_workspace(db, UUID(roles["kb"][0])) == []
+
+
+@pytest.mark.asyncio
+async def test_kb_local_rulebook_override_wins_for_extractors(db, tmp_path):
+    """extractor_config_paths used to resolve the builtin pack dir only,
+    silently ignoring a KB-local rulebook/ override's own extractors/ —
+    this is the regression test for KB-first resolution (the same
+    resolve_rulebook_dir aim_compare's canonicalizer lookup already uses)."""
+    from uuid import UUID
+
+    project, _ = await _make_cobol_project(db, tmp_path)
+    roles = project.settings["aim"]["roles"]
+    kb_root = tmp_path / "estate-kb"
+
+    override_extractors = kb_root / "rulebook" / "extractors"
+    override_extractors.mkdir(parents=True)
+    (kb_root / "rulebook" / "rulebook.yaml").write_text(
+        "id: cobol-java21\nversion: '0.1'\n"
+        "extractors:\n  - extractors/solo-structural.yaml\n",
+        encoding="utf-8",
+    )
+    (override_extractors / "solo-structural.yaml").write_text(
+        "id: solo-structural\n"
+        "file_extensions: ['.cbl']\n"
+        "node_rules:\n"
+        "  - kind: program\n"
+        "    scope: file\n"
+        r"    match: 'PROGRAM-ID\s*\.?\s+(?P<name>[A-Za-z0-9][A-Za-z0-9-]*)'" "\n",
+        encoding="utf-8",
+    )
+
+    parsers = await structural_parsers_for_workspace(db, UUID(roles["source"][0]))
+    assert [p.name for p in parsers] == ["solo-structural"]
 
 
 @pytest.mark.asyncio
