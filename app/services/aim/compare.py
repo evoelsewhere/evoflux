@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-from app.services.aim.canonicalize import canonicalize_text
+from app.services.aim.canonicalize import canonicalize_text, mask_text
 from app.services.aim.models import CanonicalProfile
 
 FileStatus = Literal["match", "diff", "missing", "extra"]
@@ -76,6 +76,91 @@ def _numbers_close(a: Any, b: Any, tolerance: float) -> bool:
     return a == b
 
 
+def _values_close(a: str, b: str, tolerance: float) -> bool:
+    """String equality, or numeric equality within *tolerance* when both
+    sides parse as numbers — the text-side counterpart of
+    :func:`_numbers_close`."""
+    if a == b:
+        return True
+    try:
+        return abs(float(a) - float(b)) <= tolerance
+    except ValueError:
+        return False
+
+
+def _line_equal(a: str, b: str, tolerance: float) -> bool:
+    """Whole-line equality, tolerating per-token numeric drift within
+    *tolerance* (currency/decimal rounding in fixed-report text). Falls back
+    to strict equality when tolerance is 0 or the token counts differ."""
+    if a == b:
+        return True
+    if tolerance <= 0:
+        return False
+    a_tokens, b_tokens = a.split(), b.split()
+    if len(a_tokens) != len(b_tokens):
+        return False
+    return all(_values_close(x, y, tolerance) for x, y in zip(a_tokens, b_tokens))
+
+
+def _split_fixed_width(line: str, fields: list) -> dict[str, str]:
+    """Slice a record *line* into its declared fixed-width fields, stripping
+    each field's padding."""
+    out: dict[str, str] = {}
+    pos = 0
+    for spec in fields:
+        raw = line[pos : pos + spec.width]
+        pos += spec.width
+        out[spec.field] = raw.strip()
+    return out
+
+
+def _compare_fixed_width(
+    rel_path: str,
+    expected_lines: list[str],
+    actual_lines: list[str],
+    profile: CanonicalProfile,
+) -> FileDiff:
+    """Field-level compare of two fixed-width record files, applying the
+    profile's ``decimal_tolerance`` to numeric fields."""
+    if len(expected_lines) != len(actual_lines):
+        return FileDiff(
+            path=rel_path,
+            status="diff",
+            detail=f"line count {len(expected_lines)} != {len(actual_lines)}",
+        )
+    diffs: list[str] = []
+    for index, (exp_line, act_line) in enumerate(zip(expected_lines, actual_lines)):
+        exp_fields = _split_fixed_width(exp_line, profile.fixed_width_fields)
+        act_fields = _split_fixed_width(act_line, profile.fixed_width_fields)
+        for spec in profile.fixed_width_fields:
+            exp_val = exp_fields.get(spec.field, "")
+            act_val = act_fields.get(spec.field, "")
+            if not _values_close(exp_val, act_val, profile.decimal_tolerance):
+                diffs.append(
+                    f"line {index + 1} field {spec.field}: "
+                    f"expected={exp_val!r} actual={act_val!r}"
+                )
+    if diffs:
+        return FileDiff(path=rel_path, status="diff", detail="\n".join(diffs))
+    return FileDiff(path=rel_path, status="match")
+
+
+def _read_text(path: Path, profile: CanonicalProfile) -> str:
+    """Read *path*, trying the profile's default encoding, then its legacy
+    fallback (EBCDIC/windows-1252/...), then a lossy default-encoding read so
+    a stray byte never aborts a compare."""
+    try:
+        return path.read_text(encoding=profile.encoding_default)
+    except (UnicodeDecodeError, LookupError):
+        pass
+    if profile.encoding_legacy_fallback:
+        try:
+            return path.read_text(encoding=profile.encoding_legacy_fallback)
+        except (UnicodeDecodeError, LookupError):
+            pass
+    return path.read_text(encoding=profile.encoding_default, errors="replace")
+
+
 def _json_diff(a: Any, b: Any, tolerance: float, path: str = "$") -> list[str]:
     diffs: list[str] = []
     if isinstance(a, dict) and isinstance(b, dict):
@@ -100,6 +185,17 @@ def _json_diff(a: Any, b: Any, tolerance: float, path: str = "$") -> list[str]:
 def _compare_file(
     rel_path: str, expected_text: str, actual_text: str, profile: CanonicalProfile
 ) -> FileDiff:
+    if profile.fixed_width_fields:
+        # Column positions are load-bearing here, so apply masks only — never
+        # whitespace/decimal normalization, which would shift field offsets.
+        # Field-level tolerance is applied after slicing instead.
+        expected_lines = mask_text(expected_text, profile).splitlines()
+        actual_lines = mask_text(actual_text, profile).splitlines()
+        if _matches_any(rel_path, profile.sort_before_diff_paths):
+            expected_lines = sorted(expected_lines)
+            actual_lines = sorted(actual_lines)
+        return _compare_fixed_width(rel_path, expected_lines, actual_lines, profile)
+
     canon_expected = canonicalize_text(expected_text, profile)
     canon_actual = canonicalize_text(actual_text, profile)
 
@@ -125,8 +221,17 @@ def _compare_file(
     if _matches_any(rel_path, profile.sort_before_diff_paths):
         expected_lines = sorted(expected_lines)
         actual_lines = sorted(actual_lines)
+
     if expected_lines == actual_lines:
         return FileDiff(path=rel_path, status="match")
+    # A tolerant second pass catches currency/decimal rounding the raw string
+    # compare flagged; only fall through to a real diff when it can't.
+    if profile.decimal_tolerance > 0 and len(expected_lines) == len(actual_lines):
+        if all(
+            _line_equal(exp, act, profile.decimal_tolerance)
+            for exp, act in zip(expected_lines, actual_lines)
+        ):
+            return FileDiff(path=rel_path, status="match")
     diff_text = "\n".join(
         difflib.unified_diff(
             expected_lines,
@@ -148,13 +253,13 @@ def compare_dirs(
     expected_paths = {
         p.relative_to(expected_dir).as_posix()
         for p in expected_dir.rglob("*")
-        if p.is_file()
+        if p.is_file() and not _matches_any(p.relative_to(expected_dir).as_posix(), profile.ignore)
     }
     actual_paths = (
         {
             p.relative_to(actual_dir).as_posix()
             for p in actual_dir.rglob("*")
-            if p.is_file()
+            if p.is_file() and not _matches_any(p.relative_to(actual_dir).as_posix(), profile.ignore)
         }
         if actual_dir.exists()
         else set()
@@ -166,12 +271,8 @@ def compare_dirs(
     for rel_path in sorted(actual_paths - expected_paths):
         files.append(FileDiff(path=rel_path, status="extra"))
     for rel_path in sorted(expected_paths & actual_paths):
-        expected_text = (expected_dir / rel_path).read_text(
-            encoding=profile.encoding_default, errors="replace"
-        )
-        actual_text = (actual_dir / rel_path).read_text(
-            encoding=profile.encoding_default, errors="replace"
-        )
+        expected_text = _read_text(expected_dir / rel_path, profile)
+        actual_text = _read_text(actual_dir / rel_path, profile)
         files.append(_compare_file(rel_path, expected_text, actual_text, profile))
 
     diff_count = sum(1 for f in files if f.status != "match")
