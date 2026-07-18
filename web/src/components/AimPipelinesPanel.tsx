@@ -77,29 +77,133 @@ import type {
   MessageResponse,
   SessionResponse,
   WorkflowExecutionSummary,
+  WorkflowInputSpec,
   WorkflowListItem,
   WorkflowNodeRun,
 } from '@/api/types'
 
-interface PipelineDef {
-  key: string
-  workflow: string
-  label: string
-  needs: 'none' | 'unit' | 'wave'
-  hasCaseSet?: boolean
+// §9.3: pipelines that write to the target repo — require confirm before run.
+// A hand-maintained set of the two builtin pipelines known to do this; a
+// rulebook-authored custom pipeline that also writes to target doesn't get
+// this extra confirm (no generic "does this write to target" signal exists
+// yet) — EvoFlux's own tool-permission gating still applies underneath.
+const CONVERT_WORKFLOW_NAMES = new Set(['aim-convert-unit', 'aim-convert-wave'])
+
+/** "aim-convert-unit" -> "Convert Unit" — used for the picker and anywhere
+ * else a short display name reads better than the raw workflow name. The
+ * full explanation lives in the workflow's own `description`, shown
+ * separately in PipelineInfoCard. */
+function pipelineDisplayName(workflowName: string): string {
+  return workflowName
+    .replace(/^aim-/, '')
+    .split('-')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
 }
 
-const PIPELINES: PipelineDef[] = [
-  { key: 'assess', workflow: 'aim-assess', label: 'Assess (inventory + waves)', needs: 'none' },
-  { key: 'understand', workflow: 'aim-understand', label: 'Understand unit', needs: 'unit' },
-  { key: 'convert-unit', workflow: 'aim-convert-unit', label: 'Convert unit', needs: 'unit' },
-  { key: 'convert-wave', workflow: 'aim-convert-wave', label: 'Convert wave', needs: 'wave' },
-  { key: 'compare', workflow: 'aim-test-compare', label: 'Test-compare unit', needs: 'unit', hasCaseSet: true },
-  { key: 'cutover', workflow: 'aim-cutover-check', label: 'Cutover check (wave)', needs: 'wave' },
-]
+/** One trigger-form field for a workflow's own declared input — renders
+ * identically whether the workflow is one of the 6 builtin pipelines or a
+ * rulebook-authored custom one. `unit` is the one name-based special case
+ * (a Combobox sourced from real KB units instead of a bare text field);
+ * everything else renders generically from its declared `type`. */
+function WorkflowInputField({
+  spec,
+  value,
+  onChange,
+  unitOptions,
+}: {
+  spec: WorkflowInputSpec
+  value: unknown
+  onChange: (value: unknown) => void
+  unitOptions: { key: string; phase: string }[]
+}) {
+  const label = spec.name
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
 
-// §9.3: pipelines that write to the target repo — require confirm before run.
-const CONVERT_KEYS = new Set(['convert-unit', 'convert-wave'])
+  if (spec.name === 'unit') {
+    return (
+      <label className="flex min-w-48 flex-col gap-1 text-xs text-(--color-text-muted)">
+        {label}
+        {unitOptions.length > 0 ? (
+          <Combobox
+            size="sm"
+            value={(value as string) || null}
+            onValueChange={(v) => onChange(v ?? '')}
+            items={unitOptions.map((unit) => ({
+              value: unit.key,
+              label: `${unit.key} · ${unit.phase}`,
+            }))}
+            placeholder="Select a unit…"
+            emptyText="No unit matches."
+          />
+        ) : (
+          <input
+            type="text"
+            value={(value as string) ?? ''}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder="module/UNIT (run assess first)"
+            className="rounded-md border border-(--color-border) bg-(--bg-subtle) px-2 py-1.5 text-xs text-(--color-text) placeholder:text-(--color-text-muted)"
+          />
+        )}
+      </label>
+    )
+  }
+
+  if (spec.type === 'enum') {
+    return (
+      <label className="flex flex-col gap-1 text-xs text-(--color-text-muted)">
+        {label}
+        <select
+          value={(value as string) ?? spec.default ?? spec.options?.[0] ?? ''}
+          onChange={(e) => onChange(e.target.value)}
+          className="rounded-md border border-(--color-border) bg-(--bg-subtle) px-2 py-1.5 text-xs text-(--color-text)"
+        >
+          {(spec.options ?? []).map((opt) => (
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
+          ))}
+        </select>
+      </label>
+    )
+  }
+
+  if (spec.type === 'boolean') {
+    return (
+      <label className="flex flex-col gap-1 text-xs text-(--color-text-muted)">
+        {label}
+        <span className="flex h-[30px] items-center">
+          <input
+            type="checkbox"
+            checked={Boolean(value)}
+            onChange={(e) => onChange(e.target.checked)}
+            className="h-3.5 w-3.5 rounded border-(--color-border)"
+          />
+        </span>
+      </label>
+    )
+  }
+
+  return (
+    <label
+      className={cn(
+        'flex flex-col gap-1 text-xs text-(--color-text-muted)',
+        spec.type === 'number' ? 'w-24' : 'min-w-32',
+      )}
+    >
+      {label}
+      <input
+        type={spec.type === 'number' ? 'number' : 'text'}
+        value={(value as string) ?? ''}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={spec.description || undefined}
+        className="rounded-md border border-(--color-border) bg-(--bg-subtle) px-2 py-1.5 text-xs text-(--color-text) placeholder:text-(--color-text-muted)"
+      />
+    </label>
+  )
+}
 
 /** Row status once session + execution are joined. `interrupted` = the DB
  * says running but no stream is live (backend restarted mid-run). */
@@ -156,16 +260,52 @@ export function AimPipelinesPanel({
   // A unit card's quick action lands here with the form pre-filled —
   // consumed once, then this screen behaves as if hand-opened.
   const [prefill] = useState(() => takeAimPipelinePrefill())
-  const [pipelineKey, setPipelineKey] = useState(() =>
-    prefill && PIPELINES.some((p) => p.key === prefill.pipeline)
-      ? prefill.pipeline
-      : PIPELINES[0].key,
+
+  // The pipeline picker is every discovered scope="aim" workflow — the 6
+  // builtin ones plus anything a rulebook's own workflows/ directory
+  // installed (rulebook_install.py copies those into the same global
+  // discovery root, so they show up here with zero special-casing).
+  const workflowsQ = useWorkflowsQuery(targetWorkspace)
+  const aimWorkflows = useMemo(
+    () =>
+      (workflowsQ.data?.workflows ?? [])
+        .filter((wf) => wf.scope === 'aim')
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [workflowsQ.data],
   )
-  const [unitInput, setUnitInput] = useState(prefill?.unit ?? '')
-  const [waveInput, setWaveInput] = useState(
-    prefill?.wave != null ? String(prefill.wave) : '0',
+  const workflowByName = useMemo(
+    () => new Map(aimWorkflows.map((wf) => [wf.name, wf])),
+    [aimWorkflows],
   )
-  const [caseSet, setCaseSet] = useState<'smoke' | 'full'>('smoke')
+
+  const [pipelineName, setPipelineName] = useState<string | null>(
+    () => prefill?.pipeline ?? null,
+  )
+  // Default to the first discovered workflow (alphabetically, "aim-assess"
+  // sorts first) once the list is known, if the current selection — the
+  // prefill's name, or nothing yet — doesn't match a real one.
+  useEffect(() => {
+    if (aimWorkflows.length === 0) return
+    if (pipelineName && aimWorkflows.some((wf) => wf.name === pipelineName)) return
+    setPipelineName(aimWorkflows[0].name)
+  }, [aimWorkflows, pipelineName])
+
+  const selectedWorkflow = pipelineName ? workflowByName.get(pipelineName) : undefined
+
+  // One generic value bag keyed by each workflow's own declared input
+  // name — replaces separate unit/wave/case_set state so any custom
+  // pipeline's inputs render and submit correctly, not just the 6 known
+  // shapes. Seeded from the prefill regardless of which pipeline ends up
+  // selected; a key with no matching input on the current workflow is
+  // simply unused.
+  const [inputValues, setInputValues] = useState<Record<string, unknown>>(() => ({
+    unit: prefill?.unit ?? '',
+    wave: prefill?.wave != null ? String(prefill.wave) : '',
+  }))
+  const setInputValue = useCallback((name: string, value: unknown) => {
+    setInputValues((prev) => ({ ...prev, [name]: value }))
+  }, [])
+
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // §9.3: convert pipelines write to the target repo — confirm before run.
@@ -200,15 +340,6 @@ export function AimPipelinesPanel({
     setReportRun({ runId })
   }, [runId])
 
-  const pipeline = PIPELINES.find((p) => p.key === pipelineKey) ?? PIPELINES[0]
-
-  const workflowsQ = useWorkflowsQuery(targetWorkspace)
-  const workflowByName = useMemo(
-    () => new Map((workflowsQ.data?.workflows ?? []).map((wf) => [wf.name, wf])),
-    [workflowsQ.data],
-  )
-  const selectedWorkflow = workflowByName.get(pipeline.workflow)
-
   const unitsQuery = useQuery({
     queryKey: queryKeys.projects.aimUnits(project.id, undefined),
     queryFn: () => listAimUnits(project.id),
@@ -225,8 +356,8 @@ export function AimPipelinesPanel({
 
   // Node chain + graph detail for the selected pipeline's info card.
   const detailQ = useQuery({
-    queryKey: ['workflow-detail', pipeline.workflow, targetWorkspace ?? ''],
-    queryFn: () => getWorkflow(pipeline.workflow, targetWorkspace),
+    queryKey: ['workflow-detail', selectedWorkflow?.name ?? '', targetWorkspace ?? ''],
+    queryFn: () => getWorkflow(selectedWorkflow!.name, targetWorkspace),
     enabled: Boolean(selectedWorkflow),
     staleTime: 60_000,
   })
@@ -281,26 +412,40 @@ export function AimPipelinesPanel({
   const canRun =
     !starting &&
     Boolean(selectedWorkflow?.valid) &&
-    (pipeline.needs !== 'unit' || unitInput.trim().length > 0) &&
-    (pipeline.needs !== 'wave' || waveInput.trim().length > 0)
+    (selectedWorkflow?.inputs ?? []).every((spec) => {
+      if (!spec.required) return true
+      const value = inputValues[spec.name]
+      return value !== undefined && value !== null && value !== ''
+    })
 
+  // Builds the run's `inputs` payload from whatever the selected workflow
+  // itself declares — works identically for the 6 known pipelines and any
+  // rulebook-authored custom one, since neither is special-cased here.
   const buildInputs = useCallback((): Record<string, unknown> => {
-    if (pipeline.needs === 'unit') {
-      const inputs: Record<string, unknown> = { unit: unitInput.trim() }
-      if (pipeline.hasCaseSet) inputs.case_set = caseSet
-      return inputs
+    const result: Record<string, unknown> = {}
+    for (const spec of selectedWorkflow?.inputs ?? []) {
+      const raw = inputValues[spec.name]
+      const value = raw === undefined || raw === '' ? spec.default : raw
+      if (value === undefined) continue
+      if (spec.type === 'number') result[spec.name] = Number(value)
+      else if (spec.type === 'boolean') result[spec.name] = Boolean(value)
+      else result[spec.name] = typeof value === 'string' ? value.trim() : value
     }
-    if (pipeline.needs === 'wave') return { wave: Number(waveInput) }
-    return {}
-  }, [pipeline, unitInput, caseSet, waveInput])
+    return result
+  }, [selectedWorkflow, inputValues])
 
   // Spec §3.3 — per-run sessions are named `<unit|wave>/<pipeline>` so the
   // run table and Discussion header read like the wireframe, not like UUIDs.
   const runLabel = useCallback((): string => {
-    if (pipeline.needs === 'unit') return `${unitInput.trim()} · ${pipeline.key}`
-    if (pipeline.needs === 'wave') return `wave ${waveInput.trim()} · ${pipeline.key}`
-    return pipeline.key
-  }, [pipeline, unitInput, waveInput])
+    const shortName = selectedWorkflow
+      ? pipelineDisplayName(selectedWorkflow.name)
+      : (pipelineName ?? 'pipeline')
+    const unitVal = inputValues.unit
+    const waveVal = inputValues.wave
+    if (typeof unitVal === 'string' && unitVal.trim()) return `${unitVal.trim()} · ${shortName}`
+    if (waveVal !== undefined && waveVal !== '') return `wave ${waveVal} · ${shortName}`
+    return shortName
+  }, [selectedWorkflow, pipelineName, inputValues])
 
   const doRun = useCallback(async () => {
     if (!selectedWorkflow) return
@@ -348,12 +493,12 @@ export function AimPipelinesPanel({
 
   // §9.3: convert pipelines write to the target repo — require explicit confirm.
   const handleRun = useCallback(() => {
-    if (CONVERT_KEYS.has(pipelineKey)) {
+    if (selectedWorkflow && CONVERT_WORKFLOW_NAMES.has(selectedWorkflow.name)) {
       setConfirmOpen(true)
     } else {
       void doRun()
     }
-  }, [pipelineKey, doRun])
+  }, [selectedWorkflow, doRun])
 
   return (
     <div className="relative flex h-full min-h-0">
@@ -375,68 +520,28 @@ export function AimPipelinesPanel({
         <div className="flex flex-wrap items-end gap-2 border-b border-(--color-border) p-4">
           <label className="flex flex-col gap-1 text-xs text-(--color-text-muted)">
             Pipeline
-            <select
-              value={pipelineKey}
-              onChange={(e) => setPipelineKey(e.target.value)}
-              className="rounded-md border border-(--color-border) bg-(--bg-subtle) px-2 py-1.5 text-xs text-(--color-text)"
-            >
-              {PIPELINES.map((p) => (
-                <option key={p.key} value={p.key}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
+            <Combobox
+              size="sm"
+              value={pipelineName}
+              onValueChange={setPipelineName}
+              items={aimWorkflows.map((wf) => ({
+                value: wf.name,
+                label: pipelineDisplayName(wf.name),
+              }))}
+              placeholder={workflowsQ.isLoading ? 'Loading…' : 'Select a pipeline…'}
+              emptyText="No pipelines found."
+              className="min-w-44"
+            />
           </label>
-          {pipeline.needs === 'unit' && (
-            <label className="flex min-w-48 flex-col gap-1 text-xs text-(--color-text-muted)">
-              Unit
-              {unitOptions.length > 0 ? (
-                <Combobox
-                  size="sm"
-                  value={unitInput || null}
-                  onValueChange={(v) => setUnitInput(v ?? '')}
-                  items={unitOptions.map((unit) => ({
-                    value: unit.key,
-                    label: `${unit.key} · ${unit.phase}`,
-                  }))}
-                  placeholder="Select a unit…"
-                  emptyText="No unit matches."
-                />
-              ) : (
-                <input
-                  type="text"
-                  value={unitInput}
-                  onChange={(e) => setUnitInput(e.target.value)}
-                  placeholder="module/UNIT (run assess first)"
-                  className="rounded-md border border-(--color-border) bg-(--bg-subtle) px-2 py-1.5 text-xs text-(--color-text) placeholder:text-(--color-text-muted)"
-                />
-              )}
-            </label>
-          )}
-          {pipeline.needs === 'wave' && (
-            <label className="flex w-24 flex-col gap-1 text-xs text-(--color-text-muted)">
-              Wave
-              <input
-                type="number"
-                value={waveInput}
-                onChange={(e) => setWaveInput(e.target.value)}
-                className="rounded-md border border-(--color-border) bg-(--bg-subtle) px-2 py-1.5 text-xs text-(--color-text)"
-              />
-            </label>
-          )}
-          {pipeline.hasCaseSet && (
-            <label className="flex flex-col gap-1 text-xs text-(--color-text-muted)">
-              Case set
-              <select
-                value={caseSet}
-                onChange={(e) => setCaseSet(e.target.value as 'smoke' | 'full')}
-                className="rounded-md border border-(--color-border) bg-(--bg-subtle) px-2 py-1.5 text-xs text-(--color-text)"
-              >
-                <option value="smoke">smoke</option>
-                <option value="full">full</option>
-              </select>
-            </label>
-          )}
+          {(selectedWorkflow?.inputs ?? []).map((spec) => (
+            <WorkflowInputField
+              key={spec.name}
+              spec={spec}
+              value={inputValues[spec.name]}
+              onChange={(value) => setInputValue(spec.name, value)}
+              unitOptions={unitOptions}
+            />
+          ))}
           <Button size="sm" onClick={() => handleRun()} disabled={!canRun || starting}>
             {starting ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
             Run
@@ -448,9 +553,12 @@ export function AimPipelinesPanel({
         <PipelineInfoCard
           workflow={selectedWorkflow}
           graph={detailQ.data?.graph}
-          pipelineKey={pipeline.key}
           units={units}
-          wave={pipeline.needs === 'wave' ? Number(waveInput) : null}
+          wave={
+            typeof inputValues.wave === 'string' && inputValues.wave !== ''
+              ? Number(inputValues.wave)
+              : null
+          }
         />
 
         {/* Run table */}
@@ -607,8 +715,11 @@ export function AimPipelinesPanel({
                   Write to target repo?
                 </p>
                 <p className="mt-1 text-xs text-(--color-text-muted)">
-                  <strong>{pipeline.label}</strong> will write converted output to the target
-                  source directory. This cannot be undone automatically.
+                  <strong>
+                    {selectedWorkflow ? pipelineDisplayName(selectedWorkflow.name) : 'This pipeline'}
+                  </strong>{' '}
+                  will write converted output to the target source directory. This cannot be
+                  undone automatically.
                 </p>
               </div>
             </div>
@@ -652,16 +763,19 @@ function NodeKindIcon({ kind }: { kind: string }) {
 
 /** Readiness line: which units the selected pipeline can actually act on
  * right now — surfaced up front so an empty wave or a phase gap is visible
- * before hitting Run, not after a confusing no-op. */
+ * before hitting Run, not after a confusing no-op. Hand-written per builtin
+ * pipeline (there's no generic way to know what an arbitrary custom
+ * rulebook workflow reads/writes); a workflow name that doesn't match one
+ * of these six falls through to `null` — no hint shown, not an error. */
 function eligibility(
-  pipelineKey: string,
+  workflowName: string,
   units: AimUnitOut[],
   wave: number | null,
 ): { text: string; warn: boolean } | null {
   const count = (phase: string, w?: number | null) =>
     units.filter((u) => u.phase === phase && (w == null || u.wave === w)).length
-  switch (pipelineKey) {
-    case 'assess':
+  switch (workflowName) {
+    case 'aim-assess':
       return {
         text:
           units.length === 0
@@ -669,21 +783,21 @@ function eligibility(
             : `Refreshes the inventory — ${units.length} unit(s) currently indexed.`,
         warn: false,
       }
-    case 'understand': {
+    case 'aim-understand': {
       const n = count('inventory')
       return {
         text: `${n} unit(s) at phase inventory await documentation.`,
         warn: n === 0 && units.length > 0,
       }
     }
-    case 'convert-unit': {
+    case 'aim-convert-unit': {
       const n = count('designed')
       return {
         text: `${n} unit(s) at phase designed (plan → gate → implement; the plan step designs first if needed).`,
         warn: false,
       }
     }
-    case 'convert-wave': {
+    case 'aim-convert-wave': {
       if (wave == null || Number.isNaN(wave)) return null
       const n = count('designed', wave)
       return {
@@ -694,14 +808,14 @@ function eligibility(
         warn: n === 0,
       }
     }
-    case 'compare': {
+    case 'aim-test-compare': {
       const n = count('converted')
       return {
         text: `${n} unit(s) at phase converted awaiting an equivalence verdict.`,
         warn: false,
       }
     }
-    case 'cutover': {
+    case 'aim-cutover-check': {
       if (wave == null || Number.isNaN(wave)) return null
       const eq = count('equivalent', wave)
       const total = units.filter((u) => u.wave === wave).length
@@ -718,13 +832,11 @@ function eligibility(
 function PipelineInfoCard({
   workflow,
   graph,
-  pipelineKey,
   units,
   wave,
 }: {
   workflow: WorkflowListItem | undefined
   graph: Record<string, unknown> | undefined
-  pipelineKey: string
   units: AimUnitOut[]
   wave: number | null
 }) {
@@ -735,7 +847,7 @@ function PipelineInfoCard({
       )
     : []
   const gateCount = nodes.filter((n) => n.kind === 'gate' || n.kind === 'input').length
-  const hint = eligibility(pipelineKey, units, wave)
+  const hint = eligibility(workflow.name, units, wave)
 
   return (
     <div className="space-y-2 border-b border-(--color-border) px-4 py-3">

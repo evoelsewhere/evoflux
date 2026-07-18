@@ -73,18 +73,20 @@ const PHASE_BAR_CLASSES: Record<(typeof PHASES)[number], string> = {
 }
 
 /** The pipeline that most likely moves this unit forward — quick actions
- * lead with it, the rest stay one click away. */
+ * lead with it, the rest stay one click away. `key` is the real workflow
+ * name (Pipelines' picker is keyed the same way, so this handoff still
+ * resolves after a rulebook adds custom pipelines alongside these). */
 function nextPipelineFor(phase: string): { key: string; label: string } {
   switch (phase) {
     case 'inventory':
-      return { key: 'understand', label: 'Understand' }
+      return { key: 'aim-understand', label: 'Understand' }
     case 'understood':
     case 'designed':
-      return { key: 'convert-unit', label: 'Convert' }
+      return { key: 'aim-convert-unit', label: 'Convert' }
     case 'converted':
-      return { key: 'compare', label: 'Test-compare' }
+      return { key: 'aim-test-compare', label: 'Test-compare' }
     default:
-      return { key: 'compare', label: 'Test-compare' }
+      return { key: 'aim-test-compare', label: 'Test-compare' }
   }
 }
 
@@ -353,7 +355,7 @@ export function AimOverviewPanel({ project }: { project: CodingProject }) {
               <p className="text-xs text-(--color-text-subtle)">
                 No units yet — the assess pipeline builds the inventory from the source estate.
               </p>
-              <Button size="sm" onClick={() => goRunPipeline('assess')}>
+              <Button size="sm" onClick={() => goRunPipeline('aim-assess')}>
                 <Play size={12} />
                 Run assess
               </Button>
@@ -549,9 +551,9 @@ function UnitDetailPanel({
           </p>
           <div className="flex flex-wrap gap-1">
             {[
-              { key: 'understand', label: 'understand' },
-              { key: 'convert-unit', label: 'convert' },
-              { key: 'compare', label: 'test-compare' },
+              { key: 'aim-understand', label: 'understand' },
+              { key: 'aim-convert-unit', label: 'convert' },
+              { key: 'aim-test-compare', label: 'test-compare' },
             ].map((p) => (
               <button
                 key={p.key}
