@@ -105,6 +105,35 @@ class AskUserService:
         self._pending.pop(req.id, None)
         return answers
 
+    def get_pending(self, request_id: str) -> AskUserRequest | None:
+        """The pending request for *request_id*, or ``None`` if unknown /
+        already resolved — lets the reply endpoint validate answers against
+        the questions before resolving."""
+        return self._pending.get(request_id)
+
+    def validate_answers(self, request_id: str, answers: list[str]) -> str | None:
+        """Check *answers* against a pending batch: one answer per question,
+        and any ``strict`` question's answer must be one of its options.
+
+        Returns an error message when invalid, or ``None`` when the answers
+        are acceptable. A gate whose answer doesn't match a declared choice
+        would otherwise route no edge and silently strand the run.
+        """
+        req = self._pending.get(request_id)
+        if req is None or req._future is None or req._future.done():
+            return None  # let reply() report the not-found/resolved case
+        if len(answers) != len(req.questions):
+            return (
+                f"expected {len(req.questions)} answer(s), got {len(answers)}."
+            )
+        for question, answer in zip(req.questions, answers):
+            if question.strict and answer not in question.options:
+                return (
+                    f"answer {answer!r} is not one of the allowed choices "
+                    f"{question.options}."
+                )
+        return None
+
     def reply(self, request_id: str, answers: list[str]) -> bool:
         """Resolve a pending question batch.  Called by the API reply endpoint.
 

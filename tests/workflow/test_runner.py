@@ -406,3 +406,36 @@ nodes:
         )
         assert resp.status_code == 422
         assert "aim session" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_reconcile_orphaned_executions_fails_live_rows(setup_db):
+    """A restart leaves running/waiting_gate rows the in-memory runner can no
+    longer drive; reconciliation must fail them so nothing shows live forever."""
+    from uuid import uuid4, uuid7
+
+    from app.core import db as db_module
+    from app.models.workflow import WorkflowExecution, WorkflowNodeRun
+    from app.workflow.runner import reconcile_orphaned_executions
+
+    running_id = uuid7()
+    gate_id = uuid7()
+    done_id = uuid7()
+    async with db_module.async_session_factory() as db:
+        db.add(WorkflowExecution(id=running_id, definition_name="w", definition_hash="h", session_id=uuid4(), status="running"))
+        db.add(WorkflowExecution(id=gate_id, definition_name="w", definition_hash="h", session_id=uuid4(), status="waiting_gate"))
+        db.add(WorkflowExecution(id=done_id, definition_name="w", definition_hash="h", session_id=uuid4(), status="completed"))
+        db.add(WorkflowNodeRun(execution_id=gate_id, node_id="certify", status="running"))
+        await db.commit()
+
+    count = await reconcile_orphaned_executions()
+    assert count == 2
+
+    async with db_module.async_session_factory() as db:
+        assert (await db.get(WorkflowExecution, running_id)).status == "failed"
+        gate_row = await db.get(WorkflowExecution, gate_id)
+        assert gate_row.status == "failed"
+        assert "restart" in (gate_row.error or "")
+        assert (await db.get(WorkflowExecution, done_id)).status == "completed"
+        node = (await db.exec(select(WorkflowNodeRun).where(WorkflowNodeRun.execution_id == gate_id))).one()
+        assert node.status == "failed"

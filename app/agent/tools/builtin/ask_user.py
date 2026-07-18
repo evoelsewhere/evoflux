@@ -25,6 +25,12 @@ class QuestionSpec(BaseModel):
             "questions where suggesting options wouldn't help."
         ),
     )
+    #: When True the answer MUST be one of ``options`` — the reply endpoint
+    #: rejects anything else with a 422. Workflow *gate* nodes set this (a
+    #: gate's choices route edges, so a free-text answer would silently
+    #: dead-end the branch); the ask_user tool leaves it False, where
+    #: ``options`` are only soft suggestions over a free-text field.
+    strict: bool = Field(default=False)
 
 
 async def _ask_user(questions: list[QuestionSpec]) -> str:
