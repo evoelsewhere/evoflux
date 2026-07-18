@@ -78,6 +78,42 @@ async def test_create_aim_project_scaffolds_kb_and_writes_manifest(db, tmp_path)
 
 
 @pytest.mark.asyncio
+async def test_create_aim_project_uses_pack_declared_compare_profile(
+    db, tmp_path, monkeypatch
+):
+    """create_manifest used to hardcode compare_default_profile="default"
+    regardless of what the rulebook pack itself declares — this is the
+    regression test for reading the pack's own value instead."""
+    from app.services.aim import rulebook_install
+
+    pack_dir = tmp_path / "fake-pack"
+    pack_dir.mkdir()
+    (pack_dir / "rulebook.yaml").write_text(
+        "id: fake-pack\nversion: '0.1'\ncompare_default_profile: strict\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(rulebook_install, "_pack_dir", lambda _rid: pack_dir)
+
+    source = _make_repo(tmp_path, "pack-src")
+    target = _make_repo(tmp_path, "pack-target")
+    kb_path = tmp_path / "pack-kb"
+
+    await create_aim_project(
+        db,
+        name="pack profile test",
+        rulebook_id="fake-pack",
+        rulebook_version="0.1",
+        source_paths=[str(source)],
+        target_path=str(target),
+        kb_path=str(kb_path),
+    )
+    await db.commit()
+
+    manifest = kb_store.read_manifest(kb_path)
+    assert manifest.compare_default_profile == "strict"
+
+
+@pytest.mark.asyncio
 async def test_create_aim_project_registers_all_workspaces(db, tmp_path):
     from sqlmodel import select
 

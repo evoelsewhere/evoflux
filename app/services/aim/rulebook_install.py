@@ -63,6 +63,23 @@ def is_project_rulebook(kb_root: Path) -> bool:
     return (kb_root / _PROJECT_RULEBOOK_DIRNAME).is_dir()
 
 
+def read_pack_manifest(pack_dir: Path) -> dict:
+    """Best-effort parse of a rulebook pack's own ``rulebook.yaml``.
+    ``{}`` if the pack or the manifest file doesn't exist, or fails to
+    parse — every caller here treats a declared field as an override of
+    its own hardcoded default, never as something to hard-require."""
+    manifest_path = pack_dir / "rulebook.yaml"
+    if not manifest_path.is_file():
+        return {}
+    try:
+        return yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        logger.warning(
+            "aim_rulebook_manifest_invalid pack_dir={} error={}", pack_dir, exc
+        )
+        return {}
+
+
 def _overlay_marker(rulebook_id: str, overlay_name: str) -> str:
     return f"<!-- rulebook-overlay: {rulebook_id}/{overlay_name} -->"
 

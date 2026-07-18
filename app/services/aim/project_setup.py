@@ -78,14 +78,22 @@ async def create_aim_project(
     repo identity — not this machine's local paths), and registers all
     workspaces.
     """
+    from app.services.aim.rulebook_install import _pack_dir, read_pack_manifest
+
     kb_root = Path(kb_path).expanduser().resolve()
     kb_store.scaffold_kb_from_template(kb_root)
+    # The pack's own declared default profile, if it names one — no KB
+    # override can exist yet for a brand-new project, so the builtin pack
+    # dir is the only place this could come from at this point.
+    pack_manifest = read_pack_manifest(_pack_dir(rulebook_id))
+    compare_default_profile = pack_manifest.get("compare_default_profile") or "default"
     kb_store.create_manifest(
         kb_root,
         rulebook_id=rulebook_id,
         rulebook_version=rulebook_version,
         source_identities=[resolve_repo_identity(p) for p in source_paths],
         target_identities=[resolve_repo_identity(target_path)],
+        compare_default_profile=compare_default_profile,
     )
 
     project = CodingProject(name=name, kind="aim", settings={})
