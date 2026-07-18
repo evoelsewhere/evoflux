@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2400 1468" font-family="'Segoe UI', -apple-system, Helvetica, Arial, sans-serif" role="img">
+<title>AIM — the legacy migration factory</title>
+<desc>Overview of EvoFlux's AIM mode: a base source, a pre-scaffolded target source, and a KB repo feed a six-stage pipeline — assess, understand, convert, test-compare, cutover — each stage run by a specialized agent and gated for human approval, with a deterministic aim_compare equivalence check at test-compare.</desc>
+
+<defs>
+  <radialGradient id="bgGlow" cx="50%" cy="0%" r="90%">
+    <stop offset="0%" stop-color="#121a2b"/>
+    <stop offset="100%" stop-color="#080a10"/>
+  </radialGradient>
+</defs>
+
+<rect x="0" y="0" width="2400" height="1468" fill="url(#bgGlow)"/>
+
+<!-- Header -->
+<rect x="80" y="56" width="72" height="72" rx="18" fill="#12161f" stroke="#2a3040"/>
+<path d="M 100 74 L 116 92 L 100 110 M 122 74 L 138 92 L 122 110" fill="none" stroke="#e8ebf1" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="172" y="98" font-size="50" font-weight="800" fill="#f2f4f8">AIM — the legacy migration factory</text>
+<text x="172" y="140" font-size="24" fill="#8c96ab">Three repos, seven specialized agents, six gated pipelines — and a deterministic equivalence check at the center.</text>
+
+<!-- Workspace boxes -->
+<g>
+  <rect x="80" y="204" width="720" height="132" rx="16" fill="#131a2b" stroke="#2c3e5c" stroke-width="2"/>
+  <text x="440" y="258" text-anchor="middle" font-size="30" font-weight="700" fill="#93c5fd">BASE SOURCE</text>
+  <text x="440" y="296" text-anchor="middle" font-size="20" fill="#7d8aa3">legacy estate, mounted read-only</text>
+</g>
+<g>
+  <rect x="840" y="204" width="720" height="132" rx="16" fill="#131a2b" stroke="#2c3e5c" stroke-width="2"/>
+  <text x="1200" y="258" text-anchor="middle" font-size="30" font-weight="700" fill="#93c5fd">TARGET SOURCE</text>
+  <text x="1200" y="296" text-anchor="middle" font-size="20" fill="#7d8aa3">pre-scaffolded by a solution architect</text>
+</g>
+<g>
+  <rect x="1600" y="204" width="720" height="132" rx="16" fill="#131a2b" stroke="#2c3e5c" stroke-width="2"/>
+  <text x="1960" y="258" text-anchor="middle" font-size="30" font-weight="700" fill="#93c5fd">KB REPO</text>
+  <text x="1960" y="296" text-anchor="middle" font-size="20" fill="#7d8aa3">system of record + team collaboration plane</text>
+</g>
+
+<!-- Down arrow + label -->
+<path d="M 1200 350 L 1200 392 M 1184 378 L 1200 396 L 1216 378" fill="none" stroke="#4a5568" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="1200" y="428" text-anchor="middle" font-size="24" fill="#8c96ab">seven agents carry each migration unit through six gated pipelines</text>
+
+<!-- Pipeline rows -->
+<!-- Row 1: ASSESS -->
+<g>
+  <rect x="80" y="458" width="2240" height="150" rx="20" fill="#0f1420" stroke="#1e2633" stroke-width="2"/>
+  <rect x="108" y="486" width="280" height="94" rx="14" fill="#16233a" stroke="#3b6ba5" stroke-width="2"/>
+  <text x="248" y="528" text-anchor="middle" font-size="27" font-weight="700" fill="#60a5fa">ASSESS</text>
+  <text x="248" y="558" text-anchor="middle" font-size="17" fill="#7ea6d6">aim-lead</text>
+  <text x="428" y="542" font-size="23" fill="#c3cbdb">Index the source estate, build the unit inventory, and propose migration waves.</text>
+  <rect x="1832" y="498" width="460" height="70" rx="12" fill="#16233a" stroke="#3b6ba5" stroke-width="1.5"/>
+  <text x="2062" y="541" text-anchor="middle" font-size="20" fill="#93c5fd">→ unit inventory · 1 gate</text>
+</g>
+
+<!-- Row 2: UNDERSTAND -->
+<g>
+  <rect x="80" y="630" width="2240" height="150" rx="20" fill="#0f1420" stroke="#1e2633" stroke-width="2"/>
+  <rect x="108" y="658" width="280" height="94" rx="14" fill="#251a3d" stroke="#7c5cc4" stroke-width="2"/>
+  <text x="248" y="700" text-anchor="middle" font-size="27" font-weight="700" fill="#a78bfa">UNDERSTAND</text>
+  <text x="248" y="730" text-anchor="middle" font-size="17" fill="#b3a0dd">aim-archaeologist</text>
+  <text x="428" y="714" font-size="23" fill="#c3cbdb">Reverse-engineer one unit into a KB doc plus candidate business rules.</text>
+  <rect x="1832" y="670" width="460" height="70" rx="12" fill="#251a3d" stroke="#7c5cc4" stroke-width="1.5"/>
+  <text x="2062" y="713" text-anchor="middle" font-size="20" fill="#a78bfa">→ KB doc + candidate rules</text>
+</g>
+
+<!-- Row 3: CONVERT -->
+<g>
+  <rect x="80" y="802" width="2240" height="150" rx="20" fill="#0f1420" stroke="#1e2633" stroke-width="2"/>
+  <rect x="108" y="830" width="280" height="94" rx="14" fill="#3d2a14" stroke="#c4863c" stroke-width="2"/>
+  <text x="248" y="872" text-anchor="middle" font-size="27" font-weight="700" fill="#fb923c">CONVERT</text>
+  <text x="248" y="902" text-anchor="middle" font-size="15" fill="#e0a86b">aim-target-architect · aim-converter</text>
+  <text x="428" y="886" font-size="23" fill="#c3cbdb">Implement into the target base — per unit, or batched across a wave.</text>
+  <rect x="1832" y="842" width="460" height="70" rx="12" fill="#3d2a14" stroke="#c4863c" stroke-width="1.5"/>
+  <text x="2062" y="885" text-anchor="middle" font-size="20" fill="#fb923c">→ code in the target repo</text>
+</g>
+
+<!-- Row 4: TEST-COMPARE -->
+<g>
+  <rect x="80" y="974" width="2240" height="150" rx="20" fill="#0f1420" stroke="#1e2633" stroke-width="2"/>
+  <rect x="108" y="1002" width="280" height="94" rx="14" fill="#123324" stroke="#3f9f6e" stroke-width="2"/>
+  <text x="248" y="1044" text-anchor="middle" font-size="27" font-weight="700" fill="#4ade80">TEST-COMPARE</text>
+  <text x="248" y="1074" text-anchor="middle" font-size="15" fill="#7cc99f">aim-appraiser · aim-test-engineer</text>
+  <text x="428" y="1042" font-size="23" fill="#c3cbdb">aim_compare canonicalizes actual vs. golden-master output; triage</text>
+  <text x="428" y="1074" font-size="23" fill="#c3cbdb">certifies or disputes the verdict.</text>
+  <rect x="1832" y="1014" width="460" height="70" rx="12" fill="#123324" stroke="#3f9f6e" stroke-width="1.5"/>
+  <text x="2062" y="1057" text-anchor="middle" font-size="20" fill="#4ade80">→ pass / fail / acceptable</text>
+</g>
+
+<!-- Row 5: CUTOVER -->
+<g>
+  <rect x="80" y="1146" width="2240" height="150" rx="20" fill="#0f1420" stroke="#1e2633" stroke-width="2"/>
+  <rect x="108" y="1174" width="280" height="94" rx="14" fill="#3a1520" stroke="#b8506e" stroke-width="2"/>
+  <text x="248" y="1216" text-anchor="middle" font-size="27" font-weight="700" fill="#f472b6">CUTOVER</text>
+  <text x="248" y="1246" text-anchor="middle" font-size="17" fill="#dd8ca8">aim-lead</text>
+  <text x="428" y="1230" font-size="23" fill="#c3cbdb">Confirm readiness and flip the migration unit's phase to live.</text>
+  <rect x="1832" y="1186" width="460" height="70" rx="12" fill="#3a1520" stroke="#b8506e" stroke-width="1.5"/>
+  <text x="2062" y="1229" text-anchor="middle" font-size="20" fill="#f472b6">→ phase: live · 1 gate</text>
+</g>
+
+<!-- Summary bar -->
+<rect x="80" y="1326" width="2240" height="100" rx="18" fill="#0e2420" stroke="#1f5c4c" stroke-width="2"/>
+<text x="1200" y="1370" text-anchor="middle" font-size="23" font-weight="700" fill="#e8fbf3">Every stage runs as a real, human-gated pipeline — not open-ended chat.</text>
+<text x="1200" y="1400" text-anchor="middle" font-size="21" fill="#8fd4bd">Rulebook packs (cobol-java21 · vb6-dotnet · java8-java21) plug in the stack-specific rules; a project's KB can override or add its own.</text>
+
+</svg>

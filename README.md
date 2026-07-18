@@ -50,6 +50,8 @@ Both modes share the same lead-and-mailbox core, the same streaming UI, the same
 
 The third mode, **AIM (AI Innovation Modernization)**, is a different shape again: a factory for migrating a legacy codebase to a new stack — COBOL to Java 21, VB6 to .NET, Java 8 to 17+ — and proving the result behaves identically to what it replaces. Its workspace is three repos instead of one (a read-only legacy **base source**, a pre-scaffolded **target source**, and a **KB repo** that doubles as the client deliverable and the team's git-based collaboration plane), its roster is seven migration-specialized agents instead of a general-purpose one, and its UI is flow-first rather than chat-first — the main surface is a project's unit inventory and pipeline runs, with chat as an optional drawer, not the primary surface. More in [Feature deep-dive](#aim-legacy-migration-mode) below.
 
+![AIM framework overview — a base source, a pre-scaffolded target source, and a KB repo feed six gated pipelines (assess, understand, convert, test-compare, cutover), each run by a specialized agent, with a deterministic aim_compare equivalence check certifying pass, fail, or acceptable-diff at test-compare](documents/images/aim-framework-overview.svg)
+
 ---
 
 ## Architecture
