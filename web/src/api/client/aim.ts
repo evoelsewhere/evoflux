@@ -10,6 +10,7 @@ import { parseDetailOrThrow } from './_shared'
 import type {
   AimLayoutDetection,
   AimManifestPreview,
+  AimMeta,
   AimProjectCreateRequest,
   AimProjectJoinRequest,
   AimProjectSummary,
@@ -24,6 +25,12 @@ import type {
 export async function listAimProjects(): Promise<CodingProject[]> {
   const res = await fetch(`${apiBaseUrl()}/team/projects?kind=aim`)
   if (!res.ok) await parseDetailOrThrow(res, 'listAimProjects')
+  return res.json()
+}
+
+export async function getAimMeta(): Promise<AimMeta> {
+  const res = await fetch(`${apiBaseUrl()}/team/projects/aim/meta`)
+  if (!res.ok) await parseDetailOrThrow(res, 'getAimMeta')
   return res.json()
 }
 

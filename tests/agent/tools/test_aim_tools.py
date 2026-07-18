@@ -340,3 +340,87 @@ async def test_compare_uses_project_canonicalizer_profile(sandbox_workspace):
     result = await aim_compare(unit="m/A", case_set="smoke")
     data = json.loads(result)
     assert data["verdict"] == "fail"
+
+
+# ---------------------------------------------------------------------------
+# Phase-vocabulary enforcement + path-traversal safety (audit hardening).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_set_phase_rejects_invalid_phase(sandbox_workspace):
+    with pytest.raises(ValueError, match="Invalid unit phase"):
+        await aim_units(
+            action="set_phase", unit="m/A", kind="program", phase="convert"
+        )
+
+
+@pytest.mark.asyncio
+async def test_set_project_phase_rejects_invalid_phase(sandbox_workspace):
+    _write_kb_skeleton(sandbox_workspace)
+    with pytest.raises(ValueError, match="Invalid project phase"):
+        await aim_units(action="set_project_phase", phase="assessed")
+
+
+@pytest.mark.asyncio
+async def test_unit_path_traversal_rejected(sandbox_workspace):
+    with pytest.raises(ValueError, match="unit name"):
+        await aim_units(
+            action="set_phase", unit="m/../../etc/passwd", kind="program"
+        )
+
+
+@pytest.mark.asyncio
+async def test_compare_rejects_case_set_traversal(sandbox_workspace):
+    result = await aim_compare(unit="m/A", case_set="../smoke")
+    data = json.loads(result)
+    assert data["verdict"] == "error"
+    assert "case_set" in data["error"]
+
+
+@pytest.mark.asyncio
+async def test_compare_profile_override_still_loads_rulebook_canonicalizer(
+    sandbox_workspace,
+):
+    # Regression: passing profile= used to skip rulebook resolution and
+    # return a bare mask-less profile. A KB-local rulebook/ override supplies
+    # a 'strict' profile whose mask neutralizes the run-id difference.
+    _write_kb_skeleton(sandbox_workspace)
+    canon_dir = sandbox_workspace / "rulebook" / "canonicalizers"
+    canon_dir.mkdir(parents=True)
+    (canon_dir / "strict.yaml").write_text(
+        "id: strict\nmask:\n  - pattern: 'run-id: \\w+'\n    replace: 'run-id: <m>'\n"
+    )
+    _write_golden_case(sandbox_workspace, "m", "A", "smoke", "run-id: abc\nv: 1")
+    actual_dir = sandbox_workspace / ".aim-actuals" / "m" / "A" / "smoke"
+    actual_dir.mkdir(parents=True)
+    (actual_dir / "out.txt").write_text("run-id: xyz\nv: 1")
+
+    result = await aim_compare(unit="m/A", case_set="smoke", profile="strict")
+    data = json.loads(result)
+    assert data["verdict"] == "pass"
+
+
+@pytest.mark.asyncio
+async def test_compare_stamps_workflow_execution_id(sandbox_workspace):
+    from app.workflow.exec_context import current_execution_id
+
+    project = await _make_aim_project(sandbox_workspace)
+    await aim_units(action="set_phase", unit="m/A", kind="program", phase="converted")
+    _write_golden_case(sandbox_workspace, "m", "A", "smoke", "hello\n")
+    actual_dir = sandbox_workspace / ".aim-actuals" / "m" / "A" / "smoke"
+    actual_dir.mkdir(parents=True)
+    (actual_dir / "out.txt").write_text("hello\n")
+
+    token = current_execution_id.set("exec-123")
+    try:
+        await aim_compare(unit="m/A", case_set="smoke")
+    finally:
+        current_execution_id.reset(token)
+
+    async with db_module.async_session_factory() as db:
+        unit_row = (
+            await db.exec(select(AimUnit).where(AimUnit.project_id == project.id))
+        ).one()
+        runs = (await db.exec(select(AimRun).where(AimRun.unit_id == unit_row.id))).all()
+    assert runs[0].workflow_execution_id == "exec-123"

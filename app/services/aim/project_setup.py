@@ -162,5 +162,21 @@ async def join_aim_project(
         rulebook_version=manifest.rulebook.version,
     )
     _install_rulebook_best_effort(kb_root, manifest.rulebook.id)
+    # A joined KB already carries units in its ``modules/**`` frontmatter;
+    # build the local index now so the dashboard isn't empty until the user
+    # hits Reindex (create, by contrast, scaffolds an empty KB — nothing to
+    # index). Best-effort: a malformed doc must not fail the join.
+    await _reindex_best_effort(db, project.id, kb_root)
     await db.refresh(project)
     return project
+
+
+async def _reindex_best_effort(db: AsyncSession, project_id, kb_root: Path) -> None:
+    from loguru import logger
+
+    try:
+        from app.services.aim.reindex import reindex_project
+
+        await reindex_project(db, project_id, kb_root)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("aim_join_reindex_failed project={} error={}", project_id, exc)

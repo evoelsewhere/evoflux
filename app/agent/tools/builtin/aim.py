@@ -18,6 +18,7 @@ rather than failing outright.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Annotated, Literal
 from uuid import UUID, uuid7
@@ -36,8 +37,24 @@ from app.services import coding_project_service as proj_svc
 from app.services.aim import kb_store
 from app.services.aim.canonicalize import load_profile
 from app.services.aim.compare import compare_dirs, write_report
-from app.services.aim.models import CanonicalProfile
+from app.services.aim.models import (
+    VALID_PHASES,
+    VALID_PROJECT_PHASES,
+    CanonicalProfile,
+    is_valid_project_phase,
+    is_valid_unit_phase,
+)
 from app.services.aim.reindex import upsert_unit
+
+
+def _current_workflow_execution_id() -> str | None:
+    """The workflow execution driving this tool call, if any — stamped onto
+    ``AimRun`` rows so a run traces back to its pipeline execution. ``None``
+    for a plain slash-command call, or an agent-turn tool call (which the
+    context var doesn't reach; those still link via ``session_id``)."""
+    from app.workflow.exec_context import current_execution_id
+
+    return current_execution_id.get()
 
 
 def _json_coerce(value: object) -> object:
@@ -86,13 +103,39 @@ async def _resolve_project_and_kb_root(db) -> tuple[UUID | None, Path]:
     return None, sandbox.workspace_root
 
 
+#: A single path component: no separators, no ``..``, no absolute/drive
+#: prefixes. Unit modules/names and case-set ids all become path segments
+#: under the KB root, so they must not be able to escape it.
+_SAFE_COMPONENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def _safe_component(value: str, *, label: str) -> str:
+    """Validate that *value* is a single, traversal-safe path component.
+
+    These tools resolve raw model-supplied strings (``unit``, ``case_set``)
+    into filesystem paths under the KB root and deliberately run outside the
+    agent sandbox, so a ``../`` here would read/write anywhere. Reject
+    anything that isn't a plain name.
+    """
+    candidate = value.strip()
+    if candidate in ("", ".", "..") or not _SAFE_COMPONENT_RE.match(candidate):
+        raise ValueError(
+            f"{label} must be a simple name (letters, digits, '.', '_', '-', "
+            f"no path separators), got {value!r}"
+        )
+    return candidate
+
+
 def _split_unit(unit: str) -> tuple[str, str]:
     if "/" not in unit:
         raise ValueError(
             f"unit must be 'module/name' (e.g. 'core-batch/PAYROLL01'), got {unit!r}"
         )
     module, name = unit.split("/", 1)
-    return module, name
+    return (
+        _safe_component(module, label="unit module"),
+        _safe_component(name, label="unit name"),
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -280,6 +323,11 @@ async def _aim_units(
         if action == "set_phase":
             if not unit:
                 raise ValueError("action='set_phase' requires 'unit'.")
+            if phase is not None and not is_valid_unit_phase(phase):
+                raise ValueError(
+                    f"Invalid unit phase {phase!r}. Valid phases: "
+                    f"{', '.join(VALID_PHASES)}."
+                )
             module, name = _split_unit(unit)
             existing = kb_store.read_unit(kb_root, module, name)
             if existing is None and kind is None:
@@ -312,6 +360,11 @@ async def _aim_units(
         if action == "set_project_phase":
             if not phase:
                 raise ValueError("action='set_project_phase' requires 'phase'.")
+            if not is_valid_project_phase(phase):
+                raise ValueError(
+                    f"Invalid project phase {phase!r}. Valid phases: "
+                    f"{', '.join(VALID_PROJECT_PHASES)}."
+                )
             kb_store.write_manifest_phase(kb_root, phase)
             return f"Project phase set to '{phase}' in {kb_root / 'aim.yaml'}"
 
@@ -350,6 +403,7 @@ async def _aim_units(
                 stats=stats or {},
                 report_path=report_path,
                 session_id=UUID(raw_sid) if raw_sid else None,
+                workflow_execution_id=_current_workflow_execution_id(),
             )
             db.add(run)
             await db.commit()
@@ -401,14 +455,20 @@ def _builtin_rulebooks_dir() -> Path:
 async def _resolve_canonical_profile(
     kb_root: Path, profile_override: str | None, rulebook_dir_override: str | None
 ) -> CanonicalProfile:
+    # Read the manifest regardless of a profile override: the override only
+    # names WHICH profile to load, not where from — the rulebook id (needed
+    # to find canonicalizers/<id>.yaml) still comes from aim.yaml. Resolving
+    # rulebook_id only in the no-override branch was a bug: passing profile=
+    # silently returned a bare, mask-less profile.
     profile_id = profile_override
     rulebook_id: str | None = None
-    if profile_id is None:
-        try:
-            manifest = kb_store.read_manifest(kb_root)
+    try:
+        manifest = kb_store.read_manifest(kb_root)
+        rulebook_id = manifest.rulebook.id
+        if profile_id is None:
             profile_id = manifest.compare_default_profile
-            rulebook_id = manifest.rulebook.id
-        except FileNotFoundError:
+    except FileNotFoundError:
+        if profile_id is None:
             profile_id = "default"
 
     rulebook_dir: Path | None
@@ -470,6 +530,12 @@ async def _aim_compare(
     async with db_module.async_session_factory() as db:
         project_id, kb_root = await _resolve_project_and_kb_root(db)
         module, name = _split_unit(unit)
+        try:
+            case_set = _safe_component(case_set, label="case_set")
+        except ValueError as exc:
+            return json.dumps(
+                {"verdict": "error", "diff_count": 0, "clusters": [], "error": str(exc)}
+            )
 
         golden_case_dir = (
             kb_root / "golden" / "units" / module / name / "cases" / case_set
@@ -490,8 +556,22 @@ async def _aim_compare(
             if actual_dir
             else Path(".aim-actuals") / module / name / case_set
         )
+        # A relative actual_dir is resolved under (and confined to) the KB
+        # root — the default already is; a caller-supplied ``../`` must not
+        # escape. An absolute path is allowed by contract (e.g. a build
+        # output dir in the target workspace).
         if not resolved_actual_dir.is_absolute():
-            resolved_actual_dir = kb_root / resolved_actual_dir
+            resolved_actual_dir = (kb_root / resolved_actual_dir).resolve()
+            kb_root_resolved = kb_root.resolve()
+            if not resolved_actual_dir.is_relative_to(kb_root_resolved):
+                return json.dumps(
+                    {
+                        "verdict": "error",
+                        "diff_count": 0,
+                        "clusters": [],
+                        "error": "actual_dir escapes the KB root",
+                    }
+                )
 
         canonical_profile = await _resolve_canonical_profile(
             kb_root, profile, rulebook_dir
@@ -527,6 +607,7 @@ async def _aim_compare(
                     stats={"diff_count": report.diff_count},
                     report_path=report_rel_path,
                     session_id=UUID(raw_sid) if raw_sid else None,
+                    workflow_execution_id=_current_workflow_execution_id(),
                 )
                 db.add(run)
                 await db.commit()

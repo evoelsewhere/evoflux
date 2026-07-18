@@ -373,6 +373,15 @@ export interface AimPhaseCounts {
   cutover: number
 }
 
+/** Backend-authoritative AIM vocabulary (GET /team/projects/aim/meta) — the
+ * source of truth the UI reads instead of hardcoding the phase set. */
+export interface AimMeta {
+  unit_phases: string[]
+  project_phases: string[]
+  phase_labels: Record<string, string>
+  phase_next_pipeline: Record<string, string | null>
+}
+
 export interface AimProjectSummary {
   project_id: string
   total_units: number
