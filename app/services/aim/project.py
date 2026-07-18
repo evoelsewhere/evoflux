@@ -8,6 +8,7 @@ See ``documents/research/aim-framework.md`` §3.3/§3.5.
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 from uuid import UUID
@@ -15,6 +16,18 @@ from uuid import UUID
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models.chat import CodingProject, CodingWorkspace
+
+
+def _strip_url_credentials(url: str) -> str:
+    """Remove any ``user:token@`` userinfo from a ``scheme://…`` URL.
+
+    A credentialed HTTPS remote (``https://user:ghp_xxx@host/repo.git``) must
+    never be written into the shared ``aim.yaml`` — it would leak the token to
+    everyone who clones the KB. scp-style remotes (``git@host:path``, no
+    ``://``) carry only a username and are left untouched.
+    """
+    match = re.match(r"^([a-zA-Z][a-zA-Z0-9+.\-]*://)[^/@]+@(.*)$", url)
+    return f"{match.group(1)}{match.group(2)}" if match else url
 
 
 def resolve_repo_identity(path: str) -> str:
@@ -26,7 +39,7 @@ def resolve_repo_identity(path: str) -> str:
     teammate cloning the KB on a different machine, where absolute paths
     necessarily differ, still recognizes "this identity is the same repo"
     and only has to supply a local path, not re-derive the whole project
-    config.
+    config. Any embedded credentials are stripped first.
     """
     try:
         result = subprocess.run(
@@ -37,7 +50,7 @@ def resolve_repo_identity(path: str) -> str:
         )
         url = result.stdout.strip()
         if result.returncode == 0 and url:
-            return url
+            return _strip_url_credentials(url)
     except (OSError, subprocess.SubprocessError):
         pass
     return Path(path).name

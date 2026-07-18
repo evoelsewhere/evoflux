@@ -36,24 +36,36 @@ import {
 } from 'lucide-react'
 import { getAimProjectSummary, listAimRuns, listAimUnits } from '@/api/client'
 import { queryKeys } from '@/queries/keys'
+import { useAimMetaQuery } from '@/queries/useAimMetaQuery'
 import { resolveAimRoleWorkspaces } from '@/components/AimKbPanel'
 import { AimSidePanel } from '@/components/AimSidePanel'
 import { setAimKbOpenPath, setAimPipelinePrefill } from '@/lib/aimHandoff'
 import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
 import { cn } from '@/lib/utils'
-import type { AimPhaseCounts, AimRunListItem, AimUnitOut, CodingProject } from '@/api/types'
+import type {
+  AimMeta,
+  AimPhaseCounts,
+  AimRunListItem,
+  AimUnitOut,
+  CodingProject,
+} from '@/api/types'
 
-const PHASES = [
+// Phase order + labels + phase→next-pipeline come from the backend
+// (GET /aim/meta, via useAimMetaQuery). These fallbacks mirror the backend
+// defaults so the board never flashes empty before the query resolves (or if
+// the endpoint is briefly unavailable) — they are NOT a second source of
+// truth.
+const FALLBACK_PHASES = [
   'inventory',
   'understood',
   'designed',
   'converted',
   'equivalent',
   'cutover',
-] as const
+]
 
-const PHASE_LABELS: Record<(typeof PHASES)[number], string> = {
+const FALLBACK_PHASE_LABELS: Record<string, string> = {
   inventory: 'Inventory',
   understood: 'Understood',
   designed: 'Designed',
@@ -62,8 +74,19 @@ const PHASE_LABELS: Record<(typeof PHASES)[number], string> = {
   cutover: 'Cutover',
 }
 
-// Distribution bar segments — muted → accent → success as units progress.
-const PHASE_BAR_CLASSES: Record<(typeof PHASES)[number], string> = {
+const FALLBACK_NEXT_PIPELINE: Record<string, string | null> = {
+  inventory: 'aim-understand',
+  understood: 'aim-convert-unit',
+  designed: 'aim-convert-unit',
+  converted: 'aim-test-compare',
+  equivalent: 'aim-cutover-check',
+  cutover: null,
+}
+
+// Distribution-bar segment colors — purely a frontend styling decision
+// (muted → accent → success as units progress), keyed by phase with a
+// neutral fallback for any phase the backend adds that the UI hasn't styled.
+const PHASE_BAR_CLASSES: Record<string, string> = {
   inventory: 'bg-(--color-text-subtle)/40',
   understood: 'bg-(--color-accent)/40',
   designed: 'bg-(--color-accent)/70',
@@ -71,23 +94,32 @@ const PHASE_BAR_CLASSES: Record<(typeof PHASES)[number], string> = {
   equivalent: 'bg-(--color-success)/70',
   cutover: 'bg-(--color-success)',
 }
+const barClass = (phase: string) => PHASE_BAR_CLASSES[phase] ?? 'bg-(--color-text-subtle)/40'
 
-/** The pipeline that most likely moves this unit forward — quick actions
- * lead with it, the rest stay one click away. `key` is the real workflow
- * name (Pipelines' picker is keyed the same way, so this handoff still
- * resolves after a rulebook adds custom pipelines alongside these). */
-function nextPipelineFor(phase: string): { key: string; label: string } {
-  switch (phase) {
-    case 'inventory':
-      return { key: 'aim-understand', label: 'Understand' }
-    case 'understood':
-    case 'designed':
-      return { key: 'aim-convert-unit', label: 'Convert' }
-    case 'converted':
-      return { key: 'aim-test-compare', label: 'Test-compare' }
-    default:
-      return { key: 'aim-test-compare', label: 'Test-compare' }
-  }
+// Friendly button labels for the built-in pipelines; any other pipeline key
+// (a rulebook-authored one) gets a title-cased fallback.
+const PIPELINE_LABELS: Record<string, string> = {
+  'aim-understand': 'Understand',
+  'aim-convert-unit': 'Convert',
+  'aim-convert-wave': 'Convert wave',
+  'aim-test-compare': 'Test-compare',
+  'aim-cutover-check': 'Cutover',
+}
+function pipelineLabel(key: string): string {
+  return PIPELINE_LABELS[key] ?? key.replace(/^aim-/, '').replace(/-/g, ' ')
+}
+
+/** The pipeline that most likely moves this unit forward, from the backend
+ * phase→next-pipeline map — quick actions lead with it. Returns `null` for a
+ * terminal phase (e.g. cutover). `key` is the real workflow name, so the
+ * handoff still resolves after a rulebook adds custom pipelines. */
+function nextPipelineFor(
+  phase: string,
+  meta: AimMeta | undefined,
+): { key: string; label: string } | null {
+  const map = meta?.phase_next_pipeline ?? FALLBACK_NEXT_PIPELINE
+  const key = map[phase] ?? null
+  return key ? { key, label: pipelineLabel(key) } : null
 }
 
 function cardTone(unit: AimUnitOut): string {
@@ -144,6 +176,10 @@ export function AimOverviewPanel({ project }: { project: CodingProject }) {
     refetchInterval: 10_000,
   })
   const allRuns = useMemo(() => recentRunsQuery.data ?? [], [recentRunsQuery.data])
+
+  const meta = useAimMetaQuery().data
+  const phases = meta?.unit_phases ?? FALLBACK_PHASES
+  const phaseLabels = meta?.phase_labels ?? FALLBACK_PHASE_LABELS
 
   const units = useMemo(() => unitsQuery.data ?? [], [unitsQuery.data])
   const waves = [...new Set(units.map((u) => u.wave).filter((w): w is number => w !== null))].sort(
@@ -366,12 +402,12 @@ export function AimOverviewPanel({ project }: { project: CodingProject }) {
             </p>
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-              {PHASES.map((phase) => {
+              {phases.map((phase) => {
                 const phaseUnits = visibleUnits.filter((u) => u.phase === phase)
                 return (
                   <div key={phase} className="min-w-0">
                     <p className="mb-1.5 truncate text-[11px] text-(--color-text-subtle)">
-                      {PHASE_LABELS[phase]} · {phaseUnits.length}
+                      {phaseLabels[phase] ?? phase} · {phaseUnits.length}
                     </p>
                     <div className="space-y-1.5">
                       {phaseUnits.map((unit) => (
@@ -489,7 +525,8 @@ function UnitDetailPanel({
 }) {
   const unitKey = `${unit.module}/${unit.name}`
   const unitRuns = runs.filter((run) => run.unit === unitKey).slice(0, 8)
-  const next = nextPipelineFor(unit.phase)
+  const meta = useAimMetaQuery().data
+  const next = nextPipelineFor(unit.phase, meta)
   const complexityEntries = Object.entries(unit.complexity).filter(
     ([, value]) => typeof value === 'string' || typeof value === 'number',
   )
@@ -511,12 +548,15 @@ function UnitDetailPanel({
       </div>
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-        {/* Quick actions — pre-filled pipeline runs; the likely next step leads. */}
+        {/* Quick actions — pre-filled pipeline runs; the likely next step leads.
+            A terminal phase (e.g. cutover) has no next pipeline. */}
         <div className="flex flex-wrap items-center gap-1.5">
-          <Button size="sm" onClick={() => onRunPipeline(next.key, unit)}>
-            <Play size={11} />
-            {next.label}
-          </Button>
+          {next && (
+            <Button size="sm" onClick={() => onRunPipeline(next.key, unit)}>
+              <Play size={11} />
+              {next.label}
+            </Button>
+          )}
           {unit.kb_doc_path && (
             <Button size="sm" variant="secondary" onClick={() => onOpenKbDoc(unit)}>
               <BookOpen size={11} />
@@ -611,27 +651,32 @@ function UnitDetailPanel({
 }
 
 function PhaseBar({ counts, total }: { counts: AimPhaseCounts; total: number }) {
+  const meta = useAimMetaQuery().data
+  const phases = meta?.unit_phases ?? FALLBACK_PHASES
+  const phaseLabels = meta?.phase_labels ?? FALLBACK_PHASE_LABELS
+  const countOf = (phase: string) =>
+    (counts as unknown as Record<string, number>)[phase] ?? 0
   return (
     <div>
       <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-(--bg-key)">
-        {PHASES.map((phase) => {
-          const count = counts[phase]
+        {phases.map((phase) => {
+          const count = countOf(phase)
           if (!count) return null
           return (
             <div
               key={phase}
-              className={PHASE_BAR_CLASSES[phase]}
+              className={barClass(phase)}
               style={{ width: `${(count / total) * 100}%` }}
-              title={`${PHASE_LABELS[phase]}: ${count}`}
+              title={`${phaseLabels[phase] ?? phase}: ${count}`}
             />
           )
         })}
       </div>
       <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
-        {PHASES.map((phase) => (
+        {phases.map((phase) => (
           <span key={phase} className="flex items-center gap-1 text-[10px] text-(--color-text-subtle)">
-            <span className={cn('h-1.5 w-1.5 rounded-full', PHASE_BAR_CLASSES[phase])} />
-            {PHASE_LABELS[phase]} {counts[phase]}
+            <span className={cn('h-1.5 w-1.5 rounded-full', barClass(phase))} />
+            {phaseLabels[phase] ?? phase} {countOf(phase)}
           </span>
         ))}
       </div>

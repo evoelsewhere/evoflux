@@ -32,6 +32,13 @@ from app.workflow.template import TemplateError, render
 
 _OUTPUT_CAP_BYTES = 32 * 1024
 
+#: Upper bound a human gate/input node will wait for a reply before the run
+#: fails. A gate legitimately waits for a person (approve a cutover overnight),
+#: but must not pin the session's single execution slot *forever* — an
+#: abandoned gate eventually frees it. Restart recovery is handled separately
+#: (:func:`reconcile_orphaned_executions`).
+_GATE_TIMEOUT_S = 24 * 3600
+
 #: Node kinds the M3 runner can execute inline. M4 extends this set.
 HEADLESS_KINDS = frozenset({"tool", "switch", "transform", "notify"})
 
@@ -88,13 +95,20 @@ class ExecutionState:
     def template_scope(self, extra: dict | None = None) -> dict:
         import os
 
+        from app.workflow.template import referenced_env_names
+
+        # Only expose the env vars this definition actually references — the
+        # exact names the approval manifest surfaced to the reviewer — never
+        # the whole host environment. A template can't read a secret it didn't
+        # declare (and an edit that adds one re-invalidates the approval hash).
+        allowed = referenced_env_names(self.definition.model_dump())
         scope: dict[str, Any] = {
             "inputs": self.inputs,
             "nodes": {
                 node_id: {"output": output}
                 for node_id, output in self.node_outputs.items()
             },
-            "env": dict(os.environ),
+            "env": {name: os.environ[name] for name in allowed if name in os.environ},
         }
         if extra:
             scope.update(extra)
@@ -165,9 +179,12 @@ class WorkflowRunner:
             await self._fail(state, node_id=state.current_node_id, error=str(exc))
 
     async def _drive(self, state: ExecutionState) -> None:
+        from app.workflow.exec_context import current_execution_id
+
         team = self._find_team(state.session_id)
         if team is not None:
             team.set_inline_busy(True)
+        exec_token = current_execution_id.set(str(state.execution_id))
         try:
             while True:
                 if state.stop_requested or state.interrupted:
@@ -201,6 +218,7 @@ class WorkflowRunner:
                 if state.graph.node_status[node.id] == "failed":
                     return
         finally:
+            current_execution_id.reset(exec_token)
             # Lower the busy flag whenever this execution no longer drives
             # the session (terminal paths pop it from `active`).
             if team is not None and self.active.get(state.session_id) is not state:
@@ -390,8 +408,25 @@ class WorkflowRunner:
         await self._emit_progress(state, node_id=node.id)
         svc = AskUserService(state.session_id)
         token = set_ask_user_service(svc)
+        # A gate's choices route edges, so its answer must be one of them —
+        # enforced at the reply endpoint via ``strict`` (a free-text answer
+        # would match no ``when`` edge and silently strand the run).
+        strict = node.kind == "gate"
         try:
-            answers = await svc.ask([QuestionSpec(question=question, options=options)])
+            answers = await asyncio.wait_for(
+                svc.ask(
+                    [QuestionSpec(question=question, options=options, strict=strict)]
+                ),
+                timeout=_GATE_TIMEOUT_S,
+            )
+        except asyncio.TimeoutError:
+            error = (
+                f"{node.kind} '{node.id}' timed out after {_GATE_TIMEOUT_S}s "
+                f"with no reply."
+            )
+            await self._persist_node_end(node_run_id, status="failed", error=error)
+            await self._fail(state, node_id=node.id, error=error)
+            return
         finally:
             reset_ask_user_service(token, state.session_id)
         state.status = "running"
@@ -940,3 +975,57 @@ class WorkflowRunner:
 
 #: Process singleton (plan §6.1).
 runner = WorkflowRunner()
+
+
+async def reconcile_orphaned_executions() -> int:
+    """Mark executions the in-memory runner can no longer drive as failed.
+
+    The runner holds all live state in memory (one :class:`ExecutionState`
+    per session); a crash or restart loses it. Any ``workflow_executions``
+    row still in ``running``/``waiting_gate`` at boot is therefore orphaned:
+    its :class:`~app.agent.ask_user.AskUserService` is gone, so a paused gate
+    can never be answered and the REST run table would show it live forever.
+    Called once from the app lifespan. Returns the number of rows reconciled.
+    """
+    from sqlmodel import col, select
+
+    from app.core import db as db_module
+    from app.models.workflow import WorkflowExecution, WorkflowNodeRun
+
+    reconciled = 0
+    try:
+        async with db_module.async_session_factory() as db:
+            rows = (
+                await db.exec(
+                    select(WorkflowExecution).where(
+                        col(WorkflowExecution.status).in_(("running", "waiting_gate"))
+                    )
+                )
+            ).all()
+            for row in rows:
+                row.status = "failed"
+                row.error = "interrupted by a server restart"
+                row.ended_at = _utcnow()
+                db.add(row)
+                node_rows = (
+                    await db.exec(
+                        select(WorkflowNodeRun).where(
+                            WorkflowNodeRun.execution_id == row.id,
+                            WorkflowNodeRun.status == "running",
+                        )
+                    )
+                ).all()
+                for node_row in node_rows:
+                    node_row.status = "failed"
+                    node_row.error = "interrupted by a server restart"
+                    node_row.ended_at = _utcnow()
+                    db.add(node_row)
+                reconciled += 1
+            if reconciled:
+                await db.commit()
+    except Exception as exc:  # noqa: BLE001 — never block startup
+        logger.warning("workflow_reconcile_failed error={}", exc)
+        return 0
+    if reconciled:
+        logger.info("workflow_executions_reconciled count={}", reconciled)
+    return reconciled

@@ -64,6 +64,13 @@ async def lifespan(app: FastAPI):
         workflow_runner.on_turn_boundary_advance,
     )
 
+    # Fail any execution left ``running``/``waiting_gate`` by a previous
+    # process: the in-memory runner starts empty, so a paused gate from
+    # before the restart is unanswerable and must not show as live.
+    from app.workflow.runner import reconcile_orphaned_executions
+
+    await reconcile_orphaned_executions()
+
     # ── Auto-migrate DB in production ───────────────────────────────
     if settings.APP_ENV == "production":
         # Alembic's ``env.py`` calls ``asyncio.run(run_migrations_online())``

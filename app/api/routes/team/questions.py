@@ -50,6 +50,10 @@ async def reply_question(
             detail=f"No active question for session '{session_id}'.",
         )
 
+    validation_error = svc.validate_answers(request_id, body.answers)
+    if validation_error is not None:
+        raise HTTPException(status_code=422, detail=validation_error)
+
     resolved = svc.reply(request_id, body.answers)
     if not resolved:
         raise HTTPException(

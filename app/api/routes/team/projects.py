@@ -33,6 +33,7 @@ from app.api.schemas.cross_repo import (
 from app.api.schemas.aim import (
     AimLayoutDetectionResponse,
     AimManifestPreviewResponse,
+    AimMetaResponse,
     AimPhaseCounts,
     AimProjectCreateRequest,
     AimProjectJoinRequest,
@@ -693,6 +694,26 @@ async def get_project_code_graph_data(
 # a dashboard. Every write to THAT index goes through the aim_units/
 # aim_compare tools (app/agent/tools/builtin/aim.py), never through this
 # router.
+
+
+@router.get("/aim/meta", response_model=AimMetaResponse)
+async def get_aim_meta() -> AimMetaResponse:
+    """Backend-authoritative AIM vocabulary — phase lists, labels, and the
+    phase→next-pipeline map. The frontend reads this instead of duplicating
+    the phase set (kept in sync with the backend ``VALID_PHASES``)."""
+    from app.services.aim.models import (
+        UNIT_PHASE_LABELS,
+        UNIT_PHASE_NEXT_PIPELINE,
+        VALID_PHASES,
+        VALID_PROJECT_PHASES,
+    )
+
+    return AimMetaResponse(
+        unit_phases=list(VALID_PHASES),
+        project_phases=list(VALID_PROJECT_PHASES),
+        phase_labels=dict(UNIT_PHASE_LABELS),
+        phase_next_pipeline=dict(UNIT_PHASE_NEXT_PIPELINE),
+    )
 
 
 @router.post("/aim/detect", response_model=AimLayoutDetectionResponse)

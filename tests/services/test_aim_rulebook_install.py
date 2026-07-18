@@ -36,6 +36,7 @@ def test_installs_pack_workflows_and_skills_gap_fill(config_dirs, monkeypatch, t
         "workflows": ["demo-flow.yaml"],
         "skills": ["demo-skill"],
         "agents": [],
+        "runners": [],
     }
 
     # Gap-fill: user-edited files survive a re-install.
@@ -44,7 +45,7 @@ def test_installs_pack_workflows_and_skills_gap_fill(config_dirs, monkeypatch, t
     target = global_workflows_dir() / "demo-flow.yaml"
     target.write_text("user edited", encoding="utf-8")
     installed2 = rulebook_install.install_rulebook_content(kb_root, "demo-pack")
-    assert installed2 == {"workflows": [], "skills": [], "agents": []}
+    assert installed2 == {"workflows": [], "skills": [], "agents": [], "runners": []}
     assert target.read_text(encoding="utf-8") == "user edited"
 
 
@@ -56,6 +57,7 @@ def test_unknown_pack_installs_nothing(config_dirs):
         "workflows": [],
         "skills": [],
         "agents": [],
+        "runners": [],
     }
 
 
@@ -208,3 +210,24 @@ def test_install_rulebook_content_reads_from_kb_override(config_dirs, tmp_path):
     from app.core.config import settings as app_settings
 
     assert (Path(app_settings.SKILLS_DIR) / "custom-idiom" / "SKILL.md").is_file()
+
+
+def test_installs_runners_into_kb_gap_fill(config_dirs, monkeypatch, tmp_path):
+    from app.services.aim import rulebook_install
+
+    pack = tmp_path / "packs" / "runner-pack"
+    (pack / "runners").mkdir(parents=True)
+    (pack / "runners" / "run_legacy.sh").write_text("#!/usr/bin/env bash\nexit 1\n")
+    (pack / "runners" / "run_target.sh").write_text("#!/usr/bin/env bash\nexit 1\n")
+    monkeypatch.setattr(rulebook_install, "_pack_dir", lambda _rid: pack)
+
+    kb_root = tmp_path / "kb"
+    installed = rulebook_install.install_rulebook_content(kb_root, "runner-pack")
+    assert sorted(installed["runners"]) == ["run_legacy.sh", "run_target.sh"]
+    assert (kb_root / "runners" / "run_target.sh").is_file()
+
+    # Gap-fill: a KB-edited runner survives a re-install.
+    (kb_root / "runners" / "run_target.sh").write_text("# customized\n")
+    installed2 = rulebook_install.install_rulebook_content(kb_root, "runner-pack")
+    assert installed2["runners"] == []
+    assert (kb_root / "runners" / "run_target.sh").read_text() == "# customized\n"

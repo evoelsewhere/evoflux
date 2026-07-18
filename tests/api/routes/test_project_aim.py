@@ -581,3 +581,19 @@ async def test_join_aim_project_missing_kb_returns_422(client, tmp_path):
         },
     )
     assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_aim_meta_serves_backend_phase_vocabulary(client):
+    from app.services.aim.models import VALID_PHASES, VALID_PROJECT_PHASES
+
+    resp = await client.get("/api/team/projects/aim/meta")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["unit_phases"] == list(VALID_PHASES)
+    assert body["project_phases"] == list(VALID_PROJECT_PHASES)
+    # Every phase has a label and an eligibility entry (None allowed).
+    assert set(body["phase_labels"]) == set(VALID_PHASES)
+    assert set(body["phase_next_pipeline"]) == set(VALID_PHASES)
+    assert body["phase_next_pipeline"]["inventory"] == "aim-understand"
+    assert body["phase_next_pipeline"]["cutover"] is None
