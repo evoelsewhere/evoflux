@@ -279,27 +279,48 @@ async def _code_graph(
                 msg += " This project has sibling repos — try a broader search."
             return msg
 
-        # Label foreign workspaces
-        foreign_ids = {ws_id for ws_id, _ in matches if ws_id != workspace_id}
+        # Label every repo in the project — covers both a matched symbol
+        # living in a sibling workspace and a cross-repo edge's own source/
+        # destination workspace, which aren't necessarily the same one.
         repo_labels = {}
-        if foreign_ids:
-            from app.models.chat import CodingWorkspace
-            from sqlmodel import col, select
-            workspaces = (
-                await db.exec(
-                    select(CodingWorkspace).where(col(CodingWorkspace.id).in_(foreign_ids))
-                )
-            ).all()
-            repo_labels = {ws.id: (ws.name or Path(ws.path).name) for ws in workspaces}
+        if project_id:
+            pairs = await proj_svc.get_project_workspaces(db, project_id)
+            repo_labels = {ws.id: (ws.name or Path(ws.path).name) for _link, ws in pairs}
 
         sections = []
         for match_ws_id, node in matches:
             # Get outbound relationships
             out_edges = []
+            import_note: str | None = None
             if direction in ("out", "both"):
                 out_edges = await svc.get_neighbors(
                     db, workspace_id=match_ws_id, node_id=node.id, direction="out"
                 )
+                # Import edges attach to the file node, not to whatever
+                # class/method textually contains the import statement — a
+                # class-level lookup would otherwise never show what its
+                # file imports. Merge the file's outbound imports in.
+                if node.kind != "file" and not any(k == "imports" for k, _ in out_edges):
+                    file_node = await svc.find_file_node(
+                        db, workspace_id=match_ws_id, file_path=node.file_path
+                    )
+                    if file_node is not None:
+                        file_imports = [
+                            pair
+                            for pair in await svc.get_neighbors(
+                                db,
+                                workspace_id=match_ws_id,
+                                node_id=file_node.id,
+                                direction="out",
+                            )
+                            if pair[0] == "imports"
+                        ]
+                        if file_imports:
+                            out_edges = out_edges + file_imports
+                            import_note = (
+                                f"imports are file-level — showing "
+                                f"{file_node.file_path}'s imports"
+                            )
 
             # Get inbound relationships
             in_edges = []
@@ -319,8 +340,19 @@ async def _code_graph(
                     out_edges,
                     in_edges,
                     cross_repo,
-                    repo_label=repo_labels.get(match_ws_id),
+                    # Only prefix the head line for a match in a *foreign*
+                    # workspace — no need to tell the agent it's looking at
+                    # its own active repo. cross_repo_labels stays unfiltered
+                    # since a cross-repo edge can legitimately point back at
+                    # the active workspace while describing a foreign match.
+                    repo_label=(
+                        repo_labels.get(match_ws_id)
+                        if match_ws_id != workspace_id
+                        else None
+                    ),
                     limit=capped,
+                    import_note=import_note,
+                    cross_repo_labels=repo_labels,
                 )
             )
 
@@ -334,6 +366,8 @@ def _render_graph(
     cross_repo: Sequence[CrossRepoEdge] = (),
     repo_label: str | None = None,
     limit: int = 40,
+    import_note: str | None = None,
+    cross_repo_labels: dict | None = None,
 ) -> str:
     head = f"[{node.kind}] {node.qualified_name} — {_loc(node)}"
     if repo_label:
@@ -350,51 +384,67 @@ def _render_graph(
             doc = doc[:_DOCSTRING_CLAMP] + "…"
         lines.append(f"  doc: {doc}")
 
-    # Outbound (what it calls/extends)
+    def _joined(names: list[str]) -> str:
+        shown = ", ".join(names[:limit])
+        if len(names) > limit:
+            shown += f" … and {len(names) - limit} more"
+        return shown
+
+    # Outbound (what it calls/extends/imports)
     if out_edges:
         calls = [n.qualified_name for k, n in out_edges if k == "calls"]
         bases = [n.qualified_name for k, n in out_edges if k in ("inherits", "implements")]
+        imports = [n.qualified_name for k, n in out_edges if k == "imports"]
         if calls:
-            lines.append(f"  calls ({len(calls)}): {', '.join(calls[:15])}")
+            lines.append(f"  calls ({len(calls)}): {_joined(calls)}")
         if bases:
-            lines.append(f"  extends: {', '.join(bases[:10])}")
+            lines.append(f"  extends: {_joined(bases)}")
+        if imports:
+            lines.append(f"  imports ({len(imports)}): {_joined(imports)}")
+            if import_note:
+                lines.append(f"  ({import_note})")
 
     # Inbound (who calls it)
     if in_edges:
         callers = [n.qualified_name for k, n in in_edges if k == "calls"]
         importers = [n.qualified_name for k, n in in_edges if k == "imports"]
         if callers:
-            lines.append(f"  called by ({len(callers)}): {', '.join(callers[:15])}")
+            lines.append(f"  called by ({len(callers)}): {_joined(callers)}")
         if importers:
-            lines.append(f"  imported by ({len(importers)}): {', '.join(importers[:10])}")
+            lines.append(f"  imported by ({len(importers)}): {_joined(importers)}")
 
     # Cross-repo inbound (who references me from other repos)
     cross_in = [e for e in cross_repo if e.dst_node_id == node.id]
     cross_out = [e for e in cross_repo if e.src_node_id == node.id]
+    labels = cross_repo_labels or {}
 
     if cross_in:
         lines.append(f"  referenced by ({len(cross_in)} cross-repo):")
-        for edge in cross_in[:10]:
+        for edge in cross_in[:limit]:
             loc = (
                 f"{edge.src_file_path}:{edge.src_line}"
                 if edge.src_line
                 else edge.src_file_path
             )
-            lines.append(f"    ← {loc} (`{edge.raw_reference}`)")
-        if len(cross_in) > 10:
-            lines.append(f"    … and {len(cross_in) - 10} more")
+            src_label = labels.get(edge.src_workspace_id)
+            prefix = f"{src_label}/" if src_label else ""
+            lines.append(f"    ← {prefix}{loc} (`{edge.raw_reference}`)")
+        if len(cross_in) > limit:
+            lines.append(f"    … and {len(cross_in) - limit} more")
 
     if cross_out:
         lines.append(f"  references ({len(cross_out)} cross-repo):")
-        for edge in cross_out[:10]:
+        for edge in cross_out[:limit]:
             loc = (
                 f"{edge.src_file_path}:{edge.src_line}"
                 if edge.src_line
                 else edge.src_file_path
             )
-            lines.append(f"    → {loc} (`{edge.raw_reference}`)")
-        if len(cross_out) > 10:
-            lines.append(f"    … and {len(cross_out) - 10} more")
+            dst_label = labels.get(edge.dst_workspace_id)
+            prefix = f"{dst_label}/" if dst_label else ""
+            lines.append(f"    → {prefix}{loc} (`{edge.raw_reference}`)")
+        if len(cross_out) > limit:
+            lines.append(f"    … and {len(cross_out) - limit} more")
 
     return "\n".join(lines)
 
