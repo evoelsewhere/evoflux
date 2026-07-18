@@ -129,10 +129,32 @@ def install_rulebook_content(kb_root: Path, rulebook_id: str) -> dict[str, list[
     roots and merge its agent overlays onto the AIM roster. Resolves the
     pack KB-first (see :func:`resolve_rulebook_dir`). Returns what was
     installed (paths relative to their roots)."""
-    installed: dict[str, list[str]] = {"workflows": [], "skills": [], "agents": []}
+    installed: dict[str, list[str]] = {
+        "workflows": [],
+        "skills": [],
+        "agents": [],
+        "runners": [],
+    }
     pack = resolve_rulebook_dir(kb_root, rulebook_id)
     if pack is None:
         return installed
+
+    # Runner scripts (run_legacy / run_target) into the KB so the paths the
+    # aim-test-engineer skill references (``runners/run_target.sh``) actually
+    # resolve — the pack ships stubs; a project implements the real
+    # invocation in its own KB copy. Gap-fill only; executable bit preserved.
+    runners_src = pack / "runners"
+    if runners_src.is_dir():
+        runners_dst = kb_root / "runners"
+        runners_dst.mkdir(parents=True, exist_ok=True)
+        for path in sorted(runners_src.iterdir()):
+            if not path.is_file():
+                continue
+            target = runners_dst / path.name
+            if target.exists():
+                continue
+            shutil.copy2(path, target)
+            installed["runners"].append(path.name)
 
     workflows_src = pack / "workflows"
     if workflows_src.is_dir():
@@ -193,12 +215,14 @@ def install_rulebook_content(kb_root: Path, rulebook_id: str) -> dict[str, list[
                     exc,
                 )
 
-    if installed["workflows"] or installed["skills"] or installed["agents"]:
+    if any(installed.values()):
         logger.info(
-            "aim_rulebook_content_installed rulebook={} workflows={} skills={} agents={}",
+            "aim_rulebook_content_installed rulebook={} workflows={} skills={} "
+            "agents={} runners={}",
             rulebook_id,
             installed["workflows"],
             installed["skills"],
             installed["agents"],
+            installed["runners"],
         )
     return installed

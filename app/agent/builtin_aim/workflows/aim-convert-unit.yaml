@@ -1,4 +1,7 @@
 # AIM pipeline — convert one unit into the target repo, gated before writes.
+# Phase transitions are DETERMINISTIC tool nodes (designed after the plan is
+# approved, converted after implementation), not prompt instructions the
+# agent might forget — the wave pipeline selects on phase=designed.
 schema_version: 1
 name: aim-convert-unit
 description: Plan, approve, then implement one unit in the target repo
@@ -18,10 +21,9 @@ nodes:
       Prepare the conversion plan for unit {{inputs.unit}}: read its KB doc
       and business rules, consult the rulebook mappings and
       target-conventions.md, and produce mapping/<unit>.md in the KB — the
-      target design this unit will be implemented against. When the mapping
-      is written, set the unit phase to designed via aim_units (the wave
-      pipeline selects by phase=designed). Do NOT write any code in the
-      target repo yet.
+      target design this unit will be implemented against. Do NOT write any
+      code in the target repo yet, and do NOT change the unit's phase — the
+      pipeline marks it deterministically after you finish.
     timeout_s: 1800
 
   - id: approve
@@ -30,15 +32,32 @@ nodes:
     body: "{{nodes.plan.output.text | truncate:2000}}"
     choices: [approve, reject]
 
+  - id: mark_designed
+    kind: tool
+    tool: aim_units
+    args:
+      action: set_phase
+      unit: "{{inputs.unit}}"
+      phase: designed
+
   - id: convert
     kind: agent
     subagents: [aim-converter]
     prompt: |
       The plan for {{inputs.unit}} is approved. Delegate to `aim-converter`:
       implement it in the target repo per mapping/<unit>.md and
-      target-conventions (the base source stays read-only), verify the target
-      builds/tests, then set the unit phase to converted via aim_units.
+      target-conventions (the base source stays read-only), then verify the
+      target builds/tests. Do NOT change the unit's phase — the pipeline marks
+      it converted deterministically after you finish.
     timeout_s: 3600
+
+  - id: mark_converted
+    kind: tool
+    tool: aim_units
+    args:
+      action: set_phase
+      unit: "{{inputs.unit}}"
+      phase: converted
 
   - id: done
     kind: notify
@@ -47,8 +66,10 @@ nodes:
 
 edges:
   - { from: plan, to: approve }
-  - { from: approve, to: convert, when: approve }
-  - { from: convert, to: done }
+  - { from: approve, to: mark_designed, when: approve }
+  - { from: mark_designed, to: convert }
+  - { from: convert, to: mark_converted }
+  - { from: mark_converted, to: done }
 
 outputs:
   plan: "{{nodes.plan.output.text}}"

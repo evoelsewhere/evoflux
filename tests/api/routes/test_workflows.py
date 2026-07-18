@@ -45,7 +45,7 @@ async def test_list_includes_builtins_with_hash_and_approval_state(client, setup
     assert entry["root"] == "builtin"
     assert entry["approved"] is False
     assert len(entry["hash"]) == 64
-    assert entry["node_count"] == 5
+    assert entry["node_count"] == 7
 
 
 @pytest.mark.asyncio

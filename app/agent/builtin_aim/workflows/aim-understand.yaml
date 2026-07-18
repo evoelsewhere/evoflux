@@ -18,10 +18,19 @@ nodes:
       Run the UNDERSTAND-UNIT phase for unit {{inputs.unit}}. Delegate to
       `aim-archaeologist`: follow the aim-legacy-comprehension skill —
       bottom-up, dependencies' docs first (if a dependency has no doc yet,
-      document it first) — then write the unit doc into the KB, extract
-      candidate business rules (aim-business-rule-extraction), and set the
-      unit phase to understood via aim_units.
+      document it first) — then write the unit doc into the KB (it MUST exist
+      after this step) and extract candidate business rules
+      (aim-business-rule-extraction). Do NOT change the unit's phase — the
+      pipeline marks it understood deterministically after you finish.
     timeout_s: 1800
+
+  - id: mark_understood
+    kind: tool
+    tool: aim_units
+    args:
+      action: set_phase
+      unit: "{{inputs.unit}}"
+      phase: understood
 
   - id: done
     kind: notify
@@ -29,7 +38,8 @@ nodes:
     message: "{{inputs.unit}} documented — doc and candidate rules are in the KB."
 
 edges:
-  - { from: understand, to: done }
+  - { from: understand, to: mark_understood }
+  - { from: mark_understood, to: done }
 
 outputs:
   summary: "{{nodes.understand.output.text}}"

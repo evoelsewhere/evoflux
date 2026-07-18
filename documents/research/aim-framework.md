@@ -217,7 +217,7 @@ Thiết kế state phải trả lời câu hỏi thực tế của dự án nhi�
 
 ```yaml
 # <project>-aim-kb/aim.yaml
-rulebook: {id: cobol-java, version: "0.3"}
+rulebook: {id: cobol-java21, version: "0.3"}
 roles:                    # repo nhận diện bằng identity dùng chung (remote URL / tên logic),
   source: [core-batch, core-online, common-copybooks]   # KHÔNG phải workspace_id cục bộ
   target: [payroll-java]
