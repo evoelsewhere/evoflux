@@ -31,9 +31,7 @@ from app.agent.schemas.chat import (
 if TYPE_CHECKING:
     from app.agent.state import AgentState, RunContext
 
-_CODE_TOOL_NAMES = frozenset(
-    {"code_search", "code_symbol", "code_neighbors", "code_overview"}
-)
+_CODE_TOOL_NAMES = frozenset({"code_search", "code_graph", "code_overview"})
 
 
 class CodeOverviewHook(BaseAgentHook):

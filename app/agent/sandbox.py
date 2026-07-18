@@ -89,7 +89,7 @@ class SandboxConfig:
         allow_network: bool | None = None,
         # Other repos in the same CodingProject, if this session is
         # project-scoped. Lets tools that call get_sandbox() (e.g.
-        # code_search/code_neighbors/code_references with scope='project')
+        # code_search/code_graph, which auto-detect project scope)
         # see the full repo set without a model-facing "workspace_paths"
         # argument on every one of them.
         extra_workspace_paths: list[str] | None = None,

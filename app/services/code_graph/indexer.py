@@ -151,7 +151,7 @@ class AmbiguousEdge:
 
     Stored so the UI and future resolution passes can surface these as
     "ambiguous" rather than silently dropping them. The agent can use
-    ``code_references`` / ``code_neighbors`` to disambiguate manually.
+    ``code_graph`` to disambiguate manually.
     """
 
     src_key: str

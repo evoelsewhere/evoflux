@@ -362,10 +362,9 @@ async def test_code_tools_report_when_workspace_not_indexed(tmp_path):
 async def test_code_tools_against_indexed_workspace(tmp_path):
     from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
     from app.agent.tools.builtin.code_graph import (
-        code_neighbors,
+        code_graph,
         code_overview,
         code_search,
-        code_symbol,
     )
 
     await _index_sample_workspace(tmp_path)
@@ -373,34 +372,33 @@ async def test_code_tools_against_indexed_workspace(tmp_path):
     token = set_sandbox(SandboxConfig(workspace=str(tmp_path)))
     try:
         overview = await code_overview()
-        assert "files" in overview
-        assert "class=1" in overview
+        assert "Files: 2" in overview
+        assert "helper" in overview  # top-referenced symbol
 
         found = await code_search(query="Service")
         assert "Service" in found
         assert "main.py" in found
 
-        symbol = await code_symbol(name="Service.run")
-        assert "Service.run" in symbol
-        assert "helper" in symbol  # calls helper
-
-        neighbours = await code_neighbors(name="Service.run")
-        assert "helper" in neighbours
+        graph = await code_graph(name="Service.run")
+        assert "Service.run" in graph
+        assert "helper" in graph  # calls helper
     finally:
         _sandbox_ctx.reset(token)
 
 
 @pytest.mark.asyncio
-async def test_code_neighbors_limit_param(tmp_path):
-    """code_neighbors must accept a `limit` to cap output for symbols with a
-    large fan-out (e.g. an interface with 80+ methods) — regression test for
-    the bug where no such knob existed and callers had no way to control
-    output size."""
+async def test_code_graph_limit_param(tmp_path):
+    """code_graph's `limit` must actually cap output for symbols with a
+    large fan-out (e.g. an interface with 80+ methods) — regression test
+    for the limit param being threaded through _code_graph and clamped,
+    but never actually applied to any of _render_graph's output slices
+    (calls/extends/called-by/imported-by/cross-repo were all hardcoded
+    to fixed-size slices regardless of what the caller asked for)."""
     from app.core.db import async_session_factory
     from app.services.code_graph_service import reindex_workspace
     from app.services.coding_workspace_service import upsert_coding_workspace
     from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
-    from app.agent.tools.builtin.code_graph import code_neighbors
+    from app.agent.tools.builtin.code_graph import code_graph
 
     (tmp_path / "main.py").write_text(
         "def a(): pass\ndef b(): pass\ndef c(): pass\n"
@@ -415,26 +413,26 @@ async def test_code_neighbors_limit_param(tmp_path):
 
     token = set_sandbox(SandboxConfig(workspace=str(tmp_path)))
     try:
-        out = await code_neighbors(name="caller", edge_kind="calls", limit=2)
-        assert out.count("calls → ") == 2
-        assert "and 1 more" in out
+        out = await code_graph(name="caller", direction="out", limit=2)
+        assert "calls (3): a, b … and 1 more" in out
     finally:
         _sandbox_ctx.reset(token)
 
 
 @pytest.mark.asyncio
-async def test_code_neighbors_imports_falls_back_to_file_node(tmp_path):
-    """code_neighbors(name=<class>, edge_kind="imports") must not report
-    "no matching neighbours" just because import edges attach to the file
-    node rather than the class — regression test for edge_kind='imports'
-    silently returning nothing for any non-file symbol."""
+async def test_code_graph_imports_falls_back_to_file_node(tmp_path):
+    """code_graph(name=<class>) must show the containing file's imports —
+    regression test for import edges attaching to the file node rather
+    than the class, which the 7-tool-to-4 consolidation dropped entirely
+    (the old code_neighbors(edge_kind="imports") fallback wasn't ported,
+    and the new tool didn't render outbound imports at all)."""
     from app.core.db import async_session_factory
     from app.models.code_graph import CodeEdge
     from app.services import code_graph_service as svc
     from app.services.code_graph_service import reindex_workspace
     from app.services.coding_workspace_service import upsert_coding_workspace
     from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
-    from app.agent.tools.builtin.code_graph import code_neighbors
+    from app.agent.tools.builtin.code_graph import code_graph
 
     (tmp_path / "main.py").write_text(
         "class Service:\n    def run(self):\n        pass\n", encoding="utf-8"
@@ -469,10 +467,9 @@ async def test_code_neighbors_imports_falls_back_to_file_node(tmp_path):
 
     token = set_sandbox(SandboxConfig(workspace=str(tmp_path)))
     try:
-        # Class-level lookup used to report "no matching neighbours" here
-        # even though the containing file plainly has an import.
-        out = await code_neighbors(name="Service", edge_kind="imports")
-        assert "no matching neighbours" not in out
+        # Class-level lookup used to show nothing for imports at all —
+        # they're attached to the containing file, not the class.
+        out = await code_graph(name="Service")
         assert "target" in out
         assert "imports are file-level" in out
     finally:
@@ -480,10 +477,12 @@ async def test_code_neighbors_imports_falls_back_to_file_node(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_code_symbol_cross_repo_limit_param(tmp_path):
-    """code_symbol must cap how many cross-repo refs it shows — regression
+async def test_code_graph_cross_repo_limit_param(tmp_path):
+    """code_graph must cap how many cross-repo refs it shows — regression
     test for unbounded cross-repo output (a heavily-referenced symbol could
-    dump ~100 lines with no way to reduce it)."""
+    dump ~100 lines with no way to reduce it) — and, separately, that each
+    cross-repo line is still prefixed with its source repo's name (that
+    label resolution was dropped in the 7-to-4 tool consolidation)."""
     from app.core.db import async_session_factory
     from app.models.code_graph import CrossRepoEdge
     from app.services.code_graph_service import (
@@ -493,7 +492,7 @@ async def test_code_symbol_cross_repo_limit_param(tmp_path):
     )
     from app.services.coding_project_service import create_project
     from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
-    from app.agent.tools.builtin.code_graph import code_symbol
+    from app.agent.tools.builtin.code_graph import code_graph
 
     repo_a = tmp_path / "repo-a"
     repo_b = tmp_path / "repo-b"
@@ -548,8 +547,8 @@ async def test_code_symbol_cross_repo_limit_param(tmp_path):
 
     token = set_sandbox(SandboxConfig(workspace=str(repo_b)))
     try:
-        out = await code_symbol(name="shared", cross_repo_limit=1)
-        assert "cross-repo refs (3)" in out
+        out = await code_graph(name="shared", limit=1)
+        assert "referenced by (3 cross-repo)" in out
         assert out.count(" ← repo-a/") == 1
         assert "and 2 more" in out
     finally:
@@ -557,10 +556,12 @@ async def test_code_symbol_cross_repo_limit_param(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_code_references_limit_applies_to_combined_total(tmp_path):
-    """code_references' limit must bound intra-repo + cross-repo refs
-    together — regression test for limit only capping intra-repo results
-    while an unbounded cross-repo section was appended on top regardless."""
+async def test_code_graph_limit_applies_independently_per_section(tmp_path):
+    """code_graph shows local callers and cross-repo refs as separate
+    sections, each capped by the same `limit` independently (not pooled
+    into one combined budget the way the pre-consolidation code_references
+    did) — this verifies neither section's limit starves or gets starved
+    by the other when both are present at once."""
     from app.core.db import async_session_factory
     from app.models.code_graph import CrossRepoEdge
     from app.services.code_graph_service import (
@@ -570,7 +571,7 @@ async def test_code_references_limit_applies_to_combined_total(tmp_path):
     )
     from app.services.coding_project_service import create_project
     from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
-    from app.agent.tools.builtin.code_graph import code_references
+    from app.agent.tools.builtin.code_graph import code_graph
 
     repo_a = tmp_path / "repo-a"
     repo_b = tmp_path / "repo-b"
@@ -628,28 +629,26 @@ async def test_code_references_limit_applies_to_combined_total(tmp_path):
 
     token = set_sandbox(SandboxConfig(workspace=str(repo_b)))
     try:
-        out = await code_references(name="shared", limit=2)
-        assert "local_caller" in out  # the 1 intra-repo ref
-        assert out.count(" ← repo-a/") == 1  # only 1 of 3 cross-repo refs shown
-        assert "and 2 more cross-repo" in out
+        out = await code_graph(name="shared", limit=2)
+        assert "called by (1): local_caller" in out  # the 1 intra-repo ref, unaffected
+        assert out.count(" ← repo-a/") == 2  # 2 of 3 cross-repo refs shown at limit=2
+        assert "and 1 more" in out
     finally:
         _sandbox_ctx.reset(token)
 
 
 @pytest.mark.asyncio
-async def test_code_tools_scope_project_resolves_sibling_repo(tmp_path):
-    """scope='project' must resolve a symbol that only exists in a sibling
-    repo — the gap that motivated giving code_neighbors/code_references a
-    scope param instead of adding separate cross-repo tools."""
+async def test_code_tools_auto_detect_scope_resolves_sibling_repo(tmp_path):
+    """code_search/code_graph must auto-resolve a symbol that only exists
+    in a sibling repo of the same project — the new consolidated tools
+    auto-detect project scope instead of requiring an explicit scope
+    param (the gap that originally motivated giving code_neighbors/
+    code_references a scope param at all)."""
     from app.core.db import async_session_factory
     from app.services.code_graph_service import reindex_workspace
     from app.services.coding_project_service import create_project
     from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
-    from app.agent.tools.builtin.code_graph import (
-        code_neighbors,
-        code_references,
-        code_search,
-    )
+    from app.agent.tools.builtin.code_graph import code_graph, code_search
 
     repo_a = tmp_path / "repo-a"
     repo_b = tmp_path / "repo-b"
@@ -681,23 +680,50 @@ async def test_code_tools_scope_project_resolves_sibling_repo(tmp_path):
     token = set_sandbox(SandboxConfig(workspace=str(repo_a)))
     try:
         # code_search: symbol only exists in the sibling repo.
-        found = await code_search(query="shared_helper", scope="project")
+        found = await code_search(query="shared_helper")
         assert "shared_helper" in found
         assert "repo-b" in found
 
-        # code_neighbors: outbound from a symbol resolved in the sibling repo.
-        neighbours = await code_neighbors(name="shared_helper", scope="project")
-        assert "support" in neighbours
-        assert "repo-b" in neighbours
+        # code_graph: both outbound and inbound resolved in the sibling repo,
+        # in one call — direction="both" is the default.
+        graph = await code_graph(name="shared_helper")
+        assert "support" in graph
+        assert "other_caller" in graph
+        assert "repo-b" in graph
+    finally:
+        _sandbox_ctx.reset(token)
 
-        # code_references: inbound to a symbol resolved in the sibling repo.
-        refs = await code_references(name="shared_helper", scope="project")
-        assert "other_caller" in refs
-        assert "repo-b" in refs
 
-        # Without scope='project', the symbol isn't visible from repo_a.
-        local_only = await code_neighbors(name="shared_helper")
-        assert "No symbol named" in local_only
+@pytest.mark.asyncio
+async def test_code_graph_not_found_without_project_link(tmp_path):
+    """A workspace with no CodingProject linking it to the repo that
+    actually has the symbol must not see it — auto-scope depends on real
+    project membership, not just being adjacent on disk."""
+    from app.core.db import async_session_factory
+    from app.services.code_graph_service import reindex_workspace
+    from app.services.coding_workspace_service import upsert_coding_workspace
+    from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
+    from app.agent.tools.builtin.code_graph import code_graph
+
+    lonely = tmp_path / "lonely-repo"
+    other = tmp_path / "other-repo"
+    lonely.mkdir()
+    other.mkdir()
+    (lonely / "main.py").write_text("def caller():\n    pass\n", encoding="utf-8")
+    (other / "lib.py").write_text("def shared_helper():\n    pass\n", encoding="utf-8")
+
+    async with async_session_factory() as db:
+        ws_lonely = await upsert_coding_workspace(db, path=str(lonely))
+        ws_other = await upsert_coding_workspace(db, path=str(other))
+        await db.commit()
+        await reindex_workspace(db, workspace_id=ws_lonely.id, root_path=str(lonely))
+        await reindex_workspace(db, workspace_id=ws_other.id, root_path=str(other))
+        await db.commit()
+
+    token = set_sandbox(SandboxConfig(workspace=str(lonely)))
+    try:
+        out = await code_graph(name="shared_helper")
+        assert "No symbol named" in out
     finally:
         _sandbox_ctx.reset(token)
 
