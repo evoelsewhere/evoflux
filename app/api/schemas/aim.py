@@ -12,6 +12,16 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
+class AimMetaResponse(BaseModel):
+    """Backend-authoritative AIM vocabulary — the single source of truth the
+    frontend reads instead of re-hardcoding phase lists/labels/eligibility."""
+
+    unit_phases: list[str]
+    project_phases: list[str]
+    phase_labels: dict[str, str]
+    phase_next_pipeline: dict[str, str | None]
+
+
 class AimUnitOut(BaseModel):
     id: UUID
     module: str
