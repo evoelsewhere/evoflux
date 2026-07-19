@@ -30,6 +30,7 @@ from app.api.routes.team import (
     questions,
     terminal,
     todos,
+    webbridge,
     worktrees,
 )
 
@@ -48,5 +49,6 @@ router.include_router(questions.router)
 router.include_router(terminal.router)
 router.include_router(worktrees.router)
 router.include_router(projects.router)
+router.include_router(webbridge.router, prefix="/webbridge")
 
 __all__ = ["router", "_serialize_agent"]
