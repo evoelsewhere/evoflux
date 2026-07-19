@@ -1,14 +1,14 @@
 /**
- * LoadingVerb — Claude-style whimsical gerund indicator.
+ * LoadingVerb — Whimsical gerund indicator.
  *
  * Rotates through playful single-word actions (Brewing, Ruminating,
- * Tinkering …) with a clean fade transition. Pair with the EvoFlux
- * logo + agent name label for the full loading experience.
+ * Tinkering …) with smooth, gentle letter-by-letter transitions.
  *
- * Respects `prefers-reduced-motion` by disabling the fade animation
+ * Respects `prefers-reduced-motion` by disabling animations
  * and just swapping the text instantly.
  */
 import { useEffect, useState } from 'react'
+import { motion, AnimatePresence, type Variants } from 'framer-motion'
 import { cn } from '@/lib/utils'
 
 interface LoadingVerbProps {
@@ -48,8 +48,6 @@ const VERBS = [
  */
 function nextVerb(prev: string): string {
   let candidate = prev
-  // Guard against the extremely unlikely but possible infinite loop when
-  // VERBS has only one entry.
   if (VERBS.length < 2) return VERBS[0]
   while (candidate === prev) {
     candidate = VERBS[Math.floor(Math.random() * VERBS.length)]
@@ -57,27 +55,92 @@ function nextVerb(prev: string): string {
   return candidate
 }
 
+/* ─── animation variants ─── */
+
+const containerVariants: Variants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.04,
+      delayChildren: 0.05,
+    },
+  },
+  exit: {
+    opacity: 0,
+    transition: {
+      staggerChildren: 0.025,
+      staggerDirection: -1,
+      duration: 0.15,
+    },
+  },
+}
+
+const letterVariants: Variants = {
+  hidden: { opacity: 0, y: 8 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      duration: 0.35,
+      ease: [0.25, 0.1, 0.25, 1],
+    },
+  },
+  exit: {
+    opacity: 0,
+    y: -6,
+    transition: { duration: 0.2, ease: 'easeIn' },
+  },
+}
+
+const dotVariants: Variants = {
+  initial: { opacity: 0.3 },
+  animate: (i: number) => ({
+    opacity: [0.3, 0.8, 0.3],
+    transition: {
+      duration: 1.8,
+      repeat: Infinity,
+      delay: i * 0.25,
+      ease: 'easeInOut',
+    },
+  }),
+}
+
+/* ─── component ─── */
+
 export function LoadingVerb({
   className,
   interval = 2_800,
   'aria-label': ariaLabel = 'Thinking',
 }: LoadingVerbProps) {
   const [verb, setVerb] = useState(() => VERBS[Math.floor(Math.random() * VERBS.length)])
-  const [fading, setFading] = useState(false)
+  const [key, setKey] = useState(0)
+  const prefersReducedMotion =
+    typeof window !== 'undefined' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
   useEffect(() => {
     const id = setInterval(() => {
-      setFading(true)
-      // Swap the text mid-fade so the new word fades *in* while the old
-      // one fades *out*. The CSS transition duration is 400ms; we swap
-      // at the halfway mark.
-      setTimeout(() => {
-        setVerb((prev) => nextVerb(prev))
-        setFading(false)
-      }, 200)
+      setVerb((prev) => nextVerb(prev))
+      setKey((p) => p + 1)
     }, interval)
     return () => clearInterval(id)
   }, [interval])
+
+  if (prefersReducedMotion) {
+    return (
+      <span
+        className={cn(
+          'inline-flex items-center gap-2 text-sm text-(--color-text-muted) select-none',
+          className,
+        )}
+        role="status"
+        aria-label={ariaLabel}
+      >
+        <span>{verb}...</span>
+      </span>
+    )
+  }
 
   return (
     <span
@@ -88,13 +151,40 @@ export function LoadingVerb({
       role="status"
       aria-label={ariaLabel}
     >
-      <span
-        className={cn(
-          'loading-verb transition-opacity duration-400',
-          fading ? 'opacity-0' : 'opacity-100',
-        )}
-      >
-        {verb}...
+      {/* Letter-by-letter verb */}
+      <AnimatePresence mode="wait">
+        <motion.span
+          key={key}
+          variants={containerVariants}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
+          className="inline-flex"
+        >
+          {verb.split('').map((letter, i) => (
+            <motion.span
+              key={`${key}-${i}`}
+              variants={letterVariants}
+              className="inline-block"
+            >
+              {letter}
+            </motion.span>
+          ))}
+        </motion.span>
+      </AnimatePresence>
+
+      {/* Gentle pulsing dots */}
+      <span className="inline-flex items-center gap-[3px]">
+        {[0, 1, 2].map((i) => (
+          <motion.span
+            key={i}
+            className="w-[3px] h-[3px] rounded-full bg-(--color-text-muted)"
+            custom={i}
+            variants={dotVariants}
+            initial="initial"
+            animate="animate"
+          />
+        ))}
       </span>
     </span>
   )
