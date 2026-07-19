@@ -45,13 +45,13 @@ def test_builds_hook_with_module_defaults(mock_provider):
     assert result._llm_provider is mock_provider
 
 
-def test_mode_coding_picks_coding_prompt_and_zero_keep(mock_provider):
-    """mode="coding" uses the structured Markdown template AND summarises
-    everything (no recent assistant turns preserved)."""
+def test_mode_coding_picks_coding_prompt_and_small_keep(mock_provider):
+    """mode="coding" uses the structured Markdown template plus a small
+    verbatim window so the latest diffs/errors survive compaction exactly."""
     result = build_summarization_hook(mock_provider, mode="coding")
     assert result is not None
     assert result._summary_prompt == CODING_SUMMARY_PROMPT
-    assert result._keep_last_assistants == CODING_KEEP_LAST_ASSISTANTS == 0
+    assert result._keep_last_assistants == CODING_KEEP_LAST_ASSISTANTS == 2
 
 
 def test_mode_normal_picks_chat_prompt_and_default_keep(mock_provider):

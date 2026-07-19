@@ -19,6 +19,78 @@ from app.agent.tools.builtin.filesystem._config_watch import notify_fs_change
 from app.agent.tools.registry import Tool
 
 
+def _line_number_at(content: str, idx: int) -> int:
+    """Me return 1-based line number of character offset *idx*."""
+    return content.count("\n", 0, idx) + 1
+
+
+def _occurrence_lines(content: str, search: str, cap: int = 5) -> list[int]:
+    """Line numbers of the first *cap* occurrences of *search*."""
+    out: list[int] = []
+    start = 0
+    while len(out) < cap:
+        idx = content.find(search, start)
+        if idx == -1:
+            break
+        out.append(_line_number_at(content, idx))
+        start = idx + len(search)
+    return out
+
+
+# Guards for the closest-match hint — keep the O(lines × window) scan cheap.
+_HINT_MAX_FILE_LINES = 20_000
+_HINT_MAX_FIND_LINES = 80
+_HINT_MIN_SIMILARITY = 0.5
+_HINT_MAX_SNIPPET_LINES = 12
+
+
+def _closest_match_hint(content: str, old_string: str) -> str:
+    """Best-effort 'did you mean' snippet for a failed match.
+
+    Slides a window the size of old_string over the file and returns the
+    most similar block (line-numbered) so the model can fix old_string
+    without re-reading the whole file.
+    """
+    from difflib import SequenceMatcher
+
+    orig_lines = content.split("\n")
+    find_lines = old_string.split("\n")
+    if find_lines and find_lines[-1] == "":
+        find_lines = find_lines[:-1]
+    n = len(find_lines)
+    if (
+        n == 0
+        or n > _HINT_MAX_FIND_LINES
+        or len(orig_lines) > _HINT_MAX_FILE_LINES
+        or len(orig_lines) < n
+    ):
+        return ""
+
+    target = "\n".join(ln.strip() for ln in find_lines)
+    sm = SequenceMatcher(b=target, autojunk=False)
+    best_ratio, best_i = 0.0, -1
+    for i in range(len(orig_lines) - n + 1):
+        window = "\n".join(ln.strip() for ln in orig_lines[i : i + n])
+        sm.set_seq1(window)
+        if sm.real_quick_ratio() <= best_ratio or sm.quick_ratio() <= best_ratio:
+            continue
+        ratio = sm.ratio()
+        if ratio > best_ratio:
+            best_ratio, best_i = ratio, i
+    if best_ratio < _HINT_MIN_SIMILARITY or best_i < 0:
+        return ""
+
+    shown = min(n, _HINT_MAX_SNIPPET_LINES)
+    snippet = "\n".join(
+        f"{best_i + 1 + k:05d}| {orig_lines[best_i + k]}" for k in range(shown)
+    )
+    suffix = "\n…" if n > shown else ""
+    return (
+        f"\nClosest existing block (similarity {best_ratio:.0%}) "
+        f"starts at line {best_i + 1}:\n{snippet}{suffix}"
+    )
+
+
 def _levenshtein(a: str, b: str) -> int:
     """Me compute edit distance between two strings."""
     if not a:
@@ -171,6 +243,7 @@ def replace_content_with_meta(
             start = idx + len(find)
 
     not_found = True
+    ambiguous_search: str | None = None
     for matcher in [
         _exact,
         _line_trimmed,
@@ -191,6 +264,8 @@ def replace_content_with_meta(
                 return content.replace(search, new_string), start_line
             last_idx = content.rfind(search)
             if idx != last_idx:
+                if ambiguous_search is None:
+                    ambiguous_search = search
                 continue
             start_line = content.count("\n", 0, idx) + 1
             return content[:idx] + new_string + content[idx + len(search) :], start_line
@@ -199,11 +274,42 @@ def replace_content_with_meta(
         raise ValueError(
             "Could not find oldString in the file. "
             "It must match exactly (including whitespace and indentation)."
+            + _closest_match_hint(content, old_string)
         )
+    detail = ""
+    if ambiguous_search is not None:
+        count = content.count(ambiguous_search)
+        lines = _occurrence_lines(content, ambiguous_search)
+        shown = ", ".join(str(n) for n in lines)
+        more = ", …" if count > len(lines) else ""
+        detail = f" ({count} occurrences, at lines {shown}{more})"
     raise ValueError(
-        "Found multiple matches for oldString. "
+        f"Found multiple matches for oldString{detail}. "
         "Provide more surrounding context to make the match unique, or set replaceAll=true."
     )
+
+
+# Post-edit snippet: ±context lines around the replacement, capped so large
+# rewrites don't bloat the tool result.
+_SNIPPET_CONTEXT_LINES = 3
+_SNIPPET_MAX_LINES = 24
+
+
+def _post_edit_snippet(new_content: str, start_line: int, new_string: str) -> str:
+    """Line-numbered view of the edited region so the model can verify
+    the result (indentation, neighbours) without a follow-up read."""
+    lines = new_content.split("\n")
+    span = len(new_string.split("\n")) if new_string else 1
+    lo = max(0, start_line - 1 - _SNIPPET_CONTEXT_LINES)
+    hi = min(len(lines), start_line - 1 + span + _SNIPPET_CONTEXT_LINES)
+    if hi <= lo:
+        return ""
+    truncated = hi - lo > _SNIPPET_MAX_LINES
+    if truncated:
+        hi = lo + _SNIPPET_MAX_LINES
+    body = "\n".join(f"{i + 1:05d}| {lines[i]}" for i in range(lo, hi))
+    suffix = "\n…" if truncated else ""
+    return f"\n\nResult (lines {lo + 1}-{hi}):\n{body}{suffix}"
 
 
 def replace_content(
@@ -226,7 +332,9 @@ async def _edit_file(
         Field(
             description=(
                 "Exact text to replace. Use the minimum lines needed to uniquely "
-                "identify the location — no more. Must match whitespace/indentation exactly."
+                "identify the location — no more. Must match whitespace/indentation "
+                "exactly. Raw file text only — never include the 'NNNNN| ' "
+                "line-number prefix shown by read."
             )
         ),
     ],
@@ -280,9 +388,10 @@ async def _edit_file(
         },
         separators=(",", ":"),
     )
+    snippet = _post_edit_snippet(new_content, start_line, new_string)
     return (
         f"@@ EvoFlux-diff-meta {meta}\n"
-        f"Edit applied successfully to {rel}\nResolved path: {resolved}"
+        f"Edit applied successfully to {rel}\nResolved path: {resolved}{snippet}"
     )
 
 

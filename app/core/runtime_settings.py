@@ -58,6 +58,9 @@ class CodeGraphSettings(BaseModel):
     # Extra delay after an agent run finishes before reindexing accumulated
     # changes. Allows final writes to settle so only one reindex fires.
     watch_resume_delay_ms: int = 5000
+    # Build the index automatically the first time a never-indexed workspace
+    # is opened in a coding/aim session (background job; UI shows progress).
+    auto_index_enabled: bool = True
 
 
 class CrossRepoSettings(BaseModel):

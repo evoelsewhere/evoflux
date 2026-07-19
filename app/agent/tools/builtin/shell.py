@@ -60,7 +60,8 @@ from app.agent.tools.registry import InjectedArg, Tool
 # ── Constants ────────────────────────────────────────────────────────────────
 
 _DEFAULT_TIMEOUT_SECONDS = (
-    60  # 60 s default; background mode handles long-running processes
+    120  # 2 min default (opencode parity) — test suites and builds routinely
+    # exceed 60 s; background mode handles truly long-running processes
 )
 _BG_OUTPUT_MAX_LINES = 200  # ring-buffer per background process
 
@@ -299,7 +300,7 @@ async def _shell(
         int | None,
         Field(
             description=(
-                "Timeout in seconds. Defaults to 60. Increase for long builds. "
+                "Timeout in seconds. Defaults to 120. Increase for long builds. "
                 "If the command legitimately takes longer, retry with a higher value."
             )
         ),
