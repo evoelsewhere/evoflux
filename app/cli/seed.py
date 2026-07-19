@@ -24,9 +24,12 @@ Sources, in order of preference
    to the running package (i.e. the user is running from a git clone),
    we copy from there. Zero network, instant, and dev edits show up
    immediately.
-2. **GitHub release tarball** — for the running app version
+2. **Wheel-bundled copy** — the wheel maps the repo's ``seed/`` tree to
+   ``app/_seed/`` (``force-include`` in ``pyproject.toml``), so pip/uv
+   installs seed fully offline.
+3. **GitHub release tarball** — last resort, for the running app version
    (``https://github.com/{REPO}/archive/refs/tags/v{VERSION}.tar.gz``).
-3. **GitHub ``main`` branch** — fallback if the tag isn't published yet.
+4. **GitHub ``main`` branch** — fallback if the tag isn't published yet.
 
 We only ever copy the ``seed/`` subtree, and we only ever *fill in
 gaps*: files that already exist in the user's config dir are kept
@@ -48,6 +51,7 @@ from pathlib import Path
 
 import yaml
 
+import app
 from app.core.version import VERSION
 
 #: GitHub ``owner/repo`` that hosts the seed bundle.
@@ -206,8 +210,8 @@ def install_seed(
     Raises
     ------
     SeedDownloadError
-        If neither a local ``seed/`` directory nor a GitHub fetch
-        succeeds.
+        If no local seed copy (repo checkout or wheel-bundled) is found
+        and no GitHub fetch succeeds either.
     """
     local = _local_seed_dir()
     if local is not None:
@@ -215,18 +219,32 @@ def install_seed(
     return _install_from_github(config_dir, provider_model=provider_model)
 
 
-# ── Local-checkout source ────────────────────────────────────────────────────
+# ── Local sources (repo checkout / wheel bundle) ─────────────────────────────
 
 
 def _local_seed_dir() -> Path | None:
-    """Return the path to a local ``seed/`` directory, if running from
-    a source checkout. ``None`` otherwise.
+    """Return a locally-available ``seed/`` directory, or ``None``.
+
+    Checks, in order:
+
+    1. The repo checkout's ``seed/`` (dev runs — edits apply immediately).
+    2. The wheel-bundled copy at ``app/_seed/`` — the wheel build maps the
+       repo's ``seed/`` tree there (see
+       ``[tool.hatch.build.targets.wheel.force-include]`` in
+       ``pyproject.toml``), so pip/uv installs work offline.
+
+    When neither exists, the GitHub tarball is the last resort.
     """
     # app/cli/seed.py → repo root is parent.parent.parent.
     repo_root = Path(__file__).resolve().parent.parent.parent
     candidate = repo_root / "seed"
     if candidate.is_dir() and (candidate / "agents").is_dir():
         return candidate
+    app_file = getattr(app, "__file__", None)
+    if app_file is not None:
+        bundled = Path(app_file).resolve().parent / "_seed"
+        if bundled.is_dir() and (bundled / "agents").is_dir():
+            return bundled
     return None
 
 
@@ -271,7 +289,7 @@ def _install_from_local(
     )
 
 
-# ── GitHub-tarball source ────────────────────────────────────────────────────
+# ── GitHub-tarball source (last resort — no checkout or wheel-bundled seed) ──
 
 
 def _install_from_github(
