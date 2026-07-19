@@ -56,6 +56,7 @@ import { useTeamStore } from '@/stores/useTeamStore'
 import { useToastStore } from '@/stores/useToastStore'
 import { prependSession, prependWorkspaceSession } from '@/stores/cache-invalidation-bridge'
 import { useUIStore } from '@/stores/useUIStore'
+import { useResizableWidth } from '@/hooks/use-resizable-width'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useTeamAgentsQuery } from '@/queries/useAgentsQuery'
 import { useFileRefsQuery } from '@/queries/useFileRefsQuery'
@@ -225,6 +226,13 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const closeScheduler = useUIStore((s) => s.closeScheduler)
   const closeBrowser = useUIStore((s) => s.closeBrowser)
   const closeTerminal = useUIStore((s) => s.closeTerminal)
+  const terminalResize = useResizableWidth({
+    storageKey: 'oa.terminalPanel.width',
+    defaultWidth: 480,
+    minWidth: 320,
+    maxWidth: 900,
+    edge: 'left',
+  })
 
   // Subscribe to active-agent stream fields directly to avoid recomputing on
   // every other agent's tick.
@@ -1677,7 +1685,16 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
           onClose={closeBrowser}
         />
         {terminalOpen && (
-          <aside className="flex h-full w-[480px] shrink-0 flex-col border-l border-(--color-border)">
+          <aside
+            className="relative flex h-full shrink-0 flex-col border-l border-(--color-border)"
+            style={{ width: terminalResize.width }}
+          >
+            <div
+              onPointerDown={terminalResize.startResize}
+              onDoubleClick={terminalResize.resetWidth}
+              className="absolute -left-1 top-0 z-10 h-full w-2 cursor-col-resize"
+              aria-hidden="true"
+            />
             <TerminalPanel
               sessionId={sessionIdState}
               mode={mode}
