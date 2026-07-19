@@ -21,13 +21,20 @@ def _read_agents_md(workspace: Path) -> str:
     if not path.is_file():
         return ""
     try:
-        size = path.stat().st_size
-        if size > MAX_AGENTS_MD_BYTES:
-            return ""
-        return path.read_text(encoding="utf-8").strip()
-    except (OSError, UnicodeDecodeError) as exc:
+        content = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
         logger.warning("multi_repo_agents_md_read_failed path={} error={}", path, exc)
         return ""
+    if len(content.encode("utf-8")) > MAX_AGENTS_MD_BYTES:
+        # Truncate rather than drop — partial instructions beat none.
+        logger.warning(
+            "multi_repo_agents_md_truncated path={} limit={}",
+            path,
+            MAX_AGENTS_MD_BYTES,
+        )
+        content = content[:MAX_AGENTS_MD_BYTES]
+        content += "\n\n[AGENTS.md truncated — file exceeds the injected-size limit]"
+    return content.strip()
 
 
 class MultiRepoContextHook(BaseAgentHook):

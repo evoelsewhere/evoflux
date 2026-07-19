@@ -76,7 +76,7 @@ async def test_write_and_read_file(sandbox_workspace):
     assert (sandbox_workspace / "test.txt").read_text() == "hello world"
 
     read_content = await read_file.arun(path="test.txt")
-    assert read_content == "hello world"
+    assert read_content == "00001| hello world"
 
 
 @pytest.mark.asyncio
@@ -107,7 +107,7 @@ async def test_read_file_truncation(sandbox_workspace, monkeypatch):
     monkeypatch.setattr(read_file_module, "_MAX_READ_BYTES", 5)
     (sandbox_workspace / "big.txt").write_text("ABCDEFGHIJ")
     result = await read_file.arun(path="big.txt")
-    assert result == "ABCDE"
+    assert result == "00001| ABCDE"
 
 
 @pytest.mark.asyncio
@@ -120,17 +120,17 @@ async def test_read_file_caps_large_text_for_context(sandbox_workspace, monkeypa
 
     result = await read_file.arun(path="material-icons.json")
 
-    assert result.startswith("A" * 10)
+    assert result.startswith("00001| AAA")
     assert "read output truncated for LLM context" in result
     assert "Use offset and limit" in result
-    assert len(result) < 250
+    assert len(result) < 300
 
 
 @pytest.mark.asyncio
 async def test_read_file_latin1_fallback(sandbox_workspace):
     (sandbox_workspace / "latin.bin").write_bytes(b"\xff\xfe")
     result = await read_file.arun(path="latin.bin")
-    assert len(result) == 2
+    assert result == "00001| ÿþ"
 
 
 @pytest.mark.asyncio
@@ -145,14 +145,14 @@ async def test_read_file_pagination(sandbox_workspace):
 
 
 @pytest.mark.asyncio
-async def test_read_file_default_returns_raw_text(sandbox_workspace):
-    """Default reads should not add pagination headers."""
+async def test_read_file_default_numbers_lines_without_header(sandbox_workspace):
+    """Default reads add 'NNNNN| ' line numbers but no pagination header."""
     content = "line1\nline2\nline3"
     (sandbox_workspace / "plain.txt").write_text(content)
 
     result = await read_file.arun(path="plain.txt")
 
-    assert result == content
+    assert result == "00001| line1\n00002| line2\n00003| line3"
 
 
 @pytest.mark.asyncio
@@ -162,7 +162,7 @@ async def test_read_file_offset_matches_grep_line_numbers(sandbox_workspace):
 
     result = await read_file.arun(path="paged.txt", offset=3, limit=1)
 
-    assert result == "[3-3/4]\ngamma\n"
+    assert result == "[3-3/4]\n00003| gamma\n"
 
 
 # ---------------------------------------------------------------------------
@@ -254,7 +254,7 @@ async def test_read_allows_active_session_artifact_path_only(sandbox_workspace):
             await read_file.arun(
                 path=str(artifact.resolve()), _injected={"_state": state}
             )
-            == "artifact content"
+            == "00001| artifact content"
         )
         with pytest.raises(ToolExecutionError):
             await read_file.arun(path=str(other.resolve()), _injected={"_state": state})
@@ -290,7 +290,10 @@ async def test_read_allows_log_paths(sandbox_workspace):
         log_path.parent.mkdir(parents=True, exist_ok=True)
         log_path.write_text("log content", encoding="utf-8")
 
-        assert await read_file.arun(path=str(log_path.resolve())) == "log content"
+        assert (
+            await read_file.arun(path=str(log_path.resolve()))
+            == "00001| log content"
+        )
     finally:
         _sandbox_ctx.reset(token)
 
@@ -619,3 +622,148 @@ async def test_remove_path_recursive(sandbox):
     result = await _remove_path("tree", recursive=True)
     assert "Removed directory" in result
     assert not d.exists()
+
+
+# ---------------------------------------------------------------------------
+# grep_files — case_insensitive / context flags (python fallback path)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def no_rg(monkeypatch):
+    """Force the pure-Python grep fallback regardless of installed tools."""
+    import shutil as _shutil
+
+    real_which = _shutil.which
+    monkeypatch.setattr(
+        _shutil, "which", lambda name, *a, **kw: None if name == "rg" else real_which(name, *a, **kw)
+    )
+
+
+class TestGrepFlags:
+    async def test_case_insensitive(self, workspace, no_rg):
+        result = await grep_files.arun(
+            pattern="DEF HELLO", directory=".", case_insensitive=True
+        )
+        assert "hello.py:1:" in result
+
+    async def test_case_sensitive_by_default(self, workspace, no_rg):
+        result = await grep_files.arun(pattern="DEF HELLO", directory=".")
+        assert "No matches" in result
+
+    async def test_context_lines(self, workspace, no_rg):
+        result = await grep_files.arun(
+            pattern="print", directory=".", include="hello.py", context=1
+        )
+        # Match on line 2 pulls in line 1 as '-'-separated context.
+        assert "hello.py-1- def hello():" in result
+        assert "hello.py:2:" in result
+
+    async def test_context_blocks_separated(self, workspace, no_rg):
+        (workspace / "multi.txt").write_text(
+            "match one\nfiller\nfiller\nfiller\nfiller\nmatch two\n"
+        )
+        result = await grep_files.arun(
+            pattern="match", directory=".", include="multi.txt", context=1
+        )
+        assert "--" in result
+        assert "multi.txt:1: match one" in result
+        assert "multi.txt:6: match two" in result
+
+    async def test_context_capped_max_results(self, workspace, no_rg):
+        (workspace / "caps.txt").write_text("hit\nhit\nhit\n")
+        result = await grep_files.arun(
+            pattern="hit", directory=".", include="caps.txt", context=1, max_results=2
+        )
+        match_lines = [l for l in result.split("\n") if ":" in l and ": hit" in l]
+        assert len(match_lines) == 2
+
+
+# ---------------------------------------------------------------------------
+# grep_files — ripgrep backend (parsing exercised via a fake rg binary)
+# ---------------------------------------------------------------------------
+
+
+def _install_fake_rg(tmp_path, monkeypatch, body: str):
+    import shutil as _shutil
+
+    script = tmp_path / "fake-rg"
+    script.write_text("#!/usr/bin/env python3\n" + body, encoding="utf-8")
+    script.chmod(0o755)
+    real_which = _shutil.which
+    monkeypatch.setattr(
+        _shutil,
+        "which",
+        lambda name, *a, **kw: str(script) if name == "rg" else real_which(name, *a, **kw),
+    )
+    return script
+
+
+class TestGrepRipgrep:
+    async def test_rg_output_parsed(self, workspace, tmp_path, monkeypatch):
+        _install_fake_rg(
+            tmp_path,
+            monkeypatch,
+            "import sys\n"
+            "sys.stdout.write('hello.py\\x1f1\\x1fdef hello():\\n')\n"
+            "sys.stdout.write('--\\n')\n"
+            "sys.stdout.write('sub/nested.py\\x1e2\\x1eprint(os.getcwd())\\n')\n",
+        )
+        result = await grep_files.arun(pattern="anything", directory=".")
+        assert "hello.py:1: def hello():" in result
+        assert "--" in result
+        assert "sub/nested.py-2- print(os.getcwd())" in result
+
+    async def test_rg_max_results_stops_early(self, workspace, tmp_path, monkeypatch):
+        _install_fake_rg(
+            tmp_path,
+            monkeypatch,
+            "import sys\n"
+            "for i in range(1, 6):\n"
+            "    sys.stdout.write(f'hello.py\\x1f{i}\\x1fline {i}\\n')\n",
+        )
+        result = await grep_files.arun(pattern="anything", directory=".", max_results=2)
+        assert result.count("hello.py:") == 2
+
+    async def test_rg_error_falls_back_to_python(self, workspace, tmp_path, monkeypatch):
+        _install_fake_rg(tmp_path, monkeypatch, "import sys\nsys.exit(2)\n")
+        result = await grep_files.arun(pattern="def hello", directory=".")
+        # Fallback scan still finds the real file content.
+        assert "hello.py:1:" in result
+
+    @pytest.mark.skipif(
+        importlib.import_module("shutil").which("rg") is None,
+        reason="ripgrep not installed",
+    )
+    async def test_real_rg_matches_legacy_format(self, workspace):
+        result = await grep_files.arun(pattern="def ", directory=".")
+        assert "hello.py:1: def hello():" in result
+        assert "world.py:1: def world():" in result
+
+
+# ---------------------------------------------------------------------------
+# glob — mtime ordering
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_glob_orders_newest_first(sandbox):
+    import os as _os
+    import time as _time
+
+    _, tmp_path = sandbox
+    old = tmp_path / "old.py"
+    new = tmp_path / "new.py"
+    old.write_text("old")
+    new.write_text("new")
+    now = _time.time()
+    _os.utime(old, (now - 1000, now - 1000))
+    _os.utime(new, (now, now))
+
+    result = await _search_files(pattern="*.py", match="name")
+    lines = result.split("\n")
+    assert lines.index("new.py") < lines.index("old.py")
+
+    result_path = await _search_files(pattern="*.py")
+    lines_path = result_path.split("\n")
+    assert lines_path.index("new.py") < lines_path.index("old.py")

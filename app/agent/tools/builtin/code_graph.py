@@ -147,7 +147,21 @@ async def _find_cross_repo_references(
 async def _code_search(
     query: Annotated[str, Field(description="Symbol name or fragment to search for.")],
     kind: Annotated[
-        Literal["file", "class", "function", "method", "interface"] | None,
+        Literal[
+            "file",
+            "module",
+            "class",
+            "function",
+            "method",
+            "interface",
+            "variable",
+            "field",
+            "property",
+            "enum",
+            "struct",
+            "namespace",
+        ]
+        | None,
         Field(description="Restrict results to a single symbol kind."),
     ] = None,
     limit: Annotated[
