@@ -60,7 +60,7 @@ import { useResizableWidth } from '@/hooks/use-resizable-width'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useTeamAgentsQuery } from '@/queries/useAgentsQuery'
 import { useFileRefsQuery } from '@/queries/useFileRefsQuery'
-import { AlertCircle, Brain, CalendarClock, Check, ChevronDown, FolderOpen, FolderCode, Menu, Minimize2, MoreHorizontal, PanelLeft, X } from 'lucide-react'
+import { AlertCircle, Brain, CalendarClock, Check, ChevronDown, FolderOpen, FolderCode, Menu, Minimize2, MoreHorizontal, PanelLeft, TerminalSquare, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { usePlatform } from '@/hooks/use-platform'
@@ -1351,6 +1351,13 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
               dreamRunning={dreamMutation.isPending}
               viewMode={viewMode}
               onViewModeChange={setViewMode}
+              terminalAction={{
+                Icon: TerminalSquare,
+                onClick: toggleTerminal,
+                title: 'AI Terminal (Ctrl+`)',
+                ariaLabel: 'Terminal',
+                indicator: terminalOpen,
+              }}
               extraActions={
                 <SessionScheduleIndicator
                   sessionId={sessionIdState}
@@ -1602,8 +1609,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
             sessionId={sessionIdState}
             onWiki={toggleWiki}
             wikiActive={wikiOpen}
-            onTerminal={toggleTerminal}
-            terminalActive={terminalOpen}
             onFiles={
               mode === 'coding'
                 ? workspace ? handleWorkspaceFiles : undefined
@@ -1686,7 +1691,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
         />
         {terminalOpen && (
           <aside
-            className="relative flex h-full shrink-0 flex-col border-l border-(--color-border)"
+            className="relative flex h-full shrink-0 flex-col"
             style={{ width: terminalResize.width }}
           >
             <div

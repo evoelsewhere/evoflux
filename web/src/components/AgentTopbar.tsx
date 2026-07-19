@@ -13,6 +13,7 @@ import {
   FolderOpen,
   ListChecks,
   Moon,
+  TerminalSquare,
   Users,
   type LucideIcon,
 } from 'lucide-react'
@@ -74,6 +75,8 @@ export interface AgentTopbarProps {
   schedulerAction?: AgentTopbarActionDescriptor
   /** Wiki action — opens the wiki drawer (Ctrl+M). */
   wikiAction?: AgentTopbarActionDescriptor
+  /** Terminal action — toggles the AI Terminal panel (Ctrl+`). */
+  terminalAction?: AgentTopbarActionDescriptor
   /** Files action — typically toggles the workspace files panel. */
   filesAction?: AgentTopbarActionDescriptor
   /** Agents action — typically toggles the agent capabilities sidebar. */
@@ -98,6 +101,7 @@ export function AgentTopbar({
   todosAction,
   schedulerAction,
   wikiAction,
+  terminalAction,
   filesAction,
   agentsAction,
   extraActions,
@@ -155,6 +159,9 @@ export function AgentTopbar({
       )}
       {wikiAction && (
         <AgentTopbarActionButton action={wikiAction} fallbackIcon={Brain} />
+      )}
+      {terminalAction && (
+        <AgentTopbarActionButton action={terminalAction} fallbackIcon={TerminalSquare} />
       )}
       {filesAction && (
         <AgentTopbarActionButton action={filesAction} fallbackIcon={FolderOpen} />

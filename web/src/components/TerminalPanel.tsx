@@ -263,7 +263,7 @@ export function TerminalPanel({
   const sendActiveToAgent = () => instancesRef.current.get(activeId)?.sendToAgent()
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[#0d1117]">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-l-xl bg-[#0d1117]">
       <div className="flex items-center gap-1 border-b border-(--color-border) bg-(--bg-key) pl-2 pr-1">
         <TerminalSquare size={13} className="shrink-0 text-(--color-text-subtle)" />
         <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto py-1">
