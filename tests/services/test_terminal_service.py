@@ -3,9 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
+import os
+import signal
+import sys
+import threading
+import types
+from unittest.mock import patch
 
 import pytest
 
+import app.services.terminal_service as ts
 from app.services.terminal_service import TerminalManager, _key
 
 
@@ -157,3 +165,328 @@ def test_terminal_run_tool_is_lead_only_all_modes():
     for mode in ("forge", "coding", "aim"):
         assert "terminal_run" in tier_tools(registry, mode=mode, role="lead")
         assert "terminal_run" not in tier_tools(registry, mode=mode, role="member")
+
+
+# ── Windows import gating ─────────────────────────────────────────────────────
+
+
+def test_module_imports_on_win32_and_attach_raises_clear_error_without_pywinpty():
+    """With sys.platform=win32 and no winpty installed, the module must still
+    import; attach() then raises an actionable RuntimeError."""
+    try:
+        with patch.object(sys, "platform", "win32"), patch.dict(
+            sys.modules, {"winpty": None}  # import of winpty → ImportError
+        ):
+            reloaded = importlib.reload(ts)
+            manager = reloaded.TerminalManager()
+            with pytest.raises(RuntimeError, match="pywinpty"):
+                manager.attach("s1", cwd="/")
+    finally:
+        importlib.reload(ts)  # restore the real (POSIX) module for other tests
+
+
+# ── Windows ConPTY path (fake winpty — no real PTY is spawned) ────────────────
+
+
+class _FakeConPtyProc:
+    """Stand-in for ``winpty.PTY`` recording every interaction."""
+
+    instances: list[_FakeConPtyProc] = []
+
+    def __init__(self, cols: int, rows: int) -> None:
+        self.cols, self.rows = cols, rows
+        self.spawn_calls: list[tuple] = []
+        self.writes: list[str] = []
+        self.sizes: list[tuple[int, int]] = []
+        self.closed = False
+        self.read_gate = threading.Event()
+        _FakeConPtyProc.instances.append(self)
+
+    def spawn(self, argv, cwd=None, env=None):
+        self.spawn_calls.append((argv, cwd, env))
+
+    def read(self, blocking=False):
+        assert blocking is True, "the pump must use a blocking read (3.x default is non-blocking)"
+        # Block (like the real blocking read) until the test releases us,
+        # then report the child as gone.
+        self.read_gate.wait()
+        raise EOFError
+
+    def write(self, text):
+        assert isinstance(text, str), "pywinpty takes str, not bytes"
+        self.writes.append(text)
+
+    def set_size(self, cols, rows):
+        self.sizes.append((cols, rows))
+
+    def isalive(self):
+        return not self.closed
+
+    def close(self):
+        self.closed = True
+        self.read_gate.set()  # release the pump thread
+
+
+@pytest.fixture
+def fake_winpty(monkeypatch):
+    """Patch in a fake winpty module and pretend to be on Windows."""
+    _FakeConPtyProc.instances.clear()
+    monkeypatch.setitem(sys.modules, "winpty", types.SimpleNamespace(PTY=_FakeConPtyProc))
+    monkeypatch.setattr(sys, "platform", "win32")
+    return _FakeConPtyProc
+
+
+async def test_spawn_windows_uses_comspec_and_conpty(fake_winpty, monkeypatch, tmp_path):
+    monkeypatch.setenv("COMSPEC", r"C:\Windows\System32\cmd.exe")
+
+    manager = TerminalManager()
+    session = manager.attach(
+        "s1", cwd=str(tmp_path), env={"EVOFLUX_MODE": "forge"}, cols=100, rows=40
+    )
+
+    assert len(fake_winpty.instances) == 1
+    proc = fake_winpty.instances[0]
+    assert (proc.cols, proc.rows) == (100, 40)
+    argv, cwd, env = proc.spawn_calls[0]
+    assert argv == r"C:\Windows\System32\cmd.exe"  # no -i on Windows
+    assert cwd == str(tmp_path)
+    # pywinpty's low-level spawn takes the raw NUL-joined env block.
+    env_map = dict(pair.split("=", 1) for pair in env.rstrip("\0").split("\0"))
+    assert env.endswith("\0")
+    assert env_map["EVOFLUX_SESSION"] == "s1"
+    assert env_map["EVOFLUX_MODE"] == "forge"
+
+    # write() encodes bytes → str for pywinpty.
+    manager.write("s1", b"dir\r\n")
+    assert proc.writes == ["dir\r\n"]
+
+    # resize() maps to set_size(cols, rows).
+    manager.resize("s1", 120, 50)
+    assert proc.sizes == [(120, 50)]
+    assert (session.cols, session.rows) == (120, 50)
+
+    # EOF from the pump thread flows through the normal teardown path:
+    # session closed, deregistered, subscribers get the None sentinel.
+    queue = manager.subscribe("s1")
+    proc.read_gate.set()
+    for _ in range(100):
+        await asyncio.sleep(0.01)
+        if not manager.is_running("s1"):
+            break
+    assert not manager.is_running("s1")
+    assert proc.closed
+    assert queue.get_nowait() is None
+
+
+async def test_spawn_windows_defaults_to_cmd_exe(fake_winpty, monkeypatch, tmp_path):
+    monkeypatch.delenv("COMSPEC", raising=False)
+
+    manager = TerminalManager()
+    manager.attach("s1", cwd=str(tmp_path))
+
+    proc = fake_winpty.instances[0]
+    assert proc.spawn_calls[0][0] == "cmd.exe"
+    proc.close()  # release the pump thread
+
+
+async def test_spawn_windows_missing_cwd_falls_back_to_home(fake_winpty):
+    manager = TerminalManager()
+    manager.attach("s1", cwd=r"C:\no\such\dir\evoflux-test")
+
+    proc = fake_winpty.instances[0]
+    assert proc.spawn_calls[0][1] == os.path.expanduser("~")
+    proc.close()  # release the pump thread
+
+
+class _FakeConPty3Proc:
+    """pywinpty 3.x shape: no ``close()``; teardown must go through
+    ``os.kill(pid, SIGTERM)`` + ``cancel_io()`` (what ptyprocess does)."""
+
+    instances: list[_FakeConPty3Proc] = []
+
+    def __init__(self, cols: int, rows: int) -> None:
+        self.cols, self.rows = cols, rows
+        self.spawn_calls: list[tuple] = []
+        self.cancel_io_calls = 0
+        self.pid = 4321
+        self.read_gate = threading.Event()
+        _FakeConPty3Proc.instances.append(self)
+
+    def spawn(self, argv, cwd=None, env=None):
+        self.spawn_calls.append((argv, cwd, env))
+
+    def read(self, blocking=False):
+        self.read_gate.wait()
+        raise EOFError
+
+    def isalive(self):
+        return True
+
+    def cancel_io(self):
+        self.cancel_io_calls += 1
+        self.read_gate.set()  # a real cancel_io unblocks the pending read
+
+
+async def test_close_windows_pywinpty3_terminates_child(monkeypatch, tmp_path):
+    _FakeConPty3Proc.instances.clear()
+    monkeypatch.setitem(
+        sys.modules, "winpty", types.SimpleNamespace(PTY=_FakeConPty3Proc)
+    )
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setenv("COMSPEC", "cmd.exe")
+    killed: list[tuple[int, int]] = []
+    monkeypatch.setattr(os, "kill", lambda pid, sig: killed.append((pid, sig)))
+
+    manager = TerminalManager()
+    manager.attach("s1", cwd=str(tmp_path))
+    await manager.close("s1")
+
+    proc = _FakeConPty3Proc.instances[0]
+    assert killed == [(4321, signal.SIGTERM)]
+    assert proc.cancel_io_calls == 1
+    assert not manager.is_running("s1")
+
+
+# ── Shared manager logic (stub backend, no real PTY) ───────────────────────────
+
+
+class _StubBackend(ts._PtyBackend):
+    """In-memory backend: records writes/resizes, close() is a counted no-op."""
+
+    def __init__(self) -> None:
+        self.writes: list[bytes] = []
+        self.resizes: list[tuple[int, int]] = []
+        self.close_calls = 0
+
+    def write(self, data: bytes) -> None:
+        self.writes.append(data)
+
+    def resize(self, rows: int, cols: int) -> None:
+        self.resizes.append((rows, cols))
+
+    def close(self) -> None:
+        self.close_calls += 1
+
+
+def _make_session(
+    manager: TerminalManager,
+    session_id: str = "s1",
+    terminal_id: str = ts.DEFAULT_TERMINAL_ID,
+) -> ts.TerminalSession:
+    session = ts.TerminalSession(
+        session_id=session_id,
+        terminal_id=terminal_id,
+        backend=_StubBackend(),
+        cols=80,
+        rows=24,
+    )
+    manager._sessions[_key(session_id, terminal_id)] = session
+    return session
+
+
+def test_attach_reuses_live_session():
+    manager = TerminalManager()
+    session = _make_session(manager)
+    assert manager.attach("s1", cwd="/nonexistent-dir") is session
+
+
+def test_handle_data_buffers_broadcasts_and_caps():
+    manager = TerminalManager()
+    session = _make_session(manager)
+    queue: asyncio.Queue = asyncio.Queue()
+    session.subscribers.add(queue)
+
+    payload = b"x" * (ts._SCROLLBACK_CAP + 10)
+    manager._handle_data(session, b"hello ")
+    manager._handle_data(session, payload)
+
+    assert bytes(session.buffer) == (b"hello " + payload)[-ts._SCROLLBACK_CAP :]
+    assert queue.get_nowait() == b"hello "
+    assert queue.get_nowait() == payload
+
+
+def test_write_and_resize_delegate_to_backend():
+    manager = TerminalManager()
+    session = _make_session(manager)
+
+    manager.write("s1", b"ls\n")
+    manager.resize("s1", 120, 40)
+
+    assert session.backend.writes == [b"ls\n"]
+    assert session.backend.resizes == [(40, 120)]
+    assert (session.cols, session.rows) == (120, 40)
+
+
+def test_write_and_resize_missing_session_are_noops():
+    manager = TerminalManager()
+    manager.write("nope", b"x")
+    manager.resize("nope", 80, 24)
+
+
+def test_handle_eof_closes_notifies_and_is_idempotent():
+    manager = TerminalManager()
+    session = _make_session(manager)
+    queue: asyncio.Queue = asyncio.Queue()
+    session.subscribers.add(queue)
+
+    manager._handle_eof(session)
+
+    assert session.closed
+    assert queue.get_nowait() is None
+    assert not manager.is_running("s1")
+    assert session.backend.close_calls == 1
+
+    manager._handle_eof(session)  # second EOF must not double-tear-down
+    assert session.backend.close_calls == 1
+
+
+def test_snapshot_and_list_terminals():
+    manager = TerminalManager()
+    session = _make_session(manager, terminal_id="2")
+    session.buffer.extend(b"abc")
+    _make_session(manager, session_id="other-session")
+
+    assert manager.snapshot("s1", "2") == b"abc"
+    assert manager.snapshot("missing") == b""
+    assert manager.list_terminals("s1") == ["2"]
+
+
+async def test_run_command_collects_output_until_idle():
+    manager = TerminalManager()
+    session = _make_session(manager)
+
+    async def feed():
+        await asyncio.sleep(0.05)
+        manager._handle_data(session, b"total 42\r\n")
+        # quiet afterwards → the idle window ends the collection
+
+    feeder = asyncio.create_task(feed())
+    output = await manager.run_command("s1", "ls", timeout_s=5, idle_s=0.2)
+    await feeder
+
+    assert "total 42" in output
+    assert session.backend.writes == [b"ls\n"]
+
+
+@pytest.mark.parametrize(
+    ("shell", "argv"),
+    [
+        ("/bin/bash", ["/bin/bash", "-i"]),
+        ("/bin/sh", ["/bin/sh", "-i"]),
+        ("/usr/bin/zsh", ["/usr/bin/zsh", "-i"]),
+        ("/usr/bin/fish", ["/usr/bin/fish"]),
+        ("pwsh", ["pwsh"]),
+    ],
+)
+def test_shell_argv(shell, argv):
+    assert ts._shell_argv(shell) == argv
+
+
+def test_env_block_is_nul_joined_createprocess_format():
+    block = ts._env_block({"A": "1", "B": "two"})
+    assert block == "A=1\0B=two\0"
+    # Round-trip: the block must parse back to the original mapping.
+    assert dict(pair.split("=", 1) for pair in block.rstrip("\0").split("\0")) == {
+        "A": "1",
+        "B": "two",
+    }

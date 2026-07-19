@@ -65,6 +65,9 @@ dependencies = [
     # Filesystem watcher (Rust notify backend) for auto-reindexing the code
     # graph when source files change. Opt-in via code_graph.watch_enabled.
     "watchfiles>=0.24.0",
+    # ConPTY backend for the interactive terminal on Windows (POSIX uses the
+    # stdlib pty/fcntl/termios stack). Imported lazily by terminal_service.
+    "pywinpty>=2.0.14; sys_platform == 'win32'",
 ]
 
 [project.urls]
