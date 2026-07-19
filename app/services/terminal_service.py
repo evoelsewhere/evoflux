@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import fcntl
 import os
+import re
 import signal
 import struct
 import subprocess
@@ -178,6 +179,53 @@ class TerminalManager:
         session.cols, session.rows = cols, rows
         _set_winsize(session.master_fd, rows, cols)
 
+    async def run_command(
+        self,
+        session_id: str,
+        command: str,
+        *,
+        timeout_s: float = 60.0,
+        idle_s: float = 0.6,
+    ) -> str:
+        """Run *command* in the session's LIVE shared shell and return the
+        output the user also sees (broadcast to any attached client).
+
+        Capture is idle-based: after sending the command, output is collected
+        until the shell goes quiet for *idle_s* (back at a prompt) or the
+        *timeout_s* deadline. Best-effort — the returned text is raw terminal
+        output (includes the echoed command line and the trailing prompt),
+        ANSI-stripped for readability. Assumes the shell is at a prompt (not
+        mid-TUI); a long-running command returns partial output at timeout.
+        """
+        session = self._sessions.get(session_id)
+        if session is None or session.closed:
+            raise RuntimeError("no live terminal for this session")
+
+        queue = self.subscribe(session_id)
+        try:
+            self.write(session_id, command.rstrip("\n").encode("utf-8") + b"\n")
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + timeout_s
+            chunks: list[bytes] = []
+            while True:
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    break
+                try:
+                    item = await asyncio.wait_for(
+                        queue.get(), timeout=min(idle_s, remaining)
+                    )
+                except asyncio.TimeoutError:
+                    if chunks:  # quiet after output → command done
+                        break
+                    continue  # nothing yet → keep waiting until the deadline
+                if item is None:  # shell exited
+                    break
+                chunks.append(item)
+            return _strip_ansi(b"".join(chunks).decode("utf-8", "replace"))
+        finally:
+            self.unsubscribe(session_id, queue)
+
     # -- subscriptions --------------------------------------------------------
     def subscribe(self, session_id: str) -> asyncio.Queue:
         session = self._sessions[session_id]
@@ -246,6 +294,17 @@ class TerminalManager:
         if session._idle_handle is not None:
             session._idle_handle.cancel()
             session._idle_handle = None
+
+
+#: CSI/OSC/single-char ANSI escapes — stripped from captured output so the
+#: agent reads plain text (the live xterm client still gets the raw bytes).
+_ANSI_RE = re.compile(
+    r"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))"
+)
+
+
+def _strip_ansi(text: str) -> str:
+    return _ANSI_RE.sub("", text).replace("\r\n", "\n").replace("\r", "")
 
 
 def _set_winsize(fd: int, rows: int, cols: int) -> None:

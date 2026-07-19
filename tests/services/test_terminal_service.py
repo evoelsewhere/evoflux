@@ -72,6 +72,40 @@ async def test_resize_is_safe(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_run_command_returns_output_and_is_seen_live(tmp_path):
+    """Agent→terminal: run_command executes in the shared shell, returns the
+    output to the caller, AND broadcasts it to an attached client (the user)."""
+    tm = TerminalManager()
+    sid = "s6"
+    tm.attach(sid, cwd=str(tmp_path))
+    watcher = tm.subscribe(sid)  # stands in for the user's live terminal
+    await asyncio.sleep(0.2)
+
+    output = await tm.run_command(sid, "echo AGENT_DROVE_$((7*8))", timeout_s=10)
+    assert "AGENT_DROVE_56" in output  # returned to the agent
+
+    # The same output reached the live client too (shared terminal).
+    seen = b""
+    try:
+        while b"AGENT_DROVE_56" not in seen:
+            chunk = await asyncio.wait_for(watcher.get(), timeout=1.0)
+            if chunk is None:
+                break
+            seen += chunk
+    except asyncio.TimeoutError:
+        pass
+    assert b"AGENT_DROVE_56" in seen
+    await tm.close(sid)
+
+
+@pytest.mark.asyncio
+async def test_run_command_without_session_raises(tmp_path):
+    tm = TerminalManager()
+    with pytest.raises(RuntimeError):
+        await tm.run_command("nope", "echo hi")
+
+
+@pytest.mark.asyncio
 async def test_exit_notifies_subscribers(tmp_path):
     tm = TerminalManager()
     sid = "s5"
@@ -91,3 +125,14 @@ async def test_exit_notifies_subscribers(tmp_path):
         pass
     assert sentinel_seen
     assert not tm.is_running(sid)
+
+
+def test_terminal_run_tool_is_lead_only_all_modes():
+    from app.agent.builtin_prompts import tier_tools
+    from app.agent.loader import _default_tool_registry
+
+    registry = _default_tool_registry()
+    assert "terminal_run" in registry
+    for mode in ("forge", "coding", "aim"):
+        assert "terminal_run" in tier_tools(registry, mode=mode, role="lead")
+        assert "terminal_run" not in tier_tools(registry, mode=mode, role="member")
