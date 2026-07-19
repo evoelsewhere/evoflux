@@ -131,9 +131,9 @@ async def lifespan(app: FastAPI):
     app.state.code_graph_watcher = code_graph_watcher
 
     # Start WebBridge extension cleanup task
-    from app.api.routes.team.webbridge import cleanup_stale_extensions
+    from app.services.webbridge_service import webbridge_manager
 
-    webbridge_cleanup_task = asyncio.create_task(cleanup_stale_extensions())
+    webbridge_cleanup_task = asyncio.create_task(webbridge_manager.run_cleanup_loop())
     app.state.webbridge_cleanup_task = webbridge_cleanup_task
 
     yield

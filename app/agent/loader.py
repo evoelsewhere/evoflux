@@ -341,6 +341,7 @@ def _default_tool_registry() -> dict[str, Tool]:
         todo_manage,
         web_fetch,
         web_search,
+        webbridge,
         image_search,
         write_file,
     )
@@ -372,6 +373,7 @@ def _default_tool_registry() -> dict[str, Tool]:
         "web_fetch": web_fetch,
         "image_search": image_search,
         "browser_use": browser_use,
+        "webbridge": webbridge,
         "preview": preview_tool,
         "date": get_date,
         "read": read_file,

@@ -1,5 +1,6 @@
 from .browser_use_tool import browser_use
 from .chapter import mark_chapter
+from .webbridge_tool import webbridge
 from .pr import create_pull_request
 from .date import get_date
 from .filesystem import (
@@ -26,6 +27,7 @@ __all__ = [
     "background_process",
     "browser_use",
     "create_pull_request",
+    "webbridge",
     "discover_skills",
     "mark_chapter",
     "edit_file",

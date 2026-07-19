@@ -74,8 +74,30 @@ _EXEMPT_PREFIXES: tuple[str, ...] = (
 
 # Query-string param name used by `<a download>` links that can't carry
 # an Authorization header. We strip this *after* extraction so downstream
-# middleware (access logs, metrics) don't see the secret.
+# middleware (access logs, metrics) don't see the secret. WebSocket
+# endpoints (which browsers cannot attach headers to either) authenticate
+# through the same param.
 _QS_TOKEN_PARAM = "_token"
+
+
+def expected_desktop_token() -> str:
+    """The configured desktop token, or ``""`` when token auth is disabled.
+
+    Resolution order: ``EVOFLUX_DESKTOP_TOKEN`` (set by the Tauri shell),
+    then ``EVOFLUX_ACCESS_KEY``, then ``server.access_key`` from runtime
+    settings. Resolved fresh on each call so WS endpoints, which have no
+    middleware of their own, can authenticate per connection.
+    """
+    return (
+        os.environ.get(_ENV_VAR, "")
+        or os.environ.get(_ACCESS_KEY_ENV_VAR, "")
+        or (load_runtime_settings().server.access_key or "")
+    )
+
+
+def desktop_token_matches(provided: str | None, expected: str) -> bool:
+    """Constant-time check of a caller-supplied token against *expected*."""
+    return bool(provided) and bool(expected) and hmac.compare_digest(provided, expected)
 
 
 def _path_is_api(path: str) -> bool:
@@ -139,13 +161,7 @@ class DesktopTokenMiddleware(BaseHTTPMiddleware):
     def __init__(self, app: ASGIApp, *, expected_token: str | None = None) -> None:
         super().__init__(app)
         self._token = (
-            expected_token
-            if expected_token is not None
-            else (
-                os.environ.get(_ENV_VAR, "")
-                or os.environ.get(_ACCESS_KEY_ENV_VAR, "")
-                or (load_runtime_settings().server.access_key or "")
-            )
+            expected_token if expected_token is not None else expected_desktop_token()
         )
         self._enabled = bool(self._token)
         if self._enabled:
@@ -160,7 +176,7 @@ class DesktopTokenMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         token = _extract_token(request)
-        if not token or not hmac.compare_digest(token, self._token):
+        if not desktop_token_matches(token, self._token):
             logger.warning(
                 "desktop_token_rejected path={} has_token={}",
                 path,
