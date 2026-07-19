@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from app.services.terminal_service import TerminalManager
+from app.services.terminal_service import TerminalManager, _key
 
 
 async def _drain_until(queue: asyncio.Queue, needle: bytes, *, timeout: float = 3.0) -> bytes:
@@ -66,7 +66,7 @@ async def test_resize_is_safe(tmp_path):
     sid = "s4"
     tm.attach(sid, cwd=str(tmp_path), cols=80, rows=24)
     tm.resize(sid, 120, 40)  # must not raise
-    session = tm._sessions[sid]
+    session = tm._sessions[_key(sid, "1")]
     assert (session.cols, session.rows) == (120, 40)
     await tm.close(sid)
 
@@ -125,6 +125,27 @@ async def test_exit_notifies_subscribers(tmp_path):
         pass
     assert sentinel_seen
     assert not tm.is_running(sid)
+
+
+@pytest.mark.asyncio
+async def test_multiple_terminals_per_session_are_independent(tmp_path):
+    tm = TerminalManager()
+    sid = "s7"
+    tm.attach(sid, terminal_id="1", cwd=str(tmp_path))
+    tm.attach(sid, terminal_id="2", cwd=str(tmp_path))
+    assert sorted(tm.list_terminals(sid)) == ["1", "2"]
+
+    q2 = tm.subscribe(sid, terminal_id="2")
+    await asyncio.sleep(0.2)
+    tm.write(sid, b"echo ONLY_ON_TWO\n", terminal_id="2")
+    got = await _drain_until(q2, b"ONLY_ON_TWO")
+    assert b"ONLY_ON_TWO" in got
+    # Tab 1 never saw tab 2's output.
+    assert b"ONLY_ON_TWO" not in tm.snapshot(sid, terminal_id="1")
+
+    await tm.close(sid, terminal_id="2")
+    assert tm.list_terminals(sid) == ["1"]  # closing one leaves the other
+    await tm.close(sid, terminal_id="1")
 
 
 def test_terminal_run_tool_is_lead_only_all_modes():

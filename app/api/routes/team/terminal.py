@@ -4,7 +4,9 @@
 persistent PTY shell (:mod:`app.services.terminal_service`). The shell is
 spawned in the session's mode-aware working directory (the coding/aim
 workspace, or the forge session dir) so the terminal always lands where the
-agent is working.
+agent is working. A session may hold several terminals (tabs), selected by the
+``tid`` query param; ``GET /team/{session_id}/terminals`` lists the live ones
+so a client can restore its tab bar after a reload.
 
 Protocol
 --------
@@ -15,6 +17,7 @@ Server → Client:
 Client → Server (JSON text frames):
 - ``{"type": "input", "data": "..."}`` — keystrokes to the shell
 - ``{"type": "resize", "cols": N, "rows": N}`` — window resize
+- ``{"type": "close"}`` — kill this terminal's shell (tab closed)
 """
 
 from __future__ import annotations
@@ -27,9 +30,21 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from loguru import logger
 
 from app.core.paths import session_workspace_dir
-from app.services.terminal_service import terminal_manager
+from app.services.terminal_service import DEFAULT_TERMINAL_ID, terminal_manager
 
 router = APIRouter()
+
+
+@router.get("/{session_id}/terminals")
+async def list_terminals(session_id: str) -> dict:
+    """Live terminal ids for a session — lets the tab bar survive a reload."""
+    return {"terminals": [{"id": tid} for tid in terminal_manager.list_terminals(session_id)]}
+
+
+@router.delete("/{session_id}/terminals/{terminal_id}", status_code=204)
+async def close_terminal(session_id: str, terminal_id: str) -> None:
+    """Kill a terminal's shell — the tab-close action."""
+    await terminal_manager.close(session_id, terminal_id=terminal_id)
 
 
 async def _resolve_cwd_and_env(session_id: str) -> tuple[str, dict[str, str]]:
@@ -60,24 +75,27 @@ async def _resolve_cwd_and_env(session_id: str) -> tuple[str, dict[str, str]]:
 @router.websocket("/{session_id}/terminal")
 async def terminal_ws(ws: WebSocket, session_id: str) -> None:
     await ws.accept()
+    tid = ws.query_params.get("tid") or DEFAULT_TERMINAL_ID
     cols, rows = _int_param(ws, "cols", 80), _int_param(ws, "rows", 24)
     cwd, env = await _resolve_cwd_and_env(session_id)
 
     try:
-        terminal_manager.attach(session_id, cwd=cwd, env=env, cols=cols, rows=rows)
+        terminal_manager.attach(
+            session_id, terminal_id=tid, cwd=cwd, env=env, cols=cols, rows=rows
+        )
     except Exception as exc:  # noqa: BLE001
         logger.warning("terminal_attach_failed session_id={} error={}", session_id, exc)
         await ws.send_text(json.dumps({"type": "error", "message": str(exc)}))
         await ws.close()
         return
 
-    terminal_manager.resize(session_id, cols, rows)
-    queue = terminal_manager.subscribe(session_id)
-    logger.debug("terminal_ws_open session_id={}", session_id)
+    terminal_manager.resize(session_id, cols, rows, terminal_id=tid)
+    queue = terminal_manager.subscribe(session_id, terminal_id=tid)
+    logger.debug("terminal_ws_open session_id={} tid={}", session_id, tid)
 
     # Replay recent scrollback so a reconnecting client isn't staring at a
     # blank screen with a live-but-contextless shell.
-    replay = terminal_manager.snapshot(session_id)
+    replay = terminal_manager.snapshot(session_id, terminal_id=tid)
     if replay:
         await ws.send_bytes(replay)
 
@@ -93,17 +111,17 @@ async def terminal_ws(ws: WebSocket, session_id: str) -> None:
     try:
         while True:
             raw = await ws.receive_text()
-            _handle_client_message(session_id, raw)
+            await _handle_client_message(session_id, tid, raw)
     except WebSocketDisconnect:
-        logger.debug("terminal_ws_close session_id={}", session_id)
+        logger.debug("terminal_ws_close session_id={} tid={}", session_id, tid)
     except Exception as exc:  # noqa: BLE001
         logger.debug("terminal_ws_error session_id={} error={}", session_id, exc)
     finally:
         output_task.cancel()
-        terminal_manager.unsubscribe(session_id, queue)
+        terminal_manager.unsubscribe(session_id, queue, terminal_id=tid)
 
 
-def _handle_client_message(session_id: str, raw: str) -> None:
+async def _handle_client_message(session_id: str, tid: str, raw: str) -> None:
     try:
         msg = json.loads(raw)
     except json.JSONDecodeError:
@@ -112,11 +130,13 @@ def _handle_client_message(session_id: str, raw: str) -> None:
     if action == "input":
         data = msg.get("data")
         if isinstance(data, str):
-            terminal_manager.write(session_id, data.encode("utf-8"))
+            terminal_manager.write(session_id, data.encode("utf-8"), terminal_id=tid)
     elif action == "resize":
         cols, rows = msg.get("cols"), msg.get("rows")
         if isinstance(cols, int) and isinstance(rows, int):
-            terminal_manager.resize(session_id, cols, rows)
+            terminal_manager.resize(session_id, cols, rows, terminal_id=tid)
+    elif action == "close":
+        await terminal_manager.close(session_id, terminal_id=tid)
 
 
 def _int_param(ws: WebSocket, name: str, default: int) -> int:
