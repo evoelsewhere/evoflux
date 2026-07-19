@@ -20,6 +20,19 @@ def client():
     return TestClient(app)
 
 
+def test_terminals_list_and_delete(client):
+    sid = "ws-term-tabs"
+    # Opening then closing the socket leaves the PTY alive (reconnect
+    # semantics), so it shows up in the list.
+    with client.websocket_connect(f"/api/team/{sid}/terminal?tid=1"):
+        pass
+    listed = client.get(f"/api/team/{sid}/terminals").json()
+    assert {"id": "1"} in listed["terminals"]
+
+    assert client.delete(f"/api/team/{sid}/terminals/1").status_code == 204
+    assert client.get(f"/api/team/{sid}/terminals").json()["terminals"] == []
+
+
 def test_terminal_ws_echo_roundtrip(client):
     sid = "ws-term-1"
     try:
