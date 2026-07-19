@@ -8,7 +8,7 @@ Reference: https://platform.openai.com/docs/api-reference/chat
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 # ---------------------------------------------------------------------------
@@ -96,6 +96,13 @@ class OpenAIPromptTokensDetails(BaseModel):
     cached_tokens: int = 0
     audio_tokens: int = 0
 
+    @field_validator("*", mode="before")
+    @classmethod
+    def _none_to_zero(cls, v: Any) -> Any:
+        # Some providers send explicit null for unused token-detail fields;
+        # Pydantic v2 rejects None for `int`, so coerce to the default 0.
+        return 0 if v is None else v
+
 
 class OpenAICompletionTokensDetails(BaseModel):
     """Breakdown of completion tokens (reasoning tokens for o-series)."""
@@ -106,6 +113,11 @@ class OpenAICompletionTokensDetails(BaseModel):
     audio_tokens: int = 0
     accepted_prediction_tokens: int = 0
     rejected_prediction_tokens: int = 0
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _none_to_zero(cls, v: Any) -> Any:
+        return 0 if v is None else v
 
 
 class OpenAIUsage(BaseModel):

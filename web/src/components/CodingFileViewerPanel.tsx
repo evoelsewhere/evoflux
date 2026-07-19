@@ -1,16 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { motion } from 'framer-motion'
 import { Check, Copy, Download, ExternalLink, FileText, GitCompare, Loader2, Pencil, Save, Undo2, X } from 'lucide-react'
 import Editor, { DiffEditor, useMonaco } from '@monaco-editor/react'
 import { codingWorkspaceFileUrl, getCodingWorkspaceGitDiff, writeCodingWorkspaceFile } from '@/api/client'
 import { downloadCodingWorkspaceFile } from '@/lib/coding-workspace-download'
 import { cn } from '@/lib/utils'
+import { STORAGE_KEYS } from '@/lib/storage-keys'
 import { formatBytes } from '@/utils/format'
-import { useReducedMotion } from '@/hooks/useReducedMotion'
-import { useResizableWidth } from '@/hooks/use-resizable-width'
 import { useMonacoTheme, languageForExt } from '@/hooks/useMonacoTheme'
 import { queryKeys } from '@/queries'
+import { SidePanel } from './shell/SidePanel'
 import type { WorkspaceFileInfo } from '@/api/types'
 
 const TEXT_EXTENSIONS = new Set([
@@ -500,15 +499,6 @@ export function CodingFileViewerPanel({
   onRejectDiff?: () => void
   mobile?: boolean
 }) {
-  const prefersReducedMotion = useReducedMotion()
-  const resizable = useResizableWidth({
-    storageKey: 'oa.codingFileViewer.width',
-    defaultWidth: 560,
-    minWidth: 420,
-    maxWidth: Math.min(880, Math.max(420, Math.floor((typeof window === 'undefined' ? 880 : window.innerWidth) - 320))),
-    edge: 'left',
-    disabled: mobile,
-  })
   const [viewMode, setViewMode] = useState<'file' | 'diff'>('file')
   const [editing, setEditing] = useState(false)
   const scopedDiff = useQuery({
@@ -522,29 +512,17 @@ export function CodingFileViewerPanel({
   const kind = kindOf(file)
 
   return (
-    <motion.aside
-      initial={prefersReducedMotion ? { opacity: 0 } : mobile ? { opacity: 0 } : { width: 0 }}
-      animate={prefersReducedMotion ? { opacity: 1 } : mobile ? { opacity: 1 } : { width: resizable.width }}
-      exit={prefersReducedMotion ? { opacity: 0 } : mobile ? { opacity: 0 } : { width: 0 }}
-      transition={{ duration: prefersReducedMotion ? 0.01 : 0.22, ease: [0.4, 0, 0.2, 1] }}
-      className={cn(
-        'fixed bottom-0 right-0 z-40 min-h-0 w-full overflow-hidden border-l border-(--color-border) bg-(--bg-card) shadow-xl md:relative md:inset-y-auto md:right-auto md:z-auto md:w-auto md:shrink-0 md:shadow-none',
-        mobile ? 'mobile-safe-top max-w-none' : '',
-      )}
-      aria-label="File viewer"
+    <SidePanel
+      storageKey={STORAGE_KEYS.panels.codingFileViewer}
+      defaultWidth={560}
+      minWidth={420}
+      maxWidth={Math.min(880, Math.max(420, Math.floor((typeof window === 'undefined' ? 880 : window.innerWidth) - 320)))}
+      mobileOverlay
+      mobile={mobile}
+      resizeLabel="Resize file viewer"
+      ariaLabel="File viewer"
+      className="bg-(--bg-card)"
     >
-      <div className={cn('relative flex h-full min-h-0 w-full flex-col', mobile ? 'max-w-none' : 'md:w-full')}>
-        {!mobile && (
-          <div
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize file viewer"
-            title="Drag to resize · double-click to reset"
-            className="absolute left-0 top-0 z-20 h-full w-1 cursor-col-resize transition-colors hover:bg-(--color-accent)/40"
-            onPointerDown={resizable.startResize}
-            onDoubleClick={resizable.resetWidth}
-          />
-        )}
         <header className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-3 py-3">
           <div className="min-w-0 flex-1">
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-(--color-text-subtle)">File</p>
@@ -598,7 +576,6 @@ export function CodingFileViewerPanel({
             )
             : <BinaryPreview workspace={workspace} file={file} />}
         </div>
-      </div>
-    </motion.aside>
+    </SidePanel>
   )
 }

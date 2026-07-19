@@ -83,7 +83,7 @@ function RepoGraph({
         type="button"
         onClick={onExpand}
         title="Expand to full view"
-        className="absolute right-1.5 top-1.5 z-30 flex h-6 w-6 items-center justify-center rounded-md bg-(--bg-card)/90 text-(--color-text-muted) opacity-0 shadow-sm transition-opacity hover:text-(--color-text) group-hover:opacity-100"
+        className="absolute right-1.5 top-1.5 z-(--z-drawer) flex h-6 w-6 items-center justify-center rounded-md bg-(--bg-card)/90 text-(--color-text-muted) opacity-0 shadow-sm transition-opacity hover:text-(--color-text) group-hover:opacity-100"
       >
         <Maximize2 size={12} />
       </button>
@@ -182,7 +182,7 @@ function RepoGraph({
             title={node.path}
             style={{ left: `${node.cx}%`, top: `${node.cy}%` }}
             className={cn(
-              'absolute z-10 -translate-x-1/2 -translate-y-1/2 rounded-xl bg-(--bg-card) shadow-sm transition-shadow',
+              'absolute z-(--z-panel) -translate-x-1/2 -translate-y-1/2 rounded-xl bg-(--bg-card) shadow-sm transition-shadow',
               repo?.index_error ? 'w-[92px] bg-(--color-error)/5 ring-1 ring-(--color-error)/30' : 'w-[88px]',
             )}
           >
@@ -210,7 +210,7 @@ function RepoGraph({
             {repo?.index_error && (
               <AlertTriangle size={11} className="absolute -right-1 -top-1 text-(--color-error)" />
             )}
-            <div className="relative z-10 flex h-[52px] flex-col items-center justify-center gap-0.5 px-2 py-1.5">
+            <div className="relative z-(--z-panel) flex h-[52px] flex-col items-center justify-center gap-0.5 px-2 py-1.5">
               <span className="flex w-full items-center justify-center gap-1">
                 <GitBranch size={10} className="shrink-0 text-(--color-text-subtle)" />
                 <span className="truncate text-[10px] font-medium text-(--color-text)">{node.label}</span>
@@ -228,7 +228,7 @@ function RepoGraph({
       {/* Global LLM/cross-repo resolve stage — pinned banner, distinct from
           any single repo's ring, mounted only while actually running. */}
       {jobRunning && job && (
-        <div className="absolute inset-x-0 top-0 z-20 flex h-5 items-center gap-1.5 border-b border-(--color-border) bg-(--bg-card)/90 px-2 backdrop-blur-sm">
+        <div className="absolute inset-x-0 top-0 z-(--z-header) flex h-5 items-center gap-1.5 border-b border-(--color-border) bg-(--bg-card)/90 px-2 backdrop-blur-sm">
           <Sparkles size={10} className="shrink-0 animate-pulse text-(--accent-orange-text)" />
           <span className="shrink-0 text-[10px] font-medium text-(--color-text-muted)">
             {job.phase === 'lexical' ? 'Lexical match' : job.phase === 'reattach' ? 'Re-attaching stale links' : 'Static match'}

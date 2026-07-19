@@ -45,7 +45,7 @@ function statusPriority(status: AgentStream['status']): number {
 
 function HResizeHandle() {
   return (
-    <Separator className="group relative z-10 flex w-2 cursor-col-resize items-center justify-center focus-visible:outline-none">
+    <Separator className="group relative z-(--z-panel) flex w-2 cursor-col-resize items-center justify-center focus-visible:outline-none">
       <div className="h-10 w-0.5 rounded-full bg-(--color-border-subtle) transition-colors group-hover:bg-(--color-border) group-data-[resize-handle-active]:bg-(--color-accent)" />
     </Separator>
   )
@@ -53,7 +53,7 @@ function HResizeHandle() {
 
 function VResizeHandle() {
   return (
-    <Separator className="group relative z-10 flex h-2 cursor-row-resize items-center justify-center focus-visible:outline-none">
+    <Separator className="group relative z-(--z-panel) flex h-2 cursor-row-resize items-center justify-center focus-visible:outline-none">
       <div className="h-0.5 w-10 rounded-full bg-(--color-border-subtle) transition-colors group-hover:bg-(--color-border) group-data-[resize-handle-active]:bg-(--color-accent)" />
     </Separator>
   )

@@ -436,7 +436,7 @@ export function RepoGraphSpatial({ data, searchQuery, selectedId, onSelect, hidd
         onPointerUp={onPointerUp}
         onPointerLeave={onPointerUp}
       />
-      <div className="pointer-events-none absolute inset-x-0 bottom-3 left-3 z-10 flex items-center gap-2">
+      <div className="pointer-events-none absolute inset-x-0 bottom-3 left-3 z-(--z-panel) flex items-center gap-2">
         <div className="pointer-events-auto flex items-center gap-3 rounded-md border border-(--color-border) bg-(--bg-card)/90 px-3 py-1.5 text-[10px] text-(--color-text-muted) backdrop-blur-sm">
           <span>{visibleNodes.length.toLocaleString()} visible</span>
           <span className="text-(--color-border)">|</span>
@@ -449,7 +449,7 @@ export function RepoGraphSpatial({ data, searchQuery, selectedId, onSelect, hidd
           )}
         </div>
       </div>
-      <div className="absolute bottom-3 right-3 z-20 flex flex-col gap-1 rounded-md border border-(--color-border) bg-(--bg-card)/90 p-1 backdrop-blur-sm">
+      <div className="absolute bottom-3 right-3 z-(--z-header) flex flex-col gap-1 rounded-md border border-(--color-border) bg-(--bg-card)/90 p-1 backdrop-blur-sm">
         <button type="button" onClick={zoomIn} className="flex h-7 w-7 items-center justify-center rounded text-(--color-text-muted) hover:bg-(--bg-key)">
           <Plus size={14} />
         </button>

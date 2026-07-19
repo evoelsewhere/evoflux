@@ -4,17 +4,41 @@
  * shared store lets shortcuts and command palette items coordinate modal
  * visibility from one path.
  *
+ * Also owns the desktop sidebar collapse state — one field shared by all
+ * three mode sidebars (forge / coding / aim) and toggled from AppShell
+ * (button + Ctrl+B). This is the store's only persisted field.
+ *
  * Mirrors the size and shape of ``useToastStore`` — Zustand + immer, no
- * persistence, no derived selectors.
+ * derived selectors.
  */
 import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
+import { STORAGE_KEYS } from '@/lib/storage-keys'
+
+const SIDEBAR_COLLAPSED_KEY = STORAGE_KEYS.sidebar.collapsed
+
+function loadSidebarCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+function persistSidebarCollapsed(collapsed: boolean): void {
+  try {
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed))
+  } catch {
+    // ignore storage failures
+  }
+}
 
 interface UIStore {
   wikiOpen: boolean
   schedulerOpen: boolean
   browserOpen: boolean
   terminalOpen: boolean
+  sidebarCollapsed: boolean
   settingsOpen: boolean
   settingsPath: string
   settingsSearch: Record<string, string>
@@ -26,6 +50,8 @@ interface UIStore {
   closeScheduler: () => void
   closeBrowser: () => void
   closeTerminal: () => void
+  toggleSidebarCollapsed: () => void
+  setSidebarCollapsed: (collapsed: boolean) => void
   openSettings: (path?: string, search?: Record<string, string>) => void
   closeSettings: () => void
   navigateSettings: (path: string, search?: Record<string, string>) => void
@@ -61,13 +87,23 @@ export const useUIStore = create<UIStore>()(
         state.schedulerOpen = false
       }
     }),
-    // The terminal is a bottom dock, not a full-screen overlay — it can sit
-    // open alongside wiki/scheduler/browser, so toggling it doesn't close them.
+    // The terminal is a right-side aside (mounted in ChatTrailingPanels),
+    // not a full-screen overlay — it can sit open alongside
+    // wiki/scheduler/browser, so toggling it doesn't close them.
     toggleTerminal: () => set((state) => { state.terminalOpen = !state.terminalOpen }),
     closeWiki: () => set((state) => { state.wikiOpen = false }),
     closeScheduler: () => set((state) => { state.schedulerOpen = false }),
     closeBrowser: () => set((state) => { state.browserOpen = false }),
     closeTerminal: () => set((state) => { state.terminalOpen = false }),
+    sidebarCollapsed: loadSidebarCollapsed(),
+    toggleSidebarCollapsed: () => set((state) => {
+      state.sidebarCollapsed = !state.sidebarCollapsed
+      persistSidebarCollapsed(state.sidebarCollapsed)
+    }),
+    setSidebarCollapsed: (collapsed) => set((state) => {
+      state.sidebarCollapsed = collapsed
+      persistSidebarCollapsed(collapsed)
+    }),
     settingsOpen: false,
     settingsPath: '',
     settingsSearch: {},

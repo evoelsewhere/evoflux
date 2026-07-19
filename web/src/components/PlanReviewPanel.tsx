@@ -23,10 +23,10 @@ import { replyPlanApproval } from '@/api/client'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { useToastStore } from '@/stores/useToastStore'
 import { useIsMobile } from '@/hooks/use-mobile'
-import { useReducedMotion } from '@/hooks/useReducedMotion'
-import { useResizableWidth } from '@/hooks/use-resizable-width'
 import { LazyMarkdownBlock } from '@/utils/LazyMarkdownBlock'
+import { SidePanel } from './shell/SidePanel'
 import { cn } from '@/lib/utils'
+import { STORAGE_KEYS } from '@/lib/storage-keys'
 import type { PlanStep } from '@/api/types'
 
 const TOOL_ICON_MAP: Record<string, string> = {
@@ -93,7 +93,7 @@ function SelectionCommentPopover({
 
   return (
     <div
-      className="fixed z-50 rounded-xl border border-(--color-border) bg-(--bg-page) p-2 shadow-xl"
+      className="fixed z-(--z-modal) rounded-xl border border-(--color-border) bg-(--bg-page) p-2 shadow-xl"
       style={{ top, left, width }}
       role="dialog"
       aria-label="Comment on selected plan text"
@@ -150,15 +150,6 @@ export function PlanReviewPanel({
 }) {
   const planApproval = useTeamStore((s) => s.planApproval)
   const isMobile = useIsMobile()
-  const prefersReducedMotion = useReducedMotion()
-  const resizable = useResizableWidth({
-    storageKey: 'planPanelWidth',
-    defaultWidth: 380,
-    minWidth: 300,
-    maxWidth: 640,
-    edge: 'left',
-    disabled: isMobile,
-  })
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const [selection, setSelection] = useState<SelectionState | null>(null)
   const [stepsOpen, setStepsOpen] = useState(false)
@@ -204,31 +195,18 @@ export function PlanReviewPanel({
   return (
     <AnimatePresence>
       {planApproval && (
-        <motion.aside
+        <SidePanel
           key={planApproval.requestId}
-          initial={prefersReducedMotion || isMobile ? { opacity: 0 } : { width: 0 }}
-          animate={prefersReducedMotion || isMobile ? { opacity: 1 } : { width: resizable.width }}
-          exit={prefersReducedMotion || isMobile ? { opacity: 0 } : { width: 0 }}
-          transition={{ duration: prefersReducedMotion ? 0.01 : 0.22, ease: [0.4, 0, 0.2, 1] }}
-          className={cn(
-            'fixed bottom-0 right-0 z-40 min-h-0 w-full overflow-hidden border-l border-(--color-border) bg-(--bg-card) shadow-xl md:relative md:inset-y-auto md:right-auto md:z-auto md:w-auto md:shrink-0 md:shadow-none',
-            isMobile ? 'mobile-safe-top max-w-none' : '',
-          )}
-          aria-label="Plan review"
+          storageKey={STORAGE_KEYS.panels.plan}
+          defaultWidth={380}
+          minWidth={300}
+          maxWidth={640}
+          mobileOverlay
+          mobile={isMobile}
+          resizeLabel="Resize plan panel"
+          ariaLabel="Plan review"
+          className="bg-(--bg-card)"
         >
-          <div className="relative flex h-full min-h-0 w-full flex-col">
-            {!isMobile && (
-              <div
-                role="separator"
-                aria-orientation="vertical"
-                aria-label="Resize plan panel"
-                title="Drag to resize · double-click to reset"
-                className="absolute left-0 top-0 z-20 h-full w-1 cursor-col-resize transition-colors hover:bg-(--color-accent)/40"
-                onPointerDown={resizable.startResize}
-                onDoubleClick={resizable.resetWidth}
-              />
-            )}
-
             <header className="flex shrink-0 items-center gap-2.5 border-b border-(--color-border) px-3 py-3">
               <ClipboardList size={16} className="shrink-0 text-(--color-primary)" aria-hidden="true" />
               <div className="min-w-0 flex-1">
@@ -279,7 +257,6 @@ export function PlanReviewPanel({
                 </div>
               )}
             </div>
-          </div>
 
           {selection && (
             <SelectionCommentPopover
@@ -288,7 +265,7 @@ export function PlanReviewPanel({
               onDismiss={dismissPopover}
             />
           )}
-        </motion.aside>
+        </SidePanel>
       )}
     </AnimatePresence>
   )

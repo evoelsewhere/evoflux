@@ -10,10 +10,12 @@
  * Keep the storage key and logic here in sync with that script.
  */
 
+import { STORAGE_KEYS } from '@/lib/storage-keys'
+
 export type ThemePreference = 'light' | 'dark' | 'system'
 export type ResolvedTheme = 'light' | 'dark'
 
-export const THEME_STORAGE_KEY = 'oa-theme'
+export const THEME_STORAGE_KEY = STORAGE_KEYS.theme
 const MEDIA_QUERY = '(prefers-color-scheme: dark)'
 const THEME_COLOR: Record<ResolvedTheme, string> = {
   light: '#FAFAFA',

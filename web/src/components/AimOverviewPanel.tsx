@@ -35,6 +35,7 @@ import {
   X,
 } from 'lucide-react'
 import { getAimProjectSummary, listAimRuns, listAimUnits } from '@/api/client'
+import { STORAGE_KEYS } from '@/lib/storage-keys'
 import { queryKeys } from '@/queries/keys'
 import { useAimMetaQuery } from '@/queries/useAimMetaQuery'
 import { resolveAimRoleWorkspaces } from '@/components/AimKbPanel'
@@ -532,7 +533,7 @@ function UnitDetailPanel({
   )
 
   return (
-    <AimSidePanel storageKey="oa.aimUnitDetail.width" defaultWidth={320} minWidth={280} maxWidth={560}>
+    <AimSidePanel storageKey={STORAGE_KEYS.panels.aimUnitDetail} defaultWidth={320} minWidth={280} maxWidth={560}>
       <div className="flex items-center justify-between gap-2 border-b border-(--color-border) px-3 py-2">
         <p className="min-w-0 truncate font-mono text-xs font-medium text-(--color-text)">
           {unitKey}

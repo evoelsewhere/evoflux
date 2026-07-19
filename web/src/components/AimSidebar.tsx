@@ -3,15 +3,16 @@
  * the list of AIM projects, and each project's feature items rendered as
  * an expandable dropdown (aim-mode-shell-ux-spec.md v2.2 §3.1).
  *
- * Shares the shell chrome of the other two sidebars (spec §7 / R8): the
- * same resizable width + collapse-to-icon-rail mechanics as Sidebar and
- * CodingSidebar, the same floating-card styling, and the same footer trio
- * (Settings · health · theme). It stays much smaller than CodingSidebar:
- * AIM projects have a fixed set of five features, no free-form workspace
- * tree, and — deliberately — no per-day session list (per-run sessions are
- * numerous and auto-archived; runs live in each project's Pipelines/Runs
- * screens instead). A single polled query lights a running dot on projects
- * with an active pipeline run.
+ * Shares the shell chrome of the other two sidebars (spec §7 / R8) via the
+ * primitives in `@/components/shell/`: the same resizable width +
+ * collapse-to-icon-rail mechanics as Sidebar and CodingSidebar, the same
+ * floating-card styling, and the same footer trio (Settings · health ·
+ * theme). It stays much smaller than CodingSidebar: AIM projects have a
+ * fixed set of five features, no free-form workspace tree, and —
+ * deliberately — no per-day session list (per-run sessions are numerous
+ * and auto-archived; runs live in each project's Pipelines/Runs screens
+ * instead). A single polled query lights a running dot on projects with an
+ * active pipeline run.
  */
 
 import { useState } from 'react'
@@ -23,21 +24,25 @@ import {
   BookOpen,
   ChevronDown,
   ChevronRight,
-  HelpCircle,
   LayoutDashboard,
   Plus,
   Search,
-  Settings,
   Workflow,
 } from 'lucide-react'
 import { ModeSwitchTabs, ModeSwitchRail } from '@/components/ModeSwitchTabs'
-import { ThemeToggle } from '@/components/ThemeToggle'
-import { HealthDot } from '@/components/HealthDot'
+import {
+  SidebarShell,
+  SidebarCard,
+  SidebarShellDivider,
+  SidebarSearchTrigger,
+  SidebarFooter,
+} from '@/components/shell/SidebarShell'
+import { CollapsibleSection } from '@/components/shell/CollapsibleSection'
+import { STORAGE_KEYS } from '@/lib/storage-keys'
 import { listTeamSessions } from '@/api/client'
 import { useAimProjectsQuery } from '@/queries/useAimProjectsQuery'
 import { queryKeys } from '@/queries/keys'
 import { usePlatform } from '@/hooks/use-platform'
-import { useResizableWidth } from '@/hooks/use-resizable-width'
 import { useUIStore } from '@/stores/useUIStore'
 import { cn } from '@/lib/utils'
 import type { LucideIcon } from 'lucide-react'
@@ -55,7 +60,28 @@ export const AIM_FEATURES: { key: AimFeature; label: string; Icon: LucideIcon }[
   { key: 'pipelines', label: 'Pipelines', Icon: Workflow },
 ]
 
-const LAST_AIM_PROJECT_KEY = 'oa-last-aim-project'
+const LAST_AIM_PROJECT_KEY = STORAGE_KEYS.lastAimProject
+const AIM_EXPANDED_KEY = STORAGE_KEYS.aim.expanded
+
+function loadAimExpanded(): string[] {
+  try {
+    const raw = localStorage.getItem(AIM_EXPANDED_KEY)
+    if (!raw) return []
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((id): id is string => typeof id === 'string')
+  } catch {
+    return []
+  }
+}
+
+function saveAimExpanded(ids: string[]): void {
+  try {
+    localStorage.setItem(AIM_EXPANDED_KEY, JSON.stringify(ids))
+  } catch {
+    // ignore storage failures
+  }
+}
 
 export function saveLastAimProject(projectId: string): void {
   try {
@@ -80,9 +106,6 @@ interface AimSidebarProps {
   /** Opens the command palette (search input + footer help), same as
    * the forge/coding sidebars. */
   onCommandPalette?: () => void
-  /** Desktop icon-rail state — owned by the AIM layout so its toggle
-   * button (between sidebar and content) can flip it, like coding. */
-  collapsed: boolean
 }
 
 export function AimSidebar({
@@ -90,25 +113,23 @@ export function AimSidebar({
   activeFeature,
   onNewProject,
   onCommandPalette,
-  collapsed,
 }: AimSidebarProps) {
   const navigate = useNavigate()
   const { isMacOverlay } = usePlatform()
+  // Collapse state is shared by all three mode sidebars and owned by
+  // useUIStore; AppShell owns the toggle button + Ctrl+B.
+  const collapsed = useUIStore((s) => s.sidebarCollapsed)
   const projectsQuery = useAimProjectsQuery()
   const projects = projectsQuery.data ?? []
-  // The active project is always expanded; others remember their toggle.
+  // The active project is always expanded; others remember their toggle
+  // (persisted to localStorage as a plain string[] of project ids).
   const [expanded, setExpanded] = useState<Set<string>>(
-    () => new Set(activeProjectId ? [activeProjectId] : []),
+    () =>
+      new Set([
+        ...loadAimExpanded(),
+        ...(activeProjectId ? [activeProjectId] : []),
+      ]),
   )
-
-  const resizable = useResizableWidth({
-    storageKey: 'oa.aimSidebar.width',
-    defaultWidth: 240,
-    minWidth: 200,
-    maxWidth: 400,
-    edge: 'right',
-    disabled: collapsed,
-  })
 
   // One poll lights the running dot for every project (mirrors coding's
   // per-project running indicator without a per-project query).
@@ -128,88 +149,55 @@ export function AimSidebar({
       const next = new Set(prev)
       if (next.has(projectId)) next.delete(projectId)
       else next.add(projectId)
+      saveAimExpanded([...next])
       return next
     })
   }
 
-  const desktopWidth = collapsed ? (isMacOverlay ? 70 : 56) : resizable.width
-
-  // Collapsed: icon rail, mirroring the other two sidebars' collapsed strips.
-  if (collapsed) {
-    return (
-      <div
-        className="relative flex h-full shrink-0 flex-col items-center gap-1 overflow-hidden p-1 transition-[width] duration-200"
-        style={{ width: desktopWidth, minWidth: desktopWidth }}
+  // Collapsed icon rail — same two-card stack as the coding sidebar's rail.
+  const rail = (
+    <>
+      <SidebarCard
+        className={`w-full shrink-0 items-center gap-0.5 px-1 pb-2 ${isMacOverlay ? 'pt-10' : 'pt-2'}`}
       >
-        <div
-          className={`flex w-full shrink-0 flex-col items-center gap-0.5 rounded-[10px] bg-(--bg-sidebar)/80 px-1 pb-2 shadow-sm backdrop-blur-xl ${isMacOverlay ? 'pt-10' : 'pt-2'}`}
-        >
-          <ModeSwitchRail active="aim" />
-          {onCommandPalette && (
-            <button
-              type="button"
-              onClick={onCommandPalette}
-              title="Search (Ctrl+P)"
-              className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
-            >
-              <Search size={15} aria-hidden="true" />
-            </button>
-          )}
+        <ModeSwitchRail active="aim" />
+        {onCommandPalette && (
           <button
             type="button"
-            onClick={onNewProject}
-            title="New / Join project"
+            onClick={onCommandPalette}
+            title="Search (Ctrl+P)"
             className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
           >
-            <Plus size={15} aria-hidden="true" />
+            <Search size={15} aria-hidden="true" />
           </button>
-        </div>
-        <div className="flex-1" />
-        <div className="flex w-full shrink-0 flex-col items-center gap-1 rounded-[10px] bg-(--bg-sidebar)/80 px-1 py-2 shadow-sm backdrop-blur-xl">
-          <button
-            type="button"
-            onClick={() => useUIStore.getState().openSettings()}
-            className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-            aria-label="Settings"
-            title="Settings"
-          >
-            <Settings size={14} aria-hidden="true" />
-          </button>
-          {onCommandPalette && (
-            <button
-              type="button"
-              onClick={onCommandPalette}
-              className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-              aria-label="Help and shortcuts"
-              title="Help and shortcuts (Ctrl+P)"
-            >
-              <HelpCircle size={14} aria-hidden="true" />
-            </button>
-          )}
-          <ThemeToggle collapsed />
-          <HealthDot />
-        </div>
-      </div>
-    )
-  }
+        )}
+        <button
+          type="button"
+          onClick={onNewProject}
+          title="New / Join project"
+          className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
+        >
+          <Plus size={15} aria-hidden="true" />
+        </button>
+      </SidebarCard>
+      <div className="flex-1" />
+      <SidebarCard className="w-full shrink-0">
+        <SidebarFooter collapsed onCommandPalette={onCommandPalette} />
+      </SidebarCard>
+    </>
+  )
 
   return (
-    <div
-      className="relative flex h-full shrink-0 flex-col overflow-hidden p-1 transition-[width] duration-200"
-      style={{ width: desktopWidth, minWidth: desktopWidth }}
+    <SidebarShell
+      storageKey={STORAGE_KEYS.sidebar.aimWidth}
+      defaultWidth={240}
+      minWidth={200}
+      maxWidth={400}
+      collapsed={collapsed}
+      rail={rail}
+      resizeLabel="Resize AIM sidebar"
     >
-      {/* Resize handle — same affordance as the other two sidebars. */}
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize AIM sidebar"
-        title="Drag to resize · double-click to reset"
-        className="absolute right-0 top-0 z-20 h-full w-1 cursor-col-resize transition-colors hover:bg-(--color-accent)/40"
-        onPointerDown={resizable.startResize}
-        onDoubleClick={resizable.resetWidth}
-      />
-
-      <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[10px] bg-(--bg-sidebar)/80 shadow-sm backdrop-blur-xl">
+      <SidebarCard className="h-full">
         {/* Mode switch — shared tab strip, same as forge/coding sidebars */}
         <div className={`shrink-0 px-2 ${isMacOverlay ? 'pt-10' : 'pt-2'}`}>
           <ModeSwitchTabs active="aim" />
@@ -219,36 +207,17 @@ export function AimSidebar({
             placement + markup as the forge/coding sidebars. */}
         {onCommandPalette && (
           <div className="shrink-0 px-2 pt-2">
-            <button
-              type="button"
-              onClick={onCommandPalette}
-              className="flex h-8 w-full items-center gap-2 rounded-md border border-(--color-border) bg-(--bg-page) px-2.5 text-left text-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
-              aria-label="Open command palette"
-              title="Open command palette (Ctrl+P)"
-            >
-              <Search size={13} aria-hidden="true" />
-              <span className="flex-1">Search…</span>
-              <kbd className="font-mono text-xs text-(--color-text-subtle)">^P</kbd>
-            </button>
+            <SidebarSearchTrigger onClick={onCommandPalette} />
           </div>
         )}
 
         {/* Project list */}
         <nav aria-label="AIM projects" className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
-          <div className="flex items-center justify-between px-1 pb-1">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-(--color-text-muted)">
-              Projects
-            </span>
-            <button
-              type="button"
-              onClick={onNewProject}
-              className="flex h-5 w-5 items-center justify-center rounded text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-text)"
-              title="New / Join migration project"
-              aria-label="New / Join migration project"
-            >
-              <Plus size={12} aria-hidden="true" />
-            </button>
-          </div>
+          <CollapsibleSection
+            label="Projects"
+            onAdd={onNewProject}
+            addLabel="New / Join migration project"
+          />
           {projectsQuery.isLoading ? (
             <p className="px-2 py-1.5 text-xs text-(--color-text-subtle)">Loading projects…</p>
           ) : projects.length === 0 ? (
@@ -360,35 +329,9 @@ export function AimSidebar({
 
         {/* Footer trio — mirrors the forge/coding sidebars so all three
             modes feel like the same shell. */}
-        <div className="flex shrink-0 items-center justify-between gap-2 border-t border-(--color-border) px-3 py-2 pb-safe">
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => useUIStore.getState().openSettings()}
-              className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-              aria-label="Settings"
-              title="Settings"
-            >
-              <Settings size={14} aria-hidden="true" />
-            </button>
-            {onCommandPalette && (
-              <button
-                type="button"
-                onClick={onCommandPalette}
-                className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-                aria-label="Help and shortcuts"
-                title="Help and shortcuts (Ctrl+P)"
-              >
-                <HelpCircle size={14} aria-hidden="true" />
-              </button>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <HealthDot />
-            <ThemeToggle collapsed />
-          </div>
-        </div>
-      </div>
-    </div>
+        <SidebarShellDivider />
+        <SidebarFooter onCommandPalette={onCommandPalette} />
+      </SidebarCard>
+    </SidebarShell>
   )
 }

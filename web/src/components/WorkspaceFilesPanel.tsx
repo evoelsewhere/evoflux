@@ -21,7 +21,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { motion } from 'framer-motion'
+import { STORAGE_KEYS } from '@/lib/storage-keys'
 import {
   X,
   FileText,
@@ -59,12 +59,11 @@ import { useWorkspaceFilesQuery } from '@/queries'
 import { queryKeys } from '@/queries/keys'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useSessionFilesWatcher } from '@/hooks/useSessionFilesWatcher'
-import { useResizableWidth } from '@/hooks/use-resizable-width'
-import { useReducedMotion } from '@/hooks/useReducedMotion'
 import { usePlatform } from '@/hooks/use-platform'
 import { mediumHapticFeedback } from '@/lib/haptics'
 import { formatBytes } from '@/utils/format'
 import { MarkdownBlock } from '@/utils/markdown'
+import { SidePanel } from './shell/SidePanel'
 import { ImageLightbox } from './ImageLightbox'
 import { DocxPreview, XlsxPreview, PptxPreview } from './workspace-office-preview'
 import type { WorkspaceFileInfo } from '@/api/types'
@@ -146,8 +145,8 @@ function vscodeWorkspaceUrl(workspaceRoot: string): string {
 
 // ── Resize constants ─────────────────────────────────────────────────────────
 
-const PANEL_WIDTH_KEY = 'workspace-panel-width'
-const TREE_WIDTH_KEY = 'workspace-tree-width'
+const PANEL_WIDTH_KEY = STORAGE_KEYS.panels.workspace
+const TREE_WIDTH_KEY = STORAGE_KEYS.panels.workspaceTree
 const PANEL_WIDTH_MIN = 320
 // Modest — this panel is docked (shares the row with sidebar + chat), not
 // floating above them, so it shouldn't claim most of the window by default.
@@ -379,7 +378,7 @@ function TreeNodeView({
         )}
         {actionsPoint && (
           <div
-            className="fixed inset-0 z-[70]"
+            className="fixed inset-0 z-(--z-lightbox)"
             onClick={() => setActionsPoint(null)}
             onContextMenu={(event) => {
               event.preventDefault()
@@ -861,7 +860,6 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
   const isMobile = useIsMobile()
   const { isMacOverlay } = usePlatform()
   const { data, isLoading, isError, refetch, isFetching } = useWorkspaceFilesQuery(sessionId)
-  const prefersReducedMotion = useReducedMotion()
   const queryClient = useQueryClient()
   useSessionFilesWatcher(sessionId, data?.workspace_root)
 
@@ -890,26 +888,20 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dragCounterRef = useRef(0)
 
-  // Outer panel width — docked, resizable from the left edge (mirrors
-  // CodingWorkspacePanel). Tree/preview split width is a separate, internal
-  // resize handled by its own hand-rolled drag below.
+  // Outer panel width — docked, resizable from the left edge — is owned by
+  // the surrounding <SidePanel> chrome (persisted under PANEL_WIDTH_KEY).
+  // The tree/preview split below is a separate, internal resize with its own
+  // hand-rolled drag; its clamp reads the panel's persisted width back out
+  // of localStorage (SidePanel's useResizableWidth writes it on every
+  // change, so the value is current by the time a tree drag starts).
   //
   // Default is modest (not the old 60vw) — this panel now shares the row
   // with the sidebar and chat instead of floating above them, so a large
   // default starves both by default. The "Expand" toggle below covers the
   // case where someone genuinely wants a full-width look at a big file
   // without dragging the handle every time.
-  const resizablePanel = useResizableWidth({
-    storageKey: PANEL_WIDTH_KEY,
-    defaultWidth: PANEL_WIDTH_DEFAULT,
-    minWidth: PANEL_WIDTH_MIN,
-    maxWidth: Math.round((typeof window === 'undefined' ? 1280 : window.innerWidth) * 0.95),
-    edge: 'left',
-    disabled: isMobile,
-  })
   const [expanded, setExpanded] = useState(false)
   const expandedWidth = Math.min(1400, Math.round((typeof window === 'undefined' ? 1280 : window.innerWidth) * 0.9))
-  const panelWidth = expanded ? expandedWidth : resizablePanel.width
 
   const [treeWidth, setTreeWidth] = useState(() =>
     readStoredWidth(TREE_WIDTH_KEY, 260, TREE_WIDTH_MIN),
@@ -919,6 +911,9 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
     e.preventDefault()
     const startX = e.clientX
     const startW = treeWidth
+    const panelWidth = expanded
+      ? expandedWidth
+      : readStoredWidth(PANEL_WIDTH_KEY, PANEL_WIDTH_DEFAULT, PANEL_WIDTH_MIN)
     const maxTW = Math.round(panelWidth * TREE_WIDTH_MAX_RATIO)
     const onMove = (ev: PointerEvent) => {
       const newW = Math.max(TREE_WIDTH_MIN, Math.min(maxTW, startW + ev.clientX - startX))
@@ -1142,27 +1137,17 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
   if (!open) return null
 
   return (
-    <motion.aside
-      initial={prefersReducedMotion ? { opacity: 0 } : isMobile ? { opacity: 0 } : { width: 0 }}
-      animate={prefersReducedMotion ? { opacity: 1 } : isMobile ? { opacity: 1 } : { width: panelWidth }}
-      transition={{ duration: prefersReducedMotion ? 0.01 : 0.22, ease: [0.4, 0, 0.2, 1] }}
-      className={cn(
-        'fixed bottom-0 right-0 z-40 flex w-full min-h-0 flex-col overflow-hidden border-l border-(--color-border) bg-(--bg-card) shadow-xl md:relative md:inset-y-auto md:right-auto md:z-auto md:w-auto md:shrink-0 md:shadow-none',
-        isMobile ? 'mobile-safe-top max-w-none' : isMacOverlay && 'top-(--spacing-app-header)',
-      )}
-      aria-label="Workspace files"
+    <SidePanel
+      storageKey={PANEL_WIDTH_KEY}
+      defaultWidth={PANEL_WIDTH_DEFAULT}
+      minWidth={PANEL_WIDTH_MIN}
+      maxWidth={Math.round((typeof window === 'undefined' ? 1280 : window.innerWidth) * 0.95)}
+      mobileOverlay
+      mobile={isMobile}
+      width={expanded ? expandedWidth : undefined}
+      ariaLabel="Workspace files"
+      className={cn('bg-(--bg-card)', !isMobile && isMacOverlay && 'top-(--spacing-app-header)')}
     >
-      {/* Left-edge drag handle to resize the panel — hidden while expanded,
-          since the displayed width is pinned to expandedWidth then and
-          dragging wouldn't visibly do anything. */}
-      {!isMobile && !expanded && (
-        <div
-          className="absolute bottom-0 left-0 top-0 z-10 w-1 cursor-ew-resize transition-colors hover:bg-(--color-accent)/20"
-          onPointerDown={resizablePanel.startResize}
-          onDoubleClick={resizablePanel.resetWidth}
-          title="Drag to resize · double-click to reset"
-        />
-      )}
       {/* Header */}
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-4 py-3">
         <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -1367,7 +1352,7 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
             onDrop={handleDrop}
           >
             {isDragging && (
-              <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded border-2 border-dashed border-(--color-accent) bg-(--color-accent)/8">
+              <div className="pointer-events-none absolute inset-0 z-(--z-panel) flex flex-col items-center justify-center gap-2 rounded border-2 border-dashed border-(--color-accent) bg-(--color-accent)/8">
                 <Upload size={22} className="text-(--color-accent)" />
                 <span className="text-xs font-medium text-(--color-accent)">Drop to upload</span>
               </div>
@@ -1495,6 +1480,6 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
         aria-hidden="true"
         onChange={handleFolderInput}
       />
-    </motion.aside>
+    </SidePanel>
   )
 }

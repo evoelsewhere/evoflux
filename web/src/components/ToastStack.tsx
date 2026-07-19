@@ -103,7 +103,7 @@ export function ToastStack() {
   const dismiss = useToastStore((s) => s.dismiss)
 
   return (
-    <div className="mobile-safe-toast pointer-events-none fixed z-[60] flex w-auto flex-col gap-2 sm:left-auto sm:w-full sm:max-w-sm">
+    <div className="mobile-safe-toast pointer-events-none fixed z-(--z-toast) flex w-auto flex-col gap-2 sm:left-auto sm:w-full sm:max-w-sm">
       <AnimatePresence initial={false}>
         {toasts.map((t) => (
           <ToastItem key={t.id} t={t} dismiss={dismiss} />
