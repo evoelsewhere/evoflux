@@ -1,3 +1,5 @@
+import { STORAGE_KEYS } from '@/lib/storage-keys'
+
 export function normalizeWorkspaceInput(value: string): string | null {
   const trimmed = value.trim()
   return trimmed.length > 0 ? trimmed : null
@@ -9,8 +11,8 @@ export function workspaceLabel(workspace: string): string {
   return trimmed.split(/[\\/]/).pop() || workspace
 }
 
-const CODING_WORKSPACES_KEY = 'oa-coding-workspaces'
-const LAST_CODING_WORKSPACE_KEY = 'oa-last-coding-workspace'
+const CODING_WORKSPACES_KEY = STORAGE_KEYS.coding.workspaces
+const LAST_CODING_WORKSPACE_KEY = STORAGE_KEYS.coding.lastWorkspace
 
 export interface CodingWorkspaceEntry {
   id: string
@@ -118,7 +120,7 @@ export function shouldRestoreLastCodingWorkspace(
   return mode === 'coding' && !sessionId && pathname === '/coding'
 }
 
-const LAST_CODING_FOCUS_KEY = 'oa-last-coding-focus'
+const LAST_CODING_FOCUS_KEY = STORAGE_KEYS.coding.lastFocus
 
 /**
  * Like saveLastCodingWorkspace, but project-aware: a project session spans

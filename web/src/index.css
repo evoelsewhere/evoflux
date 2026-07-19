@@ -126,6 +126,19 @@
     --spacing-mac-traffic-inset: 70px;
 }
 
+/* Stacking scale — referenced as z-(--z-panel) etc. This block must stay
+ * NON-inline: the parenthesised shorthand compiles to `z-index: var(--z-*)`,
+ * so the variables have to be emitted as real custom properties on :root. */
+@theme {
+    --z-panel: 10;
+    --z-header: 20;
+    --z-drawer: 30;
+    --z-overlay: 40;
+    --z-modal: 50;
+    --z-toast: 60;
+    --z-lightbox: 70;
+}
+
 /* ─────────────────────────────────────────────────────────────
  * Dark mode — pure black/white/gray, single blue accent.
  * ───────────────────────────────────────────────────────────── */

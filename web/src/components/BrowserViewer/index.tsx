@@ -138,7 +138,7 @@ export function BrowserViewer({
     <>
       {/* Backdrop — click to close on mobile */}
       <div
-        className="fixed inset-0 z-40 bg-(--color-overlay) backdrop-blur-sm sm:hidden"
+        className="fixed inset-0 z-(--z-overlay) bg-(--color-overlay) backdrop-blur-sm sm:hidden"
         onClick={onClose}
       />
 
@@ -148,7 +148,7 @@ export function BrowserViewer({
           'border-l-2 border-(--color-border-strong)',
           'bg-(--bg-page)',
           // Mobile: full-screen fixed overlay
-          'fixed z-50 inset-x-0 bottom-0 top-[env(safe-area-inset-top,0px)]',
+          'fixed z-(--z-modal) inset-x-0 bottom-0 top-[env(safe-area-inset-top,0px)]',
           // Desktop: in-flow sibling of the chat column — the chat resizes
           // instead of being covered. Width driven by the drag handle via
           // a CSS var so the mobile overlay stays full-width.
@@ -159,7 +159,7 @@ export function BrowserViewer({
       >
         {/* ── Resize handle ───────────────────────────────────── */}
         <div
-          className="absolute left-0 top-0 bottom-0 z-10 hidden w-2 cursor-col-resize sm:block group/handle"
+          className="absolute left-0 top-0 bottom-0 z-(--z-panel) hidden w-2 cursor-col-resize sm:block group/handle"
           onMouseDown={handleResizeStart}
           onDoubleClick={handleResizeDoubleClick}
           title="Drag to resize · Double-click to reset"

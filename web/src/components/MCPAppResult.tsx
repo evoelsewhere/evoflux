@@ -384,7 +384,7 @@ export function MCPAppResult({ mcpApp, sessionId, toolCallId }: MCPAppResultProp
   )
 
   return (
-    <div className={isFullscreen ? "fixed inset-0 z-50 flex min-h-0 flex-col overflow-hidden bg-(--bg-page) [[data-mobile-shell]_&]:pt-[env(safe-area-inset-top)] [[data-mobile-shell]_&]:pb-[env(safe-area-inset-bottom)] [[data-mobile-shell]_&]:pl-[env(safe-area-inset-left)] [[data-mobile-shell]_&]:pr-[env(safe-area-inset-right)]" : 'flex flex-col gap-2'}>
+    <div className={isFullscreen ? "fixed inset-0 z-(--z-modal) flex min-h-0 flex-col overflow-hidden bg-(--bg-page) [[data-mobile-shell]_&]:pt-[env(safe-area-inset-top)] [[data-mobile-shell]_&]:pb-[env(safe-area-inset-bottom)] [[data-mobile-shell]_&]:pl-[env(safe-area-inset-left)] [[data-mobile-shell]_&]:pr-[env(safe-area-inset-right)]" : 'flex flex-col gap-2'}>
       <div className={isFullscreen ? 'hidden' : 'flex items-center justify-between gap-2 font-mono text-xs text-(--color-text-muted)'}>
         <span className="min-w-0 truncate" title={resourceUri}>{title}{resourceUri ? ` · ${String(resourceUri)}` : ''}</span>
         <button

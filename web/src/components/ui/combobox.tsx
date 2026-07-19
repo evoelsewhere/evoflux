@@ -78,7 +78,7 @@ export function Combobox({
       </ComboboxPrimitive.InputGroup>
 
       <ComboboxPrimitive.Portal>
-        <ComboboxPrimitive.Positioner side="bottom" align="start" sideOffset={4} className="z-50">
+        <ComboboxPrimitive.Positioner side="bottom" align="start" sideOffset={4} className="z-(--z-modal)">
           <ComboboxPrimitive.Popup
             className={cn(
               "max-h-64 w-(--anchor-width) min-w-40 overflow-y-auto rounded-[12px] border border-(--color-border-strong) bg-(--bg-page) p-1.5 text-(--color-text) shadow-(--shadow-popover)",

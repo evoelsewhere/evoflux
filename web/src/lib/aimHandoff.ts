@@ -9,8 +9,10 @@
  * lives in the URL).
  */
 
-const PIPELINE_KEY = 'oa-aim-pipeline-prefill'
-const KB_KEY = 'oa-aim-kb-open'
+import { STORAGE_KEYS } from '@/lib/storage-keys'
+
+const PIPELINE_KEY = STORAGE_KEYS.aimHandoff.pipelinePrefill
+const KB_KEY = STORAGE_KEYS.aimHandoff.kbOpen
 
 export interface AimPipelinePrefill {
   pipeline: string

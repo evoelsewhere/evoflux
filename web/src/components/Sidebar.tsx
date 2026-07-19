@@ -13,13 +13,8 @@ import { useReducedMotion } from "@/hooks/useReducedMotion";
 import {
   CalendarClock,
   Plus,
-  Trash2,
   RefreshCw,
   Search,
-  Settings,
-  HelpCircle,
-  Loader2,
-  Pencil,
 } from "lucide-react";
 import { ModeSwitchTabs, ModeSwitchRail } from "@/components/ModeSwitchTabs";
 import { isToday, isYesterday } from "date-fns";
@@ -28,24 +23,27 @@ import {
   useDeleteTeamSessionMutation,
   useUpdateTeamSessionTitleMutation,
 } from "@/queries";
-import { formatRelativeDate } from "@/utils/format";
 import { ThemeToggle } from "./ThemeToggle";
 import { Skeleton } from "./ui/skeleton";
-import { HealthDot } from "./HealthDot";
 import { SidebarItem } from "@/components/ui/sidebar-item";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { LongPressButton } from "@/components/ui/long-press-button";
 import { usePlatform } from "@/hooks/use-platform";
-import { useResizableWidth } from "@/hooks/use-resizable-width";
 import { useUIStore } from "@/stores/useUIStore";
+import { usePinnedSessions } from "@/stores/usePinnedSessions";
+import { STORAGE_KEYS } from "@/lib/storage-keys";
+import {
+  SidebarShell,
+  SidebarCard,
+  SidebarShellDivider,
+  SidebarSearchTrigger,
+  SidebarFooter,
+} from "@/components/shell/SidebarShell";
+import { SessionRow } from "@/components/shell/SessionRow";
+import {
+  SessionContextMenu,
+  SessionActionsDialog,
+  type SessionMenuAnchor,
+} from "@/components/shell/SessionContextMenu";
+import { EditSessionTitleDialog } from "@/components/shell/EditSessionTitleDialog";
 import type { SessionResponse } from "@/api/types";
 
 interface DateGroup {
@@ -90,8 +88,6 @@ function groupByDate(sessions: SessionResponse[]): DateGroup[] {
   return groups;
 }
 
-const COLLAPSE_KEY = "oa-sidebar-collapsed";
-
 interface SidebarProps {
   currentSessionId?: string;
   onCommandPalette?: () => void;
@@ -126,43 +122,35 @@ export function Sidebar({
   const updateSessionTitle = useUpdateTeamSessionTitleMutation();
   const sessionListRef = useRef<HTMLDivElement>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
-  const editTitleInputRef = useRef<HTMLInputElement>(null);
 
   // Flatten pages into a single list of sessions
   const normalSessions = sessions.data?.pages.flatMap((p) => p.data) ?? [];
 
-  const [collapsed, setCollapsed] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(COLLAPSE_KEY) === "true";
-    } catch {
-      return false;
-    }
-  });
+  // Pinned sessions (persisted in usePinnedSessions) surface in a "Pinned"
+  // section above the date groups; only ids present in the already-loaded
+  // pages can render — a pinned session older than the loaded pages simply
+  // doesn't appear until it loads into view.
+  const pinnedIds = usePinnedSessions((s) => s.pinnedIds);
+  const togglePin = usePinnedSessions((s) => s.togglePin);
+  const pinnedIdSet = new Set(pinnedIds);
+  const pinnedSessions = pinnedIds
+    .map((id) => normalSessions.find((s) => s.id === id))
+    .filter((s): s is SessionResponse => s !== undefined);
+  const unpinnedSessions = normalSessions.filter((s) => !pinnedIdSet.has(s.id));
+
+  // Collapse state is shared by all three mode sidebars and owned by
+  // useUIStore (persisted); AppShell owns the toggle button + Ctrl+B.
+  const collapsed = useUIStore((s) => s.sidebarCollapsed);
 
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [editTarget, setEditTarget] = useState<SessionResponse | null>(null);
   const [mobileSessionActions, setMobileSessionActions] =
     useState<SessionResponse | null>(null);
-  const [desktopSessionActions, setDesktopSessionActions] = useState<{
-    session: SessionResponse;
-    x: number;
-    y: number;
-  } | null>(null);
+  const [desktopSessionActions, setDesktopSessionActions] =
+    useState<SessionMenuAnchor | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [pullDistance, setPullDistance] = useState(0);
   const pullStartYRef = useRef<number | null>(null);
-
-  const toggleCollapse = useCallback(() => {
-    setCollapsed((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem(COLLAPSE_KEY, String(next));
-      } catch {
-        // ignore
-      }
-      return next;
-    });
-  }, []);
 
   const refetchSessions = sessions.refetch;
   const canPullRefresh = isMobile && mobileOpen;
@@ -196,17 +184,13 @@ export function Sidebar({
     setPullDistance(0);
   }, [canPullRefresh, pullDistance, refetchSessions]);
 
-  // Ctrl+B: collapse sidebar; Ctrl+R: refresh sessions.
-  // Ctrl+M (wiki) / Ctrl+S (scheduler) live in TeamChatView — those panels
-  // moved out of the sidebar per the topbar-redesign wireframe and their
-  // open-state is owned by useUIStore.
+  // Ctrl+R: refresh sessions (data refresh — a sidebar concern, not shell).
+  // Ctrl+B (collapse) is owned once by AppShell; Ctrl+M (wiki) / Ctrl+S
+  // (scheduler) live in TeamChatView — those panels moved out of the sidebar
+  // per the topbar-redesign wireframe and their open-state is in useUIStore.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (!e.ctrlKey || e.metaKey) return;
-      if (e.key === "b") {
-        e.preventDefault();
-        toggleCollapse();
-      }
       if (e.key === "r") {
         e.preventDefault();
         refetchSessions();
@@ -214,13 +198,9 @@ export function Sidebar({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [toggleCollapse, refetchSessions]);
+  }, [refetchSessions]);
 
   const { hasNextPage, isFetchingNextPage, fetchNextPage } = sessions;
-
-  useEffect(() => {
-    if (editTarget) editTitleInputRef.current?.focus();
-  }, [editTarget]);
 
   // Intersection observer — load next page when sentinel scrolls into view.
   useEffect(() => {
@@ -245,17 +225,6 @@ export function Sidebar({
   const handleEdit = (session: SessionResponse) => {
     setEditTarget(session);
     setEditTitle(session.title || "");
-  };
-
-  const submitSessionTitle = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editTarget) return;
-    const title = editTitle.trim();
-    if (!title) return;
-    updateSessionTitle.mutate(
-      { id: editTarget.id, title },
-      { onSuccess: () => setEditTarget(null) },
-    );
   };
 
   const confirmDelete = () => {
@@ -295,24 +264,324 @@ export function Sidebar({
     onMobileClose?.();
   };
 
-  const resizable = useResizableWidth({
-    storageKey: "oa.sidebar.width",
-    defaultWidth: 220,
-    minWidth: 180,
-    maxWidth: 360,
-    edge: "right",
-    disabled: isMobile || collapsed,
-  });
+  const renderSessionRow = (session: SessionResponse) => (
+    <SessionRow
+      key={session.id}
+      session={session}
+      isActive={session.id === currentSessionId}
+      onSelect={(s) => handleSelect(s.id)}
+      onDelete={handleDelete}
+      pendingDelete={pendingDeleteId === session.id}
+      onCancelDelete={() => setPendingDeleteId(null)}
+      onConfirmDelete={confirmDelete}
+      onEdit={handleEdit}
+      mobileLongPressActions={mobileLongPressActions}
+      onLongPress={setMobileSessionActions}
+      onContextActions={(session, event) => {
+        setDesktopSessionActions({
+          session,
+          x: event.clientX,
+          y: event.clientY,
+        });
+      }}
+    />
+  );
 
-  // On mobile the sidebar is a fixed overlay drawer: it slides in/out via
-  // x transform and always stays 272px wide. The desktop version animates
-  // its inline width between the icon-only width and the user-resized width.
-  // On macOS Tauri the icon-only rail widens to 70px (matching
-  // --spacing-mac-traffic-inset) so the traffic-light buttons land fully
-  // inside it instead of spilling into the main content.
-  const desktopWidth = collapsed ? (isMacOverlay ? 70 : 56) : resizable.width;
-  // Computed here so both desktop and mobile branches can reference it.
-  const showIconOnly = !isMobile && collapsed;
+  const sessionList = (
+    <>
+      {sessions.isLoading && <SessionListSkeleton />}
+      {sessions.isError && (
+        <p className="px-3 py-4 text-center text-xs text-(--color-error)">Failed to load sessions</p>
+      )}
+      {sessions.isSuccess && normalSessions.length === 0 && (
+        <p className="px-3 py-4 text-center text-xs text-(--color-text-subtle)">No sessions yet</p>
+      )}
+      {sessions.isSuccess && normalSessions.length > 0 && (
+        <div className="space-y-0.5">
+          {pinnedSessions.length > 0 && (
+            <div>
+              <p
+                className={
+                  isMobile
+                    ? "px-2 pb-0.5 pt-2 text-xs text-(--color-text-subtle) first:pt-1"
+                    : "px-3 pb-1 pt-3 text-xs font-medium text-(--color-text-subtle) first:pt-1.5"
+                }
+              >
+                Pinned
+              </p>
+              {pinnedSessions.map(renderSessionRow)}
+            </div>
+          )}
+          {groupByDate(unpinnedSessions).map(({ label, sessions: group }) => (
+            <div key={label}>
+              <p
+                className={
+                  isMobile
+                    ? "px-2 pb-0.5 pt-2 text-xs text-(--color-text-subtle) first:pt-1"
+                    : "px-3 pb-1 pt-3 text-xs font-medium text-(--color-text-subtle) first:pt-1.5"
+                }
+              >
+                {label}
+              </p>
+              {group.map(renderSessionRow)}
+            </div>
+          ))}
+          <div ref={loadMoreRef} className="h-1" aria-hidden />
+          {isFetchingNextPage && <SessionListSkeleton count={3} />}
+        </div>
+      )}
+    </>
+  );
+
+  // Collapsed desktop rail: mode switch + nav icons + first-8-sessions dots.
+  const rail = (
+    <SidebarCard className="h-full">
+      <div className="shrink-0 flex flex-col items-center px-1 py-2">
+        <ModeSwitchRail
+          active={mode}
+          className={`pb-1 ${isMacOverlay ? 'pt-10' : ''}`}
+        />
+        <nav
+          aria-label="Primary"
+          className="space-y-0.5 flex flex-col items-center gap-0.5"
+        >
+          {onCommandPalette && (
+            <SidebarItem
+              Icon={Search}
+              label="Commands"
+              kbd="^P"
+              collapsed
+              onClick={onCommandPalette}
+            />
+          )}
+          <SidebarItem
+            Icon={Plus}
+            label="New Chat"
+            kbd="^N"
+            collapsed
+            onClick={handleNewChat}
+          />
+          <SidebarItem
+            Icon={CalendarClock}
+            label="Scheduler"
+            kbd="^S"
+            collapsed
+            onClick={toggleScheduler}
+          />
+        </nav>
+      </div>
+
+      <SidebarShellDivider className="mx-2" />
+
+      <div className="flex flex-1 flex-col items-center gap-1 overflow-y-auto py-2">
+        {sessions.isSuccess &&
+          normalSessions.slice(0, 8).map((session) => {
+            const isActive = session.id === currentSessionId;
+            return (
+              <button
+                key={session.id}
+                onClick={() => handleSelect(session.id)}
+                title={session.title || 'Untitled'}
+                className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
+                  isActive
+                    ? 'bg-(--bg-key) text-(--color-accent)'
+                    : 'text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-text-2)'
+                }`}
+              >
+                <div className="h-1.5 w-1.5 rounded-full bg-current" />
+              </button>
+            );
+          })}
+      </div>
+
+      <SidebarShellDivider className="mx-2" />
+
+      <div className="shrink-0 flex justify-center py-2 pb-safe px-1">
+        <ThemeToggle collapsed />
+      </div>
+    </SidebarCard>
+  );
+
+  // Desktop: one floating card with internal dividers (forge style).
+  const desktopShell = (
+    <SidebarShell
+      storageKey={STORAGE_KEYS.sidebar.width}
+      defaultWidth={220}
+      minWidth={180}
+      maxWidth={360}
+      collapsed={collapsed}
+      rail={rail}
+    >
+      <SidebarCard className="h-full">
+        {/* ─── Top section: search + nav ─── */}
+        <div className="shrink-0">
+          <div className={`px-2 ${isMacOverlay ? 'pt-10' : 'pt-2'}`}>
+            <ModeSwitchTabs active={mode} />
+          </div>
+          {onCommandPalette && (
+            <div className="px-2 pt-2">
+              <SidebarSearchTrigger onClick={onCommandPalette} />
+            </div>
+          )}
+          <nav aria-label="Primary" className="space-y-0.5 px-2 py-2">
+            <SidebarItem
+              Icon={Plus}
+              label="New Chat"
+              kbd="^N"
+              onClick={handleNewChat}
+            />
+            <SidebarItem
+              Icon={CalendarClock}
+              label="Scheduler"
+              kbd="^S"
+              onClick={toggleScheduler}
+            />
+          </nav>
+        </div>
+
+        <SidebarShellDivider />
+
+        {/* ─── Sessions section ─── */}
+        <AnimatePresence>
+          <motion.div
+            key="sessions-panel"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: prefersReducedMotion ? 0.01 : 0.15 }}
+            className="flex min-h-0 flex-1 flex-col overflow-hidden"
+          >
+            <div className="flex items-center justify-between px-3 pb-1 pt-2.5">
+              <span className="text-xs font-medium text-(--color-text-subtle)">
+                Recent
+              </span>
+              <button
+                onClick={() => refetchSessions()}
+                className="rounded-xs p-1 text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-muted)"
+                aria-label="Refresh sessions"
+                title="Refresh sessions (Ctrl+R)"
+              >
+                <RefreshCw size={11} className={sessions.isFetching ? 'animate-spin' : ''} />
+              </button>
+            </div>
+            <div
+              ref={sessionListRef}
+              className="relative flex-1 overflow-y-auto px-2 pb-2"
+              onTouchStart={handleSessionListTouchStart}
+              onTouchMove={handleSessionListTouchMove}
+              onTouchEnd={handleSessionListTouchEnd}
+              onTouchCancel={handleSessionListTouchEnd}
+            >
+              {sessionList}
+            </div>
+          </motion.div>
+        </AnimatePresence>
+
+        <SidebarShellDivider />
+
+        {/* ─── Footer section ─── */}
+        <SidebarFooter onCommandPalette={onCommandPalette} />
+      </SidebarCard>
+    </SidebarShell>
+  );
+
+  // Mobile: fixed overlay drawer — slides via x transform, always 272px.
+  const mobileDrawer = (
+    <motion.aside
+      initial={false}
+      animate={{
+        x: mobileOpen ? 0 : -280,
+        width: "min(272px, calc(100vw - 2rem))",
+      }}
+      transition={{
+        duration: prefersReducedMotion ? 0.01 : 0.22,
+        ease: [0.4, 0, 0.2, 1],
+      }}
+      className="mobile-safe-top fixed bottom-0 left-0 z-(--z-overlay) flex w-[min(272px,calc(100vw-2rem))] shrink-0 flex-col overflow-hidden bg-(--bg-sidebar) shadow-xl"
+    >
+      {/* Search trigger */}
+      {onCommandPalette && (
+        <div className="px-3 pt-3">
+          <SidebarSearchTrigger onClick={onCommandPalette} />
+        </div>
+      )}
+
+      {/* Mode switch */}
+      <div className="px-3 pt-2">
+        <ModeSwitchTabs active={mode} onNavigate={onMobileClose} />
+      </div>
+
+      {/* Nav */}
+      <nav aria-label="Primary" className="space-y-0.5 px-2 pb-2 pt-2">
+        <SidebarItem
+          Icon={Plus}
+          label="New Chat"
+          kbd="^N"
+          onClick={handleNewChat}
+        />
+        <SidebarItem
+          Icon={CalendarClock}
+          label="Scheduler"
+          kbd="^S"
+          onClick={() => { toggleScheduler(); onMobileClose?.(); }}
+        />
+      </nav>
+
+      {/* Sessions */}
+      <AnimatePresence>
+        <motion.div
+          key="mobile-sessions"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: prefersReducedMotion ? 0.01 : 0.15 }}
+          className="flex min-h-0 flex-1 flex-col overflow-hidden"
+        >
+          <div className="flex items-center justify-between px-3 pb-1 pt-2">
+            <span className="font-mono text-xs font-semibold uppercase tracking-[0.14em] text-(--color-text-muted)">
+              Recent
+            </span>
+            <button
+              onClick={() => refetchSessions()}
+              className="rounded-xs p-1 text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-muted)"
+              aria-label="Refresh sessions"
+              title="Refresh sessions (Ctrl+R)"
+            >
+              <RefreshCw size={12} className={sessions.isFetching ? 'animate-spin' : ''} />
+            </button>
+          </div>
+          <div
+            ref={sessionListRef}
+            className="relative flex-1 overflow-y-auto px-2 pb-2"
+            onTouchStart={handleSessionListTouchStart}
+            onTouchMove={handleSessionListTouchMove}
+            onTouchEnd={handleSessionListTouchEnd}
+            onTouchCancel={handleSessionListTouchEnd}
+          >
+            {canPullRefresh && (
+              <div
+                className="pointer-events-none sticky top-0 z-(--z-panel) flex justify-center overflow-hidden transition-[height] duration-150"
+                style={{ height: pullDistance }}
+                aria-hidden
+              >
+                <div className="mt-2 inline-flex h-8 items-center gap-2 rounded-full border border-(--color-border) bg-(--bg-card) px-3 text-xs text-(--color-text-muted) shadow-sm">
+                  <RefreshCw size={12} className={pullDistance >= 54 || sessions.isFetching ? 'animate-spin' : ''} />
+                  {pullDistance >= 54 ? 'Release to refresh' : 'Pull to refresh'}
+                </div>
+              </div>
+            )}
+            {sessionList}
+          </div>
+        </motion.div>
+      </AnimatePresence>
+
+      {/* Footer */}
+      <SidebarFooter
+        onCommandPalette={onCommandPalette}
+        onAction={onMobileClose}
+      />
+    </motion.aside>
+  );
 
   return (
     <>
@@ -325,724 +594,58 @@ export function Sidebar({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: prefersReducedMotion ? 0.01 : 0.2 }}
-            className="mobile-safe-top fixed inset-x-0 bottom-0 z-30 bg-(--color-overlay) md:hidden"
+            className="mobile-safe-top fixed inset-x-0 bottom-0 z-(--z-drawer) bg-(--color-overlay) md:hidden"
             aria-hidden="true"
             onClick={onMobileClose}
           />
         )}
       </AnimatePresence>
 
-      <motion.aside
-        initial={false}
-        animate={
-          isMobile
-            ? {
-                x: mobileOpen ? 0 : -280,
-                width: "min(272px, calc(100vw - 2rem))",
-              }
-            : { width: desktopWidth }
+      {isMobile ? mobileDrawer : desktopShell}
+
+      <SessionContextMenu
+        anchor={desktopSessionActions}
+        onClose={() => setDesktopSessionActions(null)}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+        pinned={
+          desktopSessionActions
+            ? pinnedIdSet.has(desktopSessionActions.session.id)
+            : false
         }
-        transition={{
-          duration: prefersReducedMotion ? 0.01 : 0.22,
-          ease: [0.4, 0, 0.2, 1],
+        onTogglePin={() => {
+          if (desktopSessionActions) togglePin(desktopSessionActions.session.id);
         }}
-        className={
-          isMobile
-            ? "mobile-safe-top fixed bottom-0 left-0 z-40 flex w-[min(272px,calc(100vw-2rem))] shrink-0 flex-col overflow-hidden bg-(--bg-sidebar) shadow-xl"
-            : "relative flex shrink-0 flex-col overflow-hidden"
+      />
+
+      <SessionActionsDialog
+        session={mobileSessionActions}
+        onClose={() => setMobileSessionActions(null)}
+        onEdit={handleEdit}
+        onDelete={(session) => setPendingDeleteId(session.id)}
+        pinned={
+          mobileSessionActions ? pinnedIdSet.has(mobileSessionActions.id) : false
         }
-        style={isMobile ? undefined : { minWidth: desktopWidth }}
-      >
-        {!isMobile && !collapsed && (
-          <div
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize sidebar"
-            title="Drag to resize · double-click to reset"
-            className="absolute right-0 top-0 z-20 h-full w-1 cursor-col-resize transition-colors hover:bg-(--color-accent)/40"
-            onPointerDown={resizable.startResize}
-            onDoubleClick={resizable.resetWidth}
-          />
-        )}
+        onTogglePin={() => {
+          if (mobileSessionActions) togglePin(mobileSessionActions.id);
+        }}
+      />
 
-        {/* showIconOnly: desktop collapsed icon-only mode.
-          On mobile the drawer is always fully expanded. */}
-        {(() => {
-          // showIconOnly is hoisted to component level above; re-shadow here
-          // for clarity inside the IIFE.
-          const ico = showIconOnly;
-
-          // Desktop: each logical group becomes its own floating region card.
-          if (!isMobile) {
-            const card = 'rounded-[10px] bg-(--bg-sidebar)/80 shadow-sm backdrop-blur-xl'
-            const divider = `shrink-0 h-px bg-(--color-border) ${ico ? 'mx-2' : 'mx-3'}`
-            return (
-              <div className="flex h-full flex-col overflow-hidden p-1">
-                <div className={`flex h-full min-h-0 flex-col overflow-hidden ${card}`}>
-
-                {/* ─── Top section: search + nav ─── */}
-                <div className={`shrink-0 ${
-                  ico ? 'flex flex-col items-center px-1 py-2' : ''
-                }`}>
-                  {/* Mode switch */}
-                  {!ico && (
-                    <div className={`px-2 ${isMacOverlay ? 'pt-10' : 'pt-2'}`}>
-                      <ModeSwitchTabs active={mode} />
-                    </div>
-                  )}
-                  {!ico && onCommandPalette && (
-                    <div className="px-2 pt-2">
-                      <button
-                        type="button"
-                        onClick={onCommandPalette}
-                        className="flex h-8 w-full items-center gap-2 rounded-md border border-(--color-border) bg-(--bg-page) px-2.5 text-left text-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
-                        aria-label="Open command palette"
-                        title="Open command palette (Ctrl+P)"
-                      >
-                        <Search size={13} aria-hidden="true" />
-                        <span className="flex-1">Search…</span>
-                        <kbd className="font-mono text-xs text-(--color-text-subtle)">^P</kbd>
-                      </button>
-                    </div>
-                  )}
-                  {ico && (
-                    <ModeSwitchRail
-                      active={mode}
-                      className={`pb-1 ${isMacOverlay ? 'pt-10' : ''}`}
-                    />
-                  )}
-                  <nav
-                    aria-label="Primary"
-                    className={`space-y-0.5 ${
-                      ico ? 'flex flex-col items-center gap-0.5' : 'px-2 py-2'
-                    }`}
-                  >
-                    {ico && onCommandPalette && (
-                      <SidebarItem
-                        Icon={Search}
-                        label="Commands"
-                        kbd="^P"
-                        collapsed
-                        onClick={onCommandPalette}
-                      />
-                    )}
-                    <SidebarItem
-                      Icon={Plus}
-                      label="New Chat"
-                      kbd="^N"
-                      collapsed={ico}
-                      onClick={handleNewChat}
-                    />
-                    <SidebarItem
-                      Icon={CalendarClock}
-                      label="Scheduler"
-                      kbd="^S"
-                      collapsed={ico}
-                      onClick={toggleScheduler}
-                    />
-                  </nav>
-                </div>
-
-                <div className={divider} />
-
-                {/* ─── Sessions / dots section ─── */}
-                {!ico ? (
-                  <AnimatePresence>
-                    <motion.div
-                      key="sessions-panel"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: prefersReducedMotion ? 0.01 : 0.15 }}
-                      className="flex min-h-0 flex-1 flex-col overflow-hidden"
-                    >
-                      <div className="flex items-center justify-between px-3 pb-1 pt-2.5">
-                        <span className="text-xs font-medium text-(--color-text-subtle)">
-                          Recent
-                        </span>
-                        <button
-                          onClick={() => refetchSessions()}
-                          className="rounded-xs p-1 text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-muted)"
-                          aria-label="Refresh sessions"
-                          title="Refresh sessions (Ctrl+R)"
-                        >
-                          <RefreshCw size={11} className={sessions.isFetching ? 'animate-spin' : ''} />
-                        </button>
-                      </div>
-                      <div
-                        ref={sessionListRef}
-                        className="relative flex-1 overflow-y-auto px-2 pb-2"
-                        onTouchStart={handleSessionListTouchStart}
-                        onTouchMove={handleSessionListTouchMove}
-                        onTouchEnd={handleSessionListTouchEnd}
-                        onTouchCancel={handleSessionListTouchEnd}
-                      >
-                        {sessions.isLoading && <SessionListSkeleton />}
-                        {sessions.isError && (
-                          <p className="px-3 py-4 text-center text-xs text-(--color-error)">Failed to load sessions</p>
-                        )}
-                        {sessions.isSuccess && normalSessions.length === 0 && (
-                          <p className="px-3 py-4 text-center text-xs text-(--color-text-subtle)">No sessions yet</p>
-                        )}
-                        {sessions.isSuccess && normalSessions.length > 0 && (
-                          <div className="space-y-0.5">
-                            {groupByDate(normalSessions).map(({ label, sessions: group }) => (
-                              <div key={label}>
-                                <p className="px-3 pb-1 pt-3 text-xs font-medium text-(--color-text-subtle) first:pt-1.5">{label}</p>
-                                {group.map((session) => (
-                                  <SessionRow
-                                    key={session.id}
-                                    session={session}
-                                    isActive={session.id === currentSessionId}
-                                    onSelect={handleSelect}
-                                    onDelete={(s) => handleDelete(s)}
-                                    pendingDelete={pendingDeleteId === session.id}
-                                    onCancelDelete={() => setPendingDeleteId(null)}
-                                    onConfirmDelete={confirmDelete}
-                                    onEdit={handleEdit}
-                                    mobileLongPressActions={mobileLongPressActions}
-                                    onLongPress={setMobileSessionActions}
-                                    onContextActions={(session, event) => {
-                                      setDesktopSessionActions({ session, x: event.clientX, y: event.clientY });
-                                    }}
-                                  />
-                                ))}
-                              </div>
-                            ))}
-                            <div ref={loadMoreRef} className="h-1" aria-hidden />
-                            {isFetchingNextPage && <SessionListSkeleton count={3} />}
-                          </div>
-                        )}
-                      </div>
-                    </motion.div>
-                  </AnimatePresence>
-                ) : (
-                  <div className="flex flex-1 flex-col items-center gap-1 overflow-y-auto py-2">
-                    {sessions.isSuccess &&
-                      normalSessions.slice(0, 8).map((session) => {
-                        const isActive = session.id === currentSessionId;
-                        return (
-                          <button
-                            key={session.id}
-                            onClick={() => handleSelect(session.id)}
-                            title={session.title || 'Untitled'}
-                            className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
-                              isActive
-                                ? 'bg-(--bg-key) text-(--color-accent)'
-                                : 'text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-text-2)'
-                            }`}
-                          >
-                            <div className="h-1.5 w-1.5 rounded-full bg-current" />
-                          </button>
-                        );
-                      })}
-                  </div>
-                )}
-
-                <div className={divider} />
-
-                {/* ─── Footer section ─── */}
-                <div className={`shrink-0 ${
-                  ico ? 'flex justify-center py-2 pb-safe px-1' : 'flex items-center justify-between gap-2 px-3 py-2 pb-safe'
-                }`}>
-                  {ico ? (
-                    <ThemeToggle collapsed />
-                  ) : (
-                    <>
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => useUIStore.getState().openSettings()}
-                          className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-                          aria-label="Settings"
-                          title="Settings"
-                        >
-                          <Settings size={14} aria-hidden="true" />
-                        </button>
-                        {onCommandPalette && (
-                          <button
-                            type="button"
-                            onClick={onCommandPalette}
-                            className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-                            aria-label="Help and shortcuts"
-                            title="Help and shortcuts (Ctrl+P)"
-                          >
-                            <HelpCircle size={14} aria-hidden="true" />
-                          </button>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <HealthDot />
-                        <ThemeToggle collapsed />
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                </div>
-              </div>
-            )
-          }
-
-          // Mobile: original flat layout (drawer overlay)
-          return (
-            <>
-              {/* Search trigger */}
-              {onCommandPalette && (
-                <div className="px-3 pt-3">
-                  <button
-                    type="button"
-                    onClick={onCommandPalette}
-                    className="flex h-8 w-full items-center gap-2 rounded-md border border-(--color-border) bg-(--bg-page) px-2.5 text-left text-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
-                    aria-label="Open command palette"
-                    title="Open command palette (Ctrl+P)"
-                  >
-                    <Search size={13} aria-hidden="true" />
-                    <span className="flex-1">Search…</span>
-                    <kbd className="font-mono text-xs text-(--color-text-subtle)">^P</kbd>
-                  </button>
-                </div>
-              )}
-
-              {/* Mode switch */}
-              <div className="px-3 pt-2">
-                <ModeSwitchTabs active={mode} onNavigate={onMobileClose} />
-              </div>
-
-              {/* Nav */}
-              <nav aria-label="Primary" className="space-y-0.5 px-2 pb-2 pt-2">
-                <SidebarItem
-                  Icon={Plus}
-                  label="New Chat"
-                  kbd="^N"
-                  onClick={handleNewChat}
-                />
-                <SidebarItem
-                  Icon={CalendarClock}
-                  label="Scheduler"
-                  kbd="^S"
-                  onClick={() => { toggleScheduler(); onMobileClose?.(); }}
-                />
-              </nav>
-
-              {/* Sessions */}
-              <AnimatePresence>
-                <motion.div
-                  key="mobile-sessions"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: prefersReducedMotion ? 0.01 : 0.15 }}
-                  className="flex min-h-0 flex-1 flex-col overflow-hidden"
-                >
-                  <div className="flex items-center justify-between px-3 pb-1 pt-2">
-                    <span className="font-mono text-xs font-semibold uppercase tracking-[0.14em] text-(--color-text-muted)">
-                      Recent
-                    </span>
-                    <button
-                      onClick={() => refetchSessions()}
-                      className="rounded-xs p-1 text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-muted)"
-                      aria-label="Refresh sessions"
-                      title="Refresh sessions (Ctrl+R)"
-                    >
-                      <RefreshCw size={12} className={sessions.isFetching ? 'animate-spin' : ''} />
-                    </button>
-                  </div>
-                  <div
-                    ref={sessionListRef}
-                    className="relative flex-1 overflow-y-auto px-2 pb-2"
-                    onTouchStart={handleSessionListTouchStart}
-                    onTouchMove={handleSessionListTouchMove}
-                    onTouchEnd={handleSessionListTouchEnd}
-                    onTouchCancel={handleSessionListTouchEnd}
-                  >
-                    {canPullRefresh && (
-                      <div
-                        className="pointer-events-none sticky top-0 z-10 flex justify-center overflow-hidden transition-[height] duration-150"
-                        style={{ height: pullDistance }}
-                        aria-hidden
-                      >
-                        <div className="mt-2 inline-flex h-8 items-center gap-2 rounded-full border border-(--color-border) bg-(--bg-card) px-3 text-xs text-(--color-text-muted) shadow-sm">
-                          <RefreshCw size={12} className={pullDistance >= 54 || sessions.isFetching ? 'animate-spin' : ''} />
-                          {pullDistance >= 54 ? 'Release to refresh' : 'Pull to refresh'}
-                        </div>
-                      </div>
-                    )}
-                    {sessions.isLoading && <SessionListSkeleton />}
-                    {sessions.isError && (
-                      <p className="px-3 py-4 text-center text-xs text-(--color-error)">Failed to load sessions</p>
-                    )}
-                    {sessions.isSuccess && normalSessions.length === 0 && (
-                      <p className="px-3 py-4 text-center text-xs text-(--color-text-subtle)">No sessions yet</p>
-                    )}
-                    {sessions.isSuccess && normalSessions.length > 0 && (
-                      <div className="space-y-0.5">
-                        {groupByDate(normalSessions).map(({ label, sessions: group }) => (
-                          <div key={label}>
-                            <p className="px-2 pb-0.5 pt-2 text-xs text-(--color-text-subtle) first:pt-1">{label}</p>
-                            {group.map((session) => (
-                              <SessionRow
-                                key={session.id}
-                                session={session}
-                                isActive={session.id === currentSessionId}
-                                onSelect={handleSelect}
-                                onDelete={(s) => handleDelete(s)}
-                                pendingDelete={pendingDeleteId === session.id}
-                                onCancelDelete={() => setPendingDeleteId(null)}
-                                onConfirmDelete={confirmDelete}
-                                onEdit={handleEdit}
-                                mobileLongPressActions={mobileLongPressActions}
-                                onLongPress={setMobileSessionActions}
-                                onContextActions={(session, event) => {
-                                  setDesktopSessionActions({ session, x: event.clientX, y: event.clientY });
-                                }}
-                              />
-                            ))}
-                          </div>
-                        ))}
-                        <div ref={loadMoreRef} className="h-1" aria-hidden />
-                        {isFetchingNextPage && <SessionListSkeleton count={3} />}
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
-              </AnimatePresence>
-
-              {/* Footer */}
-              <div className="flex items-center justify-between gap-2 px-3 py-2 pb-safe">
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => { useUIStore.getState().openSettings(); onMobileClose?.(); }}
-                    className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-                    aria-label="Settings"
-                    title="Settings"
-                  >
-                    <Settings size={14} aria-hidden="true" />
-                  </button>
-                  {onCommandPalette && (
-                    <button
-                      type="button"
-                      onClick={onCommandPalette}
-                      className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-                      aria-label="Help and shortcuts"
-                      title="Help and shortcuts (Ctrl+P)"
-                    >
-                      <HelpCircle size={14} aria-hidden="true" />
-                    </button>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <HealthDot />
-                  <ThemeToggle collapsed />
-                </div>
-              </div>
-            </>
-          )
-        })()}
-
-        {desktopSessionActions && (
-          <div
-            className="fixed inset-0 z-50"
-            onClick={() => setDesktopSessionActions(null)}
-            onContextMenu={(event) => {
-              event.preventDefault();
-              setDesktopSessionActions(null);
-            }}
-          >
-            <div
-              role="menu"
-              aria-label={`Actions for ${desktopSessionActions.session.title || "Untitled"}`}
-              className="fixed min-w-44 rounded-lg border border-(--color-border) bg-(--bg-card) p-1 text-sm text-(--color-text) shadow-xl"
-              style={{
-                left: desktopSessionActions.x,
-                top: desktopSessionActions.y,
-              }}
-              onClick={(event) => event.stopPropagation()}
-            >
-              <button
-                type="button"
-                role="menuitem"
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-(--bg-key) focus-visible:bg-(--bg-key) focus-visible:outline-none"
-                onClick={() => {
-                  const { session } = desktopSessionActions;
-                  setDesktopSessionActions(null);
-                  handleEdit(session);
-                }}
-              >
-                <Pencil size={14} aria-hidden="true" />
-                Edit title
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-(--color-error) hover:bg-(--color-error-subtle) focus-visible:bg-(--color-error-subtle) focus-visible:outline-none"
-                onClick={() => {
-                  const { session } = desktopSessionActions;
-                  setDesktopSessionActions(null);
-                  setPendingDeleteId(session.id);
-                }}
-              >
-                <Trash2 size={14} aria-hidden="true" />
-                Delete session
-              </button>
-            </div>
-          </div>
-        )}
-
-        <Dialog
-          open={mobileSessionActions !== null}
-          onOpenChange={(open) => {
-            if (!open) setMobileSessionActions(null);
-          }}
-        >
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>
-                {mobileSessionActions?.title || "Untitled"}
-              </DialogTitle>
-              <DialogDescription>Choose a session action.</DialogDescription>
-            </DialogHeader>
-            <DialogFooter className="flex-col items-stretch gap-2 p-3 sm:flex-col">
-              <Button
-                type="button"
-                variant="outline"
-                className="justify-start"
-                onClick={() => {
-                  const session = mobileSessionActions;
-                  setMobileSessionActions(null);
-                  if (session) handleEdit(session);
-                }}
-              >
-                <Pencil size={14} aria-hidden="true" />
-                Edit title
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="justify-start text-(--color-error)"
-                onClick={() => {
-                  const session = mobileSessionActions;
-                  setMobileSessionActions(null);
-                  if (session) setPendingDeleteId(session.id);
-                }}
-              >
-                <Trash2 size={14} aria-hidden="true" />
-                Delete session
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog
-          open={editTarget !== null}
-          onOpenChange={(open) => {
-            if (!open) setEditTarget(null);
-          }}
-        >
-          <DialogContent showCloseButton={false}>
-            <form onSubmit={submitSessionTitle}>
-              <DialogHeader>
-                <DialogTitle>Edit session title</DialogTitle>
-                <DialogDescription>
-                  Rename this session in the sidebar.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="px-3 py-2">
-                <input
-                  ref={editTitleInputRef}
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                  className="h-9 w-full min-w-0 rounded-[10px] border border-(--color-border) bg-(--bg-page) px-3 py-1 text-sm text-(--color-text) outline-none focus-visible:border-(--focus-ring) focus-visible:ring-2 focus-visible:ring-(--focus-ring)/25"
-                  aria-label="Session title"
-                  maxLength={255}
-                />
-                {updateSessionTitle.isError && (
-                  <p className="mt-2 text-xs text-(--color-error)">
-                    Failed to update title.
-                  </p>
-                )}
-              </div>
-              <DialogFooter className="p-3">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setEditTarget(null)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={!editTitle.trim() || updateSessionTitle.isPending}
-                >
-                  {updateSessionTitle.isPending ? "Saving…" : "Save"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </motion.aside>
+      <EditSessionTitleDialog
+        session={editTarget}
+        title={editTitle}
+        onTitleChange={setEditTitle}
+        onClose={() => setEditTarget(null)}
+        onSubmit={(title) => {
+          if (!editTarget) return;
+          updateSessionTitle.mutate(
+            { id: editTarget.id, title },
+            { onSuccess: () => setEditTarget(null) },
+          );
+        }}
+        isPending={updateSessionTitle.isPending}
+        isError={updateSessionTitle.isError}
+      />
     </>
-  );
-}
-
-interface SessionRowProps {
-  session: SessionResponse;
-  isActive: boolean;
-  onSelect: (id: string) => void;
-  onDelete: (session: SessionResponse) => void;
-  pendingDelete: boolean;
-  onCancelDelete: () => void;
-  onConfirmDelete: () => void;
-  onEdit: (session: SessionResponse) => void;
-  mobileLongPressActions?: boolean;
-  onLongPress?: (session: SessionResponse) => void;
-  onContextActions?: (
-    session: SessionResponse,
-    event: React.MouseEvent,
-  ) => void;
-}
-
-/**
- * Single session row. Background stays flat on hover; instead the row
- * brightens its text from ``--color-text-2`` to ``--color-text`` as the
- * hover affordance. Active rows keep the solid ``--bg-key`` background.
- */
-function SessionRow({
-  session,
-  isActive,
-  onSelect,
-  onDelete,
-  pendingDelete,
-  onCancelDelete,
-  onConfirmDelete,
-  onEdit,
-  mobileLongPressActions = false,
-  onLongPress,
-  onContextActions,
-}: SessionRowProps) {
-  const isScheduled = Boolean(session.scheduled_task_name);
-  const isRunning = session.running === true;
-
-  return (
-    <div className="group relative">
-      <LongPressButton
-        enabled={mobileLongPressActions}
-        onLongPress={() => onLongPress?.(session)}
-        onClick={() => onSelect(session.id)}
-        onDoubleClick={(e) => {
-          e.stopPropagation();
-          onEdit(session);
-        }}
-        onContextMenu={(e) => {
-          if (mobileLongPressActions) return;
-          e.preventDefault();
-          onContextActions?.(session, e);
-        }}
-        className={`flex w-full items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors ${
-          isActive
-            ? "bg-(--bg-key) text-(--color-text)"
-            : "text-(--color-text-2) hover:bg-(--bg-key)/50 hover:text-(--color-text)"
-        }`}
-      >
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <AnimatePresence mode="wait" initial={false}>
-              <motion.p
-                key={session.title ?? "untitled"}
-                initial={{ opacity: 0, y: -6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 6 }}
-                transition={{ duration: 0.18, ease: "easeOut" }}
-                className={`min-w-0 truncate text-xs transition-colors ${
-                  isActive
-                    ? "font-medium text-(--color-text)"
-                    : "text-(--color-text-2) group-hover:font-medium group-hover:text-(--color-text)"
-                }`}
-              >
-                {session.title || "Untitled"}
-              </motion.p>
-            </AnimatePresence>
-            {isScheduled && (
-              <span className="shrink-0 rounded-xs px-1 py-px text-xs leading-tight bg-(--bg-key) text-(--color-text-subtle)">
-                sched
-              </span>
-            )}
-            {isRunning && (
-              <span
-                className="shrink-0 text-(--color-accent)"
-                aria-label="Session running"
-              >
-                <Loader2
-                  size={11}
-                  className="animate-spin"
-                  aria-hidden="true"
-                />
-              </span>
-            )}
-          </div>
-          {isScheduled && (
-            <p className="mt-0.5 truncate text-xs text-(--color-text-subtle) transition-colors group-hover:text-(--color-text-muted)">
-              {session.scheduled_task_name}
-            </p>
-          )}
-          <p className="mt-0.5 truncate text-xs text-(--color-text-subtle) transition-colors group-hover:text-(--color-text-muted)">
-            {formatRelativeDate(session.created_at)}
-          </p>
-        </div>
-      </LongPressButton>
-
-      {!pendingDelete && (
-        <>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onEdit(session);
-            }}
-            className="absolute right-7 top-1/2 flex -translate-y-1/2 items-center justify-center rounded-xs p-1 text-(--color-text-subtle) opacity-0 transition-all hover:bg-(--bg-key) hover:text-(--color-text) group-hover:opacity-100 pointer-coarse:opacity-100"
-            aria-label={`Edit session ${session.title || "Untitled"}`}
-          >
-            <Pencil size={12} />
-          </button>
-
-          {/* Delete on hover */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete(session);
-            }}
-            className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center justify-center rounded-xs p-1 text-(--color-text-subtle) opacity-0 transition-all hover:bg-(--color-error-subtle) hover:text-(--color-error) group-hover:opacity-100 pointer-coarse:opacity-100"
-            aria-label={`Delete session ${session.title || "Untitled"}`}
-          >
-            <Trash2 size={12} />
-          </button>
-        </>
-      )}
-
-      {pendingDelete && (
-        <div className="absolute inset-y-0 right-1.5 z-10 flex items-center gap-1">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onCancelDelete();
-            }}
-            className="rounded-xs border border-(--color-border) bg-(--bg-card) px-2 py-1 text-xs text-(--color-text) hover:bg-(--bg-key)"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onConfirmDelete();
-            }}
-            className="rounded-xs bg-(--color-error) px-2 py-1 text-xs text-(--color-text-on-accent) hover:bg-(--color-error)/90"
-          >
-            Delete
-          </button>
-        </div>
-      )}
-    </div>
   );
 }

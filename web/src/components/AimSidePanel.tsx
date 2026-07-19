@@ -4,9 +4,13 @@
  * same drag-handle affordance as the sidebars and the coding file
  * viewer. Width persists per storageKey, so the Discussion keeps its
  * size across Pipelines and Runs & Reports.
+ *
+ * Thin wrapper over the shared ``SidePanel`` chrome with the width
+ * animation off — these panels never animated open/close, and their
+ * drag stays 1:1 instant.
  */
 
-import { useResizableWidth } from '@/hooks/use-resizable-width'
+import { SidePanel } from '@/components/shell/SidePanel'
 
 export function AimSidePanel({
   storageKey,
@@ -21,29 +25,16 @@ export function AimSidePanel({
   maxWidth?: number
   children: React.ReactNode
 }) {
-  const resizable = useResizableWidth({
-    storageKey,
-    defaultWidth,
-    minWidth,
-    maxWidth,
-    edge: 'left',
-  })
-
   return (
-    <div
-      className="relative flex shrink-0 flex-col border-l border-(--color-border)"
-      style={{ width: resizable.width, minWidth: resizable.width }}
+    <SidePanel
+      storageKey={storageKey}
+      defaultWidth={defaultWidth}
+      minWidth={minWidth}
+      maxWidth={maxWidth}
+      animated={false}
+      resizeLabel="Resize panel"
     >
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize panel"
-        title="Drag to resize · double-click to reset"
-        className="absolute left-0 top-0 z-20 h-full w-1 cursor-col-resize transition-colors hover:bg-(--color-accent)/40"
-        onPointerDown={resizable.startResize}
-        onDoubleClick={resizable.resetWidth}
-      />
       {children}
-    </div>
+    </SidePanel>
   )
 }
