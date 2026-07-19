@@ -261,3 +261,6 @@ mobile/ios-team.txt
 .tauri-keys/
 desktop/EvoFlux.key
 desktop/EvoFlux.key.pub
+
+# MiMo Code CLI local session/tooling dir
+.mimocode/
