@@ -74,9 +74,10 @@ async def test_workspace_instructions_hook_skips_blank_agents_md(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_workspace_instructions_hook_skips_oversized_agents_md(tmp_path):
+async def test_workspace_instructions_hook_truncates_oversized_agents_md(tmp_path):
+    """Oversized AGENTS.md is truncated to the cap, not silently dropped."""
     (tmp_path / "AGENTS.md").write_text(
-        "x" * (MAX_AGENTS_MD_BYTES + 1), encoding="utf-8"
+        "x" * (MAX_AGENTS_MD_BYTES + 100), encoding="utf-8"
     )
     hook = WorkspaceInstructionsHook(str(tmp_path))
     seen: dict[str, str] = {}
@@ -85,7 +86,7 @@ async def test_workspace_instructions_hook_skips_oversized_agents_md(tmp_path):
         system_prompt = "Base prompt"
 
         def override(self, **kwargs):
-            raise AssertionError("oversized AGENTS.md should not override the request")
+            return SimpleNamespace(**kwargs)
 
     async def handler(request):
         seen["prompt"] = request.system_prompt
@@ -93,4 +94,27 @@ async def test_workspace_instructions_hook_skips_oversized_agents_md(tmp_path):
 
     await hook.wrap_model_call(None, None, Request(), handler)  # type: ignore[arg-type]
 
-    assert seen["prompt"] == "Base prompt"
+    assert "Base prompt" in seen["prompt"]
+    assert "x" * 100 in seen["prompt"]
+    assert "[AGENTS.md truncated" in seen["prompt"]
+    # The injected block stays bounded near the cap (content + short notice).
+    assert len(seen["prompt"]) < MAX_AGENTS_MD_BYTES + 500
+
+
+@pytest.mark.asyncio
+async def test_multi_repo_hook_truncates_oversized_agents_md(tmp_path):
+    """Multi-repo AGENTS.md over its cap is truncated, not dropped."""
+    from app.agent.hooks.multi_repo_context import (
+        MAX_AGENTS_MD_BYTES as MULTI_CAP,
+        _read_agents_md,
+    )
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "AGENTS.md").write_text("y" * (MULTI_CAP + 100), encoding="utf-8")
+
+    content = _read_agents_md(repo)
+
+    assert content.startswith("y" * 100)
+    assert "[AGENTS.md truncated" in content
+    assert len(content) <= MULTI_CAP + 200

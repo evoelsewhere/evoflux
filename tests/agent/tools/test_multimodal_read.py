@@ -252,7 +252,7 @@ class TestReadFileVision:
             _injected={"_state": _make_state(vision=True)}, path="test.txt"
         )
         assert isinstance(result, str)
-        assert result == "hello world"
+        assert result == "00001| hello world"
 
     @pytest.mark.asyncio
     async def test_image_returns_tool_result(self, workspace):
@@ -349,7 +349,7 @@ class TestReadFileNoVision:
         )
 
         assert isinstance(result, str)
-        assert result == "hello"
+        assert result == "00001| hello"
 
     @pytest.mark.asyncio
     async def test_document_still_converts_text(self, workspace):

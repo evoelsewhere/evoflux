@@ -633,8 +633,10 @@ class Agent(Generic[TContext]):
             # (before_model); without this bump the tool results added after the
             # LLM call are invisible to the threshold check, letting the context
             # grow past the model's context limit before summarization fires.
-            # Rough heuristic: ~4 chars per token.
-            state.usage.last_prompt_tokens += max(0, tool_result_chars // 4)
+            # Rough heuristic: ~3 chars per token — code and diffs tokenize
+            # denser than prose, and over-counting only makes compaction fire
+            # earlier (safe); under-counting can blow past the context limit.
+            state.usage.last_prompt_tokens += max(0, tool_result_chars // 3)
 
             if cancelled:
                 break

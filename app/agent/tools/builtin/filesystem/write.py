@@ -19,7 +19,12 @@ async def _write_file(
     ],
     content: Annotated[
         str,
-        Field(description="UTF-8 text content to write."),
+        Field(
+            description=(
+                "UTF-8 text content to write. Raw text only — never include "
+                "the 'NNNNN| ' line-number prefix shown by read."
+            )
+        ),
     ],
     overwrite: Annotated[
         bool,

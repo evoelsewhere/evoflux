@@ -19,6 +19,11 @@ from app.agent.tools.builtin.filesystem._ignore import (
 from app.agent.tools.registry import Tool
 
 
+def _newest_first(hits: list[tuple[float, str]]) -> list[str]:
+    """Sort (mtime, display_path) hits newest-first; recency ≈ relevance."""
+    return [p for _, p in sorted(hits, key=lambda t: (-t[0], t[1]))]
+
+
 async def _glob_files(
     pattern: Annotated[
         str,
@@ -49,10 +54,16 @@ async def _glob_files(
         raise NotADirectoryError(f"Not a directory: {sandbox.display_path(resolved)}")
     gitignore_rules = load_gitignore_rules(resolved)
 
+    def _mtime(p: Path) -> float:
+        try:
+            return p.stat().st_mtime
+        except OSError:
+            return 0.0
+
     if match == "name":
 
         def _scan_name() -> list[str]:
-            hits: list[str] = []
+            hits: list[tuple[float, str]] = []
             for root, dirs, files in os.walk(resolved):
                 current = Path(root)
                 dirs[:] = [
@@ -73,16 +84,17 @@ async def _glob_files(
                     if is_gitignored(rel, is_dir=False, rules=gitignore_rules):
                         continue
                     if fnmatch.fnmatch(fname, pattern):
-                        hits.append(sandbox.display_path(current / fname))
+                        fpath = current / fname
+                        hits.append((_mtime(fpath), sandbox.display_path(fpath)))
                         if len(hits) >= max_results:
-                            return hits
-            return hits
+                            return _newest_first(hits)
+            return _newest_first(hits)
 
         matches = await asyncio.to_thread(_scan_name)
     else:
 
         def _scan_path() -> list[str]:
-            hits: list[str] = []
+            hits: list[tuple[float, str]] = []
             for m in sorted(resolved.glob(pattern)):
                 if not m.is_file():
                     continue
@@ -93,10 +105,10 @@ async def _glob_files(
                     continue
                 if is_gitignored(rel.as_posix(), is_dir=False, rules=gitignore_rules):
                     continue
-                hits.append(sandbox.display_path(m))
+                hits.append((_mtime(m), sandbox.display_path(m)))
                 if len(hits) >= max_results:
                     break
-            return hits
+            return _newest_first(hits)
 
         matches = await asyncio.to_thread(_scan_path)
 
@@ -110,7 +122,8 @@ glob_files = Tool(
     name="glob",
     description=(
         "Find files by glob pattern. Use match='path' (default) for full-path patterns "
-        "like 'src/**/*.ts', or match='name' for filename-only like '*.py'."
+        "like 'src/**/*.ts', or match='name' for filename-only like '*.py'. "
+        "Results are sorted by modification time, newest first."
     ),
     concurrency_safe=True,
     read_only=True,
