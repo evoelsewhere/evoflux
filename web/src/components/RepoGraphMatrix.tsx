@@ -72,7 +72,7 @@ export function RepoGraphMatrix({ repos, crossRepoEdges }: RepoGraphMatrixProps)
           <table className="border-separate border-spacing-0.5 text-[11px]">
             <thead>
               <tr>
-                <th className="sticky left-0 z-10 min-w-[120px] bg-(--bg-card) p-2 text-left text-[10px] font-medium text-(--color-text-muted)">
+                <th className="sticky left-0 z-(--z-panel) min-w-[120px] bg-(--bg-card) p-2 text-left text-[10px] font-medium text-(--color-text-muted)">
                   From \ To
                 </th>
                 {repoIds.map((id) => {
@@ -96,7 +96,7 @@ export function RepoGraphMatrix({ repos, crossRepoEdges }: RepoGraphMatrixProps)
                 const srcRepo = repoById.get(srcId)
                 return (
                   <tr key={srcId}>
-                    <td className="sticky left-0 z-10 min-w-[120px] bg-(--bg-card) p-2 text-[10px] font-medium text-(--color-text)">
+                    <td className="sticky left-0 z-(--z-panel) min-w-[120px] bg-(--bg-card) p-2 text-[10px] font-medium text-(--color-text)">
                       <span className="flex items-center gap-1">
                         <GitBranch size={9} className="text-(--color-text-subtle)" />
                         <span className="truncate">{srcRepo ? repoLabel(srcRepo.path) : srcId.slice(0, 8)}</span>

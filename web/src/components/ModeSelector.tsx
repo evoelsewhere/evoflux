@@ -115,7 +115,7 @@ export function ModeSelector({ mode, onModeChange, disabled }: ModeSelectorProps
           role="listbox"
           aria-label="Permission mode"
           className={cn(
-            'absolute bottom-full left-0 z-50 mb-1 min-w-64 overflow-hidden',
+            'absolute bottom-full left-0 z-(--z-modal) mb-1 min-w-64 overflow-hidden',
             'rounded-xl border border-(--color-border) bg-(--bg-page) shadow-xl',
           )}
         >

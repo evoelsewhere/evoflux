@@ -735,7 +735,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
     {showScrollBtn && !isEmpty && (
         <button
           onClick={() => scrollToBottom(true)}
-          className="absolute bottom-16 left-1/2 z-10 -translate-x-1/2 rounded-full border border-(--color-border) bg-(--bg-card) p-1 text-(--color-text-muted) transition-colors hover:text-(--color-text-2)"
+          className="absolute bottom-16 left-1/2 z-(--z-panel) -translate-x-1/2 rounded-full border border-(--color-border) bg-(--bg-card) p-1 text-(--color-text-muted) transition-colors hover:text-(--color-text-2)"
           aria-label="Scroll to bottom"
         >
           <ChevronDown size={16} />

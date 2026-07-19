@@ -107,7 +107,7 @@ function ModelPill({
       </button>
 
       {open && (
-        <div className="absolute bottom-full left-0 z-50 mb-1 w-[min(22rem,calc(90vw-2rem))] rounded-lg border border-(--color-border-strong) bg-(--color-surface) shadow-(--shadow-popover)">
+        <div className="absolute bottom-full left-0 z-(--z-modal) mb-1 w-[min(22rem,calc(90vw-2rem))] rounded-lg border border-(--color-border-strong) bg-(--color-surface) shadow-(--shadow-popover)">
           <div className="border-b border-(--color-border) p-2">
             <input
               ref={inputRef}
@@ -208,7 +208,7 @@ function ThinkingPill({
 
       {open && (
         <div
-          className="absolute bottom-full left-0 z-50 mb-1 w-36 rounded-lg border border-(--color-border-strong) bg-(--color-surface) p-1 shadow-(--shadow-popover)"
+          className="absolute bottom-full left-0 z-(--z-modal) mb-1 w-36 rounded-lg border border-(--color-border-strong) bg-(--color-surface) p-1 shadow-(--shadow-popover)"
           role="listbox"
         >
           {options.map((level, index) => (

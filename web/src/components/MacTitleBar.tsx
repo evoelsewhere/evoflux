@@ -27,7 +27,7 @@ export function MacTitleBar() {
   return (
     <div
       {...dragHandlers}
-      className="fixed left-0 top-0 z-20 h-10 w-(--spacing-mac-traffic-inset) select-none"
+      className="fixed left-0 top-0 z-(--z-header) h-10 w-(--spacing-mac-traffic-inset) select-none"
       aria-hidden="true"
     />
   )

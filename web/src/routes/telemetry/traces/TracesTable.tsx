@@ -37,7 +37,7 @@ export function TracesTable({
   const [now] = useState(() => Date.now())
   const table = (
     <table className="min-w-[720px] w-full text-xs">
-      <thead className="sticky top-0 z-10">
+      <thead className="sticky top-0 z-(--z-panel)">
         <tr className="border-b border-(--color-border) bg-(--bg-key)">
           <Th>When</Th>
           <Th>Session</Th>
@@ -175,7 +175,7 @@ function TraceRow({
         <tr className="contents">
           <td className="contents" colSpan={10}>
             <div
-              className="fixed inset-0 z-[70]"
+              className="fixed inset-0 z-(--z-lightbox)"
               onClick={() => setActionsPoint(null)}
               onContextMenu={(event) => {
                 event.preventDefault()

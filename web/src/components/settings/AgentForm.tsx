@@ -839,7 +839,7 @@ export function ModelCombobox({
               left: anchorRect.left,
               width: anchorRect.width,
             }}
-            className="z-50 max-h-64 overflow-y-auto rounded-lg border border-(--color-border-strong) bg-(--bg-page) p-1 shadow-(--shadow-popover)"
+            className="z-(--z-modal) max-h-64 overflow-y-auto rounded-lg border border-(--color-border-strong) bg-(--bg-page) p-1 shadow-(--shadow-popover)"
           >
             {filtered.length === 0 ? (
               <li className="px-3 py-3 text-center text-xs text-(--color-text-muted)">
