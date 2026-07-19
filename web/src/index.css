@@ -648,25 +648,8 @@ a svg[aria-hidden="true"],
 }
 
 /* ─────────────────────────────────────────────────────────────
- * Claude-style loading verb
+ * Loading verb — animations handled by framer-motion in component
  * ───────────────────────────────────────────────────────────── */
-.loading-verb {
-  /* Inline transition handles the opacity cross-fade; this just
-     adds the subtle upward drift so each new verb slides in from
-     below.  The `transition` shorthand is overridden by Tailwind
-     `duration-400` on the element, so we only set the transform
-     part here. */
-  transition-property: opacity, transform;
-  transition-timing-function: var(--ease-out);
-}
-.loading-verb-fade-out {
-  opacity: 0;
-  transform: translateY(2px);
-}
-.loading-verb-fade-in {
-  opacity: 1;
-  transform: translateY(0);
-}
 
 /* ─────────────────────────────────────────────────────────────
  * Progressive block reveal — fade-in + slight slide-up
