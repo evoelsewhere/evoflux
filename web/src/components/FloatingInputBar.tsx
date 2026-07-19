@@ -42,6 +42,8 @@ interface FloatingInputBarProps {
   filesDisabled?: boolean
   onActivity?: () => void
   activityActive?: boolean
+  onTerminal?: () => void
+  terminalActive?: boolean
   permissionMode?: import('@/api/types').PermissionMode
   onPermissionModeChange?: (mode: import('@/api/types').PermissionMode) => void
 }

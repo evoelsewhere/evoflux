@@ -365,6 +365,7 @@ def _default_tool_registry() -> dict[str, Tool]:
     from app.agent.tools.builtin.visualize import visualize_read_me, show_widget
     from app.agent.tools.builtin.preview import preview_tool
     from app.agent.tools.builtin.aim import aim_units, aim_compare
+    from app.agent.tools.builtin.terminal import terminal_run
 
     registry: dict[str, Tool] = {
         "web_search": web_search,
@@ -411,6 +412,7 @@ def _default_tool_registry() -> dict[str, Tool]:
         "show_widget": show_widget,
         "aim_units": aim_units,
         "aim_compare": aim_compare,
+        "terminal_run": terminal_run,
     }
     # Merge MCP tools from healthy servers. Names follow ``mcp_<server>_<tool>``
     # so they cannot collide with the builtins above.
