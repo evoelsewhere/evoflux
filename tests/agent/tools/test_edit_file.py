@@ -543,3 +543,78 @@ class TestTrimmedBoundaryPaths:
         find = "\nTARGET\n"  # not exact, trimmed = "TARGET" is in content
         result = replace_content(content, find, "REPLACED")
         assert result == "before REPLACED after"
+
+
+# ---------------------------------------------------------------------------
+# Failure-message quality — occurrence lines + closest-match hint
+# ---------------------------------------------------------------------------
+
+
+class TestFailureMessages:
+    def test_multiple_matches_reports_lines(self):
+        content = "foo\nbar\nfoo\nbaz\nfoo"
+        with pytest.raises(ValueError) as exc:
+            replace_content(content, "foo", "bar")
+        msg = str(exc.value)
+        assert "3 occurrences" in msg
+        assert "lines 1, 3, 5" in msg
+
+    def test_not_found_includes_closest_match_hint(self):
+        content = "def compute_total(items):\n    total = sum(items)\n    return total\n"
+        # Close but wrong: different variable name.
+        with pytest.raises(ValueError) as exc:
+            replace_content(
+                content,
+                "def compute_total(items):\n    result = sum(items)\n    return result",
+                "x",
+            )
+        msg = str(exc.value)
+        assert "Closest existing block" in msg
+        assert "00001| def compute_total(items):" in msg
+
+    def test_not_found_no_hint_when_nothing_similar(self):
+        with pytest.raises(ValueError) as exc:
+            replace_content("alpha\nbeta\n", "ZZZ_TOTALLY_UNRELATED_9843()", "x")
+        msg = str(exc.value)
+        assert "Closest existing block" not in msg
+
+
+# ---------------------------------------------------------------------------
+# Post-edit snippet in the tool result
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_edit_file_result_includes_post_edit_snippet(sandbox):
+    _, tmp_path = sandbox
+    target = tmp_path / "code.py"
+    target.write_text("a = 1\nb = 2\nc = 3\nd = 4\ne = 5\nf = 6\ng = 7\n")
+
+    result = await _edit_file(path="code.py", old_string="d = 4", new_string="d = 44")
+
+    assert "Edit applied successfully" in result
+    assert "Result (lines" in result
+    # ±3 lines of context around the replacement, line-numbered.
+    assert "00004| d = 44" in result
+    assert "00001| a = 1" in result
+    assert "00007| g = 7" in result
+    # Diff-meta line for the UI stays first.
+    assert result.startswith("@@ EvoFlux-diff-meta")
+
+
+@pytest.mark.asyncio
+async def test_edit_file_snippet_capped_for_large_replacements(sandbox):
+    _, tmp_path = sandbox
+    target = tmp_path / "big.py"
+    target.write_text("start\n" + "\n".join(f"x{i} = {i}" for i in range(60)) + "\nend\n")
+    big_new = "\n".join(f"y{i} = {i}" for i in range(60))
+
+    result = await _edit_file(
+        path="big.py",
+        old_string="\n".join(f"x{i} = {i}" for i in range(60)),
+        new_string=big_new,
+    )
+
+    snippet_lines = [l for l in result.split("\n") if l[:5].isdigit() and "| " in l]
+    assert 0 < len(snippet_lines) <= 24
+    assert result.rstrip().endswith("…")

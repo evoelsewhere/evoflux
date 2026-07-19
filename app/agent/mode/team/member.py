@@ -40,6 +40,7 @@ from app.agent.hooks.memory_flush import build_memory_flush_hook
 from app.agent.hooks.wiki_injection import default_wiki_injection_hook
 from app.agent.hooks.workspace_instructions import WorkspaceInstructionsHook
 from app.agent.hooks.multi_repo_context import MultiRepoContextHook
+from app.agent.hooks.post_edit_diagnostics import PostEditDiagnosticsHook
 from app.agent.hooks.otel import OpenTelemetryHook
 from app.agent.hooks.stream_publisher import StreamPublisherHook
 from app.agent.hooks.summarization import build_team_summarization_hook
@@ -970,6 +971,10 @@ class TeamMemberBase(abc.ABC):
                 )
             else:
                 hooks.append(WorkspaceInstructionsHook(self._team.workspace))
+            # Surface ruff issues introduced by an edit in the same tool
+            # round — the prompt-only "run lsp_diagnostics after edits"
+            # guidance has no enforcement otherwise.
+            hooks.append(PostEditDiagnosticsHook())
 
         # Title generation — lead only (members don't need session titles).
         # Always enabled; uses the same runtime provider as the chat turn so

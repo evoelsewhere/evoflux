@@ -73,15 +73,18 @@ if TYPE_CHECKING:
 # * CHAT mode (default): prose summary, keep last ``DEFAULT_KEEP_LAST_ASSISTANTS``
 #   assistant turns verbatim so the next reply has recent conversational
 #   context.
-# * CODING mode: structured Markdown summary, ``keep_last_assistants=0`` so
-#   the full pre-threshold history collapses into the summary. Coding sessions
-#   benefit from a single authoritative "state of the world" record over
-#   partially-summarised history.
+# * CODING mode: structured Markdown summary, plus a small verbatim window
+#   (``CODING_KEEP_LAST_ASSISTANTS``). Coding sessions benefit from a single
+#   authoritative "state of the world" record, but compaction typically fires
+#   mid-task — the exact text of the last diff, error message, or line numbers
+#   is what the very next step needs, and an LLM summary cannot be trusted to
+#   reproduce those strings byte-for-byte. Keeping the last two turns verbatim
+#   preserves them at a small token cost.
 DEFAULT_PROMPT_TOKEN_THRESHOLD = 250000
 MAX_PROMPT_TOKEN_THRESHOLD = 750000
 PROMPT_TOKEN_THRESHOLD_CONTEXT_RATIO = 0.75
 DEFAULT_KEEP_LAST_ASSISTANTS = 3
-CODING_KEEP_LAST_ASSISTANTS = 0
+CODING_KEEP_LAST_ASSISTANTS = 2
 DEFAULT_MAX_TOKEN_LENGTH = 30000
 DEFAULT_MIN_MESSAGES_SINCE_LAST_SUMMARY = 4
 

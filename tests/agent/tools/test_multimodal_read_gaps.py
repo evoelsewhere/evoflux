@@ -525,7 +525,7 @@ class TestReadFileWithoutState:
         result = await read_file.arun(path="test.txt")
 
         assert isinstance(result, str)
-        assert result == "hello world"
+        assert result == "00001| hello world"
 
     @pytest.mark.asyncio
     async def test_document_without_state_still_converts(self, workspace):

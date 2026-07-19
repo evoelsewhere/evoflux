@@ -31,6 +31,23 @@ _MAX_READ_BYTES = 5_242_880  # 5 MB read cap
 _MAX_CONTEXT_CHARS = 20_000  # keep read results within typical LLM context budgets
 
 
+def _number_lines(text: str, start: int = 1) -> str:
+    """Prefix each line with an 'NNNNN| ' line number (display-only metadata).
+
+    Line numbers let the model cite file:line and correlate reads with
+    grep/lsp_diagnostics/code_graph output. The prefix must never be echoed
+    back into edit old_string or write content — tool descriptions say so.
+    """
+    if not text:
+        return text
+    trailing_nl = text.endswith("\n")
+    lines = text.split("\n")
+    if trailing_nl:
+        lines = lines[:-1]
+    numbered = "\n".join(f"{start + i:05d}| {ln}" for i, ln in enumerate(lines))
+    return numbered + ("\n" if trailing_nl else "")
+
+
 def _cap_text_for_context(text: str, rel: object) -> str:
     """Return a context-safe preview for unpaginated text reads."""
     if len(text) <= _MAX_CONTEXT_CHARS:
@@ -114,7 +131,7 @@ async def _read_file(
         text = raw.decode("latin-1")
 
     if offset == 1 and limit is None:
-        return _cap_text_for_context(text, rel)
+        return _cap_text_for_context(_number_lines(text), rel)
 
     lines = text.splitlines(keepends=True)
     total = len(lines)
@@ -123,7 +140,8 @@ async def _read_file(
     slice_lines = lines[start:end]
 
     header = f"[{start + 1}-{end}/{total}]\n"
-    return _cap_text_for_context(header + "".join(slice_lines), rel)
+    numbered = _number_lines("".join(slice_lines), start=start + 1)
+    return _cap_text_for_context(header + numbered, rel)
 
 
 read_file = Tool(
@@ -133,7 +151,9 @@ read_file = Tool(
         "Read a file from the workspace. Supports text files, images "
         "(PNG, JPG, GIF, WebP), and documents (PDF, DOCX, PPTX, XLSX). "
         "Images and documents are processed for visual/text analysis. "
-        "Paths are workspace-relative."
+        "Paths are workspace-relative. Text lines are prefixed with "
+        "'NNNNN| ' line numbers — display-only metadata: NEVER include the "
+        "prefix in edit old_string/new_string or write content."
     ),
     concurrency_safe=True,
     read_only=True,
