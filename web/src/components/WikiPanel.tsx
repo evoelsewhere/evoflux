@@ -145,7 +145,7 @@ export function WikiPanel({ open, onClose }: WikiPanelProps) {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
             onClick={onClose}
-            className="fixed inset-0 z-40 bg-(--color-overlay)"
+            className="fixed inset-0 z-(--z-overlay) bg-(--color-overlay)"
           />
 
           <motion.div
@@ -153,7 +153,7 @@ export function WikiPanel({ open, onClose }: WikiPanelProps) {
             animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 }}
             exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: 8 }}
             transition={{ duration: prefersReducedMotion ? 0.01 : 0.18, ease: [0.4, 0, 0.2, 1] }}
-            className="fixed inset-x-0 bottom-0 top-[env(safe-area-inset-top,0px)] z-50 flex flex-col overflow-hidden border-(--color-border) bg-(--bg-page) shadow-2xl sm:left-1/2 sm:top-1/2 sm:inset-auto sm:h-[min(90vh,860px)] sm:w-[min(90vw,1180px)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:border"
+            className="fixed inset-x-0 bottom-0 top-[env(safe-area-inset-top,0px)] z-(--z-modal) flex flex-col overflow-hidden border-(--color-border) bg-(--bg-page) shadow-2xl sm:left-1/2 sm:top-1/2 sm:inset-auto sm:h-[min(90vh,860px)] sm:w-[min(90vw,1180px)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:border"
             role="dialog"
             aria-modal="true"
             aria-label="Wiki"
@@ -425,7 +425,7 @@ function WikiFileRow({
     </button>
     {actionsPoint && (
       <div
-        className="fixed inset-0 z-[70]"
+        className="fixed inset-0 z-(--z-lightbox)"
         onClick={() => setActionsPoint(null)}
         onContextMenu={(event) => {
           event.preventDefault()

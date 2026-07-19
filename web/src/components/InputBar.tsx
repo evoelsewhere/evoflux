@@ -1166,7 +1166,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
             id={slashMenuId}
             role="listbox"
             aria-label="Slash commands"
-            className="absolute bottom-full left-0 right-0 z-10 mb-1 max-h-64 overflow-y-auto rounded-lg border border-(--color-border-strong) bg-(--color-surface) shadow-md"
+            className="absolute bottom-full left-0 right-0 z-(--z-panel) mb-1 max-h-64 overflow-y-auto rounded-lg border border-(--color-border-strong) bg-(--color-surface) shadow-md"
           >
             {filteredSlashCommands.map((cmd) => {
               if (cmd.isSeparator) {
@@ -1225,7 +1225,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
             id={snippetMenuId}
             role="listbox"
             aria-label="Snippets"
-            className="absolute bottom-full left-0 right-0 z-10 mb-1 max-h-64 overflow-y-auto rounded-lg border border-(--color-border-strong) bg-(--color-surface) shadow-md"
+            className="absolute bottom-full left-0 right-0 z-(--z-panel) mb-1 max-h-64 overflow-y-auto rounded-lg border border-(--color-border-strong) bg-(--color-surface) shadow-md"
           >
             {filteredSnippetCommands.map((cmd, idx) => {
               const active = idx === clampedSnippetIndex
@@ -1265,7 +1265,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
             id={mentionMenuId}
             role="listbox"
             aria-label="Reference workspace file"
-            className="absolute bottom-full left-0 right-0 z-10 mb-1 max-h-64 overflow-y-auto rounded-lg border border-(--color-border-strong) bg-(--color-surface) shadow-md"
+            className="absolute bottom-full left-0 right-0 z-(--z-panel) mb-1 max-h-64 overflow-y-auto rounded-lg border border-(--color-border-strong) bg-(--color-surface) shadow-md"
           >
             {filteredMentions.map((ref, idx) => {
               const isDir = ref.type === 'directory'

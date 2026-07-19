@@ -384,7 +384,7 @@ export function SchedulerPanel({
             exit={{ opacity: 0 }}
             transition={{ duration: 0.18 }}
             onClick={onClose}
-            className="fixed inset-0 z-40 bg-(--color-overlay)"
+            className="fixed inset-0 z-(--z-overlay) bg-(--color-overlay)"
           />
 
           {/* Right-side drawer */}
@@ -394,7 +394,7 @@ export function SchedulerPanel({
             animate={prefersReducedMotion ? { opacity: 1 } : { x: 0, opacity: 1 }}
             exit={prefersReducedMotion ? { opacity: 0 } : { x: '100%', opacity: 0 }}
             transition={{ duration: prefersReducedMotion ? 0.01 : 0.22, ease: [0.4, 0, 0.2, 1] }}
-            className="fixed bottom-0 right-0 top-[env(safe-area-inset-top,0px)] z-50 flex w-full flex-col overflow-hidden border-l border-(--color-border) bg-(--bg-page) shadow-2xl sm:w-[460px]"
+            className="fixed bottom-0 right-0 top-[env(safe-area-inset-top,0px)] z-(--z-modal) flex w-full flex-col overflow-hidden border-l border-(--color-border) bg-(--bg-page) shadow-2xl sm:w-[460px]"
             role="dialog"
             aria-modal="true"
             aria-label="Scheduled tasks"

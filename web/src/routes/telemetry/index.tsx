@@ -214,7 +214,7 @@ function TraceDetailRoute({
         {selectedSpan && (
           isMobile ? (
             // Full-width overlay on mobile
-            <div className="absolute inset-0 z-10 overflow-y-auto bg-(--bg-card)">
+            <div className="absolute inset-0 z-(--z-panel) overflow-y-auto bg-(--bg-card)">
               <SpanDetailPanel
                 span={selectedSpan}
                 onClose={() => setSelectedSpanId(null)}

@@ -206,7 +206,7 @@ export function RepoGraphModal({ open, onOpenChange, project, job }: RepoGraphMo
           ) : null}
 
           {jobRunning && job && (
-            <div className="absolute inset-x-0 top-0 z-20 flex h-7 items-center gap-2 border-b border-(--color-border) bg-(--bg-card)/90 px-3 backdrop-blur-sm">
+            <div className="absolute inset-x-0 top-0 z-(--z-header) flex h-7 items-center gap-2 border-b border-(--color-border) bg-(--bg-card)/90 px-3 backdrop-blur-sm">
               <Sparkles size={12} className="shrink-0 animate-pulse text-(--accent-orange-text)" />
               <span className="shrink-0 text-xs font-medium text-(--color-text-muted)">
                 {job.phase === 'lexical' ? 'Lexical match' : job.phase === 'reattach' ? 'Re-attaching stale links' : 'Static match'}
@@ -219,7 +219,7 @@ export function RepoGraphModal({ open, onOpenChange, project, job }: RepoGraphMo
           )}
 
           {repos.length > 1 && (
-            <div className="absolute left-0 top-0 z-20 flex h-full w-52 flex-col gap-1 overflow-y-auto border-r border-(--color-border) bg-(--bg-card)/95 p-3 backdrop-blur-sm">
+            <div className="absolute left-0 top-0 z-(--z-header) flex h-full w-52 flex-col gap-1 overflow-y-auto border-r border-(--color-border) bg-(--bg-card)/95 p-3 backdrop-blur-sm">
               <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-(--color-text-subtle)">Repositories</p>
               {repos.map((repo) => {
                 const hidden = hiddenRepos.has(repo.workspace_id)
@@ -261,7 +261,7 @@ export function RepoGraphModal({ open, onOpenChange, project, job }: RepoGraphMo
           )}
 
           {selectedNode && (
-            <div className="absolute right-0 top-0 z-30 flex h-full w-80 flex-col gap-3 overflow-y-auto border-l border-(--color-border) bg-(--bg-card) p-4 shadow-xl">
+            <div className="absolute right-0 top-0 z-(--z-drawer) flex h-full w-80 flex-col gap-3 overflow-y-auto border-l border-(--color-border) bg-(--bg-card) p-4 shadow-xl">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-(--color-text)">{selectedNode.label}</p>

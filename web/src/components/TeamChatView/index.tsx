@@ -3,54 +3,49 @@
  *
  * Owns:
  *   - View-mode state (``agent`` / ``split``).
- *   - Side panels (``Sidebar``, ``WorkspaceFilesPanel``, inline task list,
- *     command palette).
- *   - The header (token totals, view toggle, panel toggles, agent tabs).
- *   - Mount-time SSE connect + session restore (carefully sequenced so
- *     ``loadSession`` runs *before* ``connectStream`` to avoid wiping
- *     replayed mid-turn state — see comment inside the init effect).
- *   - Keyboard shortcuts and the Command Palette assembly.
+ *   - The composition: stores/queries wiring, one sidebar per mode, the
+ *     ``AppShell`` frame, the view switch (AgentView / SplitGrid /
+ *     MonitorView), the ``FloatingInputBar`` and keyboard shortcuts.
  *
  * Delegates:
- *   - ``SplitGrid``       — fixed n-pane grid layout (split mode).
- *   - ``useTeamCommands`` — Command Palette command list.
+ *   - ``ChatTopbar``           — the header strip (agent switcher, loop /
+ *     workflow / task pills, ``AgentTopbar`` cluster).
+ *   - ``ChatTrailingPanels`` / ``ChatOverlayPanels`` — side panels and
+ *     fixed overlays (``components/chat/ChatPanels``).
+ *   - ``SplitGrid``            — fixed n-pane grid layout (split mode).
+ *   - ``useTeamSse``           — mount-time SSE connect + session restore
+ *     (carefully sequenced so ``loadSession`` runs *before*
+ *     ``connectStream`` to avoid wiping replayed mid-turn state — see the
+ *     comment inside the hook).
+ *   - ``useSlashCommandRegistry`` — slash / snippet / workflow command
+ *     registry and the submit-time interceptors.
+ *   - ``useMobileEdgeSwipes``  — mobile drawer edge-swipe gestures.
+ *   - ``useTeamCommands``      — Command Palette command list.
  *
  * Stream subscriptions are split into the smallest selectors that work
  * (one primitive per ``useTeamStore`` call) to avoid the infinite loop
  * that returning a freshly-built object on every render would trigger.
  */
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
 import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { FloatingTodosPanel } from '../FloatingTodosPanel'
 import { AgentView } from '../AgentView'
+import { AppShell } from '@/components/shell/AppShell'
+import { STORAGE_KEYS } from '@/lib/storage-keys'
 import { WorkspaceInfoCard } from '../WorkspaceInfoCard'
 import { ProjectInfoCard } from '../ProjectInfoCard'
 import { useProjectQuery } from '@/queries/useProjectsQuery'
 import { CodingSidebar } from '../CodingSidebar'
-import { CodingWorkspacePanel } from '../CodingWorkspacePanel'
-import { CodingFileViewerPanel } from '../CodingFileViewerPanel'
 import { Sidebar } from '../Sidebar'
-import { CommandPalette } from '../CommandPalette'
-import { WorkspaceFilesPanel } from '../WorkspaceFilesPanel'
-import { WikiPanel } from '../WikiPanel'
-import { SchedulerPanel } from '../SchedulerPanel'
-import { SessionScheduleIndicator } from '../SessionScheduleIndicator'
-import { ActivityPanel } from '../ActivityPanel'
-import { BrowserViewer } from '../BrowserViewer'
-import { TerminalPanel } from '../TerminalPanel'
-import { PlanActionBar, PlanReviewPanel } from '../PlanReviewPanel'
+import { ChatTopbar } from '@/components/chat/ChatTopbar'
+import { ChatOverlayPanels, ChatTrailingPanels } from '@/components/chat/ChatPanels'
 import { PermissionApprovalModal } from '../PermissionApprovalModal'
 import { AskUserQuestionModal } from '../AskUserQuestionModal'
 import { MonitorView } from '../MonitorView'
 import { useTodosQuery } from '@/queries/useTodosQuery'
 import { useSessionChapters } from '@/hooks/useSessionChapters'
-import { SessionTOC } from '@/components/SessionTOC'
 import { useProvidersQuery, useRegistryQuery, useTriggerDreamMutation } from '@/queries'
-import { useCommandsQuery } from '@/queries/useCommandsQuery'
-import { useSnippetsQuery } from '@/queries/useSnippetsQuery'
-import { renderCommand, renderSnippet, replyPlanApproval, resolveApiUrl, resolveTeamSession, setSessionPermissionMode, getTeamSession } from '@/api/client'
+import { replyPlanApproval, resolveTeamSession, setSessionPermissionMode, getTeamSession } from '@/api/client'
 import { useShallow } from 'zustand/react/shallow'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { useToastStore } from '@/stores/useToastStore'
@@ -60,38 +55,25 @@ import { useResizableWidth } from '@/hooks/use-resizable-width'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useTeamAgentsQuery } from '@/queries/useAgentsQuery'
 import { useFileRefsQuery } from '@/queries/useFileRefsQuery'
-import { AlertCircle, Brain, CalendarClock, Check, ChevronDown, FolderOpen, FolderCode, Menu, Minimize2, MoreHorizontal, PanelLeft, TerminalSquare, X } from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
+import { AlertCircle, FolderCode, X } from 'lucide-react'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { usePlatform } from '@/hooks/use-platform'
 import { useTauriDrag } from '@/hooks/use-tauri-drag'
 import { useWorkspaceFileWatcher } from '@/hooks/useWorkspaceFileWatcher'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { isAgentRole, type AgentRole } from '@/lib/agent-roles'
-import type { ActiveLoop, AgentStream } from '@/stores/useTeamStore'
-import { AgentTopbar } from '@/components/AgentTopbar'
-import { TaskProgressPill } from '@/components/TaskProgressPill'
-import { WorkflowProgressPill } from '@/components/WorkflowProgressPill'
-import { RunInputsDialog, type RunInputsRequest } from '@/components/RunInputsDialog'
-import { useWorkflowsQuery } from '@/queries/useWorkflowsQuery'
-import { runWorkflow } from '@/api/client'
-import { mapWorkflowArgs, parseWorkflowCommand } from '@/lib/parseWorkflowCommand'
-import { type InputBarHandle, type SlashCommand, type SnippetCommand } from '../InputBar'
+import type { AgentStream } from '@/stores/useTeamStore'
+import { PlanActionBar } from '../PlanReviewPanel'
+import { type InputBarHandle } from '../InputBar'
 import { FloatingInputBar } from '../FloatingInputBar'
-import type { AgentCapabilities as AgentCapabilitiesType, MessageAttachment, WorkspaceFileInfo } from '@/api/types'
+import type { AgentCapabilities as AgentCapabilitiesType, WorkspaceFileInfo } from '@/api/types'
 import { SplitGrid } from './SplitGrid'
 import { useTeamCommands } from './useTeamCommands'
+import { useTeamSse } from './useTeamSse'
+import { useSlashCommandRegistry } from './useSlashCommandRegistry'
+import { useMobileEdgeSwipes } from './useMobileEdgeSwipes'
 import { VIEW_MODES, type ViewMode } from './types'
 import { codingFocusId, saveLastCodingWorkspace, workspaceLabel } from '@/utils/workspace'
-import { TokenMeter } from '@/components/ui/token-meter'
 import { setTraySession } from '@/lib/tray'
-import { parseLoopCommand } from '@/lib/parseLoopCommand'
 
 interface TeamChatViewProps {
   sessionId?: string
@@ -107,19 +89,6 @@ type AgentStatus = AgentStream['status']
 const EMPTY_AGENT_STREAMS: Record<string, AgentStream> = {}
 const EMPTY_BLOCKS: AgentStream['blocks'] = []
 const EMPTY_REVERTED_MESSAGES: Array<{ role: string; content: string }> = []
-
-async function attachmentToFile(att: MessageAttachment): Promise<File | null> {
-  const url = resolveApiUrl(att.url)
-  if (!url) return null
-  const res = await fetch(url)
-  if (!res.ok) return null
-  const blob = await res.blob()
-  return new File(
-    [blob],
-    att.original_name ?? att.filename ?? 'attachment',
-    { type: att.media_type ?? blob.type },
-  )
-}
 
 export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codingSessionLoading = false }: TeamChatViewProps) {
   // A handful of child components/hooks (file refs, command palette,
@@ -140,13 +109,9 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const inputRef = useRef<InputBarHandle>(null)
   const mainColumnRef = useRef<HTMLDivElement>(null)
-  const mobileSidebarSwipeStartRef = useRef<{ x: number; y: number } | null>(null)
-  const mobileActionsSwipeStartRef = useRef<{ x: number; y: number } | null>(null)
   const [showFilesPanel, setShowFilesPanel] = useState(false)
   const [codingPanel, setCodingPanel] = useState<null | 'changed' | 'files'>(null)
   const [codingFileViewer, setCodingFileViewer] = useState<WorkspaceFileInfo | null>(null)
-  // Coding-mode sidebar is expanded by default so it's always visible on entry.
-  const [codingSidebarCollapsed, setCodingSidebarCollapsed] = useState(false)
   const [openWorkspaceDialogKey, setOpenWorkspaceDialogKey] = useState(0)
   const [showActivity, setShowActivity] = useState(false)
   const [permissionMode, setPermissionMode] = useState<import('@/api/types').PermissionMode>('auto')
@@ -168,13 +133,9 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
     }
   }, [isMobile])
 
-  const connectStream  = useTeamStore((s) => s.connectStream)
-  const loadTeamStatus = useTeamStore((s) => s.loadTeamStatus)
-  const loadSession    = useTeamStore((s) => s.loadSession)
   const sendMessage    = useTeamStore((s) => s.sendMessage)
   const continueTeam   = useTeamStore((s) => s.continueTeam)
   const beginResolvedSession = useTeamStore((s) => s.beginResolvedSession)
-  const consumeResolvedSessionReady = useTeamStore((s) => s.consumeResolvedSessionReady)
   const cycleActiveAgent = useTeamStore((s) => s.cycleActiveAgent)
   const setActiveAgent   = useTeamStore((s) => s.setActiveAgent)
   const setSessionModelSettings = useTeamStore((s) => s.setSessionModelSettings)
@@ -211,23 +172,24 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const leadName       = useTeamStore((s) => s.leadName)
   const activeLoop     = useTeamStore((s) => s.activeLoop)
   const activeWorkflowExecution = useTeamStore((s) => s.activeWorkflowExecution)
-  const [runInputsRequest, setRunInputsRequest] = useState<RunInputsRequest | null>(null)
   const isConnected    = useTeamStore((s) => s.isConnected)
   const isSessionLoading = useTeamStore((s) => s.isSessionLoading)
   // Utility modal state lives in useUIStore so only one can be open at a time.
   const wikiOpen = useUIStore((s) => s.wikiOpen)
-  const schedulerOpen = useUIStore((s) => s.schedulerOpen)
   const browserOpen = useUIStore((s) => s.browserOpen)
   const terminalOpen = useUIStore((s) => s.terminalOpen)
   const toggleWiki = useUIStore((s) => s.toggleWiki)
   const toggleScheduler = useUIStore((s) => s.toggleScheduler)
   const toggleTerminal = useUIStore((s) => s.toggleTerminal)
-  const closeWiki = useUIStore((s) => s.closeWiki)
-  const closeScheduler = useUIStore((s) => s.closeScheduler)
   const closeBrowser = useUIStore((s) => s.closeBrowser)
   const closeTerminal = useUIStore((s) => s.closeTerminal)
+  // Sidebar collapse is shell-level state shared by all three mode sidebars;
+  // AppShell renders the toggle button + Ctrl+B, these are the programmatic
+  // entry points (workspace CTAs, command palette, mobile hamburger).
+  const toggleSidebarCollapsed = useUIStore((s) => s.toggleSidebarCollapsed)
+  const setSidebarCollapsed = useUIStore((s) => s.setSidebarCollapsed)
   const terminalResize = useResizableWidth({
-    storageKey: 'oa.terminalPanel.width',
+    storageKey: STORAGE_KEYS.panels.terminal,
     defaultWidth: 480,
     minWidth: 320,
     maxWidth: 900,
@@ -357,94 +319,16 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
       }
     : undefined
 
-  const abortRef = useRef<AbortController | null>(null)
-
   // ── Init / reconnect ───────────────────────────────────────────────────────
 
-  useEffect(() => {
-    if (hasCodingWorkspace)
-      loadTeamStatus(agentWorkspace, mode === 'aim' ? 'aim' : 'coding')
-    if (isCodingSessionLoading) return
-    if (!sessionId) return
-    const store = useTeamStore.getState()
-    if (store.sessionId === sessionId && store.isConnected) return
-
-    // Reset (not just re-point) on every genuine switch — a bare
-    // `setState({ sessionId })` left `isConnected`/`agentStreams` holding
-    // the PREVIOUS session's data, so the skeleton below (gated on
-    // `sessionId && !isConnected`) never got a chance to render: the old
-    // session's stale messages kept showing with no loading feedback while
-    // `loadSession` fetched the new one in the background.
-    beginResolvedSession(sessionId, { mode, workspace: agentWorkspace })
-
-    // Clear the composer when switching sessions. The InputBar holds its
-    // draft text and pending files in local state, so without an explicit
-    // reset session A's typed-but-unsent message bleeds into session B.
-    inputRef.current?.setValue('')
-    inputRef.current?.setFiles([])
-
-    // Order matters: load prior-turn history FIRST, then open the SSE.
-    //
-    // Before this ordering, `connectStream()` started SSE replay (which
-    // writes synthetic thinking/message events into `currentBlocks`)
-    // while `loadSession()` was still inflight. When `loadSession`
-    // resolved it unconditionally set `currentBlocks = []`, wiping the
-    // replayed state. On mid-turn refresh the UI looked blank until the
-    // next live chunk arrived — often until `done`.
-    //
-    // Awaiting the DB read first means `loadSession` has already committed
-    // `blocks` and emptied `currentBlocks` by the time any SSE event is
-    // dispatched, so replay + live events accumulate cleanly.
-    let cancelled = false
-    ;(async () => {
-      if (!consumeResolvedSessionReady(sessionId, agentWorkspace)) {
-        await loadSession(sessionId, agentWorkspace)
-      }
-      if (cancelled) return
-      const controller = connectStream()
-      if (controller) abortRef.current = controller
-    })()
-
-    return () => {
-      cancelled = true
-      abortRef.current?.abort()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, agentWorkspace, hasCodingWorkspace, isCodingSessionLoading])
-
-  useEffect(() => {
-    if (!sessionId) return
-
-    const resumeStream = () => {
-      const state = useTeamStore.getState()
-      if (state.sessionId !== sessionId) return
-      if (state._workspace !== agentWorkspace) return
-      if (state.isConnected && !state._unloading) return
-
-      useTeamStore.setState({ _unloading: false })
-      if (state.isTeamWorking) {
-        void loadSession(sessionId, agentWorkspace).then(() => {
-          const current = useTeamStore.getState()
-          if (current.sessionId !== sessionId || current._workspace !== agentWorkspace) return
-          abortRef.current = connectStream()
-        })
-      } else {
-        abortRef.current = connectStream()
-      }
-    }
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') resumeStream()
-    }
-
-    window.addEventListener('pageshow', resumeStream)
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-    return () => {
-      window.removeEventListener('pageshow', resumeStream)
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, agentWorkspace])
+  const abortRef = useTeamSse({
+    sessionId,
+    agentWorkspace,
+    hasCodingWorkspace,
+    isCodingSessionLoading,
+    mode,
+    inputRef,
+  })
 
   // ── Commands / shortcuts ───────────────────────────────────────────────────
 
@@ -501,7 +385,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
         })
       }
     })()
-  }, [beginResolvedSession, isEmptyIdleSession, mode, navigate, queryClient, sessionIdState, sessionModel, sessionThinkingLevel, workspace])
+  }, [beginResolvedSession, isEmptyIdleSession, mode, navigate, queryClient, sessionIdState, sessionModel, sessionThinkingLevel, workspace, abortRef])
 
   const handleWorkspaceFiles = useCallback(() => {
     if (mode === 'coding') {
@@ -513,13 +397,13 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
           return next
         })
       } else {
-        setCodingSidebarCollapsed(false)
+        setSidebarCollapsed(false)
         setOpenWorkspaceDialogKey((value) => value + 1)
       }
       return
     }
     if (sessionIdState) setShowFilesPanel((value) => !value)
-  }, [isMobile, mode, workspace, sessionIdState])
+  }, [isMobile, mode, workspace, sessionIdState, setSidebarCollapsed])
 
   const handlePermissionModeChange = useCallback(async (newMode: import('@/api/types').PermissionMode) => {
     setPermissionMode(newMode)
@@ -539,13 +423,13 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
       setMobileSidebarOpen((value) => !value)
       return
     }
-    setCodingSidebarCollapsed((value) => !value)
-  }, [isMobile])
+    toggleSidebarCollapsed()
+  }, [isMobile, toggleSidebarCollapsed])
 
   const handleOpenWorkspaceDialog = useCallback(() => {
-    setCodingSidebarCollapsed(false)
+    setSidebarCollapsed(false)
     setOpenWorkspaceDialogKey((value) => value + 1)
-  }, [])
+  }, [setSidebarCollapsed])
 
   const handleDreamRun = useCallback(() => {
     dreamMutation.mutate(undefined, {
@@ -703,305 +587,28 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
     void setTraySession(label)
   }, [codingIdentityLabel, sessionTitle, isTeamWorking])
 
-  // Shell shortcut: start a message with `!` to run the rest as a shell command.
-  // Slash commands for the input bar (type / to trigger).
-  // Built-ins execute immediately on pick; user-defined commands are inserted
-  // into the textarea (``keepInputOpen``) so the user can append
-  // ``$ARGUMENTS`` before submitting.
-  const commandsQ = useCommandsQuery(agentWorkspace)
-  const snippetsQ = useSnippetsQuery(mode === 'coding' ? agentWorkspace : null)
-  const userCommandNames = useMemo(
-    () => new Set<string>((commandsQ.data?.commands ?? []).map((c) => c.name)),
-    [commandsQ.data],
-  )
-  const workflowsQ = useWorkflowsQuery(
-    mode === 'coding' || mode === 'aim' ? workspace : null,
-  )
-  // Approved + valid definitions matching the session scope (plan §9.1):
-  // forge sessions list forge-scope only; coding/aim sessions additionally
-  // list their own scope. Unapproved/invalid → omitted (gating by omission).
-  const runnableWorkflows = useMemo(
-    () =>
-      (workflowsQ.data?.workflows ?? []).filter(
-        (wf) =>
-          wf.approved &&
-          wf.valid &&
-          (wf.scope === 'forge' || wf.scope === mode),
-      ),
-    [workflowsQ.data, mode],
-  )
-  const slashCommands: SlashCommand[] = [
-    { id: 'stop', label: 'Stop', description: 'Stop all working agents' },
-    { id: 'continue', label: 'Continue', description: 'Continue the last assistant response' },
-    { id: 'compact', label: 'Compact', description: 'Summarize and compact this session' },
-    { id: 'shell', label: 'Shell', description: 'Run a shell command (prefix your command with !)' },
-    { id: 'undo', label: 'Undo', description: 'Undo the previous message' },
-    { id: 'redo', label: 'Redo', description: 'Restore all undone messages back to the live tip' },
-    { id: 'new', label: 'New Chat', description: 'Start a fresh team conversation' },
-    { id: 'init', label: 'Init', description: 'Create or update AGENTS.md for this project' },
-    ...(mode === 'coding'
-      ? [
-          { id: 'loop', label: 'loop <prompt>', displayName: 'loop', insertText: 'loop', description: 'Start a coding loop', keepInputOpen: true },
-          { id: 'loop:set', label: 'loop:set <limit>', displayName: 'loop:set', insertText: 'loop:set', description: 'Set coding loop budget: 5, 10, 20, or 50', keepInputOpen: true },
-          { id: 'loop:pause', label: 'loop:pause', displayName: 'loop:pause', description: 'Pause the active coding loop' },
-          { id: 'loop:resume', label: 'loop:resume', displayName: 'loop:resume', description: 'Resume the paused coding loop' },
-          { id: 'loop:stop', label: 'loop:stop', displayName: 'loop:stop', description: 'Stop the active coding loop' },
-        ]
-      : []),
-    ...runnableWorkflows.map((wf) => ({
-      id: `workflow-${wf.name}`,
-      label: `workflow ${wf.name}`,
-      displayName: `workflow ${wf.name}`,
-      insertText: `workflow ${wf.name}`,
-      description: wf.description || `Run the ${wf.name} workflow`,
-      category: 'workflow',
-      keepInputOpen: true,
-    })),
-    ...(commandsQ.data?.commands ?? []).map((c) => {
-      const displayName = c.name.replace('/', ':')
-      return {
-        id: c.name,
-        label: displayName,
-        displayName,
-        insertText: displayName,
-        description: c.description || `Custom command (${c.source})`,
-        category: 'command',
-        keepInputOpen: true,
-      }
-    }),
-  ]
-
-  const snippetCommands: SnippetCommand[] = (snippetsQ.data?.snippets ?? []).map((item) => ({
-    id: item.name,
-    label: item.name.replace('/', ':'),
-    description: item.description || `Snippet (${item.source})`,
-    category: 'snippet',
-  }))
-
-  const handleSnippetCommand = useCallback(async (id: string) => {
-    if (!agentWorkspace) return null
-    try {
-      const res = await renderSnippet(id, agentWorkspace)
-      return res.content
-    } catch (err) {
-      pushToast({
-        tone: 'error',
-        title: `Failed to render #${id.replace('/', ':')}`,
-        description: (err as Error).message,
-      })
-      return null
-    }
-  }, [agentWorkspace, pushToast])
-
-  const runLoopCommand = useCallback(async (command: string, prompt?: string) => {
-    const current = useTeamStore.getState()
-    await current.sendLoopCommand(command, prompt, {
-      mode,
-      workspace,
-      model: current.sessionId ? selectedModel || null : null,
-      thinkingLevel: current.sessionId ? selectedThinkingLevel || null : null,
-      fastMode: current.sessionFastMode,
-    })
-  }, [mode, workspace, selectedModel, selectedThinkingLevel])
-
-  const handleSlashCommand = useCallback((id: string) => {
-    switch (id) {
-      case 'stop':
-        useTeamStore.getState().stopTeam()
-        break
-      case 'continue':
-        useTeamStore.getState().continueTeam()
-        break
-      case 'compact':
-        useTeamStore.getState().compactTeam()
-        break
-      case 'shell':
-        inputRef.current?.setValue('! ')
-        inputRef.current?.focus()
-        break
-      case 'undo':
-        void useTeamStore.getState().undoTeam().then(async (response) => {
-          const message = response?.message
-          if (!message || message.role !== 'user' || message.is_summary) return
-          inputRef.current?.setValue(message.content ?? '')
-          const attachments = message.attachments ?? []
-          const files = (
-            await Promise.all(attachments.map((att) => attachmentToFile(att)))
-          ).filter((file): file is File => file !== null)
-          inputRef.current?.setFiles(files)
-          inputRef.current?.focus()
-        })
-        break
-      case 'redo':
-        void useTeamStore.getState().redoTeam().then(() => {
-          inputRef.current?.setValue('')
-          inputRef.current?.setFiles([])
-        })
-        break
-      case 'new':
-        handleNewSession()
-        break
-      case 'loop:pause':
-      case 'loop:resume':
-      case 'loop:stop':
-        void runLoopCommand(`/${id}`).then(() => {
-          const verb = id.slice('loop:'.length)
-          pushToast({ tone: 'success', title: verb === 'stop' ? 'Loop stopped' : `Loop ${verb}d` })
-        })
-        break
-      case 'init':
-        // Prompt body lives on the backend so it can be tweaked without a
-        // web rebuild and stays the single source of truth.
-        void renderCommand('init', '', agentWorkspace)
-          .then((res) =>
-            useTeamStore.getState().sendMessage(res.content, undefined, {
-              mode,
-              workspace: agentWorkspace,
-            }),
-          )
-          .catch((err: Error) =>
-            pushToast({
-              tone: 'error',
-              title: 'Failed to start /init',
-              description: err.message,
-            }),
-          )
-        break
-    }
-  }, [handleNewSession, runLoopCommand, mode, agentWorkspace, pushToast])
-
-  const tryHandleBuiltinLoopCommand = useCallback(async (content: string): Promise<boolean> => {
-    const parsed = parseLoopCommand(content)
-    switch (parsed.kind) {
-      case 'none':
-        return false
-      case 'unknown_subcommand':
-        return false
-      case 'start_missing_prompt':
-        pushToast({
-          tone: 'error',
-          title: '/loop needs a prompt',
-          description: 'Type the prompt after /loop, e.g. "/loop just say hi".',
-        })
-        return true
-      case 'set_invalid_limit':
-        pushToast({
-          tone: 'error',
-          title: '/loop:set needs a valid limit',
-          description: 'Use one of: 5, 10, 20, or 50.',
-        })
-        return true
-      case 'start':
-        await runLoopCommand(content, parsed.prompt)
-        return true
-      case 'set':
-        await runLoopCommand(`/loop:set ${parsed.limit}`)
-        pushToast({ tone: 'success', title: `Loop budget set to ${parsed.limit}` })
-        return true
-      case 'pause':
-      case 'resume':
-      case 'stop':
-        await runLoopCommand(`/loop:${parsed.kind}`)
-        pushToast({ tone: 'success', title: parsed.kind === 'stop' ? 'Loop stopped' : `Loop ${parsed.kind}d` })
-        return true
-    }
-  }, [pushToast, runLoopCommand])
-
-  const startWorkflowRun = useCallback(
-    async (name: string, values: Record<string, unknown>) => {
-      const sid = sessionIdState ?? sessionId
-      if (!sid) throw new Error('No session yet — send a message first.')
-      await runWorkflow(name, sid, values, agentWorkspace)
-    },
-    [sessionIdState, sessionId, agentWorkspace],
-  )
-
-  /** FE-intercepted /workflow (plan §9.1, F17): the raw slash text is never
-   *  sent as a chat message; positional args map onto declared inputs and
-   *  missing required ones open RunInputsDialog. */
-  const tryHandleWorkflowCommand = useCallback(
-    async (content: string): Promise<boolean> => {
-      const parsed = parseWorkflowCommand(content)
-      if (parsed.kind === 'none') return false
-      if (parsed.kind === 'missing_name') {
-        pushToast({
-          tone: 'error',
-          title: '/workflow needs a name',
-          description: 'e.g. "/workflow bug-triage TICKET-1".',
-        })
-        return true
-      }
-      const wf = runnableWorkflows.find((w) => w.name === parsed.name)
-      if (!wf) {
-        pushToast({
-          tone: 'error',
-          title: `No runnable workflow '${parsed.name}'`,
-          description: 'It may be unapproved, invalid, or out of scope here.',
-        })
-        return true
-      }
-      const mapped = mapWorkflowArgs(wf.inputs, parsed.args)
-      if (mapped.errors.length > 0) {
-        pushToast({ tone: 'error', title: 'Bad workflow arguments', description: mapped.errors.join('; ') })
-        return true
-      }
-      if (mapped.missing.length > 0) {
-        setRunInputsRequest({ name: wf.name, inputs: wf.inputs, prefilled: mapped.values })
-        return true
-      }
-      try {
-        await startWorkflowRun(wf.name, mapped.values)
-        pushToast({ tone: 'success', title: `${wf.name} started` })
-      } catch (err) {
-        pushToast({
-          tone: 'error',
-          title: `Failed to start ${wf.name}`,
-          description: err instanceof Error ? err.message : String(err),
-        })
-      }
-      return true
-    },
-    [runnableWorkflows, pushToast, startWorkflowRun],
-  )
-
-  /** If *content* starts with a known user-defined command, render server-side
-   *  and return the expanded body; otherwise return *content* unchanged. */
-  const expandUserCommand = useCallback(
-    async (content: string): Promise<string> => {
-      if (!content.startsWith('/')) return content
-      if (content.startsWith('/loop:') || content.startsWith('/loop ')) return content
-      // The command name may include slashes (nested folders), so we
-      // greedily match the longest known prefix instead of splitting on
-      // the first space. Tokens are separated by whitespace.
-      const rest = content.slice(1)
-      // Try progressively shorter prefixes — start with the full first
-      // line, peel back to the longest known command name.
-      const firstLine = rest.split('\n', 1)[0]
-      const tokens = firstLine.split(' ')
-      for (let n = tokens.length; n > 0; n--) {
-        const candidate = tokens.slice(0, n).join(' ').trim()
-        const commandName = candidate.replace(':', '/')
-        if (userCommandNames.has(commandName)) {
-          const argsHead = tokens.slice(n).join(' ')
-          const restOfMessage = rest.slice(firstLine.length)
-          const args = (argsHead + restOfMessage).trim()
-          try {
-            const res = await renderCommand(commandName, args, agentWorkspace)
-            return res.content
-          } catch (err) {
-            pushToast({
-              tone: 'error',
-              title: `Failed to render /${candidate}`,
-              description: (err as Error).message,
-            })
-            return content
-          }
-        }
-      }
-      return content
-    },
-    [userCommandNames, agentWorkspace, pushToast],
-  )
+  const {
+    slashCommands,
+    snippetCommands,
+    handleSlashCommand,
+    handleSnippetCommand,
+    tryHandleBuiltinLoopCommand,
+    tryHandleWorkflowCommand,
+    expandUserCommand,
+    startWorkflowRun,
+    runInputsRequest,
+    setRunInputsRequest,
+  } = useSlashCommandRegistry({
+    mode,
+    workspace,
+    agentWorkspace,
+    sessionId,
+    sessionIdState,
+    selectedModel,
+    selectedThinkingLevel,
+    inputRef,
+    handleNewSession,
+  })
 
   const cycleViewMode = useCallback(() => {
     setViewMode((v) => {
@@ -1034,7 +641,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
     v: isMobile ? undefined : cycleViewMode,
     f: handleWorkspaceFiles,
     p: isMobile ? undefined : () => setShowPalette((v) => !v),
-    b: mode === 'coding' ? handleCodingSidebarToggle : undefined,
+    // Ctrl+B (sidebar collapse) is registered once by AppShell.
     // Ctrl+M / Ctrl+S — open the wiki / scheduler drawers (state in useUIStore).
     m: toggleWiki,
     s: toggleScheduler,
@@ -1057,62 +664,21 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
     return () => window.removeEventListener('keydown', handler)
   }, [cycleActiveAgent])
 
-  const handleMobileSidebarSwipeStart = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
-    if ((os !== 'ios' && os !== 'android') || !isMobile || mobileSidebarOpen) return
-    const touch = event.touches[0]
-    if (!touch || touch.clientX > 24) return
-    mobileSidebarSwipeStartRef.current = { x: touch.clientX, y: touch.clientY }
-  }, [isMobile, mobileSidebarOpen, os])
-
-  const handleMobileSidebarSwipeMove = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
-    const start = mobileSidebarSwipeStartRef.current
-    if (!start || (os !== 'ios' && os !== 'android') || !isMobile || mobileSidebarOpen) return
-    const touch = event.touches[0]
-    if (!touch) return
-    const deltaX = touch.clientX - start.x
-    const deltaY = touch.clientY - start.y
-    if (deltaX > 56 && Math.abs(deltaY) < 36) {
-      if (mode === 'coding') {
-        setCodingPanel(null)
-        setCodingFileViewer(null)
-      }
-      setMobileSidebarOpen(true)
-      mobileSidebarSwipeStartRef.current = null
-    }
-  }, [isMobile, mobileSidebarOpen, mode, os])
-
-  const handleMobileSidebarSwipeEnd = useCallback(() => {
-    mobileSidebarSwipeStartRef.current = null
+  const closeCodingPanels = useCallback(() => {
+    setCodingPanel(null)
+    setCodingFileViewer(null)
   }, [])
 
-  const handleMobileActionsSwipeStart = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
-    if ((os !== 'ios' && os !== 'android') || !isMobile || showMobileActions) return
-    const touch = event.touches[0]
-    if (!touch || window.innerWidth - touch.clientX > 24) return
-    mobileActionsSwipeStartRef.current = { x: touch.clientX, y: touch.clientY }
-  }, [isMobile, os, showMobileActions])
-
-  const handleMobileActionsSwipeMove = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
-    const start = mobileActionsSwipeStartRef.current
-    if (!start || (os !== 'ios' && os !== 'android') || !isMobile || showMobileActions) return
-    const touch = event.touches[0]
-    if (!touch) return
-    const deltaX = touch.clientX - start.x
-    const deltaY = touch.clientY - start.y
-    if (deltaX < -56 && Math.abs(deltaY) < 36) {
-      setShowMobileActions(true)
-      mobileActionsSwipeStartRef.current = null
-    }
-  }, [isMobile, os, showMobileActions])
-
-  const handleMobileActionsSwipeEnd = useCallback(() => {
-    mobileActionsSwipeStartRef.current = null
-  }, [])
-
-  const loopLabel = activeLoop
-    ? `${activeLoop.paused ? 'Loop paused' : activeLoop.prompt ? 'Loop active' : 'Loop ready'}${activeLoop.prompt ? `: "${activeLoop.prompt}"` : ''}`
-    : null
-  const loopProgress = activeLoop ? `${activeLoop.used}/${activeLoop.limit}` : null
+  const { onTouchStart, onTouchMove, onTouchEnd, onTouchCancel } = useMobileEdgeSwipes({
+    os,
+    isMobile,
+    mode,
+    mobileSidebarOpen,
+    showMobileActions,
+    setMobileSidebarOpen,
+    setShowMobileActions,
+    closeCodingPanels,
+  })
 
   // While `loadSession` fetches history, the reset store has an (empty)
   // stream for the lead, so the AgentView branch would win and render its
@@ -1153,255 +719,168 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
+  // One sidebar instance per mode — the inactive mode's sidebar (and its
+  // queries) stays unmounted instead of being CSS-hidden. aim-chat has no
+  // in-chat sidebar at all (AimSidebar lives in the AIM layout).
+  const desktopSidebar = !isMobile && mode !== 'aim'
+    ? mode === 'coding'
+      ? (
+        <CodingSidebar
+          currentSessionId={sessionIdState || undefined}
+          workspace={workspace}
+          openWorkspaceDialogKey={openWorkspaceDialogKey}
+          onCommandPalette={() => setShowPalette(true)}
+          mobileOpen={false}
+          onMobileClose={() => {}}
+        />
+      )
+      : (
+        <Sidebar
+          currentSessionId={sessionIdState || undefined}
+          onCommandPalette={() => setShowPalette(true)}
+          onNewChat={handleNewSession}
+          mode={mode}
+          mobileOpen={false}
+          onMobileClose={() => {}}
+        />
+      )
+    : null
+  // On mobile the sidebar is a position:fixed overlay drawer; AppShell
+  // renders it inside the body row for z-stacking, as before.
+  const mobileSidebar = isMobile && mode !== 'aim'
+    ? mode === 'coding'
+      ? (
+        <CodingSidebar
+          currentSessionId={sessionIdState || undefined}
+          workspace={workspace}
+          openWorkspaceDialogKey={openWorkspaceDialogKey}
+          onCommandPalette={() => setShowPalette(true)}
+          mobileOpen={mobileSidebarOpen}
+          onMobileClose={() => setMobileSidebarOpen(false)}
+        />
+      )
+      : (
+        <Sidebar
+          currentSessionId={sessionIdState || undefined}
+          onCommandPalette={() => setShowPalette(true)}
+          onNewChat={handleNewSession}
+          mode={mode}
+          mobileOpen={mobileSidebarOpen}
+          onMobileClose={() => setMobileSidebarOpen(false)}
+        />
+      )
+    : null
+
+  // Side panels rendered after <main> inside AppShell's body row.
+  const trailingPanels = (
+    <ChatTrailingPanels
+      mode={mode}
+      workspace={workspace}
+      isMobile={isMobile}
+      sessionId={sessionIdState}
+      projectId={projectIdState}
+      isWorking={isTeamWorking}
+      onQuoteComment={handlePlanQuoteComment}
+      showActivity={showActivity}
+      onCloseActivity={() => setShowActivity(false)}
+      codingFileViewer={codingFileViewer}
+      onCloseCodingFileViewer={() => setCodingFileViewer(null)}
+      onAddFileComment={handleAddFileComment}
+      onSendToChat={handleSendToChat}
+      codingPanel={codingPanel}
+      onCodingFileSelect={handleCodingFileSelect}
+      onCloseCodingPanel={closeCodingPanels}
+      showFilesPanel={showFilesPanel}
+      onCloseFilesPanel={() => setShowFilesPanel(false)}
+      browserOpen={browserOpen}
+      onCloseBrowser={closeBrowser}
+      terminalOpen={terminalOpen}
+      onCloseTerminal={closeTerminal}
+      terminalResize={terminalResize}
+    />
+  )
+
+  // Modals / floating panels rendered after the body row (fixed-position —
+  // DOM order only matters for z-stacking). WikiPanel/SchedulerPanel live
+  // at the route root now (``RootOverlayPanels`` in __root.tsx) so they
+  // open in every mode.
+  const overlayPanels = (
+    <ChatOverlayPanels
+      showPalette={showPalette}
+      paletteCommands={paletteCommands}
+      onClosePalette={() => setShowPalette(false)}
+      runInputsRequest={runInputsRequest}
+      onCancelRunInputs={() => setRunInputsRequest(null)}
+      onRunInputs={async (values) => {
+        if (!runInputsRequest) return
+        await startWorkflowRun(runInputsRequest.name, values)
+        setRunInputsRequest(null)
+        pushToast({ tone: 'success', title: `${runInputsRequest.name} started` })
+      }}
+      todos={todos}
+    />
+  )
+
   return (
-    // h-dvh handles iOS Safari's dynamic toolbar.
-    <div
-      className="mobile-safe-shell mobile-viewport flex h-dvh flex-col bg-(--bg-page) md:flex-row md:gap-0.5 md:p-1"
-      onTouchStart={(event) => {
-        handleMobileSidebarSwipeStart(event)
-        handleMobileActionsSwipeStart(event)
-      }}
-      onTouchMove={(event) => {
-        handleMobileSidebarSwipeMove(event)
-        handleMobileActionsSwipeMove(event)
-      }}
-      onTouchEnd={() => {
-        handleMobileSidebarSwipeEnd()
-        handleMobileActionsSwipeEnd()
-      }}
-      onTouchCancel={() => {
-        handleMobileSidebarSwipeEnd()
-        handleMobileActionsSwipeEnd()
-      }}
+    <AppShell
+      sidebar={desktopSidebar}
+      mobileSidebar={mobileSidebar}
+      trailing={trailingPanels}
+      overlay={overlayPanels}
+      mainId="main"
+      mainRef={mainColumnRef}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      onTouchCancel={onTouchCancel}
+      header={
+        <ChatTopbar
+          dragHandlers={dragHandlers}
+          isMacOverlay={isMacOverlay}
+          isMobile={isMobile}
+          mode={mode}
+          workspace={workspace}
+          sessionId={sessionIdState}
+          sessionTitle={sessionTitle}
+          codingIdentityLabel={codingIdentityLabel}
+          activeAgent={activeAgent}
+          agentNames={agentNames}
+          agentStatuses={agentStatuses}
+          onSelectAgent={setActiveAgent}
+          effectiveViewMode={effectiveViewMode}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          activeLoop={activeLoop}
+          activeWorkflowExecution={activeWorkflowExecution}
+          onDismissWorkflowFailed={() =>
+            useTeamStore.setState((state) => {
+              state.activeWorkflowExecution = null
+            })
+          }
+          isTeamWorking={isTeamWorking}
+          chapters={chapters}
+          splitAgentCount={splitAgentNames.length}
+          headerTokens={headerTokens}
+          contextUsed={contextUsed}
+          summaryTriggerTokens={summaryTriggerTokens}
+          dreamRunning={dreamMutation.isPending}
+          terminalOpen={terminalOpen}
+          onToggleTerminal={toggleTerminal}
+          onOpenScheduler={toggleScheduler}
+          onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
+          onCodingSidebarToggle={handleCodingSidebarToggle}
+          codingPanelOpen={codingPanel !== null}
+          showFilesPanel={showFilesPanel}
+          onWorkspaceFiles={handleWorkspaceFiles}
+          onToggleFilesPanel={() => setShowFilesPanel((v) => !v)}
+          mobileActionsOpen={showMobileActions}
+          onMobileActionsOpenChange={setShowMobileActions}
+          onWiki={() => { toggleWiki(); closeMobileActionsMenu() }}
+          onScheduler={() => { toggleScheduler(); closeMobileActionsMenu() }}
+          onCompact={() => { useTeamStore.getState().compactTeam(); closeMobileActionsMenu() }}
+        />
+      }
     >
-      {/* Sidebar — full height on desktop. Both sidebars stay mounted to avoid
-          remount jitter on mode switch; CSS hides the inactive one. */}
-      {!isMobile && (
-        <>
-          <div className={mode === 'forge' ? 'contents' : 'hidden'}>
-            <Sidebar
-              currentSessionId={sessionIdState || undefined}
-              onCommandPalette={() => setShowPalette(true)}
-              onNewChat={handleNewSession}
-              mode={mode}
-              mobileOpen={false}
-              onMobileClose={() => {}}
-            />
-          </div>
-          <div className={mode === 'coding' ? 'contents' : 'hidden'}>
-            <CodingSidebar
-              currentSessionId={sessionIdState || undefined}
-              workspace={workspace}
-              onCollapse={() => setCodingSidebarCollapsed(true)}
-              openWorkspaceDialogKey={openWorkspaceDialogKey}
-              onCommandPalette={() => setShowPalette(true)}
-              desktopCollapsed={codingSidebarCollapsed}
-              mobileOpen={false}
-              onMobileClose={() => {}}
-            />
-          </div>
-        </>
-      )}
-
-      {/* Sidebar toggle — positioned between sidebar and main content on desktop.
-          aim has no in-chat sidebar (AimSidebar lives in the AIM layout). */}
-      {!isMobile && mode !== 'aim' && (
-        <div className="flex shrink-0 flex-col items-center pt-2">
-          <button
-            type="button"
-            onClick={() => {
-              if (mode === 'coding') {
-                handleCodingSidebarToggle()
-              } else {
-                window.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', ctrlKey: true, metaKey: false, bubbles: true }))
-              }
-            }}
-            aria-label="Toggle sidebar"
-            title="Toggle sidebar (Ctrl+B)"
-            className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-          >
-            <PanelLeft size={15} aria-hidden="true" />
-          </button>
-        </div>
-      )}
-
-      {/* Right column — header + main content */}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      {/* Header */}
-      <header
-        {...dragHandlers}
-        className={`mobile-safe-header relative z-20 flex shrink-0 items-center gap-1.5 px-1.5 py-1.5 ${
-          isMacOverlay && isMobile ? 'select-none' : ''
-        }`}
-        style={
-          isMacOverlay && isMobile
-            ? { paddingLeft: 'calc(var(--spacing-mac-traffic-inset) + 6px)' }
-            : undefined
-        }
-      >
-          {/* Mobile only — hamburger + title */}
-          {isMobile && (
-            <div className="flex flex-1 shrink-0 items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => {
-                  if (mode === 'coding') {
-                    handleCodingSidebarToggle()
-                  } else if (mode !== 'aim') {
-                    setMobileSidebarOpen(true)
-                  }
-                }}
-                aria-label="Toggle sidebar"
-                title="Toggle sidebar (Ctrl+B)"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-              >
-                <Menu size={15} aria-hidden="true" />
-              </button>
-              <div className="min-w-0 text-sm font-semibold text-(--color-text)">
-                <div className="truncate">{codingIdentityLabel ?? (sessionTitle || 'EvoFlux')}</div>
-                {activeAgent && <div className="truncate font-mono text-xs font-normal text-(--color-text-muted)">{activeAgent}</div>}
-              </div>
-            </div>
-          )}
-
-          {/* LEFT — agent switcher + loop status (desktop only) */}
-          <div className="flex min-w-0 flex-1 items-center gap-2 overflow-visible">
-            {effectiveViewMode === 'agent' && activeAgent && !isMobile && (
-              <ActiveAgentSwitcher
-                activeAgent={activeAgent}
-                agents={agentNames}
-                statuses={agentStatuses}
-                onSelect={setActiveAgent}
-              />
-            )}
-            {!isMobile && activeLoop && loopLabel && loopProgress && (
-              <LoopStatusPill
-                label={loopLabel}
-                progress={loopProgress}
-                compact={false}
-              />
-            )}
-            {!isMobile && activeWorkflowExecution && (
-              <WorkflowProgressPill
-                execution={activeWorkflowExecution}
-                onDismissFailed={() =>
-                  useTeamStore.setState((state) => {
-                    state.activeWorkflowExecution = null
-                  })
-                }
-              />
-            )}
-            {!isMobile && mode === 'coding' && (
-              <TaskProgressPill
-                isWorking={isTeamWorking}
-                chapters={chapters}
-              />
-            )}
-            {effectiveViewMode === 'split' && (
-              <span className="text-xs text-(--color-text-muted)">
-                Split · {splitAgentNames.length} agents
-              </span>
-            )}
-          </div>
-
-          {/* RIGHT — action cluster */}
-          <div className="flex shrink-0 items-center gap-0.5">
-          {isMobile ? (
-            <>
-              {headerTokens && (
-                <TokenMeter
-                  input={headerTokens.input}
-                  output={headerTokens.output}
-                  cached={headerTokens.cached}
-                  trigger={headerTokens.trigger}
-                  pulsing={headerTokens.pulsing}
-                  className="mr-0.5"
-                />
-              )}
-              <MobileHeaderAction
-                Icon={FolderOpen}
-                label={mode === 'coding' ? 'Workspace files' : 'Session files'}
-                onClick={mode === 'coding'
-                  ? workspace ? handleWorkspaceFiles : undefined
-                  : sessionIdState ? () => setShowFilesPanel((v) => !v) : undefined}
-                active={mode === 'coding' ? codingPanel !== null : showFilesPanel}
-                disabled={mode === 'coding' ? !workspace : !sessionIdState}
-              />
-              <MobileChatActions
-                open={showMobileActions}
-                onOpenChange={setShowMobileActions}
-                codingIdentityLabel={codingIdentityLabel}
-                activeAgent={activeAgent}
-                agents={agentNames}
-                statuses={agentStatuses}
-                onSelectAgent={setActiveAgent}
-                onWiki={() => { toggleWiki(); closeMobileActionsMenu() }}
-                onScheduler={() => { toggleScheduler(); closeMobileActionsMenu() }}
-                onCompact={() => { useTeamStore.getState().compactTeam(); closeMobileActionsMenu() }}
-                activeLoop={activeLoop}
-              />
-            </>
-          ) : (
-            <>
-            <SessionTOC sessionId={sessionIdState} />
-            <AgentTopbar
-              isMobile={false}
-              tokens={headerTokens}
-              contextBudget={contextUsed > 0 ? { used: contextUsed, max: summaryTriggerTokens } : undefined}
-              dreamRunning={dreamMutation.isPending}
-              viewMode={viewMode}
-              onViewModeChange={setViewMode}
-              terminalAction={{
-                Icon: TerminalSquare,
-                onClick: toggleTerminal,
-                title: 'AI Terminal (Ctrl+`)',
-                ariaLabel: 'Terminal',
-                indicator: terminalOpen,
-              }}
-              extraActions={
-                <SessionScheduleIndicator
-                  sessionId={sessionIdState}
-                  onOpenScheduler={toggleScheduler}
-                />
-              }
-            />
-            </>
-          )}
-          </div>
-      </header>
-
-      {/* Body — main content column. On mobile the Sidebar is
-          position:fixed (overlay drawer), rendered here for z-stacking. */}
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        {/* Mobile sidebar overlay. Both sidebars stay mounted; CSS hides inactive one. */}
-        {isMobile && (
-          <>
-            <div className={mode === 'forge' ? 'contents' : 'hidden'}>
-              <Sidebar
-                currentSessionId={sessionIdState || undefined}
-                onCommandPalette={() => setShowPalette(true)}
-                onNewChat={handleNewSession}
-                mode={mode}
-                mobileOpen={mobileSidebarOpen}
-                onMobileClose={() => setMobileSidebarOpen(false)}
-              />
-            </div>
-            <div className={mode === 'coding' ? 'contents' : 'hidden'}>
-              <CodingSidebar
-                currentSessionId={sessionIdState || undefined}
-                workspace={workspace}
-                onCollapse={() => setCodingSidebarCollapsed(true)}
-                openWorkspaceDialogKey={openWorkspaceDialogKey}
-                onCommandPalette={() => setShowPalette(true)}
-                desktopCollapsed={codingSidebarCollapsed}
-                mobileOpen={mobileSidebarOpen}
-                onMobileClose={() => setMobileSidebarOpen(false)}
-              />
-            </div>
-          </>
-        )}
-
-        <main id="main" ref={mainColumnRef} className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-[10px] bg-(--bg-page) shadow-sm">
         {setupRequired && (
           <div className="mx-3 mt-3 flex flex-col gap-3 rounded-xl border border-(--accent-blue)/35 bg-(--accent-blue-soft) p-3 text-sm text-(--color-text) shadow-sm sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 gap-3">
@@ -1621,408 +1100,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
             onPermissionModeChange={handlePermissionModeChange}
           />
         )}
-        </main>
-        <PlanReviewPanel onQuoteComment={handlePlanQuoteComment} />
-        <AnimatePresence>
-          {showActivity && (
-            <motion.aside
-              key="activity-panel"
-              initial={{ width: 0, opacity: 0 }}
-              animate={{ width: 280, opacity: 1 }}
-              exit={{ width: 0, opacity: 0 }}
-              transition={{ duration: 0.15 }}
-              className="flex h-full shrink-0 flex-col overflow-hidden border-l border-(--color-border) bg-(--bg-page)"
-            >
-              <div className="flex items-center justify-between border-b border-(--color-border) px-3 py-2">
-                <span className="text-xs font-semibold text-(--color-text-2)">Activity</span>
-                <button
-                  onClick={() => setShowActivity(false)}
-                  className="flex h-5 w-5 items-center justify-center rounded-md text-(--color-text-muted) hover:text-(--color-text)"
-                  aria-label="Close activity panel"
-                >
-                  <X size={12} />
-                </button>
-              </div>
-              <div className="min-h-0 flex-1">
-                <ActivityPanel />
-              </div>
-            </motion.aside>
-          )}
-        </AnimatePresence>
-        {mode === 'coding' && workspace && codingFileViewer !== null && (
-          <CodingFileViewerPanel
-            workspace={codingFileViewer.sourceWorkspace ?? workspace}
-            file={codingFileViewer}
-            mobile={isMobile}
-            onAddComment={handleAddFileComment}
-            onSendToChat={handleSendToChat}
-            onClose={() => setCodingFileViewer(null)}
-          />
-        )}
-        {mode === 'coding' && workspace && codingPanel !== null && (
-          <CodingWorkspacePanel
-            key={codingPanel}
-            workspace={workspace}
-            open
-            initialTab={codingPanel}
-            mobile={isMobile}
-            selectedFilePath={codingFileViewer?.path ?? null}
-            onFileSelect={handleCodingFileSelect}
-            onClose={() => {
-              setCodingPanel(null)
-              setCodingFileViewer(null)
-            }}
-            sessionId={sessionIdState}
-            projectId={projectIdState}
-            isWorking={isTeamWorking}
-          />
-        )}
-        {mode !== 'coding' && showFilesPanel && (
-          <WorkspaceFilesPanel
-            open
-            sessionId={sessionIdState}
-            onClose={() => setShowFilesPanel(false)}
-          />
-        )}
-        <BrowserViewer
-          sessionId={sessionIdState}
-          open={browserOpen}
-          onClose={closeBrowser}
-        />
-        {terminalOpen && (
-          <aside
-            className="relative flex h-full shrink-0 flex-col"
-            style={{ width: terminalResize.width }}
-          >
-            <div
-              onPointerDown={terminalResize.startResize}
-              onDoubleClick={terminalResize.resetWidth}
-              className="absolute -left-1 top-0 z-10 h-full w-2 cursor-col-resize"
-              aria-hidden="true"
-            />
-            <TerminalPanel
-              sessionId={sessionIdState}
-              mode={mode}
-              onClose={closeTerminal}
-            />
-          </aside>
-        )}
-      </div>
-
-      <WikiPanel open={wikiOpen} onClose={closeWiki} />
-      <SchedulerPanel
-        open={schedulerOpen}
-        onClose={closeScheduler}
-        contextMode={forgeOrCodingMode}
-        contextWorkspace={workspace ?? null}
-      />
-      {showPalette && (
-        <CommandPalette commands={paletteCommands} onClose={() => setShowPalette(false)} />
-      )}
-      {runInputsRequest && (
-        <RunInputsDialog
-          request={runInputsRequest}
-          onCancel={() => setRunInputsRequest(null)}
-          onRun={async (values) => {
-            await startWorkflowRun(runInputsRequest.name, values)
-            setRunInputsRequest(null)
-            pushToast({ tone: 'success', title: `${runInputsRequest.name} started` })
-          }}
-        />
-      )}
-      <FloatingTodosPanel todos={todos} />
-      </div>{/* end right column */}
-    </div>
-  )
-}
-
-// ─── Loop status ────────────────────────────────────────────────────────────
-
-function LoopStatusPill({
-  label,
-  progress,
-  compact,
-}: {
-  label: string
-  progress: string
-  compact: boolean
-}) {
-  return (
-    <div
-      className="mx-1 flex max-w-[46vw] shrink-0 items-center gap-1 rounded-full border border-(--color-border) bg-(--bg-card) px-2 py-1 text-xs text-(--color-text) shadow-sm md:max-w-sm"
-      title={`${label} · ${progress} turns`}
-    >
-      <span className="min-w-0 truncate font-medium">
-        {compact ? 'Loop' : label}
-      </span>
-      <span className="shrink-0 font-mono text-xs text-(--color-text-muted)">{progress}</span>
-    </div>
-  )
-}
-
-function MobileLoopStatusCard({ activeLoop }: { activeLoop: ActiveLoop }) {
-  const state = activeLoop.paused ? 'Paused' : activeLoop.prompt ? 'Active' : 'Ready'
-  return (
-    <div className="mb-1 rounded-md border border-(--color-border) bg-(--bg-card) px-2 py-2 text-sm">
-      <div className="flex items-center justify-between gap-2">
-        <span className="font-medium text-(--color-text)">Loop {state.toLowerCase()}</span>
-        <span className="font-mono text-xs text-(--color-text-muted)">{activeLoop.used}/{activeLoop.limit}</span>
-      </div>
-      {activeLoop.prompt && (
-        <p className="mt-1 line-clamp-2 text-xs text-(--color-text-muted)" title={activeLoop.prompt}>
-          {activeLoop.prompt}
-        </p>
-      )}
-    </div>
-  )
-}
-
-// ─── MobileChatActions ─────────────────────────────────────────────────────
-
-function MobileHeaderAction({
-  Icon,
-  label,
-  onClick,
-  active = false,
-  disabled = false,
-  badge = 0,
-}: {
-  Icon: LucideIcon
-  label: string
-  onClick?: () => void
-  active?: boolean
-  disabled?: boolean
-  badge?: number
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled || !onClick}
-      className={`relative flex h-9 w-9 items-center justify-center rounded-md transition-colors disabled:opacity-45 ${
-        active
-          ? 'bg-(--bg-key) text-(--color-text)'
-          : 'text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)'
-      }`}
-      aria-label={label}
-      title={label}
-    >
-      <Icon size={16} aria-hidden="true" />
-      {badge > 0 && (
-        <span className="absolute right-0.5 top-0.5 min-w-3.5 rounded-full bg-(--color-accent) px-1 text-center font-mono text-xs leading-3.5 text-(--bg-page)">
-          {badge > 9 ? '9+' : badge}
-        </span>
-      )}
-    </button>
-  )
-}
-
-interface MobileChatActionsProps {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  codingIdentityLabel: string | null
-  activeAgent: string | null
-  agents: string[]
-  statuses: Record<string, AgentStatus | undefined>
-  onSelectAgent: (agent: string) => void
-  onWiki: () => void
-  onScheduler: () => void
-  onCompact: () => void
-  activeLoop: ActiveLoop | null
-}
-
-function MobileChatActions({
-  open,
-  onOpenChange,
-  codingIdentityLabel,
-  activeAgent,
-  agents,
-  statuses,
-  onSelectAgent,
-  onWiki,
-  onScheduler,
-  onCompact,
-  activeLoop,
-}: MobileChatActionsProps) {
-  return (
-    <>
-      <button
-        type="button"
-        data-no-drag
-        onClick={() => onOpenChange(true)}
-        className="mr-1 flex h-9 w-9 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-        aria-label="Open chat actions"
-        title="Chat actions"
-      >
-        <MoreHorizontal size={17} aria-hidden="true" />
-      </button>
-
-      <AnimatePresence>
-        {open && (
-          <>
-            <motion.div
-              key="mobile-actions-backdrop"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.18 }}
-              className="mobile-safe-top fixed inset-x-0 bottom-0 z-30 bg-(--color-overlay) md:hidden"
-              aria-hidden="true"
-              onClick={() => onOpenChange(false)}
-            />
-            <motion.aside
-              key="mobile-actions-drawer"
-              initial={{ x: 280 }}
-              animate={{ x: 0 }}
-              exit={{ x: 280 }}
-              transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
-              className="mobile-safe-top fixed bottom-0 right-0 z-40 flex w-[min(272px,calc(100vw-2rem))] flex-col overflow-hidden border-l border-(--color-border) bg-(--bg-page) shadow-xl md:hidden"
-              role="dialog"
-              aria-modal="true"
-              aria-label="Chat actions"
-            >
-              <div className="border-b border-(--color-border) px-3 py-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-(--color-text)">
-                      {codingIdentityLabel ?? 'Chat actions'}
-                    </p>
-                    {activeAgent && (
-                      <p className="mt-1 truncate font-mono text-xs text-(--color-text-muted)">Active: {activeAgent}</p>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => onOpenChange(false)}
-                    className="rounded-md p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-                    aria-label="Close chat actions"
-                  >
-                    <X size={16} aria-hidden="true" />
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-2">
-                {activeLoop && (
-                  <>
-                    <div className="px-2 py-2 text-xs font-medium text-(--color-text-muted)">Loop</div>
-                    <MobileLoopStatusCard activeLoop={activeLoop} />
-                  </>
-                )}
-                {activeAgent && agents.length > 1 && (
-                  <>
-                    <div className="px-2 py-2 text-xs font-medium text-(--color-text-muted)">Agents</div>
-                    {agents.map((name) => (
-                      <button
-                        type="button"
-                        key={name}
-                        onClick={() => { onSelectAgent(name); onOpenChange(false) }}
-                        className="flex min-h-10 w-full items-center gap-2 rounded-md px-2 text-left text-sm transition-colors hover:bg-(--bg-key)"
-                      >
-                        <span className={`h-2 w-2 rounded-full ${dotClassFor(name, statuses[name])}`} aria-hidden="true" />
-                        <span className="min-w-0 flex-1 truncate font-mono text-xs">{name}</span>
-                        {name === activeAgent && <Check size={13} className="text-(--color-accent)" aria-hidden="true" />}
-                      </button>
-                    ))}
-                  </>
-                )}
-
-                <div className="px-2 py-2 text-xs font-medium text-(--color-text-muted)">Session</div>
-                <button type="button" onClick={onWiki} className="flex min-h-10 w-full items-center gap-2 rounded-md px-2 text-left text-sm transition-colors hover:bg-(--bg-key)">
-                  <Brain size={15} aria-hidden="true" />
-                  <span className="flex-1">Wiki</span>
-                </button>
-                <button type="button" onClick={onScheduler} className="flex min-h-10 w-full items-center gap-2 rounded-md px-2 text-left text-sm transition-colors hover:bg-(--bg-key)">
-                  <CalendarClock size={15} aria-hidden="true" />
-                  <span className="flex-1">Scheduler</span>
-                </button>
-                <button type="button" onClick={onCompact} className="flex min-h-10 w-full items-center gap-2 rounded-md px-2 text-left text-sm transition-colors hover:bg-(--bg-key)">
-                  <Minimize2 size={15} aria-hidden="true" />
-                  <span className="flex-1">Compact context</span>
-                </button>
-              </div>
-            </motion.aside>
-          </>
-        )}
-      </AnimatePresence>
-    </>
-  )
-}
-
-// ─── ActiveAgentSwitcher ───────────────────────────────────────────────────
-//
-// Single chip → dropdown of all members. Replaces the horizontal chip
-// carousel that didn't scale past ~4 agents. ``data-no-drag`` on the
-// trigger opts it out of ``useTauriDrag``'s interactive guard so the
-// chip-as-trigger doesn't race the window-drag handler.
-
-interface ActiveAgentSwitcherProps {
-  activeAgent: string
-  agents: string[]
-  statuses: Record<string, AgentStatus | undefined>
-  onSelect: (agent: string) => void
-}
-
-const DOT_BY_ROLE: Record<AgentRole, string> = {
-  EvoFlux: 'bg-(--color-marker-mint)',
-  executor: 'bg-(--color-marker-orange)',
-  consultant: 'bg-(--color-marker-blue)',
-  explorer: 'bg-(--color-text-muted)',
-}
-
-function dotClassFor(agent: string, status: AgentStatus | undefined): string {
-  if (status === 'error') return 'bg-(--color-error)'
-  if (status === 'working') return 'animate-pulse bg-(--color-accent)'
-  if (status === 'offline') return 'bg-(--color-text-subtle) opacity-50'
-  if (isAgentRole(agent)) return DOT_BY_ROLE[agent]
-  return 'bg-(--color-success)'
-}
-
-function ActiveAgentSwitcher({
-  activeAgent,
-  agents,
-  statuses,
-  onSelect,
-}: ActiveAgentSwitcherProps) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        data-no-drag
-        className="inline-flex h-9 min-w-0 shrink items-center gap-2 rounded-md px-2 font-mono text-xs leading-none font-semibold text-(--color-text) outline-none transition-all hover:bg-(--bg-key) focus-visible:ring-2 focus-visible:ring-(--color-accent)/40 sm:h-8 sm:px-3 sm:py-0"
-        aria-label={`Switch active agent (current: ${activeAgent})`}
-      >
-        <span
-          className={`h-2 w-2 shrink-0 rounded-full ${dotClassFor(activeAgent, statuses[activeAgent])}`}
-          aria-hidden="true"
-        />
-        <span className="min-w-0 truncate">{activeAgent}</span>
-        <ChevronDown size={12} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
-      </DropdownMenuTrigger>
-
-      {/* w-auto overrides w-(--anchor-width) so the menu sizes to its
-          content rather than the (narrow) trigger. */}
-      <DropdownMenuContent
-        align="start"
-        sideOffset={6}
-        className="w-auto max-w-[min(90vw,24rem)]"
-      >
-        {agents.map((name) => (
-          <DropdownMenuItem
-            key={name}
-            onClick={() => onSelect(name)}
-            className="flex min-w-40 items-center gap-2 font-mono text-xs whitespace-nowrap"
-          >
-            <span
-              className={`h-2 w-2 shrink-0 rounded-full ${dotClassFor(name, statuses[name])}`}
-              aria-hidden="true"
-            />
-            <span>{name}</span>
-            {name === activeAgent && (
-              <Check size={12} className="ml-auto shrink-0 text-(--color-accent)" aria-hidden="true" />
-            )}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    </AppShell>
   )
 }

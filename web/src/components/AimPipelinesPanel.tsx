@@ -17,6 +17,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
+import { STORAGE_KEYS } from '@/lib/storage-keys'
 import {
   Activity,
   AlertTriangle,
@@ -673,7 +674,7 @@ export function AimPipelinesPanel({
       {/* Post-run Discussion — TeamChatView is a global singleton; exactly one
           instance, mounted only while a finished run's transcript is open. */}
       {discussion && !monitorSession && !reportRun && (
-        <AimSidePanel storageKey="oa.aimDiscussion.width" defaultWidth={420}>
+        <AimSidePanel storageKey={STORAGE_KEYS.panels.aimDiscussion} defaultWidth={420}>
           <div className="flex items-center justify-between gap-2 border-b border-(--color-border) px-3 py-2">
             <p className="min-w-0 truncate text-xs font-medium text-(--color-text)">
               Discussion
@@ -703,7 +704,7 @@ export function AimPipelinesPanel({
       {/* §9.3 — Confirm dialog for convert pipelines (write to target repo) */}
       {confirmOpen && (
         <div
-          className="absolute inset-0 z-50 flex items-center justify-center bg-black/40"
+          className="absolute inset-0 z-(--z-modal) flex items-center justify-center bg-black/40"
           role="dialog"
           aria-modal="true"
         >
@@ -991,7 +992,7 @@ export function RunMonitorPanel({
   }
 
   return (
-    <AimSidePanel storageKey="oa.aimMonitor.width" defaultWidth={420}>
+    <AimSidePanel storageKey={STORAGE_KEYS.panels.aimMonitor} defaultWidth={420}>
       <div className="flex items-center justify-between gap-2 border-b border-(--color-border) px-3 py-2">
         <p className="min-w-0 truncate text-xs font-medium text-(--color-text)">
           Run monitor
@@ -1771,7 +1772,7 @@ function ReportPanel({
   const resolvedTitle = title ?? (detail ? `${detail.kind} · ${runId.slice(0, 8)}` : runId.slice(0, 8))
 
   return (
-    <AimSidePanel storageKey="oa.aimReport.width" defaultWidth={420}>
+    <AimSidePanel storageKey={STORAGE_KEYS.panels.aimReport} defaultWidth={420}>
       <div className="flex items-center justify-between gap-2 border-b border-(--color-border) px-3 py-2">
         <p className="min-w-0 truncate text-xs font-medium text-(--color-text)">
           Report

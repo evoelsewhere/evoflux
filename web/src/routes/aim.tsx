@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from '@tanstack/react-router'
-import { PanelLeft } from 'lucide-react'
 import { AimSidebar, AIM_FEATURES, loadLastAimProject, saveLastAimProject } from '@/components/AimSidebar'
 import { AimSetupWizard } from '@/components/AimSetupWizard'
 import { AimOverviewPanel } from '@/components/AimOverviewPanel'
@@ -8,13 +7,12 @@ import { AimPipelinesPanel } from '@/components/AimPipelinesPanel'
 import { AimKbPanel } from '@/components/AimKbPanel'
 import { AimRulebookPanel } from '@/components/AimRulebookPanel'
 import { CommandPalette, type Command } from '@/components/CommandPalette'
+import { AppShell } from '@/components/shell/AppShell'
 import { useAimProjectsQuery } from '@/queries/useAimProjectsQuery'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useUIStore } from '@/stores/useUIStore'
 import type { AimFeature } from '@/components/AimSidebar'
 import type { CodingProject } from '@/api/types'
-
-const AIM_SIDEBAR_COLLAPSE_KEY = 'oa-aim-sidebar-collapsed'
 
 /**
  * Layout for /aim, /aim/$projectId, /aim/$projectId/$feature and
@@ -22,9 +20,9 @@ const AIM_SIDEBAR_COLLAPSE_KEY = 'oa-aim-sidebar-collapsed'
  * (aim-mode-shell-ux-spec.md v2.2): AimSidebar navigation on the left,
  * the selected project feature as the main content. Deliberately NOT built
  * around TeamChatView — there is no chat surface in this mode; the only
- * chat entry point is the post-run Discussion panel (FE-3). The shell
- * chrome (outer flex + toggle + rounded shadowed main panel) mirrors
- * TeamChatView's so switching modes doesn't visibly change the frame.
+ * chat entry point is the post-run Discussion panel (FE-3). The frame
+ * (outer container, sidebar toggle, <main> card) is the shared AppShell,
+ * so switching modes doesn't visibly change the chrome.
  */
 function AimLayoutBase() {
   const params = useParams({ strict: false }) as Record<string, string>
@@ -37,29 +35,10 @@ function AimLayoutBase() {
   const navigate = useNavigate()
   const [wizardOpen, setWizardOpen] = useState(false)
   const [showPalette, setShowPalette] = useState(false)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(AIM_SIDEBAR_COLLAPSE_KEY) === 'true'
-    } catch {
-      return false
-    }
-  })
 
-  const toggleSidebar = useCallback(() => {
-    setSidebarCollapsed((prev) => {
-      const next = !prev
-      try {
-        localStorage.setItem(AIM_SIDEBAR_COLLAPSE_KEY, String(next))
-      } catch {
-        // ignore storage failures
-      }
-      return next
-    })
-  }, [])
-
-  // Ctrl+B / Ctrl+P — same shortcuts as the other two modes (shared hook).
+  // Ctrl+P — same palette shortcut as the other two modes (shared hook).
+  // Ctrl+B (sidebar collapse) is registered once by AppShell.
   useKeyboardShortcuts({
-    b: toggleSidebar,
     p: () => setShowPalette((v) => !v),
   })
 
@@ -85,10 +64,10 @@ function AimLayoutBase() {
     return [
       ...projectCommands,
       { id: 'new-project', group: 'AIM', label: 'New / Join Project', description: 'Set up a migration project', action: () => setWizardOpen(true) },
-      { id: 'toggle-sidebar', group: 'View', label: 'Toggle Sidebar', description: '', shortcut: 'Ctrl+B', action: toggleSidebar },
+      { id: 'toggle-sidebar', group: 'View', label: 'Toggle Sidebar', description: '', shortcut: 'Ctrl+B', action: () => useUIStore.getState().toggleSidebarCollapsed() },
       { id: 'go-settings', group: 'Settings', label: 'Open Settings', description: 'Manage agents & skills', action: () => useUIStore.getState().openSettings('agents') },
     ]
-  }, [projects, navigate, toggleSidebar])
+  }, [projects, navigate])
 
   const feature: AimFeature = runId
     ? 'pipelines'
@@ -126,53 +105,41 @@ function AimLayoutBase() {
   }, [projectId, project])
 
   return (
-    <div className="mobile-safe-shell mobile-viewport flex h-dvh flex-col bg-(--bg-page) md:flex-row md:gap-0.5 md:p-1">
-      <AimSidebar
-        activeProjectId={projectId}
-        activeFeature={projectId ? feature : undefined}
-        onNewProject={() => setWizardOpen(true)}
-        onCommandPalette={() => setShowPalette(true)}
-        collapsed={sidebarCollapsed}
-      />
-
-      {/* Sidebar toggle — same placement + affordance as the other modes. */}
-      <div className="flex shrink-0 flex-col items-center pt-2">
-        <button
-          type="button"
-          onClick={toggleSidebar}
-          aria-label="Toggle sidebar"
-          title="Toggle sidebar (Ctrl+B)"
-          className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-        >
-          <PanelLeft size={15} aria-hidden="true" />
-        </button>
-      </div>
-
-      <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        {!projectId || !project ? (
-          <EmptyState
-            loading={projectsQuery.isLoading}
-            hasProjects={(projects?.length ?? 0) > 0}
-            notFound={Boolean(projectId) && !projectsQuery.isLoading && !project}
-            onNewProject={() => setWizardOpen(true)}
+    <AppShell
+      sidebar={
+        <AimSidebar
+          activeProjectId={projectId}
+          activeFeature={projectId ? feature : undefined}
+          onNewProject={() => setWizardOpen(true)}
+          onCommandPalette={() => setShowPalette(true)}
+        />
+      }
+      overlay={
+        <>
+          <AimSetupWizard
+            open={wizardOpen}
+            onOpenChange={setWizardOpen}
+            onCreated={(id) =>
+              navigate({ to: '/aim/$projectId/$feature', params: { projectId: id, feature: 'overview' } })
+            }
           />
-        ) : (
-          <FeaturePanel project={project} feature={feature} runId={runId} />
-        )}
-      </main>
-
-      <AimSetupWizard
-        open={wizardOpen}
-        onOpenChange={setWizardOpen}
-        onCreated={(id) =>
-          navigate({ to: '/aim/$projectId/$feature', params: { projectId: id, feature: 'overview' } })
-        }
-      />
-
-      {showPalette && (
-        <CommandPalette commands={commands} onClose={() => setShowPalette(false)} />
+          {showPalette && (
+            <CommandPalette commands={commands} onClose={() => setShowPalette(false)} />
+          )}
+        </>
+      }
+    >
+      {!projectId || !project ? (
+        <EmptyState
+          loading={projectsQuery.isLoading}
+          hasProjects={(projects?.length ?? 0) > 0}
+          notFound={Boolean(projectId) && !projectsQuery.isLoading && !project}
+          onNewProject={() => setWizardOpen(true)}
+        />
+      ) : (
+        <FeaturePanel project={project} feature={feature} runId={runId} />
       )}
-    </div>
+    </AppShell>
   )
 }
 

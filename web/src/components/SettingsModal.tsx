@@ -119,7 +119,7 @@ export function SettingsModal() {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: prefersReducedMotion ? 0.01 : 0.15 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-(--color-overlay) p-4 md:p-8"
+          className="fixed inset-0 z-(--z-modal) flex items-center justify-center bg-(--color-overlay) p-4 md:p-8"
           role="dialog"
           aria-modal="true"
           aria-label="Settings"

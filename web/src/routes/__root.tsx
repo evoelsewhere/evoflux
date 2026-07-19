@@ -8,10 +8,47 @@ import { Home } from 'lucide-react'
 import { ToastStack } from '@/components/ToastStack'
 import { MacTitleBar } from '@/components/MacTitleBar'
 import { SettingsModal } from '@/components/SettingsModal'
+import { WikiPanel } from '@/components/WikiPanel'
+import { SchedulerPanel } from '@/components/SchedulerPanel'
 import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
 import { useHistorySwipeNavigation } from '@/hooks/use-history-swipe-navigation'
 import { useMobileViewportGuards } from '@/hooks/use-mobile-viewport'
 import { useDesktopCommands } from '@/lib/desktop-commands'
+import { useTeamStore } from '@/stores/useTeamStore'
+import { useUIStore } from '@/stores/useUIStore'
+import { STORAGE_KEYS } from '@/lib/storage-keys'
+
+/**
+ * RootOverlayPanels — fixed-position utility overlays that must open in
+ * every mode (forge / coding / aim), not just where a TeamChatView happens
+ * to be mounted. Open state lives in useUIStore (with mutual exclusion).
+ * The scheduler's create-form context used to come from TeamChatView
+ * props; the /coding routes prime ``useTeamStore._workspace`` from the URL
+ * (see routes/forge.tsx), so the same values are derivable here from the
+ * router + team store. Mounted before ToastStack/SettingsModal so the
+ * z-modal tie against SettingsModal keeps resolving the way it did when these
+ * panels lived inside TeamChatView (settings on top).
+ */
+function RootOverlayPanels() {
+  const wikiOpen = useUIStore((s) => s.wikiOpen)
+  const schedulerOpen = useUIStore((s) => s.schedulerOpen)
+  const closeWiki = useUIStore((s) => s.closeWiki)
+  const closeScheduler = useUIStore((s) => s.closeScheduler)
+  const location = useLocation()
+  const contextMode: 'forge' | 'coding' = location.pathname.startsWith('/coding') ? 'coding' : 'forge'
+  const codingWorkspace = useTeamStore((s) => s._workspace)
+  return (
+    <>
+      <WikiPanel open={wikiOpen} onClose={closeWiki} />
+      <SchedulerPanel
+        open={schedulerOpen}
+        onClose={closeScheduler}
+        contextMode={contextMode}
+        contextWorkspace={contextMode === 'coding' ? codingWorkspace : null}
+      />
+    </>
+  )
+}
 
 export function Root() {
   useMobileViewportGuards()
@@ -24,9 +61,8 @@ export function Root() {
   const location = useLocation()
 
   useEffect(() => {
-    const LAST_ROUTE_KEY = 'oa-last-route'
     if (window.location.pathname === '/' && window.location.search === '') {
-      const savedRoute = localStorage.getItem(LAST_ROUTE_KEY)
+      const savedRoute = localStorage.getItem(STORAGE_KEYS.lastRoute)
       if (savedRoute && savedRoute !== '/') {
         navigate({ to: savedRoute, replace: true })
       }
@@ -34,9 +70,8 @@ export function Root() {
   }, [navigate])
 
   useEffect(() => {
-    const LAST_ROUTE_KEY = 'oa-last-route'
     const fullPath = window.location.pathname + window.location.search + window.location.hash
-    localStorage.setItem(LAST_ROUTE_KEY, fullPath)
+    localStorage.setItem(STORAGE_KEYS.lastRoute, fullPath)
   }, [location])
 
   return (
@@ -45,6 +80,7 @@ export function Root() {
       <Suspense fallback={<RouteLoadingFallback />}>
         <Outlet />
       </Suspense>
+      <RootOverlayPanels />
       <ToastStack />
       <SettingsModal />
       {/* <ReactQueryDevtools initialIsOpen={false} /> */}

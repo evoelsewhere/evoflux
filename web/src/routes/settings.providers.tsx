@@ -1119,7 +1119,7 @@ function ModelRow({
       </button>
       {actionsPoint && (
         <div
-          className="fixed inset-0 z-[70]"
+          className="fixed inset-0 z-(--z-lightbox)"
           onClick={() => setActionsPoint(null)}
           onContextMenu={(event) => {
             event.preventDefault()
@@ -1438,7 +1438,7 @@ export function ProvidersSettingsPage() {
   return (
     <>
       {/* ── Page header ────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-3 border-b border(--color-border) bg-(--bg-page) px-4">
+      <header className="sticky top-0 z-(--z-panel) flex h-14 shrink-0 items-center gap-3 border-b border(--color-border) bg-(--bg-page) px-4">
         {isMobile && (
           <button
             type="button"

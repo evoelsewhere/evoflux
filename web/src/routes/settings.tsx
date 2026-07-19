@@ -68,7 +68,7 @@ export function SettingsLayout() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-(--color-overlay) p-4 md:p-8"
+      className="fixed inset-0 z-(--z-modal) flex items-center justify-center bg-(--color-overlay) p-4 md:p-8"
       role="dialog"
       aria-modal="true"
       aria-label="Settings"
@@ -115,11 +115,11 @@ export function SettingsLayout() {
           {isMobile && mobileSidebarOpen && (
             <>
               <div
-                className="fixed inset-0 z-30 bg-(--color-overlay)"
+                className="fixed inset-0 z-(--z-drawer) bg-(--color-overlay)"
                 onClick={() => setMobileSidebarOpen(false)}
                 aria-hidden="true"
               />
-              <div className="fixed bottom-0 left-0 top-0 z-40 flex">
+              <div className="fixed bottom-0 left-0 top-0 z-(--z-overlay) flex">
                 <SettingsSidebar />
               </div>
             </>

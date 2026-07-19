@@ -13,6 +13,8 @@
  * storage key and logic here in sync with that script.
  */
 
+import { STORAGE_KEYS } from '@/lib/storage-keys'
+
 export type AccentColor = 'default' | 'blue' | 'green' | 'orange' | 'pink' | 'purple' | 'red'
 export type FontFamily = 'inter' | 'system' | 'mono'
 export type FontScale = 0.9 | 1 | 1.1 | 1.2
@@ -23,7 +25,7 @@ export interface AppearanceSettings {
   fontScale: FontScale
 }
 
-export const APPEARANCE_STORAGE_KEY = 'oa-appearance'
+export const APPEARANCE_STORAGE_KEY = STORAGE_KEYS.appearance
 
 export const ACCENT_COLORS: readonly AccentColor[] = ['default', 'blue', 'green', 'orange', 'pink', 'purple', 'red']
 export const FONT_FAMILIES: readonly FontFamily[] = ['inter', 'system', 'mono']

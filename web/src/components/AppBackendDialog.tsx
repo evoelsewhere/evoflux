@@ -160,7 +160,7 @@ export function AppBackendDialog({ open, onOpenChange }: AppBackendDialogProps) 
 
   return (
     <div
-      className="mobile-safe-overlay fixed inset-0 z-50 flex items-center justify-center bg-(--color-overlay) p-4"
+      className="mobile-safe-overlay fixed inset-0 z-(--z-modal) flex items-center justify-center bg-(--color-overlay) p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="app-backend-title"

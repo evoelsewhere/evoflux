@@ -35,6 +35,14 @@ bun run build
 - Use TanStack Query for server state and Zustand stores for client state.
 - Keep UI mobile-first and consistent with existing Tailwind v4 patterns.
 
+## Shell structure
+
+- `src/components/shell/` — shared app chrome. `AppShell` owns the page frame (sidebar slot, `<main>` card, Ctrl+B); `SidebarShell` + `SidebarCard`/`SidebarFooter`/`SidebarSearchTrigger` own sidebar chrome; `SidePanel` owns resizable right-hand panels (incl. mobile overlay mode); `SessionRow`/`SessionContextMenu`/`EditSessionTitleDialog`/`CollapsibleSection` are the shared row/menu/section primitives. The three mode sidebars (`Sidebar`, `CodingSidebar`, `AimSidebar`) compose these — never hand-roll sidebar/panel chrome in a new view.
+- `src/components/chat/` — forge/coding chat chrome (`ChatTopbar`, `ChatPanels`); `TeamChatView/index.tsx` is the composition root, with logic hooks in `TeamChatView/` (`useTeamSse`, `useSlashCommandRegistry`, `useMobileEdgeSwipes`).
+- Sidebar collapse lives in `useUIStore.sidebarCollapsed`; pinned sessions in `stores/usePinnedSessions.ts`.
+- localStorage keys go through the `STORAGE_KEYS` registry in `src/lib/storage-keys.ts` — no raw string literals (exception: pre-paint scripts in `public/`, which can't import TS and must be kept in sync by hand).
+- z-index uses the `--z-*` token scale defined in `index.css` (`z-(--z-modal)` etc.) — no numeric z literals.
+
 ## Post-implementation checklist
 
 ```bash

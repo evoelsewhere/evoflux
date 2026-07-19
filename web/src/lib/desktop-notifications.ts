@@ -1,4 +1,5 @@
 import { getPlatform } from '@/hooks/use-platform'
+import { STORAGE_KEYS } from '@/lib/storage-keys'
 
 export type DesktopNotificationKind = 'assistant_done' | 'background_done' | 'reminder_fired'
 export type DesktopNotificationStatus = 'sent' | 'disabled' | 'unsupported' | 'permission-denied' | 'error'
@@ -14,8 +15,8 @@ export interface DesktopNotificationResult {
   message: string
 }
 
-const ENABLED_KEY = 'oa-desktop-notifications-enabled'
-const SOUND_ENABLED_KEY = 'oa-desktop-notifications-sound-enabled'
+const ENABLED_KEY = STORAGE_KEYS.desktopNotifications.enabled
+const SOUND_ENABLED_KEY = STORAGE_KEYS.desktopNotifications.soundEnabled
 
 let permissionRequested = false
 

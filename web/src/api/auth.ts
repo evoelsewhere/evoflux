@@ -21,6 +21,7 @@
  */
 
 import { apiBaseUrl } from './base-url'
+import { STORAGE_KEYS } from '@/lib/storage-keys'
 
 declare global {
   interface Window {
@@ -29,7 +30,7 @@ declare global {
 }
 
 const TOKEN_KEY = '__OAD_TOKEN__'
-const ACCESS_KEY_STORAGE = 'EvoFlux.accessKey'
+const ACCESS_KEY_STORAGE = STORAGE_KEYS.accessKey
 
 export function getAccessKey(): string | undefined {
   if (typeof window === 'undefined') return undefined
