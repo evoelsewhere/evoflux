@@ -130,6 +130,51 @@ class TestOpenAIUsage:
         )
         assert u.total_tokens == 2
 
+    def test_prompt_tokens_details_null_audio_tokens(self):
+        """Providers that send explicit null for audio_tokens should not crash."""
+        d = OpenAIPromptTokensDetails.model_validate(
+            {"cached_tokens": 5, "audio_tokens": None}
+        )
+        assert d.cached_tokens == 5
+        assert d.audio_tokens == 0
+
+    def test_completion_tokens_details_null_fields(self):
+        """Providers that send explicit null for detail fields should not crash."""
+        d = OpenAICompletionTokensDetails.model_validate(
+            {
+                "reasoning_tokens": 10,
+                "audio_tokens": None,
+                "accepted_prediction_tokens": None,
+                "rejected_prediction_tokens": None,
+            }
+        )
+        assert d.reasoning_tokens == 10
+        assert d.audio_tokens == 0
+        assert d.accepted_prediction_tokens == 0
+        assert d.rejected_prediction_tokens == 0
+
+    def test_stream_chunk_with_null_audio_tokens(self):
+        """The original error: streaming chunk with usage.prompt_tokens_details.audio_tokens=null."""
+        data = {
+            "id": "chatcmpl-x",
+            "created": 1,
+            "model": "gpt-4o",
+            "choices": [],
+            "usage": {
+                "prompt_tokens": 10,
+                "completion_tokens": 5,
+                "total_tokens": 15,
+                "prompt_tokens_details": {"cached_tokens": 3, "audio_tokens": None},
+                "completion_tokens_details": {"reasoning_tokens": 2, "audio_tokens": None},
+            },
+        }
+        chunk = OpenAIStreamChunk.model_validate(data)
+        assert chunk.usage is not None
+        assert chunk.usage.prompt_tokens_details is not None
+        assert chunk.usage.prompt_tokens_details.audio_tokens == 0
+        assert chunk.usage.completion_tokens_details is not None
+        assert chunk.usage.completion_tokens_details.audio_tokens == 0
+
 
 # ---------------------------------------------------------------------------
 # Non-streaming response schemas
