@@ -18,6 +18,7 @@ README.md Maintainer notes; not copied by init
 - `EvoFlux init` rewrites agent `model:` values to the user's selected provider/model.
 - Keep skill directories self-contained with any helper scripts/templates they need.
 - Keep agent prompt bodies tool-agnostic; runtime capabilities can change.
+- The wheel build bundles this tree as `app/_seed/` (`force-include` in `pyproject.toml`) so pip/uv installs seed offline; the repo `seed/` still wins in dev checkouts.
 
 ## Checks
 
