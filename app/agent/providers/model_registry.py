@@ -283,6 +283,46 @@ def _features_from_model(model: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _thinking_from_model(model: dict[str, Any]) -> dict[str, list[str]] | None:
+    """Map models.dev ``reasoning_options`` to ``thinking.levels``.
+
+    - ``effort`` — its ``values`` already use EvoFlux's level vocabulary
+      (minimal/low/medium/high/xhigh/max), so they pass through directly.
+    - ``toggle`` — ``["none"]``: the model reasons by default and can only be
+      turned off, which the UI renders as Default/None.
+    - ``budget_tokens`` — skipped: level→budget translation is provider-specific
+      (only the anthropic handler implements it), so those models stay on
+      curated/provider data instead of live normalization.
+    - explicit ``[]`` — ``{"levels": []}``: models.dev asserts "no reasoning
+      controls", which is authoritative over stale curated entries on merge.
+    - missing key or ``null`` — ``None``: unknown, so any curated fallback
+      data survives the merge.
+    """
+    if "reasoning_options" not in model:
+        return None
+    options = model["reasoning_options"]
+    if options is None or not isinstance(options, list):
+        return None
+    if not options:
+        return {"levels": []}
+    for option in options:
+        if not isinstance(option, dict) or option.get("type") != "effort":
+            continue
+        values = option.get("values")
+        if (
+            isinstance(values, list)
+            and values
+            and all(isinstance(v, str) for v in values)
+        ):
+            return {"levels": list(dict.fromkeys(values))}
+    if any(
+        isinstance(option, dict) and option.get("type") == "toggle"
+        for option in options
+    ):
+        return {"levels": ["none"]}
+    return None
+
+
 def _normalize_models_dev(data: Any, *, include_plugins: bool = True) -> ModelRegistry:
     if not isinstance(data, dict):
         return {}
@@ -306,6 +346,7 @@ def _normalize_models_dev(data: Any, *, include_plugins: bool = True) -> ModelRe
             limits = _limits_from_model(model)
             cost = _cost_from_model(model)
             features = _features_from_model(model)
+            thinking = _thinking_from_model(model)
             if capabilities:
                 entry["capabilities"] = capabilities
             if limits:
@@ -314,6 +355,8 @@ def _normalize_models_dev(data: Any, *, include_plugins: bool = True) -> ModelRe
                 entry["cost"] = cost
             if features:
                 entry["features"] = features
+            if thinking is not None:
+                entry["thinking"] = thinking
             if entry:
                 registry[f"{provider_id}:{model_id}".lower()] = entry
     return registry
