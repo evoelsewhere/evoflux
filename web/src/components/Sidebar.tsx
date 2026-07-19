@@ -44,6 +44,7 @@ import {
   type SessionMenuAnchor,
 } from "@/components/shell/SessionContextMenu";
 import { EditSessionTitleDialog } from "@/components/shell/EditSessionTitleDialog";
+import { WebBridgeNavItem } from "@/components/shell/WebBridgeNavItem";
 import type { SessionResponse } from "@/api/types";
 
 interface DateGroup {
@@ -368,6 +369,7 @@ export function Sidebar({
             collapsed
             onClick={toggleScheduler}
           />
+          <WebBridgeNavItem collapsed />
         </nav>
       </div>
 
@@ -436,6 +438,7 @@ export function Sidebar({
               kbd="^S"
               onClick={toggleScheduler}
             />
+            <WebBridgeNavItem />
           </nav>
         </div>
 
@@ -525,6 +528,7 @@ export function Sidebar({
           kbd="^S"
           onClick={() => { toggleScheduler(); onMobileClose?.(); }}
         />
+        <WebBridgeNavItem />
       </nav>
 
       {/* Sessions */}

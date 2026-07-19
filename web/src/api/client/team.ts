@@ -38,6 +38,7 @@ import type {
   ProjectReindexStartedResponse,
   ProjectCodeSearchResponse,
   ProjectCodeGraphData,
+  WebBridgeStatusResponse,
 } from '../types'
 
 export async function postTeamChat(
@@ -549,6 +550,14 @@ export interface BrowserSessionResponse {
 export async function getBrowserSession(sessionId: string): Promise<BrowserSessionResponse> {
   const res = await fetch(`${apiBaseUrl()}/team/${encodeURIComponent(sessionId)}/browser`)
   if (!res.ok) await parseDetailOrThrow(res, 'getBrowserSession')
+  return res.json()
+}
+
+// ── WebBridge ───────────────────────────────────────────────────────────────
+
+export async function getWebBridgeStatus(): Promise<WebBridgeStatusResponse> {
+  const res = await fetch(`${apiBaseUrl()}/team/webbridge/status`)
+  if (!res.ok) await parseDetailOrThrow(res, 'getWebBridgeStatus')
   return res.json()
 }
 
