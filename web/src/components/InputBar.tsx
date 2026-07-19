@@ -151,6 +151,8 @@ interface InputBarProps {
   filesDisabled?: boolean
   onActivity?: () => void
   activityActive?: boolean
+  onTerminal?: () => void
+  terminalActive?: boolean
   permissionMode?: import('@/api/types').PermissionMode
   onPermissionModeChange?: (mode: import('@/api/types').PermissionMode) => void
 }
@@ -213,6 +215,8 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   filesDisabled,
   onActivity,
   activityActive,
+  onTerminal,
+  terminalActive,
   permissionMode,
   onPermissionModeChange,
 }, ref) {
@@ -238,6 +242,20 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   const dragCounterRef = useRef(0)
   const isMobile = useIsMobile()
   const prefersReducedMotion = useReducedMotion()
+
+  // Terminal → composer handoff: the AI Terminal's "Send to agent" dispatches
+  // this event so selected output lands in the chat draft, without coupling
+  // the terminal to the composer's internal state.
+  useEffect(() => {
+    const onInsert = (e: Event) => {
+      const text = (e as CustomEvent<{ text?: string }>).detail?.text
+      if (!text) return
+      setValue((v) => (v ? `${v}\n${text}` : text))
+      textareaRef.current?.focus()
+    }
+    window.addEventListener('evoflux:composer-insert', onInsert)
+    return () => window.removeEventListener('evoflux:composer-insert', onInsert)
+  }, [])
 
   const history = useMemo(() => {
     const seen = new Set<string>()
@@ -1402,6 +1420,17 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                       className={cn(actionBtnClass, activityActive && 'bg-(--bg-key) text-(--color-text)')}
                     >
                       <Activity size={14} aria-hidden="true" />
+                    </button>
+                  )}
+                  {onTerminal && (
+                    <button
+                      type="button"
+                      onClick={(e) => { stopClick(e); onTerminal() }}
+                      aria-label="Terminal"
+                      title="AI Terminal (Ctrl+`)"
+                      className={cn(actionBtnClass, terminalActive && 'bg-(--bg-key) text-(--color-text)')}
+                    >
+                      <Terminal size={14} aria-hidden="true" />
                     </button>
                   )}
 
