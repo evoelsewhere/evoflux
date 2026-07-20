@@ -168,7 +168,7 @@ fn configure_window_chrome(
     }
     #[cfg(target_os = "windows")]
     {
-        builder.decorations(false)
+        builder
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
