@@ -50,7 +50,12 @@ from app.agent.mode.team.hooks.team_inbox import TeamInboxHook
 from app.agent.mode.team.hooks.team_prompt import AgentTeamProtocolHook
 from app.agent.hooks.tool_result_offload import ToolResultOffloadHook
 from app.agent.mode.team.shared_state import format_state_snapshot
-from app.agent.mode.team.tier_policy import denied_tools_for_tier, resolve_member_tier
+from app.agent.mode.team.tier_policy import (
+    WEBBRIDGE_SESSION_TAG,
+    denied_tools_for_tier,
+    resolve_member_tier,
+    webbridge_session_excluded_tools,
+)
 from app.agent.plugins.role import reset_role, set_role
 from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
 from app.core.paths import session_workspace_dir
@@ -155,6 +160,10 @@ LEAD_PROTOCOL = """\
    - When ALL assigned members have reported final results, respond to the user with the full synthesised answer.
    - **Sanity-check claims before promising "done" to the user.** When a member says they wrote a file or changed state, verify with a cheap read (`ls`, `read`) when feasible. Members can hallucinate success after a failed tool call — one verification beats one wrong answer.
 5. After delivering the answer, **keep members alive by default.** A live instance carries warm context and prompt-cache state, so reusing it on the next related turn is faster and cheaper than dismiss-then-respawn — message the same live handle again rather than recreating it. Dismiss (`team_manage(action='dismiss', members=['<handle>'])`) only when an instance is clearly finished for the rest of the session, or the roster is cluttered with idle members you won't reuse. Dismissal preserves history on disk, so you can still restore a dismissed handle with `team_manage(action='spawn', members=['<blueprint>#<n>'])` if a later turn revives that work."""
+
+WEBBRIDGE_SESSION_PROMPT = """\
+## WebBridge session
+This is a WebBridge session. The ONLY way you may interact with the web is the `webbridge` tool, which drives the user's real browser. browser_use/web_search/web_fetch are unavailable — do not suggest them. If the extension is not connected, ask the user to connect it via the WebBridge icon in the sidebar."""
 
 MEMBER_COMMUNICATION_RULES = """\
 ## Communication protocol
@@ -1042,11 +1051,16 @@ class TeamMemberBase(abc.ABC):
         injected = self._team.get_injected_tools(self.name)
 
         # Resolve tier-based tool restrictions for non-lead members.
-        # The lead always has full tool access.
+        # The lead always has full tool access — except in a WebBridge-tagged
+        # session, where it is scoped to the webbridge tool plus a small
+        # user-facing allowlist (see tier_policy.webbridge_session_excluded_tools),
+        # so the web can only be driven through the user's real browser.
         tier_excluded: frozenset[str] | None = None
         if self._role_label == "member":
             member_tier = resolve_member_tier(self.name)
             tier_excluded = denied_tools_for_tier(member_tier) or None
+        elif WEBBRIDGE_SESSION_TAG in self._team.session_tags:
+            tier_excluded = webbridge_session_excluded_tools(self.agent._tools)
 
         # Surface team routing context to tools via state.metadata.  The
         # schedule tool reads these as injected args so the LLM never has
@@ -1418,6 +1432,11 @@ class TeamLead(TeamMemberBase):
             LEAD_MESSAGE_FORMAT,
             LEAD_PROTOCOL,
         ]
+        if WEBBRIDGE_SESSION_TAG in team.session_tags:
+            # Tagged session (created from the WebBridge UI): the lead's tools
+            # are already scoped to webbridge-only via excluded_tools — tell it
+            # why, so it doesn't try (or suggest) browser_use/web_search.
+            sections.append(WEBBRIDGE_SESSION_PROMPT)
         protocol = "\n\n".join(sections)
         return f"{base_prompt}\n\n---\n\n{protocol}"
 

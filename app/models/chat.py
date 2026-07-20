@@ -136,6 +136,23 @@ class ChatSession(SQLModel, table=True):
             nullable=True,
         ),
     )
+    # Session tags (e.g. ["webbridge"]) — set at creation by the resolve
+    # endpoint, matched by tag-SET equality (order-insensitive), and used to
+    # scope the lead's tool access (a "webbridge"-tagged session may only
+    # drive the web through the webbridge tool). NULL = untagged session.
+    # none_as_null=True: the resolve endpoint filters on SQL NULL, so an
+    # untagged row must not persist as the JSON literal 'null' (the default
+    # JSON-type behaviour — revert/extra have it too, but they are never
+    # queried by value).
+    tags: list[str] | None = Field(
+        default=None,
+        sa_column=Column(
+            JSON(none_as_null=True).with_variant(
+                pg.JSONB(none_as_null=True), "postgresql"
+            ),
+            nullable=True,
+        ),
+    )
     created_at: datetime = Field(
         default_factory=_utcnow,
         sa_column=Column(TZDateTime(), nullable=False),

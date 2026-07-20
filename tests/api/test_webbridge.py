@@ -10,6 +10,9 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import shutil
+import subprocess
+import sys
 import time
 
 import pytest
@@ -431,3 +434,137 @@ async def test_tool_aggregates_action_errors(
     assert "Click failed: boom" in result
     assert "Typed 3 characters" in result
     assert "\n---\n" in result
+
+
+# ── POST /launch-browser ─────────────────────────────────────────────────────
+
+
+class _PopenRecorder:
+    """subprocess.Popen stand-in that records argv/kwargs, never spawns."""
+
+    instances: list[dict] = []
+
+    def __init__(self, argv, **kwargs):
+        _PopenRecorder.instances.append({"argv": list(argv), "kwargs": kwargs})
+
+
+@pytest.fixture
+def ext_dir(tmp_path, monkeypatch: pytest.MonkeyPatch):
+    """Point the extension-dir override at a real (empty) tmp directory."""
+    d = tmp_path / "webbridge-ext"
+    d.mkdir()
+    monkeypatch.setenv("EVOFLUX_WEBBRIDGE_EXTENSION_DIR", str(d))
+    return d
+
+
+class TestLaunchBrowser:
+    @pytest.fixture(autouse=True)
+    def _record_popen(self, monkeypatch: pytest.MonkeyPatch):
+        _PopenRecorder.instances = []
+        monkeypatch.setattr(subprocess, "Popen", _PopenRecorder)
+
+    def test_darwin_argv(self, client, ext_dir, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr(sys, "platform", "darwin")
+        resp = client.post(f"{_PREFIX}/launch-browser")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        assert data["browser"] == "chrome"
+        # Caveats the UI must surface.
+        assert "FULLY quit" in data["message"]
+        assert "developer-mode" in data["message"]
+        [call] = _PopenRecorder.instances
+        assert call["argv"] == [
+            "open",
+            "-na",
+            "Google Chrome",
+            "--args",
+            f"--load-extension={ext_dir}",
+        ]
+        assert call["kwargs"]["start_new_session"] is True
+
+    def test_linux_argv_google_chrome(
+        self, client, ext_dir, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setattr(sys, "platform", "linux")
+        monkeypatch.setattr(
+            shutil,
+            "which",
+            lambda name: "/usr/bin/google-chrome" if name == "google-chrome" else None,
+        )
+        resp = client.post(f"{_PREFIX}/launch-browser")
+        assert resp.status_code == 200
+        assert resp.json()["browser"] == "chrome"
+        [call] = _PopenRecorder.instances
+        assert call["argv"] == [
+            "/usr/bin/google-chrome",
+            f"--load-extension={ext_dir}",
+        ]
+
+    def test_linux_argv_chromium_label(
+        self, client, ext_dir, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setattr(sys, "platform", "linux")
+        monkeypatch.setattr(
+            shutil,
+            "which",
+            lambda name: "/usr/bin/chromium" if name == "chromium" else None,
+        )
+        resp = client.post(f"{_PREFIX}/launch-browser")
+        assert resp.status_code == 200
+        assert resp.json()["browser"] == "chromium"
+        [call] = _PopenRecorder.instances
+        assert call["argv"] == ["/usr/bin/chromium", f"--load-extension={ext_dir}"]
+
+    def test_linux_no_browser_500(
+        self, client, ext_dir, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setattr(sys, "platform", "linux")
+        monkeypatch.setattr(shutil, "which", lambda name: None)
+        resp = client.post(f"{_PREFIX}/launch-browser")
+        assert resp.status_code == 500
+        assert "google-chrome" in resp.json()["detail"]
+        assert _PopenRecorder.instances == []
+
+    def test_win32_argv_with_creationflags(
+        self, client, ext_dir, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setattr(sys, "platform", "win32")
+        monkeypatch.setattr(
+            shutil,
+            "which",
+            lambda name: r"C:\chrome\chrome.exe" if name == "chrome" else None,
+        )
+        resp = client.post(f"{_PREFIX}/launch-browser")
+        assert resp.status_code == 200
+        assert resp.json()["browser"] == "chrome"
+        [call] = _PopenRecorder.instances
+        assert call["argv"] == [r"C:\chrome\chrome.exe", f"--load-extension={ext_dir}"]
+        assert "creationflags" in call["kwargs"]
+
+    def test_missing_extension_dir_404(
+        self, client, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setenv(
+            "EVOFLUX_WEBBRIDGE_EXTENSION_DIR", str(tmp_path / "does-not-exist")
+        )
+        resp = client.post(f"{_PREFIX}/launch-browser")
+        assert resp.status_code == 404
+        detail = resp.json()["detail"]
+        assert "EVOFLUX_WEBBRIDGE_EXTENSION_DIR" in detail
+        # Manual-install instructions are part of the pinned contract.
+        assert "chrome://extensions" in detail
+        assert _PopenRecorder.instances == []
+
+    def test_popen_failure_500(
+        self, client, ext_dir, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setattr(sys, "platform", "darwin")
+
+        def _boom(*args, **kwargs):
+            raise OSError("no opener")
+
+        monkeypatch.setattr(subprocess, "Popen", _boom)
+        resp = client.post(f"{_PREFIX}/launch-browser")
+        assert resp.status_code == 500
+        assert "no opener" in resp.json()["detail"]

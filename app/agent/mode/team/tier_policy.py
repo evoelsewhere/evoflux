@@ -16,6 +16,7 @@ Tier policies
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Literal
 
 from loguru import logger
@@ -66,6 +67,48 @@ def denied_tools_for_tier(
     if tier is None:
         return frozenset()
     return TIER_DENIED_TOOLS.get(tier, frozenset())
+
+
+# ── WebBridge session scoping ─────────────────────────────────────────────
+# A session created from the WebBridge UI is tagged "webbridge" (persisted on
+# ChatSession.tags). In such a session the lead must drive the web ONLY
+# through the user's real browser via the webbridge tool — browser_use,
+# web_search, web_fetch, image_search and every other registry tool are
+# excluded, leaving just the small user-facing allowlist below.
+
+WEBBRIDGE_SESSION_TAG = "webbridge"
+
+#: Tools the team lead keeps in a WebBridge-tagged session: the webbridge
+#: tool itself plus user-interaction / coordination basics (no web access).
+WEBBRIDGE_SESSION_ALLOWED_TOOLS: frozenset[str] = frozenset(
+    {"webbridge", "ask_user", "todo_manage", "note", "date"}
+)
+
+#: Lead-only team-coordination tools additionally denied in a WebBridge
+#: session. These are NOT registry tools — AgentTeam.get_injected_tools
+#: builds them per run — so a registry-minus-allowlist computation alone
+#: would leave the lead able to spawn and delegate to members that are not
+#: webbridge-scoped. Excluding them keeps a tagged session lead-only.
+WEBBRIDGE_SESSION_DENIED_TEAM_TOOLS: frozenset[str] = frozenset(
+    {"team_manage", "team_delegate", "team_reject"}
+)
+
+
+def webbridge_session_excluded_tools(tool_names: Iterable[str]) -> frozenset[str]:
+    """Return the lead's ``excluded_tools`` set for a WebBridge-tagged session.
+
+    *tool_names* is the full set of tool names the lead would normally run
+    with (in practice its registry-granted constructor tools — MCP tools
+    included — i.e. ``agent._tools`` keys). Everything outside
+    :data:`WEBBRIDGE_SESSION_ALLOWED_TOOLS` is excluded, plus the injected
+    roster/delegation tools in :data:`WEBBRIDGE_SESSION_DENIED_TEAM_TOOLS`
+    so no members can be spawned. Loader-managed lead tools that survive the
+    allowlist (todo_manage, note) are harmless; schedule_task and skill are
+    excluded like any other non-allowlisted name.
+    """
+    return (
+        frozenset(tool_names) - WEBBRIDGE_SESSION_ALLOWED_TOOLS
+    ) | WEBBRIDGE_SESSION_DENIED_TEAM_TOOLS
 
 
 def resolve_member_tier(agent_name: str) -> str | None:
