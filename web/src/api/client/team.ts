@@ -39,6 +39,7 @@ import type {
   ProjectCodeSearchResponse,
   ProjectCodeGraphData,
   WebBridgeStatusResponse,
+  WebBridgeLaunchBrowserResponse,
 } from '../types'
 
 export async function postTeamChat(
@@ -387,11 +388,12 @@ export async function resolveTeamSession(options: {
   model?: string | null
   thinkingLevel?: string | null
   create?: boolean
+  tags?: string[]
   worktreeFrom?: string | null
   worktreeName?: string | null
   worktreeBranch?: string | null
 }): Promise<TeamSessionResolveResponse> {
-  const body: Record<string, string | boolean | null> = {
+  const body: Record<string, string | string[] | boolean | null> = {
     mode: options.mode ?? 'forge',
   }
   if (options.workspace !== undefined) body.workspace = options.workspace
@@ -399,6 +401,7 @@ export async function resolveTeamSession(options: {
   if (options.model !== undefined) body.model = options.model
   if (options.thinkingLevel !== undefined) body.thinking_level = options.thinkingLevel
   if (options.create !== undefined) body.create = options.create
+  if (options.tags !== undefined) body.tags = options.tags
   if (options.worktreeFrom !== undefined) body.worktree_from = options.worktreeFrom
   if (options.worktreeName !== undefined) body.worktree_name = options.worktreeName
   if (options.worktreeBranch !== undefined) body.worktree_branch = options.worktreeBranch
@@ -558,6 +561,17 @@ export async function getBrowserSession(sessionId: string): Promise<BrowserSessi
 export async function getWebBridgeStatus(): Promise<WebBridgeStatusResponse> {
   const res = await fetch(`${apiBaseUrl()}/team/webbridge/status`)
   if (!res.ok) await parseDetailOrThrow(res, 'getWebBridgeStatus')
+  return res.json()
+}
+
+/**
+ * Ask the backend to launch a local browser with the WebBridge extension
+ * loaded. On 404 the thrown error's message carries the backend's
+ * manual-install instructions (``detail``) — surface it as-is.
+ */
+export async function launchWebBridgeBrowser(): Promise<WebBridgeLaunchBrowserResponse> {
+  const res = await fetch(`${apiBaseUrl()}/team/webbridge/launch-browser`, { method: 'POST' })
+  if (!res.ok) await parseDetailOrThrow(res, 'launchWebBridgeBrowser')
   return res.json()
 }
 
