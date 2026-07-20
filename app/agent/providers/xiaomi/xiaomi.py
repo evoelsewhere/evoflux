@@ -39,6 +39,7 @@ from typing import Any
 from app.agent.providers.openai import ChatCompletionsOnlyProvider
 from app.agent.providers.openai.completions import CompletionsHandler
 from app.agent.providers.openai.sanitization import sanitize_openai_tool_pairs
+from app.agent.providers.openai.tool_content import flatten_tool_content_for_provider
 from app.agent.providers.openai.schemas import (
     OpenAIFunctionCall,
     OpenAIStreamOptions,
@@ -204,8 +205,9 @@ class _XiaomiCompletionsHandler(CompletionsHandler):
     ) -> dict[str, Any]:
         req = XiaomiChatRequest(
             model=self.model,
-            messages=self._convert_messages_xiaomi(
-                sanitize_openai_tool_pairs(messages)
+            messages=flatten_tool_content_for_provider(
+                self._convert_messages_xiaomi(sanitize_openai_tool_pairs(messages)),
+                self.model,
             ),
             tools=self.convert_tools(tools),
             temperature=merged.get("temperature"),
