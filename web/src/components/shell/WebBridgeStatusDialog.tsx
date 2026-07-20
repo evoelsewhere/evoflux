@@ -133,7 +133,11 @@ export function WebBridgeStatusDialog({
         {connected && extension ? (
           <>
             {(extension.current_url || extension.current_title) && (
-              <div className="rounded-md bg-(--bg-key) px-3 py-2">
+              // min-w-0: as a grid item this card's automatic minimum is its
+              // content's min-content width — and `truncate` uses nowrap, so a
+              // long URL would otherwise blow the dialog's fixed-width grid
+              // out horizontally (children stretch to the oversized track).
+              <div className="min-w-0 rounded-md bg-(--bg-key) px-3 py-2">
                 {extension.current_title && (
                   <p className="truncate text-xs font-medium text-(--color-text)">
                     {extension.current_title}
