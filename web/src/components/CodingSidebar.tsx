@@ -37,6 +37,7 @@ import { usePlatform } from "@/hooks/use-platform";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { STORAGE_KEYS } from "@/lib/storage-keys";
 import {
+  CalendarClock,
   ChevronDown,
   ChevronRight,
   Folder,
@@ -84,6 +85,7 @@ import {
   SidebarSearchTrigger,
   SidebarFooter,
 } from "@/components/shell/SidebarShell";
+import { SidebarItem } from "@/components/ui/sidebar-item";
 import { SessionRow } from "@/components/shell/SessionRow";
 import {
   SessionContextMenu,
@@ -311,6 +313,7 @@ export function CodingSidebar({
   // Collapse state is shared by all three mode sidebars and owned by
   // useUIStore; AppShell owns the toggle button + Ctrl+B.
   const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed);
+  const toggleScheduler = useUIStore((s) => s.toggleScheduler);
   const pinnedIds = usePinnedSessions((s) => s.pinnedIds);
   const togglePin = usePinnedSessions((s) => s.togglePin);
   const pinnedIdSet = new Set(pinnedIds);
@@ -998,6 +1001,13 @@ export function CodingSidebar({
         >
           <Folder size={15} aria-hidden="true" />
         </button>
+        <SidebarItem
+          Icon={CalendarClock}
+          label="Scheduler"
+          kbd="^S"
+          collapsed
+          onClick={toggleScheduler}
+        />
       </SidebarCard>
       <div className="flex-1" />
       <SidebarCard className="w-full shrink-0">
@@ -1372,6 +1382,16 @@ export function CodingSidebar({
         </SidebarCard>
       )}
 
+      {/* Scheduler toggle */}
+      <SidebarCard className="shrink-0 px-2 py-2">
+        <SidebarItem
+          Icon={CalendarClock}
+          label="Scheduler"
+          kbd="^S"
+          onClick={toggleScheduler}
+        />
+      </SidebarCard>
+
       {/* Unified workspace navigator */}
       <SidebarCard className="flex-1">
         <div className="min-h-0 flex-1 overflow-y-auto">
@@ -1409,6 +1429,16 @@ export function CodingSidebar({
           <SidebarSearchTrigger onClick={onCommandPalette} />
         </div>
       )}
+
+      {/* Scheduler toggle — mobile */}
+      <div className="px-3 pt-2">
+        <SidebarItem
+          Icon={CalendarClock}
+          label="Scheduler"
+          kbd="^S"
+          onClick={toggleScheduler}
+        />
+      </div>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         {navigatorContent}

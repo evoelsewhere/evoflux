@@ -9,9 +9,22 @@ Agent → EvoFlux backend WS relay → this extension → CDP → your browser
 ```
 
 The extension opens a persistent WebSocket to the EvoFlux backend relay
-(`/api/team/webbridge/relay`), registers itself, and executes commands
-(navigate, click, type, scroll, screenshot, extract, tabs, evaluate, …) via the
-Chrome DevTools Protocol (`chrome.debugger`).
+(`/api/team/webbridge/relay`), registers itself, and executes commands via the
+Chrome DevTools Protocol (`chrome.debugger`):
+
+- **Navigation/tabs** — navigate, back, forward, reload, get_tabs, switch_tab,
+  open_tab, close_tab.
+- **Element-based (preferred)** — snapshot (list interactive elements with
+  selectors + boxes), click_selector, click_text, fill.
+- **Coordinate/low-level** — click, dblclick, type, key, scroll.
+- **Waiting** — wait, wait_for_selector, wait_for_load.
+- **Reading** — screenshot (viewport or full_page, at CSS-pixel scale),
+  extract, evaluate.
+
+Screenshots are captured at CSS-pixel scale (`clip.scale = 1`), so a click at
+the x,y a model reads off the image lands correctly even on HiDPI/Retina
+displays. Any command may carry a `tab_id` to pin a specific tab instead of
+the active one.
 
 ## Install
 
@@ -56,10 +69,38 @@ token."**
   local EvoFlux backend (the default is loopback, `127.0.0.1`). Anyone who can
   reach the relay with a valid token can drive your browser, so keep the
   default loopback binding unless you know what you're doing.
-- While the extension is attached to a tab, Chrome shows the **"…is debugging
-  this browser"** infobar. That is a built-in Chrome warning for the
-  `debugger` permission and is expected — it disappears when the debugger
-  detaches.
+- Chrome normally shows a **"…started debugging this browser"** infobar
+  whenever an extension uses the `debugger` (CDP) API. The guided launch
+  (**WebBridge → Launch browser**, or the backend `launch-browser` endpoint)
+  starts Chrome with `--silent-debugger-extension-api`, which suppresses that
+  infobar. The flag only applies to a Chrome *started* with it, so if you
+  attach WebBridge to an already-running Chrome (or load it manually without
+  relaunching), the infobar reappears — relaunch via the guided flow to hide
+  it. To launch manually: fully quit Chrome, then
+  `google-chrome --silent-debugger-extension-api --load-extension=extensions/webbridge`.
+
+### Backend guardrails (`settings.yaml` → `webbridge`)
+
+Because the agent drives a **logged-in** browser, the backend enforces a
+policy on top of the token. Configure it under a `webbridge:` block in
+`settings.yaml`:
+
+```yaml
+webbridge:
+  enabled: true            # master switch for the whole tool
+  allowed_domains: []      # if non-empty, ONLY these domains may be driven
+  blocked_domains:         # always refused (takes precedence)
+    - mybank.com
+    - mail.google.com
+  allow_evaluate: true     # set false to forbid arbitrary-JS `evaluate`
+  audit_log_size: 200      # entries kept for GET /api/team/webbridge/audit
+```
+
+Domain matching is suffix-based, so `example.com` also covers
+`app.example.com`. Navigations to a blocked (or non-allowlisted) domain are
+refused before anything reaches the browser, and every command — allowed or
+refused — is recorded in the audit trail at
+`GET /api/team/webbridge/audit`.
 
 ## Troubleshooting
 

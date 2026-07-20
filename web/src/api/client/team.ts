@@ -40,6 +40,7 @@ import type {
   ProjectCodeGraphData,
   WebBridgeStatusResponse,
   WebBridgeLaunchBrowserResponse,
+  WebBridgeAuditResponse,
 } from '../types'
 
 export async function postTeamChat(
@@ -573,6 +574,39 @@ export async function launchWebBridgeBrowser(): Promise<WebBridgeLaunchBrowserRe
   const res = await fetch(`${apiBaseUrl()}/team/webbridge/launch-browser`, { method: 'POST' })
   if (!res.ok) await parseDetailOrThrow(res, 'launchWebBridgeBrowser')
   return res.json()
+}
+
+/**
+ * Audit trail of the commands the agent ran against the real browser — used
+ * by the WebBridge status dialog so the user can review what the agent did.
+ */
+export async function getWebBridgeAudit(limit?: number): Promise<WebBridgeAuditResponse> {
+  const qs = limit ? `?limit=${limit}` : ''
+  const res = await fetch(`${apiBaseUrl()}/team/webbridge/audit${qs}`)
+  if (!res.ok) await parseDetailOrThrow(res, 'getWebBridgeAudit')
+  return res.json()
+}
+
+/**
+ * Download the WebBridge extension as a ``.zip`` and trigger a browser save.
+ * Fetches through the authed ``fetch`` (so the token rides in the header, not
+ * the URL) and hands the blob to a transient anchor.
+ */
+export async function downloadWebBridgeExtension(): Promise<void> {
+  const res = await fetch(`${apiBaseUrl()}/team/webbridge/download`)
+  if (!res.ok) await parseDetailOrThrow(res, 'downloadWebBridgeExtension')
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  try {
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'evoflux-webbridge.zip'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+  } finally {
+    URL.revokeObjectURL(url)
+  }
 }
 
 // ── Session chapters ──────────────────────────────────────────────────────────

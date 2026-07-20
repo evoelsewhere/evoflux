@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { Loader2, Plus, RefreshCw } from 'lucide-react'
+import { Check, Copy, Download, Loader2, Plus, RefreshCw } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -20,10 +20,54 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { getWebBridgeStatus, resolveTeamSession } from '@/api/client'
+import {
+  downloadWebBridgeExtension,
+  getWebBridgeAudit,
+  getWebBridgeStatus,
+  resolveTeamSession,
+} from '@/api/client'
+import { apiBaseUrl } from '@/api/base-url'
+import { getConnectionToken } from '@/api/auth'
 import { prependSession } from '@/stores/cache-invalidation-bridge'
 import { useToastStore } from '@/stores/useToastStore'
-import type { WebBridgeStatusResponse } from '@/api/types'
+import type { WebBridgeAuditEntry, WebBridgeStatusResponse } from '@/api/types'
+
+/** Relay URL + token the extension needs, derived from the app's own
+ *  connection — so the popup shows exactly what to paste in. */
+function deriveConnection(): { relayUrl: string; token: string } {
+  let origin = apiBaseUrl().replace(/\/api$/, '')
+  if (!origin || origin.startsWith('/')) {
+    origin = typeof window !== 'undefined' ? window.location.origin : 'http://127.0.0.1:8000'
+  }
+  return { relayUrl: origin.replace(/^http/i, 'ws'), token: getConnectionToken() ?? '' }
+}
+
+/** A labelled, monospace, one-click-copy value row. */
+function CopyRow({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false)
+  const copy = useCallback(() => {
+    void navigator.clipboard?.writeText(value).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1200)
+    })
+  }, [value])
+  return (
+    <div className="flex items-center gap-2">
+      <span className="w-20 shrink-0 text-xs text-(--color-text-subtle)">{label}</span>
+      <code className="min-w-0 flex-1 truncate rounded bg-(--bg-2) px-1.5 py-0.5 font-mono text-xs text-(--color-text)">
+        {value}
+      </code>
+      <button
+        onClick={copy}
+        className="shrink-0 rounded-xs p-1 text-(--color-text-subtle) transition-colors hover:bg-(--bg-2) hover:text-(--color-text-muted)"
+        aria-label={`Copy ${label}`}
+        title={`Copy ${label}`}
+      >
+        {copied ? <Check size={12} /> : <Copy size={12} />}
+      </button>
+    </div>
+  )
+}
 
 interface WebBridgeStatusDialogProps {
   open: boolean
@@ -37,8 +81,10 @@ export function WebBridgeStatusDialog({
   onStatusChange,
 }: WebBridgeStatusDialogProps) {
   const [status, setStatus] = useState<WebBridgeStatusResponse | null>(null)
+  const [audit, setAudit] = useState<WebBridgeAuditEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [downloading, setDownloading] = useState(false)
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const pushToast = useToastStore((s) => s.push)
@@ -63,6 +109,12 @@ export function WebBridgeStatusDialog({
       onStatusChangeRef.current?.(fallback)
     } finally {
       setLoading(false)
+    }
+    // Best-effort: the audit trail is auxiliary, never block status on it.
+    try {
+      setAudit((await getWebBridgeAudit(12)).entries)
+    } catch {
+      setAudit([])
     }
   }, [])
 
@@ -93,8 +145,24 @@ export function WebBridgeStatusDialog({
     }
   }, [navigate, onOpenChange, queryClient, pushToast])
 
+  const handleDownload = useCallback(async () => {
+    setDownloading(true)
+    try {
+      await downloadWebBridgeExtension()
+    } catch (err) {
+      pushToast({
+        tone: 'error',
+        title: 'Failed to download extension',
+        description: err instanceof Error ? err.message : String(err),
+      })
+    } finally {
+      setDownloading(false)
+    }
+  }, [pushToast])
+
   const extension = status?.extensions[0]
   const connected = status?.connected ?? false
+  const conn = deriveConnection()
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -155,26 +223,83 @@ export function WebBridgeStatusDialog({
             </p>
           </>
         ) : (
-          <ol className="list-decimal space-y-1.5 pl-4 text-xs text-(--color-text-2)">
-            <li>
-              Open{' '}
-              <code className="rounded bg-(--bg-key) px-1 font-mono">
-                chrome://extensions
-              </code>{' '}
-              and enable Developer mode.
-            </li>
-            <li>
-              Click Load unpacked and select the{' '}
-              <code className="rounded bg-(--bg-key) px-1 font-mono">
-                extensions/webbridge
-              </code>{' '}
-              folder from the EvoFlux repository.
-            </li>
-            <li>
-              Click the WebBridge toolbar icon and set the relay URL and
-              access token.
-            </li>
-          </ol>
+          <div className="space-y-3">
+            <Button
+              onClick={() => void handleDownload()}
+              disabled={downloading}
+              className="w-full"
+            >
+              {downloading ? (
+                <Loader2 className="animate-spin" aria-hidden="true" />
+              ) : (
+                <Download aria-hidden="true" />
+              )}
+              Download extension package
+            </Button>
+
+            <div className="min-w-0 space-y-1.5 rounded-md bg-(--bg-key) px-3 py-2">
+              <p className="text-xs font-medium text-(--color-text-muted)">
+                Configure the extension with
+              </p>
+              <CopyRow label="Relay URL" value={conn.relayUrl} />
+              {conn.token ? (
+                <CopyRow label="Access token" value={conn.token} />
+              ) : (
+                <p className="text-xs text-(--color-text-subtle)">
+                  No access token needed — this backend runs without a key.
+                </p>
+              )}
+            </div>
+
+            <ol className="list-decimal space-y-1.5 pl-4 text-xs text-(--color-text-2)">
+              <li>Download the package above and unzip it.</li>
+              <li>
+                Open{' '}
+                <code className="rounded bg-(--bg-key) px-1 font-mono">
+                  chrome://extensions
+                </code>
+                , enable Developer mode, click Load unpacked, and select the
+                unzipped{' '}
+                <code className="rounded bg-(--bg-key) px-1 font-mono">
+                  webbridge
+                </code>{' '}
+                folder.
+              </li>
+              <li>
+                Click the WebBridge toolbar icon and paste the relay URL and
+                access token above.
+              </li>
+            </ol>
+          </div>
+        )}
+
+        {audit.length > 0 && (
+          <div className="min-w-0">
+            <p className="mb-1 text-xs font-medium text-(--color-text-muted)">
+              Recent actions
+            </p>
+            <ul className="max-h-40 space-y-0.5 overflow-y-auto">
+              {audit.map((e, i) => (
+                <li
+                  key={i}
+                  className="flex min-w-0 items-center gap-1.5 text-xs"
+                  title={e.error ?? e.url}
+                >
+                  <span
+                    className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${
+                      e.success ? 'bg-(--color-success)' : 'bg-(--color-error)'
+                    }`}
+                  />
+                  <span className="shrink-0 font-mono text-(--color-text-2)">
+                    {e.action}
+                  </span>
+                  <span className="truncate text-(--color-text-subtle)">
+                    {e.error ? e.error : e.url}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
 
         <Button
