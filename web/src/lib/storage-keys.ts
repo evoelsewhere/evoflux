@@ -16,6 +16,8 @@ export const STORAGE_KEYS = {
   lastRoute: 'oa-last-route',
   lastAimProject: 'oa-last-aim-project',
   pinnedSessions: 'oa.pinnedSessions',
+  /** JSON map of sessionId → true: WebBridge banner dismissed per session. */
+  webbridgeBannerDismissed: 'oa.webbridgeBannerDismissed',
 
   sidebar: {
     width: 'oa.sidebar.width',

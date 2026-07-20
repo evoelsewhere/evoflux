@@ -209,7 +209,7 @@ async def _team_for_session_mode(db: DbSession, session_id: str):
             db, existing, workspace
         )
         try:
-            return await team_manager.get_or_start_coding_team(
+            team_obj = await team_manager.get_or_start_coding_team(
                 workspace,
                 session_id,
                 extra_workspace_paths=extra_ws_paths or None,
@@ -218,7 +218,16 @@ async def _team_for_session_mode(db: DbSession, session_id: str):
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return _require_team(await team_manager.get_or_start_team_for_session(session_id))
+    else:
+        team_obj = _require_team(
+            await team_manager.get_or_start_team_for_session(session_id)
+        )
+    if existing is not None:
+        # Restore persisted session tags so tag-based tool scoping (e.g. a
+        # WebBridge-tagged session) survives a cold team boot — same pattern
+        # as permission_mode in team_chat.
+        team_obj.session_tags = frozenset(existing.tags or ())
+    return team_obj
 
 
 def _changed_paths_payload(shift: BoundaryShift) -> dict:
@@ -337,6 +346,9 @@ async def team_chat(
     # user's selection even after a server restart or a cold team boot.
     if existing is not None:
         team_obj.permission_mode = existing.permission_mode
+        # Same for session tags — a WebBridge-tagged session must keep its
+        # webbridge-only tool scoping across team reboots.
+        team_obj.session_tags = frozenset(existing.tags or ())
 
     effective_request_model = (
         model
@@ -929,11 +941,18 @@ async def resolve_team_session(
         workspace = _validate_workspace_or_422(workspace)
 
     watch_targets: list[str] = []
+    # Normalise to a sorted unique list so tag-set equality is a plain array
+    # comparison (see get_latest_top_level_session); empty stays NULL on write.
+    session_tags = sorted(set(body.tags))
     async with db.begin():
         session = None
         if not body.create:
             session = await get_latest_top_level_session(
-                db, mode=body.mode, workspace=workspace, project_id=project_id
+                db,
+                mode=body.mode,
+                workspace=workspace,
+                project_id=project_id,
+                tags=session_tags,
             )
         created = session is None
         if session is None:
@@ -943,6 +962,7 @@ async def resolve_team_session(
                 project_id=project_id,
                 model=model,
                 thinking_level=thinking_level,
+                tags=session_tags or None,
             )
             db.add(session)
         if body.mode == "coding" and workspace:

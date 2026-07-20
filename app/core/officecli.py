@@ -14,7 +14,10 @@ inherit ``os.environ`` minus a few leak keys, see
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 from loguru import logger
@@ -73,3 +76,54 @@ def ensure_officecli_on_path() -> None:
         os.pathsep.join([bin_dir_str, current]) if current else bin_dir_str
     )
     logger.info("officecli_bin_added_to_path dir={}", bin_dir_str)
+
+
+def warm_up_officecli() -> None:
+    """Run ``officecli --version`` once, in a background thread, at startup.
+
+    The bundled OfficeCLI is a self-contained .NET single-file binary; on
+    Windows its first execution pays a one-time extraction + antivirus-scan
+    cost of 30–120 s. If that first run happens inside an agent turn — the
+    xlsx/pptx skills shell out to ``officecli`` — it blows past the shell
+    tool's 60 s default timeout. Paying the cost here, at server startup,
+    keeps it out of the agent's critical path.
+
+    Never raises and never blocks startup; failures are logged at debug.
+    """
+    bin_dir = officecli_bin_dir()
+    if bin_dir is None:
+        return
+    binary = bin_dir / _BIN_NAME
+    threading.Thread(
+        target=_warm_up_worker,
+        args=(binary,),
+        daemon=True,
+        name="officecli-warmup",
+    ).start()
+
+
+def _warm_up_worker(binary: Path) -> None:
+    started = time.monotonic()
+    try:
+        # CREATE_NO_WINDOW exists only on Windows; it keeps a console window
+        # from flashing up on the user's desktop during this background run.
+        # ``creationflags=0`` is a documented no-op on POSIX.
+        creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+        completed = subprocess.run(
+            [str(binary), "--version"],
+            capture_output=True,
+            text=True,
+            timeout=180,
+            check=False,
+            creationflags=creationflags,
+        )
+    except Exception as exc:  # warm-up is best-effort — never propagate
+        logger.debug("officecli_warmup_failed error={}", exc)
+        return
+    duration_s = time.monotonic() - started
+    first_line = (completed.stdout or "").splitlines()
+    logger.info(
+        "officecli_warmup_done duration_s={:.1f} output={}",
+        duration_s,
+        first_line[0] if first_line else "",
+    )

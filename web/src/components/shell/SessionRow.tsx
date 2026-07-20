@@ -10,12 +10,13 @@
  *
  * Shared behavior: hover-reveal pencil (rename) and trash (delete) action
  * buttons, inline pending-delete Cancel/Delete confirmation, `sched` badge
- * support, double-click to rename, desktop context-menu trigger, and
- * mobile long-press trigger (via LongPressButton).
+ * support, a Globe badge for `webbridge`-tagged sessions, double-click to
+ * rename, desktop context-menu trigger, and mobile long-press trigger (via
+ * LongPressButton).
  */
 
 import { AnimatePresence, motion } from 'framer-motion'
-import { Loader2, Pencil, Trash2 } from 'lucide-react'
+import { Globe, Loader2, Pencil, Trash2 } from 'lucide-react'
 import { LongPressButton } from '@/components/ui/long-press-button'
 import { formatRelativeDate } from '@/utils/format'
 import { cn } from '@/lib/utils'
@@ -61,6 +62,17 @@ export function SessionRow({
   const compact = density === 'compact'
   const isScheduled = Boolean(session.scheduled_task_name)
   const isRunning = session.running === true
+  const isWebBridge = session.tags?.includes('webbridge') ?? false
+
+  const webBridgeBadge = isWebBridge ? (
+    <span
+      className="shrink-0 text-(--color-text-muted)"
+      aria-label="WebBridge session"
+      title="WebBridge session"
+    >
+      <Globe size={11} aria-hidden="true" />
+    </span>
+  ) : null
 
   return (
     <div className="group relative">
@@ -101,6 +113,7 @@ export function SessionRow({
             <span className="min-w-0 flex-1 truncate font-medium">
               {session.title || 'Untitled'}
             </span>
+            {webBridgeBadge}
             {isScheduled && (
               <span className="shrink-0 rounded-xs px-1 py-px text-[10px] leading-tight bg-(--bg-key) text-(--color-text-subtle)">
                 sched
@@ -129,6 +142,7 @@ export function SessionRow({
                   {session.title || 'Untitled'}
                 </motion.p>
               </AnimatePresence>
+              {webBridgeBadge}
               {isScheduled && (
                 <span className="shrink-0 rounded-xs px-1 py-px text-xs leading-tight bg-(--bg-key) text-(--color-text-subtle)">
                   sched

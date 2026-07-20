@@ -322,6 +322,8 @@ export interface SessionResponse {
   model?: string | null
   thinking_level?: string | null
   running?: boolean
+  /** Feature tags attached at resolve time (e.g. "webbridge"); absent/[] when none. */
+  tags?: string[]
 }
 
 // ── Coding Projects (multi-repo) ─────────────────────────────────────────────
@@ -1177,4 +1179,26 @@ export interface GitConflictsResponse {
   conflicted: boolean
   operation: string | null
   files: { path: string; status: string }[]
+}
+
+// ── WebBridge ────────────────────────────────────────────────────────────────
+
+export interface WebBridgeExtensionInfo {
+  extension_id: string
+  browser: string
+  version: string
+  connected_at: number
+  current_url: string
+  current_title: string
+}
+
+export interface WebBridgeStatusResponse {
+  connected: boolean
+  extensions: WebBridgeExtensionInfo[]
+}
+
+export interface WebBridgeLaunchBrowserResponse {
+  ok: boolean
+  browser?: string
+  message: string
 }

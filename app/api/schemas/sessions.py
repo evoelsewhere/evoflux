@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.api.schemas.base import _ExcludeNoneModel
 from app.api.schemas.projects import ProjectResponse
@@ -26,6 +26,12 @@ class TeamSessionResolveRequest(BaseModel):
     worktree_from: str | None = None
     worktree_name: str | None = None
     worktree_branch: str | None = None
+    # Session tags (e.g. ["webbridge"]) — matched by tag-SET equality: a
+    # resolve only reuses an existing session whose stored tag set equals
+    # this set, so an untagged resolve never returns a tagged session and
+    # vice versa. Persisted on the session when ``create`` (or no match)
+    # yields a new row.
+    tags: list[str] = []
 
 
 class TeamSessionUpdateRequest(BaseModel):
@@ -76,9 +82,16 @@ class SessionResponse(_ExcludeNoneModel):
     model: str | None = None
     thinking_level: str | None = None
     revert: dict | None = None
+    tags: list[str] = []
     running: bool = False
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _none_tags_to_empty(cls, value: object) -> object:
+        # Untagged sessions store NULL — the API contract serialises [].
+        return [] if value is None else value
 
 
 class TeamSessionResolveResponse(SessionResponse):

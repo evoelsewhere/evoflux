@@ -16,10 +16,17 @@ from pathlib import Path
 
 import pytest
 
+from app.agent.agent_loop import Agent
+from app.agent.mode.team.member import TeamLead
+from app.agent.mode.team.team import AgentTeam
 from app.agent.mode.team.tier_policy import (
     TIER_DENIED_TOOLS,
+    WEBBRIDGE_SESSION_ALLOWED_TOOLS,
+    WEBBRIDGE_SESSION_DENIED_TEAM_TOOLS,
+    WEBBRIDGE_SESSION_TAG,
     denied_tools_for_tier,
     resolve_member_tier,
+    webbridge_session_excluded_tools,
 )
 from app.agent.sandbox import SandboxConfig, set_sandbox
 
@@ -267,3 +274,89 @@ class TestResolveMemberTier:
     def test_no_todo_file(self, tmp_sandbox):
         """When the todo file doesn't exist, returns None."""
         assert resolve_member_tier("exec#1") is None
+
+
+# ── WebBridge session scoping ────────────────────────────────────────────
+
+# Representative lead tool set (registry keys): the allowlisted names, the
+# web tools that must be excluded, loader-managed lead tools, and an MCP tool.
+_LEAD_REGISTRY_TOOLS = [
+    "webbridge",
+    "ask_user",
+    "todo_manage",
+    "note",
+    "date",
+    "browser_use",
+    "web_search",
+    "web_fetch",
+    "image_search",
+    "schedule_task",
+    "skill",
+    "read",
+    "write",
+    "shell",
+    "mcp_playwright_navigate",
+]
+
+
+class TestWebbridgeSessionExcludedTools:
+    def test_web_tools_excluded(self):
+        excluded = webbridge_session_excluded_tools(_LEAD_REGISTRY_TOOLS)
+        assert {"browser_use", "web_search", "web_fetch", "image_search"} <= excluded
+
+    def test_allowlist_survives(self):
+        excluded = webbridge_session_excluded_tools(_LEAD_REGISTRY_TOOLS)
+        assert WEBBRIDGE_SESSION_ALLOWED_TOOLS.isdisjoint(excluded)
+
+    def test_allowlist_matches_pinned_contract(self):
+        assert WEBBRIDGE_SESSION_ALLOWED_TOOLS == frozenset(
+            {"webbridge", "ask_user", "todo_manage", "note", "date"}
+        )
+
+    def test_everything_outside_allowlist_excluded(self):
+        excluded = webbridge_session_excluded_tools(_LEAD_REGISTRY_TOOLS)
+        assert excluded >= (
+            frozenset(_LEAD_REGISTRY_TOOLS) - WEBBRIDGE_SESSION_ALLOWED_TOOLS
+        )
+
+    def test_mcp_tools_excluded(self):
+        # An MCP browser server must not bypass the webbridge-only rule.
+        excluded = webbridge_session_excluded_tools(_LEAD_REGISTRY_TOOLS)
+        assert "mcp_playwright_navigate" in excluded
+
+    def test_roster_tools_excluded(self):
+        # Injected (non-registry) lead tools that could spawn/delegate to
+        # non-scoped members are denied even though they are never in
+        # tool_names.
+        excluded = webbridge_session_excluded_tools(["webbridge"])
+        assert WEBBRIDGE_SESSION_DENIED_TEAM_TOOLS <= excluded
+        assert WEBBRIDGE_SESSION_DENIED_TEAM_TOOLS == frozenset(
+            {"team_manage", "team_delegate", "team_reject"}
+        )
+
+
+class TestWebbridgeSessionTagOnTeam:
+    def _make_lead(self):
+        from tests.agent.mode.team.conftest import MockTeamProvider
+
+        return TeamLead(Agent(name="lead", llm_provider=MockTeamProvider()))
+
+    def test_session_tags_default_empty(self):
+        team = AgentTeam(lead=self._make_lead())
+        assert team.session_tags == frozenset()
+        # Untagged → no webbridge scoping, lead keeps full access (no regression).
+        assert WEBBRIDGE_SESSION_TAG not in team.session_tags
+
+    def test_tagged_lead_prompt_has_webbridge_suffix(self):
+        team = AgentTeam(
+            lead=self._make_lead(), session_tags=frozenset({WEBBRIDGE_SESSION_TAG})
+        )
+        prompt = team.lead.build_protocol("base", team)
+        assert "WebBridge session" in prompt
+        assert "webbridge" in prompt
+        assert "browser_use/web_search/web_fetch are unavailable" in prompt
+
+    def test_untagged_lead_prompt_has_no_webbridge_suffix(self):
+        team = AgentTeam(lead=self._make_lead())
+        prompt = team.lead.build_protocol("base", team)
+        assert "WebBridge session" not in prompt

@@ -117,3 +117,103 @@ def test_ensure_officecli_on_path_noop_when_not_found(monkeypatch, tmp_path):
     officecli.ensure_officecli_on_path()
 
     assert os.environ["PATH"] == "/usr/bin"
+
+
+# ── warm_up_officecli ──────────────────────────────────────────────────────────
+
+
+class _SyncThread:
+    """Test double for threading.Thread that runs the target inline."""
+
+    def __init__(self, target=None, args=(), **_kwargs):
+        self._target = target
+        self._args = args
+
+    def start(self):
+        self._target(*self._args)
+
+
+def _fake_binary(tmp_path: Path) -> Path:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "officecli").write_text("")
+    return bin_dir
+
+
+def test_warm_up_noop_when_no_binary(monkeypatch):
+    monkeypatch.setattr(officecli, "officecli_bin_dir", lambda: None)
+    spawned = []
+
+    class _RecordingThread:
+        def __init__(self, *args, **kwargs):
+            spawned.append((args, kwargs))
+
+        def start(self):  # pragma: no cover — must never run
+            raise AssertionError("no thread should start without a binary")
+
+    monkeypatch.setattr(officecli.threading, "Thread", _RecordingThread)
+
+    officecli.warm_up_officecli()
+
+    assert spawned == []
+
+
+def test_warm_up_invokes_version_when_binary_present(monkeypatch, tmp_path):
+    bin_dir = _fake_binary(tmp_path)
+    monkeypatch.setattr(officecli, "officecli_bin_dir", lambda: bin_dir)
+    monkeypatch.setattr(officecli, "_BIN_NAME", "officecli")
+    monkeypatch.setattr(officecli.threading, "Thread", _SyncThread)
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return officecli.subprocess.CompletedProcess(
+            argv, 0, stdout="officecli 0.9.1\n", stderr=""
+        )
+
+    monkeypatch.setattr(officecli.subprocess, "run", fake_run)
+
+    officecli.warm_up_officecli()
+
+    assert len(calls) == 1
+    argv, kwargs = calls[0]
+    assert argv == [str(bin_dir / "officecli"), "--version"]
+    assert kwargs["timeout"] == 180
+    assert kwargs["capture_output"] is True
+    assert kwargs["creationflags"] == 0  # no-op default off Windows
+
+
+def test_warm_up_uses_create_no_window_on_windows(monkeypatch, tmp_path):
+    bin_dir = _fake_binary(tmp_path)
+    monkeypatch.setattr(officecli, "officecli_bin_dir", lambda: bin_dir)
+    monkeypatch.setattr(officecli, "_BIN_NAME", "officecli")
+    monkeypatch.setattr(officecli.threading, "Thread", _SyncThread)
+    monkeypatch.setattr(officecli.sys, "platform", "win32")
+    monkeypatch.setattr(
+        officecli.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False
+    )
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return officecli.subprocess.CompletedProcess(argv, 0, stdout="ok\n", stderr="")
+
+    monkeypatch.setattr(officecli.subprocess, "run", fake_run)
+
+    officecli.warm_up_officecli()
+
+    assert calls[0][1]["creationflags"] == 0x08000000
+
+
+def test_warm_up_swallows_failures(monkeypatch, tmp_path):
+    bin_dir = _fake_binary(tmp_path)
+    monkeypatch.setattr(officecli, "officecli_bin_dir", lambda: bin_dir)
+    monkeypatch.setattr(officecli, "_BIN_NAME", "officecli")
+    monkeypatch.setattr(officecli.threading, "Thread", _SyncThread)
+
+    def boom(argv, **kwargs):
+        raise OSError("cannot execute binary file")
+
+    monkeypatch.setattr(officecli.subprocess, "run", boom)
+
+    officecli.warm_up_officecli()  # must not raise
