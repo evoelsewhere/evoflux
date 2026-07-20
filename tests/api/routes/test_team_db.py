@@ -292,6 +292,97 @@ class TestResolveTeamSession:
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
+    async def test_resolve_with_tags_creates_persists_and_returns_tags(
+        self, app_with_team
+    ):
+        import app.core.db as _db
+
+        client = TestClient(app_with_team)
+        resp = client.post(
+            "/api/team/sessions/resolve",
+            json={"mode": "forge", "tags": ["webbridge"], "create": True},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["created"] is True
+        assert data["tags"] == ["webbridge"]
+
+        async with _db.async_session_factory() as db:
+            row = await db.get(ChatSession, uuid.UUID(data["id"]))
+        assert row is not None
+        assert row.tags == ["webbridge"]
+
+    def test_resolve_same_tags_reuses_session(self, app_with_team):
+        client = TestClient(app_with_team)
+
+        first = client.post(
+            "/api/team/sessions/resolve",
+            json={"mode": "forge", "tags": ["webbridge"]},
+        ).json()
+        second = client.post(
+            "/api/team/sessions/resolve",
+            json={"mode": "forge", "tags": ["webbridge"]},
+        ).json()
+
+        assert first["created"] is True
+        assert second["created"] is False
+        assert second["id"] == first["id"]
+        assert second["tags"] == ["webbridge"]
+
+    def test_resolve_untagged_does_not_return_tagged_session(self, app_with_team):
+        client = TestClient(app_with_team)
+
+        tagged = client.post(
+            "/api/team/sessions/resolve",
+            json={"mode": "forge", "tags": ["webbridge"]},
+        ).json()
+        untagged = client.post(
+            "/api/team/sessions/resolve", json={"mode": "forge"}
+        ).json()
+
+        assert untagged["created"] is True
+        assert untagged["id"] != tagged["id"]
+        assert untagged["tags"] == []
+
+    def test_resolve_tagged_does_not_return_untagged_session(self, app_with_team):
+        client = TestClient(app_with_team)
+
+        untagged = client.post(
+            "/api/team/sessions/resolve", json={"mode": "forge"}
+        ).json()
+        tagged = client.post(
+            "/api/team/sessions/resolve",
+            json={"mode": "forge", "tags": ["webbridge"]},
+        ).json()
+
+        assert tagged["created"] is True
+        assert tagged["id"] != untagged["id"]
+        assert tagged["tags"] == ["webbridge"]
+
+    @pytest.mark.asyncio
+    async def test_list_and_detail_sessions_include_tags(self, app_with_team):
+        import app.core.db as _db
+
+        tagged_id = uuid.uuid7()
+        untagged_id = uuid.uuid7()
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _create_team_session(db, tagged_id, tags=["webbridge"])
+                await _create_team_session(db, untagged_id)
+
+        client = TestClient(app_with_team)
+        resp = client.get("/api/team/sessions")
+        assert resp.status_code == 200
+        by_id = {s["id"]: s for s in resp.json()["data"]}
+        assert by_id[str(tagged_id)]["tags"] == ["webbridge"]
+        assert by_id[str(untagged_id)]["tags"] == []
+
+        detail = client.get(f"/api/team/sessions/{tagged_id}")
+        assert detail.status_code == 200
+        assert detail.json()["tags"] == ["webbridge"]
+
+    @pytest.mark.asyncio
     async def test_resolve_existing_worktree_session_keeps_registry_child(
         self, app_with_team, tmp_path
     ):

@@ -32,7 +32,7 @@ from app.core.desktop_auth import DesktopTokenMiddleware
 from app.core.exception_handlers import EXCEPTION_HANDLERS
 from app.core.metrics import HTTPMetricsMiddleware, metrics_endpoint
 from app.core.middlewares import RequestSizeLimitMiddleware, SecurityHeadersMiddleware
-from app.core.officecli import ensure_officecli_on_path
+from app.core.officecli import ensure_officecli_on_path, warm_up_officecli
 from app.core.otel import setup_otel, shutdown_otel
 from app.core.otel_retention import start_otel_retention, stop_otel_retention
 from app.core.runtime_settings import load_runtime_settings
@@ -52,6 +52,7 @@ async def lifespan(app: FastAPI):
 
     ensure_workspace_initialized()
     ensure_officecli_on_path()
+    warm_up_officecli()
 
     # ── Workflow runner ↔ team turn-boundary hooks (plan v5 §6.1) ─────────
     # Registered here rather than imported by team.py to avoid a circular
@@ -136,9 +137,18 @@ async def lifespan(app: FastAPI):
         logger.info("code_graph_watcher_disabled enabled=false")
     app.state.code_graph_watcher = code_graph_watcher
 
+    # Start WebBridge extension cleanup task
+    from app.services.webbridge_service import webbridge_manager
+
+    webbridge_cleanup_task = asyncio.create_task(webbridge_manager.run_cleanup_loop())
+    app.state.webbridge_cleanup_task = webbridge_cleanup_task
+
     yield
 
     await code_graph_watcher.stop()
+    webbridge_cleanup_task = getattr(app.state, "webbridge_cleanup_task", None)
+    if webbridge_cleanup_task:
+        webbridge_cleanup_task.cancel()
     await dream_scheduler.stop()
     await task_scheduler.stop()
     await team_manager.stop()

@@ -894,6 +894,7 @@ async def get_latest_top_level_session(
     mode: str,
     workspace: str | None,
     project_id: UUID | None = None,
+    tags: list[str] | None = None,
 ) -> ChatSession | None:
     """Return the newest top-level session for a mode/workspace pair.
 
@@ -902,6 +903,13 @@ async def get_latest_top_level_session(
     all of the project's repos, so it must never be matched/reused by the first
     repo's path alone (which could collide with an unrelated single-repo session
     or a different project sharing that path).
+
+    ``tags=None`` (the default) keeps the historical behaviour — no tag
+    filtering at all.  Any other value (including ``[]``) requires tag-SET
+    equality: only a session whose stored tag set equals the requested set
+    matches, so a tagged resolve never reuses an untagged session and vice
+    versa.  Stored tags are written sorted+deduped by the resolve endpoint,
+    so equality on the normalised array is exact.
     """
     stmt = (
         select(ChatSession)
@@ -921,6 +929,14 @@ async def get_latest_top_level_session(
             stmt = stmt.where(col(ChatSession.workspace).is_(None))
         else:
             stmt = stmt.where(ChatSession.workspace == workspace)
+    if tags is not None:
+        requested = sorted(set(tags))
+        if requested:
+            stmt = stmt.where(col(ChatSession.tags) == requested)
+        else:
+            stmt = stmt.where(
+                or_(col(ChatSession.tags).is_(None), col(ChatSession.tags) == [])
+            )
     return (await db.exec(stmt.limit(1))).first()
 
 

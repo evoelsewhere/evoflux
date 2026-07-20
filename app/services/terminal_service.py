@@ -16,22 +16,31 @@ the per-command sandbox that cages the agent's ``shell`` tool does not
 constrain a user at a live PTY; on a local desktop app (the user's own
 machine) that is the accepted model.
 
-Unix-only (``pty``/``termios``/``fcntl``). Windows would need ConPTY.
+Cross-platform: POSIX uses ``os.openpty`` + ``termios``/``fcntl``; Windows
+drives ConPTY through ``pywinpty`` — imported lazily when a terminal is
+first spawned, so this module imports cleanly everywhere without it.
 """
 
 from __future__ import annotations
 
 import asyncio
-import fcntl
 import os
 import re
 import signal
 import struct
 import subprocess
-import termios
+import sys
+import threading
 from dataclasses import dataclass, field
+from typing import Any
 
 from loguru import logger
+
+if sys.platform != "win32":
+    # POSIX-only PTY plumbing; the Windows path (ConPTY via pywinpty) uses
+    # none of these. Gated so the module imports cleanly on Windows.
+    import fcntl
+    import termios
 
 #: Bytes of recent output kept per terminal for replay on reconnect.
 _SCROLLBACK_CAP = 256 * 1024
@@ -47,14 +56,151 @@ def _key(session_id: str, terminal_id: str) -> str:
     return f"{session_id}\x00{terminal_id}"
 
 
+class _PtyBackend:
+    """Platform-specific PTY handle behind a :class:`TerminalSession`.
+
+    The manager owns buffering, broadcast, idle timers and ``run_command``;
+    the backend owns the mechanics of reading output in, plus write, resize
+    and teardown.
+    """
+
+    #: Child shell pid where the platform exposes one (logging only).
+    pid: int | None = None
+
+    def start_reading(self, manager: TerminalManager, session: TerminalSession) -> None:
+        """Hook the PTY's output into the manager's buffer/broadcast path."""
+        raise NotImplementedError
+
+    def write(self, data: bytes) -> None:
+        raise NotImplementedError
+
+    def resize(self, rows: int, cols: int) -> None:
+        raise NotImplementedError
+
+    def close(self) -> None:
+        raise NotImplementedError
+
+
+class _PosixPty(_PtyBackend):
+    """``os.openpty`` master fd + subprocess; read via ``loop.add_reader``."""
+
+    def __init__(self, master_fd: int, proc: subprocess.Popen) -> None:
+        self.master_fd = master_fd
+        self._proc = proc
+        self.pid = proc.pid
+
+    def start_reading(self, manager: TerminalManager, session: TerminalSession) -> None:
+        loop = asyncio.get_running_loop()
+        loop.add_reader(self.master_fd, manager._on_readable, session)
+
+    def write(self, data: bytes) -> None:
+        os.write(self.master_fd, data)
+
+    def resize(self, rows: int, cols: int) -> None:
+        _set_winsize(self.master_fd, rows, cols)
+
+    def close(self) -> None:
+        loop = asyncio.get_running_loop()
+        try:
+            loop.remove_reader(self.master_fd)
+        except (OSError, ValueError):
+            pass
+        try:
+            os.killpg(os.getpgid(self._proc.pid), signal.SIGHUP)
+        except (ProcessLookupError, OSError):
+            pass
+        try:
+            os.close(self.master_fd)
+        except OSError:
+            pass
+
+
+class _ConPty(_PtyBackend):
+    """Windows ConPTY via ``pywinpty``.
+
+    pywinpty offers no asyncio integration, so a daemon thread pumps the
+    blocking ``read()`` and forwards chunks into the event loop with
+    ``call_soon_threadsafe`` — from there the same buffer/broadcast path as
+    POSIX takes over. Written against the pywinpty 3.x low-level API; the
+    small 2.x differences (a ``close()`` method, ``length`` first read arg)
+    are handled where they diverge.
+    """
+
+    def __init__(self, proc: Any, loop: asyncio.AbstractEventLoop) -> None:
+        self._proc = proc  # a winpty.PTY; typed Any — pywinpty is Windows-only
+        self._loop = loop
+
+    @property
+    def pid(self) -> int | None:
+        try:
+            return self._proc.pid
+        except Exception:  # pywinpty raises WinptyError before spawn/after exit
+            return None
+
+    def start_reading(self, manager: TerminalManager, session: TerminalSession) -> None:
+        threading.Thread(
+            target=self._pump,
+            args=(manager, session),
+            daemon=True,
+            name=f"terminal-pump-{session.session_id}-{session.terminal_id}",
+        ).start()
+
+    def _pump(self, manager: TerminalManager, session: TerminalSession) -> None:
+        while True:
+            try:
+                # blocking=True — pywinpty 3.x defaults to a NON-blocking
+                # read, which would busy-spin this thread.
+                chunk = self._proc.read(blocking=True)  # str; blocks till data
+            except Exception:
+                # Child exit surfaces as EOFError/OSError or pywinpty's own
+                # WinptyError (a plain Exception subclass) — all mean EOF.
+                break
+            if not chunk:
+                if not self._proc.isalive():
+                    break
+                continue
+            data = chunk.encode("utf-8", "replace")
+            try:
+                self._loop.call_soon_threadsafe(manager._handle_data, session, data)
+            except RuntimeError:  # loop already closed — nothing left to notify
+                return
+        try:
+            self._loop.call_soon_threadsafe(manager._handle_eof, session)
+        except RuntimeError:  # loop already closed
+            pass
+
+    def write(self, data: bytes) -> None:
+        # pywinpty's write takes str, not bytes.
+        self._proc.write(data.decode("utf-8", "replace"))
+
+    def resize(self, rows: int, cols: int) -> None:
+        self._proc.set_size(cols, rows)
+
+    def close(self) -> None:
+        try:
+            close = getattr(self._proc, "close", None)
+            if close is not None:  # pywinpty 2.x
+                close()
+                return
+            # pywinpty 3.x dropped PTY.close() — terminate the child and
+            # cancel pending I/O instead (what ptyprocess.close() does).
+            # SIGTERM via os.kill maps to TerminateProcess on Windows.
+            if self._proc.isalive():
+                pid = self._proc.pid
+                if pid:
+                    os.kill(pid, signal.SIGTERM)
+            self._proc.cancel_io()
+        except Exception:  # never let teardown fail session cleanup
+            pass
+
+
 @dataclass
 class TerminalSession:
     """One live PTY + its shell process, shared by any attached clients."""
 
     session_id: str
     terminal_id: str
-    master_fd: int
-    pid: int
+    backend: _PtyBackend
     cols: int
     rows: int
     buffer: bytearray = field(default_factory=bytearray)
@@ -103,6 +249,24 @@ class TerminalManager:
         cols: int,
         rows: int,
     ) -> TerminalSession:
+        if sys.platform == "win32":
+            return self._spawn_windows(
+                session_id, terminal_id, cwd=cwd, env=env, cols=cols, rows=rows
+            )
+        return self._spawn_posix(
+            session_id, terminal_id, cwd=cwd, env=env, cols=cols, rows=rows
+        )
+
+    def _spawn_posix(
+        self,
+        session_id: str,
+        terminal_id: str,
+        *,
+        cwd: str,
+        env: dict[str, str] | None,
+        cols: int,
+        rows: int,
+    ) -> TerminalSession:
         shell = os.environ.get("SHELL") or "/bin/bash"
         # A missing cwd would make the shell spawn raise — fall back to $HOME
         # so a terminal always opens even if the workspace dir isn't there yet.
@@ -111,11 +275,7 @@ class TerminalManager:
         master_fd, slave_fd = os.openpty()
         _set_winsize(master_fd, rows, cols)
 
-        child_env = os.environ.copy()
-        child_env["TERM"] = "xterm-256color"
-        child_env["EVOFLUX_SESSION"] = session_id
-        if env:
-            child_env.update(env)
+        child_env = self._child_env(session_id, env)
 
         def _child_setup() -> None:
             # New session + make the slave our controlling terminal so job
@@ -123,9 +283,8 @@ class TerminalManager:
             os.setsid()
             fcntl.ioctl(slave_fd, termios.TIOCSCTTY, 0)
 
-        argv = [shell, "-i"] if os.path.basename(shell) in ("bash", "sh", "zsh") else [shell]
         proc = subprocess.Popen(  # noqa: S603 — a deliberate interactive shell
-            argv,
+            _shell_argv(shell),
             preexec_fn=_child_setup,
             stdin=slave_fd,
             stdout=slave_fd,
@@ -137,18 +296,16 @@ class TerminalManager:
         os.close(slave_fd)  # the child holds its own dup; parent only needs master
         os.set_blocking(master_fd, False)
 
+        backend = _PosixPty(master_fd, proc)
         session = TerminalSession(
             session_id=session_id,
             terminal_id=terminal_id,
-            master_fd=master_fd,
-            pid=proc.pid,
+            backend=backend,
             cols=cols,
             rows=rows,
         )
         self._sessions[_key(session_id, terminal_id)] = session
-
-        loop = asyncio.get_running_loop()
-        loop.add_reader(master_fd, self._on_readable, session)
+        backend.start_reading(self, session)
         logger.info(
             "terminal_spawned session_id={} terminal_id={} pid={} shell={} cwd={}",
             session_id,
@@ -159,11 +316,74 @@ class TerminalManager:
         )
         return session
 
+    def _spawn_windows(
+        self,
+        session_id: str,
+        terminal_id: str,
+        *,
+        cwd: str,
+        env: dict[str, str] | None,
+        cols: int,
+        rows: int,
+    ) -> TerminalSession:
+        try:
+            from winpty import PTY
+        except ImportError as exc:
+            raise RuntimeError(
+                "terminal on Windows requires the 'pywinpty' package "
+                "(pip install pywinpty)"
+            ) from exc
+
+        shell = os.environ.get("COMSPEC") or "cmd.exe"
+        # Same fallback as POSIX: never let a missing workspace dir keep the
+        # terminal from opening.
+        if not os.path.isdir(cwd):
+            cwd = os.path.expanduser("~")
+
+        proc = PTY(cols, rows)
+        proc.spawn(
+            shell,
+            cwd=cwd,
+            # pywinpty's low-level spawn takes the raw CreateProcessW
+            # environment string, not a dict.
+            env=_env_block(self._child_env(session_id, env)),
+        )
+
+        backend = _ConPty(proc, asyncio.get_running_loop())
+        session = TerminalSession(
+            session_id=session_id,
+            terminal_id=terminal_id,
+            backend=backend,
+            cols=cols,
+            rows=rows,
+        )
+        self._sessions[_key(session_id, terminal_id)] = session
+        backend.start_reading(self, session)
+        logger.info(
+            "terminal_spawned session_id={} terminal_id={} shell={} cwd={}",
+            session_id,
+            terminal_id,
+            shell,
+            cwd,
+        )
+        return session
+
+    @staticmethod
+    def _child_env(session_id: str, env: dict[str, str] | None) -> dict[str, str]:
+        child_env = os.environ.copy()
+        child_env["TERM"] = "xterm-256color"
+        child_env["EVOFLUX_SESSION"] = session_id
+        if env:
+            child_env.update(env)
+        return child_env
+
     # -- io -------------------------------------------------------------------
     def _on_readable(self, session: TerminalSession) -> None:
-        """Loop-reader callback: drain the PTY, buffer + broadcast, handle EOF."""
+        """Loop-reader callback (POSIX): drain the PTY, buffer + broadcast."""
+        backend = session.backend
+        assert isinstance(backend, _PosixPty)  # add_reader is only wired there
         try:
-            data = os.read(session.master_fd, _READ_SIZE)
+            data = os.read(backend.master_fd, _READ_SIZE)
         except BlockingIOError:
             return
         except OSError:
@@ -171,6 +391,10 @@ class TerminalManager:
         if not data:
             self._handle_eof(session)
             return
+        self._handle_data(session, data)
+
+    def _handle_data(self, session: TerminalSession, data: bytes) -> None:
+        """Buffer fresh PTY output and broadcast it to subscribers."""
         session.buffer.extend(data)
         if len(session.buffer) > _SCROLLBACK_CAP:
             del session.buffer[: len(session.buffer) - _SCROLLBACK_CAP]
@@ -184,8 +408,8 @@ class TerminalManager:
         if session is None or session.closed:
             return
         try:
-            os.write(session.master_fd, data)
-        except OSError as exc:
+            session.backend.write(data)
+        except Exception as exc:  # OSError on POSIX, WinptyError on Windows
             logger.debug("terminal_write_failed session_id={} error={}", session_id, exc)
 
     def resize(
@@ -200,7 +424,10 @@ class TerminalManager:
         if session is None or session.closed:
             return
         session.cols, session.rows = cols, rows
-        _set_winsize(session.master_fd, rows, cols)
+        try:
+            session.backend.resize(rows, cols)
+        except Exception as exc:  # OSError on POSIX, WinptyError on Windows
+            logger.debug("terminal_resize_failed session_id={} error={}", session_id, exc)
 
     async def run_command(
         self,
@@ -313,25 +540,13 @@ class TerminalManager:
     def _teardown(self, session: TerminalSession) -> None:
         session.closed = True
         self._cancel_idle_timer(session)
-        loop = asyncio.get_running_loop()
-        try:
-            loop.remove_reader(session.master_fd)
-        except (OSError, ValueError):
-            pass
-        try:
-            os.killpg(os.getpgid(session.pid), signal.SIGHUP)
-        except (ProcessLookupError, OSError):
-            pass
-        try:
-            os.close(session.master_fd)
-        except OSError:
-            pass
+        session.backend.close()
         self._sessions.pop(_key(session.session_id, session.terminal_id), None)
         logger.info(
             "terminal_closed session_id={} terminal_id={} pid={}",
             session.session_id,
             session.terminal_id,
-            session.pid,
+            session.backend.pid,
         )
 
     def _arm_idle_timer(self, session: TerminalSession) -> None:
@@ -355,6 +570,20 @@ _ANSI_RE = re.compile(
 
 def _strip_ansi(text: str) -> str:
     return _ANSI_RE.sub("", text).replace("\r\n", "\n").replace("\r", "")
+
+
+def _shell_argv(shell: str) -> list[str]:
+    """Interactive-shell argv: bash/sh/zsh get ``-i`` to force a prompt."""
+    if os.path.basename(shell) in ("bash", "sh", "zsh"):
+        return [shell, "-i"]
+    return [shell]
+
+
+def _env_block(env: dict[str, str]) -> str:
+    """NUL-joined ``name=value`` environment block — the raw string
+    ``CreateProcessW`` (and therefore pywinpty's low-level ``spawn``)
+    expects; the same shape pywinpty's own ``PtyProcess`` builds."""
+    return "\0".join(f"{key}={value}" for key, value in env.items()) + "\0"
 
 
 def _set_winsize(fd: int, rows: int, cols: int) -> None:
