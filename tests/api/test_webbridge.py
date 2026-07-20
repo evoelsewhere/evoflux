@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import io
 import json
 import shutil
 import subprocess
 import sys
 import time
+import zipfile
 
 import pytest
 from fastapi import FastAPI
@@ -415,7 +417,9 @@ async def test_tool_screenshot_returns_image_block(
     assert image.data == b64
     assert image.media_type == "image/png"
     text = next(p for p in result.parts if isinstance(p, TextBlock))
-    assert text.text == f"Screenshot captured (png, {len(raw)} bytes)."
+    assert "Screenshot captured" in text.text
+    assert f"{len(raw)} bytes" in text.text
+    assert "CSS pixels" in text.text
 
 
 async def test_tool_aggregates_action_errors(
@@ -434,6 +438,515 @@ async def test_tool_aggregates_action_errors(
     assert "Click failed: boom" in result
     assert "Typed 3 characters" in result
     assert "\n---\n" in result
+
+
+# ── Session routing ───────────────────────────────────────────────────────────
+
+
+def _recorder_ext(manager: WebBridgeManager, ext_id: str) -> list[str]:
+    """Register *ext_id* with a send() that records the wire commands it gets."""
+    sent: list[str] = []
+
+    async def fake_send(text: str) -> None:
+        sent.append(text)
+
+    manager.register_extension(
+        extension_id=ext_id, browser="chrome", version="1", send=fake_send
+    )
+    return sent
+
+
+async def _run(manager: WebBridgeManager, coro_factory, sent: list[str]):
+    """Drive a send_command task: start it, answer the pending request, await."""
+    task = asyncio.create_task(coro_factory())
+    for _ in range(4):
+        await asyncio.sleep(0)
+        if sent:
+            break
+    request_id = json.loads(sent[-1])["request_id"]
+    manager.handle_response(request_id, success=True, data={"ok": 1}, error=None)
+    return await task
+
+
+async def test_session_sticks_to_first_extension(manager: WebBridgeManager):
+    s1 = _recorder_ext(manager, "e1")
+    s2 = _recorder_ext(manager, "e2")  # e2 registered last → currently "active"
+
+    # First command binds session "sess" to the active extension (e2).
+    await _run(manager, lambda: manager.send_command("sess", "click", {"x": 1, "y": 2}), s2)
+    assert len(s2) == 1 and len(s1) == 0
+
+    # Make e1 look most-recently-seen; the session must still target e2.
+    manager.get_extension("e1").last_seen = time.time() + 100
+    await _run(manager, lambda: manager.send_command("sess", "click", {"x": 3, "y": 4}), s2)
+    assert len(s2) == 2 and len(s1) == 0
+
+
+async def test_explicit_extension_id_overrides_binding(manager: WebBridgeManager):
+    s1 = _recorder_ext(manager, "e1")
+    s2 = _recorder_ext(manager, "e2")
+
+    await _run(
+        manager,
+        lambda: manager.send_command("sess", "click", {"x": 1, "y": 2}, extension_id="e1"),
+        s1,
+    )
+    assert len(s1) == 1 and len(s2) == 0
+
+
+async def test_explicit_unknown_extension_errors(manager: WebBridgeManager):
+    _recorder_ext(manager, "e1")
+    result = await manager.send_command("sess", "click", {"x": 1}, extension_id="ghost")
+    assert result["success"] is False
+    assert "no browser extension" in result["error"].lower()
+
+
+def test_events_only_reach_bound_session(manager: WebBridgeManager):
+    _recorder_ext(manager, "e1")
+    _recorder_ext(manager, "e2")
+    manager.resolve_target("s1", "e1")  # bind s1 → e1
+    manager.resolve_target("s2", "e2")  # bind s2 → e2
+    q1 = manager.subscribe_agent("s1")
+    q2 = manager.subscribe_agent("s2")
+
+    manager.handle_event("e1", "tab_updated", {"url": "https://a", "title": "A"})
+
+    assert q1.qsize() == 1
+    assert q2.qsize() == 0  # s2 is pinned to e2 — must not see e1's event
+
+
+# ── Per-action timeouts ─────────────────────────────────────────────────────
+
+
+def test_timeout_navigate_exceeds_extension_internal_wait(manager: WebBridgeManager):
+    # Manager must wait longer than the extension's own 25s navigation wait.
+    assert manager._timeout_for("navigate", {}) > 30.0
+    assert manager._timeout_for("click", {}) == 30.0
+
+
+def test_timeout_derives_from_caller_timeout_ms(manager: WebBridgeManager):
+    assert manager._timeout_for("wait_for_selector", {"timeout_ms": 5000}) == 15.0
+
+
+# ── Domain policy + evaluate gate ─────────────────────────────────────────────
+
+
+def _set_policy(manager: WebBridgeManager, **kwargs) -> None:
+    """Inject a WebBridge policy straight into the manager's in-memory cache.
+
+    Mirrors what ``reload_policy()`` does at runtime, without the disk read —
+    the command path only ever consults the cache.
+    """
+    from app.core.runtime_settings import WebBridgeSettings
+
+    manager._policy_cache = WebBridgeSettings(**kwargs)
+
+
+async def test_policy_blocks_navigate_to_blocked_domain(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    _set_policy(manager, blocked_domains=["evil.com"])
+    _recorder_ext(manager, "e1")
+    result = await manager.send_command("sess", "navigate", {"url": "https://sub.evil.com/x"})
+    assert result["success"] is False
+    assert "blocked" in result["error"].lower()
+
+
+async def test_policy_allowlist_refuses_other_domains(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    _set_policy(manager, allowed_domains=["example.com"])
+    sent = _recorder_ext(manager, "e1")
+    refused = await manager.send_command("sess", "navigate", {"url": "https://other.com"})
+    assert refused["success"] is False and "allowlist" in refused["error"].lower()
+    assert sent == []  # never reached the extension
+
+    ok = await _run(
+        manager, lambda: manager.send_command("sess", "navigate", {"url": "https://example.com/p"}), sent
+    )
+    assert ok["success"] is True
+
+
+async def test_policy_gates_page_action_by_current_url(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    _set_policy(manager, blocked_domains=["evil.com"])
+    _recorder_ext(manager, "e1")
+    manager.get_extension("e1").current_url = "https://evil.com/dashboard"
+    result = await manager.send_command("sess", "click", {"x": 1, "y": 2})
+    assert result["success"] is False and "blocked" in result["error"].lower()
+
+
+async def test_policy_disables_evaluate(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    _set_policy(manager, allow_evaluate=False)
+    _recorder_ext(manager, "e1")
+    result = await manager.send_command("sess", "evaluate", {"script": "1+1"})
+    assert result["success"] is False and "evaluate" in result["error"].lower()
+
+
+async def test_policy_disabled_refuses_all(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    _set_policy(manager, enabled=False)
+    _recorder_ext(manager, "e1")
+    result = await manager.send_command("sess", "navigate", {"url": "https://example.com"})
+    assert result["success"] is False and "disabled" in result["error"].lower()
+
+
+# ── Audit trail ───────────────────────────────────────────────────────────────
+
+
+async def test_audit_records_refusals_and_endpoint(
+    client: TestClient, manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    _set_policy(manager, blocked_domains=["evil.com"])
+    _recorder_ext(manager, "e1")
+    await manager.send_command("sess", "navigate", {"url": "https://evil.com"})
+
+    entries = manager.audit_entries()
+    assert entries and entries[0]["action"] == "navigate"
+    assert entries[0]["success"] is False
+    assert entries[0]["url"] == "https://evil.com"
+
+    resp = client.get(f"{_PREFIX}/audit")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["entries"][0]["action"] == "navigate"
+    assert body["entries"][0]["error"]
+
+
+# ── Tool-level: new element/wait/tab actions ──────────────────────────────────
+
+
+async def test_tool_snapshot_lists_elements(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    _stub_send(
+        monkeypatch,
+        manager,
+        lambda action, params: {
+            "success": True,
+            "data": {
+                "elements": [
+                    {"role": "button", "text": "Sign in", "selector": "#login", "box": {"x": 100, "y": 40}},
+                ]
+            },
+            "error": None,
+        },
+    )
+    result = await webbridge(actions=[_action({"action": "snapshot"})])
+    assert isinstance(result, str)
+    assert "Sign in" in result and "#login" in result and "@(100,40)" in result
+
+
+async def test_tool_click_selector_maps_params(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    seen: list[tuple[str, dict]] = []
+
+    def handler(action: str, params: dict):
+        seen.append((action, params))
+        return {"success": True, "data": {}, "error": None}
+
+    _stub_send(monkeypatch, manager, handler)
+    result = await webbridge(
+        actions=[_action({"action": "click_selector", "selector": "#go", "index": 2})]
+    )
+    assert "Clicked '#go'" in result
+    assert seen == [("click_selector", {"selector": "#go", "index": 2})]
+
+
+async def test_tool_fill_submit_and_tab_id(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    seen: list[tuple[str, dict]] = []
+
+    def handler(action: str, params: dict):
+        seen.append((action, params))
+        return {"success": True, "data": {}, "error": None}
+
+    _stub_send(monkeypatch, manager, handler)
+    await webbridge(
+        actions=[
+            _action(
+                {
+                    "action": "fill",
+                    "selector": "#q",
+                    "value": "hello",
+                    "submit": True,
+                    "tab_id": 7,
+                }
+            )
+        ]
+    )
+    assert seen[0][0] == "fill"
+    assert seen[0][1] == {
+        "selector": "#q",
+        "value": "hello",
+        "clear": True,
+        "submit": True,
+        "tab_id": 7,
+    }
+
+
+async def test_tool_open_and_close_tab(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    def handler(action: str, params: dict):
+        if action == "open_tab":
+            return {"success": True, "data": {"tab_id": 42}, "error": None}
+        return {"success": True, "data": {}, "error": None}
+
+    _stub_send(monkeypatch, manager, handler)
+    result = await webbridge(
+        actions=[
+            _action({"action": "open_tab", "url": "https://x.test"}),
+            _action({"action": "close_tab", "id": 42}),
+        ]
+    )
+    assert "id=42" in result
+    assert "Closed tab" in result
+
+
+async def test_tool_tab_id_omitted_when_unset(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    seen: list[tuple[str, dict]] = []
+    _stub_send(monkeypatch, manager, lambda a, p: seen.append((a, p)) or {"success": True, "data": {}, "error": None})
+    await webbridge(actions=[_action({"action": "back"})])
+    assert seen == [("back", {})]  # tab_id omitted entirely when the model didn't set one
+
+    seen.clear()
+    await webbridge(actions=[_action({"action": "extract"})])
+    assert "tab_id" not in seen[0][1]  # still omitted; other extract params present
+    assert seen[0][1]["format"] == "text"
+
+
+# ── Tool-level: crawl actions ─────────────────────────────────────────────────
+
+
+async def test_tool_extract_markdown_maps_params(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    seen: list[tuple[str, dict]] = []
+
+    def handler(action: str, params: dict):
+        seen.append((action, params))
+        return {"success": True, "data": {"title": "T", "url": "u", "content": "# Hi", "format": "markdown"}, "error": None}
+
+    _stub_send(monkeypatch, manager, handler)
+    result = await webbridge(
+        actions=[_action({"action": "extract", "format": "markdown", "selector": "article", "max_chars": 500})]
+    )
+    assert seen[0][0] == "extract"
+    assert seen[0][1] == {"format": "markdown", "selector": "article", "max_chars": 500}
+    assert "# Hi" in result and "markdown" in result
+
+
+async def test_tool_extract_elements_returns_records(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    seen: list[tuple[str, dict]] = []
+
+    def handler(action: str, params: dict):
+        seen.append((action, params))
+        return {
+            "success": True,
+            "data": {"records": [{"title": "A", "url": "https://x/a"}, {"title": "B", "url": "https://x/b"}]},
+            "error": None,
+        }
+
+    _stub_send(monkeypatch, manager, handler)
+    result = await webbridge(
+        actions=[_action({"action": "extract_elements", "selector": ".card", "fields": {"title": "h3", "url": "a@href"}})]
+    )
+    assert seen[0][0] == "extract_elements"
+    assert seen[0][1]["selector"] == ".card"
+    assert seen[0][1]["fields"] == {"title": "h3", "url": "a@href"}
+    assert "2 record" in result and "https://x/a" in result
+
+
+async def test_tool_extract_elements_empty(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    _stub_send(
+        monkeypatch, manager,
+        lambda a, p: {"success": True, "data": {"records": []}, "error": None},
+    )
+    result = await webbridge(actions=[_action({"action": "extract_elements", "selector": ".none"})])
+    assert "No elements matched" in result
+
+
+async def test_tool_scroll_to_bottom(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    seen: list[tuple[str, dict]] = []
+
+    def handler(action: str, params: dict):
+        seen.append((action, params))
+        return {"success": True, "data": {"scrolls": 3, "final_height": 4200, "at_bottom": True}, "error": None}
+
+    _stub_send(monkeypatch, manager, handler)
+    result = await webbridge(actions=[_action({"action": "scroll_to_bottom", "max_scrolls": 5})])
+    assert seen[0][0] == "scroll_to_bottom"
+    assert seen[0][1]["max_scrolls"] == 5
+    assert "3 step" in result and "reached bottom" in result
+
+
+# ── Tool-level: wait_for_network_idle + crawl ─────────────────────────────────
+
+
+async def test_tool_wait_for_network_idle_reports_idle(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    seen: list[tuple[str, dict]] = []
+
+    def handler(action: str, params: dict):
+        seen.append((action, params))
+        return {"success": True, "data": {"idle": True, "inflight": 0}, "error": None}
+
+    _stub_send(monkeypatch, manager, handler)
+    result = await webbridge(actions=[_action({"action": "wait_for_network_idle", "idle_ms": 800})])
+    assert seen[0] == ("wait_for_network_idle", {"idle_ms": 800, "timeout_ms": 20000})
+    assert "Network idle" in result
+
+
+async def test_tool_wait_for_network_idle_reports_timeout(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    _stub_send(
+        monkeypatch,
+        manager,
+        lambda a, p: {"success": True, "data": {"idle": False, "inflight": 2, "timed_out": True}, "error": None},
+    )
+    result = await webbridge(actions=[_action({"action": "wait_for_network_idle"})])
+    assert "still active" in result and "2 request" in result
+
+
+async def test_tool_crawl_requires_urls(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    seen: list[tuple[str, dict]] = []
+    _stub_send(monkeypatch, manager, lambda a, p: seen.append((a, p)) or {"success": True, "data": {}, "error": None})
+    result = await webbridge(actions=[_action({"action": "crawl", "urls": []})])
+    assert "at least one URL" in result
+    assert seen == []  # no commands issued for an empty url list
+
+
+async def test_tool_crawl_runs_pages_concurrently(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    """The whole point of `crawl` is real overlap across tabs, not a serial
+
+    loop dressed up as one — so this drives the semaphore with a handler that
+    actually suspends (asyncio.sleep) and records the high-water mark of
+    simultaneously in-flight ``wait_for_load`` calls.
+    """
+    tab_counter = 0
+    concurrent = 0
+    max_concurrent = 0
+
+    async def fake_send_command(session_id: str, action: str, params: dict | None = None):
+        nonlocal tab_counter, concurrent, max_concurrent
+        params = params or {}
+        if action == "open_tab":
+            tab_counter += 1
+            return {"success": True, "data": {"tab_id": tab_counter}, "error": None}
+        if action == "wait_for_load":
+            concurrent += 1
+            max_concurrent = max(max_concurrent, concurrent)
+            await asyncio.sleep(0.02)
+            concurrent -= 1
+            return {"success": True, "data": {}, "error": None}
+        if action == "extract":
+            return {"success": True, "data": {"title": "T", "content": f"body-{params['tab_id']}"}, "error": None}
+        return {"success": True, "data": {}, "error": None}  # close_tab
+
+    monkeypatch.setattr(manager, "send_command", fake_send_command)
+
+    urls = [f"https://example.com/{i}" for i in range(6)]
+    result = await webbridge(actions=[_action({"action": "crawl", "urls": urls, "concurrency": 3})])
+
+    assert max_concurrent == 3  # genuinely overlapped, capped exactly at the semaphore size
+    assert "Crawled 6 URL(s) (3 at a time): 6 ok, 0 failed" in result
+    # asyncio.gather preserves input order in the result regardless of completion order
+    assert result.index(urls[0]) < result.index(urls[-1])
+    for url in urls:
+        assert url in result
+
+
+async def test_tool_crawl_networkidle_and_elements_mode(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    seen: list[tuple[str, dict]] = []
+
+    def handler(action: str, params: dict):
+        seen.append((action, dict(params)))
+        if action == "open_tab":
+            return {"success": True, "data": {"tab_id": 9}, "error": None}
+        if action == "extract_elements":
+            return {"success": True, "data": {"records": [{"title": "A"}]}, "error": None}
+        return {"success": True, "data": {}, "error": None}
+
+    _stub_send(monkeypatch, manager, handler)
+    result = await webbridge(
+        actions=[
+            _action(
+                {
+                    "action": "crawl",
+                    "urls": ["https://example.com/a"],
+                    "wait": "networkidle",
+                    "elements_selector": ".card",
+                    "fields": {"title": "h3"},
+                }
+            )
+        ]
+    )
+    actions_seen = [a for a, _ in seen]
+    assert "wait_for_network_idle" in actions_seen
+    assert "wait_for_load" not in actions_seen
+    extract_elements_call = next(p for a, p in seen if a == "extract_elements")
+    assert extract_elements_call == {"tab_id": 9, "selector": ".card", "fields": {"title": "h3"}, "limit": 100}
+    assert "1 record" in result and '"title": "A"' in result
+
+
+async def test_tool_crawl_isolates_per_page_errors(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    def handler(action: str, params: dict):
+        if action == "open_tab":
+            if params["url"].endswith("/bad"):
+                return {"success": False, "data": None, "error": "boom"}
+            return {"success": True, "data": {"tab_id": 1}, "error": None}
+        if action == "extract":
+            return {"success": True, "data": {"title": "Good", "content": "all fine"}, "error": None}
+        return {"success": True, "data": {}, "error": None}
+
+    _stub_send(monkeypatch, manager, handler)
+    result = await webbridge(
+        actions=[_action({"action": "crawl", "urls": ["https://x/good", "https://x/bad"]})]
+    )
+    assert "1 ok, 1 failed" in result
+    assert "ERROR: open_tab failed: boom" in result
+    assert "Title: Good" in result and "all fine" in result
+
+
+async def test_tool_crawl_close_tabs_false_skips_close(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    seen: list[str] = []
+
+    def handler(action: str, params: dict):
+        seen.append(action)
+        if action == "open_tab":
+            return {"success": True, "data": {"tab_id": 1}, "error": None}
+        return {"success": True, "data": {"content": "ok"}, "error": None}
+
+    _stub_send(monkeypatch, manager, handler)
+    await webbridge(actions=[_action({"action": "crawl", "urls": ["https://x/a"], "close_tabs": False})])
+    assert "close_tab" not in seen
 
 
 # ── POST /launch-browser ─────────────────────────────────────────────────────
@@ -480,6 +993,7 @@ class TestLaunchBrowser:
             "Google Chrome",
             "--args",
             f"--load-extension={ext_dir}",
+            "--silent-debugger-extension-api",
         ]
         assert call["kwargs"]["start_new_session"] is True
 
@@ -499,6 +1013,7 @@ class TestLaunchBrowser:
         assert call["argv"] == [
             "/usr/bin/google-chrome",
             f"--load-extension={ext_dir}",
+            "--silent-debugger-extension-api",
         ]
 
     def test_linux_argv_chromium_label(
@@ -514,7 +1029,11 @@ class TestLaunchBrowser:
         assert resp.status_code == 200
         assert resp.json()["browser"] == "chromium"
         [call] = _PopenRecorder.instances
-        assert call["argv"] == ["/usr/bin/chromium", f"--load-extension={ext_dir}"]
+        assert call["argv"] == [
+            "/usr/bin/chromium",
+            f"--load-extension={ext_dir}",
+            "--silent-debugger-extension-api",
+        ]
 
     def test_linux_no_browser_500(
         self, client, ext_dir, monkeypatch: pytest.MonkeyPatch
@@ -539,7 +1058,11 @@ class TestLaunchBrowser:
         assert resp.status_code == 200
         assert resp.json()["browser"] == "chrome"
         [call] = _PopenRecorder.instances
-        assert call["argv"] == [r"C:\chrome\chrome.exe", f"--load-extension={ext_dir}"]
+        assert call["argv"] == [
+            r"C:\chrome\chrome.exe",
+            f"--load-extension={ext_dir}",
+            "--silent-debugger-extension-api",
+        ]
         assert "creationflags" in call["kwargs"]
 
     def test_missing_extension_dir_404(
@@ -568,3 +1091,34 @@ class TestLaunchBrowser:
         resp = client.post(f"{_PREFIX}/launch-browser")
         assert resp.status_code == 500
         assert "no opener" in resp.json()["detail"]
+
+
+# ── GET /download (extension package) ─────────────────────────────────────────
+
+
+def test_download_extension_zip(client: TestClient, ext_dir):
+    (ext_dir / "manifest.json").write_text('{"name":"x"}', encoding="utf-8")
+    (ext_dir / "background.js").write_text("// bg", encoding="utf-8")
+    icons = ext_dir / "icons"
+    icons.mkdir()
+    (icons / "icon16.png").write_bytes(b"\x89PNG\r\n")
+    (ext_dir / ".DS_Store").write_bytes(b"junk")  # must be skipped
+
+    resp = client.get(f"{_PREFIX}/download")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/zip"
+    assert "evoflux-webbridge.zip" in resp.headers["content-disposition"]
+
+    names = set(zipfile.ZipFile(io.BytesIO(resp.content)).namelist())
+    assert "webbridge/manifest.json" in names
+    assert "webbridge/background.js" in names
+    assert "webbridge/icons/icon16.png" in names
+    assert not any(".DS_Store" in n for n in names)
+
+
+def test_download_missing_dir_404(
+    client: TestClient, tmp_path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("EVOFLUX_WEBBRIDGE_EXTENSION_DIR", str(tmp_path / "nope"))
+    resp = client.get(f"{_PREFIX}/download")
+    assert resp.status_code == 404

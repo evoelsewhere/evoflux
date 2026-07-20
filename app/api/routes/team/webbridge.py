@@ -24,6 +24,7 @@ endpoints stay open, matching the HTTP middleware's behaviour.
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import os
 from pathlib import Path
@@ -31,9 +32,11 @@ import shutil
 import subprocess
 import sys
 import uuid
+import zipfile
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import Response
 from loguru import logger
 from pydantic import BaseModel, Field
 
@@ -93,6 +96,33 @@ async def get_webbridge_status() -> WebBridgeStatusResponse:
     )
 
 
+class AuditEntry(BaseModel):
+    ts: float
+    session_id: str
+    extension_id: str | None = None
+    action: str
+    url: str = ""
+    success: bool
+    error: str | None = None
+
+
+class WebBridgeAuditResponse(BaseModel):
+    entries: list[AuditEntry] = Field(default_factory=list)
+
+
+@router.get("/audit")
+async def get_webbridge_audit(limit: int | None = None) -> WebBridgeAuditResponse:
+    """Most-recent-first log of commands the agent ran against the browser.
+
+    Because WebBridge drives a real, logged-in browser, this trail lets the
+    user review exactly what the agent did (and what the domain policy
+    refused). ``limit`` caps the count; the default comes from
+    ``webbridge.audit_log_size``.
+    """
+    entries = webbridge_manager.audit_entries(limit)
+    return WebBridgeAuditResponse(entries=[AuditEntry(**e) for e in entries])
+
+
 # ── Guided browser launch (auto-install) ──────────────────────────────────────
 
 _EXTENSION_DIR_ENV = "EVOFLUX_WEBBRIDGE_EXTENSION_DIR"
@@ -139,6 +169,64 @@ def _resolve_extension_dir() -> Path | None:
     return candidate if candidate.is_dir() else None
 
 
+# Files/dirs never worth shipping in the downloadable package.
+_PACKAGE_SKIP_DIRS = frozenset({"__pycache__", ".git", "node_modules"})
+_PACKAGE_SKIP_NAMES = frozenset({".DS_Store", "Thumbs.db"})
+_PACKAGE_FILENAME = "evoflux-webbridge.zip"
+
+
+@router.get("/download")
+async def download_extension() -> Response:
+    """Return the unpacked WebBridge extension as a downloadable ``.zip``.
+
+    Lets a user install the extension without hunting for a folder: download,
+    unzip, then ``Load unpacked`` the ``webbridge/`` directory. Files are
+    nested under a top-level ``webbridge/`` so the unzip yields one clean
+    folder to point Chrome at.
+    """
+    ext_dir = _resolve_extension_dir()
+    if ext_dir is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "WebBridge extension directory not found. Set "
+                f"${_EXTENSION_DIR_ENV} or install from the source tree's "
+                "extensions/webbridge directory."
+            ),
+        )
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for path in sorted(ext_dir.rglob("*")):
+            rel = path.relative_to(ext_dir)
+            if any(part in _PACKAGE_SKIP_DIRS for part in rel.parts):
+                continue
+            if path.name in _PACKAGE_SKIP_NAMES:
+                continue
+            if path.is_file():
+                zf.write(path, arcname=str(Path("webbridge") / rel))
+
+    logger.info("webbridge_download_extension bytes={}", buf.tell())
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{_PACKAGE_FILENAME}"'},
+    )
+
+
+# Chrome launch flags:
+# - --load-extension: side-load the unpacked WebBridge extension.
+# - --silent-debugger-extension-api: suppress the yellow "<ext> started
+#   debugging this browser" infobar that chrome.debugger otherwise shows on
+#   every CDP attach. It only takes effect for a Chrome *started* with the
+#   flag, which is why the guided launch fully relaunches the browser.
+def _chrome_flags(extension_dir: Path) -> list[str]:
+    return [
+        f"--load-extension={extension_dir}",
+        "--silent-debugger-extension-api",
+    ]
+
+
 def _chrome_launch_command(
     extension_dir: Path,
 ) -> tuple[str, list[str], dict[str, Any]]:
@@ -147,9 +235,9 @@ def _chrome_launch_command(
     Raises ``RuntimeError`` with a user-facing message when no Chrome-family
     executable can be found or the platform is unsupported.
     """
-    load_arg = f"--load-extension={extension_dir}"
+    flags = _chrome_flags(extension_dir)
     if sys.platform == "darwin":
-        return "chrome", ["open", "-na", "Google Chrome", "--args", load_arg], {}
+        return "chrome", ["open", "-na", "Google Chrome", "--args", *flags], {}
     if sys.platform == "win32":
         exe = shutil.which("chrome")
         if exe is None:
@@ -169,7 +257,7 @@ def _chrome_launch_command(
         creationflags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(
             subprocess, "CREATE_NO_WINDOW", 0
         )
-        return "chrome", [exe, load_arg], {"creationflags": creationflags}
+        return "chrome", [exe, *flags], {"creationflags": creationflags}
     if sys.platform.startswith("linux"):
         exe = shutil.which("google-chrome") or shutil.which("chromium")
         if exe is None:
@@ -179,7 +267,7 @@ def _chrome_launch_command(
                 "chrome://extensions."
             )
         browser = "chromium" if "chromium" in Path(exe).name else "chrome"
-        return browser, [exe, load_arg], {}
+        return browser, [exe, *flags], {}
     raise RuntimeError(
         f"Unsupported platform '{sys.platform}'. Load the extension manually "
         "from chrome://extensions instead."

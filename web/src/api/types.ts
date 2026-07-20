@@ -1202,3 +1202,17 @@ export interface WebBridgeLaunchBrowserResponse {
   browser?: string
   message: string
 }
+
+export interface WebBridgeAuditEntry {
+  ts: number
+  session_id: string
+  extension_id: string | null
+  action: string
+  url: string
+  success: boolean
+  error: string | null
+}
+
+export interface WebBridgeAuditResponse {
+  entries: WebBridgeAuditEntry[]
+}

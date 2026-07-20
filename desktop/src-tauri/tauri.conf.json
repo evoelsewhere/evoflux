@@ -69,6 +69,7 @@
     ],
     "resources": {
       "../sidecar-bundle/": "sidecar/",
+      "../../extensions/webbridge/": "extensions/webbridge/",
       "../scripts/install.sh": "install.sh",
       "../scripts/INSTALL.md": "INSTALL.md",
       "entitlements.plist": "entitlements.plist"

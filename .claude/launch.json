@@ -31,6 +31,13 @@
       "runtimeArgs": ["run", "uvicorn", "app.server:app", "--reload", "--reload-dir", "app"],
       "port": 8000,
       "autoPort": false
+    },
+    {
+      "name": "webbridge-ext-static",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "5199", "--directory", "extensions/webbridge"],
+      "port": 5199,
+      "autoPort": false
     }
   ]
 }

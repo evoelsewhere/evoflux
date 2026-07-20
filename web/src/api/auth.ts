@@ -42,6 +42,15 @@ function getToken(): string | undefined {
   return window[TOKEN_KEY] || getAccessKey() || undefined
 }
 
+/**
+ * The token the WebBridge extension must send as ``?_token=`` — the desktop
+ * per-launch token, else the configured access key. Undefined when the
+ * backend runs without auth (CLI/dev), where the extension needs no token.
+ */
+export function getConnectionToken(): string | undefined {
+  return getToken()
+}
+
 export function setAccessKey(key: string): void {
   if (typeof window === 'undefined') return
   const trimmed = key.trim()

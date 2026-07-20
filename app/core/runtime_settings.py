@@ -90,6 +90,29 @@ class ServerSettings(BaseModel):
     access_key: str | None = None
 
 
+class WebBridgeSettings(BaseModel):
+    """Guardrails for the WebBridge tool, which drives the user's *real*,
+    logged-in browser. Defaults are permissive (open loopback dev) so the
+    feature keeps working out of the box; production installs tighten these.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    # Master switch. When False the webbridge tool refuses every action.
+    enabled: bool = True
+    # When non-empty, ONLY these domains may be driven (suffix match, so
+    # "example.com" also matches "app.example.com"). Empty = allow all.
+    allowed_domains: list[str] = Field(default_factory=list)
+    # Always-refused domains (suffix match). Takes precedence over the
+    # allowlist — use for banking/webmail the agent must never touch.
+    blocked_domains: list[str] = Field(default_factory=list)
+    # Allow the `evaluate` action (arbitrary JS in the real browser). Off in
+    # locked-down installs; the far safer selector/snapshot actions stay on.
+    allow_evaluate: bool = True
+    # Recent actions kept in the in-memory audit ring buffer (GET /audit).
+    audit_log_size: int = 200
+
+
 class ProviderUiSettings(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -126,6 +149,7 @@ class RuntimeSettings(BaseModel):
     providers: dict[str, ProviderUiSettings] = Field(default_factory=dict)
     code_graph: CodeGraphSettings = Field(default_factory=CodeGraphSettings)
     cross_repo: CrossRepoSettings = Field(default_factory=CrossRepoSettings)
+    webbridge: WebBridgeSettings = Field(default_factory=WebBridgeSettings)
 
 
 def provider_visible_models(provider_id: str) -> list[str]:
