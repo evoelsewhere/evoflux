@@ -42,9 +42,11 @@ import { ChatOverlayPanels, ChatTrailingPanels } from '@/components/chat/ChatPan
 import { PermissionApprovalModal } from '../PermissionApprovalModal'
 import { AskUserQuestionModal } from '../AskUserQuestionModal'
 import { MonitorView } from '../MonitorView'
+import { WebBridgeBanner } from '../WebBridgeBanner'
 import { useTodosQuery } from '@/queries/useTodosQuery'
 import { useSessionChapters } from '@/hooks/useSessionChapters'
 import { useProvidersQuery, useRegistryQuery, useTriggerDreamMutation } from '@/queries'
+import { useTeamSessionsQuery } from '@/queries/useSessionsQuery'
 import { replyPlanApproval, resolveTeamSession, setSessionPermissionMode, getTeamSession } from '@/api/client'
 import { useShallow } from 'zustand/react/shallow'
 import { useTeamStore } from '@/stores/useTeamStore'
@@ -239,6 +241,19 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const { data: todosData } = useTodosQuery(sessionIdState)
   const todos = todosData?.todos ?? []
   const { data: chapters = [] } = useSessionChapters(sessionIdState)
+
+  // WebBridge-tagged sessions get a missing-extension banner above the chat.
+  // Tags ride on the forge session list rows — the store keeps no tags.
+  const { data: forgeSessionsData } = useTeamSessionsQuery('forge')
+  const activeSessionId = sessionIdState ?? sessionId ?? null
+  const isWebBridgeSession = useMemo(() => {
+    if (!activeSessionId) return false
+    return (
+      forgeSessionsData?.pages.some((page) =>
+        page.data.some((s) => s.id === activeSessionId && s.tags?.includes('webbridge')),
+      ) ?? false
+    )
+  }, [forgeSessionsData, activeSessionId])
   const providersQ = useProvidersQuery()
   const hasConfiguredModelProvider = providersQ.data?.providers.some(
     (provider) => provider.kind !== 'local' && provider.is_configured,
@@ -921,6 +936,9 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
               Open Providers
             </Button>
           </div>
+        )}
+        {isWebBridgeSession && activeSessionId && (
+          <WebBridgeBanner sessionId={activeSessionId} />
         )}
         {/* Content area */}
         {effectiveViewMode === 'monitor' ? (

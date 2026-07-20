@@ -322,6 +322,8 @@ export interface SessionResponse {
   model?: string | null
   thinking_level?: string | null
   running?: boolean
+  /** Feature tags attached at resolve time (e.g. "webbridge"); absent/[] when none. */
+  tags?: string[]
 }
 
 // ── Coding Projects (multi-repo) ─────────────────────────────────────────────
@@ -1184,4 +1186,10 @@ export interface WebBridgeExtensionInfo {
 export interface WebBridgeStatusResponse {
   connected: boolean
   extensions: WebBridgeExtensionInfo[]
+}
+
+export interface WebBridgeLaunchBrowserResponse {
+  ok: boolean
+  browser?: string
+  message: string
 }
