@@ -222,7 +222,10 @@ async function handleCommand(msg) {
 
     sendResponse(request_id, true, result);
   } catch (e) {
-    console.error(`[WebBridge] Command error (${action}):`, e);
+    // Not a crash — the failure is reported back to the agent via
+    // sendResponse(false). Keep it as a warning so chrome://extensions
+    // "Errors" stays reserved for real extension faults.
+    console.warn(`[WebBridge] Command failed (${action}):`, e.message);
     sendResponse(request_id, false, null, e.message);
   }
 }
@@ -252,7 +255,10 @@ async function ensureDebuggerAttached(tabId) {
   return new Promise((resolve, reject) => {
     chrome.debugger.attach({ tabId }, "1.3", () => {
       if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
+        reject(new Error(
+          chrome.runtime.lastError.message +
+          " (the tab may be a restricted page — chrome://, Web Store, or another extension's page — navigate to a normal page first)"
+        ));
       } else {
         attachedTabs.set(tabId, true);
         resolve();
@@ -272,9 +278,7 @@ async function detachDebugger(tabId) {
   });
 }
 
-async function cdpSend(tabId, method, params = {}) {
-  await ensureDebuggerAttached(tabId);
-
+function sendCommandOnce(tabId, method, params) {
   return new Promise((resolve, reject) => {
     chrome.debugger.sendCommand({ tabId }, method, params, (result) => {
       if (chrome.runtime.lastError) {
@@ -285,6 +289,37 @@ async function cdpSend(tabId, method, params = {}) {
     });
   });
 }
+
+async function cdpSend(tabId, method, params = {}) {
+  await ensureDebuggerAttached(tabId);
+
+  try {
+    return await sendCommandOnce(tabId, method, params);
+  } catch (e) {
+    if (!/not attached/i.test(e.message)) throw e;
+    // attachedTabs lied: Chrome auto-detaches on navigation to restricted
+    // pages (chrome://, web store), the user can cancel the debugging
+    // infobar, and an MV3 worker restart loses in-memory state. Drop the
+    // stale entry, re-attach once, and retry the command.
+    attachedTabs.delete(tabId);
+    await ensureDebuggerAttached(tabId);
+    return sendCommandOnce(tabId, method, params);
+  }
+}
+
+// Chrome detached the debugger outside our control (infobar Cancel,
+// navigation to a restricted page, tab process gone) — forget the stale
+// state so the next command re-attaches instead of failing.
+chrome.debugger.onDetach.addListener((source) => {
+  if (source.tabId && attachedTabs.delete(source.tabId)) {
+    console.warn("[WebBridge] Debugger detached from tab", source.tabId);
+    broadcastTabInfo();
+  }
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  attachedTabs.delete(tabId);
+});
 
 // ── Command implementations ──────────────────────────────────────────────────
 
