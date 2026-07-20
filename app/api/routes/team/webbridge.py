@@ -25,10 +25,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from loguru import logger
 from pydantic import BaseModel, Field
 
@@ -86,6 +91,141 @@ async def get_webbridge_status() -> WebBridgeStatusResponse:
         connected=status["connected"],
         extensions=[ExtensionInfo(**ext) for ext in status["extensions"]],
     )
+
+
+# ── Guided browser launch (auto-install) ──────────────────────────────────────
+
+_EXTENSION_DIR_ENV = "EVOFLUX_WEBBRIDGE_EXTENSION_DIR"
+
+# Chrome install locations probed on Windows when ``chrome`` is not on PATH.
+_WIN_CHROME_CANDIDATES = (
+    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe",
+)
+
+_LAUNCH_MESSAGE = (
+    "Browser launched with the WebBridge extension loaded. Note: Chrome must "
+    "have been FULLY quit before this launch — an already-running Chrome "
+    "ignores the extension flags. Chrome also shows a developer-mode "
+    "extension bubble on each launch; that is expected for unpacked "
+    "extensions — keep the extension enabled to use WebBridge."
+)
+
+
+class LaunchBrowserResponse(BaseModel):
+    ok: bool
+    browser: str
+    message: str
+
+
+def _resolve_extension_dir() -> Path | None:
+    """Locate the unpacked WebBridge extension directory.
+
+    The ``EVOFLUX_WEBBRIDGE_EXTENSION_DIR`` override wins when set; otherwise
+    fall back to ``<repo root>/extensions/webbridge`` (repo root = two parents
+    up from the ``app`` package). Returns ``None`` when no candidate resolves
+    to an existing directory — the caller turns that into a 404 with
+    manual-install instructions.
+    """
+    override = os.environ.get(_EXTENSION_DIR_ENV)
+    if override:
+        candidate = Path(override).expanduser()
+    else:
+        import app as _app_pkg
+
+        repo_root = Path(_app_pkg.__file__).resolve().parent.parent
+        candidate = repo_root / "extensions" / "webbridge"
+    return candidate if candidate.is_dir() else None
+
+
+def _chrome_launch_command(
+    extension_dir: Path,
+) -> tuple[str, list[str], dict[str, Any]]:
+    """Return ``(browser_label, argv, popen_kwargs)`` for the current platform.
+
+    Raises ``RuntimeError`` with a user-facing message when no Chrome-family
+    executable can be found or the platform is unsupported.
+    """
+    load_arg = f"--load-extension={extension_dir}"
+    if sys.platform == "darwin":
+        return "chrome", ["open", "-na", "Google Chrome", "--args", load_arg], {}
+    if sys.platform == "win32":
+        exe = shutil.which("chrome")
+        if exe is None:
+            for candidate in _WIN_CHROME_CANDIDATES:
+                expanded = os.path.expandvars(candidate)
+                if Path(expanded).is_file():
+                    exe = expanded
+                    break
+        if exe is None:
+            raise RuntimeError(
+                "Google Chrome was not found on this machine. Install Chrome, "
+                "or load the extension manually from chrome://extensions."
+            )
+        # DETACHED_PROCESS + CREATE_NO_WINDOW: fully independent of this
+        # process, no console window. getattr defaults keep this importable
+        # (and testable) on non-Windows hosts where the constants don't exist.
+        creationflags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(
+            subprocess, "CREATE_NO_WINDOW", 0
+        )
+        return "chrome", [exe, load_arg], {"creationflags": creationflags}
+    if sys.platform.startswith("linux"):
+        exe = shutil.which("google-chrome") or shutil.which("chromium")
+        if exe is None:
+            raise RuntimeError(
+                "Neither google-chrome nor chromium was found on PATH. Install "
+                "Chrome or Chromium, or load the extension manually from "
+                "chrome://extensions."
+            )
+        browser = "chromium" if "chromium" in Path(exe).name else "chrome"
+        return browser, [exe, load_arg], {}
+    raise RuntimeError(
+        f"Unsupported platform '{sys.platform}'. Load the extension manually "
+        "from chrome://extensions instead."
+    )
+
+
+@router.post("/launch-browser")
+async def launch_browser() -> LaunchBrowserResponse:
+    """Launch the user's Chrome-family browser with the extension loaded.
+
+    Guided auto-install: spawns Chrome with ``--load-extension`` pointing at
+    the unpacked WebBridge extension, so the user never has to visit
+    chrome://extensions by hand. The process is spawned detached — this
+    endpoint never waits on the browser.
+    """
+    extension_dir = _resolve_extension_dir()
+    if extension_dir is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "WebBridge extension directory not found (looked at "
+                f"${_EXTENSION_DIR_ENV} and <install>/extensions/webbridge). "
+                "Install it manually: open chrome://extensions, enable "
+                "Developer mode, then 'Load unpacked' and select the "
+                "extensions/webbridge directory from your EvoFlux installation."
+            ),
+        )
+    try:
+        browser, argv, popen_kwargs = _chrome_launch_command(extension_dir)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    try:
+        subprocess.Popen(  # noqa: S603 — argv is built from trusted local paths
+            argv,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            **popen_kwargs,
+        )
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to launch {browser}: {exc}"
+        ) from exc
+    logger.info("webbridge_launch_browser browser={} argv={}", browser, argv)
+    return LaunchBrowserResponse(ok=True, browser=browser, message=_LAUNCH_MESSAGE)
 
 
 # ── Extension WebSocket ───────────────────────────────────────────────────────

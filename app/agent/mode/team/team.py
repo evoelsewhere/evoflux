@@ -297,6 +297,12 @@ class AgentTeam:
         workspace: str | None = None,
         permission_mode: str = "auto",
         extra_workspace_paths: list[str] | None = None,
+        # Session tags persisted on the ChatSession row (e.g. {"webbridge"}).
+        # Restored onto the in-memory team by the chat routes on every
+        # request (same pattern as permission_mode) so a cold team boot after
+        # a server restart still enforces tag-based tool scoping — see
+        # member.py's excluded_tools computation for the "webbridge" tag.
+        session_tags: frozenset[str] | None = None,
         # AIM mode only: paths (base-source repos) the team's filesystem
         # tools must never write to, even though they sit alongside the
         # writable target/KB repos in extra_workspace_paths. Threaded into
@@ -319,6 +325,7 @@ class AgentTeam:
         self.mode = mode
         self.workspace = workspace
         self.permission_mode = permission_mode
+        self.session_tags: frozenset[str] = session_tags or frozenset()
         self.extra_workspace_paths: list[str] = extra_workspace_paths or []
         self.read_only_paths: list[str] = read_only_paths or []
 
