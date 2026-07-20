@@ -170,10 +170,10 @@ cd evoflux
 uv sync                        # Python deps (requires uv)
 cd web && bun install && cd .. # frontend deps (requires bun)
 
-make dev                       # backend :8000 (reload) + frontend :5173, together
+make dev                       # backend :8000 (reload) + Vite :5173 + desktop app (Tauri dev shell)
 ```
 
-Then open `http://localhost:5173`, connect your first LLM provider (any of the 12 supported), and start chatting in Forge mode — open a folder to switch to Coding, or set up a base/target/KB project to switch to AIM.
+The desktop app window opens automatically (the same UI is also served at `http://localhost:5173` — running the Tauri shell requires Rust and the `tauri` cargo subcommand). Connect your first LLM provider (any of the 12 supported), and start chatting in Forge mode — open a folder to switch to Coding, or set up a base/target/KB project to switch to AIM.
 
 ---
 
