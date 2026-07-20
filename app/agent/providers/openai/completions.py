@@ -40,6 +40,7 @@ from .schemas import (
     OpenAIToolCall,
 )
 from .sanitization import sanitize_openai_tool_pairs
+from .tool_content import flatten_tool_content_for_provider
 
 if TYPE_CHECKING:
     pass
@@ -209,7 +210,10 @@ class CompletionsHandler:
         max_tokens_value = merged.get("max_tokens")
         req = OpenAIChatRequest(
             model=self.model,
-            messages=self.convert_messages(sanitize_openai_tool_pairs(messages)),
+            messages=flatten_tool_content_for_provider(
+                self.convert_messages(sanitize_openai_tool_pairs(messages)),
+                self.model,
+            ),
             tools=self.convert_tools(tools),
             temperature=merged.get("temperature"),
             top_p=merged.get("top_p"),
