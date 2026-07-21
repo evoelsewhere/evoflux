@@ -28,13 +28,11 @@ kill-dev-ports: ## Stop processes listening on dev ports (:8000, :5173)
 		fi; \
 	done
 
-dev: kill-dev-ports ## Start backend (:8000 + reload), Vite (:5173) and the Tauri desktop app together
+dev: kill-dev-ports ## Start backend (:8000 + reload) and frontend (Vite :5173) together
 	@command -v bun >/dev/null 2>&1 || { echo "error: 'bun' not found — install from https://bun.sh"; exit 1; }
-	@command -v cargo >/dev/null 2>&1 || { echo "error: 'cargo' not found — install Rust via https://rustup.rs"; exit 1; }
 	@trap 'kill 0' INT TERM EXIT; \
 	(uv run uvicorn app.server:app --reload --reload-dir app 2>&1 | sed 's/^/[api] /') & \
 	(cd web && bun dev 2>&1 | sed 's/^/[web] /') & \
-	(cd desktop/src-tauri && cargo tauri dev -c tauri.dev.conf.json 2>&1 | sed 's/^/[app] /') & \
 	wait
 
 test: ## Run tests
