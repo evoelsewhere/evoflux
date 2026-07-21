@@ -54,12 +54,12 @@ export function ContextBudgetBar({
 
   return (
     <div
-      className={cn('flex items-center gap-1.5', className)}
+      className={cn('inline-flex h-8 items-center gap-1.5 rounded-md px-2', className)}
       title={tooltip}
       aria-label={tooltip}
     >
       {/* Bar track */}
-      <div className="relative h-1.5 w-16 overflow-hidden rounded-full bg-(--border-subtle)">
+      <div className="relative h-1.5 w-14 overflow-hidden rounded-full bg-(--border-subtle)">
         <div
           className={cn('absolute inset-y-0 left-0 rounded-full transition-all duration-700', barColor)}
           style={{ width: `${pct}%` }}
@@ -75,7 +75,7 @@ export function ContextBudgetBar({
               ? 'text-red-400'
               : isWarn
                 ? 'text-amber-400'
-                : 'text-(--color-text-subtle)',
+                : 'text-(--color-text-muted)',
           )}
         >
           {pct}%

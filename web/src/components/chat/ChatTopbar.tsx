@@ -252,15 +252,15 @@ export function ChatTopbar({
             <button
               type="button"
               onClick={onWiki}
-              className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors ${
+              className={`inline-flex h-8 min-w-8 items-center justify-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors ${
                 wikiActive
-                  ? 'bg-(--bg-key) text-(--color-text)'
+                  ? 'bg-(--color-surface-2) text-(--color-text)'
                   : 'text-(--color-text-2) hover:bg-(--bg-key) hover:text-(--color-text)'
               }`}
               title="Wiki / session notes (Ctrl+M)"
             >
-              <Brain size={12} aria-hidden="true" />
-              <span>Wiki</span>
+              <Brain size={14} aria-hidden="true" />
+              <span className="hidden md:inline">Wiki</span>
             </button>
           )}
           <SessionTOC sessionId={sessionId} />

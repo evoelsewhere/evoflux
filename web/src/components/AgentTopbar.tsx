@@ -116,7 +116,7 @@ export function AgentTopbar({
   return (
     <div
       className={cn(
-        'flex shrink-0 items-center gap-0.5 py-0.5 md:gap-1.5 md:py-2',
+        'flex shrink-0 items-center gap-1 py-0.5 md:gap-2 md:py-2',
         className,
       )}
     >
