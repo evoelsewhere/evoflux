@@ -246,13 +246,18 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   // Tags ride on the forge session list rows — the store keeps no tags.
   const { data: forgeSessionsData } = useTeamSessionsQuery('forge')
   const activeSessionId = sessionIdState ?? sessionId ?? null
-  const isWebBridgeSession = useMemo(() => {
-    if (!activeSessionId) return false
-    return (
-      forgeSessionsData?.pages.some((page) =>
-        page.data.some((s) => s.id === activeSessionId && s.tags?.includes('webbridge')),
-      ) ?? false
-    )
+  const { isWebBridgeSession, sessionTags } = useMemo(() => {
+    if (!activeSessionId) return { isWebBridgeSession: false, sessionTags: null }
+    for (const page of forgeSessionsData?.pages ?? []) {
+      const found = page.data.find((s) => s.id === activeSessionId)
+      if (found) {
+        return {
+          isWebBridgeSession: found.tags?.includes('webbridge') ?? false,
+          sessionTags: found.tags ?? null,
+        }
+      }
+    }
+    return { isWebBridgeSession: false, sessionTags: null }
   }, [forgeSessionsData, activeSessionId])
   const providersQ = useProvidersQuery()
   const hasConfiguredModelProvider = providersQ.data?.providers.some(
@@ -857,6 +862,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
           workspace={workspace}
           sessionId={sessionIdState}
           sessionTitle={sessionTitle}
+          sessionTags={sessionTags}
           codingIdentityLabel={codingIdentityLabel}
           activeAgent={activeAgent}
           agentNames={agentNames}
