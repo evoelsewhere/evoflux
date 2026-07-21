@@ -53,15 +53,15 @@ function CopyRow({ label, value }: { label: string; value: string }) {
   }, [value])
   return (
     <div className="flex items-center gap-2">
-      <span className="w-20 shrink-0 text-xs text-(--color-text-subtle)">{label}</span>
-      <code className="min-w-0 flex-1 truncate rounded bg-(--bg-2) px-1.5 py-0.5 font-mono text-xs text-(--color-text)">
+      <span className="w-24 shrink-0 text-xs text-(--color-text-subtle)">{label}</span>
+      <code className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap rounded bg-(--bg-2) px-1.5 py-0.5 font-mono text-xs text-(--color-text)" title={value}>
         {value}
       </code>
       <button
         onClick={copy}
         className="shrink-0 rounded-xs p-1 text-(--color-text-subtle) transition-colors hover:bg-(--bg-2) hover:text-(--color-text-muted)"
         aria-label={`Copy ${label}`}
-        title={`Copy ${label}`}
+        title={copied ? "Copied!" : `Copy ${label}`}
       >
         {copied ? <Check size={12} /> : <Copy size={12} />}
       </button>
@@ -166,7 +166,7 @@ export function WebBridgeStatusDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>WebBridge</DialogTitle>
           <DialogDescription>
@@ -275,14 +275,14 @@ export function WebBridgeStatusDialog({
 
         {audit.length > 0 && (
           <div className="min-w-0">
-            <p className="mb-1 text-xs font-medium text-(--color-text-muted)">
+            <p className="mb-2 text-xs font-medium text-(--color-text-muted)">
               Recent actions
             </p>
-            <ul className="max-h-40 space-y-0.5 overflow-y-auto">
+            <ul className="max-h-48 space-y-1 overflow-y-auto rounded-md bg-(--bg-key) px-2 py-1.5">
               {audit.map((e, i) => (
                 <li
                   key={i}
-                  className="flex min-w-0 items-center gap-1.5 text-xs"
+                  className="flex min-w-0 items-center gap-2 text-xs"
                   title={e.error ?? e.url}
                 >
                   <span
@@ -293,7 +293,7 @@ export function WebBridgeStatusDialog({
                   <span className="shrink-0 font-mono text-(--color-text-2)">
                     {e.action}
                   </span>
-                  <span className="truncate text-(--color-text-subtle)">
+                  <span className="min-w-0 flex-1 truncate text-(--color-text-subtle)">
                     {e.error ? e.error : e.url}
                   </span>
                 </li>
