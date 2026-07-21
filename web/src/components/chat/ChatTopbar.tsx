@@ -64,6 +64,7 @@ interface ChatTopbarProps {
   splitAgentCount: number
   headerTokens: AgentTopbarTokens | undefined
   contextUsed: number
+  contextWindowSize: number | undefined
   summaryTriggerTokens: number | undefined
   dreamRunning: boolean
   terminalOpen: boolean
@@ -108,6 +109,7 @@ export function ChatTopbar({
   splitAgentCount,
   headerTokens,
   contextUsed,
+  contextWindowSize,
   summaryTriggerTokens,
   dreamRunning,
   terminalOpen,
@@ -265,7 +267,7 @@ export function ChatTopbar({
           <AgentTopbar
             isMobile={false}
             tokens={headerTokens}
-            contextBudget={contextUsed > 0 ? { used: contextUsed, max: summaryTriggerTokens } : undefined}
+            contextBudget={contextUsed > 0 ? { used: contextUsed, max: contextWindowSize } : undefined}
             dreamRunning={dreamRunning}
             viewMode={viewMode}
             onViewModeChange={onViewModeChange}
