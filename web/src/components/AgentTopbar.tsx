@@ -8,11 +8,13 @@
  */
 
 import {
+  Brain,
   CalendarClock,
   FolderOpen,
   ListChecks,
   Moon,
   Terminal,
+  TerminalSquare,
   Users,
   type LucideIcon,
 } from 'lucide-react'
@@ -56,7 +58,7 @@ function ViewModeSwitch({
           type="button"
           onClick={() => onValueChange(key)}
           className={cn(
-            'px-2.5 text-xs font-medium transition-colors',
+            'px-2.5 text-xs font-medium transition-colors rounded-md',
             value === key
               ? 'bg-(--color-surface-2) text-(--color-text)'
               : 'text-(--color-text-muted) hover:text-(--color-text-2)',
