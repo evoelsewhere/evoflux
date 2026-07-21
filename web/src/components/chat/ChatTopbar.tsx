@@ -26,6 +26,7 @@ import { TaskProgressPill } from '@/components/TaskProgressPill'
 import { WorkflowProgressPill } from '@/components/WorkflowProgressPill'
 import { SessionTOC } from '@/components/SessionTOC'
 import { SessionScheduleIndicator } from '@/components/SessionScheduleIndicator'
+import { WebBridgeBrowserInfo } from '@/components/shell/WebBridgeBrowserInfo'
 import { isAgentRole, type AgentRole } from '@/lib/agent-roles'
 import type { ActiveLoop, ActiveWorkflowExecution, AgentStream } from '@/stores/useTeamStore/types'
 import type { Chapter } from '@/api/types'
@@ -46,6 +47,7 @@ interface ChatTopbarProps {
   workspace: string | null
   sessionId: string | null
   sessionTitle: string | null
+  sessionTags?: string[] | null
   codingIdentityLabel: string | null
   activeAgent: string | null
   agentNames: string[]
@@ -88,6 +90,7 @@ export function ChatTopbar({
   workspace,
   sessionId,
   sessionTitle,
+  sessionTags,
   codingIdentityLabel,
   activeAgent,
   agentNames,
@@ -121,6 +124,8 @@ export function ChatTopbar({
   onScheduler,
   onCompact,
 }: ChatTopbarProps) {
+  const isWebBridge = sessionTags?.includes('webbridge') ?? false
+
   const loopLabel = activeLoop
     ? `${activeLoop.paused ? 'Loop paused' : activeLoop.prompt ? 'Loop active' : 'Loop ready'}${activeLoop.prompt ? `: "${activeLoop.prompt}"` : ''}`
     : null
@@ -173,6 +178,7 @@ export function ChatTopbar({
               onSelect={onSelectAgent}
             />
           )}
+          {!isMobile && isWebBridge && <WebBridgeBrowserInfo />}
           {!isMobile && activeLoop && loopLabel && loopProgress && (
             <LoopStatusPill
               label={loopLabel}
