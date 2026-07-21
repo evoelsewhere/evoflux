@@ -12,7 +12,7 @@
  * opts them out of the window-drag guard.
  */
 import { AnimatePresence, motion } from 'framer-motion'
-import { Brain, CalendarClock, Check, ChevronDown, FolderOpen, Globe, Menu, Minimize2, MoreHorizontal, TerminalSquare, X } from 'lucide-react'
+import { BookOpen, CalendarClock, Check, ChevronDown, FolderOpen, Menu, Minimize2, MoreHorizontal, Terminal, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import {
   DropdownMenu,
@@ -21,7 +21,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { TokenMeter } from '@/components/ui/token-meter'
-import { AgentTopbar, type AgentTopbarTokens } from '@/components/AgentTopbar'
+import { TopbarAction } from '@/components/ui/topbar-action'
+import { AgentTopbar, type AgentTopbarTokens, type ViewMode } from '@/components/AgentTopbar'
 import { TaskProgressPill } from '@/components/TaskProgressPill'
 import { WorkflowProgressPill } from '@/components/WorkflowProgressPill'
 import { SessionTOC } from '@/components/SessionTOC'
@@ -249,19 +250,14 @@ export function ChatTopbar({
         ) : (
           <>
           {!isMobile && onWiki && (
-            <button
-              type="button"
+            <TopbarAction
+              Icon={BookOpen}
+              label="Wiki"
               onClick={onWiki}
-              className={`inline-flex h-8 min-w-8 items-center justify-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors ${
-                wikiActive
-                  ? 'bg-(--color-surface-2) text-(--color-text)'
-                  : 'text-(--color-text-2) hover:bg-(--bg-key) hover:text-(--color-text)'
-              }`}
               title="Wiki / session notes (Ctrl+M)"
-            >
-              <Brain size={14} aria-hidden="true" />
-              <span className="hidden md:inline">Wiki</span>
-            </button>
+              indicator={wikiActive}
+              indicatorClassName="bg-(--color-success)"
+            />
           )}
           <SessionTOC sessionId={sessionId} />
           <AgentTopbar
@@ -272,7 +268,7 @@ export function ChatTopbar({
             viewMode={viewMode}
             onViewModeChange={onViewModeChange}
             terminalAction={{
-              Icon: TerminalSquare,
+              Icon: Terminal,
               onClick: onToggleTerminal,
               title: 'AI Terminal (Ctrl+`)',
               ariaLabel: 'Terminal',
