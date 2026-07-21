@@ -12,7 +12,7 @@
  * opts them out of the window-drag guard.
  */
 import { AnimatePresence, motion } from 'framer-motion'
-import { Brain, CalendarClock, Check, ChevronDown, FolderOpen, Menu, Minimize2, MoreHorizontal, TerminalSquare, X } from 'lucide-react'
+import { Brain, CalendarClock, Check, ChevronDown, FolderOpen, Globe, Menu, Minimize2, MoreHorizontal, TerminalSquare, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import {
   DropdownMenu,
@@ -78,6 +78,7 @@ interface ChatTopbarProps {
   mobileActionsOpen: boolean
   onMobileActionsOpenChange: (open: boolean) => void
   onWiki: () => void
+  wikiActive?: boolean
   onScheduler: () => void
   onCompact: () => void
 }
@@ -121,6 +122,7 @@ export function ChatTopbar({
   mobileActionsOpen,
   onMobileActionsOpenChange,
   onWiki,
+  wikiActive = false,
   onScheduler,
   onCompact,
 }: ChatTopbarProps) {
@@ -179,6 +181,21 @@ export function ChatTopbar({
             />
           )}
           {!isMobile && isWebBridge && <WebBridgeBrowserInfo />}
+          {!isMobile && onWiki && (
+            <button
+              type="button"
+              onClick={onWiki}
+              className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors ${
+                wikiActive
+                  ? 'bg-(--bg-key) text-(--color-text)'
+                  : 'text-(--color-text-2) hover:bg-(--bg-key) hover:text-(--color-text)'
+              }`}
+              title="Wiki / session notes (Ctrl+M)"
+            >
+              <Brain size={12} aria-hidden="true" />
+              <span>Wiki</span>
+            </button>
+          )}
           {!isMobile && activeLoop && loopLabel && loopProgress && (
             <LoopStatusPill
               label={loopLabel}
