@@ -51,8 +51,8 @@ class TestFlattenToolContentForProvider:
         assert result[0].tool_call_id == "call_1"
         assert result[0].name == "read_file"
 
-    def test_multi_part_tool_content_preserved(self):
-        """Multi-part tool content should be left as array."""
+    def test_multi_part_tool_content_flattened(self):
+        """Multi-part tool content should be flattened to string."""
         messages = [
             OpenAIMessage(
                 role="tool",
@@ -70,11 +70,12 @@ class TestFlattenToolContentForProvider:
         result = flatten_tool_content_for_provider(messages, "mimo-v2.5")
 
         assert len(result) == 1
-        assert isinstance(result[0].content, list)
-        assert len(result[0].content) == 2
+        assert isinstance(result[0].content, str)
+        assert "Here is the image:" in result[0].content
+        assert "[image: https://example.com/img.jpg]" in result[0].content
 
-    def test_single_image_part_not_flattened(self):
-        """Single image part should not be flattened (preserves error signal)."""
+    def test_single_image_part_flattened(self):
+        """Single image part should be flattened to string placeholder."""
         messages = [
             OpenAIMessage(
                 role="tool",
@@ -91,7 +92,8 @@ class TestFlattenToolContentForProvider:
         result = flatten_tool_content_for_provider(messages, "mimo-v2.5")
 
         assert len(result) == 1
-        assert isinstance(result[0].content, list)
+        assert isinstance(result[0].content, str)
+        assert result[0].content == "[image: https://example.com/img.jpg]"
 
     def test_string_content_unchanged(self):
         """String content should not be modified."""
@@ -107,6 +109,30 @@ class TestFlattenToolContentForProvider:
 
         assert len(result) == 1
         assert result[0].content == "Plain text result"
+
+    def test_base64_image_data_flattened(self):
+        """Base64 image data should be flattened to placeholder string."""
+        messages = [
+            OpenAIMessage(
+                role="tool",
+                content=[
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": "data:image/png;base64,iVBORw0KGgo=",
+                            "detail": "auto",
+                        },
+                    }
+                ],
+                tool_call_id="call_1",
+                name="screenshot",
+            )
+        ]
+        result = flatten_tool_content_for_provider(messages, "mimo-v2.5")
+
+        assert len(result) == 1
+        assert isinstance(result[0].content, str)
+        assert result[0].content == "[image data]"
 
     def test_non_matching_model_no_transform(self):
         """Non-matching model should not trigger flatten."""
