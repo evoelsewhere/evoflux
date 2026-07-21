@@ -9,7 +9,7 @@ Configuration lives in ``.evoflux/launch.json`` at the workspace root
 unchanged):
 
     {
-      "version": "0.0.1",
+        "version": "0.0.2",
       "configurations": [
         {
           "name": "web",
