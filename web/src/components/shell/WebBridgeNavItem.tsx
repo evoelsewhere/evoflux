@@ -18,6 +18,9 @@ import { WebBridgeStatusDialog } from './WebBridgeStatusDialog'
 import { getWebBridgeStatus } from '@/api/client'
 import type { WebBridgeStatusResponse } from '@/api/types'
 
+/** Keyboard shortcut: Ctrl+Shift+W to toggle WebBridge dialog. */
+const WEBBRIDGE_SHORTCUT = { ctrl: true, shift: true, key: 'w' }
+
 interface WebBridgeNavItemProps {
   collapsed?: boolean
 }
@@ -47,6 +50,18 @@ export function WebBridgeNavItem({ collapsed = false }: WebBridgeNavItemProps) {
     [],
   )
 
+  // Global keyboard shortcut: Ctrl+Shift+W to open WebBridge dialog
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === WEBBRIDGE_SHORTCUT.key) {
+        e.preventDefault()
+        setOpen((prev) => !prev)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
+
   return (
     <>
       <SidebarItem
@@ -55,14 +70,26 @@ export function WebBridgeNavItem({ collapsed = false }: WebBridgeNavItemProps) {
         collapsed={collapsed}
         onClick={() => setOpen(true)}
         rightSlot={
-          connected !== null ? (
+          !collapsed ? (
+            <span className="flex shrink-0 items-center gap-1.5">
+              <kbd className="rounded border border-(--color-border) bg-(--bg-page) px-1 py-0.5 font-mono text-xs text-(--color-text-subtle)">
+                Ctrl+Shift+W
+              </kbd>
+              <span
+                className={`inline-block h-2 w-2 rounded-full ${
+                  connected ? 'bg-(--color-success)' : 'bg-(--color-text-subtle)'
+                }`}
+                title={connected ? 'Extension connected' : 'Extension not connected'}
+              />
+            </span>
+          ) : (
             <span
               className={`inline-block h-2 w-2 rounded-full ${
                 connected ? 'bg-(--color-success)' : 'bg-(--color-text-subtle)'
               }`}
               title={connected ? 'Extension connected' : 'Extension not connected'}
             />
-          ) : undefined
+          )
         }
       />
       <WebBridgeStatusDialog
