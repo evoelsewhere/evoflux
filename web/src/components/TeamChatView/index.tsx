@@ -897,6 +897,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
           mobileActionsOpen={showMobileActions}
           onMobileActionsOpenChange={setShowMobileActions}
           onWiki={() => { toggleWiki(); closeMobileActionsMenu() }}
+          wikiActive={wikiOpen}
           onScheduler={() => { toggleScheduler(); closeMobileActionsMenu() }}
           onCompact={() => { useTeamStore.getState().compactTeam(); closeMobileActionsMenu() }}
         />

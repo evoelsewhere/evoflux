@@ -1396,17 +1396,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                       <FolderOpen size={14} aria-hidden="true" />
                     </button>
                   )}
-                  {onWiki && (
-                    <button
-                      type="button"
-                      onClick={(e) => { stopClick(e); onWiki() }}
-                      aria-label="Wiki"
-                      title="Wiki / session notes (Ctrl+M)"
-                      className={cn(actionBtnClass, wikiActive && 'bg-(--bg-key) text-(--color-text)')}
-                    >
-                      <Brain size={14} aria-hidden="true" />
-                    </button>
-                  )}
+                  {/* Wiki moved to topbar */}
                   {onActivity && (
                     <button
                       type="button"
