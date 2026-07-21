@@ -20,6 +20,7 @@ from app.agent.loader import AgentConfig
 from app.agent.hooks.summarization import prompt_token_threshold_for_model
 from app.agent.providers.capabilities import get_capabilities
 from app.agent.providers.catalog import ProviderEntry, all_providers
+from app.agent.providers.model_metadata import get_model_limits
 from app.agent.providers.model_discovery import (
     discover_provider_models,
     filter_agent_model_ids,
@@ -303,6 +304,7 @@ async def get_registry() -> RegistryResponse:
             return
         seen.add(model_id)
         caps = get_capabilities(model_id)
+        limits = get_model_limits(model_id)
         models.append(
             ModelCatalogEntry(
                 id=model_id,
@@ -314,6 +316,7 @@ async def get_registry() -> RegistryResponse:
                 output_image=caps.output.image,
                 output_video=caps.output.video,
                 summary_trigger_tokens=prompt_token_threshold_for_model(model_id),
+                context_length=limits.context_length,
                 thinking_levels=list(get_model_thinking_levels(model_id)),
             )
         )

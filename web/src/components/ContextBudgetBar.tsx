@@ -59,7 +59,7 @@ export function ContextBudgetBar({
       aria-label={tooltip}
     >
       {/* Bar track */}
-      <div className="relative h-1 w-14 overflow-hidden rounded-full bg-(--border-subtle)">
+      <div className="relative h-1.5 w-16 overflow-hidden rounded-full bg-(--border-subtle)">
         <div
           className={cn('absolute inset-y-0 left-0 rounded-full transition-all duration-700', barColor)}
           style={{ width: `${pct}%` }}

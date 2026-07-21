@@ -309,6 +309,14 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
     }
   }, [sessionModel, registryQ.data, leadCapabilities, leadAgent?.model])
 
+  // Context window size from the model registry for the topbar budget bar.
+  const contextWindowSize = useMemo(() => {
+    const modelToLookup = sessionModel || leadAgent?.model
+    if (!modelToLookup || !registryQ.data) return undefined
+    const entry = registryQ.data.models.find((m) => m.id === modelToLookup)
+    return entry?.context_length ?? undefined
+  }, [sessionModel, registryQ.data, leadAgent?.model])
+
   // Workspace file/folder list for the InputBar's @-mention picker. Fetched
   // lazily — the query is keyed on workspace/session so coding and normal
   // modes don't share cache entries.
@@ -883,6 +891,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
           splitAgentCount={splitAgentNames.length}
           headerTokens={headerTokens}
           contextUsed={contextUsed}
+          contextWindowSize={contextWindowSize}
           summaryTriggerTokens={summaryTriggerTokens}
           dreamRunning={dreamMutation.isPending}
           terminalOpen={terminalOpen}
