@@ -1,28 +1,28 @@
 /**
  * AgentTopbar — right-cluster composite for the chat header.
  *
- * Layout: dream pulse · tokens · view toggle · todos/files/wiki etc.
+ * Layout: dream pulse · tokens · view mode switch · todos/files/wiki etc.
  * Props-driven so previews and future single-agent surfaces can reuse
  * it without pulling in TeamChatView's stores. Design source:
  * `AgentTopbar` (`E8lml9`) in `.diagrams/EvoFlux-ui.pen`.
  */
 
 import {
-  Brain,
   CalendarClock,
   FolderOpen,
   ListChecks,
   Moon,
-  TerminalSquare,
+  Terminal,
   Users,
   type LucideIcon,
 } from 'lucide-react'
 
 import { TopbarAction } from '@/components/ui/topbar-action'
 import { TokenMeter } from '@/components/ui/token-meter'
-import { ViewToggle, type ViewMode } from '@/components/ui/view-toggle'
 import { ContextBudgetBar } from '@/components/ContextBudgetBar'
 import { cn } from '@/lib/utils'
+
+export type ViewMode = 'agent' | 'split' | 'monitor'
 
 export interface AgentTopbarTokens {
   input: number
@@ -30,6 +30,49 @@ export interface AgentTopbarTokens {
   cached?: number
   trigger?: number
   pulsing?: boolean
+}
+
+const VIEW_MODES: { key: ViewMode; label: string }[] = [
+  { key: 'agent', label: 'Agent' },
+  { key: 'split', label: 'Split' },
+  { key: 'monitor', label: 'Monitor' },
+]
+
+/** Merged view mode switch + context budget bar. */
+function ViewModeSwitch({
+  value,
+  onValueChange,
+  contextBudget,
+}: {
+  value: ViewMode
+  onValueChange: (mode: ViewMode) => void
+  contextBudget?: { used: number; max?: number }
+}) {
+  return (
+    <div className="flex h-8 items-center overflow-hidden rounded-lg border border-(--color-border) bg-(--bg-card)">
+      {VIEW_MODES.map(({ key, label }) => (
+        <button
+          key={key}
+          type="button"
+          onClick={() => onValueChange(key)}
+          className={cn(
+            'px-2.5 text-xs font-medium transition-colors',
+            value === key
+              ? 'bg-(--color-surface-2) text-(--color-text)'
+              : 'text-(--color-text-muted) hover:text-(--color-text-2)',
+          )}
+        >
+          {label}
+        </button>
+      ))}
+      {contextBudget && contextBudget.used > 0 && (
+        <>
+          <div className="h-4 w-px bg-(--color-border)" />
+          <ContextBudgetBar used={contextBudget.used} max={contextBudget.max} compact />
+        </>
+      )}
+    </div>
+  )
 }
 
 export interface AgentTopbarActionDescriptor {
@@ -141,16 +184,12 @@ export function AgentTopbar({
         />
       )}
 
-      {!isMobile && contextBudget && contextBudget.used > 0 && (
-        <ContextBudgetBar
-          used={contextBudget.used}
-          max={contextBudget.max}
-          className="mr-0.5"
+      {!isMobile && showViewToggle && viewMode && onViewModeChange && (
+        <ViewModeSwitch
+          value={viewMode}
+          onValueChange={onViewModeChange}
+          contextBudget={contextBudget}
         />
-      )}
-
-      {showViewToggle && viewMode && onViewModeChange && (
-        <ViewToggle value={viewMode} onValueChange={onViewModeChange} />
       )}
 
       {todosAction && <AgentTopbarActionButton action={todosAction} fallbackIcon={ListChecks} />}

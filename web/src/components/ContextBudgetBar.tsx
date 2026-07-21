@@ -22,6 +22,8 @@ export interface ContextBudgetBarProps {
   className?: string
   /** Show the percentage label inline. Defaults to true. */
   showLabel?: boolean
+  /** Compact mode for embedding in ViewModeSwitch. */
+  compact?: boolean
 }
 
 function formatTokens(n: number): string {
@@ -35,6 +37,7 @@ export function ContextBudgetBar({
   max = DEFAULT_CONTEXT_MAX,
   className,
   showLabel = true,
+  compact = false,
 }: ContextBudgetBarProps) {
   const pct = Math.min(100, Math.round((used / max) * 100))
   const isDanger = pct >= 95
@@ -51,6 +54,35 @@ export function ContextBudgetBar({
     : isWarn
       ? `Context ${pct}% full — summarization may trigger soon (${formatTokens(used)} / ${formatTokens(max)})`
       : `Context ${pct}% used (${formatTokens(used)} / ${formatTokens(max)})`
+
+  if (compact) {
+    return (
+      <div
+        className={cn('flex items-center gap-1 px-2', className)}
+        title={tooltip}
+        aria-label={tooltip}
+      >
+        <div className="relative h-1.5 w-10 overflow-hidden rounded-full bg-(--border-subtle)">
+          <div
+            className={cn('absolute inset-y-0 left-0 rounded-full transition-all duration-700', barColor)}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <span
+          className={cn(
+            'font-mono text-[10px] tabular-nums',
+            isDanger
+              ? 'text-red-400'
+              : isWarn
+                ? 'text-amber-400'
+                : 'text-(--color-text-muted)',
+          )}
+        >
+          {pct}%
+        </span>
+      </div>
+    )
+  }
 
   return (
     <div
