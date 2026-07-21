@@ -87,7 +87,8 @@
       "digestAlgorithm": "sha256",
       "timestampUrl": "http://timestamp.digicert.com",
       "wix": {
-        "language": "en-US"
+        "language": "en-US",
+        "template": "./windows/main-per-user.wxs"
       }
     },
     "linux": {
