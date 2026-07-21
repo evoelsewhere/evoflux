@@ -12,7 +12,7 @@
  * opts them out of the window-drag guard.
  */
 import { AnimatePresence, motion } from 'framer-motion'
-import { BookOpen, CalendarClock, Check, ChevronDown, FolderOpen, Menu, Minimize2, MoreHorizontal, Terminal, X } from 'lucide-react'
+import { BookOpen, Brain, CalendarClock, Check, ChevronDown, FolderOpen, Globe, Menu, Minimize2, MoreHorizontal, Terminal, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import {
   DropdownMenu,
@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { TokenMeter } from '@/components/ui/token-meter'
 import { TopbarAction } from '@/components/ui/topbar-action'
-import { AgentTopbar, type AgentTopbarTokens, type ViewMode } from '@/components/AgentTopbar'
+import { AgentTopbar, type AgentTopbarTokens } from '@/components/AgentTopbar'
 import { TaskProgressPill } from '@/components/TaskProgressPill'
 import { WorkflowProgressPill } from '@/components/WorkflowProgressPill'
 import { SessionTOC } from '@/components/SessionTOC'
