@@ -1379,10 +1379,6 @@ export function CodingSidebar({
   // collapse-to-rail animation; coding keeps its stacked separate cards.
   const desktopShell = (
     <SidebarShell
-      storageKey={STORAGE_KEYS.sidebar.codingWidth}
-      defaultWidth={256}
-      minWidth={220}
-      maxWidth={420}
       collapsed={sidebarCollapsed}
       rail={rail}
       resizeLabel="Resize coding sidebar"

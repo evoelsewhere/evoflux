@@ -53,4 +53,9 @@ export const SPRINGS = {
 export type SpringName = keyof typeof SPRINGS
 
 /** Default spring — `moderate` unless the user overrides it. */
+/** Keep JS-driven motion aligned with the global reduced-motion CSS gate. */
+export function reducedMotionTransition<T>(reducedMotion: boolean, transition: T): T | { duration: number } {
+  return reducedMotion ? { duration: 0.01 } : transition
+}
+
 export const DEFAULT_SPRING = SPRINGS.moderate

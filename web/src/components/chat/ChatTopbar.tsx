@@ -254,6 +254,7 @@ export function ChatTopbar({
               label="Wiki"
               onClick={onWiki}
               title="Wiki / session notes (Ctrl+M)"
+              aria-pressed={wikiActive}
               indicator={wikiActive}
               indicatorClassName="bg-(--color-success)"
             />

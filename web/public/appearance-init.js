@@ -13,15 +13,9 @@
       root.style.setProperty('--color-accent', ref);
     }
 
-    var FONT_STACKS = {
-      system: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui, sans-serif",
-      mono: "'JetBrains Mono Variable', ui-monospace, 'SF Mono', 'Cascadia Code', 'Fira Code', 'Courier New', monospace",
-    };
-    var stack = FONT_STACKS[parsed.fontFamily];
-    if (stack) {
-      root.style.setProperty('--font-sans', stack);
-      root.style.setProperty('--font-heading', stack);
-    }
+    var FONTS = ['inter', 'system', 'mono', 'geist', 'source-sans'];
+    var font = FONTS.indexOf(parsed.fontFamily) !== -1 ? parsed.fontFamily : 'inter';
+    root.setAttribute('data-font', font);
 
     var scale = [0.9, 1, 1.1, 1.2].indexOf(parsed.fontScale) !== -1 ? parsed.fontScale : 1;
     if (scale !== 1) {

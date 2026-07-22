@@ -3,6 +3,8 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/inter";
 @import "@fontsource-variable/jetbrains-mono";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/source-sans-3";
 @import "@fontsource/caveat";
 @import "highlight.js/styles/atom-one-dark.css";
 
@@ -76,9 +78,9 @@
  * Tokens themselves are defined in :root.dark / :root.light below.
  * ───────────────────────────────────────────────────────────── */
 @theme inline {
-    --font-heading: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-    --font-sans: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-    --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', 'Cascadia Code', 'Fira Code', 'Courier New', monospace;
+    --font-heading: var(--app-font-heading);
+    --font-sans: var(--app-font-sans);
+    --font-mono: var(--app-font-mono);
     --font-hand: 'Caveat', cursive;
 
     /* shadcn semantic tokens */
@@ -174,6 +176,14 @@
     /* Accent */
     --color-accent:  #C8CACC;
     --color-overlay: #000000CC;
+
+    /* Composer effort scale */
+    --thinking-neutral:        #8B8D91;
+    --thinking-low:            #60A5FA;
+    --thinking-medium:         #A78BFA;
+    --thinking-high:           #FB923C;
+    --thinking-max:            #F472B6;
+    --thinking-thumb-contrast: #FFFFFF;
 
     /* Arc gradients */
     --color-gradient-primary: linear-gradient(135deg, #667eea 0%, #8B5CF6 100%);
@@ -336,6 +346,14 @@
     /* Accent */
     --color-accent:  #111114;
     --color-overlay: rgba(0, 0, 0, 0.40);
+
+    /* Composer effort scale */
+    --thinking-neutral:        #6B7280;
+    --thinking-low:            #2563EB;
+    --thinking-medium:         #7C3AED;
+    --thinking-high:           #C2410C;
+    --thinking-max:            #BE185D;
+    --thinking-thumb-contrast: #FFFFFF;
 
     /* Arc gradients */
     --color-gradient-primary: linear-gradient(135deg, #667eea 0%, #8B5CF6 100%);
@@ -734,6 +752,73 @@ a svg[aria-hidden="true"],
  * ───────────────────────────────────────────────────────────── */
 .surface-raised {
   box-shadow: var(--shadow-depth);
+}
+
+/* Runtime typography tokens. Appearance selects a preset through data-font;
+ * Tailwind utilities stay connected to these variables instead of compiling
+ * Inter into every .font-sans/.font-heading rule. */
+:root {
+    --app-font-sans: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --app-font-heading: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --app-font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', 'Cascadia Code', 'Fira Code', 'Courier New', monospace;
+}
+
+:root[data-font='system'] {
+    --app-font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui, sans-serif;
+    --app-font-heading: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui, sans-serif;
+}
+
+:root[data-font='mono'] {
+    --app-font-sans: var(--app-font-mono);
+    --app-font-heading: var(--app-font-mono);
+}
+
+:root[data-font='geist'] {
+    --app-font-sans: 'Geist Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --app-font-heading: 'Geist Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+
+:root[data-font='source-sans'] {
+    --app-font-sans: 'Source Sans 3 Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --app-font-heading: 'Source Sans 3 Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+
+/* Fast mode feedback stays inside the effort rail. Particle positions are
+ * deterministic, and only transform/opacity animate to avoid layout work. */
+.fast-mode-particle {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: var(--particle-size);
+  height: var(--particle-size);
+  border-radius: 999px;
+  background: var(--thinking-thumb-contrast);
+  opacity: 0;
+  transform: translate3d(-16px, calc(-50% + var(--particle-y)), 0) scale(0.7);
+  animation: fast-mode-stream var(--particle-duration) var(--ease-out) var(--particle-delay) infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes fast-mode-stream {
+  0%, 8% {
+    opacity: 0;
+    transform: translate3d(-16px, calc(-50% + var(--particle-y)), 0) scale(0.7);
+  }
+  16% {
+    opacity: 0.35;
+  }
+  38% {
+    opacity: 0.95;
+    transform: translate3d(9rem, calc(-50% + var(--particle-y)), 0) scale(1);
+  }
+  56% {
+    opacity: 0;
+    transform: translate3d(20rem, calc(-50% + var(--particle-y)), 0) scale(0.75);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(20rem, calc(-50% + var(--particle-y)), 0) scale(0.75);
+  }
 }
 
 /* ─────────────────────────────────────────────────────────────

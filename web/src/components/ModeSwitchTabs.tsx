@@ -6,7 +6,10 @@
  */
 
 import { useNavigate } from '@tanstack/react-router'
+import { motion } from 'framer-motion'
 import { ArrowRightLeft, Code2, Gauge } from 'lucide-react'
+import { useReducedMotion } from '@/hooks/useReducedMotion'
+import { reducedMotionTransition, SPRINGS } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 
 export type AppMode = 'forge' | 'coding' | 'aim'
@@ -28,12 +31,23 @@ export function ModeSwitchTabs({
   className?: string
 }) {
   const navigate = useNavigate()
+  const reducedMotion = useReducedMotion()
+  const activeIndex = TABS.findIndex((tab) => tab.mode === active)
   return (
     // The strip is a size container: labels only render when there's room
     // for all three (below ~12.5rem the resizable sidebars would otherwise
     // clip the text), collapsing gracefully to icons + tooltips.
     <div className={cn('@container/modeswitch', className)}>
-      <div className="flex h-8 items-center rounded-md border border-(--color-border) bg-(--bg-page) p-0.5">
+      <div className="relative grid h-9 grid-cols-3 items-center rounded-lg border border-(--color-border) bg-(--bg-page) p-0.5">
+        <motion.div
+          data-testid="mode-switch-indicator"
+          data-active-mode={active}
+          aria-hidden="true"
+          className="pointer-events-none absolute bottom-0.5 left-0.5 top-0.5 w-[calc((100%-0.25rem)/3)] rounded-[6px] bg-(--bg-key) shadow-sm"
+          initial={false}
+          animate={{ x: `${Math.max(0, activeIndex) * 100}%` }}
+          transition={reducedMotionTransition(Boolean(reducedMotion), SPRINGS.fast)}
+        />
         {TABS.map(({ mode, label, Icon, to }) => (
           <button
             key={mode}
@@ -44,15 +58,16 @@ export function ModeSwitchTabs({
               onNavigate?.()
             }}
             title={label}
+            aria-current={mode === active ? 'page' : undefined}
             className={cn(
-              'flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] px-1 text-xs font-medium transition-colors @[12.5rem]/modeswitch:px-2',
+              'relative z-10 flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-[6px] px-1 text-xs font-medium outline-none transition-[color,transform] duration-150 active:translate-y-px focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--color-accent)/35 @[12.5rem]/modeswitch:px-2',
               mode === active
-                ? 'bg-(--bg-key) text-(--color-text) shadow-sm'
+                ? 'text-(--color-text)'
                 : 'text-(--color-text-muted) hover:text-(--color-text)',
             )}
           >
             <Icon size={13} className="shrink-0" aria-hidden="true" />
-            <span className="hidden truncate @[12.5rem]/modeswitch:inline">{label}</span>
+            <span className="hidden whitespace-nowrap @[12.5rem]/modeswitch:inline">{label}</span>
           </button>
         ))}
       </div>
@@ -79,8 +94,9 @@ export function ModeSwitchRail({
             if (mode !== active) navigate({ to })
           }}
           title={label}
+          aria-current={mode === active ? 'page' : undefined}
           className={cn(
-            'flex h-8 w-8 items-center justify-center rounded-md transition-colors',
+            'flex h-8 w-8 items-center justify-center rounded-lg outline-none transition-[background-color,color,transform] duration-150 active:translate-y-px focus-visible:ring-2 focus-visible:ring-(--color-accent)/35',
             mode === active
               ? 'bg-(--bg-key) text-(--color-accent)'
               : 'text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-text-2)',

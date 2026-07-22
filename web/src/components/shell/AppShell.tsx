@@ -37,6 +37,7 @@ interface AppShellProps {
   mobileSidebar?: ReactNode
   header?: ReactNode
   trailing?: ReactNode
+  fullHeightTrailing?: ReactNode
   overlay?: ReactNode
   /** Forwarded to <main> (TeamChatView anchors the floating input bar on it). */
   mainId?: string
@@ -53,6 +54,7 @@ export function AppShell({
   mobileSidebar,
   header,
   trailing,
+  fullHeightTrailing,
   overlay,
   mainId,
   mainRef,
@@ -96,20 +98,23 @@ export function AppShell({
       )}
 
       {/* Right column — optional header + the body row. */}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {header}
-        <div className="flex min-h-0 flex-1 overflow-hidden">
-          {mobileSidebar}
-          <main
-            id={mainId}
-            ref={mainRef}
-            className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[10px] bg-(--bg-page) shadow-sm"
-          >
-            {children}
-          </main>
-          {trailing}
+      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {header}
+          <div className="flex min-h-0 flex-1 overflow-hidden">
+            {mobileSidebar}
+            <main
+              id={mainId}
+              ref={mainRef}
+              className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[10px] bg-(--bg-page) shadow-sm"
+            >
+              {children}
+            </main>
+            {trailing}
+          </div>
+          {overlay}
         </div>
-        {overlay}
+        {fullHeightTrailing}
       </div>
     </div>
   )
