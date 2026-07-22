@@ -21,7 +21,7 @@ const THINKING_LEVEL_LABEL: Record<string, string> = {
 }
 
 const CONTROL_CLASS =
-  'flex h-8 items-center rounded-lg border border-transparent px-2 text-xs text-(--color-text-2) outline-none transition-[background-color,border-color,color,box-shadow,transform] duration-150 hover:bg-(--bg-key) hover:text-(--color-text) active:translate-y-px focus-visible:border-(--color-border-strong) focus-visible:ring-2 focus-visible:ring-(--color-accent)/35'
+  'flex h-7 items-center rounded-lg border border-transparent px-1.5 text-xs text-(--color-text-2) outline-none transition-[background-color,border-color,color,box-shadow,transform] duration-150 hover:bg-(--bg-key) hover:text-(--color-text) active:translate-y-px focus-visible:border-(--color-border-strong) focus-visible:ring-2 focus-visible:ring-(--color-accent)/35'
 
 function buildThinkingOptions(levels: string[]) {
   return [
@@ -297,7 +297,7 @@ function AdvancedComposerControl({
           <button
             type="button"
             aria-label={`Model settings: ${effectiveModel ? shortModelName(effectiveModel) : 'model'}, ${currentOption.label}`}
-            className={cn(CONTROL_CLASS, 'w-52 shrink-0 justify-center gap-1.5 border-(--color-border) bg-(--bg-card)')}
+            className={cn(CONTROL_CLASS, 'w-44 shrink-0 justify-center gap-1 border-(--color-border) bg-(--bg-card)')}
           />
         }
       >
@@ -306,7 +306,7 @@ function AdvancedComposerControl({
         </span>
         <span aria-hidden="true" className="text-(--color-text-subtle)">·</span>
         <span style={{ color: thinkingColor(currentOption.value || null) }}>{currentOption.label}</span>
-        <ChevronDown aria-hidden="true" size={11} className={cn('ml-0.5 shrink-0 transition-transform duration-150', open && 'rotate-180')} />
+        <ChevronDown aria-hidden="true" size={10} className={cn('shrink-0 transition-transform duration-150', open && 'rotate-180')} />
       </PopoverTrigger>
 
       <PopoverContent
