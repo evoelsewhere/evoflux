@@ -7,6 +7,9 @@
  * - type:'tool'    → tool call card
  * - type:'text'    → markdown prose
  *
+ * Per-block rendering is delegated to the shared `BlockRenderer`
+ * (see `BlockRenderer.tsx`, also used by the Side Chat panel).
+ *
  * Blocks are grouped into "turns" via `partitionTurns` (see `utils/turns.ts`):
  * a turn is a contiguous run of non-user blocks. Each finalized turn renders a
  * single `AssistantTurnFooter` (copy + timestamp); only the trailing turn hides
@@ -15,44 +18,28 @@
  * `AgentPane` for split/unified modes.
  */
 
-import { memo, useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
-import { LazyMarkdownBlock } from '@/utils/LazyMarkdownBlock'
 import { ChatWelcome } from './ChatWelcome'
-import { ChevronDown, ChevronUp, Copy, Check, Undo2, Terminal } from 'lucide-react'
-import { Thinking } from './Thinking'
-import { ToolCall } from './ToolCall'
-import { MCPAppResult } from './MCPAppResult'
-import { WidgetRenderer } from './WidgetRenderer'
-import { InboxBubble } from './InboxBubble'
-import { HandoffCard } from './HandoffCard'
-import { CompactionDivider } from './CompactionDivider'
-import { ImageAttachment } from './ImageAttachment'
-import { FileCard } from './FileCard'
+import { ChevronDown, ChevronUp } from 'lucide-react'
+import { BlockRenderer } from './BlockRenderer'
 import { AssistantTurnFooter } from './AssistantTurnFooter'
 import { groupConsecutiveToolCalls, ToolCallGroupCard } from './ToolCallGroup'
 import type { ToolBlockGroup } from './ToolCallGroup'
 import { PendingMessageQueue } from './PendingMessageQueue'
 import { getVisibleTurnWindow, partitionTurns, type TurnItem } from '@/utils/turns'
-import { latestDirectUserBlockId } from '@/utils/blocks'
-import { extractSleepPrefix, formatTime } from '@/utils/format'
+import { isDirectUserBlock, latestDirectUserBlockId } from '@/utils/blocks'
 import { mcpAppResourceUri } from '@/utils/mcp-app-artifacts'
 import { useTeamStore } from '@/stores/useTeamStore'
-import { findCommittedMentions } from './InputBar.mentions'
-import { resolveApiUrl } from '@/api/client'
 import { LoadingVerb } from './motion/LoadingVerb'
 import { TextSelectionAction } from './TextSelectionAction'
-import type { Chapter, ContentBlock, MessageAttachment } from '@/api/types'
+import type { Chapter, ContentBlock } from '@/api/types'
 
 const SCROLL_THRESHOLD = 40
 const USER_SCROLL_DETACH_DELTA = 4
 const LOAD_OLDER_THRESHOLD = 300
 const INITIAL_RENDERED_TURNS = 80
 const TURN_RENDER_STEP = 80
-
-function isDirectUserBlock(block: ContentBlock): boolean {
-  return block.type === 'user' && !block.extra?.from_agent
-}
 
 interface AgentViewProps {
   /** Finalized blocks from previous turns. */
@@ -76,304 +63,6 @@ interface AgentViewProps {
   /** When provided, a floating text-selection action sends the selection to the side chat. */
   onSendToSideChat?: (selectedText: string) => void
 }
-
-const USER_COLLAPSE_LINES = 10
-const USER_COLLAPSE_CHARS = 700
-
-function shortModelName(modelId: string | null | undefined): string | null {
-  if (!modelId) return null
-  return modelId.split(':').at(-1)?.split('/').at(-1) || modelId
-}
-
-/**
- * Render user prose with ``@mention`` tokens syntax-highlighted.
- *
- * Matches the InputBar's overlay convention so a message looks the same
- * after send as it did while composing:
- *   - folders (token ends in ``/``)      → ``--accent-orange-text``
- *   - files (everything else, default)   → ``--accent-blue-text``
- *
- * The slash heuristic is what the picker inserts; using it (rather than
- * resolving against ``fileRefs``) keeps highlighting stable for old
- * messages whose referenced paths may since have been renamed/removed.
- * ``findCommittedMentions`` without refs falls back to syntax-only range
- * detection — same code path the overlay relies on.
- */
-function renderMentionSegments(content: string): React.ReactNode[] {
-  const ranges = findCommittedMentions(content, null)
-  if (ranges.length === 0) return [content]
-  const out: React.ReactNode[] = []
-  let cursor = 0
-  for (const r of ranges) {
-    if (r.start > cursor) out.push(content.slice(cursor, r.start))
-    const token = content.slice(r.start, r.end)
-    const isFolder = token.endsWith('/')
-    out.push(
-      <span
-        key={r.start}
-        data-mention-kind={isFolder ? 'directory' : 'file'}
-        className={
-          isFolder ? 'text-(--accent-orange-text)' : 'text-(--accent-blue-text)'
-        }
-      >
-        {token}
-      </span>,
-    )
-    cursor = r.end
-  }
-  if (cursor < content.length) out.push(content.slice(cursor))
-  return out
-}
-
-function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell }: { content: string; timestamp?: Date; attachments?: MessageAttachment[]; onRevert?: () => void; modelId?: string | null; shell?: boolean }) {
-  const [showTime, setShowTime] = useState(false)
-  const [copied, setCopied] = useState(false)
-  const [expanded, setExpanded] = useState(false)
-  const modelName = shortModelName(modelId)
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(content)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    } catch {
-      // ignore
-    }
-  }
-
-  const lines = content.split('\n')
-  const needsCollapse = lines.length > USER_COLLAPSE_LINES || content.length > USER_COLLAPSE_CHARS
-  const visibleContent = needsCollapse && !expanded
-    ? lines.length > USER_COLLAPSE_LINES
-      ? lines.slice(0, USER_COLLAPSE_LINES).join('\n')
-      : `${content.slice(0, USER_COLLAPSE_CHARS).trimEnd()}...`
-    : content
-
-  return (
-    <div
-      className="group mb-4 flex justify-end"
-      onMouseEnter={() => setShowTime(true)}
-      onMouseLeave={() => setShowTime(false)}
-    >
-      <div className="flex max-w-full flex-col items-end gap-2 md:max-w-[78%]">
-         {/* Attachments */}
-         {attachments && attachments.length > 0 && (
-           <div className="flex flex-wrap justify-end gap-2">
-             {attachments.map((att: MessageAttachment, idx: number) => {
-               const isImage = att.category === 'image'
-
-               if (isImage) {
-                 return (
-                   <ImageAttachment
-                     key={idx}
-                     src={resolveApiUrl(att.url) || ''}
-                     alt={att.original_name || `Attachment ${idx + 1}`}
-                   />
-                 )
-               }
-
-               return (
-                 <FileCard
-                   key={idx}
-                   name={att.original_name || att.filename || `File ${idx + 1}`}
-                   mediaType={att.media_type}
-                   url={resolveApiUrl(att.url)}
-                   clickable={!!att.url}
-                 />
-               )
-             })}
-           </div>
-         )}
-
-          <div className={`relative min-w-0 max-w-full overflow-hidden rounded-2xl border px-4 py-3 text-sm leading-relaxed text-(--color-text) ${shell ? 'border-(--accent-blue)/30 bg-(--bg-key)' : 'border-(--color-border-subtle) bg-(--bg-key)'}`}>
-           {/* Expand / collapse button — top-right inside bubble */}
-           {needsCollapse && (
-             <button
-               onClick={() => setExpanded((v) => !v)}
-               aria-expanded={expanded}
-               title={expanded ? 'Collapse' : 'Expand'}
-               className="absolute top-1.5 right-1.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-(--bg-key) text-(--color-text-2) transition-all duration-150 hover:text-(--color-text) active:scale-90"
-             >
-               {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-             </button>
-           )}
-           {shell && (
-             <div className="mb-1.5 flex items-center gap-1 font-mono text-xs text-(--color-text-muted)">
-               <Terminal size={12} aria-hidden="true" />
-               <span>Shell</span>
-             </div>
-           )}
-           <p className={`min-w-0 break-words whitespace-pre-wrap [overflow-wrap:anywhere] ${shell ? 'font-mono' : ''}`}>{renderMentionSegments(visibleContent)}</p>
-           {/* Gradient fade at bottom when collapsed */}
-           {needsCollapse && !expanded && (
-             <div
-                className="pointer-events-none absolute inset-x-0 bottom-0 backdrop-blur-[1px]"
-               style={{
-                 height: '2.4rem',
-                 background: 'linear-gradient(to bottom, transparent 0%, var(--color-surface) 90%)',
-               }}
-             />
-           )}
-         </div>
-
-         {/* Copy button + timestamp row */}
-          {(timestamp || modelName) && (
-            <div className={`flex items-center gap-1.5 transition-opacity duration-150 ${showTime ? 'opacity-100' : 'opacity-0'}`}>
-              {modelName && (
-                <span className="mr-1 font-mono text-xs text-(--color-text-subtle)" title={modelId ?? undefined}>
-                  {modelName}
-                </span>
-              )}
-               {onRevert && (
-                <button
-                  onClick={onRevert}
-                  className="rounded-xs p-0.5 text-(--color-text-muted) transition-colors hover:text-(--color-text-2)"
-                  aria-label="Revert latest message"
-                  title="Revert latest message"
-                >
-                  <Undo2 size={11} />
-                </button>
-              )}
-              <button
-                onClick={handleCopy}
-                className="rounded-xs p-0.5 text-(--color-text-muted) transition-colors hover:text-(--color-text-2)"
-               aria-label="Copy message"
-               title="Copy"
-             >
-               {copied ? (
-                 <Check size={11} className="text-(--color-success)" />
-               ) : (
-                 <Copy size={11} />
-               )}
-             </button>
-              {timestamp && (
-                <span
-                  className="text-xs text-(--color-text-subtle)"
-                  aria-hidden={!showTime}
-                  title={formatTime(timestamp)}
-                >
-                  {formatTime(timestamp)}
-                </span>
-              )}
-            </div>
-          )}
-      </div>
-    </div>
-  )
-}
-
-
-const BlockRenderer = memo(function BlockRenderer({ block, isStreaming, sessionId, onRevert, latestMCPAppBlockIds }: { block: ContentBlock; isStreaming: boolean; sessionId?: string; onRevert?: () => void; latestMCPAppBlockIds?: Set<string> }) {
-  switch (block.type) {
-    case 'user': {
-      // Me check if this is an inbox message (from another agent, not real user)
-      const fromAgent = block.extra?.from_agent as string | undefined
-      if (fromAgent && fromAgent !== 'user') {
-        const handoffArtifact = block.extra?._handoff_artifact as Record<string, unknown> | undefined
-        if (handoffArtifact) {
-          return <HandoffCard artifact={handoffArtifact as never} fromAgent={fromAgent} />
-        }
-        return <InboxBubble content={block.content} fromAgent={fromAgent} />
-      }
-      const blockModel = typeof block.extra?.model === 'string' ? block.extra.model : null
-      const shell = block.extra?.kind === 'user_shell'
-      return <UserBubble content={block.content} timestamp={block.timestamp} attachments={block.attachments} onRevert={onRevert} modelId={blockModel} shell={shell} />
-    }
-    case 'thinking':
-      return <Thinking content={block.content} isStreaming={isStreaming} />
-    case 'compaction': {
-      const state = block.extra?.state === 'compacting' ? 'compacting' : 'compacted'
-      const error = Boolean(block.extra?.error)
-      return (
-        <CompactionDivider
-          state={state}
-          error={error}
-          summary={block.content}
-          sessionId={sessionId}
-        />
-      )
-    }
-    case 'provider_status': {
-      const status = block.extra?.status
-      const model = block.extra?.model
-      const primary = block.extra?.primary
-      const fallback = block.extra?.fallback
-      const attempt = block.extra?.attempt
-      const maxAttempts = block.extra?.max_attempts
-      const delay = block.extra?.delay_seconds
-      const errorType = block.extra?.error_type
-      const statusCode = block.extra?.status_code
-      let message = 'Provider status updated.'
-      if (status === 'fallback') {
-        message = `Switching model from ${String(primary ?? 'primary')} to ${String(fallback ?? 'fallback')}.`
-      } else if (status === 'retrying') {
-        const delayText = typeof delay === 'number' ? ` Waiting ${delay.toFixed(1)}s.` : ''
-        const errorText = errorType ? ` after ${String(errorType)}${statusCode ? ` ${String(statusCode)}` : ''}` : ''
-        message = `Retrying ${String(model ?? 'model')} (${String(attempt ?? '?')}/${String(maxAttempts ?? '?')})${errorText}.${delayText}`
-      } else if (status === 'exhausted') {
-        const errorText = errorType ? ` after ${String(errorType)}${statusCode ? ` ${String(statusCode)}` : ''}` : ''
-        message = `${String(model ?? 'Model')} exhausted retry attempts${errorText}.`
-      }
-      return <p className="rounded-md border border-(--color-border) bg-(--bg-muted) px-3 py-2 text-xs text-(--color-text-muted)">{message}</p>
-    }
-    case 'tool': {
-      const mcpApp = (block.extra as { mcp_app?: unknown } | undefined)?.mcp_app
-      return (
-        <div>
-          <ToolCall
-            name={block.toolName || ''}
-            args={block.toolArgs}
-            done={block.toolDone}
-            liveOutput={block.toolOutput}
-            result={block.toolResult}
-            durationMs={block.durationMs}
-            startedAt={block.startedAt}
-          />
-          {block.toolDone && Boolean(mcpApp) && latestMCPAppBlockIds?.has(block.id) ? (
-            <div className="mt-2">
-              <MCPAppResult mcpApp={mcpApp as never} sessionId={sessionId} toolCallId={block.toolCallId} />
-            </div>
-          ) : null}
-        </div>
-      )
-    }
-    case 'widget': {
-      const widgetHtml = block.widgetHtml || ''
-      const isStreaming = block.isStreaming ?? false
-      const title = block.title || 'Widget'
-      return (
-        <div className="my-2">
-          <WidgetRenderer
-            html={widgetHtml}
-            isStreaming={isStreaming}
-            title={title}
-            sessionId={sessionId}
-          />
-        </div>
-      )
-    }
-    case 'text': {
-      // Me sleep sentinel — show any preceding content normally, then append idle pill
-      const sleepPrefix = extractSleepPrefix(block.content)
-      if (sleepPrefix !== null) {
-        return (
-          <div>
-            {sleepPrefix && <LazyMarkdownBlock content={sleepPrefix} sessionId={sessionId} isStreaming={isStreaming} />}
-            <p className="text-xs text-(--color-text-subtle) italic">— idle —</p>
-    </div>
-  )
-}
-
-      return (
-        <div>
-          <LazyMarkdownBlock content={block.content} sessionId={sessionId} isStreaming={isStreaming} />
-        </div>
-      )
-    }
-    default:
-      return null
-  }
-})
 
 export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError, isContinuing = false, onContinue, emptyState, chapters, onSendToSideChat }: AgentViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)

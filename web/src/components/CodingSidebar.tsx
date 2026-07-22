@@ -196,6 +196,7 @@ interface SessionListActionProps {
   currentSessionId?: string;
   mobileLongPressActions?: boolean;
   onSessionSelect: (session: SessionResponse) => void;
+  onSessionSideChat: (session: SessionResponse) => void;
   onSessionDelete: (session: SessionResponse) => void;
   pendingDeleteId: string | null;
   onCancelDelete: () => void;
@@ -210,6 +211,7 @@ function SessionListPanel({
   currentSessionId,
   mobileLongPressActions = false,
   onSessionSelect,
+  onSessionSideChat,
   onSessionDelete,
   pendingDeleteId,
   onCancelDelete,
@@ -252,6 +254,7 @@ function SessionListPanel({
           isActive={session.id === currentSessionId}
           density="compact"
           onSelect={onSessionSelect}
+          onOpenSideChat={onSessionSideChat}
           onDelete={onSessionDelete}
           pendingDelete={pendingDeleteId === session.id}
           onCancelDelete={onCancelDelete}
@@ -924,6 +927,16 @@ export function CodingSidebar({
     onMobileClose?.();
   };
 
+  // Session-row side-chat icon: open the session (no-op when already active)
+  // and ask TeamChatView to open its side chat panel.
+  const handleSessionSideChat = (
+    session: SessionResponse,
+    workspacePath: string,
+  ) => {
+    useUIStore.getState().requestSideChat(session.id);
+    handleSessionSelect(session, workspacePath);
+  };
+
   const handleSessionDelete = (session: SessionResponse) => {
     setPendingDeleteId(session.id);
   };
@@ -1174,6 +1187,9 @@ export function CodingSidebar({
                     onSessionSelect={(session) =>
                       handleSessionSelect(session, session.workspace ?? "")
                     }
+                    onSessionSideChat={(session) =>
+                      handleSessionSideChat(session, session.workspace ?? "")
+                    }
                     onSessionDelete={handleSessionDelete}
                     pendingDeleteId={pendingDeleteId}
                     onCancelDelete={() => setPendingDeleteId(null)}
@@ -1334,6 +1350,9 @@ export function CodingSidebar({
                 mobileLongPressActions={mobileLongPressActions}
                 onSessionSelect={(session) =>
                   handleSessionSelect(session, session.workspace ?? path)
+                }
+                onSessionSideChat={(session) =>
+                  handleSessionSideChat(session, session.workspace ?? path)
                 }
                 onSessionDelete={handleSessionDelete}
                 pendingDeleteId={pendingDeleteId}

@@ -859,7 +859,9 @@ async def list_sessions_page(
     """Return a cursor-paginated page of top-level sessions (newest-first).
 
     Top-level sessions are those without a ``parent_session_id`` (team leads
-    and scheduled tasks). Sub-sessions are excluded.
+    and scheduled tasks). Sub-sessions are excluded, and so are side chats
+    (``session_type="side_chat"``) — they are opened from their source
+    session's row, never listed standalone.
 
     Args:
         db: Async database session.
@@ -879,6 +881,7 @@ async def list_sessions_page(
     stmt = (
         select(ChatSession)
         .where(col(ChatSession.parent_session_id).is_(None))
+        .where(col(ChatSession.session_type) != "side_chat")
         .order_by(col(ChatSession.created_at).desc())
     )
 

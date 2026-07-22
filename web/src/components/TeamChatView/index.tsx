@@ -68,6 +68,7 @@ import { PlanActionBar } from '../PlanReviewPanel'
 import { type InputBarHandle } from '../InputBar'
 import { FloatingInputBar } from '../FloatingInputBar'
 import { SideChatPanel } from '../SideChatPanel'
+import { useSideChat } from '../SideChatPanel/useSideChat'
 import type { AgentCapabilities as AgentCapabilitiesType, WorkspaceFileInfo } from '@/api/types'
 import { SplitGrid } from './SplitGrid'
 import { useTeamCommands } from './useTeamCommands'
@@ -565,6 +566,27 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
     setSideChatOpen(true)
   }, [])
 
+  // Lifted above the panel: the side chat session (and any in-flight
+  // generation + SSE stream) survives closing/reopening the panel.
+  const sideChat = useSideChat(sessionIdState)
+
+  // Consume one-shot open requests from the sidebar session-row icon: the
+  // panel opens once the requested session is the active one.
+  const sideChatRequest = useUIStore((s) => s.sideChatRequest)
+  useEffect(() => {
+    if (sideChatRequest && sessionIdState === sideChatRequest) {
+      setSideChatOpen(true)
+      useUIStore.getState().clearSideChatRequest()
+    }
+  }, [sideChatRequest, sessionIdState])
+
+  // Create the side chat session eagerly on first open so history and the
+  // persistent SSE stream are attached before the first message is sent.
+  useEffect(() => {
+    if (sideChatOpen) sideChat.openSideChat()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sideChatOpen])
+
   // Clear the quote once the side chat panel has consumed it (on close).
   useEffect(() => {
     if (!sideChatOpen) setSideChatQuote(null)
@@ -844,10 +866,16 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
       />
       {sideChatOpen && sessionIdState && (
         <SideChatPanel
-          mainSessionId={sessionIdState}
           isOpen={sideChatOpen}
           onClose={() => setSideChatOpen(false)}
           initialQuote={sideChatQuote}
+          blocks={sideChat.blocks}
+          currentBlocks={sideChat.currentBlocks}
+          isWorking={sideChat.isWorking}
+          error={sideChat.error}
+          sideChatId={sideChat.sideChatId}
+          onSend={sideChat.sendMessage}
+          onStop={() => void sideChat.stopGeneration()}
         />
       )}
     </>

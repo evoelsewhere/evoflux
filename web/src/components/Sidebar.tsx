@@ -256,6 +256,13 @@ export function Sidebar({
     onMobileClose?.();
   };
 
+  // Session-row side-chat icon: open the session (no-op when already active)
+  // and ask TeamChatView to open its side chat panel.
+  const handleSideChat = (id: string) => {
+    useUIStore.getState().requestSideChat(id);
+    handleSelect(id);
+  };
+
   const handleNewChat = () => {
     if (onNewChat) {
       onNewChat();
@@ -271,6 +278,7 @@ export function Sidebar({
       session={session}
       isActive={session.id === currentSessionId}
       onSelect={(s) => handleSelect(s.id)}
+      onOpenSideChat={(s) => handleSideChat(s.id)}
       onDelete={handleDelete}
       pendingDelete={pendingDeleteId === session.id}
       onCancelDelete={() => setPendingDeleteId(null)}

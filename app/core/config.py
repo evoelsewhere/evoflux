@@ -87,6 +87,10 @@ class Settings(BaseSettings):
     MOONSHOT_API_KEY: SecretStr | None = None
     MOONSHOT_BASE_URL: str = ""
 
+    # FCI — FPT's OpenAI-compatible inference gateway.
+    FCI_API_KEY: SecretStr | None = None
+    FCI_BASE_URL: str = ""
+
     # Microsoft Foundry (Azure AI Foundry) — resource API key plus the
     # resource name (or a full endpoint URL) the base URL is derived from.
     FOUNDRY_API_KEY: SecretStr | None = None

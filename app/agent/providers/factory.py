@@ -27,6 +27,7 @@ from app.agent.providers.bedrock import BedrockProvider
 from app.agent.providers.codex import CodexProvider
 from app.agent.providers.copilot import CopilotProvider
 from app.agent.providers.deepseek import DeepSeekProvider
+from app.agent.providers.fci import FCIProvider
 from app.agent.providers.foundry import FoundryClaudeProvider, FoundryProvider
 from app.agent.providers.googlegenai import GoogleGenAIProvider
 from app.agent.providers.ollama import OllamaProvider
@@ -47,6 +48,7 @@ SUPPORTED_PROVIDERS: tuple[str, ...] = (
     "codex",
     "copilot",
     "deepseek",
+    "fci",
     "foundry",
     "googlegenai",
     "nvidia",
@@ -208,6 +210,16 @@ def build_provider(
             if name == "xiaomi":
                 return _with_provider_name(
                     XiaomiProvider(
+                        api_key=cast(str | SecretStr, typed_api_key),
+                        model=model,
+                        base_url=base_url,
+                        model_kwargs=kwargs,
+                    ),
+                    name,
+                )
+            if name == "fci":
+                return _with_provider_name(
+                    FCIProvider(
                         api_key=cast(str | SecretStr, typed_api_key),
                         model=model,
                         base_url=base_url,

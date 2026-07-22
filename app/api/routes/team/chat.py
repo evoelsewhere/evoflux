@@ -1491,7 +1491,13 @@ async def send_side_chat_message(
     This creates a side chat agent run with restricted tools (read-only).
     Subscribe to GET /team/{side_chat_id}/stream for the SSE feed.
     """
-    side_chat = await db.get(ChatSession, side_chat_id)
+    # Read inside an explicit transaction block so it closes before
+    # _team_for_session_mode opens its own `db.begin()` below — an implicit
+    # transaction left open by a bare `db.get()` would make that begin()
+    # raise "transaction already in progress".
+    async with db.begin():
+        side_chat = await db.get(ChatSession, side_chat_id)
+
     if (
         side_chat is None
         or side_chat.session_type != "side_chat"
@@ -1499,22 +1505,21 @@ async def send_side_chat_message(
     ):
         raise HTTPException(status_code=404, detail="Side chat not found")
 
-    # Save the user message
-    from app.services.chat_service import save_message
-
-    await save_message(db, side_chat_id, HumanMessage(content=body.content))
-    await db.commit()
-
-    # Kick off the side chat agent run in the background
+    # Kick off the side chat agent run in the background. The team flow
+    # persists the user message itself (AgentTeam.handle_user_message), so
+    # only save it here as a fallback when no run could be dispatched —
+    # saving unconditionally would double every user message.
     from app.services import agent_service
+    from app.services.chat_service import save_message
 
     try:
         # Reuse the team_for_session_mode to get the right team
         team_obj = await _team_for_session_mode(db, str(side_chat_id))
-    except Exception:
-        # Fallback: create a minimal team for the side chat
+    except Exception as exc:
+        logger.warning("side_chat_team_resolve_failed error={}", exc)
         team_obj = None
 
+    dispatched = False
     if team_obj is not None:
         # Dispatch through the normal team flow — the side chat agent
         # will use excluded_tools to restrict to read-only.
@@ -1526,8 +1531,14 @@ async def send_side_chat_message(
                 mode=side_chat.mode,
                 workspace=side_chat.workspace,
             )
+            dispatched = True
         except Exception as exc:
             logger.warning("side_chat_dispatch_failed error={}", exc)
+
+    if not dispatched:
+        await save_message(db, side_chat_id, HumanMessage(content=body.content))
+        await db.commit()
+        raise HTTPException(status_code=503, detail="Side chat agent unavailable")
 
     return {"status": "accepted", "session_id": str(side_chat_id)}
 

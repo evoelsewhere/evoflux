@@ -42,6 +42,12 @@ interface UIStore {
   settingsOpen: boolean
   settingsPath: string
   settingsSearch: Record<string, string>
+  /**
+   * One-shot request to open the side chat panel for a specific session —
+   * set by the sidebar session-row icon; consumed and cleared by
+   * TeamChatView once that session is active.
+   */
+  sideChatRequest: string | null
   toggleWiki: () => void
   toggleScheduler: () => void
   toggleBrowser: () => void
@@ -55,6 +61,8 @@ interface UIStore {
   openSettings: (path?: string, search?: Record<string, string>) => void
   closeSettings: () => void
   navigateSettings: (path: string, search?: Record<string, string>) => void
+  requestSideChat: (sessionId: string) => void
+  clearSideChatRequest: () => void
 }
 
 export const useUIStore = create<UIStore>()(
@@ -110,5 +118,8 @@ export const useUIStore = create<UIStore>()(
     openSettings: (path = '', search = {}) => set((state) => { state.settingsOpen = true; state.settingsPath = path; state.settingsSearch = search }),
     closeSettings: () => set((state) => { state.settingsOpen = false }),
     navigateSettings: (path: string, search = {}) => set((state) => { state.settingsPath = path; state.settingsSearch = search }),
+    sideChatRequest: null,
+    requestSideChat: (sessionId) => set((state) => { state.sideChatRequest = sessionId }),
+    clearSideChatRequest: () => set((state) => { state.sideChatRequest = null }),
   }))
 )
