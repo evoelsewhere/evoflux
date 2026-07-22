@@ -219,6 +219,41 @@ class TestTeamChatRoute:
         test_team.handle_user_message.assert_awaited_once()
         assert test_team.handle_user_message.call_args.kwargs["content"] == "Hello team"
 
+    def test_team_chat_rejects_disconnected_webbridge(
+        self, app_with_team, test_team, monkeypatch
+    ):
+        test_team.handle_user_message = AsyncMock(return_value=str(uuid.uuid7()))
+        monkeypatch.setattr(
+            "app.api.routes.team.chat.webbridge_manager.has_active_extension",
+            lambda: False,
+        )
+
+        response = TestClient(app_with_team).post(
+            "/api/team/chat",
+            data={"message": "Use my browser", "webbridge_enabled": "true"},
+        )
+
+        assert response.status_code == 409
+        assert "no browser extension is connected" in response.json()["detail"]
+        test_team.handle_user_message.assert_not_awaited()
+
+    def test_team_chat_enables_webbridge_for_current_session(
+        self, app_with_team, test_team, monkeypatch
+    ):
+        test_team.handle_user_message = AsyncMock(return_value=str(uuid.uuid7()))
+        monkeypatch.setattr(
+            "app.api.routes.team.chat.webbridge_manager.has_active_extension",
+            lambda: True,
+        )
+
+        response = TestClient(app_with_team).post(
+            "/api/team/chat",
+            data={"message": "Use my browser", "webbridge_enabled": "true"},
+        )
+
+        assert response.status_code == 202
+        assert "webbridge" in test_team.session_tags
+
     def test_team_chat_shell_dispatches_bang_command(self, app_with_team, test_team):
         client = TestClient(app_with_team)
         session_id = str(uuid.uuid7())

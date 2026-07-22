@@ -256,7 +256,7 @@ export const useTeamStore = create<TeamStore>()(
       return true
     },
 
-    sendMessage: async (content: string, files?: File[], options?: { mode?: string; workspace?: string | null; model?: string | null; thinkingLevel?: string | null; fastMode?: boolean; shell?: boolean }) => {
+    sendMessage: async (content: string, files?: File[], options?: { mode?: string; workspace?: string | null; model?: string | null; thinkingLevel?: string | null; fastMode?: boolean; shell?: boolean; webBridgeEnabled?: boolean }) => {
       const { leadName, agentStreams } = get()
       const leadWorking = leadName ? agentStreams[leadName]?.status === 'working' : false
 
@@ -279,6 +279,7 @@ export const useTeamStore = create<TeamStore>()(
             options?.thinkingLevel ?? get().sessionThinkingLevel,
             options?.shell ?? false,
             options?.fastMode ?? get().sessionFastMode,
+            options?.webBridgeEnabled,
           )
           if (result.status === 'queued' && !result.message_id) {
             throw new Error('Backend did not return a queued message id')
@@ -356,6 +357,7 @@ export const useTeamStore = create<TeamStore>()(
           options?.thinkingLevel ?? get().sessionThinkingLevel,
           options?.shell ?? false,
           options?.fastMode ?? get().sessionFastMode,
+          options?.webBridgeEnabled,
         )
         set((draft) => {
           draft.sessionId = result.session_id

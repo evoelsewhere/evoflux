@@ -7,7 +7,7 @@ import type { AgentCapabilities, TodoItem } from '@/api/types'
 
 interface FloatingInputBarProps {
   boundsRef: React.RefObject<HTMLElement | null>
-  onSubmit: (message: string, files?: File[]) => void
+  onSubmit: (message: string, files?: File[]) => boolean | void | Promise<boolean | void>
   onStop?: () => void
   onSlashCommand?: (id: string) => void
   onSnippetCommand?: (id: string) => Promise<string | null> | string | null
@@ -42,6 +42,8 @@ interface FloatingInputBarProps {
   filesDisabled?: boolean
   onActivity?: () => void
   activityActive?: boolean
+  webBridgeEnabled?: boolean
+  onWebBridgeEnabledChange?: (enabled: boolean) => void
   permissionMode?: import('@/api/types').PermissionMode
   onPermissionModeChange?: (mode: import('@/api/types').PermissionMode) => void
 }

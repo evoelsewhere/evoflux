@@ -413,6 +413,7 @@ class TeamMemberBase(abc.ABC):
                         agent_name=self.name,
                         mode=mode,
                         workspace=workspace,
+                        tags=sorted(self._team.session_tags) or None if self._team else None,
                     )
                     db.add(row)
                     await db.commit()
