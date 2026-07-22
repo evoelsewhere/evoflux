@@ -23,32 +23,40 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "chat_sessions",
-        sa.Column(
-            "session_type",
-            sa.String(20),
-            nullable=False,
-            server_default="main",
-        ),
-    )
-    op.add_column(
-        "chat_sessions",
-        sa.Column(
-            "source_session_id",
-            sa.Uuid(),
-            sa.ForeignKey("chat_sessions.id", ondelete="SET NULL"),
-            nullable=True,
-        ),
-    )
-    op.create_index(
-        "ix_chat_sessions_source_session",
-        "chat_sessions",
-        ["source_session_id"],
-    )
+    # SQLite has no native ALTER for constraints — adding a column with an
+    # inline ForeignKey via plain op.add_column() fails ("No support for
+    # ALTER of constraints in SQLite dialect"). batch_alter_table recreates
+    # the table under the hood, which is the supported path; see the
+    # project_id / coding_projects FK in 00000014 for the same pattern.
+    with op.batch_alter_table("chat_sessions", schema=None) as batch_op:
+        batch_op.add_column(
+            sa.Column(
+                "session_type",
+                sa.String(20),
+                nullable=False,
+                server_default="main",
+            )
+        )
+        batch_op.add_column(
+            sa.Column("source_session_id", sa.Uuid(), nullable=True)
+        )
+        batch_op.create_index(
+            "ix_chat_sessions_source_session", ["source_session_id"]
+        )
+        batch_op.create_foreign_key(
+            "fk_chat_sessions_source_session_id",
+            "chat_sessions",
+            ["source_session_id"],
+            ["id"],
+            ondelete="SET NULL",
+        )
 
 
 def downgrade() -> None:
-    op.drop_index("ix_chat_sessions_source_session", table_name="chat_sessions")
-    op.drop_column("chat_sessions", "source_session_id")
-    op.drop_column("chat_sessions", "session_type")
+    with op.batch_alter_table("chat_sessions", schema=None) as batch_op:
+        batch_op.drop_constraint(
+            "fk_chat_sessions_source_session_id", type_="foreignkey"
+        )
+        batch_op.drop_index("ix_chat_sessions_source_session")
+        batch_op.drop_column("source_session_id")
+        batch_op.drop_column("session_type")

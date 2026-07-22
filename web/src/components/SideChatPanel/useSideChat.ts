@@ -46,8 +46,8 @@ export function useSideChat(mainSessionId: string | null): UseSideChatReturn {
     if (!mainSessionId) return null
     try {
       const result = await createSideChat(mainSessionId)
-      setSideChatId(result.side_chat_id)
-      return result.side_chat_id
+      setSideChatId(result.id)
+      return result.id
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create side chat')
       return null
@@ -57,8 +57,8 @@ export function useSideChat(mainSessionId: string | null): UseSideChatReturn {
   // Fetch message history
   const { data: rawMessages = [] } = useQuery({
     queryKey: ['sideChatMessages', sideChatId],
-    queryFn: () => getSideChatMessages(sideChatId!),
-    enabled: !!sideChatId,
+    queryFn: () => getSideChatMessages(mainSessionId!, sideChatId!),
+    enabled: !!sideChatId && !!mainSessionId,
     refetchInterval: false,
   })
 
@@ -123,7 +123,10 @@ export function useSideChat(mainSessionId: string | null): UseSideChatReturn {
       }
       queryClient.setQueryData(
         ['sideChatMessages', currentSideChatId],
-        (old: typeof rawMessages) => [...old, {
+        // `old` is undefined the first time this key is written — the
+        // side chat was just created and its message-history query may
+        // not have resolved (or even started) yet.
+        (old: typeof rawMessages | undefined) => [...(old ?? []), {
           id: userMessage.id,
           role: 'user',
           content,
@@ -142,21 +145,26 @@ export function useSideChat(mainSessionId: string | null): UseSideChatReturn {
           readSSE(res, {
             onEvent: (type, data) => {
               const d = data as Record<string, unknown>
+              // Field names below must match the real SSE event schemas in
+              // app/agent/schemas/events.py (MessageEvent/ThinkingEvent use
+              // `text`, not `content`; ToolCallEvent/ToolStartEvent/ToolEndEvent
+              // key off `tool_call_id` + `name`, not `block_id`/`tool_name`) —
+              // see sse-reducer.ts's handling of the same events for the main
+              // chat, which this must stay consistent with.
               switch (type) {
                 case 'message': {
-                  const text = d.content as string
-                  const blockId = d.block_id as string ?? `block-${Date.now()}`
+                  const text = d.text as string
                   setLiveBlocks((prev) => {
                     const last = prev[prev.length - 1]
                     if (last && last.type === 'text') {
                       return [...prev.slice(0, -1), { ...last, content: (last.content ?? '') + text }]
                     }
-                    return [...prev, { id: blockId, type: 'text', content: text }]
+                    return [...prev, { id: `block-${Date.now()}`, type: 'text', content: text }]
                   })
                   break
                 }
                 case 'thinking': {
-                  const text = d.content as string
+                  const text = d.text as string
                   setLiveBlocks((prev) => {
                     const last = prev[prev.length - 1]
                     if (last && last.type === 'thinking') {
@@ -167,21 +175,36 @@ export function useSideChat(mainSessionId: string | null): UseSideChatReturn {
                   break
                 }
                 case 'tool_call': {
+                  // Name only — arguments arrive later via tool_start.
+                  const toolCallId = d.tool_call_id as string | undefined
                   const block: ContentBlock = {
-                    id: (d.block_id as string) ?? `tool-${Date.now()}`,
+                    id: toolCallId ?? `tool-${Date.now()}`,
                     type: 'tool',
-                    content: d.summary as string ?? '',
-                    toolName: d.tool_name as string,
-                    toolArgs: d.tool_args as string,
+                    content: '',
+                    toolName: d.name as string,
+                    toolCallId,
                   }
                   setLiveBlocks((prev) => [...prev, block])
                   break
                 }
-                case 'tool_end': {
-                  const blockId = d.block_id as string
+                case 'tool_start': {
+                  const toolCallId = d.tool_call_id as string | undefined
+                  const args = d.arguments as string | undefined
                   setLiveBlocks((prev) =>
                     prev.map((b) =>
-                      b.id === blockId ? { ...b, toolDone: true, toolResult: d.result as string } : b,
+                      toolCallId && b.toolCallId === toolCallId ? { ...b, toolArgs: args } : b,
+                    ),
+                  )
+                  break
+                }
+                case 'tool_end': {
+                  const toolCallId = d.tool_call_id as string | undefined
+                  const result = d.result as string | undefined
+                  setLiveBlocks((prev) =>
+                    prev.map((b) =>
+                      toolCallId && b.toolCallId === toolCallId
+                        ? { ...b, toolDone: true, toolResult: result }
+                        : b,
                     ),
                   )
                   break

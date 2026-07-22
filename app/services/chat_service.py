@@ -388,6 +388,27 @@ async def get_messages(db: AsyncSession, session_id: UUID) -> list[ChatMessage]:
         raise
 
 
+async def get_visible_session_rows(
+    db: AsyncSession, session_id: UUID
+) -> list[SessionMessage]:
+    """Return raw, user-visible ``SessionMessage`` rows for one session.
+
+    Unlike :func:`get_messages`, this does NOT deserialize into
+    ``ChatMessage`` (which drops the ORM-only ``id``/``session_id`` columns
+    per ``BaseMessage.model_config = ConfigDict(extra="ignore")``) — API
+    routes that build a ``MessageResponse`` (which requires those fields)
+    need the raw row, the same as ``get_team_history`` already fetches for
+    the main session's message list.
+    """
+    boundary = await _boundary_created_at(db, session_id)
+    rows = (await db.exec(_history_messages_stmt(session_id, boundary))).all()
+    return [
+        row
+        for row in rows
+        if _is_history_visible(row) and not _is_hidden_from_user(row)
+    ]
+
+
 async def get_messages_for_llm(db: AsyncSession, session_id: UUID) -> list[ChatMessage]:
     """Return the message window that should be sent to the LLM.
 
@@ -1382,6 +1403,17 @@ async def create_side_chat_session(
     Copies workspace/project/mode settings from the main session so the side
     chat inherits the same environment.  The ``source_session_id`` foreign key
     uses ``ON DELETE SET NULL`` so a deleted main session doesn't cascade.
+
+    Tagged ``"side_chat"`` (tier_policy.SIDE_CHAT_SESSION_TAG) so the team
+    lead for this session — a dedicated per-session instance, never shared
+    with the main session — restricts to read-only tools and gets the
+    read-only system-prompt addendum (mirrors WebBridge session tagging).
+
+    The main session's recent context is copied in as messages marked
+    ``extra.hidden_from_user=True``: invisible on GET .../messages (so the
+    panel doesn't open pre-filled with the whole main conversation) but
+    still part of get_messages_for_llm's window, so the agent actually has
+    the context "read-only access" promises.
     """
     main = await db.get(ChatSession, main_session_id)
     if main is None:
@@ -1396,13 +1428,30 @@ async def create_side_chat_session(
         mode=main.mode,
         workspace=main.workspace,
         project_id=main.project_id,
+        tags=["side_chat"],
     )
     db.add(session)
     await db.flush()
     await db.refresh(session)
+
+    context_messages = await get_side_chat_context(db, main_session_id)
+    base_time = datetime.now(timezone.utc)
+    for i, msg in enumerate(context_messages):
+        await save_message(
+            db,
+            session.id,
+            msg,
+            extra={"hidden_from_user": True, "side_chat_context": True},
+            # Strictly monotonic and guaranteed to sort before the first real
+            # message (created via the normal utcnow() default afterwards).
+            created_at=base_time + timedelta(microseconds=i),
+        )
+    await db.flush()
+
     logger.info(
-        "side_chat_created session_id={} source_session_id={}",
+        "side_chat_created session_id={} source_session_id={} context_messages={}",
         session.id,
         main_session_id,
+        len(context_messages),
     )
     return session

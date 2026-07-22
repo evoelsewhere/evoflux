@@ -53,6 +53,8 @@ from app.agent.hooks.tool_result_offload import ToolResultOffloadHook
 from app.agent.mode.team.shared_state import format_state_snapshot
 from app.agent.mode.team.tier_policy import (
     DEFAULT_DEFERRED_TOOLS,
+    SIDE_CHAT_EXCLUDED_TOOLS,
+    SIDE_CHAT_SESSION_TAG,
     WEBBRIDGE_SESSION_TAG,
     denied_tools_for_tier,
     resolve_member_tier,
@@ -166,6 +168,10 @@ LEAD_PROTOCOL = """\
 WEBBRIDGE_SESSION_PROMPT = """\
 ## WebBridge session
 This is a WebBridge session. The ONLY way you may interact with the web is the `webbridge` tool, which drives the user's real browser. browser_use/web_search/web_fetch are unavailable — do not suggest them. If the extension is not connected, ask the user to connect it via the WebBridge icon in the sidebar."""
+
+SIDE_CHAT_SESSION_PROMPT = """\
+## Side Chat session
+You are in a side chat with read-only access to the main conversation's recent context (included above, for reference only). You CANNOT modify files, execute commands, delegate to team members, or make any changes — write/edit/shell/python/team coordination tools are unavailable. Answer questions and provide information; if asked to perform an action, explain that side chat is read-only and the user should ask in the main conversation instead."""
 
 MEMBER_COMMUNICATION_RULES = """\
 ## Communication protocol
@@ -1075,6 +1081,8 @@ class TeamMemberBase(abc.ABC):
         elif WEBBRIDGE_SESSION_TAG in self._team.session_tags:
             tier_excluded = webbridge_session_excluded_tools(self.agent._tools)
             deferred = deferred - {"webbridge"}
+        elif SIDE_CHAT_SESSION_TAG in self._team.session_tags:
+            tier_excluded = SIDE_CHAT_EXCLUDED_TOOLS
 
         # Surface team routing context to tools via state.metadata.  The
         # schedule tool reads these as injected args so the LLM never has
@@ -1452,6 +1460,11 @@ class TeamLead(TeamMemberBase):
             # are already scoped to webbridge-only via excluded_tools — tell it
             # why, so it doesn't try (or suggest) browser_use/web_search.
             sections.append(WEBBRIDGE_SESSION_PROMPT)
+        if SIDE_CHAT_SESSION_TAG in team.session_tags:
+            # Tagged session (a Side Chat panel): tools are already scoped
+            # read-only via excluded_tools — tell it why, and that the
+            # context above is read-only reference from the main session.
+            sections.append(SIDE_CHAT_SESSION_PROMPT)
         protocol = "\n\n".join(sections)
         return f"{base_prompt}\n\n---\n\n{protocol}"
 
