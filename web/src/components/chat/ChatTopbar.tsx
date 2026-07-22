@@ -12,7 +12,7 @@
  * opts them out of the window-drag guard.
  */
 import { AnimatePresence, motion } from 'framer-motion'
-import { BookOpen, Brain, CalendarClock, Check, ChevronDown, FolderOpen, Globe, Menu, Minimize2, MoreHorizontal, Terminal, X } from 'lucide-react'
+import { BookOpen, Brain, CalendarClock, Check, ChevronDown, FolderOpen, Menu, Minimize2, MoreHorizontal, Terminal, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import {
   DropdownMenu,
@@ -111,7 +111,6 @@ export function ChatTopbar({
   headerTokens,
   contextUsed,
   contextWindowSize,
-  summaryTriggerTokens,
   dreamRunning,
   terminalOpen,
   onToggleTerminal,
