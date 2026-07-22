@@ -24,6 +24,26 @@ def _make_app(token: str | None) -> FastAPI:
     def auth_check() -> dict:
         return {"ok": True}
 
+    @app.post("/api/team/webbridge/pairing/code")
+    def pairing_code() -> dict:
+        return {"code": "protected"}
+
+    @app.post("/api/team/webbridge/pairing/exchange")
+    def pairing_exchange() -> dict:
+        return {"exchange": True}
+
+    @app.post("/api/team/webbridge/relay-ticket")
+    def relay_ticket() -> dict:
+        return {"ticket": True}
+
+    @app.post("/api/team/webbridge/interactions")
+    def interactions() -> dict:
+        return {"interaction": True}
+
+    @app.put("/api/team/webbridge/bindings/{tab_id}")
+    def binding(tab_id: int) -> dict:
+        return {"tab_id": tab_id}
+
     @app.get("/")
     def root() -> dict:
         return {"hello": "world"}
@@ -111,6 +131,31 @@ class TestMiddlewareEnabled:
         r = client.get("/api/auth/check", headers={"Authorization": "Bearer secret"})
         assert r.status_code == 200
         assert r.json() == {"ok": True}
+
+    def test_webbridge_custom_auth_paths_reach_their_own_auth_layer(self):
+        app = _make_app(token="secret")
+        client = TestClient(app)
+
+        for path in (
+            "/api/team/webbridge/pairing/exchange",
+            "/api/team/webbridge/relay-ticket",
+            "/api/team/webbridge/interactions",
+        ):
+            assert client.post(path).status_code == 200
+        assert client.put("/api/team/webbridge/bindings/42").status_code == 200
+
+    def test_pairing_code_issuance_still_requires_desktop_auth(self):
+        app = _make_app(token="secret")
+        client = TestClient(app)
+
+        assert client.post("/api/team/webbridge/pairing/code").status_code == 401
+        assert (
+            client.post(
+                "/api/team/webbridge/pairing/code",
+                headers={"Authorization": "Bearer secret"},
+            ).status_code
+            == 200
+        )
 
     def test_api_with_query_param_token_accepted(self):
         app = _make_app(token="secret")

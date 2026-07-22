@@ -42,6 +42,8 @@ import type {
   WebBridgeStatusResponse,
   WebBridgeLaunchBrowserResponse,
   WebBridgeAuditResponse,
+  WebBridgePairingCodeResponse,
+  WebBridgePairingInfo,
 } from '../types'
 
 export async function postTeamChat(
@@ -568,6 +570,32 @@ export async function getWebBridgeStatus(): Promise<WebBridgeStatusResponse> {
   const res = await fetch(`${apiBaseUrl()}/team/webbridge/status`)
   if (!res.ok) await parseDetailOrThrow(res, 'getWebBridgeStatus')
   return res.json()
+}
+
+export async function issueWebBridgePairingCode(
+  label = 'Chrome / Edge',
+): Promise<WebBridgePairingCodeResponse> {
+  const res = await fetch(`${apiBaseUrl()}/team/webbridge/pairing/code`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ label }),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'issueWebBridgePairingCode')
+  return res.json()
+}
+
+export async function listWebBridgePairings(): Promise<WebBridgePairingInfo[]> {
+  const res = await fetch(`${apiBaseUrl()}/team/webbridge/pairings`)
+  if (!res.ok) await parseDetailOrThrow(res, 'listWebBridgePairings')
+  return res.json()
+}
+
+export async function revokeWebBridgePairing(pairingId: string): Promise<void> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/webbridge/pairings/${encodeURIComponent(pairingId)}`,
+    { method: 'DELETE' },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'revokeWebBridgePairing')
 }
 
 /**

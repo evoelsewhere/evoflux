@@ -10,6 +10,8 @@
 
 const DEFAULT_RELAY_BASE = "ws://127.0.0.1:8000";
 const RELAY_PATH = "/api/team/webbridge/relay";
+const RELAY_TICKET_PATH = "/api/team/webbridge/relay-ticket";
+const PAIRING_EXCHANGE_PATH = "/api/team/webbridge/pairing/exchange";
 const RECONNECT_BASE_MS = 1000; // first retry delay
 const RECONNECT_MAX_MS = 30000; // cap on the exponential backoff
 const HEARTBEAT_ALARM = "webbridge-heartbeat";
@@ -25,14 +27,33 @@ let manualDisconnect = false;
 let lastCloseReason = null; // null | "auth" (4401) | "closed"
 let relayBase = DEFAULT_RELAY_BASE;
 let accessToken = "";
+let pairingCredential = "";
+let pairingId = "";
+let pairingRelayBase = "";
+let connectInFlight = false;
+
+const COMMAND_CAPABILITIES = [
+  "navigate", "click", "dblclick", "type", "key", "scroll", "screenshot",
+  "extract", "get_tabs", "switch_tab", "evaluate", "back", "forward",
+  "reload", "wait", "wait_for_selector", "wait_for_text", "wait_for_load",
+  "wait_for_network_idle", "click_selector", "click_text", "hover", "focus",
+  "select_option", "set_checked", "drag", "fill", "open_tab", "close_tab",
+  "snapshot", "extract_elements", "scroll_to_bottom", "status",
+];
 
 // ── Config (persisted in chrome.storage.local, edited via the popup) ─────────
 
 async function loadConfig() {
   try {
-    const cfg = await chrome.storage.local.get(["relayBase", "accessToken", "extensionId"]);
+    const cfg = await chrome.storage.local.get([
+      "relayBase", "accessToken", "extensionId", "pairingCredential", "pairingId",
+      "pairingRelayBase",
+    ]);
     relayBase = (cfg.relayBase || DEFAULT_RELAY_BASE).trim().replace(/\/+$/, "");
     accessToken = (cfg.accessToken || "").trim();
+    pairingCredential = (cfg.pairingCredential || "").trim();
+    pairingId = (cfg.pairingId || "").trim();
+    pairingRelayBase = (cfg.pairingRelayBase || "").trim().replace(/\/+$/, "");
     // A stable id keeps the relay from accumulating a ghost registration on
     // every MV3 service-worker restart (which discards in-memory state).
     if (cfg.extensionId) {
@@ -57,23 +78,141 @@ function buildRelayUrl() {
   return url;
 }
 
+function canonicalRelayBase() {
+  return (relayBase || DEFAULT_RELAY_BASE)
+    .trim()
+    .replace(/\/+$/, "")
+    .replace(/^http/i, "ws");
+}
+
+function assertRelayTransportSecure() {
+  let parsed;
+  try {
+    parsed = new URL(canonicalRelayBase());
+  } catch {
+    const error = new Error("Relay URL is invalid");
+    error.code = "relay_security";
+    throw error;
+  }
+  if (!['ws:', 'wss:'].includes(parsed.protocol)) {
+    const error = new Error("Relay URL must use ws, wss, http, or https");
+    error.code = "relay_security";
+    throw error;
+  }
+  const host = parsed.hostname.toLowerCase();
+  const loopback = host === "localhost" || host === "127.0.0.1" || host === "::1";
+  if (parsed.protocol === "ws:" && !loopback) {
+    const error = new Error("Remote WebBridge relays require HTTPS/WSS");
+    error.code = "relay_security";
+    throw error;
+  }
+}
+
+function buildHttpUrl(path) {
+  const base = (relayBase || DEFAULT_RELAY_BASE)
+    .replace(/^ws:/i, "http:")
+    .replace(/^wss:/i, "https:");
+  return base + path;
+}
+
+async function responseError(response, fallback) {
+  try {
+    const body = await response.json();
+    const detail = body?.detail;
+    return detail?.message || (typeof detail === "string" ? detail : fallback);
+  } catch {
+    return fallback;
+  }
+}
+
+async function buildAuthenticatedRelayUrl() {
+  assertRelayTransportSecure();
+  if (!pairingCredential) return buildRelayUrl();
+  if (!pairingRelayBase || pairingRelayBase !== canonicalRelayBase()) {
+    const error = new Error("The relay URL changed. Pair WebBridge with this relay again.");
+    error.code = "pairing";
+    throw error;
+  }
+
+  const response = await fetch(buildHttpUrl(RELAY_TICKET_PATH), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${pairingCredential}` },
+  });
+  if (!response.ok) {
+    const error = new Error(await responseError(response, "Pairing credential rejected"));
+    error.code = response.status === 401 ? "pairing" : "ticket";
+    throw error;
+  }
+  const body = await response.json();
+  if (!body?.ticket) throw new Error("Relay ticket response was missing a ticket");
+
+  const base = (relayBase || DEFAULT_RELAY_BASE).replace(/^http/i, "ws");
+  return `${base}${RELAY_PATH}?_ticket=${encodeURIComponent(body.ticket)}`;
+}
+
+async function pairWithCode(code) {
+  await loadConfig();
+  assertRelayTransportSecure();
+  const response = await fetch(buildHttpUrl(PAIRING_EXCHANGE_PATH), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      code: String(code || "").trim(),
+      browser: detectBrowser(),
+      version: chrome.runtime.getManifest().version,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Pairing code rejected"));
+  }
+  const body = await response.json();
+  if (!body?.credential || !body?.pairing_id) {
+    throw new Error("Pairing response was incomplete");
+  }
+  pairingCredential = body.credential;
+  pairingId = body.pairing_id;
+  pairingRelayBase = canonicalRelayBase();
+  accessToken = "";
+  await chrome.storage.local.set({
+    pairingCredential,
+    pairingId,
+    pairingRelayBase,
+    accessToken: "",
+  });
+  return { pairing_id: pairingId, scopes: body.scopes || [] };
+}
+
 // ── Connection management ────────────────────────────────────────────────────
 
 async function connect() {
-  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+  if (connectInFlight || (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING))) return;
 
+  connectInFlight = true;
   await loadConfig();
   manualDisconnect = false;
 
   let sock;
   try {
-    sock = new WebSocket(buildRelayUrl());
+    sock = new WebSocket(await buildAuthenticatedRelayUrl());
   } catch (e) {
-    console.error("[WebBridge] WebSocket creation failed:", e);
-    scheduleReconnect();
+    connectInFlight = false;
+    if (e.code === "pairing") {
+      pairingCredential = "";
+      pairingId = "";
+      pairingRelayBase = "";
+      await chrome.storage.local.set({
+        pairingCredential: "", pairingId: "", pairingRelayBase: "",
+      });
+      manualDisconnect = true;
+    }
+    if (e.code === "relay_security") manualDisconnect = true;
+    lastCloseReason = e.code === "pairing" ? "pairing" : e.code === "relay_security" ? "security" : "closed";
+    console.error("[WebBridge] Connection setup failed:", e);
+    if (!manualDisconnect) scheduleReconnect();
     return;
   }
   ws = sock;
+  connectInFlight = false;
 
   sock.onopen = () => {
     if (ws !== sock) return; // superseded by a newer socket
@@ -86,9 +225,17 @@ async function connect() {
     // Register with the relay
     sock.send(JSON.stringify({
       type: "register",
+      protocol_version: 2,
       extension_id: extensionId,
+      client_instance_id: extensionId,
       browser: detectBrowser(),
       version: chrome.runtime.getManifest().version,
+      capabilities: {
+        commands: COMMAND_CAPABILITIES,
+        interactions: ["context.share"],
+        captures: ["selection", "page_metadata"],
+        ui: ["popup"],
+      },
     }));
 
     ensureHeartbeatAlarm();
@@ -109,8 +256,17 @@ async function connect() {
     console.log("[WebBridge] Disconnected from relay (code", event.code + ")");
     connected = false;
     ws = null;
+    if (event.code === 4403) {
+      pairingCredential = "";
+      pairingId = "";
+      pairingRelayBase = "";
+      manualDisconnect = true;
+      chrome.storage.local.set({
+        pairingCredential: "", pairingId: "", pairingRelayBase: "",
+      });
+    }
     // 4401 = relay rejected the access token — surface it in the popup.
-    lastCloseReason = event.code === 4401 ? "auth" : "closed";
+    lastCloseReason = event.code === 4403 ? "pairing" : event.code === 4401 ? "auth" : "closed";
     if (!manualDisconnect) scheduleReconnect();
   };
 
@@ -175,7 +331,10 @@ function generateId() {
 async function handleMessage(msg) {
   if (msg.type === "registered") {
     console.log("[WebBridge] Registered with ID:", msg.extension_id);
-    if (msg.extension_id && msg.extension_id !== extensionId) {
+    if (msg.pairing_id) {
+      pairingId = msg.pairing_id;
+      chrome.storage.local.set({ pairingId });
+    } else if (msg.extension_id && msg.extension_id !== extensionId) {
       extensionId = msg.extension_id;
       chrome.storage.local.set({ extensionId }); // keep the relay-confirmed id stable
     }
@@ -1555,6 +1714,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         attached_tab_ids: [...attachedTabs.keys()],
         last_close_reason: lastCloseReason,
         relay_base: relayBase,
+        paired: Boolean(pairingCredential && pairingId),
+        pairing_id: pairingId || null,
       });
     });
     return true; // async sendResponse
@@ -1580,6 +1741,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       connect();
     })();
     sendResponse({ ok: true });
+    return true;
+  }
+
+  if (msg.type === "pair_with_code") {
+    (async () => {
+      try {
+        const result = await pairWithCode(msg.code);
+        disconnect();
+        manualDisconnect = false;
+        connect();
+        sendResponse({ ok: true, ...result });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
     return true;
   }
 

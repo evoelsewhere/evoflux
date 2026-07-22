@@ -72,6 +72,19 @@ _EXEMPT_PREFIXES: tuple[str, ...] = (
     "/static/",  # legacy static dir, if any
 )
 
+# API endpoints that intentionally implement a separate, narrower credential
+# contract. Pairing exchange is authorized by a one-time code; relay-ticket and
+# interactions require a scoped WebBridge pairing bearer. Keep this list exact.
+_CUSTOM_AUTH_EXACT: frozenset[str] = frozenset(
+    {
+        "/api/team/webbridge/pairing/exchange",
+        "/api/team/webbridge/relay-ticket",
+        "/api/team/webbridge/interactions",
+        "/api/team/webbridge/bindings",
+    }
+)
+_CUSTOM_AUTH_PREFIXES: tuple[str, ...] = ("/api/team/webbridge/bindings/",)
+
 # Query-string param name used by `<a download>` links that can't carry
 # an Authorization header. We strip this *after* extraction so downstream
 # middleware (access logs, metrics) don't see the secret. WebSocket
@@ -173,6 +186,10 @@ class DesktopTokenMiddleware(BaseHTTPMiddleware):
 
         path = request.url.path
         if _path_is_exempt(path):
+            return await call_next(request)
+        if path in _CUSTOM_AUTH_EXACT or any(
+            path.startswith(prefix) for prefix in _CUSTOM_AUTH_PREFIXES
+        ):
             return await call_next(request)
 
         token = _extract_token(request)

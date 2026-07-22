@@ -2,7 +2,7 @@
 
 Runs ``alembic upgrade head`` against a temp database using the real
 ``app/alembic.ini`` and asserts the latest schema state lands (currently:
-``chat_sessions.source_session_ref`` from revision 00000025).
+WebBridge pairing, interaction, and tab-binding state from revision 00000026).
 Complements ``tests/core/test_db_extra.py``, which only covers
 ``run_migrations`` error paths with mocks.
 """
@@ -20,7 +20,7 @@ import app
 from app.core.config import settings
 
 
-def test_alembic_upgrade_head_adds_side_chat_fields(tmp_path, monkeypatch):
+def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
     from alembic import command
     from alembic.config import Config
 
@@ -48,18 +48,30 @@ def test_alembic_upgrade_head_adds_side_chat_fields(tmp_path, monkeypatch):
             for col in fk["constrained_columns"]
         }
         assert "source_session_id" in fk_columns
+        inspector = sa.inspect(engine)
+        assert {
+            "webbridge_pairings",
+            "webbridge_interactions",
+            "webbridge_tab_bindings",
+        } <= set(inspector.get_table_names())
+        interaction_columns = {
+            column["name"] for column in inspector.get_columns("webbridge_interactions")
+        }
+        assert {
+            "request_hash",
+            "prompt",
+            "dispatch_lease_until",
+        } <= interaction_columns
         with engine.connect() as conn:
             version = conn.execute(
                 sa.text("SELECT version_num FROM alembic_version")
             ).scalar()
-        assert version == "00000025"
+        assert version == "00000026"
     finally:
         engine.dispose()
 
 
-def test_side_chat_source_ref_migration_backfills_existing_rows(
-    tmp_path, monkeypatch
-):
+def test_side_chat_source_ref_migration_backfills_existing_rows(tmp_path, monkeypatch):
     from alembic import command
     from alembic.config import Config
 

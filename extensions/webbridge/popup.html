@@ -190,9 +190,16 @@
   <div class="config-card">
     <label for="relayBase">Relay URL</label>
     <input id="relayBase" type="text" placeholder="ws://127.0.0.1:8000" spellcheck="false" autocomplete="off">
-    <label for="accessToken">Access token</label>
+    <label for="accessToken">Legacy access token</label>
     <input id="accessToken" type="password" placeholder="Required in desktop mode" autocomplete="off">
-    <div class="config-hint">Saved automatically; reconnects on change. The token is the same one the EvoFlux app uses (desktop token or server access key).</div>
+    <div class="config-hint">Relay changes reconnect automatically. The access token is only used by legacy, unpaired connections.</div>
+  </div>
+
+  <div class="config-card" id="pairingCard">
+    <label for="pairingCode">Secure pairing code</label>
+    <input id="pairingCode" type="text" placeholder="ABCD-EFGH-JKLM" spellcheck="false" autocomplete="off">
+    <button class="btn btn-primary" id="pairBtn">Pair with EvoFlux</button>
+    <div class="config-hint" id="pairingDetail">Generate a one-time code from EvoFlux, then enter it here.</div>
   </div>
 
   <button class="btn btn-primary" id="connectBtn">

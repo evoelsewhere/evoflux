@@ -1189,6 +1189,9 @@ export interface WebBridgeExtensionInfo {
   extension_id: string
   browser: string
   version: string
+  protocol_version: number
+  capabilities: Record<string, unknown>
+  paired: boolean
   connected_at: number
   current_url: string
   current_title: string
@@ -1197,6 +1200,21 @@ export interface WebBridgeExtensionInfo {
 export interface WebBridgeStatusResponse {
   connected: boolean
   extensions: WebBridgeExtensionInfo[]
+}
+
+export interface WebBridgePairingCodeResponse {
+  code: string
+  expires_in: number
+}
+
+export interface WebBridgePairingInfo {
+  pairing_id: string
+  label: string
+  browser: string
+  version: string
+  scopes: string[]
+  created_at: string
+  last_seen_at: string
 }
 
 export interface WebBridgeLaunchBrowserResponse {

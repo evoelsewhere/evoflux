@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -90,6 +91,24 @@ class ServerSettings(BaseModel):
     access_key: str | None = None
 
 
+class WebBridgeSharingSettings(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    default: Literal["ask", "allow", "block"] = "ask"
+    blocked_domains: list[str] = Field(default_factory=list)
+    allow_selection: bool = True
+    allow_readable_page: bool = False
+    allow_screenshot: bool = False
+    max_artifact_bytes: int = Field(default=5_000_000, ge=1, le=20_000_000)
+
+
+class WebBridgeInteractionSettings(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    allow_background_triggers: bool = False
+    max_per_minute: int = Field(default=30, ge=1, le=600)
+
+
 class WebBridgeSettings(BaseModel):
     """Guardrails for the WebBridge tool, which drives the user's *real*,
     logged-in browser. Defaults are permissive (open loopback dev) so the
@@ -111,6 +130,10 @@ class WebBridgeSettings(BaseModel):
     allow_evaluate: bool = True
     # Recent actions kept in the in-memory audit ring buffer (GET /audit).
     audit_log_size: int = 200
+    sharing: WebBridgeSharingSettings = Field(default_factory=WebBridgeSharingSettings)
+    interactions: WebBridgeInteractionSettings = Field(
+        default_factory=WebBridgeInteractionSettings
+    )
 
 
 class ProviderUiSettings(BaseModel):
