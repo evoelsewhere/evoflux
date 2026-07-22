@@ -52,6 +52,7 @@ from app.agent.mode.team.hooks.team_prompt import AgentTeamProtocolHook
 from app.agent.hooks.tool_result_offload import ToolResultOffloadHook
 from app.agent.mode.team.shared_state import format_state_snapshot
 from app.agent.mode.team.tier_policy import (
+    DEFAULT_DEFERRED_TOOLS,
     WEBBRIDGE_SESSION_TAG,
     denied_tools_for_tier,
     resolve_member_tier,
@@ -1061,11 +1062,19 @@ class TeamMemberBase(abc.ABC):
         # user-facing allowlist (see tier_policy.webbridge_session_excluded_tools),
         # so the web can only be driven through the user's real browser.
         tier_excluded: frozenset[str] | None = None
+        # Deferred-by-default tools (see tier_policy docstring): stay callable,
+        # just hidden from tool_defs until the agent calls load_tool. Applies
+        # to lead and member alike. In a WebBridge-tagged session "webbridge"
+        # is the session's whole purpose, so it starts revealed rather than
+        # behind an extra activation round-trip; browser_use etc. still defer
+        # (and are hard-excluded anyway by webbridge_session_excluded_tools).
+        deferred = DEFAULT_DEFERRED_TOOLS
         if self._role_label == "member":
             member_tier = resolve_member_tier(self.name)
             tier_excluded = denied_tools_for_tier(member_tier) or None
         elif WEBBRIDGE_SESSION_TAG in self._team.session_tags:
             tier_excluded = webbridge_session_excluded_tools(self.agent._tools)
+            deferred = deferred - {"webbridge"}
 
         # Surface team routing context to tools via state.metadata.  The
         # schedule tool reads these as injected args so the LLM never has
@@ -1132,6 +1141,7 @@ class TeamMemberBase(abc.ABC):
                 hooks=hooks,
                 injected_tools=injected,
                 excluded_tools=tier_excluded,
+                deferred_tools=deferred,
                 interrupt_event=self._cancel_event,
                 checkpointer=checkpointer,
                 llm_provider=runtime_provider,

@@ -20,6 +20,7 @@ from app.agent.agent_loop import Agent
 from app.agent.mode.team.member import TeamLead
 from app.agent.mode.team.team import AgentTeam
 from app.agent.mode.team.tier_policy import (
+    DEFAULT_DEFERRED_TOOLS,
     TIER_DENIED_TOOLS,
     WEBBRIDGE_SESSION_ALLOWED_TOOLS,
     WEBBRIDGE_SESSION_DENIED_TEAM_TOOLS,
@@ -83,6 +84,49 @@ class TestDeniedToolsForTier:
         assert "simple" in TIER_DENIED_TOOLS
         assert "multi_step" in TIER_DENIED_TOOLS
         assert "complex" in TIER_DENIED_TOOLS
+
+
+# ── DEFAULT_DEFERRED_TOOLS ───────────────────────────────────────────────
+
+
+class TestDefaultDeferredTools:
+    def test_includes_browser_tools(self):
+        assert {"browser_use", "webbridge"} <= DEFAULT_DEFERRED_TOOLS
+
+    def test_includes_long_tail_tools(self):
+        assert {
+            "aim_units",
+            "aim_compare",
+            "terminal_run",
+            "worktree_start",
+            "worktree_finish",
+            "lsp_diagnostics",
+            "lsp_definition",
+            "lsp_references",
+            "visualize_read_me",
+            "show_widget",
+            "create_pull_request",
+            "schedule_task",
+        } <= DEFAULT_DEFERRED_TOOLS
+
+    def test_excludes_core_coding_tools(self):
+        """Tools nearly every turn needs must never be deferred."""
+        assert DEFAULT_DEFERRED_TOOLS.isdisjoint(
+            {"read", "write", "edit", "grep", "glob", "shell", "todo_manage", "skill"}
+        )
+
+    def test_catalog_matches_default_deferred_tools(self):
+        """load_tool._CATALOG must list exactly the deferred tool names.
+
+        The two are independent hand-maintained sources (load_tool.py can't
+        import this constant at module level without a circular import —
+        see the comment above _CATALOG) — a name in one but not the other
+        means that tool is either permanently hidden with no way to unlock
+        it, or advertised by load_tool but never actually deferred.
+        """
+        from app.agent.tools.builtin.load_tool import _CATALOG
+
+        assert set(_CATALOG) == DEFAULT_DEFERRED_TOOLS
 
 
 # ── resolve_member_tier ──────────────────────────────────────────────────

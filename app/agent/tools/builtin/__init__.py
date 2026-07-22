@@ -13,6 +13,7 @@ from .filesystem import (
     remove_path,
     write_file,
 )
+from .load_tool import load_tool
 from .memory_search import memory_search
 from .note import note_tool
 from .python import python_tool
@@ -36,6 +37,7 @@ __all__ = [
     "glob_files",
     "grep_files",
     "list_directory",
+    "load_tool",
     "patch_file",
     "load_skill",
     "memory_search",

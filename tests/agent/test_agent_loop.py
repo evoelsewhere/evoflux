@@ -791,3 +791,102 @@ async def test_stream_and_assemble_merges_consecutive_user_messages():
     user_msgs = [m for m in sent if isinstance(m, HumanMessage)]
     assert len(user_msgs) == 1
     assert user_msgs[0].content == "first\n\nsecond"
+
+
+# ---------------------------------------------------------------------------
+# deferred_tools: hidden from tool_defs until load_tool activates them
+# ---------------------------------------------------------------------------
+
+
+async def test_deferred_tool_hidden_until_activated():
+    """A deferred tool is absent from tool_defs until load_tool activates it,
+    then present starting the very next model call (same run, next iteration).
+    Uses "browser_use" — a real entry in load_tool's catalog — as a stand-in
+    Tool, since load_tool only accepts catalog names."""
+    from app.agent.tools.builtin.load_tool import load_tool
+    from app.agent.tools.registry import Tool
+
+    browser_use = Tool(lambda: "browser result", name="browser_use")
+    calls: list[dict] = []
+
+    async def _iter1():
+        yield _tool_chunk(0, "call_1", "load_tool", '{"tool_name": "browser_use"}')
+        yield _finish_chunk()
+
+    async def _iter2():
+        yield _text_chunk("done", finish="stop")
+
+    def _stream_side_effect(**kwargs):
+        calls.append(kwargs)
+        return _iter1() if len(calls) == 1 else _iter2()
+
+    mock_provider = MagicMock()
+    mock_provider.stream.side_effect = _stream_side_effect
+
+    agent = Agent(
+        llm_provider=mock_provider,
+        name="test-agent",
+        system_prompt="sys",
+        tools=[browser_use, load_tool],
+    )
+
+    await agent.run(
+        [HumanMessage(content="use the browser")],
+        config=RunConfig(session_id="s_defer", run_id="r_defer"),
+        deferred_tools=frozenset({"browser_use"}),
+    )
+
+    assert len(calls) == 2
+    names_call1 = {t["function"]["name"] for t in calls[0]["tools"]}
+    names_call2 = {t["function"]["name"] for t in calls[1]["tools"]}
+    assert "browser_use" not in names_call1
+    assert "load_tool" in names_call1
+    assert "browser_use" in names_call2
+
+
+async def test_deferred_tools_none_is_backward_compatible():
+    """Omitting deferred_tools sends every tool's definition, as before."""
+    from app.agent.tools.registry import Tool
+
+    heavy = Tool(lambda: "heavy result", name="heavy")
+    captured: dict = {}
+
+    async def _gen():
+        yield _text_chunk("ok", finish="stop")
+
+    def _capture(**kwargs):
+        captured.update(kwargs)
+        return _gen()
+
+    mock_provider = MagicMock()
+    mock_provider.stream.side_effect = _capture
+
+    agent = Agent(
+        llm_provider=mock_provider,
+        name="test-agent",
+        system_prompt="sys",
+        tools=[heavy],
+    )
+
+    await agent.run(
+        [HumanMessage(content="hi")],
+        config=RunConfig(session_id="s_nodefer", run_id="r_nodefer"),
+    )
+
+    names = {t["function"]["name"] for t in captured["tools"]}
+    assert "heavy" in names
+
+
+async def test_load_tool_rejects_unknown_and_ungranted_names():
+    """load_tool fails closed for names outside the catalog or not granted
+    to this run, and never raises."""
+    from app.agent.tools.builtin.load_tool import load_tool
+    from app.agent.state import AgentState
+
+    state = AgentState(messages=[], tool_names=["load_tool"])  # "browser_use" absent
+    unknown = await load_tool.arun(tool_name="not_a_real_tool", _injected={"_state": state})
+    assert "not a deferred tool" in unknown
+
+    not_granted = await load_tool.arun(tool_name="browser_use", _injected={"_state": state})
+    assert "not available in this session" in not_granted
+    assert "activated_deferred_tools" not in state.metadata

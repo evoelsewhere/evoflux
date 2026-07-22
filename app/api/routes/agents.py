@@ -266,7 +266,7 @@ async def get_registry() -> RegistryResponse:
     from app.agent.loader import _default_tool_registry
 
     tool_registry = _default_tool_registry()
-    hidden_tools = {"skill", "todo_manage", "schedule_task", "note"}
+    hidden_tools = {"skill", "load_tool", "todo_manage", "schedule_task", "note"}
     tools = sorted(
         (
             ToolCatalogEntry(
