@@ -68,6 +68,8 @@ Before reaching for a command, know what a good xlsx looks like. These are the d
 
 **Preserve existing templates.** When editing a file that already has a look, match it. Existing conventions override these guidelines.
 
+**A template is a workbook contract, not a blank grid.** Preserve sheet order and visibility, names, formulas, styles, merged ranges, tables, named ranges, validations, conditional formatting, chart series/anchors, hidden lookup sheets, freeze panes, protection, and print settings unless the request explicitly changes them. Never infer safety from `view outline` alone.
+
 ### Visual delivery floor (applies to EVERY workbook)
 
 Before you declare done, run `officecli view "$FILE" html` and Read the returned HTML path to confirm all of these:
@@ -132,11 +134,50 @@ Any hardcoded number without a source is an undocumented assumption — a review
 Six steps. Every non-trivial build follows this shape.
 
 1. **Open/save lifecycle.** Use `officecli open <file>` at the start and `officecli save <file>` at the end to flush to disk — `save` only writes and leaves the resident warm for follow-up edits; reach for `officecli close <file>` only to release the resident on a one-shot handoff. Both are always safe (never error or lose work). For many cells, use `batch`: **≤ 50 ops/block recommended; tested up to 80+ ops per block on pure value-set payloads with zero failures. Cross-sheet formula batches are the exception — run those non-resident, single heredoc (see Known Issues)**. **Flush only at the non-officecli boundary:** officecli's own reads always see your edits; run `save`/`close` only before a non-officecli program reads the file (openpyxl/pandas, Excel, a renderer, delivery).
-2. **Create or load.** `officecli create "$FILE"` (new) or `officecli view "$FILE" outline` (existing — get the lay of the land first).
-3. **Build incrementally.** One command, read the output, continue. After any structural op (new sheet, chart, named range, pivot), run `get` on it to confirm shape before stacking more on top.
+2. **Classify every input before choosing the build mode.** Mark each workbook as one of: `existing workbook to edit`, `fillable template`, `structural base`, `visual reference`, or `data source`. Copy and edit only the first three. A visual reference guides formatting but is never the output base; a data source is read-only input. New output with no editable base: `officecli create "$FILE"`. Never overwrite a source.
+3. **Build incrementally.** One command, read the output, continue. After any structural op (new sheet, chart, named range, pivot), run `get` on it to confirm shape before stacking more on top. In template-first mode, mutate only inventoried input cells/ranges or explicitly requested structures.
 4. **Format.** Column widths, number formats, freeze panes, tab colors, header fills. Formatting is not optional polish — per "Requirements for Outputs" it is part of the deliverable.
 5. **Save, then reckon with the cache.** `officecli save <file>` writes to disk. Newly-added formulas ship without cached values; when a human opens the file in a spreadsheet app, the app recalculates and populates them. **But your downstream `INDEX/MATCH`, `SUMPRODUCT`, or any formula that references an upstream formula will cache whatever the upstream cached at write-time — often `0` or a stale value — and that cached lie survives into non-recalculating readers.** After any multi-formula build involving array formulas (`SUMPRODUCT`, `SUMIFS` with dynamic criteria) or cross-sheet chains, **re-touch every downstream cell** (run `set` again with the same formula) so the engine recomputes its cache from the freshly-cached upstream. ⚠️ Re-touch on cross-sheet chains via resident is unreliable (see Batch / resident caveats) — prefer non-resident `set` for the re-touch pass. Then `officecli get` a few downstream cells and eyeball that their `cachedValue=` is plausible. `validate` is safe with a resident open and itself flushes pending edits to disk (same as docx / pptx).
 6. **QA — assume there are problems.** See the QA section. You are not done when your last command exited 0; you are done after one fix-and-verify cycle finds zero new issues.
+
+### Template-first mode (MANDATORY for an existing workbook, fillable template, or structural base)
+
+Do not write the first value until the workbook's structure and editable surface are known.
+
+1. **Protect the source.** Keep `$SOURCE` read-only and inspect it before creating `$FILE`. Output initialization happens once in step 4; do not pre-copy an output that will be created by `merge`.
+2. **Capture a before-state inventory.** Run these against `$SOURCE` before the first mutation:
+  ```bash
+  officecli view "$SOURCE" outline
+  officecli get "$SOURCE" / --depth 2 --json
+  officecli query "$SOURCE" 'sheet' --json
+  officecli query "$SOURCE" 'row' --json
+  officecli query "$SOURCE" 'col' --json
+  officecli query "$SOURCE" 'cell:has(formula)' --json
+  officecli query "$SOURCE" 'merge' --json
+  officecli query "$SOURCE" 'namedrange' --json
+  officecli query "$SOURCE" 'listobject' --json
+  officecli query "$SOURCE" 'validation' --json
+  officecli query "$SOURCE" 'conditionalformatting' --json
+  officecli query "$SOURCE" 'chart' --json
+  officecli query "$SOURCE" 'pivottable' --json
+  officecli query "$SOURCE" 'slicer' --json
+  officecli query "$SOURCE" 'sparkline' --json
+  officecli query "$SOURCE" 'picture' --json
+  officecli query "$SOURCE" 'shape' --json
+  officecli query "$SOURCE" 'comment' --json
+  officecli query "$SOURCE" 'hyperlink' --json
+  officecli dump "$SOURCE" / -o before-blueprint.json --json
+  officecli view "$SOURCE" html
+  ```
+  Direct-`get` every returned sheet path to capture visibility, freeze panes, protection, headers/footers, and print settings; direct-`get` every returned chart/pivot/slicer/sparkline/picture/shape path to capture sources and exact anchor geometry. Query output alone is only an index. Use `raw "$SOURCE" "/SheetName"` and the full-workbook dump to include styled empty cells and unsupported worksheet extensions that normal tree walks omit. Record exact paths and properties, not just counts. Any dump warning must be explained before editing. If a selector is rejected, run `officecli help xlsx query`; do not silently skip that class or treat an unexplained empty result as proof it is absent.
+3. **Define the mutation map.** Write a compact table of `target range → allowed change → dependencies → verification`. Treat blue/input cells, named input ranges, unlocked cells, or explicit placeholders as the default editable surface. Formula cells, table headers, totals, hidden sheets, chart source ranges, and workbook names are read-only unless the request requires changing them.
+4. **Initialize the output once, then choose the least destructive mutation.** Normal mode: copy `$SOURCE` to `$FILE` and edit the copy. Textual-cell merge mode: `$FILE` must not exist; let `merge` create it directly from `$SOURCE`:
+  ```bash
+  officecli merge "$SOURCE" "$FILE" --data data.json
+  ```
+  XLSX `merge` is safe only for final **text inside dedicated text cells**. It does not replace tokens in charts, shapes, comments, headers, or footers, and every replaced cell becomes an inline string. Never use it for numeric/date/boolean inputs or formula cells; write those with typed `set`, then verify dependent formulas/caches. Scan every non-cell object class separately for unresolved tokens. For ordinary updates, set values in existing input cells and let existing formulas/charts consume them. Whole-sheet `--from` cloning is unsupported. Treat `dump`/`batch` as reconstruction, not an in-place template edit: replay only into a separate target when dump reports zero unexplained warnings and workbook-level settings/named-range dependency closure is verified; otherwise keep the copied workbook and mutate it in place. Do not insert/delete rows or columns until all dependencies are mapped.
+5. **Check after each logical block.** Re-run `get` for changed ranges and every dependent summary/chart. Confirm formulas and cached values, then render the affected sheet before moving to the next block. A successful command is not evidence that the template still works.
+6. **Run a before/after structural regression.** Repeat the same direct gets, queries, raw-sheet checks, full dump, and HTML render against `$FILE`. Compare exact sheet/object paths, formula text and dependencies, named-range refs, row/column geometry, drawing anchors, visibility, freeze panes, protection, headers/footers, and print settings. Counts alone do not pass. Any unexplained change is a defect. Re-run all QA gates after fixing it.
 
 ## Quick Start
 
@@ -221,12 +262,20 @@ officecli view "$FILE" text --start 1 --end 50 --cols A,B,C
 
 Other `view` modes worth knowing: `annotated` (cell values + types/formulas + warnings), `stats` (numeric summaries), `issues` (broken formulas, empty sheets, missing refs).
 
-**Round-trip dump.** `officecli dump "$FILE" [path]` serializes the workbook — or one worksheet (`/Sheet1`, `/sheet[N]`) — into a replayable batch JSON; `officecli batch new.xlsx --input dump.json` replays it. Use it to learn from an existing workbook's structure or clone/adapt a template instead of reading raw OOXML. Coverage per `dump --help`; subtree dumps don't carry workbook-level resources (settings, named ranges) — the replay target must already define them.
+**Round-trip dump.** `officecli dump "$FILE" [path]` serializes the workbook — or one worksheet (`/Sheet1`, `/sheet[N]`) — into replayable batch JSON. Use it primarily to learn and audit an existing workbook. Replay is reconstruction into a separate target, not a safe in-place clone: whole-sheet `add --from` is unsupported, worksheet dumps omit workbook settings and named ranges, and unsupported worksheet extensions/threaded comments surface as warnings. Replay only when every warning is understood and dependency closure is verified.
 
 ```bash
 officecli dump "$FILE" -o blueprint.json            # whole workbook
 officecli dump "$FILE" /Sheet1 -o sheet.json        # one worksheet
 officecli batch new.xlsx --input blueprint.json
+```
+
+**Template merge.** Use `merge` only when `{{key}}` placeholders live in dedicated final-text cells. The output must not already exist unless overwrite is explicitly intended. Replaced cells become inline strings; use typed `set` for numbers, dates, booleans, and formulas. Merge neither replaces nor reports tokens in charts, shapes, comments, headers, or footers, so inspect those classes separately:
+
+```bash
+officecli merge template.xlsx output.xlsx --data data.json
+officecli query output.xlsx 'cell:contains("{{")'
+officecli query output.xlsx 'chart, shape, comment' --json
 ```
 
 **Inspect one element.** Use XPath-style paths. Always quote — shells glob `[N]`.
