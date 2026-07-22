@@ -187,6 +187,7 @@ class Agent(Generic[TContext]):
         hooks: Sequence[BaseAgentHook] | None = None,
         injected_tools: list[Tool] | None = None,
         excluded_tools: frozenset[str] | None = None,
+        deferred_tools: frozenset[str] | None = None,
         interrupt_event: asyncio.Event | None = None,
         checkpointer: Checkpointer | None = None,
         llm_provider: LLMProviderBase | None = None,
@@ -208,6 +209,16 @@ class Agent(Generic[TContext]):
         from the run-local tool lookup after merging constructor + injected
         tools.  Used by team tier policies to restrict heavy tools for
         lower-tier tasks.
+
+        ``deferred_tools`` is an optional frozenset of tool names that stay
+        callable but start hidden from ``tool_defs`` — unlike
+        ``excluded_tools`` they are never popped from the run-local lookup.
+        The ``load_tool`` tool reveals one for the rest of this run by adding
+        its name to ``state.metadata["activated_deferred_tools"]``; the loop
+        recomputes ``tool_defs`` each iteration so an activation takes effect
+        starting the very next model call. Cuts baseline per-call token cost
+        for heavy/narrow tools (browser automation, AIM, LSP, ...) that most
+        turns never touch.
 
         ``checkpointer`` is an optional :class:`~app.agent.checkpointer.Checkpointer`
         that the loop calls at defined sync points to persist state.  When
@@ -237,6 +248,12 @@ class Agent(Generic[TContext]):
             for name in excluded_tools:
                 run_tools.pop(name, None)
 
+        # Deferred tools stay in run_tools (so they remain callable once
+        # unlocked) but are left out of tool_defs until activated. Intersect
+        # with what's actually present so a name already removed by
+        # excluded_tools above is simply a no-op here, never re-added.
+        deferred_names = frozenset(deferred_tools or ()) & run_tools.keys()
+
         # Work on a local copy, strip any SystemMessage — system prompt lives
         # in state.system_prompt and is prepended per-call by the loop.
         messages = [m for m in messages if not isinstance(m, SystemMessage)]
@@ -249,7 +266,25 @@ class Agent(Generic[TContext]):
             session_created_at=config.session_created_at if config else None,
         )
 
-        tool_defs = [t.definition for t in run_tools.values()]
+        # Always-visible tools' definitions never change mid-run — compute once.
+        # Some tools (skill, load_tool) have a callable description factory that
+        # does real work (filesystem scans, string building); recomputing this
+        # list every iteration would redo that work for nothing on every turn
+        # of every team run, since deferred_tools is set on virtually all of
+        # them. Only the (typically 0-2) activated deferred tools' definitions
+        # need to be (re)looked up as activation changes.
+        static_tool_defs = [
+            t.definition for name, t in run_tools.items() if name not in deferred_names
+        ]
+
+        def _compute_tool_defs(activated: frozenset[str]) -> list[dict[str, Any]]:
+            if not activated:
+                return static_tool_defs
+            return static_tool_defs + [
+                run_tools[name].definition for name in activated if name in run_tools
+            ]
+
+        tool_defs = _compute_tool_defs(frozenset())
 
         # Build per-run AgentState — passed to all hooks throughout the loop
         state = AgentState(
@@ -282,10 +317,11 @@ class Agent(Generic[TContext]):
         self.stats.status = "running"
         run_start = time.monotonic()
         logger.info(
-            "agent_run_start agent={} message_count={} tools={} session={}",
+            "agent_run_start agent={} message_count={} tools={} tools_visible={} session={}",
             self.name,
             len(messages),
             len(run_tools),
+            len(tool_defs),
             ctx.session_id,
         )
 
@@ -308,6 +344,7 @@ class Agent(Generic[TContext]):
         empty_after_tool_continuations = 0
         max_empty_after_tool_continuations = 3
         provider_resume_attempts = 0
+        last_activated_deferred: frozenset[str] = frozenset()
 
         while iteration < self.max_iterations:
             # Top-of-iteration interrupt check.  Without this, an interrupt
@@ -332,6 +369,23 @@ class Agent(Generic[TContext]):
                 self.max_iterations,
                 len(messages),
             )
+
+            # Refresh tool_defs before anything this iteration reads it (hooks
+            # included) so a load_tool activation from the previous iteration's
+            # tool execution is visible starting this model call. Skipped
+            # entirely when the activated set hasn't changed — the common case
+            # for every iteration where the agent never calls load_tool — so
+            # this never redoes the (potentially non-trivial) work in
+            # ``static_tool_defs``, only the small activated-tools lookup.
+            if deferred_names:
+                activated = frozenset(
+                    state.metadata.get("activated_deferred_tools") or ()
+                )
+                if activated != last_activated_deferred:
+                    tool_defs = _compute_tool_defs(activated)
+                    state.tool_defs = tool_defs
+                    last_activated_deferred = activated
+
             # Build per-iteration ModelRequest — immutable view of what LLM sees.
             # messages_for_llm excludes SystemMessage + excluded messages.
             model_request = ModelRequest(

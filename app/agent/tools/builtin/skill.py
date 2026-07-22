@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import textwrap
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any
@@ -317,6 +318,19 @@ def _discover_skills_cached(
     return skills
 
 
+def _short_description(description: str, *, max_len: int = 90) -> str:
+    """Truncate a skill's full description to a single terse line.
+
+    The tool description embeds one line per skill on every LLM call, so it
+    uses this short form; ``discover_skills()`` and verbose rendering keep
+    the full text for intent-matching (``extract_triggers``) and other
+    consumers.  ``textwrap.shorten`` collapses embedded newlines/whitespace
+    and truncates on word boundaries — no sentence-detection heuristic, so
+    abbreviations like "e.g."/"etc." can't cause a premature cut.
+    """
+    return textwrap.shorten(description.strip(), width=max_len, placeholder="…")
+
+
 def format_available_skills(*, verbose: bool = False) -> str:
     """Render discovered skills for prompt/tool-description context."""
     skills = [
@@ -343,7 +357,10 @@ def format_available_skills(*, verbose: bool = False) -> str:
 
     return "\n".join(
         ["## Available Skills"]
-        + [f"- **{info['name']}**: {info['description']}" for info in skills]
+        + [
+            f"- **{info['name']}**: {_short_description(str(info['description']))}"
+            for info in skills
+        ]
     )
 
 

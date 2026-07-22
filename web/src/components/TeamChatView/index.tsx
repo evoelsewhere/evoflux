@@ -67,6 +67,7 @@ import type { AgentStream } from '@/stores/useTeamStore'
 import { PlanActionBar } from '../PlanReviewPanel'
 import { type InputBarHandle } from '../InputBar'
 import { FloatingInputBar } from '../FloatingInputBar'
+import { SideChatPanel } from '../SideChatPanel'
 import type { AgentCapabilities as AgentCapabilitiesType, WorkspaceFileInfo } from '@/api/types'
 import { SplitGrid } from './SplitGrid'
 import { useTeamCommands } from './useTeamCommands'
@@ -121,6 +122,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const [showPalette, setShowPalette] = useState(false)
   const [fileRefsEnabled, setFileRefsEnabled] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('agent')
+  const [sideChatOpen, setSideChatOpen] = useState(false)
 
   // On mobile, always force agent view — split/monitor require a wide screen.
   // Also close any desktop-only panels when shrinking to mobile.
@@ -678,6 +680,8 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
     // Ctrl+I — focus the chat input (dispatched via CustomEvent so future
     // callers don't need a ref to the input).
     'i': () => window.dispatchEvent(new CustomEvent('focus-chat-input')),
+    // Ctrl+; — toggle the side chat panel
+    ';': () => setSideChatOpen((v) => !v),
   })
 
   // Tab / Shift+Tab — cycle the active agent in the store (agent view tabs
@@ -801,31 +805,40 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
 
   // Side panels rendered after <main> inside AppShell's body row.
   const trailingPanels = (
-    <ChatTrailingPanels
-      mode={mode}
-      workspace={workspace}
-      isMobile={isMobile}
-      sessionId={sessionIdState}
-      projectId={projectIdState}
-      isWorking={isTeamWorking}
-      onQuoteComment={handlePlanQuoteComment}
-      showActivity={showActivity}
-      onCloseActivity={() => setShowActivity(false)}
-      codingFileViewer={codingFileViewer}
-      onCloseCodingFileViewer={() => setCodingFileViewer(null)}
-      onAddFileComment={handleAddFileComment}
-      onSendToChat={handleSendToChat}
-      codingPanel={codingPanel}
-      onCodingFileSelect={handleCodingFileSelect}
-      onCloseCodingPanel={closeCodingPanels}
-      showFilesPanel={showFilesPanel}
-      onCloseFilesPanel={() => setShowFilesPanel(false)}
-      browserOpen={browserOpen}
-      onCloseBrowser={closeBrowser}
-      terminalOpen={terminalOpen}
-      onCloseTerminal={closeTerminal}
-      terminalResize={terminalResize}
-    />
+    <>
+      <ChatTrailingPanels
+        mode={mode}
+        workspace={workspace}
+        isMobile={isMobile}
+        sessionId={sessionIdState}
+        projectId={projectIdState}
+        isWorking={isTeamWorking}
+        onQuoteComment={handlePlanQuoteComment}
+        showActivity={showActivity}
+        onCloseActivity={() => setShowActivity(false)}
+        codingFileViewer={codingFileViewer}
+        onCloseCodingFileViewer={() => setCodingFileViewer(null)}
+        onAddFileComment={handleAddFileComment}
+        onSendToChat={handleSendToChat}
+        codingPanel={codingPanel}
+        onCodingFileSelect={handleCodingFileSelect}
+        onCloseCodingPanel={closeCodingPanels}
+        showFilesPanel={showFilesPanel}
+        onCloseFilesPanel={() => setShowFilesPanel(false)}
+        browserOpen={browserOpen}
+        onCloseBrowser={closeBrowser}
+        terminalOpen={terminalOpen}
+        onCloseTerminal={closeTerminal}
+        terminalResize={terminalResize}
+      />
+      {sideChatOpen && sessionIdState && (
+        <SideChatPanel
+          mainSessionId={sessionIdState}
+          isOpen={sideChatOpen}
+          onClose={() => setSideChatOpen(false)}
+        />
+      )}
+    </>
   )
 
   // Modals / floating panels rendered after the body row (fixed-position —
@@ -1086,7 +1099,13 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
               })
             }}
             onStop={() => useTeamStore.getState().stopTeam()}
-            onSlashCommand={handleSlashCommand}
+            onSlashCommand={(id) => {
+              if (id === 'btw') {
+                setSideChatOpen(true)
+              } else {
+                handleSlashCommand(id)
+              }
+            }}
             onSnippetCommand={handleSnippetCommand}
             slashCommands={slashCommands}
             snippetCommands={snippetCommands}

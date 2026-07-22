@@ -28,5 +28,10 @@
     },
     "owner": "evoflux",
     "updated_at": 1783439678.5431192
+  },
+  "worktree_path": {
+    "value": "/Users/khuonghung/.local/share/evoflux/worktrees/evoflux-a54472cc70/feature-side-chat",
+    "owner": "evoflux",
+    "updated_at": 1784687791.006464
   }
 }

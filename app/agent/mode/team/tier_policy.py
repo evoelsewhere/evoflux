@@ -69,6 +69,35 @@ def denied_tools_for_tier(
     return TIER_DENIED_TOOLS.get(tier, frozenset())
 
 
+# ── Default-deferred tools ────────────────────────────────────────────────
+# Heavy or narrow-purpose tools whose full schema is excluded from every
+# agent's tool_defs by default — lead included — to cut baseline per-call
+# token overhead. Unlike TIER_DENIED_TOOLS (a hard, unbypassable block),
+# these stay reachable: the agent calls ``load_tool`` to unlock one for the
+# rest of the current run. A name here has no effect if the tool was already
+# hard-denied (tier or WebBridge-session scoping already popped it from
+# run_tools) — activation can only reveal a tool that construction-time /
+# tier rules already granted, never bypass them.
+DEFAULT_DEFERRED_TOOLS: frozenset[str] = frozenset(
+    {
+        "browser_use",
+        "webbridge",
+        "aim_units",
+        "aim_compare",
+        "terminal_run",
+        "worktree_start",
+        "worktree_finish",
+        "lsp_diagnostics",
+        "lsp_definition",
+        "lsp_references",
+        "visualize_read_me",
+        "show_widget",
+        "create_pull_request",
+        "schedule_task",
+    }
+)
+
+
 # ── WebBridge session scoping ─────────────────────────────────────────────
 # A session created from the WebBridge UI is tagged "webbridge" (persisted on
 # ChatSession.tags). In such a session the lead must drive the web ONLY
