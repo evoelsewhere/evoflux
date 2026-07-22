@@ -64,7 +64,7 @@ function ModelOptions({
   }, [models, query])
 
   return (
-    <div className="flex min-h-0 flex-col gap-1.5">
+    <div className="flex min-h-0 flex-col gap-1">
       <label className="relative block">
         <Search
           aria-hidden="true"
@@ -75,10 +75,10 @@ function ModelOptions({
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search models..."
-          className="h-8 w-full rounded-md border border-(--color-border) bg-(--bg-input) pl-8 pr-2.5 font-mono text-xs text-(--color-text) outline-none transition-[border-color,box-shadow] duration-150 focus:border-(--color-border-strong) focus:ring-2 focus:ring-(--color-accent)/25"
+          className="h-7 w-full rounded-md border border-(--color-border) bg-(--bg-input) pl-8 pr-2 font-mono text-xs text-(--color-text) outline-none transition-[border-color,box-shadow] duration-150 focus:border-(--color-border-strong) focus:ring-2 focus:ring-(--color-accent)/25"
         />
       </label>
-      <div className="max-h-48 overflow-y-auto overscroll-contain" role="listbox" aria-label="Models">
+      <div className="max-h-40 overflow-y-auto overscroll-contain" role="listbox" aria-label="Models">
         {visibleModels.length === 0 ? (
           <p className="px-2 py-4 text-center text-xs text-(--color-text-muted)">No models found</p>
         ) : (
@@ -89,7 +89,7 @@ function ModelOptions({
               role="option"
               aria-selected="false"
               onClick={() => onSelect(model.id)}
-              className="flex h-7 w-full items-center rounded-md px-2 text-left font-mono text-xs text-(--color-text-2) outline-none transition-[background-color,color] duration-150 hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:bg-(--bg-key) focus-visible:text-(--color-text)"
+              className="flex h-6 w-full items-center rounded-md px-2 text-left font-mono text-xs text-(--color-text-2) outline-none transition-[background-color,color] duration-150 hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:bg-(--bg-key) focus-visible:text-(--color-text)"
             >
               <span className="truncate">{model.id}</span>
             </button>
@@ -143,7 +143,7 @@ function ThinkingEffortSlider({
     <div
       data-testid="thinking-effort-slider"
       data-reduced-motion={String(reducedMotion)}
-      className="group relative h-9 w-full rounded-full"
+      className="group relative h-8 w-full rounded-full"
       style={{
         '--thinking-color': color,
         '--thinking-progress': `${progress}%`,
@@ -152,7 +152,7 @@ function ThinkingEffortSlider({
       <div
         data-testid="thinking-effort-rail"
         aria-hidden="true"
-        className="absolute inset-x-0 top-1/2 h-3 -translate-y-1/2 overflow-hidden rounded-full bg-(--bg-key) shadow-[inset_0_1px_2px_rgb(0_0_0/0.18)]"
+        className="absolute inset-x-0 top-1/2 h-2.5 -translate-y-1/2 overflow-hidden rounded-full bg-(--bg-key) shadow-[inset_0_1px_2px_rgb(0_0_0/0.18)]"
       >
         <motion.span
           className="absolute inset-0 origin-left rounded-full bg-(--thinking-color)"
@@ -200,7 +200,7 @@ function ThinkingEffortSlider({
           {options.map((option, index) => (
             <span
               key={option.value}
-              className="relative flex size-6 shrink-0 items-center justify-center"
+              className="relative flex size-5 shrink-0 items-center justify-center"
             >
               <span
                 className="size-1 rounded-full transition-colors duration-150"
@@ -214,7 +214,7 @@ function ThinkingEffortSlider({
                 <motion.span
                   layoutId="thinking-effort-thumb"
                   data-testid="thinking-effort-thumb"
-                  className="absolute size-6 rounded-full border border-white/70 bg-(--thinking-thumb-contrast) shadow-[0_2px_8px_rgb(0_0_0/0.32),inset_0_1px_0_rgb(255_255_255/0.8)]"
+                  className="absolute size-5 rounded-full border border-white/70 bg-(--thinking-thumb-contrast) shadow-[0_2px_6px_rgb(0_0_0/0.3),inset_0_1px_0_rgb(255_255_255/0.8)]"
                   transition={visualTransition}
                 />
               )}
@@ -245,7 +245,7 @@ function ThinkingEffortSlider({
             onSelectIndex(nextIndex)
           }
         }}
-        className="absolute inset-0 z-30 h-9 w-full cursor-pointer appearance-none opacity-0 outline-none disabled:cursor-not-allowed"
+        className="absolute inset-0 z-30 h-8 w-full cursor-pointer appearance-none opacity-0 outline-none disabled:cursor-not-allowed"
       />
     </div>
   )
@@ -312,7 +312,7 @@ function AdvancedComposerControl({
       <PopoverContent
         side="top"
         align="end"
-        className="w-[min(18rem,calc(100vw-1rem))] gap-3 overflow-visible p-3"
+        className="w-[min(15.5rem,calc(100vw-1rem))] gap-2.5 overflow-visible p-2.5"
       >
           <>
             <div
@@ -333,7 +333,7 @@ function AdvancedComposerControl({
                   if (event.pointerType === 'mouse') setModelFlyoutOpen(true)
                 }}
                 onClick={() => setModelFlyoutOpen(true)}
-                className="flex h-8 w-full items-center justify-between gap-2.5 rounded-md border border-(--color-border) bg-(--bg-input) px-2.5 font-mono text-xs text-(--color-text) outline-none transition-[background-color,border-color] duration-150 hover:bg-(--bg-key) focus-visible:border-(--color-border-strong)"
+                className="flex h-7 w-full items-center justify-between gap-2 rounded-md border border-(--color-border) bg-(--bg-input) px-2 font-mono text-xs text-(--color-text) outline-none transition-[background-color,border-color] duration-150 hover:bg-(--bg-key) focus-visible:border-(--color-border-strong)"
               >
                 <span className="truncate">{effectiveModel || 'Choose a model'}</span>
                 <ChevronDown aria-hidden="true" size={12} className="-rotate-90 shrink-0 text-(--color-text-subtle)" />
@@ -347,7 +347,7 @@ function AdvancedComposerControl({
                     animate={{ opacity: 1, x: 0, scale: 1 }}
                     exit={reducedMotion ? { opacity: 0 } : { opacity: 0, x: -4, scale: 0.985 }}
                     transition={{ duration: reducedMotion ? 0 : 0.14, ease: [0.16, 1, 0.3, 1] }}
-                    className="absolute left-[calc(100%+0.375rem)] top-0 z-(--z-modal) w-[min(16.5rem,calc(100vw-1rem))] rounded-lg border border-(--color-border-strong) bg-(--bg-page) p-2 shadow-(--shadow-popover) max-[1180px]:bottom-[calc(100%+0.375rem)] max-[1180px]:left-0 max-[1180px]:top-auto"
+                    className="absolute left-[calc(100%+0.375rem)] top-0 z-(--z-modal) w-[min(14.5rem,calc(100vw-1rem))] rounded-lg border border-(--color-border-strong) bg-(--bg-page) p-1.5 shadow-(--shadow-popover) max-[1180px]:bottom-[calc(100%+0.375rem)] max-[1180px]:left-0 max-[1180px]:top-auto"
                   >
                     <ModelOptions
                       onSelect={(modelId) => {
@@ -366,7 +366,7 @@ function AdvancedComposerControl({
             </div>
 
             <div>
-              <div className="mb-2 flex items-center justify-between gap-3">
+              <div className="mb-1.5 flex items-center justify-between gap-3">
                 <label htmlFor="thinking-effort" className="text-[11px] font-medium uppercase tracking-[0.08em] text-(--color-text-subtle)">
                   Thinking
                 </label>
@@ -385,7 +385,7 @@ function AdvancedComposerControl({
 
             <div>
               <p className="mb-1 text-[11px] font-medium uppercase tracking-[0.08em] text-(--color-text-subtle)">Speed</p>
-              <div className="grid h-8 grid-cols-2 rounded-lg bg-(--bg-input) p-0.5" role="group" aria-label="Response speed">
+              <div className="grid h-7 grid-cols-2 rounded-md bg-(--bg-input) p-0.5" role="group" aria-label="Response speed">
                 {([false, true] as const).map((fast) => (
                   <button
                     key={String(fast)}
