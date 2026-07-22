@@ -842,3 +842,74 @@ export async function getProjectCodeGraphData(
   if (!res.ok) await parseDetailOrThrow(res, 'getProjectCodeGraphData')
   return res.json()
 }
+
+// ── Side Chat ─────────────────────────────────────────────────────────────────
+
+/**
+ * Create a side chat session linked to a main session.
+ * The side chat gets read-only access to the main session's context.
+ */
+export async function createSideChat(mainSessionId: string): Promise<{ side_chat_id: string; title: string }> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/${encodeURIComponent(mainSessionId)}/side-chat`,
+    {
+      method: 'POST',
+      headers: { Accept: 'application/json' },
+    },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'createSideChat')
+  return res.json()
+}
+
+/**
+ * Get messages for a side chat session.
+ */
+export async function getSideChatMessages(sideChatId: string): Promise<Array<{
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  blocks?: Array<Record<string, unknown>>
+  agent?: string | null
+  timestamp?: string
+}>> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/side-chat/${encodeURIComponent(sideChatId)}/messages`,
+    {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'getSideChatMessages')
+  return res.json()
+}
+
+/**
+ * Send a message to a side chat session.
+ * Returns immediately; the response is streamed via SSE.
+ */
+export async function sendSideChatMessage(
+  mainSessionId: string,
+  sideChatId: string,
+  content: string,
+): Promise<{ status: string; session_id: string }> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/${encodeURIComponent(mainSessionId)}/side-chat/${encodeURIComponent(sideChatId)}/message`,
+    {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ content }),
+    },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'sendSideChatMessage')
+  return res.json()
+}
+
+/**
+ * Build the SSE stream URL for a side chat session.
+ */
+export function getSideChatStreamUrl(mainSessionId: string, sideChatId: string): string {
+  return `${apiBaseUrl()}/team/${encodeURIComponent(mainSessionId)}/side-chat/${encodeURIComponent(sideChatId)}/stream`
+}

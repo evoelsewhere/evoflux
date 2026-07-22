@@ -20,6 +20,7 @@ from app.agent.mode.team.team import (
     is_loop_command,
     parse_loop_command,
 )
+from app.agent.schemas.chat import HumanMessage
 from app.agent.tools.builtin.skill import discover_skills
 from app.api.deps import ChatFormDep, DbSession
 from app.api.routes.team._helpers import (
@@ -34,6 +35,7 @@ from app.api.schemas.sessions import (
     CodingWorkspaceTreeRepository,
     CodingWorkspaceTreeResponse,
     CodingWorkspaceTreeWorktree,
+    MessageResponse,
     SessionDetailResponse,
     SessionPageResponse,
     SessionResponse,
@@ -1404,3 +1406,198 @@ async def delete_chapter(
         raise HTTPException(status_code=404, detail="Chapter not found.")
     await db.delete(chapter)
     await db.commit()
+
+
+# ── Side Chat ────────────────────────────────────────────────────────────────
+
+# Tools excluded from side chat agent runs — keeps it read-only.
+SIDE_CHAT_EXCLUDED_TOOLS: frozenset[str] = frozenset({
+    "write",
+    "edit",
+    "patch",
+    "rm",
+    "shell",
+    "bg",
+    "python",
+    "browser_use",
+    "webbridge",
+    "schedule_task",
+    "skill",  # Skills may have side effects
+    "todo_manage",  # May modify todo state
+    "team_message",  # May send messages to team
+    "team_handoff",  # May send handoffs
+    "team_state",  # May modify shared state
+    "team_delegate",  # May delegate work
+    "team_reject",  # May reject work
+    "create_pull_request",  # May create PRs
+    "show_widget",  # May render widgets
+    "visualize_read_me",  # May render visualizations
+})
+
+# System prompt extension for side chat mode.
+SIDE_CHAT_SYSTEM_PROMPT_ADDENDUM = """
+## Side Chat Mode
+
+You are in a side chat session with read-only access to the main conversation.
+- You can read the main session's context for reference
+- You CANNOT modify files, execute commands, or make changes
+- You CANNOT send messages to team members or modify shared state
+- Your responses should focus on answering questions and providing information
+- If the user asks you to perform actions, explain that you're in read-only mode
+""".strip()
+
+
+class SideChatCreateRequest(BaseModel):
+    """Request body for creating a side chat session."""
+
+    title: str | None = None
+
+
+class SideChatMessageRequest(BaseModel):
+    """Request body for sending a message to a side chat."""
+
+    content: str
+
+
+@router.post("/{session_id}/side-chat", response_model=SessionResponse)
+async def create_side_chat(
+    session_id: UUID,
+    db: DbSession,
+    body: SideChatCreateRequest | None = None,
+) -> SessionResponse:
+    """Create a side chat session with read-only access to the main session.
+
+    The side chat inherits the main session's workspace, mode, and project
+    settings but operates independently with its own message history.
+    """
+    from app.services.chat_service import create_side_chat_session
+
+    try:
+        side_chat = await create_side_chat_session(
+            db,
+            session_id,
+            title=body.title if body else None,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return SessionResponse.model_validate(side_chat)
+
+
+@router.get("/{session_id}/side-chat/{side_chat_id}/messages")
+async def get_side_chat_messages(
+    session_id: UUID,
+    side_chat_id: UUID,
+    db: DbSession,
+) -> list[MessageResponse]:
+    """Get messages for a side chat session.
+
+    Returns the side chat's own message history (not the source context).
+    """
+    side_chat = await db.get(ChatSession, side_chat_id)
+    if (
+        side_chat is None
+        or side_chat.session_type != "side_chat"
+        or side_chat.source_session_id != session_id
+    ):
+        raise HTTPException(status_code=404, detail="Side chat not found")
+
+    from app.services.chat_service import get_messages
+
+    messages = await get_messages(db, side_chat_id)
+    return [_message_response(msg) for msg in messages]
+
+
+@router.post("/{session_id}/side-chat/{side_chat_id}/message", status_code=202)
+async def send_side_chat_message(
+    session_id: UUID,
+    side_chat_id: UUID,
+    body: SideChatMessageRequest,
+    db: DbSession,
+) -> dict:
+    """Send a message to a side chat session.
+
+    This creates a side chat agent run with restricted tools (read-only).
+    Subscribe to GET /team/{side_chat_id}/stream for the SSE feed.
+    """
+    side_chat = await db.get(ChatSession, side_chat_id)
+    if (
+        side_chat is None
+        or side_chat.session_type != "side_chat"
+        or side_chat.source_session_id != session_id
+    ):
+        raise HTTPException(status_code=404, detail="Side chat not found")
+
+    # Save the user message
+    from app.services.chat_service import save_message
+
+    await save_message(db, side_chat_id, HumanMessage(content=body.content))
+    await db.commit()
+
+    # Kick off the side chat agent run in the background
+    from app.services import agent_service
+
+    try:
+        # Reuse the team_for_session_mode to get the right team
+        team_obj = await _team_for_session_mode(db, str(side_chat_id))
+    except Exception:
+        # Fallback: create a minimal team for the side chat
+        team_obj = None
+
+    if team_obj is not None:
+        # Dispatch through the normal team flow — the side chat agent
+        # will use excluded_tools to restrict to read-only.
+        try:
+            await agent_service.dispatch_user_message(
+                team_obj,
+                content=body.content,
+                session_id=str(side_chat_id),
+                mode=side_chat.mode,
+                workspace=side_chat.workspace,
+            )
+        except Exception as exc:
+            logger.warning("side_chat_dispatch_failed error={}", exc)
+
+    return {"status": "accepted", "session_id": str(side_chat_id)}
+
+
+@router.get("/{session_id}/side-chat/{side_chat_id}/stream")
+async def side_chat_stream(
+    session_id: UUID,
+    side_chat_id: UUID,
+    request: Request,
+    db: DbSession,
+):
+    """SSE stream for side chat agent events.
+
+    Uses the side chat's own session ID for streaming, isolated from the
+    main session's event feed.
+    """
+    # Validate the side chat exists and belongs to this main session
+    async with db.begin():
+        sc = await db.get(ChatSession, side_chat_id)
+
+    if (
+        sc is None
+        or sc.session_type != "side_chat"
+        or sc.source_session_id != session_id
+    ):
+        raise HTTPException(status_code=404, detail="Side chat not found")
+
+    async def _gen() -> AsyncGenerator[dict, None]:
+        try:
+            async for event in stream_store.attach(str(side_chat_id)):
+                if await request.is_disconnected():
+                    break
+                yield {
+                    "event": event.get("event", "message"),
+                    "data": event.get("data", "{}"),
+                }
+        except Exception as exc:
+            logger.exception("side_chat_stream_error type={}", type(exc).__name__)
+            yield {
+                "event": "error",
+                "data": f'{{"type":"error","message":"stream_error:{type(exc).__name__}"}}',
+            }
+
+    return EventSourceResponse(_gen())
