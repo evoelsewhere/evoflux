@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useImperativeHandle, forwardRef, useEffect, useMemo } from 'react'
-import { Activity, ArrowUp, Brain, File, Folder, FolderOpen, Loader2, MessageCircle, Paperclip, Square, Terminal } from 'lucide-react'
+import { Activity, ArrowUp, File, Folder, FolderOpen, Loader2, MessageCircle, Paperclip, Square, Terminal } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { FilePreviewStrip } from './FilePreviewStrip'
 import { findActiveMention, rankFileRefs, type FileRef } from './InputBar.mentions'
@@ -207,8 +207,6 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   todos,
   todosOpen = false,
   onTodosOpenChange,
-  onWiki,
-  wikiActive,
   onFiles,
   filesDisabled,
   onActivity,

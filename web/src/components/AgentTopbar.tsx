@@ -13,7 +13,6 @@ import {
   FolderOpen,
   ListChecks,
   Moon,
-  Terminal,
   TerminalSquare,
   Users,
   type LucideIcon,
