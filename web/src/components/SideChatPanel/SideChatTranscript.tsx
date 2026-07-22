@@ -133,6 +133,7 @@ export function SideChatTranscript({
                     block={item.block}
                     isStreaming={false}
                     sessionId={sessionId}
+                    renderLeadingQuoteAsContext
                   />
                 )
               }

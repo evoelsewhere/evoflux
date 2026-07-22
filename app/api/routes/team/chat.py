@@ -9,7 +9,7 @@ from uuid import uuid7
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlmodel import select
 from sse_starlette.sse import EventSourceResponse
 
@@ -1411,7 +1411,7 @@ async def delete_chapter(
 # ── Side Chat ────────────────────────────────────────────────────────────────
 #
 # Tool exclusion and the read-only system-prompt addendum live in
-# app.agent.mode.team.tier_policy (SIDE_CHAT_EXCLUDED_TOOLS) and
+# app.agent.mode.team.tier_policy (side_chat_session_excluded_tools) and
 # app.agent.mode.team.member (SIDE_CHAT_SESSION_PROMPT) — applied via the
 # "side_chat" session tag set on the session by create_side_chat_session,
 # the same mechanism WebBridge sessions use. Not imported here: nothing in
@@ -1428,6 +1428,13 @@ class SideChatMessageRequest(BaseModel):
     """Request body for sending a message to a side chat."""
 
     content: str
+
+    @field_validator("content")
+    @classmethod
+    def content_must_not_be_blank(cls, content: str) -> str:
+        if not content.strip():
+            raise ValueError("content must not be blank")
+        return content
 
 
 @router.post("/{session_id}/side-chat", response_model=SessionResponse)

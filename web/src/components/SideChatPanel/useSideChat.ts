@@ -60,19 +60,27 @@ interface UseSideChatReturn {
 
 export function useSideChat(mainSessionId: string | null): UseSideChatReturn {
   const queryClient = useQueryClient()
-  const [sideChatId, setSideChatId] = useState<string | null>(null)
+  const [sideChatSession, setSideChatSession] = useState<{
+    mainSessionId: string
+    id: string
+  } | null>(null)
   const [isWorking, setIsWorking] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [currentBlocks, setCurrentBlocks] = useState<ContentBlock[]>([])
-  const creatingRef = useRef<Promise<string | null> | null>(null)
+  const activeMainSessionRef = useRef(mainSessionId)
+  const sideChatIdsRef = useRef(new Map<string, string>())
+  const creatingRef = useRef(new Map<string, Promise<string | null>>())
   const streamAbortRef = useRef<AbortController | null>(null)
+  activeMainSessionRef.current = mainSessionId
+  const sideChatId = sideChatSession?.mainSessionId === mainSessionId
+    ? sideChatSession.id
+    : null
 
   // Reset when the main session changes — a side chat belongs to exactly one
   // source session.
   useEffect(() => {
     streamAbortRef.current?.abort()
     streamAbortRef.current = null
-    setSideChatId(null)
     setIsWorking(false)
     setError(null)
     setCurrentBlocks([])
@@ -82,21 +90,37 @@ export function useSideChat(mainSessionId: string | null): UseSideChatReturn {
   const ensureSideChat = useCallback(async (): Promise<string | null> => {
     if (sideChatId) return sideChatId
     if (!mainSessionId) return null
-    if (!creatingRef.current) {
-      creatingRef.current = createSideChat(mainSessionId)
+    const cachedId = sideChatIdsRef.current.get(mainSessionId)
+    if (cachedId) {
+      setSideChatSession({ mainSessionId, id: cachedId })
+      return cachedId
+    }
+
+    const pending = creatingRef.current.get(mainSessionId)
+    if (pending) return pending
+
+    const requestedMainSessionId = mainSessionId
+    const promise = createSideChat(requestedMainSessionId)
         .then((result) => {
-          setSideChatId(result.id)
+          sideChatIdsRef.current.set(requestedMainSessionId, result.id)
+          if (activeMainSessionRef.current === requestedMainSessionId) {
+            setSideChatSession({ mainSessionId: requestedMainSessionId, id: result.id })
+          }
           return result.id as string | null
         })
         .catch((err) => {
-          setError(err instanceof Error ? err.message : 'Failed to create side chat')
+          if (activeMainSessionRef.current === requestedMainSessionId) {
+            setError(err instanceof Error ? err.message : 'Failed to create side chat')
+          }
           return null
         })
         .finally(() => {
-          creatingRef.current = null
+          if (creatingRef.current.get(requestedMainSessionId) === promise) {
+            creatingRef.current.delete(requestedMainSessionId)
+          }
         })
-    }
-    return creatingRef.current
+    creatingRef.current.set(requestedMainSessionId, promise)
+    return promise
   }, [mainSessionId, sideChatId])
 
   // Fetch message history — same MessageResponse shape as the main chat
@@ -116,17 +140,20 @@ export function useSideChat(mainSessionId: string | null): UseSideChatReturn {
   // `arguments`, `result`, `duration_ms`).
   const connectStream = useCallback(
     (sideId: string) => {
-      if (!mainSessionId) return
+      if (!mainSessionId || activeMainSessionRef.current !== mainSessionId) return
+      const streamMainSessionId = mainSessionId
       streamAbortRef.current?.abort()
       const abort = new AbortController()
       streamAbortRef.current = abort
+      const isStale = () =>
+        abort.signal.aborted || activeMainSessionRef.current !== streamMainSessionId
 
-      fetch(getSideChatStreamUrl(mainSessionId, sideId), { signal: abort.signal })
+      fetch(getSideChatStreamUrl(streamMainSessionId, sideId), { signal: abort.signal })
         .then((res) => {
           if (!res.ok) throw new Error(`SSE stream failed: ${res.status}`)
           readSSE(res, {
             onEvent: (type, data) => {
-              if (abort.signal.aborted) return
+              if (isStale()) return
               const d = data as Record<string, unknown>
               switch (type) {
                 case 'agent_status':
@@ -207,14 +234,14 @@ export function useSideChat(mainSessionId: string | null): UseSideChatReturn {
               }
             },
             onError: (err) => {
-              if (abort.signal.aborted || err.name === 'AbortError') return
+              if (isStale() || err.name === 'AbortError') return
               setError(err.message)
               setIsWorking(false)
             },
           })
         })
         .catch((err) => {
-          if (abort.signal.aborted || err.name === 'AbortError') return
+          if (isStale() || err.name === 'AbortError') return
           setError(err.message)
           setIsWorking(false)
         })
@@ -236,13 +263,16 @@ export function useSideChat(mainSessionId: string | null): UseSideChatReturn {
   const sendMessage = useCallback(
     async (content: string) => {
       if (!mainSessionId || !content.trim()) return
+      const sendMainSessionId = mainSessionId
 
       const currentSideChatId = await ensureSideChat()
       if (!currentSideChatId) return
 
-      setError(null)
-      setIsWorking(true)
-      setCurrentBlocks([])
+      if (activeMainSessionRef.current === sendMainSessionId) {
+        setError(null)
+        setIsWorking(true)
+        setCurrentBlocks([])
+      }
 
       // Optimistically append the user message in MessageResponse shape so
       // parseTeamBlocks picks it up like any persisted message.
@@ -270,11 +300,15 @@ export function useSideChat(mainSessionId: string | null): UseSideChatReturn {
       )
 
       try {
-        await sendSideChatMessage(mainSessionId, currentSideChatId, content)
-        connectStream(currentSideChatId)
+        await sendSideChatMessage(sendMainSessionId, currentSideChatId, content)
+        if (activeMainSessionRef.current === sendMainSessionId) {
+          connectStream(currentSideChatId)
+        }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to send message')
-        setIsWorking(false)
+        if (activeMainSessionRef.current === sendMainSessionId) {
+          setError(err instanceof Error ? err.message : 'Failed to send message')
+          setIsWorking(false)
+        }
         // Roll the optimistic entry back to the persisted truth.
         void queryClient.invalidateQueries({ queryKey: ['sideChatMessages', currentSideChatId] })
       }
@@ -285,17 +319,22 @@ export function useSideChat(mainSessionId: string | null): UseSideChatReturn {
   // Stop — real backend interrupt (same mechanism as the main chat's
   // stopTeam), not just a client-side abort that leaves the agent running.
   const stopGeneration = useCallback(async () => {
-    if (!sideChatId) return
+    if (!sideChatId || !mainSessionId) return
+    const stopMainSessionId = mainSessionId
     try {
       await postTeamChat(null, sideChatId, true)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to stop generation')
+      if (activeMainSessionRef.current === stopMainSessionId) {
+        setError(err instanceof Error ? err.message : 'Failed to stop generation')
+      }
     } finally {
-      setIsWorking(false)
-      setCurrentBlocks([])
+      if (activeMainSessionRef.current === stopMainSessionId) {
+        setIsWorking(false)
+        setCurrentBlocks([])
+      }
       void queryClient.invalidateQueries({ queryKey: ['sideChatMessages', sideChatId] })
     }
-  }, [sideChatId, queryClient])
+  }, [mainSessionId, sideChatId, queryClient])
 
   const openSideChat = useCallback(() => {
     void ensureSideChat()

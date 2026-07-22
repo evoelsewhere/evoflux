@@ -53,11 +53,11 @@ from app.agent.hooks.tool_result_offload import ToolResultOffloadHook
 from app.agent.mode.team.shared_state import format_state_snapshot
 from app.agent.mode.team.tier_policy import (
     DEFAULT_DEFERRED_TOOLS,
-    SIDE_CHAT_EXCLUDED_TOOLS,
     SIDE_CHAT_SESSION_TAG,
     WEBBRIDGE_SESSION_TAG,
     denied_tools_for_tier,
     resolve_member_tier,
+    side_chat_session_excluded_tools,
     webbridge_session_excluded_tools,
 )
 from app.agent.plugins.role import reset_role, set_role
@@ -1082,7 +1082,9 @@ class TeamMemberBase(abc.ABC):
             tier_excluded = webbridge_session_excluded_tools(self.agent._tools)
             deferred = deferred - {"webbridge"}
         elif SIDE_CHAT_SESSION_TAG in self._team.session_tags:
-            tier_excluded = SIDE_CHAT_EXCLUDED_TOOLS
+            tier_excluded = side_chat_session_excluded_tools(
+                (*self.agent._tools.values(), *injected)
+            )
 
         # Surface team routing context to tools via state.metadata.  The
         # schedule tool reads these as injected args so the LLM never has

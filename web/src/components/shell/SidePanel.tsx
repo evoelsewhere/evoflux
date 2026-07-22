@@ -108,13 +108,14 @@ export function SidePanel({
   // fade — width-tweening a full-screen overlay (or against the user's
   // motion preference) is wrong. Matches the panels' pre-extraction code.
   const fade = prefersReducedMotion || mobile
+  const fadeWidth = mobile ? '100%' : width
   const hasHeader = title != null || headerActions != null || onClose != null
 
   return (
     <motion.aside
-      initial={!animated ? false : fade ? { opacity: 0 } : { width: 0 }}
-      animate={fade ? { opacity: 1 } : { width }}
-      exit={fade ? { opacity: 0 } : { width: 0 }}
+      initial={!animated ? false : fade ? { opacity: 0, width: fadeWidth } : { width: 0 }}
+      animate={fade ? { opacity: 1, width: fadeWidth } : { width }}
+      exit={fade ? { opacity: 0, width: fadeWidth } : { width: 0 }}
       transition={
         animated
           ? { duration: prefersReducedMotion ? 0.01 : 0.22, ease: [0.4, 0, 0.2, 1] }

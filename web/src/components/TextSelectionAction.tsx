@@ -121,8 +121,8 @@ export function TextSelectionAction({
 
   return createPortal(
     <div
-      style={{ position: 'fixed', top: position.top, left: position.left, zIndex: 9999 }}
-      className="pointer-events-auto animate-in fade-in-0 zoom-in-95"
+      style={{ position: 'fixed', top: position.top, left: position.left }}
+      className="pointer-events-auto z-(--z-toast) animate-in fade-in-0 zoom-in-95"
     >
       <button
         type="button"
