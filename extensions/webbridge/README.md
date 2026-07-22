@@ -14,17 +14,26 @@ Chrome DevTools Protocol (`chrome.debugger`):
 
 - **Navigation/tabs** — navigate, back, forward, reload, get_tabs, switch_tab,
   open_tab, close_tab.
-- **Element-based (preferred)** — snapshot (list interactive elements with
-  selectors + boxes), click_selector, click_text, fill.
-- **Coordinate/low-level** — click, dblclick, type, key, scroll.
-- **Waiting** — wait, wait_for_selector, wait_for_load.
+- **Element-based (preferred)** — snapshot, click_selector, click_text, hover,
+  focus, fill, select_option, set_checked, and drag. Snapshots include inferred
+  roles, accessible names, selectors, boxes, control states, useful attributes,
+  and page/viewport metadata.
+- **Coordinate/low-level** — click (left/middle/right), dblclick, type, key,
+  and scroll. `key` supports Alt/Control/Meta/Shift modifiers for shortcuts.
+- **Waiting** — wait, wait_for_selector, wait_for_text, wait_for_load, and
+  wait_for_network_idle.
 - **Reading** — screenshot (viewport or full_page, at CSS-pixel scale),
-  extract, evaluate.
+  extract (text/Markdown/HTML), extract_elements (structured records), and
+  evaluate.
+- **Crawling** — scroll_to_bottom for lazy content and the backend-composed
+  crawl action for concurrent extraction across background tabs.
 
 Screenshots are captured at CSS-pixel scale (`clip.scale = 1`), so a click at
 the x,y a model reads off the image lands correctly even on HiDPI/Retina
-displays. Any command may carry a `tab_id` to pin a specific tab instead of
-the active one.
+displays. Page-scoped commands may carry a `tab_id` from get_tabs to pin a
+specific tab instead of the active one. The extension broadcasts complete tab
+state (including background and pending URLs), so backend domain policy is
+enforced against the tab actually being driven.
 
 ## Install
 
@@ -45,6 +54,10 @@ the active one.
 
 Both fields are saved automatically (persisted in `chrome.storage.local`) and
 saving triggers an immediate reconnect.
+
+The popup also shows how many tabs are currently attached to the Chrome
+debugger. **Release browser control** detaches all of them without disabling
+the relay connection; disconnecting the extension releases them automatically.
 
 ### Where to find the token
 
@@ -69,6 +82,11 @@ token."**
   local EvoFlux backend (the default is loopback, `127.0.0.1`). Anyone who can
   reach the relay with a valid token can drive your browser, so keep the
   default loopback binding unless you know what you're doing.
+- Domain policy checks explicit background-tab actions against that tab's URL,
+  not the active tab. When a domain policy is configured and the target URL is
+  unknown, the backend fails closed instead of forwarding the command.
+- Password values are omitted from semantic snapshots. Arbitrary page reads
+  remain possible through `extract`/`evaluate`, subject to backend policy.
 - Chrome normally shows a **"…started debugging this browser"** infobar
   whenever an extension uses the `debugger` (CDP) API. The guided launch
   (**WebBridge → Launch browser**, or the backend `launch-browser` endpoint)
@@ -124,4 +142,10 @@ refused — is recorded in the audit trail at
 ## Development
 
 No build step — plain MV3 JavaScript. After editing, press the reload button
-on the extension card in `chrome://extensions`.
+on the extension card in `chrome://extensions`. A quick syntax check is:
+
+```bash
+node --check extensions/webbridge/background.js
+node --check extensions/webbridge/popup.js
+node --test tests/webbridge_extension.test.cjs
+```

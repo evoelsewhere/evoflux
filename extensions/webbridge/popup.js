@@ -9,10 +9,14 @@ const statusDot = document.getElementById("statusDot");
 const statusText = document.getElementById("statusText");
 const statusDetail = document.getElementById("statusDetail");
 const tabInfo = document.getElementById("tabInfo");
+const tabTitle = document.getElementById("tabTitle");
 const tabUrl = document.getElementById("tabUrl");
+const controlDetail = document.getElementById("controlDetail");
 const connectBtn = document.getElementById("connectBtn");
+const releaseBtn = document.getElementById("releaseBtn");
 const relayBaseInput = document.getElementById("relayBase");
 const accessTokenInput = document.getElementById("accessToken");
+const extensionVersion = document.getElementById("extensionVersion");
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
@@ -62,6 +66,7 @@ async function updateStatus() {
 
       if (response.active_tab) {
         tabInfo.style.display = "block";
+        tabTitle.textContent = response.active_tab.title || "Untitled";
         tabUrl.textContent = response.active_tab.url || "No URL";
       } else {
         tabInfo.style.display = "none";
@@ -86,6 +91,12 @@ async function updateStatus() {
       connectBtn.textContent = "Reconnect";
       connectBtn.className = "btn btn-primary";
     }
+
+    const attachedCount = response?.attached_tab_ids?.length || 0;
+    controlDetail.textContent = attachedCount
+      ? `Browser control active on ${attachedCount} tab${attachedCount === 1 ? "" : "s"}.`
+      : "No tabs currently controlled.";
+    releaseBtn.style.display = attachedCount ? "block" : "none";
   } catch (e) {
     // Background script might not be ready
     statusDot.className = "status-dot connecting";
@@ -94,6 +105,8 @@ async function updateStatus() {
     statusDetail.textContent = "Extension service worker is initializing...";
     connectBtn.textContent = "Reconnect";
     connectBtn.className = "btn btn-primary";
+    controlDetail.textContent = "Browser control state unavailable.";
+    releaseBtn.style.display = "none";
   }
 }
 
@@ -110,13 +123,27 @@ async function toggleConnection() {
   setTimeout(updateStatus, 500);
 }
 
+async function releaseBrowserControl() {
+  releaseBtn.disabled = true;
+  try {
+    await chrome.runtime.sendMessage({ type: "release_debuggers" });
+  } catch {
+    // Status refresh below surfaces whether any tabs remain attached.
+  } finally {
+    releaseBtn.disabled = false;
+    updateStatus();
+  }
+}
+
 // ── Wiring ───────────────────────────────────────────────────────────────────
 
 connectBtn.addEventListener("click", toggleConnection);
+releaseBtn.addEventListener("click", releaseBrowserControl);
 relayBaseInput.addEventListener("input", onConfigInput);
 accessTokenInput.addEventListener("input", onConfigInput);
 
 // Initial load
+extensionVersion.textContent = chrome.runtime.getManifest().version;
 loadConfig();
 updateStatus();
 

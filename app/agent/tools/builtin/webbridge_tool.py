@@ -34,7 +34,9 @@ def _get_sid(state: Any) -> str:
     return state.metadata.get("session_id", "default") if state else "default"
 
 
-async def _send_command(session_id: str, action: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+async def _send_command(
+    session_id: str, action: str, params: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Send a command to the extension via the manager and wait for response."""
     return await webbridge_manager.send_command(session_id, action, params)
 
@@ -87,6 +89,10 @@ class TypeAction(BaseModel):
 class KeyAction(BaseModel):
     action: Literal["key"]
     key: str = Field(description="Key to press (e.g. Enter, Tab, Escape, ArrowUp).")
+    modifiers: list[Literal["Alt", "Control", "Meta", "Shift"]] = Field(
+        default_factory=list,
+        description="Modifier keys held during the press (e.g. ['Meta'] for Cmd on macOS).",
+    )
     tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
 
 
@@ -105,7 +111,9 @@ class ScreenshotAction(BaseModel):
         default=False,
         description="Capture the whole scrollable page instead of just the viewport.",
     )
-    tab_id: int | None = Field(default=None, description="Target tab ID (default: active tab).")
+    tab_id: int | None = Field(
+        default=None, description="Target tab ID (default: active tab)."
+    )
 
 
 class ExtractAction(BaseModel):
@@ -119,12 +127,16 @@ class ExtractAction(BaseModel):
         description="Scope to the first element matching this CSS selector (default: whole page).",
     )
     max_chars: int = Field(default=15000, ge=100, le=200000)
-    tab_id: int | None = Field(default=None, description="Target tab ID (default: active tab).")
+    tab_id: int | None = Field(
+        default=None, description="Target tab ID (default: active tab)."
+    )
 
 
 class ExtractElementsAction(BaseModel):
     action: Literal["extract_elements"]
-    selector: str = Field(description="CSS selector for the records to extract (e.g. a product card, a table row).")
+    selector: str = Field(
+        description="CSS selector for the records to extract (e.g. a product card, a table row)."
+    )
     fields: dict[str, str] | None = Field(
         default=None,
         description=(
@@ -135,44 +147,69 @@ class ExtractElementsAction(BaseModel):
         ),
     )
     limit: int = Field(default=100, ge=1, le=1000)
-    tab_id: int | None = Field(default=None, description="Target tab ID (default: active tab).")
+    tab_id: int | None = Field(
+        default=None, description="Target tab ID (default: active tab)."
+    )
 
 
 class ScrollToBottomAction(BaseModel):
     action: Literal["scroll_to_bottom"]
     max_scrolls: int = Field(default=10, ge=1, le=100, description="Max scroll steps.")
-    delay_ms: int = Field(default=600, ge=50, le=5000, description="Wait after each scroll for content to load.")
-    tab_id: int | None = Field(default=None, description="Target tab ID (default: active tab).")
+    delay_ms: int = Field(
+        default=600,
+        ge=50,
+        le=5000,
+        description="Wait after each scroll for content to load.",
+    )
+    tab_id: int | None = Field(
+        default=None, description="Target tab ID (default: active tab)."
+    )
 
 
 class CrawlAction(BaseModel):
     action: Literal["crawl"]
-    urls: list[str] = Field(description="URLs to fetch and extract, crawled in parallel across background tabs.")
+    urls: list[str] = Field(
+        description="URLs to fetch and extract, crawled in parallel across background tabs."
+    )
     wait: Literal["load", "networkidle", "none"] = Field(
         default="load",
         description="Per page: wait for full load, for network idle (SPAs), or don't wait.",
     )
     wait_selector: str | None = Field(
-        default=None, description="Also wait for this selector before extracting (optional)."
+        default=None,
+        description="Also wait for this selector before extracting (optional).",
     )
-    scroll: bool = Field(default=False, description="Auto-scroll to bottom before extracting (lazy/infinite content).")
+    scroll: bool = Field(
+        default=False,
+        description="Auto-scroll to bottom before extracting (lazy/infinite content).",
+    )
     # Extraction mode: set elements_selector for structured records, else page content.
     elements_selector: str | None = Field(
         default=None,
         description="If set, scrape records matching this selector (like extract_elements); otherwise extract page content.",
     )
     fields: dict[str, str] | None = Field(
-        default=None, description="Field map for elements_selector mode (name → sub-selector, 'sel@attr' for attributes)."
+        default=None,
+        description="Field map for elements_selector mode (name → sub-selector, 'sel@attr' for attributes).",
     )
     format: Literal["text", "markdown", "html"] = Field(
-        default="markdown", description="Content format when not using elements_selector."
+        default="markdown",
+        description="Content format when not using elements_selector.",
     )
-    selector: str | None = Field(default=None, description="Scope content extraction to this selector.")
-    concurrency: int = Field(default=3, ge=1, le=8, description="Max pages fetched at once.")
+    selector: str | None = Field(
+        default=None, description="Scope content extraction to this selector."
+    )
+    concurrency: int = Field(
+        default=3, ge=1, le=8, description="Max pages fetched at once."
+    )
     max_chars: int = Field(default=15000, ge=100, le=200000)
-    limit: int = Field(default=100, ge=1, le=1000, description="Max records per page in elements mode.")
+    limit: int = Field(
+        default=100, ge=1, le=1000, description="Max records per page in elements mode."
+    )
     timeout_ms: int = Field(default=30000, ge=1000, le=60000)
-    close_tabs: bool = Field(default=True, description="Close the tabs opened for the crawl when done.")
+    close_tabs: bool = Field(
+        default=True, description="Close the tabs opened for the crawl when done."
+    )
 
 
 class GetTabsAction(BaseModel):
@@ -181,7 +218,7 @@ class GetTabsAction(BaseModel):
 
 class SwitchTabAction(BaseModel):
     action: Literal["switch_tab"]
-    index: int = Field(description="Zero-based tab index.")
+    index: int = Field(default=0, ge=0, description="Zero-based tab index.")
     id: int | None = Field(default=None, description="Tab ID (overrides index).")
 
 
@@ -195,39 +232,130 @@ class WaitForSelectorAction(BaseModel):
     selector: str = Field(description="CSS selector to wait for.")
     state: Literal["visible", "attached", "hidden"] = Field(default="visible")
     timeout_ms: int = Field(default=10000, ge=100, le=60000)
-    tab_id: int | None = Field(default=None, description="Target tab ID (default: active tab).")
+    tab_id: int | None = Field(
+        default=None, description="Target tab ID (default: active tab)."
+    )
+
+
+class WaitForTextAction(BaseModel):
+    action: Literal["wait_for_text"]
+    text: str = Field(description="Text to wait for.")
+    selector: str | None = Field(
+        default=None,
+        description="Optional CSS selector that scopes the text lookup.",
+    )
+    state: Literal["visible", "hidden"] = Field(default="visible")
+    exact: bool = Field(default=False, description="Match the normalized text exactly.")
+    timeout_ms: int = Field(default=10000, ge=100, le=60000)
+    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
 
 
 class WaitForLoadAction(BaseModel):
     action: Literal["wait_for_load"]
     state: Literal["load", "domcontentloaded"] = Field(default="load")
     timeout_ms: int = Field(default=30000, ge=100, le=60000)
-    tab_id: int | None = Field(default=None, description="Target tab ID (default: active tab).")
+    tab_id: int | None = Field(
+        default=None, description="Target tab ID (default: active tab)."
+    )
 
 
 class WaitForNetworkIdleAction(BaseModel):
     action: Literal["wait_for_network_idle"]
     idle_ms: int = Field(
-        default=500, ge=100, le=10000,
+        default=500,
+        ge=100,
+        le=10000,
         description="Consider the network idle after this many ms with no in-flight requests.",
     )
     timeout_ms: int = Field(default=20000, ge=500, le=60000)
-    tab_id: int | None = Field(default=None, description="Target tab ID (default: active tab).")
+    tab_id: int | None = Field(
+        default=None, description="Target tab ID (default: active tab)."
+    )
 
 
 class ClickSelectorAction(BaseModel):
     action: Literal["click_selector"]
     selector: str = Field(description="CSS selector of the element to click.")
-    index: int = Field(default=0, ge=0, description="Which match to click when several exist.")
-    tab_id: int | None = Field(default=None, description="Target tab ID (default: active tab).")
+    index: int = Field(
+        default=0, ge=0, description="Which match to click when several exist."
+    )
+    tab_id: int | None = Field(
+        default=None, description="Target tab ID (default: active tab)."
+    )
 
 
 class ClickTextAction(BaseModel):
     action: Literal["click_text"]
     text: str = Field(description="Visible text of the element to click.")
-    tag: str | None = Field(default=None, description="Restrict to this tag (e.g. 'button', 'a').")
-    exact: bool = Field(default=False, description="Require an exact (not substring) text match.")
-    tab_id: int | None = Field(default=None, description="Target tab ID (default: active tab).")
+    tag: str | None = Field(
+        default=None, description="Restrict to this tag (e.g. 'button', 'a')."
+    )
+    exact: bool = Field(
+        default=False, description="Require an exact (not substring) text match."
+    )
+    tab_id: int | None = Field(
+        default=None, description="Target tab ID (default: active tab)."
+    )
+
+
+class HoverAction(BaseModel):
+    action: Literal["hover"]
+    selector: str = Field(description="CSS selector of the element to hover.")
+    index: int = Field(
+        default=0, ge=0, description="Which match to hover when several exist."
+    )
+    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+
+
+class FocusAction(BaseModel):
+    action: Literal["focus"]
+    selector: str = Field(description="CSS selector of the element to focus.")
+    index: int = Field(
+        default=0, ge=0, description="Which match to focus when several exist."
+    )
+    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+
+
+class SelectOptionAction(BaseModel):
+    action: Literal["select_option"]
+    selector: str = Field(description="CSS selector of the select element.")
+    values: list[str] = Field(
+        min_length=1,
+        max_length=100,
+        description="Option values or visible labels to select.",
+    )
+    match: Literal["value", "label"] = Field(
+        default="value",
+        description="Whether entries in values match option values or visible labels.",
+    )
+    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+
+
+class SetCheckedAction(BaseModel):
+    action: Literal["set_checked"]
+    selector: str = Field(
+        description="CSS selector of a checkbox, radio, or ARIA toggle."
+    )
+    checked: bool = Field(description="Desired checked state.")
+    index: int = Field(
+        default=0, ge=0, description="Which match to update when several exist."
+    )
+    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+
+
+class DragAction(BaseModel):
+    action: Literal["drag"]
+    source_selector: str = Field(description="CSS selector of the element to drag.")
+    target_selector: str = Field(description="CSS selector of the drop target.")
+    source_index: int = Field(default=0, ge=0)
+    target_index: int = Field(default=0, ge=0)
+    steps: int = Field(
+        default=10,
+        ge=2,
+        le=50,
+        description="Number of pointer-move steps between source and target.",
+    )
+    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
 
 
 class FillAction(BaseModel):
@@ -236,7 +364,9 @@ class FillAction(BaseModel):
     value: str = Field(description="Value to set.")
     clear: bool = Field(default=True, description="Clear existing content first.")
     submit: bool = Field(default=False, description="Press Enter after filling.")
-    tab_id: int | None = Field(default=None, description="Target tab ID (default: active tab).")
+    tab_id: int | None = Field(
+        default=None, description="Target tab ID (default: active tab)."
+    )
 
 
 class OpenTabAction(BaseModel):
@@ -248,13 +378,17 @@ class OpenTabAction(BaseModel):
 class CloseTabAction(BaseModel):
     action: Literal["close_tab"]
     id: int | None = Field(default=None, description="Tab ID to close.")
-    index: int | None = Field(default=None, description="Zero-based tab index to close.")
+    index: int | None = Field(
+        default=None, description="Zero-based tab index to close."
+    )
 
 
 class SnapshotAction(BaseModel):
     action: Literal["snapshot"]
     max_elements: int = Field(default=80, ge=1, le=300)
-    tab_id: int | None = Field(default=None, description="Target tab ID (default: active tab).")
+    tab_id: int | None = Field(
+        default=None, description="Target tab ID (default: active tab)."
+    )
 
 
 class EvaluateAction(BaseModel):
@@ -296,9 +430,15 @@ AnyAction = Annotated[
     | ReloadAction
     | WaitAction
     | WaitForSelectorAction
+    | WaitForTextAction
     | WaitForLoadAction
     | ClickSelectorAction
     | ClickTextAction
+    | HoverAction
+    | FocusAction
+    | SelectOptionAction
+    | SetCheckedAction
+    | DragAction
     | FillAction
     | OpenTabAction
     | CloseTabAction
@@ -329,6 +469,11 @@ Actions:
   snapshot        — List interactive elements (selector, text, role, box) — use this to find click/fill targets.
   click_selector  — Click the element matching a CSS selector.
   click_text      — Click the element whose visible text matches.
+    hover           — Hover an element to reveal menus, tooltips, or controls.
+    focus           — Focus an element before typing or pressing keys.
+    select_option   — Select one or more native select options by value or label.
+    set_checked     — Set a checkbox, radio, switch, or ARIA toggle state.
+    drag            — Drag an element to a target using native pointer events.
   fill            — Set an input/textarea value by selector (optionally submit).
   click           — Click at x,y coordinates (fallback when no selector fits).
   dblclick        — Double-click at x,y coordinates.
@@ -337,6 +482,7 @@ Actions:
   scroll          — Scroll by dx,dy pixels.
   wait            — Pause for N milliseconds.
   wait_for_selector — Wait until a selector is visible/attached/hidden.
+    wait_for_text   — Wait until text becomes visible or hidden, optionally within a selector.
   wait_for_load   — Wait until the page finishes loading.
   wait_for_network_idle — Wait until in-flight XHR/fetch requests go quiet (SPA data loads).
   screenshot      — Capture the viewport (or full_page) as PNG/JPEG image.
@@ -458,12 +604,24 @@ async def _dispatch_webbridge(act: Any, session_id: str) -> str | ToolResult:
         return await _handle_wait(session_id, act)
     if action == "wait_for_selector":
         return await _handle_wait_for_selector(session_id, act)
+    if action == "wait_for_text":
+        return await _handle_wait_for_text(session_id, act)
     if action == "wait_for_load":
         return await _handle_wait_for_load(session_id, act)
     if action == "click_selector":
         return await _handle_click_selector(session_id, act)
     if action == "click_text":
         return await _handle_click_text(session_id, act)
+    if action == "hover":
+        return await _handle_hover(session_id, act)
+    if action == "focus":
+        return await _handle_focus(session_id, act)
+    if action == "select_option":
+        return await _handle_select_option(session_id, act)
+    if action == "set_checked":
+        return await _handle_set_checked(session_id, act)
+    if action == "drag":
+        return await _handle_drag(session_id, act)
     if action == "fill":
         return await _handle_fill(session_id, act)
     if action == "open_tab":
@@ -528,19 +686,25 @@ async def _handle_navigate(session_id: str, act: NavigateAction) -> str:
 
 
 async def _handle_click(session_id: str, act: ClickAction) -> str:
-    resp = await _send_command(session_id, "click", _tab_params(
-        act,
-        x=act.x,
-        y=act.y,
-        button=act.button,
-    ))
+    resp = await _send_command(
+        session_id,
+        "click",
+        _tab_params(
+            act,
+            x=act.x,
+            y=act.y,
+            button=act.button,
+        ),
+    )
     if resp.get("success"):
         return f"Clicked at ({act.x}, {act.y})"
     return f"Click failed: {resp.get('error', 'unknown')}"
 
 
 async def _handle_dblclick(session_id: str, act: DblClickAction) -> str:
-    resp = await _send_command(session_id, "dblclick", _tab_params(act, x=act.x, y=act.y))
+    resp = await _send_command(
+        session_id, "dblclick", _tab_params(act, x=act.x, y=act.y)
+    )
     if resp.get("success"):
         return f"Double-clicked at ({act.x}, {act.y})"
     return f"Double-click failed: {resp.get('error', 'unknown')}"
@@ -554,36 +718,51 @@ async def _handle_type(session_id: str, act: TypeAction) -> str:
 
 
 async def _handle_key(session_id: str, act: KeyAction) -> str:
-    resp = await _send_command(session_id, "key", _tab_params(act, key=act.key))
+    resp = await _send_command(
+        session_id,
+        "key",
+        _tab_params(act, key=act.key, modifiers=act.modifiers),
+    )
     if resp.get("success"):
-        return f"Pressed key: {act.key}"
+        chord = "+".join([*act.modifiers, act.key])
+        return f"Pressed key: {chord}"
     return f"Key press failed: {resp.get('error', 'unknown')}"
 
 
 async def _handle_scroll(session_id: str, act: ScrollAction) -> str:
-    resp = await _send_command(session_id, "scroll", _tab_params(act, dx=act.dx, dy=act.dy))
+    resp = await _send_command(
+        session_id, "scroll", _tab_params(act, dx=act.dx, dy=act.dy)
+    )
     if resp.get("success"):
         return f"Scrolled ({act.dx}, {act.dy})"
     return f"Scroll failed: {resp.get('error', 'unknown')}"
 
 
 async def _handle_screenshot(session_id: str, act: ScreenshotAction) -> ToolResult:
-    resp = await _send_command(session_id, "screenshot", _tab_params(
-        act,
-        format=act.format,
-        quality=act.quality,
-        full_page=act.full_page,
-    ))
+    resp = await _send_command(
+        session_id,
+        "screenshot",
+        _tab_params(
+            act,
+            format=act.format,
+            quality=act.quality,
+            full_page=act.full_page,
+        ),
+    )
 
     if not resp.get("success"):
-        return ToolResult(parts=[TextBlock(text=f"Screenshot failed: {resp.get('error', 'unknown')}")])
+        return ToolResult(
+            parts=[TextBlock(text=f"Screenshot failed: {resp.get('error', 'unknown')}")]
+        )
 
     data = resp.get("data", {})
     b64_image = data.get("data", "")
     fmt = data.get("format", act.format)
 
     if not b64_image:
-        return ToolResult(parts=[TextBlock(text="Screenshot returned empty image data.")])
+        return ToolResult(
+            parts=[TextBlock(text="Screenshot returned empty image data.")]
+        )
 
     # Decode base64 to bytes
     image_bytes = base64.b64decode(b64_image)
@@ -596,25 +775,31 @@ async def _handle_screenshot(session_id: str, act: ScreenshotAction) -> ToolResu
         dims = f", {int(vp['width'])}x{int(vp['height'])} css-px"
     scope = "full page" if data.get("full_page") else "viewport"
 
-    return ToolResult(parts=[
-        ImageDataBlock(
-            data=b64_image,
-            media_type=mime,
-        ),
-        TextBlock(
-            text=f"Screenshot captured ({scope}, {fmt}{dims}, {len(image_bytes)} bytes). "
-            "Screenshot pixels are CSS pixels — click x,y map 1:1."
-        ),
-    ])
+    return ToolResult(
+        parts=[
+            ImageDataBlock(
+                data=b64_image,
+                media_type=mime,
+            ),
+            TextBlock(
+                text=f"Screenshot captured ({scope}, {fmt}{dims}, {len(image_bytes)} bytes). "
+                "Screenshot pixels are CSS pixels — click x,y map 1:1."
+            ),
+        ]
+    )
 
 
 async def _handle_extract(session_id: str, act: ExtractAction) -> str:
-    resp = await _send_command(session_id, "extract", _tab_params(
-        act,
-        format=act.format,
-        selector=act.selector,
-        max_chars=act.max_chars,
-    ))
+    resp = await _send_command(
+        session_id,
+        "extract",
+        _tab_params(
+            act,
+            format=act.format,
+            selector=act.selector,
+            max_chars=act.max_chars,
+        ),
+    )
     if not resp.get("success"):
         return f"Extract failed: {resp.get('error', 'unknown')}"
 
@@ -637,12 +822,16 @@ async def _handle_extract(session_id: str, act: ExtractAction) -> str:
 
 
 async def _handle_extract_elements(session_id: str, act: ExtractElementsAction) -> str:
-    resp = await _send_command(session_id, "extract_elements", _tab_params(
-        act,
-        selector=act.selector,
-        fields=act.fields,
-        limit=act.limit,
-    ))
+    resp = await _send_command(
+        session_id,
+        "extract_elements",
+        _tab_params(
+            act,
+            selector=act.selector,
+            fields=act.fields,
+            limit=act.limit,
+        ),
+    )
     if not resp.get("success"):
         return f"extract_elements failed: {resp.get('error', 'unknown')}"
 
@@ -650,16 +839,22 @@ async def _handle_extract_elements(session_id: str, act: ExtractElementsAction) 
     if not records:
         return f"No elements matched selector {act.selector!r}."
     header = f"Extracted {len(records)} record(s) for {act.selector!r}:"
-    return header + "\n" + json.dumps(records, indent=2, ensure_ascii=False, default=str)
+    return (
+        header + "\n" + json.dumps(records, indent=2, ensure_ascii=False, default=str)
+    )
 
 
 async def _handle_scroll_to_bottom(session_id: str, act: ScrollToBottomAction) -> str:
-    resp = await _send_command(session_id, "scroll_to_bottom", _tab_params(
-        act,
-        max_scrolls=act.max_scrolls,
-        delay_ms=act.delay_ms,
-        timeout_ms=act.max_scrolls * (act.delay_ms + 400) + 2000,
-    ))
+    resp = await _send_command(
+        session_id,
+        "scroll_to_bottom",
+        _tab_params(
+            act,
+            max_scrolls=act.max_scrolls,
+            delay_ms=act.delay_ms,
+            timeout_ms=act.max_scrolls * (act.delay_ms + 400) + 2000,
+        ),
+    )
     if not resp.get("success"):
         return f"scroll_to_bottom failed: {resp.get('error', 'unknown')}"
     data = resp.get("data", {})
@@ -706,7 +901,9 @@ async def _handle_switch_tab(session_id: str, act: SwitchTabAction) -> str:
 
 
 async def _handle_evaluate(session_id: str, act: EvaluateAction) -> str:
-    resp = await _send_command(session_id, "evaluate", _tab_params(act, script=act.script))
+    resp = await _send_command(
+        session_id, "evaluate", _tab_params(act, script=act.script)
+    )
     if not resp.get("success"):
         return f"Evaluate failed: {resp.get('error', 'unknown')}"
 
@@ -744,34 +941,66 @@ async def _handle_wait(session_id: str, act: WaitAction) -> str:
 
 
 async def _handle_wait_for_selector(session_id: str, act: WaitForSelectorAction) -> str:
-    resp = await _send_command(session_id, "wait_for_selector", _tab_params(
-        act,
-        selector=act.selector,
-        state=act.state,
-        timeout_ms=act.timeout_ms,
-    ))
+    resp = await _send_command(
+        session_id,
+        "wait_for_selector",
+        _tab_params(
+            act,
+            selector=act.selector,
+            state=act.state,
+            timeout_ms=act.timeout_ms,
+        ),
+    )
     if resp.get("success"):
         return f"Selector {act.selector!r} is now {act.state}."
     return f"wait_for_selector failed: {resp.get('error', 'unknown')}"
 
 
+async def _handle_wait_for_text(session_id: str, act: WaitForTextAction) -> str:
+    resp = await _send_command(
+        session_id,
+        "wait_for_text",
+        _tab_params(
+            act,
+            text=act.text,
+            selector=act.selector,
+            state=act.state,
+            exact=act.exact,
+            timeout_ms=act.timeout_ms,
+        ),
+    )
+    if resp.get("success"):
+        return f"Text {act.text!r} is now {act.state}."
+    return f"wait_for_text failed: {resp.get('error', 'unknown')}"
+
+
 async def _handle_wait_for_load(session_id: str, act: WaitForLoadAction) -> str:
-    resp = await _send_command(session_id, "wait_for_load", _tab_params(
-        act,
-        state=act.state,
-        timeout_ms=act.timeout_ms,
-    ))
+    resp = await _send_command(
+        session_id,
+        "wait_for_load",
+        _tab_params(
+            act,
+            state=act.state,
+            timeout_ms=act.timeout_ms,
+        ),
+    )
     if resp.get("success"):
         return f"Page reached '{act.state}'."
     return f"wait_for_load failed: {resp.get('error', 'unknown')}"
 
 
-async def _handle_wait_for_network_idle(session_id: str, act: WaitForNetworkIdleAction) -> str:
-    resp = await _send_command(session_id, "wait_for_network_idle", _tab_params(
-        act,
-        idle_ms=act.idle_ms,
-        timeout_ms=act.timeout_ms,
-    ))
+async def _handle_wait_for_network_idle(
+    session_id: str, act: WaitForNetworkIdleAction
+) -> str:
+    resp = await _send_command(
+        session_id,
+        "wait_for_network_idle",
+        _tab_params(
+            act,
+            idle_ms=act.idle_ms,
+            timeout_ms=act.timeout_ms,
+        ),
+    )
     if not resp.get("success"):
         return f"wait_for_network_idle failed: {resp.get('error', 'unknown')}"
     data = resp.get("data", {})
@@ -784,36 +1013,129 @@ async def _handle_wait_for_network_idle(session_id: str, act: WaitForNetworkIdle
 
 
 async def _handle_click_selector(session_id: str, act: ClickSelectorAction) -> str:
-    resp = await _send_command(session_id, "click_selector", _tab_params(
-        act,
-        selector=act.selector,
-        index=act.index,
-    ))
+    resp = await _send_command(
+        session_id,
+        "click_selector",
+        _tab_params(
+            act,
+            selector=act.selector,
+            index=act.index,
+        ),
+    )
     if resp.get("success"):
         return f"Clicked {act.selector!r}."
     return f"click_selector failed: {resp.get('error', 'unknown')}"
 
 
 async def _handle_click_text(session_id: str, act: ClickTextAction) -> str:
-    resp = await _send_command(session_id, "click_text", _tab_params(
-        act,
-        text=act.text,
-        tag=act.tag,
-        exact=act.exact,
-    ))
+    resp = await _send_command(
+        session_id,
+        "click_text",
+        _tab_params(
+            act,
+            text=act.text,
+            tag=act.tag,
+            exact=act.exact,
+        ),
+    )
     if resp.get("success"):
         return f"Clicked element with text {act.text!r}."
     return f"click_text failed: {resp.get('error', 'unknown')}"
 
 
+async def _handle_hover(session_id: str, act: HoverAction) -> str:
+    resp = await _send_command(
+        session_id,
+        "hover",
+        _tab_params(
+            act,
+            selector=act.selector,
+            index=act.index,
+        ),
+    )
+    if resp.get("success"):
+        return f"Hovered {act.selector!r}."
+    return f"hover failed: {resp.get('error', 'unknown')}"
+
+
+async def _handle_focus(session_id: str, act: FocusAction) -> str:
+    resp = await _send_command(
+        session_id,
+        "focus",
+        _tab_params(
+            act,
+            selector=act.selector,
+            index=act.index,
+        ),
+    )
+    if resp.get("success"):
+        return f"Focused {act.selector!r}."
+    return f"focus failed: {resp.get('error', 'unknown')}"
+
+
+async def _handle_select_option(session_id: str, act: SelectOptionAction) -> str:
+    resp = await _send_command(
+        session_id,
+        "select_option",
+        _tab_params(
+            act,
+            selector=act.selector,
+            values=act.values,
+            match=act.match,
+        ),
+    )
+    if not resp.get("success"):
+        return f"select_option failed: {resp.get('error', 'unknown')}"
+    selected = (resp.get("data") or {}).get("selected", act.values)
+    return f"Selected {json.dumps(selected, ensure_ascii=False)} in {act.selector!r}."
+
+
+async def _handle_set_checked(session_id: str, act: SetCheckedAction) -> str:
+    resp = await _send_command(
+        session_id,
+        "set_checked",
+        _tab_params(
+            act,
+            selector=act.selector,
+            checked=act.checked,
+            index=act.index,
+        ),
+    )
+    if resp.get("success"):
+        return f"Set {act.selector!r} checked={act.checked}."
+    return f"set_checked failed: {resp.get('error', 'unknown')}"
+
+
+async def _handle_drag(session_id: str, act: DragAction) -> str:
+    resp = await _send_command(
+        session_id,
+        "drag",
+        _tab_params(
+            act,
+            source_selector=act.source_selector,
+            target_selector=act.target_selector,
+            source_index=act.source_index,
+            target_index=act.target_index,
+            steps=act.steps,
+        ),
+    )
+    if resp.get("success"):
+        return f"Dragged {act.source_selector!r} to {act.target_selector!r}."
+    return f"drag failed: {resp.get('error', 'unknown')}"
+
+
 async def _handle_fill(session_id: str, act: FillAction) -> str:
-    resp = await _send_command(session_id, "fill", _tab_params(
-        act,
-        selector=act.selector,
-        value=act.value,
-        clear=act.clear,
-        submit=act.submit,
-    ))
+    resp = await _send_command(
+        session_id,
+        "fill",
+        _tab_params(
+            act,
+            selector=act.selector,
+            value=act.value,
+            clear=act.clear,
+            submit=act.submit,
+        ),
+    )
     if resp.get("success"):
         suffix = " and submitted" if act.submit else ""
         return f"Filled {act.selector!r}{suffix}."
@@ -821,7 +1143,9 @@ async def _handle_fill(session_id: str, act: FillAction) -> str:
 
 
 async def _handle_open_tab(session_id: str, act: OpenTabAction) -> str:
-    resp = await _send_command(session_id, "open_tab", {"url": act.url, "active": act.active})
+    resp = await _send_command(
+        session_id, "open_tab", {"url": act.url, "active": act.active}
+    )
     if not resp.get("success"):
         return f"open_tab failed: {resp.get('error', 'unknown')}"
     tab_id = (resp.get("data") or {}).get("tab_id")
@@ -843,7 +1167,9 @@ async def _handle_close_tab(session_id: str, act: CloseTabAction) -> str:
 
 
 async def _handle_snapshot(session_id: str, act: SnapshotAction) -> str:
-    resp = await _send_command(session_id, "snapshot", _tab_params(act, max_elements=act.max_elements))
+    resp = await _send_command(
+        session_id, "snapshot", _tab_params(act, max_elements=act.max_elements)
+    )
     if not resp.get("success"):
         return f"snapshot failed: {resp.get('error', 'unknown')}"
 
@@ -852,8 +1178,20 @@ async def _handle_snapshot(session_id: str, act: SnapshotAction) -> str:
     if not elements:
         return "No interactive elements found on the page."
 
-    lines = [f"Interactive elements ({len(elements)}):"]
-    for el in elements:
+    lines: list[str] = []
+    title = data.get("title") or "Untitled"
+    url = data.get("url") or ""
+    viewport = data.get("viewport") or {}
+    lines.append(f"Page snapshot: {title}")
+    if url:
+        lines.append(f"URL: {url}")
+    if viewport.get("width") and viewport.get("height"):
+        lines.append(
+            f"Viewport: {viewport['width']}x{viewport['height']} css-px "
+            f"at ({viewport.get('scrollX', 0)}, {viewport.get('scrollY', 0)})"
+        )
+    lines.append(f"Interactive elements ({len(elements)}):")
+    for index, el in enumerate(elements):
         box = el.get("box") or {}
         center = ""
         if box.get("x") is not None and box.get("y") is not None:
@@ -861,8 +1199,28 @@ async def _handle_snapshot(session_id: str, act: SnapshotAction) -> str:
         label = (el.get("text") or el.get("name") or "").strip().replace("\n", " ")
         if len(label) > 80:
             label = label[:77] + "…"
+        state = el.get("state") or {}
+        state_text = ""
+        if state:
+            state_text = (
+                " ["
+                + ", ".join(
+                    f"{key}={str(value).lower()}" for key, value in state.items()
+                )
+                + "]"
+            )
+        attributes = el.get("attributes") or {}
+        attribute_text = ""
+        visible_attributes = [
+            f"{key}={value!r}"
+            for key, value in attributes.items()
+            if key in {"type", "href", "placeholder"}
+        ]
+        if visible_attributes:
+            attribute_text = " {" + ", ".join(visible_attributes) + "}"
         lines.append(
-            f"  [{el.get('role', 'element')}]{center} {label!r} — {el.get('selector', '')}"
+            f"  {index}. [{el.get('role', 'element')}]{center}{state_text} "
+            f"{label!r}{attribute_text} — {el.get('selector', '')}"
         )
     return "\n".join(lines)
 
@@ -875,60 +1233,112 @@ async def _crawl_page(session_id: str, act: CrawlAction, url: str) -> dict[str, 
     page can't sink the rest of a concurrent :func:`asyncio.gather`.
     """
     try:
-        open_resp = await _send_command(session_id, "open_tab", {"url": url, "active": False})
+        open_resp = await _send_command(
+            session_id, "open_tab", {"url": url, "active": False}
+        )
         if not open_resp.get("success"):
-            return {"url": url, "ok": False, "error": f"open_tab failed: {open_resp.get('error', 'unknown')}"}
+            return {
+                "url": url,
+                "ok": False,
+                "error": f"open_tab failed: {open_resp.get('error', 'unknown')}",
+            }
         tab_id = (open_resp.get("data") or {}).get("tab_id")
         if tab_id is None:
             return {"url": url, "ok": False, "error": "open_tab returned no tab_id"}
 
         try:
             if act.wait != "none":
-                wait_action = "wait_for_load" if act.wait == "load" else "wait_for_network_idle"
-                wr = await _send_command(session_id, wait_action, {"tab_id": tab_id, "timeout_ms": act.timeout_ms})
+                wait_action = (
+                    "wait_for_load" if act.wait == "load" else "wait_for_network_idle"
+                )
+                wr = await _send_command(
+                    session_id,
+                    wait_action,
+                    {"tab_id": tab_id, "timeout_ms": act.timeout_ms},
+                )
                 if not wr.get("success"):
-                    return {"url": url, "ok": False, "error": f"{wait_action} failed: {wr.get('error', 'unknown')}"}
+                    return {
+                        "url": url,
+                        "ok": False,
+                        "error": f"{wait_action} failed: {wr.get('error', 'unknown')}",
+                    }
 
             if act.wait_selector:
-                wsr = await _send_command(session_id, "wait_for_selector", {
-                    "tab_id": tab_id,
-                    "selector": act.wait_selector,
-                    "state": "visible",
-                    "timeout_ms": act.timeout_ms,
-                })
+                wsr = await _send_command(
+                    session_id,
+                    "wait_for_selector",
+                    {
+                        "tab_id": tab_id,
+                        "selector": act.wait_selector,
+                        "state": "visible",
+                        "timeout_ms": act.timeout_ms,
+                    },
+                )
                 if not wsr.get("success"):
-                    return {"url": url, "ok": False, "error": f"wait_for_selector failed: {wsr.get('error', 'unknown')}"}
+                    return {
+                        "url": url,
+                        "ok": False,
+                        "error": f"wait_for_selector failed: {wsr.get('error', 'unknown')}",
+                    }
 
             if act.scroll:
-                await _send_command(session_id, "scroll_to_bottom", {
-                    "tab_id": tab_id, "max_scrolls": 10, "delay_ms": 600, "timeout_ms": act.timeout_ms,
-                })
+                await _send_command(
+                    session_id,
+                    "scroll_to_bottom",
+                    {
+                        "tab_id": tab_id,
+                        "max_scrolls": 10,
+                        "delay_ms": 600,
+                        "timeout_ms": act.timeout_ms,
+                    },
+                )
 
             if act.elements_selector:
-                er = await _send_command(session_id, "extract_elements", {
-                    "tab_id": tab_id,
-                    "selector": act.elements_selector,
-                    "fields": act.fields,
-                    "limit": act.limit,
-                })
+                er = await _send_command(
+                    session_id,
+                    "extract_elements",
+                    {
+                        "tab_id": tab_id,
+                        "selector": act.elements_selector,
+                        "fields": act.fields,
+                        "limit": act.limit,
+                    },
+                )
                 if not er.get("success"):
-                    return {"url": url, "ok": False, "error": f"extract_elements failed: {er.get('error', 'unknown')}"}
+                    return {
+                        "url": url,
+                        "ok": False,
+                        "error": f"extract_elements failed: {er.get('error', 'unknown')}",
+                    }
                 records = (er.get("data") or {}).get("records", [])
                 return {"url": url, "ok": True, "records": records}
 
-            er = await _send_command(session_id, "extract", {
-                "tab_id": tab_id,
-                "format": act.format,
-                "selector": act.selector,
-                "max_chars": act.max_chars,
-            })
+            er = await _send_command(
+                session_id,
+                "extract",
+                {
+                    "tab_id": tab_id,
+                    "format": act.format,
+                    "selector": act.selector,
+                    "max_chars": act.max_chars,
+                },
+            )
             if not er.get("success"):
-                return {"url": url, "ok": False, "error": f"extract failed: {er.get('error', 'unknown')}"}
+                return {
+                    "url": url,
+                    "ok": False,
+                    "error": f"extract failed: {er.get('error', 'unknown')}",
+                }
             data = er.get("data") or {}
             content = data.get("content")
             if content is None:
                 content = data.get("text", "")
-            return {"url": url, "ok": True, "title": data.get("title", ""), "content": content[: act.max_chars]}
+            return {
+                "url": url,
+                "ok": True,
+                "title": data.get("title", ""),
+                "content": content[: act.max_chars],
+            }
         finally:
             if act.close_tabs:
                 try:
@@ -952,14 +1362,18 @@ async def _handle_crawl(session_id: str, act: CrawlAction) -> str:
     pages = await asyncio.gather(*(run_one(u) for u in act.urls))
 
     ok_count = sum(1 for p in pages if p.get("ok"))
-    lines = [f"Crawled {len(pages)} URL(s) ({act.concurrency} at a time): {ok_count} ok, {len(pages) - ok_count} failed."]
+    lines = [
+        f"Crawled {len(pages)} URL(s) ({act.concurrency} at a time): {ok_count} ok, {len(pages) - ok_count} failed."
+    ]
     for p in pages:
         lines.append(f"\n## {p['url']}")
         if not p.get("ok"):
             lines.append(f"ERROR: {p.get('error', 'unknown')}")
         elif "records" in p:
             lines.append(f"{len(p['records'])} record(s):")
-            lines.append(json.dumps(p["records"], indent=2, ensure_ascii=False, default=str))
+            lines.append(
+                json.dumps(p["records"], indent=2, ensure_ascii=False, default=str)
+            )
         else:
             if p.get("title"):
                 lines.append(f"Title: {p['title']}")
