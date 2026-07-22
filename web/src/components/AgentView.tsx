@@ -41,6 +41,7 @@ import { useTeamStore } from '@/stores/useTeamStore'
 import { findCommittedMentions } from './InputBar.mentions'
 import { resolveApiUrl } from '@/api/client'
 import { LoadingVerb } from './motion/LoadingVerb'
+import { TextSelectionAction } from './TextSelectionAction'
 import type { Chapter, ContentBlock, MessageAttachment } from '@/api/types'
 
 const SCROLL_THRESHOLD = 40
@@ -72,6 +73,8 @@ interface AgentViewProps {
   emptyState?: React.ReactNode
   /** Session chapters for anchor markers and TOC dividers. */
   chapters?: Chapter[]
+  /** When provided, a floating text-selection action sends the selection to the side chat. */
+  onSendToSideChat?: (selectedText: string) => void
 }
 
 const USER_COLLAPSE_LINES = 10
@@ -372,7 +375,7 @@ const BlockRenderer = memo(function BlockRenderer({ block, isStreaming, sessionI
   }
 })
 
-export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError, isContinuing = false, onContinue, emptyState, chapters }: AgentViewProps) {
+export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError, isContinuing = false, onContinue, emptyState, chapters, onSendToSideChat }: AgentViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const pinnedRef = useRef(true)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
@@ -741,6 +744,14 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
           <ChevronDown size={16} />
         </button>
 
+    )}
+
+    {onSendToSideChat && (
+      <TextSelectionAction
+        containerRef={scrollRef}
+        onSendToSideChat={onSendToSideChat}
+        enabled={!isEmpty}
+      />
     )}
     </div>
   )

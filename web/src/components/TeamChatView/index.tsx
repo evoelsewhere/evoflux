@@ -123,6 +123,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const [fileRefsEnabled, setFileRefsEnabled] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('agent')
   const [sideChatOpen, setSideChatOpen] = useState(false)
+  const [sideChatQuote, setSideChatQuote] = useState<string | null>(null)
 
   // On mobile, always force agent view — split/monitor require a wide screen.
   // Also close any desktop-only panels when shrinking to mobile.
@@ -559,6 +560,16 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
     inputRef.current?.focus()
   }, [])
 
+  const handleSendToSideChat = useCallback((selectedText: string) => {
+    setSideChatQuote(selectedText)
+    setSideChatOpen(true)
+  }, [])
+
+  // Clear the quote once the side chat panel has consumed it (on close).
+  useEffect(() => {
+    if (!sideChatOpen) setSideChatQuote(null)
+  }, [sideChatOpen])
+
   const handleCodingFileSelect = useCallback((file: WorkspaceFileInfo | null) => {
     setCodingFileViewer(file)
     if (isMobile && file) setCodingPanel(null)
@@ -836,6 +847,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
           mainSessionId={sessionIdState}
           isOpen={sideChatOpen}
           onClose={() => setSideChatOpen(false)}
+          initialQuote={sideChatQuote}
         />
       )}
     </>
@@ -1030,6 +1042,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
             isContinuing={isContinuing && activeAgent === leadName}
             onContinue={activeAgent === leadName ? continueTeam : undefined}
             chapters={activeAgent === leadName ? chapters : undefined}
+            onSendToSideChat={handleSendToSideChat}
             emptyState={
               mode === 'coding' && workspace ? (
                 <div className="flex flex-col items-center justify-center py-16">
