@@ -25,6 +25,8 @@ export function WebBridgeBrowserInfo() {
   }, [])
 
   useEffect(() => {
+    // Prime the polling subscription immediately on mount.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchStatus()
     const id = setInterval(() => void fetchStatus(), POLL_INTERVAL)
     return () => clearInterval(id)

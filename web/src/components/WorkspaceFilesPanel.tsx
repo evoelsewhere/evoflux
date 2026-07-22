@@ -47,8 +47,6 @@ import {
   Trash2,
   Pencil,
   FolderUp,
-  Maximize2,
-  Minimize2,
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
@@ -64,6 +62,8 @@ import { mediumHapticFeedback } from '@/lib/haptics'
 import { formatBytes } from '@/utils/format'
 import { MarkdownBlock } from '@/utils/markdown'
 import { SidePanel } from './shell/SidePanel'
+import { useUIStore } from '@/stores/useUIStore'
+import { getWorkspacePanelLayout } from '@/lib/workspace-panel-layout'
 import { ImageLightbox } from './ImageLightbox'
 import { DocxPreview, XlsxPreview, PptxPreview } from './workspace-office-preview'
 import type { WorkspaceFileInfo } from '@/api/types'
@@ -147,10 +147,8 @@ function vscodeWorkspaceUrl(workspaceRoot: string): string {
 
 const PANEL_WIDTH_KEY = STORAGE_KEYS.panels.workspace
 const TREE_WIDTH_KEY = STORAGE_KEYS.panels.workspaceTree
-const PANEL_WIDTH_MIN = 320
 // Modest — this panel is docked (shares the row with sidebar + chat), not
 // floating above them, so it shouldn't claim most of the window by default.
-const PANEL_WIDTH_DEFAULT = 520
 const TREE_WIDTH_MIN = 160
 const TREE_WIDTH_MAX_RATIO = 0.55
 
@@ -859,6 +857,21 @@ interface WorkspaceFilesPanelProps {
 export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFilesPanelProps) {
   const isMobile = useIsMobile()
   const { isMacOverlay } = usePlatform()
+  const sidebarWidth = useUIStore((state) => state.sidebarWidth)
+  const sidebarCollapsed = useUIStore((state) => state.sidebarCollapsed)
+  const [viewportWidth, setViewportWidth] = useState(() =>
+    typeof window === 'undefined' ? 1440 : window.innerWidth,
+  )
+  useEffect(() => {
+    const handleResize = () => setViewportWidth(window.innerWidth)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+  const panelLayout = useMemo(
+    () => getWorkspacePanelLayout({ viewportWidth, sidebarWidth, sidebarCollapsed, macOverlay: isMacOverlay }),
+    [isMacOverlay, sidebarCollapsed, sidebarWidth, viewportWidth],
+  )
+  const isOverlay = panelLayout.mode === 'overlay'
   const { data, isLoading, isError, refetch, isFetching } = useWorkspaceFilesQuery(sessionId)
   const queryClient = useQueryClient()
   useSessionFilesWatcher(sessionId, data?.workspace_root)
@@ -897,12 +910,8 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
   //
   // Default is modest (not the old 60vw) — this panel now shares the row
   // with the sidebar and chat instead of floating above them, so a large
-  // default starves both by default. The "Expand" toggle below covers the
-  // case where someone genuinely wants a full-width look at a big file
-  // without dragging the handle every time.
-  const [expanded, setExpanded] = useState(false)
-  const expandedWidth = Math.min(1400, Math.round((typeof window === 'undefined' ? 1280 : window.innerWidth) * 0.9))
-
+  // default is clamped to the available row. If the minimum docked layout
+  // cannot fit, the panel becomes a non-resizable viewport overlay.
   const [treeWidth, setTreeWidth] = useState(() =>
     readStoredWidth(TREE_WIDTH_KEY, 260, TREE_WIDTH_MIN),
   )
@@ -911,9 +920,12 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
     e.preventDefault()
     const startX = e.clientX
     const startW = treeWidth
-    const panelWidth = expanded
-      ? expandedWidth
-      : readStoredWidth(PANEL_WIDTH_KEY, PANEL_WIDTH_DEFAULT, PANEL_WIDTH_MIN)
+    const panelWidth = isOverlay
+      ? viewportWidth
+      : Math.min(
+          panelLayout.maxWidth,
+          readStoredWidth(PANEL_WIDTH_KEY, panelLayout.defaultWidth, panelLayout.minWidth),
+        )
     const maxTW = Math.round(panelWidth * TREE_WIDTH_MAX_RATIO)
     const onMove = (ev: PointerEvent) => {
       const newW = Math.max(TREE_WIDTH_MIN, Math.min(maxTW, startW + ev.clientX - startX))
@@ -1139,14 +1151,14 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
   return (
     <SidePanel
       storageKey={PANEL_WIDTH_KEY}
-      defaultWidth={PANEL_WIDTH_DEFAULT}
-      minWidth={PANEL_WIDTH_MIN}
-      maxWidth={Math.round((typeof window === 'undefined' ? 1280 : window.innerWidth) * 0.95)}
+      defaultWidth={panelLayout.defaultWidth}
+      minWidth={panelLayout.minWidth}
+      maxWidth={panelLayout.maxWidth}
       mobileOverlay
       mobile={isMobile}
-      width={expanded ? expandedWidth : undefined}
+      forceOverlay={isOverlay}
       ariaLabel="Workspace files"
-      className={cn('bg-(--bg-card)', !isMobile && isMacOverlay && 'top-(--spacing-app-header)')}
+      className="bg-(--bg-card)"
     >
       {/* Header */}
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-4 py-3">
@@ -1209,17 +1221,6 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
           >
             <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} />
           </button>
-          {!isMobile && (
-            <button
-              onClick={() => setExpanded((v) => !v)}
-              className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-              title={expanded ? 'Collapse' : 'Expand'}
-              aria-label={expanded ? 'Collapse panel' : 'Expand panel'}
-              aria-pressed={expanded}
-            >
-              {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-            </button>
-          )}
           <button
             onClick={onClose}
             className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
