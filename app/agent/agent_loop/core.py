@@ -333,7 +333,7 @@ class Agent(Generic[TContext]):
         # Build tool execution chain — all hooks participate via wrap_tool_call
         tool_chain: ToolCallHandler = build_tool_chain(
             combined_hooks,
-            make_tool_executor(run_tools, self.name),
+            make_tool_executor(run_tools, self.name, deferred_names),
         )
 
         iteration = 0
