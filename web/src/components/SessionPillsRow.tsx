@@ -64,7 +64,7 @@ function ModelOptions({
   }, [models, query])
 
   return (
-    <div className="flex min-h-0 flex-col gap-2">
+    <div className="flex min-h-0 flex-col gap-1.5">
       <label className="relative block">
         <Search
           aria-hidden="true"
@@ -75,10 +75,10 @@ function ModelOptions({
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search models..."
-          className="h-9 w-full rounded-lg border border-(--color-border) bg-(--bg-input) pl-8 pr-2.5 font-mono text-xs text-(--color-text) outline-none transition-[border-color,box-shadow] duration-150 focus:border-(--color-border-strong) focus:ring-2 focus:ring-(--color-accent)/25"
+          className="h-8 w-full rounded-md border border-(--color-border) bg-(--bg-input) pl-8 pr-2.5 font-mono text-xs text-(--color-text) outline-none transition-[border-color,box-shadow] duration-150 focus:border-(--color-border-strong) focus:ring-2 focus:ring-(--color-accent)/25"
         />
       </label>
-      <div className="max-h-56 overflow-y-auto overscroll-contain" role="listbox" aria-label="Models">
+      <div className="max-h-48 overflow-y-auto overscroll-contain" role="listbox" aria-label="Models">
         {visibleModels.length === 0 ? (
           <p className="px-2 py-4 text-center text-xs text-(--color-text-muted)">No models found</p>
         ) : (
@@ -89,7 +89,7 @@ function ModelOptions({
               role="option"
               aria-selected="false"
               onClick={() => onSelect(model.id)}
-              className="flex min-h-8 w-full items-center rounded-md px-2 text-left font-mono text-xs text-(--color-text-2) outline-none transition-[background-color,color] duration-150 hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:bg-(--bg-key) focus-visible:text-(--color-text)"
+              className="flex h-7 w-full items-center rounded-md px-2 text-left font-mono text-xs text-(--color-text-2) outline-none transition-[background-color,color] duration-150 hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:bg-(--bg-key) focus-visible:text-(--color-text)"
             >
               <span className="truncate">{model.id}</span>
             </button>
@@ -312,12 +312,11 @@ function AdvancedComposerControl({
       <PopoverContent
         side="top"
         align="end"
-        className="w-[min(20rem,calc(100vw-1rem))] gap-3.5 overflow-visible p-3.5"
+        className="w-[min(18rem,calc(100vw-1rem))] gap-3 overflow-visible p-3"
       >
           <>
             <div
               className="relative"
-              onPointerLeave={() => setModelFlyoutOpen(false)}
               onBlur={(event) => {
                 if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
                   setModelFlyoutOpen(false)
@@ -333,9 +332,8 @@ function AdvancedComposerControl({
                 onPointerEnter={(event) => {
                   if (event.pointerType === 'mouse') setModelFlyoutOpen(true)
                 }}
-                onMouseEnter={() => setModelFlyoutOpen(true)}
                 onClick={() => setModelFlyoutOpen(true)}
-                className="flex h-9 w-full items-center justify-between gap-3 rounded-lg border border-(--color-border) bg-(--bg-input) px-2.5 font-mono text-xs text-(--color-text) outline-none transition-[background-color,border-color] duration-150 hover:bg-(--bg-key) focus-visible:border-(--color-border-strong)"
+                className="flex h-8 w-full items-center justify-between gap-2.5 rounded-md border border-(--color-border) bg-(--bg-input) px-2.5 font-mono text-xs text-(--color-text) outline-none transition-[background-color,border-color] duration-150 hover:bg-(--bg-key) focus-visible:border-(--color-border-strong)"
               >
                 <span className="truncate">{effectiveModel || 'Choose a model'}</span>
                 <ChevronDown aria-hidden="true" size={12} className="-rotate-90 shrink-0 text-(--color-text-subtle)" />
@@ -349,7 +347,7 @@ function AdvancedComposerControl({
                     animate={{ opacity: 1, x: 0, scale: 1 }}
                     exit={reducedMotion ? { opacity: 0 } : { opacity: 0, x: -4, scale: 0.985 }}
                     transition={{ duration: reducedMotion ? 0 : 0.14, ease: [0.16, 1, 0.3, 1] }}
-                    className="absolute left-[calc(100%+0.5rem)] top-0 z-(--z-modal) w-[min(19rem,calc(100vw-1rem))] rounded-xl border border-(--color-border-strong) bg-(--bg-page) p-2.5 shadow-(--shadow-popover) max-[1180px]:bottom-[calc(100%+0.5rem)] max-[1180px]:left-0 max-[1180px]:top-auto"
+                    className="absolute left-[calc(100%+0.375rem)] top-0 z-(--z-modal) w-[min(16.5rem,calc(100vw-1rem))] rounded-lg border border-(--color-border-strong) bg-(--bg-page) p-2 shadow-(--shadow-popover) max-[1180px]:bottom-[calc(100%+0.375rem)] max-[1180px]:left-0 max-[1180px]:top-auto"
                   >
                     <ModelOptions
                       onSelect={(modelId) => {
