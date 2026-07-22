@@ -17,9 +17,12 @@ Tier policies
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from loguru import logger
+
+if TYPE_CHECKING:
+    from app.agent.tools import Tool
 
 # ── Denied-tool sets per tier ─────────────────────────────────────────────
 # Each set lists tool *names* that a member should NOT have access to when
@@ -149,30 +152,35 @@ def webbridge_session_excluded_tools(tool_names: Iterable[str]) -> frozenset[str
 # no team coordination or side-effecting tools.
 SIDE_CHAT_SESSION_TAG = "side_chat"
 
-SIDE_CHAT_EXCLUDED_TOOLS: frozenset[str] = frozenset(
+SIDE_CHAT_ALWAYS_EXCLUDED_TOOLS: frozenset[str] = frozenset(
     {
-        "write",
-        "edit",
-        "patch",
-        "rm",
-        "shell",
-        "bg",
-        "python",
-        "browser_use",
-        "webbridge",
-        "schedule_task",
-        "skill",  # Skills may have side effects
-        "todo_manage",  # May modify todo state
-        "team_message",  # May send messages to team
-        "team_handoff",  # May send handoffs
-        "team_state",  # May modify shared state
-        "team_delegate",  # May delegate work
-        "team_reject",  # May reject work
-        "create_pull_request",  # May create PRs
-        "show_widget",  # May render widgets
-        "visualize_read_me",  # May render visualizations
+        "todo_manage",
+        "team_manage",
+        "team_message",
+        "team_handoff",
+        "team_state",
+        "team_delegate",
+        "team_reject",
+        "show_widget",
+        "visualize_read_me",
     }
 )
+
+
+def side_chat_session_excluded_tools(tools: Iterable[Tool]) -> frozenset[str]:
+    """Return tools that must not run in a read-only side-chat session.
+
+    Tool access is deny-by-default: only tools explicitly declaring
+    ``read_only=True`` survive. This also blocks newly registered, plugin, and
+    MCP tools unless they opt into the read-only contract. Team coordination
+    and presentation tools are always excluded even if their metadata changes.
+    """
+    return frozenset(
+        tool.name
+        for tool in tools
+        if not getattr(tool, "read_only", False)
+        or tool.name in SIDE_CHAT_ALWAYS_EXCLUDED_TOOLS
+    )
 
 
 def resolve_member_tier(agent_name: str) -> str | None:

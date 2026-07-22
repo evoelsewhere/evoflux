@@ -2,6 +2,7 @@
 
 import pytest
 import pytest_asyncio
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -11,6 +12,7 @@ from app.agent.schemas.chat import (
     AssistantMessage,
     HumanMessage,
 )
+from app.api.routes.team.chat import SideChatMessageRequest
 from app.services.chat_service import (
     create_chat_session,
     create_side_chat_session,
@@ -40,6 +42,17 @@ async def session(engine):
     )
     async with async_session() as session:
         yield session
+
+
+def test_side_chat_message_request_rejects_blank_content():
+    with pytest.raises(ValidationError, match="content must not be blank"):
+        SideChatMessageRequest(content=" \n\t ")
+
+
+def test_side_chat_message_request_preserves_content_whitespace():
+    content = "  > quoted context\n\nQuestion  "
+
+    assert SideChatMessageRequest(content=content).content == content
 
 
 @pytest.mark.asyncio

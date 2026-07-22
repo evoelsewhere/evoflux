@@ -569,6 +569,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   // Lifted above the panel: the side chat session (and any in-flight
   // generation + SSE stream) survives closing/reopening the panel.
   const sideChat = useSideChat(sessionIdState)
+  const openSideChat = sideChat.openSideChat
 
   // Consume one-shot open requests from the sidebar session-row icon: the
   // panel opens once the requested session is the active one.
@@ -581,11 +582,12 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   }, [sideChatRequest, sessionIdState])
 
   // Create the side chat session eagerly on first open so history and the
-  // persistent SSE stream are attached before the first message is sent.
+  // stream are attached before the first message is sent. Depending on the
+  // callback also re-runs this when the active main session changes while the
+  // panel stays open.
   useEffect(() => {
-    if (sideChatOpen) sideChat.openSideChat()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sideChatOpen])
+    if (sideChatOpen) openSideChat()
+  }, [sideChatOpen, openSideChat])
 
   // Clear the quote once the side chat panel has consumed it (on close).
   useEffect(() => {
@@ -869,6 +871,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
           isOpen={sideChatOpen}
           onClose={() => setSideChatOpen(false)}
           initialQuote={sideChatQuote}
+          onQuoteConsumed={() => setSideChatQuote(null)}
           blocks={sideChat.blocks}
           currentBlocks={sideChat.currentBlocks}
           isWorking={sideChat.isWorking}

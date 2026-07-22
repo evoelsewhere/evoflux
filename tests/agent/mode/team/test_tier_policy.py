@@ -21,7 +21,7 @@ from app.agent.mode.team.member import TeamLead
 from app.agent.mode.team.team import AgentTeam
 from app.agent.mode.team.tier_policy import (
     DEFAULT_DEFERRED_TOOLS,
-    SIDE_CHAT_EXCLUDED_TOOLS,
+    SIDE_CHAT_ALWAYS_EXCLUDED_TOOLS,
     SIDE_CHAT_SESSION_TAG,
     TIER_DENIED_TOOLS,
     WEBBRIDGE_SESSION_ALLOWED_TOOLS,
@@ -29,9 +29,11 @@ from app.agent.mode.team.tier_policy import (
     WEBBRIDGE_SESSION_TAG,
     denied_tools_for_tier,
     resolve_member_tier,
+    side_chat_session_excluded_tools,
     webbridge_session_excluded_tools,
 )
 from app.agent.sandbox import SandboxConfig, set_sandbox
+from app.agent.tools import Tool
 
 
 # ── denied_tools_for_tier ────────────────────────────────────────────────
@@ -412,39 +414,41 @@ class TestWebbridgeSessionTagOnTeam:
 
 
 class TestSideChatExcludedTools:
-    def test_pinned_contract(self):
-        assert SIDE_CHAT_EXCLUDED_TOOLS == frozenset(
-            {
-                "write",
-                "edit",
-                "patch",
-                "rm",
-                "shell",
-                "bg",
-                "python",
-                "browser_use",
-                "webbridge",
-                "schedule_task",
-                "skill",
-                "todo_manage",
-                "team_message",
-                "team_handoff",
-                "team_state",
-                "team_delegate",
-                "team_reject",
-                "create_pull_request",
-                "show_widget",
-                "visualize_read_me",
-            }
-        )
+    @staticmethod
+    def _make_tool(name: str, *, read_only: bool = False) -> Tool:
+        def implementation() -> None:
+            return None
 
-    def test_excludes_all_write_and_execution_tools(self):
-        assert {"write", "edit", "patch", "rm", "shell", "bg", "python"} <= (
-            SIDE_CHAT_EXCLUDED_TOOLS
+        return Tool(implementation, name=name, read_only=read_only)
+
+    def test_new_tools_are_denied_by_default(self):
+        tools = [
+            self._make_tool("read", read_only=True),
+            self._make_tool("terminal_run"),
+            self._make_tool("future_plugin_tool"),
+        ]
+
+        assert side_chat_session_excluded_tools(tools) == frozenset(
+            {"terminal_run", "future_plugin_tool"}
         )
 
     def test_does_not_exclude_read_tools(self):
-        assert SIDE_CHAT_EXCLUDED_TOOLS.isdisjoint({"read", "grep", "glob", "ls"})
+        tools = [
+            self._make_tool(name, read_only=True)
+            for name in ("read", "grep", "glob", "ls")
+        ]
+
+        assert side_chat_session_excluded_tools(tools) == frozenset()
+
+    def test_always_excludes_coordination_and_presentation_tools(self):
+        tools = [
+            self._make_tool(name, read_only=True)
+            for name in SIDE_CHAT_ALWAYS_EXCLUDED_TOOLS
+        ]
+
+        assert side_chat_session_excluded_tools(tools) == (
+            SIDE_CHAT_ALWAYS_EXCLUDED_TOOLS
+        )
 
 
 class TestSideChatSessionTagOnTeam:

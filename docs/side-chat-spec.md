@@ -254,37 +254,41 @@ async def side_chat_stream(
 
 ### 3.1 Tool Filtering for Side Chat
 
-**File:** `app/agent/agent_loop/core.py` (lines 189-190, 247-254)
+**Files:** `app/agent/mode/team/tier_policy.py`, `app/agent/mode/team/member.py`
 
-The agent loop already supports `excluded_tools` parameter. For side chat, we exclude all write/mutating tools:
+The agent loop supports an `excluded_tools` parameter. Side chat uses a
+deny-by-default policy: only tools explicitly declaring `read_only=True` are
+kept. Newly registered, plugin, and MCP tools are therefore blocked unless
+they opt into the read-only contract. Runtime-injected team tools are included
+in the same policy calculation.
 
 ```python
-# In side chat agent run
-SIDE_CHAT_EXCLUDED_TOOLS: frozenset[str] = frozenset({
-    "write",
-    "edit",
-    "patch",
-    "rm",
-    "shell",
-    "bg",
-    "python",
-    "browser_use",
-    "webbridge",
-    "schedule_task",
-    "skill",  # Skills may have side effects
-    "todo_manage",  # May modify todo state
-    "team_message",  # May send messages to team
-    "team_handoff",  # May send handoffs
-    "team_state",  # May modify shared state
-    "create_pull_request",  # May create PRs
-    "show_widget",  # May render widgets
-    "visualize_read_me",  # May render visualizations
+SIDE_CHAT_ALWAYS_EXCLUDED_TOOLS = frozenset({
+  "todo_manage",
+  "team_manage",
+  "team_message",
+  "team_handoff",
+  "team_state",
+  "team_delegate",
+  "team_reject",
+  "show_widget",
+  "visualize_read_me",
 })
+
+def side_chat_session_excluded_tools(tools: Iterable[Tool]) -> frozenset[str]:
+  return frozenset(
+    tool.name
+    for tool in tools
+    if not getattr(tool, "read_only", False)
+    or tool.name in SIDE_CHAT_ALWAYS_EXCLUDED_TOOLS
+  )
 
 # Run agent with restricted tools
 result = await agent.run(
     messages=all_messages,
-    excluded_tools=SIDE_CHAT_EXCLUDED_TOOLS,
+  excluded_tools=side_chat_session_excluded_tools(
+    (*agent._tools.values(), *injected_tools)
+  ),
     # ... other params
 )
 ```
@@ -839,7 +843,7 @@ async def side_chat_session(db: AsyncSession, main_session: ChatSession):
 **Estimated Time:** 2-3 days
 
 ### Phase 2: Agent Integration
-7. **Tool filtering for side chat** - Define `SIDE_CHAT_EXCLUDED_TOOLS`
+7. **Tool filtering for side chat** - Apply `side_chat_session_excluded_tools`
 8. **System prompt extension** - Add side chat context to system prompt
 9. **Context injection in `get_messages_for_llm`** - Prepend source session context
 10. **Side chat agent execution** - Run agent with restricted tools

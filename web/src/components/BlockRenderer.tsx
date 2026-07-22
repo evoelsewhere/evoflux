@@ -13,7 +13,7 @@
  */
 
 import { memo, useState } from 'react'
-import { ChevronDown, ChevronUp, Copy, Check, Undo2, Terminal } from 'lucide-react'
+import { ChevronDown, ChevronUp, Copy, Check, Undo2, Terminal, Quote } from 'lucide-react'
 import { LazyMarkdownBlock } from '@/utils/LazyMarkdownBlock'
 import { Thinking } from './Thinking'
 import { ToolCall } from './ToolCall'
@@ -77,11 +77,29 @@ function renderMentionSegments(content: string): React.ReactNode[] {
   return out
 }
 
-function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell }: { content: string; timestamp?: Date; attachments?: MessageAttachment[]; onRevert?: () => void; modelId?: string | null; shell?: boolean }) {
+function splitLeadingQuote(content: string): { quote: string; message: string } | null {
+  const lines = content.split('\n')
+  const quoteLines: string[] = []
+  let index = 0
+
+  while (index < lines.length && (lines[index] === '>' || lines[index].startsWith('> '))) {
+    quoteLines.push(lines[index] === '>' ? '' : lines[index].slice(2))
+    index += 1
+  }
+
+  if (quoteLines.length === 0 || lines[index] !== '') return null
+  const message = lines.slice(index + 1).join('\n').trimStart()
+  if (!message) return null
+  return { quote: quoteLines.join('\n'), message }
+}
+
+function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell, renderLeadingQuoteAsContext }: { content: string; timestamp?: Date; attachments?: MessageAttachment[]; onRevert?: () => void; modelId?: string | null; shell?: boolean; renderLeadingQuoteAsContext?: boolean }) {
   const [showTime, setShowTime] = useState(false)
   const [copied, setCopied] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const modelName = shortModelName(modelId)
+  const quotedContext = renderLeadingQuoteAsContext ? splitLeadingQuote(content) : null
+  const messageContent = quotedContext?.message ?? content
 
   const handleCopy = async () => {
     try {
@@ -93,13 +111,13 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell 
     }
   }
 
-  const lines = content.split('\n')
-  const needsCollapse = lines.length > USER_COLLAPSE_LINES || content.length > USER_COLLAPSE_CHARS
+  const lines = messageContent.split('\n')
+  const needsCollapse = lines.length > USER_COLLAPSE_LINES || messageContent.length > USER_COLLAPSE_CHARS
   const visibleContent = needsCollapse && !expanded
     ? lines.length > USER_COLLAPSE_LINES
       ? lines.slice(0, USER_COLLAPSE_LINES).join('\n')
-      : `${content.slice(0, USER_COLLAPSE_CHARS).trimEnd()}...`
-    : content
+      : `${messageContent.slice(0, USER_COLLAPSE_CHARS).trimEnd()}...`
+    : messageContent
 
   return (
     <div
@@ -153,6 +171,20 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell 
              <div className="mb-1.5 flex items-center gap-1 font-mono text-xs text-(--color-text-muted)">
                <Terminal size={12} aria-hidden="true" />
                <span>Shell</span>
+             </div>
+           )}
+           {quotedContext && (
+             <div className="mb-2.5 border-b border-(--color-border) pb-2.5">
+               <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-(--color-text-muted)">
+                 <Quote size={11} aria-hidden="true" />
+                 <span>Selected from main chat</span>
+               </div>
+               <p
+                 className="line-clamp-3 min-w-0 text-xs leading-relaxed break-words whitespace-pre-wrap text-(--color-text-2) [overflow-wrap:anywhere]"
+                 title={quotedContext.quote}
+               >
+                 {renderMentionSegments(quotedContext.quote)}
+               </p>
              </div>
            )}
            <p className={`min-w-0 break-words whitespace-pre-wrap [overflow-wrap:anywhere] ${shell ? 'font-mono' : ''}`}>{renderMentionSegments(visibleContent)}</p>
@@ -221,9 +253,10 @@ export interface BlockRendererProps {
   sessionId?: string
   onRevert?: () => void
   latestMCPAppBlockIds?: Set<string>
+  renderLeadingQuoteAsContext?: boolean
 }
 
-export const BlockRenderer = memo(function BlockRenderer({ block, isStreaming, sessionId, onRevert, latestMCPAppBlockIds }: BlockRendererProps) {
+export const BlockRenderer = memo(function BlockRenderer({ block, isStreaming, sessionId, onRevert, latestMCPAppBlockIds, renderLeadingQuoteAsContext }: BlockRendererProps) {
   switch (block.type) {
     case 'user': {
       // Me check if this is an inbox message (from another agent, not real user)
@@ -237,7 +270,7 @@ export const BlockRenderer = memo(function BlockRenderer({ block, isStreaming, s
       }
       const blockModel = typeof block.extra?.model === 'string' ? block.extra.model : null
       const shell = block.extra?.kind === 'user_shell'
-      return <UserBubble content={block.content} timestamp={block.timestamp} attachments={block.attachments} onRevert={onRevert} modelId={blockModel} shell={shell} />
+      return <UserBubble content={block.content} timestamp={block.timestamp} attachments={block.attachments} onRevert={onRevert} modelId={blockModel} shell={shell} renderLeadingQuoteAsContext={renderLeadingQuoteAsContext} />
     }
     case 'thinking':
       return <Thinking content={block.content} isStreaming={isStreaming} />

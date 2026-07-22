@@ -75,6 +75,8 @@ interface InputBarProps {
   onFileRefsNeeded?: () => void
   isStreaming?: boolean
   disabled?: boolean
+  /** Whether this composer can submit file attachments. Defaults to true. */
+  attachmentsEnabled?: boolean
   placeholder?: string
   autoFocus?: boolean
   capabilities?: AgentCapabilities
@@ -184,6 +186,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   onFileRefsNeeded,
   isStreaming = false,
   disabled,
+  attachmentsEnabled = true,
   placeholder = 'Message EvoFlux…',
   autoFocus,
   capabilities,
@@ -498,6 +501,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   }, [blobUrls])
 
   const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (!attachmentsEnabled) return
     const items = e.clipboardData?.items
     if (!items) return
     for (let i = 0; i < items.length; i++) {
@@ -510,17 +514,19 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         }
       }
     }
-  }, [addFile, isFileTypeAllowed])
+  }, [addFile, attachmentsEnabled, isFileTypeAllowed])
 
   const handleDragEnter = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
+    if (!attachmentsEnabled) return
     dragCounterRef.current++
-  }, [])
+  }, [attachmentsEnabled])
 
   const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
+    if (!attachmentsEnabled) return
     dragCounterRef.current--
-  }, [])
+  }, [attachmentsEnabled])
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
@@ -528,6 +534,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
 
   const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
+    if (!attachmentsEnabled) return
     dragCounterRef.current = 0
     const droppedFiles = e.dataTransfer?.files
     if (!droppedFiles) return
@@ -537,7 +544,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         addFile(file)
       }
     }
-  }, [addFile, isFileTypeAllowed])
+  }, [addFile, attachmentsEnabled, isFileTypeAllowed])
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = e.currentTarget.files
@@ -1330,7 +1337,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
             {/* ── Minimized: compact action strip ── */}
             {minimized && (
               <div onClick={handleExpand} className="flex items-center gap-2 cursor-text">
-                {!shellMode && attachEl}
+                {!shellMode && attachmentsEnabled && attachEl}
                 {chatEl}
                 <div className="w-0 -ml-2 min-w-0 overflow-hidden">{messageSlot}</div>
                 {sendOrStopEl}
@@ -1381,7 +1388,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                     workspace panel open, or mobile). */}
                 <div className="flex flex-wrap items-center gap-1.5 px-3 pb-3 pt-1">
                   {/* Left: content & navigation actions */}
-                  {!shellMode && attachEl}
+                  {!shellMode && attachmentsEnabled && attachEl}
                   {onFiles && (
                     <button
                       type="button"
@@ -1446,15 +1453,17 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
 
         {!minimized && filesBelow && filePreviews}
 
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          accept={buildAcceptString()}
-          onChange={handleFileSelect}
-          className="hidden"
-          aria-hidden="true"
-        />
+        {attachmentsEnabled && (
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept={buildAcceptString()}
+            onChange={handleFileSelect}
+            className="hidden"
+            aria-hidden="true"
+          />
+        )}
       </div>
     </div>
   )

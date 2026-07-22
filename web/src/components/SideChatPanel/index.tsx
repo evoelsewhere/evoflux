@@ -7,20 +7,27 @@
  * `SideChatTranscript` (BlockRenderer) for messages and the shared `InputBar`
  * for composing.
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { SidePanel } from '@/components/shell/SidePanel'
 import { InputBar } from '@/components/InputBar'
 import type { InputBarHandle } from '@/components/InputBar'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 import { SideChatTranscript } from './SideChatTranscript'
-import { AlertCircle, Info, Quote, X } from 'lucide-react'
+import { AlertCircle, ArrowUpRight, LockKeyhole, MessageCircleQuestion, Quote, X } from 'lucide-react'
 import type { ContentBlock } from '@/api/types'
+
+const STARTER_PROMPTS = [
+  'Summarize the key decisions',
+  'Explain the latest response',
+  'Spot unanswered questions',
+] as const
 
 interface SideChatPanelProps {
   isOpen: boolean
   onClose: () => void
-  /** When provided the input is pre-filled with a quoted version of this text. */
+  /** Selected main-chat text shown as context above the composer. */
   initialQuote?: string | null
+  onQuoteConsumed: () => void
   /** Finalized blocks from the persisted history (from useSideChat). */
   blocks: ContentBlock[]
   /** Live blocks accumulating in the current streaming turn. */
@@ -36,6 +43,7 @@ export function SideChatPanel({
   isOpen,
   onClose,
   initialQuote = null,
+  onQuoteConsumed,
   blocks,
   currentBlocks,
   isWorking,
@@ -45,13 +53,7 @@ export function SideChatPanel({
   onStop,
 }: SideChatPanelProps) {
   const inputRef = useRef<InputBarHandle>(null)
-  // Selected text from the main chat, shown as a chip above the input
-  // (Claude-style) instead of being dumped into the textarea. It is only
-  // merged into the message content at send time. The chip is derived from
-  // the `initialQuote` prop; `clearedQuote` records a dismissed/consumed
-  // quote so no state-sync effect is needed.
-  const [clearedQuote, setClearedQuote] = useState<string | null>(null)
-  const quote = initialQuote && initialQuote !== clearedQuote ? initialQuote : null
+  const quote = initialQuote
 
   // Focus the input when a fresh quote arrives.
   useEffect(() => {
@@ -66,11 +68,16 @@ export function SideChatPanel({
       const content = quote
         ? `> ${quote.split('\n').join('\n> ')}\n\n${message}`
         : message
-      setClearedQuote(quote)
       await onSend(content)
+      if (quote) onQuoteConsumed()
     },
-    [quote, onSend],
+    [quote, onSend, onQuoteConsumed],
   )
+
+  const handleStarterPrompt = useCallback((prompt: string) => {
+    inputRef.current?.setValue(prompt)
+    inputRef.current?.focus()
+  }, [])
 
   if (!isOpen) return null
 
@@ -82,27 +89,27 @@ export function SideChatPanel({
       maxWidth={600}
       title={
         <div className="flex items-center gap-2">
+          <MessageCircleQuestion size={14} className="text-(--color-text-muted)" aria-hidden="true" />
           <span className="text-xs font-semibold text-(--color-text-2)">Side Chat</span>
-          <span className="rounded bg-(--color-accent-soft) px-1.5 py-0.5 text-[10px] font-medium text-(--color-accent)">
-            Read-only
-          </span>
         </div>
+      }
+      headerActions={
+        <span
+          className="flex items-center gap-1 rounded-md bg-(--bg-key) px-1.5 py-0.5 text-[10px] font-medium text-(--color-text-muted)"
+          title="Uses read-only context from the main session"
+        >
+          <LockKeyhole size={10} aria-hidden="true" />
+          Read-only
+        </span>
       }
       onClose={onClose}
       closeLabel="Close side chat"
       resizeLabel="Resize side chat panel"
+      ariaLabel="Side chat panel"
       className="bg-(--bg-page)"
       mobileOverlay
     >
       <div className="flex min-h-0 flex-1 flex-col">
-        {/* Context indicator */}
-        <div className="flex items-center gap-2 border-b border-(--color-border) bg-(--bg-key) px-3 py-2">
-          <Info size={12} className="shrink-0 text-(color-text-muted)" />
-          <span className="text-[11px] text-(--color-text-muted)">
-            Read-only context from main session
-          </span>
-        </div>
-
         {/* Message list — shared main-chat render pipeline */}
         <SideChatTranscript
           blocks={blocks}
@@ -110,17 +117,36 @@ export function SideChatPanel({
           isWorking={isWorking}
           sessionId={sideChatId ?? undefined}
           emptyState={
-            <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-(--bg-key) text-(--color-accent)">
-                <Info size={20} />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-(--color-text)">Side Chat</p>
-                <p className="mt-1 text-xs text-(--color-text-muted)">
-                  Ask questions about the main session without affecting it.
-                  <br />
-                  The agent has read-only access to the conversation context.
-                </p>
+            <div className="flex h-full items-center justify-center px-2 py-8">
+              <div className="w-full max-w-xs">
+                <div className="mb-5 flex items-center gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-(--bg-key) text-(--color-text-2)">
+                    <MessageCircleQuestion size={17} aria-hidden="true" />
+                  </div>
+                  <p className="text-sm font-medium text-(--color-text)">
+                    Ask about this conversation
+                  </p>
+                </div>
+                <div className="border-y border-(--color-border)">
+                  {STARTER_PROMPTS.map((prompt, index) => (
+                    <button
+                      key={prompt}
+                      type="button"
+                      onClick={() => handleStarterPrompt(prompt)}
+                      className={`group flex w-full items-center gap-3 py-2.5 text-left text-xs text-(--color-text-muted) transition-colors hover:text-(--color-text) ${
+                        index > 0 ? 'border-t border-(--color-border)' : ''
+                      }`}
+                      aria-label={`Use prompt: ${prompt}`}
+                    >
+                      <span className="min-w-0 flex-1">{prompt}</span>
+                      <ArrowUpRight
+                        size={13}
+                        className="shrink-0 opacity-50 transition-opacity group-hover:opacity-100"
+                        aria-hidden="true"
+                      />
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           }
@@ -128,9 +154,12 @@ export function SideChatPanel({
 
         {/* Error display */}
         {error && (
-          <div className="flex items-center gap-2 border-t border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
-            <AlertCircle size={12} />
-            <span>{error}</span>
+          <div
+            role="alert"
+            className="flex items-start gap-2 border-t border-(--color-error)/30 bg-(--color-error-subtle) px-3 py-2 text-xs text-(--color-error)"
+          >
+            <AlertCircle size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
+            <span className="min-w-0 break-words">{error}</span>
           </div>
         )}
 
@@ -147,7 +176,7 @@ export function SideChatPanel({
                 </p>
                 <button
                   type="button"
-                  onClick={() => setClearedQuote(quote)}
+                  onClick={onQuoteConsumed}
                   className="shrink-0 rounded-xs p-0.5 text-(--color-text-muted) transition-colors hover:text-(--color-text)"
                   aria-label="Remove quote"
                   title="Remove quote"
@@ -162,6 +191,7 @@ export function SideChatPanel({
             onSubmit={(message) => void handleSend(message)}
             onStop={onStop}
             isStreaming={isWorking}
+            attachmentsEnabled={false}
             placeholder="Ask a question about the main session…"
             autoFocus
           />
