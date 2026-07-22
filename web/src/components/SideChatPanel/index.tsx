@@ -21,9 +21,11 @@ interface SideChatPanelProps {
   mainSessionId: string
   isOpen: boolean
   onClose: () => void
+  /** When provided the input is pre-filled with a quoted version of this text. */
+  initialQuote?: string | null
 }
 
-export function SideChatPanel({ mainSessionId, isOpen, onClose }: SideChatPanelProps) {
+export function SideChatPanel({ mainSessionId, isOpen, onClose, initialQuote = null }: SideChatPanelProps) {
   const {
     messages,
     isWorking,
@@ -34,6 +36,16 @@ export function SideChatPanel({ mainSessionId, isOpen, onClose }: SideChatPanelP
   const [inputValue, setInputValue] = useState('')
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  // When a quote is provided (e.g. from text selection in the main chat),
+  // pre-fill the input with the quoted text and focus it.
+  useEffect(() => {
+    if (initialQuote) {
+      setInputValue(`> ${initialQuote}\n\n`)
+      // Focus after React re-renders the textarea.
+      requestAnimationFrame(() => inputRef.current?.focus())
+    }
+  }, [initialQuote])
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
