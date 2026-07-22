@@ -221,6 +221,11 @@ class WebBridgeManager:
             return None
 
         host = _host_of(url)
+        if not host and (pol.allowed_domains or pol.blocked_domains):
+            return (
+                "WebBridge domain policy is active but the target page URL "
+                "is unknown. Refresh the browser tab state and try again."
+            )
         if host and _domain_matches(host, pol.blocked_domains):
             return f"Domain '{host}' is blocked by WebBridge policy."
         if pol.allowed_domains:
@@ -235,6 +240,23 @@ class WebBridgeManager:
                     f"({', '.join(pol.allowed_domains)})."
                 )
         return None
+
+    @staticmethod
+    def _effective_url(
+        ext: ExtensionConnection, action: str, params: dict[str, Any]
+    ) -> str:
+        """Resolve the URL a command will affect for policy enforcement."""
+        if action in _TARGET_URL_ACTIONS:
+            return str(params.get("url", ""))
+
+        tab_id = params.get("tab_id")
+        if tab_id is not None:
+            for tab in ext.tabs:
+                if tab.get("id") == tab_id:
+                    return str(tab.get("url", ""))
+            return ""
+
+        return ext.current_url
 
     # ── Audit ───────────────────────────────────────────────────────────
 
@@ -307,7 +329,9 @@ class WebBridgeManager:
                 continue
             self._pending.pop(request_id, None)
             if not fut.done():
-                fut.set_result({"success": False, "data": None, "error": "extension disconnected"})
+                fut.set_result(
+                    {"success": False, "data": None, "error": "extension disconnected"}
+                )
         # Drop sessions pinned to this extension so they rebind to a live one.
         for sid, eid in list(self._session_targets.items()):
             if eid == extension_id:
@@ -464,11 +488,7 @@ class WebBridgeManager:
         # Guardrail check before anything reaches the browser. The policy is
         # an in-memory read (reload_policy refreshes it off the request path),
         # so this adds no I/O or await between receiving and forwarding.
-        effective_url = (
-            str(params.get("url", ""))
-            if action in _TARGET_URL_ACTIONS
-            else ext.current_url
-        )
+        effective_url = self._effective_url(ext, action, params)
         refusal = self.check_policy(action, params, effective_url)
         if refusal is not None:
             self._record_audit(
@@ -479,7 +499,9 @@ class WebBridgeManager:
                 success=False,
                 error=refusal,
             )
-            logger.warning("webbridge_policy_refused action={} url={}", action, effective_url)
+            logger.warning(
+                "webbridge_policy_refused action={} url={}", action, effective_url
+            )
             return {"success": False, "data": None, "error": refusal}
 
         result = await self._dispatch(ext, action, params, timeout)
@@ -568,11 +590,7 @@ class WebBridgeManager:
     def cleanup_stale(self, now: float | None = None) -> list[str]:
         """Drop extensions past the idle timeout; returns removed ids."""
         now = time.time() if now is None else now
-        stale = [
-            eid
-            for eid, ext in self._extensions.items()
-            if not ext.is_active(now)
-        ]
+        stale = [eid for eid, ext in self._extensions.items() if not ext.is_active(now)]
         for eid in stale:
             self.unregister_extension(eid)
             logger.info("webbridge_ext_timeout extension_id={}", eid)

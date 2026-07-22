@@ -127,6 +127,9 @@ function disconnect() {
     ws = null;
   }
   connected = false;
+  detachAllDebuggers().catch((e) => {
+    console.warn("[WebBridge] Failed to release browser control:", e.message);
+  });
 }
 
 // Exponential backoff with jitter, capped — avoids hammering the relay (and
@@ -239,6 +242,9 @@ async function handleCommand(msg) {
       case "wait_for_selector":
         result = await cmdWaitForSelector(params);
         break;
+      case "wait_for_text":
+        result = await cmdWaitForText(params);
+        break;
       case "wait_for_load":
         result = await cmdWaitForLoad(params);
         break;
@@ -250,6 +256,21 @@ async function handleCommand(msg) {
         break;
       case "click_text":
         result = await cmdClickText(params);
+        break;
+      case "hover":
+        result = await cmdHover(params);
+        break;
+      case "focus":
+        result = await cmdFocus(params);
+        break;
+      case "select_option":
+        result = await cmdSelectOption(params);
+        break;
+      case "set_checked":
+        result = await cmdSetChecked(params);
+        break;
+      case "drag":
+        result = await cmdDrag(params);
         break;
       case "fill":
         result = await cmdFill(params);
@@ -377,6 +398,12 @@ async function detachDebugger(tabId) {
   });
 }
 
+async function detachAllDebuggers() {
+  const tabIds = [...attachedTabs.keys()];
+  await Promise.all(tabIds.map((tabId) => detachDebugger(tabId)));
+  return tabIds;
+}
+
 function sendCommandOnce(tabId, method, params) {
   return new Promise((resolve, reject) => {
     chrome.debugger.sendCommand({ tabId }, method, params, (result) => {
@@ -447,55 +474,70 @@ chrome.debugger.onDetach.addListener((source) => {
 chrome.tabs.onRemoved.addListener((tabId) => {
   attachedTabs.delete(tabId);
   networkInflight.delete(tabId);
+  broadcastTabInfo();
 });
 
 // ── Command implementations ──────────────────────────────────────────────────
 
 async function cmdNavigate(params) {
   const tab = await resolveTab(params);
-
-  await chrome.tabs.update(tab.id, { url: params.url });
-
-  // Wait for navigation to complete
-  return new Promise((resolve) => {
-    const listener = (tabId, changeInfo) => {
+  let timeoutId = null;
+  let listener = null;
+  const completed = new Promise((resolve) => {
+    listener = (tabId, changeInfo) => {
       if (tabId === tab.id && changeInfo.status === "complete") {
         chrome.tabs.onUpdated.removeListener(listener);
-        resolve({ success: true, url: params.url });
+        if (timeoutId) clearTimeout(timeoutId);
+        resolve(true);
       }
     };
     chrome.tabs.onUpdated.addListener(listener);
-
-    // Timeout after 30s
-    setTimeout(() => {
+    timeoutId = setTimeout(() => {
       chrome.tabs.onUpdated.removeListener(listener);
-      resolve({ success: true, url: params.url });
+      resolve(false);
     }, 30000);
   });
+
+  try {
+    await chrome.tabs.update(tab.id, { url: params.url });
+  } catch (e) {
+    if (listener) chrome.tabs.onUpdated.removeListener(listener);
+    if (timeoutId) clearTimeout(timeoutId);
+    throw e;
+  }
+  const loaded = await completed;
+  await broadcastTabInfo();
+  const current = await chrome.tabs.get(tab.id);
+  return {
+    success: true,
+    url: current.url || current.pendingUrl || params.url,
+    timed_out: !loaded,
+  };
 }
 
 async function cmdClick(params) {
   const tab = await resolveTab(params);
 
   const { x, y, button = "left" } = params;
+  const resolvedButton = ["left", "middle", "right"].includes(button) ? button : "left";
 
   // Use CDP Input.dispatchMouseEvent
   await cdpSend(tab.id, "Input.dispatchMouseEvent", {
     type: "mousePressed",
     x,
     y,
-    button: button === "right" ? "right" : "left",
+    button: resolvedButton,
     clickCount: 1,
   });
   await cdpSend(tab.id, "Input.dispatchMouseEvent", {
     type: "mouseReleased",
     x,
     y,
-    button: button === "right" ? "right" : "left",
+    button: resolvedButton,
     clickCount: 1,
   });
 
-  return { success: true, x, y };
+  return { success: true, x, y, button: resolvedButton };
 }
 
 async function cmdDblClick(params) {
@@ -538,7 +580,7 @@ async function cmdType(params) {
 async function cmdKey(params) {
   const tab = await resolveTab(params);
 
-  const { key } = params;
+  const { key, modifiers = [] } = params;
 
   // Map common key names to CDP key values
   const keyMap = {
@@ -555,20 +597,36 @@ async function cmdKey(params) {
     "End": { key: "End", code: "End", windowsVirtualKeyCode: 35 },
     "PageUp": { key: "PageUp", code: "PageUp", windowsVirtualKeyCode: 33 },
     "PageDown": { key: "PageDown", code: "PageDown", windowsVirtualKeyCode: 34 },
+    "Space": { key: " ", code: "Space", windowsVirtualKeyCode: 32 },
   };
 
-  const mapped = keyMap[key] || { key, code: key };
+  let mapped = keyMap[key];
+  if (!mapped && typeof key === "string" && key.length === 1) {
+    const upper = key.toUpperCase();
+    mapped = {
+      key,
+      code: /^[a-z]$/i.test(key) ? `Key${upper}` : key,
+      windowsVirtualKeyCode: upper.charCodeAt(0),
+    };
+  }
+  mapped ||= { key, code: key };
+
+  const modifierBits = { Alt: 1, Control: 2, Meta: 4, Shift: 8 };
+  const modifierMask = [...new Set(modifiers)]
+    .reduce((mask, modifier) => mask | (modifierBits[modifier] || 0), 0);
 
   await cdpSend(tab.id, "Input.dispatchKeyEvent", {
     type: "keyDown",
     ...mapped,
+    modifiers: modifierMask,
   });
   await cdpSend(tab.id, "Input.dispatchKeyEvent", {
     type: "keyUp",
     ...mapped,
+    modifiers: modifierMask,
   });
 
-  return { success: true, key };
+  return { success: true, key, modifiers };
 }
 
 async function cmdScroll(params) {
@@ -792,13 +850,7 @@ async function cmdGetTabs() {
   const tabs = await chrome.tabs.query({});
   return {
     success: true,
-    tabs: tabs.map((t, i) => ({
-      index: i,
-      id: t.id,
-      url: t.url || "",
-      title: t.title || "",
-      active: t.active,
-    })),
+    tabs: tabs.map(tabSummary),
   };
 }
 
@@ -810,6 +862,7 @@ async function cmdSwitchTab(params) {
   if (id != null) {
     await chrome.tabs.update(id, { active: true });
     await chrome.windows.update((await chrome.tabs.get(id)).windowId, { focused: true });
+    await broadcastTabInfo();
     return { success: true, tab_id: id };
   }
 
@@ -817,6 +870,7 @@ async function cmdSwitchTab(params) {
   if (index >= 0 && index < tabs.length) {
     await chrome.tabs.update(tabs[index].id, { active: true });
     await chrome.windows.update(tabs[index].windowId, { focused: true });
+    await broadcastTabInfo();
     return { success: true, tab_id: tabs[index].id };
   }
 
@@ -827,6 +881,7 @@ async function cmdOpenTab(params) {
   const { url, active = true } = params;
   if (!url) throw new Error("open_tab requires a url");
   const tab = await chrome.tabs.create({ url, active });
+  await broadcastTabInfo();
   return { success: true, tab_id: tab.id, url };
 }
 
@@ -840,6 +895,7 @@ async function cmdCloseTab(params) {
     tabId = tabs[index].id;
   }
   await chrome.tabs.remove(tabId);
+  await broadcastTabInfo();
   return { success: true, tab_id: tabId };
 }
 
@@ -854,6 +910,11 @@ async function cmdEvaluate(params) {
     awaitPromise: true,
   });
 
+  if (result.exceptionDetails) {
+    const ex = result.exceptionDetails;
+    throw new Error(ex.exception?.description || ex.text || "Script error");
+  }
+
   return {
     success: true,
     value: result.result?.value,
@@ -865,18 +926,21 @@ async function cmdEvaluate(params) {
 async function cmdBack(params) {
   const tab = await resolveTab(params);
   await chrome.tabs.goBack(tab.id);
+  await broadcastTabInfo();
   return { success: true };
 }
 
 async function cmdForward(params) {
   const tab = await resolveTab(params);
   await chrome.tabs.goForward(tab.id);
+  await broadcastTabInfo();
   return { success: true };
 }
 
 async function cmdReload(params) {
   const tab = await resolveTab(params);
   await chrome.tabs.reload(tab.id);
+  await broadcastTabInfo();
   return { success: true };
 }
 
@@ -954,6 +1018,51 @@ async function cmdWaitForSelector(params) {
   throw new Error(`Timed out after ${timeout_ms}ms waiting for ${selector} to be ${state}`);
 }
 
+async function cmdWaitForText(params) {
+  const tab = await resolveTab(params);
+  const { text, selector = null, state = "visible", exact = false } = params || {};
+  if (!text) throw new Error("wait_for_text requires text");
+  const timeoutMs = Math.max(100, Math.min(60000, Number(params?.timeout_ms) || 10000));
+  const needle = JSON.stringify(String(text).replace(/\s+/g, " ").trim());
+  const sel = selector ? JSON.stringify(selector) : "null";
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const found = await evalInPage(
+      tab.id,
+      `(() => {
+        const needle = ${needle}, selector = ${sel}, exact = ${exact ? "true" : "false"};
+        const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
+        const visible = (el) => {
+          const rect = el.getBoundingClientRect();
+          const style = getComputedStyle(el);
+          return rect.width > 0 && rect.height > 0 && style.display !== "none" &&
+            style.visibility !== "hidden" && style.opacity !== "0";
+        };
+        if (selector) {
+          const root = document.querySelector(selector);
+          if (!root || !visible(root)) return false;
+          const value = normalize(root.innerText || root.textContent);
+          return exact ? value === needle : value.includes(needle);
+        }
+        if (!exact) {
+          const value = normalize((document.body || document.documentElement).innerText);
+          return value.includes(needle);
+        }
+        for (const el of document.querySelectorAll("body *")) {
+          if (visible(el) && normalize(el.innerText || el.textContent) === needle) return true;
+        }
+        return false;
+      })()`
+    );
+    if ((state === "hidden" && !found) || (state !== "hidden" && found)) {
+      return { success: true, text, state };
+    }
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+  throw new Error(`Timed out after ${timeoutMs}ms waiting for text ${JSON.stringify(text)} to be ${state}`);
+}
+
 // Scroll the matched element into view and return its viewport-relative CSS
 // centre (matching the clip=scale-1 screenshot coordinate space).
 async function elementCenter(tabId, expr) {
@@ -1011,6 +1120,201 @@ async function cmdClickText(params) {
   return { success: true, text, x: center.x, y: center.y };
 }
 
+async function cmdHover(params) {
+  const tab = await resolveTab(params);
+  const { selector, index = 0 } = params || {};
+  if (!selector) throw new Error("hover requires a selector");
+  const sel = JSON.stringify(selector);
+  const itemIndex = Math.max(0, Number(index) || 0);
+  const center = await elementCenter(tab.id, `document.querySelectorAll(${sel})[${itemIndex}]`);
+  if (!center) throw new Error(`No visible element for selector ${selector} (index ${index})`);
+  await cdpSend(tab.id, "Input.dispatchMouseEvent", {
+    type: "mouseMoved",
+    x: center.x,
+    y: center.y,
+  });
+  return { success: true, selector, x: center.x, y: center.y };
+}
+
+async function cmdFocus(params) {
+  const tab = await resolveTab(params);
+  const { selector, index = 0 } = params || {};
+  if (!selector) throw new Error("focus requires a selector");
+  const sel = JSON.stringify(selector);
+  const itemIndex = Math.max(0, Number(index) || 0);
+  const focused = await evalInPage(
+    tab.id,
+    `(() => {
+      const el = document.querySelectorAll(${sel})[${itemIndex}];
+      if (!el || typeof el.focus !== "function") return false;
+      el.scrollIntoView({ block: "center", inline: "center" });
+      el.focus();
+      return document.activeElement === el;
+    })()`
+  );
+  if (!focused) throw new Error(`Element ${selector} (index ${index}) could not be focused`);
+  return { success: true, selector, index: itemIndex };
+}
+
+async function cmdSelectOption(params) {
+  const tab = await resolveTab(params);
+  const { selector, values, match = "value" } = params || {};
+  if (!selector) throw new Error("select_option requires a selector");
+  if (!Array.isArray(values) || values.length === 0) {
+    throw new Error("select_option requires at least one value");
+  }
+  const sel = JSON.stringify(selector);
+  const requested = JSON.stringify(values.map(String));
+  const matchBy = match === "label" ? "label" : "value";
+  const result = await evalInPage(
+    tab.id,
+    `(() => {
+      const el = document.querySelector(${sel});
+      const requested = ${requested};
+      const matchBy = ${JSON.stringify(matchBy)};
+      if (!(el instanceof HTMLSelectElement)) return { error: "selector did not match a select element" };
+      if (!el.multiple && requested.length > 1) return { error: "select is not multiple" };
+      const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
+      const wanted = new Set(requested.map((value) => matchBy === "label" ? normalize(value) : value));
+      const matches = [...el.options].filter((option) => wanted.has(
+        matchBy === "label" ? normalize(option.label || option.textContent) : option.value
+      ));
+      const found = new Set(matches.map((option) =>
+        matchBy === "label" ? normalize(option.label || option.textContent) : option.value
+      ));
+      const missing = [...wanted].filter((value) => !found.has(value));
+      if (missing.length) return { error: "option(s) not found: " + missing.join(", ") };
+      const selectedSet = new Set(matches);
+      for (const option of el.options) option.selected = selectedSet.has(option);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      return {
+        selected: [...el.selectedOptions].map((option) => ({
+          value: option.value,
+          label: normalize(option.label || option.textContent),
+          index: option.index,
+        })),
+      };
+    })()`
+  );
+  if (result?.error) throw new Error(result.error);
+  return { success: true, selector, selected: result?.selected || [] };
+}
+
+async function checkedElementState(tabId, expression) {
+  return evalInPage(
+    tabId,
+    `(() => {
+      const el = ${expression};
+      if (!el) return { exists: false };
+      const role = el.getAttribute("role");
+      const inputType = el instanceof HTMLInputElement ? el.type : "";
+      const native = inputType === "checkbox" || inputType === "radio";
+      const aria = ["checkbox", "radio", "switch", "menuitemcheckbox", "menuitemradio"].includes(role);
+      if (!native && !aria) return { exists: true, supported: false };
+      const checked = native ? el.checked : el.getAttribute("aria-checked") === "true";
+      const disabled = Boolean(el.disabled) || el.getAttribute("aria-disabled") === "true";
+      return { exists: true, supported: true, checked, disabled };
+    })()`
+  );
+}
+
+async function cmdSetChecked(params) {
+  const tab = await resolveTab(params);
+  const { selector, checked, index = 0 } = params || {};
+  if (!selector) throw new Error("set_checked requires a selector");
+  if (typeof checked !== "boolean") throw new Error("set_checked requires a boolean checked value");
+  const sel = JSON.stringify(selector);
+  const itemIndex = Math.max(0, Number(index) || 0);
+  const expression = `document.querySelectorAll(${sel})[${itemIndex}]`;
+  const before = await checkedElementState(tab.id, expression);
+  if (!before?.exists) throw new Error(`No element for selector ${selector} (index ${index})`);
+  if (!before.supported) throw new Error("Element is not a checkbox, radio, switch, or ARIA toggle");
+  if (before.disabled) throw new Error("Element is disabled");
+  if (before.checked === checked) {
+    return { success: true, selector, checked, changed: false };
+  }
+
+  const center = await elementCenter(tab.id, expression);
+  if (!center) throw new Error(`Element ${selector} is not visible`);
+  await clickAt(tab.id, center.x, center.y);
+
+  let after = null;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    after = await checkedElementState(tab.id, expression);
+    if (after?.checked === checked) break;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  if (after?.checked !== checked) {
+    throw new Error(`Element remained checked=${after?.checked}; requested checked=${checked}`);
+  }
+  return { success: true, selector, checked, changed: true };
+}
+
+async function cmdDrag(params) {
+  const tab = await resolveTab(params);
+  const {
+    source_selector,
+    target_selector,
+    source_index = 0,
+    target_index = 0,
+    steps = 10,
+  } = params || {};
+  if (!source_selector || !target_selector) {
+    throw new Error("drag requires source_selector and target_selector");
+  }
+  const sourceSel = JSON.stringify(source_selector);
+  const targetSel = JSON.stringify(target_selector);
+  const sourceIndex = Math.max(0, Number(source_index) || 0);
+  const targetIndex = Math.max(0, Number(target_index) || 0);
+  const points = await evalInPage(
+    tab.id,
+    `(() => {
+      const source = document.querySelectorAll(${sourceSel})[${sourceIndex}];
+      const target = document.querySelectorAll(${targetSel})[${targetIndex}];
+      if (!source || !target) return { error: "source or target element not found" };
+      source.scrollIntoView({ block: "center", inline: "center" });
+      const point = (el) => {
+        const rect = el.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return null;
+        const x = rect.left + rect.width / 2, y = rect.top + rect.height / 2;
+        if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) return null;
+        return { x, y };
+      };
+      const from = point(source), to = point(target);
+      if (!from || !to) return { error: "source and target must both be visible in the viewport" };
+      return { from, to };
+    })()`
+  );
+  if (points?.error) throw new Error(points.error);
+
+  const moveSteps = Math.max(2, Math.min(50, Number(steps) || 10));
+  let current = points.from;
+  await cdpSend(tab.id, "Input.dispatchMouseEvent", {
+    type: "mouseMoved", x: current.x, y: current.y,
+  });
+  await cdpSend(tab.id, "Input.dispatchMouseEvent", {
+    type: "mousePressed", x: current.x, y: current.y, button: "left", buttons: 1, clickCount: 1,
+  });
+  try {
+    for (let step = 1; step <= moveSteps; step++) {
+      current = {
+        x: points.from.x + (points.to.x - points.from.x) * step / moveSteps,
+        y: points.from.y + (points.to.y - points.from.y) * step / moveSteps,
+      };
+      await cdpSend(tab.id, "Input.dispatchMouseEvent", {
+        type: "mouseMoved", x: current.x, y: current.y, button: "left", buttons: 1,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 16));
+    }
+  } finally {
+    await cdpSend(tab.id, "Input.dispatchMouseEvent", {
+      type: "mouseReleased", x: current.x, y: current.y, button: "left", buttons: 0, clickCount: 1,
+    });
+  }
+  return { success: true, source_selector, target_selector, from: points.from, to: points.to };
+}
+
 async function cmdFill(params) {
   const tab = await resolveTab(params);
   const { selector, value = "", clear = true, submit = false } = params || {};
@@ -1045,11 +1349,18 @@ async function cmdFill(params) {
 async function cmdSnapshot(params) {
   const tab = await resolveTab(params);
   const max = Math.max(1, Math.min(300, Number(params?.max_elements) || 80));
-  const elements = await evalInPage(
+  const snapshot = await evalInPage(
     tab.id,
     `(() => {
       const MAX = ${max};
-      const SEL = "a[href],button,input:not([type=hidden]),select,textarea,[role=button],[role=link],[role=tab],[role=menuitem],[role=checkbox],[role=radio],[contenteditable=true],[onclick]";
+      const SEL = [
+        "a[href]", "area[href]", "button", "input:not([type=hidden])", "select", "textarea", "summary",
+        "[role=button]", "[role=link]", "[role=tab]", "[role=menuitem]", "[role=menuitemcheckbox]",
+        "[role=menuitemradio]", "[role=checkbox]", "[role=radio]", "[role=switch]", "[role=combobox]",
+        "[role=listbox]", "[role=option]", "[role=slider]", "[role=spinbutton]", "[role=textbox]",
+        "[role=searchbox]", "[role=treeitem]", "[contenteditable=true]", "[tabindex]:not([tabindex='-1'])", "[onclick]",
+      ].join(",");
+      const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
       function cssPath(el) {
         if (el.id) return "#" + CSS.escape(el.id);
         const parts = [];
@@ -1067,26 +1378,98 @@ async function cmdSnapshot(params) {
         }
         return parts.join(" > ");
       }
+      function inferredRole(el) {
+        const explicit = el.getAttribute("role");
+        if (explicit) return explicit;
+        const tag = el.tagName.toLowerCase();
+        if (tag === "a" || tag === "area") return "link";
+        if (tag === "button" || tag === "summary") return "button";
+        if (tag === "textarea" || el.isContentEditable) return "textbox";
+        if (tag === "select") return el.multiple ? "listbox" : "combobox";
+        if (tag !== "input") return tag;
+        const inputRoles = {
+          button: "button", submit: "button", reset: "button", image: "button",
+          checkbox: "checkbox", radio: "radio", range: "slider", number: "spinbutton",
+          search: "searchbox",
+        };
+        return inputRoles[el.type] || "textbox";
+      }
+      function accessibleName(el) {
+        const aria = normalize(el.getAttribute("aria-label"));
+        if (aria) return aria;
+        const labelledBy = normalize(el.getAttribute("aria-labelledby"));
+        if (labelledBy) {
+          const value = normalize(labelledBy.split(/\\s+/).map((id) => document.getElementById(id)?.textContent).join(" "));
+          if (value) return value;
+        }
+        const labels = el.labels ? normalize([...el.labels].map((label) => label.innerText || label.textContent).join(" ")) : "";
+        if (labels) return labels;
+        return normalize(
+          el.getAttribute("alt") || el.getAttribute("title") || el.getAttribute("placeholder") ||
+          el.innerText || ((el.type === "button" || el.type === "submit") ? el.value : "")
+        );
+      }
+      function controlState(el) {
+        const state = {};
+        if ("disabled" in el || el.hasAttribute("aria-disabled")) {
+          state.disabled = Boolean(el.disabled) || el.getAttribute("aria-disabled") === "true";
+        }
+        if ("checked" in el || el.hasAttribute("aria-checked")) {
+          const aria = el.getAttribute("aria-checked");
+          state.checked = aria === "mixed" ? "mixed" : (aria ? aria === "true" : Boolean(el.checked));
+        }
+        if ("selected" in el || el.hasAttribute("aria-selected")) {
+          const aria = el.getAttribute("aria-selected");
+          state.selected = aria ? aria === "true" : Boolean(el.selected);
+        }
+        for (const key of ["expanded", "pressed"]) {
+          const value = el.getAttribute("aria-" + key);
+          if (value != null) state[key] = value === "mixed" ? "mixed" : value === "true";
+        }
+        if ("required" in el || el.hasAttribute("aria-required")) {
+          state.required = Boolean(el.required) || el.getAttribute("aria-required") === "true";
+        }
+        if ("readOnly" in el && el.readOnly) state.readonly = true;
+        return state;
+      }
       const out = [];
       for (const el of document.querySelectorAll(SEL)) {
         if (out.length >= MAX) break;
         const r = el.getBoundingClientRect();
         if (r.width === 0 || r.height === 0) continue;
         const s = getComputedStyle(el);
-        if (s.visibility === "hidden" || s.display === "none") continue;
-        const text = (el.innerText || el.value || el.getAttribute("aria-label") || el.getAttribute("placeholder") || "").trim().slice(0, 120);
+        if (s.visibility === "hidden" || s.display === "none" || s.opacity === "0") continue;
+        const isPassword = el instanceof HTMLInputElement && el.type === "password";
+        const text = normalize(el.innerText || (isPassword ? "" : el.value)).slice(0, 120);
+        const attributes = {};
+        if (el.type) attributes.type = el.type;
+        if (el.href) attributes.href = el.href;
+        if (el.getAttribute("placeholder")) attributes.placeholder = el.getAttribute("placeholder");
+        if (!isPassword && "value" in el && el.value) attributes.value = String(el.value).slice(0, 120);
         out.push({
-          role: el.getAttribute("role") || el.tagName.toLowerCase(),
+          role: inferredRole(el),
           text,
-          name: el.getAttribute("name") || el.id || "",
+          name: accessibleName(el).slice(0, 120),
           selector: cssPath(el),
+          state: controlState(el),
+          attributes,
           box: { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), w: Math.round(r.width), h: Math.round(r.height) },
         });
       }
-      return out;
+      return {
+        url: location.href,
+        title: document.title,
+        viewport: {
+          width: innerWidth,
+          height: innerHeight,
+          scrollX: Math.round(scrollX),
+          scrollY: Math.round(scrollY),
+        },
+        elements: out,
+      };
     })()`
   );
-  return { success: true, elements: elements || [] };
+  return { success: true, ...(snapshot || {}), elements: snapshot?.elements || [] };
 }
 
 async function cmdStatus() {
@@ -1104,33 +1487,59 @@ async function cmdStatus() {
 
 // ── Tab info broadcasting ────────────────────────────────────────────────────
 
-function broadcastTabInfo() {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+function tabSummary(tab, index) {
+  return {
+    index,
+    id: tab.id,
+    window_id: tab.windowId,
+    url: tab.url || tab.pendingUrl || "",
+    title: tab.title || "",
+    active: tab.active,
+    pinned: tab.pinned,
+  };
+}
 
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    const tab = tabs[0];
-    if (!tab) return;
+async function broadcastTabInfo() {
+  const sock = ws;
+  if (!sock || sock.readyState !== WebSocket.OPEN) return;
 
-    ws.send(JSON.stringify({
+  try {
+    const [activeTabs, tabs] = await Promise.all([
+      chrome.tabs.query({ active: true, currentWindow: true }),
+      chrome.tabs.query({}),
+    ]);
+    if (ws !== sock || sock.readyState !== WebSocket.OPEN) return;
+    const activeTab = activeTabs[0] || null;
+    sock.send(JSON.stringify({
       type: "event",
       event: "tab_updated",
       data: {
-        url: tab.url || "",
-        title: tab.title || "",
-        tabs: [], // Will be filled by get_tabs command
+        url: activeTab?.url || activeTab?.pendingUrl || "",
+        title: activeTab?.title || "",
+        tabs: tabs.map(tabSummary),
       },
     }));
-  });
+  } catch (e) {
+    console.warn("[WebBridge] Failed to broadcast tab state:", e.message);
+  }
 }
 
-// Listen for tab changes and broadcast
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (tab.active && changeInfo.status === "complete") {
+// Keep backend policy/status accurate for both active and background tabs.
+chrome.tabs.onUpdated.addListener((_tabId, changeInfo) => {
+  if (changeInfo.url || changeInfo.title || changeInfo.status === "complete") {
     broadcastTabInfo();
   }
 });
 
 chrome.tabs.onActivated.addListener(() => {
+  broadcastTabInfo();
+});
+
+chrome.tabs.onCreated.addListener(() => {
+  broadcastTabInfo();
+});
+
+chrome.tabs.onMoved.addListener(() => {
   broadcastTabInfo();
 });
 
@@ -1143,6 +1552,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         connected: connected,
         extension_id: extensionId,
         active_tab: tabs[0] ? { url: tabs[0].url, title: tabs[0].title } : null,
+        attached_tab_ids: [...attachedTabs.keys()],
         last_close_reason: lastCloseReason,
         relay_base: relayBase,
       });
@@ -1170,6 +1580,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       connect();
     })();
     sendResponse({ ok: true });
+    return true;
+  }
+
+  if (msg.type === "release_debuggers") {
+    (async () => {
+      try {
+        const released = await detachAllDebuggers();
+        sendResponse({ ok: true, released });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
     return true;
   }
 });

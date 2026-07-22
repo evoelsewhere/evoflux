@@ -11,11 +11,13 @@ import asyncio
 import base64
 import io
 import json
+import re
 import shutil
 import subprocess
 import sys
 import time
 import zipfile
+from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
@@ -36,6 +38,25 @@ _ACTION = TypeAdapter(AnyAction)
 def _action(payload: dict):
     """Build an action model the way the LLM-facing schema would."""
     return _ACTION.validate_python(payload)
+
+
+def test_tool_and_extension_action_contracts_match():
+    background = (
+        Path(__file__).resolve().parents[2]
+        / "extensions"
+        / "webbridge"
+        / "background.js"
+    ).read_text(encoding="utf-8")
+    command_switch = background[
+        background.index("async function handleCommand") : background.index(
+            "function sendResponse"
+        )
+    ]
+    extension_actions = set(re.findall(r'case "([a-z_]+)":', command_switch))
+    tool_actions = set(_ACTION.json_schema()["discriminator"]["mapping"])
+
+    # crawl is a backend orchestration action composed from extension commands.
+    assert tool_actions - {"crawl"} == extension_actions
 
 
 @pytest.fixture
@@ -123,7 +144,9 @@ def test_command_roundtrip_agent_ws(client: TestClient):
         with client.websocket_connect(f"{_PREFIX}/relay") as ext_ws:
             _register(ext_ws)
 
-            agent_ws.send_text(json.dumps({"action": "navigate", "url": "https://x.dev"}))
+            agent_ws.send_text(
+                json.dumps({"action": "navigate", "url": "https://x.dev"})
+            )
             command = json.loads(ext_ws.receive_text())
             assert command["type"] == "command"
             assert command["action"] == "navigate"
@@ -189,7 +212,9 @@ def test_extension_disconnect_fails_pending_command(client: TestClient):
     with client.websocket_connect(f"{_PREFIX}/agent/s1") as agent_ws:
         with client.websocket_connect(f"{_PREFIX}/relay") as ext_ws:
             _register(ext_ws)
-            agent_ws.send_text(json.dumps({"action": "navigate", "url": "https://x.dev"}))
+            agent_ws.send_text(
+                json.dumps({"action": "navigate", "url": "https://x.dev"})
+            )
             assert json.loads(ext_ws.receive_text())["type"] == "command"
         # Extension socket closed while the command is still pending.
         response = json.loads(agent_ws.receive_text())
@@ -230,7 +255,9 @@ async def test_manager_send_command_roundtrip(manager: WebBridgeManager):
         extension_id="e1", browser="chrome", version="1", send=fake_send
     )
 
-    task = asyncio.create_task(manager.send_command("sess", "navigate", {"url": "https://x"}))
+    task = asyncio.create_task(
+        manager.send_command("sess", "navigate", {"url": "https://x"})
+    )
     await asyncio.sleep(0)
 
     command = json.loads(sent[0])
@@ -330,7 +357,9 @@ def test_ws_rejected_without_token(client: TestClient, monkeypatch: pytest.Monke
         assert exc_info.value.code == 4401
 
 
-def test_ws_rejected_with_wrong_token(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+def test_ws_rejected_with_wrong_token(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
     monkeypatch.setenv("EVOFLUX_DESKTOP_TOKEN", "secret-token")
     with pytest.raises(WebSocketDisconnect) as exc_info:
         with client.websocket_connect(f"{_PREFIX}/relay?_token=nope"):
@@ -342,7 +371,9 @@ def test_ws_accepted_with_token(client: TestClient, monkeypatch: pytest.MonkeyPa
     monkeypatch.setenv("EVOFLUX_DESKTOP_TOKEN", "secret-token")
     with client.websocket_connect(f"{_PREFIX}/relay?_token=secret-token") as ws:
         assert _register(ws)["type"] == "registered"
-    with client.websocket_connect(f"{_PREFIX}/agent/s1?_token=secret-token") as agent_ws:
+    with client.websocket_connect(
+        f"{_PREFIX}/agent/s1?_token=secret-token"
+    ) as agent_ws:
         agent_ws.send_text(json.dumps({"action": "status"}))
         msg = json.loads(agent_ws.receive_text())
         assert msg["type"] == "response"
@@ -359,7 +390,9 @@ def test_ws_open_when_no_token_configured(client: TestClient):
 
 
 def _stub_send(monkeypatch: pytest.MonkeyPatch, manager: WebBridgeManager, handler):
-    async def fake_send_command(session_id: str, action: str, params: dict | None = None):
+    async def fake_send_command(
+        session_id: str, action: str, params: dict | None = None
+    ):
         return handler(action, params or {})
 
     monkeypatch.setattr(manager, "send_command", fake_send_command)
@@ -392,7 +425,9 @@ async def test_tool_navigate_success_text(
         return {"success": True, "data": {}, "error": None}
 
     _stub_send(monkeypatch, manager, handler)
-    result = await webbridge(actions=[_action({"action": "navigate", "url": "https://example.com"})])
+    result = await webbridge(
+        actions=[_action({"action": "navigate", "url": "https://example.com"})]
+    )
     assert result == "Navigated to https://example.com"
     assert seen == [("navigate", {"url": "https://example.com"})]
 
@@ -432,7 +467,10 @@ async def test_tool_aggregates_action_errors(
 
     _stub_send(monkeypatch, manager, handler)
     result = await webbridge(
-        actions=[_action({"action": "click", "x": 10, "y": 20}), _action({"action": "type", "text": "abc"})]
+        actions=[
+            _action({"action": "click", "x": 10, "y": 20}),
+            _action({"action": "type", "text": "abc"}),
+        ]
     )
     assert isinstance(result, str)
     assert "Click failed: boom" in result
@@ -473,12 +511,16 @@ async def test_session_sticks_to_first_extension(manager: WebBridgeManager):
     s2 = _recorder_ext(manager, "e2")  # e2 registered last → currently "active"
 
     # First command binds session "sess" to the active extension (e2).
-    await _run(manager, lambda: manager.send_command("sess", "click", {"x": 1, "y": 2}), s2)
+    await _run(
+        manager, lambda: manager.send_command("sess", "click", {"x": 1, "y": 2}), s2
+    )
     assert len(s2) == 1 and len(s1) == 0
 
     # Make e1 look most-recently-seen; the session must still target e2.
     manager.get_extension("e1").last_seen = time.time() + 100
-    await _run(manager, lambda: manager.send_command("sess", "click", {"x": 3, "y": 4}), s2)
+    await _run(
+        manager, lambda: manager.send_command("sess", "click", {"x": 3, "y": 4}), s2
+    )
     assert len(s2) == 2 and len(s1) == 0
 
 
@@ -488,7 +530,9 @@ async def test_explicit_extension_id_overrides_binding(manager: WebBridgeManager
 
     await _run(
         manager,
-        lambda: manager.send_command("sess", "click", {"x": 1, "y": 2}, extension_id="e1"),
+        lambda: manager.send_command(
+            "sess", "click", {"x": 1, "y": 2}, extension_id="e1"
+        ),
         s1,
     )
     assert len(s1) == 1 and len(s2) == 0
@@ -547,7 +591,9 @@ async def test_policy_blocks_navigate_to_blocked_domain(
 ):
     _set_policy(manager, blocked_domains=["evil.com"])
     _recorder_ext(manager, "e1")
-    result = await manager.send_command("sess", "navigate", {"url": "https://sub.evil.com/x"})
+    result = await manager.send_command(
+        "sess", "navigate", {"url": "https://sub.evil.com/x"}
+    )
     assert result["success"] is False
     assert "blocked" in result["error"].lower()
 
@@ -557,12 +603,18 @@ async def test_policy_allowlist_refuses_other_domains(
 ):
     _set_policy(manager, allowed_domains=["example.com"])
     sent = _recorder_ext(manager, "e1")
-    refused = await manager.send_command("sess", "navigate", {"url": "https://other.com"})
+    refused = await manager.send_command(
+        "sess", "navigate", {"url": "https://other.com"}
+    )
     assert refused["success"] is False and "allowlist" in refused["error"].lower()
     assert sent == []  # never reached the extension
 
     ok = await _run(
-        manager, lambda: manager.send_command("sess", "navigate", {"url": "https://example.com/p"}), sent
+        manager,
+        lambda: manager.send_command(
+            "sess", "navigate", {"url": "https://example.com/p"}
+        ),
+        sent,
     )
     assert ok["success"] is True
 
@@ -575,6 +627,46 @@ async def test_policy_gates_page_action_by_current_url(
     manager.get_extension("e1").current_url = "https://evil.com/dashboard"
     result = await manager.send_command("sess", "click", {"x": 1, "y": 2})
     assert result["success"] is False and "blocked" in result["error"].lower()
+
+
+async def test_policy_gates_page_action_by_target_tab_url(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    _set_policy(manager, blocked_domains=["evil.com"])
+    sent = _recorder_ext(manager, "e1")
+    conn = manager.get_extension("e1")
+    assert conn is not None
+    conn.current_url = "https://example.com/allowed-active-tab"
+    conn.tabs = [
+        {"id": 7, "url": "https://evil.com/private"},
+        {"id": 8, "url": "https://example.com/other"},
+    ]
+
+    result = await manager.send_command(
+        "sess", "extract", {"tab_id": 7, "format": "text"}
+    )
+
+    assert result["success"] is False
+    assert "evil.com" in result["error"]
+    assert sent == []
+
+
+async def test_policy_fails_closed_for_unknown_target_tab(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    _set_policy(manager, blocked_domains=["evil.com"])
+    sent = _recorder_ext(manager, "e1")
+    conn = manager.get_extension("e1")
+    assert conn is not None
+    conn.current_url = "https://example.com/allowed-active-tab"
+
+    result = await manager.send_command(
+        "sess", "click_selector", {"tab_id": 999, "selector": "button"}
+    )
+
+    assert result["success"] is False
+    assert "unknown" in result["error"].lower()
+    assert sent == []
 
 
 async def test_policy_disables_evaluate(
@@ -591,7 +683,9 @@ async def test_policy_disabled_refuses_all(
 ):
     _set_policy(manager, enabled=False)
     _recorder_ext(manager, "e1")
-    result = await manager.send_command("sess", "navigate", {"url": "https://example.com"})
+    result = await manager.send_command(
+        "sess", "navigate", {"url": "https://example.com"}
+    )
     assert result["success"] is False and "disabled" in result["error"].lower()
 
 
@@ -629,16 +723,30 @@ async def test_tool_snapshot_lists_elements(
         lambda action, params: {
             "success": True,
             "data": {
+                "title": "Account settings",
+                "url": "https://example.com/settings",
+                "viewport": {"width": 1280, "height": 720, "scrollX": 0, "scrollY": 40},
                 "elements": [
-                    {"role": "button", "text": "Sign in", "selector": "#login", "box": {"x": 100, "y": 40}},
-                ]
+                    {
+                        "role": "checkbox",
+                        "name": "Email alerts",
+                        "selector": "#alerts",
+                        "state": {"checked": False, "disabled": False},
+                        "attributes": {"type": "checkbox"},
+                        "box": {"x": 100, "y": 40},
+                    },
+                ],
             },
             "error": None,
         },
     )
     result = await webbridge(actions=[_action({"action": "snapshot"})])
     assert isinstance(result, str)
-    assert "Sign in" in result and "#login" in result and "@(100,40)" in result
+    assert "Page snapshot: Account settings" in result
+    assert "https://example.com/settings" in result
+    assert "1280x720 css-px at (0, 40)" in result
+    assert "Email alerts" in result and "#alerts" in result and "@(100,40)" in result
+    assert "checked=false" in result and "type='checkbox'" in result
 
 
 async def test_tool_click_selector_maps_params(
@@ -691,6 +799,117 @@ async def test_tool_fill_submit_and_tab_id(
     }
 
 
+async def test_tool_rich_interaction_actions_map_params(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    seen: list[tuple[str, dict]] = []
+
+    def handler(action: str, params: dict):
+        seen.append((action, params))
+        data = (
+            {"selected": [{"value": "vn", "label": "Vietnam", "index": 1}]}
+            if action == "select_option"
+            else {}
+        )
+        return {"success": True, "data": data, "error": None}
+
+    _stub_send(monkeypatch, manager, handler)
+    result = await webbridge(
+        actions=[
+            _action({"action": "hover", "selector": ".menu", "index": 1, "tab_id": 7}),
+            _action({"action": "focus", "selector": "#search", "tab_id": 7}),
+            _action(
+                {
+                    "action": "select_option",
+                    "selector": "#country",
+                    "values": ["Vietnam"],
+                    "match": "label",
+                    "tab_id": 7,
+                }
+            ),
+            _action(
+                {
+                    "action": "set_checked",
+                    "selector": "#terms",
+                    "checked": True,
+                    "tab_id": 7,
+                }
+            ),
+            _action(
+                {
+                    "action": "drag",
+                    "source_selector": "#card",
+                    "target_selector": "#done",
+                    "steps": 12,
+                    "tab_id": 7,
+                }
+            ),
+            _action(
+                {
+                    "action": "wait_for_text",
+                    "text": "Saved",
+                    "selector": "#toast",
+                    "exact": True,
+                    "tab_id": 7,
+                }
+            ),
+            _action(
+                {
+                    "action": "key",
+                    "key": "a",
+                    "modifiers": ["Meta", "Shift"],
+                    "tab_id": 7,
+                }
+            ),
+        ]
+    )
+
+    assert isinstance(result, str)
+    assert "Hovered '.menu'" in result
+    assert '"label": "Vietnam"' in result
+    assert "Meta+Shift+a" in result
+    assert seen == [
+        ("hover", {"selector": ".menu", "index": 1, "tab_id": 7}),
+        ("focus", {"selector": "#search", "index": 0, "tab_id": 7}),
+        (
+            "select_option",
+            {
+                "selector": "#country",
+                "values": ["Vietnam"],
+                "match": "label",
+                "tab_id": 7,
+            },
+        ),
+        (
+            "set_checked",
+            {"selector": "#terms", "checked": True, "index": 0, "tab_id": 7},
+        ),
+        (
+            "drag",
+            {
+                "source_selector": "#card",
+                "target_selector": "#done",
+                "source_index": 0,
+                "target_index": 0,
+                "steps": 12,
+                "tab_id": 7,
+            },
+        ),
+        (
+            "wait_for_text",
+            {
+                "text": "Saved",
+                "selector": "#toast",
+                "state": "visible",
+                "exact": True,
+                "timeout_ms": 10000,
+                "tab_id": 7,
+            },
+        ),
+        ("key", {"key": "a", "modifiers": ["Meta", "Shift"], "tab_id": 7}),
+    ]
+
+
 async def test_tool_open_and_close_tab(
     manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
 ):
@@ -710,13 +929,40 @@ async def test_tool_open_and_close_tab(
     assert "Closed tab" in result
 
 
+async def test_tool_switch_tab_accepts_id_without_index(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    seen: list[tuple[str, dict]] = []
+    _stub_send(
+        monkeypatch,
+        manager,
+        lambda action, params: (
+            seen.append((action, params))
+            or {"success": True, "data": {}, "error": None}
+        ),
+    )
+
+    result = await webbridge(actions=[_action({"action": "switch_tab", "id": 42})])
+
+    assert result == "Switched to tab id=42"
+    assert seen == [("switch_tab", {"id": 42})]
+
+
 async def test_tool_tab_id_omitted_when_unset(
     manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
 ):
     seen: list[tuple[str, dict]] = []
-    _stub_send(monkeypatch, manager, lambda a, p: seen.append((a, p)) or {"success": True, "data": {}, "error": None})
+    _stub_send(
+        monkeypatch,
+        manager,
+        lambda a, p: (
+            seen.append((a, p)) or {"success": True, "data": {}, "error": None}
+        ),
+    )
     await webbridge(actions=[_action({"action": "back"})])
-    assert seen == [("back", {})]  # tab_id omitted entirely when the model didn't set one
+    assert seen == [
+        ("back", {})
+    ]  # tab_id omitted entirely when the model didn't set one
 
     seen.clear()
     await webbridge(actions=[_action({"action": "extract"})])
@@ -734,11 +980,24 @@ async def test_tool_extract_markdown_maps_params(
 
     def handler(action: str, params: dict):
         seen.append((action, params))
-        return {"success": True, "data": {"title": "T", "url": "u", "content": "# Hi", "format": "markdown"}, "error": None}
+        return {
+            "success": True,
+            "data": {"title": "T", "url": "u", "content": "# Hi", "format": "markdown"},
+            "error": None,
+        }
 
     _stub_send(monkeypatch, manager, handler)
     result = await webbridge(
-        actions=[_action({"action": "extract", "format": "markdown", "selector": "article", "max_chars": 500})]
+        actions=[
+            _action(
+                {
+                    "action": "extract",
+                    "format": "markdown",
+                    "selector": "article",
+                    "max_chars": 500,
+                }
+            )
+        ]
     )
     assert seen[0][0] == "extract"
     assert seen[0][1] == {"format": "markdown", "selector": "article", "max_chars": 500}
@@ -754,13 +1013,26 @@ async def test_tool_extract_elements_returns_records(
         seen.append((action, params))
         return {
             "success": True,
-            "data": {"records": [{"title": "A", "url": "https://x/a"}, {"title": "B", "url": "https://x/b"}]},
+            "data": {
+                "records": [
+                    {"title": "A", "url": "https://x/a"},
+                    {"title": "B", "url": "https://x/b"},
+                ]
+            },
             "error": None,
         }
 
     _stub_send(monkeypatch, manager, handler)
     result = await webbridge(
-        actions=[_action({"action": "extract_elements", "selector": ".card", "fields": {"title": "h3", "url": "a@href"}})]
+        actions=[
+            _action(
+                {
+                    "action": "extract_elements",
+                    "selector": ".card",
+                    "fields": {"title": "h3", "url": "a@href"},
+                }
+            )
+        ]
     )
     assert seen[0][0] == "extract_elements"
     assert seen[0][1]["selector"] == ".card"
@@ -772,10 +1044,13 @@ async def test_tool_extract_elements_empty(
     manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
 ):
     _stub_send(
-        monkeypatch, manager,
+        monkeypatch,
+        manager,
         lambda a, p: {"success": True, "data": {"records": []}, "error": None},
     )
-    result = await webbridge(actions=[_action({"action": "extract_elements", "selector": ".none"})])
+    result = await webbridge(
+        actions=[_action({"action": "extract_elements", "selector": ".none"})]
+    )
     assert "No elements matched" in result
 
 
@@ -786,10 +1061,16 @@ async def test_tool_scroll_to_bottom(
 
     def handler(action: str, params: dict):
         seen.append((action, params))
-        return {"success": True, "data": {"scrolls": 3, "final_height": 4200, "at_bottom": True}, "error": None}
+        return {
+            "success": True,
+            "data": {"scrolls": 3, "final_height": 4200, "at_bottom": True},
+            "error": None,
+        }
 
     _stub_send(monkeypatch, manager, handler)
-    result = await webbridge(actions=[_action({"action": "scroll_to_bottom", "max_scrolls": 5})])
+    result = await webbridge(
+        actions=[_action({"action": "scroll_to_bottom", "max_scrolls": 5})]
+    )
     assert seen[0][0] == "scroll_to_bottom"
     assert seen[0][1]["max_scrolls"] == 5
     assert "3 step" in result and "reached bottom" in result
@@ -808,7 +1089,9 @@ async def test_tool_wait_for_network_idle_reports_idle(
         return {"success": True, "data": {"idle": True, "inflight": 0}, "error": None}
 
     _stub_send(monkeypatch, manager, handler)
-    result = await webbridge(actions=[_action({"action": "wait_for_network_idle", "idle_ms": 800})])
+    result = await webbridge(
+        actions=[_action({"action": "wait_for_network_idle", "idle_ms": 800})]
+    )
     assert seen[0] == ("wait_for_network_idle", {"idle_ms": 800, "timeout_ms": 20000})
     assert "Network idle" in result
 
@@ -819,7 +1102,11 @@ async def test_tool_wait_for_network_idle_reports_timeout(
     _stub_send(
         monkeypatch,
         manager,
-        lambda a, p: {"success": True, "data": {"idle": False, "inflight": 2, "timed_out": True}, "error": None},
+        lambda a, p: {
+            "success": True,
+            "data": {"idle": False, "inflight": 2, "timed_out": True},
+            "error": None,
+        },
     )
     result = await webbridge(actions=[_action({"action": "wait_for_network_idle"})])
     assert "still active" in result and "2 request" in result
@@ -829,7 +1116,13 @@ async def test_tool_crawl_requires_urls(
     manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
 ):
     seen: list[tuple[str, dict]] = []
-    _stub_send(monkeypatch, manager, lambda a, p: seen.append((a, p)) or {"success": True, "data": {}, "error": None})
+    _stub_send(
+        monkeypatch,
+        manager,
+        lambda a, p: (
+            seen.append((a, p)) or {"success": True, "data": {}, "error": None}
+        ),
+    )
     result = await webbridge(actions=[_action({"action": "crawl", "urls": []})])
     assert "at least one URL" in result
     assert seen == []  # no commands issued for an empty url list
@@ -848,7 +1141,9 @@ async def test_tool_crawl_runs_pages_concurrently(
     concurrent = 0
     max_concurrent = 0
 
-    async def fake_send_command(session_id: str, action: str, params: dict | None = None):
+    async def fake_send_command(
+        session_id: str, action: str, params: dict | None = None
+    ):
         nonlocal tab_counter, concurrent, max_concurrent
         params = params or {}
         if action == "open_tab":
@@ -861,15 +1156,23 @@ async def test_tool_crawl_runs_pages_concurrently(
             concurrent -= 1
             return {"success": True, "data": {}, "error": None}
         if action == "extract":
-            return {"success": True, "data": {"title": "T", "content": f"body-{params['tab_id']}"}, "error": None}
+            return {
+                "success": True,
+                "data": {"title": "T", "content": f"body-{params['tab_id']}"},
+                "error": None,
+            }
         return {"success": True, "data": {}, "error": None}  # close_tab
 
     monkeypatch.setattr(manager, "send_command", fake_send_command)
 
     urls = [f"https://example.com/{i}" for i in range(6)]
-    result = await webbridge(actions=[_action({"action": "crawl", "urls": urls, "concurrency": 3})])
+    result = await webbridge(
+        actions=[_action({"action": "crawl", "urls": urls, "concurrency": 3})]
+    )
 
-    assert max_concurrent == 3  # genuinely overlapped, capped exactly at the semaphore size
+    assert (
+        max_concurrent == 3
+    )  # genuinely overlapped, capped exactly at the semaphore size
     assert "Crawled 6 URL(s) (3 at a time): 6 ok, 0 failed" in result
     # asyncio.gather preserves input order in the result regardless of completion order
     assert result.index(urls[0]) < result.index(urls[-1])
@@ -887,7 +1190,11 @@ async def test_tool_crawl_networkidle_and_elements_mode(
         if action == "open_tab":
             return {"success": True, "data": {"tab_id": 9}, "error": None}
         if action == "extract_elements":
-            return {"success": True, "data": {"records": [{"title": "A"}]}, "error": None}
+            return {
+                "success": True,
+                "data": {"records": [{"title": "A"}]},
+                "error": None,
+            }
         return {"success": True, "data": {}, "error": None}
 
     _stub_send(monkeypatch, manager, handler)
@@ -908,7 +1215,12 @@ async def test_tool_crawl_networkidle_and_elements_mode(
     assert "wait_for_network_idle" in actions_seen
     assert "wait_for_load" not in actions_seen
     extract_elements_call = next(p for a, p in seen if a == "extract_elements")
-    assert extract_elements_call == {"tab_id": 9, "selector": ".card", "fields": {"title": "h3"}, "limit": 100}
+    assert extract_elements_call == {
+        "tab_id": 9,
+        "selector": ".card",
+        "fields": {"title": "h3"},
+        "limit": 100,
+    }
     assert "1 record" in result and '"title": "A"' in result
 
 
@@ -921,12 +1233,18 @@ async def test_tool_crawl_isolates_per_page_errors(
                 return {"success": False, "data": None, "error": "boom"}
             return {"success": True, "data": {"tab_id": 1}, "error": None}
         if action == "extract":
-            return {"success": True, "data": {"title": "Good", "content": "all fine"}, "error": None}
+            return {
+                "success": True,
+                "data": {"title": "Good", "content": "all fine"},
+                "error": None,
+            }
         return {"success": True, "data": {}, "error": None}
 
     _stub_send(monkeypatch, manager, handler)
     result = await webbridge(
-        actions=[_action({"action": "crawl", "urls": ["https://x/good", "https://x/bad"]})]
+        actions=[
+            _action({"action": "crawl", "urls": ["https://x/good", "https://x/bad"]})
+        ]
     )
     assert "1 ok, 1 failed" in result
     assert "ERROR: open_tab failed: boom" in result
@@ -945,7 +1263,11 @@ async def test_tool_crawl_close_tabs_false_skips_close(
         return {"success": True, "data": {"content": "ok"}, "error": None}
 
     _stub_send(monkeypatch, manager, handler)
-    await webbridge(actions=[_action({"action": "crawl", "urls": ["https://x/a"], "close_tabs": False})])
+    await webbridge(
+        actions=[
+            _action({"action": "crawl", "urls": ["https://x/a"], "close_tabs": False})
+        ]
+    )
     assert "close_tab" not in seen
 
 
@@ -1079,9 +1401,7 @@ class TestLaunchBrowser:
         assert "chrome://extensions" in detail
         assert _PopenRecorder.instances == []
 
-    def test_popen_failure_500(
-        self, client, ext_dir, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_popen_failure_500(self, client, ext_dir, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(sys, "platform", "darwin")
 
         def _boom(*args, **kwargs):
