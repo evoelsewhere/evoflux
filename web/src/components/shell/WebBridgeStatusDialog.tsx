@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Check, Copy, Download, Loader2, RefreshCw } from 'lucide-react'
+import { Check, Copy, Download, KeyRound, Loader2, RefreshCw, Unplug } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -21,20 +21,25 @@ import {
   downloadWebBridgeExtension,
   getWebBridgeAudit,
   getWebBridgeStatus,
+  issueWebBridgePairingCode,
+  listWebBridgePairings,
+  revokeWebBridgePairing,
 } from '@/api/client'
 import { apiBaseUrl } from '@/api/base-url'
-import { getConnectionToken } from '@/api/auth'
 import { useToastStore } from '@/stores/useToastStore'
-import type { WebBridgeAuditEntry, WebBridgeStatusResponse } from '@/api/types'
+import type {
+  WebBridgeAuditEntry,
+  WebBridgePairingInfo,
+  WebBridgeStatusResponse,
+} from '@/api/types'
 
-/** Relay URL + token the extension needs, derived from the app's own
- *  connection — so the popup shows exactly what to paste in. */
-function deriveConnection(): { relayUrl: string; token: string } {
+/** Relay URL the extension needs, derived from the app's own connection. */
+function deriveRelayUrl(): string {
   let origin = apiBaseUrl().replace(/\/api$/, '')
   if (!origin || origin.startsWith('/')) {
     origin = typeof window !== 'undefined' ? window.location.origin : 'http://127.0.0.1:8000'
   }
-  return { relayUrl: origin.replace(/^http/i, 'ws'), token: getConnectionToken() ?? '' }
+  return origin.replace(/^http/i, 'ws')
 }
 
 /** A labelled, monospace, one-click-copy value row. */
@@ -79,6 +84,10 @@ export function WebBridgeStatusDialog({
   const [audit, setAudit] = useState<WebBridgeAuditEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  const [pairingCode, setPairingCode] = useState<string | null>(null)
+  const [pairings, setPairings] = useState<WebBridgePairingInfo[]>([])
+  const [pairing, setPairing] = useState(false)
+  const [revokingPairingId, setRevokingPairingId] = useState<string | null>(null)
   const pushToast = useToastStore((s) => s.push)
 
   // Ref-synced so `refresh` stays referentially stable for the open-effect
@@ -108,6 +117,11 @@ export function WebBridgeStatusDialog({
     } catch {
       setAudit([])
     }
+    try {
+      setPairings(await listWebBridgePairings())
+    } catch {
+      setPairings([])
+    }
   }, [])
 
   // Refetch every time the dialog opens so the status is current.
@@ -130,9 +144,44 @@ export function WebBridgeStatusDialog({
     }
   }, [pushToast])
 
+  const handlePairingCode = useCallback(async () => {
+    setPairing(true)
+    try {
+      const result = await issueWebBridgePairingCode()
+      setPairingCode(result.code)
+    } catch (err) {
+      pushToast({
+        tone: 'error',
+        title: 'Could not create pairing code',
+        description: err instanceof Error ? err.message : String(err),
+      })
+    } finally {
+      setPairing(false)
+    }
+  }, [pushToast])
+
   const extension = status?.extensions[0]
   const connected = status?.connected ?? false
-  const conn = deriveConnection()
+  const relayUrl = deriveRelayUrl()
+  const hasLegacyConnection = Boolean(
+    status?.extensions.some((activeExtension) => !activeExtension.paired),
+  )
+
+  const handleRevoke = useCallback(async (pairingId: string) => {
+    setRevokingPairingId(pairingId)
+    try {
+      await revokeWebBridgePairing(pairingId)
+      await refresh()
+    } catch (err) {
+      pushToast({
+        tone: 'error',
+        title: 'Could not revoke pairing',
+        description: err instanceof Error ? err.message : String(err),
+      })
+    } finally {
+      setRevokingPairingId(null)
+    }
+  }, [pushToast, refresh])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -191,6 +240,29 @@ export function WebBridgeStatusDialog({
             <p className="text-xs text-(--color-text-muted)">
               Ask the agent to browse — it can now use your real browser.
             </p>
+            {hasLegacyConnection && (
+              <div className="space-y-2 rounded-md bg-(--bg-key) px-3 py-2">
+                <p className="text-xs text-(--color-text-muted)">
+                  This extension uses the legacy token connection. Pair it to
+                  replace that token with a scoped credential.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void handlePairingCode()}
+                  disabled={pairing}
+                  className="w-full"
+                >
+                  {pairing ? (
+                    <Loader2 className="animate-spin" aria-hidden="true" />
+                  ) : (
+                    <KeyRound aria-hidden="true" />
+                  )}
+                  Generate secure pairing code
+                </Button>
+                {pairingCode && <CopyRow label="Pairing code" value={pairingCode} />}
+              </div>
+            )}
           </>
         ) : (
           <div className="space-y-3">
@@ -207,18 +279,35 @@ export function WebBridgeStatusDialog({
               Download extension package
             </Button>
 
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void handlePairingCode()}
+              disabled={pairing}
+              className="w-full"
+            >
+              {pairing ? (
+                <Loader2 className="animate-spin" aria-hidden="true" />
+              ) : (
+                <KeyRound aria-hidden="true" />
+              )}
+              Generate secure pairing code
+            </Button>
+
+            {pairingCode && (
+              <div className="min-w-0 space-y-1.5 rounded-md bg-(--bg-key) px-3 py-2">
+                <CopyRow label="Pairing code" value={pairingCode} />
+                <p className="text-xs text-(--color-text-subtle)">
+                  One-time code. Expires in 5 minutes.
+                </p>
+              </div>
+            )}
+
             <div className="min-w-0 space-y-1.5 rounded-md bg-(--bg-key) px-3 py-2">
               <p className="text-xs font-medium text-(--color-text-muted)">
-                Configure the extension with
+                Connection address
               </p>
-              <CopyRow label="Relay URL" value={conn.relayUrl} />
-              {conn.token ? (
-                <CopyRow label="Access token" value={conn.token} />
-              ) : (
-                <p className="text-xs text-(--color-text-subtle)">
-                  No access token needed — this backend runs without a key.
-                </p>
-              )}
+              <CopyRow label="Relay URL" value={relayUrl} />
             </div>
 
             <ol className="list-decimal space-y-1.5 pl-4 text-xs text-(--color-text-2)">
@@ -236,10 +325,46 @@ export function WebBridgeStatusDialog({
                 folder.
               </li>
               <li>
-                Click the WebBridge toolbar icon and paste the relay URL and
-                access token above.
+                Generate a pairing code, then open the WebBridge toolbar popup,
+                enter the relay URL and pair securely.
               </li>
             </ol>
+          </div>
+        )}
+
+        {pairings.length > 0 && (
+          <div className="min-w-0 space-y-2">
+            <p className="text-xs font-medium text-(--color-text-muted)">
+              Secure pairings
+            </p>
+            <ul className="space-y-1 rounded-md bg-(--bg-key) px-2 py-1.5">
+              {pairings.map((paired) => (
+                <li key={paired.pairing_id} className="flex min-w-0 items-center gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs font-medium text-(--color-text)">
+                      {paired.label}
+                    </p>
+                    <p className="truncate text-xs text-(--color-text-subtle)">
+                      {paired.browser} · v{paired.version}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handleRevoke(paired.pairing_id)}
+                    disabled={revokingPairingId === paired.pairing_id}
+                    className="shrink-0 rounded-xs p-1 text-(--color-text-subtle) transition-colors hover:bg-(--bg-2) hover:text-(--color-error) disabled:opacity-50"
+                    aria-label={`Revoke ${paired.label}`}
+                    title={`Revoke ${paired.label}`}
+                  >
+                    {revokingPairingId === paired.pairing_id ? (
+                      <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Unplug size={14} aria-hidden="true" />
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
 

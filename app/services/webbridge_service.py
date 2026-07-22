@@ -73,6 +73,42 @@ _UNGATED_ACTIONS: frozenset[str] = frozenset(
 #: Actions whose *target* URL lives in ``params["url"]`` rather than the
 #: extension's current page.
 _TARGET_URL_ACTIONS: frozenset[str] = frozenset({"navigate", "open_tab"})
+_PAGE_READ_ACTIONS: frozenset[str] = frozenset(
+    {"extract", "extract_elements", "snapshot", "screenshot", "evaluate"}
+)
+# Actions resolved by the extension's ``resolveTab`` helper. A visible
+# session/tab binding pins these actions without stealing browser focus.
+_TAB_SCOPED_ACTIONS: frozenset[str] = frozenset(
+    {
+        "navigate",
+        "click",
+        "dblclick",
+        "type",
+        "key",
+        "scroll",
+        "screenshot",
+        "extract",
+        "evaluate",
+        "back",
+        "forward",
+        "reload",
+        "wait_for_selector",
+        "wait_for_text",
+        "wait_for_load",
+        "wait_for_network_idle",
+        "click_selector",
+        "click_text",
+        "hover",
+        "focus",
+        "select_option",
+        "set_checked",
+        "drag",
+        "fill",
+        "snapshot",
+        "extract_elements",
+        "scroll_to_bottom",
+    }
+)
 
 #: Error returned when a command is issued with no usable extension.
 NO_EXTENSION_ERROR = (
@@ -83,6 +119,7 @@ NO_EXTENSION_ERROR = (
 #: Send half of an extension's WebSocket, supplied by the relay adapter
 #: (typically ``ws.send_text``).
 SendText = Callable[[str], Awaitable[None]]
+CloseSocket = Callable[[int], Awaitable[None]]
 
 
 def _host_of(url: str) -> str:
@@ -93,6 +130,19 @@ def _host_of(url: str) -> str:
         return (urlparse(url).hostname or "").lower()
     except ValueError:
         return ""
+
+
+def _origin_of(url: str) -> str:
+    """Normalized scheme + authority for an HTTP(S) URL, or ``""``."""
+    if not url:
+        return ""
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return ""
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return ""
+    return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
 
 
 def _domain_matches(host: str, patterns: list[str]) -> bool:
@@ -118,11 +168,19 @@ class ExtensionConnection:
         browser: str,
         version: str,
         send: SendText,
+        protocol_version: int = 1,
+        capabilities: dict[str, Any] | None = None,
+        close: CloseSocket | None = None,
+        paired: bool = False,
     ) -> None:
         self.extension_id = extension_id
         self.browser = browser
         self.version = version
+        self.protocol_version = protocol_version
+        self.capabilities = capabilities or {}
         self.send = send
+        self.close = close
+        self.paired = paired
         self.connected_at = time.time()
         self.last_seen = time.time()
         self.tabs: list[dict[str, Any]] = []
@@ -138,6 +196,9 @@ class ExtensionConnection:
             "extension_id": self.extension_id,
             "browser": self.browser,
             "version": self.version,
+            "protocol_version": self.protocol_version,
+            "capabilities": self.capabilities,
+            "paired": self.paired,
             "connected_at": self.connected_at,
             "current_url": self.current_url,
             "current_title": self.current_title,
@@ -156,6 +217,11 @@ class WebBridgeManager:
         self._agent_queues: dict[str, set[asyncio.Queue[dict[str, Any]]]] = {}
         # session_id → extension_id it is bound to (sticky routing)
         self._session_targets: dict[str, str] = {}
+        # session_id → (extension_id, tab_id) explicitly selected by the user.
+        self._session_tabs: dict[str, tuple[str, int]] = {}
+        # Persisted bindings loaded after a reconnect stay fail-closed until
+        # the extension's complete tab snapshot confirms both tab ID + origin.
+        self._pending_session_tabs: dict[str, tuple[str, int, str]] = {}
         # Newest-last audit ring buffer of executed commands.
         self._audit: deque[dict[str, Any]] = deque(maxlen=_AUDIT_HARD_CAP)
         # In-memory WebBridge policy; refreshed off the request path by
@@ -228,6 +294,15 @@ class WebBridgeManager:
             )
         if host and _domain_matches(host, pol.blocked_domains):
             return f"Domain '{host}' is blocked by WebBridge policy."
+        if (
+            action in _PAGE_READ_ACTIONS
+            and host
+            and _domain_matches(host, pol.sharing.blocked_domains)
+        ):
+            return (
+                f"Reading page data from domain '{host}' is blocked by "
+                "WebBridge sharing policy."
+            )
         if pol.allowed_domains:
             if not host:
                 return (
@@ -239,6 +314,36 @@ class WebBridgeManager:
                     f"Domain '{host}' is not in the WebBridge allowlist "
                     f"({', '.join(pol.allowed_domains)})."
                 )
+        return None
+
+    def check_interaction_policy(
+        self,
+        *,
+        origin: str,
+        user_gesture: bool,
+        context_type: str | None,
+    ) -> str | None:
+        """Return a refusal for browser-to-EvoFlux sharing, else ``None``."""
+        policy = self._policy()
+        if not policy.enabled:
+            return "WebBridge is disabled by policy."
+        sharing = policy.sharing
+        interactions = policy.interactions
+        host = _host_of(origin)
+        if host and _domain_matches(host, sharing.blocked_domains):
+            return f"Sharing from domain '{host}' is blocked by WebBridge policy."
+        if sharing.default == "block":
+            return "Browser-to-EvoFlux sharing is disabled by policy."
+        if not user_gesture and (
+            sharing.default == "ask" or not interactions.allow_background_triggers
+        ):
+            return "Browser interaction requires an explicit user gesture."
+        if context_type == "selection" and not sharing.allow_selection:
+            return "Sharing browser selections is disabled by policy."
+        if context_type == "readable_page" and not sharing.allow_readable_page:
+            return "Sharing readable page content is disabled by policy."
+        if context_type == "screenshot" and not sharing.allow_screenshot:
+            return "Sharing browser screenshots is disabled by policy."
         return None
 
     @staticmethod
@@ -301,13 +406,35 @@ class WebBridgeManager:
         browser: str,
         version: str,
         send: SendText,
+        protocol_version: int = 1,
+        capabilities: dict[str, Any] | None = None,
+        close: CloseSocket | None = None,
+        paired: bool = False,
     ) -> ExtensionConnection:
         """Register (or replace) a connected extension."""
+        previous = self._extensions.get(extension_id)
+        if previous is not None:
+            for request_id, (ext_id, future) in list(self._pending.items()):
+                if ext_id != extension_id:
+                    continue
+                self._pending.pop(request_id, None)
+                if not future.done():
+                    future.set_result(
+                        {
+                            "success": False,
+                            "data": None,
+                            "error": "extension reconnected",
+                        }
+                    )
         conn = ExtensionConnection(
             extension_id=extension_id,
             browser=browser,
             version=version,
             send=send,
+            protocol_version=protocol_version,
+            capabilities=capabilities,
+            close=close,
+            paired=paired,
         )
         self._extensions[extension_id] = conn
         logger.info(
@@ -318,11 +445,19 @@ class WebBridgeManager:
         )
         return conn
 
-    def unregister_extension(self, extension_id: str) -> None:
+    def unregister_extension(
+        self,
+        extension_id: str,
+        *,
+        connection: ExtensionConnection | None = None,
+    ) -> None:
         """Drop an extension and fail every command still pending on it."""
-        conn = self._extensions.pop(extension_id, None)
+        conn = self._extensions.get(extension_id)
         if conn is None:
             return
+        if connection is not None and conn is not connection:
+            return
+        self._extensions.pop(extension_id, None)
         logger.info("webbridge_ext_disconnected extension_id={}", extension_id)
         for request_id, (ext_id, fut) in list(self._pending.items()):
             if ext_id != extension_id:
@@ -336,14 +471,38 @@ class WebBridgeManager:
         for sid, eid in list(self._session_targets.items()):
             if eid == extension_id:
                 self._session_targets.pop(sid, None)
+                self._session_tabs.pop(sid, None)
+                self._pending_session_tabs.pop(sid, None)
 
     def get_extension(self, extension_id: str) -> ExtensionConnection | None:
         return self._extensions.get(extension_id)
 
-    def touch(self, extension_id: str) -> None:
+    async def close_extension(self, extension_id: str, *, code: int = 1000) -> bool:
+        """Close and unregister an extension, if connected."""
+        conn = self._extensions.get(extension_id)
+        if conn is None:
+            return False
+        if conn.close is not None:
+            try:
+                await conn.close(code)
+            except Exception as exc:
+                logger.debug(
+                    "webbridge_ext_close_failed extension_id={} error={}",
+                    extension_id,
+                    exc,
+                )
+        self.unregister_extension(extension_id)
+        return True
+
+    def touch(
+        self,
+        extension_id: str,
+        *,
+        connection: ExtensionConnection | None = None,
+    ) -> None:
         """Refresh an extension's liveness timestamp (heartbeat)."""
         conn = self._extensions.get(extension_id)
-        if conn is not None:
+        if conn is not None and (connection is None or conn is connection):
             conn.last_seen = time.time()
 
     # ── Status ──────────────────────────────────────────────────────────
@@ -377,7 +536,11 @@ class WebBridgeManager:
                 return None
             # An explicit target also (re)binds the session so its events and
             # follow-up commands stick to the same extension.
+            previous = self._session_targets.get(session_id)
             self._session_targets[session_id] = extension_id
+            if previous is not None and previous != extension_id:
+                self._session_tabs.pop(session_id, None)
+                self._pending_session_tabs.pop(session_id, None)
             return ext
 
         bound = self._session_targets.get(session_id)
@@ -386,11 +549,81 @@ class WebBridgeManager:
             if ext is not None and ext.is_active(time.time()):
                 return ext
             self._session_targets.pop(session_id, None)
+            self._session_tabs.pop(session_id, None)
+            self._pending_session_tabs.pop(session_id, None)
 
         ext = self.get_active_extension()
         if ext is not None:
             self._session_targets[session_id] = ext.extension_id
         return ext
+
+    def bind_session_tab(self, session_id: str, extension_id: str, tab_id: int) -> None:
+        """Pin page-scoped commands for *session_id* to one extension tab."""
+        self._session_targets[session_id] = extension_id
+        self._session_tabs[session_id] = (extension_id, tab_id)
+        self._pending_session_tabs.pop(session_id, None)
+
+    def stage_session_tab_binding(
+        self,
+        session_id: str,
+        extension_id: str,
+        tab_id: int,
+        origin: str,
+    ) -> None:
+        """Load a durable binding without trusting a stale browser tab ID yet."""
+        self._session_targets[session_id] = extension_id
+        self._session_tabs.pop(session_id, None)
+        self._pending_session_tabs[session_id] = (
+            extension_id,
+            tab_id,
+            _origin_of(origin),
+        )
+
+    def validate_pending_tab_bindings(
+        self,
+        extension_id: str,
+        tabs: list[dict[str, Any]],
+    ) -> list[tuple[str, int]]:
+        """Activate matching pending bindings; return stale bindings to delete."""
+        tab_urls = {
+            tab.get("id"): str(tab.get("url", ""))
+            for tab in tabs
+            if tab.get("id") is not None
+        }
+        stale: list[tuple[str, int]] = []
+        for session_id, (bound_extension, tab_id, expected_origin) in list(
+            self._pending_session_tabs.items()
+        ):
+            if bound_extension != extension_id:
+                continue
+            actual_url = tab_urls.get(tab_id)
+            if (
+                actual_url is not None
+                and expected_origin
+                and _origin_of(actual_url) == expected_origin
+            ):
+                self.bind_session_tab(session_id, extension_id, tab_id)
+            else:
+                self._pending_session_tabs.pop(session_id, None)
+                self._session_targets.pop(session_id, None)
+                stale.append((session_id, tab_id))
+        return stale
+
+    def unbind_session_tab(
+        self, session_id: str, *, extension_id: str | None = None
+    ) -> bool:
+        binding = self._session_tabs.get(session_id)
+        if binding is None or (extension_id is not None and binding[0] != extension_id):
+            return False
+        self._session_tabs.pop(session_id, None)
+        self._pending_session_tabs.pop(session_id, None)
+        return True
+
+    def session_tab_binding(self, session_id: str) -> tuple[str, int] | None:
+        return self._session_tabs.get(session_id)
+
+    def session_tab_binding_pending(self, session_id: str) -> bool:
+        return session_id in self._pending_session_tabs
 
     def status(self) -> dict[str, Any]:
         """Connection status — the shape behind ``GET /webbridge/status``."""
@@ -402,9 +635,18 @@ class WebBridgeManager:
 
     # ── Events / responses coming from the extension ────────────────────
 
-    def handle_event(self, extension_id: str, event: str, data: dict[str, Any]) -> None:
+    def handle_event(
+        self,
+        extension_id: str,
+        event: str,
+        data: dict[str, Any],
+        *,
+        connection: ExtensionConnection | None = None,
+    ) -> None:
         """Track extension state and broadcast the event to agent consumers."""
         conn = self._extensions.get(extension_id)
+        if connection is not None and conn is not connection:
+            return
         if conn is not None:
             conn.last_seen = time.time()
             if event == "tab_updated":
@@ -438,8 +680,13 @@ class WebBridgeManager:
         success: bool,
         data: Any,
         error: str | None,
+        extension_id: str | None = None,
+        connection: ExtensionConnection | None = None,
     ) -> bool:
         """Resolve the pending command for *request_id*. False if unknown."""
+        if extension_id is not None and connection is not None:
+            if self._extensions.get(extension_id) is not connection:
+                return False
         entry = self._pending.pop(request_id, None)
         if entry is None:
             logger.debug("webbridge_orphan_response request_id={}", request_id)
@@ -475,7 +722,7 @@ class WebBridgeManager:
         (plus ``request_id`` for wire correlation) — never raises for
         routine failures like a missing extension or a timeout.
         """
-        params = params or {}
+        params = dict(params or {})
 
         if action == "status":
             # Answered locally — does not need an extension.
@@ -484,6 +731,27 @@ class WebBridgeManager:
         ext = self.resolve_target(session_id, extension_id)
         if ext is None:
             return {"success": False, "data": None, "error": NO_EXTENSION_ERROR}
+
+        binding = self._session_tabs.get(session_id)
+        pending_binding = self._pending_session_tabs.get(session_id)
+        if (
+            action in _TAB_SCOPED_ACTIONS
+            and "tab_id" not in params
+            and pending_binding is not None
+            and pending_binding[0] == ext.extension_id
+        ):
+            return {
+                "success": False,
+                "data": None,
+                "error": "Bound browser tab is pending validation; wait for tab state.",
+            }
+        if (
+            action in _TAB_SCOPED_ACTIONS
+            and "tab_id" not in params
+            and binding is not None
+            and binding[0] == ext.extension_id
+        ):
+            params["tab_id"] = binding[1]
 
         # Guardrail check before anything reaches the browser. The policy is
         # an in-memory read (reload_policy refreshes it off the request path),

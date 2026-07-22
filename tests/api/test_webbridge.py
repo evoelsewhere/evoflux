@@ -17,7 +17,11 @@ import subprocess
 import sys
 import time
 import zipfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+from uuid import UUID
 
 import pytest
 from fastapi import FastAPI
@@ -27,8 +31,27 @@ from starlette.websockets import WebSocketDisconnect
 
 from app.agent.schemas.chat import ImageDataBlock, TextBlock, ToolResult
 from app.agent.tools.builtin.webbridge_tool import AnyAction, webbridge
-from app.api.routes.team.webbridge import router
+from app.api.routes.team.webbridge import InteractionRequest, router
+from app.models.webbridge import WebBridgeInteraction
+from app.services.webbridge_pairing_service import (
+    PairingGrant,
+    WebBridgePairingCodeStore,
+    WebBridgeRateLimiter,
+    WebBridgeTicketStore,
+    authenticate_pairing,
+    claim_interaction_dispatch,
+    create_or_get_interaction,
+    create_pairing,
+    list_tab_bindings,
+    upsert_tab_binding,
+    webbridge_pairing_code_store,
+    webbridge_ticket_store,
+)
 from app.services.webbridge_service import WebBridgeManager
+from app.services.interactive_message_service import (
+    InteractiveMessageResult,
+    submit_persisted_interactive_message,
+)
 
 _PREFIX = "/api/team/webbridge"
 
@@ -90,6 +113,20 @@ def _register(ws, extension_id: str = "ext-1") -> dict:
     return json.loads(ws.receive_text())
 
 
+def _pair_extension(client: TestClient, label: str = "Work Chrome") -> dict:
+    code = webbridge_pairing_code_store.issue(label)
+    exchange = client.post(
+        f"{_PREFIX}/pairing/exchange",
+        json={
+            "code": code,
+            "browser": "chrome",
+            "version": "1.2.0",
+        },
+    )
+    assert exchange.status_code == 201
+    return exchange.json()
+
+
 # ── REST status + registration ────────────────────────────────────────────────
 
 
@@ -107,6 +144,34 @@ def test_register_then_status_shows_connected(client: TestClient):
 
     # After disconnect the status flips back.
     assert client.get(f"{_PREFIX}/status").json()["connected"] is False
+
+
+def test_protocol_capabilities_are_reported_in_status(client: TestClient):
+    with client.websocket_connect(f"{_PREFIX}/relay") as ws:
+        ws.send_text(
+            json.dumps(
+                {
+                    "type": "register",
+                    "protocol_version": 2,
+                    "extension_id": "ext-v2",
+                    "browser": "chrome",
+                    "version": "2.0.0",
+                    "capabilities": {
+                        "commands": ["snapshot"],
+                        "interactions": ["context.share"],
+                    },
+                }
+            )
+        )
+        assert json.loads(ws.receive_text())["type"] == "registered"
+
+        [extension] = client.get(f"{_PREFIX}/status").json()["extensions"]
+        assert extension["protocol_version"] == 2
+        assert extension["capabilities"] == {
+            "commands": ["snapshot"],
+            "interactions": ["context.share"],
+        }
+        assert extension["paired"] is False
 
 
 def test_event_updates_extension_state(client: TestClient):
@@ -134,6 +199,15 @@ def test_event_updates_extension_state(client: TestClient):
         assert ext["current_url"] == "https://example.com"
         assert ext["current_title"] == "Example"
         assert ext["tabs"] == [{"index": 0, "title": "Example", "active": True}]
+
+
+def test_relay_rejects_oversized_frames(client: TestClient):
+    with client.websocket_connect(f"{_PREFIX}/relay") as ws:
+        _register(ws)
+        ws.send_text("x" * 1_000_001)
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            ws.receive_text()
+        assert exc_info.value.code == 1009
 
 
 # ── Command roundtrip over the wire ───────────────────────────────────────────
@@ -275,6 +349,80 @@ async def test_manager_send_command_roundtrip(manager: WebBridgeManager):
     assert result["data"] == {"ok": 1}
 
 
+async def test_bound_session_pins_tab_unless_command_overrides_it(
+    manager: WebBridgeManager,
+):
+    sent: list[str] = []
+
+    async def fake_send(text: str) -> None:
+        sent.append(text)
+
+    manager.register_extension(
+        extension_id="e1", browser="chrome", version="1", send=fake_send
+    )
+    manager.bind_session_tab("sess", "e1", 42)
+
+    bound = asyncio.create_task(
+        manager.send_command("sess", "navigate", {"url": "https://bound.dev"})
+    )
+    await asyncio.sleep(0)
+    bound_command = json.loads(sent.pop(0))
+    assert bound_command["params"]["tab_id"] == 42
+    manager.handle_response(
+        bound_command["request_id"], success=True, data={}, error=None
+    )
+    await bound
+
+    explicit = asyncio.create_task(
+        manager.send_command(
+            "sess", "navigate", {"url": "https://explicit.dev", "tab_id": 9}
+        )
+    )
+    await asyncio.sleep(0)
+    explicit_command = json.loads(sent.pop(0))
+    assert explicit_command["params"]["tab_id"] == 9
+    manager.handle_response(
+        explicit_command["request_id"], success=True, data={}, error=None
+    )
+    await explicit
+
+
+async def test_rehydrated_binding_fails_closed_until_tab_origin_is_validated(
+    manager: WebBridgeManager,
+):
+    sent: list[str] = []
+
+    async def fake_send(text: str) -> None:
+        sent.append(text)
+
+    manager.register_extension(
+        extension_id="pairing-1", browser="chrome", version="1", send=fake_send
+    )
+    manager.stage_session_tab_binding("sess", "pairing-1", 42, "https://example.com")
+
+    pending = await manager.send_command(
+        "sess", "navigate", {"url": "https://example.com/next"}
+    )
+    assert pending["success"] is False
+    assert "pending validation" in pending["error"]
+    assert sent == []
+
+    stale = manager.validate_pending_tab_bindings(
+        "pairing-1", [{"id": 42, "url": "https://example.com/current"}]
+    )
+    assert stale == []
+    assert manager.session_tab_binding("sess") == ("pairing-1", 42)
+
+    command_task = asyncio.create_task(
+        manager.send_command("sess", "navigate", {"url": "https://example.com/next"})
+    )
+    await asyncio.sleep(0)
+    command = json.loads(sent.pop())
+    assert command["params"]["tab_id"] == 42
+    manager.handle_response(command["request_id"], success=True, data={}, error=None)
+    assert (await command_task)["success"] is True
+
+
 async def test_manager_commands_correlate_by_request_id(manager: WebBridgeManager):
     sent: list[str] = []
 
@@ -324,6 +472,34 @@ async def test_manager_disconnect_fails_pending(manager: WebBridgeManager):
     assert result["error"] == "extension disconnected"
 
 
+def test_stale_connection_cannot_unregister_its_replacement(
+    manager: WebBridgeManager,
+):
+    async def first_send(text: str) -> None:
+        pass
+
+    async def second_send(text: str) -> None:
+        pass
+
+    first = manager.register_extension(
+        extension_id="pairing-1", browser="chrome", version="1", send=first_send
+    )
+    second = manager.register_extension(
+        extension_id="pairing-1", browser="chrome", version="2", send=second_send
+    )
+
+    manager.unregister_extension("pairing-1", connection=first)
+    manager.handle_event(
+        "pairing-1",
+        "tab_updated",
+        {"url": "https://stale.example", "title": "Stale"},
+        connection=first,
+    )
+
+    assert manager.get_extension("pairing-1") is second
+    assert second.current_url == ""
+
+
 async def test_manager_status_action_is_local(manager: WebBridgeManager):
     result = await manager.send_command("sess", "status")
     assert result["success"] is True
@@ -346,6 +522,751 @@ async def test_manager_cleanup_stale(manager: WebBridgeManager):
 
 
 # ── WS token auth ─────────────────────────────────────────────────────────────
+
+
+def test_relay_ticket_is_single_use_and_expires():
+    tickets = WebBridgeTicketStore(ttl_seconds=10)
+
+    ticket = tickets.issue("pairing-1", now=100.0)
+    assert tickets.consume(ticket, now=109.0) == "pairing-1"
+    assert tickets.consume(ticket, now=109.0) is None
+
+    expired = tickets.issue("pairing-2", now=200.0)
+    assert tickets.consume(expired, now=211.0) is None
+
+    revoked = tickets.issue("pairing-3", now=300.0)
+    tickets.revoke("pairing-3")
+    assert tickets.is_revoked("pairing-3")
+    assert tickets.consume(revoked, now=301.0) is None
+    with pytest.raises(ValueError, match="revoked"):
+        tickets.issue("pairing-3", now=302.0)
+
+
+def test_pairing_code_is_single_use_case_insensitive_and_expires():
+    codes = WebBridgePairingCodeStore(ttl_seconds=10)
+
+    code = codes.issue("Work Chrome", now=100.0)
+    grant = codes.consume(code.lower(), now=109.0)
+    assert grant is not None
+    assert grant.label == "Work Chrome"
+    assert "relay" in grant.scopes
+    assert codes.consume(code, now=109.0) is None
+
+    expired = codes.issue("Expired", now=200.0)
+    assert codes.consume(expired, now=211.0) is None
+
+
+def test_interaction_rate_limiter_uses_sliding_window():
+    limiter = WebBridgeRateLimiter(window_seconds=10)
+
+    assert limiter.allow("pairing-1", 2, now=100.0)
+    assert limiter.allow("pairing-1", 2, now=101.0)
+    assert not limiter.allow("pairing-1", 2, now=109.0)
+    assert limiter.allow("pairing-1", 2, now=111.0)
+
+
+async def test_pairing_credential_is_hashed_and_scoped():
+    from app.core import db as db_module
+
+    async with db_module.async_session_factory() as db:
+        pairing, credential = await create_pairing(
+            db,
+            grant=PairingGrant(
+                label="Work Chrome",
+                scopes=frozenset({"relay"}),
+            ),
+            browser="chrome",
+            version="1.2.0",
+        )
+        await db.commit()
+
+        assert pairing.credential_hash != credential
+        assert credential not in repr(pairing)
+        assert await authenticate_pairing(db, credential, required_scope="relay")
+        assert (
+            await authenticate_pairing(
+                db, credential, required_scope="interactions:write"
+            )
+            is None
+        )
+
+
+async def test_interaction_idempotency_replays_same_request_and_rejects_conflict():
+    from app.core import db as db_module
+
+    async with db_module.async_session_factory() as db:
+        pairing, _ = await create_pairing(
+            db,
+            grant=PairingGrant(
+                label="Work Chrome",
+                scopes=frozenset({"interactions:write"}),
+            ),
+            browser="chrome",
+            version="1.2.0",
+        )
+        request_payload = {
+            "kind": "context.share",
+            "delivery": "draft",
+            "payload": {"prompt": "Explain this"},
+        }
+        first, created = await create_or_get_interaction(
+            db,
+            pairing_id=pairing.id,
+            interaction_id="interaction-1",
+            request_payload=request_payload,
+            kind="context.share",
+            delivery="draft",
+            status="draft",
+            target_session_id=None,
+            origin="https://example.com",
+            tab_id=7,
+            page_instance_id="page-1",
+            payload_metadata={"context_type": "selection"},
+        )
+        replay, replay_created = await create_or_get_interaction(
+            db,
+            pairing_id=pairing.id,
+            interaction_id="interaction-1",
+            request_payload=request_payload,
+            kind="context.share",
+            delivery="draft",
+            status="draft",
+            target_session_id=None,
+            origin="https://example.com",
+            tab_id=7,
+            page_instance_id="page-1",
+            payload_metadata={"context_type": "selection"},
+        )
+
+        assert created is True
+        assert replay_created is False
+        assert replay.id == first.id
+
+        with pytest.raises(ValueError, match="already used"):
+            await create_or_get_interaction(
+                db,
+                pairing_id=pairing.id,
+                interaction_id="interaction-1",
+                request_payload={**request_payload, "payload": {"prompt": "Changed"}},
+                kind="context.share",
+                delivery="draft",
+                status="draft",
+                target_session_id=None,
+                origin="https://example.com",
+                tab_id=7,
+                page_instance_id="page-1",
+                payload_metadata={"context_type": "selection"},
+            )
+
+
+async def test_pending_submit_dispatch_claim_is_atomic():
+    from app.core import db as db_module
+
+    async with db_module.async_session_factory() as setup_db:
+        pairing, _ = await create_pairing(
+            setup_db,
+            grant=PairingGrant(
+                label="Work Chrome", scopes=frozenset({"interactions:write"})
+            ),
+            browser="chrome",
+            version="1.2.0",
+        )
+        interaction, _ = await create_or_get_interaction(
+            setup_db,
+            pairing_id=pairing.id,
+            interaction_id="claim-1",
+            request_payload={"delivery": "submit"},
+            kind="prompt.submit",
+            delivery="submit",
+            status="pending",
+            target_session_id=None,
+            origin="https://example.com",
+            tab_id=7,
+            page_instance_id=None,
+            payload_metadata={},
+            prompt="Prompt",
+        )
+        await setup_db.commit()
+        interaction_id = interaction.id
+
+    async def claim() -> bool:
+        async with db_module.async_session_factory() as db:
+            row = await db.get(WebBridgeInteraction, interaction_id)
+            assert row is not None
+            return await claim_interaction_dispatch(db, row)
+
+    results = await asyncio.gather(claim(), claim())
+    assert results.count(True) == 1
+    assert results.count(False) == 1
+
+
+async def test_tab_binding_upserts_one_tab_to_a_new_session():
+    from app.core import db as db_module
+    from app.models.chat import ChatSession
+
+    async with db_module.async_session_factory() as db:
+        pairing, _ = await create_pairing(
+            db,
+            grant=PairingGrant(
+                label="Work Chrome",
+                scopes=frozenset({"bindings:write"}),
+            ),
+            browser="chrome",
+            version="1.2.0",
+        )
+        first_session = ChatSession(title="First")
+        second_session = ChatSession(title="Second")
+        db.add(first_session)
+        db.add(second_session)
+        await db.flush()
+
+        first = await upsert_tab_binding(
+            db,
+            pairing_id=pairing.id,
+            tab_id=42,
+            session_id=first_session.id,
+            origin="https://first.example",
+            page_instance_id="page-1",
+        )
+        second = await upsert_tab_binding(
+            db,
+            pairing_id=pairing.id,
+            tab_id=42,
+            session_id=second_session.id,
+            origin="https://second.example",
+            page_instance_id="page-2",
+        )
+        bindings = await list_tab_bindings(db, pairing.id)
+
+        assert second.id == first.id
+        assert len(bindings) == 1
+        assert bindings[0].session_id == second_session.id
+        assert bindings[0].origin == "https://second.example"
+
+
+async def test_prepared_interactive_message_queues_when_session_is_busy():
+    from app.core import db as db_module
+    from app.models.chat import ChatSession, SessionMessage
+
+    team = SimpleNamespace(
+        user_message_lock=asyncio.Lock(),
+        session_tags=frozenset(),
+        permission_mode="auto",
+        lead=SimpleNamespace(agent=SimpleNamespace(model_id="model:test")),
+        has_active_user_turn=lambda: True,
+        _activate_queued_user_messages=AsyncMock(return_value=False),
+    )
+    async with db_module.async_session_factory() as db:
+        session = ChatSession(
+            title="Busy",
+            tags=["webbridge"],
+            permission_mode="accept-edits",
+            model="model:persisted",
+        )
+        db.add(session)
+        await db.commit()
+
+        result = await submit_persisted_interactive_message(
+            db, session=session, team=team, content="Browser follow-up"
+        )
+        queued = await db.get(SessionMessage, result.message_id)
+
+        assert result.status == "queued"
+        assert queued is not None
+        assert queued.extra["queue_status"] == "queued"
+        assert queued.extra["model"] == "model:persisted"
+        assert team.session_tags == frozenset({"webbridge"})
+        assert team.permission_mode == "accept-edits"
+
+
+async def test_prepared_interactive_message_dispatches_when_idle(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from app.core import db as db_module
+    from app.models.chat import ChatSession
+
+    dispatch = AsyncMock(return_value=("session-id", 0))
+    monkeypatch.setattr(
+        "app.services.interactive_message_service.agent_service.dispatch_user_message",
+        dispatch,
+    )
+    team = SimpleNamespace(
+        user_message_lock=asyncio.Lock(),
+        session_tags=frozenset(),
+        permission_mode="auto",
+        lead=SimpleNamespace(agent=SimpleNamespace(model_id="model:test")),
+        has_active_user_turn=lambda: False,
+    )
+    async with db_module.async_session_factory() as db:
+        session = ChatSession(title="Idle", mode="coding", workspace="/tmp/project")
+        db.add(session)
+        await db.commit()
+
+        result = await submit_persisted_interactive_message(
+            db, session=session, team=team, content="Browser prompt"
+        )
+
+    assert result.status == "accepted"
+    dispatch.assert_awaited_once_with(
+        team,
+        content="Browser prompt",
+        session_id=str(session.id),
+        mode="coding",
+        workspace="/tmp/project",
+    )
+
+
+async def test_submit_interaction_dispatches_once_and_replays_ack(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from app.core import db as db_module
+    from app.models.chat import ChatSession
+
+    async with db_module.async_session_factory() as db:
+        session = ChatSession(title="Browser target")
+        db.add(session)
+        await db.commit()
+
+    fake_team = SimpleNamespace()
+    resolve = AsyncMock(return_value=(session, fake_team))
+    submit = AsyncMock(
+        return_value=InteractiveMessageResult(
+            status="accepted", session_id=str(session.id)
+        )
+    )
+    monkeypatch.setattr(
+        "app.api.routes.team.webbridge.resolve_team_for_session", resolve
+    )
+    monkeypatch.setattr(
+        "app.api.routes.team.webbridge.submit_persisted_interactive_message", submit
+    )
+
+    pairing = _pair_extension(client)
+    headers = {
+        "Authorization": f"Bearer {pairing['credential']}",
+        "Idempotency-Key": "submit-1",
+    }
+    payload = {
+        "kind": "prompt.submit",
+        "delivery": "submit",
+        "source": {
+            "tab_id": 7,
+            "origin": "https://example.com",
+            "user_gesture": True,
+        },
+        "target": {"session_id": str(session.id)},
+        "payload": {"prompt": "Use this browser context", "metadata": {}},
+    }
+
+    first = client.post(f"{_PREFIX}/interactions", headers=headers, json=payload)
+    replay = client.post(f"{_PREFIX}/interactions", headers=headers, json=payload)
+
+    assert first.status_code == 202
+    assert first.json()["status"] == "accepted"
+    assert replay.status_code == 200
+    assert replay.json() == first.json()
+    submit.assert_awaited_once()
+
+
+async def test_submit_retry_reclaims_stale_pending_interaction(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from app.core import db as db_module
+    from app.models.chat import ChatSession
+
+    async with db_module.async_session_factory() as db:
+        session = ChatSession(title="Crash recovery target")
+        db.add(session)
+        await db.commit()
+
+    pairing = _pair_extension(client)
+    payload = {
+        "kind": "prompt.submit",
+        "delivery": "submit",
+        "source": {
+            "tab_id": 7,
+            "origin": "https://example.com",
+            "user_gesture": True,
+        },
+        "target": {"session_id": str(session.id)},
+        "payload": {"prompt": "Recover this prompt", "metadata": {}},
+    }
+    request_payload = InteractionRequest.model_validate(payload).model_dump(mode="json")
+    async with db_module.async_session_factory() as db:
+        interaction, _ = await create_or_get_interaction(
+            db,
+            pairing_id=UUID(pairing["pairing_id"]),
+            interaction_id="stale-submit-1",
+            request_payload=request_payload,
+            kind="prompt.submit",
+            delivery="submit",
+            status="pending",
+            target_session_id=session.id,
+            origin="https://example.com",
+            tab_id=7,
+            page_instance_id=None,
+            payload_metadata={},
+            prompt="Recover this prompt",
+        )
+        interaction.dispatch_lease_until = datetime.now(timezone.utc) - timedelta(
+            seconds=1
+        )
+        db.add(interaction)
+        await db.commit()
+
+    submit = AsyncMock(
+        return_value=InteractiveMessageResult(
+            status="accepted", session_id=str(session.id)
+        )
+    )
+    monkeypatch.setattr(
+        "app.api.routes.team.webbridge.resolve_team_for_session",
+        AsyncMock(return_value=(session, SimpleNamespace())),
+    )
+    monkeypatch.setattr(
+        "app.api.routes.team.webbridge.submit_persisted_interactive_message", submit
+    )
+    headers = {
+        "Authorization": f"Bearer {pairing['credential']}",
+        "Idempotency-Key": "stale-submit-1",
+    }
+
+    recovered = client.post(f"{_PREFIX}/interactions", headers=headers, json=payload)
+    replay = client.post(f"{_PREFIX}/interactions", headers=headers, json=payload)
+
+    assert recovered.status_code == 200
+    assert recovered.json()["status"] == "accepted"
+    assert replay.json() == recovered.json()
+    submit.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    ("source", "target", "prompt", "status", "code"),
+    [
+        (
+            {"user_gesture": False},
+            {"session_id": None},
+            "Prompt",
+            403,
+            "user_gesture_required",
+        ),
+        (
+            {"user_gesture": True},
+            {"session_id": None},
+            "Prompt",
+            422,
+            "session_required",
+        ),
+        (
+            {"user_gesture": True},
+            {"session_id": "00000000-0000-0000-0000-000000000001"},
+            "   ",
+            422,
+            "prompt_required",
+        ),
+    ],
+)
+def test_submit_interaction_guardrails(
+    client: TestClient,
+    source: dict,
+    target: dict,
+    prompt: str,
+    status: int,
+    code: str,
+):
+    pairing = _pair_extension(client)
+    response = client.post(
+        f"{_PREFIX}/interactions",
+        headers={
+            "Authorization": f"Bearer {pairing['credential']}",
+            "Idempotency-Key": f"guard-{code}",
+        },
+        json={
+            "kind": "prompt.submit",
+            "delivery": "submit",
+            "source": source,
+            "target": target,
+            "payload": {"prompt": prompt},
+        },
+    )
+    assert response.status_code == status
+    assert response.json()["detail"]["code"] == code
+
+
+async def test_tab_binding_crud_is_scoped_and_updates_manager(
+    client: TestClient,
+    manager: WebBridgeManager,
+):
+    from app.core import db as db_module
+    from app.models.chat import ChatSession
+
+    async with db_module.async_session_factory() as db:
+        session = ChatSession(title="Bound session")
+        db.add(session)
+        await db.commit()
+
+    pairing = _pair_extension(client)
+    headers = {"Authorization": f"Bearer {pairing['credential']}"}
+    bound = client.put(
+        f"{_PREFIX}/bindings/42",
+        headers=headers,
+        json={
+            "session_id": str(session.id),
+            "origin": "https://example.com",
+            "page_instance_id": "page-1",
+        },
+    )
+    assert bound.status_code == 200
+    assert bound.json()["tab_id"] == 42
+    assert manager.session_tab_binding(str(session.id)) == (
+        pairing["pairing_id"],
+        42,
+    )
+
+    bindings = client.get(f"{_PREFIX}/bindings", headers=headers)
+    assert bindings.status_code == 200
+    assert [item["tab_id"] for item in bindings.json()] == [42]
+
+    removed = client.delete(f"{_PREFIX}/bindings/42", headers=headers)
+    assert removed.status_code == 204
+    assert manager.session_tab_binding(str(session.id)) is None
+
+
+async def test_paired_relay_rehydrates_binding_without_client_get(
+    client: TestClient,
+    manager: WebBridgeManager,
+):
+    from app.core import db as db_module
+    from app.models.chat import ChatSession
+
+    async with db_module.async_session_factory() as db:
+        session = ChatSession(title="Recovered binding")
+        db.add(session)
+        await db.commit()
+
+    pairing = _pair_extension(client)
+    headers = {"Authorization": f"Bearer {pairing['credential']}"}
+    bound = client.put(
+        f"{_PREFIX}/bindings/42",
+        headers=headers,
+        json={
+            "session_id": str(session.id),
+            "origin": "https://example.com",
+            "page_instance_id": "page-1",
+        },
+    )
+    assert bound.status_code == 200
+    assert manager.unbind_session_tab(str(session.id)) is True
+
+    ticket = client.post(f"{_PREFIX}/relay-ticket", headers=headers).json()["ticket"]
+    with client.websocket_connect(f"{_PREFIX}/relay?_ticket={ticket}") as ws:
+        _register(ws)
+        assert manager.session_tab_binding_pending(str(session.id)) is True
+        assert manager.session_tab_binding(str(session.id)) is None
+
+        ws.send_text(
+            json.dumps(
+                {
+                    "type": "event",
+                    "event": "tab_updated",
+                    "data": {
+                        "url": "https://example.com/current",
+                        "title": "Example",
+                        "tabs": [
+                            {
+                                "id": 42,
+                                "url": "https://example.com/current",
+                                "title": "Example",
+                            }
+                        ],
+                    },
+                }
+            )
+        )
+        ws.send_text(json.dumps({"type": "ping"}))
+        assert json.loads(ws.receive_text())["type"] == "pong"
+
+        assert manager.session_tab_binding_pending(str(session.id)) is False
+        assert manager.session_tab_binding(str(session.id)) == (
+            pairing["pairing_id"],
+            42,
+        )
+
+
+def test_pair_exchange_mints_scoped_credential_and_consumes_code(client: TestClient):
+    code = webbridge_pairing_code_store.issue("Work Chrome")
+    payload = {"code": code, "browser": "chrome", "version": "1.2.0"}
+
+    response = client.post(f"{_PREFIX}/pairing/exchange", json=payload)
+    assert response.status_code == 201
+    data = response.json()
+    assert data["pairing_id"]
+    assert data["credential"]
+    assert {"relay", "interactions:write"} <= set(data["scopes"])
+
+    replay = client.post(f"{_PREFIX}/pairing/exchange", json=payload)
+    assert replay.status_code == 401
+
+
+def test_pairing_code_requires_configured_backend_auth(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
+    response = client.post(f"{_PREFIX}/pairing/code", json={"label": "Work Chrome"})
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "pairing_requires_auth"
+
+    monkeypatch.setenv("EVOFLUX_ACCESS_KEY", "configured")
+    response = client.post(f"{_PREFIX}/pairing/code", json={"label": "Work Chrome"})
+    assert response.status_code == 201
+    assert response.json()["code"]
+
+
+def test_pairing_credential_mints_single_use_authoritative_relay_ticket(
+    client: TestClient,
+):
+    pairing = _pair_extension(client)
+    ticket_response = client.post(
+        f"{_PREFIX}/relay-ticket",
+        headers={"Authorization": f"Bearer {pairing['credential']}"},
+    )
+    assert ticket_response.status_code == 201
+    ticket = ticket_response.json()["ticket"]
+
+    with client.websocket_connect(f"{_PREFIX}/relay?_ticket={ticket}") as ws:
+        ack = _register(ws, extension_id="spoofed-extension-id")
+        assert ack["extension_id"] == pairing["pairing_id"]
+        assert ack["pairing_id"] == pairing["pairing_id"]
+        assert ack["protocol_version"] == 2
+        [extension] = client.get(f"{_PREFIX}/status").json()["extensions"]
+        assert extension["paired"] is True
+
+    with pytest.raises(WebSocketDisconnect) as exc_info:
+        with client.websocket_connect(f"{_PREFIX}/relay?_ticket={ticket}"):
+            pass
+    assert exc_info.value.code == 4401
+
+
+def test_revoking_pairing_invalidates_credential_and_outstanding_tickets(
+    client: TestClient,
+):
+    pairing = _pair_extension(client)
+    headers = {"Authorization": f"Bearer {pairing['credential']}"}
+    ticket_response = client.post(f"{_PREFIX}/relay-ticket", headers=headers)
+    assert ticket_response.status_code == 201
+    ticket = ticket_response.json()["ticket"]
+
+    pairings = client.get(f"{_PREFIX}/pairings")
+    assert pairing["pairing_id"] in {item["pairing_id"] for item in pairings.json()}
+    revoked = client.delete(f"{_PREFIX}/pairings/{pairing['pairing_id']}")
+    assert revoked.status_code == 204
+
+    assert client.post(f"{_PREFIX}/relay-ticket", headers=headers).status_code == 401
+    assert pairing["pairing_id"] not in {
+        item["pairing_id"] for item in client.get(f"{_PREFIX}/pairings").json()
+    }
+    with pytest.raises(WebSocketDisconnect) as exc_info:
+        with client.websocket_connect(f"{_PREFIX}/relay?_ticket={ticket}"):
+            pass
+    assert exc_info.value.code == 4401
+
+
+def test_ticket_mint_revoke_race_returns_auth_failure(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    pairing = _pair_extension(client)
+    monkeypatch.setattr(
+        webbridge_ticket_store,
+        "issue",
+        lambda pairing_id: (_ for _ in ()).throw(ValueError("pairing is revoked")),
+    )
+
+    response = client.post(
+        f"{_PREFIX}/relay-ticket",
+        headers={"Authorization": f"Bearer {pairing['credential']}"},
+    )
+    assert response.status_code == 401
+    assert response.json()["detail"]["code"] == "invalid_pairing"
+
+
+def test_draft_interaction_is_idempotent_and_conflicts_on_payload_change(
+    client: TestClient,
+):
+    pairing = _pair_extension(client)
+    headers = {
+        "Authorization": f"Bearer {pairing['credential']}",
+        "Idempotency-Key": "interaction-1",
+    }
+    payload = {
+        "kind": "context.share",
+        "delivery": "draft",
+        "source": {
+            "tab_id": 7,
+            "page_instance_id": "page-1",
+            "origin": "https://example.com",
+            "user_gesture": True,
+        },
+        "target": {"session_id": None},
+        "payload": {
+            "prompt": "Explain this",
+            "metadata": {"context_type": "selection"},
+        },
+    }
+
+    first = client.post(f"{_PREFIX}/interactions", headers=headers, json=payload)
+    replay = client.post(f"{_PREFIX}/interactions", headers=headers, json=payload)
+    assert first.status_code == 202
+    assert replay.status_code == 200
+    assert replay.json() == first.json()
+    assert first.json()["status"] == "draft"
+
+    changed = {
+        **payload,
+        "payload": {**payload["payload"], "prompt": "Changed"},
+    }
+    conflict = client.post(f"{_PREFIX}/interactions", headers=headers, json=changed)
+    assert conflict.status_code == 409
+    assert conflict.json()["detail"]["code"] == "idempotency_conflict"
+
+
+def test_interaction_rate_limit_does_not_charge_idempotent_replay(
+    client: TestClient,
+    manager: WebBridgeManager,
+):
+    _set_policy(manager, interactions={"max_per_minute": 1})
+    pairing = _pair_extension(client)
+    headers = {
+        "Authorization": f"Bearer {pairing['credential']}",
+        "Idempotency-Key": "rate-1",
+    }
+    payload = {
+        "kind": "context.share",
+        "delivery": "draft",
+        "source": {"origin": "https://example.com", "user_gesture": True},
+        "target": {"session_id": None},
+        "payload": {"prompt": "Draft", "metadata": {}},
+    }
+
+    assert (
+        client.post(
+            f"{_PREFIX}/interactions", headers=headers, json=payload
+        ).status_code
+        == 202
+    )
+    assert (
+        client.post(
+            f"{_PREFIX}/interactions", headers=headers, json=payload
+        ).status_code
+        == 200
+    )
+
+    headers["Idempotency-Key"] = "rate-2"
+    limited = client.post(f"{_PREFIX}/interactions", headers=headers, json=payload)
+    assert limited.status_code == 429
+    assert limited.headers["Retry-After"] == "60"
+    assert limited.json()["detail"]["code"] == "rate_limited"
 
 
 def test_ws_rejected_without_token(client: TestClient, monkeypatch: pytest.MonkeyPatch):
@@ -455,6 +1376,7 @@ async def test_tool_screenshot_returns_image_block(
     assert "Screenshot captured" in text.text
     assert f"{len(raw)} bytes" in text.text
     assert "CSS pixels" in text.text
+    assert "Untrusted browser content" in text.text
 
 
 async def test_tool_aggregates_action_errors(
@@ -586,6 +1508,43 @@ def _set_policy(manager: WebBridgeManager, **kwargs) -> None:
     manager._policy_cache = WebBridgeSettings(**kwargs)
 
 
+def test_interaction_policy_blocks_domains_background_and_disabled_capture(
+    manager: WebBridgeManager,
+):
+    _set_policy(
+        manager,
+        sharing={
+            "blocked_domains": ["private.example"],
+            "allow_selection": False,
+        },
+    )
+
+    assert (
+        "blocked"
+        in manager.check_interaction_policy(
+            origin="https://app.private.example/path",
+            user_gesture=True,
+            context_type="selection",
+        ).lower()
+    )
+    assert (
+        "user gesture"
+        in manager.check_interaction_policy(
+            origin="https://safe.example",
+            user_gesture=False,
+            context_type=None,
+        ).lower()
+    )
+    assert (
+        "selection"
+        in manager.check_interaction_policy(
+            origin="https://safe.example",
+            user_gesture=True,
+            context_type="selection",
+        ).lower()
+    )
+
+
 async def test_policy_blocks_navigate_to_blocked_domain(
     manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
 ):
@@ -596,6 +1555,25 @@ async def test_policy_blocks_navigate_to_blocked_domain(
     )
     assert result["success"] is False
     assert "blocked" in result["error"].lower()
+
+
+async def test_sharing_policy_blocks_command_page_reads_only(
+    manager: WebBridgeManager,
+):
+    _set_policy(manager, sharing={"blocked_domains": ["private.example"]})
+    sent = _recorder_ext(manager, "e1")
+    manager.get_extension("e1").current_url = "https://private.example/account"
+
+    refused = await manager.send_command("sess", "extract", {})
+    assert refused["success"] is False
+    assert "sharing policy" in refused["error"].lower()
+    assert sent == []
+
+    click = asyncio.create_task(manager.send_command("sess", "click", {"x": 1, "y": 2}))
+    await asyncio.sleep(0)
+    command = json.loads(sent.pop())
+    manager.handle_response(command["request_id"], success=True, data={}, error=None)
+    assert (await click)["success"] is True
 
 
 async def test_policy_allowlist_refuses_other_domains(
@@ -743,6 +1721,7 @@ async def test_tool_snapshot_lists_elements(
     result = await webbridge(actions=[_action({"action": "snapshot"})])
     assert isinstance(result, str)
     assert "Page snapshot: Account settings" in result
+    assert "Untrusted browser content" in result
     assert "https://example.com/settings" in result
     assert "1280x720 css-px at (0, 40)" in result
     assert "Email alerts" in result and "#alerts" in result and "@(100,40)" in result

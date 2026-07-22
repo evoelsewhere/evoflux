@@ -43,23 +43,39 @@ enforced against the tab actually being driven.
 3. Click the WebBridge icon in the toolbar to open the popup and configure the
    connection (below).
 
+## Secure pairing (recommended)
+
+1. Open **WebBridge** in EvoFlux and click **Generate secure pairing code**.
+2. Open the extension popup, set the EvoFlux relay URL, enter the one-time code,
+  and click **Pair with EvoFlux**.
+3. The extension stores a revocable, scoped pairing credential locally. Before
+  every relay connection it exchanges that credential over HTTP for a
+  single-use, 30-second WebSocket ticket; the credential is never placed in a
+  URL.
+
+Pairing codes expire after five minutes and work once. EvoFlux must have desktop
+token auth or a server access key configured before it can issue a code. Pairing
+survives desktop restarts, unlike the per-launch desktop token, and can be
+revoked from the WebBridge dialog.
+
 ## Popup configuration
 
 - **Relay URL** — base URL of the EvoFlux backend, default
   `ws://127.0.0.1:8000`. `http(s)://` bases are accepted and normalized to
   `ws(s)://`. The extension appends `/api/team/webbridge/relay` itself.
-- **Access token** — required whenever the backend enforces authentication
-  (desktop app mode, or a server started with `--key`). Leave empty for a
-  local dev backend without a key.
+- **Legacy access token** — migration fallback for an unpaired extension. It is
+  the desktop token or server access key and is sent in the relay query string.
+  Prefer secure pairing for new installations.
 
-Both fields are saved automatically (persisted in `chrome.storage.local`) and
-saving triggers an immediate reconnect.
+Connection fields are saved in `chrome.storage.local`; changing them triggers an
+immediate reconnect. The secure pairing credential is also stored locally but
+is only sent as an HTTP Bearer credential to mint relay tickets.
 
 The popup also shows how many tabs are currently attached to the Chrome
 debugger. **Release browser control** detaches all of them without disabling
 the relay connection; disconnecting the extension releases them automatically.
 
-### Where to find the token
+### Legacy: where to find the token
 
 The token is the same credential the EvoFlux web UI uses:
 
@@ -78,6 +94,9 @@ token."**
 - The access token is required in desktop mode; without a valid `?_token=` the
   relay rejects the connection (close code 4401). The token is stored locally
   in `chrome.storage.local` and sent only to the configured relay URL.
+- Paired connections instead use a scoped credential plus a single-use relay
+  ticket. Revoking a pairing invalidates its credential and outstanding tickets
+  and closes its active relay connection.
 - Commands arrive **only** from the configured relay — point it at your own
   local EvoFlux backend (the default is loopback, `127.0.0.1`). Anyone who can
   reach the relay with a valid token can drive your browser, so keep the
@@ -112,6 +131,18 @@ webbridge:
     - mail.google.com
   allow_evaluate: true     # set false to forbid arbitrary-JS `evaluate`
   audit_log_size: 200      # entries kept for GET /api/team/webbridge/audit
+  sharing:
+    default: ask           # ask | allow | block for browser -> EvoFlux data
+    blocked_domains:       # page data from these domains cannot enter EvoFlux
+      - mybank.com
+      - mail.google.com
+    allow_selection: true
+    allow_readable_page: false
+    allow_screenshot: false
+    max_artifact_bytes: 5000000
+  interactions:
+    allow_background_triggers: false
+    max_per_minute: 30
 ```
 
 Domain matching is suffix-based, so `example.com` also covers

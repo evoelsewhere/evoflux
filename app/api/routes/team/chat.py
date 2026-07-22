@@ -62,13 +62,14 @@ from app.services import (
     memory_stream_store as stream_store,
     team_manager,
 )
-from app.services.agent_service import AttachmentError, RawAttachment
+from app.services.agent_service import AttachmentError, NoTeamConfigured, RawAttachment
 from app.services.coding_workspace_service import (
     hide_coding_workspace,
     list_visible_coding_workspaces,
     upsert_coding_workspace,
 )
 from app.services.webbridge_service import webbridge_manager
+from app.services.interactive_message_service import resolve_team_for_session
 from app.services.chat_service import (
     BoundaryShift,
     cancel_queued_user_message,
@@ -202,36 +203,12 @@ async def _team_for_session_mode(db: DbSession, session_id: str):
     pipeline in that session run with the forge lead.
     """
     try:
-        session_uuid = UUID(session_id)
+        _, team_obj = await resolve_team_for_session(db, session_id)
+        return team_obj
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail="Invalid session id.") from exc
-    async with db.begin():
-        existing = await db.get(ChatSession, session_uuid)
-    if existing and existing.mode in ("coding", "aim") and existing.workspace:
-        workspace = _validate_workspace_or_422(existing.workspace)
-        extra_ws_paths, read_only_paths = await _project_paths_for_session(
-            db, existing, workspace
-        )
-        try:
-            team_obj = await team_manager.get_or_start_coding_team(
-                workspace,
-                session_id,
-                extra_workspace_paths=extra_ws_paths or None,
-                mode=existing.mode,
-                read_only_paths=read_only_paths or None,
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
-    else:
-        team_obj = _require_team(
-            await team_manager.get_or_start_team_for_session(session_id)
-        )
-    if existing is not None:
-        # Restore persisted session tags so tag-based tool scoping (e.g. a
-        # WebBridge-tagged session) survives a cold team boot — same pattern
-        # as permission_mode in team_chat.
-        team_obj.session_tags = frozenset(existing.tags or ())
-    return team_obj
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except NoTeamConfigured as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 def _changed_paths_payload(shift: BoundaryShift) -> dict:

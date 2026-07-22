@@ -16,6 +16,10 @@ const connectBtn = document.getElementById("connectBtn");
 const releaseBtn = document.getElementById("releaseBtn");
 const relayBaseInput = document.getElementById("relayBase");
 const accessTokenInput = document.getElementById("accessToken");
+const pairingCard = document.getElementById("pairingCard");
+const pairingCodeInput = document.getElementById("pairingCode");
+const pairBtn = document.getElementById("pairBtn");
+const pairingDetail = document.getElementById("pairingDetail");
 const extensionVersion = document.getElementById("extensionVersion");
 
 // ── Config ───────────────────────────────────────────────────────────────────
@@ -62,7 +66,9 @@ async function updateStatus() {
       statusDot.className = "status-dot connected";
       statusText.textContent = "Connected";
       statusDetail.className = "detail";
-      statusDetail.textContent = `Extension ID: ${response.extension_id || "unknown"}`;
+      statusDetail.textContent = response.paired
+        ? `Securely paired: ${response.pairing_id || "connected"}`
+        : `Legacy connection: ${response.extension_id || "unknown"}`;
 
       if (response.active_tab) {
         tabInfo.style.display = "block";
@@ -74,6 +80,22 @@ async function updateStatus() {
 
       connectBtn.textContent = "Disconnect";
       connectBtn.className = "btn btn-danger";
+    } else if (response && response.last_close_reason === "pairing") {
+      statusDot.className = "status-dot disconnected";
+      statusText.textContent = "Pairing required";
+      statusDetail.className = "detail auth-error";
+      statusDetail.textContent = "The pairing was rejected or revoked. Generate a new code in EvoFlux.";
+      tabInfo.style.display = "none";
+      connectBtn.textContent = "Reconnect";
+      connectBtn.className = "btn btn-primary";
+    } else if (response && response.last_close_reason === "security") {
+      statusDot.className = "status-dot disconnected";
+      statusText.textContent = "Insecure relay URL"
+      statusDetail.className = "detail auth-error";
+      statusDetail.textContent = "Remote relays must use HTTPS or WSS. Plaintext is only allowed on loopback.";
+      tabInfo.style.display = "none";
+      connectBtn.textContent = "Reconnect";
+      connectBtn.className = "btn btn-primary";
     } else if (response && response.last_close_reason === "auth") {
       statusDot.className = "status-dot disconnected";
       statusText.textContent = "Auth failed";
@@ -97,6 +119,7 @@ async function updateStatus() {
       ? `Browser control active on ${attachedCount} tab${attachedCount === 1 ? "" : "s"}.`
       : "No tabs currently controlled.";
     releaseBtn.style.display = attachedCount ? "block" : "none";
+    pairingCard.style.display = response?.paired ? "none" : "block";
   } catch (e) {
     // Background script might not be ready
     statusDot.className = "status-dot connecting";
@@ -107,6 +130,28 @@ async function updateStatus() {
     connectBtn.className = "btn btn-primary";
     controlDetail.textContent = "Browser control state unavailable.";
     releaseBtn.style.display = "none";
+  }
+}
+
+async function pairExtension() {
+  const code = pairingCodeInput.value.trim().toUpperCase();
+  if (!code) {
+    pairingDetail.textContent = "Enter the one-time code shown in EvoFlux.";
+    return;
+  }
+  pairBtn.disabled = true;
+  pairingDetail.textContent = "Pairing...";
+  await saveConfig(false);
+  try {
+    const result = await chrome.runtime.sendMessage({ type: "pair_with_code", code });
+    if (!result?.ok) throw new Error(result?.error || "Pairing failed");
+    pairingCodeInput.value = "";
+    pairingDetail.textContent = "Paired. Connecting with a scoped credential...";
+    setTimeout(updateStatus, 500);
+  } catch (e) {
+    pairingDetail.textContent = e.message || String(e);
+  } finally {
+    pairBtn.disabled = false;
   }
 }
 
@@ -138,6 +183,7 @@ async function releaseBrowserControl() {
 // ── Wiring ───────────────────────────────────────────────────────────────────
 
 connectBtn.addEventListener("click", toggleConnection);
+pairBtn.addEventListener("click", pairExtension);
 releaseBtn.addEventListener("click", releaseBrowserControl);
 relayBaseInput.addEventListener("input", onConfigInput);
 accessTokenInput.addEventListener("input", onConfigInput);
