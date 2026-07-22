@@ -98,6 +98,7 @@ export function useSlashCommandRegistry({
     { id: 'redo', label: 'Redo', description: 'Restore all undone messages back to the live tip' },
     { id: 'new', label: 'New Chat', description: 'Start a fresh team conversation' },
     { id: 'init', label: 'Init', description: 'Create or update AGENTS.md for this project' },
+    { id: 'btw', label: 'btw', description: 'Open side chat with read-only access to this session' },
     ...(mode === 'coding'
       ? [
           { id: 'loop', label: 'loop <prompt>', displayName: 'loop', insertText: 'loop', description: 'Start a coding loop', keepInputOpen: true },
@@ -225,6 +226,9 @@ export function useSlashCommandRegistry({
               description: err.message,
             }),
           )
+        break
+      case 'btw':
+        // Handled by the parent (TeamChatView) via onSlashCommand callback
         break
     }
   }, [handleNewSession, runLoopCommand, mode, agentWorkspace, pushToast, inputRef])

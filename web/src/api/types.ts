@@ -1218,3 +1218,26 @@ export interface WebBridgeAuditEntry {
 export interface WebBridgeAuditResponse {
   entries: WebBridgeAuditEntry[]
 }
+
+// ── Side Chat ─────────────────────────────────────────────────────────────────
+
+export interface SideChatSession {
+  id: string
+  main_session_id: string
+  title: string
+  created_at: string
+}
+
+export interface SideChatMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  blocks: ContentBlock[]
+  agent?: string | null
+  timestamp: Date
+}
+
+export interface SideChatCreateResponse {
+  side_chat_id: string
+  title: string
+}

@@ -153,6 +153,25 @@ class ChatSession(SQLModel, table=True):
             nullable=True,
         ),
     )
+    # Session type: "main" (default), "team_member" (existing parent_session_id
+    # usage), or "side_chat" (read-only access to source_session_id context).
+    session_type: str = Field(
+        default="main",
+        max_length=20,
+        sa_column=Column(sa.String(20), nullable=False, server_default="main"),
+    )
+    # For side chats: reference to the main session they read from.
+    # ON DELETE SET NULL so a deleted main session leaves the side chat intact
+    # (it just loses source context — graceful degradation).
+    source_session_id: UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            sa.Uuid(),
+            ForeignKey("chat_sessions.id", ondelete="SET NULL"),
+            nullable=True,
+            index=True,
+        ),
+    )
     created_at: datetime = Field(
         default_factory=_utcnow,
         sa_column=Column(TZDateTime(), nullable=False),

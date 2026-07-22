@@ -1339,3 +1339,70 @@ def _build_parts(text: str, attachments: list[dict]) -> list | None:
         not (hasattr(p, "text") and getattr(p, "text") == text) for p in parts
     )
     return parts if has_file_blocks else None
+
+
+# ── Side Chat helpers ────────────────────────────────────────────────────────
+
+
+async def get_side_chat_context(
+    db: AsyncSession,
+    source_session_id: UUID,
+    *,
+    max_messages: int = 50,
+) -> list[ChatMessage]:
+    """Load the last *max_messages* visible messages from *source_session_id*.
+
+    Returns them in chronological order so they can be prepended to the side
+    chat's own message list as read-only context for the LLM.  Messages with
+    ``exclude_from_context=True`` are filtered out (same as
+    :func:`get_messages_for_llm`).
+    """
+    stmt = (
+        select(SessionMessage)
+        .where(col(SessionMessage.session_id) == source_session_id)
+        .where(~col(SessionMessage.exclude_from_context))
+        .order_by(col(SessionMessage.created_at).desc())
+        .limit(max_messages)
+    )
+    db_messages = list((await db.exec(stmt)).all())
+    db_messages.reverse()  # chronological order
+    return await asyncio.to_thread(
+        _deserialize_messages, db_messages, sanitize_tool_pairs=True
+    )
+
+
+async def create_side_chat_session(
+    db: AsyncSession,
+    main_session_id: UUID,
+    *,
+    title: str | None = None,
+) -> ChatSession:
+    """Create a side-chat session with read-only access to *main_session_id*.
+
+    Copies workspace/project/mode settings from the main session so the side
+    chat inherits the same environment.  The ``source_session_id`` foreign key
+    uses ``ON DELETE SET NULL`` so a deleted main session doesn't cascade.
+    """
+    main = await db.get(ChatSession, main_session_id)
+    if main is None:
+        raise ValueError(f"Main session {main_session_id} not found")
+
+    effective_title = title or f"Side Chat: {main.title or 'Untitled'}"
+    session = ChatSession(
+        title=effective_title,
+        session_type="side_chat",
+        source_session_id=main_session_id,
+        agent_name=main.agent_name,
+        mode=main.mode,
+        workspace=main.workspace,
+        project_id=main.project_id,
+    )
+    db.add(session)
+    await db.flush()
+    await db.refresh(session)
+    logger.info(
+        "side_chat_created session_id={} source_session_id={}",
+        session.id,
+        main_session_id,
+    )
+    return session
