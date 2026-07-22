@@ -260,10 +260,38 @@ class TestLoadSkill:
 
     def test_tool_description_tells_agent_not_to_reload_visible_skills(self):
         description = _skill_tool_description()
-        assert "Call this at most once per skill." in description
-        assert (
-            "reuse those instructions instead of calling this tool again" in description
+        assert "at most once per skill" in description
+        assert "reuse instructions already visible" in description
+        assert "action='list'" in description
+
+    @pytest.mark.asyncio
+    async def test_list_action_returns_full_catalog(self, tmp_path, monkeypatch):
+        d = tmp_path / "analysis"
+        d.mkdir()
+        (d / "SKILL.md").write_text(
+            "---\nname: analysis\ndescription: Full catalog description\n---\nBody."
         )
+        monkeypatch.setattr("app.agent.tools.builtin.skill._SKILLS_DIR", tmp_path)
+
+        result = await load_skill(action="list")
+
+        assert "analysis" in result
+        assert "Full catalog description" in result
+
+    def test_tool_description_lists_names_without_full_descriptions(
+        self, tmp_path, monkeypatch
+    ):
+        d = tmp_path / "analysis"
+        d.mkdir()
+        (d / "SKILL.md").write_text(
+            "---\nname: analysis\ndescription: Expensive full description\n---\nBody."
+        )
+        monkeypatch.setattr("app.agent.tools.builtin.skill._SKILLS_DIR", tmp_path)
+
+        description = _skill_tool_description()
+
+        assert "analysis" in description
+        assert "Expensive full description" not in description
 
 
 # ---------------------------------------------------------------------------

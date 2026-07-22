@@ -20,14 +20,15 @@ from app.agent.agent_loop import Agent
 from app.agent.mode.team.member import TeamLead
 from app.agent.mode.team.team import AgentTeam
 from app.agent.mode.team.tier_policy import (
-    DEFAULT_DEFERRED_TOOLS,
+    BROWSER_SIGNAL_REVEALED_TOOLS,
     SIDE_CHAT_ALWAYS_EXCLUDED_TOOLS,
     SIDE_CHAT_SESSION_TAG,
     TIER_DENIED_TOOLS,
-    WEBBRIDGE_SESSION_ALLOWED_TOOLS,
-    WEBBRIDGE_SESSION_DENIED_TEAM_TOOLS,
+    WEBBRIDGE_SESSION_DENIED_WEB_TOOLS,
     WEBBRIDGE_SESSION_TAG,
+    deferred_tools_for_run,
     denied_tools_for_tier,
+    request_has_browser_signal,
     resolve_member_tier,
     side_chat_session_excluded_tools,
     webbridge_session_excluded_tools,
@@ -52,6 +53,30 @@ class TestDeniedToolsForTier:
         assert "shell" in denied
         assert "bg" in denied
         assert "python" in denied
+
+    def test_trivial_denies_new_side_effecting_tools_from_metadata(self):
+        future_tool = Tool(
+            lambda: None,
+            name="future_side_effect",
+            deferred=True,
+            read_only=False,
+        )
+
+        denied = denied_tools_for_tier("trivial", [future_tool])
+
+        assert "future_side_effect" in denied
+
+    def test_trivial_allows_new_read_only_tools_from_metadata(self):
+        future_tool = Tool(
+            lambda: None,
+            name="future_inspector",
+            deferred=True,
+            read_only=True,
+        )
+
+        denied = denied_tools_for_tier("trivial", [future_tool])
+
+        assert "future_inspector" not in denied
 
     def test_trivial_denies_browser(self):
         denied = denied_tools_for_tier("trivial")
@@ -90,15 +115,22 @@ class TestDeniedToolsForTier:
         assert "complex" in TIER_DENIED_TOOLS
 
 
-# ── DEFAULT_DEFERRED_TOOLS ───────────────────────────────────────────────
+# ── Registry-driven deferred tools ───────────────────────────────────────
 
 
 class TestDefaultDeferredTools:
     def test_includes_browser_tools(self):
-        assert {"browser_use", "webbridge"} <= DEFAULT_DEFERRED_TOOLS
+        from app.agent.loader import _default_tool_registry
+
+        registry = _default_tool_registry()
+        assert registry["browser_use"].deferred
+        assert registry["webbridge"].deferred
 
     def test_includes_long_tail_tools(self):
-        assert {
+        from app.agent.loader import _default_tool_registry
+
+        registry = _default_tool_registry()
+        expected = {
             "aim_units",
             "aim_compare",
             "terminal_run",
@@ -111,26 +143,147 @@ class TestDefaultDeferredTools:
             "show_widget",
             "create_pull_request",
             "schedule_task",
-        } <= DEFAULT_DEFERRED_TOOLS
+        }
+        assert all(registry[name].deferred for name in expected)
+        assert all(registry[name].deferred_summary for name in expected)
 
     def test_excludes_core_coding_tools(self):
         """Tools nearly every turn needs must never be deferred."""
-        assert DEFAULT_DEFERRED_TOOLS.isdisjoint(
-            {"read", "write", "edit", "grep", "glob", "shell", "todo_manage", "skill"}
+        from app.agent.loader import _default_tool_registry
+
+        registry = _default_tool_registry()
+        assert not any(
+            registry[name].deferred
+            for name in (
+                "read",
+                "write",
+                "edit",
+                "grep",
+                "glob",
+                "shell",
+                "todo_manage",
+                "skill",
+            )
         )
 
-    def test_catalog_matches_default_deferred_tools(self):
-        """load_tool._CATALOG must list exactly the deferred tool names.
+    def test_loader_is_core_and_read_only(self):
+        from app.agent.loader import _default_tool_registry
 
-        The two are independent hand-maintained sources (load_tool.py can't
-        import this constant at module level without a circular import —
-        see the comment above _CATALOG) — a name in one but not the other
-        means that tool is either permanently hidden with no way to unlock
-        it, or advertised by load_tool but never actually deferred.
-        """
-        from app.agent.tools.builtin.load_tool import _CATALOG
+        loader = _default_tool_registry()["load_tool"]
+        assert not loader.deferred
+        assert loader.read_only
 
-        assert set(_CATALOG) == DEFAULT_DEFERRED_TOOLS
+    def test_lead_registry_core_stays_between_ten_and_fifteen_tools(self):
+        from app.agent.builtin_prompts import tier_tools
+        from app.agent.loader import _default_tool_registry
+
+        registry = _default_tool_registry()
+        expected_core = {
+            "edit",
+            "glob",
+            "grep",
+            "load_tool",
+            "ls",
+            "patch",
+            "read",
+            "shell",
+            "skill",
+            "todo_manage",
+            "write",
+        }
+        for mode in ("forge", "coding", "aim"):
+            granted = set(tier_tools(registry, mode=mode, role="lead"))
+            granted.update({"skill", "todo_manage", "schedule_task", "note"})
+            eager = {name for name in granted if not registry[name].deferred}
+            assert 10 <= len(eager) <= 15
+            assert eager == expected_core
+
+    def test_actual_coding_lead_payload_has_fourteen_eager_tools(self):
+        from app.agent.builtin_prompts import tier_tools
+        from app.agent.loader import _default_tool_registry
+        from tests.agent.mode.team.conftest import MockTeamProvider
+
+        registry = _default_tool_registry()
+        names = set(tier_tools(registry, mode="coding", role="lead"))
+        names.update({"skill", "todo_manage", "schedule_task", "note"})
+        agent = Agent(
+            name="lead",
+            llm_provider=MockTeamProvider(),
+            tools=[registry[name] for name in sorted(names)],
+        )
+        lead = TeamLead(agent)
+        team = AgentTeam(lead=lead, mode="coding")
+        merged = {
+            tool.name: tool
+            for tool in (*agent._tools.values(), *team.get_injected_tools("lead"))
+        }
+
+        eager = {name for name, tool in merged.items() if not tool.deferred}
+
+        assert eager == {
+            "edit",
+            "glob",
+            "grep",
+            "load_tool",
+            "ls",
+            "patch",
+            "read",
+            "shell",
+            "skill",
+            "team_delegate",
+            "team_manage",
+            "team_message",
+            "todo_manage",
+            "write",
+        }
+
+
+class TestBrowserSignalDeferredTools:
+    @staticmethod
+    def _tool(name: str, *, deferred: bool = False) -> Tool:
+        return Tool(lambda: None, name=name, deferred=deferred)
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Open https://example.com and take a screenshot",
+            "Verify the responsive frontend in Chrome",
+            "Inspect the DOM on localhost:5173",
+        ],
+    )
+    def test_clear_browser_requests_are_detected(self, text):
+        assert request_has_browser_signal(text)
+
+    def test_plain_backend_request_does_not_reveal_browser(self):
+        assert not request_has_browser_signal("Refactor the database query and run tests")
+
+    def test_browser_signal_reveals_browser_and_preview_only(self):
+        tools = [
+            self._tool("load_tool"),
+            self._tool("browser_use", deferred=True),
+            self._tool("preview", deferred=True),
+            self._tool("webbridge", deferred=True),
+            self._tool("lsp_diagnostics", deferred=True),
+        ]
+
+        deferred = deferred_tools_for_run(
+            tools, request_text="Check this responsive web app in a browser"
+        )
+
+        assert BROWSER_SIGNAL_REVEALED_TOOLS.isdisjoint(deferred)
+        assert {"webbridge", "lsp_diagnostics"} <= deferred
+
+    def test_webbridge_tag_reveals_webbridge_without_headless_browser(self):
+        tools = [
+            self._tool("load_tool"),
+            self._tool("browser_use", deferred=True),
+            self._tool("webbridge", deferred=True),
+        ]
+
+        deferred = deferred_tools_for_run(tools, reveal_webbridge=True)
+
+        assert "webbridge" not in deferred
+        assert "browser_use" in deferred
 
 
 # ── resolve_member_tier ──────────────────────────────────────────────────
@@ -326,8 +479,8 @@ class TestResolveMemberTier:
 
 # ── WebBridge session scoping ────────────────────────────────────────────
 
-# Representative lead tool set (registry keys): the allowlisted names, the
-# web tools that must be excluded, loader-managed lead tools, and an MCP tool.
+# Representative lead tool set: workspace/core tools, competing web backends,
+# deferred loaders, injected team tools, and browser/non-browser MCP tools.
 _LEAD_REGISTRY_TOOLS = [
     "webbridge",
     "ask_user",
@@ -343,7 +496,16 @@ _LEAD_REGISTRY_TOOLS = [
     "read",
     "write",
     "shell",
+    "load_tool",
+    "preview",
     "mcp_playwright_navigate",
+    "mcp_filesystem_read_file",
+    "team_message",
+    "team_handoff",
+    "team_state",
+    "team_manage",
+    "team_delegate",
+    "team_reject",
 ]
 
 
@@ -352,19 +514,21 @@ class TestWebbridgeSessionExcludedTools:
         excluded = webbridge_session_excluded_tools(_LEAD_REGISTRY_TOOLS)
         assert {"browser_use", "web_search", "web_fetch", "image_search"} <= excluded
 
-    def test_allowlist_survives(self):
+    def test_workspace_and_loader_tools_survive(self):
         excluded = webbridge_session_excluded_tools(_LEAD_REGISTRY_TOOLS)
-        assert WEBBRIDGE_SESSION_ALLOWED_TOOLS.isdisjoint(excluded)
+        assert {
+            "read",
+            "write",
+            "shell",
+            "skill",
+            "load_tool",
+            "preview",
+            "mcp_filesystem_read_file",
+        }.isdisjoint(excluded)
 
-    def test_allowlist_matches_pinned_contract(self):
-        assert WEBBRIDGE_SESSION_ALLOWED_TOOLS == frozenset(
-            {"webbridge", "ask_user", "todo_manage", "note", "date"}
-        )
-
-    def test_everything_outside_allowlist_excluded(self):
-        excluded = webbridge_session_excluded_tools(_LEAD_REGISTRY_TOOLS)
-        assert excluded >= (
-            frozenset(_LEAD_REGISTRY_TOOLS) - WEBBRIDGE_SESSION_ALLOWED_TOOLS
+    def test_denied_web_tools_match_pinned_contract(self):
+        assert WEBBRIDGE_SESSION_DENIED_WEB_TOOLS == frozenset(
+            {"browser_use", "web_search", "web_fetch", "image_search"}
         )
 
     def test_mcp_tools_excluded(self):
@@ -372,15 +536,20 @@ class TestWebbridgeSessionExcludedTools:
         excluded = webbridge_session_excluded_tools(_LEAD_REGISTRY_TOOLS)
         assert "mcp_playwright_navigate" in excluded
 
-    def test_roster_tools_excluded(self):
-        # Injected (non-registry) lead tools that could spawn/delegate to
-        # non-scoped members are denied even though they are never in
-        # tool_names.
-        excluded = webbridge_session_excluded_tools(["webbridge"])
-        assert WEBBRIDGE_SESSION_DENIED_TEAM_TOOLS <= excluded
-        assert WEBBRIDGE_SESSION_DENIED_TEAM_TOOLS == frozenset(
-            {"team_manage", "team_delegate", "team_reject"}
-        )
+    def test_all_injected_team_tools_survive(self):
+        injected = {
+            "team_message",
+            "team_handoff",
+            "todo_manage",
+            "team_state",
+            "team_manage",
+            "team_delegate",
+            "team_reject",
+        }
+
+        excluded = webbridge_session_excluded_tools({"webbridge", *injected})
+
+        assert injected.isdisjoint(excluded)
 
 
 class TestWebbridgeSessionTagOnTeam:
@@ -402,7 +571,9 @@ class TestWebbridgeSessionTagOnTeam:
         prompt = team.lead.build_protocol("base", team)
         assert "WebBridge session" in prompt
         assert "webbridge" in prompt
-        assert "browser_use/web_search/web_fetch are unavailable" in prompt
+        assert "read and edit files" in prompt
+        assert "delegate workspace work" in prompt
+        assert "browser_use, web_search, web_fetch" in prompt
 
     def test_untagged_lead_prompt_has_no_webbridge_suffix(self):
         team = AgentTeam(lead=self._make_lead())

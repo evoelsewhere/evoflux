@@ -121,6 +121,8 @@ enter_plan_mode = Tool(
     _enter_plan_mode,
     name="enter_plan_mode",
     lead_only=True,
+    deferred=True,
+    deferred_summary="Enter interactive plan-review mode before making destructive changes.",
     description=(
         "Activate plan mode: subsequent destructive tool calls (edit, write, "
         "patch, rm, shell, python, bg) are recorded instead of executed. "
@@ -133,6 +135,8 @@ exit_plan_mode = Tool(
     _exit_plan_mode,
     name="exit_plan_mode",
     lead_only=True,
+    deferred=True,
+    deferred_summary="Present a recorded implementation plan for user approval.",
     description=(
         "Present your markdown plan (plus all recorded steps) to the user "
         "for review. Blocks until they respond: approved (execute steps), "

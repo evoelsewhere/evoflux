@@ -629,7 +629,11 @@ Verify workflow: navigate → wait → console + snapshot → interact → scree
 """
 
 
-@tool(name="browser_use")
+@tool(
+    name="browser_use",
+    deferred=True,
+    deferred_summary="Drive a headless browser to navigate, inspect, and interact with web pages.",
+)
 async def browser_use(
     actions: Annotated[
         list[AnyAction],

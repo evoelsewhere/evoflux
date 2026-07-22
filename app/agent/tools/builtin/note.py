@@ -38,6 +38,8 @@ async def _note(
 note_tool = Tool(
     _note,
     name="note",
+    deferred=True,
+    deferred_summary="Record a durable note about a decision, preference, or fact.",
     description=(
         "Record a curated note during the session. "
         "Use for decisions, user preferences, or facts worth remembering. "

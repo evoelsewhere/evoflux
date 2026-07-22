@@ -372,7 +372,11 @@ result together. Pass wait:"networkidle" when the target pages are SPAs.\
 """
 
 
-@tool(name="webbridge")
+@tool(
+    name="webbridge",
+    deferred=True,
+    deferred_summary="Drive the user's real browser through the WebBridge extension.",
+)
 async def webbridge(
     actions: Annotated[
         list[AnyAction],

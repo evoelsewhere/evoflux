@@ -12,7 +12,11 @@ from app.agent.schemas.chat import (
     AssistantMessage,
     HumanMessage,
 )
-from app.api.routes.team.chat import SideChatMessageRequest
+from app.api.routes.team.chat import (
+    SideChatMessageRequest,
+    _side_chat_belongs_to_source,
+    get_side_chat_messages,
+)
 from app.services.chat_service import (
     create_chat_session,
     create_side_chat_session,
@@ -63,6 +67,7 @@ async def test_create_side_chat_session(session):
 
     assert side_chat.session_type == "side_chat"
     assert side_chat.source_session_id == main.id
+    assert side_chat.source_session_ref == main.id
     assert side_chat.title == "Side Chat: Main Session"
     assert side_chat.mode == main.mode
     assert side_chat.workspace == main.workspace
@@ -312,3 +317,32 @@ async def test_side_chat_source_session_set_null_on_delete(session):
     # ON DELETE SET NULL is enforced by PostgreSQL; SQLite needs PRAGMA
     # so we just verify the side chat survived the cascade.
     assert refreshed_side_chat.session_type == "side_chat"
+
+
+@pytest.mark.asyncio
+async def test_orphaned_side_chat_remains_authorized_by_immutable_source_ref(session):
+    """ON DELETE SET NULL must not make an already-open side chat unusable."""
+    main = await create_chat_session(session, title="Main Session")
+    side_chat = await create_side_chat_session(session, main.id)
+    await save_message(session, side_chat.id, HumanMessage(content="Still here"))
+    side_chat.source_session_id = None
+    session.add(side_chat)
+    await session.commit()
+
+    messages = await get_side_chat_messages(main.id, side_chat.id, session)
+
+    assert [message.content for message in messages] == ["Still here"]
+
+
+def test_orphaned_side_chat_rejects_a_different_source_id():
+    from uuid import uuid4
+
+    original_source_id = uuid4()
+    side_chat = ChatSession(
+        session_type="side_chat",
+        source_session_id=None,
+        source_session_ref=original_source_id,
+    )
+
+    assert _side_chat_belongs_to_source(side_chat, original_source_id)
+    assert not _side_chat_belongs_to_source(side_chat, uuid4())

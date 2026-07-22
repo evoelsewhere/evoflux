@@ -69,6 +69,8 @@ terminal_run = Tool(
     _terminal_run,
     name="terminal_run",
     lead_only=True,
+    deferred=True,
+    deferred_summary="Run a command in the user's visible shared terminal session.",
     description=(
         "Run a shell command in the user's LIVE shared terminal (the same PTY "
         "the user has open): the user watches it run and it shares that shell's "

@@ -156,8 +156,8 @@ _SAFE_TOOLS: frozenset[str] = frozenset(
         "team_reject", "team_manage",
         # background-task introspection (start stays gated)
         "shell_bg_status", "shell_bg_wait",
-        # skill loading (instructions only; execution goes through gated tools)
-        "skill",
+        # instruction/schema loading only; real execution stays permission-gated
+        "skill", "load_tool",
     }
 )
 

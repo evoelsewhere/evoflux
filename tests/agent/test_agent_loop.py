@@ -844,6 +844,81 @@ async def test_deferred_tool_hidden_until_activated():
     assert "browser_use" in names_call2
 
 
+async def test_tool_metadata_drives_deferral_without_a_static_catalog():
+    """Any granted tool marked deferred participates in lazy loading without
+    adding its name to a second policy table."""
+    from app.agent.tools.builtin.load_tool import load_tool
+    from app.agent.tools.registry import Tool
+
+    specialized = Tool(
+        lambda: "special result",
+        name="future_specialized_tool",
+        deferred=True,
+        deferred_summary="Inspect a future specialized data source.",
+    )
+    calls: list[dict] = []
+
+    async def _iter1():
+        yield _tool_chunk(
+            0,
+            "call_1",
+            "load_tool",
+            '{"tool_name": "future_specialized_tool"}',
+        )
+        yield _finish_chunk()
+
+    async def _iter2():
+        yield _text_chunk("done", finish="stop")
+
+    def _stream_side_effect(**kwargs):
+        calls.append(kwargs)
+        return _iter1() if len(calls) == 1 else _iter2()
+
+    mock_provider = MagicMock()
+    mock_provider.stream.side_effect = _stream_side_effect
+    agent = Agent(
+        llm_provider=mock_provider,
+        name="test-agent",
+        tools=[specialized, load_tool],
+    )
+
+    await agent.run([HumanMessage(content="use the specialized source")])
+
+    first_names = {t["function"]["name"] for t in calls[0]["tools"]}
+    second_names = {t["function"]["name"] for t in calls[1]["tools"]}
+    assert "future_specialized_tool" not in first_names
+    assert "future_specialized_tool" in second_names
+
+
+async def test_deferred_metadata_stays_visible_without_loader_tool():
+    """A standalone Agent cannot strand a deferred tool when no activation
+    tool was granted to that agent."""
+    from app.agent.tools.registry import Tool
+
+    specialized = Tool(
+        lambda: "special result",
+        name="standalone_specialized_tool",
+        deferred=True,
+    )
+    captured: dict = {}
+
+    async def _gen():
+        yield _text_chunk("ok", finish="stop")
+
+    def _capture(**kwargs):
+        captured.update(kwargs)
+        return _gen()
+
+    mock_provider = MagicMock()
+    mock_provider.stream.side_effect = _capture
+    agent = Agent(llm_provider=mock_provider, tools=[specialized])
+
+    await agent.run([HumanMessage(content="hi")])
+
+    names = {t["function"]["name"] for t in captured["tools"]}
+    assert "standalone_specialized_tool" in names
+
+
 async def test_deferred_tool_blocked_before_activation():
     """A deferred tool called directly (no prior load_tool) is refused by the
     executor and never actually runs — hiding the schema alone isn't a gate,
@@ -859,7 +934,13 @@ async def test_deferred_tool_blocked_before_activation():
     browser_use = Tool(_run_browser, name="browser_use")
     captured: list = []
 
+    hook_calls = [0]
+
     class CapturingHook(BaseAgentHook):
+        async def wrap_tool_call(self, ctx, state, tool_call, handler):
+            hook_calls[0] += 1
+            return await handler(ctx, state, tool_call)
+
         async def after_agent(self, ctx, state, assistant_msg):
             captured.extend(state.messages)
 
@@ -894,6 +975,7 @@ async def test_deferred_tool_blocked_before_activation():
     )
 
     assert call_count[0] == 0, "blocked tool must never actually execute"
+    assert hook_calls[0] == 0, "blocked tool must not reach permission/plugin hooks"
     tool_messages = [m for m in captured if isinstance(m, ToolMessage)]
     assert len(tool_messages) == 1
     assert "load_tool" in tool_messages[0].content
@@ -946,3 +1028,46 @@ async def test_load_tool_rejects_unknown_and_ungranted_names():
     not_granted = await load_tool.arun(tool_name="browser_use", _injected={"_state": state})
     assert "not available in this session" in not_granted
     assert "activated_deferred_tools" not in state.metadata
+
+
+async def test_load_tool_search_uses_only_run_local_catalog():
+    from app.agent.tools.builtin.load_tool import load_tool
+    from app.agent.state import AgentState
+
+    state = AgentState(messages=[], tool_names=["load_tool", "mcp_docs_search"])
+    state.metadata["deferred_tool_catalog"] = {
+        "mcp_docs_search": "Search the connected documentation server."
+    }
+
+    result = await load_tool.arun(
+        query="documentation search", _injected={"_state": state}
+    )
+
+    assert "mcp_docs_search" in result
+    assert "browser_use" not in result
+
+
+async def test_load_tool_batch_activation_is_atomic():
+    from app.agent.tools.builtin.load_tool import load_tool
+    from app.agent.state import AgentState
+
+    state = AgentState(messages=[], tool_names=["load_tool", "bg_start", "bg_wait"])
+    state.metadata["deferred_tool_catalog"] = {
+        "bg_start": "Start background work.",
+        "bg_wait": "Wait for background work.",
+    }
+    state.metadata["activated_deferred_tools"] = set()
+
+    result = await load_tool.arun(
+        tool_names=["bg_start", "bg_wait"], _injected={"_state": state}
+    )
+
+    assert "bg_start" in result and "bg_wait" in result
+    assert state.metadata["activated_deferred_tools"] == {"bg_start", "bg_wait"}
+
+    failed = await load_tool.arun(
+        tool_names=["bg_start", "not_granted"], _injected={"_state": state}
+    )
+
+    assert "not available" in failed
+    assert state.metadata["activated_deferred_tools"] == {"bg_start", "bg_wait"}

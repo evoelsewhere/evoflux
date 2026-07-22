@@ -143,6 +143,8 @@ class Tool:
         read_only: bool = False,
         tiers: tuple[str, ...] | None = None,
         lead_only: bool = False,
+        deferred: bool = False,
+        deferred_summary: str | None = None,
     ) -> None:
         self._func = func
         # ``Callable`` is the abstract type; only function objects guarantee
@@ -168,6 +170,10 @@ class Tool:
         # Tools that talk to the user or restructure the session (ask_user,
         # plan mode, worktree, ...) are lead-only: team members never get them.
         self.lead_only = lead_only
+        # Deferred tools remain executable by this agent but omit their full
+        # schema until the model explicitly activates them via load_tool.
+        self.deferred = deferred
+        self.deferred_summary = deferred_summary
 
         self._model, self._definition, self._injected_params = self._build()
         self._description_factory: Callable[[], str] | None = (
@@ -363,6 +369,8 @@ def tool(
     read_only: bool = False,
     tiers: tuple[str, ...] | None = None,
     lead_only: bool = False,
+    deferred: bool = False,
+    deferred_summary: str | None = None,
 ) -> Callable[[Callable], Tool]: ...
 
 
@@ -375,6 +383,8 @@ def tool(
     read_only: bool = False,
     tiers: tuple[str, ...] | None = None,
     lead_only: bool = False,
+    deferred: bool = False,
+    deferred_summary: str | None = None,
 ) -> Tool | Callable[[Callable], Tool]:
     """Decorator that converts a function into a :class:`Tool`.
 
@@ -416,6 +426,8 @@ def tool(
             read_only=read_only,
             tiers=tiers,
             lead_only=lead_only,
+            deferred=deferred,
+            deferred_summary=deferred_summary,
         )
 
     return decorator

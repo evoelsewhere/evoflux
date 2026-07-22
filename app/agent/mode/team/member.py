@@ -52,9 +52,9 @@ from app.agent.mode.team.hooks.team_prompt import AgentTeamProtocolHook
 from app.agent.hooks.tool_result_offload import ToolResultOffloadHook
 from app.agent.mode.team.shared_state import format_state_snapshot
 from app.agent.mode.team.tier_policy import (
-    DEFAULT_DEFERRED_TOOLS,
     SIDE_CHAT_SESSION_TAG,
     WEBBRIDGE_SESSION_TAG,
+    deferred_tools_for_run,
     denied_tools_for_tier,
     resolve_member_tier,
     side_chat_session_excluded_tools,
@@ -167,11 +167,15 @@ LEAD_PROTOCOL = """\
 
 WEBBRIDGE_SESSION_PROMPT = """\
 ## WebBridge session
-This is a WebBridge session. The ONLY way you may interact with the web is the `webbridge` tool, which drives the user's real browser. browser_use/web_search/web_fetch are unavailable — do not suggest them. If the extension is not connected, ask the user to connect it via the WebBridge icon in the sidebar."""
+This is a normal workspace-capable chat with the `webbridge` tool added for the user's real browser. You may read and edit files, run shell commands, use skills, delegate workspace work to team members, and otherwise operate normally. The ONLY way anyone on the team may interact with web pages is `webbridge`; browser_use, web_search, web_fetch, image_search, and browser-automation MCP tools are unavailable. If the extension is not connected, ask the user to connect it via the WebBridge icon in the sidebar."""
 
 SIDE_CHAT_SESSION_PROMPT = """\
 ## Side Chat session
 You are in a side chat with read-only access to the main conversation's recent context (included above, for reference only). You CANNOT modify files, execute commands, delegate to team members, or make any changes — write/edit/shell/python/team coordination tools are unavailable. Answer questions and provide information; if asked to perform an action, explain that side chat is read-only and the user should ask in the main conversation instead."""
+
+DEFERRED_TOOL_PROTOCOL = """\
+## Deferred tools
+Only the small core tool set is visible by default. Specialized tools mentioned elsewhere in your instructions may be deferred. Before calling one that is not visible, use `load_tool(query='<capability>')`, then activate the exact returned name (or related names together with `tool_names=[...]`). The full schemas appear on your next turn. Deferred loading never overrides role, tier, or session restrictions."""
 
 MEMBER_COMMUNICATION_RULES = """\
 ## Communication protocol
@@ -1063,24 +1067,35 @@ class TeamMemberBase(abc.ABC):
         injected = self._team.get_injected_tools(self.name)
 
         # Resolve tier-based tool restrictions for non-lead members.
-        # The lead always has full tool access — except in a WebBridge-tagged
-        # session, where it is scoped to the webbridge tool plus a small
-        # user-facing allowlist (see tier_policy.webbridge_session_excluded_tools),
-        # so the web can only be driven through the user's real browser.
+        # The lead keeps full workspace access in a WebBridge-tagged session;
+        # only competing web/browser backends are excluded so web pages are
+        # always driven through the user's real browser.
         tier_excluded: frozenset[str] | None = None
-        # Deferred-by-default tools (see tier_policy docstring): stay callable,
-        # just hidden from tool_defs until the agent calls load_tool. Applies
-        # to lead and member alike. In a WebBridge-tagged session "webbridge"
-        # is the session's whole purpose, so it starts revealed rather than
-        # behind an extra activation round-trip; browser_use etc. still defer
-        # (and are hard-excluded anyway by webbridge_session_excluded_tools).
-        deferred = DEFAULT_DEFERRED_TOOLS
+        latest_request_text = next(
+            (
+                message.text_content()
+                for message in reversed(run_messages)
+                if isinstance(message, HumanMessage)
+            ),
+            None,
+        )
+        granted_tools = (*self.agent._tools.values(), *injected)
+        is_webbridge_session = WEBBRIDGE_SESSION_TAG in self._team.session_tags
+        deferred = deferred_tools_for_run(
+            granted_tools,
+            request_text=latest_request_text,
+            reveal_webbridge=is_webbridge_session,
+        )
         if self._role_label == "member":
             member_tier = resolve_member_tier(self.name)
-            tier_excluded = denied_tools_for_tier(member_tier) or None
-        elif WEBBRIDGE_SESSION_TAG in self._team.session_tags:
-            tier_excluded = webbridge_session_excluded_tools(self.agent._tools)
-            deferred = deferred - {"webbridge"}
+            tier_excluded = denied_tools_for_tier(
+                member_tier, self.agent._tools.values()
+            ) or None
+        if is_webbridge_session:
+            webbridge_excluded = webbridge_session_excluded_tools(
+                tool.name for tool in granted_tools
+            )
+            tier_excluded = frozenset(tier_excluded or ()) | webbridge_excluded
         elif SIDE_CHAT_SESSION_TAG in self._team.session_tags:
             tier_excluded = side_chat_session_excluded_tools(
                 (*self.agent._tools.values(), *injected)
@@ -1457,10 +1472,11 @@ class TeamLead(TeamMemberBase):
             LEAD_MESSAGE_FORMAT,
             LEAD_PROTOCOL,
         ]
+        if WEBBRIDGE_SESSION_TAG not in team.session_tags:
+            sections.append(DEFERRED_TOOL_PROTOCOL)
         if WEBBRIDGE_SESSION_TAG in team.session_tags:
-            # Tagged session (created from the WebBridge UI): the lead's tools
-            # are already scoped to webbridge-only via excluded_tools — tell it
-            # why, so it doesn't try (or suggest) browser_use/web_search.
+            # Tagged sessions retain workspace tools but route all browser/web
+            # interaction through the user's real browser via WebBridge.
             sections.append(WEBBRIDGE_SESSION_PROMPT)
         if SIDE_CHAT_SESSION_TAG in team.session_tags:
             # Tagged session (a Side Chat panel): tools are already scoped
@@ -1579,6 +1595,7 @@ class TeamMember(TeamMemberBase):
             MEMBER_COMMUNICATION_RULES,
             MEMBER_MESSAGE_FORMAT.format(lead_name=lead_name),
             MEMBER_PROTOCOL.format(lead_name=lead_name),
+            DEFERRED_TOOL_PROTOCOL,
         ]
 
         protocol = "\n\n".join(sections)

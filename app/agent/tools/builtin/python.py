@@ -207,6 +207,8 @@ async def _python(
 python_tool = Tool(
     _python,
     name="python",
+    deferred=True,
+    deferred_summary="Execute Python for data processing, parsing, calculations, or automation.",
     description=(
         "Execute Python code. Cross-platform, works on Windows/macOS/Linux. "
         "All installed packages available. "

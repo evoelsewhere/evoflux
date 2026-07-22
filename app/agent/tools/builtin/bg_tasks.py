@@ -318,6 +318,8 @@ def _format_done(task: BgTask, *, remove: bool = False) -> str:
 shell_bg_start = Tool(
     _shell_bg_start,
     name="shell_bg_start",
+    deferred=True,
+    deferred_summary="Start a tracked shell command in the background.",
     description=(
         "Start a shell command in the background; returns a task_id immediately "
         "without waiting. Use for builds, test suites, or dev servers."
@@ -333,11 +335,15 @@ shell_bg_status = Tool(
     ),
     concurrency_safe=True,
     read_only=True,
+    deferred=True,
+    deferred_summary="Check a tracked background shell task without blocking.",
 )
 
 shell_bg_wait = Tool(
     _shell_bg_wait,
     name="shell_bg_wait",
+    deferred=True,
+    deferred_summary="Wait for a tracked background shell task and return its output.",
     description=(
         "Block until a background task finishes (with timeout) and return its output. "
         "Cleans up the task on completion."
