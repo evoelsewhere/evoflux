@@ -140,6 +140,41 @@ def webbridge_session_excluded_tools(tool_names: Iterable[str]) -> frozenset[str
     ) | WEBBRIDGE_SESSION_DENIED_TEAM_TOOLS
 
 
+
+# ── Side Chat session scoping ─────────────────────────────────────────────
+# A side chat is tagged "side_chat" (persisted on ChatSession.tags, same
+# mechanism as WEBBRIDGE_SESSION_TAG). It has its own dedicated team instance
+# (team_manager keys teams by session_id), so tagging it never affects the
+# main session's tools. Read-only: no file writes, no shell/code execution,
+# no team coordination or side-effecting tools.
+SIDE_CHAT_SESSION_TAG = "side_chat"
+
+SIDE_CHAT_EXCLUDED_TOOLS: frozenset[str] = frozenset(
+    {
+        "write",
+        "edit",
+        "patch",
+        "rm",
+        "shell",
+        "bg",
+        "python",
+        "browser_use",
+        "webbridge",
+        "schedule_task",
+        "skill",  # Skills may have side effects
+        "todo_manage",  # May modify todo state
+        "team_message",  # May send messages to team
+        "team_handoff",  # May send handoffs
+        "team_state",  # May modify shared state
+        "team_delegate",  # May delegate work
+        "team_reject",  # May reject work
+        "create_pull_request",  # May create PRs
+        "show_widget",  # May render widgets
+        "visualize_read_me",  # May render visualizations
+    }
+)
+
+
 def resolve_member_tier(agent_name: str) -> str | None:
     """Look up the highest tier among active tasks assigned to *agent_name*.
 

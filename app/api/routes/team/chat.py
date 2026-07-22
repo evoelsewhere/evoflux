@@ -1409,42 +1409,13 @@ async def delete_chapter(
 
 
 # ── Side Chat ────────────────────────────────────────────────────────────────
-
-# Tools excluded from side chat agent runs — keeps it read-only.
-SIDE_CHAT_EXCLUDED_TOOLS: frozenset[str] = frozenset({
-    "write",
-    "edit",
-    "patch",
-    "rm",
-    "shell",
-    "bg",
-    "python",
-    "browser_use",
-    "webbridge",
-    "schedule_task",
-    "skill",  # Skills may have side effects
-    "todo_manage",  # May modify todo state
-    "team_message",  # May send messages to team
-    "team_handoff",  # May send handoffs
-    "team_state",  # May modify shared state
-    "team_delegate",  # May delegate work
-    "team_reject",  # May reject work
-    "create_pull_request",  # May create PRs
-    "show_widget",  # May render widgets
-    "visualize_read_me",  # May render visualizations
-})
-
-# System prompt extension for side chat mode.
-SIDE_CHAT_SYSTEM_PROMPT_ADDENDUM = """
-## Side Chat Mode
-
-You are in a side chat session with read-only access to the main conversation.
-- You can read the main session's context for reference
-- You CANNOT modify files, execute commands, or make changes
-- You CANNOT send messages to team members or modify shared state
-- Your responses should focus on answering questions and providing information
-- If the user asks you to perform actions, explain that you're in read-only mode
-""".strip()
+#
+# Tool exclusion and the read-only system-prompt addendum live in
+# app.agent.mode.team.tier_policy (SIDE_CHAT_EXCLUDED_TOOLS) and
+# app.agent.mode.team.member (SIDE_CHAT_SESSION_PROMPT) — applied via the
+# "side_chat" session tag set on the session by create_side_chat_session,
+# the same mechanism WebBridge sessions use. Not imported here: nothing in
+# this file needs them directly, tagging happens once at session creation.
 
 
 class SideChatCreateRequest(BaseModel):
@@ -1502,10 +1473,10 @@ async def get_side_chat_messages(
     ):
         raise HTTPException(status_code=404, detail="Side chat not found")
 
-    from app.services.chat_service import get_messages
+    from app.services.chat_service import get_visible_session_rows
 
-    messages = await get_messages(db, side_chat_id)
-    return [_message_response(msg) for msg in messages]
+    rows = await get_visible_session_rows(db, side_chat_id)
+    return [_message_response(row) for row in rows]
 
 
 @router.post("/{session_id}/side-chat/{side_chat_id}/message", status_code=202)

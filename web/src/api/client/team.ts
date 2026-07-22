@@ -848,8 +848,12 @@ export async function getProjectCodeGraphData(
 /**
  * Create a side chat session linked to a main session.
  * The side chat gets read-only access to the main session's context.
+ *
+ * The backend returns a full SessionResponse (response_model=SessionResponse
+ * on POST /team/{session_id}/side-chat) — the session's own id is `id`, not
+ * `side_chat_id`; there is no `side_chat_id` field in that response at all.
  */
-export async function createSideChat(mainSessionId: string): Promise<{ side_chat_id: string; title: string }> {
+export async function createSideChat(mainSessionId: string): Promise<{ id: string; title: string | null }> {
   const res = await fetch(
     `${apiBaseUrl()}/team/${encodeURIComponent(mainSessionId)}/side-chat`,
     {
@@ -864,7 +868,10 @@ export async function createSideChat(mainSessionId: string): Promise<{ side_chat
 /**
  * Get messages for a side chat session.
  */
-export async function getSideChatMessages(sideChatId: string): Promise<Array<{
+export async function getSideChatMessages(
+  mainSessionId: string,
+  sideChatId: string,
+): Promise<Array<{
   id: string
   role: 'user' | 'assistant'
   content: string
@@ -873,7 +880,7 @@ export async function getSideChatMessages(sideChatId: string): Promise<Array<{
   timestamp?: string
 }>> {
   const res = await fetch(
-    `${apiBaseUrl()}/team/side-chat/${encodeURIComponent(sideChatId)}/messages`,
+    `${apiBaseUrl()}/team/${encodeURIComponent(mainSessionId)}/side-chat/${encodeURIComponent(sideChatId)}/messages`,
     {
       method: 'GET',
       headers: { Accept: 'application/json' },

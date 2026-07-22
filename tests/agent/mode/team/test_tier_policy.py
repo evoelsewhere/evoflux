@@ -21,6 +21,8 @@ from app.agent.mode.team.member import TeamLead
 from app.agent.mode.team.team import AgentTeam
 from app.agent.mode.team.tier_policy import (
     DEFAULT_DEFERRED_TOOLS,
+    SIDE_CHAT_EXCLUDED_TOOLS,
+    SIDE_CHAT_SESSION_TAG,
     TIER_DENIED_TOOLS,
     WEBBRIDGE_SESSION_ALLOWED_TOOLS,
     WEBBRIDGE_SESSION_DENIED_TEAM_TOOLS,
@@ -404,3 +406,73 @@ class TestWebbridgeSessionTagOnTeam:
         team = AgentTeam(lead=self._make_lead())
         prompt = team.lead.build_protocol("base", team)
         assert "WebBridge session" not in prompt
+
+
+# ── Side Chat session scoping ────────────────────────────────────────────
+
+
+class TestSideChatExcludedTools:
+    def test_pinned_contract(self):
+        assert SIDE_CHAT_EXCLUDED_TOOLS == frozenset(
+            {
+                "write",
+                "edit",
+                "patch",
+                "rm",
+                "shell",
+                "bg",
+                "python",
+                "browser_use",
+                "webbridge",
+                "schedule_task",
+                "skill",
+                "todo_manage",
+                "team_message",
+                "team_handoff",
+                "team_state",
+                "team_delegate",
+                "team_reject",
+                "create_pull_request",
+                "show_widget",
+                "visualize_read_me",
+            }
+        )
+
+    def test_excludes_all_write_and_execution_tools(self):
+        assert {"write", "edit", "patch", "rm", "shell", "bg", "python"} <= (
+            SIDE_CHAT_EXCLUDED_TOOLS
+        )
+
+    def test_does_not_exclude_read_tools(self):
+        assert SIDE_CHAT_EXCLUDED_TOOLS.isdisjoint({"read", "grep", "glob", "ls"})
+
+
+class TestSideChatSessionTagOnTeam:
+    def _make_lead(self):
+        from tests.agent.mode.team.conftest import MockTeamProvider
+
+        return TeamLead(Agent(name="lead", llm_provider=MockTeamProvider()))
+
+    def test_tagged_lead_prompt_has_side_chat_suffix(self):
+        team = AgentTeam(
+            lead=self._make_lead(), session_tags=frozenset({SIDE_CHAT_SESSION_TAG})
+        )
+        prompt = team.lead.build_protocol("base", team)
+        assert "Side Chat session" in prompt
+        assert "read-only" in prompt
+
+    def test_untagged_lead_prompt_has_no_side_chat_suffix(self):
+        team = AgentTeam(lead=self._make_lead())
+        prompt = team.lead.build_protocol("base", team)
+        assert "Side Chat session" not in prompt
+
+    def test_webbridge_and_side_chat_suffixes_independent(self):
+        """A team tagged only "webbridge" must not also get the side-chat
+        suffix, and vice versa — the two elif-free `if`s must not bleed
+        into each other."""
+        webbridge_team = AgentTeam(
+            lead=self._make_lead(), session_tags=frozenset({WEBBRIDGE_SESSION_TAG})
+        )
+        prompt = webbridge_team.lead.build_protocol("base", webbridge_team)
+        assert "WebBridge session" in prompt
+        assert "Side Chat session" not in prompt
