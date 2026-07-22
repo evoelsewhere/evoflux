@@ -20,6 +20,7 @@ from app.agent.mode.team.team import (
     is_loop_command,
     parse_loop_command,
 )
+from app.agent.mode.team.tier_policy import WEBBRIDGE_SESSION_TAG
 from app.agent.schemas.chat import HumanMessage
 from app.agent.tools.builtin.skill import discover_skills
 from app.api.deps import ChatFormDep, DbSession
@@ -67,6 +68,7 @@ from app.services.coding_workspace_service import (
     list_visible_coding_workspaces,
     upsert_coding_workspace,
 )
+from app.services.webbridge_service import webbridge_manager
 from app.services.chat_service import (
     BoundaryShift,
     cancel_queued_user_message,
@@ -293,6 +295,29 @@ async def team_chat(
         async with db.begin():
             existing = await db.get(ChatSession, session_uuid)
 
+    session_tags = set(existing.tags or ()) if existing is not None else set()
+    if body.webbridge_enabled is not None:
+        if body.webbridge_enabled:
+            session_tags.add(WEBBRIDGE_SESSION_TAG)
+        else:
+            session_tags.discard(WEBBRIDGE_SESSION_TAG)
+
+    if (
+        WEBBRIDGE_SESSION_TAG in session_tags
+        and not webbridge_manager.has_active_extension()
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "WebBridge is enabled, but no browser extension is connected. "
+                "Connect it from the WebBridge panel and try again."
+            ),
+        )
+
+    if body.webbridge_enabled is not None and existing is not None:
+        async with db.begin():
+            existing.tags = sorted(session_tags) or None
+
     if existing and existing.mode in ("coding", "aim") and existing.workspace:
         persisted_workspace = _validate_workspace_or_422(existing.workspace)
         if mode == existing.mode and workspace is not None:
@@ -344,13 +369,11 @@ async def team_chat(
         if workspace is None and existing is not None and existing.workspace:
             workspace = existing.workspace
 
-    # Restore persisted permission mode so the in-memory team reflects the
+    # Restore persisted session settings so the in-memory team reflects the
     # user's selection even after a server restart or a cold team boot.
+    team_obj.session_tags = frozenset(session_tags)
     if existing is not None:
         team_obj.permission_mode = existing.permission_mode
-        # Same for session tags — a WebBridge-tagged session must keep its
-        # WebBridge-only web-access routing across team reboots.
-        team_obj.session_tags = frozenset(existing.tags or ())
 
     effective_request_model = (
         model

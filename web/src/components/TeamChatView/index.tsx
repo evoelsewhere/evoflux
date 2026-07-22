@@ -43,12 +43,12 @@ import { WorkspaceFilesPanel } from '@/components/WorkspaceFilesPanel'
 import { PermissionApprovalModal } from '../PermissionApprovalModal'
 import { AskUserQuestionModal } from '../AskUserQuestionModal'
 import { MonitorView } from '../MonitorView'
-import { WebBridgeBanner } from '../WebBridgeBanner'
+import { WebBridgeStatusDialog } from '@/components/shell/WebBridgeStatusDialog'
 import { useTodosQuery } from '@/queries/useTodosQuery'
 import { useSessionChapters } from '@/hooks/useSessionChapters'
 import { useProvidersQuery, useRegistryQuery, useTriggerDreamMutation } from '@/queries'
 import { useTeamSessionsQuery } from '@/queries/useSessionsQuery'
-import { replyPlanApproval, resolveTeamSession, setSessionPermissionMode, getTeamSession } from '@/api/client'
+import { getTeamSession, getWebBridgeStatus, replyPlanApproval, resolveTeamSession, setSessionPermissionMode } from '@/api/client'
 import { useShallow } from 'zustand/react/shallow'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { useToastStore } from '@/stores/useToastStore'
@@ -126,6 +126,8 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const [viewMode, setViewMode] = useState<ViewMode>('agent')
   const [sideChatOpen, setSideChatOpen] = useState(false)
   const [sideChatQuote, setSideChatQuote] = useState<string | null>(null)
+  const [webBridgeEnabled, setWebBridgeEnabled] = useState(false)
+  const [webBridgeDialogOpen, setWebBridgeDialogOpen] = useState(false)
 
   // On mobile, always force agent view — split/monitor require a wide screen.
   // Also close any desktop-only panels when shrinking to mobile.
@@ -248,23 +250,26 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const todos = todosData?.todos ?? []
   const { data: chapters = [] } = useSessionChapters(sessionIdState)
 
-  // WebBridge-tagged sessions get a missing-extension banner above the chat.
-  // Tags ride on the forge session list rows — the store keeps no tags.
-  const { data: forgeSessionsData } = useTeamSessionsQuery('forge')
+  // Tags ride on session-list rows — the stream store intentionally keeps no
+  // session metadata. WebBridge remains a session capability, not a chat mode.
+  const { data: sessionsData } = useTeamSessionsQuery(mode)
   const activeSessionId = sessionIdState ?? sessionId ?? null
-  const { isWebBridgeSession, sessionTags } = useMemo(() => {
-    if (!activeSessionId) return { isWebBridgeSession: false, sessionTags: null }
-    for (const page of forgeSessionsData?.pages ?? []) {
+  const sessionTags = useMemo(() => {
+    if (!activeSessionId) return null
+    for (const page of sessionsData?.pages ?? []) {
       const found = page.data.find((s) => s.id === activeSessionId)
-      if (found) {
-        return {
-          isWebBridgeSession: found.tags?.includes('webbridge') ?? false,
-          sessionTags: found.tags ?? null,
-        }
-      }
+      if (found) return found.tags ?? []
     }
-    return { isWebBridgeSession: false, sessionTags: null }
-  }, [forgeSessionsData, activeSessionId])
+    return null
+  }, [sessionsData, activeSessionId])
+  const persistedWebBridgeEnabled = sessionTags?.includes('webbridge')
+  useEffect(() => {
+    if (!activeSessionId) {
+      setWebBridgeEnabled(false)
+    } else if (persistedWebBridgeEnabled !== undefined) {
+      setWebBridgeEnabled(persistedWebBridgeEnabled)
+    }
+  }, [activeSessionId, persistedWebBridgeEnabled])
   const providersQ = useProvidersQuery()
   const hasConfiguredModelProvider = providersQ.data?.providers.some(
     (provider) => provider.kind !== 'local' && provider.is_configured,
@@ -588,6 +593,11 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const handleSendToSideChat = useCallback((selectedText: string) => {
     setSideChatQuote(selectedText)
     setSideChatOpen(true)
+  }, [])
+
+  const handleWebBridgeEnabledChange = useCallback((enabled: boolean) => {
+    setWebBridgeEnabled(enabled)
+    if (enabled) setWebBridgeDialogOpen(true)
   }, [])
 
   // Lifted above the panel: the side chat session (and any in-flight
@@ -914,6 +924,79 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
     />
   ) : null
 
+  const handleComposerSubmit = useCallback(async (content: string, files?: File[]) => {
+    if (webBridgeEnabled) {
+      try {
+        const status = await getWebBridgeStatus()
+        if (!status.connected) {
+          pushToast({
+            tone: 'error',
+            title: 'WebBridge is not connected',
+            description: 'Connect the browser extension before sending this message.',
+          })
+          setWebBridgeDialogOpen(true)
+          return false
+        }
+      } catch {
+        pushToast({
+          tone: 'error',
+          title: 'Could not check WebBridge',
+          description: 'Reconnect the browser extension before sending this message.',
+        })
+        setWebBridgeDialogOpen(true)
+        return false
+      }
+    }
+
+    // While a plan is pending review, a text-only message is the revision
+    // feedback — a normal send would just queue behind the blocked agent turn.
+    const pendingPlan = useTeamStore.getState().planApproval
+    if (pendingPlan && (!files || files.length === 0)) {
+      const planSessionId = useTeamStore.getState().sessionId
+      if (planSessionId) {
+        try {
+          await replyPlanApproval(planSessionId, pendingPlan.requestId, 'revise', content)
+          useTeamStore.setState({ planApproval: null })
+          pushToast({ tone: 'info', title: 'Revision sent — agent is updating the plan' })
+        } catch (err) {
+          pushToast({
+            tone: 'error',
+            title: 'Failed to send revision',
+            description: err instanceof Error ? err.message : undefined,
+          })
+        }
+        return true
+      }
+    }
+    if (await tryHandleWorkflowCommand(content)) return true
+    if (mode === 'coding' && (await tryHandleBuiltinLoopCommand(content))) return true
+    const shell = content.startsWith('!')
+    const command = shell ? content.slice(1).trim() : content
+    const expanded = shell ? `!${command}` : await expandUserCommand(content)
+    const current = useTeamStore.getState()
+    await sendMessage(expanded, files, {
+      mode,
+      workspace,
+      model: current.sessionId ? selectedModel || null : null,
+      thinkingLevel: current.sessionId ? selectedThinkingLevel || null : null,
+      fastMode: current.sessionFastMode,
+      shell,
+      webBridgeEnabled,
+    })
+    return true
+  }, [
+    expandUserCommand,
+    mode,
+    pushToast,
+    selectedModel,
+    selectedThinkingLevel,
+    sendMessage,
+    tryHandleBuiltinLoopCommand,
+    tryHandleWorkflowCommand,
+    webBridgeEnabled,
+    workspace,
+  ])
+
   // Modals / floating panels rendered after the body row (fixed-position —
   // DOM order only matters for z-stacking). WikiPanel/SchedulerPanel live
   // at the route root now (``RootOverlayPanels`` in __root.tsx) so they
@@ -957,7 +1040,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
           workspace={workspace}
           sessionId={sessionIdState}
           sessionTitle={sessionTitle}
-          sessionTags={sessionTags}
           codingIdentityLabel={codingIdentityLabel}
           activeAgent={activeAgent}
           agentNames={agentNames}
@@ -1039,9 +1121,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
               Open Providers
             </Button>
           </div>
-        )}
-        {isWebBridgeSession && activeSessionId && (
-          <WebBridgeBanner sessionId={activeSessionId} />
         )}
         {/* Content area */}
         {effectiveViewMode === 'monitor' ? (
@@ -1131,48 +1210,13 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
 
         <PermissionApprovalModal />
         <AskUserQuestionModal />
+        <WebBridgeStatusDialog open={webBridgeDialogOpen} onOpenChange={setWebBridgeDialogOpen} />
         <PlanActionBar onRevise={() => inputRef.current?.focus()} />
         {(mode !== 'coding' || workspace) && (
           <FloatingInputBar
             ref={inputRef}
             boundsRef={mainColumnRef}
-            onSubmit={async (content, files) => {
-              // While a plan is pending review, a text-only message is the
-              // revision feedback — a normal send would just queue behind
-              // the blocked agent turn and never reach it.
-              const pendingPlan = useTeamStore.getState().planApproval
-              if (pendingPlan && (!files || files.length === 0)) {
-                const planSessionId = useTeamStore.getState().sessionId
-                if (planSessionId) {
-                  try {
-                    await replyPlanApproval(planSessionId, pendingPlan.requestId, 'revise', content)
-                    useTeamStore.setState({ planApproval: null })
-                    pushToast({ tone: 'info', title: 'Revision sent — agent is updating the plan' })
-                  } catch (err) {
-                    pushToast({
-                      tone: 'error',
-                      title: 'Failed to send revision',
-                      description: err instanceof Error ? err.message : undefined,
-                    })
-                  }
-                  return
-                }
-              }
-              if (await tryHandleWorkflowCommand(content)) return
-              if (mode === 'coding' && (await tryHandleBuiltinLoopCommand(content))) return
-              const shell = content.startsWith('!')
-              const command = shell ? content.slice(1).trim() : content
-              const expanded = shell ? `!${command}` : await expandUserCommand(content)
-              const current = useTeamStore.getState()
-              sendMessage(expanded, files, {
-                mode,
-                workspace,
-                model: current.sessionId ? selectedModel || null : null,
-                thinkingLevel: current.sessionId ? selectedThinkingLevel || null : null,
-                fastMode: current.sessionFastMode,
-                shell,
-              })
-            }}
+            onSubmit={handleComposerSubmit}
             onStop={() => useTeamStore.getState().stopTeam()}
             onSlashCommand={(id) => {
               if (id === 'btw') {
@@ -1224,6 +1268,8 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
             filesDisabled={mode !== 'coding' && !sessionIdState}
             onActivity={handleActivityToggle}
             activityActive={showActivity}
+            webBridgeEnabled={webBridgeEnabled}
+            onWebBridgeEnabledChange={handleWebBridgeEnabledChange}
             permissionMode={permissionMode}
             onPermissionModeChange={handlePermissionModeChange}
           />

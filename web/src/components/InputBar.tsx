@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useImperativeHandle, forwardRef, useEffect, useMemo } from 'react'
-import { Activity, ArrowUp, File, Folder, FolderOpen, Loader2, MessageCircle, Paperclip, Square, Terminal } from 'lucide-react'
+import { Activity, ArrowUp, File, Folder, FolderOpen, Globe, Loader2, MessageCircle, Paperclip, Square, Terminal } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { FilePreviewStrip } from './FilePreviewStrip'
 import { findActiveMention, rankFileRefs, type FileRef } from './InputBar.mentions'
@@ -60,7 +60,8 @@ export interface SnippetCommand {
 }
 
 interface InputBarProps {
-  onSubmit: (message: string, files?: File[]) => void
+  /** Return false to reject the send and preserve the current draft. */
+  onSubmit: (message: string, files?: File[]) => boolean | void | Promise<boolean | void>
   onStop?: () => void
   onSlashCommand?: (id: string) => void
   onSnippetCommand?: (id: string) => Promise<string | null> | string | null
@@ -153,6 +154,9 @@ interface InputBarProps {
   filesDisabled?: boolean
   onActivity?: () => void
   activityActive?: boolean
+  /** Enables the current chat's real-browser WebBridge capability. */
+  webBridgeEnabled?: boolean
+  onWebBridgeEnabledChange?: (enabled: boolean) => void
   permissionMode?: import('@/api/types').PermissionMode
   onPermissionModeChange?: (mode: import('@/api/types').PermissionMode) => void
 }
@@ -214,6 +218,8 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   filesDisabled,
   onActivity,
   activityActive,
+  webBridgeEnabled = false,
+  onWebBridgeEnabledChange,
   permissionMode,
   onPermissionModeChange,
 }, ref) {
@@ -224,6 +230,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   const [mentionMenuIndex, setMentionMenuIndex] = useState(0)
   const [localHistory, setLocalHistory] = useState<string[]>([])
   const [historyIndex, setHistoryIndex] = useState(-1)
+  const [submitting, setSubmitting] = useState(false)
   const [snippetRange, setSnippetRange] = useState<
     { start: number; end: number; query: string } | null
   >(null)
@@ -413,11 +420,20 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     ? value.slice(1).toLowerCase()
     : null
 
-  const submit = useCallback(() => {
+  const submit = useCallback(async () => {
     const trimmed = value.trim()
-    if (!trimmed || disabled || slashFilter !== null) return
+    if (!trimmed || disabled || submitting || slashFilter !== null) return
     const submitted = shellMode ? `!${trimmed}` : trimmed
-    onSubmit(submitted, files.length > 0 ? files : undefined)
+    setSubmitting(true)
+    try {
+      const accepted = await onSubmit(submitted, files.length > 0 ? files : undefined)
+      if (accepted === false) return
+    } catch {
+      // The caller owns reporting; preserve the draft so it can be retried.
+      return
+    } finally {
+      setSubmitting(false)
+    }
     setLocalHistory((prev) =>
       prev[0] === submitted ? prev : [submitted, ...prev].slice(0, 100),
     )
@@ -440,6 +456,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     files,
     shellMode,
     slashFilter,
+    submitting,
   ])
 
   const buildAcceptString = useCallback((): string => {
@@ -903,7 +920,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
 
     if (e.key === 'Enter' && !e.shiftKey && !isMobile) {
       e.preventDefault()
-      submit()
+      void submit()
     }
   }
 
@@ -945,7 +962,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   }
 
   const hasText = value.trim().length > 0
-  const canSend = hasText && !disabled
+  const canSend = hasText && !disabled && !submitting
   const canStop = isStreaming && !disabled && onStop != null
   const charCount = value.length
   const showCharCount = charCount > CHAR_WARN_THRESHOLD
@@ -1008,6 +1025,26 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     </button>
   )
 
+  const webBridgeEl = onWebBridgeEnabledChange ? (
+    <button
+      type="button"
+      onClick={(e) => {
+        stopClick(e)
+        onWebBridgeEnabledChange(!webBridgeEnabled)
+      }}
+      disabled={disabled}
+      aria-label={webBridgeEnabled ? 'Disable WebBridge' : 'Enable WebBridge'}
+      aria-pressed={webBridgeEnabled}
+      title={webBridgeEnabled ? 'WebBridge enabled' : 'Enable WebBridge'}
+      className={cn(
+        actionBtnClass,
+        webBridgeEnabled && 'border-(--color-accent) bg-(--bg-key) text-(--color-text)',
+      )}
+    >
+      <Globe size={14} aria-hidden="true" />
+    </button>
+  ) : null
+
   const chatEl = minimized ? (
     <button
       type="button"
@@ -1049,7 +1086,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   ) : (
     <button
       type="button"
-      onClick={(e) => { stopClick(e); submit() }}
+      onClick={(e) => { stopClick(e); void submit() }}
       disabled={!canSend}
       aria-label="Send message"
       title={isMobile ? 'Send message' : 'Send (Enter) · New line (Shift+Enter) · Commands (/)'}
@@ -1059,7 +1096,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
           : 'bg-(--bg-key) text-(--color-text-muted) opacity-40 cursor-not-allowed'
       }`}
     >
-      {disabled && !minimized ? (
+      {((disabled && !minimized) || submitting) ? (
         <Loader2 size={14} className="animate-spin" aria-hidden="true" />
       ) : (
         <ArrowUp size={15} aria-hidden="true" />
@@ -1389,6 +1426,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                 <div className="flex flex-wrap items-center gap-1.5 px-3 pb-3 pt-1">
                   {/* Left: content & navigation actions */}
                   {!shellMode && attachmentsEnabled && attachEl}
+                  {!shellMode && webBridgeEl}
                   {onFiles && (
                     <button
                       type="button"

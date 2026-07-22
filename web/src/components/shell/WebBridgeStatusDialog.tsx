@@ -1,7 +1,6 @@
 /**
- * WebBridgeStatusDialog — extension-connection status, install steps, and
- * the "New WebBridge chat" entry point. Shared by the sidebar nav item
- * (WebBridgeNavItem) and the in-chat WebBridgeBanner's "Install guide".
+ * WebBridgeStatusDialog — extension-connection status and install steps.
+ * Shared by the sidebar nav item and the chat composer WebBridge control.
  *
  * Owns status fetching: refreshed every time the dialog opens, plus a
  * manual refresh button. ``onStatusChange`` lets the nav item keep its
@@ -9,9 +8,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate } from '@tanstack/react-router'
-import { useQueryClient } from '@tanstack/react-query'
-import { Check, Copy, Download, Loader2, Plus, RefreshCw } from 'lucide-react'
+import { Check, Copy, Download, Loader2, RefreshCw } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -24,11 +21,9 @@ import {
   downloadWebBridgeExtension,
   getWebBridgeAudit,
   getWebBridgeStatus,
-  resolveTeamSession,
 } from '@/api/client'
 import { apiBaseUrl } from '@/api/base-url'
 import { getConnectionToken } from '@/api/auth'
-import { prependSession } from '@/stores/cache-invalidation-bridge'
 import { useToastStore } from '@/stores/useToastStore'
 import type { WebBridgeAuditEntry, WebBridgeStatusResponse } from '@/api/types'
 
@@ -83,10 +78,7 @@ export function WebBridgeStatusDialog({
   const [status, setStatus] = useState<WebBridgeStatusResponse | null>(null)
   const [audit, setAudit] = useState<WebBridgeAuditEntry[]>([])
   const [loading, setLoading] = useState(false)
-  const [creating, setCreating] = useState(false)
   const [downloading, setDownloading] = useState(false)
-  const navigate = useNavigate()
-  const queryClient = useQueryClient()
   const pushToast = useToastStore((s) => s.push)
 
   // Ref-synced so `refresh` stays referentially stable for the open-effect
@@ -122,28 +114,6 @@ export function WebBridgeStatusDialog({
   useEffect(() => {
     if (open) void refresh()
   }, [open, refresh])
-
-  const handleNewChat = useCallback(async () => {
-    setCreating(true)
-    try {
-      const session = await resolveTeamSession({
-        mode: 'forge',
-        create: true,
-        tags: ['webbridge'],
-      })
-      if (session.created) prependSession(queryClient, session)
-      onOpenChange(false)
-      navigate({ to: '/$sessionId', params: { sessionId: session.id } })
-    } catch (err) {
-      pushToast({
-        tone: 'error',
-        title: 'Failed to create WebBridge chat',
-        description: err instanceof Error ? err.message : String(err),
-      })
-    } finally {
-      setCreating(false)
-    }
-  }, [navigate, onOpenChange, queryClient, pushToast])
 
   const handleDownload = useCallback(async () => {
     setDownloading(true)
@@ -302,17 +272,8 @@ export function WebBridgeStatusDialog({
           </div>
         )}
 
-        <Button
-          onClick={() => void handleNewChat()}
-          disabled={creating}
-          className="w-full"
-        >
-          {creating ? (
-            <Loader2 className="animate-spin" aria-hidden="true" />
-          ) : (
-            <Plus aria-hidden="true" />
-          )}
-          New WebBridge chat
+        <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="w-full">
+          Close
         </Button>
       </DialogContent>
     </Dialog>

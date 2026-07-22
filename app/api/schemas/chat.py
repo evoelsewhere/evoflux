@@ -48,6 +48,10 @@ class ChatForm(BaseModel):
         False,
         description="Run message text as a shell command instead of an agent prompt.",
     )
+    webbridge_enabled: bool | None = Field(
+        None,
+        description="Whether this turn enables real-browser WebBridge for its session.",
+    )
 
     @classmethod
     def as_form(
@@ -61,6 +65,7 @@ class ChatForm(BaseModel):
         thinking_level: str | None = Form(None),
         fast_mode: bool = Form(False),
         shell: bool = Form(False),
+        webbridge_enabled: bool | None = Form(None),
     ) -> "ChatForm":
         try:
             return cls(
@@ -73,6 +78,7 @@ class ChatForm(BaseModel):
                 thinking_level=thinking_level,
                 fast_mode=fast_mode,
                 shell=shell,
+                webbridge_enabled=webbridge_enabled,
             )
         except ValidationError as exc:
             raise HTTPException(

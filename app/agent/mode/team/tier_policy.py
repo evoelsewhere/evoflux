@@ -128,9 +128,10 @@ def deferred_tools_for_run(
 
 
 # ── WebBridge session scoping ─────────────────────────────────────────────
-# A session created from the WebBridge UI is tagged "webbridge" (persisted on
-# ChatSession.tags). It keeps the lead's normal workspace tools, but the lead
-# must drive the web ONLY through the user's real browser via webbridge.
+# A normal chat can enable WebBridge through the composer; the capability is
+# persisted as the "webbridge" ChatSession tag. It keeps the lead's normal
+# workspace tools, but the lead must drive the web ONLY through the user's
+# real browser via webbridge.
 # Competing built-in and MCP browser/web backends are hard-excluded.
 
 WEBBRIDGE_SESSION_TAG = "webbridge"

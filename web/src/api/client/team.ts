@@ -55,6 +55,7 @@ export async function postTeamChat(
   thinkingLevel?: string | null,
   shell = false,
   fastMode = false,
+  webBridgeEnabled?: boolean,
 ): Promise<{ status: string; session_id: string; message_id?: string }> {
   const formData = new FormData()
   if (message) {
@@ -80,6 +81,9 @@ export async function postTeamChat(
   }
   if (fastMode) {
     formData.append('fast_mode', 'true')
+  }
+  if (webBridgeEnabled !== undefined) {
+    formData.append('webbridge_enabled', String(webBridgeEnabled))
   }
   if (shell) {
     formData.append('shell', 'true')
