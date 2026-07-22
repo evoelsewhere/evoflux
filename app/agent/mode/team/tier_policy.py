@@ -17,6 +17,7 @@ Tier policies
 from __future__ import annotations
 
 from collections.abc import Iterable
+import re
 from typing import TYPE_CHECKING, Literal
 
 from loguru import logger
@@ -62,6 +63,7 @@ TIER_DENIED_TOOLS: dict[str, frozenset[str]] = {
 
 def denied_tools_for_tier(
     tier: Literal["trivial", "simple", "multi_step", "complex"] | str | None,
+    tools: Iterable[Tool] = (),
 ) -> frozenset[str]:
     """Return the set of tool names denied for *tier*.
 
@@ -69,78 +71,106 @@ def denied_tools_for_tier(
     """
     if tier is None:
         return frozenset()
-    return TIER_DENIED_TOOLS.get(tier, frozenset())
+    denied = TIER_DENIED_TOOLS.get(tier, frozenset())
+    if tier == "trivial":
+        # Trivial tasks are read-only by contract. Derive this part from tool
+        # metadata so newly registered built-ins, plugins, and MCP tools fail
+        # closed without another hand-maintained name list. Injected team
+        # coordination tools are intentionally not passed by the call site.
+        denied |= frozenset(
+            tool.name for tool in tools if not getattr(tool, "read_only", False)
+        )
+    return denied
 
 
-# ── Default-deferred tools ────────────────────────────────────────────────
-# Heavy or narrow-purpose tools whose full schema is excluded from every
-# agent's tool_defs by default — lead included — to cut baseline per-call
-# token overhead. Unlike TIER_DENIED_TOOLS (a hard, unbypassable block),
-# these stay reachable: the agent calls ``load_tool`` to unlock one for the
-# rest of the current run. A name here has no effect if the tool was already
-# hard-denied (tier or WebBridge-session scoping already popped it from
-# run_tools) — activation can only reveal a tool that construction-time /
-# tier rules already granted, never bypass them.
-DEFAULT_DEFERRED_TOOLS: frozenset[str] = frozenset(
-    {
-        "browser_use",
-        "webbridge",
-        "aim_units",
-        "aim_compare",
-        "terminal_run",
-        "worktree_start",
-        "worktree_finish",
-        "lsp_diagnostics",
-        "lsp_definition",
-        "lsp_references",
-        "visualize_read_me",
-        "show_widget",
-        "create_pull_request",
-        "schedule_task",
-    }
+# ── Deferred-tool visibility ─────────────────────────────────────────────
+
+_BROWSER_SIGNAL_RE = re.compile(
+    r"(?:https?://|\blocalhost(?::\d+)?\b|\b127\.0\.0\.1(?::\d+)?\b|"
+    r"\b(?:browser|chrome|firefox|playwright|selenium|screenshot|viewport|"
+    r"responsive|website|web[ -]?app|front[ -]?end|dom|visual[ -]?regression)\b)",
+    re.IGNORECASE,
 )
+
+BROWSER_SIGNAL_REVEALED_TOOLS: frozenset[str] = frozenset(
+    {"browser_use", "preview"}
+)
+
+
+def request_has_browser_signal(text: str | None) -> bool:
+    """Return whether the latest request clearly needs browser capabilities."""
+    return bool(text and _BROWSER_SIGNAL_RE.search(text))
+
+
+def deferred_tools_for_run(
+    tools: Iterable[Tool],
+    *,
+    request_text: str | None = None,
+    reveal_webbridge: bool = False,
+) -> frozenset[str]:
+    """Resolve metadata-driven deferred names for one team-agent run.
+
+    Browser automation and preview are revealed automatically for a clear
+    browser/UI request. WebBridge is only auto-revealed for its tagged session.
+    Hard exclusions are applied separately and still win after this step.
+    """
+    tool_list = tuple(tools)
+    if not any(tool.name == "load_tool" for tool in tool_list):
+        return frozenset()
+    deferred = {
+        tool.name for tool in tool_list if getattr(tool, "deferred", False)
+    }
+    if request_has_browser_signal(request_text):
+        deferred.difference_update(BROWSER_SIGNAL_REVEALED_TOOLS)
+    if reveal_webbridge:
+        deferred.discard("webbridge")
+    return frozenset(deferred)
 
 
 # ── WebBridge session scoping ─────────────────────────────────────────────
 # A session created from the WebBridge UI is tagged "webbridge" (persisted on
-# ChatSession.tags). In such a session the lead must drive the web ONLY
-# through the user's real browser via the webbridge tool — browser_use,
-# web_search, web_fetch, image_search and every other registry tool are
-# excluded, leaving just the small user-facing allowlist below.
+# ChatSession.tags). It keeps the lead's normal workspace tools, but the lead
+# must drive the web ONLY through the user's real browser via webbridge.
+# Competing built-in and MCP browser/web backends are hard-excluded.
 
 WEBBRIDGE_SESSION_TAG = "webbridge"
 
-#: Tools the team lead keeps in a WebBridge-tagged session: the webbridge
-#: tool itself plus user-interaction / coordination basics (no web access).
-WEBBRIDGE_SESSION_ALLOWED_TOOLS: frozenset[str] = frozenset(
-    {"webbridge", "ask_user", "todo_manage", "note", "date"}
+#: Built-ins that would bypass the tagged session's real-browser backend.
+WEBBRIDGE_SESSION_DENIED_WEB_TOOLS: frozenset[str] = frozenset(
+    {"browser_use", "web_search", "web_fetch", "image_search"}
 )
 
-#: Lead-only team-coordination tools additionally denied in a WebBridge
-#: session. These are NOT registry tools — AgentTeam.get_injected_tools
-#: builds them per run — so a registry-minus-allowlist computation alone
-#: would leave the lead able to spawn and delegate to members that are not
-#: webbridge-scoped. Excluding them keeps a tagged session lead-only.
-WEBBRIDGE_SESSION_DENIED_TEAM_TOOLS: frozenset[str] = frozenset(
-    {"team_manage", "team_delegate", "team_reject"}
+#: MCP names are ``mcp_<server>_<tool>``. These markers identify browser
+#: automation servers while leaving filesystem, database, and other workspace
+#: MCP tools available through the normal deferred loader.
+_WEBBRIDGE_MCP_BROWSER_MARKERS: tuple[str, ...] = (
+    "browser",
+    "chrome-devtools",
+    "chrome_devtools",
+    "chromedevtools",
+    "devtools",
+    "playwright",
+    "puppeteer",
+    "selenium",
 )
 
 
 def webbridge_session_excluded_tools(tool_names: Iterable[str]) -> frozenset[str]:
     """Return the lead's ``excluded_tools`` set for a WebBridge-tagged session.
 
-    *tool_names* is the full set of tool names the lead would normally run
-    with (in practice its registry-granted constructor tools — MCP tools
-    included — i.e. ``agent._tools`` keys). Everything outside
-    :data:`WEBBRIDGE_SESSION_ALLOWED_TOOLS` is excluded, plus the injected
-    roster/delegation tools in :data:`WEBBRIDGE_SESSION_DENIED_TEAM_TOOLS`
-    so no members can be spawned. Loader-managed lead tools that survive the
-    allowlist (todo_manage, note) are harmless; schedule_task and skill are
-    excluded like any other non-allowlisted name.
+    Workspace, coding, user-interaction, and non-browser MCP tools remain
+    available. Competing web backends are excluded so browser interaction can
+    only use ``webbridge``. The call site applies this policy to every team
+    member, so normal workspace delegation cannot bypass the browser routing.
     """
-    return (
-        frozenset(tool_names) - WEBBRIDGE_SESSION_ALLOWED_TOOLS
-    ) | WEBBRIDGE_SESSION_DENIED_TEAM_TOOLS
+    denied = set(WEBBRIDGE_SESSION_DENIED_WEB_TOOLS)
+    for name in tool_names:
+        lowered = name.casefold()
+        if lowered.startswith("mcp_") and any(
+            marker in lowered for marker in _WEBBRIDGE_MCP_BROWSER_MARKERS
+        ):
+            denied.add(name)
+    return frozenset(denied)
 
 
 

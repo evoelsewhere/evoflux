@@ -349,6 +349,8 @@ worktree_start = Tool(
     _worktree_start,
     name="worktree_start",
     lead_only=True,
+    deferred=True,
+    deferred_summary="Create an isolated git worktree for parallel or experimental work.",
     description=(
         "Create an isolated git worktree + branch and switch the agent's workspace "
         "to it. All file/shell tools will operate in the worktree until worktree_finish."
@@ -359,6 +361,8 @@ worktree_finish = Tool(
     _worktree_finish,
     name="worktree_finish",
     lead_only=True,
+    deferred=True,
+    deferred_summary="Finish and remove a worktree, showing or discarding its changes.",
     description=(
         "Show the diff from the worktree, remove it, and restore the original workspace. "
         "Use action='discard' to skip the diff."

@@ -165,6 +165,8 @@ async def _create_pull_request(
 create_pull_request = Tool(
     _create_pull_request,
     name="create_pull_request",
+    deferred=True,
+    deferred_summary="Commit, push, and open a pull request for the current branch.",
     description=(
         "Stage all changes in a repository, create a git commit, push the branch, "
         "and open a GitHub/GitLab pull request using the gh CLI. "

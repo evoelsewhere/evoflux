@@ -704,5 +704,7 @@ async def _background_process(
 background_process = Tool(
     _background_process,
     name="bg",
+    deferred=True,
+    deferred_summary="Inspect, wait for, read, or stop processes started by shell(background=true).",
     description="Manage background processes started with shell(background=true). Actions: list, status, output, stop, wait.",
 )

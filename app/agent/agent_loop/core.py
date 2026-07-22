@@ -210,9 +210,10 @@ class Agent(Generic[TContext]):
         tools.  Used by team tier policies to restrict heavy tools for
         lower-tier tasks.
 
-        ``deferred_tools`` is an optional frozenset of tool names that stay
-        callable but start hidden from ``tool_defs`` — unlike
+        ``deferred_tools`` optionally overrides the tool metadata that marks
+        which names stay callable but start hidden from ``tool_defs`` — unlike
         ``excluded_tools`` they are never popped from the run-local lookup.
+        When omitted, every run-local tool with ``deferred=True`` is hidden.
         The ``load_tool`` tool reveals one for the rest of this run by adding
         its name to ``state.metadata["activated_deferred_tools"]``; the loop
         recomputes ``tool_defs`` each iteration so an activation takes effect
@@ -252,7 +253,29 @@ class Agent(Generic[TContext]):
         # unlocked) but are left out of tool_defs until activated. Intersect
         # with what's actually present so a name already removed by
         # excluded_tools above is simply a no-op here, never re-added.
-        deferred_names = frozenset(deferred_tools or ()) & run_tools.keys()
+        requested_deferred = (
+            set(deferred_tools)
+            if deferred_tools is not None
+            else {
+                name
+                for name, run_tool in run_tools.items()
+                if getattr(run_tool, "deferred", False)
+            }
+            if "load_tool" in run_tools
+            else set()
+        )
+        deferred_names = frozenset(requested_deferred & run_tools.keys())
+
+        def _deferred_summary(run_tool: Tool) -> str:
+            summary = getattr(run_tool, "deferred_summary", None)
+            if summary:
+                return summary
+            compact = " ".join(run_tool.description.split())
+            return compact[:197] + "..." if len(compact) > 200 else compact
+
+        deferred_catalog = {
+            name: _deferred_summary(run_tools[name]) for name in sorted(deferred_names)
+        }
 
         # Work on a local copy, strip any SystemMessage — system prompt lives
         # in state.system_prompt and is prepended per-call by the loop.
@@ -281,7 +304,9 @@ class Agent(Generic[TContext]):
             if not activated:
                 return static_tool_defs
             return static_tool_defs + [
-                run_tools[name].definition for name in activated if name in run_tools
+                run_tools[name].definition
+                for name in sorted(activated)
+                if name in deferred_names
             ]
 
         tool_defs = _compute_tool_defs(frozenset())
@@ -309,6 +334,11 @@ class Agent(Generic[TContext]):
             for key, value in config.metadata.items():
                 state.metadata.setdefault(key, value)
 
+        # Runtime-owned metadata: the loader can only discover tools granted
+        # after hard exclusions, and caller metadata cannot pre-activate one.
+        state.metadata["deferred_tool_catalog"] = deferred_catalog
+        state.metadata["activated_deferred_tools"] = set()
+
         # Me seed last_prompt_tokens from checkpointer so SummarizationHook
         # fires on session resume without call-site workaround
         if checkpointer is not None and ctx.session_id is not None:
@@ -330,11 +360,33 @@ class Agent(Generic[TContext]):
 
         last_assistant_msg: AssistantMessage | None = None
 
-        # Build tool execution chain — all hooks participate via wrap_tool_call
-        tool_chain: ToolCallHandler = build_tool_chain(
+        # Build the hook chain around the executor, then put the deferred gate
+        # outside it. A hidden tool named directly by the model must not reach
+        # permission prompts, telemetry, or plugin hooks before activation.
+        hooked_tool_chain: ToolCallHandler = build_tool_chain(
             combined_hooks,
             make_tool_executor(run_tools, self.name, deferred_names),
         )
+
+        async def tool_chain(
+            tool_ctx: RunContext,
+            tool_state: AgentState,
+            tool_call,
+        ) -> str:
+            tool_name = tool_call.function.name
+            activated = tool_state.metadata.get("activated_deferred_tools") or ()
+            if tool_name in deferred_names and tool_name not in activated:
+                logger.info(
+                    "tool_call_blocked_before_hooks agent={} tool={}",
+                    self.name,
+                    tool_name,
+                )
+                return (
+                    f"'{tool_name}' is not yet available — call "
+                    f"load_tool(tool_name='{tool_name}') first, then "
+                    f"call '{tool_name}' again on your next turn."
+                )
+            return await hooked_tool_chain(tool_ctx, tool_state, tool_call)
 
         iteration = 0
         total_tokens = 0

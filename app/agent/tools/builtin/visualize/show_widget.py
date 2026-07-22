@@ -17,6 +17,8 @@ from app.agent.tools import tool
     description="Render an interactive HTML widget inline in the conversation. Call visualize_read_me first to load design guidelines.",
     concurrency_safe=False,
     read_only=True,
+    deferred=True,
+    deferred_summary="Render an interactive HTML widget inline in the conversation.",
 )
 async def show_widget(
     title: Annotated[

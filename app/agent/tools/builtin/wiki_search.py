@@ -92,4 +92,6 @@ wiki_search = Tool(
     ),
     concurrency_safe=True,
     read_only=True,
+    deferred=True,
+    deferred_summary="Search distilled wiki knowledge from prior conversations.",
 )

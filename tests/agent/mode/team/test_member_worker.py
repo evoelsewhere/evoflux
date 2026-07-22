@@ -16,6 +16,7 @@ from app.agent.artifacts import TODOS_FILENAME
 from app.agent.mode.team.mailbox import Message
 from app.agent.mode.team.member import TeamLead, TeamMember
 from app.agent.mode.team.team import AgentTeam
+from app.agent.mode.team.tier_policy import WEBBRIDGE_SESSION_TAG
 from app.agent.schemas.chat import (
     AssistantMessage,
     ChatCompletionChunk,
@@ -237,6 +238,121 @@ class TestOnDemandActivation:
         assert captured["factory_model"] == "googlegenai:gemini-3.1-flash-lite"
         assert captured["summary_provider"] is override_provider
         assert captured["summary_model"] == "googlegenai:gemini-3.1-flash-lite"
+
+    async def test_webbridge_lead_keeps_workspace_and_delegation_tools(self):
+        from app.agent.tools.builtin.load_tool import load_tool
+        from app.agent.tools.registry import Tool
+
+        db_factory = _make_mock_db_factory()
+        tools = [
+            Tool(lambda: None, name="read"),
+            Tool(lambda: None, name="write"),
+            Tool(lambda: None, name="shell"),
+            Tool(lambda: None, name="skill"),
+            load_tool,
+            Tool(lambda: None, name="webbridge", deferred=True),
+            Tool(lambda: None, name="browser_use", deferred=True),
+            Tool(lambda: None, name="web_search", deferred=True),
+            Tool(
+                lambda: None,
+                name="mcp_filesystem_read_file",
+                deferred=True,
+            ),
+            Tool(
+                lambda: None,
+                name="mcp_playwright_navigate",
+                deferred=True,
+            ),
+        ]
+        lead = TeamLead(
+            Agent(name="lead", llm_provider=MockTeamProvider(), tools=tools),
+            db_factory=db_factory,
+        )
+        team = AgentTeam(
+            lead=lead,
+            db_factory=db_factory,
+            session_tags=frozenset({WEBBRIDGE_SESSION_TAG}),
+        )
+        lead.register(team)
+        captured: dict[str, object] = {}
+
+        async def fake_run(*_args, **kwargs):
+            captured.update(kwargs)
+            return []
+
+        lead.agent.run = fake_run  # type: ignore[method-assign]
+
+        await lead._handle_messages(force_compaction=True)
+
+        excluded = frozenset(captured["excluded_tools"] or ())  # type: ignore[arg-type]
+        deferred = frozenset(captured["deferred_tools"] or ())  # type: ignore[arg-type]
+        assert {
+            "read",
+            "write",
+            "shell",
+            "skill",
+            "load_tool",
+            "mcp_filesystem_read_file",
+            "team_manage",
+            "team_delegate",
+        }.isdisjoint(excluded)
+        assert {"browser_use", "web_search", "mcp_playwright_navigate"} <= excluded
+        assert "webbridge" not in deferred
+        assert "mcp_filesystem_read_file" in deferred
+
+    async def test_webbridge_member_keeps_workspace_tools_but_loses_other_browsers(
+        self,
+    ):
+        from app.agent.tools.builtin.load_tool import load_tool
+        from app.agent.tools.registry import Tool
+
+        db_factory = _make_mock_db_factory()
+        lead = TeamLead(
+            Agent(name="lead", llm_provider=MockTeamProvider()),
+            db_factory=db_factory,
+        )
+        worker = TeamMember(
+            Agent(
+                name="worker",
+                llm_provider=MockTeamProvider(),
+                tools=[
+                    Tool(lambda: None, name="read"),
+                    Tool(lambda: None, name="edit"),
+                    Tool(lambda: None, name="shell"),
+                    load_tool,
+                    Tool(lambda: None, name="webbridge", deferred=True),
+                    Tool(lambda: None, name="browser_use", deferred=True),
+                    Tool(
+                        lambda: None,
+                        name="mcp_chrome-devtools_click",
+                        deferred=True,
+                    ),
+                ],
+            ),
+            db_factory=db_factory,
+        )
+        team = AgentTeam(
+            lead=lead,
+            members={"worker": worker},
+            db_factory=db_factory,
+            session_tags=frozenset({WEBBRIDGE_SESSION_TAG}),
+        )
+        worker.register(team)
+        captured: dict[str, object] = {}
+
+        async def fake_run(*_args, **kwargs):
+            captured.update(kwargs)
+            return []
+
+        worker.agent.run = fake_run  # type: ignore[method-assign]
+
+        await worker._handle_messages(force_compaction=True)
+
+        excluded = frozenset(captured["excluded_tools"] or ())  # type: ignore[arg-type]
+        assert {"read", "edit", "shell", "load_tool", "team_message"}.isdisjoint(
+            excluded
+        )
+        assert {"browser_use", "mcp_chrome-devtools_click"} <= excluded
 
     async def test_worker_activates_on_inbox_message(self, team_with_db):
         """Worker activates when a message arrives in inbox."""
