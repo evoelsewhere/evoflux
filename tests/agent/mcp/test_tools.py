@@ -171,6 +171,21 @@ class TestMCPToolDefinition:
         assert tool.name == "mcp_filesystem_list_files"
         assert tool.definition["function"]["name"] == "mcp_filesystem_list_files"
 
+    def test_mcp_tools_are_deferred_with_compact_catalog_metadata(self) -> None:
+        mcp_tool = SimpleNamespace(
+            name="list_files",
+            description="List files in a connected remote directory",
+            inputSchema={"type": "object", "properties": {}},
+        )
+        tool = MCPTool(
+            server_name="filesystem",
+            mcp_tool=mcp_tool,  # type: ignore[arg-type]
+            session_provider=lambda: None,
+        )
+
+        assert tool.deferred is True
+        assert tool.deferred_summary == mcp_tool.description
+
     def test_mcp_tool_definition_description(self) -> None:
         """MCPTool.definition includes description."""
         mcp_tool = SimpleNamespace(

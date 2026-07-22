@@ -393,4 +393,6 @@ async def _schedule_task(
 schedule_task = Tool(
     _schedule_task,
     name="schedule_task",
+    deferred=True,
+    deferred_summary="Create, inspect, update, pause, resume, or delete scheduled tasks.",
 )

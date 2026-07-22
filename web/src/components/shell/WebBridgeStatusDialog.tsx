@@ -166,7 +166,7 @@ export function WebBridgeStatusDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md min-w-0 w-[400px]">
         <DialogHeader>
           <DialogTitle>WebBridge</DialogTitle>
           <DialogDescription>

@@ -81,7 +81,7 @@ IS_WINDOWS = platform.system() == "Windows"
 # OfficeCLI (https://github.com/iOfficeAI/OfficeCLI) — the xlsx/pptx skills
 # shell out to this single-binary CLI instead of openpyxl/python-pptx.
 # Pinned (not "latest") for reproducible builds; bump deliberately.
-OFFICECLI_VERSION = "v1.0.136"
+OFFICECLI_VERSION = "v1.0.140"
 OFFICECLI_RELEASE_BASE = "https://github.com/iOfficeAI/OfficeCLI/releases/download"
 
 

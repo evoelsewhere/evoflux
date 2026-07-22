@@ -1899,6 +1899,17 @@ class AgentTeam:
                 make_team_reject_tool(self.mailbox, agent_name=agent_name, team=self)
             )
 
+            deferred_lead_tools = {
+                "team_handoff": "Deliver a structured handoff to another team member.",
+                "team_state": "Read or update persistent shared team key-value state.",
+                "team_reject": "Reject a member handoff with structured corrective feedback.",
+            }
+            for team_tool in tools:
+                summary = deferred_lead_tools.get(team_tool.name)
+                if summary:
+                    team_tool.deferred = True
+                    team_tool.deferred_summary = summary
+
         return tools
 
     # ------------------------------------------------------------------

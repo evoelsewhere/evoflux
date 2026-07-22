@@ -475,6 +475,8 @@ lsp_diagnostics = Tool(
     ),
     concurrency_safe=True,
     read_only=True,
+    deferred=True,
+    deferred_summary="Run static diagnostics for a file or directory.",
 )
 
 lsp_definition = Tool(
@@ -487,6 +489,8 @@ lsp_definition = Tool(
     ),
     concurrency_safe=True,
     read_only=True,
+    deferred=True,
+    deferred_summary="Find the definition of a code symbol.",
 )
 
 lsp_references = Tool(
@@ -498,4 +502,6 @@ lsp_references = Tool(
     ),
     concurrency_safe=True,
     read_only=True,
+    deferred=True,
+    deferred_summary="Find references to a code symbol across the workspace.",
 )

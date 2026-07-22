@@ -15,6 +15,7 @@ import { STORAGE_KEYS } from '@/lib/storage-keys'
 import { SideChatTranscript } from './SideChatTranscript'
 import { AlertCircle, ArrowUpRight, LockKeyhole, MessageCircleQuestion, Quote, X } from 'lucide-react'
 import type { ContentBlock } from '@/api/types'
+import type { SideChatSendResult } from './useSideChat'
 
 const STARTER_PROMPTS = [
   'Summarize the key decisions',
@@ -35,7 +36,7 @@ interface SideChatPanelProps {
   isWorking: boolean
   error: string | null
   sideChatId: string | null
-  onSend: (content: string) => Promise<void>
+  onSend: (content: string) => Promise<SideChatSendResult>
   onStop: () => void
 }
 
@@ -68,8 +69,16 @@ export function SideChatPanel({
       const content = quote
         ? `> ${quote.split('\n').join('\n> ')}\n\n${message}`
         : message
-      await onSend(content)
-      if (quote) onQuoteConsumed()
+      const result = await onSend(content)
+      if (result === 'sent') {
+        if (quote) onQuoteConsumed()
+      } else if (result === 'failed') {
+        // InputBar clears immediately after invoking onSubmit; restore the
+        // draft when the asynchronous request was not accepted. Append so a
+        // slow failure cannot overwrite text entered while the request ran.
+        inputRef.current?.appendValue(message)
+        inputRef.current?.focus()
+      }
     },
     [quote, onSend, onQuoteConsumed],
   )

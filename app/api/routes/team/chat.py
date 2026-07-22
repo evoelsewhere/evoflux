@@ -349,7 +349,7 @@ async def team_chat(
     if existing is not None:
         team_obj.permission_mode = existing.permission_mode
         # Same for session tags — a WebBridge-tagged session must keep its
-        # webbridge-only tool scoping across team reboots.
+        # WebBridge-only web-access routing across team reboots.
         team_obj.session_tags = frozenset(existing.tags or ())
 
     effective_request_model = (
@@ -1437,6 +1437,17 @@ class SideChatMessageRequest(BaseModel):
         return content
 
 
+def _side_chat_belongs_to_source(
+    side_chat: ChatSession | None,
+    source_session_id: UUID,
+) -> bool:
+    """Validate side-chat ownership even after its source FK is cleared."""
+    if side_chat is None or side_chat.session_type != "side_chat":
+        return False
+    source_ref = side_chat.source_session_ref or side_chat.source_session_id
+    return source_ref == source_session_id
+
+
 @router.post("/{session_id}/side-chat", response_model=SessionResponse)
 async def create_side_chat(
     session_id: UUID,
@@ -1473,11 +1484,7 @@ async def get_side_chat_messages(
     Returns the side chat's own message history (not the source context).
     """
     side_chat = await db.get(ChatSession, side_chat_id)
-    if (
-        side_chat is None
-        or side_chat.session_type != "side_chat"
-        or side_chat.source_session_id != session_id
-    ):
+    if not _side_chat_belongs_to_source(side_chat, session_id):
         raise HTTPException(status_code=404, detail="Side chat not found")
 
     from app.services.chat_service import get_visible_session_rows
@@ -1505,11 +1512,7 @@ async def send_side_chat_message(
     async with db.begin():
         side_chat = await db.get(ChatSession, side_chat_id)
 
-    if (
-        side_chat is None
-        or side_chat.session_type != "side_chat"
-        or side_chat.source_session_id != session_id
-    ):
+    if not _side_chat_belongs_to_source(side_chat, session_id):
         raise HTTPException(status_code=404, detail="Side chat not found")
 
     # Kick off the side chat agent run in the background. The team flow
@@ -1566,11 +1569,7 @@ async def side_chat_stream(
     async with db.begin():
         sc = await db.get(ChatSession, side_chat_id)
 
-    if (
-        sc is None
-        or sc.session_type != "side_chat"
-        or sc.source_session_id != session_id
-    ):
+    if not _side_chat_belongs_to_source(sc, session_id):
         raise HTTPException(status_code=404, detail="Side chat not found")
 
     async def _gen() -> AsyncGenerator[dict, None]:

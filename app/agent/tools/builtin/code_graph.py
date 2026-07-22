@@ -243,6 +243,8 @@ code_search = Tool(
     ),
     concurrency_safe=True,
     read_only=True,
+    deferred=True,
+    deferred_summary="Search the indexed code graph for symbols by name or fragment.",
 )
 
 
@@ -472,6 +474,8 @@ code_graph = Tool(
     ),
     concurrency_safe=True,
     read_only=True,
+    deferred=True,
+    deferred_summary="Explore callers, callees, inheritance, and cross-repo references.",
 )
 
 
@@ -561,6 +565,8 @@ code_overview = Tool(
     ),
     concurrency_safe=True,
     read_only=True,
+    deferred=True,
+    deferred_summary="Show indexed codebase statistics, languages, and important symbols.",
 )
 
 
@@ -665,4 +671,6 @@ code_path = Tool(
     ),
     concurrency_safe=True,
     read_only=True,
+    deferred=True,
+    deferred_summary="Find a dependency path between two indexed code symbols.",
 )

@@ -26,6 +26,8 @@ from app.agent.tools.builtin.visualize.guidelines import (
     ),
     concurrency_safe=True,
     read_only=True,
+    deferred=True,
+    deferred_summary="Load design guidelines before rendering an interactive widget.",
 )
 async def visualize_read_me(
     modules: Annotated[

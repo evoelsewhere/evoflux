@@ -172,6 +172,13 @@ class ChatSession(SQLModel, table=True):
             index=True,
         ),
     )
+    # Immutable source identity used to authorize an already-open side chat
+    # after source_session_id is cleared by ON DELETE SET NULL. No FK by
+    # design: this value must survive deletion of the source row.
+    source_session_ref: UUID | None = Field(
+        default=None,
+        sa_column=Column(sa.Uuid(), nullable=True),
+    )
     created_at: datetime = Field(
         default_factory=_utcnow,
         sa_column=Column(TZDateTime(), nullable=False),
