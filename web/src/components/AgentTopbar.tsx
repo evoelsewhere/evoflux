@@ -17,10 +17,12 @@ import {
   Users,
   type LucideIcon,
 } from 'lucide-react'
+import { motion } from 'framer-motion'
 
 import { TopbarAction } from '@/components/ui/topbar-action'
 import { TokenMeter } from '@/components/ui/token-meter'
 import { ContextBudgetBar } from '@/components/ContextBudgetBar'
+import { useReducedMotion } from '@/hooks/useReducedMotion'
 import { cn } from '@/lib/utils'
 
 export type ViewMode = 'agent' | 'split' | 'monitor'
@@ -49,26 +51,47 @@ function ViewModeSwitch({
   onValueChange: (mode: ViewMode) => void
   contextBudget?: { used: number; max?: number }
 }) {
+  const reducedMotion = Boolean(useReducedMotion())
+
   return (
-    <div className="flex h-8 items-center overflow-hidden rounded-lg border border-(--color-border) bg-(--bg-card)">
+    <div
+      role="radiogroup"
+      aria-label="View mode"
+      className="relative isolate flex h-8 items-center rounded-[10px] border border-(--color-border) bg-(--bg-input) p-0.5 shadow-[inset_0_1px_0_rgb(255_255_255/0.04)]"
+    >
       {VIEW_MODES.map(({ key, label }) => (
         <button
           key={key}
           type="button"
+          role="radio"
+          aria-checked={value === key}
+          aria-label={label}
           onClick={() => onValueChange(key)}
           className={cn(
-            'px-2.5 text-xs font-medium transition-colors rounded-md',
+            'relative flex h-7 min-w-[3.2rem] items-center justify-center rounded-[8px] px-2.5 text-xs font-medium outline-none transition-[color,transform] duration-150 active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-(--focus-ring)/40',
             value === key
-              ? 'bg-(--color-surface-2) text-(--color-text)'
+              ? 'text-(--color-text)'
               : 'text-(--color-text-muted) hover:text-(--color-text-2)',
           )}
         >
-          {label}
+          {value === key && (
+            <motion.span
+              layoutId="view-mode-indicator"
+              data-testid="view-mode-indicator"
+              aria-hidden="true"
+              className="absolute inset-0 -z-10 rounded-[8px] bg-(--color-surface-2) shadow-[0_1px_2px_rgb(0_0_0/0.14),inset_0_1px_0_rgb(255_255_255/0.06)]"
+              initial={false}
+              transition={reducedMotion
+                ? { duration: 0 }
+                : { type: 'spring', stiffness: 480, damping: 38, mass: 0.55 }}
+            />
+          )}
+          <span className="relative z-10">{label}</span>
         </button>
       ))}
       {contextBudget && contextBudget.used > 0 && (
         <>
-          <div className="h-4 w-px bg-(--color-border)" />
+          <div className="mx-0.5 h-4 w-px bg-(--color-border)" />
           <ContextBudgetBar used={contextBudget.used} max={contextBudget.max} compact />
         </>
       )}

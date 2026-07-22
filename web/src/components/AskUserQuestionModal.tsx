@@ -24,7 +24,7 @@ export function AskUserQuestionModal() {
     setAnswers(askUserQuestion ? askUserQuestion.questions.map(() => '') : [])
     setStep(0)
     setReplyError(null)
-  }, [askUserQuestion?.requestId])
+  }, [askUserQuestion])
 
   if (!askUserQuestion || !sessionId) return null
 

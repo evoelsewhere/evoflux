@@ -62,7 +62,7 @@ import {
 } from '@/api/client'
 import { queryKeys } from '@/queries/keys'
 import { useWorkflowsQuery } from '@/queries/useWorkflowsQuery'
-import { resolveAimRolePath } from '@/components/AimKbPanel'
+import { resolveAimRolePath } from '@/lib/aim-kb'
 import { AimSidePanel } from '@/components/AimSidePanel'
 import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'

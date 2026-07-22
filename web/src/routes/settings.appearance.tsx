@@ -17,10 +17,12 @@ const ACCENT_OPTIONS: ReadonlyArray<{ value: AccentColor; label: string }> = [
   { value: 'red', label: 'Red' },
 ]
 
-const FONT_OPTIONS: ReadonlyArray<{ value: FontFamily; label: string; family: string }> = [
-  { value: 'inter', label: 'Inter', family: "'Inter Variable', sans-serif" },
-  { value: 'system', label: 'System UI', family: "-apple-system, 'Segoe UI', system-ui, sans-serif" },
-  { value: 'mono', label: 'Monospace', family: "'JetBrains Mono Variable', monospace" },
+const FONT_OPTIONS: ReadonlyArray<{ value: FontFamily; label: string; description: string; family: string }> = [
+  { value: 'inter', label: 'Inter', description: 'Balanced default for dense product UI', family: "'Inter Variable', sans-serif" },
+  { value: 'system', label: 'System UI', description: 'Native to your operating system', family: "-apple-system, 'Segoe UI', system-ui, sans-serif" },
+  { value: 'mono', label: 'Monospace', description: 'JetBrains Mono across the full interface', family: "'JetBrains Mono Variable', monospace" },
+  { value: 'geist', label: 'Geist', description: 'ChatGPT-inspired', family: "'Geist Variable', sans-serif" },
+  { value: 'source-sans', label: 'Source Sans 3', description: 'Claude-inspired', family: "'Source Sans 3 Variable', sans-serif" },
 ]
 
 const SCALE_OPTIONS: ReadonlyArray<{ value: FontScale; label: string }> = [
@@ -104,24 +106,36 @@ export function AppearanceSettingsPage() {
             <h2 className="text-xs font-semibold uppercase tracking-wider text-(--color-text-muted)">
               Font
             </h2>
-            <div className="flex flex-wrap gap-2">
+            <div role="radiogroup" aria-label="Font family" className="grid gap-2 sm:grid-cols-2">
               {FONT_OPTIONS.map((opt) => {
                 const active = settings.fontFamily === opt.value
                 return (
                   <button
                     key={opt.value}
                     type="button"
+                    role="radio"
+                    aria-checked={active}
                     onClick={() => update({ fontFamily: opt.value })}
-                    aria-pressed={active}
                     className={cn(
-                      'flex h-9 items-center gap-2 rounded-md border px-3 text-xs font-medium transition-colors',
+                      'group flex min-h-16 items-center gap-3 rounded-[10px] border p-3 text-left outline-none transition-[background-color,border-color,color,box-shadow,transform] duration-150 focus-visible:ring-2 focus-visible:ring-(--focus-ring)/35 active:translate-y-px',
                       active
                         ? 'border-(--color-border-strong) bg-(--bg-key) text-(--color-text)'
-                        : 'border-(--color-border) text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)',
+                        : 'border-(--color-border) bg-(--bg-page) text-(--color-text-muted) hover:border-(--color-border-strong) hover:bg-(--bg-key)',
                     )}
                   >
-                    <span style={{ fontFamily: opt.family }} aria-hidden="true">Aa</span>
-                    {opt.label}
+                    <span
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-(--color-surface-2) text-base font-semibold text-(--color-text)"
+                      style={{ fontFamily: opt.family }}
+                      aria-hidden="true"
+                    >
+                      Aa
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium text-(--color-text)" style={{ fontFamily: opt.family }}>
+                        {opt.label}
+                      </span>
+                      <span className="mt-0.5 block text-xs leading-snug text-(--color-text-muted)">{opt.description}</span>
+                    </span>
                   </button>
                 )
               })}
@@ -159,6 +173,7 @@ export function AppearanceSettingsPage() {
               })}
             </div>
           </section>
+
         </div>
       </div>
     </>

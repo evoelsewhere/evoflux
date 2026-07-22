@@ -29,7 +29,6 @@ import { SidebarItem } from "@/components/ui/sidebar-item";
 import { usePlatform } from "@/hooks/use-platform";
 import { useUIStore } from "@/stores/useUIStore";
 import { usePinnedSessions } from "@/stores/usePinnedSessions";
-import { STORAGE_KEYS } from "@/lib/storage-keys";
 import {
   SidebarShell,
   SidebarCard,
@@ -415,10 +414,6 @@ export function Sidebar({
   // Desktop: one floating card with internal dividers (forge style).
   const desktopShell = (
     <SidebarShell
-      storageKey={STORAGE_KEYS.sidebar.width}
-      defaultWidth={220}
-      minWidth={180}
-      maxWidth={360}
       collapsed={collapsed}
       rail={rail}
     >

@@ -20,14 +20,10 @@ import { useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
-  BookMarked,
-  BookOpen,
   ChevronDown,
   ChevronRight,
-  LayoutDashboard,
   Plus,
   Search,
-  Workflow,
 } from 'lucide-react'
 import { ModeSwitchTabs, ModeSwitchRail } from '@/components/ModeSwitchTabs'
 import {
@@ -39,28 +35,22 @@ import {
 } from '@/components/shell/SidebarShell'
 import { CollapsibleSection } from '@/components/shell/CollapsibleSection'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
+import {
+  AIM_FEATURES,
+  saveLastAimProject,
+  type AimFeature,
+} from '@/lib/aim-sidebar'
 import { listTeamSessions } from '@/api/client'
 import { useAimProjectsQuery } from '@/queries/useAimProjectsQuery'
 import { queryKeys } from '@/queries/keys'
 import { usePlatform } from '@/hooks/use-platform'
 import { useUIStore } from '@/stores/useUIStore'
 import { cn } from '@/lib/utils'
-import type { LucideIcon } from 'lucide-react'
 
 // Runs & Reports folded into Pipelines (its run table now shows the
 // aim_runs verdict inline via a Report side panel) — one less place to
 // look for "what happened", since every compare/convert/test verdict
 // already traces back to a pipeline run.
-export type AimFeature = 'overview' | 'kb' | 'rulebook' | 'pipelines'
-
-export const AIM_FEATURES: { key: AimFeature; label: string; Icon: LucideIcon }[] = [
-  { key: 'overview', label: 'Overview', Icon: LayoutDashboard },
-  { key: 'kb', label: 'Knowledge Base', Icon: BookOpen },
-  { key: 'rulebook', label: 'Rulebook', Icon: BookMarked },
-  { key: 'pipelines', label: 'Pipelines', Icon: Workflow },
-]
-
-const LAST_AIM_PROJECT_KEY = STORAGE_KEYS.lastAimProject
 const AIM_EXPANDED_KEY = STORAGE_KEYS.aim.expanded
 
 function loadAimExpanded(): string[] {
@@ -80,22 +70,6 @@ function saveAimExpanded(ids: string[]): void {
     localStorage.setItem(AIM_EXPANDED_KEY, JSON.stringify(ids))
   } catch {
     // ignore storage failures
-  }
-}
-
-export function saveLastAimProject(projectId: string): void {
-  try {
-    localStorage.setItem(LAST_AIM_PROJECT_KEY, projectId)
-  } catch {
-    // ignore storage failures
-  }
-}
-
-export function loadLastAimProject(): string | null {
-  try {
-    return localStorage.getItem(LAST_AIM_PROJECT_KEY)
-  } catch {
-    return null
   }
 }
 
@@ -189,10 +163,6 @@ export function AimSidebar({
 
   return (
     <SidebarShell
-      storageKey={STORAGE_KEYS.sidebar.aimWidth}
-      defaultWidth={240}
-      minWidth={200}
-      maxWidth={400}
       collapsed={collapsed}
       rail={rail}
       resizeLabel="Resize AIM sidebar"
