@@ -844,6 +844,62 @@ async def test_deferred_tool_hidden_until_activated():
     assert "browser_use" in names_call2
 
 
+async def test_deferred_tool_blocked_before_activation():
+    """A deferred tool called directly (no prior load_tool) is refused by the
+    executor and never actually runs — hiding the schema alone isn't a gate,
+    tool_executor must enforce it too."""
+    from app.agent.tools.registry import Tool
+
+    call_count = [0]
+
+    def _run_browser():
+        call_count[0] += 1
+        return "browser ran"
+
+    browser_use = Tool(_run_browser, name="browser_use")
+    captured: list = []
+
+    class CapturingHook(BaseAgentHook):
+        async def after_agent(self, ctx, state, assistant_msg):
+            captured.extend(state.messages)
+
+    async def _iter1():
+        yield _tool_chunk(0, "call_1", "browser_use", "{}")
+        yield _finish_chunk()
+
+    async def _iter2():
+        yield _text_chunk("ok", finish="stop")
+
+    calls = [0]
+
+    def _stream_side_effect(**kwargs):
+        calls[0] += 1
+        return _iter1() if calls[0] == 1 else _iter2()
+
+    mock_provider = MagicMock()
+    mock_provider.stream.side_effect = _stream_side_effect
+
+    agent = Agent(
+        llm_provider=mock_provider,
+        name="test-agent",
+        system_prompt="sys",
+        tools=[browser_use],
+        hooks=[CapturingHook()],
+    )
+
+    await agent.run(
+        [HumanMessage(content="use the browser")],
+        config=RunConfig(session_id="s_blocked", run_id="r_blocked"),
+        deferred_tools=frozenset({"browser_use"}),
+    )
+
+    assert call_count[0] == 0, "blocked tool must never actually execute"
+    tool_messages = [m for m in captured if isinstance(m, ToolMessage)]
+    assert len(tool_messages) == 1
+    assert "load_tool" in tool_messages[0].content
+    assert "not yet available" in tool_messages[0].content
+
+
 async def test_deferred_tools_none_is_backward_compatible():
     """Omitting deferred_tools sends every tool's definition, as before."""
     from app.agent.tools.registry import Tool
