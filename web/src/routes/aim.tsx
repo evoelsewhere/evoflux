@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from '@tanstack/react-router'
-import { AimSidebar, AIM_FEATURES, loadLastAimProject, saveLastAimProject } from '@/components/AimSidebar'
+import { AimSidebar } from '@/components/AimSidebar'
+import { AIM_FEATURES, loadLastAimProject, saveLastAimProject } from '@/lib/aim-sidebar'
 import { AimSetupWizard } from '@/components/AimSetupWizard'
 import { AimOverviewPanel } from '@/components/AimOverviewPanel'
 import { AimPipelinesPanel } from '@/components/AimPipelinesPanel'
@@ -11,7 +12,7 @@ import { AppShell } from '@/components/shell/AppShell'
 import { useAimProjectsQuery } from '@/queries/useAimProjectsQuery'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useUIStore } from '@/stores/useUIStore'
-import type { AimFeature } from '@/components/AimSidebar'
+import type { AimFeature } from '@/lib/aim-sidebar'
 import type { CodingProject } from '@/api/types'
 
 /**

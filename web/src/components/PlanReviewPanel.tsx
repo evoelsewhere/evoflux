@@ -188,6 +188,8 @@ export function PlanReviewPanel({
 
   // Reset transient UI whenever a new (or no) plan request is active.
   useEffect(() => {
+    // The request id is an external lifecycle boundary for this transient UI.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelection(null)
     setStepsOpen(false)
   }, [planApproval?.requestId])

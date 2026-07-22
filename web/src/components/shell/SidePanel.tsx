@@ -43,6 +43,8 @@ interface SidePanelProps {
    * siblings (activity, AIM) leave this off.
    */
   mobileOverlay?: boolean
+  /** Force a viewport overlay even above the normal mobile breakpoint. */
+  forceOverlay?: boolean
   /** Mobile state for a `mobileOverlay` panel — defaults to useIsMobile(). */
   mobile?: boolean
   /**
@@ -51,7 +53,7 @@ interface SidePanelProps {
    */
   animated?: boolean
   /**
-   * Pinned width override (e.g. WorkspaceFilesPanel's expanded mode). Wins
+   * Pinned width override for callers that need a fixed panel size. Wins
    * over the resized width and hides the handle, since dragging a pinned
    * width would visibly do nothing.
    */
@@ -78,6 +80,7 @@ export function SidePanel({
   minWidth,
   maxWidth,
   mobileOverlay = false,
+  forceOverlay = false,
   mobile: mobileProp,
   animated = true,
   width: widthOverride,
@@ -93,39 +96,43 @@ export function SidePanel({
 }: SidePanelProps) {
   const detectedMobile = useIsMobile()
   const prefersReducedMotion = useReducedMotion()
-  const mobile = mobileOverlay && (mobileProp ?? detectedMobile)
+  const breakpointOverlay = mobileOverlay && (mobileProp ?? detectedMobile)
+  const overlay = forceOverlay || breakpointOverlay
   const resizable = useResizableWidth({
     storageKey,
     defaultWidth,
     minWidth,
     maxWidth,
     edge: 'left',
-    disabled: mobile,
+    disabled: overlay,
   })
   const width = widthOverride ?? resizable.width
 
   // Mobile and reduced-motion both degrade the open/close animation to a
   // fade — width-tweening a full-screen overlay (or against the user's
   // motion preference) is wrong. Matches the panels' pre-extraction code.
-  const fade = prefersReducedMotion || mobile
-  const fadeWidth = mobile ? '100%' : width
+  const fade = prefersReducedMotion || overlay
   const hasHeader = title != null || headerActions != null || onClose != null
 
   return (
     <motion.aside
-      initial={!animated ? false : fade ? { opacity: 0, width: fadeWidth } : { width: 0 }}
-      animate={fade ? { opacity: 1, width: fadeWidth } : { width }}
-      exit={fade ? { opacity: 0, width: fadeWidth } : { width: 0 }}
+      style={overlay ? { width: '100%' } : undefined}
+      initial={!animated ? false : fade ? { opacity: 0 } : { width: 0 }}
+      animate={fade ? { opacity: 1 } : { width }}
+      exit={fade ? { opacity: 0 } : { width: 0 }}
       transition={
         animated
           ? { duration: prefersReducedMotion ? 0.01 : 0.22, ease: [0.4, 0, 0.2, 1] }
           : { duration: 0 }
       }
       className={cn(
-        mobileOverlay
+        forceOverlay
+          ? 'fixed inset-0 z-(--z-overlay) min-h-0 w-full max-w-none overflow-hidden border-l border-(--color-border) shadow-xl'
+          : mobileOverlay
           ? 'fixed bottom-0 right-0 z-(--z-overlay) min-h-0 w-full overflow-hidden border-l border-(--color-border) shadow-xl md:relative md:inset-y-auto md:right-auto md:z-auto md:w-auto md:shrink-0 md:shadow-none'
           : 'relative flex h-full shrink-0 flex-col overflow-hidden border-l border-(--color-border)',
-        mobile && 'mobile-safe-top max-w-none',
+        breakpointOverlay && !forceOverlay && 'mobile-safe-top max-w-none',
+        forceOverlay && 'max-w-none',
         className,
       )}
       aria-label={ariaLabel}
@@ -133,11 +140,11 @@ export function SidePanel({
       <div
         className={cn(
           'relative flex h-full min-h-0 w-full flex-col',
-          mobileOverlay && (mobile ? 'max-w-none' : 'md:w-full'),
+          mobileOverlay && (overlay ? 'max-w-none' : 'md:w-full'),
           contentClassName,
         )}
       >
-        {!mobile && widthOverride === undefined && (
+        {!overlay && widthOverride === undefined && (
           <div
             role="separator"
             aria-orientation="vertical"

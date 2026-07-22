@@ -39,6 +39,7 @@ import { CodingSidebar } from '../CodingSidebar'
 import { Sidebar } from '../Sidebar'
 import { ChatTopbar } from '@/components/chat/ChatTopbar'
 import { ChatOverlayPanels, ChatTrailingPanels } from '@/components/chat/ChatPanels'
+import { WorkspaceFilesPanel } from '@/components/WorkspaceFilesPanel'
 import { PermissionApprovalModal } from '../PermissionApprovalModal'
 import { AskUserQuestionModal } from '../AskUserQuestionModal'
 import { MonitorView } from '../MonitorView'
@@ -133,12 +134,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
     setCodingFileViewer(null)
   }, [workspace])
 
-  useEffect(() => {
-    if (isMobile) {
-      setShowFilesPanel(false)
-    }
-  }, [isMobile])
-
   const sendMessage    = useTeamStore((s) => s.sendMessage)
   const continueTeam   = useTeamStore((s) => s.continueTeam)
   const beginResolvedSession = useTeamStore((s) => s.beginResolvedSession)
@@ -189,6 +184,13 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const toggleTerminal = useUIStore((s) => s.toggleTerminal)
   const closeBrowser = useUIStore((s) => s.closeBrowser)
   const closeTerminal = useUIStore((s) => s.closeTerminal)
+
+  useEffect(() => {
+    if (browserOpen || terminalOpen) {
+      setShowFilesPanel(false)
+      setShowActivity(false)
+    }
+  }, [browserOpen, terminalOpen])
   // Sidebar collapse is shell-level state shared by all three mode sidebars;
   // AppShell renders the toggle button + Ctrl+B, these are the programmatic
   // entry points (workspace CTAs, command palette, mobile hamburger).
@@ -286,7 +288,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const leadCapabilities: AgentCapabilitiesType | undefined = leadAgent?.capabilities
   const selectedModel = sessionModel ?? ''
   const summaryTriggerTokens = leadAgent?.summary_trigger_tokens
-  const selectedThinkingLevel = sessionThinkingLevel ?? ''
+  const selectedThinkingLevel = sessionThinkingLevel ?? 'none'
 
   // When the user selects a session model override, derive capabilities from
   // the model registry so file-upload affordances match the selected model.
@@ -434,8 +436,30 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
       }
       return
     }
-    if (sessionIdState) setShowFilesPanel((value) => !value)
-  }, [isMobile, mode, workspace, sessionIdState, setSidebarCollapsed])
+    if (sessionIdState) {
+      setShowFilesPanel((value) => {
+        const nextOpen = !value
+        if (nextOpen) {
+          setShowActivity(false)
+          closeBrowser()
+          closeTerminal()
+        }
+        return nextOpen
+      })
+    }
+  }, [closeBrowser, closeTerminal, isMobile, mode, workspace, sessionIdState, setSidebarCollapsed])
+
+  const handleActivityToggle = useCallback(() => {
+    setShowActivity((value) => {
+      const nextOpen = !value
+      if (nextOpen) {
+        setShowFilesPanel(false)
+        closeBrowser()
+        closeTerminal()
+      }
+      return nextOpen
+    })
+  }, [closeBrowser, closeTerminal])
 
   const handlePermissionModeChange = useCallback(async (newMode: import('@/api/types').PermissionMode) => {
     setPermissionMode(newMode)
@@ -858,8 +882,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
         codingPanel={codingPanel}
         onCodingFileSelect={handleCodingFileSelect}
         onCloseCodingPanel={closeCodingPanels}
-        showFilesPanel={showFilesPanel}
-        onCloseFilesPanel={() => setShowFilesPanel(false)}
         browserOpen={browserOpen}
         onCloseBrowser={closeBrowser}
         terminalOpen={terminalOpen}
@@ -883,6 +905,14 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
       )}
     </>
   )
+
+  const fullHeightTrailing = mode !== 'coding' && showFilesPanel ? (
+    <WorkspaceFilesPanel
+      open
+      sessionId={sessionIdState}
+      onClose={() => setShowFilesPanel(false)}
+    />
+  ) : null
 
   // Modals / floating panels rendered after the body row (fixed-position —
   // DOM order only matters for z-stacking). WikiPanel/SchedulerPanel live
@@ -910,6 +940,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
       sidebar={desktopSidebar}
       mobileSidebar={mobileSidebar}
       trailing={trailingPanels}
+      fullHeightTrailing={fullHeightTrailing}
       overlay={overlayPanels}
       mainId="main"
       mainRef={mainColumnRef}
@@ -958,7 +989,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
           codingPanelOpen={codingPanel !== null}
           showFilesPanel={showFilesPanel}
           onWorkspaceFiles={handleWorkspaceFiles}
-          onToggleFilesPanel={() => setShowFilesPanel((v) => !v)}
+          onToggleFilesPanel={handleWorkspaceFiles}
           mobileActionsOpen={showMobileActions}
           onMobileActionsOpenChange={setShowMobileActions}
           onWiki={() => { toggleWiki(); closeMobileActionsMenu() }}
@@ -1188,10 +1219,10 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
             onFiles={
               mode === 'coding'
                 ? workspace ? handleWorkspaceFiles : undefined
-                : () => setShowFilesPanel((v) => !v)
+                : handleWorkspaceFiles
             }
             filesDisabled={mode !== 'coding' && !sessionIdState}
-            onActivity={() => setShowActivity((v) => !v)}
+            onActivity={handleActivityToggle}
             activityActive={showActivity}
             permissionMode={permissionMode}
             onPermissionModeChange={handlePermissionModeChange}

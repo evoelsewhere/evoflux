@@ -186,7 +186,7 @@ export function SourceControlModal({
   const branch = changesQuery.data?.branch
   const ahead = changesQuery.data?.ahead ?? 0
   const behind = changesQuery.data?.behind ?? 0
-  const files = changesQuery.data?.files ?? []
+  const files = useMemo(() => changesQuery.data?.files ?? [], [changesQuery.data?.files])
   const stagedFiles = files.filter((f) => f.staged)
   const unstagedFiles = files.filter((f) => !f.staged)
   const localBranches = (branchesQuery.data ?? []).filter((b) => !b.remote)

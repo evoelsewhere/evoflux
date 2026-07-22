@@ -6,9 +6,9 @@
  * Shared by Sidebar.tsx / AimSidebar.tsx / CodingSidebar.tsx — all three
  * mode sidebars compose this shell instead of duplicating the mechanics.
  * The shell owns:
- *   - `useResizableWidth` (persisted width, pointer drag, dbl-click reset)
- *   - the resize-handle separator (aria-label + pointer logic unchanged)
- *   - the framer-motion width animation (0.22s, eased; reduced-motion aware)
+ *   - one canonical width in `useUIStore` (persisted drag + dbl-click reset)
+ *   - the resize-handle separator and direct, non-tweened pointer updates
+ *   - the collapse/expand animation (0.22s, reduced-motion aware)
  *   - the collapsed rail width: 56px, or 70px on macOS overlay so the
  *     traffic lights land inside the rail
  *
@@ -25,23 +25,22 @@
  *       children — the shell's `gap-1 p-1` column spaces them.
  */
 
-import type { ReactNode } from 'react'
+import {
+  useCallback,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react'
 import { motion } from 'framer-motion'
 import { HelpCircle, Search, Settings } from 'lucide-react'
 import { usePlatform } from '@/hooks/use-platform'
 import { useReducedMotion } from '@/hooks/useReducedMotion'
-import { useResizableWidth } from '@/hooks/use-resizable-width'
 import { useUIStore } from '@/stores/useUIStore'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { HealthDot } from '@/components/HealthDot'
 import { cn } from '@/lib/utils'
 
 interface SidebarShellProps {
-  /** localStorage key the resized width persists under. */
-  storageKey: string
-  defaultWidth: number
-  minWidth: number
-  maxWidth: number
   /** Collapsed icon-rail state — owned by the caller. */
   collapsed?: boolean
   /** Content rendered in place of `children` while collapsed. */
@@ -52,10 +51,6 @@ interface SidebarShellProps {
 }
 
 export function SidebarShell({
-  storageKey,
-  defaultWidth,
-  minWidth,
-  maxWidth,
   collapsed = false,
   rail,
   resizeLabel = 'Resize sidebar',
@@ -63,26 +58,46 @@ export function SidebarShell({
 }: SidebarShellProps) {
   const { isMacOverlay } = usePlatform()
   const prefersReducedMotion = useReducedMotion()
-  const resizable = useResizableWidth({
-    storageKey,
-    defaultWidth,
-    minWidth,
-    maxWidth,
-    edge: 'right',
-    disabled: collapsed,
-  })
+  const sidebarWidth = useUIStore((state) => state.sidebarWidth)
+  const setSidebarWidth = useUIStore((state) => state.setSidebarWidth)
+  const resetSidebarWidth = useUIStore((state) => state.resetSidebarWidth)
+  const [isResizing, setIsResizing] = useState(false)
+
+  const startResize = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    if (collapsed || event.pointerType === 'touch') return
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = sidebarWidth
+    setIsResizing(true)
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      setSidebarWidth(startWidth + moveEvent.clientX - startX)
+    }
+    const handleUp = () => {
+      window.removeEventListener('pointermove', handleMove)
+      window.removeEventListener('pointerup', handleUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      setIsResizing(false)
+    }
+
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    window.addEventListener('pointermove', handleMove)
+    window.addEventListener('pointerup', handleUp, { once: true })
+  }, [collapsed, setSidebarWidth, sidebarWidth])
 
   // On macOS Tauri the rail widens to 70px (matching
   // --spacing-mac-traffic-inset) so the traffic-light buttons land fully
   // inside it instead of spilling into the main content.
-  const width = collapsed ? (isMacOverlay ? 70 : 56) : resizable.width
+  const width = collapsed ? (isMacOverlay ? 70 : 56) : sidebarWidth
 
   return (
     <motion.aside
       initial={false}
       animate={{ width }}
       transition={{
-        duration: prefersReducedMotion ? 0.01 : 0.22,
+        duration: prefersReducedMotion || isResizing ? 0 : 0.22,
         ease: [0.4, 0, 0.2, 1],
       }}
       className="relative flex h-full shrink-0 flex-col overflow-hidden"
@@ -95,8 +110,8 @@ export function SidebarShell({
           aria-label={resizeLabel}
           title="Drag to resize · double-click to reset"
           className="absolute right-0 top-0 z-(--z-header) h-full w-1 cursor-col-resize transition-colors hover:bg-(--color-accent)/40"
-          onPointerDown={resizable.startResize}
-          onDoubleClick={resizable.resetWidth}
+          onPointerDown={startResize}
+          onDoubleClick={resetSidebarWidth}
         />
       )}
       <div className="flex h-full flex-col gap-1 overflow-hidden p-1">

@@ -20,7 +20,6 @@ import { PlanReviewPanel } from '../PlanReviewPanel'
 import { ActivityPanel } from '../ActivityPanel'
 import { CodingFileViewerPanel } from '../CodingFileViewerPanel'
 import { CodingWorkspacePanel } from '../CodingWorkspacePanel'
-import { WorkspaceFilesPanel } from '../WorkspaceFilesPanel'
 import { BrowserViewer } from '../BrowserViewer'
 import { TerminalPanel } from '../TerminalPanel'
 import { CommandPalette, type Command } from '../CommandPalette'
@@ -48,8 +47,6 @@ interface ChatTrailingPanelsProps {
   codingPanel: 'changed' | 'files' | null
   onCodingFileSelect: (file: WorkspaceFileInfo | null) => void
   onCloseCodingPanel: () => void
-  showFilesPanel: boolean
-  onCloseFilesPanel: () => void
   browserOpen: boolean
   onCloseBrowser: () => void
   terminalOpen: boolean
@@ -75,8 +72,6 @@ export function ChatTrailingPanels({
   codingPanel,
   onCodingFileSelect,
   onCloseCodingPanel,
-  showFilesPanel,
-  onCloseFilesPanel,
   browserOpen,
   onCloseBrowser,
   terminalOpen,
@@ -129,13 +124,6 @@ export function ChatTrailingPanels({
           sessionId={sessionId}
           projectId={projectId}
           isWorking={isWorking}
-        />
-      )}
-      {mode !== 'coding' && showFilesPanel && (
-        <WorkspaceFilesPanel
-          open
-          sessionId={sessionId}
-          onClose={onCloseFilesPanel}
         />
       )}
       <BrowserViewer
