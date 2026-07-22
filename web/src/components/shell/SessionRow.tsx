@@ -16,7 +16,7 @@
  */
 
 import { AnimatePresence, motion } from 'framer-motion'
-import { Globe, Loader2, Pencil, Trash2 } from 'lucide-react'
+import { Globe, Loader2, MessageSquarePlus, Pencil, Trash2 } from 'lucide-react'
 import { LongPressButton } from '@/components/ui/long-press-button'
 import { formatRelativeDate } from '@/utils/format'
 import { cn } from '@/lib/utils'
@@ -32,6 +32,8 @@ export interface SessionRowProps {
   onCancelDelete: () => void
   onConfirmDelete: () => void
   onEdit: (session: SessionResponse) => void
+  /** When provided, shows a hover action that opens the session's side chat. */
+  onOpenSideChat?: (session: SessionResponse) => void
   mobileLongPressActions?: boolean
   onLongPress?: (session: SessionResponse) => void
   onContextActions?: (
@@ -55,6 +57,7 @@ export function SessionRow({
   onCancelDelete,
   onConfirmDelete,
   onEdit,
+  onOpenSideChat,
   mobileLongPressActions = false,
   onLongPress,
   onContextActions,
@@ -175,6 +178,24 @@ export function SessionRow({
 
       {!pendingDelete && (
         <>
+          {onOpenSideChat && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onOpenSideChat(session)
+              }}
+              className={cn(
+                'absolute top-1/2 flex -translate-y-1/2 items-center justify-center rounded-xs p-1 text-(--color-text-subtle) opacity-0 transition-all hover:bg-(--bg-key) hover:text-(--color-text) group-hover:opacity-100 pointer-coarse:opacity-100',
+                compact ? 'right-11' : 'right-[3.25rem]',
+              )}
+              aria-label={`Open side chat for ${session.title || 'Untitled'}`}
+              title="Open side chat"
+            >
+              <MessageSquarePlus size={compact ? 11 : 12} />
+            </button>
+          )}
+
           <button
             type="button"
             onClick={(e) => {

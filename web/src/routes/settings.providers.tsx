@@ -74,6 +74,7 @@ const PROVIDER_BRANDS: Record<string, ProviderBrand> = {
   xiaomi: { iconClass: 'bg-[#FF6900]/15 text-[#FF6900] ring-[#FF6900]/20', tagline: 'MiLM models' },
   kimi: { iconClass: 'bg-[#7C3AED]/15 text-[#7C3AED] ring-[#7C3AED]/20', tagline: 'Moonshot AI' },
   foundry: { iconClass: 'bg-[#0078D4]/15 text-[#0078D4] ring-[#0078D4]/20', tagline: 'Azure AI Foundry' },
+  fci: { iconClass: 'bg-[#F26522]/15 text-[#F26522] ring-[#F26522]/20', tagline: 'FPT inference gateway' },
 }
 
 function getProviderBrand(id: string): ProviderBrand {
@@ -97,6 +98,7 @@ const DAEMON_BASE_URL: Record<string, { var: string; placeholder: string }> = {
   ollama: { var: 'OLLAMA_BASE_URL', placeholder: 'http://localhost:11434/v1' },
   xiaomi: { var: 'XIAOMI_BASE_URL', placeholder: 'https://api.xiaomi.com/v1' },
   kimi: { var: 'MOONSHOT_BASE_URL', placeholder: 'https://api.kimi.ai/v1' },
+  fci: { var: 'FCI_BASE_URL', placeholder: 'https://<your-fci-gateway>/v1' },
 }
 
 function eventLabel(event: OAuthLoginEvent): string {

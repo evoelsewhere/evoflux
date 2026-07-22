@@ -189,6 +189,44 @@ _CATALOG: list[ProviderEntry] = [
         "docs_url": "https://dev.mi.com/platform/mimo",
     },
     {
+        "id": "fci",
+        "label": "FCI",
+        "description": "FPT's OpenAI-compatible inference gateway — Qwen, GLM, Gemma, gpt-oss, DeepSeek, and Llama models.",
+        "kind": "api_key",
+        "env_var": "FCI_API_KEY",
+        "credentials": [
+            {
+                "name": "FCI_API_KEY",
+                "label": "FCI API key",
+                "secret": True,
+                "required": True,
+                "placeholder": "sk-...",
+            },
+            {
+                "name": "FCI_BASE_URL",
+                "label": "Base URL",
+                "secret": False,
+                "required": True,
+                "placeholder": "https://<your-fci-gateway>/v1",
+            },
+        ],
+        # Safety net if the gateway doesn't implement GET /models — live
+        # discovery (via OPENAI_COMPATIBLE_PROVIDER_SPECS) is tried first.
+        "fallback_models": [
+            "Qwen3.6-27B",
+            "GLM-5.1",
+            "GLM-5.2",
+            "gemma-4-31B-it",
+            "gemma-4-26B-A4B-it",
+            "gemma-3-27b-it",
+            "gpt-oss-20b",
+            "gpt-oss-120b",
+            "DeepSeek-V4-Flash",
+            "Qwen2.5-VL-7B-Instruct",
+            "Llama-3.3-70B-Instruct",
+        ],
+    },
+    {
         "id": "kimi",
         "label": "Kimi (Moonshot AI)",
         "description": "Moonshot AI's Kimi models — reasoning and coding.",

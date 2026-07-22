@@ -74,4 +74,14 @@ OPENAI_COMPATIBLE_PROVIDER_SPECS: dict[str, OpenAICompatibleProviderSpec] = {
         base_url="https://api.kimi.ai/v1",
         base_url_env_var="MOONSHOT_BASE_URL",
     ),
+    # FCI's gateway has no fixed public host (org-specific deployment) — no
+    # fallback base_url, so a missing FCI_BASE_URL fails loudly (see
+    # FCIProvider) instead of silently hitting a relative/malformed URL.
+    "fci": OpenAICompatibleProviderSpec(
+        provider_id="fci",
+        label="FCI",
+        env_var="FCI_API_KEY",
+        base_url="",
+        base_url_env_var="FCI_BASE_URL",
+    ),
 }

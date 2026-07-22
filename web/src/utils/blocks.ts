@@ -21,6 +21,10 @@ export function latestDirectUserBlockId(blocks: ContentBlock[]): string | undefi
   return undefined
 }
 
+export function isDirectUserBlock(block: ContentBlock): boolean {
+  return block.type === 'user' && !block.extra?.from_agent
+}
+
 export function appendThinking(
   blocks: ContentBlock[],
   text: string

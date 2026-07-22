@@ -39,6 +39,7 @@ export const STORAGE_KEYS = {
     aimMonitor: 'oa.aimMonitor.width',
     aimReport: 'oa.aimReport.width',
     aimUnitDetail: 'oa.aimUnitDetail.width',
+    sideChat: 'oa.sideChatPanel.width',
   },
 
   /** Coding workspace list + last-used pointers (utils/workspace.ts). */

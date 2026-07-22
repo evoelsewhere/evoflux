@@ -9,6 +9,7 @@ import type { SSECallbacks } from '../sse'
 import { parseDetailOrThrow } from './_shared'
 import type {
   Chapter,
+  MessageResponse,
   SessionDetailResponse,
   TeamSessionResolveResponse,
   SessionPageResponse,
@@ -867,18 +868,15 @@ export async function createSideChat(mainSessionId: string): Promise<{ id: strin
 
 /**
  * Get messages for a side chat session.
+ *
+ * The backend serializes with the same ``MessageResponse`` shape as the main
+ * chat history endpoint, so callers can reuse ``parseTeamBlocks`` to build
+ * ContentBlock[] — keeping the side chat on the shared render pipeline.
  */
 export async function getSideChatMessages(
   mainSessionId: string,
   sideChatId: string,
-): Promise<Array<{
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  blocks?: Array<Record<string, unknown>>
-  agent?: string | null
-  timestamp?: string
-}>> {
+): Promise<MessageResponse[]> {
   const res = await fetch(
     `${apiBaseUrl()}/team/${encodeURIComponent(mainSessionId)}/side-chat/${encodeURIComponent(sideChatId)}/messages`,
     {
