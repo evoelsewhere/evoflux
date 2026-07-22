@@ -297,7 +297,7 @@ function AdvancedComposerControl({
           <button
             type="button"
             aria-label={`Model settings: ${effectiveModel ? shortModelName(effectiveModel) : 'model'}, ${currentOption.label}`}
-            className={cn(CONTROL_CLASS, 'w-52 shrink-0 justify-center gap-1.5 border-(--color-border) bg-(--bg-card)')}
+            className={cn(CONTROL_CLASS, 'shrink-0 justify-center gap-1.5 border-(--color-border) bg-(--bg-card)')}
           />
         }
       >
