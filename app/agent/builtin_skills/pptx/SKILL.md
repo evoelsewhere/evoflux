@@ -60,7 +60,7 @@ These are the deliverable standards every deck MUST meet. Violating any one = no
 
 **One idea per slide.** If a slide needs a second title to explain what it covers, split it. Dense "everything about X" slides lose the audience inside 3 seconds. Use a section divider to group related one-idea slides, not a mega-slide.
 
-**Explicit type hierarchy — do NOT rely on theme defaults.** Theme defaults drift between masters. Set sizes explicitly on every text shape.
+**Explicit type hierarchy for custom decks; verified inheritance for templates.** The numeric floor below applies to template-free custom decks. In a template-backed deck, inspect direct formatting plus `effective.size`, `effective.font`, `effective.color`, and their `effective.*.src` provenance. `inheritedFrom=layout` identifies a layout placeholder that is not materialized on the slide; it is not style provenance. Preserve the template's own readable hierarchy when the render fits, even if it differs from the custom-deck floor. Do not restyle a valid template merely to satisfy generic numbers.
 
 | Element | Minimum | Typical | Min shape height |
 |---|---|---|---|
@@ -71,7 +71,7 @@ These are the deliverable standards every deck MUST meet. Violating any one = no
 
 Rule of thumb: **min shape height ≈ font_pt × 0.05cm**. An 18pt sublabel in a 0.8cm-tall box will overflow — `view annotated` catches this.
 
-Title must be **≥ 2× body size** (36pt over 20pt works; 28pt over 20pt looks timid). Four legit exceptions to body ≥ 18pt: chart axis labels, legends, footer / page number, and ≤ 5-word KPI sublabels (e.g. "Active users"). Descriptive sentences must be ≥ 18pt. Left-align body; center only titles and hero numbers. If "the cards won't fit", drop cards instead of shrinking font.
+In a custom deck, the title must be **≥ 2× body size** (36pt over 20pt works; 28pt over 20pt looks timid). Four legit exceptions to body ≥ 18pt: chart axis labels, legends, footer / page number, and ≤ 5-word KPI sublabels (e.g. "Active users"). Descriptive sentences must be ≥ 18pt. Left-align body; center only titles and hero numbers. If "the cards won't fit", drop cards instead of shrinking font. In a template-backed deck, judge hierarchy against the template, rendered readability, and fit instead of forcing these absolute values.
 
 **Two fonts max, one palette.** One heading font + one body font (e.g. Georgia + Calibri) — a third *display* face is fine only for big numerals or the cover title, as long as that heading+body pair stays intact. One dominant brand color (60–70% weight) + one supporting + one accent. Never mix 4+ colors in body content. **The palettes and font pairings in Design Principles are a floor, not a menu:** if the user gave brand colors/fonts or an existing template, match those first; otherwise the named sets are calibrated seeds — blend or diverge freely, as long as the result isn't *worse* than them and still clears the contrast floor.
 
@@ -125,7 +125,7 @@ Pair by document register, not by novelty. "Best For" is a prompt, not a decree;
 | Palatino | Garamond | Elegant editorial, luxury, nonprofit |
 | Consolas | Calibri | Developer tools, technical / engineering |
 
-Set both fonts explicitly on every shape (`--prop font=Georgia` on titles, `--prop font=Calibri` on body), not via theme inheritance.
+For a custom deck, set both fonts explicitly on every shape (`--prop font=Georgia` on titles, `--prop font=Calibri` on body). For a template-backed deck, keep theme/layout inheritance when its effective values meet the hierarchy and contrast requirements; direct formatting is a repair, not the default.
 
 ### Color and contrast
 
@@ -213,14 +213,61 @@ Copy-level tells live in "Copy reads human".
 
 ## Common Workflow
 
-1. **Open/save lifecycle.** `officecli open <file>` at the start, `officecli save <file>` at the end to flush your edits to disk. `save` only writes — it leaves the resident warm for any follow-up edit; reach for `officecli close <file>` only when you want to release the resident immediately (a one-shot handoff). Both are always safe — they never error or lose work. Use `batch` for repetitive shape grids. **Flush only at the non-officecli boundary:** officecli's own reads always see your edits; run `save`/`close` only before a non-officecli program reads the file (python-pptx, PowerPoint, a renderer, delivery).
-2. **Orient.** New deck: `officecli create "$FILE"`. Existing: `officecli view "$FILE" outline` first. Never edit blind.
-3. **Title sequence first (plan, don't build yet).** Before creating any slide or shape, write out the full ordered list of slide titles. If someone reading ONLY the titles can't follow the argument, fix the arc now — cheaper in a list than after 14 slides. Pick ONE title grammar — all topic noun-phrases or all action statements, never a mix — and hold it throughout (see "Copy reads human").
+1. **Open once per artifact session, not once per turn.** For an existing deck, run `officecli open <file>` only on the first turn that touches that exact path. A live resident is keyed by the canonical file path and survives shell commands and agent turns; every later `get`/`query`/`view`/mutation command automatically reuses it. On a follow-up turn, issue the intended command directly — do not prepend another `open`. End normal turns with `officecli save <file>` when disk must be current; `save` flushes but keeps the resident warm. Use `officecli close <file>` only when the user is done, an external editor needs ownership, the file will be moved/replaced, or memory must be released. Use `batch` for repetitive shape grids. **Flush only at the non-officecli boundary:** officecli's own reads always see your edits; run `save`/`close` only before a non-officecli program reads the file (python-pptx, PowerPoint, a renderer, delivery).
+2. **Classify every input before choosing the build mode.** Mark each presentation as one of: `existing deck to edit`, `fillable template`, `structural base`, `visual reference`, or `content source`. Copy and edit only the first three. A visual reference guides the design grammar but is never the output base; a content source is read-only input. New output with no editable base: `officecli create "$FILE"` and use custom blank layouts. Never edit blind or overwrite a source.
+3. **Title sequence + layout map first (plan, don't build yet).** Write the full ordered list of slide titles. If someone reading ONLY the titles can't follow the argument, fix the arc now. For every title, also record `content role → chosen layout/reference slide → placeholders to populate → required visual`. Do not create slides until every planned slide has a layout decision. Pick ONE title grammar — all topic noun-phrases or all action statements, never a mix — and hold it throughout (see "Copy reads human").
 4. **Build in display order.** Add slides in audience-view order: cover → agenda → section-1 divider → section-1 content → section-2 divider → … → closing. `--index` on slide add works, but linear append keeps the build script readable and avoids index-arithmetic bugs. **Before final delivery, confirm slide count + narrative arc match your build plan.**
-5. **Incremental per slide.** Create slide + background, then title, then supporting shapes / charts / connectors. Always `layout=blank` for custom designs. After each structural op, `get /slide[N] --depth 1` to confirm shape IDs.
+5. **Incremental per slide.** Create or clone one slide, populate its placeholders, then add only the supporting shapes / charts / connectors the chosen layout lacks. Use `layout=blank` only in custom mode. After each structural op, `get /slide[N] --depth 1` to confirm shape IDs. Before starting the next slide, render the current slide to PNG and inspect it; fix position, wrapping, overflow, z-order, and contrast immediately so layout errors do not compound across the deck.
 6. **Format to spec.** Per the Requirements table; formatting is deliverable, not polish.
 7. **Save + verify.** `officecli save` flushes the file to disk (or `officecli close` to flush and also end the session). Always open in the target presentation viewer before shipping — chart colors, animations, fonts, and zoom are runtime features `view html` can't render. Full verification in QA below.
 8. **QA — assume there are problems.** Fix-and-verify until a cycle finds zero new issues.
+
+### Large-deck resident performance
+
+Cold-opening a media-heavy deck can dominate the whole turn. The cold parse cannot be skipped, but it must happen once, not once per question.
+
+- For a deck likely to receive follow-up edits, keep the first resident alive longer than OfficeCLI's 12-minute default. On macOS/Linux, start the first cold session with `OFFICECLI_RESIDENT_IDLE_SECONDS=3600 officecli open "$FILE"`; in PowerShell, set `$env:OFFICECLI_RESIDENT_IDLE_SECONDS='3600'` before the first `officecli open $FILE`. Valid values are 1–86400 seconds. Use 3600 by default for a large deck; longer windows trade latency for resident RAM. Do not probe liveness with another `open`: in bundled `v1.0.140`, the reuse path resets idle to 12 minutes and therefore shortens a longer custom window.
+- Read the `open` output. `resident started` means a cold parse occurred; `reusing running resident` must return quickly and means the deck was not reparsed. If the first useful command auto-started a 60-second resident, run `officecli open "$FILE"` once after it finishes to promote that already-loaded resident to the normal interactive window.
+- Never use `close` as an end-of-turn cleanup when follow-ups are plausible. Use `save`; the resident auto-flushes while staying alive. Do not copy, rename, replace, or delete the backing file while its resident is live.
+- If a warm follow-up unexpectedly takes as long as a cold open, stop repeating it. Confirm whether the previous output said `resident started`, whether more than the configured idle window elapsed, and whether another step called `close` or replaced the path. Repeated cold starts indicate lifecycle loss, not a reason to run more `open` commands.
+
+### Template-first mode (MANDATORY for an existing deck, fillable template, or structural base)
+
+The template is part of the specification, not a background image. Do not add or move anything until its layout system is understood.
+
+1. **Protect the source.** Copy the source to the requested output path and edit the copy. Do not `create` over it.
+2. **Build a template inventory.** Run all of the following before the first mutation:
+  ```bash
+  officecli view "$FILE" outline
+  officecli get "$FILE" / --depth 2 --json
+  officecli get "$FILE" /theme --json
+  officecli query "$FILE" 'slidemaster' --json
+  officecli query "$FILE" 'slidelayout' --json
+  officecli query "$FILE" 'placeholder' --json
+  officecli query "$FILE" 'comment, moderncomment, animation, media, ole, zoom, model3d, notes' --json
+  officecli dump "$FILE" / -o template-blueprint.json --json
+  officecli view "$FILE" screenshot --grid 4 -o template-grid.png
+  officecli help pptx slideMaster
+  officecli help pptx slideLayout
+  officecli help pptx placeholder
+  ```
+  For every master/layout path, run both `get <path> --depth 2` and `raw <path>`. `get` on a layout enumerates plain shapes only; use raw XML plus the whole-document dump and its warnings to catch pictures, groups, relationship-backed assets, and other master/layout content. Render every layout, including unused ones, by appending one temporary slide per exact layout ID to a disposable audit copy and screenshotting those pages. Read the JSON, raw content, warnings, and images, then record: slide size/aspect ratio; theme fonts/colors; every master and layout name/ID; each layout's complete item and placeholder geometry; representative slide numbers; recurring logo, footer, page number, background, and decorative elements. Any dump warning or unknown item blocks mutation until classified.
+3. **Map content and classify every item.** For each planned slide, choose the layout whose placeholder count and geometry fit the content. For a candidate reference slide, make an item manifest with `path/name/type → placeholder or slide-owned → x/y/width/height → keep/replace/remove`. Include shapes, pictures, charts, tables, groups, connectors, notes, comments, modern comments, animations, transitions, links, audio/video, OLE, zoom, 3D objects, and inherited furniture. **No item may remain unclassified**: cloning a sample slide and replacing only its title/body is a template leak. Prefer cloning the strongest fully-classified reference slide because it preserves relationships and non-placeholder furniture:
+  ```bash
+  officecli add "$FILE" / --from "/slide[N]"
+  officecli get "$FILE" "/slide[last()]" --depth 2
+  officecli set "$FILE" "/slide[last()]/placeholder[1]" --prop text="Final title"
+  officecli set "$FILE" "/slide[last()]/placeholder[2]" --prop text="Final body"
+  ```
+  The placeholder numbers above are examples only. Use each unique positional path returned for the cloned slide and verify its `phType`, `phIndex`, and bounds before setting text. Never use `/placeholder[body]` when a layout has multiple body/object slots because type lookup selects only the first match. If inherited placeholders do not yield unique paths, clone a representative slide with materialized placeholders or consult installed help for index-capable syntax. If no representative slide exists, add a slide with the selected layout using the exact layout identifier reported by help/inventory. Never guess a layout name.
+4. **Respect inheritance and lock geometry.** Populate existing placeholders first. Inspect direct values, `effective.*`, and `effective.*.src`; use `inheritedFrom` only to identify an unmaterialized layout placeholder. Treat inventoried `x/y/width/height`, z-order, and alignment as a baseline. Do not move, resize, recolor, re-font, or reorder inherited/reference items unless the layout map explicitly allows it. If content does not fit, shorten it, split the slide, or choose another layout before moving neighboring items or shrinking type. Do not cover master furniture with new shapes. Add freeform shapes only in layout whitespace and align them to the template's established grid, not the generic 33.87 × 19.05cm grid.
+5. **Audit every cloned slide before continuing.** After populating one slide:
+  ```bash
+  officecli get "$FILE" "/slide[last()]" --depth 2
+  officecli view "$FILE" screenshot --page N -o "slide-N.png"
+  ```
+  Compare it with its reference slide and item manifest for title baseline, exact placeholder bounds, margins, repeated-element alignment, logo/footer integrity, z-order, and all keep/replace/remove decisions. Any unexplained geometry change or unclassified sample item is a failure. Fix now; only then build the next slide.
+6. **Remove sample material last.** Keep source slides available while building. Remove unneeded examples only after output slides pass visual QA, then re-check slide order, internal links, notes, numbering, comments, animations, transitions, and every keep/replace/remove decision.
 
 ## Quick Start
 
@@ -229,7 +276,7 @@ Minimal viable deck: cover + one content slide + notes. `$FILE` stands in for yo
 ```bash
 FILE="deck.pptx"
 officecli create "$FILE"
-officecli open "$FILE"
+officecli open "$FILE"  # once: promote create's short resident for this artifact session
 
 # Cover — dark fill, centered title
 officecli add "$FILE" / --type slide --prop layout=blank --prop background=1E2761
@@ -251,7 +298,7 @@ officecli save "$FILE"
 officecli validate "$FILE"
 ```
 
-Shape of every build: open → slide+background → title → body → notes → save → validate.
+Shape of the first build: open once → slide+background → title → body → notes → save → validate. Follow-up turns start at the requested read/edit operation and reuse the resident; they do not repeat `open`.
 
 ## Reading & Analysis
 
@@ -300,7 +347,7 @@ Verbs: `add` / `set` / `remove` / `move` / `swap` / `batch` / `raw-set`. Ninety 
 
 ### Slides and backgrounds
 
-A slide is `/slide[N]`. Always pass `layout=blank` for custom designs. Background: solid, gradient, or image.
+A slide is `/slide[N]`. Pass `layout=blank` only for a template-free custom design. In a template-backed deck, clone a representative slide or use an inventoried layout so master objects and placeholder geometry survive. Background: solid, gradient, or image.
 
 ```bash
 officecli add "$FILE" / --type slide --prop layout=blank --prop background=1E2761                 # solid
@@ -381,7 +428,7 @@ officecli set "$FILE" "/slide[2]/shape[@name=HeroCard]" --prop animation=none   
 ### Tables, placeholders, groups, zoom — one-liners
 
 - **Tables** — `--type table --prop rows=N --prop cols=M`. Row-level `set` supports `height` and `c1/c2/c3` (seed cell text). Header-row styling is table-level (`firstRow=true` / `headerFill=`), not a row prop. Cell formatting lives on the cell paragraph / run. Populate rows BEFORE setting table-level font (font cascade gets reset by row ops).
-- **Placeholders** — `"/slide[N]/placeholder[title]"` / `placeholder[body]`. Available only when the slide uses a layout with placeholders (not `layout=blank`).
+- **Placeholders** — `"/slide[N]/placeholder[title]"` is safe for the unique title slot. Use positional paths returned by `query placeholder` for body/object slots; `placeholder[body]` selects only the first match and is unsafe on multi-content layouts. Available only when the slide uses a layout with placeholders (not `layout=blank`).
 - **Groups** (LEAD) — address children via `"/slide[N]/group[@name=G]/shape[1]"`. Survives reordering better than positional indexes.
 - **Zoom slide** (LEAD) — `--type zoom --prop target=N` (one link per target; alias `slide`). Emit N separate zoom shapes for a multi-target nav hub. Zoom is a runtime feature — `view html` shows the static geometry; the zoom interaction runs only in a live presentation viewer.
 - **Slide comments** — reviewer annotations anchored at `/slide[N]/comment[M]`. Full lifecycle (`add / set / get / query / remove`). Props: `text`, `author`, `initials` (auto-derived), `date` (ISO 8601, defaults to UtcNow), `x` / `y` (length anchor).

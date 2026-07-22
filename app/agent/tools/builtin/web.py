@@ -26,7 +26,13 @@ _USER_AGENT = (
 )
 
 
-@tool(name="web_search", concurrency_safe=True, read_only=True)
+@tool(
+    name="web_search",
+    concurrency_safe=True,
+    read_only=True,
+    deferred=True,
+    deferred_summary="Search the public web for current information and sources.",
+)
 async def web_search(
     query: Annotated[
         str,
@@ -119,7 +125,13 @@ def _fallback_convert(content_bytes: bytes, mime: str | None) -> str:
         return content_bytes.decode("utf-8", errors="replace")
 
 
-@tool(name="web_fetch", concurrency_safe=True, read_only=True)
+@tool(
+    name="web_fetch",
+    concurrency_safe=True,
+    read_only=True,
+    deferred=True,
+    deferred_summary="Fetch a web URL as Markdown, HTML, or plain text.",
+)
 async def web_fetch(
     url: Annotated[
         str,
@@ -207,7 +219,13 @@ async def web_fetch(
         return f"Error fetching or converting: {str(e)}"
 
 
-@tool(name="image_search", concurrency_safe=True, read_only=True)
+@tool(
+    name="image_search",
+    concurrency_safe=True,
+    read_only=True,
+    deferred=True,
+    deferred_summary="Search the web for usable photos, illustrations, icons, or backgrounds.",
+)
 async def image_search(
     query: Annotated[
         str,

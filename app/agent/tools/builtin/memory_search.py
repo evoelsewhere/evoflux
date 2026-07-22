@@ -57,4 +57,6 @@ memory_search = Tool(
     ),
     concurrency_safe=True,
     read_only=True,
+    deferred=True,
+    deferred_summary="Search EvoFlux memory, notes, wiki pages, and prior visible chats.",
 )

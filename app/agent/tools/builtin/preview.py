@@ -418,4 +418,6 @@ preview_tool = Tool(
     _preview,
     name="preview",
     concurrency_safe=False,
+    deferred=True,
+    deferred_summary="Start, inspect, or stop a configured development server for browser verification.",
 )

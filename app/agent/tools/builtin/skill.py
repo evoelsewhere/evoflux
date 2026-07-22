@@ -18,7 +18,7 @@ import re
 import textwrap
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import yaml
 
@@ -365,15 +365,14 @@ def format_available_skills(*, verbose: bool = False) -> str:
 
 
 def _skill_tool_description() -> str:
-    return "\n".join(
-        [
-            "Load a specialized skill that provides domain-specific instructions and workflows.",
-            "",
-            "When a task matches one of the available skills listed below, use this tool to load the full skill instructions.",
-            "Call this at most once per skill. If the same skill was already loaded earlier in the visible conversation, reuse those instructions instead of calling this tool again.",
-            "",
-            format_available_skills(verbose=False),
-        ]
+    names = sorted(discover_skills())
+    available = ", ".join(names) if names else "(none)"
+    return (
+        "List or load specialized skill instructions. The description keeps "
+        "only skill names to minimize repeated schema tokens; call with "
+        "action='list' for the full catalog. Call action='load' at most once "
+        "per skill and reuse instructions already visible in the conversation.\n\n"
+        f"Available skill names: {available}"
     )
 
 
@@ -444,14 +443,23 @@ def _loaded_skills_from_messages(state: Any) -> dict[str, str]:
 @tool(name="skill", description=_skill_tool_description)
 async def load_skill(
     skill_name: Annotated[
-        str,
+        str | None,
         Field(
-            description="Skill name from the available skills listed in this tool description (e.g. 'mcp-installer'). Do not call this again for a skill that is already loaded in the visible conversation; reuse the prior instructions instead."
+            description="Exact skill name to load. Required when action='load'."
         ),
-    ],
+    ] = None,
+    action: Annotated[
+        Literal["list", "load"],
+        Field(description="List the full catalog or load one skill's instructions."),
+    ] = "load",
     _state: Annotated[Any, InjectedArg()] = None,
 ) -> str:
-    """Load skill instructions into context."""
+    """List available skills or load one skill's instructions into context."""
+    if action == "list":
+        return format_available_skills(verbose=True)
+    if not skill_name:
+        return "skill_name is required when action='load'."
+
     if _state is not None:
         loaded_skills = _state.metadata.get("loaded_skills")
         if loaded_skills is None:

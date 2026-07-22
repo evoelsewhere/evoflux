@@ -80,6 +80,8 @@ async def _remove_path(
 remove_path = Tool(
     _remove_path,
     name="rm",
+    deferred=True,
+    deferred_summary="Permanently remove a file or directory from the workspace.",
     description=(
         "Permanently delete a file or directory from the workspace. "
         "Use only when the user asked for removal or deletion is necessary. "

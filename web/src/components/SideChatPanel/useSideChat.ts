@@ -44,6 +44,8 @@ import {
 } from '@/utils/blocks'
 import type { ContentBlock, MessageResponse } from '@/api/types'
 
+export type SideChatSendResult = 'sent' | 'failed' | 'stale'
+
 interface UseSideChatReturn {
   /** Finalized blocks from the persisted history. */
   blocks: ContentBlock[]
@@ -52,7 +54,7 @@ interface UseSideChatReturn {
   isWorking: boolean
   error: string | null
   sideChatId: string | null
-  sendMessage: (content: string) => Promise<void>
+  sendMessage: (content: string) => Promise<SideChatSendResult>
   stopGeneration: () => Promise<void>
   /** Lazily create the side chat session (opens history + stream). */
   openSideChat: () => void
@@ -262,11 +264,13 @@ export function useSideChat(mainSessionId: string | null): UseSideChatReturn {
   // emitted in between.
   const sendMessage = useCallback(
     async (content: string) => {
-      if (!mainSessionId || !content.trim()) return
+      if (!mainSessionId || !content.trim()) return 'failed'
       const sendMainSessionId = mainSessionId
 
       const currentSideChatId = await ensureSideChat()
-      if (!currentSideChatId) return
+      if (!currentSideChatId) {
+        return activeMainSessionRef.current === sendMainSessionId ? 'failed' : 'stale'
+      }
 
       if (activeMainSessionRef.current === sendMainSessionId) {
         setError(null)
@@ -303,14 +307,18 @@ export function useSideChat(mainSessionId: string | null): UseSideChatReturn {
         await sendSideChatMessage(sendMainSessionId, currentSideChatId, content)
         if (activeMainSessionRef.current === sendMainSessionId) {
           connectStream(currentSideChatId)
+          return 'sent'
         }
+        return 'stale'
       } catch (err) {
-        if (activeMainSessionRef.current === sendMainSessionId) {
+        const isCurrentSession = activeMainSessionRef.current === sendMainSessionId
+        if (isCurrentSession) {
           setError(err instanceof Error ? err.message : 'Failed to send message')
           setIsWorking(false)
         }
         // Roll the optimistic entry back to the persisted truth.
         void queryClient.invalidateQueries({ queryKey: ['sideChatMessages', currentSideChatId] })
+        return isCurrentSession ? 'failed' : 'stale'
       }
     },
     [mainSessionId, ensureSideChat, queryClient, connectStream],

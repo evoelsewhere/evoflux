@@ -1427,6 +1427,7 @@ async def create_side_chat_session(
         title=effective_title,
         session_type="side_chat",
         source_session_id=main_session_id,
+        source_session_ref=main_session_id,
         agent_name=main.agent_name,
         mode=main.mode,
         workspace=main.workspace,

@@ -101,6 +101,18 @@ class MCPTool(Tool):
         self.name = local_name
         self._custom_description = description
         self._func = self._invoke  # for repr / __wrapped__ compatibility
+        self.concurrency_safe = False
+        annotations = getattr(mcp_tool, "annotations", None)
+        self.read_only = bool(getattr(annotations, "readOnlyHint", False))
+        self.tiers = None
+        self.lead_only = False
+        self.deferred = True
+        compact_description = " ".join(description.split())
+        self.deferred_summary = (
+            compact_description[:157] + "..."
+            if len(compact_description) > 160
+            else compact_description
+        )
 
         self.__name__ = local_name
         self.__doc__ = description

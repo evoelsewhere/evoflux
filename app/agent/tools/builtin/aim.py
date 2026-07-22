@@ -440,6 +440,8 @@ aim_units = Tool(
         "knowledge-base repo is always the source of truth."
     ),
     tiers=("aim",),
+    deferred=True,
+    deferred_summary="Inspect or update AIM migration units, phases, runs, and traceability links.",
 )
 
 
@@ -627,4 +629,6 @@ aim_compare = Tool(
         "clusters as JSON; writes a full report next to the golden case."
     ),
     tiers=("aim",),
+    deferred=True,
+    deferred_summary="Compare a migrated unit's output with its canonical golden master.",
 )

@@ -67,7 +67,9 @@ export function TextSelectionAction({
       !container.contains(sel.anchorNode) ||
       !container.contains(sel.focusNode)
     ) {
-      // Selection is outside our container — ignore.
+      // A new selection outside the transcript invalidates any action left
+      // over from the previous in-transcript selection.
+      dismiss()
       return
     }
 
