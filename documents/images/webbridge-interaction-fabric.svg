@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2400 1300" font-family="'Segoe UI', -apple-system, Helvetica, Arial, sans-serif" role="img">
+<title>WebBridge — a bidirectional Browser Interaction Fabric</title>
+<desc>Overview of EvoFlux's WebBridge extension: a persistent relay connects an agent, the EvoFlux backend, and the user's real Chrome/Edge browser, with control flowing from the agent to the page over CDP and context, selections, and handoff flowing back from the browser to the agent across four layers — P0 secure transport, P1 browser-to-agent context, P2 Side Panel and live handoff, and P3 Teach Mode and text watches.</desc>
+
+<defs>
+  <radialGradient id="bgGlowWB" cx="50%" cy="0%" r="90%">
+    <stop offset="0%" stop-color="#121a2b"/>
+    <stop offset="100%" stop-color="#080a10"/>
+  </radialGradient>
+</defs>
+
+<rect x="0" y="0" width="2400" height="1300" fill="url(#bgGlowWB)"/>
+
+<!-- Header -->
+<rect x="80" y="56" width="72" height="72" rx="18" fill="#12161f" stroke="#2a3040"/>
+<path d="M 98 82 L 118 82 L 108 68 Z" fill="#7dd3fc"/>
+<path d="M 98 102 L 118 102 L 108 116 Z" fill="#fb923c"/>
+<path d="M 100 92 L 116 92" stroke="#e8ebf1" stroke-width="5" stroke-linecap="round"/>
+<text x="172" y="98" font-size="50" font-weight="800" fill="#f2f4f8">WebBridge — a bidirectional Browser Interaction Fabric</text>
+<text x="172" y="140" font-size="24" fill="#8c96ab">One persistent relay, two directions: the agent drives your real browser, and your browser feeds context and handoff back.</text>
+
+<!-- Workspace boxes -->
+<g>
+  <rect x="80" y="204" width="720" height="132" rx="16" fill="#131a2b" stroke="#2c3e5c" stroke-width="2"/>
+  <text x="440" y="258" text-anchor="middle" font-size="30" font-weight="700" fill="#93c5fd">AGENT</text>
+  <text x="440" y="296" text-anchor="middle" font-size="20" fill="#7d8aa3">runs inside an EvoFlux session</text>
+</g>
+<g>
+  <rect x="840" y="204" width="720" height="132" rx="16" fill="#131a2b" stroke="#2c3e5c" stroke-width="2"/>
+  <text x="1200" y="258" text-anchor="middle" font-size="30" font-weight="700" fill="#93c5fd">EVOFLUX BACKEND</text>
+  <text x="1200" y="296" text-anchor="middle" font-size="20" fill="#7d8aa3">WS relay · domain policy · pairing · mailbox</text>
+</g>
+<g>
+  <rect x="1600" y="204" width="720" height="132" rx="16" fill="#131a2b" stroke="#2c3e5c" stroke-width="2"/>
+  <text x="1960" y="258" text-anchor="middle" font-size="30" font-weight="700" fill="#93c5fd">YOUR REAL BROWSER</text>
+  <text x="1960" y="296" text-anchor="middle" font-size="20" fill="#7d8aa3">WebBridge extension + your logged-in page</text>
+</g>
+
+<!-- Down arrow + label -->
+<path d="M 1200 350 L 1200 392 M 1184 378 L 1200 396 L 1216 378" fill="none" stroke="#4a5568" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="1200" y="428" text-anchor="middle" font-size="24" fill="#8c96ab">control flows agent → browser over CDP; context and handoff flow browser → agent across four layers</text>
+
+<!-- Row 1: P0 SECURE TRANSPORT -->
+<g>
+  <rect x="80" y="458" width="2240" height="150" rx="20" fill="#0f1420" stroke="#1e2633" stroke-width="2"/>
+  <rect x="108" y="486" width="280" height="94" rx="14" fill="#16233a" stroke="#3b6ba5" stroke-width="2"/>
+  <text x="248" y="528" text-anchor="middle" font-size="27" font-weight="700" fill="#60a5fa">P0</text>
+  <text x="248" y="558" text-anchor="middle" font-size="17" fill="#7ea6d6">SECURE TRANSPORT</text>
+  <text x="428" y="526" font-size="23" fill="#c3cbdb">Extension registers on a persistent WS relay; a scoped pairing credential is exchanged</text>
+  <text x="428" y="558" font-size="23" fill="#c3cbdb">for a single-use, 30-second ticket before every connection.</text>
+  <rect x="1832" y="498" width="460" height="70" rx="12" fill="#16233a" stroke="#3b6ba5" stroke-width="1.5"/>
+  <text x="2062" y="541" text-anchor="middle" font-size="20" fill="#93c5fd">→ audited, policy-checked channel</text>
+</g>
+
+<!-- Row 2: P1 BROWSER TO AGENT CONTEXT -->
+<g>
+  <rect x="80" y="630" width="2240" height="150" rx="20" fill="#0f1420" stroke="#1e2633" stroke-width="2"/>
+  <rect x="108" y="658" width="280" height="94" rx="14" fill="#251a3d" stroke="#7c5cc4" stroke-width="2"/>
+  <text x="248" y="700" text-anchor="middle" font-size="27" font-weight="700" fill="#a78bfa">P1</text>
+  <text x="248" y="730" text-anchor="middle" font-size="16" fill="#b3a0dd">BROWSER → AGENT CONTEXT</text>
+  <text x="428" y="698" font-size="23" fill="#c3cbdb">Explicit context-menu actions send selection, link, or page — gated by a per-domain</text>
+  <text x="428" y="730" font-size="23" fill="#c3cbdb">sharing policy, origin-stripped, and tagged as untrusted data.</text>
+  <rect x="1832" y="670" width="460" height="70" rx="12" fill="#251a3d" stroke="#7c5cc4" stroke-width="1.5"/>
+  <text x="2062" y="713" text-anchor="middle" font-size="20" fill="#a78bfa">→ provenance-tagged transcript context</text>
+</g>
+
+<!-- Row 3: P2 SIDE PANEL & HANDOFF -->
+<g>
+  <rect x="80" y="802" width="2240" height="150" rx="20" fill="#0f1420" stroke="#1e2633" stroke-width="2"/>
+  <rect x="108" y="830" width="280" height="94" rx="14" fill="#3d2a14" stroke="#c4863c" stroke-width="2"/>
+  <text x="248" y="872" text-anchor="middle" font-size="27" font-weight="700" fill="#fb923c">P2</text>
+  <text x="248" y="902" text-anchor="middle" font-size="16" fill="#e0a86b">SIDE PANEL &amp; HANDOFF</text>
+  <text x="428" y="870" font-size="23" fill="#c3cbdb">A persistent panel streams the transcript over SSE, relays live AskUser answers,</text>
+  <text x="428" y="902" font-size="23" fill="#c3cbdb">and lets a human Take control on a tab mid-task, then Resume the agent.</text>
+  <rect x="1832" y="842" width="460" height="70" rx="12" fill="#3d2a14" stroke="#c4863c" stroke-width="1.5"/>
+  <text x="2062" y="885" text-anchor="middle" font-size="20" fill="#fb923c">→ live, human-in-the-loop session</text>
+</g>
+
+<!-- Row 4: P3 TEACH MODE & WATCHES -->
+<g>
+  <rect x="80" y="974" width="2240" height="150" rx="20" fill="#0f1420" stroke="#1e2633" stroke-width="2"/>
+  <rect x="108" y="1002" width="280" height="94" rx="14" fill="#123324" stroke="#3f9f6e" stroke-width="2"/>
+  <text x="248" y="1044" text-anchor="middle" font-size="27" font-weight="700" fill="#4ade80">P3</text>
+  <text x="248" y="1074" text-anchor="middle" font-size="16" fill="#7cc99f">TEACH MODE &amp; WATCHES</text>
+  <text x="428" y="1042" font-size="23" fill="#c3cbdb">Records a semantic click/fill/select/navigate sequence — secrets redacted at the</text>
+  <text x="428" y="1074" font-size="23" fill="#c3cbdb">source — into a human-reviewed draft; a text watch waits for a phrase on a page.</text>
+  <rect x="1832" y="1014" width="460" height="70" rx="12" fill="#123324" stroke="#3f9f6e" stroke-width="1.5"/>
+  <text x="2062" y="1057" text-anchor="middle" font-size="20" fill="#4ade80">→ reviewable, replayable draft</text>
+</g>
+
+<!-- Summary bar -->
+<rect x="80" y="1154" width="2240" height="100" rx="18" fill="#0e2420" stroke="#1f5c4c" stroke-width="2"/>
+<text x="1200" y="1198" text-anchor="middle" font-size="23" font-weight="700" fill="#e8fbf3">Every pairing, ticket, binding, and Teach draft is a persisted, Alembic-migrated row — not in-memory state.</text>
+<text x="1200" y="1228" text-anchor="middle" font-size="21" fill="#8fd4bd">Revoking a pairing closes its live relay connection immediately; agent commands reuse the same CDP set as EvoFlux's headless browser tool.</text>
+
+</svg>

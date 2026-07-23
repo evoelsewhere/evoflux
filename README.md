@@ -14,7 +14,7 @@
   [![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white)](app/)
   [![BYOM](https://img.shields.io/badge/BYOM-12%20providers-6E56CF)](#bring-your-own-model)
 
-  [Quick Start](#quick-start) · [The Harness](#evoflux-as-an-agent-harness) · [Three Modes](#one-app-three-modes-forge-coding-and-aim) · [Architecture](#architecture) · [Comparison](#how-evoflux-compares)
+  [Quick Start](#quick-start) · [The Harness](#evoflux-as-an-agent-harness) · [Three Modes](#one-app-three-modes-forge-coding-and-aim) · [Architecture](#architecture) · [WebBridge](#browser-agent-bridge-webbridge) · [Comparison](#how-evoflux-compares)
 
 </div>
 
@@ -122,8 +122,24 @@ Long sessions get chapters (agent-markable dividers with a live table of content
 ### AIM: legacy migration mode
 The third mode turns a legacy-to-modern migration into a factory. A project's workspace is a read-only **base source** (the legacy estate), a pre-scaffolded **target source**, and a **KB repo** that's the system of record for both — unit inventory, phase, business rules, and rulebook all resolve KB-first, so a project can override or extend the shared defaults without touching EvoFlux's own code. Seven specialized agents (`aim-lead`, `aim-archaeologist`, `aim-target-architect`, `aim-converter`, `aim-appraiser`, `aim-test-engineer`, `aim-triage-analyst`) carry each migration unit through six pipelines — deterministic, human-gated graphs of agent/tool/approval steps, not open-ended chat: `aim-assess` (inventory + wave plan), `aim-understand` (one unit → KB doc + candidate business rules), `aim-convert-unit` / `aim-convert-wave` (implement into the target base, unit-by-unit or as a batch), `aim-test-compare` (certify or triage), and `aim-cutover-check` (phase flip). Equivalence is deterministic, not vibes: `aim_compare` canonicalizes actual and golden-master output per a stack-specific rulebook — encoding, sort order, date/number formatting, the "harmless" differences that hide real defects — and records a pass/fail/acceptable-diff verdict with a full diff report, closing a gap most published reference implementations in this space (including Microsoft's own open-source one) leave unsolved. Rulebook packs (`cobol-java21`, `vb6-dotnet`, `java8-java21` ship built in) bundle the conversion mappings, canonicalizer profiles, and agent-blueprint overlays for one source→target stack pair; a project's KB repo can carry its own to override or extend any of them.
 
+### Browser Agent Bridge (WebBridge)
+Most "browser tool" integrations are one-way: the agent drives a browser, done. WebBridge (`extensions/webbridge`) is EvoFlux's Chrome/Edge extension for the other, harder half — a **Browser Interaction Fabric** where control flows both ways over the same persistent connection, and the browser being driven is your **real one**, with your actual logins and cookies, not a disposable headless instance:
+
+![WebBridge overview — an agent and the EvoFlux backend (WS relay, domain policy, pairing, session mailbox) connect over a persistent relay to the WebBridge extension in the user's real Chrome/Edge browser; control flows agent to browser over CDP while context, selections, and handoff flow browser to agent across four layers: P0 secure transport, P1 browser-to-agent context, P2 Side Panel and live handoff, and P3 Teach Mode and text watches](documents/images/webbridge-interaction-fabric.svg)
+
+Agent-driven control reuses the same element-based and coordinate-level command set as EvoFlux's headless browser tool (snapshot, click, fill, extract, screenshot, wait, crawl) over the Chrome DevTools Protocol, so a workflow written against one transfers to the other. What WebBridge adds on top is the human-owned direction of that fabric, delivered in four layers:
+
+| Layer | What it adds | Key pieces |
+|---|---|---|
+| **Secure transport** | A persistent WebSocket relay the extension registers on, gated by a scoped pairing credential exchanged for a single-use, 30-second connection ticket (never a bare token in a URL); every command is checked against a per-domain allow/block policy and written to an audit log | `background.js`, `app/api/routes/team/webbridge.py`, `webbridge_service.py` |
+| **Browser → agent context** | Explicit "Ask EvoFlux about selection / link / page" context-menu actions, gated by a per-domain sharing policy (`ask`/`allow`/`block`); origin/query/fragment stripping and untrusted-data tagging before anything reaches the transcript | `popup.js`, `webbridge_pairing_service.py` |
+| **Side Panel & live handoff** | A persistent panel next to the page: streamed transcript over SSE, in-flight `AskUser` answers, a sanitized single-element picker, and a **Take control / Resume agent** lease that pauses agent commands on a tab while a human logs in or completes a manual step | `sidepanel.js`/`sidepanel.html`, `markdown.js`, `element_picker.js` |
+| **Teach Mode & watches** | Records a semantic click/fill/select/navigate sequence — never raw keystrokes, secret-looking fields redacted at the source — into a human-reviewed, replayable draft; a lightweight text watch polls a page for a phrase and only surfaces a badge until a user confirms sending it | `teach_recorder.js`, Teach-draft Alembic migrations |
+
+Every pairing, ticket, tab-binding, and Teach draft is a persisted, Alembic-migrated row, not in-memory state — a pairing (and its bindings) survives a backend restart, and revoking it closes the live relay connection and invalidates outstanding tickets immediately. See [`extensions/webbridge/README.md`](extensions/webbridge/README.md) for install, pairing, and `settings.yaml` domain/sharing guardrail configuration.
+
 ### Beyond coding
-A headless-Chromium browser-automation tool (navigate, click, fill, extract, screenshot, live CDP screencasting) ships built in — no external Playwright server to run. Document intake handles PDF, DOCX, and HTML via `markitdown`. Observability is OpenTelemetry and Prometheus, aggregated through DuckDB into UI-friendly summaries. A cron scheduler fires prompts at agents on a schedule, reusing the exact same chat pipeline a human message would use.
+A headless-Chromium browser-automation tool (navigate, click, fill, extract, screenshot, live CDP screencasting) ships built in — no external Playwright server to run — for disposable, agent-only browsing that's separate from the real-browser WebBridge above. Document intake handles PDF, DOCX, and HTML via `markitdown`. Observability is OpenTelemetry and Prometheus, aggregated through DuckDB into UI-friendly summaries. A cron scheduler fires prompts at agents on a schedule, reusing the exact same chat pipeline a human message would use.
 
 ---
 
@@ -142,6 +158,7 @@ The AI coding agent market moved fast through 2025–2026: in a Feb 2026 survey 
 | Code understanding | Structural code graph, 25 parsers, cross-repo resolution | Codebase search; optional opt-in LSP plugin | Embedding-based semantic search, not LSP | "Ask Devin" codebase Q&A | Repo-aware agent loop | Agent-Computer Interface |
 | Persistent memory | Wiki + Dream consolidation, inspectable markdown | `CLAUDE.md` + auto-saved memory | Per-project Memories + Rules, no cross-project | Org-wide knowledge base + DeepWiki docs | `AGENTS.md` (hierarchical) + session memories | Context condenser + `AGENTS.md`/skills |
 | Sandboxing | Denylist filesystem sandbox + wildcard permissions | Permission rules + OS-level sandbox, optional VM | OS-level sandbox + auto-review classifier | Per-session isolated VM/container; VPC option | Seatbelt/Bubblewrap/ACLs by OS; cloud microVM | Docker container |
+| Real-browser bridge | Yes — [WebBridge](#browser-agent-bridge-webbridge) drives your logged-in Chrome/Edge both ways (agent control + browser-to-agent context/handoff) | No | No | No | No | No |
 | Pricing | Free — pay only your own model API costs | ~$17–20/mo (Pro), up to $100–200/mo (Max) or metered API | $0–200+/mo (Hobby to Ultra tiers) | $0–200+/mo per seat, plus usage-based fees | ~$20/mo (ChatGPT Plus) | Free self-hosted; Cloud has free + paid tiers |
 
 *(Competitor figures reflect publicly reported information as of mid-2026, verified via official docs and pricing pages where possible, and may have changed since.)*
