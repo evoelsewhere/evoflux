@@ -83,6 +83,7 @@ _CUSTOM_AUTH_EXACT: frozenset[str] = frozenset(
         "/api/team/webbridge/interactions",
         "/api/team/webbridge/bindings",
         "/api/team/webbridge/sessions",
+        "/api/team/webbridge/models",
         "/api/team/webbridge/teach-drafts",
     }
 )
@@ -91,11 +92,10 @@ _CUSTOM_AUTH_PREFIXES: tuple[str, ...] = (
     "/api/team/webbridge/sessions/",
 )
 
-# Query-string param name used by `<a download>` links that can't carry
-# an Authorization header. We strip this *after* extraction so downstream
-# middleware (access logs, metrics) don't see the secret. WebSocket
-# endpoints (which browsers cannot attach headers to either) authenticate
-# through the same param.
+# Query-string param name used by clients that cannot carry an Authorization
+# header. We strip this *after* extraction so downstream middleware (access
+# logs, metrics) don't see the secret. The external WebBridge agent WebSocket
+# also uses it; the browser-extension relay uses pairing tickets instead.
 _QS_TOKEN_PARAM = "_token"
 
 

@@ -14,10 +14,6 @@ const teachRecorderSource = fs.readFileSync(
   path.join(__dirname, "..", "extensions", "webbridge", "teach_recorder.js"),
   "utf8"
 );
-const popupSource = fs.readFileSync(
-  path.join(__dirname, "..", "extensions", "webbridge", "popup.js"),
-  "utf8"
-);
 const markdownSource = fs.readFileSync(
   path.join(__dirname, "..", "extensions", "webbridge", "markdown.js"),
   "utf8"
@@ -397,20 +393,6 @@ function loadTeachRecorder() {
   return { context, listeners, sent, FakeInput, FakeTextArea };
 }
 
-test("P2 popup opens the Side Panel directly inside the click gesture", () => {
-  const start = popupSource.indexOf("function openSidePanel()");
-  const end = popupSource.indexOf("// ── Wiring", start);
-  assert.ok(start >= 0 && end > start);
-  const implementation = popupSource.slice(start, end);
-
-  assert.match(implementation, /chrome\.sidePanel\.open\(options\)/);
-  assert.doesNotMatch(implementation, /chrome\.runtime\.sendMessage\s*\(/);
-  assert.match(
-    popupSource,
-    /openSidePanelBtn\.addEventListener\("click", openSidePanel\)/,
-  );
-});
-
 test("P2 Side Chat auto-creates and binds one session for an unbound tab", async () => {
   let sessionCreates = 0;
   let bindingCreates = 0;
@@ -468,8 +450,8 @@ test("P2 extension action opens Side Chat and settings live inside the panel", (
   assert.doesNotMatch(sidePanelHtml, /id="sessionSelect"/);
   assert.doesNotMatch(sidePanelHtml, /id="bindBtn"/);
   assert.doesNotMatch(sidePanelHtml, /Legacy access token|accessTokenInput/);
-  assert.doesNotMatch(popupSource, /accessTokenInput|Legacy connection/);
   assert.doesNotMatch(workerSource, /[?&]_token=/);
+  assert.doesNotMatch(workerSource, /ui: \["popup"/);
 });
 
 test("P2 Side Chat strips extension-only tab metadata from picked elements", () => {
@@ -716,7 +698,7 @@ test("selection context creates and binds a browser session before submitting pr
   assert.ok(worker.menuItems.every((item) => item.documentUrlPatterns?.includes("https://*/*")));
 });
 
-test("quick prompt honors the popup-selected session and rebinds the current tab", async () => {
+test("explicit browser context reuses its assigned session", async () => {
   let interactionBody = null;
   const worker = loadWorker({
     storedConfig: {
@@ -845,7 +827,7 @@ test("expired pending browser context is purged during status reads", async () =
   assert.equal(worker.storedConfig.pendingInteraction, undefined);
 });
 
-test("P1 popup context rejects restricted browser pages before any network request", async () => {
+test("P1 browser context rejects restricted pages before any network request", async () => {
   const worker = loadWorker({
     storedConfig: {
       relayBase: "ws://127.0.0.1:8000",
@@ -862,33 +844,6 @@ test("P1 popup context rejects restricted browser pages before any network reque
     )`),
     /HTTP\(S\) page/
   );
-  assert.equal(worker.fetchCalls.length, 0);
-});
-
-test("P1 popup session creation rejects restricted browser pages before any network request", async () => {
-  const worker = loadWorker({
-    storedConfig: {
-      relayBase: "ws://127.0.0.1:8000",
-    },
-    fetchResponder: async () => {
-      throw new Error("network must not be reached");
-    },
-  });
-
-  await new Promise((resolve) => setImmediate(resolve));
-  await new Promise((resolve) => setImmediate(resolve));
-  worker.setTabUrl(1, "chrome://settings");
-  let response = null;
-  await worker.run(`chrome.runtime.onMessage.emit(
-    { type: "create_browser_session" },
-    null,
-    (value) => { globalThis.createSessionResponse = value; }
-  )`);
-  await new Promise((resolve) => setImmediate(resolve));
-  response = worker.run("globalThis.createSessionResponse");
-
-  assert.equal(response.ok, false);
-  assert.match(response.error, /HTTP\(S\) page/);
   assert.equal(worker.fetchCalls.length, 0);
 });
 
@@ -1178,24 +1133,6 @@ test("P3 Teach Mode stops capturing after cross-origin navigation", async () => 
   assert.equal(worker.storedConfig.webbridgeTeachRecording.state, "ready");
   assert.match(worker.storedConfig.webbridgeTeachRecording.stop_reason, /cross-origin/);
   assert.equal(worker.tabMessages.at(-1).message.enabled, false);
-});
-
-test("P2 opens the Chrome Side Panel for the active tab", async () => {
-  const worker = loadWorker();
-  await new Promise((resolve) => setImmediate(resolve));
-  let response = null;
-
-  await worker.run(`chrome.runtime.onMessage.emit(
-    { type: "open_side_panel" },
-    null,
-    (value) => { globalThis.sidePanelResponse = value; }
-  )`);
-  await new Promise((resolve) => setImmediate(resolve));
-  response = worker.run("globalThis.sidePanelResponse");
-
-  assert.equal(response.ok, true);
-  assert.equal(response.tab_id, 1);
-  assert.ok(worker.sidePanelCalls.some((call) => call.kind === "open" && call.options.tabId === 1));
 });
 
 test("P2 human control lease blocks agent commands until the user resumes", async () => {

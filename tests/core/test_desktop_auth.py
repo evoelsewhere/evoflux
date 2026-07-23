@@ -56,6 +56,10 @@ def _make_app(token: str | None) -> FastAPI:
     def browser_sessions() -> dict:
         return {"sessions": True}
 
+    @app.get("/api/team/webbridge/models")
+    def browser_models() -> dict:
+        return {"models": True}
+
     @app.get("/api/team/webbridge/sessions/session-1/history")
     def browser_session_history() -> dict:
         return {"messages": []}
@@ -173,6 +177,7 @@ class TestMiddlewareEnabled:
         ):
             assert client.post(path).status_code == 200
         assert client.get("/api/team/webbridge/sessions").status_code == 200
+        assert client.get("/api/team/webbridge/models").status_code == 200
         assert (
             client.get("/api/team/webbridge/sessions/session-1/history").status_code
             == 200
