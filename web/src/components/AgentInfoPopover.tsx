@@ -277,7 +277,7 @@ export function AgentInfoPopover({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`rounded-md p-1.5 transition-colors ${
+        className={`flex h-7 w-7 items-center justify-center rounded-[7px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-(--color-accent)/30 ${
           open
             ? 'bg-(--bg-key) text-(--color-text)'
             : 'text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text-2)'
@@ -285,7 +285,7 @@ export function AgentInfoPopover({
         title="Agent info & tools"
         aria-expanded={open}
       >
-        <Info size={14} />
+        <Info size={13} />
       </button>
 
       <AnimatePresence>
@@ -295,7 +295,7 @@ export function AgentInfoPopover({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.97 }}
             transition={{ duration: 0.15 }}
-            className="absolute bottom-full right-0 z-(--z-modal) mb-1 w-[min(24rem,calc(90vw-2rem))] max-h-[60vh] overflow-y-auto rounded-lg border border-(--color-border-strong) bg-(--color-surface) shadow-(--shadow-popover)"
+            className="absolute bottom-full right-0 z-(--z-modal) mb-2 max-h-[60vh] w-[min(22rem,calc(100vw-1rem))] overflow-y-auto rounded-[9px] border border-(--color-border) bg-(--color-surface) shadow-(--shadow-popover)"
           >
             {isLoading || !leadAgent ? (
               <div className="space-y-2 p-3">
