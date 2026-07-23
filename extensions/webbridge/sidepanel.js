@@ -152,6 +152,14 @@ function browserOrigin(url) {
   }
 }
 
+function browserTabScope(tab) {
+  return browserOrigin(tab?.url || tab?.pendingUrl || "") || `tab:${tab?.id}`;
+}
+
+function hasPageTools(tab = activeTab) {
+  return Boolean(browserOrigin(tab?.url || tab?.pendingUrl || ""));
+}
+
 function panelHttpBase() {
   const base = (relayBase || DEFAULT_RELAY_BASE)
     .trim()
@@ -244,7 +252,7 @@ function isBoundToSelectedSession() {
   return Boolean(
     binding &&
     binding.session_id === selectedSessionId &&
-    (activeTabIsGroupedChild || binding.origin === browserOrigin(activeTab?.url || activeTab?.pendingUrl || ""))
+    (activeTabIsGroupedChild || binding.origin === browserTabScope(activeTab))
   );
 }
 
@@ -424,7 +432,10 @@ function renderHumanControl() {
   takeControlBtn.style.display = active ? "none" : "inline-flex";
   resumeAgentBtn.style.display = active ? "inline-flex" : "none";
   if (active) contextDetail.textContent = "Agent paused — you control this tab";
-  else if (activeTab) contextDetail.textContent = browserOrigin(activeTab.url || activeTab.pendingUrl || "") || "One session, one primary tab";
+  else if (activeTab) {
+    contextDetail.textContent = browserOrigin(activeTab.url || activeTab.pendingUrl || "")
+      || "Browser tools activate on HTTP(S) pages";
+  }
 }
 
 async function refreshHumanControl() {
@@ -438,21 +449,23 @@ async function refreshHumanControl() {
 }
 
 function renderBindingStatus() {
-  const pageUrl = safePageUrl(activeTab?.url || activeTab?.pendingUrl || "");
   const bound = isBoundToSelectedSession();
+  const pageTools = hasPageTools();
   newGroupedTabBtn.disabled = !bound;
   composer.disabled = !bound;
   sendBtn.disabled = !bound || composerSending;
-  if (!pageUrl) {
-    bindingStatus.textContent = "Open an HTTP(S) page to start a conversation";
-    contextDetail.textContent = "Browser tools are unavailable on internal pages";
-    return;
-  }
+  pickElementBtn.disabled = !bound || !pageTools;
+  takeControlBtn.disabled = !bound || !pageTools;
   if (bound) {
-    bindingStatus.textContent = activeTabIsGroupedChild ? "Session group tab" : "Connected to this tab";
+    bindingStatus.textContent = activeTabIsGroupedChild
+      ? "Session group tab"
+      : pageTools
+        ? "Connected to this tab"
+        : "Chat connected to this tab";
     contextDetail.textContent = activeTabIsGroupedChild
       ? "Agent defaults to the primary tab"
-      : browserOrigin(pageUrl);
+      : browserOrigin(activeTab?.url || activeTab?.pendingUrl || "")
+        || "Browser tools activate on HTTP(S) pages";
     return;
   }
   bindingStatus.textContent = "Preparing browser session";
@@ -501,7 +514,7 @@ function showEmptyTranscript(text) {
 
 async function loadHistory() {
   if (!selectedSessionId) {
-    showEmptyTranscript("Open an HTTP(S) page and EvoFlux will create a conversation for this tab.");
+    showEmptyTranscript("EvoFlux will create a conversation for this tab.");
     return;
   }
   const response = await panelFetch(
@@ -599,9 +612,7 @@ async function submitQuestion(request, inputs, button) {
 }
 
 async function ensureAutoSession(tab) {
-  const origin = browserOrigin(tab.url || tab.pendingUrl || "");
-  if (!origin) throw new Error("Side Chat only works on HTTP(S) pages.");
-  const stableActionId = `side-chat-${await sha256(`${tab.id}:${origin}`)}`;
+  const stableActionId = `side-chat-${await sha256(String(tab.id))}`;
   const response = await chrome.runtime.sendMessage({
     type: "ensure_browser_session_for_tab",
     action_id: nextAutoBindActionId || stableActionId,
@@ -621,21 +632,6 @@ async function refreshPanel({ preserveTranscript = false } = {}) {
     if (activeTab && activeTab.id !== nextTab.id) stopStream();
     activeTab = nextTab;
     pageTitle.textContent = activeTab.title || safePageUrl(activeTab.url || activeTab.pendingUrl || "") || "Side Chat";
-    if (!safePageUrl(activeTab.url || activeTab.pendingUrl || "")) {
-      selectedSessionId = "";
-      primaryBinding = null;
-      activeTabIsGroupedChild = false;
-      currentSessionModel = null;
-      sessions = [];
-      bindings = [];
-      sessionTitle.textContent = "EvoFlux";
-      renderModelTrigger();
-      renderBindingStatus();
-      showEmptyTranscript("Open a regular website to start a browser conversation.");
-      statusDot.className = "status-dot";
-      clearNotice();
-      return;
-    }
     const ensured = await ensureAutoSession(activeTab);
     if (generation !== refreshGeneration) return;
     selectedSessionId = ensured.session_id;
@@ -698,6 +694,10 @@ async function startFreshConversation() {
 }
 
 async function takeHumanControl() {
+  if (!hasPageTools()) {
+    setComposerStatus("Browser control is available after this tab opens an HTTP(S) page.");
+    return;
+  }
   setControlsDisabled(true);
   try {
     const response = await chrome.runtime.sendMessage({
@@ -734,6 +734,10 @@ async function resumeAgent() {
 }
 
 async function startElementPicker() {
+  if (!hasPageTools()) {
+    setComposerStatus("Element picker is available after this tab opens an HTTP(S) page.");
+    return;
+  }
   pickElementBtn.disabled = true;
   try {
     const response = await chrome.runtime.sendMessage({ type: "start_element_picker" });
@@ -966,8 +970,8 @@ function startStream() {
 async function sendMessage() {
   if (composerSending) return;
   const content = composer.value.trim();
-  const origin = browserOrigin(activeTab?.url || activeTab?.pendingUrl || "");
-  if (!content || !selectedSessionId || !activeTab?.id || !origin) return;
+  const sourceScope = browserTabScope(activeTab);
+  if (!content || !selectedSessionId || !activeTab?.id) return;
   if (!isBoundToSelectedSession()) {
     setNotice("Bind this tab to the selected session before sending a message.", "error");
     return;
@@ -981,7 +985,7 @@ async function sendMessage() {
       ? `${element.page_url}:${element.selector}`
       : "";
     const requestShape = await sha256(
-      `${selectedSessionId}:${activeTab.id}:${origin}:${content}:${elementKey}`
+      `${selectedSessionId}:${activeTab.id}:${sourceScope}:${content}:${elementKey}`
     );
     if (!pendingComposerRequest) {
       const stored = await panelSessionStorage().get([PANEL_REQUEST_STORAGE_KEY]);
@@ -1006,7 +1010,7 @@ async function sendMessage() {
           content,
           tab_id: activeTab.id,
           binding_tab_id: selectedBinding()?.tab_id || activeTab.id,
-          origin,
+          origin: sourceScope,
           user_gesture: true,
           element,
         }),
@@ -1108,15 +1112,21 @@ async function refreshSettings() {
       watchActionBtn.textContent = "Start watch";
       watchSettingsDetail.textContent = "A match stays private until you send it.";
     }
-    watchNeedleInput.disabled = Boolean(activeTextWatch);
-    watchTtlSelect.disabled = Boolean(activeTextWatch);
-    watchActionBtn.disabled = !selectedSessionId;
+    const pageTools = hasPageTools();
+    watchNeedleInput.disabled = Boolean(activeTextWatch) || !pageTools;
+    watchTtlSelect.disabled = Boolean(activeTextWatch) || !pageTools;
+    watchActionBtn.disabled = !selectedSessionId || !pageTools;
+    if (!pageTools) {
+      watchSettingsDetail.textContent = "Available after this tab opens an HTTP(S) page.";
+    }
     activeTeachRecording = response?.teach_recording || null;
     const teachingThisTab = activeTeachRecording?.tab_id === activeTab?.id;
     teachActionBtn.textContent = teachingThisTab ? "Stop & save draft" : "Start recording";
-    teachActionBtn.disabled = !selectedSessionId || Boolean(activeTeachRecording && !teachingThisTab);
+    teachActionBtn.disabled = !selectedSessionId || !pageTools || Boolean(activeTeachRecording && !teachingThisTab);
     discardTeachBtn.style.display = teachingThisTab ? "inline-flex" : "none";
-    teachSettingsDetail.textContent = teachingThisTab
+    teachSettingsDetail.textContent = !pageTools
+      ? "Available after this tab opens an HTTP(S) page."
+      : teachingThisTab
       ? `Recording ${activeTeachRecording.action_count || 0} semantic actions on this tab.`
       : activeTeachRecording
         ? "Teach Mode is recording in another tab."
@@ -1220,7 +1230,7 @@ async function runWatchAction() {
   } catch (error) {
     watchSettingsDetail.textContent = error.message || String(error);
   } finally {
-    watchActionBtn.disabled = !selectedSessionId;
+    watchActionBtn.disabled = !selectedSessionId || !hasPageTools();
   }
 }
 
@@ -1235,7 +1245,7 @@ async function runTeachAction() {
   } catch (error) {
     teachSettingsDetail.textContent = error.message || String(error);
   } finally {
-    teachActionBtn.disabled = !selectedSessionId || Boolean(activeTeachRecording && activeTeachRecording.tab_id !== activeTab?.id);
+    teachActionBtn.disabled = !selectedSessionId || !hasPageTools() || Boolean(activeTeachRecording && activeTeachRecording.tab_id !== activeTab?.id);
   }
 }
 

@@ -438,6 +438,69 @@ test("P2 Side Chat auto-creates and binds one session for an unbound tab", async
   assert.equal(bindingCreates, 1);
 });
 
+test("P2 internal tab keeps one session and upgrades its HTTP tool scope", async () => {
+  let sessionCreates = 0;
+  const bindings = [];
+  const worker = loadWorker({
+    storedConfig: {
+      relayBase: "ws://127.0.0.1:8000",
+      pairingCredential: "pair-secret",
+      pairingId: "pairing-1",
+      pairingRelayBase: "ws://127.0.0.1:8000",
+    },
+    fetchResponder: async (url, init) => {
+      if (url.endsWith("/bindings") && !init.method) {
+        return { ok: true, async json() { return bindings.map((item) => ({ ...item })); } };
+      }
+      if (url.endsWith("/sessions") && init.method === "POST") {
+        sessionCreates += 1;
+        return { ok: true, async json() { return { id: "session-internal", title: "Browser: New Tab" }; } };
+      }
+      if (url.endsWith("/sessions") && !init.method) {
+        return { ok: true, async json() { return [{ id: "session-internal", title: "Browser: New Tab" }]; } };
+      }
+      if (url.endsWith("/bindings/1") && init.method === "PUT") {
+        const body = JSON.parse(init.body);
+        bindings.splice(0, bindings.length, {
+          tab_id: 1,
+          session_id: body.session_id,
+          origin: body.origin,
+        });
+        return { ok: true, async json() { return bindings[0]; } };
+      }
+      throw new Error(`Unexpected fetch ${url} ${init.method || "GET"}`);
+    },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  worker.setTabUrl(1, "chrome://newtab/");
+
+  const internal = await worker.run(`new Promise((resolve) => chrome.runtime.onMessage.emit(
+    { type: "ensure_browser_session_for_tab", action_id: "internal-tab" }, null, resolve
+  ))`);
+  assert.equal(internal.ok, true);
+  assert.equal(internal.session_id, "session-internal");
+  assert.equal(internal.binding_origin, "tab:1");
+  assert.equal(bindings[0].origin, "tab:1");
+
+  worker.setTabUrl(1, "https://example.com/app");
+  const upgraded = await worker.run(`new Promise((resolve) => chrome.runtime.onMessage.emit(
+    { type: "ensure_browser_session_for_tab", action_id: "same-tab" }, null, resolve
+  ))`);
+  assert.equal(upgraded.session_id, "session-internal");
+  assert.equal(upgraded.binding_origin, "https://example.com");
+  assert.equal(bindings[0].origin, "https://example.com");
+  assert.equal(sessionCreates, 1);
+});
+
+test("P2 internal pages keep chat enabled while page tools wait for HTTP", () => {
+  assert.match(sidePanelSource, /function browserTabScope\(tab\)/);
+  assert.match(sidePanelSource, /Chat connected to this tab/);
+  assert.match(sidePanelSource, /Browser tools activate on HTTP\(S\) pages/);
+  assert.match(sidePanelSource, /origin: sourceScope/);
+  assert.doesNotMatch(sidePanelSource, /Side Chat only works on HTTP\(S\) pages/);
+  assert.doesNotMatch(sidePanelSource, /Open an HTTP\(S\) page to start a conversation/);
+});
+
 test("P2 extension action opens Side Chat and settings live inside the panel", () => {
   assert.equal(extensionManifest.action.default_popup, undefined);
   assert.equal(extensionManifest.content_scripts, undefined);

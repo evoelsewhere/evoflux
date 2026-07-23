@@ -95,10 +95,11 @@ same session and interaction identity without creating a duplicate task.
 To grant an existing WebBridge-enabled chat to a browser, open the EvoFlux
 WebBridge dialog, select the paired browser and session, then choose **Grant**.
 The extension cannot make that cross-pairing grant itself.
-When a bound tab changes origin, its binding is removed before the agent can
-continue using it. URL query strings and fragments are stripped from P1 browser
-context, while selected text remains bounded and is marked as untrusted data in
-the EvoFlux transcript.
+When a bound tab changes origin, the conversation stays attached to its tab ID
+while browser tools pause until Side Chat refreshes the new origin scope. URL
+query strings and fragments are stripped from P1 browser context, while
+selected text remains bounded and is marked as untrusted data in the EvoFlux
+transcript.
 
 ## P2: Side Panel and live handoff
 
@@ -126,9 +127,11 @@ session picker or manual bind step. It can:
   live lease. It clears when the tab changes origin, closes, expires, or the
   browser restarts.
 
-Side Panel messages require the selected session to be explicitly granted to
-the pairing and bound to the current page origin. Opt-in issue diagnostics are
-not part of this P2 MVP yet.
+Side Panel messages require the session to be granted to the pairing and bound
+to the current tab. Conversation ownership follows the tab ID even on internal
+pages such as `chrome://newtab`; page-dependent browser tools remain disabled
+until that tab opens an HTTP(S) page, when the same binding is upgraded to the
+page origin. Opt-in issue diagnostics are not part of this P2 MVP yet.
 
 ## P3: Teach Mode and text watches
 

@@ -149,6 +149,10 @@ function browserOrigin(url) {
   }
 }
 
+function browserTabScope(tab) {
+  return browserOrigin(tab?.url || tab?.pendingUrl || "") || `tab:${tab?.id}`;
+}
+
 function requireBrowserPageUrl(url) {
   const safeUrl = safePageUrl(url);
   if (!safeUrl) {
@@ -694,15 +698,14 @@ async function listTabBindings() {
 }
 
 async function bindTabToSession(tab, sessionId, pageUrl) {
-  const origin = browserOrigin(pageUrl);
-  if (!origin) throw new Error("Browser context can only be sent from an HTTP(S) page.");
+  const origin = browserOrigin(pageUrl) || `tab:${tab.id}`;
   const response = await pairingFetch(`${BINDINGS_PATH}/${encodeURIComponent(tab.id)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       session_id: sessionId,
       origin,
-      page_instance_id: `${tab.id}:${pageUrl || ""}`.slice(0, 128),
+      page_instance_id: `${tab.id}:${origin}`.slice(0, 128),
     }),
   });
   return response.json();
@@ -715,11 +718,15 @@ async function ensureSessionForTab(tab, pageUrl, actionId) {
 async function ensureSessionContextForTab(tab, pageUrl, actionId) {
   const bindings = await listTabBindings();
   const binding = bindings.find((item) => item.tab_id === tab.id);
-  if (binding && binding.origin === browserOrigin(pageUrl)) {
+  const scope = browserTabScope(tab);
+  if (binding) {
+    if (binding.origin !== scope) {
+      await bindTabToSession(tab, binding.session_id, pageUrl);
+    }
     return {
       session_id: binding.session_id,
       binding_tab_id: binding.tab_id,
-      binding_origin: binding.origin,
+      binding_origin: scope,
       grouped: false,
     };
   }
@@ -731,21 +738,25 @@ async function ensureSessionContextForTab(tab, pageUrl, actionId) {
     const primaryTab = primaryBinding
       ? groupedTabs.find((item) => item.id === primaryBinding.tab_id)
       : null;
-    if (
-      primaryBinding &&
-      primaryTab &&
-      primaryBinding.origin === browserOrigin(primaryTab.url || primaryTab.pendingUrl || "")
-    ) {
+    if (primaryBinding && primaryTab) {
+      const primaryScope = browserTabScope(primaryTab);
+      if (primaryBinding.origin !== primaryScope) {
+        await bindTabToSession(
+          primaryTab,
+          primaryBinding.session_id,
+          primaryTab.url || primaryTab.pendingUrl || "",
+        );
+      }
       return {
         session_id: primaryBinding.session_id,
         binding_tab_id: primaryBinding.tab_id,
-        binding_origin: primaryBinding.origin,
+        binding_origin: primaryScope,
         grouped: true,
       };
     }
   }
 
-  const label = boundedText(tab.title) || browserOrigin(pageUrl) || "Browser page";
+  const label = boundedText(tab.title) || browserOrigin(pageUrl) || "Browser tab";
   const session = await createBrowserSession(
     `Browser: ${label}`.slice(0, 255),
     actionId,
@@ -3147,7 +3158,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       try {
         const tab = await getActiveTab();
         if (!tab || tab.id == null) throw new Error("No active tab");
-        const pageUrl = requireBrowserPageUrl(tab.url || tab.pendingUrl || "");
+        const pageUrl = tab.url || tab.pendingUrl || "";
         const context = await ensureSessionContextForTab(
           tab,
           pageUrl,
@@ -3178,7 +3189,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       try {
         const tab = await getActiveTab();
         if (!tab || tab.id == null) throw new Error("No active tab");
-        const pageUrl = requireBrowserPageUrl(tab.url || tab.pendingUrl || "");
+        const pageUrl = tab.url || tab.pendingUrl || "";
         const context = await ensureSessionContextForTab(tab, pageUrl, interactionId());
         if (context.session_id !== msg.session_id) {
           throw new Error("This tab is not part of that browser session.");

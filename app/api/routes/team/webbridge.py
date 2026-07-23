@@ -742,7 +742,7 @@ async def _require_panel_binding(
     session_id: uuid.UUID,
     binding_tab_id: int,
     source_tab_id: int,
-    source_origin: str,
+    source_scope: str,
 ) -> None:
     bindings = await list_tab_bindings(db, pairing_id)
     binding = next(
@@ -754,7 +754,7 @@ async def _require_panel_binding(
         None,
     )
     valid = binding is not None and (
-        binding_tab_id == source_tab_id and binding.origin == source_origin
+        binding_tab_id == source_tab_id and binding.origin == source_scope
     )
     if binding is not None and binding_tab_id != source_tab_id:
         extension = webbridge_manager.get_extension(str(pairing_id))
@@ -771,8 +771,8 @@ async def _require_panel_binding(
                 isinstance(primary_group, int)
                 and primary_group >= 0
                 and primary_group == source_group
-                and _safe_http_origin(str(primary.get("url") or "")) == binding.origin
-                and _safe_http_origin(str(source.get("url") or "")) == source_origin
+                and _live_tab_scope(primary) == binding.origin
+                and _live_tab_scope(source) == source_scope
             )
     if not valid:
         raise HTTPException(
@@ -820,13 +820,13 @@ async def send_browser_panel_message(
         request, db, required_scope="session:messages:write"
     )
     await _require_pairing_webbridge_session(db, session_id, pairing.id)
-    origin = _safe_http_origin(body.origin)
-    if not origin:
+    source_scope = _tab_scope(body.tab_id, body.origin)
+    if not source_scope:
         raise HTTPException(
             status_code=422,
             detail={
-                "code": "http_origin_required",
-                "message": "Side Panel messages must come from an HTTP(S) page.",
+                "code": "invalid_tab_scope",
+                "message": "Side Panel messages require the current HTTP origin or tab scope.",
             },
         )
     await _require_panel_binding(
@@ -835,7 +835,7 @@ async def send_browser_panel_message(
         session_id=session_id,
         binding_tab_id=body.binding_tab_id or body.tab_id,
         source_tab_id=body.tab_id,
-        source_origin=origin,
+        source_scope=source_scope,
     )
     if not body.user_gesture:
         raise HTTPException(
@@ -894,8 +894,13 @@ async def send_browser_panel_message(
         dispatched_content = body.content
         element_context: dict[str, str] | None = None
         if body.element is not None:
+            source_origin = _safe_http_origin(source_scope)
             element_page_url = _safe_http_url(body.element.page_url)
-            if not element_page_url or _safe_http_origin(element_page_url) != origin:
+            if (
+                not source_origin
+                or not element_page_url
+                or _safe_http_origin(element_page_url) != source_origin
+            ):
                 raise HTTPException(
                     status_code=422,
                     detail={
@@ -1274,6 +1279,21 @@ def _safe_http_origin(value: str) -> str:
     return urlunsplit((parsed.scheme.lower(), parsed.netloc.lower(), "", "", ""))
 
 
+def _tab_scope(tab_id: int, value: str) -> str:
+    origin = _safe_http_origin(value)
+    if origin:
+        return origin
+    expected = f"tab:{tab_id}"
+    return expected if value == expected else ""
+
+
+def _live_tab_scope(tab: dict[str, Any]) -> str:
+    tab_id = tab.get("id")
+    if not isinstance(tab_id, int):
+        return ""
+    return _safe_http_origin(str(tab.get("url") or "")) or f"tab:{tab_id}"
+
+
 def _browser_context(
     metadata: dict[str, Any], source: InteractionSource
 ) -> dict[str, str]:
@@ -1501,14 +1521,6 @@ class TabBindingRequest(BaseModel):
     origin: str = Field(default="", max_length=2048)
     page_instance_id: str | None = Field(default=None, max_length=128)
 
-    @field_validator("origin")
-    @classmethod
-    def _normalize_origin(cls, value: str) -> str:
-        normalized = _safe_http_origin(value)
-        if not normalized:
-            raise ValueError("origin must be an HTTP(S) origin")
-        return normalized
-
 
 class TabBindingResponse(BaseModel):
     tab_id: int
@@ -1552,19 +1564,28 @@ async def bind_tab_to_session(
 ) -> TabBindingResponse:
     pairing = await _paired_request(request, db, required_scope="bindings:write")
     await _require_pairing_webbridge_session(db, body.session_id, pairing.id)
+    scope = _tab_scope(tab_id, body.origin)
+    if not scope:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "invalid_tab_scope",
+                "message": "Binding requires an HTTP origin or the matching tab scope.",
+            },
+        )
     binding = await upsert_tab_binding(
         db,
         pairing_id=pairing.id,
         tab_id=tab_id,
         session_id=body.session_id,
-        origin=body.origin,
+        origin=scope,
         page_instance_id=body.page_instance_id,
     )
     webbridge_manager.bind_session_tab(
         str(body.session_id),
         str(pairing.id),
         tab_id,
-        body.origin,
+        scope,
         binding.expires_at.timestamp(),
     )
     return _tab_binding_response(binding)

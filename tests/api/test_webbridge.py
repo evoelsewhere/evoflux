@@ -193,7 +193,7 @@ async def test_side_chat_accepts_only_verified_tabs_in_primary_group(manager):
             session_id=session.id,
             binding_tab_id=10,
             source_tab_id=11,
-            source_origin="https://child.example",
+            source_scope="https://child.example",
         )
 
         connection.tabs[1]["group_id"] = 8
@@ -204,7 +204,7 @@ async def test_side_chat_accepts_only_verified_tabs_in_primary_group(manager):
                 session_id=session.id,
                 binding_tab_id=10,
                 source_tab_id=11,
-                source_origin="https://child.example",
+                source_scope="https://child.example",
             )
         assert getattr(exc_info.value, "status_code", None) == 409
 
@@ -602,6 +602,40 @@ async def test_bound_session_groups_opened_tabs_without_polluting_other_commands
     assert (await task)["success"] is True
 
 
+async def test_internal_tab_binding_restores_chat_ownership_but_blocks_page_actions(
+    manager: WebBridgeManager,
+):
+    sent: list[str] = []
+
+    async def fake_send(text: str) -> None:
+        sent.append(text)
+
+    manager.register_extension(
+        extension_id="e1", browser="chrome", version="1.9.0", send=fake_send
+    )
+    extension = manager.get_extension("e1")
+    assert extension is not None
+    extension.tabs = [{"id": 42, "url": "chrome://newtab/"}]
+    manager.stage_session_tab_binding("sess", "e1", 42, "tab:42")
+    stale = manager.validate_pending_tab_bindings("e1", extension.tabs)
+    assert stale == []
+    assert manager.session_tab_binding("sess") == ("e1", 42)
+
+    blocked = await manager.send_command("sess", "click", {"x": 1, "y": 2})
+    assert blocked["success"] is False
+    assert "internal page" in blocked["error"]
+    assert sent == []
+
+    opened = asyncio.create_task(
+        manager.send_command("sess", "open_tab", {"url": "https://child.example"})
+    )
+    await asyncio.sleep(0)
+    command = json.loads(sent.pop())
+    assert command["params"]["_webbridge_parent_tab_id"] == 42
+    manager.handle_response(command["request_id"], success=True, data={}, error=None)
+    assert (await opened)["success"] is True
+
+
 async def test_live_binding_refuses_commands_after_cross_origin_navigation(
     manager: WebBridgeManager,
 ):
@@ -633,14 +667,29 @@ async def test_live_binding_refuses_commands_after_cross_origin_navigation(
     extension.tabs = [{"id": 42, "url": "https://mail.example.net/inbox"}]
     refused = await manager.send_command("sess", "extract", {})
     assert refused["success"] is False
-    assert "changed origin" in refused["error"]
-    assert manager.session_tab_binding("sess") is None
+    assert "changed page scope" in refused["error"]
+    assert manager.session_tab_binding("sess") == ("e1", 42)
     assert sent == []
     refused_again = await manager.send_command("sess", "click", {"x": 1, "y": 2})
     assert refused_again["success"] is False
-    assert "changed origin" in refused_again["error"]
+    assert "refresh Side Chat" in refused_again["error"]
     assert sent == []
-    assert manager.unbind_session_tab("sess", extension_id="e1") is True
+
+    manager.bind_session_tab("sess", "e1", 42, "https://mail.example.net")
+    resumed = asyncio.create_task(
+        manager.send_command("sess", "click", {"x": 1, "y": 2})
+    )
+    await asyncio.sleep(0)
+    resumed_command = json.loads(sent.pop())
+    assert resumed_command["params"]["tab_id"] == 42
+    assert (
+        resumed_command["params"]["_webbridge_expected_origin"]
+        == "https://mail.example.net"
+    )
+    manager.handle_response(
+        resumed_command["request_id"], success=True, data={}, error=None
+    )
+    assert (await resumed)["success"] is True
 
 
 async def test_rehydrated_binding_fails_closed_until_tab_origin_is_validated(
@@ -1703,6 +1752,37 @@ async def test_side_panel_transcript_composer_and_handoff_are_pairing_scoped(
     )
     assert stale_origin.status_code == 409
 
+    internal_binding = client.put(
+        f"{_PREFIX}/bindings/42",
+        headers=owner_headers,
+        json={"session_id": str(session.id), "origin": "tab:42"},
+    )
+    assert internal_binding.status_code == 200
+    assert internal_binding.json()["origin"] == "tab:42"
+    internal_payload = {
+        "content": "Chat while this is an internal tab",
+        "tab_id": 42,
+        "origin": "tab:42",
+        "user_gesture": True,
+        "element": None,
+    }
+    internal_message = client.post(
+        f"{_PREFIX}/sessions/{session.id}/messages",
+        headers={**owner_headers, "Idempotency-Key": "panel-internal-1"},
+        json=internal_payload,
+    )
+    assert internal_message.status_code == 202
+    assert internal_message.json()["status"] == "accepted"
+    assert submit.await_count == 2
+
+    internal_element = client.post(
+        f"{_PREFIX}/sessions/{session.id}/messages",
+        headers={**owner_headers, "Idempotency-Key": "panel-internal-element"},
+        json={**internal_payload, "element": message_payload["element"]},
+    )
+    assert internal_element.status_code == 422
+    assert internal_element.json()["detail"]["code"] == "invalid_element_scope"
+
     reply_calls: list[tuple[str, list[str]]] = []
     pending = SimpleNamespace(
         questions=[SimpleNamespace(question="Continue?", options=["yes", "no"])]
@@ -2428,7 +2508,7 @@ async def test_browser_interaction_requires_http_origin(client: TestClient):
     assert response.json()["detail"]["code"] == "http_origin_required"
 
 
-async def test_browser_binding_normalizes_origin_and_rejects_non_http(
+async def test_browser_binding_accepts_matching_tab_scope_and_normalizes_http_origin(
     client: TestClient,
 ):
     from app.core import db as db_module
@@ -2447,6 +2527,21 @@ async def test_browser_binding_normalizes_origin_and_rejects_non_http(
         json={"session_id": str(session.id), "origin": "chrome://settings"},
     )
     assert bad.status_code == 422
+
+    wrong_tab_scope = client.put(
+        f"{_PREFIX}/bindings/42",
+        headers=headers,
+        json={"session_id": str(session.id), "origin": "tab:43"},
+    )
+    assert wrong_tab_scope.status_code == 422
+
+    internal = client.put(
+        f"{_PREFIX}/bindings/42",
+        headers=headers,
+        json={"session_id": str(session.id), "origin": "tab:42"},
+    )
+    assert internal.status_code == 200
+    assert internal.json()["origin"] == "tab:42"
 
     ok = client.put(
         f"{_PREFIX}/bindings/42",
