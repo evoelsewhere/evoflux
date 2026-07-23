@@ -171,7 +171,6 @@ class ExtensionConnection:
         protocol_version: int = 1,
         capabilities: dict[str, Any] | None = None,
         close: CloseSocket | None = None,
-        paired: bool = False,
     ) -> None:
         self.extension_id = extension_id
         self.browser = browser
@@ -180,7 +179,6 @@ class ExtensionConnection:
         self.capabilities = capabilities or {}
         self.send = send
         self.close = close
-        self.paired = paired
         self.connected_at = time.time()
         self.last_seen = time.time()
         self.tabs: list[dict[str, Any]] = []
@@ -198,7 +196,6 @@ class ExtensionConnection:
             "version": self.version,
             "protocol_version": self.protocol_version,
             "capabilities": self.capabilities,
-            "paired": self.paired,
             "connected_at": self.connected_at,
             "current_url": self.current_url,
             "current_title": self.current_title,
@@ -417,7 +414,6 @@ class WebBridgeManager:
         protocol_version: int = 1,
         capabilities: dict[str, Any] | None = None,
         close: CloseSocket | None = None,
-        paired: bool = False,
     ) -> ExtensionConnection:
         """Register (or replace) a connected extension."""
         previous = self._extensions.get(extension_id)
@@ -442,7 +438,6 @@ class WebBridgeManager:
             protocol_version=protocol_version,
             capabilities=capabilities,
             close=close,
-            paired=paired,
         )
         self._extensions[extension_id] = conn
         logger.info(
@@ -942,6 +937,18 @@ class WebBridgeManager:
             params["tab_id"] = binding[1]
             if expected_origin:
                 params["_webbridge_expected_origin"] = expected_origin
+
+        # A session starts with one primary tab. If it opens additional tabs,
+        # the extension groups them with that primary tab while keeping the
+        # fail-closed default target unchanged.
+        if action == "open_tab":
+            params["_webbridge_session_id"] = session_id
+            if (
+                binding is not None
+                and binding[0] == ext.extension_id
+                and (binding_expires_at is None or binding_expires_at > time.time())
+            ):
+                params["_webbridge_parent_tab_id"] = binding[1]
 
         # Guardrail check before anything reaches the browser. The policy is
         # an in-memory read (reload_policy refreshes it off the request path),

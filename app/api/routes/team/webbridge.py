@@ -14,11 +14,9 @@ extension registry, request/response correlation and event fan-out. The
 in-process ``webbridge`` agent tool talks to the same manager directly, so
 it never needs a loopback WebSocket of its own.
 
-Both WS endpoints require the desktop token via the ``?_token=`` query
-param when one is configured (see :mod:`app.core.desktop_auth`) — without
-it, any local web page could open a socket and impersonate an extension
-or drive the user's browser. When no token is configured (CLI mode) the
-endpoints stay open, matching the HTTP middleware's behaviour.
+The extension relay accepts only a short-lived, single-use ticket minted from
+a scoped WebBridge pairing credential. The external agent WebSocket keeps the
+app's desktop/access-key authentication contract.
 """
 
 from __future__ import annotations
@@ -105,16 +103,14 @@ def _pairing_revocation_event(pairing_id: str) -> asyncio.Event:
     return _pairing_revocation_events.setdefault(pairing_id, asyncio.Event())
 
 
-def _trusted_local_origin(value: str | None, *, allow_extension: bool = False) -> bool:
-    """Accept non-browser local clients and explicit local/extension Origins."""
+def _trusted_local_origin(value: str | None) -> bool:
+    """Accept non-browser local clients and explicit local web Origins."""
     if not value:
         return True
     try:
         parsed = urlsplit(value)
     except ValueError:
         return False
-    if allow_extension and parsed.scheme == "chrome-extension" and parsed.netloc:
-        return True
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         return False
     try:
@@ -133,7 +129,7 @@ def _extension_origin(value: str | None) -> bool:
     return parsed.scheme == "chrome-extension" and bool(parsed.netloc)
 
 
-async def _ws_authorized(ws: WebSocket, *, allow_extension: bool = False) -> bool:
+async def _ws_authorized(ws: WebSocket) -> bool:
     """Enforce the desktop token on a WebSocket handshake.
 
     Mirrors :class:`app.core.desktop_auth.DesktopTokenMiddleware` for WS
@@ -143,9 +139,7 @@ async def _ws_authorized(ws: WebSocket, *, allow_extension: bool = False) -> boo
     """
     expected = expected_desktop_token()
     if not expected:
-        if _trusted_local_origin(
-            ws.headers.get("origin"), allow_extension=allow_extension
-        ):
+        if _trusted_local_origin(ws.headers.get("origin")):
             return True
         logger.warning("webbridge_ws_origin_rejected path={}", ws.url.path)
         await ws.close(code=4401)
@@ -160,16 +154,18 @@ async def _ws_authorized(ws: WebSocket, *, allow_extension: bool = False) -> boo
 async def _extension_ws_authorization(
     ws: WebSocket,
 ) -> tuple[bool, str | None]:
-    """Authorize an extension relay and return its pairing identity, if any."""
+    """Require and atomically consume a pairing-scoped relay ticket."""
     ticket = ws.query_params.get("_ticket")
-    if ticket is not None:
-        pairing_id = webbridge_ticket_store.consume(ticket)
-        if pairing_id is not None:
-            return True, pairing_id
-        logger.warning("webbridge_ticket_rejected path={}", ws.url.path)
+    if ticket is None:
+        logger.warning("webbridge_ticket_missing path={}", ws.url.path)
         await ws.close(code=4401)
         return False, None
-    return await _ws_authorized(ws, allow_extension=True), None
+    pairing_id = webbridge_ticket_store.consume(ticket)
+    if pairing_id is not None:
+        return True, pairing_id
+    logger.warning("webbridge_ticket_rejected path={}", ws.url.path)
+    await ws.close(code=4401)
+    return False, None
 
 
 def _bearer_token(request: Request) -> str:
@@ -376,6 +372,26 @@ class BrowserSessionOption(BaseModel):
     title: str
     mode: str
     running: bool
+    model: str | None = None
+
+
+class BrowserModelOption(BaseModel):
+    id: str
+    provider: str
+    model: str
+    thinking_levels: list[str] = Field(default_factory=list)
+
+
+class BrowserSessionModelRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    model: str | None = Field(default=None, max_length=255)
+
+    @field_validator("model")
+    @classmethod
+    def _normalize_model(cls, value: str | None) -> str | None:
+        normalized = value.strip() if value else None
+        return normalized or None
 
 
 class BrowserPanelMessage(BaseModel):
@@ -407,6 +423,7 @@ class BrowserPanelMessageRequest(BaseModel):
 
     content: str = Field(min_length=1, max_length=100_000)
     tab_id: int = Field(ge=0)
+    binding_tab_id: int | None = Field(default=None, ge=0)
     origin: str = Field(max_length=2048)
     user_gesture: bool = False
     element: BrowserPanelElement | None = None
@@ -556,6 +573,7 @@ async def list_browser_sessions(
             title=session.title or "Untitled session",
             mode=session.mode,
             running=str(session.id) in running,
+            model=session.model,
         )
         for session in sessions
         if owner_tag in (session.tags or ())
@@ -604,6 +622,58 @@ async def create_browser_session(
         title=session.title or "Untitled session",
         mode=session.mode,
         running=str(session.id) in stream_store.running_session_ids(),
+        model=session.model,
+    )
+
+
+@router.get("/models", response_model=list[BrowserModelOption])
+async def list_browser_models(
+    request: Request, db: DbSession
+) -> list[BrowserModelOption]:
+    """Return only configured, user-visible models to a paired Side Chat."""
+    await _paired_request(request, db, required_scope="sessions:list")
+    from app.api.routes.agents import get_registry
+
+    registry = await get_registry()
+    return [
+        BrowserModelOption(
+            id=entry.id,
+            provider=entry.provider,
+            model=entry.model,
+            thinking_levels=entry.thinking_levels,
+        )
+        for entry in registry.models
+    ]
+
+
+@router.patch("/sessions/{session_id}/model", response_model=BrowserSessionOption)
+async def update_browser_session_model(
+    session_id: uuid.UUID,
+    body: BrowserSessionModelRequest,
+    request: Request,
+    db: DbSession,
+) -> BrowserSessionOption:
+    """Persist the model used by the next Side Chat turn."""
+    pairing = await _paired_request(
+        request, db, required_scope="session:messages:write"
+    )
+    session = await _require_pairing_webbridge_session(db, session_id, pairing.id)
+    if body.model is not None:
+        from app.api.routes.agents import is_registered_model_id
+
+        if not await is_registered_model_id(body.model):
+            raise HTTPException(
+                status_code=422, detail="Choose a model from the registry."
+            )
+    session.model = body.model
+    db.add(session)
+    await db.flush()
+    return BrowserSessionOption(
+        id=str(session.id),
+        title=session.title or "Untitled session",
+        mode=session.mode,
+        running=str(session.id) in stream_store.running_session_ids(),
+        model=session.model,
     )
 
 
@@ -624,26 +694,94 @@ def _browser_panel_messages(rows: list[Any]) -> list[BrowserPanelMessage]:
     return messages
 
 
+def _browser_panel_stream_event(event: dict[str, Any]) -> dict[str, str] | None:
+    """Keep Side Chat live while withholding raw tool arguments and output."""
+    event_type = str(event.get("event") or "")
+    if event_type in {
+        "agent_status",
+        "done",
+        "error",
+        "message",
+        "question_asked",
+        "session",
+        "title_update",
+    }:
+        return event
+    activity_states = {
+        "tool_call": "queued",
+        "tool_start": "running",
+        "tool_end": "done",
+    }
+    state = activity_states.get(event_type)
+    if state is None:
+        return None
+    raw_data = event.get("data")
+    try:
+        data = json.loads(raw_data) if isinstance(raw_data, str) else raw_data
+    except (TypeError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    return {
+        "event": "activity",
+        "data": json.dumps(
+            {
+                "type": "activity",
+                "id": str(data.get("tool_call_id") or ""),
+                "agent": str(data.get("agent") or "EvoFlux"),
+                "name": str(data.get("name") or "tool"),
+                "state": state,
+            },
+            separators=(",", ":"),
+        ),
+    }
+
+
 async def _require_panel_binding(
     db: DbSession,
     *,
     pairing_id: uuid.UUID,
     session_id: uuid.UUID,
-    tab_id: int,
-    origin: str,
+    binding_tab_id: int,
+    source_tab_id: int,
+    source_origin: str,
 ) -> None:
     bindings = await list_tab_bindings(db, pairing_id)
-    if not any(
-        binding.tab_id == tab_id
-        and binding.session_id == session_id
-        and binding.origin == origin
-        for binding in bindings
-    ):
+    binding = next(
+        (
+            candidate
+            for candidate in bindings
+            if candidate.tab_id == binding_tab_id and candidate.session_id == session_id
+        ),
+        None,
+    )
+    valid = binding is not None and (
+        binding_tab_id == source_tab_id and binding.origin == source_origin
+    )
+    if binding is not None and binding_tab_id != source_tab_id:
+        extension = webbridge_manager.get_extension(str(pairing_id))
+        tabs = {
+            tab.get("id"): tab
+            for tab in (extension.tabs if extension is not None else [])
+        }
+        primary = tabs.get(binding_tab_id)
+        source = tabs.get(source_tab_id)
+        primary_group = primary.get("group_id", -1) if primary else -1
+        source_group = source.get("group_id", -1) if source else -1
+        if primary is not None and source is not None:
+            valid = bool(
+                isinstance(primary_group, int)
+                and primary_group >= 0
+                and primary_group == source_group
+                and _safe_http_origin(str(primary.get("url") or "")) == binding.origin
+                and _safe_http_origin(str(source.get("url") or "")) == source_origin
+            )
+    if not valid:
         raise HTTPException(
             status_code=409,
             detail={
                 "code": "side_panel_binding_required",
-                "message": "Bind the current tab to this browser session before using the side panel.",
+                "message": "This tab must be the session's primary tab or a verified member of its Chrome tab group.",
             },
         )
 
@@ -697,8 +835,9 @@ async def send_browser_panel_message(
         db,
         pairing_id=pairing.id,
         session_id=session_id,
-        tab_id=body.tab_id,
-        origin=origin,
+        binding_tab_id=body.binding_tab_id or body.tab_id,
+        source_tab_id=body.tab_id,
+        source_origin=origin,
     )
     if not body.user_gesture:
         raise HTTPException(
@@ -799,6 +938,7 @@ async def send_browser_panel_message(
             message_extra={
                 "webbridge_side_panel": {
                     "tab_id": body.tab_id,
+                    "binding_tab_id": body.binding_tab_id or body.tab_id,
                     **({"element": element_context} if element_context else {}),
                 },
                 "webbridge_source": {
@@ -892,17 +1032,6 @@ async def stream_browser_panel_session(
     revocation_event = _pairing_revocation_event(str(pairing.id))
     # Do not hold a DB connection for the lifetime of a fetch-SSE stream.
     await db.commit()
-    allowed_events = frozenset(
-        {
-            "agent_status",
-            "done",
-            "error",
-            "message",
-            "question_asked",
-            "session",
-            "title_update",
-        }
-    )
 
     async def _gen():
         events = stream_store.attach(stream_session_id)
@@ -926,9 +1055,9 @@ async def stream_browser_panel_session(
                     break
                 if await request.is_disconnected():
                     break
-                if event.get("event") not in allowed_events:
-                    continue
-                yield event
+                panel_event = _browser_panel_stream_event(event)
+                if panel_event is not None:
+                    yield panel_event
         finally:
             await events.aclose()
 
@@ -1018,6 +1147,7 @@ async def assign_session_to_pairing(
         title=session.title or "Untitled session",
         mode=session.mode,
         running=str(session.id) in stream_store.running_session_ids(),
+        model=session.model,
     )
 
 
@@ -1886,7 +2016,6 @@ class ExtensionInfo(BaseModel):
     version: str
     protocol_version: int = 1
     capabilities: dict[str, Any] = Field(default_factory=dict)
-    paired: bool = False
     connected_at: float
     current_url: str = ""
     current_title: str = ""
@@ -2149,6 +2278,7 @@ async def extension_relay(ws: WebSocket) -> None:
     authorized, pairing_id = await _extension_ws_authorization(ws)
     if not authorized:
         return
+    assert pairing_id is not None
     await ws.accept()
     extension_id: str | None = None
     registered_connection: ExtensionConnection | None = None
@@ -2166,14 +2296,10 @@ async def extension_relay(ws: WebSocket) -> None:
             msg_type = msg.get("type")
 
             if msg_type == "register":
-                if pairing_id is not None and webbridge_ticket_store.is_revoked(
-                    pairing_id
-                ):
+                if webbridge_ticket_store.is_revoked(pairing_id):
                     await ws.close(code=4403)
                     break
-                extension_id = (
-                    pairing_id or msg.get("extension_id") or str(uuid.uuid4())
-                )
+                extension_id = pairing_id
                 previous_connection = webbridge_manager.get_extension(extension_id)
                 registered_connection = webbridge_manager.register_extension(
                     extension_id=extension_id,
@@ -2183,10 +2309,8 @@ async def extension_relay(ws: WebSocket) -> None:
                     protocol_version=msg.get("protocol_version", 1),
                     capabilities=msg.get("capabilities", {}),
                     close=lambda code: ws.close(code=code),
-                    paired=pairing_id is not None,
                 )
-                if pairing_id is not None:
-                    await _stage_persisted_bindings(pairing_id)
+                await _stage_persisted_bindings(pairing_id)
                 if (
                     previous_connection is not None
                     and previous_connection.close is not None
@@ -2202,9 +2326,9 @@ async def extension_relay(ws: WebSocket) -> None:
                 ack: dict[str, Any] = {
                     "type": "registered",
                     "extension_id": extension_id,
+                    "pairing_id": pairing_id,
+                    "protocol_version": 2,
                 }
-                if pairing_id is not None:
-                    ack.update({"pairing_id": pairing_id, "protocol_version": 2})
                 await ws.send_text(json.dumps(ack))
             elif extension_id is None:
                 # Everything below requires a registered connection.
@@ -2227,7 +2351,7 @@ async def extension_relay(ws: WebSocket) -> None:
                     event_data,
                     connection=registered_connection,
                 )
-                if pairing_id is not None and event_name == "tab_updated":
+                if event_name == "tab_updated":
                     stale = webbridge_manager.validate_pending_tab_bindings(
                         pairing_id, event_data.get("tabs", [])
                     )

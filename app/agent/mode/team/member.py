@@ -413,7 +413,9 @@ class TeamMemberBase(abc.ABC):
                         agent_name=self.name,
                         mode=mode,
                         workspace=workspace,
-                        tags=sorted(self._team.session_tags) or None if self._team else None,
+                        tags=sorted(self._team.session_tags) or None
+                        if self._team
+                        else None,
                     )
                     db.add(row)
                     await db.commit()
@@ -1089,9 +1091,9 @@ class TeamMemberBase(abc.ABC):
         )
         if self._role_label == "member":
             member_tier = resolve_member_tier(self.name)
-            tier_excluded = denied_tools_for_tier(
-                member_tier, self.agent._tools.values()
-            ) or None
+            tier_excluded = (
+                denied_tools_for_tier(member_tier, self.agent._tools.values()) or None
+            )
         if is_webbridge_session:
             webbridge_excluded = webbridge_session_excluded_tools(
                 tool.name for tool in granted_tools
@@ -1107,6 +1109,10 @@ class TeamMemberBase(abc.ABC):
         # to specify (or could lie about) the routing target.
         run_metadata: dict[str, object] = {
             "team_mode": self._team.mode,
+            # Browser ownership belongs to the top-level conversation. Team
+            # members keep their own session IDs for history/checkpointing,
+            # but WebBridge commands must reuse the lead's tab binding/group.
+            "webbridge_session_id": lead_session_id,
         }
         if force_compaction:
             run_metadata["force_summarization"] = True

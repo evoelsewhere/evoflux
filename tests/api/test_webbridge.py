@@ -21,18 +21,23 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from pydantic import TypeAdapter
 from sqlmodel import select
 from starlette.websockets import WebSocketDisconnect
 
 from app.agent.schemas.chat import ImageDataBlock, TextBlock, ToolResult
-from app.agent.tools.builtin.webbridge_tool import AnyAction, webbridge
-from app.api.routes.team.webbridge import InteractionRequest, router
+from app.agent.tools.builtin.webbridge_tool import AnyAction, _get_sid, webbridge
+from app.api.routes.team.webbridge import (
+    InteractionRequest,
+    _browser_panel_stream_event,
+    _require_panel_binding,
+    router,
+)
 from app.models.chat import SessionMessage
 from app.models.webbridge import WebBridgeInteraction, WebBridgeTeachDraft
 from app.services.webbridge_pairing_service import (
@@ -84,6 +89,121 @@ def test_tool_and_extension_action_contracts_match():
     assert tool_actions - {"crawl"} == extension_actions
 
 
+def test_webbridge_tool_routes_spawned_members_through_lead_session():
+    state = SimpleNamespace(
+        metadata={
+            "session_id": "member-session",
+            "webbridge_session_id": "lead-session",
+        }
+    )
+
+    assert _get_sid(state) == "lead-session"
+
+
+def test_side_chat_stream_sanitizes_tool_activity():
+    event = _browser_panel_stream_event(
+        {
+            "event": "tool_start",
+            "data": json.dumps(
+                {
+                    "agent": "lead",
+                    "tool_call_id": "call-1",
+                    "name": "webbridge",
+                    "arguments": '{"url":"https://secret.example"}',
+                    "result": "private output",
+                }
+            ),
+        }
+    )
+
+    assert event is not None
+    assert event["event"] == "activity"
+    data = json.loads(event["data"])
+    assert data == {
+        "type": "activity",
+        "id": "call-1",
+        "agent": "lead",
+        "name": "webbridge",
+        "state": "running",
+    }
+    assert "secret.example" not in event["data"]
+    assert "private output" not in event["data"]
+
+
+async def test_side_chat_accepts_only_verified_tabs_in_primary_group(manager):
+    from app.core import db as db_module
+    from app.models.chat import ChatSession
+
+    async with db_module.async_session_factory() as db:
+        pairing, _ = await create_pairing(
+            db,
+            grant=PairingGrant(
+                label="Grouped Chrome",
+                scopes=frozenset({"bindings:write"}),
+            ),
+            browser="chrome",
+            version="1.9.0",
+        )
+        session = ChatSession(
+            title="Grouped browser task",
+            tags=["webbridge", f"webbridge_pairing:{pairing.id}"],
+        )
+        db.add(session)
+        await db.flush()
+        await upsert_tab_binding(
+            db,
+            pairing_id=pairing.id,
+            tab_id=10,
+            session_id=session.id,
+            origin="https://primary.example",
+            page_instance_id="primary-page",
+        )
+        await db.commit()
+
+        async def send(_message: str) -> None:
+            return None
+
+        connection = manager.register_extension(
+            extension_id=str(pairing.id),
+            browser="chrome",
+            version="1.9.0",
+            send=send,
+        )
+        connection.tabs = [
+            {
+                "id": 10,
+                "url": "https://primary.example/start",
+                "group_id": 7,
+            },
+            {
+                "id": 11,
+                "url": "https://child.example/work",
+                "group_id": 7,
+            },
+        ]
+
+        await _require_panel_binding(
+            db,
+            pairing_id=pairing.id,
+            session_id=session.id,
+            binding_tab_id=10,
+            source_tab_id=11,
+            source_origin="https://child.example",
+        )
+
+        connection.tabs[1]["group_id"] = 8
+        with pytest.raises(HTTPException) as exc_info:
+            await _require_panel_binding(
+                db,
+                pairing_id=pairing.id,
+                session_id=session.id,
+                binding_tab_id=10,
+                source_tab_id=11,
+                source_origin="https://child.example",
+            )
+        assert getattr(exc_info.value, "status_code", None) == 409
+
+
 @pytest.fixture
 def manager(monkeypatch: pytest.MonkeyPatch) -> WebBridgeManager:
     """Fresh manager per test, swapped into every module that holds a reference."""
@@ -113,6 +233,12 @@ def _register(ws, extension_id: str = "ext-1") -> dict:
         )
     )
     return json.loads(ws.receive_text())
+
+
+def _ticketed_relay_path(pairing_id: str | None = None) -> tuple[str, str]:
+    owner = pairing_id or str(uuid4())
+    ticket = webbridge_ticket_store.issue(owner)
+    return f"{_PREFIX}/relay?_ticket={ticket}", owner
 
 
 def _pair_extension(client: TestClient, label: str = "Work Chrome") -> dict:
@@ -174,14 +300,20 @@ async def _persist_delivered_interactive_message(
 
 
 def test_register_then_status_shows_connected(client: TestClient):
-    with client.websocket_connect(f"{_PREFIX}/relay") as ws:
+    relay_path, pairing_id = _ticketed_relay_path()
+    with client.websocket_connect(relay_path) as ws:
         ack = _register(ws)
-        assert ack == {"type": "registered", "extension_id": "ext-1"}
+        assert ack == {
+            "type": "registered",
+            "extension_id": pairing_id,
+            "pairing_id": pairing_id,
+            "protocol_version": 2,
+        }
 
         status = client.get(f"{_PREFIX}/status").json()
         assert status["connected"] is True
         [ext] = status["extensions"]
-        assert ext["extension_id"] == "ext-1"
+        assert ext["extension_id"] == pairing_id
         assert ext["browser"] == "chrome"
         assert ext["version"] == "120.0"
 
@@ -190,7 +322,8 @@ def test_register_then_status_shows_connected(client: TestClient):
 
 
 def test_protocol_capabilities_are_reported_in_status(client: TestClient):
-    with client.websocket_connect(f"{_PREFIX}/relay") as ws:
+    relay_path, pairing_id = _ticketed_relay_path()
+    with client.websocket_connect(relay_path) as ws:
         ws.send_text(
             json.dumps(
                 {
@@ -206,7 +339,9 @@ def test_protocol_capabilities_are_reported_in_status(client: TestClient):
                 }
             )
         )
-        assert json.loads(ws.receive_text())["type"] == "registered"
+        ack = json.loads(ws.receive_text())
+        assert ack["type"] == "registered"
+        assert ack["extension_id"] == pairing_id
 
         [extension] = client.get(f"{_PREFIX}/status").json()["extensions"]
         assert extension["protocol_version"] == 2
@@ -214,11 +349,11 @@ def test_protocol_capabilities_are_reported_in_status(client: TestClient):
             "commands": ["snapshot"],
             "interactions": ["context.share"],
         }
-        assert extension["paired"] is False
 
 
 def test_event_updates_extension_state(client: TestClient):
-    with client.websocket_connect(f"{_PREFIX}/relay") as ws:
+    relay_path, _ = _ticketed_relay_path()
+    with client.websocket_connect(relay_path) as ws:
         _register(ws)
         ws.send_text(
             json.dumps(
@@ -245,7 +380,8 @@ def test_event_updates_extension_state(client: TestClient):
 
 
 def test_relay_rejects_oversized_frames(client: TestClient):
-    with client.websocket_connect(f"{_PREFIX}/relay") as ws:
+    relay_path, _ = _ticketed_relay_path()
+    with client.websocket_connect(relay_path) as ws:
         _register(ws)
         ws.send_text("x" * 1_000_001)
         with pytest.raises(WebSocketDisconnect) as exc_info:
@@ -257,8 +393,9 @@ def test_relay_rejects_oversized_frames(client: TestClient):
 
 
 def test_command_roundtrip_agent_ws(client: TestClient):
+    relay_path, _ = _ticketed_relay_path()
     with client.websocket_connect(f"{_PREFIX}/agent/s1") as agent_ws:
-        with client.websocket_connect(f"{_PREFIX}/relay") as ext_ws:
+        with client.websocket_connect(relay_path) as ext_ws:
             _register(ext_ws)
 
             agent_ws.send_text(
@@ -289,8 +426,9 @@ def test_command_roundtrip_agent_ws(client: TestClient):
 
 
 def test_sequential_commands_correlate_by_request_id(client: TestClient):
+    relay_path, _ = _ticketed_relay_path()
     with client.websocket_connect(f"{_PREFIX}/agent/s1") as agent_ws:
-        with client.websocket_connect(f"{_PREFIX}/relay") as ext_ws:
+        with client.websocket_connect(relay_path) as ext_ws:
             _register(ext_ws)
             seen_ids: list[str] = []
 
@@ -326,8 +464,9 @@ def test_agent_ws_no_extension(client: TestClient):
 
 
 def test_extension_disconnect_fails_pending_command(client: TestClient):
+    relay_path, _ = _ticketed_relay_path()
     with client.websocket_connect(f"{_PREFIX}/agent/s1") as agent_ws:
-        with client.websocket_connect(f"{_PREFIX}/relay") as ext_ws:
+        with client.websocket_connect(relay_path) as ext_ws:
             _register(ext_ws)
             agent_ws.send_text(
                 json.dumps({"action": "navigate", "url": "https://x.dev"})
@@ -344,11 +483,12 @@ def test_extension_disconnect_fails_pending_command(client: TestClient):
 
 
 def test_ping_refreshes_last_seen(client: TestClient, manager: WebBridgeManager):
-    with client.websocket_connect(f"{_PREFIX}/relay") as ws:
+    relay_path, pairing_id = _ticketed_relay_path()
+    with client.websocket_connect(relay_path) as ws:
         _register(ws)
 
         # Simulate an idle extension: status must report it as gone.
-        conn = manager.get_extension("ext-1")
+        conn = manager.get_extension(pairing_id)
         assert conn is not None
         conn.last_seen = time.time() - 1000
         assert client.get(f"{_PREFIX}/status").json()["connected"] is False
@@ -428,6 +568,33 @@ async def test_bound_session_pins_tab_unless_command_overrides_it(
         explicit_command["request_id"], success=True, data={}, error=None
     )
     await explicit
+
+
+async def test_bound_session_groups_opened_tabs_without_polluting_other_commands(
+    manager: WebBridgeManager,
+):
+    sent: list[str] = []
+
+    async def fake_send(text: str) -> None:
+        sent.append(text)
+
+    manager.register_extension(
+        extension_id="e1", browser="chrome", version="1.9.0", send=fake_send
+    )
+    manager.bind_session_tab("sess", "e1", 42, "https://primary.example")
+
+    task = asyncio.create_task(
+        manager.send_command("sess", "open_tab", {"url": "https://child.example"})
+    )
+    await asyncio.sleep(0)
+    command = json.loads(sent.pop())
+    assert command["params"] == {
+        "url": "https://child.example",
+        "_webbridge_session_id": "sess",
+        "_webbridge_parent_tab_id": 42,
+    }
+    manager.handle_response(command["request_id"], success=True, data={}, error=None)
+    assert (await task)["success"] is True
 
 
 async def test_live_binding_refuses_commands_after_cross_origin_navigation(
@@ -1117,7 +1284,13 @@ async def test_prepared_interactive_message_dispatches_when_idle(
         has_active_user_turn=lambda: False,
     )
     async with db_module.async_session_factory() as db:
-        session = ChatSession(title="Idle", mode="coding", workspace="/tmp/project")
+        session = ChatSession(
+            title="Idle",
+            mode="coding",
+            workspace="/tmp/project",
+            model="openai:gpt-test",
+            thinking_level="high",
+        )
         db.add(session)
         await db.commit()
 
@@ -1132,6 +1305,10 @@ async def test_prepared_interactive_message_dispatches_when_idle(
         session_id=str(session.id),
         mode="coding",
         workspace="/tmp/project",
+        model="openai:gpt-test",
+        model_provided=True,
+        thinking_level="high",
+        thinking_level_provided=True,
     )
 
 
@@ -1482,6 +1659,7 @@ async def test_side_panel_transcript_composer_and_handoff_are_pairing_scoped(
     dispatched_extra = submit.await_args.kwargs["message_extra"]
     assert dispatched_extra["webbridge_side_panel"] == {
         "tab_id": 42,
+        "binding_tab_id": 42,
         "element": {
             "page_url": "https://example.com/page",
             "selector": "button[data-testid=save]",
@@ -1974,6 +2152,7 @@ async def test_paired_extension_lists_and_creates_browser_sessions(
             "title": "Existing WebBridge session",
             "mode": "forge",
             "running": False,
+            "model": None,
         }
     ]
 
@@ -2003,6 +2182,74 @@ async def test_paired_extension_lists_and_creates_browser_sessions(
     assert created_row is not None
     assert "webbridge" in (created_row.tags or ())
     assert f"webbridge_pairing:{pairing['pairing_id']}" in (created_row.tags or ())
+
+
+async def test_paired_side_chat_lists_and_persists_session_model(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from app.core import db as db_module
+    from app.models.chat import ChatSession
+
+    session = ChatSession(title="Model-aware browser session", tags=["webbridge"])
+    async with db_module.async_session_factory() as db:
+        db.add(session)
+        await db.commit()
+
+    owner = _pair_extension(client, "Model Chrome")
+    other = _pair_extension(client, "Other Chrome")
+    _assign_pairing_session(client, owner, session.id)
+    owner_headers = {"Authorization": f"Bearer {owner['credential']}"}
+    other_headers = {"Authorization": f"Bearer {other['credential']}"}
+
+    registry = SimpleNamespace(
+        models=[
+            SimpleNamespace(
+                id="openai:gpt-test",
+                provider="openai",
+                model="gpt-test",
+                thinking_levels=["low", "high"],
+            )
+        ]
+    )
+    monkeypatch.setattr(
+        "app.api.routes.agents.get_registry", AsyncMock(return_value=registry)
+    )
+    monkeypatch.setattr(
+        "app.api.routes.agents.is_registered_model_id",
+        AsyncMock(return_value=True),
+    )
+
+    catalog = client.get(f"{_PREFIX}/models", headers=owner_headers)
+    assert catalog.status_code == 200
+    assert catalog.json() == [
+        {
+            "id": "openai:gpt-test",
+            "provider": "openai",
+            "model": "gpt-test",
+            "thinking_levels": ["low", "high"],
+        }
+    ]
+
+    updated = client.patch(
+        f"{_PREFIX}/sessions/{session.id}/model",
+        headers=owner_headers,
+        json={"model": "openai:gpt-test"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["model"] == "openai:gpt-test"
+
+    rejected = client.patch(
+        f"{_PREFIX}/sessions/{session.id}/model",
+        headers=other_headers,
+        json={"model": "openai:gpt-test"},
+    )
+    assert rejected.status_code == 403
+
+    async with db_module.async_session_factory() as db:
+        persisted = await db.get(ChatSession, session.id)
+    assert persisted is not None
+    assert persisted.model == "openai:gpt-test"
 
 
 async def test_browser_pairings_cannot_enumerate_or_target_each_others_sessions(
@@ -2299,7 +2546,6 @@ def test_pairing_credential_mints_single_use_authoritative_relay_ticket(
         assert ack["pairing_id"] == pairing["pairing_id"]
         assert ack["protocol_version"] == 2
         [extension] = client.get(f"{_PREFIX}/status").json()["extensions"]
-        assert extension["paired"] is True
 
     with pytest.raises(WebSocketDisconnect) as exc_info:
         with client.websocket_connect(f"{_PREFIX}/relay?_ticket={ticket}"):
@@ -2433,7 +2679,9 @@ def test_interaction_rate_limit_does_not_charge_idempotent_replay(
     assert limited.json()["detail"]["code"] == "rate_limited"
 
 
-def test_ws_rejected_without_token(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+def test_extension_relay_requires_ticket_and_agent_ws_requires_desktop_token(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
     monkeypatch.setenv("EVOFLUX_DESKTOP_TOKEN", "secret-token")
     for path in (f"{_PREFIX}/relay", f"{_PREFIX}/agent/s1"):
         with pytest.raises(WebSocketDisconnect) as exc_info:
@@ -2442,20 +2690,22 @@ def test_ws_rejected_without_token(client: TestClient, monkeypatch: pytest.Monke
         assert exc_info.value.code == 4401
 
 
-def test_ws_rejected_with_wrong_token(
+def test_extension_relay_rejects_desktop_token_and_agent_rejects_wrong_token(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setenv("EVOFLUX_DESKTOP_TOKEN", "secret-token")
-    with pytest.raises(WebSocketDisconnect) as exc_info:
-        with client.websocket_connect(f"{_PREFIX}/relay?_token=nope"):
-            pass
-    assert exc_info.value.code == 4401
+    for path in (
+        f"{_PREFIX}/relay?_token=secret-token",
+        f"{_PREFIX}/agent/s1?_token=nope",
+    ):
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            with client.websocket_connect(path):
+                pass
+        assert exc_info.value.code == 4401
 
 
-def test_ws_accepted_with_token(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+def test_agent_ws_accepts_desktop_token(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("EVOFLUX_DESKTOP_TOKEN", "secret-token")
-    with client.websocket_connect(f"{_PREFIX}/relay?_token=secret-token") as ws:
-        assert _register(ws)["type"] == "registered"
     with client.websocket_connect(
         f"{_PREFIX}/agent/s1?_token=secret-token"
     ) as agent_ws:
@@ -2465,10 +2715,17 @@ def test_ws_accepted_with_token(client: TestClient, monkeypatch: pytest.MonkeyPa
         assert msg["success"] is True
 
 
-def test_ws_open_when_no_token_configured(client: TestClient):
-    # conftest deletes EVOFLUX_DESKTOP_TOKEN for the whole session.
-    with client.websocket_connect(f"{_PREFIX}/relay") as ws:
-        assert _register(ws)["type"] == "registered"
+def test_extension_relay_still_requires_ticket_when_desktop_auth_is_disabled(
+    client: TestClient,
+):
+    with pytest.raises(WebSocketDisconnect) as exc_info:
+        with client.websocket_connect(f"{_PREFIX}/relay"):
+            pass
+    assert exc_info.value.code == 4401
+
+    with client.websocket_connect(f"{_PREFIX}/agent/s1") as agent_ws:
+        agent_ws.send_text(json.dumps({"action": "status"}))
+        assert json.loads(agent_ws.receive_text())["type"] == "response"
 
 
 def test_open_local_ws_rejects_hostile_browser_origin(client: TestClient):
@@ -2480,11 +2737,13 @@ def test_open_local_ws_rejects_hostile_browser_origin(client: TestClient):
                 pass
         assert exc_info.value.code == 4401
 
-    with client.websocket_connect(
-        f"{_PREFIX}/relay",
-        headers={"Origin": "chrome-extension://abcdefghijklmnop"},
-    ) as ws:
-        assert _register(ws)["type"] == "registered"
+    with pytest.raises(WebSocketDisconnect) as exc_info:
+        with client.websocket_connect(
+            f"{_PREFIX}/relay",
+            headers={"Origin": "chrome-extension://abcdefghijklmnop"},
+        ):
+            pass
+    assert exc_info.value.code == 4401
 
 
 # ── Tool-level (manager's send_command stubbed) ───────────────────────────────

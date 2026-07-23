@@ -42,14 +42,14 @@ const PICKED_ELEMENT_STORAGE_KEY = "webbridgePickedElements";
 
 let ws = null;
 let extensionId = null; // loaded/persisted in chrome.storage.local (stable across SW restarts)
+const sessionGroupLocks = new Map();
 let connected = false;
 let reconnectTimer = null;
 let reconnectAttempts = 0;
 let attachedTabs = new Map(); // tabId → true (CDP attached)
 let manualDisconnect = false;
-let lastCloseReason = null; // null | "auth" (4401) | "closed"
+let lastCloseReason = null; // null | "ticket" (4401) | "pairing" (4403) | "closed"
 let relayBase = DEFAULT_RELAY_BASE;
-let accessToken = "";
 let pairingCredential = "";
 let pairingId = "";
 let pairingRelayBase = "";
@@ -64,16 +64,15 @@ const COMMAND_CAPABILITIES = [
   "snapshot", "extract_elements", "scroll_to_bottom", "status",
 ];
 
-// ── Config (persisted in chrome.storage.local, edited via the popup) ─────────
+// ── Config (persisted in chrome.storage.local, edited in Side Chat settings) ─
 
 async function loadConfig() {
   try {
     const cfg = await chrome.storage.local.get([
-      "relayBase", "accessToken", "extensionId", "pairingCredential", "pairingId",
+      "relayBase", "extensionId", "pairingCredential", "pairingId",
       "pairingRelayBase",
     ]);
     relayBase = (cfg.relayBase || DEFAULT_RELAY_BASE).trim().replace(/\/+$/, "");
-    accessToken = (cfg.accessToken || "").trim();
     pairingCredential = (cfg.pairingCredential || "").trim();
     pairingId = (cfg.pairingId || "").trim();
     pairingRelayBase = (cfg.pairingRelayBase || "").trim().replace(/\/+$/, "");
@@ -85,20 +84,12 @@ async function loadConfig() {
       extensionId = generateId();
       chrome.storage.local.set({ extensionId });
     }
+    await chrome.storage.local.remove(["accessToken"]);
   } catch (e) {
     console.warn("[WebBridge] Failed to load config, using defaults:", e);
     relayBase = DEFAULT_RELAY_BASE;
-    accessToken = "";
     if (!extensionId) extensionId = generateId();
   }
-}
-
-function buildRelayUrl() {
-  // Accept http(s):// bases too — normalize to ws(s)://.
-  const base = (relayBase || DEFAULT_RELAY_BASE).replace(/^http/i, "ws");
-  let url = base + RELAY_PATH;
-  if (accessToken) url += "?_token=" + encodeURIComponent(accessToken);
-  return url;
 }
 
 function canonicalRelayBase() {
@@ -718,17 +709,54 @@ async function bindTabToSession(tab, sessionId, pageUrl) {
 }
 
 async function ensureSessionForTab(tab, pageUrl, actionId) {
+  return (await ensureSessionContextForTab(tab, pageUrl, actionId)).session_id;
+}
+
+async function ensureSessionContextForTab(tab, pageUrl, actionId) {
   const bindings = await listTabBindings();
   const binding = bindings.find((item) => item.tab_id === tab.id);
-  if (binding && binding.origin === browserOrigin(pageUrl)) return binding.session_id;
+  if (binding && binding.origin === browserOrigin(pageUrl)) {
+    return {
+      session_id: binding.session_id,
+      binding_tab_id: binding.tab_id,
+      binding_origin: binding.origin,
+      grouped: false,
+    };
+  }
+
+  if (Number.isInteger(tab.groupId) && tab.groupId >= 0) {
+    const groupedTabs = await chrome.tabs.query({ groupId: tab.groupId });
+    const groupedIds = new Set(groupedTabs.map((item) => item.id));
+    const primaryBinding = bindings.find((item) => groupedIds.has(item.tab_id));
+    const primaryTab = primaryBinding
+      ? groupedTabs.find((item) => item.id === primaryBinding.tab_id)
+      : null;
+    if (
+      primaryBinding &&
+      primaryTab &&
+      primaryBinding.origin === browserOrigin(primaryTab.url || primaryTab.pendingUrl || "")
+    ) {
+      return {
+        session_id: primaryBinding.session_id,
+        binding_tab_id: primaryBinding.tab_id,
+        binding_origin: primaryBinding.origin,
+        grouped: true,
+      };
+    }
+  }
 
   const label = boundedText(tab.title) || browserOrigin(pageUrl) || "Browser page";
   const session = await createBrowserSession(
     `Browser: ${label}`.slice(0, 255),
     actionId,
   );
-  await bindTabToSession(tab, session.id, pageUrl);
-  return session.id;
+  const createdBinding = await bindTabToSession(tab, session.id, pageUrl);
+  return {
+    session_id: session.id,
+    binding_tab_id: createdBinding.tab_id,
+    binding_origin: createdBinding.origin,
+    grouped: false,
+  };
 }
 
 function contextMenuPayload(info, tab) {
@@ -919,7 +947,11 @@ async function responseError(response, fallback) {
 
 async function buildAuthenticatedRelayUrl() {
   assertRelayTransportSecure();
-  if (!pairingCredential) return buildRelayUrl();
+  if (!pairingCredential) {
+    const error = new Error("Pair WebBridge before connecting to the relay.");
+    error.code = "pairing_required";
+    throw error;
+  }
   if (!pairingRelayBase || pairingRelayBase !== canonicalRelayBase()) {
     const error = new Error("The relay URL changed. Pair WebBridge with this relay again.");
     error.code = "pairing";
@@ -972,13 +1004,12 @@ async function persistPairing(body) {
   pairingCredential = body.credential;
   pairingId = body.pairing_id;
   pairingRelayBase = canonicalRelayBase();
-  accessToken = "";
   await chrome.storage.local.set({
     pairingCredential,
     pairingId,
     pairingRelayBase,
-    accessToken: "",
   });
+  await chrome.storage.local.remove(["accessToken"]);
 }
 
 async function pairLocally() {
@@ -1023,8 +1054,13 @@ async function connect() {
       await clearRevokedPairingState();
       manualDisconnect = true;
     }
+    if (e.code === "pairing_required") manualDisconnect = true;
     if (e.code === "relay_security") manualDisconnect = true;
-    lastCloseReason = e.code === "pairing" ? "pairing" : e.code === "relay_security" ? "security" : "closed";
+    lastCloseReason = ["pairing", "pairing_required"].includes(e.code)
+      ? "pairing"
+      : e.code === "relay_security"
+        ? "security"
+        : "closed";
     console.error("[WebBridge] Connection setup failed:", e);
     if (!manualDisconnect) scheduleReconnect();
     return;
@@ -1082,8 +1118,8 @@ async function connect() {
         console.warn("[WebBridge] Pairing cleanup failed:", error.message);
       });
     }
-    // 4401 = relay rejected the access token — surface it in the popup.
-    lastCloseReason = event.code === 4403 ? "pairing" : event.code === 4401 ? "auth" : "closed";
+    // 4401 = the single-use relay ticket was invalid or expired.
+    lastCloseReason = event.code === 4403 ? "pairing" : event.code === 4401 ? "ticket" : "closed";
     if (!manualDisconnect) scheduleReconnect();
   };
 
@@ -1440,17 +1476,77 @@ async function releaseHumanControlLease(tabId = null) {
 
 async function configureSidePanel() {
   if (!chrome.sidePanel?.setPanelBehavior) return;
-  await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false });
+  await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 }
 
-async function openSidePanelForActiveTab() {
+async function openSidePanelForTab(tab) {
   if (!chrome.sidePanel?.open) {
     throw new Error("Chrome Side Panel is unavailable in this browser.");
   }
-  const tab = await getActiveTab();
   if (!tab || tab.id == null) throw new Error("No active tab");
   await chrome.sidePanel.open({ tabId: tab.id });
-  return { tab_id: tab.id };
+  return { tab_id: tab.id, window_id: tab.windowId };
+}
+
+async function openSidePanelForActiveTab() {
+  return openSidePanelForTab(await getActiveTab());
+}
+
+async function addTabToSessionGroup(parentTab, childTab, sessionId) {
+  if (!chrome.tabs?.group) return null;
+  const existingGroupId = Number.isInteger(parentTab.groupId) && parentTab.groupId >= 0
+    ? parentTab.groupId
+    : null;
+  const groupId = existingGroupId == null
+    ? await chrome.tabs.group({
+      tabIds: [parentTab.id, childTab.id],
+      createProperties: { windowId: parentTab.windowId },
+    })
+    : existingGroupId;
+  if (existingGroupId != null) {
+    await chrome.tabs.group({ tabIds: childTab.id, groupId });
+  }
+  if (chrome.tabGroups?.update) {
+    const suffix = boundedText(parentTab.title).slice(0, 24);
+    await chrome.tabGroups.update(groupId, {
+      title: suffix ? `EvoFlux · ${suffix}` : "EvoFlux",
+      color: "blue",
+      collapsed: false,
+    });
+  }
+  return groupId;
+}
+
+async function withSessionGroupLock(sessionId, operation) {
+  const key = String(sessionId || "default");
+  const previous = sessionGroupLocks.get(key) || Promise.resolve();
+  let release;
+  const current = new Promise((resolve) => { release = resolve; });
+  sessionGroupLocks.set(key, current);
+  await previous.catch(() => {});
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (sessionGroupLocks.get(key) === current) sessionGroupLocks.delete(key);
+  }
+}
+
+async function createGroupedSessionTab(parentTab, sessionId, { url = "chrome://newtab/", active = false } = {}) {
+  if (!parentTab || parentTab.id == null) throw new Error("The session has no primary browser tab.");
+  const childTab = await chrome.tabs.create({
+    url,
+    active,
+    windowId: parentTab.windowId,
+    openerTabId: parentTab.id,
+    ...(Number.isInteger(parentTab.index) ? { index: parentTab.index + 1 } : {}),
+  });
+  const groupId = await withSessionGroupLock(sessionId, async () => {
+    const currentParent = await chrome.tabs.get(parentTab.id);
+    return addTabToSessionGroup(currentParent, childTab, sessionId);
+  });
+  await broadcastTabInfo();
+  return { success: true, tab_id: childTab.id, group_id: groupId, url };
 }
 
 async function pickedElementStorage() {
@@ -1515,8 +1611,27 @@ async function startElementPicker(tab) {
     target: { tabId: tab.id },
     files: ["element_picker.js"],
   });
-  await chrome.tabs.sendMessage(tab.id, { type: "webbridge_element_picker", enabled: true });
-  return { tab_id: tab.id };
+  let lastError = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await chrome.tabs.sendMessage(tab.id, {
+        type: "webbridge_element_picker",
+        enabled: true,
+      });
+      if (response?.ok) {
+        chrome.runtime.sendMessage({
+          type: "element_picker_state",
+          active: true,
+          tab_id: tab.id,
+        }).catch(() => {});
+        return { tab_id: tab.id };
+      }
+    } catch (error) {
+      lastError = error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 40));
+  }
+  throw lastError || new Error("Element picker did not become ready on this page.");
 }
 
 async function cancelElementPicker(tab) {
@@ -2118,6 +2233,11 @@ async function cmdOpenTab(params) {
     if (current && await humanLeaseForWindow(current.windowId)) {
       throw new Error("Human control is active in this window. Open the tab in background or wait for the user to resume the agent.");
     }
+  }
+  const parentTabId = params._webbridge_parent_tab_id;
+  if (parentTabId != null) {
+    const parentTab = await chrome.tabs.get(parentTabId);
+    return createGroupedSessionTab(parentTab, params._webbridge_session_id, { url, active });
   }
   const tab = await chrome.tabs.create({ url, active });
   await broadcastTabInfo();
@@ -2742,6 +2862,7 @@ function tabSummary(tab, index) {
     title: tab.title || "",
     active: tab.active,
     pinned: tab.pinned,
+    group_id: Number.isInteger(tab.groupId) ? tab.groupId : -1,
   };
 }
 
@@ -2817,11 +2938,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const tab = await chrome.tabs.get(sender.tab.id);
         const element = await savePickedElement(tab, msg.element);
         sendResponse({ ok: true, element });
+        chrome.runtime.sendMessage({
+          type: "element_picker_state",
+          active: false,
+          tab_id: tab.id,
+        }).catch(() => {});
         chrome.runtime.sendMessage({ type: "element_picker_result", element }).catch(() => {});
       } catch (e) {
         sendResponse({ ok: false, error: e.message });
       }
     })();
+    return true;
+  }
+
+  if (msg.type === "element_picker_cancelled") {
+    chrome.runtime.sendMessage({
+      type: "element_picker_state",
+      active: false,
+      tab_id: sender.tab?.id,
+    }).catch(() => {});
+    sendResponse({ ok: true });
     return true;
   }
 
@@ -2997,7 +3133,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "take_human_control") {
     (async () => {
       try {
-        sendResponse({ ok: true, lease: await takeHumanControlLease(await getActiveTab()) });
+        const tab = msg.tab_id != null ? await chrome.tabs.get(msg.tab_id) : await getActiveTab();
+        sendResponse({ ok: true, lease: await takeHumanControlLease(tab) });
       } catch (e) {
         sendResponse({ ok: false, error: e.message });
       }
@@ -3008,7 +3145,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "release_human_control") {
     (async () => {
       try {
-        const tab = await getActiveTab();
+        const tab = msg.tab_id != null ? await chrome.tabs.get(msg.tab_id) : await getActiveTab();
         sendResponse({ ok: true, released: await releaseHumanControlLease(tab?.id ?? null) });
       } catch (e) {
         sendResponse({ ok: false, error: e.message });
@@ -3020,7 +3157,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "get_human_control") {
     (async () => {
       try {
-        sendResponse({ ok: true, lease: humanLeaseSummary(await humanLeaseForTab(await getActiveTab())) });
+        const tab = msg.tab_id != null ? await chrome.tabs.get(msg.tab_id) : await getActiveTab();
+        sendResponse({ ok: true, lease: humanLeaseSummary(await humanLeaseForTab(tab)) });
       } catch (e) {
         sendResponse({ ok: false, error: e.message });
       }
@@ -3038,6 +3176,56 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           sessions: Array.isArray(sessions) ? sessions : (sessions.data || []),
           bindings,
         });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "ensure_browser_session_for_tab") {
+    (async () => {
+      try {
+        const tab = await getActiveTab();
+        if (!tab || tab.id == null) throw new Error("No active tab");
+        const pageUrl = requireBrowserPageUrl(tab.url || tab.pendingUrl || "");
+        const context = await ensureSessionContextForTab(
+          tab,
+          pageUrl,
+          msg.action_id || interactionId(),
+        );
+        const sessions = await listBrowserSessions();
+        const sessionList = Array.isArray(sessions) ? sessions : (sessions.data || []);
+        sendResponse({
+          ok: true,
+          ...context,
+          session: sessionList.find((item) => item.id === context.session_id) || null,
+          tab: {
+            id: tab.id,
+            title: tab.title || "",
+            url: pageUrl,
+            group_id: Number.isInteger(tab.groupId) ? tab.groupId : -1,
+          },
+        });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "open_grouped_session_tab") {
+    (async () => {
+      try {
+        const tab = await getActiveTab();
+        if (!tab || tab.id == null) throw new Error("No active tab");
+        const pageUrl = requireBrowserPageUrl(tab.url || tab.pendingUrl || "");
+        const context = await ensureSessionContextForTab(tab, pageUrl, interactionId());
+        if (context.session_id !== msg.session_id) {
+          throw new Error("This tab is not part of that browser session.");
+        }
+        const primaryTab = await chrome.tabs.get(context.binding_tab_id);
+        sendResponse({ ok: true, ...(await createGroupedSessionTab(primaryTab, msg.session_id)) });
       } catch (e) {
         sendResponse({ ok: false, error: e.message });
       }

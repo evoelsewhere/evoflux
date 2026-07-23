@@ -23,6 +23,55 @@
       --error-soft: rgba(255, 115, 125, .1);
       --warning: #e4b34a;
       --warning-soft: rgba(228, 179, 74, .1);
+      --header-bg: rgba(25, 28, 31, .96);
+      --assistant-border: rgba(255, 255, 255, .045);
+      --code-block-bg: #101214;
+      --code-block-text: #f4f5f6;
+      --link: #9d9bff;
+      --picked-text: #c7c5ff;
+      --composer-shadow: rgba(0, 0, 0, .14);
+      --user-message: #45429d;
+    }
+    :root[data-theme="light"] {
+      color-scheme: light;
+      --bg: #f7f8fa;
+      --surface: #ffffff;
+      --surface-raised: #f0f2f5;
+      --surface-hover: #e7eaf0;
+      --border: #d9dde4;
+      --border-strong: #b9c0ca;
+      --text: #191c21;
+      --muted: #626b76;
+      --subtle: #8a949f;
+      --accent: #5652c4;
+      --accent-hover: #4b47b2;
+      --accent-soft: rgba(86, 82, 196, .1);
+      --success: #16845b;
+      --success-soft: rgba(22, 132, 91, .1);
+      --error: #c43b49;
+      --error-soft: rgba(196, 59, 73, .09);
+      --warning: #956300;
+      --warning-soft: rgba(149, 99, 0, .09);
+      --header-bg: rgba(255, 255, 255, .96);
+      --assistant-border: rgba(25, 28, 33, .09);
+      --code-block-bg: #171a1f;
+      --code-block-text: #eef1f5;
+      --link: #4945b8;
+      --picked-text: #4945b8;
+      --composer-shadow: rgba(39, 45, 55, .1);
+      --user-message: #5652c4;
+    }
+    @media (prefers-color-scheme: light) {
+      :root:not([data-theme]) {
+        color-scheme: light;
+        --bg: #f7f8fa; --surface: #ffffff; --surface-raised: #f0f2f5; --surface-hover: #e7eaf0;
+        --border: #d9dde4; --border-strong: #b9c0ca; --text: #191c21; --muted: #626b76; --subtle: #8a949f;
+        --accent: #5652c4; --accent-hover: #4b47b2; --accent-soft: rgba(86, 82, 196, .1);
+        --success: #16845b; --success-soft: rgba(22, 132, 91, .1); --error: #c43b49; --error-soft: rgba(196, 59, 73, .09);
+        --warning: #956300; --warning-soft: rgba(149, 99, 0, .09); --header-bg: rgba(255, 255, 255, .96);
+        --assistant-border: rgba(25, 28, 33, .09); --code-block-bg: #171a1f; --code-block-text: #eef1f5;
+        --link: #4945b8; --picked-text: #4945b8; --composer-shadow: rgba(39, 45, 55, .1); --user-message: #5652c4;
+      }
     }
     * { box-sizing: border-box; }
     html, body { height: 100%; margin: 0; }
@@ -43,22 +92,24 @@
       display: flex;
       align-items: center;
       gap: 10px;
-      min-height: 58px;
-      padding: 10px 12px;
+      min-height: 54px;
+      padding: 8px 10px;
       border-bottom: 1px solid var(--border);
-      background: rgba(25, 28, 31, .96);
+      background: var(--header-bg);
     }
-    .logo { width: 30px; height: 30px; border-radius: 7px; overflow: hidden; flex: 0 0 auto; box-shadow: 0 0 0 1px var(--border); }
+    .logo { width: 28px; height: 28px; border-radius: 7px; overflow: hidden; flex: 0 0 auto; box-shadow: 0 0 0 1px var(--border); }
     .logo img { width: 100%; height: 100%; display: block; }
     .title { min-width: 0; flex: 1; }
-    .title strong { display: block; font-size: 13px; font-weight: 700; line-height: 1.2; }
+    .title strong { display: block; overflow: hidden; font-size: 12px; font-weight: 700; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
     .title span { display: block; overflow: hidden; margin-top: 2px; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
     .header-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
     .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--subtle); box-shadow: 0 0 0 3px rgba(113, 122, 131, .1); }
     .status-dot.live { background: var(--success); box-shadow: 0 0 0 3px var(--success-soft); }
     .status-dot.error { background: var(--error); box-shadow: 0 0 0 3px var(--error-soft); }
-    .session-bar { padding: 10px 12px 9px; border-bottom: 1px solid var(--border); background: var(--surface); }
-    .session-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+    .context-bar { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 5px 10px; border-bottom: 1px solid var(--border); background: var(--surface); }
+    .context-copy { min-width: 0; flex: 1; }
+    .context-copy strong { display: block; overflow: hidden; font-size: 11px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+    .context-copy span { display: block; overflow: hidden; margin-top: 1px; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
     .label { display: block; margin: 0; color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; }
     .row { display: flex; align-items: center; gap: 6px; min-width: 0; }
     select, textarea, input {
@@ -77,12 +128,12 @@
     .btn.primary { border-color: var(--accent); background: var(--accent); color: white; }
     .btn.primary:hover:not(:disabled) { background: var(--accent-hover); }
     .btn.icon { width: 30px; padding: 0; font-size: 15px; }
+    .btn svg, .tool-icon svg, .model-trigger svg { width: 15px; height: 15px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .btn.icon.subtle { border-color: transparent; background: transparent; color: var(--muted); }
+    .btn.icon.subtle:hover:not(:disabled) { border-color: var(--border); background: var(--surface-raised); color: var(--text); }
     .btn.stop { min-height: 28px; border-color: transparent; background: transparent; color: var(--muted); }
     .btn.stop:hover:not(:disabled) { border-color: rgba(255, 115, 125, .2); background: var(--error-soft); color: var(--error); }
-    .action-bar { display: flex; align-items: center; gap: 6px; margin-top: 8px; overflow-x: auto; scrollbar-width: none; }
-    .action-bar::-webkit-scrollbar { display: none; }
-    .action-bar .btn { flex: 0 0 auto; }
-    .context-status { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; min-height: 20px; margin-top: 7px; }
+    .context-actions { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
     .binding { display: none; min-width: 0; max-width: 100%; overflow-wrap: anywhere; border-radius: 999px; padding: 3px 7px; background: rgba(255,255,255,.035); color: var(--muted); font-size: 10px; line-height: 1.3; }
     .binding:not(:empty) { display: inline-flex; }
     .binding.ok { background: var(--success-soft); color: var(--success); }
@@ -91,12 +142,13 @@
     .notice.visible { display: block; }
     .notice.error { color: var(--error); background: var(--error-soft); }
     .notice.info { color: var(--muted); background: rgba(255, 255, 255, .02); }
-    .transcript { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 14px 12px 20px; scroll-behavior: smooth; }
+    .transcript { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 16px 12px 24px; }
     .empty { display: flex; min-height: 100%; align-items: center; justify-content: center; padding: 28px; color: var(--muted); font-size: 12px; text-align: center; line-height: 1.55; }
     .message { max-width: 94%; margin: 0 0 12px; border-radius: 8px; padding: 9px 10px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; }
-    .message.user { margin-left: auto; background: #45429d; color: #fafaff; }
-    .message.assistant { max-width: 100%; padding: 2px 2px 10px; background: transparent; border-bottom: 1px solid rgba(255,255,255,.045); border-radius: 0; }
+    .message.user { margin-left: auto; background: var(--user-message); color: #fafaff; }
+    .message.assistant { max-width: 100%; padding: 2px 2px 10px; background: transparent; border-bottom: 1px solid var(--assistant-border); border-radius: 0; }
     .message.live { border-color: rgba(119, 116, 255, .45); }
+    .message.live .message-body { animation: reveal-content 150ms ease-out; }
     .message-meta { display: block; margin-bottom: 4px; color: var(--muted); font-size: 10px; font-weight: 600; }
     .message.user .message-meta { color: rgba(255,255,255,.72); }
     .message-body { min-width: 0; }
@@ -119,14 +171,23 @@
     .message-body li.task input { width: 13px; height: 13px; margin-top: 3px; accent-color: var(--accent); }
     .message-body blockquote { margin: 8px 0; padding: 2px 0 2px 9px; border-left: 3px solid var(--accent); color: var(--muted); }
     .message-body code { border-radius: 4px; background: var(--surface-raised); padding: 1px 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
-    .message-body pre { max-width: 100%; margin: 8px 0; overflow-x: auto; border: 1px solid var(--border); border-radius: 6px; background: #101214; padding: 9px; }
+    .message-body pre { max-width: 100%; margin: 8px 0; overflow-x: auto; border: 1px solid var(--border); border-radius: 6px; background: var(--code-block-bg); color: var(--code-block-text); padding: 9px; }
     .message-body pre code { display: block; padding: 0; background: transparent; white-space: pre; font-size: 11px; line-height: 1.45; }
-    .message-body a { color: #9d9bff; text-decoration: underline; text-underline-offset: 2px; }
+    .message-body a { color: var(--link); text-decoration: underline; text-underline-offset: 2px; }
     .message-body hr { height: 1px; margin: 10px 0; border: 0; background: var(--border); }
     .message-body .table-wrap { max-width: 100%; margin: 8px 0; overflow-x: auto; }
     .message-body table { width: 100%; border-collapse: collapse; font-size: 11px; }
     .message-body th, .message-body td { border: 1px solid var(--border); padding: 5px 6px; vertical-align: top; }
     .message-body th { background: var(--surface-raised); font-weight: 700; }
+    .activity { display: none; align-items: center; gap: 8px; min-height: 34px; margin: 0 12px 8px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--muted); }
+    .activity.visible { display: flex; }
+    .activity-copy { min-width: 0; flex: 1; }
+    .activity-copy strong { display: block; overflow: hidden; color: var(--text); font-size: 10px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+    .activity-copy span { display: block; overflow: hidden; margin-top: 1px; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+    .thinking-dots { display: inline-flex; align-items: center; gap: 3px; }
+    .thinking-dots i { width: 4px; height: 4px; border-radius: 50%; background: var(--accent); animation: thinking-dot 1.2s ease-in-out infinite; }
+    .thinking-dots i:nth-child(2) { animation-delay: 150ms; }
+    .thinking-dots i:nth-child(3) { animation-delay: 300ms; }
     .questions { display: none; max-height: 42%; overflow-y: auto; border-top: 1px solid var(--border); padding: 10px 12px; background: var(--surface); }
     .questions.visible { display: block; }
     .question-card { margin-bottom: 9px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-raised); }
@@ -137,18 +198,68 @@
     .options { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 7px; }
     .option { min-height: 25px; padding: 0 7px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text); font-size: 11px; }
     .option:hover { border-color: var(--accent); }
-    .composer { padding: 9px 10px 10px; border-top: 1px solid var(--border); background: var(--surface); box-shadow: 0 -8px 22px rgba(0,0,0,.14); }
-    .composer-row { position: relative; display: flex; align-items: flex-end; gap: 7px; }
-    .composer textarea { padding-right: 58px; }
-    .composer .btn { flex: 0 0 auto; min-height: 34px; }
-    .composer #sendBtn { position: absolute; right: 5px; bottom: 5px; min-height: 34px; padding: 0 11px; }
-    .composer-status { min-height: 14px; margin-top: 5px; padding-left: 2px; color: var(--muted); font-size: 10px; }
+    .composer { position: relative; padding: 0 10px 10px; background: var(--bg); }
+    .composer-shell { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); box-shadow: 0 5px 20px var(--composer-shadow); transition: border-color 140ms ease, box-shadow 140ms ease; }
+    .composer-shell:focus-within { border-color: var(--border-strong); box-shadow: 0 7px 24px var(--composer-shadow), 0 0 0 2px var(--accent-soft); }
+    .composer-row { display: flex; align-items: flex-end; gap: 7px; }
+    .composer textarea { min-height: 54px; max-height: 154px; border: 0; border-radius: 0; padding: 10px 11px 6px; background: transparent; box-shadow: none; }
+    .composer textarea:focus { border: 0; box-shadow: none; }
+    .composer-tools { display: flex; align-items: center; gap: 2px; min-height: 38px; padding: 3px 5px 5px; }
+    .composer-tools .spacer { flex: 1; }
+    .tool-icon { display: inline-grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--muted); }
+    .tool-icon:hover:not(:disabled), .tool-icon.active { border-color: var(--border); background: var(--surface-raised); color: var(--text); }
+    .tool-icon.active { color: var(--accent); }
+    .tool-icon.primary { border-color: var(--accent); background: var(--accent); color: white; }
+    .tool-icon.primary:hover:not(:disabled) { background: var(--accent-hover); }
+    .tool-icon:focus-visible, .model-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .model-picker { position: relative; min-width: 0; }
+    .model-trigger { display: flex; min-width: 0; max-width: 148px; height: 30px; align-items: center; gap: 5px; border: 1px solid transparent; border-radius: 7px; padding: 0 7px; background: transparent; color: var(--muted); }
+    .model-trigger:hover:not(:disabled), .model-trigger[aria-expanded="true"] { border-color: var(--border); background: var(--surface-raised); color: var(--text); }
+    .model-trigger span { overflow: hidden; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+    .model-trigger .chevron { width: 11px; height: 11px; }
+    .model-popover { position: absolute; z-index: 20; bottom: calc(100% + 7px); left: 0; display: none; width: min(270px, calc(100vw - 20px)); overflow: hidden; border: 1px solid var(--border-strong); border-radius: 9px; background: var(--surface); box-shadow: 0 14px 40px rgba(0,0,0,.25); }
+    .model-popover.visible { display: block; }
+    .model-search { position: relative; padding: 7px; border-bottom: 1px solid var(--border); }
+    .model-search svg { position: absolute; top: 50%; left: 16px; width: 13px; height: 13px; fill: none; stroke: var(--muted); stroke-width: 1.8; transform: translateY(-50%); }
+    .model-search input { height: 31px; padding: 0 8px 0 28px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
+    .model-list { max-height: 210px; overflow-y: auto; padding: 4px; }
+    .model-option { display: flex; width: 100%; min-width: 0; align-items: center; gap: 7px; border: 0; border-radius: 6px; padding: 7px 8px; background: transparent; color: var(--text); text-align: left; }
+    .model-option:hover, .model-option[aria-selected="true"] { background: var(--surface-raised); }
+    .model-option[aria-selected="true"] { color: var(--accent); }
+    .model-option-copy { min-width: 0; flex: 1; }
+    .model-option-copy strong { display: block; overflow: hidden; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+    .model-option-copy span { display: block; overflow: hidden; margin-top: 2px; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+    .model-empty { padding: 18px 10px; color: var(--muted); font-size: 10px; text-align: center; }
+    .composer-status { min-height: 14px; padding: 4px 2px 0; color: var(--muted); font-size: 9px; }
     .composer-status.error { color: var(--error); }
-    .picked-card { align-items: center; margin-bottom: 7px; border: 1px solid var(--border); border-radius: 7px; padding: 5px 6px 5px 8px; background: var(--accent-soft); color: #c7c5ff; font-size: 11px; }
+    .picked-card { align-items: center; margin-bottom: 7px; border: 1px solid var(--border); border-radius: 7px; padding: 5px 6px 5px 8px; background: var(--accent-soft); color: var(--picked-text); font-size: 11px; }
+    .settings-backdrop { position: fixed; inset: 0; z-index: 30; display: none; background: rgba(0, 0, 0, .28); }
+    .settings-backdrop.visible { display: block; }
+    .settings-drawer { position: fixed; inset: 0 0 0 auto; z-index: 31; display: flex; width: min(100%, 380px); flex-direction: column; border-left: 1px solid var(--border); background: var(--bg); box-shadow: -14px 0 36px rgba(0, 0, 0, .2); transform: translateX(102%); transition: transform 180ms ease-out; }
+    .settings-drawer.visible { transform: translateX(0); }
+    .settings-header { display: flex; align-items: center; gap: 9px; min-height: 54px; padding: 8px 10px; border-bottom: 1px solid var(--border); background: var(--surface); }
+    .settings-header strong { flex: 1; font-size: 13px; }
+    .settings-content { min-height: 0; overflow-y: auto; padding: 12px; }
+    .settings-section { margin-bottom: 18px; }
+    .settings-section h2 { margin: 0 0 8px; color: var(--muted); font-size: 10px; font-weight: 750; text-transform: uppercase; }
+    .settings-card { overflow: hidden; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+    .setting-row { padding: 10px; border-bottom: 1px solid var(--border); }
+    .setting-row:last-child { border-bottom: 0; }
+    .setting-row label { display: block; margin-bottom: 5px; color: var(--muted); font-size: 10px; font-weight: 650; }
+    .setting-row input, .setting-row select { height: 34px; padding: 0 9px; }
+    .setting-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .setting-hint { margin-top: 6px; overflow-wrap: anywhere; color: var(--muted); font-size: 9px; line-height: 1.45; }
+    .connection-line { display: flex; align-items: center; gap: 8px; }
+    .connection-line strong { flex: 1; font-size: 11px; }
+    .segmented { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; border-radius: 7px; padding: 2px; background: var(--surface-raised); }
+    .segmented button { min-height: 29px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font-size: 10px; }
+    .segmented button.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 4px var(--composer-shadow); }
+    @keyframes thinking-dot { 0%, 70%, 100% { opacity: .25; transform: translateY(0); } 35% { opacity: 1; transform: translateY(-2px); } }
+    @keyframes reveal-content { from { opacity: .55; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+    @media (prefers-reduced-motion: reduce) { .thinking-dots i, .message.live .message-body { animation: none; } .settings-drawer { transition: none; } }
     @media (max-width: 360px) {
       .header { padding-inline: 10px; }
-      .session-bar, .transcript, .composer, .questions { padding-inline: 10px; }
-      .action-bar .btn { padding-inline: 7px; }
+      .transcript, .composer, .questions { padding-inline: 10px; }
     }
   </style>
 </head>
@@ -157,36 +268,24 @@
     <header class="header">
       <div class="logo"><img src="icons/icon128.png" alt="EvoFlux" /></div>
       <div class="title">
-        <strong>EvoFlux</strong>
-        <span id="pageTitle">WebBridge Side Panel</span>
+        <strong id="sessionTitle">EvoFlux</strong>
+        <span id="pageTitle">Connecting this tab…</span>
       </div>
       <div class="header-actions">
         <span class="status-dot" id="statusDot" title="Connection status"></span>
-        <button class="btn stop" id="stopBtn" title="Stop the current EvoFlux run">Stop</button>
+        <button class="btn stop" id="stopBtn" title="Stop the current EvoFlux run" style="display:none">Stop</button>
+        <button class="btn icon subtle" id="settingsBtn" title="Open WebBridge settings" aria-label="Open WebBridge settings">⚙</button>
       </div>
     </header>
 
-    <section class="session-bar">
-      <div class="session-heading">
-        <label class="label" for="sessionSelect">Session</label>
+    <section class="context-bar">
+      <div class="context-copy">
+        <strong id="bindingStatus">Preparing browser session</strong>
+        <span id="contextDetail">One session, one primary tab</span>
       </div>
-      <div class="row session-actions">
-        <select id="sessionSelect" aria-label="Current tab session">
-          <option value="">Choose a browser session</option>
-        </select>
-        <button class="btn icon" id="refreshBtn" title="Refresh sessions and transcript" aria-label="Refresh sessions and transcript">↻</button>
-      </div>
-      <div class="action-bar">
-        <button class="btn" id="bindBtn">Bind tab</button>
-        <button class="btn" id="unbindBtn" style="display:none">Unbind tab</button>
-        <button class="btn" id="pickElementBtn">Pick element</button>
-        <button class="btn" id="takeControlBtn">Take over</button>
-        <button class="btn primary" id="resumeAgentBtn" style="display:none">Resume agent</button>
-      </div>
-      <div class="context-status">
-        <div class="binding" id="bindingStatus">Choose a session to bind this tab.</div>
-        <div class="binding" id="controlStatus"></div>
-        <div class="binding" id="pickedElementStatus"></div>
+      <div class="context-actions">
+        <button class="btn icon subtle" id="newGroupedTabBtn" title="New tab in this conversation group" aria-label="New tab in this conversation group">＋</button>
+        <button class="btn icon subtle" id="refreshBtn" title="Reload conversation" aria-label="Reload conversation">↻</button>
       </div>
     </section>
 
@@ -194,18 +293,107 @@
     <section class="transcript" id="transcript" aria-live="polite"></section>
     <section class="questions" id="questions" aria-live="polite"></section>
 
+    <div class="activity" id="activity" role="status" aria-live="polite">
+      <span class="thinking-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+      <div class="activity-copy">
+        <strong id="activityLabel">Thinking</strong>
+        <span id="activityDetail">EvoFlux is working</span>
+      </div>
+    </div>
+
     <footer class="composer">
       <div class="row picked-card" id="pickedElementCard" style="display:none">
         <span id="pickedElementLabel" style="min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap"></span>
-        <button class="btn icon" id="clearElementBtn" title="Remove picked element" aria-label="Remove picked element">×</button>
+        <button class="tool-icon" id="clearElementBtn" title="Remove picked element" aria-label="Remove picked element"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
       </div>
-      <div class="composer-row">
-        <textarea id="composer" placeholder="Message EvoFlux in this session..." aria-label="Message EvoFlux"></textarea>
-        <button class="btn primary" id="sendBtn">Send</button>
+      <div class="composer-shell">
+        <div class="composer-row">
+          <textarea id="composer" placeholder="Reply to EvoFlux…" aria-label="Message EvoFlux"></textarea>
+        </div>
+        <div class="composer-tools">
+          <div class="model-picker">
+            <button class="model-trigger" id="modelTrigger" type="button" aria-haspopup="listbox" aria-expanded="false" title="Choose model">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M9 8V4h6v4M8 14h.01M16 14h.01M9 18h6"/></svg>
+              <span id="modelLabel">Model</span>
+              <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m18 15-6-6-6 6"/></svg>
+            </button>
+            <div class="model-popover" id="modelPopover">
+              <div class="model-search">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                <input id="modelSearch" type="search" placeholder="Search models…" aria-label="Search models" autocomplete="off">
+              </div>
+              <div class="model-list" id="modelList" role="listbox" aria-label="Models"></div>
+            </div>
+          </div>
+          <button class="tool-icon" id="pickElementBtn" title="Pick an element from this page" aria-label="Pick an element from this page"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg></button>
+          <button class="tool-icon" id="takeControlBtn" title="Take control of the browser" aria-label="Take control of the browser"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 3 14 9-6 2-2 6z"/><path d="m13 14 4 4"/></svg></button>
+          <button class="tool-icon active" id="resumeAgentBtn" title="Resume agent control" aria-label="Resume agent control" style="display:none"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 3 14 9-14 9z"/></svg></button>
+          <span class="spacer"></span>
+          <button class="tool-icon primary" id="sendBtn" title="Send message" aria-label="Send message"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 7-7 7 7M12 19V5"/></svg></button>
+        </div>
       </div>
       <div class="composer-status" id="composerStatus"></div>
     </footer>
   </main>
+
+  <div class="settings-backdrop" id="settingsBackdrop"></div>
+  <aside class="settings-drawer" id="settingsDrawer" aria-hidden="true" inert>
+    <header class="settings-header">
+      <button class="btn icon subtle" id="closeSettingsBtn" aria-label="Close settings">←</button>
+      <strong>WebBridge settings</strong>
+    </header>
+    <div class="settings-content">
+      <section class="settings-section">
+        <h2>Connection</h2>
+        <div class="settings-card">
+          <div class="setting-row">
+            <div class="connection-line"><span class="status-dot" id="settingsStatusDot"></span><strong id="settingsStatusText">Checking connection…</strong></div>
+            <div class="setting-hint" id="settingsStatusDetail"></div>
+          </div>
+          <div class="setting-row">
+            <label for="relayBaseInput">Relay URL</label>
+            <input id="relayBaseInput" type="text" placeholder="ws://127.0.0.1:8000" spellcheck="false" autocomplete="off">
+            <div class="setting-actions"><button class="btn primary" id="saveConnectionBtn">Save &amp; reconnect</button><button class="btn" id="toggleConnectionBtn">Reconnect</button></div>
+            <div class="setting-hint">Connections use secure pairing and single-use relay tickets.</div>
+          </div>
+          <div class="setting-row" id="pairingSettings">
+            <button class="btn primary" id="pairLocalBtn">Pair local EvoFlux</button>
+            <label for="pairingCodeInput" style="margin-top:10px">One-time pairing code</label>
+            <input id="pairingCodeInput" type="text" placeholder="ABCD-EFGH-JKLM" autocomplete="off">
+            <div class="setting-actions"><button class="btn" id="pairCodeBtn">Pair with code</button></div>
+            <div class="setting-hint" id="pairingSettingsDetail">Local pairing needs no code.</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="settings-section">
+        <h2>Appearance</h2>
+        <div class="segmented" id="themeControl" aria-label="Color theme">
+          <button data-theme-value="system">System</button><button data-theme-value="light">Light</button><button data-theme-value="dark">Dark</button>
+        </div>
+      </section>
+
+      <section class="settings-section">
+        <h2>Page automation</h2>
+        <div class="settings-card">
+          <div class="setting-row">
+            <label for="watchNeedleInput">Watch for page text</label>
+            <input id="watchNeedleInput" type="text" maxlength="160" placeholder="Build complete" autocomplete="off">
+            <div class="row" style="margin-top:6px"><select id="watchTtlSelect"><option value="5">5 minutes</option><option value="15" selected>15 minutes</option><option value="60">1 hour</option></select><button class="btn" id="watchActionBtn">Start watch</button></div>
+            <div class="setting-hint" id="watchSettingsDetail">A match stays private until you send it.</div>
+          </div>
+          <div class="setting-row">
+            <label>Teach Mode</label>
+            <div class="setting-actions"><button class="btn" id="teachActionBtn">Start recording</button><button class="btn" id="discardTeachBtn" style="display:none">Discard</button></div>
+            <div class="setting-hint" id="teachSettingsDetail">Record semantic actions into a reviewable draft.</div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-actions"><button class="btn" id="retryContextBtn" style="display:none">Retry browser context</button><button class="btn" id="releaseControlBtn">Release browser control</button><button class="btn" id="newConversationBtn">Start fresh conversation</button></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </aside>
   <script src="markdown.js"></script>
   <script src="sidepanel.js"></script>
 </body>

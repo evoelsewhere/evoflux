@@ -200,6 +200,10 @@ async def submit_persisted_interactive_message(
             "session_id": session_id,
             "mode": session.mode,
             "workspace": session.workspace,
+            "model": session.model,
+            "model_provided": session.model is not None,
+            "thinking_level": session.thinking_level,
+            "thinking_level_provided": session.thinking_level is not None,
         }
         if message_extra is not None:
             dispatch_kwargs["message_extra"] = message_extra

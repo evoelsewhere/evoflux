@@ -1191,7 +1191,6 @@ export interface WebBridgeExtensionInfo {
   version: string
   protocol_version: number
   capabilities: Record<string, unknown>
-  paired: boolean
   connected_at: number
   current_url: string
   current_title: string

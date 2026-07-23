@@ -1,6 +1,6 @@
 /**
  * EvoFlux WebBridge — Popup script
- * Shows connection status and configures the relay URL / access token.
+ * Shows connection status and configures the relay URL.
  */
 
 const DEFAULT_RELAY_BASE = "ws://127.0.0.1:8000";
@@ -15,7 +15,6 @@ const controlDetail = document.getElementById("controlDetail");
 const connectBtn = document.getElementById("connectBtn");
 const releaseBtn = document.getElementById("releaseBtn");
 const relayBaseInput = document.getElementById("relayBase");
-const accessTokenInput = document.getElementById("accessToken");
 const pairingCard = document.getElementById("pairingCard");
 const localPairBtn = document.getElementById("localPairBtn");
 const pairingCodeInput = document.getElementById("pairingCode");
@@ -49,9 +48,9 @@ let activeTeachRecording = null;
 
 async function loadConfig() {
   try {
-    const cfg = await chrome.storage.local.get(["relayBase", "accessToken"]);
+    const cfg = await chrome.storage.local.get(["relayBase"]);
     relayBaseInput.value = cfg.relayBase || DEFAULT_RELAY_BASE;
-    accessTokenInput.value = cfg.accessToken || "";
+    await chrome.storage.local.remove(["accessToken"]);
   } catch {
     relayBaseInput.value = DEFAULT_RELAY_BASE;
   }
@@ -69,8 +68,8 @@ async function saveConfig(notify = true) {
   clearTimeout(saveTimer);
   await chrome.storage.local.set({
     relayBase: relayBaseInput.value.trim() || DEFAULT_RELAY_BASE,
-    accessToken: accessTokenInput.value.trim(),
   });
+  await chrome.storage.local.remove(["accessToken"]);
   if (!notify) return;
   try {
     await chrome.runtime.sendMessage({ type: "config_updated" });
@@ -90,9 +89,7 @@ async function updateStatus() {
       statusDot.className = "status-dot connected";
       statusText.textContent = "Connected";
       statusDetail.className = "detail";
-      statusDetail.textContent = response.paired
-        ? `Securely paired: ${response.pairing_id || "connected"}`
-        : `Legacy connection: ${response.extension_id || "unknown"}`;
+      statusDetail.textContent = `Securely paired: ${response.pairing_id || "connected"}`;
 
       if (response.active_tab) {
         tabInfo.style.display = "block";
@@ -120,11 +117,11 @@ async function updateStatus() {
       tabInfo.style.display = "none";
       connectBtn.textContent = "Reconnect";
       connectBtn.className = "btn btn-primary";
-    } else if (response && response.last_close_reason === "auth") {
+    } else if (response && response.last_close_reason === "ticket") {
       statusDot.className = "status-dot disconnected";
-      statusText.textContent = "Auth failed";
+      statusText.textContent = "Ticket rejected";
       statusDetail.className = "detail auth-error";
-      statusDetail.textContent = "Relay rejected the connection (4401) — check the access token.";
+      statusDetail.textContent = "The single-use relay ticket was invalid or expired. Reconnect to mint a new ticket.";
       tabInfo.style.display = "none";
       connectBtn.textContent = "Reconnect";
       connectBtn.className = "btn btn-primary";
@@ -537,7 +534,6 @@ startTeachBtn.addEventListener("click", startTeachRecording);
 stopTeachBtn.addEventListener("click", stopTeachRecording);
 cancelTeachBtn.addEventListener("click", cancelTeachRecording);
 relayBaseInput.addEventListener("input", onConfigInput);
-accessTokenInput.addEventListener("input", onConfigInput);
 
 // Initial load
 extensionVersion.textContent = chrome.runtime.getManifest().version;

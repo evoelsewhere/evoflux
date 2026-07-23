@@ -215,9 +215,6 @@ export function WebBridgeStatusDialog({
   const extension = status?.extensions[0]
   const connected = status?.connected ?? false
   const relayUrl = deriveRelayUrl()
-  const hasLegacyConnection = Boolean(
-    status?.extensions.some((activeExtension) => !activeExtension.paired),
-  )
 
   const handleRevoke = useCallback(async (pairingId: string) => {
     setRevokingPairingId(pairingId)
@@ -375,29 +372,6 @@ export function WebBridgeStatusDialog({
             <p className="text-xs text-(--color-text-muted)">
               Ask the agent to browse — it can now use your real browser.
             </p>
-            {hasLegacyConnection && (
-              <div className="space-y-2 rounded-md bg-(--bg-key) px-3 py-2">
-                <p className="text-xs text-(--color-text-muted)">
-                  This extension uses the legacy token connection. Pair it to
-                  replace that token with a scoped credential.
-                </p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => void handlePairingCode()}
-                  disabled={pairing}
-                  className="w-full"
-                >
-                  {pairing ? (
-                    <Loader2 className="animate-spin" aria-hidden="true" />
-                  ) : (
-                    <KeyRound aria-hidden="true" />
-                  )}
-                  Generate secure pairing code
-                </Button>
-                {pairingCode && <CopyRow label="Pairing code" value={pairingCode} />}
-              </div>
-            )}
           </>
         ) : (
           <div className="space-y-3">
@@ -460,8 +434,8 @@ export function WebBridgeStatusDialog({
                 folder.
               </li>
               <li>
-                Generate a pairing code, then open the WebBridge toolbar popup,
-                enter the relay URL and pair securely.
+                Click the WebBridge toolbar icon, open Side Chat settings, then
+                pair locally or enter the one-time pairing code above.
               </li>
             </ol>
           </div>
