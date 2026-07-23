@@ -12,10 +12,33 @@ const DEFAULT_RELAY_BASE = "ws://127.0.0.1:8000";
 const RELAY_PATH = "/api/team/webbridge/relay";
 const RELAY_TICKET_PATH = "/api/team/webbridge/relay-ticket";
 const PAIRING_EXCHANGE_PATH = "/api/team/webbridge/pairing/exchange";
+const LOCAL_PAIRING_PATH = "/api/team/webbridge/pairing/local";
+const BROWSER_SESSIONS_PATH = "/api/team/webbridge/sessions";
+const BINDINGS_PATH = "/api/team/webbridge/bindings";
+const INTERACTIONS_PATH = "/api/team/webbridge/interactions";
+const TEACH_DRAFTS_PATH = "/api/team/webbridge/teach-drafts";
+const MENU_SELECTION_ID = "webbridge-ask-selection";
+const MENU_LINK_ID = "webbridge-ask-link";
+const MENU_PAGE_ID = "webbridge-ask-page";
+const MAX_CONTEXT_CHARS = 20000;
+const PENDING_INTERACTION_TTL_MS = 5 * 60 * 1000;
 const RECONNECT_BASE_MS = 1000; // first retry delay
 const RECONNECT_MAX_MS = 30000; // cap on the exponential backoff
 const HEARTBEAT_ALARM = "webbridge-heartbeat";
 const HEARTBEAT_PERIOD_MIN = 0.5; // minimum period chrome.alarms allows
+const TEXT_WATCH_ALARM = "webbridge-text-watch";
+const TEXT_WATCH_PERIOD_MIN = 0.5;
+const TEXT_WATCH_STORAGE_KEY = "webbridgeTextWatches";
+const MAX_TEXT_WATCHES = 10;
+const MAX_TEXT_WATCH_NEEDLE_CHARS = 160;
+const MAX_TEXT_WATCH_TTL_MINUTES = 24 * 60;
+const TEACH_RECORDING_STORAGE_KEY = "webbridgeTeachRecording";
+const MAX_TEACH_ACTIONS = 50;
+const MAX_TEACH_SELECTOR_CHARS = 512;
+const MAX_TEACH_VALUE_CHARS = 4_000;
+const HUMAN_LEASE_STORAGE_KEY = "webbridgeHumanControlLease";
+const HUMAN_LEASE_TTL_MS = 30 * 60 * 1000;
+const PICKED_ELEMENT_STORAGE_KEY = "webbridgePickedElements";
 
 let ws = null;
 let extensionId = null; // loaded/persisted in chrome.storage.local (stable across SW restarts)
@@ -115,6 +138,775 @@ function buildHttpUrl(path) {
   return base + path;
 }
 
+function interactionId() {
+  if (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+  return `interaction-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+function boundedText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, MAX_CONTEXT_CHARS);
+}
+
+function browserOrigin(url) {
+  try {
+    const parsed = new URL(url || "");
+    return (parsed.protocol === "http:" || parsed.protocol === "https:") ? parsed.origin : "";
+  } catch {
+    return "";
+  }
+}
+
+function requireBrowserPageUrl(url) {
+  const safeUrl = safePageUrl(url);
+  if (!safeUrl) {
+    throw new Error("Browser context can only be sent from an HTTP(S) page.");
+  }
+  return safeUrl;
+}
+
+function safePageUrl(url) {
+  try {
+    const parsed = new URL(url || "");
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
+    return `${parsed.origin}${parsed.pathname}`;
+  } catch {
+    return "";
+  }
+}
+
+function normalizeWatchNeedle(value) {
+  const needle = String(value || "").replace(/\s+/g, " ").trim();
+  if (!needle) throw new Error("Enter text for WebBridge to watch.");
+  if (needle.length > MAX_TEXT_WATCH_NEEDLE_CHARS) {
+    throw new Error(`Watch text must be at most ${MAX_TEXT_WATCH_NEEDLE_CHARS} characters.`);
+  }
+  return needle;
+}
+
+function normalizeWatchTtlMinutes(value) {
+  const minutes = Math.floor(Number(value));
+  if (!Number.isFinite(minutes) || minutes < 1 || minutes > MAX_TEXT_WATCH_TTL_MINUTES) {
+    throw new Error(`Watch duration must be between 1 and ${MAX_TEXT_WATCH_TTL_MINUTES} minutes.`);
+  }
+  return minutes;
+}
+
+function isLiveTextWatch(watch, now = Date.now()) {
+  return Boolean(
+    watch &&
+    (watch.state === "armed" || watch.state === "matched") &&
+    Number.isFinite(watch.expires_at) &&
+    watch.expires_at > now
+  );
+}
+
+async function readTextWatches() {
+  const stored = await chrome.storage.local.get([TEXT_WATCH_STORAGE_KEY]);
+  const watches = Array.isArray(stored[TEXT_WATCH_STORAGE_KEY])
+    ? stored[TEXT_WATCH_STORAGE_KEY]
+    : [];
+  const live = watches.filter((watch) => isLiveTextWatch(watch));
+  if (live.length !== watches.length) {
+    for (const watch of watches) {
+      if (!isLiveTextWatch(watch)) clearWatchMatch(watch.tab_id);
+    }
+    await chrome.storage.local.set({ [TEXT_WATCH_STORAGE_KEY]: live });
+  }
+  return live;
+}
+
+async function writeTextWatches(watches) {
+  await chrome.storage.local.set({ [TEXT_WATCH_STORAGE_KEY]: watches });
+}
+
+function showWatchMatch(tabId) {
+  if (!chrome.action) return;
+  chrome.action.setBadgeText({ tabId, text: "W" });
+  chrome.action.setBadgeBackgroundColor({ tabId, color: "#ca8a04" });
+  chrome.action.setTitle({
+    tabId,
+    title: "WebBridge watch matched. Open WebBridge to send it to EvoFlux.",
+  });
+}
+
+function clearWatchMatch(tabId) {
+  if (!chrome.action) return;
+  chrome.action.setBadgeText({ tabId, text: "" });
+}
+
+function textWatchSummary(watch) {
+  return {
+    id: watch.id,
+    tab_id: watch.tab_id,
+    page_url: watch.page_url,
+    session_id: watch.session_id,
+    needle: watch.needle,
+    state: watch.state,
+    created_at: watch.created_at,
+    expires_at: watch.expires_at,
+    matched_at: watch.matched_at || null,
+  };
+}
+
+function ensureTextWatchAlarm() {
+  chrome.alarms.create(TEXT_WATCH_ALARM, { periodInMinutes: TEXT_WATCH_PERIOD_MIN });
+}
+
+async function cancelTextWatchesForTab(tabId, currentUrl = null) {
+  const watches = await readTextWatches();
+  const currentPageUrl = currentUrl == null ? null : safePageUrl(currentUrl);
+  const retained = watches.filter((watch) => {
+    if (watch.tab_id !== tabId) return true;
+    return currentPageUrl !== null && watch.page_url === currentPageUrl;
+  });
+  if (retained.length !== watches.length) {
+    await writeTextWatches(retained);
+    clearWatchMatch(tabId);
+  }
+}
+
+async function watchTextPresent(tabId, needle) {
+  const results = await chrome.scripting.executeScript({
+    target: { tabId },
+    args: [needle],
+    func: (expected) => {
+      const normalize = (value) => String(value || "").replace(/\s+/g, " ").trim();
+      const root = document.body || document.documentElement;
+      return normalize(root?.innerText || root?.textContent || "").includes(normalize(expected));
+    },
+  });
+  return results.some((result) => result?.result === true);
+}
+
+async function armTextWatch(tab, sessionId, needleValue, ttlValue) {
+  if (!tab || tab.id == null) throw new Error("No browser tab available");
+  const pageUrl = requireBrowserPageUrl(tab.url || tab.pendingUrl || "");
+  const normalizedSessionId = String(sessionId || "").trim();
+  if (!normalizedSessionId) throw new Error("Choose a browser session before arming a watch.");
+  const needle = normalizeWatchNeedle(needleValue);
+  const ttlMinutes = normalizeWatchTtlMinutes(ttlValue);
+
+  // Reuse the P1 binding endpoint so ownership and origin checks remain server-authoritative.
+  await bindTabToSession(tab, normalizedSessionId, pageUrl);
+
+  const now = Date.now();
+  const watches = await readTextWatches();
+  const retained = watches.filter((watch) => watch.tab_id !== tab.id);
+  if (retained.length >= MAX_TEXT_WATCHES) {
+    throw new Error(`WebBridge can keep at most ${MAX_TEXT_WATCHES} active watches.`);
+  }
+  const watch = {
+    id: interactionId(),
+    tab_id: tab.id,
+    origin: browserOrigin(pageUrl),
+    page_url: pageUrl,
+    session_id: normalizedSessionId,
+    needle,
+    state: "armed",
+    created_at: now,
+    expires_at: now + ttlMinutes * 60 * 1000,
+    matched_at: null,
+  };
+  await writeTextWatches([...retained, watch]);
+  clearWatchMatch(tab.id);
+  ensureTextWatchAlarm();
+  return textWatchSummary(watch);
+}
+
+async function cancelTextWatch(watchId) {
+  const watches = await readTextWatches();
+  const watch = watches.find((entry) => entry.id === watchId);
+  if (!watch) return false;
+  await writeTextWatches(watches.filter((entry) => entry.id !== watchId));
+  clearWatchMatch(watch.tab_id);
+  return true;
+}
+
+async function pollTextWatches() {
+  const watches = await readTextWatches();
+  if (!watches.length) return [];
+
+  let changed = false;
+  const retained = [];
+  const matched = [];
+  for (const watch of watches) {
+    if (watch.state !== "armed") {
+      retained.push(watch);
+      continue;
+    }
+    let tab;
+    try {
+      tab = await chrome.tabs.get(watch.tab_id);
+    } catch {
+      changed = true;
+      continue;
+    }
+    if (safePageUrl(tab.url || tab.pendingUrl || "") !== watch.page_url) {
+      clearWatchMatch(watch.tab_id);
+      changed = true;
+      continue;
+    }
+    try {
+      if (await watchTextPresent(watch.tab_id, watch.needle)) {
+        const updated = { ...watch, state: "matched", matched_at: Date.now() };
+        retained.push(updated);
+        matched.push(textWatchSummary(updated));
+        showWatchMatch(watch.tab_id);
+        changed = true;
+      } else {
+        retained.push(watch);
+      }
+    } catch (error) {
+      // A transient navigation or restricted page must not leak page content or trigger a send.
+      console.warn("[WebBridge] Text watch poll failed:", error.message);
+      retained.push(watch);
+    }
+  }
+  if (changed) await writeTextWatches(retained);
+  return matched;
+}
+
+async function sendMatchedTextWatch(watchId) {
+  const watches = await readTextWatches();
+  const watch = watches.find((entry) => entry.id === watchId);
+  if (!watch || watch.state !== "matched") {
+    throw new Error("This text watch is no longer ready to send.");
+  }
+  let tab;
+  try {
+    tab = await chrome.tabs.get(watch.tab_id);
+  } catch {
+    await cancelTextWatch(watch.id);
+    throw new Error("The watched tab was closed.");
+  }
+  const pageUrl = requireBrowserPageUrl(tab.url || tab.pendingUrl || "");
+  if (pageUrl !== watch.page_url) {
+    await cancelTextWatch(watch.id);
+    throw new Error("The watched page changed. Arm a new text watch for this page.");
+  }
+  const result = await submitBrowserContext(
+    tab,
+    {
+      context_type: "page_metadata",
+      prompt: `The page watch for "${watch.needle}" matched. Help me assess this page.`,
+      metadata: {
+        page_url: pageUrl,
+        page_title: boundedText(tab.title),
+      },
+    },
+    watch.session_id,
+    `${watch.id}:match`,
+  );
+  await cancelTextWatch(watch.id);
+  return result;
+}
+
+function teachRecordingSummary(recording) {
+  if (!recording) return null;
+  const actions = Array.isArray(recording.actions) ? recording.actions : [];
+  return {
+    id: recording.id,
+    tab_id: recording.tab_id,
+    session_id: recording.session_id,
+    origin: recording.origin,
+    start_url: recording.start_url,
+    current_page_url: recording.current_page_url,
+    title: recording.title,
+    state: recording.state,
+    action_count: actions.length,
+    truncated: Boolean(recording.truncated),
+    parameter_names: [...new Set(
+      actions.filter((action) => action.secret && action.parameter).map((action) => action.parameter)
+    )],
+    stop_reason: recording.stop_reason || null,
+  };
+}
+
+async function readTeachRecording() {
+  const stored = await chrome.storage.local.get([TEACH_RECORDING_STORAGE_KEY]);
+  const recording = stored[TEACH_RECORDING_STORAGE_KEY];
+  return recording && typeof recording === "object" ? recording : null;
+}
+
+async function writeTeachRecording(recording) {
+  await chrome.storage.local.set({ [TEACH_RECORDING_STORAGE_KEY]: recording });
+}
+
+function teachSelector(value) {
+  const selector = String(value || "").trim();
+  if (!selector || selector.length > MAX_TEACH_SELECTOR_CHARS) {
+    throw new Error("Recorded selector is invalid.");
+  }
+  return selector;
+}
+
+function teachParameterName(value) {
+  const parameter = String(value || "").trim();
+  if (!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(parameter)) {
+    throw new Error("Recorded secret parameter name is invalid.");
+  }
+  return parameter;
+}
+
+function normalizeTeachAction(action) {
+  const kind = String(action?.kind || "");
+  if (kind === "click") {
+    return { kind, selector: teachSelector(action.selector) };
+  }
+  if (kind === "fill") {
+    const selector = teachSelector(action.selector);
+    if (action.secret) {
+      return {
+        kind,
+        selector,
+        secret: true,
+        parameter: teachParameterName(action.parameter),
+      };
+    }
+    const value = String(action.value ?? "");
+    if (value.length > MAX_TEACH_VALUE_CHARS) {
+      throw new Error("Recorded field value is too long.");
+    }
+    return { kind, selector, value };
+  }
+  if (kind === "select") {
+    const values = Array.isArray(action.values)
+      ? action.values.map(String).filter(Boolean).slice(0, 20)
+      : [];
+    if (!values.length || values.some((value) => value.length > 512)) {
+      throw new Error("Recorded select values are invalid.");
+    }
+    return { kind, selector: teachSelector(action.selector), values };
+  }
+  if (kind === "set_checked") {
+    if (typeof action.checked !== "boolean") {
+      throw new Error("Recorded checked state is invalid.");
+    }
+    return { kind, selector: teachSelector(action.selector), checked: action.checked };
+  }
+  throw new Error("Recorded action is not supported.");
+}
+
+async function setTeachRecorderEnabled(tabId, enabled) {
+  if (enabled) {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["teach_recorder.js"],
+    });
+  }
+  await chrome.tabs.sendMessage(tabId, {
+    type: "webbridge_teach_recording",
+    enabled,
+  });
+}
+
+async function appendTeachAction(recording, action) {
+  const actions = Array.isArray(recording.actions) ? [...recording.actions] : [];
+  const previous = actions.at(-1);
+  const replacePrevious = previous &&
+    previous.kind === action.kind &&
+    previous.selector === action.selector &&
+    ["fill", "select", "set_checked"].includes(action.kind);
+  if (replacePrevious) {
+    actions[actions.length - 1] = action;
+  } else if (actions.length < MAX_TEACH_ACTIONS) {
+    actions.push(action);
+  } else {
+    recording.truncated = true;
+  }
+  recording.actions = actions;
+  recording.updated_at = Date.now();
+  await writeTeachRecording(recording);
+  return teachRecordingSummary(recording);
+}
+
+async function startTeachRecording(tab, sessionId) {
+  if (!tab || tab.id == null) throw new Error("No browser tab available");
+  const pageUrl = requireBrowserPageUrl(tab.url || tab.pendingUrl || "");
+  const normalizedSessionId = String(sessionId || "").trim();
+  if (!normalizedSessionId) throw new Error("Choose a browser session before starting Teach Mode.");
+  await bindTabToSession(tab, normalizedSessionId, pageUrl);
+  const recording = {
+    id: interactionId(),
+    tab_id: tab.id,
+    session_id: normalizedSessionId,
+    origin: browserOrigin(pageUrl),
+    start_url: pageUrl,
+    current_page_url: pageUrl,
+    title: boundedText(tab.title) || "Recorded browser flow",
+    state: "recording",
+    actions: [],
+    created_at: Date.now(),
+    updated_at: Date.now(),
+    truncated: false,
+  };
+  await writeTeachRecording(recording);
+  try {
+    await setTeachRecorderEnabled(tab.id, true);
+  } catch (error) {
+    await chrome.storage.local.remove([TEACH_RECORDING_STORAGE_KEY]);
+    throw new Error(`Could not start Teach Mode: ${error.message}`);
+  }
+  return teachRecordingSummary(recording);
+}
+
+async function recordTeachAction(tab, action, sourceUrl = "") {
+  const recording = await readTeachRecording();
+  if (!recording || recording.state !== "recording" || recording.tab_id !== tab.id) {
+    return null;
+  }
+  const pageUrl = safePageUrl(tab.url || tab.pendingUrl || "");
+  const sourcePageUrl = sourceUrl ? safePageUrl(sourceUrl) : pageUrl;
+  if (
+    !pageUrl ||
+    !sourcePageUrl ||
+    sourcePageUrl !== pageUrl ||
+    browserOrigin(pageUrl) !== recording.origin
+  ) {
+    return null;
+  }
+  recording.current_page_url = pageUrl;
+  return appendTeachAction(recording, normalizeTeachAction(action));
+}
+
+async function handleTeachTabUpdate(tabId, changeInfo) {
+  const recording = await readTeachRecording();
+  if (!recording || recording.state !== "recording" || recording.tab_id !== tabId) return;
+  if (changeInfo.url) {
+    const nextPageUrl = safePageUrl(changeInfo.url);
+    if (!nextPageUrl || browserOrigin(nextPageUrl) !== recording.origin) {
+      recording.state = "ready";
+      recording.stop_reason = "Recording stopped after cross-origin navigation.";
+      await writeTeachRecording(recording);
+      try {
+        await setTeachRecorderEnabled(tabId, false);
+      } catch {
+        // The page may have been torn down while navigating.
+      }
+      return;
+    }
+    if (nextPageUrl !== recording.current_page_url) {
+      recording.current_page_url = nextPageUrl;
+      await appendTeachAction(recording, { kind: "navigate", url: nextPageUrl });
+    }
+  }
+  if (changeInfo.status === "complete") {
+    try {
+      await setTeachRecorderEnabled(tabId, true);
+    } catch (error) {
+      console.warn("[WebBridge] Failed to resume Teach Mode after navigation:", error.message);
+    }
+  }
+}
+
+async function cancelTeachRecording(tabId = null) {
+  const recording = await readTeachRecording();
+  if (!recording || (tabId != null && recording.tab_id !== tabId)) return false;
+  try {
+    await setTeachRecorderEnabled(recording.tab_id, false);
+  } catch {
+    // The tab can close before the recorder is disabled.
+  }
+  await chrome.storage.local.remove([TEACH_RECORDING_STORAGE_KEY]);
+  return true;
+}
+
+async function createTeachDraft(recording) {
+  const warnings = [];
+  if (recording.truncated) {
+    warnings.push("Recording reached the 50-action limit; later actions were not captured.");
+  }
+  if (recording.stop_reason) warnings.push(recording.stop_reason);
+  const response = await pairingFetch(TEACH_DRAFTS_PATH, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      session_id: recording.session_id,
+      tab_id: recording.tab_id,
+      title: recording.title,
+      origin: recording.origin,
+      start_url: recording.start_url,
+      actions: recording.actions,
+      warnings,
+    }),
+  });
+  return response.json();
+}
+
+async function finishTeachRecording() {
+  const recording = await readTeachRecording();
+  if (!recording) throw new Error("Teach Mode is not recording a browser flow.");
+  if (recording.state === "recording") {
+    try {
+      await setTeachRecorderEnabled(recording.tab_id, false);
+    } catch {
+      // Preserve a valid local trace even if the page was closed.
+    }
+    recording.state = "ready";
+    recording.updated_at = Date.now();
+    await writeTeachRecording(recording);
+  }
+  if (!Array.isArray(recording.actions) || !recording.actions.length) {
+    throw new Error("Teach Mode did not capture any supported browser actions.");
+  }
+  const draft = await createTeachDraft(recording);
+  await chrome.storage.local.remove([TEACH_RECORDING_STORAGE_KEY]);
+  await chrome.storage.local.set({ lastTeachDraft: draft });
+  return draft;
+}
+
+async function pairingFetch(path, options = {}) {
+  await loadConfig();
+  assertRelayTransportSecure();
+  if (!pairingCredential || !pairingRelayBase || pairingRelayBase !== canonicalRelayBase()) {
+    const error = new Error("Pair WebBridge with this relay before sending browser context.");
+    error.code = "pairing";
+    throw error;
+  }
+  const response = await fetch(buildHttpUrl(path), {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${pairingCredential}`,
+      ...(options.headers || {}),
+    },
+  });
+  if (!response.ok) {
+    const error = new Error(await responseError(response, "WebBridge request failed"));
+    error.code = response.status === 401 ? "pairing" : "request";
+    throw error;
+  }
+  return response;
+}
+
+async function listBrowserSessions() {
+  const response = await pairingFetch(BROWSER_SESSIONS_PATH);
+  return response.json();
+}
+
+async function createBrowserSession(title, actionId) {
+  const response = await pairingFetch(BROWSER_SESSIONS_PATH, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": `${actionId}:session`,
+    },
+    body: JSON.stringify({ title }),
+  });
+  return response.json();
+}
+
+async function listTabBindings() {
+  const response = await pairingFetch(BINDINGS_PATH);
+  return response.json();
+}
+
+async function bindTabToSession(tab, sessionId, pageUrl) {
+  const origin = browserOrigin(pageUrl);
+  if (!origin) throw new Error("Browser context can only be sent from an HTTP(S) page.");
+  const response = await pairingFetch(`${BINDINGS_PATH}/${encodeURIComponent(tab.id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      session_id: sessionId,
+      origin,
+      page_instance_id: `${tab.id}:${pageUrl || ""}`.slice(0, 128),
+    }),
+  });
+  return response.json();
+}
+
+async function ensureSessionForTab(tab, pageUrl, actionId) {
+  const bindings = await listTabBindings();
+  const binding = bindings.find((item) => item.tab_id === tab.id);
+  if (binding && binding.origin === browserOrigin(pageUrl)) return binding.session_id;
+
+  const label = boundedText(tab.title) || browserOrigin(pageUrl) || "Browser page";
+  const session = await createBrowserSession(
+    `Browser: ${label}`.slice(0, 255),
+    actionId,
+  );
+  await bindTabToSession(tab, session.id, pageUrl);
+  return session.id;
+}
+
+function contextMenuPayload(info, tab) {
+  const pageUrl = safePageUrl(info.pageUrl || tab.url || tab.pendingUrl || "");
+  const common = {
+    page_url: pageUrl,
+    page_title: boundedText(tab.title),
+  };
+  if (info.menuItemId === MENU_SELECTION_ID) {
+    return {
+      context_type: "selection",
+      prompt: "Help me understand the selected browser content.",
+      metadata: { ...common, selection_text: boundedText(info.selectionText) },
+    };
+  }
+  if (info.menuItemId === MENU_LINK_ID) {
+    return {
+      context_type: "link",
+      prompt: "Help me understand this linked page and its relevance.",
+      metadata: { ...common, link_url: safePageUrl(info.linkUrl || "") },
+    };
+  }
+  return {
+    context_type: "page_metadata",
+    prompt: "Help me understand this browser page.",
+    metadata: common,
+  };
+}
+
+function showInteractionOutcome(tabId, result) {
+  if (!chrome.action) return;
+  const accepted = result && ["accepted", "queued"].includes(result.status);
+  const text = accepted ? "OK" : "!";
+  const color = accepted ? "#16a34a" : "#dc2626";
+  chrome.action.setBadgeText({ tabId, text });
+  chrome.action.setBadgeBackgroundColor({ tabId, color });
+  chrome.action.setTitle({
+    tabId,
+    title: accepted ? "EvoFlux received browser context" : "EvoFlux could not receive browser context",
+  });
+}
+
+async function submitBrowserContext(tab, payload, sessionIdOverride = null, actionId = null) {
+  const pageUrl = requireBrowserPageUrl(
+    payload.metadata.page_url || tab.url || tab.pendingUrl || ""
+  );
+  const requestId = actionId || interactionId();
+  const pending = {
+    action_id: requestId,
+    tab_id: tab.id,
+    page_url: pageUrl,
+    payload,
+    session_id: sessionIdOverride,
+    created_at: Date.now(),
+  };
+  await chrome.storage.local.set({ pendingInteraction: pending });
+  const sessionId = sessionIdOverride
+    ? (await bindTabToSession(tab, sessionIdOverride, pageUrl), sessionIdOverride)
+    : await ensureSessionForTab(tab, pageUrl, requestId);
+  await chrome.storage.local.set({
+    pendingInteraction: { ...pending, session_id: sessionId },
+  });
+  const response = await pairingFetch(INTERACTIONS_PATH, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": requestId,
+    },
+    body: JSON.stringify({
+      kind: "context.share",
+      delivery: "submit",
+      source: {
+        tab_id: tab.id,
+        page_instance_id: `${tab.id}:${pageUrl}`.slice(0, 128),
+        origin: browserOrigin(pageUrl),
+        user_gesture: true,
+      },
+      target: { session_id: sessionId },
+      payload: {
+        prompt: payload.prompt,
+        metadata: { context_type: payload.context_type, ...payload.metadata },
+      },
+    }),
+  });
+  const result = await response.json();
+  await chrome.storage.local.set({
+    lastInteraction: {
+      ...result,
+      context_type: payload.context_type,
+      created_at: Date.now(),
+    },
+  });
+  if (result.status !== "pending") {
+    await chrome.storage.local.remove(["pendingInteraction"]);
+  }
+  showInteractionOutcome(tab.id, result);
+  return result;
+}
+
+async function retryPendingInteraction() {
+  const pending = await readPendingInteraction();
+  if (!pending) throw new Error("No browser interaction is waiting to retry.");
+  const tab = await chrome.tabs.get(pending.tab_id);
+  const currentUrl = tab.url || tab.pendingUrl || "";
+  if (browserOrigin(currentUrl) !== browserOrigin(pending.page_url)) {
+    await chrome.storage.local.remove(["pendingInteraction"]);
+    throw new Error("The browser tab changed origin. Send browser context again from the current page.");
+  }
+  return submitBrowserContext(
+    tab,
+    pending.payload,
+    pending.session_id || null,
+    pending.action_id,
+  );
+}
+
+async function readPendingInteraction() {
+  const stored = await chrome.storage.local.get(["pendingInteraction"]);
+  const pending = stored.pendingInteraction;
+  if (!pending) return null;
+  if (!pending.created_at || Date.now() - pending.created_at > PENDING_INTERACTION_TTL_MS) {
+    await chrome.storage.local.remove(["pendingInteraction"]);
+    return null;
+  }
+  return pending;
+}
+
+async function sendContextMenuInteraction(info, tab) {
+  if (!tab || tab.id == null) throw new Error("No browser tab available");
+  return submitBrowserContext(tab, contextMenuPayload(info, tab));
+}
+
+function removeAllContextMenus() {
+  return new Promise((resolve, reject) => {
+    chrome.contextMenus.removeAll(() => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+      } else {
+        resolve();
+      }
+    });
+  });
+}
+
+function createContextMenu(item) {
+  return new Promise((resolve, reject) => {
+    chrome.contextMenus.create(item, () => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+      } else {
+        resolve();
+      }
+    });
+  });
+}
+
+async function setupContextMenus() {
+  await removeAllContextMenus();
+  await createContextMenu({
+    id: MENU_SELECTION_ID,
+    title: "Ask EvoFlux about selection",
+    contexts: ["selection"],
+    documentUrlPatterns: ["http://*/*", "https://*/*"],
+  });
+  await createContextMenu({
+    id: MENU_LINK_ID,
+    title: "Ask EvoFlux about link",
+    contexts: ["link"],
+    documentUrlPatterns: ["http://*/*", "https://*/*"],
+  });
+  await createContextMenu({
+    id: MENU_PAGE_ID,
+    title: "Ask EvoFlux about page",
+    contexts: ["page"],
+    documentUrlPatterns: ["http://*/*", "https://*/*"],
+  });
+}
+
 async function responseError(response, fallback) {
   try {
     const body = await response.json();
@@ -169,6 +961,14 @@ async function pairWithCode(code) {
   if (!body?.credential || !body?.pairing_id) {
     throw new Error("Pairing response was incomplete");
   }
+  await persistPairing(body);
+  return { pairing_id: pairingId, scopes: body.scopes || [] };
+}
+
+async function persistPairing(body) {
+  if (!body?.credential || !body?.pairing_id) {
+    throw new Error("Pairing response was incomplete");
+  }
   pairingCredential = body.credential;
   pairingId = body.pairing_id;
   pairingRelayBase = canonicalRelayBase();
@@ -179,6 +979,29 @@ async function pairWithCode(code) {
     pairingRelayBase,
     accessToken: "",
   });
+}
+
+async function pairLocally() {
+  await loadConfig();
+  assertRelayTransportSecure();
+  const parsed = new URL(canonicalRelayBase());
+  if (!["localhost", "127.0.0.1", "::1"].includes(parsed.hostname.toLowerCase())) {
+    throw new Error("Code-free pairing is only available for a loopback EvoFlux relay.");
+  }
+  const response = await fetch(buildHttpUrl(LOCAL_PAIRING_PATH), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      label: `${detectBrowser() === "edge" ? "Edge" : "Chrome"} on this device`,
+      browser: detectBrowser(),
+      version: chrome.runtime.getManifest().version,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Local pairing was rejected"));
+  }
+  const body = await response.json();
+  await persistPairing(body);
   return { pairing_id: pairingId, scopes: body.scopes || [] };
 }
 
@@ -197,12 +1020,7 @@ async function connect() {
   } catch (e) {
     connectInFlight = false;
     if (e.code === "pairing") {
-      pairingCredential = "";
-      pairingId = "";
-      pairingRelayBase = "";
-      await chrome.storage.local.set({
-        pairingCredential: "", pairingId: "", pairingRelayBase: "",
-      });
+      await clearRevokedPairingState();
       manualDisconnect = true;
     }
     if (e.code === "relay_security") manualDisconnect = true;
@@ -232,9 +1050,11 @@ async function connect() {
       version: chrome.runtime.getManifest().version,
       capabilities: {
         commands: COMMAND_CAPABILITIES,
-        interactions: ["context.share"],
-        captures: ["selection", "page_metadata"],
-        ui: ["popup"],
+        interactions: ["context.share", "prompt.submit"],
+        captures: ["selection", "link", "page_metadata"],
+        ui: ["popup", "side_panel"],
+        handoff: ["ask_user_reply", "human_control_lease"],
+        automation: ["teach_mode", "text_watch"],
       },
     }));
 
@@ -257,12 +1077,9 @@ async function connect() {
     connected = false;
     ws = null;
     if (event.code === 4403) {
-      pairingCredential = "";
-      pairingId = "";
-      pairingRelayBase = "";
       manualDisconnect = true;
-      chrome.storage.local.set({
-        pairingCredential: "", pairingId: "", pairingRelayBase: "",
+      clearRevokedPairingState().catch((error) => {
+        console.warn("[WebBridge] Pairing cleanup failed:", error.message);
       });
     }
     // 4401 = relay rejected the access token — surface it in the popup.
@@ -273,6 +1090,36 @@ async function connect() {
   sock.onerror = (e) => {
     console.error("[WebBridge] WebSocket error:", e);
   };
+}
+
+async function clearRevokedPairingState() {
+  pairingCredential = "";
+  pairingId = "";
+  pairingRelayBase = "";
+  const watches = await readTextWatches().catch(() => []);
+  for (const watch of watches) clearWatchMatch(watch.tab_id);
+  await Promise.allSettled([
+    detachAllDebuggers(),
+    cancelTeachRecording(),
+  ]);
+  await chrome.storage.local.set({
+    pairingCredential: "",
+    pairingId: "",
+    pairingRelayBase: "",
+  });
+  await chrome.storage.local.remove([
+    TEXT_WATCH_STORAGE_KEY,
+    TEACH_RECORDING_STORAGE_KEY,
+    "pendingInteraction",
+    "lastInteraction",
+    "lastTeachDraft",
+  ]);
+  await humanLeaseStorage().remove([
+    HUMAN_LEASE_STORAGE_KEY,
+    PICKED_ELEMENT_STORAGE_KEY,
+    "webbridgePanelPendingRequest",
+  ]);
+  chrome.runtime.sendMessage({ type: "pairing_revoked" }).catch(() => {});
 }
 
 function disconnect() {
@@ -307,11 +1154,18 @@ function ensureHeartbeatAlarm() {
 }
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name !== HEARTBEAT_ALARM) return;
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: "ping" }));
-  } else if (!manualDisconnect) {
-    connect();
+  if (alarm.name === HEARTBEAT_ALARM) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "ping" }));
+    } else if (!manualDisconnect) {
+      connect();
+    }
+    return;
+  }
+  if (alarm.name === TEXT_WATCH_ALARM) {
+    pollTextWatches().catch((error) => {
+      console.warn("[WebBridge] Text watch poll failed:", error.message);
+    });
   }
 });
 
@@ -486,19 +1340,219 @@ async function getActiveTab() {
   return tab;
 }
 
+function humanLeaseSummary(lease) {
+  if (!lease) return null;
+  return {
+    tab_id: lease.tab_id,
+    origin: lease.origin,
+    acquired_at: lease.acquired_at,
+    expires_at: lease.expires_at,
+  };
+}
+
+function humanLeaseStorage() {
+  // Live handoff/control state must survive MV3 worker suspension but not a
+  // browser restart. Chrome 116 provides storage.session; local is a guarded
+  // fallback for test harnesses and older Chromium implementations.
+  return chrome.storage.session || chrome.storage.local;
+}
+
+async function readHumanControlLeases() {
+  const storage = humanLeaseStorage();
+  const stored = await storage.get([HUMAN_LEASE_STORAGE_KEY]);
+  const raw = stored[HUMAN_LEASE_STORAGE_KEY];
+  const leases = raw?.tab_id != null ? { [raw.tab_id]: raw } : (raw || {});
+  let changed = raw?.tab_id != null;
+  for (const [tabId, lease] of Object.entries(leases)) {
+    if (!lease || !Number.isFinite(lease.expires_at) || lease.expires_at <= Date.now()) {
+      delete leases[tabId];
+      changed = true;
+    }
+  }
+  if (changed) {
+    if (Object.keys(leases).length) {
+      await storage.set({ [HUMAN_LEASE_STORAGE_KEY]: leases });
+    } else {
+      await storage.remove([HUMAN_LEASE_STORAGE_KEY]);
+    }
+  }
+  return leases;
+}
+
+async function humanLeaseForTab(tab) {
+  if (!tab || tab.id == null) return null;
+  const leases = await readHumanControlLeases();
+  const lease = leases[tab.id];
+  if (!lease) return null;
+  const origin = browserOrigin(tab.url || tab.pendingUrl || "");
+  if (!origin || origin !== lease.origin) {
+    delete leases[tab.id];
+    if (Object.keys(leases).length) {
+      await humanLeaseStorage().set({ [HUMAN_LEASE_STORAGE_KEY]: leases });
+    } else {
+      await humanLeaseStorage().remove([HUMAN_LEASE_STORAGE_KEY]);
+    }
+    return null;
+  }
+  return lease;
+}
+
+async function humanLeaseForWindow(windowId) {
+  if (windowId == null) return null;
+  const leases = await readHumanControlLeases();
+  return Object.values(leases).find((lease) => lease.window_id === windowId) || null;
+}
+
+async function takeHumanControlLease(tab) {
+  if (!tab || tab.id == null) throw new Error("No active browser tab");
+  const origin = browserOrigin(tab.url || tab.pendingUrl || "");
+  if (!origin) throw new Error("Human control can only be taken on an HTTP(S) page.");
+  const now = Date.now();
+  const lease = {
+    tab_id: tab.id,
+    window_id: tab.windowId,
+    origin,
+    acquired_at: now,
+    expires_at: now + HUMAN_LEASE_TTL_MS,
+  };
+  const leases = await readHumanControlLeases();
+  leases[tab.id] = lease;
+  await humanLeaseStorage().set({ [HUMAN_LEASE_STORAGE_KEY]: leases });
+  return humanLeaseSummary(lease);
+}
+
+async function releaseHumanControlLease(tabId = null) {
+  const leases = await readHumanControlLeases();
+  if (tabId == null) {
+    if (!Object.keys(leases).length) return false;
+    await humanLeaseStorage().remove([HUMAN_LEASE_STORAGE_KEY]);
+    return true;
+  }
+  if (!leases[tabId]) return false;
+  delete leases[tabId];
+  if (Object.keys(leases).length) {
+    await humanLeaseStorage().set({ [HUMAN_LEASE_STORAGE_KEY]: leases });
+  } else {
+    await humanLeaseStorage().remove([HUMAN_LEASE_STORAGE_KEY]);
+  }
+  return true;
+}
+
+async function configureSidePanel() {
+  if (!chrome.sidePanel?.setPanelBehavior) return;
+  await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false });
+}
+
+async function openSidePanelForActiveTab() {
+  if (!chrome.sidePanel?.open) {
+    throw new Error("Chrome Side Panel is unavailable in this browser.");
+  }
+  const tab = await getActiveTab();
+  if (!tab || tab.id == null) throw new Error("No active tab");
+  await chrome.sidePanel.open({ tabId: tab.id });
+  return { tab_id: tab.id };
+}
+
+async function pickedElementStorage() {
+  return chrome.storage.session || chrome.storage.local;
+}
+
+async function readPickedElements() {
+  const storage = await pickedElementStorage();
+  const stored = await storage.get([PICKED_ELEMENT_STORAGE_KEY]);
+  return stored[PICKED_ELEMENT_STORAGE_KEY] || {};
+}
+
+async function pickedElementForTab(tabId) {
+  const elements = await readPickedElements();
+  return elements[tabId] || null;
+}
+
+async function clearPickedElement(tabId) {
+  const storage = await pickedElementStorage();
+  const elements = await readPickedElements();
+  if (!elements[tabId]) return false;
+  delete elements[tabId];
+  if (Object.keys(elements).length) {
+    await storage.set({ [PICKED_ELEMENT_STORAGE_KEY]: elements });
+  } else {
+    await storage.remove([PICKED_ELEMENT_STORAGE_KEY]);
+  }
+  return true;
+}
+
+function sanitizePickedElement(tab, raw) {
+  const pageUrl = safePageUrl(tab.url || tab.pendingUrl || "");
+  const sourceUrl = safePageUrl(raw?.page_url || "");
+  const selector = String(raw?.selector || "").trim().slice(0, 512);
+  if (!pageUrl || sourceUrl !== pageUrl || !selector) {
+    throw new Error("Picked element does not belong to the active page.");
+  }
+  return {
+    tab_id: tab.id,
+    page_url: pageUrl,
+    selector,
+    tag: boundedText(raw?.tag).slice(0, 40),
+    role: boundedText(raw?.role).slice(0, 80),
+    name: boundedText(raw?.name).slice(0, 200),
+    text: boundedText(raw?.text).slice(0, 500),
+  };
+}
+
+async function savePickedElement(tab, raw) {
+  const picked = sanitizePickedElement(tab, raw);
+  const storage = await pickedElementStorage();
+  const elements = await readPickedElements();
+  elements[tab.id] = picked;
+  await storage.set({ [PICKED_ELEMENT_STORAGE_KEY]: elements });
+  return picked;
+}
+
+async function startElementPicker(tab) {
+  if (!tab || tab.id == null) throw new Error("No active browser tab");
+  requireBrowserPageUrl(tab.url || tab.pendingUrl || "");
+  await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    files: ["element_picker.js"],
+  });
+  await chrome.tabs.sendMessage(tab.id, { type: "webbridge_element_picker", enabled: true });
+  return { tab_id: tab.id };
+}
+
+async function cancelElementPicker(tab) {
+  if (!tab || tab.id == null) return false;
+  try {
+    await chrome.tabs.sendMessage(tab.id, { type: "webbridge_element_picker", enabled: false });
+  } catch {
+    // Navigation can tear down the picker before cancellation arrives.
+  }
+  return true;
+}
+
 // Resolve the tab a command targets: an explicit params.tab_id (so a session
 // can pin a tab and stay deterministic even if the user switches tabs), else
 // the active tab.
 async function resolveTab(params) {
+  let tab;
   if (params && params.tab_id != null) {
     try {
-      return await chrome.tabs.get(params.tab_id);
+      tab = await chrome.tabs.get(params.tab_id);
     } catch {
       throw new Error(`Tab ${params.tab_id} not found`);
     }
+  } else {
+    tab = await getActiveTab();
+    if (!tab) throw new Error("No active tab");
   }
-  const tab = await getActiveTab();
-  if (!tab) throw new Error("No active tab");
+  if (await humanLeaseForTab(tab)) {
+    throw new Error("Human control is active for this tab. Wait for the user to resume the agent.");
+  }
+  if (
+    params?._webbridge_expected_origin &&
+    browserOrigin(tab.url || tab.pendingUrl || "") !== params._webbridge_expected_origin
+  ) {
+    throw new Error("Bound browser tab changed origin; bind this tab again before continuing.");
+  }
   return tab;
 }
 
@@ -633,6 +1687,18 @@ chrome.debugger.onDetach.addListener((source) => {
 chrome.tabs.onRemoved.addListener((tabId) => {
   attachedTabs.delete(tabId);
   networkInflight.delete(tabId);
+  cancelTextWatchesForTab(tabId).catch((error) => {
+    console.warn("[WebBridge] Failed to cancel tab text watches:", error.message);
+  });
+  cancelTeachRecording(tabId).catch((error) => {
+    console.warn("[WebBridge] Failed to cancel Teach Mode for a closed tab:", error.message);
+  });
+  releaseHumanControlLease(tabId).catch((error) => {
+    console.warn("[WebBridge] Failed to release human control for a closed tab:", error.message);
+  });
+  clearPickedElement(tabId).catch((error) => {
+    console.warn("[WebBridge] Failed to clear picked element for a closed tab:", error.message);
+  });
   broadcastTabInfo();
 });
 
@@ -1019,18 +2085,26 @@ async function cmdSwitchTab(params) {
   // `id != null` (not `if (id)`) so a legitimate tab id of 0 isn't treated
   // as "no id given".
   if (id != null) {
+    const tab = await chrome.tabs.get(id);
+    if (await humanLeaseForWindow(tab.windowId)) {
+      throw new Error("Human control is active in this window. Wait for the user to resume the agent.");
+    }
     await chrome.tabs.update(id, { active: true });
-    await chrome.windows.update((await chrome.tabs.get(id)).windowId, { focused: true });
+    await chrome.windows.update(tab.windowId, { focused: true });
     await broadcastTabInfo();
     return { success: true, tab_id: id };
   }
 
   const tabs = await chrome.tabs.query({});
   if (index >= 0 && index < tabs.length) {
-    await chrome.tabs.update(tabs[index].id, { active: true });
-    await chrome.windows.update(tabs[index].windowId, { focused: true });
+    const tab = tabs[index];
+    if (await humanLeaseForWindow(tab.windowId)) {
+      throw new Error("Human control is active in this window. Wait for the user to resume the agent.");
+    }
+    await chrome.tabs.update(tab.id, { active: true });
+    await chrome.windows.update(tab.windowId, { focused: true });
     await broadcastTabInfo();
-    return { success: true, tab_id: tabs[index].id };
+    return { success: true, tab_id: tab.id };
   }
 
   throw new Error(`Tab index ${index} out of range`);
@@ -1039,6 +2113,12 @@ async function cmdSwitchTab(params) {
 async function cmdOpenTab(params) {
   const { url, active = true } = params;
   if (!url) throw new Error("open_tab requires a url");
+  if (active) {
+    const current = await getActiveTab();
+    if (current && await humanLeaseForWindow(current.windowId)) {
+      throw new Error("Human control is active in this window. Open the tab in background or wait for the user to resume the agent.");
+    }
+  }
   const tab = await chrome.tabs.create({ url, active });
   await broadcastTabInfo();
   return { success: true, tab_id: tab.id, url };
@@ -1052,6 +2132,13 @@ async function cmdCloseTab(params) {
     const tabs = await chrome.tabs.query({});
     if (index < 0 || index >= tabs.length) throw new Error(`Tab index ${index} out of range`);
     tabId = tabs[index].id;
+  }
+  const tab = await chrome.tabs.get(tabId);
+  if (await humanLeaseForTab(tab)) {
+    throw new Error("Human control is active for this tab. Wait for the user to resume the agent.");
+  }
+  if (tab.active && await humanLeaseForWindow(tab.windowId)) {
+    throw new Error("Human control is active in this window. Wait for the user to resume the agent.");
   }
   await chrome.tabs.remove(tabId);
   await broadcastTabInfo();
@@ -1684,7 +2771,23 @@ async function broadcastTabInfo() {
 }
 
 // Keep backend policy/status accurate for both active and background tabs.
-chrome.tabs.onUpdated.addListener((_tabId, changeInfo) => {
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.url) {
+    cancelTextWatchesForTab(tabId, changeInfo.url).catch((error) => {
+      console.warn("[WebBridge] Failed to update text watch scope:", error.message);
+    });
+    clearPickedElement(tabId).catch((error) => {
+      console.warn("[WebBridge] Failed to clear picked element after navigation:", error.message);
+    });
+  }
+  handleTeachTabUpdate(tabId, changeInfo).catch((error) => {
+    console.warn("[WebBridge] Failed to update Teach Mode scope:", error.message);
+  });
+  if (changeInfo.url) {
+    humanLeaseForTab({ id: tabId, url: changeInfo.url }).catch((error) => {
+      console.warn("[WebBridge] Failed to validate human control scope:", error.message);
+    });
+  }
   if (changeInfo.url || changeInfo.title || changeInfo.status === "complete") {
     broadcastTabInfo();
   }
@@ -1705,19 +2808,67 @@ chrome.tabs.onMoved.addListener(() => {
 // ── Message handlers (popup communication) ───────────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type === "element_picked") {
+    (async () => {
+      try {
+        if (!sender.tab || sender.tab.id == null) {
+          throw new Error("Picked elements must come from a browser tab.");
+        }
+        const tab = await chrome.tabs.get(sender.tab.id);
+        const element = await savePickedElement(tab, msg.element);
+        sendResponse({ ok: true, element });
+        chrome.runtime.sendMessage({ type: "element_picker_result", element }).catch(() => {});
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "teach_action") {
+    (async () => {
+      try {
+        if (!sender.tab || sender.tab.id == null) {
+          throw new Error("Teach actions must come from the recorded browser tab.");
+        }
+        const tab = await chrome.tabs.get(sender.tab.id);
+        const recording = await recordTeachAction(tab, msg.action, sender.url || "");
+        sendResponse({ ok: true, recording });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
   if (msg.type === "get_status") {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    (async () => {
+      const [tabs, stored, watches, recording, pendingInteraction] = await Promise.all([
+        chrome.tabs.query({ active: true, currentWindow: true }),
+        chrome.storage.local.get(["lastInteraction", "lastTeachDraft"]),
+        readTextWatches(),
+        readTeachRecording(),
+        readPendingInteraction(),
+      ]);
+      const activeTab = tabs[0] || null;
+      const humanLease = await humanLeaseForTab(activeTab);
       sendResponse({
         connected: connected,
         extension_id: extensionId,
-        active_tab: tabs[0] ? { url: tabs[0].url, title: tabs[0].title } : null,
+        active_tab: activeTab ? { id: activeTab.id, url: activeTab.url, title: activeTab.title } : null,
         attached_tab_ids: [...attachedTabs.keys()],
         last_close_reason: lastCloseReason,
         relay_base: relayBase,
         paired: Boolean(pairingCredential && pairingId),
         pairing_id: pairingId || null,
+        last_interaction: stored.lastInteraction || null,
+        pending_interaction: pendingInteraction,
+        text_watches: watches.map(textWatchSummary),
+        teach_recording: teachRecordingSummary(recording),
+        last_teach_draft: stored.lastTeachDraft || null,
+        human_control_lease: humanLeaseSummary(humanLease),
       });
-    });
+    })().catch((e) => sendResponse({ ok: false, error: e.message }));
     return true; // async sendResponse
   }
 
@@ -1759,11 +2910,282 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  if (msg.type === "pair_locally") {
+    (async () => {
+      try {
+        const result = await pairLocally();
+        disconnect();
+        manualDisconnect = false;
+        connect();
+        sendResponse({ ok: true, ...result });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
   if (msg.type === "release_debuggers") {
     (async () => {
       try {
         const released = await detachAllDebuggers();
         sendResponse({ ok: true, released });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "open_side_panel") {
+    (async () => {
+      try {
+        sendResponse({ ok: true, ...(await openSidePanelForActiveTab()) });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "start_element_picker") {
+    (async () => {
+      try {
+        sendResponse({ ok: true, ...(await startElementPicker(await getActiveTab())) });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "cancel_element_picker") {
+    (async () => {
+      try {
+        sendResponse({ ok: true, cancelled: await cancelElementPicker(await getActiveTab()) });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "get_picked_element") {
+    (async () => {
+      try {
+        const tab = await getActiveTab();
+        sendResponse({ ok: true, element: tab?.id == null ? null : await pickedElementForTab(tab.id) });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "clear_picked_element") {
+    (async () => {
+      try {
+        const tab = await getActiveTab();
+        sendResponse({ ok: true, cleared: tab?.id == null ? false : await clearPickedElement(tab.id) });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "take_human_control") {
+    (async () => {
+      try {
+        sendResponse({ ok: true, lease: await takeHumanControlLease(await getActiveTab()) });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "release_human_control") {
+    (async () => {
+      try {
+        const tab = await getActiveTab();
+        sendResponse({ ok: true, released: await releaseHumanControlLease(tab?.id ?? null) });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "get_human_control") {
+    (async () => {
+      try {
+        sendResponse({ ok: true, lease: humanLeaseSummary(await humanLeaseForTab(await getActiveTab())) });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "get_browser_sessions") {
+    (async () => {
+      try {
+        const sessions = await listBrowserSessions();
+        const bindings = await listTabBindings();
+        sendResponse({
+          ok: true,
+          sessions: Array.isArray(sessions) ? sessions : (sessions.data || []),
+          bindings,
+        });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "bind_tab_session") {
+    (async () => {
+      try {
+        const tab = await getActiveTab();
+        if (!tab || tab.id == null) throw new Error("No active tab");
+        const binding = await bindTabToSession(
+          tab,
+          msg.session_id,
+          tab.url || tab.pendingUrl || ""
+        );
+        sendResponse({ ok: true, binding });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "send_page_prompt") {
+    (async () => {
+      try {
+        const tab = await getActiveTab();
+        if (!tab || tab.id == null) throw new Error("No active tab");
+        const result = await submitBrowserContext(tab, {
+          context_type: "page_metadata",
+          prompt: boundedText(msg.prompt) || "Help me understand this browser page.",
+          metadata: {
+            page_url: safePageUrl(tab.url || tab.pendingUrl || ""),
+            page_title: boundedText(tab.title),
+          },
+        }, msg.session_id || null);
+        sendResponse({ ok: true, result });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "create_browser_session") {
+    (async () => {
+      try {
+        const tab = await getActiveTab();
+        if (!tab || tab.id == null) throw new Error("No active tab");
+        const pageUrl = requireBrowserPageUrl(tab.url || tab.pendingUrl || "");
+        const label = boundedText(tab.title) || browserOrigin(pageUrl) || "Browser page";
+        const actionId = msg.action_id || interactionId();
+        const session = await createBrowserSession(
+          `Browser: ${label}`.slice(0, 255),
+          actionId,
+        );
+        await bindTabToSession(tab, session.id, pageUrl);
+        sendResponse({ ok: true, session });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "start_teach_recording") {
+    (async () => {
+      try {
+        const tab = await getActiveTab();
+        const recording = await startTeachRecording(tab, msg.session_id);
+        sendResponse({ ok: true, recording });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "stop_teach_recording") {
+    (async () => {
+      try {
+        sendResponse({ ok: true, draft: await finishTeachRecording() });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "cancel_teach_recording") {
+    (async () => {
+      try {
+        sendResponse({ ok: true, cancelled: await cancelTeachRecording() });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "arm_text_watch") {
+    (async () => {
+      try {
+        const tab = await getActiveTab();
+        const watch = await armTextWatch(
+          tab,
+          msg.session_id,
+          msg.needle,
+          msg.ttl_minutes,
+        );
+        sendResponse({ ok: true, watch });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "cancel_text_watch") {
+    (async () => {
+      try {
+        sendResponse({ ok: true, cancelled: await cancelTextWatch(msg.watch_id) });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "send_matched_text_watch") {
+    (async () => {
+      try {
+        const result = await sendMatchedTextWatch(msg.watch_id);
+        sendResponse({ ok: true, result });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "retry_pending_interaction") {
+    (async () => {
+      try {
+        const result = await retryPendingInteraction();
+        sendResponse({ ok: true, result });
       } catch (e) {
         sendResponse({ ok: false, error: e.message });
       }
@@ -1776,17 +3198,41 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 chrome.runtime.onStartup.addListener(() => {
   console.log("[WebBridge] Browser startup — reconnecting...");
+  configureSidePanel().catch((e) => {
+    console.warn("[WebBridge] Side Panel setup failed:", e.message);
+  });
   connect();
 });
 
 chrome.runtime.onInstalled.addListener(() => {
+  setupContextMenus().catch((e) => console.warn("[WebBridge] Context menu setup failed:", e));
+  configureSidePanel().catch((e) => {
+    console.warn("[WebBridge] Side Panel setup failed:", e.message);
+  });
   console.log("[WebBridge] Extension installed/updated — connecting...");
   connect();
+});
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (![MENU_SELECTION_ID, MENU_LINK_ID, MENU_PAGE_ID].includes(info.menuItemId)) return;
+  sendContextMenuInteraction(info, tab).catch((e) => {
+    console.warn("[WebBridge] Context menu interaction failed:", e.message);
+    chrome.storage.local.set({
+      lastInteraction: { status: "rejected", error: e.message, created_at: Date.now() },
+    });
+  });
 });
 
 // Idempotent: guarantees the worker always has a wake-up scheduled, even
 // after Chrome kills and revives the service worker.
 ensureHeartbeatAlarm();
+ensureTextWatchAlarm();
+readPendingInteraction().catch((e) => {
+  console.warn("[WebBridge] Failed to purge pending browser context:", e.message);
+});
+configureSidePanel().catch((e) => {
+  console.warn("[WebBridge] Side Panel setup failed:", e.message);
+});
 
 console.log("[WebBridge] Extension loaded, connecting...");
 connect();

@@ -44,6 +44,9 @@ import type {
   WebBridgeAuditResponse,
   WebBridgePairingCodeResponse,
   WebBridgePairingInfo,
+  WebBridgeBrowserSessionOption,
+  WebBridgeTeachDraft,
+  WebBridgeTeachDraftReplayResponse,
 } from '../types'
 
 export async function postTeamChat(
@@ -596,6 +599,59 @@ export async function revokeWebBridgePairing(pairingId: string): Promise<void> {
     { method: 'DELETE' },
   )
   if (!res.ok) await parseDetailOrThrow(res, 'revokeWebBridgePairing')
+}
+
+export async function assignWebBridgeSessionToPairing(
+  pairingId: string,
+  sessionId: string,
+): Promise<WebBridgeBrowserSessionOption> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/webbridge/pairings/${encodeURIComponent(pairingId)}/sessions/${encodeURIComponent(sessionId)}`,
+    { method: 'PUT' },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'assignWebBridgeSessionToPairing')
+  return res.json()
+}
+
+export async function listWebBridgeTeachDrafts(): Promise<WebBridgeTeachDraft[]> {
+  const res = await fetch(`${apiBaseUrl()}/team/webbridge/teach-drafts/review`)
+  if (!res.ok) await parseDetailOrThrow(res, 'listWebBridgeTeachDrafts')
+  return res.json()
+}
+
+export async function approveWebBridgeTeachDraft(
+  draftId: string,
+): Promise<WebBridgeTeachDraft> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/webbridge/teach-drafts/${encodeURIComponent(draftId)}/approve`,
+    { method: 'POST' },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'approveWebBridgeTeachDraft')
+  return res.json()
+}
+
+export async function replayWebBridgeTeachDraft(
+  draftId: string,
+  parameters: Record<string, string>,
+): Promise<WebBridgeTeachDraftReplayResponse> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/webbridge/teach-drafts/${encodeURIComponent(draftId)}/replay`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parameters }),
+    },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'replayWebBridgeTeachDraft')
+  return res.json()
+}
+
+export async function deleteWebBridgeTeachDraft(draftId: string): Promise<void> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/webbridge/teach-drafts/${encodeURIComponent(draftId)}`,
+    { method: 'DELETE' },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'deleteWebBridgeTeachDraft')
 }
 
 /**

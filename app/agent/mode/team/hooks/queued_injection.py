@@ -28,6 +28,7 @@ from app.agent.hooks.base import BaseAgentHook
 from app.agent.schemas.chat import HumanMessage
 from app.core.db import DbFactory, resolve_db_factory
 from app.services.chat_service import pop_queued_user_messages
+from app.services.chat_service import mark_channel_source_delivered
 
 if TYPE_CHECKING:
     from app.agent.state import AgentState, ModelRequest, RunContext
@@ -70,6 +71,16 @@ class QueuedMessageInjectionHook(BaseAgentHook):
             state.messages.append(
                 HumanMessage(content=row.content or "", extra=row.extra)
             )
+
+        # The rows are now part of the next model request. Mark source-keyed
+        # browser messages delivered so a lost HTTP ACK cannot inject them a
+        # second time after the turn completes.
+        async with db_factory() as db:
+            for queued_row in queued:
+                row = await db.get(type(queued_row), queued_row.id)
+                if row is not None:
+                    await mark_channel_source_delivered(db, row)
+            await db.commit()
 
         # Emit the same SSE event the post-turn drain path uses so the UI
         # unblurs the queued bubbles and renders them in the transcript.

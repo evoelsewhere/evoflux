@@ -219,6 +219,14 @@ class WebBridgeManager:
         self._session_targets: dict[str, str] = {}
         # session_id → (extension_id, tab_id) explicitly selected by the user.
         self._session_tabs: dict[str, tuple[str, int]] = {}
+        # session_id → normalized origin expected for the live tab binding.
+        self._session_tab_origins: dict[str, str] = {}
+        # session_id → durable binding expiry as UNIX seconds.
+        self._session_tab_expires: dict[str, float] = {}
+        # session_id → (extension_id, reason) after a binding fails validation.
+        # This tombstone prevents a later command from falling back to the
+        # active tab until the user explicitly binds or unbinds the session.
+        self._invalid_session_tabs: dict[str, tuple[str, str]] = {}
         # Persisted bindings loaded after a reconnect stay fail-closed until
         # the extension's complete tab snapshot confirms both tab ID + origin.
         self._pending_session_tabs: dict[str, tuple[str, int, str]] = {}
@@ -472,7 +480,9 @@ class WebBridgeManager:
             if eid == extension_id:
                 self._session_targets.pop(sid, None)
                 self._session_tabs.pop(sid, None)
+                self._session_tab_origins.pop(sid, None)
                 self._pending_session_tabs.pop(sid, None)
+                self._session_tab_expires.pop(sid, None)
 
     def get_extension(self, extension_id: str) -> ExtensionConnection | None:
         return self._extensions.get(extension_id)
@@ -540,7 +550,9 @@ class WebBridgeManager:
             self._session_targets[session_id] = extension_id
             if previous is not None and previous != extension_id:
                 self._session_tabs.pop(session_id, None)
+                self._session_tab_origins.pop(session_id, None)
                 self._pending_session_tabs.pop(session_id, None)
+                self._session_tab_expires.pop(session_id, None)
             return ext
 
         bound = self._session_targets.get(session_id)
@@ -550,17 +562,47 @@ class WebBridgeManager:
                 return ext
             self._session_targets.pop(session_id, None)
             self._session_tabs.pop(session_id, None)
+            self._session_tab_origins.pop(session_id, None)
             self._pending_session_tabs.pop(session_id, None)
+            self._session_tab_expires.pop(session_id, None)
 
         ext = self.get_active_extension()
         if ext is not None:
             self._session_targets[session_id] = ext.extension_id
         return ext
 
-    def bind_session_tab(self, session_id: str, extension_id: str, tab_id: int) -> None:
+    def bind_session_tab(
+        self,
+        session_id: str,
+        extension_id: str,
+        tab_id: int,
+        origin: str = "",
+        expires_at: float | None = None,
+    ) -> None:
         """Pin page-scoped commands for *session_id* to one extension tab."""
+        for other_session, target in list(self._session_tabs.items()):
+            if other_session != session_id and target == (extension_id, tab_id):
+                self.unbind_session_tab(other_session, extension_id=extension_id)
+        for other_session, pending in list(self._pending_session_tabs.items()):
+            if (
+                other_session != session_id
+                and pending[0] == extension_id
+                and pending[1] == tab_id
+            ):
+                self.unbind_session_tab(other_session, extension_id=extension_id)
         self._session_targets[session_id] = extension_id
         self._session_tabs[session_id] = (extension_id, tab_id)
+        self._invalid_session_tabs.pop(session_id, None)
+        expected_origin = _origin_of(origin)
+        self._invalid_session_tabs.pop(session_id, None)
+        if expected_origin:
+            self._session_tab_origins[session_id] = expected_origin
+        else:
+            self._session_tab_origins.pop(session_id, None)
+        if expires_at is not None:
+            self._session_tab_expires[session_id] = expires_at
+        else:
+            self._session_tab_expires.pop(session_id, None)
         self._pending_session_tabs.pop(session_id, None)
 
     def stage_session_tab_binding(
@@ -569,14 +611,35 @@ class WebBridgeManager:
         extension_id: str,
         tab_id: int,
         origin: str,
+        expires_at: float | None = None,
     ) -> None:
         """Load a durable binding without trusting a stale browser tab ID yet."""
+        for other_session, target in list(self._session_tabs.items()):
+            if other_session != session_id and target == (extension_id, tab_id):
+                self.unbind_session_tab(other_session, extension_id=extension_id)
+        for other_session, pending in list(self._pending_session_tabs.items()):
+            if (
+                other_session != session_id
+                and pending[0] == extension_id
+                and pending[1] == tab_id
+            ):
+                self.unbind_session_tab(other_session, extension_id=extension_id)
+        expected_origin = _origin_of(origin)
+        if (
+            self._session_tabs.get(session_id) == (extension_id, tab_id)
+            and self._session_tab_origins.get(session_id) == expected_origin
+        ):
+            return
         self._session_targets[session_id] = extension_id
         self._session_tabs.pop(session_id, None)
+        if expires_at is not None:
+            self._session_tab_expires[session_id] = expires_at
+        else:
+            self._session_tab_expires.pop(session_id, None)
         self._pending_session_tabs[session_id] = (
             extension_id,
             tab_id,
-            _origin_of(origin),
+            expected_origin,
         )
 
     def validate_pending_tab_bindings(
@@ -602,21 +665,81 @@ class WebBridgeManager:
                 and expected_origin
                 and _origin_of(actual_url) == expected_origin
             ):
-                self.bind_session_tab(session_id, extension_id, tab_id)
+                self.bind_session_tab(
+                    session_id,
+                    extension_id,
+                    tab_id,
+                    expected_origin,
+                    self._session_tab_expires.get(session_id),
+                )
             else:
+                self._invalid_session_tabs[session_id] = (
+                    extension_id,
+                    "Bound browser tab is unavailable or changed origin; bind this tab again before continuing.",
+                )
                 self._pending_session_tabs.pop(session_id, None)
                 self._session_targets.pop(session_id, None)
+                self._session_tab_expires.pop(session_id, None)
                 stale.append((session_id, tab_id))
+        return stale
+
+    def validate_active_tab_bindings(
+        self,
+        extension_id: str,
+        tabs: list[dict[str, Any]],
+    ) -> list[tuple[str, int]]:
+        """Drop live bindings whose tab vanished or navigated cross-origin."""
+        tab_urls = {
+            tab.get("id"): str(tab.get("url", ""))
+            for tab in tabs
+            if tab.get("id") is not None
+        }
+        stale: list[tuple[str, int]] = []
+        for session_id, (bound_extension, tab_id) in list(self._session_tabs.items()):
+            if bound_extension != extension_id:
+                continue
+            expected_origin = self._session_tab_origins.get(session_id)
+            if not expected_origin:
+                continue
+            actual_url = tab_urls.get(tab_id)
+            if actual_url is not None and _origin_of(actual_url) == expected_origin:
+                continue
+            self._invalid_session_tabs[session_id] = (
+                extension_id,
+                "Bound browser tab changed origin; bind this tab again before continuing.",
+            )
+            self._session_tabs.pop(session_id, None)
+            self._session_tab_origins.pop(session_id, None)
+            self._session_targets.pop(session_id, None)
+            self._session_tab_expires.pop(session_id, None)
+            stale.append((session_id, tab_id))
         return stale
 
     def unbind_session_tab(
         self, session_id: str, *, extension_id: str | None = None
     ) -> bool:
         binding = self._session_tabs.get(session_id)
-        if binding is None or (extension_id is not None and binding[0] != extension_id):
+        pending = self._pending_session_tabs.get(session_id)
+        invalid = self._invalid_session_tabs.get(session_id)
+        bound_extension = (
+            binding[0]
+            if binding is not None
+            else pending[0]
+            if pending
+            else invalid[0]
+            if invalid
+            else None
+        )
+        if bound_extension is None or (
+            extension_id is not None and bound_extension != extension_id
+        ):
             return False
         self._session_tabs.pop(session_id, None)
+        self._session_tab_origins.pop(session_id, None)
         self._pending_session_tabs.pop(session_id, None)
+        self._session_targets.pop(session_id, None)
+        self._session_tab_expires.pop(session_id, None)
+        self._invalid_session_tabs.pop(session_id, None)
         return True
 
     def session_tab_binding(self, session_id: str) -> tuple[str, int] | None:
@@ -728,12 +851,47 @@ class WebBridgeManager:
             # Answered locally — does not need an extension.
             return {"success": True, "data": self.status(), "error": None}
 
+        invalid_binding = self._invalid_session_tabs.get(session_id)
+        if action in _TAB_SCOPED_ACTIONS and invalid_binding is not None:
+            return {
+                "success": False,
+                "data": None,
+                "error": invalid_binding[1],
+            }
+
         ext = self.resolve_target(session_id, extension_id)
         if ext is None:
             return {"success": False, "data": None, "error": NO_EXTENSION_ERROR}
 
         binding = self._session_tabs.get(session_id)
         pending_binding = self._pending_session_tabs.get(session_id)
+        binding_expires_at = self._session_tab_expires.get(session_id)
+        if (
+            action in _TAB_SCOPED_ACTIONS
+            and (binding is not None or pending_binding is not None)
+            and binding_expires_at is not None
+            and binding_expires_at <= time.time()
+        ):
+            if binding is not None:
+                invalid_extension_id = binding[0]
+            elif pending_binding is not None:
+                invalid_extension_id = pending_binding[0]
+            else:  # pragma: no cover — guarded by the condition above
+                invalid_extension_id = ext.extension_id
+            self._invalid_session_tabs[session_id] = (
+                invalid_extension_id,
+                "Bound browser tab expired; bind this tab again before continuing.",
+            )
+            self._session_tabs.pop(session_id, None)
+            self._session_tab_origins.pop(session_id, None)
+            self._pending_session_tabs.pop(session_id, None)
+            self._session_targets.pop(session_id, None)
+            self._session_tab_expires.pop(session_id, None)
+            return {
+                "success": False,
+                "data": None,
+                "error": "Bound browser tab expired; bind this tab again before continuing.",
+            }
         if (
             action in _TAB_SCOPED_ACTIONS
             and "tab_id" not in params
@@ -751,7 +909,39 @@ class WebBridgeManager:
             and binding is not None
             and binding[0] == ext.extension_id
         ):
+            expected_origin = self._session_tab_origins.get(session_id)
+            if expected_origin:
+                current_url = next(
+                    (
+                        str(tab.get("url", ""))
+                        for tab in ext.tabs
+                        if tab.get("id") == binding[1]
+                    ),
+                    "",
+                )
+                if not current_url:
+                    return {
+                        "success": False,
+                        "data": None,
+                        "error": "Bound browser tab is pending origin validation; wait for tab state.",
+                    }
+                if _origin_of(current_url) != expected_origin:
+                    self._invalid_session_tabs[session_id] = (
+                        binding[0],
+                        "Bound browser tab changed origin; bind this tab again before continuing.",
+                    )
+                    self._session_tabs.pop(session_id, None)
+                    self._session_tab_origins.pop(session_id, None)
+                    self._session_targets.pop(session_id, None)
+                    self._session_tab_expires.pop(session_id, None)
+                    return {
+                        "success": False,
+                        "data": None,
+                        "error": "Bound browser tab changed origin; bind this tab again before continuing.",
+                    }
             params["tab_id"] = binding[1]
+            if expected_origin:
+                params["_webbridge_expected_origin"] = expected_origin
 
         # Guardrail check before anything reaches the browser. The policy is
         # an in-memory read (reload_policy refreshes it off the request path),

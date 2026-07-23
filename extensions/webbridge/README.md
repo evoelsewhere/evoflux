@@ -45,18 +45,22 @@ enforced against the tab actually being driven.
 
 ## Secure pairing (recommended)
 
-1. Open **WebBridge** in EvoFlux and click **Generate secure pairing code**.
-2. Open the extension popup, set the EvoFlux relay URL, enter the one-time code,
-  and click **Pair with EvoFlux**.
-3. The extension stores a revocable, scoped pairing credential locally. Before
+1. Open the extension popup and set the EvoFlux relay URL.
+2. When EvoFlux runs on the same device, click **Pair local EvoFlux**. No code
+  is required; the endpoint accepts only a loopback Chrome-extension request.
+3. For a remote/manual setup, open **WebBridge** in EvoFlux, generate a one-time
+  code, enter it in the extension popup, and click **Pair with EvoFlux**.
+4. The extension stores a revocable, scoped pairing credential locally. Before
   every relay connection it exchanges that credential over HTTP for a
   single-use, 30-second WebSocket ticket; the credential is never placed in a
   URL.
 
-Pairing codes expire after five minutes and work once. EvoFlux must have desktop
-token auth or a server access key configured before it can issue a code. Pairing
-survives desktop restarts, unlike the per-launch desktop token, and can be
-revoked from the WebBridge dialog.
+Pairing codes expire after five minutes and work once. A desktop app or keyed
+server requires its desktop token or access key before it can issue a code. The
+source-checkout `make dev` workflow runs on loopback and may issue codes only to
+loopback clients; a server exposed beyond loopback must configure an access key.
+Pairing survives desktop restarts, unlike the per-launch desktop token, and can
+be revoked from the WebBridge dialog.
 
 ## Popup configuration
 
@@ -74,6 +78,78 @@ is only sent as an HTTP Bearer credential to mint relay tickets.
 The popup also shows how many tabs are currently attached to the Chrome
 debugger. **Release browser control** detaches all of them without disabling
 the relay connection; disconnecting the extension releases them automatically.
+
+## Send browser context to EvoFlux
+
+After secure pairing, WebBridge adds three explicit, HTTP(S)-only context-menu
+actions:
+
+- **Ask EvoFlux about selection** sends the selected text with page provenance.
+- **Ask EvoFlux about link** sends the page and linked URL.
+- **Ask EvoFlux about page** sends the current page title and URL.
+
+The extension creates a browser session for an unbound tab, or uses the tab's
+existing binding. The popup can instead bind the current tab to an explicitly
+chosen WebBridge-enabled session, create a browser session, or send a quick
+page prompt. A failed request keeps one short-lived pending action in local
+storage; use **Retry previous browser context** in the popup to replay the same
+session and interaction identity without creating a duplicate task.
+
+Only sessions explicitly enabled for WebBridge **and granted to this browser
+pairing** appear in the popup chooser. To use an existing chat, open the
+EvoFlux WebBridge dialog, select the paired browser and a WebBridge-enabled
+session, then choose **Grant**. The browser extension cannot make that
+cross-pairing grant itself.
+When a bound tab changes origin, its binding is removed before the agent can
+continue using it. URL query strings and fragments are stripped from P1 browser
+context, while selected text remains bounded and is marked as untrusted data in
+the EvoFlux transcript.
+
+## P2: Side Panel and live handoff
+
+Click **Open EvoFlux Side Panel** in the paired popup to keep a browser-scoped
+conversation next to the current page. The panel can:
+
+- Select a pairing-owned session, bind or unbind the current HTTP(S) tab, and
+  send an explicit message through the normal EvoFlux chat pipeline.
+- Load the session transcript and stream live assistant output using fetch-SSE.
+  The panel receives transcript/status/question frames only; it does not expose
+  raw tool arguments or tool output.
+- Show a live `AskUser` handoff batch and send the user's answers back to the
+  active EvoFlux run. A browser restart or ended run clears that live request.
+- Use **Pick element** to highlight and select one element on the page. The next
+  Side Panel message includes its sanitized selector, role, accessible name and
+  non-form text as untrusted context; input/select/textarea values are never
+  read by the picker.
+- Use **Take control** to pause agent browser commands on the current tab while
+  the user logs in or performs a manual step. **Resume agent** releases this
+  live lease. It clears when the tab changes origin, closes, expires, or the
+  browser restarts.
+
+Side Panel messages require the selected session to be explicitly granted to
+the pairing and bound to the current page origin. Opt-in issue diagnostics are
+not part of this P2 MVP yet.
+
+## P3: Teach Mode and text watches
+
+The popup provides two opt-in P3 controls after pairing and selecting a browser
+session:
+
+- **Watch for page text** polls the current HTTP(S) page every 30 seconds for a
+  literal phrase. A watch is scoped to that tab's exact origin and path, expires
+  after the chosen TTL, and is cancelled when the page changes or tab closes.
+  A match only shows a `W` badge and waits; **Send matched watch** is a separate
+  user gesture that sends page metadata through the normal P1 context pipeline.
+- **Teach Mode** records semantic click, fill, select, checkbox/radio, and
+  same-origin navigation actions. It does not record raw keystrokes. Passwords
+  and fields whose metadata looks secret are represented as parameter names;
+  their values are never sent to EvoFlux or written to extension storage.
+
+Stopping Teach Mode saves a pairing-scoped draft. Review it in the EvoFlux
+WebBridge dialog, approve it, provide any secret parameters there, then replay
+it. The extension cannot approve or replay a draft on its own. Replay remains
+subject to the existing tab-binding, origin, domain-policy, and command-audit
+guards.
 
 ### Legacy: where to find the token
 
@@ -178,5 +254,7 @@ on the extension card in `chrome://extensions`. A quick syntax check is:
 ```bash
 node --check extensions/webbridge/background.js
 node --check extensions/webbridge/popup.js
+node --check extensions/webbridge/sidepanel.js
+node --check extensions/webbridge/teach_recorder.js
 node --test tests/webbridge_extension.test.cjs
 ```

@@ -443,6 +443,7 @@ async def dispatch_user_message(
     content: str,
     session_id: str | None,
     attachments: list[RawAttachment] | None = None,
+    message_extra: dict | None = None,
     mode: str = "forge",
     workspace: str | None = None,
     model: str | None = None,
@@ -450,6 +451,8 @@ async def dispatch_user_message(
     thinking_level: str | None = None,
     thinking_level_provided: bool = False,
     service_tier: str | None = None,
+    persist_message: bool = True,
+    existing_message_id: uuid.UUID | None = None,
 ) -> tuple[str, int]:
     """Send a user message through the team.
 
@@ -480,6 +483,7 @@ async def dispatch_user_message(
         session_id=sid,
         interrupt=False,
         attachment_metas=metas if metas else None,
+        message_extra=message_extra,
         mode=mode,
         workspace=workspace,
         model=model,
@@ -487,6 +491,8 @@ async def dispatch_user_message(
         thinking_level=thinking_level,
         thinking_level_provided=thinking_level_provided or thinking_level is not None,
         service_tier=service_tier,
+        persist_message=persist_message,
+        existing_message_id=existing_message_id,
     )
     logger.info(
         "agent_service_dispatched session_id={} attachments={}",

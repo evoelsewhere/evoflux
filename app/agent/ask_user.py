@@ -56,7 +56,9 @@ class AskUserService:
         # blocks until svc.reply(request_id, answers) is called from HTTP
     """
 
-    def __init__(self, session_id: str, *, stream_session_id: str | None = None) -> None:
+    def __init__(
+        self, session_id: str, *, stream_session_id: str | None = None
+    ) -> None:
         self.session_id = session_id
         # SSE events publish to the lead's stream (may differ from a
         # member's own session_id when called from a member agent).
@@ -123,9 +125,7 @@ class AskUserService:
         if req is None or req._future is None or req._future.done():
             return None  # let reply() report the not-found/resolved case
         if len(answers) != len(req.questions):
-            return (
-                f"expected {len(req.questions)} answer(s), got {len(answers)}."
-            )
+            return f"expected {len(req.questions)} answer(s), got {len(answers)}."
         for question, answer in zip(req.questions, answers):
             if question.strict and answer not in question.options:
                 return (
@@ -184,3 +184,17 @@ def reset_ask_user_service(token: contextvars.Token, session_id: str) -> None:
 def get_service_for_session(session_id: str) -> AskUserService | None:
     """Look up an active service by session_id (for the HTTP reply endpoint)."""
     return _active_services.get(session_id)
+
+
+def get_services_for_stream(stream_session_id: str) -> list[AskUserService]:
+    """Live AskUser services publishing to one lead/session stream.
+
+    A member can ask a question while publishing it on its parent lead stream.
+    Browser handoff surfaces need this reverse lookup to recover requests after
+    reconnect without exposing requests from another session.
+    """
+    return [
+        service
+        for service in _active_services.values()
+        if service.stream_session_id == stream_session_id
+    ]

@@ -13,7 +13,7 @@
  */
 
 import { memo, useState } from 'react'
-import { ChevronDown, ChevronUp, Copy, Check, Undo2, Terminal, Quote } from 'lucide-react'
+import { ChevronDown, ChevronUp, Copy, Check, Undo2, Terminal, Quote, Globe2 } from 'lucide-react'
 import { LazyMarkdownBlock } from '@/utils/LazyMarkdownBlock'
 import { Thinking } from './Thinking'
 import { ToolCall } from './ToolCall'
@@ -93,7 +93,16 @@ function splitLeadingQuote(content: string): { quote: string; message: string } 
   return { quote: quoteLines.join('\n'), message }
 }
 
-function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell, renderLeadingQuoteAsContext }: { content: string; timestamp?: Date; attachments?: MessageAttachment[]; onRevert?: () => void; modelId?: string | null; shell?: boolean; renderLeadingQuoteAsContext?: boolean }) {
+type WebBridgeContext = {
+  type?: string
+  origin?: string
+  page_url?: string
+  page_title?: string
+  link_url?: string
+  selection_text?: string
+}
+
+function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell, renderLeadingQuoteAsContext, webbridgeContext }: { content: string; timestamp?: Date; attachments?: MessageAttachment[]; onRevert?: () => void; modelId?: string | null; shell?: boolean; renderLeadingQuoteAsContext?: boolean; webbridgeContext?: WebBridgeContext }) {
   const [showTime, setShowTime] = useState(false)
   const [copied, setCopied] = useState(false)
   const [expanded, setExpanded] = useState(false)
@@ -171,6 +180,17 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell,
              <div className="mb-1.5 flex items-center gap-1 font-mono text-xs text-(--color-text-muted)">
                <Terminal size={12} aria-hidden="true" />
                <span>Shell</span>
+             </div>
+           )}
+           {webbridgeContext && (
+             <div className="mb-2.5 min-w-0 border-b border-(--color-border) pb-2.5">
+               <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-(--color-text-muted)">
+                 <Globe2 size={11} aria-hidden="true" />
+                 <span>Browser context</span>
+               </div>
+               <p className="truncate text-xs text-(--color-text-2)" title={webbridgeContext.page_url ?? webbridgeContext.origin}>
+                 {webbridgeContext.page_title || webbridgeContext.page_url || webbridgeContext.origin || 'Shared from browser'}
+               </p>
              </div>
            )}
            {quotedContext && (
@@ -270,7 +290,8 @@ export const BlockRenderer = memo(function BlockRenderer({ block, isStreaming, s
       }
       const blockModel = typeof block.extra?.model === 'string' ? block.extra.model : null
       const shell = block.extra?.kind === 'user_shell'
-      return <UserBubble content={block.content} timestamp={block.timestamp} attachments={block.attachments} onRevert={onRevert} modelId={blockModel} shell={shell} renderLeadingQuoteAsContext={renderLeadingQuoteAsContext} />
+      const webbridgeContext = block.extra?.webbridge_context as WebBridgeContext | undefined
+      return <UserBubble content={block.content} timestamp={block.timestamp} attachments={block.attachments} onRevert={onRevert} modelId={blockModel} shell={shell} renderLeadingQuoteAsContext={renderLeadingQuoteAsContext} webbridgeContext={webbridgeContext} />
     }
     case 'thinking':
       return <Thinking content={block.content} isStreaming={isStreaming} />

@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #111315;
+      --surface: #191c1f;
+      --surface-raised: #202428;
+      --surface-hover: #292e33;
+      --border: #30363b;
+      --border-strong: #464e55;
+      --text: #f4f5f6;
+      --muted: #9aa2aa;
+      --subtle: #717a83;
+      --accent: #625ed1;
+      --accent-hover: #6b67d8;
+      --accent-soft: rgba(119, 116, 255, .13);
+      --success: #48c78e;
+      --success-soft: rgba(72, 199, 142, .11);
+      --error: #ff737d;
+      --error-soft: rgba(255, 115, 125, .1);
+      --warning: #e4b34a;
+      --warning-soft: rgba(228, 179, 74, .1);
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      min-width: 0;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Avenir Next", "Segoe UI Variable", "Segoe UI", sans-serif;
+      font-size: 13px;
+      letter-spacing: 0;
+    }
+    button, input, select, textarea { font: inherit; }
+    button { cursor: pointer; letter-spacing: 0; }
+    button:disabled { cursor: not-allowed; opacity: .55; }
+    .panel { display: flex; flex-direction: column; height: 100%; }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 58px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(25, 28, 31, .96);
+    }
+    .logo { width: 30px; height: 30px; border-radius: 7px; overflow: hidden; flex: 0 0 auto; box-shadow: 0 0 0 1px var(--border); }
+    .logo img { width: 100%; height: 100%; display: block; }
+    .title { min-width: 0; flex: 1; }
+    .title strong { display: block; font-size: 13px; font-weight: 700; line-height: 1.2; }
+    .title span { display: block; overflow: hidden; margin-top: 2px; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+    .header-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--subtle); box-shadow: 0 0 0 3px rgba(113, 122, 131, .1); }
+    .status-dot.live { background: var(--success); box-shadow: 0 0 0 3px var(--success-soft); }
+    .status-dot.error { background: var(--error); box-shadow: 0 0 0 3px var(--error-soft); }
+    .session-bar { padding: 10px 12px 9px; border-bottom: 1px solid var(--border); background: var(--surface); }
+    .session-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+    .label { display: block; margin: 0; color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; }
+    .row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    select, textarea, input {
+      width: 100%; border: 1px solid var(--border); border-radius: 7px;
+      outline: none; background: var(--bg); color: var(--text); letter-spacing: 0;
+    }
+    select { min-width: 0; height: 34px; padding: 0 31px 0 9px; font-size: 12px; }
+    textarea { min-height: 44px; max-height: 132px; padding: 9px 10px; resize: none; line-height: 1.4; }
+    select:focus, textarea:focus, input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(109, 106, 246, .2); }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+      min-height: 30px; padding: 0 9px; border: 1px solid var(--border); border-radius: 6px;
+      background: var(--surface-raised); color: var(--text); font-size: 11px; font-weight: 650;
+    }
+    .btn:hover:not(:disabled) { border-color: var(--border-strong); background: var(--surface-hover); }
+    .btn.primary { border-color: var(--accent); background: var(--accent); color: white; }
+    .btn.primary:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn.icon { width: 30px; padding: 0; font-size: 15px; }
+    .btn.stop { min-height: 28px; border-color: transparent; background: transparent; color: var(--muted); }
+    .btn.stop:hover:not(:disabled) { border-color: rgba(255, 115, 125, .2); background: var(--error-soft); color: var(--error); }
+    .action-bar { display: flex; align-items: center; gap: 6px; margin-top: 8px; overflow-x: auto; scrollbar-width: none; }
+    .action-bar::-webkit-scrollbar { display: none; }
+    .action-bar .btn { flex: 0 0 auto; }
+    .context-status { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; min-height: 20px; margin-top: 7px; }
+    .binding { display: none; min-width: 0; max-width: 100%; overflow-wrap: anywhere; border-radius: 999px; padding: 3px 7px; background: rgba(255,255,255,.035); color: var(--muted); font-size: 10px; line-height: 1.3; }
+    .binding:not(:empty) { display: inline-flex; }
+    .binding.ok { background: var(--success-soft); color: var(--success); }
+    .binding.warn { background: var(--warning-soft); color: var(--warning); }
+    .notice { display: none; padding: 7px 12px; border-bottom: 1px solid var(--border); color: var(--muted); font-size: 11px; line-height: 1.4; }
+    .notice.visible { display: block; }
+    .notice.error { color: var(--error); background: var(--error-soft); }
+    .notice.info { color: var(--muted); background: rgba(255, 255, 255, .02); }
+    .transcript { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 14px 12px 20px; scroll-behavior: smooth; }
+    .empty { display: flex; min-height: 100%; align-items: center; justify-content: center; padding: 28px; color: var(--muted); font-size: 12px; text-align: center; line-height: 1.55; }
+    .message { max-width: 94%; margin: 0 0 12px; border-radius: 8px; padding: 9px 10px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; }
+    .message.user { margin-left: auto; background: #45429d; color: #fafaff; }
+    .message.assistant { max-width: 100%; padding: 2px 2px 10px; background: transparent; border-bottom: 1px solid rgba(255,255,255,.045); border-radius: 0; }
+    .message.live { border-color: rgba(119, 116, 255, .45); }
+    .message-meta { display: block; margin-bottom: 4px; color: var(--muted); font-size: 10px; font-weight: 600; }
+    .message.user .message-meta { color: rgba(255,255,255,.72); }
+    .message-body { min-width: 0; }
+    .message.user .message-body { white-space: pre-wrap; }
+    .message.assistant .message-body { white-space: normal; }
+    .message-body > :first-child { margin-top: 0; }
+    .message-body > :last-child { margin-bottom: 0; }
+    .message-body p { margin: 0 0 8px; }
+    .message-body h1, .message-body h2, .message-body h3,
+    .message-body h4, .message-body h5, .message-body h6 {
+      margin: 12px 0 6px; line-height: 1.25; font-weight: 700;
+    }
+    .message-body h1 { font-size: 18px; }
+    .message-body h2 { font-size: 16px; }
+    .message-body h3 { font-size: 14px; }
+    .message-body h4, .message-body h5, .message-body h6 { font-size: 13px; }
+    .message-body ul, .message-body ol { margin: 6px 0 9px; padding-left: 21px; }
+    .message-body li { margin: 3px 0; }
+    .message-body li.task { display: flex; align-items: flex-start; gap: 6px; margin-left: -18px; list-style: none; }
+    .message-body li.task input { width: 13px; height: 13px; margin-top: 3px; accent-color: var(--accent); }
+    .message-body blockquote { margin: 8px 0; padding: 2px 0 2px 9px; border-left: 3px solid var(--accent); color: var(--muted); }
+    .message-body code { border-radius: 4px; background: var(--surface-raised); padding: 1px 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+    .message-body pre { max-width: 100%; margin: 8px 0; overflow-x: auto; border: 1px solid var(--border); border-radius: 6px; background: #101214; padding: 9px; }
+    .message-body pre code { display: block; padding: 0; background: transparent; white-space: pre; font-size: 11px; line-height: 1.45; }
+    .message-body a { color: #9d9bff; text-decoration: underline; text-underline-offset: 2px; }
+    .message-body hr { height: 1px; margin: 10px 0; border: 0; background: var(--border); }
+    .message-body .table-wrap { max-width: 100%; margin: 8px 0; overflow-x: auto; }
+    .message-body table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    .message-body th, .message-body td { border: 1px solid var(--border); padding: 5px 6px; vertical-align: top; }
+    .message-body th { background: var(--surface-raised); font-weight: 700; }
+    .questions { display: none; max-height: 42%; overflow-y: auto; border-top: 1px solid var(--border); padding: 10px 12px; background: var(--surface); }
+    .questions.visible { display: block; }
+    .question-card { margin-bottom: 9px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-raised); }
+    .question-card:last-child { margin-bottom: 0; }
+    .question-card p { margin: 0 0 7px; font-size: 12px; line-height: 1.4; }
+    .answer { margin: 0 0 7px; }
+    textarea.answer { min-height: 42px; }
+    .options { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 7px; }
+    .option { min-height: 25px; padding: 0 7px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text); font-size: 11px; }
+    .option:hover { border-color: var(--accent); }
+    .composer { padding: 9px 10px 10px; border-top: 1px solid var(--border); background: var(--surface); box-shadow: 0 -8px 22px rgba(0,0,0,.14); }
+    .composer-row { position: relative; display: flex; align-items: flex-end; gap: 7px; }
+    .composer textarea { padding-right: 58px; }
+    .composer .btn { flex: 0 0 auto; min-height: 34px; }
+    .composer #sendBtn { position: absolute; right: 5px; bottom: 5px; min-height: 34px; padding: 0 11px; }
+    .composer-status { min-height: 14px; margin-top: 5px; padding-left: 2px; color: var(--muted); font-size: 10px; }
+    .composer-status.error { color: var(--error); }
+    .picked-card { align-items: center; margin-bottom: 7px; border: 1px solid var(--border); border-radius: 7px; padding: 5px 6px 5px 8px; background: var(--accent-soft); color: #c7c5ff; font-size: 11px; }
+    @media (max-width: 360px) {
+      .header { padding-inline: 10px; }
+      .session-bar, .transcript, .composer, .questions { padding-inline: 10px; }
+      .action-bar .btn { padding-inline: 7px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="panel">
+    <header class="header">
+      <div class="logo"><img src="icons/icon128.png" alt="EvoFlux" /></div>
+      <div class="title">
+        <strong>EvoFlux</strong>
+        <span id="pageTitle">WebBridge Side Panel</span>
+      </div>
+      <div class="header-actions">
+        <span class="status-dot" id="statusDot" title="Connection status"></span>
+        <button class="btn stop" id="stopBtn" title="Stop the current EvoFlux run">Stop</button>
+      </div>
+    </header>
+
+    <section class="session-bar">
+      <div class="session-heading">
+        <label class="label" for="sessionSelect">Session</label>
+      </div>
+      <div class="row session-actions">
+        <select id="sessionSelect" aria-label="Current tab session">
+          <option value="">Choose a browser session</option>
+        </select>
+        <button class="btn icon" id="refreshBtn" title="Refresh sessions and transcript" aria-label="Refresh sessions and transcript">↻</button>
+      </div>
+      <div class="action-bar">
+        <button class="btn" id="bindBtn">Bind tab</button>
+        <button class="btn" id="unbindBtn" style="display:none">Unbind tab</button>
+        <button class="btn" id="pickElementBtn">Pick element</button>
+        <button class="btn" id="takeControlBtn">Take over</button>
+        <button class="btn primary" id="resumeAgentBtn" style="display:none">Resume agent</button>
+      </div>
+      <div class="context-status">
+        <div class="binding" id="bindingStatus">Choose a session to bind this tab.</div>
+        <div class="binding" id="controlStatus"></div>
+        <div class="binding" id="pickedElementStatus"></div>
+      </div>
+    </section>
+
+    <div class="notice info visible" id="notice">Loading WebBridge session...</div>
+    <section class="transcript" id="transcript" aria-live="polite"></section>
+    <section class="questions" id="questions" aria-live="polite"></section>
+
+    <footer class="composer">
+      <div class="row picked-card" id="pickedElementCard" style="display:none">
+        <span id="pickedElementLabel" style="min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap"></span>
+        <button class="btn icon" id="clearElementBtn" title="Remove picked element" aria-label="Remove picked element">×</button>
+      </div>
+      <div class="composer-row">
+        <textarea id="composer" placeholder="Message EvoFlux in this session..." aria-label="Message EvoFlux"></textarea>
+        <button class="btn primary" id="sendBtn">Send</button>
+      </div>
+      <div class="composer-status" id="composerStatus"></div>
+    </footer>
+  </main>
+  <script src="markdown.js"></script>
+  <script src="sidepanel.js"></script>
+</body>
+</html>

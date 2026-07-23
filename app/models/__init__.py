@@ -8,7 +8,12 @@ from .chat import (
 )
 from .code_graph import CodeEdge, CodeIndexState, CodeNode
 from .workflow import WorkflowApproval, WorkflowExecution, WorkflowNodeRun
-from .webbridge import WebBridgeInteraction, WebBridgePairing, WebBridgeTabBinding
+from .webbridge import (
+    WebBridgeInteraction,
+    WebBridgePairing,
+    WebBridgeTabBinding,
+    WebBridgeTeachDraft,
+)
 
 __all__ = [
     "AimLink",
@@ -28,4 +33,5 @@ __all__ = [
     "WebBridgeInteraction",
     "WebBridgePairing",
     "WebBridgeTabBinding",
+    "WebBridgeTeachDraft",
 ]

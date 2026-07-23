@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Trạng thái** | IN PROGRESS (v1.1 - P0 foundation implemented; P1/P2 proposed) |
+| **Trạng thái** | IN PROGRESS (v1.4 - P0/P1 implemented; P2/P3 MVP implemented) |
 | **Ngày** | 2026-07-22 |
 | **Phạm vi** | Mở rộng WebBridge từ kênh EvoFlux điều khiển browser thành lớp tương tác hai chiều browser <-> EvoFlux |
 | **Tài liệu liên quan** | [`forge-computer-use.md`](forge-computer-use.md), [`../../extensions/webbridge/README.md`](../../extensions/webbridge/README.md), [`../../docs/side-chat-spec.md`](../../docs/side-chat-spec.md) |
@@ -680,8 +680,44 @@ cho cả command-plane observation:
 và interaction state, one-time pairing code, scoped credential, single-use relay
 ticket, revocation, protocol/capability registration, idempotent draft/submit,
 queue-aware chat dispatch, tab/session binding + command pinning, sharing policy
-và rate limit. Context menu/quick prompt chưa có; đó vẫn là P1. Side panel,
-fetch-SSE transcript và handoff vẫn là P2.
+và rate limit. P1 MVP hiện đã có Chrome context menu cho selection/link/page,
+browser session tự tạo hoặc bind tab với recent session, quick prompt trong popup,
+message provenance trong transcript và ACK badge ở toolbar. P1 chỉ gửi metadata,
+link và selected text từ `OnClickData`; readable DOM/page extract, screenshot,
+side panel/fetch-SSE transcript và handoff vẫn là P2.
+
+**P1 ownership update (2026-07-23):** session chooser của extension chỉ thấy
+sessions thuộc pairing hiện tại. Session tạo từ browser được gắn owner tag theo
+pairing; muốn dùng chat có sẵn, user phải grant session đó cho pairing từ dialog
+WebBridge trong app. Pairing khác không thể enumerate, bind hoặc gửi context vào
+session chưa được grant. Context retry giữ một action/session identity ngắn hạn,
+bound tab fail-closed khi đổi origin, và URL query/fragment không được persist.
+
+**P3 MVP update (2026-07-23):** extension đã có explicit text watch scoped theo
+tab + origin + path, TTL tối đa 24 giờ, kill switch tại popup, và alarm poll chỉ
+trả boolean. Match không tự gửi context hoặc tự chạy agent; user phải bấm Send
+matched watch để đi qua P1 interaction pipeline. Teach Mode ghi semantic
+navigation/click/fill/select/toggle theo user gesture, thay secret value bằng
+parameter placeholder tại source, và lưu pairing-scoped draft. Draft chỉ được
+approve/replay từ app; replay đi qua command policy, tab binding và audit hiện
+có. Browser credential không thể tự approve/replay draft.
+
+**P2 MVP update (2026-07-23):** Chrome Side Panel hiện có pairing-scoped session
+picker, bind/unbind tab, composer, transcript fetch-SSE và restore pending
+AskUser questions. Browser pairing chỉ đọc/gửi vào session đã được grant; stream
+lọc tool arguments/results. User có thể Take control cho một tab; lease sống
+trong browser session, tự hết hạn/clear khi đổi origin hoặc đóng tab và chặn
+agent command vào tab đó cho đến Resume agent. Agent-initiated takeover prompt
+và Report issue diagnostics vẫn là slice P2 tiếp theo.
+
+**P0-P3 hardening review (2026-07-23):** local extension có code-free pairing
+chỉ từ `chrome-extension://` + loopback; website origin bị từ chối. Browser
+messages dùng persisted source state để dedupe lost ACK/process restart, binding
+giữ đúng một primary tab per pairing/session và fail-closed khi hết hạn. Revoke
+xóa pairing-owned metadata/tag và dừng capture/lease/stream. Teach recorder nhận
+OTP/MFA/PIN/payment/token fields tại source, review hiển thị non-secret values +
+capture warnings, replay serialized per session. Side Panel có Stop, auto-attach
+live runs, reconnect rebuild, và sanitized element picker.
 
 ### P0 - Protocol + secure channel foundation (4-6 ngày)
 
@@ -718,32 +754,52 @@ message đôi.
 
 ### P2 - Side panel + live interactive handoff (7-12 ngày)
 
-- Chrome Side Panel với session picker, composer, transcript streaming.
-- Bind/unbind tab với session.
+- Chrome Side Panel với session picker, composer, transcript streaming. **MVP
+  done:** fetch-SSE only forwards transcript/status/question events, never raw
+  tool arguments/results.
+- Bind/unbind tab với session. **MVP done:** composer requires an active binding
+  whose persisted origin matches the current page.
 - Handoff mở rộng `AskUserService`: browser là thêm một answer channel cho
   request ID hiện có; state live-only, mất hiệu lực khi process/run restart.
+  **MVP done:** side panel restores/replies to pending AskUser batches owned by
+  its assigned session.
 - Element picker + highlight overlay; secret completion không đọc value.
+  **MVP done:** opt-in hover highlight + click capture, form values are never
+  read, and the next message carries a sanitized untrusted DOM anchor.
 - Control lease per-tab; presence rõ agent hay human đang điều khiển, stop/release
-  luôn truy cập được.
+  luôn truy cập được. **MVP done:** explicit Take control/Resume agent lease,
+  stored only for the browser session and enforced by the extension command path.
 - Side panel dùng REST + fetch-SSE, giữ replay/reconnect của stream store.
 - **Report issue to EvoFlux:** opt-in diagnostics collector giữ ring buffer nhỏ,
   redacted cho console/network; user gesture đóng gói evidence + element + ảnh.
+  Deferred to the next P2 slice.
 
-**Exit criterion:** agent gặp login, mời user takeover trong tab, user login và
-bấm Resume; cùng live run tiếp tục đúng tab, command khác bị chặn trong thời gian
-human giữ lease.
+**P2 MVP exit criterion met:** user bind một tab, chat/see response cạnh page,
+trả lời AskUser request trong browser, Pick element, Take control để chặn agent
+commands trên tab rồi Resume agent. Full P2 criterion still needs
+agent-initiated takeover UI và opt-in diagnostics evidence.
 
 ### P3 - Teach mode + explicit watches (10-15 ngày)
 
-- Semantic action recorder, parameter/secret handling.
-- Draft workflow/test artifact + review/replay.
-- Watch subscription có TTL, scope, debounce và kill switch.
-- Browser Inbox triage và notification routing.
+- Semantic action recorder, parameter/secret handling. **MVP done:** captures
+  navigation/click/fill/select/toggle; values of secret fields never leave the
+  extension, only their parameter names do.
+- Draft workflow/test artifact + review/replay. **MVP done:** pairing-scoped
+  Teach draft review, app-side approval and supervised sequential replay.
+- Watch subscription có TTL, scope, debounce và kill switch. **MVP done:** one
+  literal text watch per tab, HTTP(S) page + exact path scope, 30-second poll,
+  bounded TTL, cancel-on-navigation/close, and explicit confirmation before
+  browser context is submitted.
+- Browser Inbox triage và notification routing. Deferred until multi-watch
+  telemetry justifies a dedicated inbox rather than popup state/badge.
 - Nếu cần resume qua backend restart: durable handoff/waiting-run state thay cho
   future in-memory hiện có.
 
-**Exit criterion:** user record một flow ngắn, EvoFlux tạo workflow review được,
-replay thành công; watch không phát event ngoài scope đã duyệt.
+**P3 MVP exit criterion met:** user record một flow ngắn, secret input được yêu
+cầu lại only at replay, app review/approve flow và replay qua binding thành
+công; watch không đọc content vào EvoFlux hay phát event ngoài exact page scope
+trước khi user xác nhận. Full P3 criterion still needs workflow-file generation,
+multi-watch Browser Inbox và durable handoff.
 
 ### P4 - Trusted connectors (sau khi P1-P3 có telemetry)
 

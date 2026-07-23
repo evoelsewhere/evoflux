@@ -32,6 +32,10 @@ def _make_app(token: str | None) -> FastAPI:
     def pairing_exchange() -> dict:
         return {"exchange": True}
 
+    @app.post("/api/team/webbridge/pairing/local")
+    def pairing_local() -> dict:
+        return {"local": True}
+
     @app.post("/api/team/webbridge/relay-ticket")
     def relay_ticket() -> dict:
         return {"ticket": True}
@@ -40,9 +44,33 @@ def _make_app(token: str | None) -> FastAPI:
     def interactions() -> dict:
         return {"interaction": True}
 
+    @app.post("/api/team/webbridge/teach-drafts")
+    def create_teach_draft() -> dict:
+        return {"draft": True}
+
+    @app.get("/api/team/webbridge/teach-drafts/review")
+    def review_teach_drafts() -> dict:
+        return {"drafts": True}
+
+    @app.get("/api/team/webbridge/sessions")
+    def browser_sessions() -> dict:
+        return {"sessions": True}
+
+    @app.get("/api/team/webbridge/sessions/session-1/history")
+    def browser_session_history() -> dict:
+        return {"messages": []}
+
+    @app.post("/api/team/webbridge/sessions/session-1/messages")
+    def browser_session_message() -> dict:
+        return {"message": True}
+
     @app.put("/api/team/webbridge/bindings/{tab_id}")
     def binding(tab_id: int) -> dict:
         return {"tab_id": tab_id}
+
+    @app.put("/api/team/webbridge/pairings/{pairing_id}/sessions/{session_id}")
+    def assign_pairing_session(pairing_id: str, session_id: str) -> dict:
+        return {"pairing_id": pairing_id, "session_id": session_id}
 
     @app.get("/")
     def root() -> dict:
@@ -138,11 +166,34 @@ class TestMiddlewareEnabled:
 
         for path in (
             "/api/team/webbridge/pairing/exchange",
+            "/api/team/webbridge/pairing/local",
             "/api/team/webbridge/relay-ticket",
             "/api/team/webbridge/interactions",
+            "/api/team/webbridge/teach-drafts",
         ):
             assert client.post(path).status_code == 200
+        assert client.get("/api/team/webbridge/sessions").status_code == 200
+        assert (
+            client.get("/api/team/webbridge/sessions/session-1/history").status_code
+            == 200
+        )
+        assert (
+            client.post("/api/team/webbridge/sessions/session-1/messages").status_code
+            == 200
+        )
         assert client.put("/api/team/webbridge/bindings/42").status_code == 200
+        assert client.get("/api/team/webbridge/teach-drafts/review").status_code == 401
+
+    def test_pairing_session_assignment_requires_desktop_auth(self):
+        app = _make_app(token="secret")
+        client = TestClient(app)
+        path = "/api/team/webbridge/pairings/pairing-1/sessions/session-1"
+
+        assert client.put(path).status_code == 401
+        assert (
+            client.put(path, headers={"Authorization": "Bearer secret"}).status_code
+            == 200
+        )
 
     def test_pairing_code_issuance_still_requires_desktop_auth(self):
         app = _make_app(token="secret")

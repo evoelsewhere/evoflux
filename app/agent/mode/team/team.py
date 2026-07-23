@@ -57,6 +57,7 @@ from app.services.chat_service import (
     BoundaryShift,
     get_messages_for_llm,
     heal_orphaned_tool_calls,
+    mark_channel_source_delivered,
     pop_queued_user_messages,
     redo_session_messages,
     save_message,
@@ -677,6 +678,9 @@ class AgentTeam:
                 content=f"[user]: {row.content or ''}",
             )
             await self.mailbox.send(to=self.lead.name, message=msg)
+            await asyncio.shield(
+                self._mark_channel_source_delivered(session_id, row.id)
+            )
         logger.info(
             "team_queued_messages_activated session_id={} count={} message_ids={}",
             session_id,
@@ -836,6 +840,7 @@ class AgentTeam:
         session_id: str,
         interrupt: bool = False,
         attachment_metas: list[dict] | None = None,
+        message_extra: dict | None = None,
         mode: str | None = None,
         workspace: str | None = None,
         model: str | None = None,
@@ -843,6 +848,8 @@ class AgentTeam:
         thinking_level: str | None = None,
         thinking_level_provided: bool = False,
         service_tier: str | None = None,
+        persist_message: bool = True,
+        existing_message_id: UUID | None = None,
     ) -> str:
         """Deliver a user message to the team lead. Returns the session_id.
 
@@ -1018,6 +1025,10 @@ class AgentTeam:
                 logger.warning("team_loop_command_done_failed error={}", exc)
             return session_id
 
+        saved_user_message_id = existing_message_id
+        source_required = isinstance(
+            (message_extra or {}).get("webbridge_source"), dict
+        )
         try:
             db_factory = resolve_db_factory(self.lead.db_factory)
             lead_uuid = UUID(session_id)
@@ -1051,13 +1062,13 @@ class AgentTeam:
                 else:
                     effective_model = model or self.lead.agent.model_id
 
+                msg_extra: dict | None = dict(message_extra or {}) or None
                 if attachment_metas:
                     parts = build_parts_from_metas(content, attachment_metas)
                     user_msg = HumanMessage(content=content, parts=parts)
-                    msg_extra: dict | None = {"attachments": attachment_metas}
+                    msg_extra = {**(msg_extra or {}), "attachments": attachment_metas}
                 else:
                     user_msg = HumanMessage(content=content)
-                    msg_extra = None
 
                 if snapshot_hash:
                     extra_with_snapshot = dict(msg_extra or {})
@@ -1072,7 +1083,9 @@ class AgentTeam:
                     extra_with_model["service_tier"] = service_tier
                 msg_extra = extra_with_model
 
-                await save_message(db, lead_uuid, user_msg, extra=msg_extra)
+                if persist_message:
+                    saved = await save_message(db, lead_uuid, user_msg, extra=msg_extra)
+                    saved_user_message_id = saved.id
 
                 for member in self.members.values():
                     try:
@@ -1098,6 +1111,8 @@ class AgentTeam:
                 type(exc).__name__,
                 repr(exc),
             )
+            if source_required:
+                raise
 
         # Initialise a fresh state blob for this turn synchronously before
         # delivering the message to the lead. This guarantees the state key
@@ -1134,8 +1149,32 @@ class AgentTeam:
             content=f"[user]: {content}",
         )
         await self.mailbox.send(to=self.lead.name, message=msg)
+        if saved_user_message_id is not None:
+            await asyncio.shield(
+                self._mark_channel_source_delivered(session_id, saved_user_message_id)
+            )
 
         return session_id
+
+    async def _mark_channel_source_delivered(
+        self, session_id: str, message_id: UUID
+    ) -> None:
+        """Mark a persisted channel message after mailbox delivery succeeds."""
+        try:
+            session_uuid = UUID(session_id)
+            db_factory = resolve_db_factory(self.lead.db_factory)
+            async with db_factory() as db:
+                row = await db.get(SessionMessage, message_id)
+                if row is None or row.session_id != session_uuid:
+                    return
+                await mark_channel_source_delivered(db, row)
+                await db.commit()
+        except Exception as exc:
+            logger.warning(
+                "team_channel_delivery_mark_failed message_id={} error={}",
+                message_id,
+                exc,
+            )
 
     async def handle_continue(self, session_id: str) -> str:
         """Continue the prior assistant turn on *session_id* — no new user message.
