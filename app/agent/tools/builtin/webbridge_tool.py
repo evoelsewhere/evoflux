@@ -31,7 +31,10 @@ from app.services.webbridge_service import webbridge_manager
 
 
 def _get_sid(state: Any) -> str:
-    return state.metadata.get("session_id", "default") if state else "default"
+    if not state:
+        return "default"
+    metadata = state.metadata or {}
+    return metadata.get("webbridge_session_id") or metadata.get("session_id", "default")
 
 
 async def _send_command(

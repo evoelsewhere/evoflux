@@ -5,6 +5,16 @@
   let highlighted = null;
   let previousOutline = "";
   let previousOffset = "";
+  let previousCursor = "";
+
+  const badgeHost = document.createElement("div");
+  badgeHost.style.cssText = "all:initial;position:fixed;top:14px;left:50%;z-index:2147483647;pointer-events:none;transform:translateX(-50%)";
+  const badgeRoot = badgeHost.attachShadow({ mode: "closed" });
+  const badge = document.createElement("div");
+  badge.textContent = "Pick an element · Esc to cancel";
+  badge.style.cssText = "box-sizing:border-box;border:1px solid rgba(255,255,255,.18);border-radius:8px;padding:7px 10px;background:#17191c;color:#f4f5f6;box-shadow:0 8px 28px rgba(0,0,0,.28);font:600 12px/1.2 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;letter-spacing:0;white-space:nowrap";
+  badgeRoot.append(badge);
+  document.documentElement.append(badgeHost);
 
   const normalize = (value) => String(value || "").replace(/\s+/g, " ").trim();
 
@@ -59,6 +69,16 @@
   function stop() {
     enabled = false;
     clearHighlight();
+    badgeHost.hidden = true;
+    document.documentElement.style.cursor = previousCursor;
+  }
+
+  function start() {
+    if (enabled) return;
+    enabled = true;
+    badgeHost.hidden = false;
+    previousCursor = document.documentElement.style.cursor;
+    document.documentElement.style.cursor = "crosshair";
   }
 
   function onMove(event) {
@@ -87,17 +107,21 @@
   }
 
   function onKey(event) {
-    if (enabled && event.key === "Escape") stop();
+    if (enabled && event.key === "Escape") {
+      stop();
+      chrome.runtime.sendMessage({ type: "element_picker_cancelled" }).catch(() => {});
+    }
   }
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type !== "webbridge_element_picker") return;
-    enabled = Boolean(message.enabled);
-    if (!enabled) clearHighlight();
+    if (message.enabled) start();
+    else stop();
     sendResponse({ ok: true });
   });
   document.addEventListener("mousemove", onMove, true);
   document.addEventListener("click", onClick, true);
   document.addEventListener("keydown", onKey, true);
+  start();
   globalThis.__evofluxElementPicker = true;
 })();

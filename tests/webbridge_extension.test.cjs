@@ -22,6 +22,18 @@ const markdownSource = fs.readFileSync(
   path.join(__dirname, "..", "extensions", "webbridge", "markdown.js"),
   "utf8"
 );
+const sidePanelSource = fs.readFileSync(
+  path.join(__dirname, "..", "extensions", "webbridge", "sidepanel.js"),
+  "utf8"
+);
+const sidePanelHtml = fs.readFileSync(
+  path.join(__dirname, "..", "extensions", "webbridge", "sidepanel.html"),
+  "utf8"
+);
+const extensionManifest = JSON.parse(fs.readFileSync(
+  path.join(__dirname, "..", "extensions", "webbridge", "manifest.json"),
+  "utf8"
+));
 
 function eventChannel() {
   const listeners = new Set();
@@ -49,6 +61,7 @@ function loadWorker(options = {}) {
   const alarmCalls = [];
   const tabMessages = [];
   const sidePanelCalls = [];
+  const tabGroupCalls = [];
   const storedConfig = {
     extensionId: "ext-test",
     ...(options.storedConfig || {}),
@@ -95,6 +108,8 @@ function loadWorker(options = {}) {
     onMoved: eventChannel(),
     async query(queryInfo = {}) {
       if (queryInfo.active) return tabList.filter((tab) => tab.active);
+      if (queryInfo.groupId != null) return tabList.filter((tab) => tab.groupId === queryInfo.groupId);
+      if (queryInfo.windowId != null) return tabList.filter((tab) => tab.windowId === queryInfo.windowId);
       return tabList;
     },
     async get(tabId) {
@@ -104,13 +119,38 @@ function loadWorker(options = {}) {
     },
     async update(tabId, changes) {
       const tab = await this.get(tabId);
+      if (changes.active) {
+        for (const candidate of tabList) {
+          if (candidate.windowId === tab.windowId) candidate.active = false;
+        }
+      }
       Object.assign(tab, changes);
       return tab;
     },
-    async create({ url, active }) {
-      const tab = { id: 3, windowId: 10, active, pinned: false, title: "", url };
+    async create(options) {
+      const tab = {
+        id: Math.max(...tabList.map((candidate) => candidate.id)) + 1,
+        windowId: options.windowId ?? 10,
+        active: options.active ?? true,
+        pinned: false,
+        title: "",
+        url: options.url,
+        groupId: -1,
+        openerTabId: options.openerTabId,
+        index: options.index,
+      };
       tabList.push(tab);
       return tab;
+    },
+    async group(options) {
+      tabGroupCalls.push({ kind: "group", options });
+      const groupId = options.groupId ?? 77;
+      const tabIds = Array.isArray(options.tabIds) ? options.tabIds : [options.tabIds];
+      for (const tabId of tabIds) {
+        const tab = tabList.find((candidate) => candidate.id === tabId);
+        if (tab) tab.groupId = groupId;
+      }
+      return groupId;
     },
     async remove(tabId) {
       const index = tabList.findIndex((tab) => tab.id === tabId);
@@ -118,6 +158,9 @@ function loadWorker(options = {}) {
     },
     async sendMessage(tabId, message) {
       tabMessages.push({ tabId, message });
+      if (options.tabMessageResponder) {
+        return options.tabMessageResponder(tabId, message);
+      }
       return { ok: true };
     },
     async goBack() {},
@@ -185,6 +228,12 @@ function loadWorker(options = {}) {
       },
       async setPanelBehavior(options) {
         sidePanelCalls.push({ kind: "behavior", options });
+      },
+    },
+    tabGroups: {
+      async update(groupId, options) {
+        tabGroupCalls.push({ kind: "update", groupId, options });
+        return { id: groupId, ...options };
       },
     },
     tabs,
@@ -258,6 +307,7 @@ function loadWorker(options = {}) {
     scriptCalls,
     tabMessages,
     sidePanelCalls,
+    tabGroupCalls,
     sockets,
     storedConfig,
     storedSession,
@@ -359,6 +409,223 @@ test("P2 popup opens the Side Panel directly inside the click gesture", () => {
     popupSource,
     /openSidePanelBtn\.addEventListener\("click", openSidePanel\)/,
   );
+});
+
+test("P2 Side Chat auto-creates and binds one session for an unbound tab", async () => {
+  let sessionCreates = 0;
+  let bindingCreates = 0;
+  const worker = loadWorker({
+    storedConfig: {
+      relayBase: "ws://127.0.0.1:8000",
+      pairingCredential: "pair-secret",
+      pairingId: "pairing-1",
+      pairingRelayBase: "ws://127.0.0.1:8000",
+    },
+    fetchResponder: async (url, init) => {
+      if (url.endsWith("/sessions") && !init.method) {
+        return { ok: true, async json() { return [{ id: "session-auto", title: "Browser: Active" }]; } };
+      }
+      if (url.endsWith("/bindings") && !init.method) {
+        return { ok: true, async json() { return []; } };
+      }
+      if (url.endsWith("/sessions") && init.method === "POST") {
+        sessionCreates += 1;
+        return { ok: true, async json() { return { id: "session-auto", title: "Browser: Active" }; } };
+      }
+      if (url.endsWith("/bindings/1") && init.method === "PUT") {
+        bindingCreates += 1;
+        return { ok: true, async json() { return { tab_id: 1, session_id: "session-auto" }; } };
+      }
+      throw new Error(`Unexpected fetch ${url} ${init.method || "GET"}`);
+    },
+  });
+
+  await new Promise((resolve) => setImmediate(resolve));
+  const response = await worker.run(`new Promise((resolve) => {
+    chrome.runtime.onMessage.emit(
+      { type: "ensure_browser_session_for_tab", action_id: "auto-bind-1" },
+      null,
+      resolve
+    );
+  })`);
+
+  assert.equal(response.ok, true);
+  assert.equal(response.session_id, "session-auto");
+  assert.equal(response.tab.id, 1);
+  assert.equal(sessionCreates, 1);
+  assert.equal(bindingCreates, 1);
+});
+
+test("P2 extension action opens Side Chat and settings live inside the panel", () => {
+  assert.equal(extensionManifest.action.default_popup, undefined);
+  assert.equal(extensionManifest.content_scripts, undefined);
+  assert.equal(extensionManifest.web_accessible_resources, undefined);
+  assert.ok(extensionManifest.permissions.includes("tabGroups"));
+  assert.match(workerSource, /openPanelOnActionClick: true/);
+  assert.match(sidePanelHtml, /id="settingsDrawer"/);
+  assert.match(sidePanelHtml, /id="relayBaseInput"/);
+  assert.match(sidePanelHtml, /id="pairLocalBtn"/);
+  assert.doesNotMatch(sidePanelHtml, /id="sessionSelect"/);
+  assert.doesNotMatch(sidePanelHtml, /id="bindBtn"/);
+  assert.doesNotMatch(sidePanelHtml, /Legacy access token|accessTokenInput/);
+  assert.doesNotMatch(popupSource, /accessTokenInput|Legacy connection/);
+  assert.doesNotMatch(workerSource, /[?&]_token=/);
+});
+
+test("P2 Side Chat strips extension-only tab metadata from picked elements", () => {
+  const start = sidePanelSource.indexOf("function browserPanelElement(");
+  const end = sidePanelSource.indexOf("\n}\n", start) + 3;
+  assert.ok(start >= 0 && end > start);
+  const context = vm.createContext({ result: null });
+  vm.runInContext(`${sidePanelSource.slice(start, end)}
+    result = browserPanelElement({
+      tab_id: 874320141,
+      page_url: "https://example.com/page",
+      selector: "#save",
+      tag: "button",
+      role: "button",
+      name: "Save",
+      text: "Save",
+      internal: "must-not-leak"
+    }, 874320141);`, context);
+
+  assert.equal(context.result.page_url, "https://example.com/page");
+  assert.equal(context.result.selector, "#save");
+  assert.equal("tab_id" in context.result, false);
+  assert.equal("internal" in context.result, false);
+});
+
+test("P2 a session opens child tabs in a named Chrome tab group", async () => {
+  let sessionCreates = 0;
+  const worker = loadWorker({
+    storedConfig: {
+      relayBase: "ws://127.0.0.1:8000",
+      pairingCredential: "pair-secret",
+      pairingId: "pairing-1",
+      pairingRelayBase: "ws://127.0.0.1:8000",
+    },
+    fetchResponder: async (url, init) => {
+      if (url.endsWith("/bindings")) {
+        return {
+          ok: true,
+          async json() {
+            return [{
+              tab_id: 1,
+              session_id: "session-123456",
+              origin: "https://example.com",
+            }];
+          },
+        };
+      }
+      if (url.endsWith("/sessions") && !init.method) {
+        return {
+          ok: true,
+          async json() { return [{ id: "session-123456", title: "Browser: Active" }]; },
+        };
+      }
+      if (url.endsWith("/sessions") && init.method === "POST") {
+        sessionCreates += 1;
+      }
+      throw new Error(`Unexpected fetch ${url}`);
+    },
+  });
+
+  await new Promise((resolve) => setImmediate(resolve));
+  const response = await worker.run(`new Promise((resolve) => {
+    chrome.runtime.onMessage.emit(
+      { type: "open_grouped_session_tab", session_id: "session-123456" },
+      null,
+      resolve
+    );
+  })`);
+
+  assert.equal(response.ok, true);
+  assert.equal(response.tab_id, 3);
+  assert.equal(response.group_id, 77);
+  assert.equal(worker.tabGroupCalls[0].options.tabIds[0], 1);
+  assert.equal(worker.tabGroupCalls[0].options.tabIds[1], 3);
+  assert.equal(worker.tabGroupCalls[1].kind, "update");
+  assert.equal(worker.tabGroupCalls[1].options.title, "EvoFlux · Active");
+  const child = await worker.run("chrome.tabs.get(3)");
+  assert.equal(child.openerTabId, 1);
+  assert.equal(child.windowId, 10);
+  assert.equal(child.active, false);
+
+  await worker.run("chrome.tabs.update(3, { active: true })");
+  worker.setTabUrl(3, "https://child.example/work");
+  const childContext = await worker.run(`new Promise((resolve) => {
+    chrome.runtime.onMessage.emit(
+      { type: "ensure_browser_session_for_tab", action_id: "child-resolve" },
+      null,
+      resolve
+    );
+  })`);
+  assert.equal(childContext.ok, true);
+  assert.equal(childContext.session_id, "session-123456");
+  assert.equal(childContext.binding_tab_id, 1);
+  assert.equal(childContext.grouped, true);
+  assert.equal(sessionCreates, 0);
+});
+
+test("P2 parallel subagents join one session tab group", async () => {
+  const worker = loadWorker();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const results = await worker.run(`Promise.all([
+    createGroupedSessionTab(
+      { id: 1, windowId: 10, groupId: -1, title: "Primary" },
+      "lead-session",
+      { url: "https://one.example", active: false }
+    ),
+    createGroupedSessionTab(
+      { id: 1, windowId: 10, groupId: -1, title: "Primary" },
+      "lead-session",
+      { url: "https://two.example", active: false }
+    )
+  ])`);
+
+  assert.equal(results[0].group_id, 77);
+  assert.equal(results[1].group_id, 77);
+  assert.equal((await worker.run("chrome.tabs.get(1)")).groupId, 77);
+  assert.equal((await worker.run("chrome.tabs.get(3)")).groupId, 77);
+  assert.equal((await worker.run("chrome.tabs.get(4)")).groupId, 77);
+  const createGroupCalls = worker.tabGroupCalls.filter((call) => (
+    call.kind === "group" && call.options.createProperties
+  ));
+  assert.equal(createGroupCalls.length, 1);
+});
+
+test("P2 Side Chat supports persisted light and dark themes", () => {
+  assert.match(sidePanelHtml, /:root\[data-theme="light"\]/);
+  assert.match(sidePanelHtml, /data-theme-value="system"/);
+  assert.match(sidePanelHtml, /data-theme-value="light"/);
+  assert.match(sidePanelHtml, /data-theme-value="dark"/);
+  assert.match(sidePanelSource, /webbridgeSideChatTheme/);
+  assert.match(sidePanelSource, /dataset\.theme = themePreference/);
+  assert.match(sidePanelSource, /delete document\.documentElement\.dataset\.theme/);
+  assert.match(sidePanelSource, /THEME_STORAGE_KEY]: themePreference/);
+});
+
+test("P2 Side Chat renders progressive activity and throttles Markdown", () => {
+  assert.match(sidePanelHtml, /id="activity"/);
+  assert.match(sidePanelSource, /type === "agent_status"/);
+  assert.match(sidePanelSource, /type === "activity"/);
+  assert.match(sidePanelSource, /LOADING_VERBS/);
+  assert.match(sidePanelSource, /}, 80\)/);
+  assert.match(sidePanelSource, /transcriptPinned/);
+});
+
+test("P2 composer exposes model selection and icon-only browser controls", () => {
+  assert.match(sidePanelHtml, /id="modelTrigger"/);
+  assert.match(sidePanelHtml, /id="modelSearch"/);
+  assert.match(sidePanelHtml, /id="modelList"/);
+  assert.match(sidePanelSource, /\/api\/team\/webbridge\/models/);
+  assert.match(sidePanelSource, /\/model`/);
+  for (const id of ["pickElementBtn", "takeControlBtn", "resumeAgentBtn", "sendBtn"]) {
+    const start = sidePanelHtml.indexOf(`id="${id}"`);
+    assert.ok(start >= 0);
+    assert.match(sidePanelHtml.slice(start, start + 400), /<svg/);
+  }
 });
 
 test("P2 Side Panel renders safe Markdown for history and streaming responses", () => {
@@ -977,6 +1244,29 @@ test("P2 element picker stores only a sanitized semantic anchor", async () => {
   assert.ok(worker.storedSession.webbridgePickedElements[1]);
 });
 
+test("P2 element picker retries activation and renders page guidance", async () => {
+  let attempts = 0;
+  const worker = loadWorker({
+    async tabMessageResponder(_tabId, message) {
+      if (message.type !== "webbridge_element_picker") return { ok: true };
+      attempts += 1;
+      if (attempts === 1) throw new Error("Receiving end does not exist");
+      return { ok: true };
+    },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const result = await worker.run("startElementPicker({ id: 1, url: 'https://example.com/active' })");
+
+  assert.equal(result.tab_id, 1);
+  assert.equal(attempts, 2);
+  assert.ok(worker.scriptCalls.some((call) => call.files?.includes("element_picker.js")));
+  const pickerSource = fs.readFileSync(path.join(__dirname, "..", "extensions", "webbridge", "element_picker.js"), "utf8");
+  assert.match(pickerSource, /Pick an element · Esc to cancel/);
+  assert.match(pickerSource, /function start\(\) \{\s+if \(enabled\) return;/);
+  assert.match(pickerSource, /document\.documentElement\.style\.cursor = previousCursor/);
+});
+
 test("paired connection exchanges credential for a single-use relay ticket", async () => {
   const worker = loadWorker({
     storedConfig: {
@@ -1047,8 +1337,25 @@ test("pairing code exchange persists the scoped credential", async () => {
   assert.equal(worker.storedConfig.pairingCredential, "scoped-secret");
   assert.equal(worker.storedConfig.pairingId, "pairing-2");
   assert.equal(worker.storedConfig.pairingRelayBase, "wss://evoflux.example");
-  assert.equal(worker.storedConfig.accessToken, "");
+  assert.equal(worker.storedConfig.accessToken, undefined);
   assert.equal(result.pairing_id, "pairing-2");
+});
+
+test("legacy stored access token is removed and cannot open the relay", async () => {
+  const worker = loadWorker({
+    storedConfig: {
+      relayBase: "ws://127.0.0.1:8000",
+      accessToken: "must-be-deleted",
+    },
+  });
+
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(worker.storedConfig.accessToken, undefined);
+  assert.equal(worker.sockets.length, 0);
+  assert.equal(worker.fetchCalls.length, 0);
+  assert.equal(worker.run("lastCloseReason"), "pairing");
 });
 
 test("local loopback pairing persists a scoped credential without a code", async () => {

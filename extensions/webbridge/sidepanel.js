@@ -8,20 +8,24 @@
 const DEFAULT_RELAY_BASE = "ws://127.0.0.1:8000";
 const SESSIONS_PATH = "/api/team/webbridge/sessions";
 const BINDINGS_PATH = "/api/team/webbridge/bindings";
+const MODELS_PATH = "/api/team/webbridge/models";
+const THEME_STORAGE_KEY = "webbridgeSideChatTheme";
 
+const sessionTitle = document.getElementById("sessionTitle");
 const pageTitle = document.getElementById("pageTitle");
 const statusDot = document.getElementById("statusDot");
 const stopBtn = document.getElementById("stopBtn");
-const sessionSelect = document.getElementById("sessionSelect");
+const settingsBtn = document.getElementById("settingsBtn");
+const settingsBackdrop = document.getElementById("settingsBackdrop");
+const settingsDrawer = document.getElementById("settingsDrawer");
+const closeSettingsBtn = document.getElementById("closeSettingsBtn");
 const refreshBtn = document.getElementById("refreshBtn");
-const bindBtn = document.getElementById("bindBtn");
-const unbindBtn = document.getElementById("unbindBtn");
+const newGroupedTabBtn = document.getElementById("newGroupedTabBtn");
 const pickElementBtn = document.getElementById("pickElementBtn");
 const takeControlBtn = document.getElementById("takeControlBtn");
 const resumeAgentBtn = document.getElementById("resumeAgentBtn");
 const bindingStatus = document.getElementById("bindingStatus");
-const controlStatus = document.getElementById("controlStatus");
-const pickedElementStatus = document.getElementById("pickedElementStatus");
+const contextDetail = document.getElementById("contextDetail");
 const pickedElementCard = document.getElementById("pickedElementCard");
 const pickedElementLabel = document.getElementById("pickedElementLabel");
 const clearElementBtn = document.getElementById("clearElementBtn");
@@ -31,6 +35,36 @@ const questionsRoot = document.getElementById("questions");
 const composer = document.getElementById("composer");
 const sendBtn = document.getElementById("sendBtn");
 const composerStatus = document.getElementById("composerStatus");
+const modelTrigger = document.getElementById("modelTrigger");
+const modelLabel = document.getElementById("modelLabel");
+const modelPopover = document.getElementById("modelPopover");
+const modelSearch = document.getElementById("modelSearch");
+const modelList = document.getElementById("modelList");
+const activity = document.getElementById("activity");
+const activityLabel = document.getElementById("activityLabel");
+const activityDetail = document.getElementById("activityDetail");
+const relayBaseInput = document.getElementById("relayBaseInput");
+const saveConnectionBtn = document.getElementById("saveConnectionBtn");
+const toggleConnectionBtn = document.getElementById("toggleConnectionBtn");
+const settingsStatusDot = document.getElementById("settingsStatusDot");
+const settingsStatusText = document.getElementById("settingsStatusText");
+const settingsStatusDetail = document.getElementById("settingsStatusDetail");
+const pairingSettings = document.getElementById("pairingSettings");
+const pairLocalBtn = document.getElementById("pairLocalBtn");
+const pairingCodeInput = document.getElementById("pairingCodeInput");
+const pairCodeBtn = document.getElementById("pairCodeBtn");
+const pairingSettingsDetail = document.getElementById("pairingSettingsDetail");
+const themeControl = document.getElementById("themeControl");
+const watchNeedleInput = document.getElementById("watchNeedleInput");
+const watchTtlSelect = document.getElementById("watchTtlSelect");
+const watchActionBtn = document.getElementById("watchActionBtn");
+const watchSettingsDetail = document.getElementById("watchSettingsDetail");
+const teachActionBtn = document.getElementById("teachActionBtn");
+const discardTeachBtn = document.getElementById("discardTeachBtn");
+const teachSettingsDetail = document.getElementById("teachSettingsDetail");
+const retryContextBtn = document.getElementById("retryContextBtn");
+const releaseControlBtn = document.getElementById("releaseControlBtn");
+const newConversationBtn = document.getElementById("newConversationBtn");
 
 let relayBase = DEFAULT_RELAY_BASE;
 let pairingCredential = "";
@@ -39,15 +73,58 @@ let activeTab = null;
 let sessions = [];
 let bindings = [];
 let selectedSessionId = "";
+let primaryBinding = null;
+let activeTabIsGroupedChild = false;
 let streamController = null;
 let streamGeneration = 0;
+let refreshGeneration = 0;
 let liveMessage = null;
 let pendingQuestions = new Map();
 let humanControlLease = null;
 let pendingComposerRequest = null;
 let pickedElement = null;
 let composerSending = false;
+let activeTextWatch = null;
+let activeTeachRecording = null;
+let browserModels = [];
+let currentSessionModel = null;
+let modelCatalogLoaded = false;
+let modelCatalogLoading = false;
+let elementPickerActive = false;
+let nextAutoBindActionId = "";
+let markdownRenderTimer = null;
+let transcriptPinned = true;
+const agentStates = new Map();
+const toolActivities = new Map();
 const PANEL_REQUEST_STORAGE_KEY = "webbridgePanelPendingRequest";
+let themePreference = "system";
+
+const LOADING_VERBS = [
+  "Brewing", "Cogitating", "Ideating", "Musing", "Percolating", "Pondering", "Tinkering", "Weaving",
+];
+let loadingVerbIndex = Math.floor(Math.random() * LOADING_VERBS.length);
+
+function applyTheme(theme) {
+  themePreference = ["light", "dark"].includes(theme) ? theme : "system";
+  if (themePreference === "system") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = themePreference;
+  for (const button of themeControl.querySelectorAll("button")) {
+    button.classList.toggle("active", button.dataset.themeValue === themePreference);
+  }
+}
+
+async function initializeTheme() {
+  const stored = await chrome.storage.local.get([THEME_STORAGE_KEY]);
+  themePreference = ["system", "light", "dark"].includes(stored[THEME_STORAGE_KEY])
+    ? stored[THEME_STORAGE_KEY]
+    : "system";
+  applyTheme(themePreference);
+}
+
+async function setTheme(theme) {
+  applyTheme(theme);
+  await chrome.storage.local.set({ [THEME_STORAGE_KEY]: themePreference });
+}
 
 function canonicalRelayBase() {
   return (relayBase || DEFAULT_RELAY_BASE)
@@ -159,7 +236,7 @@ async function currentTab() {
 }
 
 function selectedBinding() {
-  return bindings.find((binding) => binding.tab_id === activeTab?.id) || null;
+  return primaryBinding || bindings.find((binding) => binding.tab_id === activeTab?.id) || null;
 }
 
 function isBoundToSelectedSession() {
@@ -167,7 +244,7 @@ function isBoundToSelectedSession() {
   return Boolean(
     binding &&
     binding.session_id === selectedSessionId &&
-    binding.origin === browserOrigin(activeTab?.url || activeTab?.pendingUrl || "")
+    (activeTabIsGroupedChild || binding.origin === browserOrigin(activeTab?.url || activeTab?.pendingUrl || ""))
   );
 }
 
@@ -187,28 +264,152 @@ function setComposerStatus(message = "", tone = "") {
 }
 
 function setControlsDisabled(disabled) {
-  sessionSelect.disabled = disabled;
   refreshBtn.disabled = disabled;
-  bindBtn.disabled = disabled;
-  unbindBtn.disabled = disabled;
+  newGroupedTabBtn.disabled = disabled;
   pickElementBtn.disabled = disabled;
   takeControlBtn.disabled = disabled;
   resumeAgentBtn.disabled = disabled;
   composer.disabled = disabled;
   sendBtn.disabled = disabled;
   stopBtn.disabled = disabled;
+  modelTrigger.disabled = disabled || !selectedSessionId;
 }
 
 function renderPickedElement() {
   const active = pickedElement?.tab_id === activeTab?.id;
   pickedElementCard.style.display = active ? "flex" : "none";
-  pickedElementStatus.textContent = active
-    ? `Picked ${pickedElement.role || pickedElement.tag || "element"}: ${pickedElement.name || pickedElement.text || pickedElement.selector}`
-    : "";
   pickedElementLabel.textContent = active
     ? `${pickedElement.name || pickedElement.text || pickedElement.selector}`
     : "";
-  pickElementBtn.textContent = active ? "Pick another" : "Pick element";
+  pickElementBtn.classList.toggle("active", active || elementPickerActive);
+  pickElementBtn.title = active ? "Pick another element" : elementPickerActive ? "Element picker active" : "Pick an element from this page";
+  pickElementBtn.setAttribute("aria-label", pickElementBtn.title);
+}
+
+function browserPanelElement(element, tabId) {
+  if (!element || element.tab_id !== tabId) return null;
+  return {
+    page_url: element.page_url || "",
+    selector: element.selector || "",
+    tag: element.tag || "",
+    role: element.role || "",
+    name: element.name || "",
+    text: element.text || "",
+  };
+}
+
+function shortModelName(modelId) {
+  const value = String(modelId || "");
+  const separator = value.indexOf(":");
+  return separator >= 0 ? value.slice(separator + 1) : value;
+}
+
+function renderModelTrigger(session = null) {
+  if (session) currentSessionModel = session.model || null;
+  const label = currentSessionModel ? shortModelName(currentSessionModel) : "Model";
+  modelLabel.textContent = label;
+  modelTrigger.title = currentSessionModel || "Use the lead agent's default model";
+  modelTrigger.disabled = !selectedSessionId;
+}
+
+function closeModelPicker() {
+  modelPopover.classList.remove("visible");
+  modelTrigger.setAttribute("aria-expanded", "false");
+}
+
+function renderModelOptions(query = "") {
+  const normalized = query.trim().toLowerCase();
+  const visible = browserModels.filter((entry) => (
+    !normalized || entry.id.toLowerCase().includes(normalized)
+  )).slice(0, 60);
+  modelList.replaceChildren();
+
+  const appendOption = (model, label, detail) => {
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = "model-option";
+    option.dataset.modelId = model || "";
+    option.setAttribute("role", "option");
+    option.setAttribute("aria-selected", String((model || null) === currentSessionModel));
+    const copy = document.createElement("span");
+    copy.className = "model-option-copy";
+    const name = document.createElement("strong");
+    name.textContent = label;
+    const meta = document.createElement("span");
+    meta.textContent = detail;
+    copy.append(name, meta);
+    option.append(copy);
+    modelList.append(option);
+  };
+
+  if (!normalized || "default lead model".includes(normalized)) {
+    appendOption(null, "Default", "Use the lead agent model");
+  }
+  for (const entry of visible) {
+    appendOption(entry.id, entry.model || shortModelName(entry.id), entry.provider || "Configured model");
+  }
+  if (!modelList.childElementCount) {
+    const empty = document.createElement("div");
+    empty.className = "model-empty";
+    empty.textContent = modelCatalogLoading ? "Loading models…" : "No models found";
+    modelList.append(empty);
+  }
+}
+
+async function loadBrowserModels() {
+  if (modelCatalogLoaded || modelCatalogLoading) return;
+  modelCatalogLoading = true;
+  renderModelOptions(modelSearch.value);
+  try {
+    const response = await panelFetch(MODELS_PATH);
+    browserModels = await response.json();
+    modelCatalogLoaded = true;
+  } catch (error) {
+    setComposerStatus(error.message || String(error), "error");
+  } finally {
+    modelCatalogLoading = false;
+    renderModelOptions(modelSearch.value);
+  }
+}
+
+async function openModelPicker() {
+  if (!selectedSessionId) return;
+  const open = !modelPopover.classList.contains("visible");
+  if (!open) {
+    closeModelPicker();
+    return;
+  }
+  modelPopover.classList.add("visible");
+  modelTrigger.setAttribute("aria-expanded", "true");
+  renderModelOptions(modelSearch.value);
+  await loadBrowserModels();
+  modelSearch.focus();
+}
+
+async function selectSessionModel(model) {
+  if (!selectedSessionId) return;
+  modelTrigger.disabled = true;
+  try {
+    const response = await panelFetch(
+      `${SESSIONS_PATH}/${encodeURIComponent(selectedSessionId)}/model`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: model || null }),
+      }
+    );
+    const session = await response.json();
+    currentSessionModel = session.model || null;
+    const existing = sessions.find((item) => item.id === selectedSessionId);
+    if (existing) existing.model = currentSessionModel;
+    renderModelTrigger(session);
+    setComposerStatus(currentSessionModel ? `Using ${shortModelName(currentSessionModel)}.` : "Using the lead agent's default model.");
+    closeModelPicker();
+  } catch (error) {
+    setComposerStatus(error.message || String(error), "error");
+  } finally {
+    modelTrigger.disabled = false;
+  }
 }
 
 async function refreshPickedElement() {
@@ -219,62 +420,43 @@ async function refreshPickedElement() {
 }
 
 function renderHumanControl() {
-  const active = humanControlLease?.tab_id === activeTab?.id;
+  const active = humanControlLease?.tab_id === selectedBinding()?.tab_id;
   takeControlBtn.style.display = active ? "none" : "inline-flex";
   resumeAgentBtn.style.display = active ? "inline-flex" : "none";
-  controlStatus.textContent = active
-    ? "You control this tab"
-    : "";
-  controlStatus.className = active ? "binding warn" : "binding";
+  if (active) contextDetail.textContent = "Agent paused — you control this tab";
+  else if (activeTab) contextDetail.textContent = browserOrigin(activeTab.url || activeTab.pendingUrl || "") || "One session, one primary tab";
 }
 
 async function refreshHumanControl() {
-  const response = await chrome.runtime.sendMessage({ type: "get_human_control" });
+  const response = await chrome.runtime.sendMessage({
+    type: "get_human_control",
+    tab_id: selectedBinding()?.tab_id,
+  });
   if (!response?.ok) throw new Error(response?.error || "Could not read human control state");
   humanControlLease = response.lease || null;
   renderHumanControl();
 }
 
-function renderSessionOptions() {
-  const previouslySelected = selectedSessionId;
-  sessionSelect.replaceChildren();
-  const placeholder = document.createElement("option");
-  placeholder.value = "";
-  placeholder.textContent = "Choose a browser session";
-  sessionSelect.append(placeholder);
-  for (const session of sessions) {
-    const option = document.createElement("option");
-    option.value = session.id;
-    option.textContent = session.title || "Untitled session";
-    sessionSelect.append(option);
-  }
-  const currentBinding = selectedBinding();
-  const candidate = currentBinding?.session_id || previouslySelected;
-  selectedSessionId = sessions.some((session) => session.id === candidate) ? candidate : "";
-  sessionSelect.value = selectedSessionId;
-}
-
 function renderBindingStatus() {
   const pageUrl = safePageUrl(activeTab?.url || activeTab?.pendingUrl || "");
   const bound = isBoundToSelectedSession();
-  bindBtn.disabled = !selectedSessionId || !pageUrl;
-  unbindBtn.disabled = !selectedBinding();
-  bindBtn.style.display = bound ? "none" : "inline-flex";
-  unbindBtn.style.display = bound ? "inline-flex" : "none";
+  newGroupedTabBtn.disabled = !bound;
+  composer.disabled = !bound;
+  sendBtn.disabled = !bound || composerSending;
   if (!pageUrl) {
-    bindingStatus.textContent = "Open an HTTP(S) page to use browser tools";
-    bindingStatus.className = "binding warn";
+    bindingStatus.textContent = "Open an HTTP(S) page to start a conversation";
+    contextDetail.textContent = "Browser tools are unavailable on internal pages";
     return;
   }
   if (bound) {
-    bindingStatus.textContent = "Tab connected";
-    bindingStatus.className = "binding ok";
+    bindingStatus.textContent = activeTabIsGroupedChild ? "Session group tab" : "Connected to this tab";
+    contextDetail.textContent = activeTabIsGroupedChild
+      ? "Agent defaults to the primary tab"
+      : browserOrigin(pageUrl);
     return;
   }
-  bindingStatus.textContent = selectedSessionId
-    ? "Connect this tab to send messages"
-    : "Choose a session";
-  bindingStatus.className = "binding";
+  bindingStatus.textContent = "Preparing browser session";
+  contextDetail.textContent = "This happens automatically";
 }
 
 function clearTranscript() {
@@ -283,7 +465,8 @@ function clearTranscript() {
 }
 
 function scrollTranscriptToEnd() {
-  transcript.scrollTop = transcript.scrollHeight;
+  if (!transcriptPinned) return;
+  requestAnimationFrame(() => { transcript.scrollTop = transcript.scrollHeight; });
 }
 
 function appendMessage(message, { live = false } = {}) {
@@ -318,7 +501,7 @@ function showEmptyTranscript(text) {
 
 async function loadHistory() {
   if (!selectedSessionId) {
-    showEmptyTranscript("Bind this tab to a browser session to see its transcript.");
+    showEmptyTranscript("Open an HTTP(S) page and EvoFlux will create a conversation for this tab.");
     return;
   }
   const response = await panelFetch(
@@ -415,24 +598,65 @@ async function submitQuestion(request, inputs, button) {
   }
 }
 
+async function ensureAutoSession(tab) {
+  const origin = browserOrigin(tab.url || tab.pendingUrl || "");
+  if (!origin) throw new Error("Side Chat only works on HTTP(S) pages.");
+  const stableActionId = `side-chat-${await sha256(`${tab.id}:${origin}`)}`;
+  const response = await chrome.runtime.sendMessage({
+    type: "ensure_browser_session_for_tab",
+    action_id: nextAutoBindActionId || stableActionId,
+  });
+  nextAutoBindActionId = "";
+  if (!response?.ok) throw new Error(response?.error || "Could not prepare a browser session");
+  if (response.tab?.id !== tab.id) throw new Error("The active browser tab changed while Side Chat was loading.");
+  return response;
+}
+
 async function refreshPanel({ preserveTranscript = false } = {}) {
+  const generation = ++refreshGeneration;
   setControlsDisabled(true);
   try {
     await loadConfig();
     const nextTab = await currentTab();
     if (activeTab && activeTab.id !== nextTab.id) stopStream();
     activeTab = nextTab;
-    pageTitle.textContent = activeTab.title || safePageUrl(activeTab.url || activeTab.pendingUrl || "WebBridge Side Panel");
+    pageTitle.textContent = activeTab.title || safePageUrl(activeTab.url || activeTab.pendingUrl || "") || "Side Chat";
+    if (!safePageUrl(activeTab.url || activeTab.pendingUrl || "")) {
+      selectedSessionId = "";
+      primaryBinding = null;
+      activeTabIsGroupedChild = false;
+      currentSessionModel = null;
+      sessions = [];
+      bindings = [];
+      sessionTitle.textContent = "EvoFlux";
+      renderModelTrigger();
+      renderBindingStatus();
+      showEmptyTranscript("Open a regular website to start a browser conversation.");
+      statusDot.className = "status-dot";
+      clearNotice();
+      return;
+    }
+    const ensured = await ensureAutoSession(activeTab);
+    if (generation !== refreshGeneration) return;
+    selectedSessionId = ensured.session_id;
+    activeTabIsGroupedChild = Boolean(ensured.grouped);
     const [sessionResponse, bindingResponse] = await Promise.all([
       panelFetch(SESSIONS_PATH),
       panelFetch(BINDINGS_PATH),
     ]);
+    if (generation !== refreshGeneration) return;
     sessions = await sessionResponse.json();
     bindings = await bindingResponse.json();
-    renderSessionOptions();
+    primaryBinding = bindings.find((binding) => (
+      binding.tab_id === ensured.binding_tab_id && binding.session_id === selectedSessionId
+    )) || null;
+    const session = sessions.find((item) => item.id === selectedSessionId) || ensured.session;
+    sessionTitle.textContent = session?.title || "Browser conversation";
+    renderModelTrigger(session);
     renderBindingStatus();
     await refreshHumanControl();
     await refreshPickedElement();
+    if (generation !== refreshGeneration) return;
     statusDot.className = "status-dot live";
     clearNotice();
     if (!preserveTranscript) await loadHistory();
@@ -441,47 +665,30 @@ async function refreshPanel({ preserveTranscript = false } = {}) {
       startStream();
     }
   } catch (error) {
+    if (generation !== refreshGeneration) return;
     statusDot.className = "status-dot error";
     setNotice(error.message || String(error), "error");
-    showEmptyTranscript("Connect a securely paired WebBridge extension to use this panel.");
+    showEmptyTranscript("Side Chat could not prepare this browser tab. Open Settings to check the WebBridge connection.");
   } finally {
+    if (generation !== refreshGeneration) return;
     setControlsDisabled(false);
     renderBindingStatus();
   }
 }
 
-async function bindCurrentTab() {
-  if (!selectedSessionId || !activeTab?.id) return;
-  const origin = browserOrigin(activeTab.url || activeTab.pendingUrl || "");
-  if (!origin) {
-    setNotice("Side Panel only works on HTTP(S) pages.", "error");
-    return;
-  }
-  setControlsDisabled(true);
-  try {
-    await panelFetch(`${BINDINGS_PATH}/${encodeURIComponent(activeTab.id)}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        session_id: selectedSessionId,
-        origin,
-        page_instance_id: `${activeTab.id}:${safePageUrl(activeTab.url || activeTab.pendingUrl || "")}`.slice(0, 128),
-      }),
-    });
-    await refreshPanel();
-  } catch (error) {
-    setNotice(error.message || String(error), "error");
-  } finally {
-    setControlsDisabled(false);
-  }
-}
-
-async function unbindCurrentTab() {
+async function startFreshConversation() {
   if (!activeTab?.id) return;
   setControlsDisabled(true);
   try {
     await panelFetch(`${BINDINGS_PATH}/${encodeURIComponent(activeTab.id)}`, { method: "DELETE" });
     stopStream();
+    selectedSessionId = "";
+    primaryBinding = null;
+    activeTabIsGroupedChild = false;
+    currentSessionModel = null;
+    renderModelTrigger();
+    nextAutoBindActionId = `side-chat-fresh-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    closeSettings();
     await refreshPanel();
   } catch (error) {
     setNotice(error.message || String(error), "error");
@@ -493,7 +700,10 @@ async function unbindCurrentTab() {
 async function takeHumanControl() {
   setControlsDisabled(true);
   try {
-    const response = await chrome.runtime.sendMessage({ type: "take_human_control" });
+    const response = await chrome.runtime.sendMessage({
+      type: "take_human_control",
+      tab_id: selectedBinding()?.tab_id,
+    });
     if (!response?.ok) throw new Error(response?.error || "Could not take control of this tab");
     humanControlLease = response.lease || null;
     renderHumanControl();
@@ -508,7 +718,10 @@ async function takeHumanControl() {
 async function resumeAgent() {
   setControlsDisabled(true);
   try {
-    const response = await chrome.runtime.sendMessage({ type: "release_human_control" });
+    const response = await chrome.runtime.sendMessage({
+      type: "release_human_control",
+      tab_id: selectedBinding()?.tab_id,
+    });
     if (!response?.ok) throw new Error(response?.error || "Could not resume agent control");
     humanControlLease = null;
     renderHumanControl();
@@ -525,9 +738,14 @@ async function startElementPicker() {
   try {
     const response = await chrome.runtime.sendMessage({ type: "start_element_picker" });
     if (!response?.ok) throw new Error(response?.error || "Could not start element picker");
-    setNotice("Move over the page and click an element. Press Escape to cancel.");
+    elementPickerActive = true;
+    renderPickedElement();
+    clearNotice();
+    setComposerStatus("Picker active on the page · click an element or press Escape.");
   } catch (error) {
-    setNotice(error.message || String(error), "error");
+    elementPickerActive = false;
+    renderPickedElement();
+    setComposerStatus(error.message || String(error), "error");
   } finally {
     pickElementBtn.disabled = false;
   }
@@ -547,6 +765,8 @@ function stopStream() {
   streamGeneration += 1;
   streamController?.abort();
   streamController = null;
+  clearTimeout(markdownRenderTimer);
+  markdownRenderTimer = null;
   liveMessage = null;
 }
 
@@ -589,15 +809,73 @@ async function readSse(response, onEvent) {
   }
 }
 
+function friendlyToolName(name) {
+  return String(name || "tool")
+    .replace(/^mcp__/, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function renderActivity() {
+  const runningTool = [...toolActivities.values()].find((entry) => entry.state !== "done");
+  const workingAgent = [...agentStates.entries()].find(([, state]) => state === "working");
+  const working = Boolean(runningTool || workingAgent);
+  activity.classList.toggle("visible", working);
+  stopBtn.style.display = working ? "inline-flex" : "none";
+  if (!working) return;
+  if (runningTool) {
+    activityLabel.textContent = friendlyToolName(runningTool.name);
+    activityDetail.textContent = `${runningTool.agent || "EvoFlux"} is running a tool`;
+    return;
+  }
+  activityLabel.textContent = LOADING_VERBS[loadingVerbIndex];
+  activityDetail.textContent = `${workingAgent[0] || "EvoFlux"} is working`;
+}
+
+function scheduleLiveMarkdownRender() {
+  if (!liveMessage || markdownRenderTimer) return;
+  markdownRenderTimer = setTimeout(() => {
+    markdownRenderTimer = null;
+    if (!liveMessage) return;
+    globalThis.WebBridgeMarkdown?.render(liveMessage.content, liveMessage.rawContent);
+    scrollTranscriptToEnd();
+  }, 80);
+}
+
+function flushLiveMarkdownRender() {
+  clearTimeout(markdownRenderTimer);
+  markdownRenderTimer = null;
+  if (!liveMessage) return;
+  globalThis.WebBridgeMarkdown?.render(liveMessage.content, liveMessage.rawContent);
+  scrollTranscriptToEnd();
+}
+
 function handleStreamEvent(type, data) {
   if (type === "message") {
     const agent = data.agent || "EvoFlux";
     if (!liveMessage || liveMessage.agent !== agent) {
+      flushLiveMarkdownRender();
       liveMessage = { agent, ...appendMessage({ role: "assistant", agent, content: "" }, { live: true }) };
     }
     liveMessage.rawContent += data.text || "";
-    globalThis.WebBridgeMarkdown?.render(liveMessage.content, liveMessage.rawContent);
-    scrollTranscriptToEnd();
+    scheduleLiveMarkdownRender();
+    return;
+  }
+  if (type === "agent_status") {
+    agentStates.set(data.agent || "EvoFlux", data.status || "idle");
+    if (data.status !== "working") {
+      for (const [key, entry] of toolActivities) {
+        if (!data.agent || entry.agent === data.agent) toolActivities.delete(key);
+      }
+    }
+    renderActivity();
+    return;
+  }
+  if (type === "activity") {
+    const key = data.id || `${data.agent || "EvoFlux"}:${data.name || "tool"}`;
+    if (data.state === "done") toolActivities.delete(key);
+    else toolActivities.set(key, data);
+    renderActivity();
     return;
   }
   if (type === "question_asked") {
@@ -610,7 +888,17 @@ function handleStreamEvent(type, data) {
     return;
   }
   if (type === "error") {
+    agentStates.clear();
+    toolActivities.clear();
+    renderActivity();
     setNotice(data.message || "EvoFlux stream failed.", "error");
+    return;
+  }
+  if (type === "done") {
+    flushLiveMarkdownRender();
+    agentStates.clear();
+    toolActivities.clear();
+    renderActivity();
     return;
   }
   if (type === "title_update" && data.title) {
@@ -646,6 +934,7 @@ async function runStream(sessionId, generation) {
       if (generation === streamGeneration) streamController = null;
       if (generation !== streamGeneration) return;
       if (sawDone || !sawEvent) {
+        flushLiveMarkdownRender();
         liveMessage = null;
         await loadHistory();
         await loadPendingQuestions();
@@ -660,6 +949,7 @@ async function runStream(sessionId, generation) {
     await delay(300);
   }
   if (generation === streamGeneration) {
+    flushLiveMarkdownRender();
     liveMessage = null;
     await loadHistory();
     await loadPendingQuestions();
@@ -686,8 +976,9 @@ async function sendMessage() {
   sendBtn.disabled = true;
   setComposerStatus("Sending...");
   try {
-    const elementKey = pickedElement?.tab_id === activeTab.id
-      ? `${pickedElement.page_url}:${pickedElement.selector}`
+    const element = browserPanelElement(pickedElement, activeTab.id);
+    const elementKey = element
+      ? `${element.page_url}:${element.selector}`
       : "";
     const requestShape = await sha256(
       `${selectedSessionId}:${activeTab.id}:${origin}:${content}:${elementKey}`
@@ -714,9 +1005,10 @@ async function sendMessage() {
         body: JSON.stringify({
           content,
           tab_id: activeTab.id,
+          binding_tab_id: selectedBinding()?.tab_id || activeTab.id,
           origin,
           user_gesture: true,
-          element: pickedElement?.tab_id === activeTab.id ? pickedElement : null,
+          element,
         }),
       }
     );
@@ -725,6 +1017,7 @@ async function sendMessage() {
       pendingComposerRequest = null;
       await panelSessionStorage().remove([PANEL_REQUEST_STORAGE_KEY]);
       composer.value = "";
+      resizeComposer();
     }
     if (result.status === "pending") {
       setComposerStatus("Delivery is pending. Send again to retry safely.");
@@ -735,6 +1028,8 @@ async function sendMessage() {
     }
     appendMessage({ role: "user", content });
     setComposerStatus(result.status === "queued" ? "Queued behind the current turn." : "EvoFlux is responding.");
+    agentStates.set("EvoFlux", "working");
+    renderActivity();
     startStream();
   } catch (error) {
     stopStream();
@@ -747,7 +1042,7 @@ async function sendMessage() {
 
 async function stopRun() {
   if (!selectedSessionId) {
-    setNotice("Choose a browser session before stopping a run.", "error");
+    setNotice("No browser conversation is active on this tab.", "error");
     return;
   }
   stopBtn.disabled = true;
@@ -757,6 +1052,9 @@ async function stopRun() {
       { method: "POST" }
     );
     stopStream();
+    agentStates.clear();
+    toolActivities.clear();
+    renderActivity();
     setComposerStatus("Run stopped.");
     await loadHistory();
     await loadPendingQuestions();
@@ -767,23 +1065,254 @@ async function stopRun() {
   }
 }
 
-sessionSelect.addEventListener("change", async () => {
-  selectedSessionId = sessionSelect.value;
-  stopStream();
-  renderBindingStatus();
+function openSettings() {
+  settingsBackdrop.classList.add("visible");
+  settingsDrawer.classList.add("visible");
+  settingsDrawer.removeAttribute("inert");
+  settingsDrawer.setAttribute("aria-hidden", "false");
+  void refreshSettings();
+}
+
+function closeSettings() {
+  settingsBackdrop.classList.remove("visible");
+  settingsDrawer.classList.remove("visible");
+  settingsDrawer.setAttribute("inert", "");
+  settingsDrawer.setAttribute("aria-hidden", "true");
+}
+
+async function refreshSettings() {
   try {
-    await loadHistory();
-    await loadPendingQuestions();
-    if (sessions.find((session) => session.id === selectedSessionId)?.running) {
-      startStream();
+    const [config, response] = await Promise.all([
+      chrome.storage.local.get(["relayBase"]),
+      chrome.runtime.sendMessage({ type: "get_status" }),
+    ]);
+    if (document.activeElement !== relayBaseInput) relayBaseInput.value = config.relayBase || DEFAULT_RELAY_BASE;
+    const connected = Boolean(response?.connected);
+    settingsStatusDot.className = `status-dot ${connected ? "live" : "error"}`;
+    settingsStatusText.textContent = connected ? "Connected" : "Disconnected";
+    settingsStatusDetail.textContent = connected
+      ? `Secure pairing ${response.pairing_id || "active"}`
+      : response?.last_close_reason === "pairing"
+        ? "Pairing was rejected or revoked."
+        : "Reconnect or pair this extension to continue.";
+    toggleConnectionBtn.textContent = connected ? "Disconnect" : "Reconnect";
+    pairingSettings.style.display = response?.paired ? "none" : "block";
+    activeTextWatch = (response?.text_watches || []).find((item) => item.tab_id === activeTab?.id) || null;
+    if (activeTextWatch?.state === "matched") {
+      watchActionBtn.textContent = "Send match";
+      watchSettingsDetail.textContent = `Matched “${activeTextWatch.needle}”. Nothing is sent until you confirm.`;
+    } else if (activeTextWatch) {
+      watchActionBtn.textContent = "Cancel watch";
+      watchSettingsDetail.textContent = `Watching for “${activeTextWatch.needle}”.`;
+    } else {
+      watchActionBtn.textContent = "Start watch";
+      watchSettingsDetail.textContent = "A match stays private until you send it.";
     }
+    watchNeedleInput.disabled = Boolean(activeTextWatch);
+    watchTtlSelect.disabled = Boolean(activeTextWatch);
+    watchActionBtn.disabled = !selectedSessionId;
+    activeTeachRecording = response?.teach_recording || null;
+    const teachingThisTab = activeTeachRecording?.tab_id === activeTab?.id;
+    teachActionBtn.textContent = teachingThisTab ? "Stop & save draft" : "Start recording";
+    teachActionBtn.disabled = !selectedSessionId || Boolean(activeTeachRecording && !teachingThisTab);
+    discardTeachBtn.style.display = teachingThisTab ? "inline-flex" : "none";
+    teachSettingsDetail.textContent = teachingThisTab
+      ? `Recording ${activeTeachRecording.action_count || 0} semantic actions on this tab.`
+      : activeTeachRecording
+        ? "Teach Mode is recording in another tab."
+        : response?.last_teach_draft
+          ? "Draft saved. Review and approve it in EvoFlux before replay."
+          : "Record semantic actions into a reviewable draft.";
+    retryContextBtn.style.display = response?.pending_interaction ? "inline-flex" : "none";
+    releaseControlBtn.disabled = !(response?.attached_tab_ids?.length);
+    newConversationBtn.disabled = !selectedSessionId || activeTabIsGroupedChild;
+    newConversationBtn.title = activeTabIsGroupedChild
+      ? "Switch to the primary tab to start a fresh conversation"
+      : "Create a new conversation for this primary tab";
+  } catch (error) {
+    settingsStatusDot.className = "status-dot error";
+    settingsStatusText.textContent = "Extension unavailable";
+    settingsStatusDetail.textContent = error.message || String(error);
+  }
+}
+
+async function saveConnectionSettings() {
+  saveConnectionBtn.disabled = true;
+  try {
+    await chrome.storage.local.set({
+      relayBase: relayBaseInput.value.trim() || DEFAULT_RELAY_BASE,
+    });
+    await chrome.storage.local.remove(["accessToken"]);
+    await chrome.runtime.sendMessage({ type: "config_updated" });
+    settingsStatusDetail.textContent = "Saved. Reconnecting…";
+    setTimeout(() => void refreshSettings(), 500);
+  } finally {
+    saveConnectionBtn.disabled = false;
+  }
+}
+
+async function pairLocally() {
+  pairLocalBtn.disabled = true;
+  pairCodeBtn.disabled = true;
+  pairingSettingsDetail.textContent = "Pairing with local EvoFlux…";
+  try {
+    await chrome.storage.local.set({ relayBase: relayBaseInput.value.trim() || DEFAULT_RELAY_BASE });
+    const response = await chrome.runtime.sendMessage({ type: "pair_locally" });
+    if (!response?.ok) throw new Error(response?.error || "Local pairing failed");
+    pairingSettingsDetail.textContent = "Paired. Connecting…";
+    setTimeout(() => { void refreshSettings(); void refreshPanel(); }, 500);
+  } catch (error) {
+    pairingSettingsDetail.textContent = error.message || String(error);
+  } finally {
+    pairLocalBtn.disabled = false;
+    pairCodeBtn.disabled = false;
+  }
+}
+
+async function pairWithCode() {
+  const code = pairingCodeInput.value.trim().toUpperCase();
+  if (!code) {
+    pairingSettingsDetail.textContent = "Enter the one-time code shown in EvoFlux.";
+    return;
+  }
+  pairLocalBtn.disabled = true;
+  pairCodeBtn.disabled = true;
+  pairingSettingsDetail.textContent = "Pairing…";
+  try {
+    await chrome.storage.local.set({ relayBase: relayBaseInput.value.trim() || DEFAULT_RELAY_BASE });
+    const response = await chrome.runtime.sendMessage({ type: "pair_with_code", code });
+    if (!response?.ok) throw new Error(response?.error || "Pairing failed");
+    pairingCodeInput.value = "";
+    pairingSettingsDetail.textContent = "Paired. Connecting…";
+    setTimeout(() => { void refreshSettings(); void refreshPanel(); }, 500);
+  } catch (error) {
+    pairingSettingsDetail.textContent = error.message || String(error);
+  } finally {
+    pairLocalBtn.disabled = false;
+    pairCodeBtn.disabled = false;
+  }
+}
+
+async function toggleConnection() {
+  await chrome.runtime.sendMessage({ type: "toggle_connection" });
+  setTimeout(() => void refreshSettings(), 500);
+}
+
+async function runWatchAction() {
+  watchActionBtn.disabled = true;
+  try {
+    let response;
+    if (activeTextWatch?.state === "matched") {
+      response = await chrome.runtime.sendMessage({ type: "send_matched_text_watch", watch_id: activeTextWatch.id });
+    } else if (activeTextWatch) {
+      response = await chrome.runtime.sendMessage({ type: "cancel_text_watch", watch_id: activeTextWatch.id });
+    } else {
+      if (!watchNeedleInput.value.trim()) throw new Error("Enter text to watch for.");
+      response = await chrome.runtime.sendMessage({
+        type: "arm_text_watch",
+        session_id: selectedSessionId,
+        needle: watchNeedleInput.value,
+        ttl_minutes: watchTtlSelect.value,
+      });
+    }
+    if (!response?.ok) throw new Error(response?.error || "Could not update the text watch");
+    await refreshSettings();
+  } catch (error) {
+    watchSettingsDetail.textContent = error.message || String(error);
+  } finally {
+    watchActionBtn.disabled = !selectedSessionId;
+  }
+}
+
+async function runTeachAction() {
+  teachActionBtn.disabled = true;
+  try {
+    const response = activeTeachRecording?.tab_id === activeTab?.id
+      ? await chrome.runtime.sendMessage({ type: "stop_teach_recording" })
+      : await chrome.runtime.sendMessage({ type: "start_teach_recording", session_id: selectedSessionId });
+    if (!response?.ok) throw new Error(response?.error || "Could not update Teach Mode");
+    await refreshSettings();
+  } catch (error) {
+    teachSettingsDetail.textContent = error.message || String(error);
+  } finally {
+    teachActionBtn.disabled = !selectedSessionId || Boolean(activeTeachRecording && activeTeachRecording.tab_id !== activeTab?.id);
+  }
+}
+
+async function discardTeachRecording() {
+  const response = await chrome.runtime.sendMessage({ type: "cancel_teach_recording" });
+  if (!response?.ok) teachSettingsDetail.textContent = response?.error || "Could not discard recording";
+  await refreshSettings();
+}
+
+async function retryBrowserContext() {
+  retryContextBtn.disabled = true;
+  try {
+    const response = await chrome.runtime.sendMessage({ type: "retry_pending_interaction" });
+    if (!response?.ok) throw new Error(response?.error || "Could not retry browser context");
+    await refreshSettings();
+  } catch (error) {
+    settingsStatusDetail.textContent = error.message || String(error);
+  } finally {
+    retryContextBtn.disabled = false;
+  }
+}
+
+async function releaseBrowserControl() {
+  releaseControlBtn.disabled = true;
+  await chrome.runtime.sendMessage({ type: "release_debuggers" });
+  await refreshSettings();
+}
+
+async function openGroupedTab() {
+  newGroupedTabBtn.disabled = true;
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "open_grouped_session_tab",
+      session_id: selectedSessionId,
+    });
+    if (!response?.ok) throw new Error(response?.error || "Could not open a grouped tab");
+    setComposerStatus("Opened a background tab in this session group.");
   } catch (error) {
     setNotice(error.message || String(error), "error");
+  } finally {
+    newGroupedTabBtn.disabled = false;
   }
+}
+
+function resizeComposer() {
+  composer.style.height = "auto";
+  composer.style.height = `${Math.min(composer.scrollHeight, 154)}px`;
+}
+
+settingsBtn.addEventListener("click", openSettings);
+closeSettingsBtn.addEventListener("click", closeSettings);
+settingsBackdrop.addEventListener("click", closeSettings);
+saveConnectionBtn.addEventListener("click", () => void saveConnectionSettings());
+toggleConnectionBtn.addEventListener("click", () => void toggleConnection());
+pairLocalBtn.addEventListener("click", () => void pairLocally());
+pairCodeBtn.addEventListener("click", () => void pairWithCode());
+themeControl.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-theme-value]");
+  if (button) void setTheme(button.dataset.themeValue);
+});
+watchActionBtn.addEventListener("click", () => void runWatchAction());
+teachActionBtn.addEventListener("click", () => void runTeachAction());
+discardTeachBtn.addEventListener("click", () => void discardTeachRecording());
+retryContextBtn.addEventListener("click", () => void retryBrowserContext());
+releaseControlBtn.addEventListener("click", () => void releaseBrowserControl());
+newConversationBtn.addEventListener("click", () => void startFreshConversation());
+newGroupedTabBtn.addEventListener("click", () => void openGroupedTab());
+modelTrigger.addEventListener("click", () => void openModelPicker());
+modelSearch.addEventListener("input", () => renderModelOptions(modelSearch.value));
+modelList.addEventListener("click", (event) => {
+  const option = event.target.closest("button[data-model-id]");
+  if (option) void selectSessionModel(option.dataset.modelId || null);
+});
+document.addEventListener("click", (event) => {
+  if (!event.target.closest(".model-picker")) closeModelPicker();
 });
 refreshBtn.addEventListener("click", () => void refreshPanel());
-bindBtn.addEventListener("click", () => void bindCurrentTab());
-unbindBtn.addEventListener("click", () => void unbindCurrentTab());
 pickElementBtn.addEventListener("click", () => void startElementPicker());
 clearElementBtn.addEventListener("click", () => void clearElement());
 takeControlBtn.addEventListener("click", () => void takeHumanControl());
@@ -791,11 +1320,15 @@ resumeAgentBtn.addEventListener("click", () => void resumeAgent());
 sendBtn.addEventListener("click", () => void sendMessage());
 stopBtn.addEventListener("click", () => void stopRun());
 composer.addEventListener("keydown", (event) => {
-  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+  if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
     event.preventDefault();
     void sendMessage();
   }
 });
+composer.addEventListener("input", resizeComposer);
+transcript.addEventListener("scroll", () => {
+  transcriptPinned = transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight <= 40;
+}, { passive: true });
 chrome.tabs.onActivated.addListener(() => void refreshPanel());
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (tabId === activeTab?.id && (changeInfo.url || changeInfo.status === "complete")) {
@@ -813,6 +1346,8 @@ chrome.runtime.onMessage.addListener((message) => {
     sessions = [];
     bindings = [];
     selectedSessionId = "";
+    currentSessionModel = null;
+    renderModelTrigger();
     pendingQuestions.clear();
     renderQuestions();
     showEmptyTranscript("WebBridge pairing was revoked. Pair the extension again to continue.");
@@ -820,13 +1355,21 @@ chrome.runtime.onMessage.addListener((message) => {
     statusDot.className = "status-dot error";
     return;
   }
+  if (message?.type === "element_picker_state") {
+    if (message.tab_id !== activeTab?.id) return;
+    elementPickerActive = Boolean(message.active);
+    renderPickedElement();
+    if (!elementPickerActive && !pickedElement) setComposerStatus("");
+    return;
+  }
   if (message?.type !== "element_picker_result") return;
+  elementPickerActive = false;
   pickedElement = message.element || null;
   renderPickedElement();
   clearNotice();
+  setComposerStatus("");
   composer.focus();
 });
-
 async function refreshRunningState() {
   if (!selectedSessionId || streamController) return;
   try {
@@ -841,5 +1384,10 @@ async function refreshRunningState() {
   }
 }
 
+void initializeTheme();
 void refreshPanel();
+setInterval(() => {
+  loadingVerbIndex = (loadingVerbIndex + 1) % LOADING_VERBS.length;
+  if (activity.classList.contains("visible") && toolActivities.size === 0) renderActivity();
+}, 2800);
 setInterval(() => void refreshRunningState(), 2000);
