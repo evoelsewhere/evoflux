@@ -72,12 +72,11 @@ Connection fields are saved in `chrome.storage.local`; saving them triggers an
 immediate reconnect. The secure pairing credential is also stored locally but
 is only sent as an HTTP Bearer credential to mint relay tickets. The same
 settings drawer contains theme, text-watch, Teach Mode, retry, and browser
-control actions; the extension toolbar icon opens Side Chat directly rather
-than a separate popup.
+control actions; the extension toolbar icon opens Side Chat directly.
 
-The popup also shows how many tabs are currently attached to the Chrome
-debugger. **Release browser control** detaches all of them without disabling
-the relay connection; disconnecting the extension releases them automatically.
+Side Chat settings also show browser-control state. **Release browser control**
+detaches every controlled tab without disabling the relay connection;
+disconnecting the extension releases them automatically.
 
 ## Send browser context to EvoFlux
 
@@ -88,18 +87,14 @@ actions:
 - **Ask EvoFlux about link** sends the page and linked URL.
 - **Ask EvoFlux about page** sends the current page title and URL.
 
-The extension creates a browser session for an unbound tab, or uses the tab's
-existing binding. The popup can instead bind the current tab to an explicitly
-chosen WebBridge-enabled session, create a browser session, or send a quick
-page prompt. A failed request keeps one short-lived pending action in local
-storage; use **Retry previous browser context** in the popup to replay the same
-session and interaction identity without creating a duplicate task.
+The extension creates a browser session for an unbound tab or reuses the tab's
+existing binding. A failed request keeps one short-lived pending action in
+local storage; use **Retry browser context** in Side Chat settings to replay the
+same session and interaction identity without creating a duplicate task.
 
-Only sessions explicitly enabled for WebBridge **and granted to this browser
-pairing** appear in the popup chooser. To use an existing chat, open the
-EvoFlux WebBridge dialog, select the paired browser and a WebBridge-enabled
-session, then choose **Grant**. The browser extension cannot make that
-cross-pairing grant itself.
+To grant an existing WebBridge-enabled chat to a browser, open the EvoFlux
+WebBridge dialog, select the paired browser and session, then choose **Grant**.
+The extension cannot make that cross-pairing grant itself.
 When a bound tab changes origin, its binding is removed before the agent can
 continue using it. URL query strings and fragments are stripped from P1 browser
 context, while selected text remains bounded and is marked as untrusted data in
@@ -137,8 +132,8 @@ not part of this P2 MVP yet.
 
 ## P3: Teach Mode and text watches
 
-The popup provides two opt-in P3 controls after pairing and selecting a browser
-session:
+Side Chat settings provide two opt-in P3 controls after automatic session
+binding:
 
 - **Watch for page text** polls the current HTTP(S) page every 30 seconds for a
   literal phrase. A watch is scoped to that tab's exact origin and path, expires
@@ -242,7 +237,6 @@ on the extension card in `chrome://extensions`. A quick syntax check is:
 
 ```bash
 node --check extensions/webbridge/background.js
-node --check extensions/webbridge/popup.js
 node --check extensions/webbridge/sidepanel.js
 node --check extensions/webbridge/teach_recorder.js
 node --test tests/webbridge_extension.test.cjs

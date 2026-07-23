@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import io
 import json
 import re
@@ -39,7 +40,11 @@ from app.api.routes.team.webbridge import (
     router,
 )
 from app.models.chat import SessionMessage
-from app.models.webbridge import WebBridgeInteraction, WebBridgeTeachDraft
+from app.models.webbridge import (
+    WebBridgeInteraction,
+    WebBridgePairing,
+    WebBridgeTeachDraft,
+)
 from app.services.webbridge_pairing_service import (
     PairingGrant,
     WebBridgePairingCodeStore,
@@ -2529,6 +2534,51 @@ def test_local_pairing_needs_no_code_but_stays_loopback_origin_scoped(
     assert remote.status_code == 403
 
 
+async def test_local_pairing_credential_ticket_relay_and_revoke_chain(
+    client: TestClient,
+):
+    from app.core import db as db_module
+
+    local_client = TestClient(client.app, client=("127.0.0.1", 5173))
+    paired = local_client.post(
+        f"{_PREFIX}/pairing/local",
+        headers={"Origin": "chrome-extension://abcdefghijklmnop"},
+        json={"label": "Local Chrome", "browser": "chrome", "version": "1.9.0"},
+    )
+    assert paired.status_code == 201
+    pairing = paired.json()
+    credential = pairing["credential"]
+
+    async with db_module.async_session_factory() as db:
+        stored = await db.get(WebBridgePairing, UUID(pairing["pairing_id"]))
+    assert stored is not None
+    assert stored.credential_hash == hashlib.sha256(credential.encode()).hexdigest()
+    assert credential not in repr(stored)
+
+    headers = {"Authorization": f"Bearer {credential}"}
+    first_ticket = client.post(f"{_PREFIX}/relay-ticket", headers=headers)
+    assert first_ticket.status_code == 201
+    with client.websocket_connect(
+        f"{_PREFIX}/relay?_ticket={first_ticket.json()['ticket']}"
+    ) as ws:
+        ack = _register(ws, extension_id="spoofed")
+        assert ack["extension_id"] == pairing["pairing_id"]
+        assert ack["pairing_id"] == pairing["pairing_id"]
+
+    outstanding = client.post(f"{_PREFIX}/relay-ticket", headers=headers)
+    assert outstanding.status_code == 201
+    assert (
+        client.delete(f"{_PREFIX}/pairings/{pairing['pairing_id']}").status_code == 204
+    )
+    assert client.post(f"{_PREFIX}/relay-ticket", headers=headers).status_code == 401
+    with pytest.raises(WebSocketDisconnect) as exc_info:
+        with client.websocket_connect(
+            f"{_PREFIX}/relay?_ticket={outstanding.json()['ticket']}"
+        ):
+            pass
+    assert exc_info.value.code == 4401
+
+
 def test_pairing_credential_mints_single_use_authoritative_relay_ticket(
     client: TestClient,
 ):
@@ -2704,7 +2754,9 @@ def test_extension_relay_rejects_desktop_token_and_agent_rejects_wrong_token(
         assert exc_info.value.code == 4401
 
 
-def test_agent_ws_accepts_desktop_token(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+def test_agent_ws_accepts_desktop_token(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
     monkeypatch.setenv("EVOFLUX_DESKTOP_TOKEN", "secret-token")
     with client.websocket_connect(
         f"{_PREFIX}/agent/s1?_token=secret-token"

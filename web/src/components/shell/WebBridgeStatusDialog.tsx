@@ -388,29 +388,44 @@ export function WebBridgeStatusDialog({
               Download extension package
             </Button>
 
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => void handlePairingCode()}
-              disabled={pairing}
-              className="w-full"
-            >
-              {pairing ? (
-                <Loader2 className="animate-spin" aria-hidden="true" />
-              ) : (
-                <KeyRound aria-hidden="true" />
-              )}
-              Generate secure pairing code
-            </Button>
+            <div className="min-w-0 space-y-1.5 rounded-md bg-(--bg-key) px-3 py-2">
+              <p className="text-xs font-medium text-(--color-text-muted)">
+                Same device
+              </p>
+              <p className="text-xs text-(--color-text-subtle)">
+                Click the WebBridge toolbar icon, open Settings, then choose
+                Pair local EvoFlux. No code is generated.
+              </p>
+            </div>
 
-            {pairingCode && (
-              <div className="min-w-0 space-y-1.5 rounded-md bg-(--bg-key) px-3 py-2">
-                <CopyRow label="Pairing code" value={pairingCode} />
-                <p className="text-xs text-(--color-text-subtle)">
-                  One-time code. Expires in 5 minutes.
-                </p>
-              </div>
-            )}
+            <div className="min-w-0 space-y-2 rounded-md border border-(--color-border) px-3 py-2">
+              <p className="text-xs font-medium text-(--color-text-muted)">
+                Manual or remote pairing
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void handlePairingCode()}
+                disabled={pairing}
+                className="w-full"
+              >
+                {pairing ? (
+                  <Loader2 className="animate-spin" aria-hidden="true" />
+                ) : (
+                  <KeyRound aria-hidden="true" />
+                )}
+                Generate one-time pairing code
+              </Button>
+
+              {pairingCode && (
+                <div className="min-w-0 space-y-1.5">
+                  <CopyRow label="Pairing code" value={pairingCode} />
+                  <p className="text-xs text-(--color-text-subtle)">
+                    Single use. Expires in 5 minutes.
+                  </p>
+                </div>
+              )}
+            </div>
 
             <div className="min-w-0 space-y-1.5 rounded-md bg-(--bg-key) px-3 py-2">
               <p className="text-xs font-medium text-(--color-text-muted)">
@@ -434,8 +449,8 @@ export function WebBridgeStatusDialog({
                 folder.
               </li>
               <li>
-                Click the WebBridge toolbar icon, open Side Chat settings, then
-                pair locally or enter the one-time pairing code above.
+                Click the WebBridge toolbar icon and pair locally. Use the
+                one-time code only when local pairing is unavailable.
               </li>
             </ol>
           </div>

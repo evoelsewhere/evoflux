@@ -1088,7 +1088,7 @@ async function connect() {
         commands: COMMAND_CAPABILITIES,
         interactions: ["context.share", "prompt.submit"],
         captures: ["selection", "link", "page_metadata"],
-        ui: ["popup", "side_panel"],
+        ui: ["side_panel"],
         handoff: ["ask_user_reply", "human_control_lease"],
         automation: ["teach_mode", "text_watch"],
       },
@@ -1477,19 +1477,6 @@ async function releaseHumanControlLease(tabId = null) {
 async function configureSidePanel() {
   if (!chrome.sidePanel?.setPanelBehavior) return;
   await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
-}
-
-async function openSidePanelForTab(tab) {
-  if (!chrome.sidePanel?.open) {
-    throw new Error("Chrome Side Panel is unavailable in this browser.");
-  }
-  if (!tab || tab.id == null) throw new Error("No active tab");
-  await chrome.sidePanel.open({ tabId: tab.id });
-  return { tab_id: tab.id, window_id: tab.windowId };
-}
-
-async function openSidePanelForActiveTab() {
-  return openSidePanelForTab(await getActiveTab());
 }
 
 async function addTabToSessionGroup(parentTab, childTab, sessionId) {
@@ -2926,7 +2913,7 @@ chrome.tabs.onMoved.addListener(() => {
   broadcastTabInfo();
 });
 
-// ── Message handlers (popup communication) ───────────────────────────────────
+// ── Message handlers (Side Chat and content scripts) ─────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "element_picked") {
@@ -3020,7 +3007,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === "config_updated") {
-    // Popup saved new relay URL / token — reload and reconnect.
+    // Side Chat settings saved a new relay URL — reload and reconnect.
     (async () => {
       disconnect();
       manualDisconnect = false;
@@ -3066,17 +3053,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       try {
         const released = await detachAllDebuggers();
         sendResponse({ ok: true, released });
-      } catch (e) {
-        sendResponse({ ok: false, error: e.message });
-      }
-    })();
-    return true;
-  }
-
-  if (msg.type === "open_side_panel") {
-    (async () => {
-      try {
-        sendResponse({ ok: true, ...(await openSidePanelForActiveTab()) });
       } catch (e) {
         sendResponse({ ok: false, error: e.message });
       }
@@ -3166,23 +3142,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
-  if (msg.type === "get_browser_sessions") {
-    (async () => {
-      try {
-        const sessions = await listBrowserSessions();
-        const bindings = await listTabBindings();
-        sendResponse({
-          ok: true,
-          sessions: Array.isArray(sessions) ? sessions : (sessions.data || []),
-          bindings,
-        });
-      } catch (e) {
-        sendResponse({ ok: false, error: e.message });
-      }
-    })();
-    return true;
-  }
-
   if (msg.type === "ensure_browser_session_for_tab") {
     (async () => {
       try {
@@ -3226,66 +3185,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         const primaryTab = await chrome.tabs.get(context.binding_tab_id);
         sendResponse({ ok: true, ...(await createGroupedSessionTab(primaryTab, msg.session_id)) });
-      } catch (e) {
-        sendResponse({ ok: false, error: e.message });
-      }
-    })();
-    return true;
-  }
-
-  if (msg.type === "bind_tab_session") {
-    (async () => {
-      try {
-        const tab = await getActiveTab();
-        if (!tab || tab.id == null) throw new Error("No active tab");
-        const binding = await bindTabToSession(
-          tab,
-          msg.session_id,
-          tab.url || tab.pendingUrl || ""
-        );
-        sendResponse({ ok: true, binding });
-      } catch (e) {
-        sendResponse({ ok: false, error: e.message });
-      }
-    })();
-    return true;
-  }
-
-  if (msg.type === "send_page_prompt") {
-    (async () => {
-      try {
-        const tab = await getActiveTab();
-        if (!tab || tab.id == null) throw new Error("No active tab");
-        const result = await submitBrowserContext(tab, {
-          context_type: "page_metadata",
-          prompt: boundedText(msg.prompt) || "Help me understand this browser page.",
-          metadata: {
-            page_url: safePageUrl(tab.url || tab.pendingUrl || ""),
-            page_title: boundedText(tab.title),
-          },
-        }, msg.session_id || null);
-        sendResponse({ ok: true, result });
-      } catch (e) {
-        sendResponse({ ok: false, error: e.message });
-      }
-    })();
-    return true;
-  }
-
-  if (msg.type === "create_browser_session") {
-    (async () => {
-      try {
-        const tab = await getActiveTab();
-        if (!tab || tab.id == null) throw new Error("No active tab");
-        const pageUrl = requireBrowserPageUrl(tab.url || tab.pendingUrl || "");
-        const label = boundedText(tab.title) || browserOrigin(pageUrl) || "Browser page";
-        const actionId = msg.action_id || interactionId();
-        const session = await createBrowserSession(
-          `Browser: ${label}`.slice(0, 255),
-          actionId,
-        );
-        await bindTabToSession(tab, session.id, pageUrl);
-        sendResponse({ ok: true, session });
       } catch (e) {
         sendResponse({ ok: false, error: e.message });
       }

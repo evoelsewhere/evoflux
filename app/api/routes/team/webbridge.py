@@ -129,8 +129,8 @@ def _extension_origin(value: str | None) -> bool:
     return parsed.scheme == "chrome-extension" and bool(parsed.netloc)
 
 
-async def _ws_authorized(ws: WebSocket) -> bool:
-    """Enforce the desktop token on a WebSocket handshake.
+async def _agent_ws_authorized(ws: WebSocket) -> bool:
+    """Enforce desktop/access-key auth on the external agent WebSocket.
 
     Mirrors :class:`app.core.desktop_auth.DesktopTokenMiddleware` for WS
     endpoints: open when no token is configured; otherwise the ``?_token=``
@@ -151,21 +151,19 @@ async def _ws_authorized(ws: WebSocket) -> bool:
     return False
 
 
-async def _extension_ws_authorization(
-    ws: WebSocket,
-) -> tuple[bool, str | None]:
+async def _consume_extension_ticket(ws: WebSocket) -> str | None:
     """Require and atomically consume a pairing-scoped relay ticket."""
     ticket = ws.query_params.get("_ticket")
     if ticket is None:
         logger.warning("webbridge_ticket_missing path={}", ws.url.path)
         await ws.close(code=4401)
-        return False, None
+        return None
     pairing_id = webbridge_ticket_store.consume(ticket)
     if pairing_id is not None:
-        return True, pairing_id
+        return pairing_id
     logger.warning("webbridge_ticket_rejected path={}", ws.url.path)
     await ws.close(code=4401)
-    return False, None
+    return None
 
 
 def _bearer_token(request: Request) -> str:
@@ -2275,10 +2273,9 @@ async def extension_relay(ws: WebSocket) -> None:
     - ``{"type": "command", "request_id": "...", "action": "...", "params": {...}}``
     - ``{"type": "pong"}`` — heartbeat reply
     """
-    authorized, pairing_id = await _extension_ws_authorization(ws)
-    if not authorized:
+    pairing_id = await _consume_extension_ticket(ws)
+    if pairing_id is None:
         return
-    assert pairing_id is not None
     await ws.accept()
     extension_id: str | None = None
     registered_connection: ExtensionConnection | None = None
@@ -2405,7 +2402,7 @@ async def agent_relay(ws: WebSocket, session_id: str) -> None:
     - ``{"type": "event", "event": "...", "data": {...}}``
     - ``{"type": "no_extension", "error": "..."}``
     """
-    if not await _ws_authorized(ws):
+    if not await _agent_ws_authorized(ws):
         return
     await ws.accept()
     queue = webbridge_manager.subscribe_agent(session_id)
