@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronUp, Shield } from 'lucide-react'
+import { Check, ChevronDown, Shield } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { PermissionMode } from '@/api/types'
 
@@ -54,8 +54,6 @@ export function ModeSelector({ mode, onModeChange, disabled }: ModeSelectorProps
   const containerRef = useRef<HTMLDivElement>(null)
 
   const current = MODES.find((m) => m.id === mode) ?? MODES[3]
-  const isNonDefault = mode !== 'auto'
-
   // Close on outside click
   useEffect(() => {
     if (!open) return
@@ -86,26 +84,25 @@ export function ModeSelector({ mode, onModeChange, disabled }: ModeSelectorProps
     <div ref={containerRef} className="relative">
       {/* Trigger badge — only shows when non-default OR always as compact icon */}
       <button
+        type="button"
         onClick={() => !disabled && setOpen((v) => !v)}
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
         title="Agent permission mode"
         className={cn(
-          'flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium transition-colors',
-          'border border-(--color-border) bg-(--bg-card)',
-          isNonDefault
-            ? 'text-(--color-text) hover:bg-(--bg-key)'
-            : 'text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)',
+          'flex h-7 max-w-40 items-center gap-1.5 rounded-[7px] px-2 text-xs font-medium text-(--color-text-muted) outline-none transition-[background-color,color,transform]',
+          'hover:bg-(--bg-key) hover:text-(--color-text) active:translate-y-px focus-visible:ring-2 focus-visible:ring-(--color-accent)/30',
+          open && 'bg-(--bg-key) text-(--color-text)',
           disabled && 'cursor-default opacity-50',
         )}
       >
-        <Shield size={11} aria-hidden="true" className={cn(isNonDefault && 'text-(--color-primary)')} />
-        <span>{current.label}</span>
-        <ChevronUp
+        <Shield size={12} aria-hidden="true" className="shrink-0" />
+        <span className="truncate">{current.label}</span>
+        <ChevronDown
           size={10}
           aria-hidden="true"
-          className={cn('transition-transform', !open && 'rotate-180')}
+          className={cn('shrink-0 transition-transform', open && 'rotate-180')}
         />
       </button>
 
@@ -115,35 +112,36 @@ export function ModeSelector({ mode, onModeChange, disabled }: ModeSelectorProps
           role="listbox"
           aria-label="Permission mode"
           className={cn(
-            'absolute bottom-full left-0 z-(--z-modal) mb-1 min-w-64 overflow-hidden',
-            'rounded-xl border border-(--color-border) bg-(--bg-page) shadow-xl',
+            'absolute bottom-full right-0 z-(--z-modal) mb-2 w-[min(18rem,calc(100vw-1rem))] overflow-hidden p-1',
+            'rounded-[9px] border border-(--color-border) bg-(--color-surface) shadow-(--shadow-popover)',
           )}
         >
-          <div className="px-3 pt-3 pb-1 text-xs font-semibold uppercase tracking-wider text-(--color-text-muted)">
-            Mode
+          <div className="px-2 pb-1.5 pt-1 text-xs font-semibold text-(--color-text)">
+            Permission mode
           </div>
           {MODES.map((m) => (
             <button
               key={m.id}
+              type="button"
               role="option"
               aria-selected={mode === m.id}
               onClick={() => { onModeChange(m.id); setOpen(false) }}
               className={cn(
-                'flex w-full items-center gap-2 px-3 py-2 text-left transition-colors',
-                'hover:bg-(--bg-key)',
+                'grid w-full grid-cols-[14px_minmax(0,1fr)_12px] items-center gap-2 rounded-[6px] px-2 py-1.5 text-left outline-none transition-colors',
+                'hover:bg-(--bg-key) focus-visible:bg-(--bg-key)',
                 mode === m.id && 'bg-(--bg-key)',
               )}
             >
               <Check
                 size={13}
                 aria-hidden="true"
-                className={cn('shrink-0', mode === m.id ? 'opacity-100 text-(--color-primary)' : 'opacity-0')}
+                className={cn(mode === m.id ? 'opacity-100 text-(--color-text)' : 'opacity-0')}
               />
               <span className="min-w-0 flex-1">
-                <span className="block text-sm font-medium text-(--color-text)">{m.label}</span>
-                <span className="block text-xs text-(--color-text-muted)">{m.description}</span>
+                <span className="block text-xs font-medium text-(--color-text)">{m.label}</span>
+                <span className="block truncate text-[11px] leading-4 text-(--color-text-subtle)">{m.description}</span>
               </span>
-              <span className="shrink-0 rounded bg-(--bg-card) px-1.5 py-0.5 text-xs text-(--color-text-muted) border border-(--color-border)">
+              <span className="text-right text-[10px] tabular-nums text-(--color-text-subtle)">
                 {m.shortcut}
               </span>
             </button>

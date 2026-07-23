@@ -992,13 +992,17 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     />
   ) : null
 
-  // Reusable pill button styles for the action row (attach, mic — pencil
-  // calls these `inputBarAttach`, `inputBarMic`: 32×32, rounded-sm border,
-  // --color-surface fill).
-  const actionBtnClass =
-    'flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-(--color-border) bg-(--color-surface) text-(--color-text-2) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:cursor-not-allowed disabled:opacity-50'
+  const actionBtnClass = cn(
+    'flex shrink-0 items-center justify-center text-(--color-text-muted) outline-none transition-[background-color,color,transform] hover:bg-(--bg-key) hover:text-(--color-text) active:translate-y-px focus-visible:ring-2 focus-visible:ring-(--color-accent)/30 disabled:cursor-not-allowed disabled:opacity-50',
+    isMobile
+      ? 'h-8 w-8 rounded-full border border-(--color-border) bg-(--color-surface)'
+      : 'h-7 w-7 rounded-[7px] bg-transparent',
+  )
   const shellBtnClass = shellMode
-    ? 'flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-(--color-accent) bg-(--bg-key) px-3 font-mono text-xs text-(--color-text) transition-colors hover:bg-(--color-surface) disabled:cursor-not-allowed disabled:opacity-50'
+    ? cn(
+        'flex h-8 shrink-0 items-center gap-1.5 border border-(--color-accent) bg-(--bg-key) px-3 font-mono text-xs text-(--color-text) outline-none transition-colors hover:bg-(--color-surface) focus-visible:ring-2 focus-visible:ring-(--color-accent)/30 disabled:cursor-not-allowed disabled:opacity-50',
+        isMobile ? 'rounded-full' : 'rounded-[7px]',
+      )
     : actionBtnClass
 
   const todoCount = todos?.length ?? 0
@@ -1038,7 +1042,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       title={webBridgeEnabled ? 'WebBridge enabled' : 'Enable WebBridge'}
       className={cn(
         actionBtnClass,
-        webBridgeEnabled && 'border-(--color-accent) bg-(--bg-key) text-(--color-text)',
+        webBridgeEnabled && 'bg-(--bg-key) text-(--color-text)',
       )}
     >
       <Globe size={14} aria-hidden="true" />
@@ -1079,7 +1083,10 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       type="button"
       onClick={(e) => { stopClick(e); onStop?.() }}
       aria-label="Stop generation"
-      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-(--color-error) text-(--color-text-on-accent) transition-all hover:opacity-90 active:scale-95"
+      className={cn(
+        'flex shrink-0 items-center justify-center bg-(--color-error) text-(--color-text-on-accent) outline-none transition-[opacity,transform] hover:opacity-90 active:scale-95 focus-visible:ring-2 focus-visible:ring-(--color-error)/40',
+        isMobile ? 'h-9 w-9 rounded-full' : 'h-7 w-7 rounded-[7px]',
+      )}
     >
       <Square size={13} fill="currentColor" />
     </button>
@@ -1090,11 +1097,13 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       disabled={!canSend}
       aria-label="Send message"
       title={isMobile ? 'Send message' : 'Send (Enter) · New line (Shift+Enter) · Commands (/)'}
-      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-all active:scale-95 ${
+      className={cn(
+        'flex shrink-0 items-center justify-center outline-none transition-[background-color,color,opacity,transform,box-shadow] active:scale-95 focus-visible:ring-2 focus-visible:ring-(--color-accent)/40',
+        isMobile ? 'h-9 w-9 rounded-full' : 'h-7 w-7 rounded-[7px]',
         canSend
-          ? 'bg-gradient-primary text-(--color-text-on-accent) shadow-sm hover:opacity-90'
-          : 'bg-(--bg-key) text-(--color-text-muted) opacity-40 cursor-not-allowed'
-      }`}
+          ? 'bg-(--bg-send) text-(--color-text-on-accent) shadow-sm hover:opacity-90'
+          : 'cursor-not-allowed bg-(--bg-key) text-(--color-text-muted) opacity-40',
+      )}
     >
       {((disabled && !minimized) || submitting) ? (
         <Loader2 size={14} className="animate-spin" aria-hidden="true" />
@@ -1365,11 +1374,20 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
             onDragLeave={handleDragLeave}
             onDragOver={handleDragOver}
             onDrop={handleDrop}
-            className={`relative block bg-(--color-surface) transition-[border-color,box-shadow] duration-200 ${
+            className={cn(
+              'relative block border bg-(--color-surface) transition-[background-color,border-color,box-shadow] duration-200',
               minimized
-                ? 'w-fit rounded-2xl border border-(--color-border) hover:bg-(--bg-key)'
-                : 'w-full rounded-xl border border-(--color-border) focus-within:border-(--focus-ring)/40'
-            }`}
+                ? cn(
+                    'w-fit border-(--color-border) hover:bg-(--bg-key)',
+                    isMobile ? 'rounded-2xl' : 'rounded-[10px]',
+                  )
+                : cn(
+                    'w-full border-(--color-border) focus-within:border-(--color-border-strong)',
+                    isMobile
+                      ? 'rounded-xl'
+                      : 'rounded-[10px] shadow-[0_6px_20px_rgb(0_0_0/0.08)]',
+                  ),
+            )}
           >
             {/* ── Minimized: compact action strip ── */}
             {minimized && (
@@ -1394,7 +1412,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                   </div>
                 )}
                 {/* Textarea area */}
-                <div className="px-4 pt-3 pb-1">
+                <div className={cn('px-4 pt-3', isMobile ? 'pb-1' : 'pb-2')}>
                   {shellMode && (
                     <div className="mb-2">
                       <button
@@ -1419,11 +1437,15 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                   {messageSlot}
                 </div>
 
-                {/* Bottom action bar — action buttons left · config selectors right · send.
-                    flex-wrap so the right-hand group (model pills / mode / send) drops to its
-                    own line instead of overflowing the card when the column narrows (docked
-                    workspace panel open, or mobile). */}
-                <div className="flex flex-wrap items-center gap-1.5 px-3 pb-3 pt-1">
+                {/* Bottom action bar — action buttons left · config selectors right · send. */}
+                <div
+                  className={cn(
+                    'flex flex-wrap items-center gap-1.5',
+                    isMobile
+                      ? 'px-3 pb-3 pt-1'
+                      : 'min-h-9 px-2.5 pb-2 pt-0',
+                  )}
+                >
                   {/* Left: content & navigation actions */}
                   {!shellMode && attachmentsEnabled && attachEl}
                   {!shellMode && webBridgeEl}
