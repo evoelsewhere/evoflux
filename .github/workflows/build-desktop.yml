@@ -1,171 +1,171 @@
-name: Build Desktop
+# name: Build Desktop
 
-on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Release version (e.g. 1.57.1). Leave empty for dev build."
-        required: false
-        type: string
-  pull_request:
-    paths:
-      - "desktop/**"
-      - "web/**"
-      - "scripts/build_sidecar.py"
-      - "pyproject.toml"
-      - ".github/workflows/build-desktop.yml"
+# on:
+#   workflow_dispatch:
+#     inputs:
+#       version:
+#         description: "Release version (e.g. 1.57.1). Leave empty for dev build."
+#         required: false
+#         type: string
+#   pull_request:
+#     paths:
+#       - "desktop/**"
+#       - "web/**"
+#       - "scripts/build_sidecar.py"
+#       - "pyproject.toml"
+#       - ".github/workflows/build-desktop.yml"
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+# concurrency:
+#   group: ${{ github.workflow }}-${{ github.ref }}
+#   cancel-in-progress: true
 
-env:
-  PYTHON_VERSION: "3.12"
-  BUN_VERSION: "latest"
-  # Tauri sidecar output directory (must match tauri.conf.json bundle.resources)
-  SIDECAR_DIR: desktop/sidecar-bundle
+# env:
+#   PYTHON_VERSION: "3.12"
+#   BUN_VERSION: "latest"
+#   # Tauri sidecar output directory (must match tauri.conf.json bundle.resources)
+#   SIDECAR_DIR: desktop/sidecar-bundle
 
-jobs:
-  # ── Build sidecar (shared across platforms) ───────────────────────────
-  sidecar:
-    name: Sidecar (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            platform: macos-arm64
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            platform: windows
-    steps:
-      - uses: actions/checkout@v4
+# jobs:
+#   # ── Build sidecar (shared across platforms) ───────────────────────────
+#   sidecar:
+#     name: Sidecar (${{ matrix.os }})
+#     runs-on: ${{ matrix.os }}
+#     strategy:
+#       fail-fast: false
+#       matrix:
+#         include:
+#           - os: macos-latest
+#             target: aarch64-apple-darwin
+#             platform: macos-arm64
+#           - os: windows-latest
+#             target: x86_64-pc-windows-msvc
+#             platform: windows
+#     steps:
+#       - uses: actions/checkout@v4
 
-      - uses: astral-sh/setup-uv@v4
+#       - uses: astral-sh/setup-uv@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
+#       - uses: actions/setup-python@v5
+#         with:
+#           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Build sidecar
-        shell: bash
-        run: |
-          python scripts/build_sidecar.py \
-            --root . \
-            --out ${{ env.SIDECAR_DIR }} \
-            --python-version 3.12
+#       - name: Build sidecar
+#         shell: bash
+#         run: |
+#           python scripts/build_sidecar.py \
+#             --root . \
+#             --out ${{ env.SIDECAR_DIR }} \
+#             --python-version 3.12
 
-      - name: Upload sidecar artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: sidecar-${{ matrix.platform }}
-          path: ${{ env.SIDECAR_DIR }}/
-          retention-days: 1
-          if-no-files-found: error
+#       - name: Upload sidecar artifact
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: sidecar-${{ matrix.platform }}
+#           path: ${{ env.SIDECAR_DIR }}/
+#           retention-days: 1
+#           if-no-files-found: error
 
-  # ── Build desktop apps ────────────────────────────────────────────────
-  desktop:
-    name: Desktop (${{ matrix.name }})
-    needs: sidecar
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: macOS (arm64)
-            os: macos-latest
-            platform: macos-arm64
-            targets: "app,dmg"
+#   # ── Build desktop apps ────────────────────────────────────────────────
+#   desktop:
+#     name: Desktop (${{ matrix.name }})
+#     needs: sidecar
+#     runs-on: ${{ matrix.os }}
+#     strategy:
+#       fail-fast: false
+#       matrix:
+#         include:
+#           - name: macOS (arm64)
+#             os: macos-latest
+#             platform: macos-arm64
+#             targets: "app,dmg"
 
-          - name: Windows (x64)
-            os: windows-latest
-            platform: windows
-            targets: "msi"
+#           - name: Windows (x64)
+#             os: windows-latest
+#             platform: windows
+#             targets: "msi"
 
-    steps:
-      - uses: actions/checkout@v4
+#     steps:
+#       - uses: actions/checkout@v4
 
-      # ── Web frontend ─────────────────────────────────────────────────
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
+#       # ── Web frontend ─────────────────────────────────────────────────
+#       - uses: oven-sh/setup-bun@v2
+#         with:
+#           bun-version: ${{ env.BUN_VERSION }}
 
-      - name: Build web frontend
-        working-directory: web
-        run: |
-          bun install --frozen-lockfile
-          bun run build
+#       - name: Build web frontend
+#         working-directory: web
+#         run: |
+#           bun install --frozen-lockfile
+#           bun run build
 
-      # ── Rust toolchain ───────────────────────────────────────────────
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+#       # ── Rust toolchain ───────────────────────────────────────────────
+#       - name: Install Rust toolchain
+#         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Cargo registry & build
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            desktop/src-tauri/target
-          key: tauri-${{ runner.os }}-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}
-          restore-keys: |
-            tauri-${{ runner.os }}-
+#       - name: Cache Cargo registry & build
+#         uses: actions/cache@v4
+#         with:
+#           path: |
+#             ~/.cargo/registry
+#             ~/.cargo/git
+#             desktop/src-tauri/target
+#           key: tauri-${{ runner.os }}-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}
+#           restore-keys: |
+#             tauri-${{ runner.os }}-
 
-      # ── Platform dependencies ────────────────────────────────────────
-      - name: Install Windows dependencies
-        if: runner.os == 'Windows'
-        uses: nuget/setup-nuget@v2
+#       # ── Platform dependencies ────────────────────────────────────────
+#       - name: Install Windows dependencies
+#         if: runner.os == 'Windows'
+#         uses: nuget/setup-nuget@v2
 
-      # ── Tauri CLI ────────────────────────────────────────────────────
-      - name: Cache Tauri CLI
-        id: cache-tauri-cli
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/bin/cargo-tauri*
-          key: tauri-cli-${{ runner.os }}-v2
+#       # ── Tauri CLI ────────────────────────────────────────────────────
+#       - name: Cache Tauri CLI
+#         id: cache-tauri-cli
+#         uses: actions/cache@v4
+#         with:
+#           path: ~/.cargo/bin/cargo-tauri*
+#           key: tauri-cli-${{ runner.os }}-v2
 
-      - name: Install Tauri CLI
-        if: steps.cache-tauri-cli.outputs.cache-hit != 'true'
-        shell: bash
-        run: cargo install tauri-cli --version "^2" --locked
+#       - name: Install Tauri CLI
+#         if: steps.cache-tauri-cli.outputs.cache-hit != 'true'
+#         shell: bash
+#         run: cargo install tauri-cli --version "^2" --locked
 
-      # ── Download sidecar ─────────────────────────────────────────────
-      - name: Download sidecar artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: sidecar-${{ matrix.platform }}
-          path: ${{ env.SIDECAR_DIR }}/
+#       # ── Download sidecar ─────────────────────────────────────────────
+#       - name: Download sidecar artifact
+#         uses: actions/download-artifact@v4
+#         with:
+#           name: sidecar-${{ matrix.platform }}
+#           path: ${{ env.SIDECAR_DIR }}/
 
-      # ── Build ────────────────────────────────────────────────────────
-      - name: Build Tauri app
-        working-directory: desktop/src-tauri
-        env:
-          # Skip the beforeBuildCommand (we already built the frontend)
-          TAURI_SKIP_FRONTEND_BUILD: "1"
-        run: |
-          # Build for the target platforms
-          cargo tauri build --bundles ${{ matrix.targets }}
+#       # ── Build ────────────────────────────────────────────────────────
+#       - name: Build Tauri app
+#         working-directory: desktop/src-tauri
+#         env:
+#           # Skip the beforeBuildCommand (we already built the frontend)
+#           TAURI_SKIP_FRONTEND_BUILD: "1"
+#         run: |
+#           # Build for the target platforms
+#           cargo tauri build --bundles ${{ matrix.targets }}
 
-      # ── Upload artifacts ─────────────────────────────────────────────
-      - name: Upload macOS artifacts
-        if: runner.os == 'macOS'
-        uses: actions/upload-artifact@v4
-        with:
-          name: desktop-${{ matrix.platform }}
-          path: |
-            desktop/src-tauri/target/release/bundle/dmg/*.dmg
-            desktop/src-tauri/target/release/bundle/macos/*.app
-          retention-days: 7
-          if-no-files-found: error
+#       # ── Upload artifacts ─────────────────────────────────────────────
+#       - name: Upload macOS artifacts
+#         if: runner.os == 'macOS'
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: desktop-${{ matrix.platform }}
+#           path: |
+#             desktop/src-tauri/target/release/bundle/dmg/*.dmg
+#             desktop/src-tauri/target/release/bundle/macos/*.app
+#           retention-days: 7
+#           if-no-files-found: error
 
-      - name: Upload Windows artifacts
-        if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v4
-        with:
-          name: desktop-windows
-          path: desktop/src-tauri/target/release/bundle/msi/*.msi
-          retention-days: 7
-          if-no-files-found: error
+#       - name: Upload Windows artifacts
+#         if: runner.os == 'Windows'
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: desktop-windows
+#           path: desktop/src-tauri/target/release/bundle/msi/*.msi
+#           retention-days: 7
+#           if-no-files-found: error
 
