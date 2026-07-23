@@ -145,6 +145,21 @@ def _origin_of(url: str) -> str:
     return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
 
 
+def _binding_scope(value: str) -> str:
+    origin = _origin_of(value)
+    if origin:
+        return origin
+    if value.startswith("tab:") and value[4:].isdigit():
+        return value
+    return ""
+
+
+def _scope_matches_tab(scope: str, tab_id: int, url: str) -> bool:
+    if scope == f"tab:{tab_id}":
+        return True
+    return bool(scope) and _origin_of(url) == scope
+
+
 def _domain_matches(host: str, patterns: list[str]) -> bool:
     """True when *host* equals or is a sub-domain of any configured pattern."""
     if not host:
@@ -216,7 +231,7 @@ class WebBridgeManager:
         self._session_targets: dict[str, str] = {}
         # session_id → (extension_id, tab_id) explicitly selected by the user.
         self._session_tabs: dict[str, tuple[str, int]] = {}
-        # session_id → normalized origin expected for the live tab binding.
+        # session_id → HTTP origin or tab:<id> scope for the live binding.
         self._session_tab_origins: dict[str, str] = {}
         # session_id → durable binding expiry as UNIX seconds.
         self._session_tab_expires: dict[str, float] = {}
@@ -588,7 +603,7 @@ class WebBridgeManager:
         self._session_targets[session_id] = extension_id
         self._session_tabs[session_id] = (extension_id, tab_id)
         self._invalid_session_tabs.pop(session_id, None)
-        expected_origin = _origin_of(origin)
+        expected_origin = _binding_scope(origin)
         self._invalid_session_tabs.pop(session_id, None)
         if expected_origin:
             self._session_tab_origins[session_id] = expected_origin
@@ -619,7 +634,7 @@ class WebBridgeManager:
                 and pending[1] == tab_id
             ):
                 self.unbind_session_tab(other_session, extension_id=extension_id)
-        expected_origin = _origin_of(origin)
+        expected_origin = _binding_scope(origin)
         if (
             self._session_tabs.get(session_id) == (extension_id, tab_id)
             and self._session_tab_origins.get(session_id) == expected_origin
@@ -655,16 +670,17 @@ class WebBridgeManager:
             if bound_extension != extension_id:
                 continue
             actual_url = tab_urls.get(tab_id)
-            if (
-                actual_url is not None
-                and expected_origin
-                and _origin_of(actual_url) == expected_origin
-            ):
+            if actual_url is not None:
+                restored_scope = (
+                    expected_origin
+                    if _scope_matches_tab(expected_origin, tab_id, actual_url)
+                    else f"tab:{tab_id}"
+                )
                 self.bind_session_tab(
                     session_id,
                     extension_id,
                     tab_id,
-                    expected_origin,
+                    restored_scope,
                     self._session_tab_expires.get(session_id),
                 )
             else:
@@ -697,7 +713,13 @@ class WebBridgeManager:
             if not expected_origin:
                 continue
             actual_url = tab_urls.get(tab_id)
-            if actual_url is not None and _origin_of(actual_url) == expected_origin:
+            if actual_url is not None and _scope_matches_tab(
+                expected_origin, tab_id, actual_url
+            ):
+                continue
+            if actual_url is not None:
+                self._session_tab_origins[session_id] = f"tab:{tab_id}"
+                self._invalid_session_tabs.pop(session_id, None)
                 continue
             self._invalid_session_tabs[session_id] = (
                 extension_id,
@@ -920,22 +942,27 @@ class WebBridgeManager:
                         "data": None,
                         "error": "Bound browser tab is pending origin validation; wait for tab state.",
                     }
-                if _origin_of(current_url) != expected_origin:
-                    self._invalid_session_tabs[session_id] = (
-                        binding[0],
-                        "Bound browser tab changed origin; bind this tab again before continuing.",
-                    )
-                    self._session_tabs.pop(session_id, None)
-                    self._session_tab_origins.pop(session_id, None)
-                    self._session_targets.pop(session_id, None)
-                    self._session_tab_expires.pop(session_id, None)
+                if expected_origin.startswith("tab:"):
+                    if _origin_of(current_url):
+                        return {
+                            "success": False,
+                            "data": None,
+                            "error": "Browser tab entered an HTTP(S) page; refresh Side Chat before using browser tools.",
+                        }
                     return {
                         "success": False,
                         "data": None,
-                        "error": "Bound browser tab changed origin; bind this tab again before continuing.",
+                        "error": "Browser tools are unavailable on this internal page; Side Chat remains available.",
+                    }
+                if _origin_of(current_url) != expected_origin:
+                    self._session_tab_origins[session_id] = f"tab:{binding[1]}"
+                    return {
+                        "success": False,
+                        "data": None,
+                        "error": "Bound browser tab changed page scope; refresh Side Chat before continuing.",
                     }
             params["tab_id"] = binding[1]
-            if expected_origin:
+            if expected_origin and not expected_origin.startswith("tab:"):
                 params["_webbridge_expected_origin"] = expected_origin
 
         # A session starts with one primary tab. If it opens additional tabs,
