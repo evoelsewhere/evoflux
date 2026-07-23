@@ -5,9 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from uuid import UUID
 
+from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.models.chat import ChatSession
+from app.models.chat import ChatSession, SessionMessage
 from app.services import agent_service, team_manager
 from app.services.agent_service import NoTeamConfigured
 from app.services.chat_service import cleanup_reverted_tail, save_queued_user_message
@@ -18,6 +19,40 @@ class InteractiveMessageResult:
     status: str
     session_id: str
     message_id: UUID | None = None
+
+
+class InteractiveMessageConflict(ValueError):
+    """One channel action key was reused with a different request payload."""
+
+
+async def find_interactive_message_by_source(
+    db: AsyncSession,
+    *,
+    session_id: UUID,
+    source_key: str,
+) -> SessionMessage | None:
+    """Return a recently persisted user message for one channel action.
+
+    The source key lives in the existing message ``extra`` JSON. A bounded
+    newest-first lookup is sufficient because browser retries expire quickly,
+    while avoiding another schema/index solely for a local channel adapter.
+    """
+    rows = (
+        await db.exec(
+            select(SessionMessage)
+            .where(
+                SessionMessage.session_id == session_id,
+                SessionMessage.role == "user",
+            )
+            .order_by(col(SessionMessage.created_at).desc())
+            .limit(200)
+        )
+    ).all()
+    for row in rows:
+        source = (row.extra or {}).get("webbridge_source")
+        if isinstance(source, dict) and source.get("key") == source_key:
+            return row
+    return None
 
 
 async def _project_paths_for_session(
@@ -90,6 +125,10 @@ async def submit_persisted_interactive_message(
     session: ChatSession,
     team,
     content: str,
+    message_extra: dict | None = None,
+    persisted_message: SessionMessage | None = None,
+    source_key: str | None = None,
+    source_request_hash: str | None = None,
 ) -> InteractiveMessageResult:
     """Queue or dispatch one prepared, attachment-free interactive message."""
     session_id = str(session.id)
@@ -98,10 +137,44 @@ async def submit_persisted_interactive_message(
 
     async with team.user_message_lock:
         async with db.begin():
+            if persisted_message is None and source_key:
+                persisted_message = await find_interactive_message_by_source(
+                    db, session_id=session.id, source_key=source_key
+                )
+            if persisted_message is not None and source_request_hash:
+                source = (persisted_message.extra or {}).get("webbridge_source")
+                if (
+                    isinstance(source, dict)
+                    and source.get("request_hash") != source_request_hash
+                ):
+                    raise InteractiveMessageConflict(
+                        "Idempotency-Key was already used for another message."
+                    )
             await cleanup_reverted_tail(db, session.id)
 
+        if persisted_message is not None:
+            source = (persisted_message.extra or {}).get("webbridge_source") or {}
+            if source.get("state") == "delivered":
+                return InteractiveMessageResult(
+                    status="accepted",
+                    session_id=session_id,
+                    message_id=persisted_message.id,
+                )
+            if (persisted_message.extra or {}).get("queue_status") == "queued":
+                return InteractiveMessageResult(
+                    status="queued",
+                    session_id=session_id,
+                    message_id=persisted_message.id,
+                )
+            if team.has_active_user_turn():
+                return InteractiveMessageResult(
+                    status="pending",
+                    session_id=session_id,
+                    message_id=persisted_message.id,
+                )
+
         if team.has_active_user_turn():
-            queued_extra: dict[str, object] = {}
+            queued_extra: dict[str, object] = dict(message_extra or {})
             effective_model = session.model or team.lead.agent.model_id
             if effective_model:
                 queued_extra["model"] = effective_model
@@ -122,19 +195,36 @@ async def submit_persisted_interactive_message(
                 message_id=queued.id,
             )
 
+        dispatch_kwargs: dict = {
+            "content": content,
+            "session_id": session_id,
+            "mode": session.mode,
+            "workspace": session.workspace,
+        }
+        if message_extra is not None:
+            dispatch_kwargs["message_extra"] = message_extra
+        if persisted_message is not None:
+            dispatch_kwargs.update(
+                persist_message=False,
+                existing_message_id=persisted_message.id,
+            )
         dispatched_id, _ = await agent_service.dispatch_user_message(
-            team,
-            content=content,
-            session_id=session_id,
-            mode=session.mode,
-            workspace=session.workspace,
+            team, **dispatch_kwargs
         )
-        return InteractiveMessageResult(status="accepted", session_id=dispatched_id)
+        return InteractiveMessageResult(
+            status="accepted",
+            session_id=dispatched_id,
+            message_id=(
+                persisted_message.id if persisted_message is not None else None
+            ),
+        )
 
 
 __all__ = [
+    "InteractiveMessageConflict",
     "InteractiveMessageResult",
     "NoTeamConfigured",
+    "find_interactive_message_by_source",
     "resolve_team_for_session",
     "submit_persisted_interactive_message",
 ]

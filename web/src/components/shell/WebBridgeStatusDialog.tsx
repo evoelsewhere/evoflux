@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Check, Copy, Download, KeyRound, Loader2, RefreshCw, Unplug } from 'lucide-react'
+import { Check, Copy, Download, KeyRound, Link2, Loader2, Play, RefreshCw, Trash2, Unplug } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -17,20 +17,37 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  assignWebBridgeSessionToPairing,
+  approveWebBridgeTeachDraft,
+  deleteWebBridgeTeachDraft,
   downloadWebBridgeExtension,
   getWebBridgeAudit,
   getWebBridgeStatus,
   issueWebBridgePairingCode,
   listWebBridgePairings,
+  listTeamSessions,
+  listWebBridgeTeachDrafts,
   revokeWebBridgePairing,
+  replayWebBridgeTeachDraft,
 } from '@/api/client'
 import { apiBaseUrl } from '@/api/base-url'
 import { useToastStore } from '@/stores/useToastStore'
 import type {
   WebBridgeAuditEntry,
+  SessionResponse,
   WebBridgePairingInfo,
   WebBridgeStatusResponse,
+  WebBridgeTeachAction,
+  WebBridgeTeachDraft,
 } from '@/api/types'
 
 /** Relay URL the extension needs, derived from the app's own connection. */
@@ -69,6 +86,20 @@ function CopyRow({ label, value }: { label: string; value: string }) {
   )
 }
 
+function teachActionLabel(action: WebBridgeTeachAction): string {
+  if (action.kind === 'navigate') return `Navigate to ${action.url ?? 'page'}`
+  if (action.kind === 'fill') {
+    return action.secret
+      ? `Fill ${action.selector ?? 'field'} from ${action.parameter ?? 'secret parameter'}`
+      : `Fill ${action.selector ?? 'field'} with ${JSON.stringify(action.value ?? '')}`
+  }
+  if (action.kind === 'select') {
+    return `Select ${(action.values ?? []).map((value) => JSON.stringify(value)).join(', ')} in ${action.selector ?? 'field'}`
+  }
+  if (action.kind === 'set_checked') return `${action.checked ? 'Enable' : 'Disable'} ${action.selector ?? 'field'}`
+  return `Click ${action.selector ?? 'element'}`
+}
+
 interface WebBridgeStatusDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -86,8 +117,16 @@ export function WebBridgeStatusDialog({
   const [downloading, setDownloading] = useState(false)
   const [pairingCode, setPairingCode] = useState<string | null>(null)
   const [pairings, setPairings] = useState<WebBridgePairingInfo[]>([])
+  const [webBridgeSessions, setWebBridgeSessions] = useState<SessionResponse[]>([])
+  const [selectedSessionByPairing, setSelectedSessionByPairing] = useState<Record<string, string>>({})
   const [pairing, setPairing] = useState(false)
   const [revokingPairingId, setRevokingPairingId] = useState<string | null>(null)
+  const [assigningPairingId, setAssigningPairingId] = useState<string | null>(null)
+  const [teachDrafts, setTeachDrafts] = useState<WebBridgeTeachDraft[]>([])
+  const [approvingDraftId, setApprovingDraftId] = useState<string | null>(null)
+  const [replayingDraftId, setReplayingDraftId] = useState<string | null>(null)
+  const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null)
+  const [draftParameters, setDraftParameters] = useState<Record<string, Record<string, string>>>({})
   const pushToast = useToastStore((s) => s.push)
 
   // Ref-synced so `refresh` stays referentially stable for the open-effect
@@ -118,9 +157,22 @@ export function WebBridgeStatusDialog({
       setAudit([])
     }
     try {
-      setPairings(await listWebBridgePairings())
+      const [nextPairings, page] = await Promise.all([
+        listWebBridgePairings(),
+        listTeamSessions(undefined, 100),
+      ])
+      setPairings(nextPairings)
+      setWebBridgeSessions(
+        page.data.filter((session) => session.tags?.includes('webbridge')),
+      )
     } catch {
       setPairings([])
+      setWebBridgeSessions([])
+    }
+    try {
+      setTeachDrafts(await listWebBridgeTeachDrafts())
+    } catch {
+      setTeachDrafts([])
     }
   }, [])
 
@@ -180,6 +232,89 @@ export function WebBridgeStatusDialog({
       })
     } finally {
       setRevokingPairingId(null)
+    }
+  }, [pushToast, refresh])
+
+  const handleAssign = useCallback(async (pairingId: string) => {
+    const sessionId = selectedSessionByPairing[pairingId]
+    if (!sessionId) {
+      pushToast({
+        tone: 'error',
+        title: 'Choose a WebBridge session',
+      })
+      return
+    }
+    setAssigningPairingId(pairingId)
+    try {
+      await assignWebBridgeSessionToPairing(pairingId, sessionId)
+      await refresh()
+      pushToast({
+        tone: 'success',
+        title: 'Session granted to browser pairing',
+      })
+    } catch (err) {
+      pushToast({
+        tone: 'error',
+        title: 'Could not grant session access',
+        description: err instanceof Error ? err.message : String(err),
+      })
+    } finally {
+      setAssigningPairingId(null)
+    }
+  }, [pushToast, refresh, selectedSessionByPairing])
+
+  const handleApproveDraft = useCallback(async (draftId: string) => {
+    setApprovingDraftId(draftId)
+    try {
+      await approveWebBridgeTeachDraft(draftId)
+      await refresh()
+      pushToast({ tone: 'success', title: 'Teach draft approved for supervised replay' })
+    } catch (err) {
+      pushToast({
+        tone: 'error',
+        title: 'Could not approve Teach draft',
+        description: err instanceof Error ? err.message : String(err),
+      })
+    } finally {
+      setApprovingDraftId(null)
+    }
+  }, [pushToast, refresh])
+
+  const handleReplayDraft = useCallback(async (draft: WebBridgeTeachDraft) => {
+    setReplayingDraftId(draft.id)
+    try {
+      await replayWebBridgeTeachDraft(draft.id, draftParameters[draft.id] ?? {})
+      setDraftParameters((current) => {
+        const next = { ...current }
+        delete next[draft.id]
+        return next
+      })
+      await refresh()
+      pushToast({ tone: 'success', title: 'Teach draft replay completed' })
+    } catch (err) {
+      pushToast({
+        tone: 'error',
+        title: 'Teach draft replay stopped',
+        description: err instanceof Error ? err.message : String(err),
+      })
+    } finally {
+      setReplayingDraftId(null)
+    }
+  }, [draftParameters, pushToast, refresh])
+
+  const handleDeleteDraft = useCallback(async (draftId: string) => {
+    setDeletingDraftId(draftId)
+    try {
+      await deleteWebBridgeTeachDraft(draftId)
+      await refresh()
+    } catch (err) {
+      pushToast({
+        tone: 'error',
+        title: 'Could not delete Teach draft',
+        description: err instanceof Error ? err.message : String(err),
+      })
+    } finally {
+      setDeletingDraftId(null)
     }
   }, [pushToast, refresh])
 
@@ -339,29 +474,171 @@ export function WebBridgeStatusDialog({
             </p>
             <ul className="space-y-1 rounded-md bg-(--bg-key) px-2 py-1.5">
               {pairings.map((paired) => (
-                <li key={paired.pairing_id} className="flex min-w-0 items-center gap-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs font-medium text-(--color-text)">
-                      {paired.label}
-                    </p>
-                    <p className="truncate text-xs text-(--color-text-subtle)">
-                      {paired.browser} · v{paired.version}
-                    </p>
+                <li key={paired.pairing_id} className="min-w-0 space-y-2 border-b border-(--color-border-subtle) py-1.5 last:border-b-0">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-medium text-(--color-text)">
+                        {paired.label}
+                      </p>
+                      <p className="truncate text-xs text-(--color-text-subtle)">
+                        {paired.browser} · v{paired.version}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleRevoke(paired.pairing_id)}
+                      disabled={revokingPairingId === paired.pairing_id}
+                      className="shrink-0 rounded-xs p-1 text-(--color-text-subtle) transition-colors hover:bg-(--bg-2) hover:text-(--color-error) disabled:opacity-50"
+                      aria-label={`Revoke ${paired.label}`}
+                      title={`Revoke ${paired.label}`}
+                    >
+                      {revokingPairingId === paired.pairing_id ? (
+                        <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+                      ) : (
+                        <Unplug size={14} aria-hidden="true" />
+                      )}
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => void handleRevoke(paired.pairing_id)}
-                    disabled={revokingPairingId === paired.pairing_id}
-                    className="shrink-0 rounded-xs p-1 text-(--color-text-subtle) transition-colors hover:bg-(--bg-2) hover:text-(--color-error) disabled:opacity-50"
-                    aria-label={`Revoke ${paired.label}`}
-                    title={`Revoke ${paired.label}`}
-                  >
-                    {revokingPairingId === paired.pairing_id ? (
-                      <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+                  {webBridgeSessions.length > 0 ? (
+                    <div className="flex min-w-0 items-center gap-2">
+                      <Select
+                        value={selectedSessionByPairing[paired.pairing_id] ?? null}
+                        onValueChange={(value) => setSelectedSessionByPairing((current) => ({
+                          ...current,
+                          [paired.pairing_id]: value ?? '',
+                        }))}
+                      >
+                        <SelectTrigger size="sm" className="min-w-0 flex-1">
+                          <SelectValue placeholder="Grant a WebBridge session" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {webBridgeSessions.map((session) => (
+                            <SelectItem key={session.id} value={session.id}>
+                              {session.title || 'Untitled session'}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void handleAssign(paired.pairing_id)}
+                        disabled={assigningPairingId === paired.pairing_id}
+                      >
+                        {assigningPairingId === paired.pairing_id ? (
+                          <Loader2 className="animate-spin" aria-hidden="true" />
+                        ) : (
+                          <Link2 aria-hidden="true" />
+                        )}
+                        Grant
+                      </Button>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-(--color-text-subtle)">
+                      Enable WebBridge in a chat session to grant it to this browser.
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {teachDrafts.length > 0 && (
+          <div className="min-w-0 space-y-2">
+            <p className="text-xs font-medium text-(--color-text-muted)">
+              Teach drafts
+            </p>
+            <ul className="max-h-72 space-y-1 overflow-y-auto rounded-md bg-(--bg-key) px-2 py-1.5">
+              {teachDrafts.map((draft) => (
+                <li key={draft.id} className="min-w-0 space-y-2 border-b border-(--color-border-subtle) py-2 last:border-b-0">
+                  <div className="flex min-w-0 items-start gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-medium text-(--color-text)">{draft.title}</p>
+                      <p className="truncate text-xs text-(--color-text-subtle)" title={draft.start_url}>
+                        {draft.actions.length} semantic step{draft.actions.length === 1 ? '' : 's'} · {draft.status}
+                      </p>
+                      <p className="truncate text-xs text-(--color-text-subtle)" title={draft.start_url}>
+                        {draft.start_url}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteDraft(draft.id)}
+                      disabled={deletingDraftId === draft.id}
+                      className="shrink-0 rounded-xs p-1 text-(--color-text-subtle) transition-colors hover:bg-(--bg-2) hover:text-(--color-error) disabled:opacity-50"
+                      aria-label={`Delete ${draft.title}`}
+                      title={`Delete ${draft.title}`}
+                    >
+                      {deletingDraftId === draft.id ? (
+                        <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+                      ) : (
+                        <Trash2 size={14} aria-hidden="true" />
+                      )}
+                    </button>
+                  </div>
+                  <ol className="space-y-0.5 text-xs text-(--color-text-subtle)">
+                    {draft.actions.map((action, index) => (
+                      <li key={`${draft.id}-${index}`} className="truncate" title={teachActionLabel(action)}>
+                        {index + 1}. {teachActionLabel(action)}
+                      </li>
+                    ))}
+                  </ol>
+                  {draft.capture_warnings.map((warning) => (
+                    <p key={warning} className="text-xs text-(--color-warning)">{warning}</p>
+                  ))}
+                  {draft.parameter_names.map((parameter) => (
+                    <Input
+                      key={parameter}
+                      type="password"
+                      value={draftParameters[draft.id]?.[parameter] ?? ''}
+                      onChange={(event) => setDraftParameters((current) => ({
+                        ...current,
+                        [draft.id]: { ...current[draft.id], [parameter]: event.target.value },
+                      }))}
+                      placeholder={parameter}
+                      aria-label={`Value for ${parameter}`}
+                      className="h-8 text-xs"
+                    />
+                  ))}
+                  {draft.last_error && (
+                    <p className="text-xs text-(--color-error)">{draft.last_error}</p>
+                  )}
+                  <div className="flex gap-2">
+                    {draft.status !== 'approved' ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void handleApproveDraft(draft.id)}
+                        disabled={approvingDraftId === draft.id}
+                        className="flex-1"
+                      >
+                        {approvingDraftId === draft.id ? (
+                          <Loader2 className="animate-spin" aria-hidden="true" />
+                        ) : (
+                          <Check aria-hidden="true" />
+                        )}
+                        Approve
+                      </Button>
                     ) : (
-                      <Unplug size={14} aria-hidden="true" />
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => void handleReplayDraft(draft)}
+                        disabled={replayingDraftId === draft.id}
+                        className="flex-1"
+                      >
+                        {replayingDraftId === draft.id ? (
+                          <Loader2 className="animate-spin" aria-hidden="true" />
+                        ) : (
+                          <Play aria-hidden="true" />
+                        )}
+                        Replay
+                      </Button>
                     )}
-                  </button>
+                  </div>
                 </li>
               ))}
             </ul>

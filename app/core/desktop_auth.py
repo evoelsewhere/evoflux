@@ -78,12 +78,18 @@ _EXEMPT_PREFIXES: tuple[str, ...] = (
 _CUSTOM_AUTH_EXACT: frozenset[str] = frozenset(
     {
         "/api/team/webbridge/pairing/exchange",
+        "/api/team/webbridge/pairing/local",
         "/api/team/webbridge/relay-ticket",
         "/api/team/webbridge/interactions",
         "/api/team/webbridge/bindings",
+        "/api/team/webbridge/sessions",
+        "/api/team/webbridge/teach-drafts",
     }
 )
-_CUSTOM_AUTH_PREFIXES: tuple[str, ...] = ("/api/team/webbridge/bindings/",)
+_CUSTOM_AUTH_PREFIXES: tuple[str, ...] = (
+    "/api/team/webbridge/bindings/",
+    "/api/team/webbridge/sessions/",
+)
 
 # Query-string param name used by `<a download>` links that can't carry
 # an Authorization header. We strip this *after* extraction so downstream

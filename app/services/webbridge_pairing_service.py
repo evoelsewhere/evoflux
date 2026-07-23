@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import or_, update
+from sqlalchemy import delete, or_, update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -22,7 +22,9 @@ from app.models.webbridge import (
     WebBridgeInteraction,
     WebBridgePairing,
     WebBridgeTabBinding,
+    WebBridgeTeachDraft,
 )
+from app.models.chat import ChatSession
 
 
 DEFAULT_PAIRING_SCOPES = frozenset(
@@ -31,13 +33,42 @@ DEFAULT_PAIRING_SCOPES = frozenset(
         "interactions:write",
         "bindings:write",
         "sessions:list",
+        "sessions:create",
+        "session-stream:read",
+        "teach:drafts:write",
+        "session:messages:write",
+        "handoff:reply",
+    }
+)
+_P0_PAIRING_SCOPES = frozenset(
+    {
+        "relay",
+        "interactions:write",
+        "bindings:write",
+        "sessions:list",
         "session-stream:read",
     }
 )
+_P1_PAIRING_SCOPES = frozenset(
+    {
+        "relay",
+        "interactions:write",
+        "bindings:write",
+        "sessions:list",
+        "sessions:create",
+        "session-stream:read",
+    }
+)
+_P3_PAIRING_SCOPES = _P1_PAIRING_SCOPES | {"teach:drafts:write"}
 
 
 def _token_digest(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def pairing_session_tag(pairing_id: UUID | str) -> str:
+    """Session tag granting one paired browser access to a WebBridge session."""
+    return f"webbridge_pairing:{pairing_id}"
 
 
 @dataclass(frozen=True)
@@ -208,6 +239,16 @@ async def authenticate_pairing(
     ).first()
     if pairing is None:
         return None
+    # P0/P1 pairings were issued by this same first-party flow. Upgrade only
+    # their exact historical scope sets so existing extensions can use the
+    # new draft-only Teach Mode capability without being re-paired. Approval
+    # and replay intentionally remain app-authenticated endpoints.
+    if frozenset(pairing.scopes) in {
+        _P0_PAIRING_SCOPES,
+        _P1_PAIRING_SCOPES,
+        _P3_PAIRING_SCOPES,
+    }:
+        pairing.scopes = sorted(DEFAULT_PAIRING_SCOPES)
     if required_scope is not None and required_scope not in pairing.scopes:
         return None
     pairing.last_seen_at = datetime.now(timezone.utc)
@@ -232,6 +273,35 @@ async def revoke_pairing(db: AsyncSession, pairing_id: UUID) -> WebBridgePairing
     db.add(pairing)
     await db.flush()
     return pairing
+
+
+async def delete_pairing_data(db: AsyncSession, pairing_id: UUID) -> None:
+    """Remove pairing-owned channel metadata while preserving chat messages."""
+    await db.exec(
+        delete(WebBridgeTabBinding).where(
+            col(WebBridgeTabBinding.pairing_id) == pairing_id
+        )
+    )
+    await db.exec(
+        delete(WebBridgeInteraction).where(
+            col(WebBridgeInteraction.pairing_id) == pairing_id
+        )
+    )
+    await db.exec(
+        delete(WebBridgeTeachDraft).where(
+            col(WebBridgeTeachDraft.pairing_id) == pairing_id
+        )
+    )
+    owner_tag = pairing_session_tag(pairing_id)
+    sessions = (
+        await db.exec(select(ChatSession).where(col(ChatSession.tags).is_not(None)))
+    ).all()
+    for session in sessions:
+        if owner_tag not in (session.tags or ()):
+            continue
+        session.tags = [tag for tag in (session.tags or []) if tag != owner_tag] or None
+        db.add(session)
+    await db.flush()
 
 
 def interaction_request_hash(payload: dict[str, Any]) -> str:
@@ -296,6 +366,43 @@ async def create_or_get_interaction(
     return interaction, True
 
 
+async def create_teach_draft(
+    db: AsyncSession,
+    *,
+    pairing_id: UUID,
+    session_id: UUID,
+    tab_id: int,
+    title: str,
+    origin: str,
+    start_url: str,
+    actions: list[dict[str, Any]],
+    parameter_names: list[str],
+    capture_warnings: list[str],
+) -> WebBridgeTeachDraft:
+    """Persist a review-gated semantic browser trace for one pairing."""
+    draft = WebBridgeTeachDraft(
+        pairing_id=pairing_id,
+        session_id=session_id,
+        tab_id=tab_id,
+        title=title,
+        origin=origin,
+        start_url=start_url,
+        actions=actions,
+        parameter_names=parameter_names,
+        capture_warnings=capture_warnings,
+    )
+    db.add(draft)
+    await db.flush()
+    return draft
+
+
+async def list_teach_drafts(db: AsyncSession) -> list[WebBridgeTeachDraft]:
+    rows = await db.exec(
+        select(WebBridgeTeachDraft).order_by(col(WebBridgeTeachDraft.created_at).desc())
+    )
+    return list(rows.all())
+
+
 async def claim_interaction_dispatch(
     db: AsyncSession,
     interaction: WebBridgeInteraction,
@@ -319,8 +426,6 @@ async def claim_interaction_dispatch(
     )
     await db.commit()
     claimed = result.first() is not None
-    if claimed:
-        await db.refresh(interaction)
     return claimed
 
 
@@ -335,6 +440,17 @@ async def upsert_tab_binding(
     ttl_seconds: int = 86_400,
 ) -> WebBridgeTabBinding:
     now = datetime.now(timezone.utc)
+    stale_session_bindings = (
+        await db.exec(
+            select(WebBridgeTabBinding).where(
+                WebBridgeTabBinding.pairing_id == pairing_id,
+                WebBridgeTabBinding.session_id == session_id,
+                WebBridgeTabBinding.tab_id != tab_id,
+            )
+        )
+    ).all()
+    for stale in stale_session_bindings:
+        await db.delete(stale)
     binding = (
         await db.exec(
             select(WebBridgeTabBinding).where(
@@ -375,7 +491,10 @@ async def list_tab_bindings(
         )
         .order_by(col(WebBridgeTabBinding.updated_at).desc())
     )
-    return list(rows.all())
+    newest_by_session: dict[UUID, WebBridgeTabBinding] = {}
+    for binding in rows.all():
+        newest_by_session.setdefault(binding.session_id, binding)
+    return list(newest_by_session.values())
 
 
 async def delete_tab_binding(
@@ -390,7 +509,16 @@ async def delete_tab_binding(
         )
     ).first()
     if binding is not None:
-        await db.delete(binding)
+        session_bindings = (
+            await db.exec(
+                select(WebBridgeTabBinding).where(
+                    WebBridgeTabBinding.pairing_id == pairing_id,
+                    WebBridgeTabBinding.session_id == binding.session_id,
+                )
+            )
+        ).all()
+        for session_binding in session_bindings:
+            await db.delete(session_binding)
         await db.flush()
     return binding
 

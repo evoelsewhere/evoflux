@@ -686,6 +686,23 @@ async def save_queued_user_message(
     )
 
 
+async def mark_channel_source_delivered(db: AsyncSession, row: SessionMessage) -> bool:
+    """Mark a source-keyed channel row after its delivery boundary succeeds."""
+    extra = dict(row.extra or {})
+    source = extra.get("webbridge_source")
+    if not isinstance(source, dict) or not source.get("key"):
+        return False
+    if source.get("state") == "delivered":
+        return False
+    source = dict(source)
+    source["state"] = "delivered"
+    extra["webbridge_source"] = source
+    row.extra = extra
+    db.add(row)
+    await db.flush()
+    return True
+
+
 async def release_queued_user_messages(
     db: AsyncSession,
     session_id: UUID,
@@ -1095,9 +1112,7 @@ async def get_team_history(
     # count drops below PAGE_SIZE, and has_more becomes False even though
     # the DB has more rows.
     has_more = len(all_lead_rows) > _HISTORY_PAGE_SIZE
-    raw_lead = [
-        msg for msg in all_lead_rows if not _is_hidden_from_user(msg)
-    ]
+    raw_lead = [msg for msg in all_lead_rows if not _is_hidden_from_user(msg)]
     raw_lead = raw_lead[:_HISTORY_PAGE_SIZE]
     lead_msgs = list(reversed(raw_lead))
     next_cursor = lead_msgs[0].created_at if (has_more and lead_msgs) else None

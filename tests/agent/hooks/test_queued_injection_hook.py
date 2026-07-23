@@ -146,6 +146,37 @@ async def test_queued_rows_become_visible_in_history(db_factory):
 
 
 @pytest.mark.asyncio
+async def test_queued_webbridge_source_is_marked_delivered_after_injection(db_factory):
+    async with db_factory() as db:
+        chat = await create_chat_session(db, title="t")
+        queued = await save_queued_user_message(
+            db,
+            chat.id,
+            "browser follow-up",
+            extra={
+                "webbridge_source": {
+                    "key": "webbridge-panel:pairing-1:request-1",
+                    "state": "persisted",
+                }
+            },
+        )
+        await db.commit()
+
+    hook = QueuedMessageInjectionHook(
+        session_id=str(chat.id), agent_name="lead", db_factory=db_factory
+    )
+    with patch("app.services.memory_stream_store.push_event", new_callable=AsyncMock):
+        await hook.before_model(_ctx(str(chat.id)), _state(), _request())
+
+    async with db_factory() as db:
+        delivered = await db.get(type(queued), queued.id)
+
+    assert delivered is not None
+    assert delivered.extra["webbridge_source"]["state"] == "delivered"
+    assert "queue_status" not in delivered.extra
+
+
+@pytest.mark.asyncio
 async def test_sse_failure_does_not_break_injection(db_factory):
     """If the SSE push raises, the messages are still injected into state."""
     async with db_factory() as db:

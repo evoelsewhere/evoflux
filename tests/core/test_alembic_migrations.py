@@ -2,7 +2,8 @@
 
 Runs ``alembic upgrade head`` against a temp database using the real
 ``app/alembic.ini`` and asserts the latest schema state lands (currently:
-WebBridge pairing, interaction, and tab-binding state from revision 00000026).
+WebBridge pairing, interaction, tab-binding, and Teach Mode state from revision
+00000032).
 Complements ``tests/core/test_db_extra.py``, which only covers
 ``run_migrations`` error paths with mocks.
 """
@@ -53,6 +54,7 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
             "webbridge_pairings",
             "webbridge_interactions",
             "webbridge_tab_bindings",
+            "webbridge_teach_drafts",
         } <= set(inspector.get_table_names())
         interaction_columns = {
             column["name"] for column in inspector.get_columns("webbridge_interactions")
@@ -62,11 +64,163 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
             "prompt",
             "dispatch_lease_until",
         } <= interaction_columns
+        teach_draft_columns = {
+            column["name"] for column in inspector.get_columns("webbridge_teach_drafts")
+        }
+        assert {
+            "pairing_id",
+            "session_id",
+            "actions",
+            "parameter_names",
+            "capture_warnings",
+            "status",
+            "replay_count",
+        } <= teach_draft_columns
+        binding_unique_indexes = {
+            index["name"]
+            for index in inspector.get_indexes("webbridge_tab_bindings")
+            if index.get("unique")
+        }
+        assert "uq_webbridge_tab_bindings_pairing_session" in binding_unique_indexes
         with engine.connect() as conn:
             version = conn.execute(
                 sa.text("SELECT version_num FROM alembic_version")
             ).scalar()
-        assert version == "00000026"
+        assert version == "00000032"
+    finally:
+        engine.dispose()
+
+
+def test_webbridge_prompt_repair_migrates_drifted_revision_26_database(
+    tmp_path, monkeypatch
+):
+    from alembic import command
+    from alembic.config import Config
+
+    db_path = tmp_path / "webbridge-prompt-repair.sqlite"
+    monkeypatch.setattr(
+        settings, "DATABASE_URL", SecretStr(f"sqlite+aiosqlite:///{db_path}")
+    )
+
+    ini = Path(app.__file__).resolve().parent / "alembic.ini"
+    cfg = Config(str(ini))
+    command.upgrade(cfg, "00000026")
+
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                sa.text("ALTER TABLE webbridge_interactions DROP COLUMN prompt")
+            )
+    finally:
+        engine.dispose()
+
+    command.upgrade(cfg, "head")
+
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    try:
+        columns = {
+            column["name"]
+            for column in sa.inspect(engine).get_columns("webbridge_interactions")
+        }
+        assert "prompt" in columns
+        with engine.connect() as conn:
+            version = conn.execute(
+                sa.text("SELECT version_num FROM alembic_version")
+            ).scalar()
+        assert version == "00000032"
+    finally:
+        engine.dispose()
+
+
+def test_webbridge_tab_binding_repair_migrates_drifted_revision_27_database(
+    tmp_path, monkeypatch
+):
+    from alembic import command
+    from alembic.config import Config
+
+    db_path = tmp_path / "webbridge-bindings-repair.sqlite"
+    monkeypatch.setattr(
+        settings, "DATABASE_URL", SecretStr(f"sqlite+aiosqlite:///{db_path}")
+    )
+
+    ini = Path(app.__file__).resolve().parent / "alembic.ini"
+    cfg = Config(str(ini))
+    command.upgrade(cfg, "00000027")
+
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    try:
+        with engine.begin() as conn:
+            conn.execute(sa.text("DROP TABLE webbridge_tab_bindings"))
+    finally:
+        engine.dispose()
+
+    command.upgrade(cfg, "head")
+
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    try:
+        inspector = sa.inspect(engine)
+        assert "webbridge_tab_bindings" in inspector.get_table_names()
+        assert {
+            "pairing_id",
+            "tab_id",
+            "session_id",
+            "origin",
+            "page_instance_id",
+            "expires_at",
+        } <= {
+            column["name"] for column in inspector.get_columns("webbridge_tab_bindings")
+        }
+        with engine.connect() as conn:
+            version = conn.execute(
+                sa.text("SELECT version_num FROM alembic_version")
+            ).scalar()
+        assert version == "00000032"
+    finally:
+        engine.dispose()
+
+
+def test_webbridge_dispatch_lease_repair_migrates_drifted_revision_28_database(
+    tmp_path, monkeypatch
+):
+    from alembic import command
+    from alembic.config import Config
+
+    db_path = tmp_path / "webbridge-dispatch-lease-repair.sqlite"
+    monkeypatch.setattr(
+        settings, "DATABASE_URL", SecretStr(f"sqlite+aiosqlite:///{db_path}")
+    )
+
+    ini = Path(app.__file__).resolve().parent / "alembic.ini"
+    cfg = Config(str(ini))
+    command.upgrade(cfg, "00000028")
+
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                sa.text(
+                    "ALTER TABLE webbridge_interactions "
+                    "DROP COLUMN dispatch_lease_until"
+                )
+            )
+    finally:
+        engine.dispose()
+
+    command.upgrade(cfg, "head")
+
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    try:
+        columns = {
+            column["name"]
+            for column in sa.inspect(engine).get_columns("webbridge_interactions")
+        }
+        assert "dispatch_lease_until" in columns
+        with engine.connect() as conn:
+            version = conn.execute(
+                sa.text("SELECT version_num FROM alembic_version")
+            ).scalar()
+        assert version == "00000032"
     finally:
         engine.dispose()
 

@@ -105,6 +105,79 @@ class WebBridgeInteraction(SQLModel, table=True):
     )
 
 
+class WebBridgeTeachDraft(SQLModel, table=True):
+    """A user-recorded, review-gated semantic browser trace."""
+
+    __tablename__: str = "webbridge_teach_drafts"  # type: ignore[reportIncompatibleVariableOverride]
+    __table_args__ = (
+        sa.Index(
+            "ix_webbridge_teach_drafts_pairing_created", "pairing_id", "created_at"
+        ),
+        sa.Index("ix_webbridge_teach_drafts_session", "session_id"),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    pairing_id: UUID = Field(
+        sa_column=Column(
+            sa.Uuid(),
+            ForeignKey("webbridge_pairings.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    session_id: UUID = Field(
+        sa_column=Column(
+            sa.Uuid(),
+            ForeignKey("chat_sessions.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    tab_id: int = Field(sa_column=Column(sa.Integer(), nullable=False))
+    title: str = Field(sa_column=Column(sa.String(255), nullable=False))
+    origin: str = Field(sa_column=Column(Text(), nullable=False))
+    start_url: str = Field(sa_column=Column(Text(), nullable=False))
+    actions: list[dict] = Field(
+        default_factory=list,
+        sa_column=Column(
+            JSON().with_variant(pg.JSONB(), "postgresql"),
+            nullable=False,
+            server_default="[]",
+        ),
+    )
+    parameter_names: list[str] = Field(
+        default_factory=list,
+        sa_column=Column(
+            JSON().with_variant(pg.JSONB(), "postgresql"),
+            nullable=False,
+            server_default="[]",
+        ),
+    )
+    capture_warnings: list[str] = Field(
+        default_factory=list,
+        sa_column=Column(
+            JSON().with_variant(pg.JSONB(), "postgresql"),
+            nullable=False,
+            server_default="[]",
+        ),
+    )
+    # draft | approved | replay_failed. Approval remains valid across replay attempts.
+    status: str = Field(
+        default="draft",
+        sa_column=Column(sa.String(20), nullable=False, server_default="draft"),
+    )
+    replay_count: int = Field(
+        default=0,
+        sa_column=Column(sa.Integer(), nullable=False, server_default="0"),
+    )
+    created_at: datetime = Field(
+        default_factory=_utcnow, sa_column=Column(TZDateTime(), nullable=False)
+    )
+    approved_at: datetime | None = Field(default=None, sa_column=Column(TZDateTime()))
+    last_replayed_at: datetime | None = Field(
+        default=None, sa_column=Column(TZDateTime())
+    )
+    last_error: str | None = Field(default=None, sa_column=Column(Text()))
+
+
 class WebBridgeTabBinding(SQLModel, table=True):
     __tablename__: str = "webbridge_tab_bindings"  # type: ignore[reportIncompatibleVariableOverride]
     __table_args__ = (
@@ -112,6 +185,11 @@ class WebBridgeTabBinding(SQLModel, table=True):
             "pairing_id",
             "tab_id",
             name="uq_webbridge_tab_bindings_pairing_tab",
+        ),
+        sa.UniqueConstraint(
+            "pairing_id",
+            "session_id",
+            name="uq_webbridge_tab_bindings_pairing_session",
         ),
         sa.Index("ix_webbridge_tab_bindings_session", "session_id"),
         sa.Index("ix_webbridge_tab_bindings_expires", "expires_at"),
