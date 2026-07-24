@@ -71,7 +71,8 @@ export function McpListPage() {
   return (
     <SettingsListView
       title="MCP servers"
-      description="External tool providers via Model Context Protocol. Stdio servers run locally as a child process; HTTP servers are remote."
+      icon={Plug}
+      description="External tool providers over Model Context Protocol. Stdio servers run locally as a child process, HTTP servers are remote."
       newTo="/settings/mcp/new"
       newLabel="New server"
       filterPlaceholder="Filter servers…"

@@ -20,7 +20,6 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronRight, Copy, Check, MonitorPlayIcon } from 'lucide-react'
 import { ToolResult } from '../ToolResult'
-import { DURATIONS_S, EASINGS } from '@/lib/motion'
 import { getToolDisplay } from './display'
 import { DiffView } from './DiffView'
 import { ReadView } from './ReadView'
@@ -240,7 +239,6 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: DURATIONS_S.base, ease: EASINGS.out }}
             className="overflow-hidden"
           >
             <section className="surface-raised group relative mt-1 overflow-hidden rounded-md border border-(--color-border) bg-(--bg-card)">

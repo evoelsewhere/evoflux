@@ -1,14 +1,19 @@
 import { useState } from 'react'
-import { Trash2 } from 'lucide-react'
+import { AlertCircle, Sparkles, Trash2 } from 'lucide-react'
 
 import { useDeleteSkillMutation, useSkillFileQuery, useUpdateSkillMutation } from '@/queries'
 import { useToastStore } from '@/stores/useToastStore'
 import { ApiValidationError } from '@/api/client'
-import { EditorSubHeader } from '@/components/settings/EditorSubHeader'
+import { EditorHeaderActions } from '@/components/settings/EditorHeaderActions'
+import {
+  SettingsCallout,
+  SettingsGroup,
+  SettingsPage,
+  SettingsRow,
+} from '@/components/settings/SettingsLayout'
 import { contentEquals } from '@/components/settings/frontmatter'
 import { validateSkillDraft } from '@/components/settings/schema'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -85,38 +90,46 @@ export function SkillEditorPage() {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <EditorSubHeader
-        kind="skill"
-        name={name}
-        path={data?.path}
-        dirty={dirty}
-        invalid={invalid}
-        saving={updateMut.isPending}
-        error={saveError}
-        validationHint={firstDraftError}
-        saveDisabledReason={readOnly ? `Read-only skill from ${data?.source ?? 'external source'}` : null}
-        onSave={handleSave}
-      />
-
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-3xl p-6">
-          {isLoading && <p className="text-sm text-(--color-text-muted)">Loading…</p>}
-          {isError && (
-            <p className="text-sm text-(--color-error)">Failed to load: {String(error)}</p>
-          )}
-          {data && (
-            <Card size="sm">
-              <CardHeader>
-                <CardTitle>Skill source</CardTitle>
-                <CardDescription>
-                  Frontmatter (<span className="font-mono">name</span>,{' '}
-                  <span className="font-mono">description</span>) is required;
-                  use <span className="font-mono">parent/sub</span> for a one-level sub-skill.
-                  The body is the instruction the agent loads on demand.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
+    <>
+      <SettingsPage
+        icon={Sparkles}
+        title={name}
+        lede={data?.path ? <span className="font-mono text-xs">{data.path}</span> : undefined}
+        actions={
+          <EditorHeaderActions
+            dirty={dirty}
+            invalid={invalid}
+            saving={updateMut.isPending}
+            error={saveError}
+            validationHint={firstDraftError}
+            saveDisabledReason={
+              readOnly ? `Read-only skill from ${data?.source ?? 'external source'}` : null
+            }
+            onSave={handleSave}
+          />
+        }
+      >
+        {isLoading && <p className="text-sm text-(--color-text-muted)">Loading…</p>}
+        {isError && (
+          <SettingsCallout tone="error" icon={AlertCircle}>
+            Failed to load: {String(error)}
+          </SettingsCallout>
+        )}
+        {data && (
+          <SettingsGroup
+            title="Skill source"
+            description={
+              <>
+                Frontmatter (<span className="font-mono">name</span>,{' '}
+                <span className="font-mono">description</span>) is required; use{' '}
+                <span className="font-mono">parent/sub</span> for a one-level sub-skill. The body is
+                the instruction the agent loads on demand.
+              </>
+            }
+          >
+            <SettingsRow
+              stacked
+              control={
                 <Textarea
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
@@ -127,47 +140,47 @@ export function SkillEditorPage() {
                   aria-invalid={invalid || undefined}
                   className="min-h-96 font-mono text-[13px] leading-relaxed"
                 />
-              </CardContent>
-            </Card>
-          )}
-          <div className="mt-4 flex items-center justify-between gap-2 text-xs text-(--color-text-muted)">
-            <div className="flex items-center gap-2">
-              {dirty && (
-                <>
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    className="min-h-11 md:min-h-0"
-                    onClick={() => data && setDraft(data.content)}
-                  >
-                    Discard changes
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    className="min-h-11 md:min-h-0"
-                    onClick={() => navigate('/settings/skills')}
-                  >
-                    Leave without saving
-                  </Button>
-                </>
-              )}
-            </div>
-            {data && data.editable && !data.built_in && (
-              <Button
-                variant="destructive"
-                size="xs"
-                className="min-h-11 md:min-h-0"
-                onClick={() => setDeleteOpen(true)}
-                disabled={deleteMut.isPending}
-              >
-                <Trash2 size={11} aria-hidden="true" />
-                Delete skill
-              </Button>
+              }
+            />
+          </SettingsGroup>
+        )}
+        <div className="flex items-center justify-between gap-2 text-xs text-(--color-text-muted)">
+          <div className="flex items-center gap-2">
+            {dirty && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  className="min-h-11 md:min-h-0"
+                  onClick={() => data && setDraft(data.content)}
+                >
+                  Discard changes
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  className="min-h-11 md:min-h-0"
+                  onClick={() => navigate('/settings/skills')}
+                >
+                  Leave without saving
+                </Button>
+              </>
             )}
           </div>
+          {data && data.editable && !data.built_in && (
+            <Button
+              variant="destructive"
+              size="xs"
+              className="min-h-11 md:min-h-0"
+              onClick={() => setDeleteOpen(true)}
+              disabled={deleteMut.isPending}
+            >
+              <Trash2 size={11} aria-hidden="true" />
+              Delete skill
+            </Button>
+          )}
         </div>
-      </div>
+      </SettingsPage>
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent showCloseButton={false}>
@@ -192,6 +205,6 @@ export function SkillEditorPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   )
 }

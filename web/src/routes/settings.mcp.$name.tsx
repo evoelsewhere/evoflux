@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { AlertCircle, RotateCw, Trash2 } from 'lucide-react'
+import { AlertCircle, Plug, RotateCw, Trash2 } from 'lucide-react'
 
 import {
   useConnectMcpOAuthMutation,
@@ -10,8 +10,14 @@ import {
 } from '@/queries'
 import { useToastStore } from '@/stores/useToastStore'
 import { ApiValidationError } from '@/api/client'
-import { EditorSubHeader } from '@/components/settings/EditorSubHeader'
+import { EditorHeaderActions } from '@/components/settings/EditorHeaderActions'
 import { McpServerForm } from '@/components/settings/McpServerForm'
+import {
+  SettingsCallout,
+  SettingsGroup,
+  SettingsPage,
+  SettingsRow,
+} from '@/components/settings/SettingsLayout'
 import {
   draftEquals,
   draftFromServerBody,
@@ -20,7 +26,6 @@ import {
   type McpServerDraft,
 } from '@/components/settings/McpServerDraft'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -35,8 +40,8 @@ import { useSettingsParams, useSettingsNavigate } from '@/contexts/SettingsConte
  * MCP server detail / editor page.
  *
  * Layout mirrors the agent / skill editors:
- *   • sticky `EditorSubHeader` (Save + dirty/invalid status)
- *   • scrollable body capped at `max-w-3xl` with the standard padding
+ *   • `SettingsPage` frame with `EditorHeaderActions` (Save + dirty/invalid status)
+ *   • grouped body using the shared settings primitives
  *
  * The body shows:
  *   1. live status (state, started_at, tools, error) — read-only
@@ -140,74 +145,60 @@ export function McpServerDetailPage() {
   const server = serverQ.data
 
   return (
-    <div className="flex h-full flex-col">
-      <EditorSubHeader
-        kind="mcp"
-        name={name}
-        path=".evoflux/config/mcp.json"
-        dirty={dirty}
-        invalid={invalid}
-        saving={updateMut.isPending}
-        error={saveError}
-        validationHint={firstError}
-        onSave={handleSave}
-      />
+    <>
+      <SettingsPage
+        icon={Plug}
+        title={name}
+        lede={<span className="font-mono text-xs">.EvoFlux/config/mcp.json</span>}
+        actions={
+          <EditorHeaderActions
+            dirty={dirty}
+            invalid={invalid}
+            saving={updateMut.isPending}
+            error={saveError}
+            validationHint={firstError}
+            onSave={handleSave}
+          />
+        }
+      >
+        {serverQ.isLoading && <p className="text-sm text-(--color-text-muted)">Loading server…</p>}
+        {serverQ.isError && (
+          <SettingsCallout tone="error" icon={AlertCircle}>
+            Failed to load: {String(serverQ.error)}
+          </SettingsCallout>
+        )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex max-w-3xl flex-col gap-4 p-6">
-          {serverQ.isLoading && (
-            <p className="text-sm text-(--color-text-muted)">Loading server…</p>
-          )}
-          {serverQ.isError && (
-            <p className="text-sm text-(--color-error)">
-              Failed to load: {String(serverQ.error)}
-            </p>
-          )}
+        {server && (
+          <>
+            <StatusGroup server={server} />
 
-          {server && (
-            <>
-              <StatusCard server={server} />
+            {server.state === 'error' && server.error && (
+              <SettingsCallout tone="error" icon={AlertCircle}>
+                <p className="font-medium">Runtime error</p>
+                <p className="mt-1 font-mono break-all text-(--color-error)">{server.error}</p>
+              </SettingsCallout>
+            )}
 
-              {server.state === 'error' && server.error && (
-                <Card size="sm" className="border-(--color-error)/40 bg-(--color-error-subtle)">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-(--color-error)">
-                      <AlertCircle size={14} className="text-(--color-error)" />
-                      Runtime error
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="font-mono text-xs text-(--color-error)">{server.error}</p>
-                  </CardContent>
-                </Card>
-              )}
+            {server.state === 'auth_required' && (
+              <SettingsCallout tone="warning" icon={AlertCircle}>
+                <p className="font-medium">OAuth needed to connect</p>
+                <p className="mt-1 text-(--color-text-muted)">
+                  Connect OAuth to authorize this MCP server.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-2.5 min-h-11 md:min-h-0"
+                  onClick={handleConnectOAuth}
+                  disabled={connectOAuthMut.isPending || !server.enabled}
+                >
+                  {connectOAuthMut.isPending ? 'Connecting…' : 'Connect OAuth'}
+                </Button>
+              </SettingsCallout>
+            )}
 
-              {server.state === 'auth_required' && (
-                <Card size="sm" className="border-(--accent-orange)/40 bg-(--accent-orange)/10">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-(--accent-orange)">
-                      <AlertCircle size={14} className="text-(--accent-orange)" />
-                      OAuth needed to connect
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="mb-3 text-xs text-(--color-text-muted)">
-                      Connect OAuth to authorize this MCP server.
-                    </p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="min-h-11 md:min-h-0"
-                      onClick={handleConnectOAuth}
-                      disabled={connectOAuthMut.isPending || !server.enabled}
-                    >
-                      {connectOAuthMut.isPending ? 'Connecting…' : 'Connect OAuth'}
-                    </Button>
-                  </CardContent>
-                </Card>
-              )}
-
-              {draft ? (
+            {draft ? (
+              <SettingsGroup bare>
                 <McpServerForm
                   value={draft}
                   onChange={setDraft}
@@ -215,61 +206,57 @@ export function McpServerDetailPage() {
                   disabled={updateMut.isPending}
                   errors={fieldErrors}
                 />
-              ) : (
-                <Card size="sm">
-                  <CardContent className="pt-4">
-                    <p className="text-xs text-(--color-text-muted)">
-                      No saved configuration found. The server may have been removed
-                      from <span className="font-mono">mcp.json</span>.
-                    </p>
-                  </CardContent>
-                </Card>
-              )}
+              </SettingsGroup>
+            ) : (
+              <SettingsCallout tone="info">
+                No saved configuration found. The server may have been removed from{' '}
+                <span className="font-mono">mcp.json</span>.
+              </SettingsCallout>
+            )}
 
-              <div className="flex items-center justify-between gap-2 text-xs text-(--color-text-muted)">
-                <div className="flex items-center gap-2">
-                  {dirty && (
-                    <>
-                      <Button
-                        variant="ghost"
-                        size="xs"
-                        className="min-h-11 md:min-h-0"
-                        onClick={() => seedDraft && setDraft(seedDraft)}
-                      >
-                        Discard changes
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="xs"
-                        className="min-h-11 md:min-h-0"
-                        onClick={() => navigate('/settings/mcp')}
-                      >
-                        Leave without saving
-                      </Button>
-                    </>
-                  )}
-                </div>
-                <Button
-                  variant="destructive"
-                  size="xs"
-                  className="min-h-11 md:min-h-0"
-                  onClick={() => setDeleteOpen(true)}
-                  disabled={deleteMut.isPending}
-                >
-                  <Trash2 size={11} aria-hidden="true" />
-                  Delete server
-                </Button>
+            <div className="flex items-center justify-between gap-2 text-xs text-(--color-text-muted)">
+              <div className="flex items-center gap-2">
+                {dirty && (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      className="min-h-11 md:min-h-0"
+                      onClick={() => seedDraft && setDraft(seedDraft)}
+                    >
+                      Discard changes
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      className="min-h-11 md:min-h-0"
+                      onClick={() => navigate('/settings/mcp')}
+                    >
+                      Leave without saving
+                    </Button>
+                  </>
+                )}
               </div>
+              <Button
+                variant="destructive"
+                size="xs"
+                className="min-h-11 md:min-h-0"
+                onClick={() => setDeleteOpen(true)}
+                disabled={deleteMut.isPending}
+              >
+                <Trash2 size={11} aria-hidden="true" />
+                Delete server
+              </Button>
+            </div>
 
-              <RestartCard
-                onRestart={handleRestart}
-                pending={restartMut.isPending}
-                enabled={server.enabled}
-              />
-            </>
-          )}
-        </div>
-      </div>
+            <RestartGroup
+              onRestart={handleRestart}
+              pending={restartMut.isPending}
+              enabled={server.enabled}
+            />
+          </>
+        )}
+      </SettingsPage>
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent showCloseButton={false}>
@@ -294,54 +281,63 @@ export function McpServerDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   )
 }
 
-// ── Status card ─────────────────────────────────────────────────────────────
+// ── Status group ────────────────────────────────────────────────────────────
 
-function StatusCard({
+function StatusGroup({
   server,
 }: {
   server: NonNullable<ReturnType<typeof useMcpServerQuery>['data']>
 }) {
   return (
-    <Card size="sm">
-      <CardHeader>
-        <CardTitle>Runtime status</CardTitle>
-        <CardDescription>Live state of the running connection.</CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-3 text-xs sm:grid-cols-2">
-        <Stat label="State">
+    <SettingsGroup title="Runtime status" description="Live state of the running connection.">
+      <SettingsRow
+        label="State"
+        control={
           <span
             className={
               server.state === 'ready'
-                ? 'text-(--accent-green)'
+                ? 'text-sm text-(--accent-green)'
                 : server.state === 'starting'
-                  ? 'text-(--accent-orange)'
+                  ? 'text-sm text-(--accent-orange)'
                   : server.state === 'auth_required'
-                    ? 'text-(--accent-orange)'
-                  : server.state === 'error'
-                    ? 'text-(--color-error)'
-                    : 'text-(--color-text-muted)'
+                    ? 'text-sm text-(--accent-orange)'
+                    : server.state === 'error'
+                      ? 'text-sm text-(--color-error)'
+                      : 'text-sm text-(--color-text-muted)'
             }
           >
             {server.state}
           </span>
-        </Stat>
-        <Stat label="Transport">
-          <span className="font-mono">{server.transport}</span>
-        </Stat>
-        <Stat label="Enabled">{server.enabled ? 'yes' : 'no'}</Stat>
-        <Stat label="Started">
-          {server.started_at ? new Date(server.started_at).toLocaleString() : '—'}
-        </Stat>
+        }
+      />
+      <SettingsRow
+        label="Transport"
+        control={<span className="font-mono text-sm text-(--color-text)">{server.transport}</span>}
+      />
+      <SettingsRow
+        label="Enabled"
+        control={
+          <span className="text-sm text-(--color-text)">{server.enabled ? 'yes' : 'no'}</span>
+        }
+      />
+      <SettingsRow
+        label="Started"
+        control={
+          <span className="text-sm text-(--color-text)">
+            {server.started_at ? new Date(server.started_at).toLocaleString() : '-'}
+          </span>
+        }
+      />
 
-        {server.tool_names.length > 0 && (
-          <div className="sm:col-span-2">
-            <p className="mb-1.5 text-xs font-medium text-(--color-text)">
-              Tools ({server.tool_names.length})
-            </p>
+      {server.tool_names.length > 0 && (
+        <SettingsRow
+          label={`Tools (${server.tool_names.length})`}
+          stacked
+          control={
             <div className="flex flex-wrap gap-1">
               {server.tool_names.map((tool) => (
                 <span
@@ -352,25 +348,16 @@ function StatusCard({
                 </span>
               ))}
             </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+          }
+        />
+      )}
+    </SettingsGroup>
   )
 }
 
-function Stat({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-xs text-(--color-text-muted)">{label}</span>
-      <span className="font-medium text-(--color-text)">{children}</span>
-    </div>
-  )
-}
+// ── Restart group ───────────────────────────────────────────────────────────
 
-// ── Restart card ────────────────────────────────────────────────────────────
-
-function RestartCard({
+function RestartGroup({
   onRestart,
   pending,
   enabled,
@@ -380,33 +367,33 @@ function RestartCard({
   enabled: boolean
 }) {
   return (
-    <Card size="sm">
-      <CardHeader>
-        <CardTitle>Connection</CardTitle>
-        <CardDescription>
-          Restart the server process without changing its configuration.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="min-h-11 md:min-h-0"
-            onClick={onRestart}
-            disabled={pending || !enabled}
-            aria-label={pending ? 'Restarting' : 'Restart server'}
-          >
-            <RotateCw size={12} aria-hidden="true" />
-            {pending ? 'Restarting…' : 'Restart'}
-          </Button>
-        </div>
-        {!enabled && (
-          <p className="mt-2 text-xs text-(--color-text-muted)">
-            Server is disabled — enable and save first to restart.
-          </p>
-        )}
-      </CardContent>
-    </Card>
+    <SettingsGroup
+      title="Connection"
+      description="Restart the server process without changing its configuration."
+    >
+      <SettingsRow
+        stacked
+        control={
+          <div className="space-y-2.5">
+            <Button
+              variant="outline"
+              size="sm"
+              className="min-h-11 md:min-h-0"
+              onClick={onRestart}
+              disabled={pending || !enabled}
+              aria-label={pending ? 'Restarting' : 'Restart server'}
+            >
+              <RotateCw size={12} aria-hidden="true" />
+              {pending ? 'Restarting…' : 'Restart'}
+            </Button>
+            {!enabled && (
+              <p className="text-xs text-(--color-text-muted)">
+                Server is disabled. Enable and save first to restart.
+              </p>
+            )}
+          </div>
+        }
+      />
+    </SettingsGroup>
   )
 }

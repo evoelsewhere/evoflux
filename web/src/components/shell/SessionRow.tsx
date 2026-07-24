@@ -19,6 +19,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { Globe2, Loader2, MessageSquarePlus, Pencil, Trash2 } from 'lucide-react'
 import { LongPressButton } from '@/components/ui/long-press-button'
 import { formatRelativeDate } from '@/utils/format'
+import { useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import type { SessionResponse } from '@/api/types'
 
@@ -62,6 +63,7 @@ export function SessionRow({
   onLongPress,
   onContextActions,
 }: SessionRowProps) {
+  const preset = useMotionPreset()
   const compact = density === 'compact'
   const isScheduled = Boolean(session.scheduled_task_name)
   const isRunning = session.running === true
@@ -128,10 +130,9 @@ export function SessionRow({
               <AnimatePresence mode="wait" initial={false}>
                 <motion.p
                   key={session.title ?? 'untitled'}
-                  initial={{ opacity: 0, y: -6 }}
+                  initial={{ opacity: 0, y: -6 * preset.distance }}
                   animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 6 }}
-                  transition={{ duration: 0.18, ease: 'easeOut' }}
+                  exit={{ opacity: 0, y: 6 * preset.distance }}
                   className={`min-w-0 truncate text-xs transition-colors ${
                     isActive
                       ? 'font-medium text-(--color-text)'

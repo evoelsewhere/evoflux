@@ -69,7 +69,8 @@ export function SkillsListPage() {
   return (
     <SettingsListView
       title="Skills"
-      description="Reusable instruction packs available to any agent. Supports flat skills and one-level sub-skills (shown as parent:sub). Live in .evoflux/skills/."
+      icon={Sparkles}
+      description="Reusable instruction packs any agent can load on demand. Flat skills and one-level sub-skills (shown as parent:sub) both live in .evoflux/skills/."
       newTo="/settings/skills/new"
       newLabel="New skill"
       filterPlaceholder="Filter skills…"

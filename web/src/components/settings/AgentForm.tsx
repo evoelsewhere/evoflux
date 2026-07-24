@@ -67,8 +67,8 @@ interface Props {
 }
 
 const THINKING_LEVELS: Array<{ value: string; label: string }> = [
-  { value: '__none__', label: '(default)' },
   { value: 'none', label: 'none' },
+  { value: '__none__', label: '(default)' },
   { value: 'low', label: 'low' },
   { value: 'medium', label: 'medium' },
   { value: 'high', label: 'high' },

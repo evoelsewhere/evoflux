@@ -40,6 +40,8 @@ import { Sidebar } from '../Sidebar'
 import { ChatTopbar } from '@/components/chat/ChatTopbar'
 import { ChatOverlayPanels, ChatTrailingPanels } from '@/components/chat/ChatPanels'
 import { WorkspaceFilesPanel } from '@/components/WorkspaceFilesPanel'
+import { CodingFileViewerPanel } from '@/components/CodingFileViewerPanel'
+import { CodingWorkspacePanel } from '@/components/CodingWorkspacePanel'
 import { PermissionApprovalModal } from '../PermissionApprovalModal'
 import { AskUserQuestionModal } from '../AskUserQuestionModal'
 import { MonitorView } from '../MonitorView'
@@ -877,21 +879,10 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
     <>
       <ChatTrailingPanels
         mode={mode}
-        workspace={workspace}
-        isMobile={isMobile}
         sessionId={sessionIdState}
-        projectId={projectIdState}
-        isWorking={isTeamWorking}
         onQuoteComment={handlePlanQuoteComment}
         showActivity={showActivity}
         onCloseActivity={() => setShowActivity(false)}
-        codingFileViewer={codingFileViewer}
-        onCloseCodingFileViewer={() => setCodingFileViewer(null)}
-        onAddFileComment={handleAddFileComment}
-        onSendToChat={handleSendToChat}
-        codingPanel={codingPanel}
-        onCodingFileSelect={handleCodingFileSelect}
-        onCloseCodingPanel={closeCodingPanels}
         browserOpen={browserOpen}
         onCloseBrowser={closeBrowser}
         terminalOpen={terminalOpen}
@@ -916,14 +907,45 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
     </>
   )
 
-  const fullHeightTrailing = mode !== 'coding' && showFilesPanel ? (
-    <WorkspaceFilesPanel
-      open
-      sessionId={sessionIdState}
-      onClose={() => setShowFilesPanel(false)}
-    />
-  ) : null
-
+  // Full-height right column beside the main card — same slot Forge uses for
+  // session files, so Coding's workspace covers the right corner instead of
+  // sitting under the topbar with a negative-margin hack.
+  const fullHeightTrailing = (
+    <>
+      {mode === 'coding' && workspace && codingFileViewer !== null && (
+        <CodingFileViewerPanel
+          workspace={codingFileViewer.sourceWorkspace ?? workspace}
+          file={codingFileViewer}
+          mobile={isMobile}
+          onAddComment={handleAddFileComment}
+          onSendToChat={handleSendToChat}
+          onClose={() => setCodingFileViewer(null)}
+        />
+      )}
+      {mode === 'coding' && workspace && codingPanel !== null && (
+        <CodingWorkspacePanel
+          key={codingPanel}
+          workspace={workspace}
+          open
+          initialTab={codingPanel}
+          mobile={isMobile}
+          selectedFilePath={codingFileViewer?.path ?? null}
+          onFileSelect={handleCodingFileSelect}
+          onClose={closeCodingPanels}
+          sessionId={sessionIdState}
+          projectId={projectIdState}
+          isWorking={isTeamWorking}
+        />
+      )}
+      {mode !== 'coding' && showFilesPanel ? (
+        <WorkspaceFilesPanel
+          open
+          sessionId={sessionIdState}
+          onClose={() => setShowFilesPanel(false)}
+        />
+      ) : null}
+    </>
+  )
   const handleComposerSubmit = useCallback(async (content: string, files?: File[]) => {
     if (webBridgeEnabled) {
       try {

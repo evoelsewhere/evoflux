@@ -34,7 +34,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { usePlatform } from "@/hooks/use-platform";
-import { useReducedMotion } from "@/hooks/useReducedMotion";
+import { useMotionPreset } from "@/lib/motion";
 import { STORAGE_KEYS } from "@/lib/storage-keys";
 import {
   CalendarClock,
@@ -312,7 +312,7 @@ export function CodingSidebar({
     useState(isTauri);
   const isTauriMobile = isTauri && (os === "ios" || os === "android");
   const mobileLongPressActions = isMobile && isTauriMobile && mobileOpen;
-  const prefersReducedMotion = useReducedMotion();
+  const preset = useMotionPreset();
   // Collapse state is shared by all three mode sidebars and owned by
   // useUIStore; AppShell owns the toggle button + Ctrl+B.
   const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed);
@@ -1429,10 +1429,7 @@ export function CodingSidebar({
         x: mobileOpen ? 0 : -280,
         width: "min(272px, calc(100vw - 2rem))",
       }}
-      transition={{
-        duration: prefersReducedMotion ? 0.01 : 0.22,
-        ease: [0.4, 0, 0.2, 1],
-      }}
+      transition={preset.spring}
       className="mobile-safe-top fixed bottom-0 left-0 z-(--z-overlay) flex w-[min(272px,calc(100vw-2rem))] shrink-0 flex-col overflow-hidden bg-(--bg-sidebar) shadow-xl"
     >
       <div className="px-3 pt-3">
@@ -1478,7 +1475,6 @@ export function CodingSidebar({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: prefersReducedMotion ? 0.01 : 0.2 }}
             className="mobile-safe-top fixed inset-x-0 bottom-0 z-(--z-drawer) bg-(--color-overlay) md:hidden"
             aria-hidden="true"
             onClick={onMobileClose}

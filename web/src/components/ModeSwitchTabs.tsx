@@ -8,8 +8,7 @@
 import { useNavigate } from '@tanstack/react-router'
 import { motion } from 'framer-motion'
 import { ArrowRightLeft, Code2, Gauge } from 'lucide-react'
-import { useReducedMotion } from '@/hooks/useReducedMotion'
-import { reducedMotionTransition, SPRINGS } from '@/lib/motion'
+import { useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 
 export type AppMode = 'forge' | 'coding' | 'aim'
@@ -31,7 +30,7 @@ export function ModeSwitchTabs({
   className?: string
 }) {
   const navigate = useNavigate()
-  const reducedMotion = useReducedMotion()
+  const preset = useMotionPreset()
   const activeIndex = TABS.findIndex((tab) => tab.mode === active)
   return (
     // The strip is a size container: labels only render when there's room
@@ -46,7 +45,7 @@ export function ModeSwitchTabs({
           className="pointer-events-none absolute bottom-0.5 left-0.5 top-0.5 w-[calc((100%-0.25rem)/3)] rounded-[6px] bg-(--bg-key) shadow-sm"
           initial={false}
           animate={{ x: `${Math.max(0, activeIndex) * 100}%` }}
-          transition={reducedMotionTransition(Boolean(reducedMotion), SPRINGS.fast)}
+          transition={preset.spring}
         />
         {TABS.map(({ mode, label, Icon, to }) => (
           <button

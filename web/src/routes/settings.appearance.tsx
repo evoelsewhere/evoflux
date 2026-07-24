@@ -1,11 +1,19 @@
-import { ArrowLeft, Palette } from 'lucide-react'
+import { Check, Palette } from 'lucide-react'
 
-import { useIsMobile } from '@/hooks/use-mobile'
-import { useSettingsNavigate } from '@/contexts/SettingsContext'
 import { useAppearance } from '@/hooks/useAppearance'
 import { ThemeToggle } from '@/components/ThemeToggle'
+import { MotionPreview } from '@/components/settings/MotionPreview'
+import { SettingsGroup, SettingsPage, SettingsRow } from '@/components/settings/SettingsLayout'
+import { DiscreteSlider } from '@/components/ui/discrete-slider'
 import { cn } from '@/lib/utils'
-import type { AccentColor, FontFamily, FontScale } from '@/lib/appearance'
+import {
+  FONT_SCALES,
+  MOTION_INTENSITIES,
+  type AccentColor,
+  type FontFamily,
+  type FontScale,
+  type MotionIntensity,
+} from '@/lib/appearance'
 
 const ACCENT_OPTIONS: ReadonlyArray<{ value: AccentColor; label: string }> = [
   { value: 'default', label: 'Default' },
@@ -22,91 +30,104 @@ const FONT_OPTIONS: ReadonlyArray<{ value: FontFamily; label: string; descriptio
   { value: 'system', label: 'System UI', description: 'Native to your operating system', family: "-apple-system, 'Segoe UI', system-ui, sans-serif" },
   { value: 'mono', label: 'Monospace', description: 'JetBrains Mono across the full interface', family: "'JetBrains Mono Variable', monospace" },
   { value: 'geist', label: 'Geist', description: 'ChatGPT-inspired', family: "'Geist Variable', sans-serif" },
-  { value: 'source-sans', label: 'Source Sans 3', description: 'Claude-inspired', family: "'Source Sans 3 Variable', sans-serif" },
+  { value: 'anthropic-sans', label: 'Anthropic Sans', description: 'Claude-inspired', family: "'Anthropic Sans', 'Source Sans 3 Variable', sans-serif" },
 ]
 
-const SCALE_OPTIONS: ReadonlyArray<{ value: FontScale; label: string }> = [
-  { value: 0.9, label: '90%' },
-  { value: 1, label: '100%' },
-  { value: 1.1, label: '110%' },
-  { value: 1.2, label: '120%' },
+const MOTION_OPTIONS: ReadonlyArray<{ value: MotionIntensity; label: string; description: string }> = [
+  {
+    value: 'reduced',
+    label: 'Reduced',
+    description: 'Transitions resolve instantly. Progress spinners keep turning so nothing looks stuck.',
+  },
+  {
+    value: 'subtle',
+    label: 'Subtle',
+    description: 'Short fades, no overshoot, and decorative loops stay off.',
+  },
+  {
+    value: 'standard',
+    label: 'Standard',
+    description: 'The product default. Panels, menus and lists move at a normal pace.',
+  },
+  {
+    value: 'expressive',
+    label: 'Expressive',
+    description: 'Springier controls and longer travel on entering elements.',
+  },
+  {
+    value: 'cinematic',
+    label: 'Cinematic',
+    description: 'Slow, weighty motion with the most pronounced spring.',
+  },
 ]
 
 export function AppearanceSettingsPage() {
-  const isMobile = useIsMobile()
-  const settingsNavigate = useSettingsNavigate()
   const { settings, update } = useAppearance()
+  const scaleIndex = Math.max(0, FONT_SCALES.indexOf(settings.fontScale))
+  const motionIndex = Math.max(0, MOTION_INTENSITIES.indexOf(settings.motionIntensity))
+  const motionOption = MOTION_OPTIONS[motionIndex] ?? MOTION_OPTIONS[2]
 
   return (
-    <>
-      <header className="sticky top-0 z-(--z-panel) flex h-14 shrink-0 items-center gap-3 border-b border-(--color-border) bg-(--bg-page) px-4">
-        {isMobile && (
-          <button
-            type="button"
-            onClick={() => settingsNavigate('/settings')}
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-            aria-label="Back to settings"
-          >
-            <ArrowLeft size={14} />
-          </button>
-        )}
-        <Palette size={15} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
-        <h1 className="flex-1 truncate text-sm font-semibold text-(--color-text)">Appearance</h1>
-      </header>
-
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-2xl space-y-5 p-6">
-          <p className="text-sm leading-relaxed text-(--color-text-muted)">
-            Customize how EvoFlux looks. Changes apply immediately across the whole app.
-          </p>
-
-          <section className="space-y-3 rounded-xl border border-(--color-border) bg-(--bg-card) p-4">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-(--color-text-muted)">
-              Theme
-            </h2>
-            <ThemeToggle />
-          </section>
-
-          <section className="space-y-3 rounded-xl border border-(--color-border) bg-(--bg-card) p-4">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-(--color-text-muted)">
-              Accent color
-            </h2>
-            <div className="flex flex-wrap gap-2">
+    <SettingsPage
+      icon={Palette}
+      title="Appearance"
+      lede="Theme, type and motion. Every change applies immediately across the app and is remembered on this machine."
+    >
+      <SettingsGroup title="Theme">
+        <SettingsRow
+          label="Color scheme"
+          description="Follow the system setting or pin the app to light or dark."
+          control={<ThemeToggle />}
+        />
+        <SettingsRow
+          label="Accent"
+          description="Used for selection, focus and active states."
+          stacked
+          control={
+            <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Accent color">
               {ACCENT_OPTIONS.map((opt) => {
                 const active = settings.accent === opt.value
                 return (
                   <button
                     key={opt.value}
                     type="button"
-                    onClick={() => update({ accent: opt.value })}
-                    aria-pressed={active}
+                    role="radio"
+                    aria-checked={active}
+                    aria-label={opt.label}
                     title={opt.label}
+                    onClick={() => update({ accent: opt.value })}
                     className={cn(
-                      'flex h-9 items-center gap-2 rounded-md border px-2.5 text-xs font-medium transition-colors',
+                      'flex size-11 items-center justify-center rounded-md border transition-colors md:size-9',
                       active
-                        ? 'border-(--color-border-strong) bg-(--bg-key) text-(--color-text)'
-                        : 'border-(--color-border) text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)',
+                        ? 'border-(--color-border-strong) bg-(--bg-key)'
+                        : 'border-transparent hover:bg-(--bg-key)',
                     )}
                   >
                     <span
-                      className="h-4 w-4 shrink-0 rounded-full ring-1 ring-inset ring-(--color-border-strong)"
+                      className="flex size-5 items-center justify-center rounded-full ring-1 ring-inset ring-black/15"
                       style={{
-                        background: opt.value === 'default' ? 'var(--color-text-muted)' : `var(--accent-${opt.value})`,
+                        background:
+                          opt.value === 'default' ? 'var(--color-text-muted)' : `var(--accent-${opt.value})`,
                       }}
                       aria-hidden="true"
-                    />
-                    {opt.label}
+                    >
+                      {active && <Check size={12} strokeWidth={3} className="text-(--bg-page)" />}
+                    </span>
                   </button>
                 )
               })}
             </div>
-          </section>
+          }
+        />
+      </SettingsGroup>
 
-          <section className="space-y-3 rounded-xl border border-(--color-border) bg-(--bg-card) p-4">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-(--color-text-muted)">
-              Font
-            </h2>
-            <div role="radiogroup" aria-label="Font family" className="grid gap-2 sm:grid-cols-2">
+      <SettingsGroup title="Typography">
+        <SettingsRow
+          label="Interface font"
+          description="Applies to every surface except code blocks, which stay monospaced."
+          stacked
+          control={
+            <div role="radiogroup" aria-label="Font family" className="grid gap-1.5 sm:grid-cols-2">
               {FONT_OPTIONS.map((opt) => {
                 const active = settings.fontFamily === opt.value
                 return (
@@ -117,65 +138,81 @@ export function AppearanceSettingsPage() {
                     aria-checked={active}
                     onClick={() => update({ fontFamily: opt.value })}
                     className={cn(
-                      'group flex min-h-16 items-center gap-3 rounded-[10px] border p-3 text-left outline-none transition-[background-color,border-color,color,box-shadow,transform] duration-150 focus-visible:ring-2 focus-visible:ring-(--focus-ring)/35 active:translate-y-px',
+                      'flex items-center gap-3 rounded-md border p-2.5 text-left outline-none transition-colors',
+                      'focus-visible:ring-2 focus-visible:ring-(--focus-ring)/35 active:translate-y-px',
                       active
-                        ? 'border-(--color-border-strong) bg-(--bg-key) text-(--color-text)'
-                        : 'border-(--color-border) bg-(--bg-page) text-(--color-text-muted) hover:border-(--color-border-strong) hover:bg-(--bg-key)',
+                        ? 'border-(--color-border-strong) bg-(--bg-key)'
+                        : 'border-(--color-border) hover:border-(--color-border-strong) hover:bg-(--bg-key)/60',
                     )}
                   >
                     <span
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-(--color-surface-2) text-base font-semibold text-(--color-text)"
+                      className="flex size-8 shrink-0 items-center justify-center rounded bg-(--color-surface-2) text-sm font-semibold text-(--color-text)"
                       style={{ fontFamily: opt.family }}
                       aria-hidden="true"
                     >
                       Aa
                     </span>
                     <span className="min-w-0">
-                      <span className="block text-sm font-medium text-(--color-text)" style={{ fontFamily: opt.family }}>
+                      <span
+                        className="block text-sm text-(--color-text)"
+                        style={{ fontFamily: opt.family }}
+                      >
                         {opt.label}
                       </span>
-                      <span className="mt-0.5 block text-xs leading-snug text-(--color-text-muted)">{opt.description}</span>
+                      <span className="mt-0.5 block truncate text-xs text-(--color-text-muted)">
+                        {opt.description}
+                      </span>
                     </span>
                   </button>
                 )
               })}
             </div>
-          </section>
+          }
+        />
 
-          <section className="space-y-3 rounded-xl border border-(--color-border) bg-(--bg-card) p-4">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-(--color-text-muted)">
-              UI scale
-            </h2>
-            <div
-              role="radiogroup"
-              aria-label="UI scale"
-              className="inline-flex items-center overflow-hidden rounded-md border border-(--color-border-subtle) p-0.5"
-            >
-              {SCALE_OPTIONS.map((opt) => {
-                const active = settings.fontScale === opt.value
-                return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    role="radio"
-                    aria-checked={active}
-                    onClick={() => update({ fontScale: opt.value })}
-                    className={cn(
-                      'h-7 rounded-sm px-2.5 text-xs font-medium transition-colors',
-                      active
-                        ? 'bg-(--color-surface-2) text-(--color-text)'
-                        : 'text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text-2)',
-                    )}
-                  >
-                    {opt.label}
-                  </button>
-                )
-              })}
+        <SettingsRow
+          stacked
+          control={
+            <DiscreteSlider
+              label="Interface scale"
+              valueLabel={`${Math.round(settings.fontScale * 100)}%`}
+              index={scaleIndex}
+              marks={FONT_SCALES.map((scale) => `${Math.round(scale * 100)}`)}
+              hint="Scales every size in the app, including this page."
+              onChange={(nextIndex) => {
+                const next = FONT_SCALES[nextIndex] as FontScale | undefined
+                if (next != null) update({ fontScale: next })
+              }}
+            />
+          }
+        />
+      </SettingsGroup>
+
+      <SettingsGroup
+        title="Motion"
+        description="One setting drives panel transitions, menus, list reveals, switches and drag physics everywhere in the app. The system reduced-motion preference always wins."
+      >
+        <SettingsRow
+          stacked
+          control={
+            <div className="space-y-3.5">
+              <DiscreteSlider
+                label="UI animations"
+                valueLabel={motionOption.label}
+                index={motionIndex}
+                marks={MOTION_OPTIONS.map((option) => option.label)}
+                color="var(--thinking-medium)"
+                hint={motionOption.description}
+                onChange={(nextIndex) => {
+                  const next = MOTION_INTENSITIES[nextIndex] as MotionIntensity | undefined
+                  if (next != null) update({ motionIntensity: next })
+                }}
+              />
+              <MotionPreview />
             </div>
-          </section>
-
-        </div>
-      </div>
-    </>
+          }
+        />
+      </SettingsGroup>
+    </SettingsPage>
   )
 }

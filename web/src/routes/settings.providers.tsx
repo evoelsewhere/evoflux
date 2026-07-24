@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import fuzzysort from 'fuzzysort'
 import {
   AlertCircle,
-  ArrowLeft,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -27,6 +26,11 @@ import {
   type ProviderInfo,
   type ProviderUsageLimit,
 } from '@/api/client'
+import {
+  SettingsCallout,
+  SettingsGroup,
+  SettingsPage,
+} from '@/components/settings/SettingsLayout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -42,43 +46,20 @@ import {
 } from '@/queries'
 import { openExternalUrl } from '@/lib/open-external'
 import { useIsMobile } from '@/hooks/use-mobile'
-import { useSettingsNavigate } from '@/contexts/SettingsContext'
 import { usePlatform } from '@/hooks/use-platform'
 import { mediumHapticFeedback } from '@/lib/haptics'
 import { useToastStore } from '@/stores/useToastStore'
 import { isTransientNetworkError } from '@/utils/errors'
 import { cn } from '@/lib/utils'
+import { ProviderBrandIcon as SharedProviderBrandIcon } from '@/components/providers/ProviderBrandIcon'
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 const MODEL_LONG_PRESS_MS = 520
 const MODEL_LONG_PRESS_MOVE_TOLERANCE = 10
 
-// ─── Provider brand identity ────────────────────────────────────────────────
-
-interface ProviderBrand {
-  /** CSS class string for the brand icon background + text color. */
-  iconClass: string
-  /** Tagline or short descriptor for the provider. */
-  tagline?: string
-}
-
-const PROVIDER_BRANDS: Record<string, ProviderBrand> = {
-  anthropic: { iconClass: 'bg-[#D4A574]/15 text-[#D4A574] ring-[#D4A574]/20', tagline: 'Claude models' },
-  openai: { iconClass: 'bg-[#10A37F]/15 text-[#10A37F] ring-[#10A37F]/20', tagline: 'GPT & reasoning' },
-  copilot: { iconClass: 'bg-[#6E40C9]/15 text-[#6E40C9] ring-[#6E40C9]/20', tagline: 'GitHub Copilot' },
-  codex: { iconClass: 'bg-[#10A37F]/15 text-[#10A37F] ring-[#10A37F]/20', tagline: 'Codex CLI' },
-  ollama: { iconClass: 'bg-white/10 text-white/80 ring-white/15', tagline: 'Local inference' },
-  router9: { iconClass: 'bg-[#60A5FA]/15 text-[#60A5FA] ring-[#60A5FA]/20', tagline: 'Model router' },
-  cliproxy: { iconClass: 'bg-[#F59E0B]/15 text-[#F59E0B] ring-[#F59E0B]/20', tagline: 'CLI proxy' },
-  xiaomi: { iconClass: 'bg-[#FF6900]/15 text-[#FF6900] ring-[#FF6900]/20', tagline: 'MiLM models' },
-  kimi: { iconClass: 'bg-[#7C3AED]/15 text-[#7C3AED] ring-[#7C3AED]/20', tagline: 'Moonshot AI' },
-  foundry: { iconClass: 'bg-[#0078D4]/15 text-[#0078D4] ring-[#0078D4]/20', tagline: 'Azure AI Foundry' },
-  fci: { iconClass: 'bg-[#F26522]/15 text-[#F26522] ring-[#F26522]/20', tagline: 'FPT inference gateway' },
-}
-
-function getProviderBrand(id: string): ProviderBrand {
-  return PROVIDER_BRANDS[id] ?? { iconClass: 'bg-(--bg-key) text-(--color-text-muted) ring-(--color-border)' }
+function ProviderBrandIcon({ provider, size = 'md' }: { provider: ProviderInfo; size?: 'sm' | 'md' | 'lg' }) {
+  return <SharedProviderBrandIcon providerId={provider.id} size={size} />
 }
 
 // ─── Utility helpers ─────────────────────────────────────────────────────────
@@ -208,119 +189,6 @@ function UsagePanel({ limits }: { limits: ProviderUsageLimit[] }) {
           Limit reached: {primary.rate_limit_reached_type.replaceAll('_', ' ')}
         </p>
       )}
-    </div>
-  )
-}
-
-// ─── Brand icon ──────────────────────────────────────────────────────────────
-
-function ProviderBrandIcon({ provider, size = 'md' }: { provider: ProviderInfo; size?: 'sm' | 'md' | 'lg' }) {
-  const brand = getProviderBrand(provider.id)
-  const sizeClasses = {
-    sm: 'h-8 w-8',
-    md: 'h-10 w-10',
-    lg: 'h-12 w-12',
-  }
-  const svgSizes = {
-    sm: 16,
-    md: 20,
-    lg: 24,
-  }
-
-  const renderLogo = () => {
-    const s = svgSizes[size]
-    switch (provider.id) {
-      case 'anthropic':
-        return (
-          <svg width={s} height={s} viewBox="0 0 256 176" fill="currentColor">
-            <path d="M147.487 0C147.487 0 217.568 175.78 217.568 175.78H256L185.919 0H147.487ZM70.071 0C70.071 0 0 175.78 0 175.78H39.179L53.51 138.866H126.818L141.146 175.78H180.325L110.254 0H70.071ZM66.183 106.221L90.162 44.447L114.142 106.221H66.183Z"/>
-          </svg>
-        )
-      case 'openai':
-        return (
-          <svg width={s} height={s} viewBox="0 0 256 260" fill="currentColor">
-            <path d="M239.184 106.203C245.054 88.524 243.022 69.173 233.608 53.1C219.452 28.459 191 15.784 163.213 21.74C147.554 4.321 123.795-3.424 100.879 1.419C77.963 6.261 59.369 22.957 52.096 45.221C33.844 48.964 18.09 60.393 8.867 76.582C-5.443 101.183-2.195 132.215 16.899 153.32C11.006 170.991 13.02 190.344 22.424 206.423C36.598 231.072 65.068 243.747 92.87 237.783C105.236 251.708 123.001 259.631 141.624 259.527C170.105 259.552 195.338 241.166 204.038 214.046C222.287 210.296 238.038 198.87 247.267 182.685C261.404 158.128 258.142 127.263 239.184 106.203ZM141.624 242.541C130.256 242.559 119.244 238.575 110.519 231.286L163.725 200.591C166.341 199.056 167.954 196.257 167.971 193.224V120.374L189.816 133.01C190.034 133.121 190.186 133.331 190.225 133.573V193.94C190.169 220.758 168.442 242.485 141.624 242.541ZM37.158 197.931C31.456 188.086 29.409 176.547 31.377 165.342L84.633 196.089C87.239 197.618 90.468 197.618 93.074 196.089L156.255 159.664V184.885C156.244 185.15 156.112 185.395 155.897 185.55L103.562 215.734C80.305 229.132 50.592 221.165 37.158 197.931ZM23.549 85.381C29.29 75.473 38.351 67.916 49.129 64.048V125.439C49.089 128.459 50.697 131.263 53.324 132.754L116.198 169.026L94.353 181.662C94.113 181.789 93.826 181.789 93.586 181.662L41.353 151.53C18.142 138.076 10.182 108.386 23.549 85.125V85.381ZM203.015 127.076L139.936 90.446L161.729 77.861C161.969 77.733 162.257 77.733 162.497 77.861L214.73 108.045C231.032 117.452 240.437 135.426 238.872 154.183C237.306 172.939 225.051 189.106 207.414 195.68V134.289C207.323 131.277 205.651 128.536 203.015 127.076ZM224.757 94.385L171.603 63.383C168.981 61.844 165.732 61.844 163.111 63.383L99.981 99.808V74.587C99.953 74.325 100.071 74.07 100.288 73.922L152.521 43.789C168.863 34.374 189.174 35.253 204.643 46.043C220.111 56.834 227.949 75.592 224.757 94.18V94.385ZM88.061 139.098L66.216 126.513C65.995 126.379 65.845 126.154 65.807 125.899V65.685C65.831 46.829 76.75 29.685 93.827 21.688C110.904 13.692 131.064 16.284 145.563 28.339L92.358 59.034C89.742 60.569 88.128 63.368 88.112 66.401L88.061 139.098ZM99.929 113.519L128.067 97.301L156.255 113.519V145.953L128.169 162.171L99.981 145.953L99.929 113.519Z"/>
-          </svg>
-        )
-      case 'copilot':
-        return (
-          <svg width={s} height={s} viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/>
-          </svg>
-        )
-      case 'codex':
-        return (
-          <svg width={s} height={s} viewBox="0 0 256 260" fill="currentColor">
-            <path d="M239.184 106.203C245.054 88.524 243.022 69.173 233.608 53.1C219.452 28.459 191 15.784 163.213 21.74C147.554 4.321 123.795-3.424 100.879 1.419C77.963 6.261 59.369 22.957 52.096 45.221C33.844 48.964 18.09 60.393 8.867 76.582C-5.443 101.183-2.195 132.215 16.899 153.32C11.006 170.991 13.02 190.344 22.424 206.423C36.598 231.072 65.068 243.747 92.87 237.783C105.236 251.708 123.001 259.631 141.624 259.527C170.105 259.552 195.338 241.166 204.038 214.046C222.287 210.296 238.038 198.87 247.267 182.685C261.404 158.128 258.142 127.263 239.184 106.203Z"/>
-          </svg>
-        )
-      case 'ollama':
-        return (
-          <svg width={s} height={s} viewBox="0 0 17 25" fill="currentColor">
-            <path d="M4.405.102c.216.096.411.255.588.465.295.348.544.846.734 1.436.191.593.315 1.25.362 1.909.63-.405 1.329-.651 2.049-.723.87-.08 1.73.098 2.48.538.101.06.2.125.297.193.05-.647.172-1.289.36-1.868.19-.591.439-1.087.733-1.436.164-.202.365-.361.589-.466.257-.114.53-.134.796-.048.401.13.745.418 1.016.837.248.383.434.874.561 1.463.231 1.061.271 2.458.116 4.142l.053.045.026.022c.757.654 1.284 1.587 1.563 2.67.435 1.69.216 3.585-.534 4.645l-.018.024.002.003c.417.866.67 1.781.724 2.728l.002.034c.064 1.21-.2 2.428-.814 3.625l-.007.011.01.027c.472 1.315.62 2.639.438 3.962l-.006.044c-.028.193-.122.366-.262.48-.14.114-.314.161-.484.129-.084-.015-.165-.049-.238-.099a1.075 1.075 0 01-.177-.174c-.049-.078-.085-.167-.105-.261-.02-.094-.023-.192-.01-.288.167-1.174.01-2.351-.48-3.549-.046-.111-.066-.234-.059-.356.007-.122.041-.241.099-.344l.004-.007c.604-1.05.854-2.079.8-3.091-.046-.885-.325-1.755-.8-2.583a1.392 1.392 0 00-.107-.187c-.034-.048-.067-.094-.107-.138-.243-.181-.467-.642-.58-1.273-.125-.746-.092-1.514-.114-1.763-.205-.795-.58-1.459-1.105-1.912-.6-.516-1.388-.765-2.385-.693-.13.01-.261-.025-.373-.1a1.266 1.266 0 01-.336-.39c-.314-.756-.772-1.297-1.343-1.632a2.509 2.509 0 00-1.039-.311c-.331-.014-.657.071-.925.26a1.232 1.232 0 00-.118-.103c-.378-.27-.877-.255-1.353-.218-.369.029-.72.091-1.043.225l-.048-.088c-.144-.325-.364-.612-.615-.83-.223-.192-.521-.307-.837-.328-.266-.017-.54.063-.763.225-.216-.096-.411-.255-.588-.465z"/>
-          </svg>
-        )
-      case 'router9':
-        return (
-          <svg width={s} height={s} viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
-          </svg>
-        )
-      case 'cliproxy':
-        return (
-          <svg width={s} height={s} viewBox="0 0 24 24" fill="currentColor">
-            <path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/>
-          </svg>
-        )
-      case 'xiaomi':
-        return (
-          <svg width={s} height={s} viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-          </svg>
-        )
-      case 'kimi':
-        return (
-          <svg width={s} height={s} viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
-          </svg>
-        )
-      case 'foundry':
-        return (
-          <svg width={s} height={s} viewBox="0 0 24 24" fill="currentColor">
-            <path d="M2 2h9.5v9.5H2V2zm10.5 0H22v9.5h-9.5V2zM2 12.5h9.5V22H2v-9.5zm10.5 0H22V22h-9.5v-9.5z"/>
-          </svg>
-        )
-      default:
-        return (
-          <span className="font-bold text-sm">{provider.id.charAt(0).toUpperCase()}</span>
-        )
-    }
-  }
-
-  return (
-    <div
-      className={cn(
-        'flex shrink-0 items-center justify-center rounded-xl ring-1 transition-all',
-        sizeClasses[size],
-        brand.iconClass,
-      )}
-      aria-hidden="true"
-    >
-      {renderLogo()}
-    </div>
-  )
-}
-
-// ─── Section header ──────────────────────────────────────────────────────────
-
-function SectionHeader({ label, count, icon: Icon }: { label: string; count: number; icon?: React.ComponentType<{ size?: number; className?: string }> }) {
-  return (
-    <div className="flex items-center gap-2.5 pb-2">
-      {Icon && <Icon size={14} className="text-(--color-text-muted)" aria-hidden="true" />}
-      <h2 className="text-xs font-semibold uppercase tracking-wider text-(--color-text-muted)">{label}</h2>
-      <span className="rounded-full bg-(--color-accent-subtle) px-2 py-0.5 font-mono text-[0.65rem] tabular-nums text-(--color-text-muted)">
-        {count}
-      </span>
     </div>
   )
 }
@@ -502,8 +370,8 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
         type="button"
         onClick={() => setExpanded(true)}
         className={cn(
-          'group relative flex w-full items-center gap-3.5 rounded-xl border bg-(--bg-card) px-4 py-3.5 text-left transition-all duration-150',
-          'hover:border-(--color-border-strong) hover:shadow-md hover:shadow-black/5',
+          'group relative flex w-full items-center gap-3.5 rounded-lg border bg-(--bg-card) px-4 py-3.5 text-left transition-all',
+          'hover:border-(--color-border-strong)',
           'focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-(--focus-ring)/40',
           isConfiguredButUnreachable
             ? 'border-(--color-error)/30 hover:border-(--color-error)/40'
@@ -1410,8 +1278,6 @@ function OAuthLoginDialog({
 // ─── Main page ───────────────────────────────────────────────────────────────
 
 export function ProvidersSettingsPage() {
-  const isMobile = useIsMobile()
-  const settingsNavigate = useSettingsNavigate()
   const providersQ = useProvidersQuery()
   const [search, setSearch] = useState('')
 
@@ -1438,137 +1304,98 @@ export function ProvidersSettingsPage() {
   const totalFiltered = filteredConnected.length + filteredAvailable.length
 
   return (
-    <>
-      {/* ── Page header ────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-(--z-panel) flex h-14 shrink-0 items-center gap-3 border-b border(--color-border) bg-(--bg-page) px-4">
-        {isMobile && (
-          <button
-            type="button"
-            onClick={() => settingsNavigate('/settings')}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
-            aria-label="Back to settings"
-          >
-            <ArrowLeft size={16} />
-          </button>
-        )}
-        <KeyRound size={16} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
-        <h1 className="flex-1 truncate text-sm font-semibold text-(--color-text)">Providers</h1>
-        {connectedProviders.length > 0 && (
-          <span className="rounded-full bg-(--color-success-subtle) px-2.5 py-1 text-[0.65rem] font-semibold text-(--color-success)">
+    <SettingsPage
+      icon={KeyRound}
+      title="Providers"
+      lede="Connect a model provider so EvoFlux can run agents. API keys and OAuth tokens are stored on this machine only."
+      actions={
+        connectedProviders.length > 0 ? (
+          <span className="rounded-full bg-(--color-success-subtle) px-2.5 py-1 text-[11px] font-medium text-(--color-success)">
             {connectedProviders.length} connected
           </span>
-        )}
-      </header>
-
-      {/* ── Content ────────────────────────────────────────────────────────── */}
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-3xl px-4 pt-6 pb-10 sm:px-6">
-          {/* ── Intro + search ──────────────────────────────────────────────── */}
-          <div className="space-y-4">
-            <p className="text-sm leading-relaxed text-(--color-text-muted)">
-              Connect a model provider so EvoFlux can run agents. API keys are stored locally; OAuth tokens are cached on your machine.
-            </p>
-
-            {!providersQ.isLoading && providers.length > 0 && (
-              <div className="relative flex h-10 items-center rounded-xl border border-(--color-border) bg-(--bg-card) transition-colors focus-within:border-(--focus-ring) focus-within:ring-3 focus-within:ring-(--focus-ring)/30">
-                <Search
-                  size={14}
-                  className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-(--color-text-muted)"
-                  aria-hidden="true"
-                />
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search providers…"
-                  aria-label="Search providers"
-                  className="h-full flex-1 border-0 bg-transparent pr-4 pl-10 text-sm focus:ring-0 focus-visible:ring-0"
-                />
-                {!providersQ.isLoading && (
-                  <span className="pr-3.5 font-mono text-xs tabular-nums text-(--color-text-muted)">
-                    {totalFiltered} {totalFiltered === 1 ? 'provider' : 'providers'}
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* ── Loading / Error states ──────────────────────────────────────── */}
-          {providersQ.isLoading && (
-            <div className="flex items-center gap-2 py-12 text-sm text-(--color-text-muted)">
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              Loading providers…
-            </div>
-          )}
-          {providersQ.error && (
-            <div className="mt-4 flex items-start gap-3 rounded-xl border border-(--color-error)/30 bg-(--color-error)/10 p-4">
-              <AlertCircle size={16} className="mt-0.5 shrink-0 text-(--color-error)" aria-hidden="true" />
-              <div>
-                <p className="text-sm font-medium text-(--color-error)">Failed to load providers</p>
-                <p className="mt-1 text-xs text-(--color-text-muted)">
-                  {providersQ.error instanceof Error ? providersQ.error.message : String(providersQ.error)}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* ── Provider groups ─────────────────────────────────────────────── */}
-          {!providersQ.isLoading && !providersQ.error && (
-            <div className="mt-8 space-y-8">
-              {/* Connected providers */}
-              {filteredConnected.length > 0 && (
-                <section>
-                  <SectionHeader label="Connected" count={filteredConnected.length} icon={CheckCircle2} />
-                  <div className="space-y-3">
-                    {filteredConnected.map((provider) => (
-                      <ProviderCard key={provider.id} provider={provider} />
-                    ))}
-                  </div>
-                </section>
-              )}
-
-              {/* Available providers */}
-              {filteredAvailable.length > 0 && (
-                <section>
-                  <SectionHeader label="Available" count={filteredAvailable.length} icon={KeyRound} />
-                  <div className="space-y-3">
-                    {filteredAvailable.map((provider) => (
-                      <ProviderCard key={provider.id} provider={provider} />
-                    ))}
-                  </div>
-                </section>
-              )}
-
-              {/* Empty search */}
-              {totalFiltered === 0 && search.trim() && (
-                <div className="py-12 text-center">
-                  <Search size={24} className="mx-auto mb-3 text-(--color-text-muted)/50" aria-hidden="true" />
-                  <p className="text-sm text-(--color-text-muted)">
-                    No providers match &ldquo;{search}&rdquo;
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setSearch('')}
-                    className="mt-2 text-sm font-medium text-(--color-accent) hover:text-(--color-accent-foreground)"
-                  >
-                    Clear search
-                  </button>
-                </div>
-              )}
-
-              {/* No providers at all */}
-              {providers.length === 0 && !providersQ.isLoading && (
-                <div className="py-12 text-center">
-                  <KeyRound size={32} className="mx-auto mb-4 text-(--color-text-muted)/30" aria-hidden="true" />
-                  <p className="text-sm font-medium text-(--color-text)">No providers available</p>
-                  <p className="mt-1 text-xs text-(--color-text-muted)">
-                    Check your backend connection and try again.
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
+        ) : undefined
+      }
+    >
+      {!providersQ.isLoading && providers.length > 0 && (
+        <div className="flex h-10 items-center gap-2 rounded-lg border border-(--color-border) bg-(--bg-card) px-3 focus-within:border-(--focus-ring) focus-within:ring-3 focus-within:ring-(--focus-ring)/30">
+          <Search size={14} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search providers…"
+            aria-label="Search providers"
+            className="h-full flex-1 border-0 bg-transparent px-0 text-sm shadow-none focus:ring-0 focus-visible:ring-0"
+          />
+          <span className="shrink-0 font-mono text-xs tabular-nums text-(--color-text-muted)">
+            {totalFiltered} {totalFiltered === 1 ? 'provider' : 'providers'}
+          </span>
         </div>
-      </div>
-    </>
+      )}
+
+      {providersQ.isLoading && (
+        <div className="flex items-center gap-2 py-12 text-sm text-(--color-text-muted)">
+          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          Loading providers…
+        </div>
+      )}
+
+      {providersQ.error && (
+        <SettingsCallout tone="error" icon={AlertCircle}>
+          <p className="font-medium">Failed to load providers</p>
+          <p className="mt-1 text-(--color-text-muted)">
+            {providersQ.error instanceof Error ? providersQ.error.message : String(providersQ.error)}
+          </p>
+        </SettingsCallout>
+      )}
+
+      {!providersQ.isLoading && !providersQ.error && (
+        <>
+          {filteredConnected.length > 0 && (
+            <SettingsGroup title="Connected" bare className="space-y-2">
+              {filteredConnected.map((provider) => (
+                <ProviderCard key={provider.id} provider={provider} />
+              ))}
+            </SettingsGroup>
+          )}
+
+          {filteredAvailable.length > 0 && (
+            <SettingsGroup
+              title="Available"
+              description="Add a key or sign in to make these usable by your agents."
+              bare
+              className="space-y-2"
+            >
+              {filteredAvailable.map((provider) => (
+                <ProviderCard key={provider.id} provider={provider} />
+              ))}
+            </SettingsGroup>
+          )}
+
+          {totalFiltered === 0 && search.trim() && (
+            <div className="rounded-lg border border-dashed border-(--color-border) py-12 text-center">
+              <p className="text-sm text-(--color-text-muted)">
+                No providers match &ldquo;{search}&rdquo;.
+              </p>
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="mt-2 text-sm font-medium text-(--color-text) underline-offset-2 hover:underline"
+              >
+                Clear search
+              </button>
+            </div>
+          )}
+
+          {providers.length === 0 && (
+            <div className="rounded-lg border border-dashed border-(--color-border) py-12 text-center">
+              <p className="text-sm font-medium text-(--color-text)">No providers available</p>
+              <p className="mt-1 text-xs text-(--color-text-muted)">
+                Check the backend connection and try again.
+              </p>
+            </div>
+          )}
+        </>
+      )}
+    </SettingsPage>
   )
 }

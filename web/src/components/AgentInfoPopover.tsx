@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { useTeamAgentsQuery } from '@/queries/useAgentsQuery'
 import { useMcpServersQuery } from '@/queries/useMcpQuery'
+import { useMotionPreset } from '@/lib/motion'
 import type {
   AgentInfo,
   AgentCapabilities as AgentCapabilitiesType,
@@ -118,7 +119,6 @@ function ToolRow({ name, description }: { name: string; description: string }) {
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.14 }}
             className="overflow-hidden"
           >
             <p className="border-t border-(--color-border) px-2.5 py-1.5 text-xs leading-relaxed text-(--color-text-muted)">
@@ -210,6 +210,7 @@ export function AgentInfoPopover({
 }: AgentInfoPopoverProps) {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const preset = useMotionPreset()
 
   const { data, isLoading, refetch } = useTeamAgentsQuery(workspace, open, mode)
   const mcpServersQuery = useMcpServersQuery()
@@ -291,10 +292,10 @@ export function AgentInfoPopover({
       <AnimatePresence>
         {open && (
           <motion.div
-            initial={{ opacity: 0, y: 4, scale: 0.97 }}
+            initial={{ opacity: 0, y: 4 * preset.distance, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 4, scale: 0.97 }}
-            transition={{ duration: 0.15 }}
+            exit={{ opacity: 0, y: 4 * preset.distance, scale: 0.97 }}
+            transition={preset.spring}
             className="absolute bottom-full right-0 z-(--z-modal) mb-2 max-h-[60vh] w-[min(22rem,calc(100vw-1rem))] overflow-y-auto rounded-[9px] border border-(--color-border) bg-(--color-surface) shadow-(--shadow-popover)"
           >
             {isLoading || !leadAgent ? (
@@ -343,7 +344,6 @@ export function AgentInfoPopover({
                                 initial={{ height: 0, opacity: 0 }}
                                 animate={{ height: 'auto', opacity: 1 }}
                                 exit={{ height: 0, opacity: 0 }}
-                                transition={{ duration: 0.15 }}
                                 className="overflow-hidden"
                               >
                                 <div className="flex flex-col gap-0.5 pt-0.5">

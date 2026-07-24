@@ -39,6 +39,7 @@ import {
   useWriteWikiFileMutation,
   useDeleteWikiFileMutation,
 } from '@/queries'
+import { useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import type { WikiFileInfo } from '@/api/types'
 
@@ -71,6 +72,7 @@ type Section = {
 export function WikiPanel({ open, onClose }: WikiPanelProps) {
   const isMobile = useIsMobile()
   const prefersReducedMotion = useReducedMotion()
+  const preset = useMotionPreset()
   const { data: tree, isLoading, isError } = useWikiTreeQuery(true)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [mobilePane, setMobilePane] = useState<'tree' | 'editor'>('tree')
@@ -143,16 +145,15 @@ export function WikiPanel({ open, onClose }: WikiPanelProps) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
             onClick={onClose}
             className="fixed inset-0 z-(--z-overlay) bg-(--color-overlay)"
           />
 
           <motion.div
-            initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: 8 }}
+            initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: 8 * preset.distance }}
             animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 }}
-            exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: 8 }}
-            transition={{ duration: prefersReducedMotion ? 0.01 : 0.18, ease: [0.4, 0, 0.2, 1] }}
+            exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: 8 * preset.distance }}
+            transition={preset.spring}
             className="fixed inset-x-0 bottom-0 top-[env(safe-area-inset-top,0px)] z-(--z-modal) flex flex-col overflow-hidden border-(--color-border) bg-(--bg-page) shadow-2xl sm:left-1/2 sm:top-1/2 sm:inset-auto sm:h-[min(90vh,860px)] sm:w-[min(90vw,1180px)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:border"
             role="dialog"
             aria-modal="true"

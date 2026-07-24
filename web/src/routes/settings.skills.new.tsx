@@ -1,11 +1,16 @@
 import { useState } from 'react'
+import { Sparkles } from 'lucide-react'
 
 import { useCreateSkillMutation } from '@/queries'
 import { useToastStore } from '@/stores/useToastStore'
 import { ApiValidationError } from '@/api/client'
-import { EditorSubHeader } from '@/components/settings/EditorSubHeader'
+import { EditorHeaderActions } from '@/components/settings/EditorHeaderActions'
+import {
+  SettingsGroup,
+  SettingsPage,
+  SettingsRow,
+} from '@/components/settings/SettingsLayout'
 import { validateSkillDraft } from '@/components/settings/schema'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 import { useSettingsNavigate } from '@/contexts/SettingsContext'
 
@@ -60,44 +65,46 @@ export function NewSkillPage() {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <EditorSubHeader
-        kind="skill"
-        name="New skill"
-        dirty={content !== TEMPLATE}
-        invalid={invalid}
-        saving={createMut.isPending}
-        error={saveError}
-        validationHint={firstDraftError}
-        onSave={handleCreate}
-      />
-
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-3xl p-6">
-          <Card size="sm">
-            <CardHeader>
-              <CardTitle>Skill source</CardTitle>
-              <CardDescription>
-                Frontmatter (<span className="font-mono">name</span>,{' '}
-                <span className="font-mono">description</span>) is required;
-                use <span className="font-mono">parent/sub</span> for a one-level sub-skill.
-                The body is the instruction the agent loads on demand.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Textarea
-                value={content}
-                onChange={(e) => handleContentChange(e.target.value)}
-                disabled={createMut.isPending}
-                rows={28}
-                spellCheck={false}
-                aria-invalid={invalid || undefined}
-                className="min-h-96 font-mono text-[13px] leading-relaxed"
-              />
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    </div>
+    <SettingsPage
+      icon={Sparkles}
+      title="New skill"
+      actions={
+        <EditorHeaderActions
+          dirty={content !== TEMPLATE}
+          invalid={invalid}
+          saving={createMut.isPending}
+          error={saveError}
+          validationHint={firstDraftError}
+          onSave={handleCreate}
+        />
+      }
+    >
+      <SettingsGroup
+        title="Skill source"
+        description={
+          <>
+            Frontmatter (<span className="font-mono">name</span>,{' '}
+            <span className="font-mono">description</span>) is required; use{' '}
+            <span className="font-mono">parent/sub</span> for a one-level sub-skill. The body is the
+            instruction the agent loads on demand.
+          </>
+        }
+      >
+        <SettingsRow
+          stacked
+          control={
+            <Textarea
+              value={content}
+              onChange={(e) => handleContentChange(e.target.value)}
+              disabled={createMut.isPending}
+              rows={28}
+              spellCheck={false}
+              aria-invalid={invalid || undefined}
+              className="min-h-96 font-mono text-[13px] leading-relaxed"
+            />
+          }
+        />
+      </SettingsGroup>
+    </SettingsPage>
   )
 }

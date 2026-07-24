@@ -23,28 +23,58 @@ import { Breadcrumb, type BreadcrumbItem } from '@/components/Breadcrumb'
 import { SettingsSidebar } from '@/components/settings/SettingsSidebar'
 import { useIsMobile } from '@/hooks/use-mobile'
 
-/** Page title shown in the modal header based on the current pathname. */
-function pageTitleFor(pathname: string): string {
-  if (pathname.startsWith('/settings/agents')) return 'Agents'
-  if (pathname.startsWith('/settings/skills')) return 'Skills'
-  if (pathname.startsWith('/settings/mcp')) return 'MCP servers'
-  if (pathname === '/settings/providers') return 'Providers'
-  if (pathname === '/settings/multimodal') return 'Multimodal'
-  if (pathname === '/settings/sandbox') return 'Sandbox'
-  if (pathname === '/settings/dream') return 'Dream'
-  if (pathname === '/settings/notifications') return 'Notifications'
-  if (pathname === '/settings/appearance') return 'Appearance'
-  return 'Settings'
+/** Sections that own a list page plus per-item editor routes. */
+const LIST_SECTIONS: ReadonlyArray<{ segment: string; label: string }> = [
+  { segment: 'agents', label: 'Agents' },
+  { segment: 'skills', label: 'Skills' },
+  { segment: 'mcp', label: 'MCP servers' },
+]
+
+const LEAF_SECTIONS: Readonly<Record<string, string>> = {
+  providers: 'Providers',
+  connection: 'Connection',
+  sandbox: 'Sandbox',
+  dream: 'Dream',
+  notifications: 'Notifications',
+  appearance: 'Appearance',
+  telemetry: 'Telemetry',
+  diagnostics: 'Diagnostics',
 }
 
-/** Breadcrumb trail for the current settings page. */
+function sectionFor(pathname: string): { label: string; segment: string; item?: string } | null {
+  const parts = pathname.replace(/^\/settings\/?/, '').split('/').filter(Boolean)
+  const [segment, ...rest] = parts
+  if (!segment) return null
+
+  const list = LIST_SECTIONS.find((entry) => entry.segment === segment)
+  if (list) {
+    const item = rest.join('/')
+    return { label: list.label, segment, item: item === 'new' ? 'New' : item || undefined }
+  }
+
+  const leaf = LEAF_SECTIONS[segment]
+  return leaf ? { label: leaf, segment } : null
+}
+
+/** Page title shown in the modal header based on the current pathname. */
+function pageTitleFor(pathname: string): string {
+  return sectionFor(pathname)?.label ?? 'Settings'
+}
+
+/**
+ * Breadcrumb trail. On editor routes the section crumb stays a link, which is
+ * the only way back to the list on desktop — the page header shows its back
+ * button on mobile only.
+ */
 function breadcrumbsFor(pathname: string): BreadcrumbItem[] {
-  const section = pageTitleFor(pathname)
-  if (section === 'Settings') return [{ label: 'Settings' }]
-  return [
+  const section = sectionFor(pathname)
+  if (!section) return [{ label: 'Settings' }]
+  const trail: BreadcrumbItem[] = [
     { label: 'Settings', to: '/settings' },
-    { label: section },
+    { label: section.label, to: `/settings/${section.segment}` },
   ]
+  if (section.item) trail.push({ label: section.item })
+  return trail
 }
 
 export function SettingsLayout() {
