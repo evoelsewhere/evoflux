@@ -34,6 +34,17 @@ nodes:
       aim_units, and produce a revised summary.
     timeout_s: 1800
 
+  - id: approve_rework
+    kind: gate
+    title: "Approve the revised wave plan"
+    body: "{{nodes.rework.output.text | truncate:2000}}"
+    choices: [approve, stop]
+
+  - id: rework_stopped
+    kind: notify
+    title: "aim-assess"
+    message: "The revised wave plan was not approved. Project phase remains assess."
+
   - id: advance_phase
     kind: tool
     tool: aim_units
@@ -51,7 +62,13 @@ edges:
   - { from: approve_plan, to: advance_phase, when: approve }
   - { from: approve_plan, to: rework, when: rework }
   - { from: advance_phase, to: done }
-  - { from: rework, to: done }
+  - { from: rework, to: approve_rework }
+  - { from: approve_rework, to: advance_phase, when: approve }
+  - { from: approve_rework, to: rework_stopped, when: stop }
 
 outputs:
   summary: "{{nodes.assess.output.text}}"
+  original_summary: "{{nodes.assess.output.text}}"
+  initial_decision: "{{nodes.approve_plan.output.choice}}"
+  revised_summary: "{{nodes.rework.output.text}}"
+  revised_decision: "{{nodes.approve_rework.output.choice}}"

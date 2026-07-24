@@ -41,4 +41,4 @@ make -C desktop build
 
 - Dev mode with external backend depends on root `make dev` already running.
 - Keep macOS, Windows, and Linux lifecycle behavior in mind when changing process cleanup.
-- Do not commit `target/`, generated bundles, or machine-local `.EvoFlux/` state.
+- Do not commit `target/`, generated bundles, or machine-local `.evoflux/` state.

@@ -11,6 +11,8 @@ from uuid import UUID, uuid7
 
 import yaml
 
+from app.services.aim import kb_store
+
 _UNIT_RE = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
 
 
@@ -79,6 +81,29 @@ async def verify_target_conversion(
     if not target_root.is_dir():
         raise VerificationError(f"target repository is unavailable: {target_root}")
     command_path = resolve_verification_command(kb_root, unit)
+    module, name = unit.split("/", 1)
+    unit_result = kb_store.read_unit(kb_root, module, name)
+    if unit_result is None:
+        raise VerificationError(f"unit {unit} is missing from the KB")
+    target_paths = unit_result[0].target_paths
+    if not target_paths:
+        raise VerificationError(f"unit {unit} records no target_paths")
+    target_root_resolved = target_root.resolve()
+    for declared_path in target_paths:
+        relative = Path(declared_path)
+        if relative.is_absolute():
+            raise VerificationError(
+                f"unit {unit} target path must be relative: {declared_path!r}"
+            )
+        resolved = (target_root_resolved / relative).resolve()
+        if not resolved.is_relative_to(target_root_resolved):
+            raise VerificationError(
+                f"unit {unit} target path escapes target repository: {declared_path!r}"
+            )
+        if not resolved.exists():
+            raise VerificationError(
+                f"unit {unit} target path does not exist: {declared_path!r}"
+            )
     environment = {
         "AIM_UNIT": unit,
         "AIM_KB_ROOT": str(kb_root.resolve()),

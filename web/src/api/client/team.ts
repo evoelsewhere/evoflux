@@ -449,7 +449,7 @@ export async function teamHistory(sessionId: string, before?: string): Promise<T
 }
 
 /**
- * List every file under the session's agent workspace (``.EvoFlux/team/{sid}``).
+ * List every file under the session's agent workspace (``.evoflux/team/{sid}``).
  *
  * Returns an empty list for fresh sessions where the workspace hasn't been
  * created yet (the agent hasn't written anything).  File bytes are fetched

@@ -1,6 +1,6 @@
 /**
  * WorkspaceFilesPanel — docked side panel listing every file the agent has
- * written into the session workspace (``.EvoFlux/team/{sid}``).
+ * written into the session workspace (``.evoflux/team/{sid}``).
  *
  * Layout: docked panel that shrinks the chat column (mirrors
  * ``CodingWorkspacePanel``) — a flex sibling of ``<main>``, not an overlay,

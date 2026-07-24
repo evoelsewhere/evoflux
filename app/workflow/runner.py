@@ -767,18 +767,18 @@ class WorkflowRunner:
     # -- terminal transitions ---------------------------------------------------
     async def _complete(self, state: ExecutionState) -> None:
         outputs: dict[str, Any] = {}
-        try:
-            outputs = {
-                key: render(tpl, state.template_scope())
-                for key, tpl in state.definition.outputs.items()
-            }
-        except TemplateError as exc:
-            # Outputs referencing skipped branches simply come back partial.
-            logger.debug(
-                "workflow_outputs_partial execution={} error={}",
-                state.execution_id,
-                exc,
-            )
+        for key, template in state.definition.outputs.items():
+            try:
+                outputs[key] = render(template, state.template_scope())
+            except TemplateError as exc:
+                # Outputs referencing skipped branches are omitted independently;
+                # resolvable keys remain available to callers.
+                logger.debug(
+                    "workflow_output_omitted execution={} key={} error={}",
+                    state.execution_id,
+                    key,
+                    exc,
+                )
         state.status = "completed"
         await self._release_execution_claims(state.execution_id)
         await self._persist_execution_end(state, outputs=outputs)

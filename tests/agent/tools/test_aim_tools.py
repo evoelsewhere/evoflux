@@ -15,6 +15,7 @@ from app.agent.tools.builtin.aim import (
     aim_claim,
     aim_compare,
     aim_readiness,
+    aim_understanding,
     aim_units,
 )
 from app.core import db as db_module
@@ -101,14 +102,18 @@ def test_aim_tools_excluded_from_forge_and_coding_tiers():
     forge_names = tier_tools(registry, mode="forge", role="member")
     coding_names = tier_tools(registry, mode="coding", role="member")
     assert "aim_units" not in forge_names
+    assert "aim_capture" not in forge_names
     assert "aim_compare" not in forge_names
     assert "aim_readiness" not in forge_names
+    assert "aim_understanding" not in forge_names
     assert "aim_claim" not in forge_names
     assert "aim_execute" not in forge_names
     assert "aim_verify" not in forge_names
     assert "aim_units" not in coding_names
+    assert "aim_capture" not in coding_names
     assert "aim_compare" not in coding_names
     assert "aim_readiness" not in coding_names
+    assert "aim_understanding" not in coding_names
     assert "aim_claim" not in coding_names
     assert "aim_execute" not in coding_names
     assert "aim_verify" not in coding_names
@@ -118,8 +123,10 @@ def test_aim_tools_included_in_aim_tier():
     registry = _default_tool_registry()
     aim_names = tier_tools(registry, mode="aim", role="member")
     assert "aim_units" in aim_names
+    assert "aim_capture" in aim_names
     assert "aim_compare" in aim_names
     assert "aim_readiness" in aim_names
+    assert "aim_understanding" in aim_names
     assert "aim_claim" in aim_names
     assert "aim_execute" in aim_names
     assert "aim_verify" in aim_names
@@ -386,12 +393,16 @@ async def test_owning_workflow_advances_ready_unit(sandbox_workspace):
 
     await _make_aim_project(sandbox_workspace)
     await aim_units(action="set_phase", unit="m/A", kind="program", phase="inventory")
-    kb_store.write_unit(sandbox_workspace, "m", "A", body="Documented behavior.")
     execution = await _make_workflow_execution("aim-understand")
 
     token = current_execution_id.set(str(execution.id))
     try:
         await aim_claim(action="acquire", unit="m/A")
+        snapshot = json.loads(await aim_understanding(action="snapshot", units=["m/A"]))
+        kb_store.write_unit(sandbox_workspace, "m", "A", body="Documented behavior.")
+        await aim_understanding(
+            action="verify", units=["m/A"], baseline=snapshot["digests"]
+        )
         result = await aim_units(action="set_phase", unit="m/A", phase="understood")
     finally:
         current_execution_id.reset(token)
@@ -402,7 +413,76 @@ async def test_owning_workflow_advances_ready_unit(sandbox_workspace):
     )
     assert len(events) == 1
     event = yaml.safe_load(events[0].read_text())
-    assert event["evidence_refs"] == ["modules/m/A.md"]
+    assert event["evidence_refs"][0] == "modules/m/A.md"
+    assert event["evidence_refs"][1].startswith("state/evidence/understanding/")
+
+
+@pytest.mark.asyncio
+async def test_understand_workflow_advances_claimed_dependency_closure(
+    sandbox_workspace,
+):
+    from app.workflow.exec_context import current_execution_id
+
+    await _make_aim_project(sandbox_workspace)
+    await aim_units(
+        action="set_phase",
+        unit="shared/DATE",
+        kind="utility",
+        phase="inventory",
+    )
+    await aim_units(
+        action="set_phase",
+        unit="core/PAY",
+        kind="program",
+        phase="inventory",
+        depends_on=["shared/DATE"],
+    )
+    execution = await _make_workflow_execution("aim-understand")
+
+    token = current_execution_id.set(str(execution.id))
+    try:
+        acquired = json.loads(
+            await aim_claim(action="acquire", units=["shared/DATE", "core/PAY"])
+        )
+        snapshot = json.loads(
+            await aim_understanding(
+                action="snapshot", units=["shared/DATE", "core/PAY"]
+            )
+        )
+        kb_store.write_unit(
+            sandbox_workspace,
+            "shared",
+            "DATE",
+            body="Documented date behavior.",
+        )
+        kb_store.write_unit(
+            sandbox_workspace,
+            "core",
+            "PAY",
+            depends_on=["shared/DATE"],
+            body="Documented payroll behavior.",
+        )
+        await aim_understanding(
+            action="verify",
+            units=["shared/DATE", "core/PAY"],
+            baseline=snapshot["digests"],
+        )
+        await aim_units(action="set_phase", unit="shared/DATE", phase="understood")
+        await aim_units(action="set_phase", unit="core/PAY", phase="understood")
+        released = json.loads(
+            await aim_claim(action="release", units=["shared/DATE", "core/PAY"])
+        )
+    finally:
+        current_execution_id.reset(token)
+
+    assert acquired["count"] == 2
+    assert released["count"] == 2
+    assert kb_store.read_unit(sandbox_workspace, "shared", "DATE")[0].phase == (
+        "understood"
+    )
+    assert kb_store.read_unit(sandbox_workspace, "core", "PAY")[0].phase == (
+        "understood"
+    )
 
 
 @pytest.mark.asyncio
@@ -536,6 +616,7 @@ async def test_compare_requires_golden_metadata(sandbox_workspace):
 
     data = json.loads(result)
     assert data["verdict"] == "error"
+    assert data["report_path"] is None
     assert data["error_kind"] == "missing_golden_metadata"
 
 

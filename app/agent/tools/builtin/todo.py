@@ -186,7 +186,7 @@ def release_in_progress_for_actor(
     path = (
         todos_path(session_id)
         if session_id
-        else workspace_root / ".EvoFlux" / TODOS_FILENAME
+        else workspace_root / ".evoflux" / TODOS_FILENAME
     )
     if not path.exists():
         return []

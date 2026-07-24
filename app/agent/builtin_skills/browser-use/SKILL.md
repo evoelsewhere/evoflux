@@ -54,8 +54,8 @@ If a global `browser-use` exists, use it. Otherwise use `uvx browser-use ...`.
 Save screenshots/logs in the workspace:
 
 ```bash
-mkdir -p .EvoFlux/browser-use
-browser-use screenshot ".EvoFlux/browser-use/<descriptive-name>.png"
+mkdir -p .evoflux/browser-use
+browser-use screenshot ".evoflux/browser-use/<descriptive-name>.png"
 ```
 
 ## Core Workflow

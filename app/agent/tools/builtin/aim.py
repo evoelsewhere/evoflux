@@ -359,6 +359,13 @@ async def _aim_units(
                 )
             module, name = _split_unit(unit)
             existing = kb_store.read_unit(kb_root, module, name)
+            if kind is not None and (kb_root / "aim.yaml").is_file():
+                from app.services.aim.rulebook import validate_unit_kind
+
+                try:
+                    validate_unit_kind(kb_root, kind)
+                except FileNotFoundError:
+                    pass
             if existing is None and kind is None:
                 raise ValueError(
                     f"Unit {unit} doesn't exist yet — pass 'kind' to create it."
@@ -390,8 +397,22 @@ async def _aim_units(
                     workflow_name = await _current_workflow_name(db)
                     compare_pass = False
                     conversion_verified = False
+                    understanding_verified = False
                     pass_run: AimRun | None = None
                     conversion_evidence: Path | None = None
+                    understanding_evidence: Path | None = None
+                    if phase == "understood" and workflow_execution_id:
+                        from app.services.aim.understanding import (
+                            has_understanding_evidence,
+                            understanding_evidence_path,
+                        )
+
+                        understanding_evidence = understanding_evidence_path(
+                            kb_root, unit, workflow_execution_id
+                        )
+                        understanding_verified = has_understanding_evidence(
+                            kb_root, unit, workflow_execution_id
+                        )
                     if (
                         phase == "equivalent"
                         and project_id is not None
@@ -437,6 +458,7 @@ async def _aim_units(
                         name,
                         phase,
                         workflow_name=workflow_name,
+                        understanding_verified=understanding_verified,
                         compare_pass=compare_pass,
                         conversion_verified=conversion_verified,
                     )
@@ -474,6 +496,10 @@ async def _aim_units(
                     evidence_refs: list[str] = []
                     if phase == "understood":
                         evidence_refs.append(f"modules/{module}/{name}.md")
+                        if understanding_evidence is not None:
+                            evidence_refs.append(
+                                understanding_evidence.relative_to(kb_root).as_posix()
+                            )
                     elif phase == "designed":
                         mapping_path = resolve_mapping_path(kb_root, module, name)
                         if mapping_path is not None:
@@ -519,6 +545,8 @@ async def _aim_units(
                 last_transition_id=transition_id,
             )
             frontmatter, _ = kb_store.read_unit(kb_root, module, name)
+            if transition_id is not None:
+                kb_store.sync_project_phase_from_units(kb_root)
             if project_id is not None:
                 rel_path = str(doc_path.relative_to(kb_root))
                 await upsert_unit(db, project_id, module, name, frontmatter, rel_path)
@@ -693,6 +721,69 @@ aim_readiness = Tool(
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# aim_understanding
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+async def _aim_understanding(
+    action: Annotated[
+        Literal["snapshot", "verify"], Field(description="Evidence operation.")
+    ],
+    units: Annotated[
+        list[str],
+        BeforeValidator(_json_coerce),
+        Field(description="Dependency-ordered module/name unit list."),
+    ],
+    baseline: Annotated[
+        dict[str, str] | None,
+        BeforeValidator(_json_coerce),
+        Field(description="Snapshot digests returned by the snapshot action."),
+    ] = None,
+) -> str:
+    execution_id = _current_workflow_execution_id()
+    if not execution_id:
+        raise ValueError("AIM understanding evidence requires a workflow execution.")
+    async with db_module.async_session_factory() as db:
+        _project_id, kb_root = await _resolve_project_and_kb_root(db)
+    from app.services.aim.understanding import (
+        snapshot_understanding,
+        verify_understanding,
+    )
+
+    if action == "snapshot":
+        return json.dumps(
+            {
+                "status": "snapshotted",
+                "units": units,
+                "digests": snapshot_understanding(kb_root, units),
+            }
+        )
+    if baseline is None:
+        raise ValueError("action='verify' requires baseline digests.")
+    paths = verify_understanding(kb_root, units, baseline, execution_id=execution_id)
+    return json.dumps(
+        {
+            "status": "pass",
+            "count": len(paths),
+            "evidence_paths": [str(path.relative_to(kb_root)) for path in paths],
+        }
+    )
+
+
+aim_understanding = Tool(
+    _aim_understanding,
+    name="aim_understanding",
+    description=(
+        "Snapshot AIM unit documentation and verify same-execution understanding "
+        "changes before phase transition."
+    ),
+    tiers=("aim",),
+    deferred=True,
+    deferred_summary="Verify same-attempt AIM understanding evidence.",
+)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # aim_claim
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -860,6 +951,63 @@ aim_claim = Tool(
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# aim_capture
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+async def _aim_capture(
+    unit: Annotated[str, Field(description="Unit key as module/name.")],
+    case_set: Annotated[
+        str, Field(description="Golden case set to capture from the legacy source.")
+    ] = "smoke",
+    overwrite: Annotated[
+        bool,
+        Field(
+            description="Replace an existing expected baseline after explicit approval."
+        ),
+    ] = False,
+) -> str:
+    from app.services.aim.runners import capture_legacy_case
+
+    async with db_module.async_session_factory() as db:
+        _project_id, kb_root = await _resolve_project_and_kb_root(db)
+    result = await capture_legacy_case(
+        kb_root,
+        unit,
+        case_set,
+        overwrite=overwrite,
+    )
+    module, name = unit.split("/", 1)
+    expected_dir = (
+        kb_root / "golden" / "units" / module / name / "cases" / case_set / "expected"
+    )
+    return json.dumps(
+        {
+            "status": "captured",
+            "unit": result.unit,
+            "case_set": result.case_set,
+            "expected_dir": str(expected_dir),
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        }
+    )
+
+
+aim_capture = Tool(
+    _aim_capture,
+    name="aim_capture",
+    description=(
+        "Run the rulebook legacy runner into staging and promote fresh output "
+        "to a validated golden case. Existing expected output is protected "
+        "unless overwrite is explicitly approved."
+    ),
+    tiers=("aim",),
+    deferred=True,
+    deferred_summary="Capture a trusted legacy golden baseline.",
+)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # aim_execute
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -1001,6 +1149,7 @@ def _compare_error(kind: str, message: str) -> str:
             "verdict": "error",
             "diff_count": 0,
             "clusters": [],
+            "report_path": None,
             "error_kind": kind,
             "error": message,
         }

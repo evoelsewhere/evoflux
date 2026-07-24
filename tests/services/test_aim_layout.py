@@ -141,3 +141,26 @@ def test_manifest_detection_and_identity_auto_map(tmp_path):
         "aim_target_source": str(root / "aim_target_source")
     }
     assert any("repo-elsewhere" in warning for warning in detection.warnings)
+
+
+def test_manifest_identity_auto_maps_nested_target_repo(tmp_path):
+    from app.services.aim.kb_store import create_manifest, scaffold_kb_from_template
+
+    root = _make_layout(tmp_path, sources=("repo-a",))
+    target = root / "aim_target_source" / "sqlite-rust"
+    target.mkdir()
+    kb = root / document_repo_name("core-batch")
+    scaffold_kb_from_template(kb)
+    create_manifest(
+        kb,
+        rulebook_id="sqlite-c-to-rust-rulebook",
+        rulebook_version="0.2.0",
+        source_identities=["repo-a"],
+        target_identities=["sqlite-rust"],
+    )
+
+    detection = detect_aim_layout(root)
+
+    assert detection.target_path == str(target)
+    assert detection.target_identity_map == {"sqlite-rust": str(target)}
+    assert not any("sqlite-rust" in warning for warning in detection.warnings)

@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.services.aim.models import AimManifest
 
@@ -18,13 +19,73 @@ RULEBOOK_DIRNAME = "rulebook"
 TEMPLATE_RULEBOOK_ID = "project-rulebook"
 
 
+class RulebookStack(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    stack: str = Field(min_length=1)
+    language: str | None = None
+    standard: str | None = None
+    edition: str | None = None
+    version: str | None = None
+    file_extensions: list[str] = Field(default_factory=list)
+
+    @field_validator("file_extensions")
+    @classmethod
+    def _validate_extensions(cls, values: list[str]) -> list[str]:
+        invalid = [value for value in values if not value.startswith(".")]
+        if invalid:
+            raise ValueError(f"file extensions must start with '.': {invalid}")
+        return values
+
+
+class RulebookWorkspaceActivation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    skills: list[str] = Field(default_factory=list)
+    workflows: list[str] = Field(default_factory=list)
+    commands: list[str] = Field(default_factory=list)
+
+    @field_validator("skills", "workflows", "commands")
+    @classmethod
+    def _validate_project_paths(cls, values: list[str], info) -> list[str]:
+        expected_root = Path(".evoflux") / info.field_name
+        invalid = [
+            value
+            for value in values
+            if Path(value).is_absolute()
+            or ".." in Path(value).parts
+            or not Path(value).is_relative_to(expected_root)
+        ]
+        if invalid:
+            raise ValueError(
+                f"{info.field_name} activation paths must be under "
+                f"{expected_root.as_posix()}/: {invalid}"
+            )
+        return values
+
+
 class RulebookManifest(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid")
 
     id: str = Field(min_length=1, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
     version: str = Field(min_length=1)
     description: str = ""
+    source: RulebookStack | None = None
+    target: RulebookStack | None = None
+    unit_kinds: list[str] = Field(default_factory=list)
+    parser_strategy: Literal["tree_sitter", "structural", "none"] = "none"
+    capabilities: dict[str, str] = Field(default_factory=dict)
     compare_default_profile: str = "default"
+    canonicalizers: dict[str, str] = Field(default_factory=dict)
+    extractors: list[str] = Field(default_factory=list)
+    runners: dict[str, str] = Field(default_factory=dict)
+    mappings: dict[str, str] = Field(default_factory=dict)
+    assets: dict[str, str] = Field(default_factory=dict)
+    target_base: str | None = None
+    ui_patterns: str | None = None
+    workspace_activation: RulebookWorkspaceActivation = Field(
+        default_factory=RulebookWorkspaceActivation
+    )
 
 
 def rulebook_dir(kb_root: Path) -> Path:
@@ -88,6 +149,15 @@ def validate_rulebook_identity(
     rulebook = read_rulebook_manifest(kb_root)
     _assert_rulebook_identity(project, rulebook)
     return rulebook
+
+
+def validate_unit_kind(kb_root: Path, kind: str) -> None:
+    manifest = validate_rulebook_identity(kb_root)
+    if manifest.unit_kinds and kind not in manifest.unit_kinds:
+        raise ValueError(
+            f"Unit kind {kind!r} is not allowed by rulebook {manifest.id}; "
+            f"expected one of {', '.join(manifest.unit_kinds)}."
+        )
 
 
 def project_rulebook_id(project_name: str) -> str:

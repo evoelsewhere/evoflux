@@ -24,8 +24,9 @@ The target base already exists. A solution architect scaffolded it before this p
 ## Per unit, you produce
 
 1. **`mapping/<unit>.md` in the KB**: which target module/class/service this unit becomes, how its interfaces map, which business rules it must implement — cited by ID (`BR-<MOD>-####`), never paraphrased — and any deviations from a naive translation with the reasoning. Read the unit's `modules/<module>/<unit>.md` doc and its cited rules first; the local rulebook's `mappings/` directory has the project construct table to follow.
-2. **ADRs for deliberate deviations** (`decisions/ADR-###.md`): if a legacy quirk shouldn't survive (an actual bug that was never a "feature"), record the decision as an ADR cited from the mapping — don't leave it implicit.
-3. Link the mapping: `aim_units action=add_link from_ref='unit:<module>/<name>' to_ref='doc:mapping/<unit>.md' link_kind='designed_by'` (optional but cheap traceability).
+2. **`mapping/<module>/<unit>.verify.command`**: an executable, deterministic command that runs from the target repository, exits non-zero on failure, and verifies the exact mapped unit. It may reference tests or build targets that conversion will implement, but it must not implement target behavior itself.
+3. **ADRs for deliberate deviations** (`decisions/ADR-###.md`): if a legacy quirk shouldn't survive (an actual bug that was never a "feature"), record the decision as an ADR cited from the mapping — don't leave it implicit.
+4. Link the mapping: `aim_units action=add_link from_ref='unit:<module>/<name>' to_ref='doc:mapping/<unit>.md' link_kind='designed_by'` (optional but cheap traceability).
 
 Only cite **confirmed** rules as requirements. If a rule you need is still `status: candidate`, say so in the mapping and in your gate summary — assuming an unconfirmed rule's intent is how migrations ship the wrong behavior with full confidence.
 

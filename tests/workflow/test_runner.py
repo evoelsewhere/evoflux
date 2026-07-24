@@ -126,6 +126,43 @@ async def test_headless_walk_runs_to_completion_with_rows(setup_db, progress_eve
 
 
 @pytest.mark.asyncio
+async def test_outputs_omit_only_keys_from_skipped_branches(setup_db):
+    from app.core import db as db_module
+    from app.models.workflow import WorkflowExecution
+
+    runner = WorkflowRunner()
+    definition = parse_definition("""
+schema_version: 1
+name: partial-outputs
+scope: forge
+nodes:
+    - { id: route, kind: switch, value: selected }
+    - { id: selected, kind: transform, set: { result: kept } }
+    - { id: skipped, kind: transform, set: { result: omitted } }
+edges:
+    - { from: route, to: selected, when: selected }
+    - { from: route, to: skipped, when: skipped }
+outputs:
+    always: "{{nodes.selected.output.result}}"
+    branch_only: "{{nodes.skipped.output.result}}"
+""")
+    session_id = "06a58f00-0000-7000-8000-000000000099"
+
+    state = await runner.start(
+        definition,
+        definition_hash="0" * 64,
+        session_id=session_id,
+        inputs={},
+        scope_workspace=None,
+    )
+    await _wait_done(runner, session_id)
+
+    async with db_module.async_session_factory() as db:
+        execution = await db.get(WorkflowExecution, state.execution_id)
+        assert execution.outputs == {"always": "kept"}
+
+
+@pytest.mark.asyncio
 async def test_template_failure_fails_execution(setup_db):
     from app.core import db as db_module
     from app.models.workflow import WorkflowExecution

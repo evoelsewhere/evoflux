@@ -19,7 +19,7 @@ for changing models, tools, MCP servers, plugins, or other agent configuration.
 EvoFlux discovers skills from these roots, in order. The first skill with a
 given `name` wins:
 
-1. `{cwd}/.EvoFlux/skills/{skill-name}/SKILL.md`
+1. `{cwd}/.evoflux/skills/{skill-name}/SKILL.md`
 2. `{cwd}/.opencode/skills/{skill-name}/SKILL.md`
 3. `{SKILLS_DIR}/{skill-name}/SKILL.md`
 4. `~/.config/opencode/skills/{skill-name}/SKILL.md`

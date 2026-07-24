@@ -211,6 +211,7 @@ class CanonicalProfile(BaseModel):
 
     id: str
     description: str = ""
+    mode: Literal["text", "binary"] = "text"
     encoding_default: str = "utf-8"
     #: Codepage tried when a file fails to decode as ``encoding_default`` —
     #: e.g. ``cp037`` (EBCDIC) or ``windows-1252`` for legacy output whose
@@ -235,6 +236,7 @@ class CanonicalProfile(BaseModel):
         return cls(
             id=data["id"],
             description=data.get("description", ""),
+            mode=data.get("mode", "text"),
             encoding_default=encoding.get("default", "utf-8"),
             encoding_legacy_fallback=encoding.get("legacy_fallback", "") or "",
             mask=[CanonicalMaskRule(**m) for m in data.get("mask", []) or []],

@@ -34,9 +34,12 @@ import {
   CornerDownLeft,
   FileText,
   Loader2,
+  Maximize2,
   MessageSquareText,
+  Minus,
   OctagonX,
   Play,
+  Plus,
   Repeat,
   ShieldCheck,
   Shuffle,
@@ -113,11 +116,13 @@ function WorkflowInputField({
   value,
   onChange,
   unitOptions,
+  waveOptions,
 }: {
   spec: WorkflowInputSpec
   value: unknown
   onChange: (value: unknown) => void
-  unitOptions: { key: string; phase: string }[]
+  unitOptions: { key: string; phase: string; kind: string; wave: number | null }[]
+  waveOptions: { wave: number; count: number }[]
 }) {
   const label = spec.name
     .split('_')
@@ -126,7 +131,7 @@ function WorkflowInputField({
 
   if (spec.name === 'unit') {
     return (
-      <label className="flex min-w-48 flex-col gap-1 text-xs text-(--color-text-muted)">
+      <label className="flex min-w-52 flex-col gap-1 text-xs text-(--color-text-muted)">
         {label}
         {unitOptions.length > 0 ? (
           <Combobox
@@ -135,10 +140,16 @@ function WorkflowInputField({
             onValueChange={(v) => onChange(v ?? '')}
             items={unitOptions.map((unit) => ({
               value: unit.key,
-              label: `${unit.key} · ${unit.phase}`,
+              label: unit.key,
+              meta: unit.phase,
+              description: `${unit.kind}${unit.wave === null ? '' : ` · wave ${unit.wave}`}`,
+              keywords: `${unit.kind} ${unit.phase} ${unit.wave ?? ''}`,
             }))}
             placeholder="Select a unit…"
             emptyText="No unit matches."
+            ariaLabel={label}
+            searchPlaceholder="Search units…"
+            className="w-60"
           />
         ) : (
           <input
@@ -153,21 +164,53 @@ function WorkflowInputField({
     )
   }
 
-  if (spec.type === 'enum') {
+  if (spec.name === 'wave' && waveOptions.length > 0) {
+    const selectedWave =
+      value !== undefined && value !== null && value !== '' ? String(value) : null
     return (
-      <label className="flex flex-col gap-1 text-xs text-(--color-text-muted)">
+      <label className="flex w-32 flex-col gap-1 text-xs text-(--color-text-muted)">
         {label}
-        <select
-          value={(value as string) ?? spec.default ?? spec.options?.[0] ?? ''}
-          onChange={(e) => onChange(e.target.value)}
-          className="rounded-md border border-(--color-border) bg-(--bg-subtle) px-2 py-1.5 text-xs text-(--color-text)"
-        >
-          {(spec.options ?? []).map((opt) => (
-            <option key={opt} value={opt}>
-              {opt}
-            </option>
-          ))}
-        </select>
+        <Combobox
+          size="sm"
+          value={selectedWave}
+          onValueChange={(selected) => onChange(selected ?? '')}
+          items={waveOptions.map((option) => ({
+            value: String(option.wave),
+            label: `Wave ${option.wave}`,
+            meta: `${option.count} units`,
+            keywords: `${option.wave} ${option.count}`,
+          }))}
+          placeholder="Select wave…"
+          emptyText="No wave matches."
+          ariaLabel={label}
+          searchPlaceholder="Search waves…"
+        />
+      </label>
+    )
+  }
+
+  if (spec.type === 'enum') {
+    const options = spec.options ?? []
+    return (
+      <label className="flex min-w-32 flex-col gap-1 text-xs text-(--color-text-muted)">
+        {label}
+        <Combobox
+          size="sm"
+          value={typeof value === 'string' && value ? value : null}
+          onValueChange={(selected) => onChange(selected ?? '')}
+          items={options.map((option) => ({
+            value: option,
+            label: option
+              .split(/[-_]/)
+              .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+              .join(' '),
+            meta: option,
+          }))}
+          placeholder={`Select ${label.toLocaleLowerCase()}…`}
+          emptyText={`No ${label.toLocaleLowerCase()} matches.`}
+          ariaLabel={label}
+          searchPlaceholder={`Search ${label.toLocaleLowerCase()}…`}
+        />
       </label>
     )
   }
@@ -298,13 +341,39 @@ export function AimPipelinesPanel({
   // shapes. Seeded from the prefill regardless of which pipeline ends up
   // selected; a key with no matching input on the current workflow is
   // simply unused.
-  const [inputValues, setInputValues] = useState<Record<string, unknown>>(() => ({
-    unit: prefill?.unit ?? '',
-    wave: prefill?.wave != null ? String(prefill.wave) : '',
-  }))
+  const [inputValuesByPipeline, setInputValuesByPipeline] = useState<
+    Record<string, Record<string, unknown>>
+  >(() =>
+    prefill?.pipeline
+      ? {
+          [prefill.pipeline]: {
+            unit: prefill.unit ?? '',
+            wave: prefill.wave != null ? String(prefill.wave) : '',
+          },
+        }
+      : {},
+  )
+  const inputValues = useMemo(() => {
+    const values = pipelineName ? { ...(inputValuesByPipeline[pipelineName] ?? {}) } : {}
+    for (const spec of selectedWorkflow?.inputs ?? []) {
+      if (values[spec.name] !== undefined) continue
+      if (spec.default !== undefined) values[spec.name] = spec.default
+      else if (spec.type === 'enum') values[spec.name] = spec.options?.[0] ?? ''
+      else if (spec.type === 'boolean') values[spec.name] = false
+      else values[spec.name] = ''
+    }
+    return values
+  }, [inputValuesByPipeline, pipelineName, selectedWorkflow])
   const setInputValue = useCallback((name: string, value: unknown) => {
-    setInputValues((prev) => ({ ...prev, [name]: value }))
-  }, [])
+    if (!pipelineName) return
+    setInputValuesByPipeline((previous) => ({
+      ...previous,
+      [pipelineName]: {
+        ...(previous[pipelineName] ?? {}),
+        [name]: value,
+      },
+    }))
+  }, [pipelineName])
 
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -349,10 +418,25 @@ export function AimPipelinesPanel({
   const unitOptions = useMemo(
     () =>
       units
-        .map((u) => ({ key: `${u.module}/${u.name}`, phase: u.phase }))
+        .map((u) => ({
+          key: `${u.module}/${u.name}`,
+          phase: u.phase,
+          kind: u.kind,
+          wave: u.wave,
+        }))
         .sort((a, b) => a.key.localeCompare(b.key)),
     [units],
   )
+  const waveOptions = useMemo(() => {
+    const counts = new Map<number, number>()
+    for (const unit of units) {
+      if (unit.wave === null) continue
+      counts.set(unit.wave, (counts.get(unit.wave) ?? 0) + 1)
+    }
+    return [...counts.entries()]
+      .sort(([left], [right]) => left - right)
+      .map(([wave, count]) => ({ wave, count }))
+  }, [units])
 
   const readinessInputs = useMemo(() => {
     const unit = typeof inputValues.unit === 'string' ? inputValues.unit.trim() : undefined
@@ -592,7 +676,7 @@ export function AimPipelinesPanel({
 
         {/* Trigger form */}
         <div className="flex flex-wrap items-end gap-2 border-b border-(--color-border) p-4">
-          <label className="flex flex-col gap-1 text-xs text-(--color-text-muted)">
+          <label className="flex w-full min-w-0 flex-col gap-1 text-xs text-(--color-text-muted) sm:w-auto">
             Pipeline
             <Combobox
               size="sm"
@@ -601,10 +685,15 @@ export function AimPipelinesPanel({
               items={aimWorkflows.map((wf) => ({
                 value: wf.name,
                 label: pipelineDisplayName(wf.name),
+                description: wf.description,
+                meta: `${wf.node_count} nodes · ${wf.root}`,
+                keywords: `${wf.name} ${wf.scope}`,
               }))}
               placeholder={workflowsQ.isLoading ? 'Loading…' : 'Select a pipeline…'}
               emptyText="No pipelines found."
-              className="min-w-44"
+              ariaLabel="Pipeline"
+              searchPlaceholder="Search pipelines…"
+              className="w-full sm:w-[320px]"
             />
           </label>
           {(selectedWorkflow?.inputs ?? []).map((spec) => (
@@ -614,6 +703,7 @@ export function AimPipelinesPanel({
               value={inputValues[spec.name]}
               onChange={(value) => setInputValue(spec.name, value)}
               unitOptions={unitOptions}
+              waveOptions={waveOptions}
             />
           ))}
           <Button size="sm" onClick={() => handleRun()} disabled={!canRun || starting}>
@@ -820,19 +910,609 @@ export function AimPipelinesPanel({
 function NodeKindIcon({ kind }: { kind: string }) {
   switch (kind) {
     case 'agent':
-      return <Bot size={11} className="shrink-0 text-(--color-accent)" />
+      return <Bot size={14} className="shrink-0 text-(--accent-purple)" />
     case 'gate':
     case 'input':
-      return <CirclePause size={11} className="shrink-0 text-(--color-warning,orange)" />
+      return <CirclePause size={14} className="shrink-0 text-(--color-warning,orange)" />
     case 'tool':
-      return <Wrench size={11} className="shrink-0 text-(--color-text-subtle)" />
+      return <Wrench size={14} className="shrink-0 text-(--color-info)" />
     case 'foreach':
-      return <Repeat size={11} className="shrink-0 text-(--color-text-subtle)" />
+      return <Repeat size={14} className="shrink-0 text-(--color-success)" />
     case 'notify':
-      return <Bell size={11} className="shrink-0 text-(--color-text-subtle)" />
+      return <Bell size={14} className="shrink-0 text-(--color-text-muted)" />
     default:
-      return <Shuffle size={11} className="shrink-0 text-(--color-text-subtle)" />
+      return <Shuffle size={14} className="shrink-0 text-(--color-accent)" />
   }
+}
+
+interface WorkflowCanvasNode {
+  id: string
+  kind: string
+  tool?: string
+  title?: string
+  prompt?: string
+  body?: string
+  message?: string
+  question?: string
+  items?: string
+  value?: string
+  choices?: string[]
+  subagents?: string[]
+  args?: Record<string, unknown>
+}
+
+interface WorkflowCanvasEdge {
+  from: string
+  to: string
+  when?: string
+}
+
+interface PositionedWorkflowNode extends WorkflowCanvasNode {
+  x: number
+  y: number
+}
+
+const WORKFLOW_NODE_WIDTH = 186
+const WORKFLOW_NODE_HEIGHT = 66
+const WORKFLOW_COLUMN_GAP = 78
+const WORKFLOW_ROW_GAP = 30
+const WORKFLOW_CANVAS_PADDING = 28
+const WORKFLOW_VIEWPORT_HEIGHT = 272
+const WORKFLOW_MIN_ZOOM = 0.65
+
+function layoutWorkflowGraph(nodes: WorkflowCanvasNode[], edges: WorkflowCanvasEdge[]) {
+  const nodeIds = new Set(nodes.map((node) => node.id))
+  const outgoing = new Map<string, string[]>()
+  const indegree = new Map(nodes.map((node) => [node.id, 0]))
+  const level = new Map(nodes.map((node) => [node.id, 0]))
+
+  for (const edge of edges) {
+    if (!nodeIds.has(edge.from) || !nodeIds.has(edge.to)) continue
+    outgoing.set(edge.from, [...(outgoing.get(edge.from) ?? []), edge.to])
+    indegree.set(edge.to, (indegree.get(edge.to) ?? 0) + 1)
+  }
+
+  const queue = nodes.filter((node) => indegree.get(node.id) === 0).map((node) => node.id)
+  const visited = new Set<string>()
+  while (queue.length > 0) {
+    const id = queue.shift() as string
+    if (visited.has(id)) continue
+    visited.add(id)
+    for (const target of outgoing.get(id) ?? []) {
+      level.set(target, Math.max(level.get(target) ?? 0, (level.get(id) ?? 0) + 1))
+      indegree.set(target, (indegree.get(target) ?? 1) - 1)
+      if (indegree.get(target) === 0) queue.push(target)
+    }
+  }
+
+  // Invalid cyclic definitions are surfaced elsewhere; keep their preview usable.
+  let fallbackLevel = Math.max(0, ...level.values())
+  for (const node of nodes) {
+    if (!visited.has(node.id)) {
+      fallbackLevel += 1
+      level.set(node.id, fallbackLevel)
+    }
+  }
+
+  const columns = new Map<number, WorkflowCanvasNode[]>()
+  for (const node of nodes) {
+    const column = level.get(node.id) ?? 0
+    columns.set(column, [...(columns.get(column) ?? []), node])
+  }
+  const maxRows = Math.max(1, ...[...columns.values()].map((column) => column.length))
+  const rowStride = WORKFLOW_NODE_HEIGHT + WORKFLOW_ROW_GAP
+  const positioned: PositionedWorkflowNode[] = []
+  for (const [columnIndex, columnNodes] of columns) {
+    const columnOffset = ((maxRows - columnNodes.length) * rowStride) / 2
+    columnNodes.forEach((node, rowIndex) => {
+      positioned.push({
+        ...node,
+        x: WORKFLOW_CANVAS_PADDING + columnIndex * (WORKFLOW_NODE_WIDTH + WORKFLOW_COLUMN_GAP),
+        y: WORKFLOW_CANVAS_PADDING + columnOffset + rowIndex * rowStride,
+      })
+    })
+  }
+
+  const maxLevel = Math.max(0, ...level.values())
+  return {
+    nodes: positioned,
+    width:
+      WORKFLOW_CANVAS_PADDING * 2 +
+      WORKFLOW_NODE_WIDTH +
+      maxLevel * (WORKFLOW_NODE_WIDTH + WORKFLOW_COLUMN_GAP),
+    height: Math.max(
+      210,
+      WORKFLOW_CANVAS_PADDING * 2 + maxRows * WORKFLOW_NODE_HEIGHT + (maxRows - 1) * WORKFLOW_ROW_GAP,
+    ),
+  }
+}
+
+function workflowNodeTone(kind: string): string {
+  switch (kind) {
+    case 'gate':
+    case 'input':
+      return 'border-(--color-warning,orange)/60 bg-(--color-warning-subtle)/25'
+    case 'agent':
+      return 'border-(--accent-purple)/55 bg-(--accent-purple-soft)/20'
+    case 'tool':
+      return 'border-(--color-info)/50 bg-(--color-info-subtle)/20'
+    case 'foreach':
+      return 'border-(--color-success)/50 bg-(--color-success-subtle)/20'
+    default:
+      return 'border-(--color-border)'
+  }
+}
+
+function workflowNodeAccent(kind: string): string {
+  switch (kind) {
+    case 'gate':
+    case 'input':
+      return 'bg-(--color-warning,orange)'
+    case 'agent':
+      return 'bg-(--accent-purple)'
+    case 'tool':
+      return 'bg-(--color-info)'
+    case 'foreach':
+      return 'bg-(--color-success)'
+    default:
+      return 'bg-(--color-text-muted)'
+  }
+}
+
+function workflowNodeIconTone(kind: string): string {
+  switch (kind) {
+    case 'gate':
+    case 'input':
+      return 'border-(--color-warning,orange)/30 bg-(--color-warning-subtle)/35'
+    case 'agent':
+      return 'border-(--accent-purple)/30 bg-(--accent-purple-soft)/35'
+    case 'tool':
+      return 'border-(--color-info)/30 bg-(--color-info-subtle)/35'
+    case 'foreach':
+      return 'border-(--color-success)/30 bg-(--color-success-subtle)/35'
+    default:
+      return 'border-(--color-border) bg-(--bg-key)'
+  }
+}
+
+function workflowNodeSummary(node: WorkflowCanvasNode): string {
+  switch (node.kind) {
+    case 'agent':
+      return node.subagents?.length ? node.subagents.join(', ') : 'Lead agent'
+    case 'gate':
+      return node.title ?? `${node.choices?.length ?? 0} decision options`
+    case 'input':
+      return node.question ?? 'User input'
+    case 'tool':
+      return node.tool ?? 'Deterministic action'
+    case 'foreach':
+      return node.items ? `Each item · ${node.items}` : 'Sequential batch'
+    case 'notify':
+      return node.title ?? node.message ?? 'Notification'
+    case 'switch':
+      return node.value ? `Route · ${node.value}` : 'Conditional route'
+    default:
+      return 'Workflow step'
+  }
+}
+
+function workflowNodeInstruction(node: WorkflowCanvasNode): string | null {
+  return node.prompt ?? node.body ?? node.message ?? node.question ?? null
+}
+
+function orthogonalWorkflowEdge(
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
+  outerLaneY?: number,
+) {
+  const roundedPath = (points: Array<{ x: number; y: number }>) => {
+    if (points.length < 2) return ''
+    const commands = [`M ${points[0].x} ${points[0].y}`]
+    for (let index = 1; index < points.length; index += 1) {
+      const current = points[index]
+      const next = points[index + 1]
+      if (!next) {
+        commands.push(`L ${current.x} ${current.y}`)
+        continue
+      }
+      const previous = points[index - 1]
+      const incomingLength = Math.hypot(current.x - previous.x, current.y - previous.y)
+      const outgoingLength = Math.hypot(next.x - current.x, next.y - current.y)
+      const radius = Math.min(9, incomingLength / 2, outgoingLength / 2)
+      const before = {
+        x: current.x - ((current.x - previous.x) / incomingLength) * radius,
+        y: current.y - ((current.y - previous.y) / incomingLength) * radius,
+      }
+      const after = {
+        x: current.x + ((next.x - current.x) / outgoingLength) * radius,
+        y: current.y + ((next.y - current.y) / outgoingLength) * radius,
+      }
+      commands.push(
+        `L ${before.x} ${before.y}`,
+        `Q ${current.x} ${current.y} ${after.x} ${after.y}`,
+      )
+    }
+    return commands.join(' ')
+  }
+
+  if (Math.abs(endY - startY) < 1) {
+    return {
+      path: `M ${startX} ${startY} H ${endX}`,
+      labelX: (startX + endX) / 2,
+      labelY: startY - 7,
+    }
+  }
+  if (outerLaneY !== undefined) {
+    const exitX = startX + 28
+    const entryX = endX - 28
+    return {
+      path: roundedPath([
+        { x: startX, y: startY },
+        { x: exitX, y: startY },
+        { x: exitX, y: outerLaneY },
+        { x: entryX, y: outerLaneY },
+        { x: entryX, y: endY },
+        { x: endX, y: endY },
+      ]),
+      labelX: (exitX + entryX) / 2,
+      labelY: outerLaneY - 7,
+    }
+  }
+  const foldX = startX + (endX - startX) * 0.5
+  return {
+    path: roundedPath([
+      { x: startX, y: startY },
+      { x: foldX, y: startY },
+      { x: foldX, y: endY },
+      { x: endX, y: endY },
+    ]),
+    labelX: (foldX + endX) / 2,
+    labelY: endY - 8,
+  }
+}
+
+function WorkflowCanvasPreview({
+  nodes,
+  edges,
+}: {
+  nodes: WorkflowCanvasNode[]
+  edges: WorkflowCanvasEdge[]
+}) {
+  const viewportRef = useRef<HTMLDivElement>(null)
+  const [zoom, setZoom] = useState(0.82)
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(nodes[0]?.id ?? null)
+  const layout = useMemo(() => layoutWorkflowGraph(nodes, edges), [edges, nodes])
+  const nodeById = useMemo(
+    () => new Map(layout.nodes.map((node) => [node.id, node])),
+    [layout.nodes],
+  )
+  const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? nodes[0] ?? null
+  const incomingEdges = selectedNode
+    ? edges.filter((edge) => edge.to === selectedNode.id)
+    : []
+  const outgoingEdges = selectedNode
+    ? edges.filter((edge) => edge.from === selectedNode.id)
+    : []
+
+  const fit = () => {
+    const viewportWidth = viewportRef.current?.clientWidth ?? layout.width
+    setZoom(Math.max(WORKFLOW_MIN_ZOOM, Math.min(1, (viewportWidth - 28) / layout.width)))
+    viewportRef.current?.scrollTo({ left: 0, top: 0, behavior: 'smooth' })
+  }
+
+  return (
+    <div className="overflow-hidden rounded-md border border-(--color-border) bg-(--bg-page)">
+      <div className="flex h-8 items-center justify-between border-b border-(--color-border) bg-(--bg-subtle)/70 px-2.5">
+        <span className="font-mono text-[9px] text-(--color-text-subtle)">
+          graph · {nodes.length} nodes · {edges.length} routes
+        </span>
+        <div className="flex items-center gap-0.5">
+          <button
+            type="button"
+            onClick={() => setZoom((value) => Math.max(WORKFLOW_MIN_ZOOM, value - 0.1))}
+            className="flex h-5 w-5 items-center justify-center rounded text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)"
+            aria-label="Zoom workflow graph out"
+            title="Zoom out"
+          >
+            <Minus size={10} />
+          </button>
+          <span className="w-9 text-center font-mono text-[9px] text-(--color-text-subtle)">
+            {Math.round(zoom * 100)}%
+          </span>
+          <button
+            type="button"
+            onClick={() => setZoom((value) => Math.min(1.2, value + 0.1))}
+            className="flex h-5 w-5 items-center justify-center rounded text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)"
+            aria-label="Zoom workflow graph in"
+            title="Zoom in"
+          >
+            <Plus size={10} />
+          </button>
+          <button
+            type="button"
+            onClick={fit}
+            className="ml-1 flex h-5 w-5 items-center justify-center rounded text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)"
+            aria-label="Fit workflow graph"
+            title="Fit graph"
+          >
+            <Maximize2 size={10} />
+          </button>
+        </div>
+      </div>
+
+      <div
+        ref={viewportRef}
+        className="h-[272px] overflow-auto"
+        style={{
+          backgroundImage:
+            'radial-gradient(color-mix(in srgb, var(--color-border) 80%, transparent) 1px, transparent 1px)',
+          backgroundSize: '16px 16px',
+        }}
+      >
+        <div
+          className="relative"
+          style={{
+            width: layout.width * zoom,
+            height: Math.max(WORKFLOW_VIEWPORT_HEIGHT, layout.height * zoom),
+          }}
+        >
+          <div
+            className="absolute left-0 top-0 origin-top-left"
+            style={{
+              width: layout.width,
+              height: layout.height,
+              top: Math.max(0, (WORKFLOW_VIEWPORT_HEIGHT - layout.height * zoom) / 2),
+              transform: `scale(${zoom})`,
+            }}
+          >
+            <svg
+              className="pointer-events-none absolute inset-0 h-full w-full"
+              viewBox={`0 0 ${layout.width} ${layout.height}`}
+              aria-hidden="true"
+            >
+              <defs>
+                <marker
+                  id="workflow-edge-arrow"
+                  markerWidth="8"
+                  markerHeight="8"
+                  refX="7"
+                  refY="4"
+                  orient="auto"
+                >
+                  <path d="M0,0 L8,4 L0,8 Z" fill="var(--color-text-muted)" />
+                </marker>
+                <marker
+                  id="workflow-edge-arrow-branch"
+                  markerWidth="8"
+                  markerHeight="8"
+                  refX="7"
+                  refY="4"
+                  orient="auto"
+                >
+                  <path d="M0,0 L8,4 L0,8 Z" fill="var(--color-warning)" />
+                </marker>
+              </defs>
+              {edges.map((edge, index) => {
+                const source = nodeById.get(edge.from)
+                const target = nodeById.get(edge.to)
+                if (!source || !target) return null
+                const startX = source.x + WORKFLOW_NODE_WIDTH
+                const startY = source.y + WORKFLOW_NODE_HEIGHT / 2
+                const endX = target.x
+                const endY = target.y + WORKFLOW_NODE_HEIGHT / 2
+                const skipsColumns =
+                  endX - startX >
+                  (WORKFLOW_NODE_WIDTH + WORKFLOW_COLUMN_GAP) * 1.45
+                const outerLaneY = skipsColumns
+                  ? endY >= startY
+                    ? layout.height - 10
+                    : 10
+                  : undefined
+                const routed = orthogonalWorkflowEdge(
+                  startX,
+                  startY,
+                  endX,
+                  endY,
+                  outerLaneY,
+                )
+                const conditional = Boolean(edge.when && edge.when !== '*')
+                const connected = Boolean(
+                  selectedNode &&
+                    (edge.from === selectedNode.id || edge.to === selectedNode.id),
+                )
+                return (
+                  <g
+                    key={`${edge.from}-${edge.to}-${edge.when ?? index}`}
+                    opacity={selectedNode ? (connected ? 1 : 0.28) : 1}
+                  >
+                    <path
+                      d={routed.path}
+                      fill="none"
+                      stroke={conditional ? 'var(--color-warning)' : 'var(--color-text-muted)'}
+                      strokeOpacity={conditional ? 0.82 : 0.68}
+                      strokeWidth={connected ? 2 : 1.35}
+                      strokeLinejoin="round"
+                      markerEnd={
+                        conditional
+                          ? 'url(#workflow-edge-arrow-branch)'
+                          : 'url(#workflow-edge-arrow)'
+                      }
+                    />
+                    {conditional && (
+                      <text
+                        x={routed.labelX}
+                        y={routed.labelY}
+                        textAnchor="middle"
+                        fill="var(--color-warning)"
+                        stroke="var(--bg-page)"
+                        strokeWidth="4"
+                        paintOrder="stroke"
+                        fontSize="9"
+                        fontWeight="600"
+                        fontFamily="var(--font-mono)"
+                      >
+                        {edge.when}
+                      </text>
+                    )}
+                  </g>
+                )
+              })}
+            </svg>
+
+            {layout.nodes.map((node) => (
+              <button
+                type="button"
+                key={node.id}
+                onClick={() => setSelectedNodeId(node.id)}
+                aria-pressed={selectedNode?.id === node.id}
+                className={cn(
+                  'absolute rounded-lg border bg-(--bg-card) text-left shadow-sm outline-none transition-[border-color,box-shadow,opacity] hover:border-(--color-border-strong) focus-visible:ring-2 focus-visible:ring-(--focus-ring)/40',
+                  workflowNodeTone(node.kind),
+                  selectedNode?.id === node.id
+                    ? 'ring-2 ring-(--color-accent)/35 shadow-md'
+                    : selectedNode && 'opacity-80 hover:opacity-100',
+                )}
+                style={{
+                  left: node.x,
+                  top: node.y,
+                  width: WORKFLOW_NODE_WIDTH,
+                  height: WORKFLOW_NODE_HEIGHT,
+                }}
+                title={`Inspect ${node.id}`}
+              >
+                <span className="absolute -left-[5px] top-[28px] h-2.5 w-2.5 rounded-full border-2 border-(--bg-page) bg-(--color-text-muted) shadow-sm" />
+                <span className={cn('absolute -right-[5px] top-[28px] h-2.5 w-2.5 rounded-full border-2 border-(--bg-page) shadow-sm', workflowNodeAccent(node.kind))} />
+                <span className="flex h-full min-w-0 items-center gap-2.5 px-3">
+                  <span
+                    className={cn(
+                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-md border',
+                      workflowNodeIconTone(node.kind),
+                    )}
+                  >
+                    <NodeKindIcon kind={node.kind} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[8px] font-semibold uppercase text-(--color-text-subtle)">
+                      {node.kind}
+                    </span>
+                    <span className="mt-0.5 line-clamp-2 block font-mono text-[11px] font-semibold leading-3.5 text-(--color-text)">
+                      {node.id}
+                    </span>
+                    <span className="mt-0.5 block truncate text-[8px] text-(--color-text-subtle)">
+                      {workflowNodeSummary(node)}
+                    </span>
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {selectedNode && (
+        <div className="border-t border-(--color-border) bg-(--bg-subtle)/45 p-3">
+          <div className="flex min-w-0 items-start gap-2.5">
+            <span
+              className={cn(
+                'flex h-8 w-8 shrink-0 items-center justify-center rounded-md border',
+                workflowNodeIconTone(selectedNode.kind),
+              )}
+            >
+              <NodeKindIcon kind={selectedNode.kind} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="font-mono text-xs font-semibold text-(--color-text)">
+                  {selectedNode.id}
+                </span>
+                <span className="rounded bg-(--bg-key) px-1.5 py-0.5 text-[8px] font-semibold uppercase text-(--color-text-subtle)">
+                  {selectedNode.kind}
+                </span>
+                {selectedNode.tool && (
+                  <span className="rounded bg-(--color-info-subtle)/35 px-1.5 py-0.5 font-mono text-[9px] text-(--color-info)">
+                    {selectedNode.tool}
+                  </span>
+                )}
+              </div>
+              <p className="mt-1 text-[10px] leading-4 text-(--color-text-muted)">
+                {workflowNodeSummary(selectedNode)}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[9px] text-(--color-text-subtle)">
+            <span className="font-semibold uppercase">Routes</span>
+            {incomingEdges.length === 0 && (
+              <span className="rounded border border-(--color-border) px-1.5 py-0.5">entry</span>
+            )}
+            {incomingEdges.map((edge) => (
+              <span
+                key={`in-${edge.from}-${edge.when ?? ''}`}
+                className="rounded border border-(--color-border) px-1.5 py-0.5 font-mono"
+              >
+                {edge.from} →
+              </span>
+            ))}
+            {outgoingEdges.map((edge) => (
+              <span
+                key={`out-${edge.to}-${edge.when ?? ''}`}
+                className={cn(
+                  'rounded border px-1.5 py-0.5 font-mono',
+                  edge.when && edge.when !== '*'
+                    ? 'border-(--color-warning,orange)/40 text-(--color-warning,orange)'
+                    : 'border-(--color-border)',
+                )}
+              >
+                → {edge.to}{edge.when && edge.when !== '*' ? ` · ${edge.when}` : ''}
+              </span>
+            ))}
+            {outgoingEdges.length === 0 && (
+              <span className="rounded border border-(--color-border) px-1.5 py-0.5">terminal</span>
+            )}
+          </div>
+
+          {(selectedNode.choices?.length || selectedNode.subagents?.length) && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {selectedNode.subagents?.map((agent) => (
+                <span key={agent} className="rounded bg-(--accent-purple-soft)/35 px-1.5 py-0.5 text-[9px] text-(--accent-purple)">
+                  agent · {agent}
+                </span>
+              ))}
+              {selectedNode.choices?.map((choice) => (
+                <span key={choice} className="rounded bg-(--color-warning-subtle)/35 px-1.5 py-0.5 text-[9px] text-(--color-warning,orange)">
+                  choice · {choice}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {workflowNodeInstruction(selectedNode) && (
+            <details className="mt-2 rounded border border-(--color-border) bg-(--bg-page)">
+              <summary className="cursor-pointer px-2 py-1.5 text-[9px] font-medium text-(--color-text-muted)">
+                View full instruction
+              </summary>
+              <pre className="max-h-36 overflow-auto whitespace-pre-wrap border-t border-(--color-border) p-2 font-mono text-[9px] leading-4 text-(--color-text-2)">
+                {workflowNodeInstruction(selectedNode)}
+              </pre>
+            </details>
+          )}
+
+          {selectedNode.args && Object.keys(selectedNode.args).length > 0 && (
+            <details className="mt-2 rounded border border-(--color-border) bg-(--bg-page)">
+              <summary className="cursor-pointer px-2 py-1.5 text-[9px] font-medium text-(--color-text-muted)">
+                View tool arguments
+              </summary>
+              <pre className="max-h-36 overflow-auto whitespace-pre-wrap border-t border-(--color-border) p-2 font-mono text-[9px] leading-4 text-(--color-text-2)">
+                {JSON.stringify(selectedNode.args, null, 2)}
+              </pre>
+            </details>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function PipelineInfoCard({
@@ -848,9 +1528,46 @@ function PipelineInfoCard({
 }) {
   if (!workflow) return null
   const nodes = Array.isArray(graph?.nodes)
-    ? (graph.nodes as Array<{ id?: string; kind?: string }>).filter(
-        (n) => typeof n?.id === 'string' && typeof n?.kind === 'string',
-      )
+    ? (graph.nodes as Array<Record<string, unknown>>)
+        .filter((node) => typeof node?.id === 'string' && typeof node?.kind === 'string')
+        .map((node): WorkflowCanvasNode => ({
+          id: node.id as string,
+          kind: node.kind as string,
+          tool: typeof node.tool === 'string' ? node.tool : undefined,
+          title: typeof node.title === 'string' ? node.title : undefined,
+          prompt: typeof node.prompt === 'string' ? node.prompt : undefined,
+          body: typeof node.body === 'string' ? node.body : undefined,
+          message: typeof node.message === 'string' ? node.message : undefined,
+          question: typeof node.question === 'string' ? node.question : undefined,
+          items: typeof node.items === 'string' ? node.items : undefined,
+          value: typeof node.value === 'string' ? node.value : undefined,
+          choices: Array.isArray(node.choices)
+            ? node.choices.filter((choice): choice is string => typeof choice === 'string')
+            : undefined,
+          subagents: Array.isArray(node.subagents)
+            ? node.subagents.filter((agent): agent is string => typeof agent === 'string')
+            : undefined,
+          args:
+            typeof node.args === 'object' && node.args !== null
+              ? (node.args as Record<string, unknown>)
+              : undefined,
+        }))
+    : []
+  const nodeIds = new Set(nodes.map((node) => node.id))
+  const edges = Array.isArray(graph?.edges)
+    ? (graph.edges as Array<{ from?: string; to?: string; when?: string }>)
+        .filter(
+          (edge) =>
+            typeof edge?.from === 'string' &&
+            typeof edge?.to === 'string' &&
+            nodeIds.has(edge.from) &&
+            nodeIds.has(edge.to),
+        )
+        .map((edge) => ({
+          from: edge.from as string,
+          to: edge.to as string,
+          when: typeof edge.when === 'string' ? edge.when : undefined,
+        }))
     : []
   const gateCount = nodes.filter((n) => n.kind === 'gate' || n.kind === 'input').length
 
@@ -865,29 +1582,9 @@ function PipelineInfoCard({
         )}
       </p>
 
-      {/* Node chain — declared order; gates in amber. */}
+      {/* Theme-aware DAG preview from the workflow's real nodes and edges. */}
       {nodes.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1">
-          {nodes.map((node, index) => (
-            <span key={node.id} className="flex items-center gap-1">
-              {index > 0 && (
-                <ArrowRight size={10} className="text-(--color-text-subtle)" aria-hidden="true" />
-              )}
-              <span
-                className={cn(
-                  'flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[10px]',
-                  node.kind === 'gate' || node.kind === 'input'
-                    ? 'border-(--color-warning,orange)/40 text-(--color-warning,orange)'
-                    : 'border-(--color-border) text-(--color-text-2)',
-                )}
-                title={`${node.kind} node`}
-              >
-                <NodeKindIcon kind={node.kind as string} />
-                {node.id}
-              </span>
-            </span>
-          ))}
-        </div>
+        <WorkflowCanvasPreview nodes={nodes} edges={edges} />
       )}
 
       {/* Inputs + readiness */}
@@ -1000,6 +1697,13 @@ export function RunMonitorPanel({
   const nodeRuns = detailQ.data?.node_runs ?? []
   const status = displayStatus(sessionRunning, execution)
   const active = status === 'running' || status === 'waiting_gate'
+  const completedNodeCount = nodeRuns.filter((node) =>
+    ['succeeded', 'failed', 'skipped'].includes(node.status),
+  ).length
+  const runningNode = [...nodeRuns].reverse().find((node) => node.status === 'running')
+  const executionInputs = Object.entries(execution?.inputs ?? {}).filter(
+    ([, value]) => value !== null && value !== undefined && value !== '',
+  )
 
   const [stopping, setStopping] = useState(false)
   const stop = async () => {
@@ -1016,21 +1720,37 @@ export function RunMonitorPanel({
   }
 
   return (
-    <AimSidePanel storageKey={STORAGE_KEYS.panels.aimMonitor} defaultWidth={420}>
-      <div className="flex items-center justify-between gap-2 border-b border-(--color-border) px-3 py-2">
-        <p className="min-w-0 truncate text-xs font-medium text-(--color-text)">
-          Run monitor
-          <span className="ml-1.5 font-normal text-(--color-text-subtle)">
-            {title ?? sessionId.slice(0, 8)}
-          </span>
-        </p>
-        <div className="flex shrink-0 items-center gap-1">
+    <AimSidePanel
+      storageKey={STORAGE_KEYS.panels.aimMonitor}
+      defaultWidth={500}
+      minWidth={340}
+      maxWidth={840}
+    >
+      <div className="sticky top-0 z-10 border-b border-(--color-border) bg-(--bg-page)/95 backdrop-blur-sm">
+        <div className="flex h-11 items-center justify-between gap-3 px-4">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-(--color-border) bg-(--bg-key) text-(--color-text-muted)">
+              <Activity size={13} aria-hidden="true" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase text-(--color-text-subtle)">
+                Run monitor
+              </p>
+              <p
+                className="truncate text-xs font-medium text-(--color-text)"
+                title={title ?? undefined}
+              >
+                {title ?? sessionId.slice(0, 8)}
+              </p>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
           {active && executionId && (
             <button
               type="button"
               onClick={() => void stop()}
               disabled={stopping}
-              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-(--color-error) transition-colors hover:bg-(--bg-key)"
+              className="flex h-7 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium text-(--color-error) transition-colors hover:bg-(--color-error)/10 disabled:opacity-50"
               title="Stop this run"
             >
               {stopping ? <Loader2 size={11} className="animate-spin" /> : <OctagonX size={11} />}
@@ -1041,76 +1761,154 @@ export function RunMonitorPanel({
             type="button"
             onClick={onClose}
             aria-label="Close run monitor"
-            className="rounded p-0.5 text-(--color-text-muted) hover:text-(--color-text)"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)"
           >
             <X size={13} />
           </button>
+          </div>
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {/* Execution summary */}
-        {!execution ? (
-          lookupExhausted ? (
-            <p className="text-xs text-(--color-text-subtle)">
-              No workflow execution is recorded for this run.
-            </p>
+        <section className="border-b border-(--color-border) bg-(--bg-subtle)/35 px-4 py-3">
+          {!execution ? (
+            lookupExhausted ? (
+              <div className="flex items-start gap-2 text-xs text-(--color-text-muted)">
+                <CircleAlert size={14} className="mt-0.5 shrink-0" />
+                <span>No workflow execution is recorded for this run.</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-xs text-(--color-text-muted)">
+                <Loader2 size={13} className="animate-spin text-(--color-accent)" />
+                Waiting for the execution to register…
+              </div>
+            )
           ) : (
-            <p className="flex items-center gap-1.5 text-xs text-(--color-text-subtle)">
-              <Loader2 size={12} className="animate-spin" />
-              Waiting for the execution to register…
-            </p>
-          )
-        ) : (
-          <div className="space-y-1 rounded-md bg-(--bg-key) px-3 py-2">
-            <div className="flex items-center justify-between gap-2">
-              <span className="truncate font-mono text-[11px] text-(--color-text-2)">
-                {execution.definition_name}
-              </span>
-              <StatusBadge status={status} />
+            <div className="space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p
+                    className="truncate font-mono text-xs font-medium text-(--color-text)"
+                    title={execution.definition_name}
+                  >
+                    {execution.definition_name}
+                  </p>
+                  <p className="mt-0.5 truncate text-[10px] text-(--color-text-subtle)">
+                    {runningNode
+                      ? `Now · ${runningNode.node_id}`
+                      : `Execution · ${execution.id.slice(0, 8)}`}
+                  </p>
+                </div>
+                <span className="shrink-0 rounded-md border border-(--color-border) bg-(--bg-page) px-2 py-1 text-[11px] font-medium">
+                  <StatusBadge status={status} />
+                </span>
+              </div>
+
+              <div className="grid grid-cols-3 divide-x divide-(--color-border) border-y border-(--color-border) py-2">
+                <div className="pr-2">
+                  <p className="text-[9px] font-semibold uppercase text-(--color-text-subtle)">Elapsed</p>
+                  <p className="mt-0.5 font-mono text-[11px] text-(--color-text-2)">
+                    {executionDuration(execution)}
+                  </p>
+                </div>
+                <div className="px-2">
+                  <p className="text-[9px] font-semibold uppercase text-(--color-text-subtle)">Nodes</p>
+                  <p className="mt-0.5 font-mono text-[11px] text-(--color-text-2)">
+                    {completedNodeCount} done · {nodeRuns.length} seen
+                  </p>
+                </div>
+                <div className="pl-2">
+                  <p className="text-[9px] font-semibold uppercase text-(--color-text-subtle)">Started</p>
+                  <p className="mt-0.5 font-mono text-[11px] text-(--color-text-2)">
+                    {new Date(execution.started_at).toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </p>
+                </div>
+              </div>
+
+              {executionInputs.length > 0 && (
+                <div className="flex flex-wrap gap-x-3 gap-y-1">
+                  {executionInputs.map(([key, value]) => (
+                    <span key={key} className="min-w-0 text-[10px] text-(--color-text-subtle)">
+                      {key}{' '}
+                      <strong className="font-mono font-medium text-(--color-text-2)">
+                        {typeof value === 'string' ? value : JSON.stringify(value)}
+                      </strong>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              <div className="h-0.5 overflow-hidden rounded-full bg-(--color-border)">
+                <div
+                  className={cn(
+                    'h-full rounded-full',
+                    status === 'completed' && 'w-full bg-(--color-success)',
+                    status === 'failed' && 'w-full bg-(--color-error)',
+                    status === 'stopped' && 'w-full bg-(--color-text-muted)',
+                    status === 'interrupted' && 'w-full bg-(--color-warning,orange)',
+                    status === 'waiting_gate' &&
+                      'w-3/5 animate-pulse bg-(--color-warning,orange)',
+                    status === 'running' && 'w-2/5 animate-pulse bg-(--color-accent)',
+                    status === 'done' && 'w-full bg-(--color-success)',
+                  )}
+                />
+              </div>
+
+              {execution.error && (
+                <div className="flex gap-2 border-l-2 border-(--color-error) bg-(--color-error)/5 px-2.5 py-2">
+                  <CircleX size={13} className="mt-0.5 shrink-0 text-(--color-error)" />
+                  <p className="whitespace-pre-wrap text-[11px] leading-4 text-(--color-error)">
+                    {execution.error}
+                  </p>
+                </div>
+              )}
             </div>
-            <p className="text-[10px] text-(--color-text-subtle)">
-              started {new Date(execution.started_at).toLocaleTimeString()}
-              {execution.ended_at
-                ? ` · finished ${new Date(execution.ended_at).toLocaleTimeString()}`
-                : ''}
-            </p>
-            {execution.error && (
-              <p className="whitespace-pre-wrap text-[11px] text-(--color-error)">
-                {execution.error}
-              </p>
-            )}
-          </div>
-        )}
+          )}
+        </section>
 
         {/* Inline gate — answer without a chat surface (spec §3.3). Rendered
             whenever the run is live: the execution row only says
             waiting_gate while the runner holds it in memory, so the gate is
             detected by polling pending questions, not by status alone. */}
-        {active && <GateSection sessionId={sessionId} />}
+        {active && (
+          <div className="px-4 pt-3">
+            <GateSection sessionId={sessionId} />
+          </div>
+        )}
 
         {/* Node-by-node progress + debug output. */}
         {nodeRuns.length > 0 && (
-          <div>
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-(--color-text-subtle)">
-              Nodes · {nodeRuns.filter((n) => n.status === 'succeeded').length}/{nodeRuns.length}
-            </p>
-            <div className="space-y-0.5">
+          <section className="border-b border-(--color-border) px-4 py-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-[10px] font-semibold uppercase text-(--color-text-subtle)">
+                Node timeline
+              </p>
+              <span className="font-mono text-[10px] text-(--color-text-subtle)">
+                {completedNodeCount}/{nodeRuns.length} settled
+              </span>
+            </div>
+            <div className="relative ml-1 border-l border-(--color-border)">
               {nodeRuns.map((node) => (
                 <NodeRunRow key={node.id} node={node} />
               ))}
             </div>
-          </div>
+          </section>
         )}
 
         {/* What the agents are actually doing — read-only transcript tail. */}
         {sessionId.length > 0 && <ActivityLogSection sessionId={sessionId} active={active} />}
 
         {execution && !active && onDiscuss && (
-          <Button size="sm" variant="secondary" onClick={onDiscuss} className="w-full">
-            <MessageSquareText size={12} />
-            Open Discussion
-          </Button>
+          <div className="sticky bottom-0 border-t border-(--color-border) bg-(--bg-page)/95 p-3 backdrop-blur-sm">
+            <Button size="sm" variant="secondary" onClick={onDiscuss} className="w-full">
+              <MessageSquareText size={12} />
+              Open Discussion
+            </Button>
+          </div>
         )}
       </div>
     </AimSidePanel>
@@ -1127,7 +1925,7 @@ function AgentName({ agent }: { agent: string }) {
   return (
     <span
       className={cn(
-        'font-semibold tracking-wide',
+        'font-semibold',
         agent === 'lead' ? 'text-(--color-accent)' : 'text-(--color-text-2)',
       )}
     >
@@ -1306,59 +2104,83 @@ function ActivityLogSection({ sessionId, active }: { sessionId: string; active: 
     })
 
   return (
-    <div>
-      <div className="mb-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-(--color-text-subtle)">
-          Activity log
-        </p>
-        {/* Who's on this run. */}
-        <span className="text-[10px] text-(--color-text-subtle)">
+    <section className="px-4 py-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+        <div className="flex items-center gap-2">
+          <p className="text-[10px] font-semibold uppercase text-(--color-text-subtle)">
+            Event stream
+          </p>
+          <span className="rounded bg-(--bg-key) px-1.5 py-0.5 font-mono text-[9px] text-(--color-text-muted)">
+            {lines.length}
+          </span>
+        </div>
+        <span
+          className="max-w-52 truncate text-[10px] text-(--color-text-subtle)"
+          title={agents.join(' · ')}
+        >
           {agents.join(' · ')}
         </span>
       </div>
 
-      <div
-        ref={scrollRef}
-        className="max-h-80 space-y-2 overflow-y-auto rounded-md bg-(--bg-key) p-2.5"
-      >
+      <div className="overflow-hidden rounded-md border border-(--color-border) bg-(--bg-subtle)/30">
+        <div ref={scrollRef} className="relative min-h-64 max-h-[52vh] overflow-y-auto px-3">
+          <div
+            className="absolute bottom-0 left-[22px] top-0 w-px bg-(--color-border)"
+            aria-hidden="true"
+          />
         {lines.map((line) => {
-          // Delegation — a system row between bubbles, like the chat's
-          // inter-agent events: centered, quiet, names carry the meaning.
           if (line.kind === 'delegate') {
             return (
-              <div key={line.key} className="px-1 py-0.5 text-center text-[11px] leading-4">
-                <span className="text-(--color-text-subtle)">
-                  <AgentName agent={line.agent} />{' '}
-                  <ArrowRight size={10} className="inline text-(--color-text-subtle)" aria-hidden="true" />{' '}
-                  <AgentName agent={line.to ?? '?'} />
+              <div
+                key={line.key}
+                className="relative flex gap-3 border-b border-(--color-border)/60 py-2.5 pl-1"
+              >
+                <span className="relative z-[1] flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-(--color-border) bg-(--bg-page) text-(--color-text-muted)">
+                  <Shuffle size={10} aria-hidden="true" />
                 </span>
-                {line.text && (
-                  <span className="mx-auto mt-0.5 block max-w-[92%] truncate text-(--color-text-subtle)" title={line.text}>
-                    {line.text}
-                  </span>
-                )}
+                <div className="min-w-0 flex-1">
+                  <p className="flex flex-wrap items-center gap-1.5 text-[10px] text-(--color-text-subtle)">
+                    <AgentName agent={line.agent} />
+                    <ArrowRight size={9} aria-hidden="true" />
+                    <AgentName agent={line.to ?? '?'} />
+                    {line.at && <span className="ml-auto font-mono">{timeOf(line.at)}</span>}
+                  </p>
+                  {line.text && (
+                    <p
+                      className="mt-0.5 truncate text-[11px] text-(--color-text-muted)"
+                      title={line.text}
+                    >
+                      {line.text}
+                    </p>
+                  )}
+                </div>
               </div>
             )
           }
 
-          // Handoff — a compact echo of the chat's HandoffCard: left bubble
-          // with an accent border and a status badge.
           if (line.kind === 'handoff') {
             return (
-              <div key={line.key} className="flex justify-start">
-                <div className="max-w-[92%] rounded-lg rounded-bl-sm border border-(--color-accent)/30 bg-(--bg-page) px-2.5 py-1.5 shadow-sm">
+              <div
+                key={line.key}
+                className="relative flex gap-3 border-b border-(--color-border)/60 py-2.5 pl-1"
+              >
+                <span className="relative z-[1] flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-(--color-accent)/40 bg-(--bg-page) text-(--color-accent)">
+                  <CornerDownLeft size={10} aria-hidden="true" />
+                </span>
+                <div className="min-w-0 flex-1 border-l-2 border-(--color-accent)/40 pl-2.5">
                   <p className="mb-0.5 flex items-center gap-1.5 text-[10px]">
-                    <CornerDownLeft size={10} className="shrink-0 text-(--color-accent)" aria-hidden="true" />
-                    <span className="font-semibold tracking-wide text-(--color-text-2)">
-                      Handoff from {line.agent}
+                    <span className="font-semibold text-(--color-text-2)">
+                      Handoff · {line.agent}
                     </span>
                     {line.status && (
-                      <span className="rounded bg-(--bg-key) px-1 py-px text-[10px] text-(--color-text-muted)">
+                      <span className="rounded bg-(--bg-key) px-1 py-px text-[9px] text-(--color-text-muted)">
                         {line.status}
                       </span>
                     )}
                     {line.at && (
-                      <span className="ml-auto text-(--color-text-subtle)">{timeOf(line.at)}</span>
+                      <span className="ml-auto font-mono text-(--color-text-subtle)">
+                        {timeOf(line.at)}
+                      </span>
                     )}
                   </p>
                   {line.text && (
@@ -1373,14 +2195,19 @@ function ActivityLogSection({ sessionId, active }: { sessionId: string; active: 
             )
           }
 
-          // The pipeline prompt — right-aligned like a user message.
           if (line.kind === 'prompt') {
             return (
-              <div key={line.key} className="flex justify-end">
-                <div className="max-w-[92%] rounded-lg rounded-br-sm border border-(--color-border) bg-(--bg-page) px-2.5 py-1.5">
-                  <p className="mb-0.5 flex items-center justify-between gap-2 text-[10px] text-(--color-text-subtle)">
-                    <span className="font-semibold uppercase tracking-wider">run prompt</span>
-                    {line.at && <span>{timeOf(line.at)}</span>}
+              <div
+                key={line.key}
+                className="relative flex gap-3 border-b border-(--color-border)/60 py-2.5 pl-1"
+              >
+                <span className="relative z-[1] flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-(--color-border) bg-(--bg-page) text-(--color-text-muted)">
+                  <FileText size={10} aria-hidden="true" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="mb-0.5 flex items-center gap-2 text-[10px] text-(--color-text-subtle)">
+                    <span className="font-semibold uppercase">Run brief</span>
+                    {line.at && <span className="ml-auto font-mono">{timeOf(line.at)}</span>}
                   </p>
                   <p
                     className={cn(
@@ -1397,15 +2224,21 @@ function ActivityLogSection({ sessionId, active }: { sessionId: string; active: 
             )
           }
 
-          // Agent message — a left chat bubble: name + time header, prose
-          // body (click to expand), tool calls as chips inside the bubble.
           return (
-            <div key={line.key} className="flex justify-start">
-              <div className="max-w-[92%] rounded-lg rounded-bl-sm border border-(--color-border) bg-(--bg-page) px-2.5 py-1.5">
+            <div
+              key={line.key}
+              className="relative flex gap-3 border-b border-(--color-border)/60 py-2.5 pl-1"
+            >
+              <span className="relative z-[1] flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-(--color-border) bg-(--bg-page) text-(--color-text-muted)">
+                <Bot size={10} aria-hidden="true" />
+              </span>
+              <div className="min-w-0 flex-1">
                 <p className="mb-0.5 flex items-center gap-2 text-[10px]">
                   <AgentName agent={line.agent} />
                   {line.at && (
-                    <span className="text-(--color-text-subtle)">{timeOf(line.at)}</span>
+                    <span className="ml-auto font-mono text-(--color-text-subtle)">
+                      {timeOf(line.at)}
+                    </span>
                   )}
                 </p>
                 {line.text && (
@@ -1420,7 +2253,7 @@ function ActivityLogSection({ sessionId, active }: { sessionId: string; active: 
                     {line.tools.map((tool, index) => (
                       <span
                         key={`${line.key}-${tool}-${index}`}
-                        className="flex items-center gap-1 rounded bg-(--bg-key) px-1.5 py-0.5 font-mono text-[10px] text-(--color-text-muted)"
+                        className="flex items-center gap-1 rounded border border-(--color-border)/70 bg-(--bg-page) px-1.5 py-0.5 font-mono text-[9px] text-(--color-text-muted)"
                       >
                         <Wrench size={9} aria-hidden="true" />
                         {tool}
@@ -1432,23 +2265,27 @@ function ActivityLogSection({ sessionId, active }: { sessionId: string; active: 
             </div>
           )
         })}
+        </div>
 
-        {/* Typing-style indicator — the run is live; more is coming. */}
         {active && (
-          <div className="flex items-center gap-1.5 px-1 text-[11px] text-(--color-text-subtle)">
-            <Loader2 size={10} className="animate-spin" aria-hidden="true" />
+          <div className="flex h-9 items-center gap-2 border-t border-(--color-border) bg-(--bg-page) px-3 text-[10px] text-(--color-text-subtle)">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-(--color-accent) opacity-40" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-(--color-accent)" />
+            </span>
             {lastAgent ? (
               <>
                 <AgentName agent={lastAgent} />
-                <span>is working…</span>
+                <span>is working</span>
               </>
             ) : (
-              'working…'
+              <span>Waiting for activity</span>
             )}
+            <span className="ml-auto font-mono">live</span>
           </div>
         )}
       </div>
-    </div>
+    </section>
   )
 }
 
@@ -1460,12 +2297,15 @@ function NodeRunRow({ node }: { node: WorkflowNodeRun }) {
     : null
 
   return (
-    <div className="rounded border border-(--color-border)/60">
+    <div className="relative pl-5">
+      <span className="absolute -left-[6px] top-2.5 z-[1] flex h-3 w-3 items-center justify-center rounded-full bg-(--bg-page)">
+        <NodeStatusIcon status={node.status} />
+      </span>
       <button
         type="button"
         onClick={() => hasDetail && setOpen((v) => !v)}
         className={cn(
-          'flex w-full items-center gap-1.5 px-2 py-1.5 text-left text-xs',
+          'flex min-h-8 w-full items-center gap-1.5 rounded px-1.5 text-left text-xs',
           hasDetail && 'hover:bg-(--bg-key)',
         )}
       >
@@ -1478,7 +2318,6 @@ function NodeRunRow({ node }: { node: WorkflowNodeRun }) {
         ) : (
           <span className="w-2.5 shrink-0" />
         )}
-        <NodeStatusIcon status={node.status} />
         <span className="min-w-0 flex-1 truncate font-mono text-(--color-text-2)">
           {node.node_id}
           {node.iteration !== null && (
@@ -1488,9 +2327,12 @@ function NodeRunRow({ node }: { node: WorkflowNodeRun }) {
         {duration && (
           <span className="shrink-0 text-[10px] text-(--color-text-subtle)">{duration}</span>
         )}
+        <span className="shrink-0 text-[9px] uppercase text-(--color-text-subtle)">
+          {node.status}
+        </span>
       </button>
       {open && (
-        <div className="space-y-1 border-t border-(--color-border)/60 px-2 py-1.5">
+        <div className="mb-2 space-y-1 border-l-2 border-(--color-border) bg-(--bg-subtle)/50 px-2.5 py-2">
           {node.error && (
             <p className="whitespace-pre-wrap text-[11px] text-(--color-error)">{node.error}</p>
           )}

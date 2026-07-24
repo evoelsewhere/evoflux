@@ -160,11 +160,25 @@ def _propose_identity_maps(detection: AimLayoutDetection) -> None:
     detection.source_identity_map = {
         identity: detected_sources.get(identity) for identity in manifest.roles.source
     }
-    target_identity = resolve_repo_identity(detection.target_path)
-    detection.target_identity_map = {
-        identity: (detection.target_path if identity == target_identity else None)
-        for identity in manifest.roles.target
+
+    target_base = Path(detection.target_path)
+    target_candidates = [target_base]
+    target_candidates.extend(
+        child
+        for child in sorted(target_base.iterdir())
+        if child.is_dir() and not child.name.startswith(".")
+    )
+    detected_targets = {
+        resolve_repo_identity(str(path)): str(path) for path in target_candidates
     }
+    detection.target_identity_map = {
+        identity: detected_targets.get(identity) for identity in manifest.roles.target
+    }
+    matched_targets = [
+        path for path in detection.target_identity_map.values() if path is not None
+    ]
+    if len(manifest.roles.target) == 1 and len(matched_targets) == 1:
+        detection.target_path = matched_targets[0]
     unmatched = [
         identity
         for identity, path in {

@@ -17,12 +17,52 @@ from app.services.aim.project import (
     resolve_target_workspace_path,
 )
 from app.services.aim.rulebook import (
+    RulebookManifest,
     read_rulebook_manifest,
     resolve_rulebook_dir,
     resolve_rulebook_path,
 )
 
 HealthStatus = Literal["pass", "warn", "fail"]
+
+
+def _declared_rulebook_assets(manifest: RulebookManifest) -> dict[str, str]:
+    assets = dict(manifest.assets)
+    assets.update({f"mapping:{name}": path for name, path in manifest.mappings.items()})
+    if manifest.target_base:
+        assets["target_base"] = manifest.target_base
+    if manifest.ui_patterns:
+        assets["ui_patterns"] = manifest.ui_patterns
+    if manifest.parser_strategy != "none":
+        assets.update(
+            {f"extractor:{index}": path for index, path in enumerate(manifest.extractors)}
+        )
+    return assets
+
+
+def _workspace_activation_errors(
+    target: Path | None, manifest: RulebookManifest
+) -> list[str]:
+    declared = {
+        kind: paths
+        for kind, paths in manifest.workspace_activation.model_dump().items()
+        if paths
+    }
+    if not declared:
+        return []
+    if target is None or not target.is_dir():
+        return ["target workspace is unavailable for project customizations"]
+    root = target.resolve()
+    errors: list[str] = []
+    for kind, paths in declared.items():
+        for relative in paths:
+            candidate = Path(relative)
+            resolved = (root / candidate).resolve()
+            if candidate.is_absolute() or not resolved.is_relative_to(root):
+                errors.append(f"{kind} path escapes target workspace: {relative}")
+            elif not resolved.is_file():
+                errors.append(f"{kind} file is missing: {relative}")
+    return errors
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,7 +263,60 @@ async def evaluate_project_health(
             message=(
                 "Not production-ready: " + ", ".join(incomplete_capabilities)
                 if incomplete_capabilities
-                else "All lifecycle capabilities are ready."
+                else "All lifecycle capability switches are active."
+            ),
+        )
+    )
+
+    asset_errors: list[str] = []
+    if pack_model is not None and kb_root is not None:
+        for label, declared_path in _declared_rulebook_assets(pack_model).items():
+            try:
+                path = resolve_rulebook_path(kb_root, declared_path)
+            except ValueError as exc:
+                asset_errors.append(f"{label}: {exc}")
+                continue
+            if not path.is_file():
+                asset_errors.append(f"{label} is missing: {declared_path}")
+        if pack_model.parser_strategy != "none":
+            from app.services.code_graph.parsers.structural import (
+                load_structural_config,
+            )
+
+            for declared_path in pack_model.extractors:
+                try:
+                    path = resolve_rulebook_path(kb_root, declared_path)
+                    if path.is_file():
+                        load_structural_config(path)
+                except (OSError, ValueError) as exc:
+                    asset_errors.append(f"extractor {declared_path}: {exc}")
+    checks.append(
+        HealthCheck(
+            id="rulebook_assets",
+            label="Rulebook operational assets",
+            status="fail" if asset_errors else "pass",
+            message=(
+                "; ".join(asset_errors)
+                if asset_errors
+                else "All declared rulebook assets are present and valid."
+            ),
+        )
+    )
+
+    activation_errors = (
+        _workspace_activation_errors(target, pack_model)
+        if pack_model is not None
+        else []
+    )
+    checks.append(
+        HealthCheck(
+            id="workspace_activation",
+            label="Project customizations",
+            status="fail" if activation_errors else "pass",
+            message=(
+                "; ".join(activation_errors)
+                if activation_errors
+                else "Declared project skills, workflows, and commands are available."
             ),
         )
     )
@@ -233,19 +326,27 @@ async def evaluate_project_health(
         if pack is not None and manifest is not None
         else None
     )
+    profile_error = ""
+    if profile_path is not None and profile_path.is_file():
+        try:
+            from app.services.aim.canonicalize import load_profile
+
+            load_profile(profile_path)
+        except (OSError, ValueError) as exc:
+            profile_error = str(exc)
     checks.append(
         HealthCheck(
             id="canonicalizer",
             label="Canonicalizer",
             status="pass"
-            if profile_path is not None and profile_path.is_file()
+            if profile_path is not None and profile_path.is_file() and not profile_error
             else "fail",
             message=(
                 f"Profile {manifest.compare_default_profile!r} is available."
                 if profile_path is not None
                 and profile_path.is_file()
                 and manifest is not None
-                else "Pinned canonicalizer profile is missing."
+                else profile_error or "Pinned canonicalizer profile is missing."
             ),
         )
     )
@@ -255,6 +356,9 @@ async def evaluate_project_health(
     if not isinstance(runner_declarations, dict) or not runner_declarations:
         runner_errors.append("rulebook declares no legacy/target runners")
     elif kb_root is not None:
+        for required_role in ("legacy", "target"):
+            if not runner_declarations.get(required_role):
+                runner_errors.append(f"rulebook declares no {required_role} runner")
         for role, declared_path in runner_declarations.items():
             try:
                 path = resolve_rulebook_path(kb_root, str(declared_path))
@@ -291,6 +395,11 @@ async def evaluate_project_health(
         invalid_units: list[str] = list(scan_errors)
         state_schema = manifest.state_schema if manifest is not None else 1
         for module, name, frontmatter, _ in scanned_units:
+            allowed_kinds = pack_model.unit_kinds if pack_model is not None else []
+            if allowed_kinds and frontmatter.kind not in allowed_kinds:
+                invalid_units.append(
+                    f"{module}/{name}: kind {frontmatter.kind!r} is not allowed"
+                )
             error = kb_store.validate_unit_state(
                 kb_root,
                 module,

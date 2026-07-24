@@ -62,7 +62,7 @@ def _skill_source(path: Path) -> str:
     config_dir = Path(settings.EVOFLUX_CONFIG_DIR).resolve()
     opencode_global = Path.home() / ".config" / "opencode" / "skills"
     project_root = skill_module._project_root().resolve()
-    if _is_relative_to(resolved, project_root / ".EvoFlux" / "skills"):
+    if _is_relative_to(resolved, project_root / ".evoflux" / "skills"):
         return "project-EvoFlux"
     if _is_relative_to(resolved, project_root / ".opencode" / "skills"):
         return "project-opencode"
@@ -111,7 +111,7 @@ def _delete_skill_file(path: Path) -> None:
         # above a known skill root.
         source = _skill_source(path)
         root_by_source = {
-            "project-EvoFlux": Path.cwd() / ".EvoFlux" / "skills",
+            "project-EvoFlux": Path.cwd() / ".evoflux" / "skills",
             "project-opencode": Path.cwd() / ".opencode" / "skills",
             "global-EvoFlux": Path(settings.SKILLS_DIR),
             "global-opencode": Path.home() / ".config" / "opencode" / "skills",

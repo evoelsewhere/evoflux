@@ -31,8 +31,10 @@ export function AimSidePanel({
       defaultWidth={defaultWidth}
       minWidth={minWidth}
       maxWidth={maxWidth}
+      mobileOverlay
       animated={false}
       resizeLabel="Resize panel"
+      className="bg-(--bg-page)"
     >
       {children}
     </SidePanel>

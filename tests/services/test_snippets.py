@@ -13,7 +13,7 @@ from app.services.snippets import discover_snippets
 def roots(tmp_path: Path, monkeypatch):
     cwd = tmp_path / "project"
     cwd.mkdir()
-    project = cwd / ".EvoFlux" / "snippets"
+    project = cwd / ".evoflux" / "snippets"
     global_config = tmp_path / "config"
     global_root = global_config / "snippets"
 

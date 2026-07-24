@@ -44,7 +44,7 @@ def global_workflows_dir() -> Path:
 def _candidate_roots(workspace: str | None) -> list[tuple[Path, str]]:
     roots: list[tuple[Path, str]] = []
     if workspace:
-        roots.append((Path(workspace) / ".EvoFlux" / "workflows", "workspace"))
+        roots.append((Path(workspace) / ".evoflux" / "workflows", "workspace"))
     roots.append((global_workflows_dir(), "global"))
     for builtin in _builtin_dirs():
         roots.append((builtin, "builtin"))
@@ -115,7 +115,7 @@ def save_workflow(
     (plan §7: approvals never transfer across roots).
     """
     if workspace:
-        target_dir = Path(workspace) / ".EvoFlux" / "workflows"
+        target_dir = Path(workspace) / ".evoflux" / "workflows"
         root_label = "workspace"
     else:
         target_dir = global_workflows_dir()
@@ -142,7 +142,7 @@ def delete_workflow(name: str, *, workspace: str | None = None) -> bool:
     removed = False
     candidates = []
     if workspace:
-        candidates.append(Path(workspace) / ".EvoFlux" / "workflows" / f"{name}.yaml")
+        candidates.append(Path(workspace) / ".evoflux" / "workflows" / f"{name}.yaml")
     candidates.append(global_workflows_dir() / f"{name}.yaml")
     for path in candidates:
         if path.is_file():

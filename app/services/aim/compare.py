@@ -332,6 +332,9 @@ def compare_dirs(
     for rel_path in sorted(expected_paths & actual_paths):
         expected_path = expected_dir / rel_path
         actual_path = actual_dir / rel_path
+        if profile.mode == "binary":
+            files.append(_compare_binary(rel_path, expected_path, actual_path))
+            continue
         expected_text = _read_text(expected_path, profile)
         actual_text = _read_text(actual_path, profile)
         if expected_text is None or actual_text is None:

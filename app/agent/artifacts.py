@@ -7,7 +7,7 @@ from pathlib import Path
 from app.agent.sandbox import get_sandbox
 from app.core.config import settings
 
-SESSION_METADATA_DIR = ".EvoFlux"
+SESSION_METADATA_DIR = ".evoflux"
 SESSIONS_DIR = "sessions"
 TOOL_RESULTS_DIR = ".tool_results"
 SHELL_TOOL_DIR = "shell"

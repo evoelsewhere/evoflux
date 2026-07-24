@@ -7,7 +7,7 @@ intermediate results, and coordination flags without routing everything
 through message passing.
 
 The store is persisted as a JSON file in the session workspace alongside
-the todo list (``{workspace}/.EvoFlux/team_state.json``).  Concurrent
+the todo list (``{workspace}/.evoflux/team_state.json``).  Concurrent
 access from parallel member turns is safe because each tool invocation is
 short-lived and Python's file I/O is atomic-enough for small JSON blobs.
 
@@ -44,7 +44,7 @@ def _state_path():
     from pathlib import Path
 
     workspace = Path(sandbox.workspace_root)
-    return workspace / ".EvoFlux" / STATE_FILENAME
+    return workspace / ".evoflux" / STATE_FILENAME
 
 
 def _load_state() -> dict[str, dict]:

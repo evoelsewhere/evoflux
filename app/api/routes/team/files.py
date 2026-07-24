@@ -389,11 +389,11 @@ def _list_workspace_files(root: Path, session_id: str) -> WorkspaceFilesResponse
     # InputBar @-mention picker policy:
     #   - Always skip ``.git/`` — VCS internals are huge and never useful to
     #     reference from a chat composer.
-    #   - Otherwise allow dot-prefixed entries (``.EvoFlux/``, ``.github/``,
+    #   - Otherwise allow dot-prefixed entries (``.evoflux/``, ``.github/``,
     #     ``.env.example``, …) and defer the actual filtering to ``.gitignore``.
     #     This matches what users see in their editor and honours the project's
-    #     ``!`` re-include rules (e.g. ``.EvoFlux/commands/`` is tracked even
-    #     though ``.EvoFlux/*`` is ignored).
+    #     ``!`` re-include rules (e.g. ``.evoflux/commands/`` is tracked even
+    #     though ``.evoflux/*`` is ignored).
     for dirpath, dirnames, filenames in os.walk(root):
         current = Path(dirpath)
         dirnames[:] = sorted(

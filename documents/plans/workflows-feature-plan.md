@@ -96,7 +96,7 @@ Every claim below was verified against the live codebase on 2026-07-09 (three pa
 
 Same roots/precedence as skills/commands/snippets (F15):
 
-1. `{workspace}/.EvoFlux/workflows/*.yaml` — per-repo. Shadows global names; needs its own approval regardless (§7).
+1. `{workspace}/.evoflux/workflows/*.yaml` — per-repo. Shadows global names; needs its own approval regardless (§7).
 2. `{EVOFLUX_CONFIG_DIR}/workflows/*.yaml` — global.
 3. `app/agent/builtin_workflows/*.yaml` — bundled read-only examples.
 
@@ -105,7 +105,7 @@ Implementation: `app/services/workflows_fs.py` — discovery/mtime-cache cloned 
 ### 4.2 Schema (v1)
 
 ```yaml
-# .EvoFlux/workflows/bug-triage.yaml
+# .evoflux/workflows/bug-triage.yaml
 schema_version: 1
 name: bug-triage
 description: Triage a bug and open a fix PR

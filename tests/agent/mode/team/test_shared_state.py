@@ -39,7 +39,7 @@ def tmp_sandbox(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SandboxConfi
 
 @pytest.fixture
 def state_file(tmp_sandbox: SandboxConfig) -> Path:
-    return Path(str(tmp_sandbox.workspace_root)) / ".EvoFlux" / STATE_FILENAME
+    return Path(str(tmp_sandbox.workspace_root)) / ".evoflux" / STATE_FILENAME
 
 
 # ── Set action ───────────────────────────────────────────────────────────

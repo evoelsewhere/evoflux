@@ -2,7 +2,13 @@ from pathlib import Path
 
 import pytest
 
-from app.services.aim.kb_store import list_units, read_manifest, read_unit, write_unit
+from app.services.aim.kb_store import (
+    list_units,
+    read_manifest,
+    read_unit,
+    sync_project_phase_from_units,
+    write_unit,
+)
 from app.services.aim.models import AimManifest
 
 
@@ -102,3 +108,28 @@ phase: understand
 def test_read_manifest_missing_file_raises(tmp_path: Path):
     with pytest.raises(FileNotFoundError):
         read_manifest(tmp_path)
+
+
+def test_project_phase_tracks_earliest_unfinished_unit_boundary(tmp_path: Path):
+    (tmp_path / "aim.yaml").write_text(
+        "rulebook: {id: test, version: '1'}\n"
+        "roles: {source: [], target: []}\n"
+        "phase: understand\n"
+    )
+    write_unit(tmp_path, "core", "A", kind="component", phase="understood")
+    write_unit(tmp_path, "core", "B", kind="component", phase="inventory")
+
+    assert sync_project_phase_from_units(tmp_path) == "understand"
+    write_unit(tmp_path, "core", "B", phase="understood")
+    assert sync_project_phase_from_units(tmp_path) == "design"
+    assert read_manifest(tmp_path).phase == "design"
+
+    write_unit(tmp_path, "core", "A", phase="designed")
+    write_unit(tmp_path, "core", "B", phase="designed")
+    assert sync_project_phase_from_units(tmp_path) == "convert"
+    write_unit(tmp_path, "core", "A", phase="converted")
+    write_unit(tmp_path, "core", "B", phase="converted")
+    assert sync_project_phase_from_units(tmp_path) == "test"
+    write_unit(tmp_path, "core", "A", phase="equivalent")
+    write_unit(tmp_path, "core", "B", phase="cutover")
+    assert sync_project_phase_from_units(tmp_path) == "cutover"

@@ -115,16 +115,49 @@ def test_aim_test_compare_executes_actuals_deterministically():
     assert run_node.tool == "aim_execute"
 
 
+def test_aim_assess_rework_requires_second_approval():
+    app_dir = Path(__file__).resolve().parents[2] / "app"
+    path = app_dir / "agent" / "builtin_aim" / "workflows" / "aim-assess.yaml"
+    definition = parse_definition(path.read_text(encoding="utf-8"))
+
+    approve_rework = next(
+        node for node in definition.nodes if node.id == "approve_rework"
+    )
+    assert approve_rework.kind == "gate"
+    assert approve_rework.choices == ["approve", "stop"]
+    edges = {(edge.from_, edge.to, edge.when) for edge in definition.edges}
+    assert ("rework", "approve_rework", None) in edges
+    assert ("approve_rework", "advance_phase", "approve") in edges
+    assert ("approve_rework", "rework_stopped", "stop") in edges
+
+
+def test_aim_action_workflow_outputs_distinguish_readiness_from_outcome():
+    app_dir = Path(__file__).resolve().parents[2] / "app"
+    workflow_dir = app_dir / "agent" / "builtin_aim" / "workflows"
+    for path in sorted(workflow_dir.glob("*.yaml")):
+        if path.stem == "aim-assess":
+            continue
+        definition = parse_definition(path.read_text(encoding="utf-8"))
+        assert "readiness_status" in definition.outputs, path
+        assert "blockers" in definition.outputs, path
+        assert "status" not in definition.outputs, path
+
+    compare = parse_definition(
+        (workflow_dir / "aim-test-compare.yaml").read_text(encoding="utf-8")
+    )
+    assert {"verdict", "report_path", "decision"} <= compare.outputs.keys()
+
+
 def test_discovery_precedence_and_crud(tmp_path, monkeypatch):
     from app.core.config import settings as app_settings
 
     monkeypatch.setattr(app_settings, "EVOFLUX_CONFIG_DIR", str(tmp_path / "config"))
     workspace = tmp_path / "repo"
-    (workspace / ".EvoFlux" / "workflows").mkdir(parents=True)
+    (workspace / ".evoflux" / "workflows").mkdir(parents=True)
 
     # Workspace shadows global for the same name.
     save_workflow("dupe", MANIFESTY.replace("manifesty", "dupe"))  # global root
-    (workspace / ".EvoFlux" / "workflows" / "dupe.yaml").write_text(
+    (workspace / ".evoflux" / "workflows" / "dupe.yaml").write_text(
         MANIFESTY.replace("manifesty", "dupe").replace("echo hi", "echo ws"),
         encoding="utf-8",
     )
@@ -139,14 +172,14 @@ def test_discovery_precedence_and_crud(tmp_path, monkeypatch):
     assert names["aim-test-compare"] == "builtin"
 
     # Invalid file still listed, with errors.
-    (workspace / ".EvoFlux" / "workflows" / "broken.yaml").write_text(
+    (workspace / ".evoflux" / "workflows" / "broken.yaml").write_text(
         "schema_version: 1\nname: broken\nnodes: []\n", encoding="utf-8"
     )
     broken = get_workflow("broken", workspace=str(workspace))
     assert broken is not None and broken.definition is None and broken.errors
 
     # Name/stem mismatch is an error.
-    (workspace / ".EvoFlux" / "workflows" / "renamed.yaml").write_text(
+    (workspace / ".evoflux" / "workflows" / "renamed.yaml").write_text(
         MANIFESTY, encoding="utf-8"
     )
     mismatch = get_workflow("renamed", workspace=str(workspace))

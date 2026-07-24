@@ -149,7 +149,7 @@ async def test_workspace_root_shadows_global_and_needs_own_approval(
     client, setup_db, tmp_path
 ):
     workspace = tmp_path / "repo"
-    (workspace / ".EvoFlux" / "workflows").mkdir(parents=True)
+    (workspace / ".evoflux" / "workflows").mkdir(parents=True)
 
     raw_global = VALID.format(name="shadowed")
     saved = await client.put("/api/workflows/shadowed", json={"raw_yaml": raw_global})

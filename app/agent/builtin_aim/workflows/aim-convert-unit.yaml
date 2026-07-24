@@ -68,7 +68,7 @@ nodes:
   - id: done
     kind: notify
     title: "aim-convert-unit"
-    message: "{{inputs.unit}} converted — run aim-test-compare next."
+    message: "{{inputs.unit}} converted — capture a trusted golden baseline if needed, then run aim-test-compare."
 
   - id: release
     kind: tool
@@ -88,5 +88,7 @@ edges:
   - { from: release, to: done }
 
 outputs:
-  status: "{{nodes.readiness.output.status}}"
+  readiness_status: "{{nodes.readiness.output.status}}"
   blockers: "{{nodes.readiness.output.blockers | json}}"
+  verification_status: "{{nodes.verify.output.status}}"
+  evidence_path: "{{nodes.verify.output.evidence_path}}"

@@ -399,7 +399,7 @@ class TestTokenSubstitution:
 # Multi-root discovery (project/global × EvoFlux/opencode)
 #
 # Skills are discovered from four roots in this precedence order:
-#   1. {cwd}/.EvoFlux/skills/
+#   1. {cwd}/.evoflux/skills/
 #   2. {cwd}/.opencode/skills/
 #   3. _SKILLS_DIR  (EvoFlux global, typically {CONFIG_DIR}/skills)
 #   4. ~/.config/opencode/skills/
@@ -430,7 +430,7 @@ class TestMultiRootDiscovery:
     @pytest.fixture
     def roots(self, tmp_path, monkeypatch):
         """Patch ``_iter_skill_roots`` to a fresh four-root layout under tmp_path."""
-        project_oad = tmp_path / "proj" / ".EvoFlux" / "skills"
+        project_oad = tmp_path / "proj" / ".evoflux" / "skills"
         project_oc = tmp_path / "proj" / ".opencode" / "skills"
         global_oad = tmp_path / "config" / "skills"
         global_oc = tmp_path / "home" / ".config" / "opencode" / "skills"
@@ -490,7 +490,7 @@ class TestMultiRootDiscovery:
         assert set(result.keys()) == {"alpha", "beta", "gamma", "delta"}
 
     def test_project_skills_use_active_sandbox_workspace(self, sandbox_workspace):
-        project_oad = sandbox_workspace / ".EvoFlux" / "skills"
+        project_oad = sandbox_workspace / ".evoflux" / "skills"
         self._write_skill(project_oad, "oad/commit", "Commit workflow", "Body.")
 
         result = discover_skills()
@@ -504,13 +504,13 @@ class TestMultiRootDiscovery:
     ):
         process_cwd = tmp_path / "process-cwd"
         self._write_skill(
-            process_cwd / ".EvoFlux" / "skills",
+            process_cwd / ".evoflux" / "skills",
             "oad/commit",
             "Wrong cwd skill",
             "Wrong body.",
         )
         self._write_skill(
-            sandbox_workspace / ".EvoFlux" / "skills",
+            sandbox_workspace / ".evoflux" / "skills",
             "oad/commit",
             "Workspace skill",
             "Workspace body.",
@@ -521,7 +521,7 @@ class TestMultiRootDiscovery:
 
         assert result["oad/commit"]["description"] == "Workspace skill"
         assert result["oad/commit"]["dir"] == str(
-            sandbox_workspace / ".EvoFlux" / "skills" / "oad" / "commit"
+            sandbox_workspace / ".evoflux" / "skills" / "oad" / "commit"
         )
 
     def test_sandbox_project_skills_precede_global_EvoFlux(
@@ -532,7 +532,7 @@ class TestMultiRootDiscovery:
         monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
         self._write_skill(global_oad, "oad/commit", "Global skill", "Global body.")
         self._write_skill(
-            sandbox_workspace / ".EvoFlux" / "skills",
+            sandbox_workspace / ".evoflux" / "skills",
             "oad/commit",
             "Workspace skill",
             "Workspace body.",
@@ -545,7 +545,7 @@ class TestMultiRootDiscovery:
     @pytest.mark.asyncio
     async def test_load_skill_reads_sandbox_project_body(self, sandbox_workspace):
         self._write_skill(
-            sandbox_workspace / ".EvoFlux" / "skills",
+            sandbox_workspace / ".evoflux" / "skills",
             "oad/commit",
             "Commit workflow",
             "Workspace commit body.",

@@ -5,7 +5,10 @@ import pytest
 from app.services.aim import kb_store
 from app.services.aim.runners import (
     RunnerExecutionError,
+    capture_legacy_case,
+    execute_legacy_case,
     execute_target_case,
+    resolve_legacy_runner,
     resolve_target_runner,
 )
 
@@ -14,6 +17,14 @@ set -euo pipefail
 command_file="$AIM_CASE_DIR/target.command"
 [[ -f "$command_file" ]] || { echo "missing target command: $command_file" >&2; exit 3; }
 cd "$AIM_TARGET_ROOT"
+bash "$command_file"
+"""
+
+LEGACY_RUNNER = """#!/usr/bin/env bash
+set -euo pipefail
+command_file="$AIM_CASE_DIR/legacy.command"
+[[ -f "$command_file" ]] || { echo "missing legacy command: $command_file" >&2; exit 3; }
+cd "$AIM_SOURCE_BASE"
 bash "$command_file"
 """
 
@@ -37,9 +48,11 @@ def _project(tmp_path: Path) -> tuple[Path, Path]:
         "id: java8-java21\n"
         "version: '0.1'\n"
         "runners:\n"
+        "  legacy: runners/run_legacy.sh\n"
         "  target: runners/run_target.sh\n",
         encoding="utf-8",
     )
+    (runners / "run_legacy.sh").write_text(LEGACY_RUNNER, encoding="utf-8")
     (runners / "run_target.sh").write_text(TARGET_RUNNER, encoding="utf-8")
     return root, kb_root
 
@@ -72,6 +85,39 @@ async def test_execute_target_case_fails_without_case_command(tmp_path: Path):
         await execute_target_case(kb_root, "core/Pay", "smoke")
 
 
+@pytest.mark.asyncio
+async def test_execute_legacy_case_uses_separate_staging_dir(tmp_path: Path):
+    _root, kb_root = _project(tmp_path)
+    case_dir = kb_root / "golden" / "units" / "core" / "Pay" / "cases" / "smoke"
+    case_dir.mkdir(parents=True)
+    (case_dir / "legacy.command").write_text(
+        'printf "legacy\n" > "$AIM_OUT_DIR/out.txt"\n', encoding="utf-8"
+    )
+
+    result = await execute_legacy_case(kb_root, "core/Pay", "smoke")
+
+    assert result.role == "legacy"
+    assert result.actual_dir == kb_root / ".aim-legacy-actuals/core/Pay/smoke"
+    assert (result.actual_dir / "out.txt").read_text() == "legacy\n"
+
+
+@pytest.mark.asyncio
+async def test_capture_legacy_case_promotes_validated_output(tmp_path: Path):
+    _root, kb_root = _project(tmp_path)
+    case_dir = kb_root / "golden" / "units" / "core" / "Pay" / "cases" / "smoke"
+    case_dir.mkdir(parents=True)
+    (case_dir / "meta.yaml").write_text("provenance: captured\n")
+    (case_dir / "legacy.command").write_text(
+        'printf "baseline\n" > "$AIM_OUT_DIR/out.txt"\n', encoding="utf-8"
+    )
+
+    await capture_legacy_case(kb_root, "core/Pay", "smoke")
+
+    assert (case_dir / "expected/out.txt").read_text() == "baseline\n"
+    with pytest.raises(RunnerExecutionError, match="already exists"):
+        await capture_legacy_case(kb_root, "core/Pay", "smoke")
+
+
 def test_target_runner_must_stay_inside_local_rulebook(tmp_path: Path):
     _root, kb_root = _project(tmp_path)
     outside = kb_root / "outside.sh"
@@ -86,3 +132,9 @@ def test_target_runner_must_stay_inside_local_rulebook(tmp_path: Path):
 
     with pytest.raises(RunnerExecutionError, match="escapes rulebook directory"):
         resolve_target_runner(kb_root)
+
+
+def test_legacy_runner_resolves_inside_local_rulebook(tmp_path: Path):
+    _root, kb_root = _project(tmp_path)
+
+    assert resolve_legacy_runner(kb_root) == kb_root / "rulebook/runners/run_legacy.sh"

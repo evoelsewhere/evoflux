@@ -44,26 +44,21 @@ nodes:
     title: "aim-cutover-check claim blocked"
     message: "Wave {{inputs.wave}} has claimed units: {{nodes.acquire.output.blockers | json}}"
 
-  - id: equivalents
-    kind: tool
-    tool: aim_units
-    args: { action: list, phase_filter: equivalent, wave_filter: "{{inputs.wave}}", format: json }
-
   - id: confirm
     kind: gate
     title: "Cut over wave {{inputs.wave}}?"
-    body: "All {{nodes.readiness.output.selected_count}} unit(s) in wave {{inputs.wave}} are certified equivalent or already cut over, and the operational checklist is complete. Confirm the go/no-go decision."
+    body: "The entire wave is certified equivalent or already cut over, all external dependencies are cut over, and the operational checklist is complete. Transition these {{nodes.readiness.output.selected_count}} remaining unit(s) in dependency order: {{nodes.readiness.output.selected_units | truncate:1600}}"
     choices: [cutover, hold]
 
   - id: mark_cutover
     kind: foreach
-    items: "{{nodes.equivalents.output.units}}"
+    items: "{{nodes.readiness.output.selected_units}}"
     body:
       kind: tool
       tool: aim_units
       args:
         action: set_phase
-        unit: "{{item.module}}/{{item.name}}"
+        unit: "{{item}}"
         phase: cutover
 
   - id: done
@@ -84,13 +79,14 @@ edges:
   - { from: readiness_branch, to: acquire, when: ready }
   - { from: acquire, to: claim_branch }
   - { from: claim_branch, to: claim_blocked, when: blocked }
-  - { from: claim_branch, to: equivalents, when: acquired }
-  - { from: equivalents, to: confirm }
+  - { from: claim_branch, to: confirm, when: acquired }
   - { from: confirm, to: mark_cutover, when: cutover }
   - { from: confirm, to: release, when: hold }
   - { from: mark_cutover, to: release }
   - { from: release, to: done }
 
 outputs:
-  status: "{{nodes.readiness.output.status}}"
+  readiness_status: "{{nodes.readiness.output.status}}"
   blockers: "{{nodes.readiness.output.blockers | json}}"
+  decision: "{{nodes.confirm.output.choice}}"
+  transitioned_count: "{{nodes.mark_cutover.output.count}}"

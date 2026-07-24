@@ -15,7 +15,7 @@ from app.api.routes.snippets import router as snippets_router
 def roots(tmp_path: Path, monkeypatch):
     workspace = tmp_path / "project"
     workspace.mkdir()
-    project_root = workspace / ".EvoFlux" / "snippets"
+    project_root = workspace / ".evoflux" / "snippets"
     global_config = tmp_path / "config"
     global_root = global_config / "snippets"
 
