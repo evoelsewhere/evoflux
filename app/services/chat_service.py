@@ -7,9 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import NamedTuple
 from uuid import UUID
 
-import sqlalchemy as sa
 from loguru import logger
-from sqlalchemy.orm import aliased
 from sqlmodel import and_, col, or_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -929,6 +927,33 @@ async def list_sessions_page(
     return rows, next_cursor, has_more
 
 
+async def list_sessions_with_tag(
+    db: AsyncSession,
+    tag: str,
+    *,
+    limit: int = 100,
+) -> list[ChatSession]:
+    """Return the newest top-level sessions containing one server-owned tag.
+
+    JSON membership differs between SQLite and Postgres, while WebBridge pairing
+    lists are small and local. Read top-level session metadata once, filter the
+    tag in Python, then apply the requested cap so old pairing-owned sessions do
+    not disappear behind newer unrelated sessions.
+    """
+    bounded_limit = max(1, min(limit, 500))
+    rows = (
+        await db.exec(
+            select(ChatSession)
+            .where(col(ChatSession.parent_session_id).is_(None))
+            .where(col(ChatSession.session_type) != "side_chat")
+            .order_by(col(ChatSession.created_at).desc())
+        )
+    ).all()
+    return [session for session in rows if tag in (session.tags or ())][
+        :bounded_limit
+    ]
+
+
 async def get_latest_top_level_session(
     db: AsyncSession,
     *,
@@ -1067,14 +1092,27 @@ class TeamHistoryData(NamedTuple):
     lead_messages: list[SessionMessage]
     members: list[TeamHistoryMemberData]
     has_more: bool
-    next_cursor: datetime | None
+    next_cursor: str | None
+
+
+def _decode_history_cursor(
+    value: str | datetime | None,
+) -> tuple[datetime | None, UUID | None]:
+    if value is None:
+        return None, None
+    if isinstance(value, datetime):
+        return value, None
+    timestamp, separator, message_id = value.rpartition("|")
+    if not separator:
+        return datetime.fromisoformat(value), None
+    return datetime.fromisoformat(timestamp), UUID(message_id)
 
 
 async def get_team_history(
     db: AsyncSession,
     lead_session_id: UUID,
     *,
-    before: datetime | None = None,
+    before: str | datetime | None = None,
 ) -> TeamHistoryData | None:
     """Fetch the latest page of history for a team lead session and its sub-sessions.
 
@@ -1089,34 +1127,6 @@ async def get_team_history(
     if lead_session is None:
         return None
 
-    def _fetch_page(session_id: UUID):
-        stmt = (
-            select(SessionMessage)
-            .where(col(SessionMessage.session_id) == session_id)
-            .order_by(col(SessionMessage.created_at).desc())
-            .limit(_HISTORY_PAGE_SIZE + 1)
-        )
-        if before is not None:
-            stmt = stmt.where(col(SessionMessage.created_at) < before)
-        return stmt
-
-    # Me: summaries are NOT filtered here. The compaction divider in the
-    # web UI keys off ``is_summary=True`` rows to render the inline
-    # "Session compacted" marker + summary body; hiding them would make
-    # the divider vanish on reload. Undo uses ``extra.hidden_from_user``.
-    all_lead_rows = list((await db.exec(_fetch_page(lead_session_id))).all())
-    # Me: ``has_more`` must be based on the *raw* row count returned by the
-    # DB query (before hidden_from_user filtering).  If we check the
-    # filtered count instead, sessions with many hidden messages silently
-    # stop paginating: the filter eats into the LIMIT+1 rows, the visible
-    # count drops below PAGE_SIZE, and has_more becomes False even though
-    # the DB has more rows.
-    has_more = len(all_lead_rows) > _HISTORY_PAGE_SIZE
-    raw_lead = [msg for msg in all_lead_rows if not _is_hidden_from_user(msg)]
-    raw_lead = raw_lead[:_HISTORY_PAGE_SIZE]
-    lead_msgs = list(reversed(raw_lead))
-    next_cursor = lead_msgs[0].created_at if (has_more and lead_msgs) else None
-
     sub_sessions = (
         await db.exec(
             select(ChatSession)
@@ -1124,46 +1134,53 @@ async def get_team_history(
             .order_by(col(ChatSession.created_at).asc())
         )
     ).all()
-
-    # One query for all sub-sessions instead of a paginated SELECT each: a
-    # window function ranks messages per session (SQLite supports these),
-    # mirroring ``_fetch_page`` exactly — top ``PAGE_SIZE + 1`` rows per
-    # session by ``created_at DESC`` with the same ``before`` cursor filter.
-    members: list[TeamHistoryMemberData] = []
-    if sub_sessions:
-        rn = (
-            sa.func.row_number()
-            .over(
-                partition_by=col(SessionMessage.session_id),
-                order_by=col(SessionMessage.created_at).desc(),
-            )
-            .label("rn")
+    session_ids = [lead_session_id, *(session.id for session in sub_sessions)]
+    before_at, before_id = _decode_history_cursor(before)
+    stmt = (
+        select(SessionMessage)
+        .where(col(SessionMessage.session_id).in_(session_ids))
+        .order_by(
+            col(SessionMessage.created_at).desc(),
+            col(SessionMessage.id).desc(),
         )
-        inner = select(SessionMessage, rn).where(
-            col(SessionMessage.session_id).in_([sub.id for sub in sub_sessions])
-        )
-        if before is not None:
-            inner = inner.where(col(SessionMessage.created_at) < before)
-        subq = inner.subquery()
-        ranked_msg = aliased(SessionMessage, subq)
-        rows = (
-            await db.exec(
-                select(ranked_msg)
-                .where(subq.c.rn <= _HISTORY_PAGE_SIZE + 1)
-                .order_by(subq.c.session_id, subq.c.created_at.desc())
+        .limit(_HISTORY_PAGE_SIZE + 1)
+    )
+    if before_at is not None:
+        if before_id is None:
+            stmt = stmt.where(col(SessionMessage.created_at) < before_at)
+        else:
+            stmt = stmt.where(
+                or_(
+                    col(SessionMessage.created_at) < before_at,
+                    and_(
+                        col(SessionMessage.created_at) == before_at,
+                        col(SessionMessage.id) < before_id,
+                    ),
+                )
             )
-        ).all()
-        by_session: dict[UUID, list[SessionMessage]] = {}
-        for msg in rows:
-            by_session.setdefault(msg.session_id, []).append(msg)
-        for sub in sub_sessions:
-            raw_member = [
-                msg
-                for msg in by_session.get(sub.id, [])
-                if not _is_hidden_from_user(msg)
-            ]
-            member_msgs = list(reversed(raw_member[:_HISTORY_PAGE_SIZE]))
-            members.append(TeamHistoryMemberData(session=sub, messages=member_msgs))
+    raw_page = list((await db.exec(stmt)).all())
+    has_more = len(raw_page) > _HISTORY_PAGE_SIZE
+    page = raw_page[:_HISTORY_PAGE_SIZE]
+    # Summaries remain visible for compaction UI; only explicit
+    # ``hidden_from_user`` rows are removed from the rendered page.
+    visible_page = [row for row in page if not _is_hidden_from_user(row)]
+    lead_msgs = list(
+        reversed([row for row in visible_page if row.session_id == lead_session_id])
+    )
+    members = [
+        TeamHistoryMemberData(
+            session=sub,
+            messages=list(
+                reversed([row for row in visible_page if row.session_id == sub.id])
+            ),
+        )
+        for sub in sub_sessions
+    ]
+    next_cursor = (
+        f"{page[-1].created_at.isoformat()}|{page[-1].id}"
+        if has_more and page
+        else None
+    )
 
     return TeamHistoryData(
         lead_session=lead_session,

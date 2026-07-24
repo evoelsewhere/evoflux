@@ -19,6 +19,18 @@
     }
   }
 
+  function safeMediaSource(value) {
+    const source = String(value || "").trim();
+    if (!source || source.startsWith("data:") || source.startsWith("blob:")) return "";
+    try {
+      const url = new URL(source);
+      return ["http:", "https:"].includes(url.protocol) ? url.href : "";
+    } catch {
+      if (source.startsWith("//") || source.startsWith("/") || source.includes("..")) return "";
+      return source.replace(/^\.\//, "");
+    }
+  }
+
   function renderInline(source) {
     const tokens = [];
     const hold = (html) => {
@@ -31,6 +43,18 @@
     value = value.replace(/`([^`\n]+)`/g, (_match, code) => (
       hold(`<code>${escapeHtml(code)}</code>`)
     ));
+    value = value.replace(/!\[([^\]\n]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g, (_match, alt, rawSource) => {
+      const source = safeMediaSource(rawSource);
+      if (!source) return escapeHtml(alt || "Image unavailable");
+      if (/^https?:\/\//i.test(source)) {
+        return hold(
+          `<button type="button" data-webbridge-remote-media-src="${escapeHtml(source)}" data-webbridge-remote-media-alt="${escapeHtml(alt || "Image")}">Load remote image: ${escapeHtml(alt || "Image")}</button>`
+        );
+      }
+      return hold(
+        `<img data-webbridge-media-src="${escapeHtml(source)}" alt="${escapeHtml(alt || "Image")}" loading="lazy">`
+      );
+    });
     value = value.replace(/\[([^\]\n]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g, (_match, label, rawHref) => {
       const href = safeHref(rawHref);
       if (!href) return escapeHtml(label);

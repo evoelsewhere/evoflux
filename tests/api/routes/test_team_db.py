@@ -7,7 +7,7 @@ These tests use the real in-memory DB to exercise the SQL queries.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -805,6 +805,89 @@ class TestTeamHistoryWithData:
         member = data["members"][0]
         assert len(member["messages"]) >= 2
         assert member["name"] == "worker"
+
+    @pytest.mark.asyncio
+    async def test_history_paginates_one_global_lead_member_timeline(
+        self, app_with_team
+    ):
+        import app.core.db as _db
+
+        lead_id = uuid.uuid7()
+        member_id = uuid.uuid7()
+        base = datetime.now(timezone.utc) - timedelta(minutes=120)
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _create_team_session(db, lead_id)
+                await _create_member_session(
+                    db, member_id, lead_id, agent_name="worker"
+                )
+                for index in range(120):
+                    session_id = lead_id if index % 2 == 0 else member_id
+                    await _add_message(
+                        db,
+                        session_id,
+                        content=f"message-{index}",
+                        created_at=base + timedelta(minutes=index),
+                    )
+
+        client = TestClient(app_with_team)
+        first = client.get(f"/api/team/{lead_id}/history").json()
+        first_messages = [
+            *first["lead"]["messages"],
+            *(message for member in first["members"] for message in member["messages"]),
+        ]
+        assert len(first_messages) == 100
+        assert first["has_more"] is True
+        second = client.get(
+            f"/api/team/{lead_id}/history",
+            params={"before": first["next_cursor"]},
+        ).json()
+        second_messages = [
+            *second["lead"]["messages"],
+            *(message for member in second["members"] for message in member["messages"]),
+        ]
+        assert len(second_messages) == 20
+        assert second["has_more"] is False
+        contents = {message["content"] for message in [*first_messages, *second_messages]}
+        assert contents == {f"message-{index}" for index in range(120)}
+
+    @pytest.mark.asyncio
+    async def test_history_cursor_keeps_rows_with_identical_timestamps(
+        self, app_with_team
+    ):
+        import app.core.db as _db
+
+        lead_id = uuid.uuid7()
+        member_id = uuid.uuid7()
+        timestamp = datetime.now(timezone.utc)
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _create_team_session(db, lead_id)
+                await _create_member_session(db, member_id, lead_id)
+                for index in range(120):
+                    await _add_message(
+                        db,
+                        lead_id if index % 2 == 0 else member_id,
+                        content=f"tie-{index}",
+                        created_at=timestamp,
+                    )
+
+        client = TestClient(app_with_team)
+        first = client.get(f"/api/team/{lead_id}/history").json()
+        second = client.get(
+            f"/api/team/{lead_id}/history",
+            params={"before": first["next_cursor"]},
+        ).json()
+        messages = [
+            *first["lead"]["messages"],
+            *(message for member in first["members"] for message in member["messages"]),
+            *second["lead"]["messages"],
+            *(message for member in second["members"] for message in member["messages"]),
+        ]
+        assert len(messages) == 120
+        assert {message["content"] for message in messages} == {
+            f"tie-{index}" for index in range(120)
+        }
 
     @pytest.mark.asyncio
     async def test_history_includes_summary_messages(self, app_with_team):

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import base64
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from loguru import logger
@@ -58,6 +59,8 @@ def build_parts_from_metas(
     parts: list = []
 
     for att in attachment_metas:
+        if att.get("deleted_at") or _artifact_expired(att):
+            continue
         category = att.get("category", "image")
         original_name = att.get("original_name", att.get("filename", "file"))
 
@@ -137,3 +140,17 @@ def build_parts_from_metas(
     # Me user text always last — natural order: context → question
     parts.append(TextBlock(text=message))
     return parts
+
+
+def _artifact_expired(att: dict) -> bool:
+    artifact = att.get("webbridge_artifact")
+    expires_at = artifact.get("expires_at") if isinstance(artifact, dict) else None
+    if not isinstance(expires_at, str):
+        return False
+    try:
+        expiry = datetime.fromisoformat(expires_at)
+    except ValueError:
+        return True
+    if expiry.tzinfo is None:
+        expiry = expiry.replace(tzinfo=timezone.utc)
+    return expiry <= datetime.now(timezone.utc)

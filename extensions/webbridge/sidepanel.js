@@ -16,6 +16,7 @@ const pageTitle = document.getElementById("pageTitle");
 const statusDot = document.getElementById("statusDot");
 const stopBtn = document.getElementById("stopBtn");
 const settingsBtn = document.getElementById("settingsBtn");
+const openInEvoFluxBtn = document.getElementById("openInEvoFluxBtn");
 const settingsBackdrop = document.getElementById("settingsBackdrop");
 const settingsDrawer = document.getElementById("settingsDrawer");
 const closeSettingsBtn = document.getElementById("closeSettingsBtn");
@@ -29,8 +30,15 @@ const contextDetail = document.getElementById("contextDetail");
 const pickedElementCard = document.getElementById("pickedElementCard");
 const pickedElementLabel = document.getElementById("pickedElementLabel");
 const clearElementBtn = document.getElementById("clearElementBtn");
+const contextChips = document.getElementById("contextChips");
+const attachPageBtn = document.getElementById("attachPageBtn");
+const attachSelectionBtn = document.getElementById("attachSelectionBtn");
+const captureRegionBtn = document.getElementById("captureRegionBtn");
+const attachFileBtn = document.getElementById("attachFileBtn");
+const fileInput = document.getElementById("fileInput");
 const notice = document.getElementById("notice");
 const transcript = document.getElementById("transcript");
+const loadOlderBtn = document.getElementById("loadOlderBtn");
 const questionsRoot = document.getElementById("questions");
 const composer = document.getElementById("composer");
 const sendBtn = document.getElementById("sendBtn");
@@ -59,12 +67,16 @@ const watchNeedleInput = document.getElementById("watchNeedleInput");
 const watchTtlSelect = document.getElementById("watchTtlSelect");
 const watchActionBtn = document.getElementById("watchActionBtn");
 const watchSettingsDetail = document.getElementById("watchSettingsDetail");
+const watchList = document.getElementById("watchList");
+const stopAllWatchesBtn = document.getElementById("stopAllWatchesBtn");
 const teachActionBtn = document.getElementById("teachActionBtn");
 const discardTeachBtn = document.getElementById("discardTeachBtn");
 const teachSettingsDetail = document.getElementById("teachSettingsDetail");
+const issueCaptureBtn = document.getElementById("issueCaptureBtn");
+const reportIssueBtn = document.getElementById("reportIssueBtn");
+const issueSettingsDetail = document.getElementById("issueSettingsDetail");
 const retryContextBtn = document.getElementById("retryContextBtn");
 const releaseControlBtn = document.getElementById("releaseControlBtn");
-const newConversationBtn = document.getElementById("newConversationBtn");
 
 let relayBase = DEFAULT_RELAY_BASE;
 let pairingCredential = "";
@@ -80,23 +92,33 @@ let streamGeneration = 0;
 let refreshGeneration = 0;
 let liveMessage = null;
 let pendingQuestions = new Map();
+const activeTakeoverRequests = new Set();
 let humanControlLease = null;
 let pendingComposerRequest = null;
 let pickedElement = null;
+let panelContexts = [];
+let regionCapture = null;
+let panelFiles = [];
+let panelFileTabId = null;
 let composerSending = false;
 let activeTextWatch = null;
+let textWatches = [];
 let activeTeachRecording = null;
+let activeIssueCapture = null;
 let browserModels = [];
 let currentSessionModel = null;
 let modelCatalogLoaded = false;
 let modelCatalogLoading = false;
 let elementPickerActive = false;
-let nextAutoBindActionId = "";
 let markdownRenderTimer = null;
 let transcriptPinned = true;
+let historyCursor = null;
+const mediaObjectUrls = new Map();
 const agentStates = new Map();
 const toolActivities = new Map();
 const PANEL_REQUEST_STORAGE_KEY = "webbridgePanelPendingRequest";
+const PANEL_CONTEXT_DRAFT_STORAGE_KEY = "webbridgePanelContextDraft";
+const TAB_PAGE_INSTANCE_STORAGE_KEY = "webbridgeTabPageInstance";
 let themePreference = "system";
 
 const LOADING_VERBS = [
@@ -281,6 +303,11 @@ function setControlsDisabled(disabled) {
   sendBtn.disabled = disabled;
   stopBtn.disabled = disabled;
   modelTrigger.disabled = disabled || !selectedSessionId;
+  attachPageBtn.disabled = disabled;
+  attachSelectionBtn.disabled = disabled;
+  captureRegionBtn.disabled = disabled;
+  attachFileBtn.disabled = disabled;
+  openInEvoFluxBtn.disabled = disabled || !selectedSessionId;
 }
 
 function renderPickedElement() {
@@ -292,6 +319,121 @@ function renderPickedElement() {
   pickElementBtn.classList.toggle("active", active || elementPickerActive);
   pickElementBtn.title = active ? "Pick another element" : elementPickerActive ? "Element picker active" : "Pick an element from this page";
   pickElementBtn.setAttribute("aria-label", pickElementBtn.title);
+}
+
+function renderPanelContexts() {
+  contextChips.replaceChildren();
+  const currentContexts = panelContexts.filter((context) => context.tab_id === activeTab?.id);
+  const items = [
+    ...currentContexts.map((context) => ({
+      key: context.type,
+      label: context.type === "selection" ? "Selection" : "Page",
+      detail: context.text,
+    })),
+    ...(regionCapture?.tab_id === activeTab?.id ? [{
+      key: "screenshot",
+      label: "Region",
+      detail: `${Math.round(regionCapture.clip.width)}×${Math.round(regionCapture.clip.height)}`,
+    }] : []),
+    ...(panelFileTabId === activeTab?.id ? panelFiles : []).map((file, index) => ({
+      key: `file:${index}`,
+      label: file.name,
+      detail: `${file.type || "file"} · ${file.size} bytes`,
+    })),
+  ];
+  contextChips.classList.toggle("visible", items.length > 0);
+  for (const item of items) {
+    const chip = document.createElement("div");
+    chip.className = "context-chip";
+    chip.title = item.detail;
+    const label = document.createElement("span");
+    label.textContent = item.label;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.setAttribute("aria-label", `Remove ${item.label}`);
+    remove.textContent = "×";
+    remove.addEventListener("click", () => void removePanelContext(item.key));
+    chip.append(label, remove);
+    contextChips.append(chip);
+  }
+  attachPageBtn.classList.toggle("active", currentContexts.some((context) => context.type === "readable_page"));
+  attachSelectionBtn.classList.toggle("active", currentContexts.some((context) => context.type === "selection"));
+  captureRegionBtn.classList.toggle("active", regionCapture?.tab_id === activeTab?.id);
+  attachFileBtn.classList.toggle("active", panelFiles.length > 0);
+}
+
+async function removePanelContext(type) {
+  if (type === "screenshot") {
+    await chrome.runtime.sendMessage({ type: "clear_region_capture" });
+    regionCapture = null;
+  } else if (type.startsWith("file:")) {
+    panelFiles.splice(Number(type.split(":")[1]), 1);
+    if (!panelFiles.length) panelFileTabId = null;
+  } else {
+    panelContexts = panelContexts.filter((context) => !(context.tab_id === activeTab?.id && context.type === type));
+  }
+  renderPanelContexts();
+}
+
+async function captureTextContext(type) {
+  if (!hasPageTools()) return;
+  const response = await chrome.runtime.sendMessage({ type: "capture_panel_context", kind: type });
+  if (!response?.ok) {
+    setComposerStatus(response?.error || "Could not capture browser context", "error");
+    return;
+  }
+  panelContexts = panelContexts.filter((context) => !(context.tab_id === activeTab.id && context.type === type));
+  panelContexts.push({ ...response.context, tab_id: activeTab.id });
+  renderPanelContexts();
+  setComposerStatus(`${type === "selection" ? "Selection" : "Page"} attached.`);
+}
+
+async function startRegionCapture() {
+  if (!hasPageTools()) return;
+  if (panelFiles.length) {
+    panelFiles = [];
+    renderPanelContexts();
+  }
+  const response = await chrome.runtime.sendMessage({ type: "start_region_picker" });
+  if (!response?.ok) {
+    setComposerStatus(response?.error || "Could not start region capture", "error");
+    return;
+  }
+  setComposerStatus("Drag a region on the page · Escape to cancel.");
+}
+
+function selectPanelFiles(files) {
+  const selected = [...files].slice(0, 10);
+  const totalBytes = selected.reduce((total, file) => total + file.size, 0);
+  if (totalBytes > 5_000_000) {
+    setComposerStatus("Selected files exceed the 5 MB browser artifact limit.", "error");
+    fileInput.value = "";
+    return;
+  }
+  panelFiles = selected;
+  panelFileTabId = activeTab?.id ?? null;
+  if (regionCapture?.tab_id === activeTab?.id) {
+    void chrome.runtime.sendMessage({ type: "clear_region_capture" });
+    regionCapture = null;
+  }
+  renderPanelContexts();
+  setComposerStatus(`${panelFiles.length} file${panelFiles.length === 1 ? "" : "s"} attached.`);
+  fileInput.value = "";
+}
+
+async function openInEvoFlux() {
+  if (!selectedSessionId) return;
+  await chrome.tabs.create({
+    url: `${panelHttpBase()}/${encodeURIComponent(selectedSessionId)}`,
+    active: true,
+  });
+}
+
+function base64PngBlob(value) {
+  const binary = atob(value || "");
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return new Blob([bytes], { type: "image/png" });
 }
 
 function browserPanelElement(element, tabId) {
@@ -458,23 +600,136 @@ function renderBindingStatus() {
   takeControlBtn.disabled = !bound || !pageTools;
   if (bound) {
     bindingStatus.textContent = activeTabIsGroupedChild
-      ? "Session group tab"
-      : pageTools
-        ? "Connected to this tab"
-        : "Chat connected to this tab";
+      ? "Group tab"
+      : "Primary tab";
     contextDetail.textContent = activeTabIsGroupedChild
       ? "Agent defaults to the primary tab"
       : browserOrigin(activeTab?.url || activeTab?.pendingUrl || "")
         || "Browser tools activate on HTTP(S) pages";
     return;
   }
-  bindingStatus.textContent = "Preparing browser session";
-  contextDetail.textContent = "This happens automatically";
+  bindingStatus.textContent = "Preparing tab session";
+  contextDetail.textContent = "WebBridge creates it automatically";
 }
 
 function clearTranscript() {
+  for (const objectUrl of mediaObjectUrls.values()) URL.revokeObjectURL(objectUrl);
+  mediaObjectUrls.clear();
   transcript.replaceChildren();
+  transcript.append(loadOlderBtn);
+  loadOlderBtn.classList.remove("visible");
+  historyCursor = null;
   liveMessage = null;
+}
+
+function panelMediaPath(source) {
+  if (!selectedSessionId || !source || /^(?:https?:)?\/\//i.test(source)) return "";
+  const clean = source.replace(/^\.\//, "").replace(/^\/+/, "");
+  if (!clean || clean.split("/").includes("..")) return "";
+  return `${SESSIONS_PATH}/${encodeURIComponent(selectedSessionId)}/media/${clean.split("/").map(encodeURIComponent).join("/")}`;
+}
+
+async function authenticatedMediaUrl(path) {
+  if (mediaObjectUrls.has(path)) return mediaObjectUrls.get(path);
+  const response = await panelFetch(path);
+  const objectUrl = URL.createObjectURL(await response.blob());
+  mediaObjectUrls.set(path, objectUrl);
+  return objectUrl;
+}
+
+async function hydrateMarkdownMedia(root) {
+  for (const image of root.querySelectorAll("img[data-webbridge-media-src]")) {
+    const source = image.dataset.webbridgeMediaSrc || "";
+    try {
+      const path = panelMediaPath(source);
+      if (!path) throw new Error("Unsupported media path");
+      image.src = await authenticatedMediaUrl(path);
+      image.removeAttribute("data-webbridge-media-src");
+    } catch {
+      const fallback = document.createElement("span");
+      fallback.className = "media-unavailable";
+      fallback.textContent = image.alt || "Image unavailable";
+      image.replaceWith(fallback);
+    }
+  }
+  for (const button of root.querySelectorAll("button[data-webbridge-remote-media-src]")) {
+    button.addEventListener("click", () => {
+      const source = button.dataset.webbridgeRemoteMediaSrc || "";
+      if (!/^https?:\/\//i.test(source)) return;
+      const image = document.createElement("img");
+      image.src = source;
+      image.alt = button.dataset.webbridgeRemoteMediaAlt || "Remote image";
+      image.loading = "lazy";
+      image.referrerPolicy = "no-referrer";
+      button.replaceWith(image);
+    }, { once: true });
+  }
+}
+
+async function renderAttachments(item, attachments = []) {
+  if (!attachments.length) return;
+  const root = document.createElement("div");
+  root.className = "message-attachments";
+  item.append(root);
+  for (const attachment of attachments) {
+    const entry = document.createElement(attachment.category === "image" ? "figure" : "div");
+    entry.className = `message-attachment ${attachment.category === "image" ? "image" : "file"}`;
+    if (attachment.category === "image") {
+      const image = document.createElement("img");
+      image.alt = attachment.name || "Image";
+      image.loading = "lazy";
+      const caption = document.createElement("figcaption");
+      caption.textContent = attachment.name || "Image";
+      entry.append(image, caption);
+      root.append(entry);
+      try { image.src = await authenticatedMediaUrl(attachment.url); }
+      catch { entry.replaceWith(Object.assign(document.createElement("span"), { className: "media-unavailable", textContent: `${attachment.name || "Image"} unavailable` })); }
+      if (attachment.deletable) addAttachmentDelete(entry, attachment);
+      continue;
+    }
+    const download = document.createElement("button");
+    download.type = "button";
+    download.textContent = attachment.name || "Attachment";
+    download.addEventListener("click", async () => {
+      try {
+        const url = await authenticatedMediaUrl(attachment.url);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = attachment.name || "attachment";
+        anchor.click();
+      } catch (error) {
+        setNotice(error.message || String(error), "error");
+      }
+    });
+    entry.append(download);
+    if (attachment.deletable) addAttachmentDelete(entry, attachment);
+    root.append(entry);
+  }
+}
+
+function addAttachmentDelete(entry, attachment) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "attachment-delete";
+  button.textContent = "×";
+  button.title = `Delete ${attachment.name || "attachment"}`;
+  button.setAttribute("aria-label", button.title);
+  button.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    button.disabled = true;
+    try {
+      await panelFetch(attachment.url, { method: "DELETE" });
+      const objectUrl = mediaObjectUrls.get(attachment.url);
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      mediaObjectUrls.delete(attachment.url);
+      entry.remove();
+    } catch (error) {
+      button.disabled = false;
+      setNotice(error.message || String(error), "error");
+    }
+  });
+  entry.append(button);
 }
 
 function scrollTranscriptToEnd() {
@@ -482,7 +737,7 @@ function scrollTranscriptToEnd() {
   requestAnimationFrame(() => { transcript.scrollTop = transcript.scrollHeight; });
 }
 
-function appendMessage(message, { live = false } = {}) {
+function appendMessage(message, { live = false, prepend = false } = {}) {
   const empty = transcript.querySelector(".empty");
   if (empty) empty.remove();
   const item = document.createElement("article");
@@ -495,12 +750,15 @@ function appendMessage(message, { live = false } = {}) {
   const rawContent = message.content || "";
   if (message.role === "assistant" && globalThis.WebBridgeMarkdown) {
     globalThis.WebBridgeMarkdown.render(content, rawContent);
+    void hydrateMarkdownMedia(content);
   } else {
     content.textContent = rawContent;
   }
   item.append(meta, content);
-  transcript.append(item);
-  scrollTranscriptToEnd();
+  void renderAttachments(item, message.attachments || []);
+  if (prepend) transcript.insertBefore(item, loadOlderBtn.nextSibling);
+  else transcript.append(item);
+  if (!prepend) scrollTranscriptToEnd();
   return { item, content, rawContent };
 }
 
@@ -512,39 +770,89 @@ function showEmptyTranscript(text) {
   transcript.append(empty);
 }
 
-async function loadHistory() {
+async function loadHistory({ before = null, prepend = false } = {}) {
   if (!selectedSessionId) {
-    showEmptyTranscript("EvoFlux will create a conversation for this tab.");
+    showEmptyTranscript("EvoFlux is preparing this tab session.");
     return;
   }
-  const response = await panelFetch(
-    `${SESSIONS_PATH}/${encodeURIComponent(selectedSessionId)}/history?limit=100`
-  );
-  const body = await response.json();
-  clearTranscript();
-  if (!body.messages?.length) {
-    showEmptyTranscript("No messages yet. Send a question from the Side Panel.");
+  let cursor = before;
+  let body = null;
+  for (let page = 0; page < 20; page += 1) {
+    const path = cursor
+      ? `${SESSIONS_PATH}/${encodeURIComponent(selectedSessionId)}/history?before=${encodeURIComponent(cursor)}`
+      : `${SESSIONS_PATH}/${encodeURIComponent(selectedSessionId)}/history`;
+    const response = await panelFetch(path);
+    body = await response.json();
+    if (body.messages?.length || !body.has_more || !body.next_cursor) break;
+    cursor = body.next_cursor;
+  }
+  const previousHeight = transcript.scrollHeight;
+  if (!prepend) clearTranscript();
+  if (!body?.messages?.length) {
+    if (!prepend) showEmptyTranscript("No messages yet. Send a question from the Side Panel.");
+    historyCursor = body?.next_cursor || null;
+    loadOlderBtn.classList.toggle("visible", Boolean(body?.has_more && historyCursor));
     return;
   }
-  for (const message of body.messages) appendMessage(message);
+  if (prepend) {
+    for (const message of [...body.messages].reverse()) appendMessage(message, { prepend: true });
+    requestAnimationFrame(() => {
+      transcript.scrollTop += transcript.scrollHeight - previousHeight;
+    });
+  } else {
+    for (const message of body.messages) appendMessage(message);
+  }
+  historyCursor = body.next_cursor || null;
+  loadOlderBtn.classList.toggle("visible", Boolean(body.has_more && historyCursor));
 }
 
 function renderQuestions() {
   questionsRoot.replaceChildren();
   const questions = [...pendingQuestions.values()];
+  const liveRequestIds = new Set(questions.map((request) => request.request_id));
+  for (const requestId of activeTakeoverRequests) {
+    if (!liveRequestIds.has(requestId)) activeTakeoverRequests.delete(requestId);
+  }
   questionsRoot.classList.toggle("visible", questions.length > 0);
   for (const request of questions) {
     const card = document.createElement("article");
     card.className = "question-card";
     const inputs = [];
+    const handoffs = request.questions.map((question) => question.browser_handoff || null);
+    const needsTakeover = handoffs.some((handoff) => handoff?.kind === "take_over");
     request.questions.forEach((question, index) => {
+      const handoff = handoffs[index];
+      if (handoff) {
+        const meta = document.createElement("div");
+        meta.className = "handoff-meta";
+        const title = document.createElement("strong");
+        title.textContent = handoff.title || {
+          take_over: "Take over this tab",
+          confirm_action: "Confirm browser action",
+          provide_secret: "Complete secure input",
+          choose_option: "Choose an option",
+        }[handoff.kind] || "Browser handoff";
+        meta.append(title);
+        for (const detail of [handoff.action, handoff.target, handoff.consequence].filter(Boolean)) {
+          const line = document.createElement("div");
+          line.textContent = detail;
+          meta.append(line);
+        }
+        card.append(meta);
+      }
       const prompt = document.createElement("p");
       prompt.textContent = question.question || `Question ${index + 1}`;
       card.append(prompt);
       const input = document.createElement("textarea");
       input.className = "answer";
-      input.placeholder = "Your answer";
+      input.placeholder = handoff?.kind === "provide_secret"
+        ? "No secret is read · click Completed after entering it on the page"
+        : "Your answer";
       input.setAttribute("aria-label", `Answer ${index + 1}`);
+      if (handoff?.kind === "provide_secret" || handoff?.kind === "take_over") {
+        input.hidden = true;
+        input.value = "completed";
+      }
       card.append(input);
       inputs.push(input);
       if (Array.isArray(question.options) && question.options.length) {
@@ -564,8 +872,16 @@ function renderQuestions() {
     const reply = document.createElement("button");
     reply.type = "button";
     reply.className = "btn primary";
-    reply.textContent = "Reply";
+    reply.textContent = handoffs.some((handoff) => handoff?.kind === "take_over")
+      ? "Done · Resume agent"
+      : handoffs.some((handoff) => handoff?.kind === "provide_secret")
+        ? "Completed"
+        : "Reply";
     reply.addEventListener("click", () => void submitQuestion(request, inputs, reply));
+    if (needsTakeover && !activeTakeoverRequests.has(request.request_id)) {
+      activeTakeoverRequests.add(request.request_id);
+      void takeHumanControl();
+    }
     card.append(reply);
     questionsRoot.append(card);
   }
@@ -585,6 +901,51 @@ async function loadPendingQuestions() {
   renderQuestions();
 }
 
+async function consumeContextMenuDraft() {
+  if (!activeTab?.id) return;
+  const storage = panelSessionStorage();
+  const draftKey = `${PANEL_CONTEXT_DRAFT_STORAGE_KEY}:${activeTab.id}`;
+  const pageInstanceKey = `${TAB_PAGE_INSTANCE_STORAGE_KEY}:${activeTab.id}`;
+  const stored = await storage.get([draftKey, pageInstanceKey]);
+  const draft = stored[draftKey];
+  const currentPageUrl = safePageUrl(activeTab.url || activeTab.pendingUrl || "");
+  if (
+    !draft ||
+    !draft.created_at ||
+    Date.now() - draft.created_at > 5 * 60 * 1000 ||
+    draft.page_url !== currentPageUrl ||
+    !draft.page_instance_id ||
+    draft.page_instance_id !== stored[pageInstanceKey]
+  ) {
+    if (draft) await storage.remove([draftKey]);
+    return;
+  }
+  const payload = draft.payload || {};
+  const metadata = payload.metadata || {};
+  composer.value = payload.prompt || composer.value;
+  resizeComposer();
+  if (payload.context_type === "selection" && metadata.selection_text) {
+    panelContexts = panelContexts.filter((context) => !(context.tab_id === activeTab.id && context.type === "selection"));
+    panelContexts.push({
+      tab_id: activeTab.id,
+      type: "selection",
+      page_url: metadata.page_url,
+      title: metadata.page_title || "",
+      text: metadata.selection_text,
+    });
+  } else {
+    const detail = payload.context_type === "link" ? metadata.link_url : metadata.page_url;
+    if (detail) {
+      composer.value = `${composer.value}\n\nSource: ${detail}`.trim();
+      resizeComposer();
+    }
+  }
+  await storage.remove([draftKey]);
+  renderPanelContexts();
+  setComposerStatus("Browser context ready · review and send.");
+  composer.focus();
+}
+
 async function submitQuestion(request, inputs, button) {
   const answers = inputs.map((input) => input.value.trim());
   if (answers.some((answer) => !answer)) {
@@ -602,6 +963,10 @@ async function submitQuestion(request, inputs, button) {
       }
     );
     pendingQuestions.delete(request.request_id);
+    activeTakeoverRequests.delete(request.request_id);
+    if (request.questions.some((question) => question.browser_handoff?.kind === "take_over")) {
+      await resumeAgent();
+    }
     renderQuestions();
     clearNotice();
   } catch (error) {
@@ -611,14 +976,11 @@ async function submitQuestion(request, inputs, button) {
   }
 }
 
-async function ensureAutoSession(tab) {
-  const stableActionId = `side-chat-${await sha256(String(tab.id))}`;
+async function resolvePanelSession(tab) {
   const response = await chrome.runtime.sendMessage({
     type: "ensure_browser_session_for_tab",
-    action_id: nextAutoBindActionId || stableActionId,
   });
-  nextAutoBindActionId = "";
-  if (!response?.ok) throw new Error(response?.error || "Could not prepare a browser session");
+  if (!response?.ok) throw new Error(response?.error || "Could not prepare this tab session");
   if (response.tab?.id !== tab.id) throw new Error("The active browser tab changed while Side Chat was loading.");
   return response;
 }
@@ -629,12 +991,16 @@ async function refreshPanel({ preserveTranscript = false } = {}) {
   try {
     await loadConfig();
     const nextTab = await currentTab();
-    if (activeTab && activeTab.id !== nextTab.id) stopStream();
+    if (activeTab && activeTab.id !== nextTab.id) {
+      stopStream();
+      panelFiles = [];
+      panelFileTabId = null;
+    }
     activeTab = nextTab;
     pageTitle.textContent = activeTab.title || safePageUrl(activeTab.url || activeTab.pendingUrl || "") || "Side Chat";
-    const ensured = await ensureAutoSession(activeTab);
+    const ensured = await resolvePanelSession(activeTab);
     if (generation !== refreshGeneration) return;
-    selectedSessionId = ensured.session_id;
+    selectedSessionId = ensured.session_id || "";
     activeTabIsGroupedChild = Boolean(ensured.grouped);
     const [sessionResponse, bindingResponse] = await Promise.all([
       panelFetch(SESSIONS_PATH),
@@ -647,11 +1013,16 @@ async function refreshPanel({ preserveTranscript = false } = {}) {
       binding.tab_id === ensured.binding_tab_id && binding.session_id === selectedSessionId
     )) || null;
     const session = sessions.find((item) => item.id === selectedSessionId) || ensured.session;
-    sessionTitle.textContent = session?.title || "Browser conversation";
+    sessionTitle.textContent = session?.title || "EvoFlux Side Chat";
     renderModelTrigger(session);
     renderBindingStatus();
-    await refreshHumanControl();
+    if (selectedSessionId) await refreshHumanControl();
+    else humanControlLease = null;
     await refreshPickedElement();
+    const captureResponse = await chrome.runtime.sendMessage({ type: "get_region_capture" });
+    regionCapture = captureResponse?.ok ? captureResponse.capture : null;
+    renderPanelContexts();
+    await consumeContextMenuDraft();
     if (generation !== refreshGeneration) return;
     statusDot.className = "status-dot live";
     clearNotice();
@@ -669,27 +1040,6 @@ async function refreshPanel({ preserveTranscript = false } = {}) {
     if (generation !== refreshGeneration) return;
     setControlsDisabled(false);
     renderBindingStatus();
-  }
-}
-
-async function startFreshConversation() {
-  if (!activeTab?.id) return;
-  setControlsDisabled(true);
-  try {
-    await panelFetch(`${BINDINGS_PATH}/${encodeURIComponent(activeTab.id)}`, { method: "DELETE" });
-    stopStream();
-    selectedSessionId = "";
-    primaryBinding = null;
-    activeTabIsGroupedChild = false;
-    currentSessionModel = null;
-    renderModelTrigger();
-    nextAutoBindActionId = `side-chat-fresh-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    closeSettings();
-    await refreshPanel();
-  } catch (error) {
-    setNotice(error.message || String(error), "error");
-  } finally {
-    setControlsDisabled(false);
   }
 }
 
@@ -842,6 +1192,7 @@ function scheduleLiveMarkdownRender() {
     markdownRenderTimer = null;
     if (!liveMessage) return;
     globalThis.WebBridgeMarkdown?.render(liveMessage.content, liveMessage.rawContent);
+    void hydrateMarkdownMedia(liveMessage.content);
     scrollTranscriptToEnd();
   }, 80);
 }
@@ -851,6 +1202,7 @@ function flushLiveMarkdownRender() {
   markdownRenderTimer = null;
   if (!liveMessage) return;
   globalThis.WebBridgeMarkdown?.render(liveMessage.content, liveMessage.rawContent);
+  void hydrateMarkdownMedia(liveMessage.content);
   scrollTranscriptToEnd();
 }
 
@@ -896,6 +1248,17 @@ function handleStreamEvent(type, data) {
     toolActivities.clear();
     renderActivity();
     setNotice(data.message || "EvoFlux stream failed.", "error");
+    return;
+  }
+  if (type === "provider_status") {
+    const providerStatus = data.status || "updated";
+    if (providerStatus === "fallback") {
+      setNotice(`Switching model to ${data.fallback || "a fallback provider"}.`, "info");
+    } else if (providerStatus === "retrying") {
+      setComposerStatus(`Provider retry ${data.attempt || ""}/${data.max_attempts || ""}`.replace(/\/$/, ""));
+    } else if (providerStatus === "exhausted") {
+      setNotice(`${data.model || "Provider"} exhausted retry attempts.`, "error");
+    }
     return;
   }
   if (type === "done") {
@@ -984,8 +1347,18 @@ async function sendMessage() {
     const elementKey = element
       ? `${element.page_url}:${element.selector}`
       : "";
+    const contexts = panelContexts
+      .filter((context) => context.tab_id === activeTab.id)
+      .map(({ tab_id: _tabId, ...context }) => context);
+    const screenshotKey = regionCapture?.tab_id === activeTab.id
+      ? `${regionCapture.page_url}:${JSON.stringify(regionCapture.clip)}:${regionCapture.data_base64.length}`
+      : "";
+    const activeFiles = panelFileTabId === activeTab.id ? panelFiles : [];
+    const filesKey = activeFiles
+      .map((file) => `${file.name}:${file.size}:${file.lastModified}`)
+      .join("|");
     const requestShape = await sha256(
-      `${selectedSessionId}:${activeTab.id}:${sourceScope}:${content}:${elementKey}`
+      `${selectedSessionId}:${activeTab.id}:${sourceScope}:${content}:${elementKey}:${JSON.stringify(contexts)}:${screenshotKey}:${filesKey}`
     );
     if (!pendingComposerRequest) {
       const stored = await panelSessionStorage().get([PANEL_REQUEST_STORAGE_KEY]);
@@ -998,24 +1371,61 @@ async function sendMessage() {
       };
       await panelSessionStorage().set({ [PANEL_REQUEST_STORAGE_KEY]: pendingComposerRequest });
     }
-    const response = await panelFetch(
-      `${SESSIONS_PATH}/${encodeURIComponent(selectedSessionId)}/messages`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Idempotency-Key": pendingComposerRequest.id,
+    const body = {
+      content,
+      tab_id: activeTab.id,
+      binding_tab_id: selectedBinding()?.tab_id || activeTab.id,
+      origin: sourceScope,
+      user_gesture: true,
+      element,
+      contexts,
+    };
+    let response;
+    if (activeFiles.length) {
+      const form = new FormData();
+      form.append("payload", JSON.stringify(body));
+      for (const file of activeFiles) form.append("attachments", file, file.name);
+      response = await panelFetch(
+        `${SESSIONS_PATH}/${encodeURIComponent(selectedSessionId)}/messages/attachments`,
+        {
+          method: "POST",
+          headers: { "Idempotency-Key": pendingComposerRequest.id },
+          body: form,
+        }
+      );
+    } else if (regionCapture?.tab_id === activeTab.id) {
+      const form = new FormData();
+      form.append("payload", JSON.stringify({
+        ...body,
+        screenshot: {
+          page_url: regionCapture.page_url,
+          captured_at: regionCapture.captured_at,
+          clip: regionCapture.clip,
+          viewport: regionCapture.viewport,
         },
-        body: JSON.stringify({
-          content,
-          tab_id: activeTab.id,
-          binding_tab_id: selectedBinding()?.tab_id || activeTab.id,
-          origin: sourceScope,
-          user_gesture: true,
-          element,
-        }),
-      }
-    );
+      }));
+      form.append("screenshot", base64PngBlob(regionCapture.data_base64), "browser-region.png");
+      response = await panelFetch(
+        `${SESSIONS_PATH}/${encodeURIComponent(selectedSessionId)}/messages/screenshot`,
+        {
+          method: "POST",
+          headers: { "Idempotency-Key": pendingComposerRequest.id },
+          body: form,
+        }
+      );
+    } else {
+      response = await panelFetch(
+        `${SESSIONS_PATH}/${encodeURIComponent(selectedSessionId)}/messages`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": pendingComposerRequest.id,
+          },
+          body: JSON.stringify(body),
+        }
+      );
+    }
     const result = await response.json();
     if (result.status !== "pending") {
       pendingComposerRequest = null;
@@ -1030,6 +1440,14 @@ async function sendMessage() {
     if (pickedElement?.tab_id === activeTab.id) {
       await clearElement();
     }
+    panelContexts = panelContexts.filter((context) => context.tab_id !== activeTab.id);
+    panelFiles = [];
+    panelFileTabId = null;
+    if (regionCapture?.tab_id === activeTab.id) {
+      await chrome.runtime.sendMessage({ type: "clear_region_capture" });
+      regionCapture = null;
+    }
+    renderPanelContexts();
     appendMessage({ role: "user", content });
     setComposerStatus(result.status === "queued" ? "Queued behind the current turn." : "EvoFlux is responding.");
     agentStates.set("EvoFlux", "working");
@@ -1044,9 +1462,42 @@ async function sendMessage() {
   }
 }
 
+async function submitIssueReport(report) {
+  if (!selectedSessionId || !activeTab?.id || !isBoundToSelectedSession()) {
+    throw new Error("This tab session is not ready for an issue report.");
+  }
+  const form = new FormData();
+  form.append("payload", JSON.stringify({
+    content: "Investigate the browser issue captured on this page. Use the attached screenshot and redacted diagnostics as evidence.",
+    tab_id: activeTab.id,
+    binding_tab_id: selectedBinding()?.tab_id || activeTab.id,
+    origin: browserTabScope(activeTab),
+    user_gesture: true,
+    element: browserPanelElement(pickedElement, activeTab.id),
+    contexts: [],
+    diagnostics: report.diagnostics || [],
+    screenshot: {
+      page_url: report.capture.page_url,
+      captured_at: report.capture.captured_at,
+      clip: report.capture.clip,
+      viewport: report.capture.viewport,
+    },
+  }));
+  form.append("screenshot", base64PngBlob(report.capture.data_base64), "browser-issue.png");
+  const response = await panelFetch(
+    `${SESSIONS_PATH}/${encodeURIComponent(selectedSessionId)}/messages/screenshot`,
+    {
+      method: "POST",
+      headers: { "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `issue-${Date.now()}` },
+      body: form,
+    }
+  );
+  return response.json();
+}
+
 async function stopRun() {
   if (!selectedSessionId) {
-    setNotice("No browser conversation is active on this tab.", "error");
+    setNotice("This tab session is not ready yet.", "error");
     return;
   }
   stopBtn.disabled = true;
@@ -1101,7 +1552,8 @@ async function refreshSettings() {
         : "Reconnect or pair this extension to continue.";
     toggleConnectionBtn.textContent = connected ? "Disconnect" : "Reconnect";
     pairingSettings.style.display = response?.paired ? "none" : "block";
-    activeTextWatch = (response?.text_watches || []).find((item) => item.tab_id === activeTab?.id) || null;
+    textWatches = response?.text_watches || [];
+    activeTextWatch = textWatches.find((item) => item.tab_id === activeTab?.id) || null;
     if (activeTextWatch?.state === "matched") {
       watchActionBtn.textContent = "Send match";
       watchSettingsDetail.textContent = `Matched “${activeTextWatch.needle}”. Nothing is sent until you confirm.`;
@@ -1119,6 +1571,7 @@ async function refreshSettings() {
     if (!pageTools) {
       watchSettingsDetail.textContent = "Available after this tab opens an HTTP(S) page.";
     }
+    renderWatchList();
     activeTeachRecording = response?.teach_recording || null;
     const teachingThisTab = activeTeachRecording?.tab_id === activeTab?.id;
     teachActionBtn.textContent = teachingThisTab ? "Stop & save draft" : "Start recording";
@@ -1133,16 +1586,66 @@ async function refreshSettings() {
         : response?.last_teach_draft
           ? "Draft saved. Review and approve it in EvoFlux before replay."
           : "Record semantic actions into a reviewable draft.";
+    const issueResponse = await chrome.runtime.sendMessage({ type: "get_issue_capture" });
+    activeIssueCapture = issueResponse?.ok ? issueResponse.capture : null;
+    issueCaptureBtn.textContent = activeIssueCapture ? "Stop capture" : "Start capture";
+    reportIssueBtn.disabled = !activeIssueCapture || !selectedSessionId || !pageTools;
+    issueCaptureBtn.disabled = !selectedSessionId || !pageTools;
+    issueSettingsDetail.textContent = !pageTools
+      ? "Available after this tab opens an HTTP(S) page."
+      : activeIssueCapture
+        ? `Collecting redacted errors on this page · ${activeIssueCapture.entry_count || 0} captured.`
+        : "Opt in to collect a small redacted console/network error ring for this page.";
     retryContextBtn.style.display = response?.pending_interaction ? "inline-flex" : "none";
     releaseControlBtn.disabled = !(response?.attached_tab_ids?.length);
-    newConversationBtn.disabled = !selectedSessionId || activeTabIsGroupedChild;
-    newConversationBtn.title = activeTabIsGroupedChild
-      ? "Switch to the primary tab to start a fresh conversation"
-      : "Create a new conversation for this primary tab";
   } catch (error) {
     settingsStatusDot.className = "status-dot error";
     settingsStatusText.textContent = "Extension unavailable";
     settingsStatusDetail.textContent = error.message || String(error);
+  }
+}
+
+function renderWatchList() {
+  watchList.replaceChildren();
+  stopAllWatchesBtn.style.display = textWatches.length ? "inline-flex" : "none";
+  for (const watch of textWatches) {
+    const item = document.createElement("div");
+    item.className = "watch-item";
+    const copy = document.createElement("div");
+    copy.className = "watch-item-copy";
+    const label = document.createElement("strong");
+    label.textContent = `${watch.state === "matched" ? "Matched" : "Watching"}: ${watch.needle}`;
+    const page = document.createElement("span");
+    page.textContent = watch.page_url;
+    copy.append(label, page);
+    const action = document.createElement("button");
+    action.type = "button";
+    action.className = `btn${watch.state === "matched" ? " primary" : ""}`;
+    action.textContent = watch.state === "matched" ? "Send" : "Cancel";
+    action.addEventListener("click", async () => {
+      action.disabled = true;
+      const response = await chrome.runtime.sendMessage({
+        type: watch.state === "matched" ? "send_matched_text_watch" : "cancel_text_watch",
+        watch_id: watch.id,
+      });
+      if (!response?.ok) watchSettingsDetail.textContent = response?.error || "Could not update watch";
+      await refreshSettings();
+    });
+    item.append(copy, action);
+    watchList.append(item);
+  }
+}
+
+async function stopAllWatches() {
+  stopAllWatchesBtn.disabled = true;
+  try {
+    const response = await chrome.runtime.sendMessage({ type: "cancel_all_text_watches" });
+    if (!response?.ok) throw new Error(response?.error || "Could not stop watches");
+    await refreshSettings();
+  } catch (error) {
+    watchSettingsDetail.textContent = error.message || String(error);
+  } finally {
+    stopAllWatchesBtn.disabled = false;
   }
 }
 
@@ -1255,6 +1758,39 @@ async function discardTeachRecording() {
   await refreshSettings();
 }
 
+async function toggleIssueCapture() {
+  issueCaptureBtn.disabled = true;
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: activeIssueCapture ? "stop_issue_capture" : "start_issue_capture",
+    });
+    if (!response?.ok) throw new Error(response?.error || "Could not update issue capture");
+    await refreshSettings();
+  } catch (error) {
+    issueSettingsDetail.textContent = error.message || String(error);
+  } finally {
+    issueCaptureBtn.disabled = !selectedSessionId || !hasPageTools();
+  }
+}
+
+async function reportIssue() {
+  reportIssueBtn.disabled = true;
+  issueSettingsDetail.textContent = "Capturing evidence…";
+  try {
+    const response = await chrome.runtime.sendMessage({ type: "collect_issue_report" });
+    if (!response?.ok) throw new Error(response?.error || "Could not collect issue evidence");
+    const result = await submitIssueReport(response.report);
+    closeSettings();
+    appendMessage({ role: "user", content: "Investigate the captured browser issue." });
+    setComposerStatus(result.status === "queued" ? "Issue report queued." : "Issue report sent.");
+    startStream();
+  } catch (error) {
+    issueSettingsDetail.textContent = error.message || String(error);
+  } finally {
+    await refreshSettings();
+  }
+}
+
 async function retryBrowserContext() {
   retryContextBtn.disabled = true;
   try {
@@ -1296,6 +1832,7 @@ function resizeComposer() {
 }
 
 settingsBtn.addEventListener("click", openSettings);
+openInEvoFluxBtn.addEventListener("click", () => void openInEvoFlux());
 closeSettingsBtn.addEventListener("click", closeSettings);
 settingsBackdrop.addEventListener("click", closeSettings);
 saveConnectionBtn.addEventListener("click", () => void saveConnectionSettings());
@@ -1307,11 +1844,13 @@ themeControl.addEventListener("click", (event) => {
   if (button) void setTheme(button.dataset.themeValue);
 });
 watchActionBtn.addEventListener("click", () => void runWatchAction());
+stopAllWatchesBtn.addEventListener("click", () => void stopAllWatches());
 teachActionBtn.addEventListener("click", () => void runTeachAction());
 discardTeachBtn.addEventListener("click", () => void discardTeachRecording());
+issueCaptureBtn.addEventListener("click", () => void toggleIssueCapture());
+reportIssueBtn.addEventListener("click", () => void reportIssue());
 retryContextBtn.addEventListener("click", () => void retryBrowserContext());
 releaseControlBtn.addEventListener("click", () => void releaseBrowserControl());
-newConversationBtn.addEventListener("click", () => void startFreshConversation());
 newGroupedTabBtn.addEventListener("click", () => void openGroupedTab());
 modelTrigger.addEventListener("click", () => void openModelPicker());
 modelSearch.addEventListener("input", () => renderModelOptions(modelSearch.value));
@@ -1323,7 +1862,19 @@ document.addEventListener("click", (event) => {
   if (!event.target.closest(".model-picker")) closeModelPicker();
 });
 refreshBtn.addEventListener("click", () => void refreshPanel());
+loadOlderBtn.addEventListener("click", () => {
+  if (!historyCursor) return;
+  loadOlderBtn.disabled = true;
+  void loadHistory({ before: historyCursor, prepend: true }).finally(() => {
+    loadOlderBtn.disabled = false;
+  });
+});
 pickElementBtn.addEventListener("click", () => void startElementPicker());
+attachPageBtn.addEventListener("click", () => void captureTextContext("readable_page"));
+attachSelectionBtn.addEventListener("click", () => void captureTextContext("selection"));
+captureRegionBtn.addEventListener("click", () => void startRegionCapture());
+attachFileBtn.addEventListener("click", () => fileInput.click());
+fileInput.addEventListener("change", () => selectPanelFiles(fileInput.files || []));
 clearElementBtn.addEventListener("click", () => void clearElement());
 takeControlBtn.addEventListener("click", () => void takeHumanControl());
 resumeAgentBtn.addEventListener("click", () => void resumeAgent());
@@ -1370,6 +1921,21 @@ chrome.runtime.onMessage.addListener((message) => {
     elementPickerActive = Boolean(message.active);
     renderPickedElement();
     if (!elementPickerActive && !pickedElement) setComposerStatus("");
+    return;
+  }
+  if (message?.type === "region_capture_ready") {
+    if (message.capture?.tab_id !== activeTab?.id) return;
+    regionCapture = message.capture;
+    renderPanelContexts();
+    setComposerStatus("Screen region attached.");
+    return;
+  }
+  if (message?.type === "region_capture_error") {
+    setComposerStatus(message.error || "Could not capture region", "error");
+    return;
+  }
+  if (message?.type === "region_capture_cancelled") {
+    setComposerStatus(message.reason === "too_small" ? "Select a larger region." : "Region capture cancelled.");
     return;
   }
   if (message?.type !== "element_picker_result") return;

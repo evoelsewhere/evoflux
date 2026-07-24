@@ -176,6 +176,80 @@ class WebBridgeTeachDraft(SQLModel, table=True):
         default=None, sa_column=Column(TZDateTime())
     )
     last_error: str | None = Field(default=None, sa_column=Column(Text()))
+    replay_execution_id: UUID | None = Field(
+        default=None, sa_column=Column(sa.Uuid(), nullable=True)
+    )
+    replay_next_step: int = Field(
+        default=0,
+        sa_column=Column(sa.Integer(), nullable=False, server_default="0"),
+    )
+    replay_state: str = Field(
+        default="idle",
+        sa_column=Column(sa.String(20), nullable=False, server_default="idle"),
+    )
+    replay_in_flight_step: int | None = Field(
+        default=None, sa_column=Column(sa.Integer(), nullable=True)
+    )
+
+
+class WebBridgeTeachReplay(SQLModel, table=True):
+    """One durable, idempotent request to advance a Teach replay."""
+
+    __tablename__: str = "webbridge_teach_replays"  # type: ignore[reportIncompatibleVariableOverride]
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "draft_id",
+            "idempotency_key",
+            name="uq_webbridge_teach_replays_draft_key",
+        ),
+        sa.Index("ix_webbridge_teach_replays_draft_created", "draft_id", "created_at"),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    draft_id: UUID = Field(
+        sa_column=Column(
+            sa.Uuid(),
+            ForeignKey("webbridge_teach_drafts.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    execution_id: UUID = Field(sa_column=Column(sa.Uuid(), nullable=False))
+    idempotency_key: str = Field(sa_column=Column(sa.String(128), nullable=False))
+    request_hash: str = Field(sa_column=Column(sa.String(64), nullable=False))
+    start_step: int = Field(sa_column=Column(sa.Integer(), nullable=False))
+    end_step: int = Field(sa_column=Column(sa.Integer(), nullable=False))
+    state: str = Field(
+        default="pending",
+        sa_column=Column(sa.String(20), nullable=False, server_default="pending"),
+    )
+    in_flight_step: int | None = Field(
+        default=None, sa_column=Column(sa.Integer(), nullable=True)
+    )
+    steps: list[dict] = Field(
+        default_factory=list,
+        sa_column=Column(
+            JSON().with_variant(pg.JSONB(), "postgresql"),
+            nullable=False,
+            server_default="[]",
+        ),
+    )
+    next_step: int | None = Field(
+        default=None, sa_column=Column(sa.Integer(), nullable=True)
+    )
+    response_draft: dict | None = Field(
+        default=None,
+        sa_column=Column(
+            JSON().with_variant(pg.JSONB(), "postgresql"),
+            nullable=True,
+        ),
+    )
+    error: str | None = Field(default=None, sa_column=Column(Text()))
+    created_at: datetime = Field(
+        default_factory=_utcnow, sa_column=Column(TZDateTime(), nullable=False)
+    )
+    updated_at: datetime = Field(
+        default_factory=_utcnow, sa_column=Column(TZDateTime(), nullable=False)
+    )
 
 
 class WebBridgeTabBinding(SQLModel, table=True):

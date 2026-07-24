@@ -1216,13 +1216,6 @@ export interface WebBridgePairingInfo {
   last_seen_at: string
 }
 
-export interface WebBridgeBrowserSessionOption {
-  id: string
-  title: string
-  mode: string
-  running: boolean
-}
-
 export interface WebBridgeLaunchBrowserResponse {
   ok: boolean
   browser?: string
@@ -1237,6 +1230,7 @@ export interface WebBridgeAuditEntry {
   url: string
   success: boolean
   error: string | null
+  direction: 'agent_out' | 'browser_in'
 }
 
 export interface WebBridgeAuditResponse {
@@ -1271,11 +1265,18 @@ export interface WebBridgeTeachDraft {
   approved_at: string | null
   last_replayed_at: string | null
   last_error: string | null
+  replay_execution_id: string | null
+  replay_next_step: number
+  replay_state: 'idle' | 'ready' | 'in_flight' | 'ambiguous' | 'completed'
+  replay_in_flight_step: number | null
+  workflow_yaml: string
 }
 
 export interface WebBridgeTeachDraftReplayResponse {
   draft: WebBridgeTeachDraft
   steps: Array<{ kind: string; success: boolean; error: string | null }>
+  execution_id: string
+  next_step: number | null
 }
 
 // ── Side Chat ─────────────────────────────────────────────────────────────────

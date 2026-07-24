@@ -8,9 +8,23 @@ all replies together, which resolves the future this tool is awaiting.
 from __future__ import annotations
 
 from loguru import logger
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.agent.tools.registry import Tool
+
+
+class BrowserHandoffSpec(BaseModel):
+    """Optional browser-native presentation for an AskUser question."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str = Field(
+        pattern=r"^(take_over|confirm_action|provide_secret|choose_option)$"
+    )
+    title: str = Field(default="", max_length=120)
+    action: str = Field(default="", max_length=500)
+    consequence: str = Field(default="", max_length=1_000)
+    target: str = Field(default="", max_length=500)
 
 
 class QuestionSpec(BaseModel):
@@ -31,6 +45,7 @@ class QuestionSpec(BaseModel):
     #: dead-end the branch); the ask_user tool leaves it False, where
     #: ``options`` are only soft suggestions over a free-text field.
     strict: bool = Field(default=False)
+    browser_handoff: BrowserHandoffSpec | None = None
 
 
 async def _ask_user(questions: list[QuestionSpec]) -> str:

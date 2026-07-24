@@ -143,6 +143,8 @@
     .notice.error { color: var(--error); background: var(--error-soft); }
     .notice.info { color: var(--muted); background: rgba(255, 255, 255, .02); }
     .transcript { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 16px 12px 24px; }
+    .load-older { display: none; width: max-content; min-height: 27px; margin: 0 auto 12px; border: 1px solid var(--border); border-radius: 6px; padding: 0 9px; background: var(--surface); color: var(--muted); font-size: 10px; }
+    .load-older.visible { display: block; }
     .empty { display: flex; min-height: 100%; align-items: center; justify-content: center; padding: 28px; color: var(--muted); font-size: 12px; text-align: center; line-height: 1.55; }
     .message { max-width: 94%; margin: 0 0 12px; border-radius: 8px; padding: 9px 10px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; }
     .message.user { margin-left: auto; background: var(--user-message); color: #fafaff; }
@@ -174,6 +176,16 @@
     .message-body pre { max-width: 100%; margin: 8px 0; overflow-x: auto; border: 1px solid var(--border); border-radius: 6px; background: var(--code-block-bg); color: var(--code-block-text); padding: 9px; }
     .message-body pre code { display: block; padding: 0; background: transparent; white-space: pre; font-size: 11px; line-height: 1.45; }
     .message-body a { color: var(--link); text-decoration: underline; text-underline-offset: 2px; }
+    .message-body img { display: block; max-width: 100%; max-height: 68vh; margin: 8px 0; border: 1px solid var(--border); border-radius: 7px; object-fit: contain; }
+    .message-attachments { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 8px; }
+    .message-attachment { position: relative; min-width: 0; margin: 0; border: 1px solid var(--border); border-radius: 7px; background: var(--surface-raised); color: var(--text); }
+    .message-attachment.image { max-width: min(100%, 320px); overflow: hidden; }
+    .message-attachment.image img { display: block; width: 100%; max-height: 260px; object-fit: contain; background: var(--code-block-bg); }
+    .message-attachment.image figcaption { overflow: hidden; padding: 5px 7px; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+    .message-attachment.file { min-height: 30px; padding: 0 9px; font-size: 10px; }
+    .attachment-delete { position: absolute; top: 4px; right: 4px; z-index: 1; display: grid; width: 24px; height: 24px; place-items: center; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--muted); }
+    .attachment-delete:hover { color: var(--error); }
+    .media-unavailable { display: inline-flex; margin: 7px 0; border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; color: var(--muted); font-size: 10px; }
     .message-body hr { height: 1px; margin: 10px 0; border: 0; background: var(--border); }
     .message-body .table-wrap { max-width: 100%; margin: 8px 0; overflow-x: auto; }
     .message-body table { width: 100%; border-collapse: collapse; font-size: 11px; }
@@ -193,6 +205,8 @@
     .question-card { margin-bottom: 9px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-raised); }
     .question-card:last-child { margin-bottom: 0; }
     .question-card p { margin: 0 0 7px; font-size: 12px; line-height: 1.4; }
+    .handoff-meta { margin-bottom: 8px; border-left: 3px solid var(--accent); padding-left: 8px; color: var(--muted); font-size: 10px; line-height: 1.45; }
+    .handoff-meta strong { display: block; margin-bottom: 2px; color: var(--text); font-size: 11px; }
     .answer { margin: 0 0 7px; }
     textarea.answer { min-height: 42px; }
     .options { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 7px; }
@@ -233,6 +247,12 @@
     .composer-status { min-height: 14px; padding: 4px 2px 0; color: var(--muted); font-size: 9px; }
     .composer-status.error { color: var(--error); }
     .picked-card { align-items: center; margin-bottom: 7px; border: 1px solid var(--border); border-radius: 7px; padding: 5px 6px 5px 8px; background: var(--accent-soft); color: var(--picked-text); font-size: 11px; }
+    .context-chips { display: none; flex-wrap: wrap; gap: 5px; margin-bottom: 7px; }
+    .context-chips.visible { display: flex; }
+    .context-chip { display: inline-flex; min-width: 0; max-width: 100%; align-items: center; gap: 5px; border: 1px solid var(--border); border-radius: 6px; padding: 4px 5px 4px 7px; background: var(--surface-raised); color: var(--text); font-size: 10px; }
+    .context-chip span { overflow: hidden; max-width: 220px; text-overflow: ellipsis; white-space: nowrap; }
+    .context-chip button { display: grid; width: 20px; height: 20px; place-items: center; border: 0; border-radius: 4px; background: transparent; color: var(--muted); }
+    .context-chip button:hover { background: var(--surface-hover); color: var(--text); }
     .settings-backdrop { position: fixed; inset: 0; z-index: 30; display: none; background: rgba(0, 0, 0, .28); }
     .settings-backdrop.visible { display: block; }
     .settings-drawer { position: fixed; inset: 0 0 0 auto; z-index: 31; display: flex; width: min(100%, 380px); flex-direction: column; border-left: 1px solid var(--border); background: var(--bg); box-shadow: -14px 0 36px rgba(0, 0, 0, .2); transform: translateX(102%); transition: transform 180ms ease-out; }
@@ -249,6 +269,12 @@
     .setting-row input, .setting-row select { height: 34px; padding: 0 9px; }
     .setting-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
     .setting-hint { margin-top: 6px; overflow-wrap: anywhere; color: var(--muted); font-size: 9px; line-height: 1.45; }
+    .watch-list { display: grid; gap: 5px; margin-top: 8px; }
+    .watch-item { display: flex; min-width: 0; align-items: center; gap: 6px; border-top: 1px solid var(--border); padding-top: 6px; }
+    .watch-item-copy { min-width: 0; flex: 1; }
+    .watch-item-copy strong, .watch-item-copy span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .watch-item-copy strong { font-size: 10px; }
+    .watch-item-copy span { color: var(--muted); font-size: 9px; }
     .connection-line { display: flex; align-items: center; gap: 8px; }
     .connection-line strong { flex: 1; font-size: 11px; }
     .segmented { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; border-radius: 7px; padding: 2px; background: var(--surface-raised); }
@@ -274,23 +300,24 @@
       <div class="header-actions">
         <span class="status-dot" id="statusDot" title="Connection status"></span>
         <button class="btn stop" id="stopBtn" title="Stop the current EvoFlux run" style="display:none">Stop</button>
+        <button class="btn icon subtle" id="openInEvoFluxBtn" title="Open this tab session in EvoFlux" aria-label="Open this tab session in EvoFlux"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3h7v7M10 14 21 3M21 14v7H3V3h7"/></svg></button>
         <button class="btn icon subtle" id="settingsBtn" title="Open WebBridge settings" aria-label="Open WebBridge settings">⚙</button>
       </div>
     </header>
 
     <section class="context-bar">
       <div class="context-copy">
-        <strong id="bindingStatus">Preparing browser session</strong>
-        <span id="contextDetail">One session, one primary tab</span>
+        <strong id="bindingStatus">Preparing tab session</strong>
+        <span id="contextDetail">Primary tab · group starts with a second tab</span>
       </div>
       <div class="context-actions">
-        <button class="btn icon subtle" id="newGroupedTabBtn" title="New tab in this conversation group" aria-label="New tab in this conversation group">＋</button>
-        <button class="btn icon subtle" id="refreshBtn" title="Reload conversation" aria-label="Reload conversation">↻</button>
+        <button class="btn icon subtle" id="newGroupedTabBtn" title="Open a tab in this session group" aria-label="Open a tab in this session group">＋</button>
+        <button class="btn icon subtle" id="refreshBtn" title="Reload tab session" aria-label="Reload tab session">↻</button>
       </div>
     </section>
 
     <div class="notice info visible" id="notice">Loading WebBridge session...</div>
-    <section class="transcript" id="transcript" aria-live="polite"></section>
+    <section class="transcript" id="transcript" aria-live="polite"><button class="load-older" id="loadOlderBtn" type="button">Load older</button></section>
     <section class="questions" id="questions" aria-live="polite"></section>
 
     <div class="activity" id="activity" role="status" aria-live="polite">
@@ -302,6 +329,7 @@
     </div>
 
     <footer class="composer">
+      <div class="context-chips" id="contextChips"></div>
       <div class="row picked-card" id="pickedElementCard" style="display:none">
         <span id="pickedElementLabel" style="min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap"></span>
         <button class="tool-icon" id="clearElementBtn" title="Remove picked element" aria-label="Remove picked element"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
@@ -325,6 +353,11 @@
               <div class="model-list" id="modelList" role="listbox" aria-label="Models"></div>
             </div>
           </div>
+          <button class="tool-icon" id="attachPageBtn" title="Attach readable page" aria-label="Attach readable page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6z"/><path d="M14 3v4h4M9 11h6M9 15h6"/></svg></button>
+          <button class="tool-icon" id="attachSelectionBtn" title="Attach selected text" aria-label="Attach selected text"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 9h12M4 13h16M4 17h10"/></svg></button>
+          <button class="tool-icon" id="captureRegionBtn" title="Capture a screen region" aria-label="Capture a screen region"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg></button>
+          <button class="tool-icon" id="attachFileBtn" title="Attach files" aria-label="Attach files"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21.4 11.6-8.9 8.9a6 6 0 0 1-8.5-8.5l9.6-9.6a4 4 0 0 1 5.7 5.7l-9.6 9.6a2 2 0 0 1-2.8-2.8l8.9-8.9"/></svg></button>
+          <input id="fileInput" type="file" multiple hidden>
           <button class="tool-icon" id="pickElementBtn" title="Pick an element from this page" aria-label="Pick an element from this page"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg></button>
           <button class="tool-icon" id="takeControlBtn" title="Take control of the browser" aria-label="Take control of the browser"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 3 14 9-6 2-2 6z"/><path d="m13 14 4 4"/></svg></button>
           <button class="tool-icon active" id="resumeAgentBtn" title="Resume agent control" aria-label="Resume agent control" style="display:none"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 3 14 9-14 9z"/></svg></button>
@@ -382,6 +415,8 @@
             <input id="watchNeedleInput" type="text" maxlength="160" placeholder="Build complete" autocomplete="off">
             <div class="row" style="margin-top:6px"><select id="watchTtlSelect"><option value="5">5 minutes</option><option value="15" selected>15 minutes</option><option value="60">1 hour</option></select><button class="btn" id="watchActionBtn">Start watch</button></div>
             <div class="setting-hint" id="watchSettingsDetail">A match stays private until you send it.</div>
+            <div class="watch-list" id="watchList"></div>
+            <button class="btn" id="stopAllWatchesBtn" style="display:none;margin-top:7px">Stop all watches</button>
           </div>
           <div class="setting-row">
             <label>Teach Mode</label>
@@ -389,7 +424,12 @@
             <div class="setting-hint" id="teachSettingsDetail">Record semantic actions into a reviewable draft.</div>
           </div>
           <div class="setting-row">
-            <div class="setting-actions"><button class="btn" id="retryContextBtn" style="display:none">Retry browser context</button><button class="btn" id="releaseControlBtn">Release browser control</button><button class="btn" id="newConversationBtn">Start fresh conversation</button></div>
+            <label>Report issue evidence</label>
+            <div class="setting-actions"><button class="btn" id="issueCaptureBtn">Start capture</button><button class="btn primary" id="reportIssueBtn" disabled>Report issue</button></div>
+            <div class="setting-hint" id="issueSettingsDetail">Opt in to collect a small redacted console/network error ring for this page.</div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-actions"><button class="btn" id="retryContextBtn" style="display:none">Retry browser context</button><button class="btn" id="releaseControlBtn">Release browser control</button></div>
           </div>
         </div>
       </section>

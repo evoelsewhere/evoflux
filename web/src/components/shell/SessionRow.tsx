@@ -16,7 +16,7 @@
  */
 
 import { AnimatePresence, motion } from 'framer-motion'
-import { Loader2, MessageSquarePlus, Pencil, Trash2 } from 'lucide-react'
+import { Globe2, Loader2, MessageSquarePlus, Pencil, Trash2 } from 'lucide-react'
 import { LongPressButton } from '@/components/ui/long-press-button'
 import { formatRelativeDate } from '@/utils/format'
 import { cn } from '@/lib/utils'
@@ -65,6 +65,7 @@ export function SessionRow({
   const compact = density === 'compact'
   const isScheduled = Boolean(session.scheduled_task_name)
   const isRunning = session.running === true
+  const isBrowserCreated = session.tags?.includes('webbridge_origin:browser') ?? false
 
   return (
     <div className="group relative">
@@ -110,6 +111,13 @@ export function SessionRow({
                 sched
               </span>
             )}
+            {isBrowserCreated && (
+              <Globe2
+                size={10}
+                className="shrink-0 text-(--color-text-subtle)"
+                aria-label="Created from browser"
+              />
+            )}
             <span className="shrink-0 text-[10px] text-(--color-text-subtle)">
               {formatRelativeDate(session.created_at)}
             </span>
@@ -136,6 +144,11 @@ export function SessionRow({
               {isScheduled && (
                 <span className="shrink-0 rounded-xs px-1 py-px text-xs leading-tight bg-(--bg-key) text-(--color-text-subtle)">
                   sched
+                </span>
+              )}
+              {isBrowserCreated && (
+                <span title="Created from browser" aria-label="Created from browser">
+                  <Globe2 size={11} className="shrink-0 text-(--color-text-subtle)" aria-hidden="true" />
                 </span>
               )}
               {isRunning && (

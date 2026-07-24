@@ -142,6 +142,10 @@ async def lifespan(app: FastAPI):
 
     webbridge_cleanup_task = asyncio.create_task(webbridge_manager.run_cleanup_loop())
     app.state.webbridge_cleanup_task = webbridge_cleanup_task
+    from app.services.webbridge_artifact_service import run_artifact_cleanup_loop
+
+    webbridge_artifact_cleanup_task = asyncio.create_task(run_artifact_cleanup_loop())
+    app.state.webbridge_artifact_cleanup_task = webbridge_artifact_cleanup_task
 
     yield
 
@@ -149,6 +153,11 @@ async def lifespan(app: FastAPI):
     webbridge_cleanup_task = getattr(app.state, "webbridge_cleanup_task", None)
     if webbridge_cleanup_task:
         webbridge_cleanup_task.cancel()
+    webbridge_artifact_cleanup_task = getattr(
+        app.state, "webbridge_artifact_cleanup_task", None
+    )
+    if webbridge_artifact_cleanup_task:
+        webbridge_artifact_cleanup_task.cancel()
     await dream_scheduler.stop()
     await task_scheduler.stop()
     await team_manager.stop()

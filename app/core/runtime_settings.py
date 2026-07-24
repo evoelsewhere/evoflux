@@ -97,9 +97,10 @@ class WebBridgeSharingSettings(BaseModel):
     default: Literal["ask", "allow", "block"] = "ask"
     blocked_domains: list[str] = Field(default_factory=list)
     allow_selection: bool = True
-    allow_readable_page: bool = False
-    allow_screenshot: bool = False
+    allow_readable_page: bool = True
+    allow_screenshot: bool = True
     max_artifact_bytes: int = Field(default=5_000_000, ge=1, le=20_000_000)
+    artifact_retention_hours: int = Field(default=24, ge=1, le=24 * 30)
 
 
 class WebBridgeInteractionSettings(BaseModel):

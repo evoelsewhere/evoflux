@@ -134,8 +134,6 @@ def deferred_tools_for_run(
 # real browser via webbridge.
 # Competing built-in and MCP browser/web backends are hard-excluded.
 
-WEBBRIDGE_SESSION_TAG = "webbridge"
-
 #: Built-ins that would bypass the tagged session's real-browser backend.
 WEBBRIDGE_SESSION_DENIED_WEB_TOOLS: frozenset[str] = frozenset(
     {"browser_use", "web_search", "web_fetch", "image_search"}

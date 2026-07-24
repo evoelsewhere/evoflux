@@ -44,7 +44,6 @@ import type {
   WebBridgeAuditResponse,
   WebBridgePairingCodeResponse,
   WebBridgePairingInfo,
-  WebBridgeBrowserSessionOption,
   WebBridgeTeachDraft,
   WebBridgeTeachDraftReplayResponse,
 } from '../types'
@@ -601,18 +600,6 @@ export async function revokeWebBridgePairing(pairingId: string): Promise<void> {
   if (!res.ok) await parseDetailOrThrow(res, 'revokeWebBridgePairing')
 }
 
-export async function assignWebBridgeSessionToPairing(
-  pairingId: string,
-  sessionId: string,
-): Promise<WebBridgeBrowserSessionOption> {
-  const res = await fetch(
-    `${apiBaseUrl()}/team/webbridge/pairings/${encodeURIComponent(pairingId)}/sessions/${encodeURIComponent(sessionId)}`,
-    { method: 'PUT' },
-  )
-  if (!res.ok) await parseDetailOrThrow(res, 'assignWebBridgeSessionToPairing')
-  return res.json()
-}
-
 export async function listWebBridgeTeachDrafts(): Promise<WebBridgeTeachDraft[]> {
   const res = await fetch(`${apiBaseUrl()}/team/webbridge/teach-drafts/review`)
   if (!res.ok) await parseDetailOrThrow(res, 'listWebBridgeTeachDrafts')
@@ -633,16 +620,50 @@ export async function approveWebBridgeTeachDraft(
 export async function replayWebBridgeTeachDraft(
   draftId: string,
   parameters: Record<string, string>,
+  executionId: string,
+  startStep: number,
+  idempotencyKey: string,
+  restart = false,
 ): Promise<WebBridgeTeachDraftReplayResponse> {
   const res = await fetch(
     `${apiBaseUrl()}/team/webbridge/teach-drafts/${encodeURIComponent(draftId)}/replay`,
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ parameters }),
+      headers: {
+        'Content-Type': 'application/json',
+        'Idempotency-Key': idempotencyKey,
+      },
+      body: JSON.stringify({
+        parameters,
+        execution_id: executionId,
+        start_step: startStep,
+        max_steps: 1,
+        restart,
+      }),
     },
   )
   if (!res.ok) await parseDetailOrThrow(res, 'replayWebBridgeTeachDraft')
+  return res.json()
+}
+
+export async function resolveWebBridgeTeachReplay(
+  draftId: string,
+  executionId: string,
+  outcome: 'completed' | 'not_completed',
+): Promise<WebBridgeTeachDraft> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/webbridge/teach-drafts/${encodeURIComponent(draftId)}/replay/resolve`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        execution_id: executionId,
+        outcome,
+        user_confirmed: true,
+      }),
+    },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'resolveWebBridgeTeachReplay')
   return res.json()
 }
 

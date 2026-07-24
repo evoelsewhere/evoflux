@@ -48,3 +48,21 @@ async def test_validate_answers_allows_free_text_when_not_strict():
 
     svc.reply(request_id, ["something else"])
     await task
+
+
+def test_browser_handoff_metadata_is_typed_and_secret_free():
+    question = QuestionSpec.model_validate(
+        {
+            "question": "Complete sign-in, then continue.",
+            "options": ["completed", "cancelled"],
+            "strict": True,
+            "browser_handoff": {
+                "kind": "provide_secret",
+                "title": "Sign in",
+                "target": "Password field",
+            },
+        }
+    )
+    assert question.browser_handoff is not None
+    assert question.browser_handoff.kind == "provide_secret"
+    assert "value" not in question.browser_handoff.model_dump()

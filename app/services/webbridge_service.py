@@ -74,7 +74,15 @@ _UNGATED_ACTIONS: frozenset[str] = frozenset(
 #: extension's current page.
 _TARGET_URL_ACTIONS: frozenset[str] = frozenset({"navigate", "open_tab"})
 _PAGE_READ_ACTIONS: frozenset[str] = frozenset(
-    {"extract", "extract_elements", "snapshot", "screenshot", "evaluate"}
+    {
+        "extract",
+        "extract_elements",
+        "snapshot",
+        "semantic_snapshot",
+        "semantic_read",
+        "screenshot",
+        "evaluate",
+    }
 )
 # Actions resolved by the extension's ``resolveTab`` helper. A visible
 # session/tab binding pins these actions without stealing browser focus.
@@ -105,6 +113,10 @@ _TAB_SCOPED_ACTIONS: frozenset[str] = frozenset(
         "drag",
         "fill",
         "snapshot",
+        "semantic_snapshot",
+        "semantic_read",
+        "semantic_select",
+        "semantic_write",
         "extract_elements",
         "scroll_to_bottom",
     }
@@ -323,6 +335,20 @@ class WebBridgeManager:
                 f"Reading page data from domain '{host}' is blocked by "
                 "WebBridge sharing policy."
             )
+        if action == "screenshot" and not pol.sharing.allow_screenshot:
+            return "Browser screenshots are disabled by WebBridge sharing policy."
+        if (
+            action in {
+                "extract",
+                "extract_elements",
+                "snapshot",
+                "semantic_snapshot",
+                "semantic_read",
+                "evaluate",
+            }
+            and not pol.sharing.allow_readable_page
+        ):
+            return "Reading browser page content is disabled by WebBridge sharing policy."
         if pol.allowed_domains:
             if not host:
                 return (
@@ -404,6 +430,31 @@ class WebBridgeManager:
                 "url": url,
                 "success": success,
                 "error": error,
+                "direction": "agent_out",
+            }
+        )
+
+    def record_interaction_audit(
+        self,
+        *,
+        session_id: str,
+        extension_id: str,
+        action: str,
+        url: str,
+        success: bool,
+        error: str | None = None,
+    ) -> None:
+        """Record browser-origin metadata without storing raw page content."""
+        self._audit.append(
+            {
+                "ts": time.time(),
+                "session_id": session_id,
+                "extension_id": extension_id,
+                "action": action,
+                "url": url,
+                "success": success,
+                "error": error,
+                "direction": "browser_in",
             }
         )
 
@@ -443,6 +494,7 @@ class WebBridgeManager:
                             "success": False,
                             "data": None,
                             "error": "extension reconnected",
+                            "outcome_known": False,
                         }
                     )
         conn = ExtensionConnection(
@@ -483,7 +535,12 @@ class WebBridgeManager:
             self._pending.pop(request_id, None)
             if not fut.done():
                 fut.set_result(
-                    {"success": False, "data": None, "error": "extension disconnected"}
+                    {
+                        "success": False,
+                        "data": None,
+                        "error": "extension disconnected",
+                        "outcome_known": False,
+                    }
                 )
         # Drop sessions pinned to this extension so they rebind to a live one.
         for sid, eid in list(self._session_targets.items()):
@@ -833,7 +890,14 @@ class WebBridgeManager:
             return False
         _, fut = entry
         if not fut.done():
-            fut.set_result({"success": success, "data": data, "error": error})
+            fut.set_result(
+                {
+                    "success": success,
+                    "data": data,
+                    "error": error,
+                    "outcome_known": True,
+                }
+            )
         return True
 
     # ── Commands (agent → extension) ────────────────────────────────────
@@ -879,6 +943,21 @@ class WebBridgeManager:
         ext = self.resolve_target(session_id, extension_id)
         if ext is None:
             return {"success": False, "data": None, "error": NO_EXTENSION_ERROR}
+        advertised_commands = ext.capabilities.get("commands")
+        if (
+            ext.protocol_version >= 2
+            and isinstance(advertised_commands, list)
+            and advertised_commands
+            and action not in advertised_commands
+        ):
+            return {
+                "success": False,
+                "data": None,
+                "error": (
+                    f"Connected WebBridge extension {ext.version} does not support "
+                    f"the '{action}' command. Update the extension and try again."
+                ),
+            }
 
         binding = self._session_tabs.get(session_id)
         pending_binding = self._pending_session_tabs.get(session_id)
@@ -1046,6 +1125,7 @@ class WebBridgeManager:
                 "success": False,
                 "data": None,
                 "error": "Extension disconnected",
+                "outcome_known": False,
             }
 
         try:
@@ -1057,6 +1137,7 @@ class WebBridgeManager:
                 "success": False,
                 "data": None,
                 "error": f"Extension response timeout ({budget:.0f}s)",
+                "outcome_known": False,
             }
         return {"request_id": request_id, **result}
 

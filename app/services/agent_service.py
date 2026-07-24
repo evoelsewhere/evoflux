@@ -20,7 +20,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
-from uuid import uuid7
+from uuid import uuid7  # ty: ignore[unresolved-import] - backported in app.__init__
 
 from loguru import logger
 
@@ -308,6 +308,7 @@ async def _persist_attachment(
         "original_name": safe_original_name,
         "media_type": mime,
         "category": category,
+        "size": len(data),
         "url": f"/api/team/{session_id}/uploads/{filename}",
     }
     if category in ("text", "data"):
@@ -443,6 +444,7 @@ async def dispatch_user_message(
     content: str,
     session_id: str | None,
     attachments: list[RawAttachment] | None = None,
+    attachment_metas: list[dict] | None = None,
     message_extra: dict | None = None,
     mode: str = "forge",
     workspace: str | None = None,
@@ -468,10 +470,14 @@ async def dispatch_user_message(
     Raises :class:`AttachmentError` on invalid attachments; callers translate
     ``AttachmentError.status`` to their transport's error shape.
     """
+    if attachments and attachment_metas:
+        raise ValueError("attachments and attachment_metas are mutually exclusive")
     atts = attachments or []
     sid = session_id or str(uuid7())
 
-    if atts:
+    if attachment_metas is not None:
+        metas = attachment_metas
+    elif atts:
         _, metas = await validate_and_persist_attachments(
             team, atts, sid, model_override=model
         )
