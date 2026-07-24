@@ -139,18 +139,16 @@ operational runbooks tied to the shipped surface:
 Verified: validate_skills 50/50 PASS, all 6 workflow YAMLs parse, roster
 integration + agent suite + aim services/API green.
 
-### R2-P9 — Pipeline info card + rulebook agent overlays (user feedback) ✅ 8287ec9
+### R2-P9 — Pipeline info card + rulebook guidance (superseded architecture) ✅ 8287ec9
 
 "UI Pipelines quá sơ sài; rulebook có setting agent không?": (1) Pipelines
 got an info card for the selected pipeline — description + human-gate
 badge, node chain (gates amber), input specs, invalid surface, and a
 phase-aware readiness hint (amber when e.g. a wave has no designed
-units); unit options show phases. (2) Confirmed rulebook agent config is
-BY DESIGN (packs ship agents/<name>.md overlays) but install never
-implemented it — install_rulebook_content now merges overlays onto the
-roster (skills append+dedup, prompt append, marker-guarded idempotence,
-seed backfill first); 5 install tests incl. merge + orphan-skip.
-Verified live: info card + convert-wave amber hint on COBOL project.
+units); unit options show phases. The overlay installer described in the
+original implementation was subsequently removed: rulebook `agents/`,
+`skills/`, and `workflows/` are project references only and never mutate
+global discovery roots. Verified live: info card + convert-wave readiness hint.
 
 ### R2-P10 — Activity log chat-style + markdown (user feedback ×3) ✅ 3aa7abf/a57afdc
 

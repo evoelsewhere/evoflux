@@ -153,8 +153,16 @@ export function AimKbPanel({ project }: { project: CodingProject }) {
           )}
           Reindex
           {reindex.data && (
-            <span className="text-[10px] text-(--color-text-subtle)">
+            <span
+              className={
+                reindex.data.invalid > 0
+                  ? 'text-[10px] text-(--color-error)'
+                  : 'text-[10px] text-(--color-text-subtle)'
+              }
+              title={reindex.data.errors.join('\n') || undefined}
+            >
               +{reindex.data.created} ~{reindex.data.updated}
+              {reindex.data.invalid > 0 ? ` · ${reindex.data.invalid} invalid` : ''}
             </span>
           )}
         </button>

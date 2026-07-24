@@ -64,6 +64,7 @@ class ExecutionState:
     scope_workspace: str | None
     graph: GraphState
     inputs: dict[str, Any]
+    retry_of_execution_id: UUID | None = None
     node_outputs: dict[str, dict] = field(default_factory=dict)
     status: str = "running"  # running | waiting_gate | completed | failed | stopped
     error: str | None = None
@@ -134,6 +135,7 @@ class WorkflowRunner:
         session_id: str,
         inputs: dict[str, Any],
         scope_workspace: str | None,
+        retry_of_execution_id: UUID | None = None,
     ) -> ExecutionState:
         if session_id in self.active:
             raise RuntimeError("execution already active in this session")
@@ -144,6 +146,7 @@ class WorkflowRunner:
             scope_workspace=scope_workspace,
             graph=GraphState.create(definition),
             inputs=inputs,
+            retry_of_execution_id=retry_of_execution_id,
         )
         self.active[session_id] = state
         await self._persist_execution_start(state, definition_hash)
@@ -635,9 +638,7 @@ class WorkflowRunner:
                 # coding/aim definition but the session lost its
                 # mode/workspace — refuse rather than run on the wrong team.
                 return None
-            return await team_manager.get_or_start_team_for_session(
-                state.session_id
-            )
+            return await team_manager.get_or_start_team_for_session(state.session_id)
         except Exception as exc:  # noqa: BLE001
             logger.warning("workflow_team_boot_failed error={}", exc)
             return None
@@ -779,6 +780,7 @@ class WorkflowRunner:
                 exc,
             )
         state.status = "completed"
+        await self._release_execution_claims(state.execution_id)
         await self._persist_execution_end(state, outputs=outputs)
         await self._emit_progress(state, node_id=None)
         self.active.pop(state.session_id, None)
@@ -791,6 +793,7 @@ class WorkflowRunner:
             state.graph.mark_failed(node_id)
         state.status = "failed"
         state.error = error
+        await self._release_execution_claims(state.execution_id)
         await self._persist_execution_end(state, error=error)
         await self._emit_progress(state, node_id=node_id, error=error)
         self.active.pop(state.session_id, None)
@@ -800,6 +803,7 @@ class WorkflowRunner:
         if self.active.get(state.session_id) is not state:
             return  # already finalised
         state.status = status
+        await self._release_execution_claims(state.execution_id)
         await self._persist_execution_end(state)
         await self._emit_progress(state, node_id=state.current_node_id)
         self.active.pop(state.session_id, None)
@@ -807,6 +811,32 @@ class WorkflowRunner:
         if team is not None:
             team.set_inline_busy(False)
         await self._emit_done_if_owned(state)
+
+    async def _release_execution_claims(self, execution_id: UUID) -> None:
+        from sqlmodel import select
+
+        from app.core import db as db_module
+        from app.models.aim import AimClaim
+
+        try:
+            async with db_module.async_session_factory() as db:
+                claims = (
+                    await db.exec(
+                        select(AimClaim).where(
+                            AimClaim.workflow_execution_id == execution_id
+                        )
+                    )
+                ).all()
+                for claim in claims:
+                    await db.delete(claim)
+                if claims:
+                    await db.commit()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "workflow_claim_cleanup_failed execution={} error={}",
+                execution_id,
+                exc,
+            )
 
     # -- side channels ------------------------------------------------------------
     @staticmethod
@@ -880,6 +910,8 @@ class WorkflowRunner:
                         definition_hash=definition_hash,
                         session_id=UUID(state.session_id),
                         status="running",
+                        inputs=state.inputs,
+                        retry_of_execution_id=state.retry_of_execution_id,
                     )
                 )
                 await db.commit()
@@ -990,6 +1022,7 @@ async def reconcile_orphaned_executions() -> int:
     from sqlmodel import col, select
 
     from app.core import db as db_module
+    from app.models.aim import AimClaim
     from app.models.workflow import WorkflowExecution, WorkflowNodeRun
 
     reconciled = 0
@@ -1020,6 +1053,13 @@ async def reconcile_orphaned_executions() -> int:
                     node_row.error = "interrupted by a server restart"
                     node_row.ended_at = _utcnow()
                     db.add(node_row)
+                claim_rows = (
+                    await db.exec(
+                        select(AimClaim).where(AimClaim.workflow_execution_id == row.id)
+                    )
+                ).all()
+                for claim_row in claim_rows:
+                    await db.delete(claim_row)
                 reconciled += 1
             if reconciled:
                 await db.commit()

@@ -44,7 +44,9 @@ class AimUnit(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid7, primary_key=True)
     project_id: UUID = Field(
         sa_column=Column(
-            sa.Uuid(), ForeignKey("coding_projects.id", ondelete="CASCADE"), nullable=False
+            sa.Uuid(),
+            ForeignKey("coding_projects.id", ondelete="CASCADE"),
+            nullable=False,
         ),
     )
     # Namespaces the unit across a multi-repo base source — e.g. "core-batch".
@@ -66,22 +68,68 @@ class AimUnit(SQLModel, table=True):
     # unit before working on it".
     assignee: str | None = Field(default=None, sa_column=Column(sa.String(120)))
     source_paths: list = Field(
-        default_factory=list, sa_column=Column(JSON(), nullable=False, server_default="[]")
+        default_factory=list,
+        sa_column=Column(JSON(), nullable=False, server_default="[]"),
     )
     target_paths: list = Field(
-        default_factory=list, sa_column=Column(JSON(), nullable=False, server_default="[]")
+        default_factory=list,
+        sa_column=Column(JSON(), nullable=False, server_default="[]"),
     )
     # Other units this one depends on, as "<module>/<name>" strings.
     depends_on: list = Field(
-        default_factory=list, sa_column=Column(JSON(), nullable=False, server_default="[]")
+        default_factory=list,
+        sa_column=Column(JSON(), nullable=False, server_default="[]"),
     )
     # Free-form, rulebook/appraiser-defined — e.g. {"score": "medium", "reasons": [...]}.
     complexity: dict = Field(
-        default_factory=dict, sa_column=Column(JSON(), nullable=False, server_default="{}")
+        default_factory=dict,
+        sa_column=Column(JSON(), nullable=False, server_default="{}"),
+    )
+    revision: int = Field(
+        default=0,
+        sa_column=Column(sa.Integer(), nullable=False, server_default="0"),
+    )
+    last_transition_id: str | None = Field(
+        default=None, sa_column=Column(sa.String(36))
     )
     # Relative path to this unit's doc in the KB repo, e.g.
     # "modules/core-batch/PAYROLL01.md" — the reindex source for this row.
     kb_doc_path: str | None = Field(default=None, sa_column=Column(sa.String()))
+    created_at: datetime = Field(
+        default_factory=_utcnow, sa_column=Column(TZDateTime(), nullable=False)
+    )
+    updated_at: datetime = Field(
+        default_factory=_utcnow,
+        sa_column=Column(TZDateTime(), nullable=False, onupdate=_utcnow),
+    )
+
+
+class AimClaim(SQLModel, table=True):
+    """Exclusive, expiring ownership of one migration unit."""
+
+    __tablename__: str = "aim_claims"  # type: ignore[reportIncompatibleVariableOverride]
+    __table_args__ = (
+        sa.UniqueConstraint("unit_id", name="uq_aim_claims_unit"),
+        sa.Index("ix_aim_claims_project_lease", "project_id", "lease_expires_at"),
+    )
+
+    id: UUID = Field(default_factory=uuid7, primary_key=True)
+    project_id: UUID = Field(
+        sa_column=Column(
+            sa.Uuid(),
+            ForeignKey("coding_projects.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    unit_id: UUID = Field(
+        sa_column=Column(
+            sa.Uuid(), ForeignKey("aim_units.id", ondelete="CASCADE"), nullable=False
+        )
+    )
+    workflow_execution_id: UUID = Field(sa_column=Column(sa.Uuid(), nullable=False))
+    workflow_name: str = Field(sa_column=Column(sa.String(120), nullable=False))
+    session_id: UUID | None = Field(default=None, sa_column=Column(sa.Uuid()))
+    lease_expires_at: datetime = Field(sa_column=Column(TZDateTime(), nullable=False))
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=Column(TZDateTime(), nullable=False)
     )
@@ -118,18 +166,23 @@ class AimRun(SQLModel, table=True):
     # e.g. "smoke", "full", or a specific case id — free string.
     case_set: str | None = Field(default=None, sa_column=Column(sa.String(60)))
     stats: dict = Field(
-        default_factory=dict, sa_column=Column(JSON(), nullable=False, server_default="{}")
+        default_factory=dict,
+        sa_column=Column(JSON(), nullable=False, server_default="{}"),
     )
     report_path: str | None = Field(default=None, sa_column=Column(sa.String()))
     # Deliberately NOT a foreign key — the Workflows engine's execution rows
     # are a best-effort debug log (see workflows-feature-plan.md §5), and a
     # run predates AIM-4/the Workflows engine entirely when triggered by a
     # plain slash command.
-    workflow_execution_id: str | None = Field(default=None, sa_column=Column(sa.String()))
+    workflow_execution_id: str | None = Field(
+        default=None, sa_column=Column(sa.String())
+    )
     # The AIM session that produced this run — NOT a DB foreign key (runs
     # recorded by plain slash commands predate the workflow engine, and the
     # chat_sessions table may live in a different DB shard eventually).
-    session_id: UUID | None = Field(default=None, sa_column=Column(sa.Uuid(), nullable=True))
+    session_id: UUID | None = Field(
+        default=None, sa_column=Column(sa.Uuid(), nullable=True)
+    )
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=Column(TZDateTime(), nullable=False)
     )
@@ -153,7 +206,9 @@ class AimLink(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid7, primary_key=True)
     project_id: UUID = Field(
         sa_column=Column(
-            sa.Uuid(), ForeignKey("coding_projects.id", ondelete="CASCADE"), nullable=False
+            sa.Uuid(),
+            ForeignKey("coding_projects.id", ondelete="CASCADE"),
+            nullable=False,
         ),
     )
     from_ref: str = Field(sa_column=Column(sa.String(255), nullable=False))

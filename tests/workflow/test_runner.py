@@ -98,6 +98,8 @@ async def test_headless_walk_runs_to_completion_with_rows(setup_db, progress_eve
         execution = await db.get(WorkflowExecution, state.execution_id)
         assert execution is not None
         assert execution.status == "completed"
+        assert execution.inputs == {"level": "critical"}
+        assert execution.retry_of_execution_id is None
         assert execution.outputs == {"level": "critical"}
         rows = (
             await db.exec(
@@ -409,12 +411,83 @@ nodes:
 
 
 @pytest.mark.asyncio
+async def test_concurrent_assessment_in_same_project_rejected(
+    setup_db, tmp_path, monkeypatch
+):
+    from fastapi import FastAPI
+    from httpx import ASGITransport, AsyncClient
+
+    from app.api.routes.workflows import router as workflows_router
+    from app.core import db as db_module
+    from app.core.config import settings as app_settings
+    from app.models.chat import ChatSession, CodingProject
+    from app.models.workflow import WorkflowExecution
+
+    monkeypatch.setattr(app_settings, "EVOFLUX_CONFIG_DIR", str(tmp_path / "config"))
+    app = FastAPI()
+    app.include_router(workflows_router, prefix="/api/workflows")
+    transport = ASGITransport(app=app)
+    workspace = tmp_path / "target"
+    workspace.mkdir()
+
+    async with db_module.async_session_factory() as db:
+        project = CodingProject(name="assessment-lock", kind="aim")
+        db.add(project)
+        await db.flush()
+        first = ChatSession(mode="aim", project_id=project.id, workspace=str(workspace))
+        second = ChatSession(
+            mode="aim", project_id=project.id, workspace=str(workspace)
+        )
+        db.add(first)
+        db.add(second)
+        await db.flush()
+        db.add(
+            WorkflowExecution(
+                definition_name="aim-assess",
+                definition_hash="existing",
+                session_id=first.id,
+                status="running",
+            )
+        )
+        await db.commit()
+        second_id = second.id
+
+    async with AsyncClient(transport=transport, base_url="http://t") as client:
+        saved = await client.put(
+            "/api/workflows/aim-assess",
+            json={
+                "raw_yaml": (
+                    "schema_version: 1\n"
+                    "name: aim-assess\n"
+                    "scope: aim\n"
+                    "nodes:\n"
+                    "  - {id: done, kind: notify, message: done}\n"
+                )
+            },
+        )
+        await client.post(
+            "/api/workflows/aim-assess/approve",
+            json={"hash": saved.json()["hash"]},
+        )
+        response = await client.post(
+            "/api/workflows/aim-assess/run",
+            json={"session_id": str(second_id), "inputs": {}},
+        )
+
+    assert response.status_code == 409
+    assert "already active" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_reconcile_orphaned_executions_fails_live_rows(setup_db):
     """A restart leaves running/waiting_gate rows the in-memory runner can no
     longer drive; reconciliation must fail them so nothing shows live forever."""
+    from datetime import datetime, timedelta, timezone
     from uuid import uuid4, uuid7
 
     from app.core import db as db_module
+    from app.models.aim import AimClaim, AimUnit
+    from app.models.chat import CodingProject
     from app.models.workflow import WorkflowExecution, WorkflowNodeRun
     from app.workflow.runner import reconcile_orphaned_executions
 
@@ -422,11 +495,57 @@ async def test_reconcile_orphaned_executions_fails_live_rows(setup_db):
     gate_id = uuid7()
     done_id = uuid7()
     async with db_module.async_session_factory() as db:
-        db.add(WorkflowExecution(id=running_id, definition_name="w", definition_hash="h", session_id=uuid4(), status="running"))
-        db.add(WorkflowExecution(id=gate_id, definition_name="w", definition_hash="h", session_id=uuid4(), status="waiting_gate"))
-        db.add(WorkflowExecution(id=done_id, definition_name="w", definition_hash="h", session_id=uuid4(), status="completed"))
-        db.add(WorkflowNodeRun(execution_id=gate_id, node_id="certify", status="running"))
+        project = CodingProject(name="reconcile-aim", kind="aim")
+        db.add(project)
+        await db.flush()
+        unit = AimUnit(
+            project_id=project.id,
+            module="m",
+            name="A",
+            kind="program",
+        )
+        db.add(unit)
+        await db.flush()
+        db.add(
+            WorkflowExecution(
+                id=running_id,
+                definition_name="w",
+                definition_hash="h",
+                session_id=uuid4(),
+                status="running",
+            )
+        )
+        db.add(
+            WorkflowExecution(
+                id=gate_id,
+                definition_name="w",
+                definition_hash="h",
+                session_id=uuid4(),
+                status="waiting_gate",
+            )
+        )
+        db.add(
+            WorkflowExecution(
+                id=done_id,
+                definition_name="w",
+                definition_hash="h",
+                session_id=uuid4(),
+                status="completed",
+            )
+        )
+        db.add(
+            WorkflowNodeRun(execution_id=gate_id, node_id="certify", status="running")
+        )
+        claim = AimClaim(
+            project_id=project.id,
+            unit_id=unit.id,
+            workflow_execution_id=gate_id,
+            workflow_name="w",
+            lease_expires_at=datetime.now(timezone.utc) + timedelta(hours=2),
+        )
+        db.add(claim)
         await db.commit()
+        claim_id = claim.id
 
     count = await reconcile_orphaned_executions()
     assert count == 2
@@ -437,5 +556,50 @@ async def test_reconcile_orphaned_executions_fails_live_rows(setup_db):
         assert gate_row.status == "failed"
         assert "restart" in (gate_row.error or "")
         assert (await db.get(WorkflowExecution, done_id)).status == "completed"
-        node = (await db.exec(select(WorkflowNodeRun).where(WorkflowNodeRun.execution_id == gate_id))).one()
+        node = (
+            await db.exec(
+                select(WorkflowNodeRun).where(WorkflowNodeRun.execution_id == gate_id)
+            )
+        ).one()
         assert node.status == "failed"
+        assert await db.get(AimClaim, claim_id) is None
+
+
+@pytest.mark.asyncio
+async def test_terminal_cleanup_releases_execution_claims(setup_db):
+    from datetime import datetime, timedelta, timezone
+    from uuid import uuid7
+
+    from app.core import db as db_module
+    from app.models.aim import AimClaim, AimUnit
+    from app.models.chat import CodingProject
+    from app.workflow.runner import WorkflowRunner
+
+    execution_id = uuid7()
+    async with db_module.async_session_factory() as db:
+        project = CodingProject(name="cleanup-aim", kind="aim")
+        db.add(project)
+        await db.flush()
+        unit = AimUnit(
+            project_id=project.id,
+            module="m",
+            name="A",
+            kind="program",
+        )
+        db.add(unit)
+        await db.flush()
+        claim = AimClaim(
+            project_id=project.id,
+            unit_id=unit.id,
+            workflow_execution_id=execution_id,
+            workflow_name="aim-convert-unit",
+            lease_expires_at=datetime.now(timezone.utc) + timedelta(hours=2),
+        )
+        db.add(claim)
+        await db.commit()
+        claim_id = claim.id
+
+    await WorkflowRunner()._release_execution_claims(execution_id)
+
+    async with db_module.async_session_factory() as db:
+        assert await db.get(AimClaim, claim_id) is None

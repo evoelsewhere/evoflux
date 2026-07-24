@@ -11,6 +11,34 @@ inputs:
     description: "module/UNIT to document (e.g. core-batch/EODCLOSE)"
 
 nodes:
+  - id: readiness
+    kind: tool
+    tool: aim_readiness
+    args: { pipeline: aim-understand, unit: "{{inputs.unit}}" }
+
+  - id: readiness_branch
+    kind: switch
+    value: "{{nodes.readiness.output.status}}"
+
+  - id: blocked
+    kind: notify
+    title: "aim-understand blocked"
+    message: "{{inputs.unit}} is not ready for understanding: {{nodes.readiness.output.blockers | json}}"
+
+  - id: acquire
+    kind: tool
+    tool: aim_claim
+    args: { action: acquire, unit: "{{inputs.unit}}" }
+
+  - id: claim_branch
+    kind: switch
+    value: "{{nodes.acquire.output.status}}"
+
+  - id: claim_blocked
+    kind: notify
+    title: "aim-understand claim blocked"
+    message: "{{inputs.unit}} is already owned: {{nodes.acquire.output.blockers | json}}"
+
   - id: understand
     kind: agent
     subagents: [aim-archaeologist]
@@ -37,9 +65,22 @@ nodes:
     title: "aim-understand"
     message: "{{inputs.unit}} documented — doc and candidate rules are in the KB."
 
+  - id: release
+    kind: tool
+    tool: aim_claim
+    args: { action: release, unit: "{{inputs.unit}}" }
+
 edges:
+  - { from: readiness, to: readiness_branch }
+  - { from: readiness_branch, to: blocked, when: blocked }
+  - { from: readiness_branch, to: acquire, when: ready }
+  - { from: acquire, to: claim_branch }
+  - { from: claim_branch, to: claim_blocked, when: blocked }
+  - { from: claim_branch, to: understand, when: acquired }
   - { from: understand, to: mark_understood }
-  - { from: mark_understood, to: done }
+  - { from: mark_understood, to: release }
+  - { from: release, to: done }
 
 outputs:
-  summary: "{{nodes.understand.output.text}}"
+  status: "{{nodes.readiness.output.status}}"
+  blockers: "{{nodes.readiness.output.blockers | json}}"

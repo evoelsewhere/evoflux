@@ -59,6 +59,33 @@ def test_missing_and_extra_files_detected(tmp_path: Path):
     assert report.verdict == "fail"
 
 
+def test_empty_expected_output_fails_closed(tmp_path: Path):
+    expected = tmp_path / "expected"
+    actual = tmp_path / "actual"
+    expected.mkdir()
+
+    report = compare_dirs(expected, actual, _profile())
+
+    assert report.verdict == "fail"
+    assert report.diff_count == 1
+    assert "expected output set is empty" in report.files[0].detail
+
+
+def test_undecodable_binary_files_are_compared_byte_exact(tmp_path: Path):
+    expected = tmp_path / "expected"
+    actual = tmp_path / "actual"
+    expected.mkdir()
+    actual.mkdir()
+    (expected / "out.bin").write_bytes(b"\xff")
+    (actual / "out.bin").write_bytes(b"\xfe")
+
+    report = compare_dirs(expected, actual, _profile())
+
+    assert report.verdict == "fail"
+    assert report.diff_count == 1
+    assert "binary content differs" in report.files[0].detail
+
+
 def test_json_numeric_tolerance_accepts_small_delta(tmp_path: Path):
     expected = tmp_path / "expected"
     actual = tmp_path / "actual"
@@ -79,8 +106,8 @@ def test_sort_before_diff_ignores_json_array_order(tmp_path: Path):
     actual = tmp_path / "actual"
     expected.mkdir()
     actual.mkdir()
-    (expected / "out.json").write_text('[3, 1, 2]')
-    (actual / "out.json").write_text('[1, 2, 3]')
+    (expected / "out.json").write_text("[3, 1, 2]")
+    (actual / "out.json").write_text("[1, 2, 3]")
 
     report = compare_dirs(expected, actual, _profile())
     assert report.verdict == "fail"
@@ -174,8 +201,14 @@ def test_trim_trailing_zeros_makes_decimals_equal(tmp_path: Path):
     (expected / "out.txt").write_text("amount 1.50 rate 2.000\n")
     (actual / "out.txt").write_text("amount 1.5 rate 2\n")
 
-    assert compare_dirs(expected, actual, _profile(trim_trailing_zeros=True)).verdict == "pass"
-    assert compare_dirs(expected, actual, _profile(trim_trailing_zeros=False)).verdict == "fail"
+    assert (
+        compare_dirs(expected, actual, _profile(trim_trailing_zeros=True)).verdict
+        == "pass"
+    )
+    assert (
+        compare_dirs(expected, actual, _profile(trim_trailing_zeros=False)).verdict
+        == "fail"
+    )
 
 
 def test_legacy_encoding_fallback_decodes_ebcdic(tmp_path: Path):
@@ -188,9 +221,7 @@ def test_legacy_encoding_fallback_decodes_ebcdic(tmp_path: Path):
     (expected / "out.txt").write_bytes("HELLO\n".encode("cp037"))
     (actual / "out.txt").write_text("HELLO\n", encoding="utf-8")
 
-    report = compare_dirs(
-        expected, actual, _profile(encoding_legacy_fallback="cp037")
-    )
+    report = compare_dirs(expected, actual, _profile(encoding_legacy_fallback="cp037"))
     assert report.verdict == "pass"
 
 

@@ -12,27 +12,47 @@ inputs:
     description: "wave number to cut over"
 
 nodes:
+  - id: readiness
+    kind: tool
+    tool: aim_readiness
+    args:
+      pipeline: aim-cutover-check
+      wave: "{{inputs.wave}}"
+
+  - id: readiness_branch
+    kind: switch
+    value: "{{nodes.readiness.output.status}}"
+
+  - id: blocked
+    kind: notify
+    title: "aim-cutover-check blocked"
+    message: "Wave {{inputs.wave}} is not ready for cutover: {{nodes.readiness.output.blockers | json}}"
+
+  - id: acquire
+    kind: tool
+    tool: aim_claim
+    args:
+      action: acquire
+      units: "{{nodes.readiness.output.selected_units}}"
+
+  - id: claim_branch
+    kind: switch
+    value: "{{nodes.acquire.output.status}}"
+
+  - id: claim_blocked
+    kind: notify
+    title: "aim-cutover-check claim blocked"
+    message: "Wave {{inputs.wave}} has claimed units: {{nodes.acquire.output.blockers | json}}"
+
   - id: equivalents
     kind: tool
     tool: aim_units
     args: { action: list, phase_filter: equivalent, wave_filter: "{{inputs.wave}}", format: json }
 
-  - id: pending
-    kind: tool
-    tool: aim_units
-    args: { action: list, wave_filter: "{{inputs.wave}}", format: json }
-
-  - id: readiness
-    kind: transform
-    set:
-      equivalent_count: "{{nodes.equivalents.output.count}}"
-      total_count: "{{nodes.pending.output.count}}"
-      units: "{{nodes.equivalents.output.units | json}}"
-
   - id: confirm
     kind: gate
     title: "Cut over wave {{inputs.wave}}?"
-    body: "{{nodes.readiness.output.equivalent_count}} of {{nodes.readiness.output.total_count}} unit(s) in wave {{inputs.wave}} are certified equivalent. Cutting over marks them as live-on-target."
+    body: "All {{nodes.readiness.output.selected_count}} unit(s) in wave {{inputs.wave}} are certified equivalent or already cut over, and the operational checklist is complete. Confirm the go/no-go decision."
     choices: [cutover, hold]
 
   - id: mark_cutover
@@ -49,14 +69,28 @@ nodes:
   - id: done
     kind: notify
     title: "aim-cutover-check"
-    message: "Wave {{inputs.wave}} cut over: {{nodes.mark_cutover.output.count}} unit(s) now live on target."
+    message: "Wave {{inputs.wave}} cutover check finished."
+
+  - id: release
+    kind: tool
+    tool: aim_claim
+    args:
+      action: release
+      units: "{{nodes.readiness.output.selected_units}}"
 
 edges:
-  - { from: equivalents, to: pending }
-  - { from: pending, to: readiness }
-  - { from: readiness, to: confirm }
+  - { from: readiness, to: readiness_branch }
+  - { from: readiness_branch, to: blocked, when: blocked }
+  - { from: readiness_branch, to: acquire, when: ready }
+  - { from: acquire, to: claim_branch }
+  - { from: claim_branch, to: claim_blocked, when: blocked }
+  - { from: claim_branch, to: equivalents, when: acquired }
+  - { from: equivalents, to: confirm }
   - { from: confirm, to: mark_cutover, when: cutover }
-  - { from: mark_cutover, to: done }
+  - { from: confirm, to: release, when: hold }
+  - { from: mark_cutover, to: release }
+  - { from: release, to: done }
 
 outputs:
-  cutover_count: "{{nodes.mark_cutover.output.count}}"
+  status: "{{nodes.readiness.output.status}}"
+  blockers: "{{nodes.readiness.output.blockers | json}}"

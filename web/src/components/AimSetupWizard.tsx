@@ -32,19 +32,6 @@ import { usePlatform } from '@/hooks/use-platform'
 import { useIsMobile } from '@/hooks/use-mobile'
 import type { AimLayoutDetection, AimManifestPreview } from '@/api/types'
 
-const KNOWN_RULEBOOKS = [
-  { id: 'java8-java21', label: 'Java 8 → Java 21' },
-  { id: 'vb6-dotnet', label: 'VB6 → .NET' },
-  { id: 'cobol-java21', label: 'COBOL/JCL → Java 21' },
-]
-
-// Sentinel for "this project defines its own rulebook" — resolved from
-// aim_<project>_document/rulebook/ instead of a shared builtin pack (see
-// app/services/aim/rulebook_install.py's resolve_rulebook_dir). Any
-// rulebook_id string is valid; the KB repo just needs a rulebook/
-// directory before (or shortly after) create for it to actually resolve.
-const CUSTOM_RULEBOOK = '__custom__'
-
 interface AimSetupWizardProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -94,8 +81,6 @@ export function AimSetupWizard({ open, onOpenChange, onCreated }: AimSetupWizard
   const [rootPath, setRootPath] = useState('')
   const [detection, setDetection] = useState<AimLayoutDetection | null>(null)
   const [manifest, setManifest] = useState<AimManifestPreview | null>(null)
-  const [rulebookId, setRulebookId] = useState(KNOWN_RULEBOOKS[0].id)
-  const [customRulebookId, setCustomRulebookId] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -108,7 +93,6 @@ export function AimSetupWizard({ open, onOpenChange, onCreated }: AimSetupWizard
     setRootPath('')
     setDetection(null)
     setManifest(null)
-    setRulebookId(KNOWN_RULEBOOKS[0].id)
     setError(null)
     setSubmitting(false)
   }, [])
@@ -173,7 +157,6 @@ export function AimSetupWizard({ open, onOpenChange, onCreated }: AimSetupWizard
           })
         : await createProject.mutateAsync({
             name: detection.project_name,
-            rulebook_id: rulebookId === CUSTOM_RULEBOOK ? customRulebookId.trim() : rulebookId,
             source_paths: detection.source_paths,
             target_path: detection.target_path,
             kb_path: detection.kb_path,
@@ -185,7 +168,7 @@ export function AimSetupWizard({ open, onOpenChange, onCreated }: AimSetupWizard
     } finally {
       setSubmitting(false)
     }
-  }, [detection, rulebookId, customRulebookId, createProject, joinProject, onCreated, handleClose])
+  }, [detection, createProject, joinProject, onCreated, handleClose])
 
   const mode = detection?.has_manifest ? 'join' : 'create'
 
@@ -207,7 +190,7 @@ export function AimSetupWizard({ open, onOpenChange, onCreated }: AimSetupWizard
               ? 'Pick the project root folder — roles are detected from its layout.'
               : mode === 'join'
                 ? 'Existing project detected (aim.yaml found) — review and join.'
-                : 'New project — review what was detected and pick a rulebook.'}
+                : 'New project — review the detected repositories and local KB.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -288,37 +271,16 @@ export function AimSetupWizard({ open, onOpenChange, onCreated }: AimSetupWizard
               </div>
 
               {mode === 'create' ? (
-                <>
-                  <label className="block text-xs font-medium text-(--color-text)">Rulebook</label>
-                  <select
-                    value={rulebookId}
-                    onChange={(e) => setRulebookId(e.target.value)}
-                    className="w-full rounded-md border border-(--color-border) bg-(--bg-subtle) px-3 py-2 text-sm text-(--color-text)"
-                  >
-                    {KNOWN_RULEBOOKS.map((rb) => (
-                      <option key={rb.id} value={rb.id}>
-                        {rb.label}
-                      </option>
-                    ))}
-                    <option value={CUSTOM_RULEBOOK}>Custom (defined in this project)…</option>
-                  </select>
-                  {rulebookId === CUSTOM_RULEBOOK && (
-                    <div className="space-y-1">
-                      <input
-                        type="text"
-                        value={customRulebookId}
-                        onChange={(e) => setCustomRulebookId(e.target.value)}
-                        placeholder="e.g. servlet-jsp-springboot"
-                        className="w-full rounded-md border border-(--color-border) bg-(--bg-subtle) px-3 py-2 text-sm text-(--color-text)"
-                      />
-                      <p className="text-[11px] text-(--color-text-subtle)">
-                        A custom id resolves from this project's own KB repo — put its rulebook
-                        pack at <code>rulebook/</code> in the document repo (before or shortly
-                        after creating), not in EvoFlux itself.
-                      </p>
-                    </div>
-                  )}
-                </>
+                <div className="space-y-1 border-l-2 border-(--color-accent) pl-3">
+                  <p className="text-xs font-medium text-(--color-text)">
+                    Project-owned rulebook
+                  </p>
+                  <p className="text-[11px] leading-4 text-(--color-text-subtle)">
+                    A safe sample will be scaffolded at <code>rulebook/</code> in the document
+                    repository. Adapt its stack rules there; lifecycle capabilities remain
+                    blocked until the project marks them ready.
+                  </p>
+                </div>
               ) : (
                 <div className="space-y-1.5">
                   {manifest && (
@@ -388,12 +350,7 @@ export function AimSetupWizard({ open, onOpenChange, onCreated }: AimSetupWizard
               <Button
                 size="sm"
                 onClick={() => void handleSubmit()}
-                disabled={
-                  submitting ||
-                  (mode === 'create' &&
-                    rulebookId === CUSTOM_RULEBOOK &&
-                    !customRulebookId.trim())
-                }
+                disabled={submitting}
               >
                 {submitting && <Loader2 size={12} className="animate-spin" />}
                 {mode === 'join' ? 'Join project' : 'Create project'}

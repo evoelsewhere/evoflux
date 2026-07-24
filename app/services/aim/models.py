@@ -5,7 +5,11 @@ in ``documents/research/aim-framework.md`` §3.5/§3.7/§3.8.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from datetime import datetime, timezone
+from typing import Literal
+from uuid import UUID
+
+from pydantic import BaseModel, Field, model_validator
 
 VALID_PHASES: tuple[str, ...] = (
     "inventory",
@@ -44,7 +48,7 @@ UNIT_PHASE_LABELS: dict[str, str] = {
 #: board's per-unit "run next" hint. ``None`` = terminal (nothing to run).
 UNIT_PHASE_NEXT_PIPELINE: dict[str, str | None] = {
     "inventory": "aim-understand",
-    "understood": "aim-convert-unit",
+    "understood": "aim-design-unit",
     "designed": "aim-convert-unit",
     "converted": "aim-test-compare",
     "equivalent": "aim-cutover-check",
@@ -97,6 +101,7 @@ class AimManifest(BaseModel):
     golden_dir: str = "golden"
     compare_default_profile: str = "default"
     phase: str = "assess"
+    state_schema: int = Field(default=1, ge=1)
 
 
 class UnitFrontmatter(BaseModel):
@@ -115,6 +120,77 @@ class UnitFrontmatter(BaseModel):
     target_paths: list[str] = Field(default_factory=list)
     depends_on: list[str] = Field(default_factory=list)
     complexity: dict = Field(default_factory=dict)
+    revision: int = Field(default=0, ge=0)
+    last_transition_id: str | None = None
+
+
+class GoldenCaseMeta(BaseModel):
+    """Trust metadata for one golden case set.
+
+    A deterministic diff is only meaningful when the expected output has a
+    known origin. Synthesized fixtures additionally need an explicit SME
+    sign-off before AIM may use them to certify equivalence.
+    """
+
+    provenance: Literal["captured", "prod_log_replay", "synthesized"]
+    canonicalizer_profile: str | None = None
+    source_revision: str | None = None
+    environment_fingerprint: str | None = None
+    capture_command: str | None = None
+    sme_sign_off: str | None = None
+
+    @model_validator(mode="after")
+    def _require_synthesized_sign_off(self) -> "GoldenCaseMeta":
+        if self.provenance == "synthesized" and not self.sme_sign_off:
+            raise ValueError("synthesized golden cases require sme_sign_off")
+        return self
+
+
+class AimRunMeta(BaseModel):
+    id: UUID
+    unit: str
+    kind: Literal["compare", "convert", "test"]
+    verdict: Literal["pass", "fail", "acceptable_diff", "error"]
+    case_set: str | None = None
+    stats: dict = Field(default_factory=dict)
+    report_path: str | None = None
+    session_id: UUID | None = None
+    workflow_execution_id: str | None = None
+    created_at: datetime
+
+
+class AimLinkMeta(BaseModel):
+    id: UUID
+    from_ref: str
+    to_ref: str
+    kind: str
+    note: str | None = None
+    created_at: datetime
+
+
+class CutoverChecklist(BaseModel):
+    wave: int = Field(ge=0)
+    deployment_ready: bool = False
+    data_reconciled: bool = False
+    rollback_ready: bool = False
+    monitoring_ready: bool = False
+    approved_by: str | None = None
+    notes: str = ""
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def blockers(self) -> list[str]:
+        blockers: list[str] = []
+        for field_name, label in (
+            ("deployment_ready", "deployment readiness"),
+            ("data_reconciled", "data reconciliation"),
+            ("rollback_ready", "rollback readiness"),
+            ("monitoring_ready", "monitoring readiness"),
+        ):
+            if not getattr(self, field_name):
+                blockers.append(f"cutover checklist: {label} is not confirmed")
+        if not self.approved_by or not self.approved_by.strip():
+            blockers.append("cutover checklist: approved_by is required")
+        return blockers
 
 
 class CanonicalMaskRule(BaseModel):
@@ -168,6 +244,7 @@ class CanonicalProfile(BaseModel):
             decimal_tolerance=float(number_format.get("decimal_tolerance", 0.0)),
             trim_trailing_zeros=bool(number_format.get("trim_trailing_zeros", True)),
             fixed_width_fields=[
-                CanonicalFixedWidthField(**f) for f in fixed_width.get("fields", []) or []
+                CanonicalFixedWidthField(**f)
+                for f in fixed_width.get("fields", []) or []
             ],
         )

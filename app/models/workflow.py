@@ -57,6 +57,13 @@ class WorkflowExecution(SQLModel, table=True):
         sa_column=Column(sa.String(20), nullable=False, server_default="running"),
     )
     error: str | None = Field(default=None, sa_column=Column(Text()))
+    inputs: dict = Field(
+        default_factory=dict,
+        sa_column=Column(JSON(), nullable=False, server_default="{}"),
+    )
+    retry_of_execution_id: UUID | None = Field(
+        default=None, sa_column=Column(sa.Uuid())
+    )
     outputs: dict = Field(
         default_factory=dict,
         sa_column=Column(JSON(), nullable=False, server_default="{}"),

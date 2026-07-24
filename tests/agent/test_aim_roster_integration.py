@@ -6,7 +6,6 @@ milestones together end to end — not just each piece in isolation.
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 import pytest
@@ -67,3 +66,9 @@ def test_aim_tier_tools_matches_what_the_real_lead_received(real_aim_agents_dir)
     assert "aim_units" in expected
     assert "aim_compare" in expected
     assert expected.issubset(set(team.lead.agent._tools.keys()))
+
+
+def test_phase_producing_members_declare_workflow_owned_transitions():
+    for name in ("aim-archaeologist", "aim-target-architect", "aim-converter"):
+        content = (_SEED_AIM_DIR / f"{name}.md").read_text(encoding="utf-8")
+        assert "Phase transitions are workflow-owned" in content, name

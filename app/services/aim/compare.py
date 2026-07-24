@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import difflib
 import fnmatch
+import hashlib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -22,6 +23,25 @@ from app.services.aim.canonicalize import canonicalize_text, mask_text
 from app.services.aim.models import CanonicalProfile
 
 FileStatus = Literal["match", "diff", "missing", "extra"]
+
+_BINARY_SUFFIXES = frozenset(
+    {
+        ".bin",
+        ".class",
+        ".dll",
+        ".exe",
+        ".gif",
+        ".gz",
+        ".jar",
+        ".jpeg",
+        ".jpg",
+        ".pdf",
+        ".png",
+        ".so",
+        ".webp",
+        ".zip",
+    }
+)
 
 
 @dataclass
@@ -69,9 +89,12 @@ def _matches_any(rel_path: str, globs: list[str]) -> bool:
 
 
 def _numbers_close(a: Any, b: Any, tolerance: float) -> bool:
-    if isinstance(a, (int, float)) and not isinstance(a, bool) and isinstance(
-        b, (int, float)
-    ) and not isinstance(b, bool):
+    if (
+        isinstance(a, (int, float))
+        and not isinstance(a, bool)
+        and isinstance(b, (int, float))
+        and not isinstance(b, bool)
+    ):
         return abs(float(a) - float(b)) <= tolerance
     return a == b
 
@@ -145,10 +168,13 @@ def _compare_fixed_width(
     return FileDiff(path=rel_path, status="match")
 
 
-def _read_text(path: Path, profile: CanonicalProfile) -> str:
+def _read_text(path: Path, profile: CanonicalProfile) -> str | None:
     """Read *path*, trying the profile's default encoding, then its legacy
-    fallback (EBCDIC/windows-1252/...), then a lossy default-encoding read so
-    a stray byte never aborts a compare."""
+    fallback (EBCDIC/windows-1252/...). ``None`` means the content must be
+    compared byte-for-byte; lossy replacement decoding could turn different
+    binary bytes into the same text and falsely certify equivalence."""
+    if path.suffix.lower() in _BINARY_SUFFIXES:
+        return None
     try:
         return path.read_text(encoding=profile.encoding_default)
     except (UnicodeDecodeError, LookupError):
@@ -158,7 +184,25 @@ def _read_text(path: Path, profile: CanonicalProfile) -> str:
             return path.read_text(encoding=profile.encoding_legacy_fallback)
         except (UnicodeDecodeError, LookupError):
             pass
-    return path.read_text(encoding=profile.encoding_default, errors="replace")
+    return None
+
+
+def _compare_binary(rel_path: str, expected_path: Path, actual_path: Path) -> FileDiff:
+    expected = expected_path.read_bytes()
+    actual = actual_path.read_bytes()
+    if expected == actual:
+        return FileDiff(path=rel_path, status="match")
+    expected_hash = hashlib.sha256(expected).hexdigest()
+    actual_hash = hashlib.sha256(actual).hexdigest()
+    return FileDiff(
+        path=rel_path,
+        status="diff",
+        detail=(
+            "binary content differs: "
+            f"expected={len(expected)} bytes sha256={expected_hash}; "
+            f"actual={len(actual)} bytes sha256={actual_hash}"
+        ),
+    )
 
 
 def _json_diff(a: Any, b: Any, tolerance: float, path: str = "$") -> list[str]:
@@ -253,17 +297,32 @@ def compare_dirs(
     expected_paths = {
         p.relative_to(expected_dir).as_posix()
         for p in expected_dir.rglob("*")
-        if p.is_file() and not _matches_any(p.relative_to(expected_dir).as_posix(), profile.ignore)
+        if p.is_file()
+        and not _matches_any(p.relative_to(expected_dir).as_posix(), profile.ignore)
     }
     actual_paths = (
         {
             p.relative_to(actual_dir).as_posix()
             for p in actual_dir.rglob("*")
-            if p.is_file() and not _matches_any(p.relative_to(actual_dir).as_posix(), profile.ignore)
+            if p.is_file()
+            and not _matches_any(p.relative_to(actual_dir).as_posix(), profile.ignore)
         }
         if actual_dir.exists()
         else set()
     )
+
+    if not expected_paths:
+        return CompareReport(
+            verdict="fail",
+            diff_count=1,
+            files=[
+                FileDiff(
+                    path=".",
+                    status="diff",
+                    detail="expected output set is empty after applying ignore rules",
+                )
+            ],
+        )
 
     files: list[FileDiff] = []
     for rel_path in sorted(expected_paths - actual_paths):
@@ -271,9 +330,14 @@ def compare_dirs(
     for rel_path in sorted(actual_paths - expected_paths):
         files.append(FileDiff(path=rel_path, status="extra"))
     for rel_path in sorted(expected_paths & actual_paths):
-        expected_text = _read_text(expected_dir / rel_path, profile)
-        actual_text = _read_text(actual_dir / rel_path, profile)
-        files.append(_compare_file(rel_path, expected_text, actual_text, profile))
+        expected_path = expected_dir / rel_path
+        actual_path = actual_dir / rel_path
+        expected_text = _read_text(expected_path, profile)
+        actual_text = _read_text(actual_path, profile)
+        if expected_text is None or actual_text is None:
+            files.append(_compare_binary(rel_path, expected_path, actual_path))
+        else:
+            files.append(_compare_file(rel_path, expected_text, actual_text, profile))
 
     diff_count = sum(1 for f in files if f.status != "match")
     verdict: Literal["pass", "fail"] = "pass" if diff_count == 0 else "fail"

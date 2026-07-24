@@ -363,10 +363,21 @@ def _default_tool_registry() -> dict[str, Tool]:
         shell_bg_wait,
     )
     from app.agent.tools.builtin.worktree import worktree_start, worktree_finish
-    from app.agent.tools.builtin.lsp import lsp_diagnostics, lsp_definition, lsp_references
+    from app.agent.tools.builtin.lsp import (
+        lsp_diagnostics,
+        lsp_definition,
+        lsp_references,
+    )
     from app.agent.tools.builtin.visualize import visualize_read_me, show_widget
     from app.agent.tools.builtin.preview import preview_tool
-    from app.agent.tools.builtin.aim import aim_units, aim_compare
+    from app.agent.tools.builtin.aim import (
+        aim_claim,
+        aim_compare,
+        aim_execute,
+        aim_readiness,
+        aim_units,
+        aim_verify,
+    )
     from app.agent.tools.builtin.terminal import terminal_run
 
     registry: dict[str, Tool] = {
@@ -416,6 +427,10 @@ def _default_tool_registry() -> dict[str, Tool]:
         "show_widget": show_widget,
         "aim_units": aim_units,
         "aim_compare": aim_compare,
+        "aim_readiness": aim_readiness,
+        "aim_claim": aim_claim,
+        "aim_execute": aim_execute,
+        "aim_verify": aim_verify,
         "terminal_run": terminal_run,
     }
     # Merge MCP tools from healthy servers. Names follow ``mcp_<server>_<tool>``
@@ -547,10 +562,7 @@ def _build_agent(
         # lead_only is an invariant, not just a tier-grant default: a
         # frontmatter extra cannot hand a member a user-interaction /
         # session-structure tool (ask_user would deadlock a delegation).
-        if (
-            getattr(tool_registry[tool_name], "lead_only", False)
-            and cfg.role != "lead"
-        ):
+        if getattr(tool_registry[tool_name], "lead_only", False) and cfg.role != "lead":
             logger.warning(
                 "agent_lead_only_tool_skipped agent={} tool={}",
                 cfg.name,

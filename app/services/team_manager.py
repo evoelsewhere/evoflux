@@ -123,21 +123,61 @@ def _ensure_aim_agents_installed(agents_dir: Path) -> None:
     ``agents/aim/`` subtree. Safe to call repeatedly — install_seed only
     fills gaps, never overwrites.
     """
-    if any(agents_dir.glob("*.md")):
-        return
-    from app.agent.loader import _lead_model_for_dir
-    from app.cli.seed import PROVIDER_MODEL_TOKEN, SeedDownloadError, install_seed
+    if not any(agents_dir.glob("*.md")):
+        from app.agent.loader import _lead_model_for_dir
+        from app.cli.seed import PROVIDER_MODEL_TOKEN, SeedDownloadError, install_seed
 
-    # By the time this backfill runs (lazily, on first aim team load) the
-    # user has typically already configured a provider — unlike a genuine
-    # first-run install, where deferring to the placeholder is correct.
-    # Reuse whatever the forge lead already resolved to, so aim blueprints
-    # don't ship unconfigured while every other mode already works.
-    provider_model = _lead_model_for_dir(_resolve_agents_dir()) or PROVIDER_MODEL_TOKEN
-    try:
-        install_seed(Path(settings.EVOFLUX_CONFIG_DIR), provider_model=provider_model)
-    except SeedDownloadError as exc:
-        logger.warning("aim_agents_seed_backfill_failed error={}", exc)
+        # By the time this backfill runs (lazily, on first aim team load) the
+        # user has typically already configured a provider — unlike a genuine
+        # first-run install, where deferring to the placeholder is correct.
+        provider_model = (
+            _lead_model_for_dir(_resolve_agents_dir()) or PROVIDER_MODEL_TOKEN
+        )
+        try:
+            install_seed(
+                Path(settings.EVOFLUX_CONFIG_DIR), provider_model=provider_model
+            )
+        except SeedDownloadError as exc:
+            logger.warning("aim_agents_seed_backfill_failed error={}", exc)
+
+    marker = "<!-- aim-runtime-contract:v2 -->"
+    contracts = {
+        "aim-lead.md": (
+            "Phase transitions are workflow-owned deterministic tool nodes. "
+            "Agents create artifacts and metadata but never advance lifecycle state."
+        ),
+        "aim-archaeologist.md": (
+            "Phase transitions are workflow-owned. Never set phase=understood; "
+            "return artifact paths for the workflow validator."
+        ),
+        "aim-target-architect.md": (
+            "Phase transitions are workflow-owned. Design runs in "
+            "aim-design-unit; never set phase=designed."
+        ),
+        "aim-converter.md": (
+            "Phase transitions are workflow-owned. Record target_paths without "
+            "changing phase; deterministic workflow nodes set converted."
+        ),
+        "aim-test-engineer.md": (
+            "Only deterministic aim_compare output may reach certification. "
+            "Runner prose never certifies equivalence."
+        ),
+        "aim-triage-analyst.md": (
+            "Triage receives deterministic fail/error outcomes. Accepted "
+            "differences still require cited human review."
+        ),
+    }
+    for filename, contract in contracts.items():
+        path = agents_dir / filename
+        if not path.is_file():
+            continue
+        content = path.read_text(encoding="utf-8")
+        if marker in content:
+            continue
+        path.write_text(
+            f"{content.rstrip()}\n\n{marker}\n\n## Runtime contract\n\n{contract}\n",
+            encoding="utf-8",
+        )
 
 
 def _resolve_workspace(workspace: str) -> Path:

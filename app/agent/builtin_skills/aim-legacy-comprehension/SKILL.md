@@ -26,7 +26,7 @@ Legacy comprehension for a migration project fails the same way almost every tim
 3. **Write for a developer who has never seen this codebase.** Purpose, control flow in prose (not a line-by-line transliteration), interfaces (what calls this, what this calls), side effects (files written, records updated, external systems touched). Write the BODY of `modules/<module>/<unit>.md`; leave the frontmatter state fields to the `aim_units` tool.
 4. **Flag ambiguity instead of resolving it silently.** Dead code, unreachable branches, rules that seem to contradict each other — write the flag down. Ambiguity caught here is cheap; discovered during test compare it's expensive.
 5. **Extract candidate business rules as you go** (see `aim-business-rule-extraction`) — comprehension and rule extraction are one pass over the code, not two.
-6. **Close the loop in state**: when the doc is done, `aim_units action=set_phase unit="<module>/<name>" phase=understood`. The next session (or the next teammate on a cloned KB) resumes the walk from state, not from memory.
+6. **Close the loop in evidence**: return the written doc/rule paths and ambiguities to the workflow. Phase transitions are workflow-owned; the deterministic `mark_understood` node advances state only after this artifact-producing turn succeeds.
 
 ## Deriving the bottom-up order
 
@@ -39,4 +39,4 @@ The order comes from the graph, not from judgment calls:
 
 ## Verification
 
-Before considering a unit's documentation done: does it cite what it calls and what calls it (not just describe the unit in isolation)? Does every non-obvious business decision in the source have a corresponding candidate rule, or an explicit note that none was found? Would a converter agent be able to implement this unit correctly from the doc alone, without re-reading the legacy source? Did the phase actually move to `understood` via `aim_units`? If any answer is no, the doc isn't finished yet.
+Before considering a unit's documentation done: does it cite what it calls and what calls it (not just describe the unit in isolation)? Does every non-obvious business decision in the source have a corresponding candidate rule, or an explicit note that none was found? Would a converter agent be able to implement this unit correctly from the doc alone, without re-reading the legacy source? Did you return concrete artifact paths and unresolved ambiguities for the workflow validator? If any answer is no, the doc isn't finished yet.

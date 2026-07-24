@@ -13,6 +13,38 @@ inputs:
     description: "wave number to convert"
 
 nodes:
+  - id: readiness
+    kind: tool
+    tool: aim_readiness
+    args:
+      pipeline: aim-convert-wave
+      wave: "{{inputs.wave}}"
+
+  - id: readiness_branch
+    kind: switch
+    value: "{{nodes.readiness.output.status}}"
+
+  - id: blocked
+    kind: notify
+    title: "aim-convert-wave blocked"
+    message: "Wave {{inputs.wave}} is not ready for conversion: {{nodes.readiness.output.blockers | json}}"
+
+  - id: acquire
+    kind: tool
+    tool: aim_claim
+    args:
+      action: acquire
+      units: "{{nodes.readiness.output.selected_units}}"
+
+  - id: claim_branch
+    kind: switch
+    value: "{{nodes.acquire.output.status}}"
+
+  - id: claim_blocked
+    kind: notify
+    title: "aim-convert-wave claim blocked"
+    message: "Wave {{inputs.wave}} has claimed units: {{nodes.acquire.output.blockers | json}}"
+
   - id: list_units
     kind: tool
     tool: aim_units
@@ -40,20 +72,60 @@ nodes:
         Convert unit {{item.module}}/{{item.name}} (wave {{inputs.wave}},
         item {{index}}): delegate to `aim-converter` — implement it in the
         target repo per its KB mapping and target-conventions (base source is
-        read-only), verify the target builds, then set its phase to converted
-        via aim_units.
+        read-only), verify the target builds, then update target_paths via
+        aim_units WITHOUT changing phase. The deterministic mark_converted
+        node owns the transition after every implementation finishes.
       timeout_s: 3600
+
+  - id: mark_converted
+    kind: foreach
+    items: "{{nodes.list_units.output.units}}"
+    body:
+      kind: tool
+      tool: aim_units
+      args:
+        action: set_phase
+        unit: "{{item.module}}/{{item.name}}"
+        phase: converted
+
+  - id: verify_each
+    kind: foreach
+    items: "{{nodes.list_units.output.units}}"
+    body:
+      kind: tool
+      tool: aim_verify
+      args:
+        unit: "{{item.module}}/{{item.name}}"
+      timeout_s: 1800
 
   - id: done
     kind: notify
     title: "aim-convert-wave"
     message: "Wave {{inputs.wave}}: {{nodes.convert_each.output.count}} unit(s) converted — run aim-test-compare per unit next."
 
+  - id: release
+    kind: tool
+    tool: aim_claim
+    args:
+      action: release
+      units: "{{nodes.readiness.output.selected_units}}"
+
 edges:
+  - { from: readiness, to: readiness_branch }
+  - { from: readiness_branch, to: blocked, when: blocked }
+  - { from: readiness_branch, to: acquire, when: ready }
+  - { from: acquire, to: claim_branch }
+  - { from: claim_branch, to: claim_blocked, when: blocked }
+  - { from: claim_branch, to: list_units, when: acquired }
   - { from: list_units, to: batch_summary }
   - { from: batch_summary, to: approve_batch }
   - { from: approve_batch, to: convert_each, when: approve }
-  - { from: convert_each, to: done }
+  - { from: convert_each, to: verify_each }
+  - { from: verify_each, to: mark_converted }
+  - { from: approve_batch, to: release, when: cancel }
+  - { from: mark_converted, to: release }
+  - { from: release, to: done }
 
 outputs:
-  converted: "{{nodes.convert_each.output.count}}"
+  status: "{{nodes.readiness.output.status}}"
+  blockers: "{{nodes.readiness.output.blockers | json}}"

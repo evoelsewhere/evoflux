@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi import FastAPI
@@ -100,7 +100,6 @@ async def test_reindex_aim_project_rebuilds_units_from_kb(client, tmp_path):
         "/api/team/projects/aim",
         json={
             "name": "reindex-me",
-            "rulebook_id": "cobol-java21",
             "source_paths": [str(source)],
             "target_path": str(target),
             "kb_path": str(kb_path),
@@ -111,7 +110,7 @@ async def test_reindex_aim_project_rebuilds_units_from_kb(client, tmp_path):
 
     # Simulate a teammate's contribution arriving via git pull.
     write_unit(
-        kb_path, "core-batch", "EODCLOSE", kind="program", phase="understood", wave=1
+        kb_path, "core-batch", "EODCLOSE", kind="program", phase="inventory", wave=1
     )
 
     resp = await client.post(f"/api/team/projects/{project_id}/aim/reindex")
@@ -123,6 +122,207 @@ async def test_reindex_aim_project_rebuilds_units_from_kb(client, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_aim_readiness_endpoint_blocks_incomplete_cutover(client, tmp_path):
+    from app.services.aim.kb_store import write_unit
+
+    source = _make_local_repo(tmp_path, "readiness-source")
+    target = _make_local_repo(tmp_path, "readiness-target")
+    kb_path = tmp_path / "readiness-kb"
+    create_resp = await client.post(
+        "/api/team/projects/aim",
+        json={
+            "name": "readiness-project",
+            "source_paths": [str(source)],
+            "target_path": str(target),
+            "kb_path": str(kb_path),
+        },
+    )
+    project_id = create_resp.json()["id"]
+    write_unit(kb_path, "core", "A", kind="program", phase="equivalent", wave=1)
+    write_unit(
+        kb_path,
+        "core",
+        "B",
+        kind="program",
+        phase="converted",
+        wave=1,
+        target_paths=["src/B.java"],
+    )
+
+    resp = await client.get(
+        f"/api/team/projects/{project_id}/aim/readiness",
+        params={"pipeline": "aim-cutover-check", "wave": 1},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "blocked"
+    assert any("core/B" in blocker for blocker in resp.json()["blockers"])
+
+
+@pytest.mark.asyncio
+async def test_units_expose_backend_next_action_and_template_blocker(
+    client, tmp_path
+):
+    from app.services.aim.kb_store import write_unit
+
+    source = _make_local_repo(tmp_path, "actions-source")
+    target = _make_local_repo(tmp_path, "actions-target")
+    kb_path = tmp_path / "actions-kb"
+    create_resp = await client.post(
+        "/api/team/projects/aim",
+        json={
+            "name": "actions-project",
+            "source_paths": [str(source)],
+            "target_path": str(target),
+            "kb_path": str(kb_path),
+        },
+    )
+    project_id = create_resp.json()["id"]
+    write_unit(kb_path, "core", "PAY", kind="program", phase="inventory")
+    reindex = await client.post(f"/api/team/projects/{project_id}/aim/reindex")
+    assert reindex.status_code == 200
+
+    units = (await client.get(f"/api/team/projects/{project_id}/aim/units")).json()
+
+    assert units[0]["state_verified"] is True
+    assert units[0]["next_action"]["pipeline"] == "aim-understand"
+    assert units[0]["next_action"]["allowed"] is False
+    assert "rulebook capability understand is template" in units[0]["next_action"][
+        "blockers"
+    ]
+    assert units[0]["claim"] is None
+
+
+@pytest.mark.asyncio
+async def test_reconcile_legacy_state_creates_verified_baseline(client, tmp_path):
+    import yaml
+
+    from app.services.aim.kb_store import write_unit
+
+    source = _make_local_repo(tmp_path, "legacy-source")
+    target = _make_local_repo(tmp_path, "legacy-target")
+    kb_path = tmp_path / "legacy-kb"
+    create_resp = await client.post(
+        "/api/team/projects/aim",
+        json={
+            "name": "legacy-project",
+            "source_paths": [str(source)],
+            "target_path": str(target),
+            "kb_path": str(kb_path),
+        },
+    )
+    project_id = create_resp.json()["id"]
+    manifest_path = kb_path / "aim.yaml"
+    manifest = yaml.safe_load(manifest_path.read_text())
+    manifest["state_schema"] = 1
+    manifest_path.write_text(yaml.safe_dump(manifest, sort_keys=False))
+    write_unit(
+        kb_path,
+        "core",
+        "PAY",
+        kind="program",
+        phase="converted",
+        target_paths=["src/Pay.java"],
+    )
+    await client.post(f"/api/team/projects/{project_id}/aim/reindex")
+
+    response = await client.post(
+        f"/api/team/projects/{project_id}/aim/reconcile-state",
+        json={"confirmation": "accept-current-state"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["reconciled"] == 1
+    units = (await client.get(f"/api/team/projects/{project_id}/aim/units")).json()
+    assert units[0]["state_verified"] is True
+    assert units[0]["revision"] == 1
+
+
+@pytest.mark.asyncio
+async def test_project_health_surfaces_runner_and_target_base_blockers(
+    client, tmp_path
+):
+    source = _make_local_repo(tmp_path, "health-source")
+    target = _make_local_repo(tmp_path, "health-target")
+    kb_path = tmp_path / "health-kb"
+    create_resp = await client.post(
+        "/api/team/projects/aim",
+        json={
+            "name": "health-project",
+            "source_paths": [str(source)],
+            "target_path": str(target),
+            "kb_path": str(kb_path),
+        },
+    )
+    project_id = create_resp.json()["id"]
+
+    response = await client.get(f"/api/team/projects/{project_id}/aim/health")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "blocked"
+    checks = {check["id"]: check for check in body["checks"]}
+    assert checks["target_base"]["status"] == "fail"
+    assert checks["runners"]["status"] == "fail"
+    assert checks["capabilities"]["status"] == "fail"
+
+
+@pytest.mark.asyncio
+async def test_project_approval_inbox_aggregates_live_gates(client, tmp_path):
+    from app.agent.ask_user import (
+        AskUserRequest,
+        AskUserService,
+        reset_ask_user_service,
+        set_ask_user_service,
+    )
+    from app.agent.tools.builtin.ask_user import QuestionSpec
+    from app.models.chat import ChatSession
+    from app.models.workflow import WorkflowExecution
+
+    project, *_ = await _make_aim_project_with_units(tmp_path)
+    async with db_module.async_session_factory() as db:
+        session = ChatSession(
+            mode="aim",
+            project_id=project.id,
+            workspace=str(tmp_path),
+            title="PAY · design",
+        )
+        db.add(session)
+        await db.flush()
+        execution = WorkflowExecution(
+            definition_name="aim-design-unit",
+            definition_hash="hash",
+            session_id=session.id,
+            status="waiting_gate",
+        )
+        db.add(execution)
+        await db.commit()
+
+    service = AskUserService(str(session.id))
+    request = AskUserRequest.create(
+        str(session.id),
+        [
+            QuestionSpec(
+                question="Approve target design?", options=["approve", "reject"]
+            )
+        ],
+    )
+    service._pending[request.id] = request
+    token = set_ask_user_service(service)
+    try:
+        response = await client.get(f"/api/team/projects/{project.id}/aim/approvals")
+    finally:
+        reset_ask_user_service(token, str(session.id))
+
+    assert response.status_code == 200
+    approvals = response.json()
+    assert len(approvals) == 1
+    assert approvals[0]["workflow"] == "aim-design-unit"
+    assert approvals[0]["question"] == "Approve target design?"
+    assert approvals[0]["options"] == ["approve", "reject"]
+
+
+@pytest.mark.asyncio
 async def test_get_aim_rulebook_returns_manifest_and_files(client, tmp_path):
     source = _make_local_repo(tmp_path, "src-rb")
     target = _make_local_repo(tmp_path, "tgt-rb")
@@ -130,7 +330,6 @@ async def test_get_aim_rulebook_returns_manifest_and_files(client, tmp_path):
         "/api/team/projects/aim",
         json={
             "name": "rb-view",
-            "rulebook_id": "cobol-java21",
             "source_paths": [str(source)],
             "target_path": str(target),
             "kb_path": str(tmp_path / "kb-rb"),
@@ -142,22 +341,23 @@ async def test_get_aim_rulebook_returns_manifest_and_files(client, tmp_path):
     resp = await client.get(f"/api/team/projects/{project_id}/aim/rulebook")
     assert resp.status_code == 200
     body = resp.json()
-    assert body["id"] == "cobol-java21"
-    assert body["manifest"]["parser_strategy"] == "structural"
+    assert body["id"] == "rb-view-rulebook"
+    assert body["manifest"]["parser_strategy"] == "none"
+    assert "source" not in body
     paths = [f["path"] for f in body["files"]]
     assert "rulebook.yaml" in paths
-    assert "extractors/cobol-structural.yaml" in paths
+    assert "extractors/structural.example.yaml" in paths
+    assert "canonicalizers/default.yaml" in paths
 
 
 @pytest.mark.asyncio
-async def test_get_aim_rulebook_404_for_unknown_pack(client, tmp_path):
+async def test_get_aim_rulebook_404_without_local_manifest(client, tmp_path):
     source = _make_local_repo(tmp_path, "src-rb2")
     target = _make_local_repo(tmp_path, "tgt-rb2")
     create_resp = await client.post(
         "/api/team/projects/aim",
         json={
             "name": "rb-missing",
-            "rulebook_id": "not-a-real-pack",
             "source_paths": [str(source)],
             "target_path": str(target),
             "kb_path": str(tmp_path / "kb-rb2"),
@@ -165,20 +365,20 @@ async def test_get_aim_rulebook_404_for_unknown_pack(client, tmp_path):
     )
     assert create_resp.status_code == 201
     project_id = create_resp.json()["id"]
+    (tmp_path / "kb-rb2" / "rulebook" / "rulebook.yaml").unlink()
 
     resp = await client.get(f"/api/team/projects/{project_id}/aim/rulebook")
     assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_get_aim_rulebook_reports_builtin_source(client, tmp_path):
+async def test_get_aim_rulebook_404_for_identity_mismatch(client, tmp_path):
     source = _make_local_repo(tmp_path, "src-rb3")
     target = _make_local_repo(tmp_path, "tgt-rb3")
     create_resp = await client.post(
         "/api/team/projects/aim",
         json={
-            "name": "rb-builtin",
-            "rulebook_id": "cobol-java21",
+            "name": "rb-mismatch",
             "source_paths": [str(source)],
             "target_path": str(target),
             "kb_path": str(tmp_path / "kb-rb3"),
@@ -186,18 +386,20 @@ async def test_get_aim_rulebook_reports_builtin_source(client, tmp_path):
     )
     assert create_resp.status_code == 201
     project_id = create_resp.json()["id"]
+    rulebook_path = tmp_path / "kb-rb3" / "rulebook" / "rulebook.yaml"
+    rulebook_path.write_text(
+        rulebook_path.read_text(encoding="utf-8").replace(
+            "id: rb-mismatch-rulebook", "id: another-project-rulebook"
+        ),
+        encoding="utf-8",
+    )
 
     resp = await client.get(f"/api/team/projects/{project_id}/aim/rulebook")
-    assert resp.status_code == 200
-    assert resp.json()["source"] == "builtin"
+    assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_get_aim_rulebook_prefers_kb_override(client, tmp_path):
-    """A KB-local rulebook/ directory wins over the builtin pack of the
-    same id, and the endpoint reports source='project' — the flexibility
-    the user asked for: a project's rulebook lives in its own KB repo,
-    not hardcoded into EvoFlux."""
+async def test_get_aim_rulebook_reads_project_customization(client, tmp_path):
     source = _make_local_repo(tmp_path, "src-rb4")
     target = _make_local_repo(tmp_path, "tgt-rb4")
     kb_path = tmp_path / "kb-rb4"
@@ -205,9 +407,6 @@ async def test_get_aim_rulebook_prefers_kb_override(client, tmp_path):
         "/api/team/projects/aim",
         json={
             "name": "rb-override",
-            # A real builtin pack id -- proves the KB override wins even
-            # when a same-named builtin pack also exists.
-            "rulebook_id": "cobol-java21",
             "source_paths": [str(source)],
             "target_path": str(target),
             "kb_path": str(kb_path),
@@ -216,24 +415,59 @@ async def test_get_aim_rulebook_prefers_kb_override(client, tmp_path):
     assert create_resp.status_code == 201
     project_id = create_resp.json()["id"]
 
-    # A KB-local override, added after project creation (git pull of a
-    # teammate's customization, in practice).
+    # Customize the project-local copy after project creation (a teammate's
+    # committed rulebook update, in practice).
     override_dir = kb_path / "rulebook"
-    override_dir.mkdir(parents=True)
     (override_dir / "rulebook.yaml").write_text(
-        "id: cobol-java21\nversion: '0.1'\ndescription: project-specific override\n"
+        "id: rb-override-rulebook\nversion: '0.1'\n"
+        "description: project-specific policy\n"
         "parser_strategy: tree_sitter\n",
         encoding="utf-8",
+    )
+    (override_dir / "project-policy.md").write_text(
+        "# Engagement-specific policy\n", encoding="utf-8"
     )
 
     resp = await client.get(f"/api/team/projects/{project_id}/aim/rulebook")
     assert resp.status_code == 200
     body = resp.json()
-    assert body["source"] == "project"
-    assert body["manifest"]["description"] == "project-specific override"
-    # Not the builtin cobol-java21 pack's structural extractors.
+    assert body["manifest"]["description"] == "project-specific policy"
+    assert "source" not in body
     paths = [f["path"] for f in body["files"]]
-    assert "extractors/cobol-structural.yaml" not in paths
+    assert "project-policy.md" in paths
+
+
+@pytest.mark.asyncio
+async def test_get_aim_rulebook_ignores_stale_cached_identity(client, tmp_path):
+    source = _make_local_repo(tmp_path, "src-rb-cache")
+    target = _make_local_repo(tmp_path, "tgt-rb-cache")
+    kb_path = tmp_path / "kb-rb-cache"
+    create_resp = await client.post(
+        "/api/team/projects/aim",
+        json={
+            "name": "cache-source",
+            "source_paths": [str(source)],
+            "target_path": str(target),
+            "kb_path": str(kb_path),
+        },
+    )
+    project_id = create_resp.json()["id"]
+    async with db_module.async_session_factory() as db:
+        project = await db.get(CodingProject, UUID(project_id))
+        assert project is not None
+        settings = dict(project.settings)
+        settings["aim"] = {
+            **settings["aim"],
+            "rulebook": {"id": "stale-cache", "version": "0"},
+        }
+        project.settings = settings
+        db.add(project)
+        await db.commit()
+
+    response = await client.get(f"/api/team/projects/{project_id}/aim/rulebook")
+
+    assert response.status_code == 200
+    assert response.json()["id"] == "cache-source-rulebook"
 
 
 @pytest.mark.asyncio
@@ -392,8 +626,6 @@ async def test_create_aim_project_route_end_to_end(client, tmp_path):
         "/api/team/projects/aim",
         json={
             "name": "core-batch migration",
-            "rulebook_id": "java8-java21",
-            "rulebook_version": "0.1",
             "source_paths": [str(source)],
             "target_path": str(target),
             "kb_path": str(kb_path),
@@ -402,7 +634,7 @@ async def test_create_aim_project_route_end_to_end(client, tmp_path):
     assert resp.status_code == 201
     body = resp.json()
     assert body["kind"] == "aim"
-    assert body["settings"]["aim"]["rulebook"]["id"] == "java8-java21"
+    assert body["settings"]["aim"]["rulebook"]["id"] == "core-batch-migration-rulebook"
     assert len(body["workspaces"]) == 3
     assert (kb_path / "aim.yaml").exists()
 
@@ -413,7 +645,6 @@ async def test_create_aim_project_rejects_missing_source_path(client, tmp_path):
         "/api/team/projects/aim",
         json={
             "name": "p",
-            "rulebook_id": "default",
             "source_paths": [str(tmp_path / "does-not-exist")],
             "target_path": str(_make_local_repo(tmp_path, "target")),
             "kb_path": str(tmp_path / "kb"),
@@ -435,7 +666,6 @@ async def test_create_aim_project_accepts_pre_existing_kb_dir(client, tmp_path):
         "/api/team/projects/aim",
         json={
             "name": "p",
-            "rulebook_id": "default",
             "source_paths": [str(_make_local_repo(tmp_path, "source"))],
             "target_path": str(_make_local_repo(tmp_path, "target")),
             "kb_path": str(kb_path),
@@ -457,7 +687,6 @@ async def test_create_aim_project_rejects_kb_that_is_already_an_aim_kb(
         "/api/team/projects/aim",
         json={
             "name": "p",
-            "rulebook_id": "default",
             "source_paths": [str(_make_local_repo(tmp_path, "source"))],
             "target_path": str(_make_local_repo(tmp_path, "target")),
             "kb_path": str(kb_path),
@@ -487,9 +716,7 @@ async def test_detect_aim_layout_route(client, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_detect_aim_layout_route_rejects_nonconforming_folder(
-    client, tmp_path
-):
+async def test_detect_aim_layout_route_rejects_nonconforming_folder(client, tmp_path):
     plain = tmp_path / "plain"
     plain.mkdir()
 
@@ -509,8 +736,6 @@ async def test_preview_aim_project_route(client, tmp_path):
         "/api/team/projects/aim",
         json={
             "name": "p",
-            "rulebook_id": "vb6-dotnet",
-            "rulebook_version": "0.2",
             "source_paths": [str(source)],
             "target_path": str(target),
             "kb_path": str(kb_path),
@@ -522,8 +747,8 @@ async def test_preview_aim_project_route(client, tmp_path):
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert body["rulebook_id"] == "vb6-dotnet"
-    assert body["rulebook_version"] == "0.2"
+    assert body["rulebook_id"] == "p-rulebook"
+    assert body["rulebook_version"] == "0.1"
     assert body["source_identities"] == ["source-repo"]
 
 
@@ -545,7 +770,6 @@ async def test_join_aim_project_route_end_to_end(client, tmp_path):
         "/api/team/projects/aim",
         json={
             "name": "original",
-            "rulebook_id": "java8-java21",
             "source_paths": [str(source1)],
             "target_path": str(target1),
             "kb_path": str(kb_path),
@@ -566,7 +790,7 @@ async def test_join_aim_project_route_end_to_end(client, tmp_path):
     assert resp.status_code == 201
     body = resp.json()
     assert body["kind"] == "aim"
-    assert body["settings"]["aim"]["rulebook"]["id"] == "java8-java21"
+    assert body["settings"]["aim"]["rulebook"]["id"] == "original-rulebook"
 
 
 @pytest.mark.asyncio
@@ -596,4 +820,6 @@ async def test_aim_meta_serves_backend_phase_vocabulary(client):
     assert set(body["phase_labels"]) == set(VALID_PHASES)
     assert set(body["phase_next_pipeline"]) == set(VALID_PHASES)
     assert body["phase_next_pipeline"]["inventory"] == "aim-understand"
+    assert body["phase_next_pipeline"]["understood"] == "aim-design-unit"
+    assert body["phase_next_pipeline"]["designed"] == "aim-convert-unit"
     assert body["phase_next_pipeline"]["cutover"] is None

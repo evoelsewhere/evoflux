@@ -1,5 +1,14 @@
-# AIM KB template (draft)
+# AIM knowledge-base template
 
-Starting layout for an AIM migration project's knowledge-base repo, per `documents/research/aim-framework.md` §3.6. To use today: copy this directory's contents into a new git repo, fill in `aim.yaml`, and `git init && git add -A && git commit`.
+This is the scaffold used by `AimSetupWizard` for a new migration project.
+The KB is the project's Git-tracked system of record for unit state, business
+rules, target mappings, evidence, approvals, and decisions.
 
-**Status: content-only (AIM-0).** `AimSetupWizard` (AIM-2) will eventually scaffold a new KB repo from this template automatically; until then, copying it by hand is the way to start a project.
+Start with [GUIDELINES.md](GUIDELINES.md), then use [INDEX.md](INDEX.md) as the
+content map. `aim.yaml` declares project identity and pins the rulebook stored
+in this repository.
+
+The `rulebook/` directory is active and project-owned from creation. EvoFlux
+ships no stack-specific rulebook and performs no catalog fallback. Its sample
+manifest and subitems are deliberately marked `template`; adapt and activate
+them according to [rulebook/GUIDELINES.md](rulebook/GUIDELINES.md).

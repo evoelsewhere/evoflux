@@ -334,9 +334,7 @@ def _coerce_inputs(definition: WorkflowDefinition, provided: dict) -> dict:
                 )
             elif spec.type == "enum":
                 if str(raw) not in (spec.options or []):
-                    errors.append(
-                        f"input '{name}': '{raw}' not in {spec.options}."
-                    )
+                    errors.append(f"input '{name}': '{raw}' not in {spec.options}.")
                     continue
                 values[name] = str(raw)
             else:
@@ -391,6 +389,42 @@ async def run_workflow_route(
             detail=f"'{name}' is not approved — review and approve it first.",
         )
 
+    if body.retry_of_execution_id is not None:
+        from app.models.workflow import WorkflowExecution
+
+        parent = await db.get(WorkflowExecution, body.retry_of_execution_id)
+        if parent is None:
+            raise HTTPException(status_code=404, detail="Retry parent was not found.")
+        if parent.definition_name != name:
+            raise HTTPException(
+                status_code=422,
+                detail="Retry parent belongs to a different workflow definition.",
+            )
+        if parent.definition_hash != file_hash:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "The workflow changed since the failed attempt. Review and "
+                    "run it as a new attempt."
+                ),
+            )
+        if parent.status not in {"completed", "failed", "stopped"}:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Execution in status {parent.status!r} cannot be retried.",
+            )
+        from app.models.aim import AimClaim
+
+        stale_claims = (
+            await db.exec(
+                select(AimClaim).where(AimClaim.workflow_execution_id == parent.id)
+            )
+        ).all()
+        for stale_claim in stale_claims:
+            await db.delete(stale_claim)
+        if stale_claims:
+            await db.commit()
+
     # Scope rules (§6.2 + aim extension): forge runs anywhere; coding/aim
     # definitions require a session of that mode, whose pinned workspace IS
     # the target.
@@ -410,6 +444,30 @@ async def run_workflow_route(
             )
         scope_workspace = session.workspace
 
+    if definition.scope == "aim" and name == "aim-assess" and session.project_id:
+        from app.models.chat import ChatSession
+        from app.models.workflow import WorkflowExecution
+
+        active_assessment = (
+            await db.exec(
+                select(WorkflowExecution)
+                .join(
+                    ChatSession,
+                    col(WorkflowExecution.session_id) == col(ChatSession.id),
+                )
+                .where(
+                    ChatSession.project_id == session.project_id,
+                    WorkflowExecution.definition_name == name,
+                    col(WorkflowExecution.status).in_(("running", "waiting_gate")),
+                )
+            )
+        ).first()
+        if active_assessment is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="An assessment is already active for this AIM project.",
+            )
+
     if runner.is_driving(body.session_id):
         raise HTTPException(
             status_code=409, detail="An execution is already active in this session."
@@ -422,6 +480,7 @@ async def run_workflow_route(
         session_id=body.session_id,
         inputs=inputs,
         scope_workspace=scope_workspace,
+        retry_of_execution_id=body.retry_of_execution_id,
     )
     return WorkflowRunResponse(
         execution_id=state.execution_id, session_id=body.session_id
@@ -436,7 +495,9 @@ async def stop_execution_route(execution_id: UUID) -> None:
         raise HTTPException(status_code=404, detail="No active execution with that id.")
 
 
-@router.get("/executions/{execution_id}", response_model=WorkflowExecutionDetailResponse)
+@router.get(
+    "/executions/{execution_id}", response_model=WorkflowExecutionDetailResponse
+)
 async def get_execution_route(
     execution_id: UUID, db: DbSession
 ) -> WorkflowExecutionDetailResponse:

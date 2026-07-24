@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
 
@@ -31,22 +32,31 @@ from app.api.schemas.cross_repo import (
     CrossRepoResolveStatusResponse,
 )
 from app.api.schemas.aim import (
+    AimApprovalOut,
+    AimCutoverChecklistOut,
+    AimCutoverChecklistUpdate,
     AimLayoutDetectionResponse,
     AimManifestPreviewResponse,
     AimMetaResponse,
     AimPhaseCounts,
     AimProjectCreateRequest,
+    AimProjectHealthOut,
     AimProjectJoinRequest,
     AimProjectSummaryOut,
+    AimReadinessResponse,
     AimReindexResponse,
     AimRulebookFile,
     AimRulebookResponse,
     AimRunListItem,
     AimRunOut,
+    AimStateReconcileRequest,
+    AimStateReconcileResponse,
     AimUnitOut,
+    AimUnitActionOut,
+    AimUnitClaimOut,
 )
 from app.api.schemas.projects import ProjectResponse, ProjectWorkspaceItem
-from app.models.aim import AimRun, AimUnit
+from app.models.aim import AimClaim, AimRun, AimUnit
 from app.models.chat import CodingProjectWorkspace, CodingWorkspace
 from app.models.code_graph import CrossRepoEdge
 from app.services import code_graph_service as cg_svc
@@ -235,6 +245,8 @@ async def add_workspace(
     if link is None:
         raise HTTPException(status_code=404, detail="Project not found")
     ws = await db.get(CodingWorkspace, link.workspace_id)
+    if ws is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
     await db.commit()
     return _ws_item(link, ws)
 
@@ -272,6 +284,8 @@ async def update_workspace_in_project(
         link.sort_order = body.sort_order
     db.add(link)
     ws = await db.get(CodingWorkspace, workspace_id)
+    if ws is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
     await db.commit()
     return _ws_item(link, ws)
 
@@ -448,6 +462,7 @@ async def reindex_project_code_graph(
 
     # Run all index job starts concurrently
     import asyncio
+
     results = await asyncio.gather(*[start_index_job(ws) for _, ws in pairs])
 
     workspace_ids: list[UUID] = []
@@ -785,13 +800,15 @@ async def create_aim_project_route(
     project = await aim_project_setup.create_aim_project(
         db,
         name=body.name,
-        rulebook_id=body.rulebook_id,
-        rulebook_version=body.rulebook_version,
         source_paths=source_paths,
         target_path=target_path,
         kb_path=str(kb_root),
     )
     await db.commit()
+    from app.services.aim.watcher import _global_aim_watcher
+
+    if _global_aim_watcher is not None:
+        await _global_aim_watcher.watch_project(project.id, str(kb_root))
     return await _project_response(db, project.id)
 
 
@@ -808,11 +825,16 @@ async def join_aim_project_route(
             source_paths=[_validate_path_or_422(p) for p in body.source_paths],
             target_path=_validate_path_or_422(body.target_path),
         )
-    except FileNotFoundError:
+    except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(
-            status_code=422, detail=f"No aim.yaml found at '{kb_path}'."
+            status_code=422,
+            detail=f"AIM KB manifest or local rulebook is invalid: {exc}",
         )
     await db.commit()
+    from app.services.aim.watcher import _global_aim_watcher
+
+    if _global_aim_watcher is not None:
+        await _global_aim_watcher.watch_project(project.id, kb_path)
     return await _project_response(db, project.id)
 
 
@@ -823,7 +845,14 @@ async def _get_aim_project_or_404(db: DbSession, project_id: UUID):
     return project
 
 
-def _aim_unit_out(row: AimUnit) -> AimUnitOut:
+def _aim_unit_out(
+    row: AimUnit,
+    *,
+    state_verified: bool = False,
+    state_error: str | None = None,
+    next_action: AimUnitActionOut | None = None,
+    claim: AimUnitClaimOut | None = None,
+) -> AimUnitOut:
     return AimUnitOut(
         id=row.id,
         module=row.module,
@@ -834,6 +863,12 @@ def _aim_unit_out(row: AimUnit) -> AimUnitOut:
         assignee=row.assignee,
         depends_on=row.depends_on,
         complexity=row.complexity,
+        revision=row.revision,
+        last_transition_id=row.last_transition_id,
+        state_verified=state_verified,
+        state_error=state_error,
+        next_action=next_action,
+        claim=claim,
         kb_doc_path=row.kb_doc_path,
         updated_at=row.updated_at,
     )
@@ -883,7 +918,12 @@ async def list_aim_units(
     phase: str | None = None,
     wave: int | None = None,
 ) -> list[AimUnitOut]:
-    await _get_aim_project_or_404(db, project_id)
+    from app.services.aim import kb_store
+    from app.services.aim.models import UNIT_PHASE_NEXT_PIPELINE, next_unit_phase
+    from app.services.aim.project import resolve_kb_workspace_path
+    from app.services.aim.readiness import evaluate_pipeline
+
+    project = await _get_aim_project_or_404(db, project_id)
 
     stmt = select(AimUnit).where(AimUnit.project_id == project_id)
     if phase is not None:
@@ -891,7 +931,253 @@ async def list_aim_units(
     if wave is not None:
         stmt = stmt.where(AimUnit.wave == wave)
     rows = (await db.exec(stmt.order_by(AimUnit.module, AimUnit.name))).all()
-    return [_aim_unit_out(row) for row in rows]
+    now = datetime.now(timezone.utc)
+    claims = (
+        await db.exec(
+            select(AimClaim).where(
+                AimClaim.project_id == project_id,
+                AimClaim.lease_expires_at > now,
+            )
+        )
+    ).all()
+    claims_by_unit = {claim.unit_id: claim for claim in claims}
+    kb_path = await resolve_kb_workspace_path(db, project)
+    kb_root = Path(kb_path) if kb_path and Path(kb_path).is_dir() else None
+    state_schema = 1
+    if kb_root is not None:
+        try:
+            state_schema = kb_store.read_manifest(kb_root).state_schema
+        except (FileNotFoundError, ValueError):
+            state_schema = 1
+
+    output: list[AimUnitOut] = []
+    for row in rows:
+        state_error: str | None = "KB repo is not available on this machine"
+        action: AimUnitActionOut | None = None
+        if kb_root is not None:
+            unit_state = kb_store.read_unit(kb_root, row.module, row.name)
+            if unit_state is None:
+                state_error = "unit document is missing from the KB"
+            elif state_schema < 2:
+                state_error = (
+                    "legacy state schema: reconcile this unit before running "
+                    "lifecycle actions"
+                )
+            else:
+                state_error = kb_store.validate_unit_state(
+                    kb_root,
+                    row.module,
+                    row.name,
+                    unit_state[0],
+                    state_schema=state_schema,
+                )
+            pipeline = UNIT_PHASE_NEXT_PIPELINE.get(row.phase)
+            target_phase = next_unit_phase(row.phase)
+            if pipeline and target_phase:
+                readiness = evaluate_pipeline(
+                    kb_root,
+                    pipeline,
+                    unit=f"{row.module}/{row.name}",
+                    wave=row.wave,
+                    case_set="smoke",
+                )
+                action = AimUnitActionOut(
+                    pipeline=pipeline,
+                    target_phase=target_phase,
+                    allowed=readiness.allowed and state_error is None,
+                    blockers=[
+                        *([state_error] if state_error else []),
+                        *readiness.blockers,
+                    ],
+                    warnings=list(readiness.warnings),
+                )
+        claim_row = claims_by_unit.get(row.id)
+        claim = (
+            AimUnitClaimOut(
+                workflow_execution_id=claim_row.workflow_execution_id,
+                workflow_name=claim_row.workflow_name,
+                session_id=claim_row.session_id,
+                lease_expires_at=claim_row.lease_expires_at,
+            )
+            if claim_row is not None
+            else None
+        )
+        output.append(
+            _aim_unit_out(
+                row,
+                state_verified=state_error is None,
+                state_error=state_error,
+                next_action=action,
+                claim=claim,
+            )
+        )
+    return output
+
+
+@router.get(
+    "/{project_id}/aim/readiness",
+    response_model=AimReadinessResponse,
+)
+async def get_aim_readiness(
+    project_id: UUID,
+    db: DbSession,
+    pipeline: str,
+    unit: str | None = None,
+    wave: int | None = None,
+    case_set: str | None = None,
+) -> AimReadinessResponse:
+    from app.services.aim.project import resolve_kb_workspace_path
+    from app.services.aim.readiness import evaluate_pipeline
+
+    project = await _get_aim_project_or_404(db, project_id)
+    kb_path = await resolve_kb_workspace_path(db, project)
+    if not kb_path or not Path(kb_path).is_dir():
+        raise HTTPException(
+            status_code=422, detail="Project has no KB repo on this machine."
+        )
+    result = evaluate_pipeline(
+        Path(kb_path),
+        pipeline,
+        unit=unit,
+        wave=wave,
+        case_set=case_set,
+    )
+    return AimReadinessResponse(**result.to_dict())
+
+
+@router.get("/{project_id}/aim/health", response_model=AimProjectHealthOut)
+async def get_aim_project_health(
+    project_id: UUID, db: DbSession
+) -> AimProjectHealthOut:
+    from app.services.aim.health import evaluate_project_health
+
+    project = await _get_aim_project_or_404(db, project_id)
+    health = await evaluate_project_health(db, project)
+    return AimProjectHealthOut(**health.to_dict())
+
+
+@router.get("/{project_id}/aim/approvals", response_model=list[AimApprovalOut])
+async def list_aim_approvals(project_id: UUID, db: DbSession) -> list[AimApprovalOut]:
+    from app.agent.ask_user import get_service_for_session
+    from app.models.chat import ChatSession
+    from app.models.workflow import WorkflowExecution
+
+    await _get_aim_project_or_404(db, project_id)
+    rows = (
+        await db.exec(
+            select(WorkflowExecution, ChatSession)
+            .join(ChatSession, col(WorkflowExecution.session_id) == col(ChatSession.id))
+            .where(
+                ChatSession.project_id == project_id,
+                WorkflowExecution.status == "waiting_gate",
+            )
+            .order_by(col(WorkflowExecution.started_at))
+        )
+    ).all()
+    approvals: list[AimApprovalOut] = []
+    for execution, session in rows:
+        service = get_service_for_session(str(session.id))
+        if service is None:
+            continue
+        for request_id, request in service._pending.items():
+            for question in request.questions:
+                approvals.append(
+                    AimApprovalOut(
+                        execution_id=execution.id,
+                        session_id=session.id,
+                        session_title=session.title,
+                        workflow=execution.definition_name,
+                        request_id=request_id,
+                        question=question.question,
+                        options=question.options,
+                    )
+                )
+    return approvals
+
+
+@router.post(
+    "/{project_id}/aim/reconcile-state",
+    response_model=AimStateReconcileResponse,
+)
+async def reconcile_aim_state(
+    project_id: UUID,
+    body: AimStateReconcileRequest,
+    db: DbSession,
+) -> AimStateReconcileResponse:
+    from app.services.aim import kb_store
+    from app.services.aim.project import resolve_kb_workspace_path
+    from app.services.aim.reindex import reindex_project
+
+    project = await _get_aim_project_or_404(db, project_id)
+    kb_path = await resolve_kb_workspace_path(db, project)
+    if not kb_path or not Path(kb_path).is_dir():
+        raise HTTPException(
+            status_code=422, detail="Project has no KB repo on this machine."
+        )
+    kb_root = Path(kb_path)
+    manifest = kb_store.read_manifest(kb_root)
+    if manifest.state_schema >= 2:
+        return AimStateReconcileResponse(
+            reconciliation_id="already-current",
+            reconciled=0,
+            state_schema=manifest.state_schema,
+        )
+    reconciliation_id, reconciled = kb_store.reconcile_legacy_state(kb_root)
+    await reindex_project(db, project_id, kb_root)
+    await db.commit()
+    return AimStateReconcileResponse(
+        reconciliation_id=reconciliation_id,
+        reconciled=reconciled,
+        state_schema=2,
+    )
+
+
+async def _aim_kb_root_or_422(db: DbSession, project_id: UUID) -> tuple[object, Path]:
+    from app.services.aim.project import resolve_kb_workspace_path
+
+    project = await _get_aim_project_or_404(db, project_id)
+    kb_path = await resolve_kb_workspace_path(db, project)
+    if not kb_path or not Path(kb_path).is_dir():
+        raise HTTPException(
+            status_code=422, detail="Project has no KB repo on this machine."
+        )
+    return project, Path(kb_path)
+
+
+@router.get(
+    "/{project_id}/aim/waves/{wave}/cutover",
+    response_model=AimCutoverChecklistOut,
+)
+async def get_aim_cutover_checklist(
+    project_id: UUID, wave: int, db: DbSession
+) -> AimCutoverChecklistOut:
+    from app.services.aim import kb_store
+    from app.services.aim.models import CutoverChecklist
+
+    _project, kb_root = await _aim_kb_root_or_422(db, project_id)
+    checklist = kb_store.read_cutover_checklist(kb_root, wave) or CutoverChecklist(
+        wave=wave
+    )
+    return AimCutoverChecklistOut(**checklist.model_dump())
+
+
+@router.put(
+    "/{project_id}/aim/waves/{wave}/cutover",
+    response_model=AimCutoverChecklistOut,
+)
+async def update_aim_cutover_checklist(
+    project_id: UUID,
+    wave: int,
+    body: AimCutoverChecklistUpdate,
+    db: DbSession,
+) -> AimCutoverChecklistOut:
+    from app.services.aim import kb_store
+    from app.services.aim.models import CutoverChecklist
+
+    _project, kb_root = await _aim_kb_root_or_422(db, project_id)
+    checklist = CutoverChecklist(wave=wave, **body.model_dump())
+    kb_store.write_cutover_checklist(kb_root, checklist)
+    return AimCutoverChecklistOut(**checklist.model_dump())
 
 
 @router.get("/{project_id}/aim/runs", response_model=list[AimRunListItem])
@@ -944,7 +1230,15 @@ async def reindex_aim_project(project_id: UUID, db: DbSession) -> AimReindexResp
     result = await reindex_project(db, project_id, Path(kb_path))
     await db.commit()
     return AimReindexResponse(
-        created=result.created, updated=result.updated, unchanged=result.unchanged
+        created=result.created,
+        updated=result.updated,
+        unchanged=result.unchanged,
+        invalid=result.invalid,
+        errors=result.errors,
+        runs_created=result.runs_created,
+        runs_updated=result.runs_updated,
+        links_created=result.links_created,
+        links_updated=result.links_updated,
     )
 
 
@@ -955,49 +1249,32 @@ _RULEBOOK_MAX_FILES = 60
 
 @router.get("/{project_id}/aim/rulebook", response_model=AimRulebookResponse)
 async def get_aim_rulebook(project_id: UUID, db: DbSession) -> AimRulebookResponse:
-    """The project's rulebook pack, read-only — answers "what rules does
+    """The project's KB-local rulebook, read-only — answers "what rules does
     this line convert by?" without opening the EvoFlux repo (spec v2.2 J5).
-    Resolved KB-first: a project whose KB carries its own rulebook/
-    override uses that instead of a shared builtin pack.
+    The rulebook is always read from this project's KB repository.
     """
-    import yaml
-
     from app.services.aim.project import resolve_kb_workspace_path
-    from app.services.aim.rulebook_install import (
-        is_project_rulebook,
-        resolve_rulebook_dir,
-    )
+    from app.services.aim.rulebook import rulebook_dir, validate_rulebook_identity
 
     project = await _get_aim_project_or_404(db, project_id)
-    rulebook_id = ((project.settings.get("aim") or {}).get("rulebook") or {}).get("id")
     kb_path = await resolve_kb_workspace_path(db, project)
     kb_root = Path(kb_path) if kb_path else None
-    pack_dir = (
-        resolve_rulebook_dir(kb_root, rulebook_id)
-        if rulebook_id and kb_root is not None
-        else None
-    )
-    if not rulebook_id or pack_dir is None or not pack_dir.is_dir():
+    try:
+        local_manifest = (
+            validate_rulebook_identity(kb_root) if kb_root is not None else None
+        )
+    except (FileNotFoundError, ValueError):
+        local_manifest = None
+    if local_manifest is None or kb_root is None:
         raise HTTPException(
             status_code=404,
-            detail=f"Rulebook pack '{rulebook_id}' is not installed here.",
+            detail="KB-local rulebook is missing, invalid, or does not match aim.yaml.",
         )
-    source: Literal["project", "builtin"] = (
-        "project" if kb_root is not None and is_project_rulebook(kb_root) else "builtin"
-    )
-
-    manifest: dict = {}
-    manifest_path = pack_dir / "rulebook.yaml"
-    if manifest_path.is_file():
-        try:
-            loaded = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
-            if isinstance(loaded, dict):
-                manifest = loaded
-        except yaml.YAMLError:
-            manifest = {}
+    local_rulebook_dir = rulebook_dir(kb_root)
+    manifest = local_manifest.model_dump()
 
     files: list[AimRulebookFile] = []
-    for path in sorted(pack_dir.rglob("*")):
+    for path in sorted(local_rulebook_dir.rglob("*")):
         if len(files) >= _RULEBOOK_MAX_FILES:
             break
         if not path.is_file() or path.suffix.lower() not in _RULEBOOK_TEXT_SUFFIXES:
@@ -1009,9 +1286,11 @@ async def get_aim_rulebook(project_id: UUID, db: DbSession) -> AimRulebookRespon
         except (OSError, UnicodeDecodeError):
             continue
         files.append(
-            AimRulebookFile(path=str(path.relative_to(pack_dir)), content=content)
+            AimRulebookFile(
+                path=str(path.relative_to(local_rulebook_dir)), content=content
+            )
         )
-    return AimRulebookResponse(id=rulebook_id, source=source, manifest=manifest, files=files)
+    return AimRulebookResponse(id=local_manifest.id, manifest=manifest, files=files)
 
 
 @router.get("/{project_id}/aim/runs/{run_id}", response_model=AimRunOut)

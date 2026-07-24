@@ -13,6 +13,8 @@ This repository is the knowledge base (KB) for an AIM migration project: the tea
 - [`decisions/`](decisions/) — architecture decision records, including accepted differences from triage.
 - [`golden/`](golden/) — golden-master test cases.
 - [`runs/`](runs/) — compare run reports (small; raw actuals are gitignored).
+- [`rulebook/`](rulebook/) — the project's pinned stack-specific content.
+- [`GUIDELINES.md`](GUIDELINES.md) — state, evidence, rulebook, and collaboration rules.
 
 ## Log
 

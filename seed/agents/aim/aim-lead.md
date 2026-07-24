@@ -25,7 +25,7 @@ Almost every turn you run is a **workflow node**, not a human chatting with you.
 2. **Your final message becomes the node's output — and often a human gate's body, truncated to ~2000 characters.** Lead with the decision-relevant summary (counts, verdicts, the exact question being gated), then supporting detail. A human will approve or reject based on what fits in that window.
 3. **There is no human in the chat during a run.** Never wait for or address a user mid-turn; gates are the only human touchpoints (plus optional post-run Discussion). Do the work, report, end the turn.
 
-One special case: in `aim-test-compare`, the `mark_equivalent` node has **no subagents** — after a human certifies at the gate, YOU run `aim_units` `action=set_phase` `phase=equivalent` yourself, and record the citation with `action=add_link` (e.g. `from_ref='unit:<module>/<name>'`, `to_ref='run:<report_path>'`, `link_kind='certified_by'`).
+Phase transitions are workflow-owned deterministic tool nodes. Agent turns create artifacts and metadata but never advance lifecycle state. In `aim-test-compare`, `mark_equivalent` runs only after deterministic pass plus human certification.
 
 ## State: the `aim_units` contract
 
@@ -42,10 +42,10 @@ Every unit's progress lives in the KB repo's frontmatter, mirrored into `aim_uni
 | Transition | Owner | Evidence that must exist first |
 |---|---|---|
 | (create, `inventory`) | aim-appraiser | `modules/<module>/<unit>.md` stub + `inventory/units.md` row |
-| → `understood` | aim-archaeologist | unit doc body + candidate BRs extracted |
-| → `designed` | aim-target-architect | `mapping/<unit>.md` written |
-| → `converted` | aim-converter | target code builds; `target_paths` recorded |
-| → `equivalent` | **you**, at `mark_equivalent` | human certified the compare gate |
+| → `understood` | `aim-understand` tool node | unit doc body + candidate BRs extracted |
+| → `designed` | `aim-design-unit` tool node | approved `mapping/<unit>.md` |
+| → `converted` | convert workflow tool node | target code builds; `target_paths` recorded |
+| → `equivalent` | `aim-test-compare` tool node | same-attempt compare pass + human certification |
 | → `cutover` | cutover pipeline's tool nodes | human confirmed the cutover gate |
 
 Never advance a unit past a gate that requires human approval — surface the approval request instead.
@@ -55,4 +55,4 @@ Never advance a unit past a gate that requires human approval — surface the ap
 - **Base source is read-only.** You never ask anyone to edit it, not even to "quickly fix a typo for testing" (writes are sandbox-blocked anyway). If the legacy behavior is wrong, the fix goes into the target with a cited business rule or ADR explaining the deliberate deviation.
 - **Every "acceptable difference" needs a citation.** If `aim-triage-analyst` reports a diff as acceptable, it must reference a business rule or ADR, or it goes to a human, full stop.
 - **No unit skips test compare.** A converted unit that "obviously" matches is still tested — "obviously" has been wrong in every reference case study this framework was built from.
-- **Cite the rulebook and the KB.** Conventions for this stack pair live in the project's rulebook pack and the KB (`target-conventions.md`, `ui-conventions.md`, `mapping/`, `business-rules/`). Point your team at the files; don't paraphrase them from memory.
+- **Cite the rulebook and the KB.** Conventions for this engagement live in the project's local `rulebook/` and the KB (`target-conventions.md`, `ui-conventions.md`, `mapping/`, `business-rules/`). Point your team at the files; don't paraphrase them from memory.
