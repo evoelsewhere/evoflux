@@ -1,10 +1,12 @@
 import { useState } from 'react'
+import { Plug } from 'lucide-react'
 
 import { useCreateMcpServerMutation } from '@/queries'
 import { useToastStore } from '@/stores/useToastStore'
 import { ApiValidationError } from '@/api/client'
-import { EditorSubHeader } from '@/components/settings/EditorSubHeader'
+import { EditorHeaderActions } from '@/components/settings/EditorHeaderActions'
 import { McpServerForm } from '@/components/settings/McpServerForm'
+import { SettingsGroup, SettingsPage } from '@/components/settings/SettingsLayout'
 import {
   draftToServerBody,
   emptyDraft,
@@ -75,29 +77,29 @@ export function NewMcpServerPage() {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <EditorSubHeader
-        kind="mcp"
-        name="New MCP server"
-        dirty={dirty}
-        invalid={invalid}
-        saving={createMut.isPending}
-        error={saveError}
-        validationHint={firstError}
-        onSave={handleCreate}
-      />
-
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-3xl p-6">
-          <McpServerForm
-            value={draft}
-            onChange={setDraft}
-            isNew
-            disabled={createMut.isPending}
-            errors={fieldErrors}
-          />
-        </div>
-      </div>
-    </div>
+    <SettingsPage
+      icon={Plug}
+      title="New MCP server"
+      actions={
+        <EditorHeaderActions
+          dirty={dirty}
+          invalid={invalid}
+          saving={createMut.isPending}
+          error={saveError}
+          validationHint={firstError}
+          onSave={handleCreate}
+        />
+      }
+    >
+      <SettingsGroup bare>
+        <McpServerForm
+          value={draft}
+          onChange={setDraft}
+          isNew
+          disabled={createMut.isPending}
+          errors={fieldErrors}
+        />
+      </SettingsGroup>
+    </SettingsPage>
   )
 }

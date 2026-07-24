@@ -840,22 +840,23 @@ export function AimPipelinesPanel({
           instance, mounted only while a finished run's transcript is open. */}
       {discussion && !monitorSession && !reportRun && (
         <AimSidePanel storageKey={STORAGE_KEYS.panels.aimDiscussion} defaultWidth={420}>
-          <div className="flex items-center justify-between gap-2 border-b border-(--color-border) px-3 py-2">
-            <p className="min-w-0 truncate text-xs font-medium text-(--color-text)">
-              Discussion
-              <span className="ml-1.5 font-normal text-(--color-text-subtle)">
+          <header className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-4 py-3">
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-(--color-text)">Discussion</h2>
+              <p className="mt-0.5 truncate text-xs text-(--color-text-subtle)">
                 {discussion.title ?? discussion.id.slice(0, 8)}
-              </span>
-            </p>
+              </p>
+            </div>
             <button
               type="button"
               onClick={() => setDiscussion(null)}
               aria-label="Close discussion"
-              className="shrink-0 rounded p-0.5 text-(--color-text-muted) hover:text-(--color-text)"
+              title="Close"
+              className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
             >
-              <X size={13} />
+              <X size={16} />
             </button>
-          </div>
+          </header>
           <div className="min-h-0 flex-1 overflow-hidden">
             <TeamChatView
               sessionId={discussion.id}
@@ -1765,7 +1766,7 @@ export function RunMonitorPanel({
             aria-label="Close run monitor"
             className="flex h-7 w-7 items-center justify-center rounded-md text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)"
           >
-            <X size={13} />
+            <X size={16} />
           </button>
           </div>
         </div>
@@ -2671,22 +2672,23 @@ function ReportPanel({
 
   return (
     <AimSidePanel storageKey={STORAGE_KEYS.panels.aimReport} defaultWidth={420}>
-      <div className="flex items-center justify-between gap-2 border-b border-(--color-border) px-3 py-2">
-        <p className="min-w-0 truncate text-xs font-medium text-(--color-text)">
-          Report
-          <span className="ml-1.5 truncate font-normal text-(--color-text-subtle)">
+      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-4 py-3">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold text-(--color-text)">Report</h2>
+          <p className="mt-0.5 truncate text-xs text-(--color-text-subtle)">
             {resolvedTitle}
-          </span>
-        </p>
+          </p>
+        </div>
         <button
           type="button"
           onClick={onClose}
           aria-label="Close report"
-          className="shrink-0 rounded p-0.5 text-(--color-text-muted) hover:text-(--color-text)"
+          title="Close"
+          className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
         >
-          <X size={13} />
+          <X size={16} />
         </button>
-      </div>
+      </header>
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {detailQuery.isLoading ? (

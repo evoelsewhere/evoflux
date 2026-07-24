@@ -13,14 +13,40 @@
       root.style.setProperty('--color-accent', ref);
     }
 
-    var FONTS = ['inter', 'system', 'mono', 'geist', 'source-sans'];
-    var font = FONTS.indexOf(parsed.fontFamily) !== -1 ? parsed.fontFamily : 'inter';
+    var FONTS = ['inter', 'system', 'mono', 'geist', 'anthropic-sans'];
+    var font = parsed.fontFamily === 'source-sans'
+      ? 'anthropic-sans'
+      : (FONTS.indexOf(parsed.fontFamily) !== -1 ? parsed.fontFamily : 'inter');
     root.setAttribute('data-font', font);
 
-    var scale = [0.9, 1, 1.1, 1.2].indexOf(parsed.fontScale) !== -1 ? parsed.fontScale : 1;
+    var SCALES = [0.85, 0.9, 0.95, 1, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3];
+    var scale = typeof parsed.fontScale === 'number' ? parsed.fontScale : 1;
+    if (SCALES.indexOf(scale) === -1) {
+      var best = 1;
+      var bestDelta = Infinity;
+      for (var i = 0; i < SCALES.length; i++) {
+        var delta = Math.abs(SCALES[i] - scale);
+        if (delta < bestDelta) {
+          best = SCALES[i];
+          bestDelta = delta;
+        }
+      }
+      scale = best;
+    }
     if (scale !== 1) {
       root.style.setProperty('font-size', (18 * scale) + 'px');
     }
+
+    var MOTIONS = ['reduced', 'subtle', 'standard', 'expressive', 'cinematic'];
+    var motion = MOTIONS.indexOf(parsed.motionIntensity) !== -1 ? parsed.motionIntensity : 'standard';
+    root.setAttribute('data-motion', motion);
+    var motionScale =
+      motion === 'reduced' ? '0'
+        : motion === 'subtle' ? '0.7'
+          : motion === 'standard' ? '1'
+            : motion === 'expressive' ? '1.25'
+              : '1.55';
+    root.style.setProperty('--motion-user-scale', motionScale);
   } catch (e) {
     // Fall back to default appearance (the canonical default in index.css).
   }

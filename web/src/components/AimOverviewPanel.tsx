@@ -1125,19 +1125,21 @@ function UnitDetailPanel({
 
   return (
     <AimSidePanel storageKey={STORAGE_KEYS.panels.aimUnitDetail} defaultWidth={320} minWidth={280} maxWidth={560}>
-      <div className="flex items-center justify-between gap-2 border-b border-(--color-border) px-3 py-2">
-        <p className="min-w-0 truncate font-mono text-xs font-medium text-(--color-text)">
-          {unitKey}
-        </p>
+      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-4 py-3">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold text-(--color-text)">Unit</h2>
+          <p className="mt-0.5 truncate font-mono text-xs text-(--color-text-subtle)">{unitKey}</p>
+        </div>
         <button
           type="button"
           onClick={onClose}
           aria-label="Close unit details"
-          className="shrink-0 rounded p-0.5 text-(--color-text-muted) hover:text-(--color-text)"
+          title="Close"
+          className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
         >
-          <X size={13} />
+          <X size={16} />
         </button>
-      </div>
+      </header>
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {/* Quick actions — pre-filled pipeline runs; the likely next step leads.

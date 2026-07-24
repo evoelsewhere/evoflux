@@ -1,22 +1,23 @@
 /**
  * /settings — "About EvoFlux" landing.
  *
- * Desktop hides the sidebar category list (the rail already shows them);
- * mobile re-uses this page as the settings hub by rendering nav cards.
- *
+ * Desktop hides the category list (the sidebar rail already shows it);
+ * mobile re-uses this page as the settings hub by rendering nav rows in the
+ * same four groups as the sidebar.
  */
 import {
+  BarChart3,
   Bell,
   ChevronRight,
   Server,
   Info,
-  Image,
   KeyRound,
   Moon,
   Palette,
   Plug,
   Shield,
   Sparkles,
+  Stethoscope,
   Wrench,
   type LucideIcon,
 } from 'lucide-react'
@@ -24,6 +25,8 @@ import {
 import { cn } from '@/lib/utils'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useSettingsNavigate } from '@/contexts/SettingsContext'
+import { SettingsGroup, SettingsPage, SettingsRow } from '@/components/settings/SettingsLayout'
+import { Button } from '@/components/ui/button'
 import {
   useAgentFilesQuery,
   useHealthQuery,
@@ -34,58 +37,48 @@ import {
 } from '@/queries'
 import { useUIStore } from '@/stores/useUIStore'
 
-interface CardProps {
+interface NavRow {
   to: string
   icon: LucideIcon
   title: string
   description: string
-  count: number | null
-  countLabel: string
+  count?: number | null
+  countLabel?: string
 }
 
-function SettingsNavCard({ to, icon: Icon, title, description, count, countLabel }: CardProps) {
+function SettingsNavRow({ row }: { row: NavRow }) {
   const navigate = useSettingsNavigate()
+  const Icon = row.icon
   return (
     <button
       type="button"
-      onClick={() => navigate(to)}
+      onClick={() => navigate(row.to)}
       className={cn(
-        'group flex w-full items-start gap-3 rounded-xl border border-(--color-border) bg-(--bg-card) p-4 text-left text-(--color-text) transition-colors sm:items-center sm:gap-4',
-        'hover:border-(--color-border-strong) hover:bg-(--color-surface)',
-        'focus-visible:border-(--focus-ring) focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-(--focus-ring)/40',
+        'group flex w-full items-center gap-3 px-4 py-3 text-left transition-colors',
+        'hover:bg-(--bg-key)/60',
+        'focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-(--focus-ring)/40 focus-visible:outline-none',
       )}
     >
-      <span
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-(--bg-key) text-(--color-text-muted) ring-1 ring-(--color-border) transition-colors group-hover:text-(--color-text)"
-        aria-hidden="true"
-      >
-        <Icon size={18} />
+      <Icon size={16} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-2">
+          <span className="truncate text-sm text-(--color-text)">{row.title}</span>
+          {row.count != null && (
+            <span className="font-mono text-[11px] tabular-nums text-(--color-text-subtle)">
+              {row.count} {row.countLabel}
+            </span>
+          )}
+        </span>
+        <span className="mt-0.5 block truncate text-xs text-(--color-text-muted)">
+          {row.description}
+        </span>
       </span>
-
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
-          <span className="text-sm font-semibold text-(--color-text)">{title}</span>
-          <span className="w-fit rounded-md bg-(--bg-key) px-2 py-0.5 font-mono text-xs tabular-nums text-(--color-text-muted)">
-            {count === null ? '–' : count} {countLabel}
-          </span>
-        </div>
-        <p className="mt-1 text-xs leading-5 text-(--color-text-muted) sm:truncate">{description}</p>
-      </div>
-
       <ChevronRight
-        size={16}
-        className="shrink-0 text-(--color-text-muted) transition-transform group-hover:translate-x-0.5 group-hover:text-(--color-text)"
+        size={15}
+        className="shrink-0 text-(--color-text-subtle) transition-transform group-hover:translate-x-0.5"
         aria-hidden="true"
       />
     </button>
-  )
-}
-
-function SectionHeader({ children }: { children: string }) {
-  return (
-    <h2 className="mb-2 px-1 text-xs font-medium tracking-wider text-(--color-text-muted) uppercase">
-      {children}
-    </h2>
   )
 }
 
@@ -101,141 +94,145 @@ export function SettingsHubPage() {
   const agentsCount = agentsQ.data?.agents.length ?? null
   const skillsCount = skillsQ.data?.skills.length ?? null
   const mcpCount = mcpQ.data?.servers.length ?? null
-  const connectedProvidersCount = providersQ.data?.providers.filter((provider) => provider.is_configured).length ?? null
+  const connectedProviders =
+    providersQ.data?.providers.filter((provider) => provider.is_configured).length ?? null
   const sandboxCount = sandboxQ.data?.denied_patterns.length ?? null
   const version = healthQ.data?.version
 
-  return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-3xl space-y-6 px-3 pt-4 pb-8 sm:space-y-8 sm:px-8 sm:pt-8 sm:pb-12">
-        <header className="flex items-center gap-3">
-          <span
-            className="flex h-10 w-10 items-center justify-center rounded-xl bg-(--bg-key) text-(--color-text-muted) ring-1 ring-(--color-border)"
-            aria-hidden="true"
-          >
-            <Info size={18} />
-          </span>
-          <div>
-            <h1 className="text-lg font-semibold text-(--color-text)">About EvoFlux</h1>
-            <p className="text-xs text-(--color-text-muted)">
-              {version
-                ? `On-machine AI assistant · v${version}`
-                : 'On-machine AI assistant'}
-            </p>
-          </div>
-        </header>
+  const groups: Array<{ label: string; rows: NavRow[] }> = [
+    {
+      label: 'Models',
+      rows: [
+        {
+          to: '/settings/providers',
+          icon: KeyRound,
+          title: 'Providers',
+          description: 'API keys and OAuth model providers',
+          count: connectedProviders,
+          countLabel: 'connected',
+        },
+        {
+          to: '/settings/connection',
+          icon: Server,
+          title: 'Connection',
+          description: 'Point the app at a local or remote backend',
+        },
+      ],
+    },
+    {
+      label: 'Team',
+      rows: [
+        {
+          to: '/settings/agents',
+          icon: Wrench,
+          title: 'Agents',
+          description: 'Model, tools and system prompt per team member',
+          count: agentsCount,
+          countLabel: agentsCount === 1 ? 'agent' : 'agents',
+        },
+        {
+          to: '/settings/skills',
+          icon: Sparkles,
+          title: 'Skills',
+          description: 'Instruction packs agents load on demand',
+          count: skillsCount,
+          countLabel: skillsCount === 1 ? 'skill' : 'skills',
+        },
+        {
+          to: '/settings/mcp',
+          icon: Plug,
+          title: 'MCP servers',
+          description: 'External tools over Model Context Protocol',
+          count: mcpCount,
+          countLabel: mcpCount === 1 ? 'server' : 'servers',
+        },
+      ],
+    },
+    {
+      label: 'Machine',
+      rows: [
+        {
+          to: '/settings/sandbox',
+          icon: Shield,
+          title: 'Sandbox',
+          description: 'Files and folders agents cannot reach',
+          count: sandboxCount,
+          countLabel: sandboxCount === 1 ? 'pattern' : 'patterns',
+        },
+        {
+          to: '/settings/dream',
+          icon: Moon,
+          title: 'Dream',
+          description: 'Scheduled agent that folds sessions into the wiki',
+        },
+        {
+          to: '/settings/notifications',
+          icon: Bell,
+          title: 'Notifications',
+          description: 'Desktop alerts and test delivery',
+        },
+      ],
+    },
+    {
+      label: 'Application',
+      rows: [
+        {
+          to: '/settings/appearance',
+          icon: Palette,
+          title: 'Appearance',
+          description: 'Theme, accent, font, scale and motion',
+        },
+        {
+          to: '/settings/telemetry',
+          icon: BarChart3,
+          title: 'Telemetry',
+          description: 'Span aggregates, latency and recent traces',
+        },
+        {
+          to: '/settings/diagnostics',
+          icon: Stethoscope,
+          title: 'Diagnostics',
+          description: 'Health checks across every subsystem',
+        },
+      ],
+    },
+  ]
 
-        <section className="rounded-md border border-(--color-border) bg-(--bg-card) p-4 shadow-sm">
-          <div className="flex items-start gap-3">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-(--bg-key) text-(--color-text-muted) ring-1 ring-(--color-border)" aria-hidden="true">
-              <Server size={18} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <h2 className="text-sm font-semibold text-(--color-text)">Backend connection</h2>
-              <p className="mt-1 text-xs leading-5 text-(--color-text-muted)">
-                Connect this app to an existing EvoFlux server, or switch back to the bundled local sidecar when available.
-              </p>
-            </div>
-            <button
-              type="button"
+  return (
+    <SettingsPage
+      icon={Info}
+      title="About EvoFlux"
+      lede={
+        version
+          ? `On-machine AI assistant, version ${version}. Everything below is stored locally on this machine.`
+          : 'On-machine AI assistant. Everything below is stored locally on this machine.'
+      }
+    >
+      <SettingsGroup title="Backend">
+        <SettingsRow
+          label="Backend connection"
+          description="Connect to an existing EvoFlux server, or switch back to the bundled local sidecar when it is available."
+          control={
+            <Button
+              size="sm"
+              variant="outline"
               onClick={() => useUIStore.getState().navigateSettings('connection')}
-              className="rounded-md border border-(--color-border) px-3 py-1.5 text-xs font-medium text-(--color-text) hover:bg-(--bg-page)"
             >
               Configure
-            </button>
-          </div>
-        </section>
+            </Button>
+          }
+        />
+      </SettingsGroup>
 
-        {/* Mobile picks up navigation from this list because the sidebar is
-            hidden on small screens. */}
-        {isMobile && (
-          <>
-            <section>
-              <SectionHeader>Workspace</SectionHeader>
-              <div className="space-y-2">
-                <SettingsNavCard
-                  to="/settings/agents"
-                  icon={Wrench}
-                  title="Agents"
-                  description="Define and edit your agent team — model, tools, system prompt"
-                  count={agentsCount}
-                  countLabel={agentsCount === 1 ? 'agent' : 'agents'}
-                />
-                <SettingsNavCard
-                  to="/settings/skills"
-                  icon={Sparkles}
-                  title="Skills"
-                  description="Reusable instruction modules agents load on demand"
-                  count={skillsCount}
-                  countLabel={skillsCount === 1 ? 'skill' : 'skills'}
-                />
-                <SettingsNavCard
-                  to="/settings/mcp"
-                  icon={Plug}
-                  title="MCP servers"
-                  description="External tool providers via Model Context Protocol"
-                  count={mcpCount}
-                  countLabel={mcpCount === 1 ? 'server' : 'servers'}
-                />
-                <SettingsNavCard
-                  to="/settings/providers"
-                  icon={KeyRound}
-                  title="Providers"
-                  description="Configure API keys and OAuth model providers"
-                  count={connectedProvidersCount}
-                  countLabel="connected"
-                />
-              </div>
-            </section>
-
-            <section>
-              <SectionHeader>System</SectionHeader>
-              <div className="space-y-2">
-                <SettingsNavCard
-                  to="/settings/sandbox"
-                  icon={Shield}
-                  title="Sandbox"
-                  description="Files and folders agents cannot access"
-                  count={sandboxCount}
-                  countLabel={sandboxCount === 1 ? 'pattern' : 'patterns'}
-                />
-                <SettingsNavCard
-                  to="/settings/multimodal"
-                  icon={Image}
-                  title="Multimodal"
-                  description="Configure image and video generation defaults"
-                  count={null}
-                  countLabel=""
-                />
-                <SettingsNavCard
-                  to="/settings/dream"
-                  icon={Moon}
-                  title="Dream"
-                  description="Cron agent that synthesises sessions into wiki topics"
-                  count={null}
-                  countLabel=""
-                />
-                <SettingsNavCard
-                  to="/settings/notifications"
-                  icon={Bell}
-                  title="Notifications"
-                  description="Control desktop notifications and send a test notification"
-                  count={null}
-                  countLabel=""
-                />
-                <SettingsNavCard
-                  to="/settings/appearance"
-                  icon={Palette}
-                  title="Appearance"
-                  description="Theme, accent color, font, and UI scale"
-                  count={null}
-                  countLabel=""
-                />
-              </div>
-            </section>
-          </>
-        )}
-      </div>
-    </div>
+      {/* Mobile has no sidebar rail, so this page carries the navigation. */}
+      {isMobile &&
+        groups.map((group) => (
+          <SettingsGroup key={group.label} title={group.label}>
+            {group.rows.map((row) => (
+              <SettingsNavRow key={row.to} row={row} />
+            ))}
+          </SettingsGroup>
+        ))}
+    </SettingsPage>
   )
 }

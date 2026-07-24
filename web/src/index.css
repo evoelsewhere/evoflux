@@ -8,6 +8,14 @@
 @import "@fontsource/caveat";
 @import "highlight.js/styles/atom-one-dark.css";
 
+@font-face {
+  font-family: 'Anthropic Sans';
+  src: url('/fonts/anthropic-sans/AnthropicSans-400.woff2') format('woff2');
+  font-weight: 300 800;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* ─────────────────────────────────────────────────────────────
  * EvoFlux — syntax highlighting (highlight.js)
  * Each token category maps to a distinct semantic CSS variable.
@@ -263,11 +271,12 @@
     --shadow-popover: 0 16px 48px rgba(0, 0, 0, 0.55), 0 6px 24px rgba(0, 0, 0, 0.38);
 
     /* Motion */
-    --motion-instant: 80ms;
-    --motion-fast:    150ms;
-    --motion-base:    240ms;
-    --motion-slow:    400ms;
-    --motion-glacial: 800ms;
+    --motion-instant: calc(80ms * var(--motion-user-scale, 1));
+    --motion-fast:    calc(150ms * var(--motion-user-scale, 1));
+    --motion-base:    calc(240ms * var(--motion-user-scale, 1));
+    --motion-slow:    calc(400ms * var(--motion-user-scale, 1));
+    --motion-glacial: calc(800ms * var(--motion-user-scale, 1));
+    --motion-user-scale: 1;
 
     --ease-out:           cubic-bezier(0.16, 1, 0.3, 1);
     --ease-in-out:        cubic-bezier(0.4, 0, 0.2, 1);
@@ -686,21 +695,21 @@ a svg[aria-hidden="true"],
   animation: block-reveal var(--motion-base) var(--ease-out) both;
 }
 
-/* Staggered children — each child delays by 40ms * index.
+/* Staggered children — each child delays by 40ms * index * user scale.
    Apply to a parent container; children inherit via CSS custom prop. */
 .stagger-children > * {
   animation: block-reveal var(--motion-base) var(--ease-out) both;
 }
 .stagger-children > *:nth-child(1)  { animation-delay: 0ms; }
-.stagger-children > *:nth-child(2)  { animation-delay: 40ms; }
-.stagger-children > *:nth-child(3)  { animation-delay: 80ms; }
-.stagger-children > *:nth-child(4)  { animation-delay: 120ms; }
-.stagger-children > *:nth-child(5)  { animation-delay: 160ms; }
-.stagger-children > *:nth-child(6)  { animation-delay: 200ms; }
-.stagger-children > *:nth-child(7)  { animation-delay: 240ms; }
-.stagger-children > *:nth-child(8)  { animation-delay: 280ms; }
-.stagger-children > *:nth-child(9)  { animation-delay: 320ms; }
-.stagger-children > *:nth-child(10) { animation-delay: 360ms; }
+.stagger-children > *:nth-child(2)  { animation-delay: calc(40ms * var(--motion-user-scale, 1)); }
+.stagger-children > *:nth-child(3)  { animation-delay: calc(80ms * var(--motion-user-scale, 1)); }
+.stagger-children > *:nth-child(4)  { animation-delay: calc(120ms * var(--motion-user-scale, 1)); }
+.stagger-children > *:nth-child(5)  { animation-delay: calc(160ms * var(--motion-user-scale, 1)); }
+.stagger-children > *:nth-child(6)  { animation-delay: calc(200ms * var(--motion-user-scale, 1)); }
+.stagger-children > *:nth-child(7)  { animation-delay: calc(240ms * var(--motion-user-scale, 1)); }
+.stagger-children > *:nth-child(8)  { animation-delay: calc(280ms * var(--motion-user-scale, 1)); }
+.stagger-children > *:nth-child(9)  { animation-delay: calc(320ms * var(--motion-user-scale, 1)); }
+.stagger-children > *:nth-child(10) { animation-delay: calc(360ms * var(--motion-user-scale, 1)); }
 
 /* ─────────────────────────────────────────────────────────────
  * Skeleton shimmer — reduced-motion-safe subtle pulse
@@ -761,6 +770,13 @@ a svg[aria-hidden="true"],
     --app-font-sans: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
     --app-font-heading: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
     --app-font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', 'Cascadia Code', 'Fira Code', 'Courier New', monospace;
+
+    /* Appearance → UI animations. Tailwind resolves every `transition-*`
+     * utility that has no explicit duration through these two variables, so
+     * the user's intensity reaches components that never opted in. */
+    --motion-user-scale: 1;
+    --default-transition-duration: var(--motion-fast);
+    --default-transition-timing-function: var(--ease-out);
 }
 
 :root[data-font='system'] {
@@ -778,9 +794,10 @@ a svg[aria-hidden="true"],
     --app-font-heading: 'Geist Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
 }
 
+:root[data-font='anthropic-sans'],
 :root[data-font='source-sans'] {
-    --app-font-sans: 'Source Sans 3 Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-    --app-font-heading: 'Source Sans 3 Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --app-font-sans: 'Anthropic Sans', 'Source Sans 3 Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --app-font-heading: 'Anthropic Sans', 'Source Sans 3 Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
 }
 
 /* Fast mode feedback stays inside the effort rail. Particle positions are
@@ -832,7 +849,10 @@ a svg[aria-hidden="true"],
 .interactive-weight:active { font-weight: 600; }
 
 /* ─────────────────────────────────────────────────────────────
- * prefers-reduced-motion
+ * Appearance → UI animations
+ *
+ * Reduced collapses every transition to a blink, whether it came from the
+ * OS preference or the in-app setting.
  * ───────────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -842,6 +862,50 @@ a svg[aria-hidden="true"],
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+:root[data-motion='reduced'] *,
+:root[data-motion='reduced'] *::before,
+:root[data-motion='reduced'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* Progress indicators are exempt. A frozen spinner reads as a hung app, so
+ * reduced motion slows the loop down instead of stopping it. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin,
+  .animate-pulse {
+    animation-duration: 1.6s !important;
+    animation-iteration-count: infinite !important;
+  }
+}
+
+:root[data-motion='reduced'] .animate-spin,
+:root[data-motion='reduced'] .animate-pulse {
+  animation-duration: 1.6s !important;
+  animation-iteration-count: infinite !important;
+}
+
+/* Decorative loops carry no information, so they only run once the user has
+ * asked for more than the calm end of the scale. Mark such elements with
+ * `motion-ambient`. */
+:root[data-motion='reduced'] .motion-ambient,
+:root[data-motion='reduced'] .fast-mode-particle,
+:root[data-motion='subtle'] .motion-ambient,
+:root[data-motion='subtle'] .fast-mode-particle {
+  animation: none !important;
+  opacity: 0 !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motion-ambient,
+  .fast-mode-particle {
+    animation: none !important;
+    opacity: 0 !important;
   }
 }
 

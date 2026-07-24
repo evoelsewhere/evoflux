@@ -12,6 +12,7 @@ import { useState, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { CheckSquare, X, Minimize2, GripVertical } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useMotionPreset } from '@/lib/motion'
 import { TodosList } from './TodosList'
 import type { TodoItem } from '@/api/types'
 
@@ -27,6 +28,7 @@ const DEFAULT_TOP = 48
 export function FloatingTodosPanel({ todos, className }: FloatingTodosPanelProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [isMinimized, setIsMinimized] = useState(false)
+  const preset = useMotionPreset()
 
   /* Absolute pixel position (top-right anchor by default) */
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
@@ -145,7 +147,7 @@ export function FloatingTodosPanel({ todos, className }: FloatingTodosPanelProps
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.8, opacity: 0 }}
-            transition={{ duration: 0.15 }}
+            transition={preset.spring}
             type="button"
             onPointerDown={onPointerDown}
             onClick={handleToggleClick}
@@ -173,7 +175,7 @@ export function FloatingTodosPanel({ todos, className }: FloatingTodosPanelProps
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.8, opacity: 0 }}
-            transition={{ duration: 0.15 }}
+            transition={preset.spring}
             type="button"
             onPointerDown={onPointerDown}
             onClick={handleMinimizedClick}
@@ -195,10 +197,10 @@ export function FloatingTodosPanel({ todos, className }: FloatingTodosPanelProps
           /* ── Full panel ── */
           <motion.div
             key="panel"
-            initial={{ scale: 0.95, opacity: 0, y: -10 }}
+            initial={{ scale: 0.95, opacity: 0, y: -10 * preset.distance }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.95, opacity: 0, y: -10 }}
-            transition={{ duration: 0.15 }}
+            exit={{ scale: 0.95, opacity: 0, y: -10 * preset.distance }}
+            transition={preset.spring}
             className={cn(
               'rounded-lg border border-(--color-border)',
               'bg-(--bg-card) shadow-xl',

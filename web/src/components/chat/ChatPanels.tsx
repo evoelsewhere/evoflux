@@ -3,11 +3,10 @@
  * (extracted, unchanged, from its layout).
  *
  *   - ``ChatTrailingPanels`` — rendered after <main> inside AppShell's body
- *     row: PlanReviewPanel, the Activity aside, coding workbench /
- *     file viewer, WorkspaceFilesPanel, BrowserViewer, TerminalPanel.
- *     Every panel except BrowserViewer and the terminal now shares the
- *     ``SidePanel`` chrome (persisted resize, width animation, mobile
- *     overlay pattern).
+ *     row: PlanReviewPanel, Activity, BrowserViewer, TerminalPanel.
+ *     Coding workspace / file viewer live in ``fullHeightTrailing`` (same
+ *     slot as Forge's WorkspaceFilesPanel) so they cover the right corner
+ *     beside the main card instead of sitting under the topbar.
  *   - ``ChatOverlayPanels`` — rendered after the body row (fixed-position —
  *     DOM order only matters for z-stacking): CommandPalette,
  *     RunInputsDialog, FloatingTodosPanel. WikiPanel and SchedulerPanel
@@ -18,8 +17,6 @@
 import { AnimatePresence } from 'framer-motion'
 import { PlanReviewPanel } from '../PlanReviewPanel'
 import { ActivityPanel } from '../ActivityPanel'
-import { CodingFileViewerPanel } from '../CodingFileViewerPanel'
-import { CodingWorkspacePanel } from '../CodingWorkspacePanel'
 import { BrowserViewer } from '../BrowserViewer'
 import { TerminalPanel } from '../TerminalPanel'
 import { CommandPalette, type Command } from '../CommandPalette'
@@ -28,25 +25,14 @@ import { FloatingTodosPanel } from '../FloatingTodosPanel'
 import { SidePanel } from '@/components/shell/SidePanel'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 import type { useResizableWidth } from '@/hooks/use-resizable-width'
-import type { TodoItem, WorkspaceFileInfo } from '@/api/types'
+import type { TodoItem } from '@/api/types'
 
 interface ChatTrailingPanelsProps {
   mode: 'forge' | 'coding' | 'aim'
-  workspace: string | null
-  isMobile: boolean
   sessionId: string | null
-  projectId: string | null
-  isWorking: boolean
   onQuoteComment: (quote: string, comment: string) => void
   showActivity: boolean
   onCloseActivity: () => void
-  codingFileViewer: WorkspaceFileInfo | null
-  onCloseCodingFileViewer: () => void
-  onAddFileComment: (path: string, startLine: number, endLine: number) => void
-  onSendToChat: (action: string, code: string, path: string, startLine: number, endLine: number) => void
-  codingPanel: 'changed' | 'files' | null
-  onCodingFileSelect: (file: WorkspaceFileInfo | null) => void
-  onCloseCodingPanel: () => void
   browserOpen: boolean
   onCloseBrowser: () => void
   terminalOpen: boolean
@@ -57,21 +43,10 @@ interface ChatTrailingPanelsProps {
 // Side panels rendered after <main> inside AppShell's body row.
 export function ChatTrailingPanels({
   mode,
-  workspace,
-  isMobile,
   sessionId,
-  projectId,
-  isWorking,
   onQuoteComment,
   showActivity,
   onCloseActivity,
-  codingFileViewer,
-  onCloseCodingFileViewer,
-  onAddFileComment,
-  onSendToChat,
-  codingPanel,
-  onCodingFileSelect,
-  onCloseCodingPanel,
   browserOpen,
   onCloseBrowser,
   terminalOpen,
@@ -101,31 +76,6 @@ export function ChatTrailingPanels({
           </SidePanel>
         )}
       </AnimatePresence>
-      {mode === 'coding' && workspace && codingFileViewer !== null && (
-        <CodingFileViewerPanel
-          workspace={codingFileViewer.sourceWorkspace ?? workspace}
-          file={codingFileViewer}
-          mobile={isMobile}
-          onAddComment={onAddFileComment}
-          onSendToChat={onSendToChat}
-          onClose={onCloseCodingFileViewer}
-        />
-      )}
-      {mode === 'coding' && workspace && codingPanel !== null && (
-        <CodingWorkspacePanel
-          key={codingPanel}
-          workspace={workspace}
-          open
-          initialTab={codingPanel}
-          mobile={isMobile}
-          selectedFilePath={codingFileViewer?.path ?? null}
-          onFileSelect={onCodingFileSelect}
-          onClose={onCloseCodingPanel}
-          sessionId={sessionId}
-          projectId={projectId}
-          isWorking={isWorking}
-        />
-      )}
       <BrowserViewer
         sessionId={sessionId}
         open={browserOpen}

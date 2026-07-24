@@ -8,7 +8,7 @@
  * The shell owns:
  *   - one canonical width in `useUIStore` (persisted drag + dbl-click reset)
  *   - the resize-handle separator and direct, non-tweened pointer updates
- *   - the collapse/expand animation (0.22s, reduced-motion aware)
+ *   - the collapse/expand animation (follows the user's motion intensity)
  *   - the collapsed rail width: 56px, or 70px on macOS overlay so the
  *     traffic lights land inside the rail
  *
@@ -34,7 +34,7 @@ import {
 import { motion } from 'framer-motion'
 import { HelpCircle, Search, Settings } from 'lucide-react'
 import { usePlatform } from '@/hooks/use-platform'
-import { useReducedMotion } from '@/hooks/useReducedMotion'
+import { useMotionPreset } from '@/lib/motion'
 import { useUIStore } from '@/stores/useUIStore'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { HealthDot } from '@/components/HealthDot'
@@ -57,7 +57,7 @@ export function SidebarShell({
   children,
 }: SidebarShellProps) {
   const { isMacOverlay } = usePlatform()
-  const prefersReducedMotion = useReducedMotion()
+  const preset = useMotionPreset()
   const sidebarWidth = useUIStore((state) => state.sidebarWidth)
   const setSidebarWidth = useUIStore((state) => state.setSidebarWidth)
   const resetSidebarWidth = useUIStore((state) => state.resetSidebarWidth)
@@ -96,10 +96,7 @@ export function SidebarShell({
     <motion.aside
       initial={false}
       animate={{ width }}
-      transition={{
-        duration: prefersReducedMotion || isResizing ? 0 : 0.22,
-        ease: [0.4, 0, 0.2, 1],
-      }}
+      transition={isResizing ? { duration: 0 } : preset.transition}
       className="relative flex h-full shrink-0 flex-col overflow-hidden"
       style={{ minWidth: width }}
     >

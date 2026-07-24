@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Trash2 } from 'lucide-react'
+import { AlertCircle, Trash2, Wrench } from 'lucide-react'
 
 import {
   useAgentFileQuery,
@@ -10,7 +10,12 @@ import {
 import { useToastStore } from '@/stores/useToastStore'
 import { ApiValidationError } from '@/api/client'
 import { AgentForm } from '@/components/settings/AgentForm'
-import { EditorSubHeader } from '@/components/settings/EditorSubHeader'
+import { EditorHeaderActions } from '@/components/settings/EditorHeaderActions'
+import {
+  SettingsCallout,
+  SettingsGroup,
+  SettingsPage,
+} from '@/components/settings/SettingsLayout'
 import { contentEquals } from '@/components/settings/frontmatter'
 import { validateAgentDraft } from '@/components/settings/schema'
 import { Button } from '@/components/ui/button'
@@ -100,30 +105,32 @@ export function AgentEditorPage() {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <EditorSubHeader
-        kind="agent"
-        name={name}
-        path={data?.path}
-        dirty={dirty}
-        invalid={invalid}
-        saving={updateMut.isPending}
-        error={saveError}
-        validationHint={firstDraftError}
-        mode={mode}
-        onModeChange={setMode}
-        onSave={handleSave}
-      />
-
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-3xl p-6">
-          {isLoading && (
-            <p className="text-sm text-(--color-text-muted)">Loading…</p>
-          )}
-          {isError && (
-            <p className="text-sm text-(--color-error)">Failed to load: {String(error)}</p>
-          )}
-          {data && (
+    <>
+      <SettingsPage
+        icon={Wrench}
+        title={name}
+        lede={data?.path ? <span className="font-mono text-xs">{data.path}</span> : undefined}
+        actions={
+          <EditorHeaderActions
+            dirty={dirty}
+            invalid={invalid}
+            saving={updateMut.isPending}
+            error={saveError}
+            validationHint={firstDraftError}
+            mode={mode}
+            onModeChange={setMode}
+            onSave={handleSave}
+          />
+        }
+      >
+        {isLoading && <p className="text-sm text-(--color-text-muted)">Loading…</p>}
+        {isError && (
+          <SettingsCallout tone="error" icon={AlertCircle}>
+            Failed to load: {String(error)}
+          </SettingsCallout>
+        )}
+        {data && (
+          <SettingsGroup bare>
             <AgentForm
               initial={data.content}
               agentPath={name}
@@ -133,45 +140,45 @@ export function AgentEditorPage() {
               mode={mode}
               onModeChange={setMode}
             />
-          )}
-          <div className="mt-4 flex items-center justify-between gap-2 text-xs text-(--color-text-muted)">
-            <div className="flex items-center gap-2">
-              {dirty && (
-                <>
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    className="min-h-11 md:min-h-0"
-                    onClick={() => data && setDraft(data.content)}
-                  >
-                    Discard changes
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    className="min-h-11 md:min-h-0"
-                    onClick={() => navigate('/settings/agents')}
-                  >
-                    Leave without saving
-                  </Button>
-                </>
-              )}
-            </div>
-            {data && !isBuiltIn && (
-              <Button
-                variant="destructive"
-                size="xs"
-                className="min-h-11 md:min-h-0"
-                onClick={() => setDeleteOpen(true)}
-                disabled={deleteMut.isPending}
-              >
-                <Trash2 size={11} aria-hidden="true" />
-                Delete agent
-              </Button>
+          </SettingsGroup>
+        )}
+        <div className="flex items-center justify-between gap-2 text-xs text-(--color-text-muted)">
+          <div className="flex items-center gap-2">
+            {dirty && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  className="min-h-11 md:min-h-0"
+                  onClick={() => data && setDraft(data.content)}
+                >
+                  Discard changes
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  className="min-h-11 md:min-h-0"
+                  onClick={() => navigate('/settings/agents')}
+                >
+                  Leave without saving
+                </Button>
+              </>
             )}
           </div>
+          {data && !isBuiltIn && (
+            <Button
+              variant="destructive"
+              size="xs"
+              className="min-h-11 md:min-h-0"
+              onClick={() => setDeleteOpen(true)}
+              disabled={deleteMut.isPending}
+            >
+              <Trash2 size={11} aria-hidden="true" />
+              Delete agent
+            </Button>
+          )}
         </div>
-      </div>
+      </SettingsPage>
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent showCloseButton={false}>
@@ -196,7 +203,7 @@ export function AgentEditorPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   )
 }
 

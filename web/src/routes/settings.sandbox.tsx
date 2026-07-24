@@ -3,15 +3,18 @@
  * cannot access (system-level files like ``.env``, ``db/``, etc).
  */
 import { useMemo, useState } from 'react'
-import { AlertCircle, ArrowLeft, ChevronDown, Plus, Save, Trash2 } from 'lucide-react'
+import { AlertCircle, ChevronDown, Plus, Save, Shield, Trash2 } from 'lucide-react'
 
 import {
   useSandboxSettingsQuery,
   useUpdateSandboxSettingsMutation,
 } from '@/queries'
 import { useToastStore } from '@/stores/useToastStore'
-import { useIsMobile } from '@/hooks/use-mobile'
-import { useSettingsNavigate } from '@/contexts/SettingsContext'
+import {
+  SettingsCallout,
+  SettingsGroup,
+  SettingsPage,
+} from '@/components/settings/SettingsLayout'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -23,8 +26,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils'
 
 export function SandboxSettingsPage() {
-  const isMobile = useIsMobile()
-  const settingsNavigate = useSettingsNavigate()
   const { data, isLoading, error } = useSandboxSettingsQuery()
   const updateMut = useUpdateSandboxSettingsMutation()
   const push = useToastStore((s) => s.push)
@@ -81,120 +82,109 @@ export function SandboxSettingsPage() {
   }
 
   return (
-    <>
-      <header className="sticky top-0 z-(--z-panel) flex h-14 shrink-0 items-center gap-3 border-b border-(--color-border) bg-(--bg-page) px-4">
-        {isMobile && (
-          <button
-            type="button"
-            onClick={() => settingsNavigate('/settings')}
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) md:h-7 md:w-7"
-            aria-label="Back to settings"
+    <SettingsPage
+      icon={Shield}
+      title="Sandbox"
+      lede={
+        <>
+          Glob patterns are matched against the resolved absolute path. Use{' '}
+          <code className="rounded bg-(--bg-key) px-1 py-0.5 font-mono text-xs">**</code> for any depth
+          and <code className="rounded bg-(--bg-key) px-1 py-0.5 font-mono text-xs">*</code> for one
+          segment. The agent workspace and shared memory stay reachable even when a pattern would
+          match them. <SandboxHelpPopover />
+        </>
+      }
+      actions={
+        <div className="flex items-center gap-2">
+          {dirty && (
+            <span className="text-xs text-(--color-text-muted)" aria-live="polite">
+              Unsaved
+            </span>
+          )}
+          <Button
+            size="sm"
+            className="min-h-11 md:min-h-0"
+            onClick={handleSave}
+            disabled={!dirty || updateMut.isPending}
           >
-            <ArrowLeft size={14} />
-          </button>
-        )}
-        <h1 className="flex-1 truncate text-sm font-semibold text-(--color-text)">Sandbox</h1>
-        {dirty && (
-          <span className="text-xs text-(--color-text-muted)" aria-live="polite">
-            Unsaved
-          </span>
-        )}
-        <Button
-          size="sm"
-          className="min-h-11 md:min-h-0"
-          onClick={handleSave}
-          disabled={!dirty || updateMut.isPending}
-        >
-          <Save size={12} aria-hidden="true" />
-          {updateMut.isPending ? 'Saving…' : 'Save'}
-        </Button>
-      </header>
-
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-3xl space-y-5 p-6">
-          <p className="text-sm leading-relaxed text-(--color-text-muted)">
-            Glob patterns matched against the resolved absolute path. Use{' '}
-            <code className="rounded bg-(--bg-key) px-1 py-0.5 font-mono text-xs">**</code>{' '}
-            for any depth and{' '}
-            <code className="rounded bg-(--bg-key) px-1 py-0.5 font-mono text-xs">*</code>{' '}
-            for one path segment. The agent&rsquo;s workspace and shared memory
-            are always reachable, even when a pattern would otherwise match.{' '}
-            <SandboxHelpPopover />
-          </p>
-
-          {isLoading && (
-            <p className="text-sm text-(--color-text-muted)">Loading…</p>
-          )}
-
-          {error && (
-            <div
-              className="flex items-start gap-2 rounded-lg bg-(--color-error-subtle) p-3 text-xs text-(--color-error)"
-              role="alert"
-            >
-              <AlertCircle size={13} aria-hidden="true" className="mt-0.5" />
-              <span>{error instanceof Error ? error.message : String(error)}</span>
-            </div>
-          )}
-
-          {!isLoading && !error && (
-            <>
-              {patterns.length === 0 ? (
-                <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-(--color-border) p-10 text-center">
-                  <p className="text-sm font-medium text-(--color-text)">No patterns</p>
-                  <p className="max-w-sm text-xs leading-relaxed text-(--color-text-muted)">
-                    Agents have unrestricted filesystem access (apart from the
-                    built-in DB / state / cache denial). Add a pattern below to
-                    block files like <code className="font-mono">.env</code> or
-                    folders like <code className="font-mono">secrets/</code>.
-                  </p>
-                  <Button size="sm" className="min-h-11 md:min-h-0" onClick={addRow}>
-                    <Plus size={12} aria-hidden="true" />
-                    Add pattern
-                  </Button>
-                </div>
-              ) : (
-                <>
-                  <ul className="space-y-2">
-                    {patterns.map((pattern, idx) => (
-                      <li key={idx} className="flex items-center gap-2">
-                        <Input
-                          value={pattern}
-                          onChange={(e) => updateAt(idx, e.target.value)}
-                          placeholder="**/.env"
-                          aria-label={`Pattern ${idx + 1}`}
-                          className="h-9 font-mono text-sm"
-                        />
-                        <Tooltip>
-                          <TooltipTrigger
-                            render={
-                              <Button
-                                size="icon-sm"
-                                variant="ghost"
-                                className="h-11 w-11 md:h-7 md:w-7"
-                                onClick={() => removeAt(idx)}
-                                aria-label={`Remove pattern ${idx + 1}`}
-                              >
-                                <Trash2 size={13} />
-                              </Button>
-                            }
-                          />
-                          <TooltipContent>Remove</TooltipContent>
-                        </Tooltip>
-                      </li>
-                    ))}
-                  </ul>
-
-                  <Button size="sm" variant="outline" className="min-h-11 md:min-h-0" onClick={addRow}>
-                    <Plus size={12} aria-hidden="true" />
-                    Add pattern
-                  </Button>
-                </>
-              )}
-            </>
-          )}
+            <Save size={12} aria-hidden="true" />
+            {updateMut.isPending ? 'Saving…' : 'Save'}
+          </Button>
         </div>
-      </div>
-    </>
+      }
+    >
+      {isLoading && <p className="text-sm text-(--color-text-muted)">Loading…</p>}
+
+      {error && (
+        <SettingsCallout tone="error" icon={AlertCircle}>
+          {error instanceof Error ? error.message : String(error)}
+        </SettingsCallout>
+      )}
+
+      {!isLoading && !error && patterns.length === 0 && (
+        <SettingsGroup title="Denied patterns" bare>
+          <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-(--color-border) p-10 text-center">
+            <p className="text-sm font-medium text-(--color-text)">Nothing is blocked yet</p>
+            <p className="max-w-sm text-xs leading-relaxed text-(--color-text-muted)">
+              Agents can reach the whole filesystem apart from the built-in database, state and cache
+              denial. Add a pattern to block files like{' '}
+              <code className="font-mono">.env</code> or folders like{' '}
+              <code className="font-mono">secrets/</code>.
+            </p>
+            <Button size="sm" className="min-h-11 md:min-h-0" onClick={addRow}>
+              <Plus size={12} aria-hidden="true" />
+              Add pattern
+            </Button>
+          </div>
+        </SettingsGroup>
+      )}
+
+      {!isLoading && !error && patterns.length > 0 && (
+        <SettingsGroup
+          title="Denied patterns"
+          description={`${patterns.length} ${patterns.length === 1 ? 'pattern is' : 'patterns are'} matched with logical OR. One match blocks access.`}
+          actions={
+            <Button size="sm" variant="outline" className="min-h-11 md:min-h-0" onClick={addRow}>
+              <Plus size={12} aria-hidden="true" />
+              Add
+            </Button>
+          }
+        >
+          <ul>
+            {patterns.map((pattern, idx) => (
+              <li
+                key={idx}
+                className="flex items-center gap-2 px-3 py-2 not-last:border-b not-last:border-(--color-border-subtle)"
+              >
+                <Input
+                  value={pattern}
+                  onChange={(e) => updateAt(idx, e.target.value)}
+                  placeholder="**/.env"
+                  aria-label={`Pattern ${idx + 1}`}
+                  className="h-9 border-transparent bg-transparent font-mono text-sm focus-visible:border-(--color-border)"
+                />
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        className="size-11 shrink-0 md:size-7"
+                        onClick={() => removeAt(idx)}
+                        aria-label={`Remove pattern ${idx + 1}`}
+                      >
+                        <Trash2 size={13} />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>Remove</TooltipContent>
+                </Tooltip>
+              </li>
+            ))}
+          </ul>
+        </SettingsGroup>
+      )}
+    </SettingsPage>
   )
 }
 
@@ -227,16 +217,13 @@ function SandboxHelpPopover() {
         render={
           <button
             type="button"
-            className="inline-flex min-h-11 items-center gap-0.5 rounded text-(--color-text) underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-(--focus-ring)/40 md:min-h-0"
+            className="inline-flex min-h-11 items-center gap-0.5 rounded text-(--color-text) underline-offset-2 hover:underline focus-visible:ring-3 focus-visible:ring-(--focus-ring)/40 focus-visible:outline-none md:min-h-0"
           >
             See examples
             <ChevronDown
               size={12}
               aria-hidden="true"
-              className={cn(
-                'transition-transform duration-150',
-                open && 'rotate-180',
-              )}
+              className={cn('transition-transform', open && 'rotate-180')}
             />
           </button>
         }
@@ -248,16 +235,13 @@ function SandboxHelpPopover() {
               <code className="self-start rounded bg-(--bg-key) px-1.5 py-0.5 font-mono text-xs text-(--color-text)">
                 {ex.pattern}
               </code>
-              <span className="text-xs leading-snug text-(--color-text-muted)">
-                {ex.description}
-              </span>
+              <span className="text-xs leading-snug text-(--color-text-muted)">{ex.description}</span>
             </li>
           ))}
         </ul>
 
         <p className="border-t border-(--color-border) pt-2 text-xs leading-snug text-(--color-text-muted)">
-          Built-in DB / state / cache paths are always denied; matching is
-          logical-OR across patterns &mdash; one match blocks access.
+          Built-in database, state and cache paths are always denied.
         </p>
       </PopoverContent>
     </Popover>

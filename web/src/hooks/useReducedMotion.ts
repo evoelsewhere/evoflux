@@ -1,11 +1,35 @@
 /**
- * useReducedMotion — single import path for the `prefers-reduced-motion`
- * query. Re-exports framer-motion's implementation so app code depends on
- * our path, not framer-motion's surface.
+ * useReducedMotion — honors OS `prefers-reduced-motion` and the Appearance
+ * "UI animations → Reduced" setting (`data-motion="reduced"`).
  *
- * The CSS layer in `index.css` already short-circuits transitions and
- * animations when the media query matches; use this hook only for
- * JS-driven motion (framer-motion variants, animation-derived layout,
+ * The CSS layer in `index.css` also short-circuits transitions when either
+ * gate is active; use this hook for JS-driven motion (framer-motion,
  * custom rAF loops).
  */
-export { useReducedMotion } from 'framer-motion'
+import { useSyncExternalStore } from 'react'
+import { useReducedMotion as useFramerReducedMotion } from 'framer-motion'
+
+function subscribeMotionAttr(onStoreChange: () => void): () => void {
+  const observer = new MutationObserver(onStoreChange)
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['data-motion'],
+  })
+  window.addEventListener('evoflux:appearance-change', onStoreChange)
+  return () => {
+    observer.disconnect()
+    window.removeEventListener('evoflux:appearance-change', onStoreChange)
+  }
+}
+
+function readMotionReduced(): boolean {
+  return document.documentElement.dataset.motion === 'reduced'
+}
+
+export function useReducedMotion(): boolean | null {
+  const osReduced = useFramerReducedMotion()
+  const userReduced = useSyncExternalStore(subscribeMotionAttr, readMotionReduced, () => false)
+  if (osReduced) return true
+  if (userReduced) return true
+  return osReduced
+}
