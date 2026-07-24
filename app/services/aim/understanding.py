@@ -16,6 +16,10 @@ class UnderstandingEvidenceError(ValueError):
     pass
 
 
+_MIN_DOCUMENT_CHARS = 600
+_MIN_DOCUMENT_SECTIONS = 3
+
+
 def _split_unit(unit: str) -> tuple[str, str]:
     if "/" not in unit:
         raise UnderstandingEvidenceError(f"invalid unit key: {unit!r}")
@@ -28,6 +32,20 @@ def _body_digest(kb_root: Path, unit: str) -> str:
     if result is None:
         raise UnderstandingEvidenceError(f"unit {unit} is missing from the KB")
     return hashlib.sha256(result[1].encode("utf-8")).hexdigest()
+
+
+def _document_quality(body: str) -> dict[str, int | bool]:
+    lines = body.splitlines()
+    characters = len(body.strip())
+    sections = sum(line.startswith("## ") for line in lines)
+    return {
+        "characters": characters,
+        "lines": len(lines),
+        "sections": sections,
+        "substantive": (
+            characters >= _MIN_DOCUMENT_CHARS and sections >= _MIN_DOCUMENT_SECTIONS
+        ),
+    }
 
 
 def snapshot_understanding(kb_root: Path, units: list[str]) -> dict[str, str]:
@@ -59,7 +77,7 @@ def verify_understanding(
     except ValueError as exc:
         raise UnderstandingEvidenceError("workflow execution id is not a UUID") from exc
 
-    verified: list[tuple[str, str, str]] = []
+    verified: list[tuple[str, str, str, str, dict[str, int | bool]]] = []
     for unit in units:
         before = baseline.get(unit)
         if before is None:
@@ -71,16 +89,21 @@ def verify_understanding(
         body = result[1]
         if not body.strip():
             raise UnderstandingEvidenceError(f"unit {unit} documentation body is empty")
-        after = hashlib.sha256(body.encode("utf-8")).hexdigest()
-        if after == before:
+        quality = _document_quality(body)
+        if not quality["substantive"]:
             raise UnderstandingEvidenceError(
-                f"unit {unit} documentation did not change during this workflow"
+                f"unit {unit} documentation is still a stub "
+                f"({quality['characters']} chars, {quality['sections']} sections; "
+                f"requires at least {_MIN_DOCUMENT_CHARS} chars and "
+                f"{_MIN_DOCUMENT_SECTIONS} sections)"
             )
-        verified.append((unit, before, after))
+        after = hashlib.sha256(body.encode("utf-8")).hexdigest()
+        change_kind = "updated" if after != before else "reviewed_unchanged"
+        verified.append((unit, before, after, change_kind, quality))
 
     paths: list[Path] = []
     created_at = datetime.now(timezone.utc).isoformat()
-    for unit, before, after in verified:
+    for unit, before, after, change_kind, quality in verified:
         path = understanding_evidence_path(kb_root, unit, execution_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
@@ -91,8 +114,10 @@ def verify_understanding(
                     "unit": unit,
                     "workflow_execution_id": execution_id,
                     "status": "pass",
+                    "change_kind": change_kind,
                     "before_sha256": before,
                     "after_sha256": after,
+                    "quality": quality,
                     "created_at": created_at,
                 },
                 sort_keys=False,
@@ -111,9 +136,31 @@ def has_understanding_evidence(kb_root: Path, unit: str, execution_id: str) -> b
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except (OSError, UnicodeDecodeError, yaml.YAMLError):
         return False
-    return (
-        data.get("unit") == unit
-        and data.get("workflow_execution_id") == execution_id
-        and data.get("status") == "pass"
-        and data.get("before_sha256") != data.get("after_sha256")
-    )
+    if (
+        data.get("unit") != unit
+        or data.get("workflow_execution_id") != execution_id
+        or data.get("status") != "pass"
+    ):
+        return False
+    before = data.get("before_sha256")
+    after = data.get("after_sha256")
+    if not isinstance(before, str) or not isinstance(after, str):
+        return False
+    try:
+        if _body_digest(kb_root, unit) != after:
+            return False
+    except UnderstandingEvidenceError:
+        return False
+
+    change_kind = data.get("change_kind")
+    if change_kind is None:
+        # Backward compatibility for evidence written before change_kind.
+        return before != after
+    quality = data.get("quality")
+    if not isinstance(quality, dict) or quality.get("substantive") is not True:
+        return False
+    if change_kind == "updated":
+        return before != after
+    if change_kind == "reviewed_unchanged":
+        return before == after
+    return False
