@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.api.schemas.base import _ExcludeNoneModel
 from app.api.schemas.projects import ProjectResponse
+from app.webbridge_tags import WEBBRIDGE_BROWSER_ORIGIN_TAG
 
 
 class SessionCreate(BaseModel):
@@ -32,6 +33,19 @@ class TeamSessionResolveRequest(BaseModel):
     # vice versa. Persisted on the session when ``create`` (or no match)
     # yields a new row.
     tags: list[str] = []
+
+    @field_validator("tags")
+    @classmethod
+    def _reject_reserved_tags(cls, value: list[str]) -> list[str]:
+        reserved_prefixes = (
+            WEBBRIDGE_BROWSER_ORIGIN_TAG.partition(":")[0] + ":",
+            "webbridge_pairing:",
+        )
+        if any(
+            tag.startswith(prefix) for tag in value for prefix in reserved_prefixes
+        ):
+            raise ValueError("WebBridge provenance and pairing tags are server-managed")
+        return value
 
 
 class TeamSessionUpdateRequest(BaseModel):

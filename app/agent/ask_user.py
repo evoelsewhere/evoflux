@@ -86,7 +86,15 @@ class AskUserService:
                         request_id=req.id,
                         session_id=self.session_id,
                         questions=[
-                            {"question": q.question, "options": q.options}
+                            {
+                                "question": q.question,
+                                "options": q.options,
+                                **(
+                                    {"browser_handoff": q.browser_handoff.model_dump()}
+                                    if q.browser_handoff is not None
+                                    else {}
+                                ),
+                            }
                             for q in questions
                         ],
                     )

@@ -8,12 +8,13 @@
  *   Agent ←→ Backend Relay ←→ This Extension ←→ Real Browser (CDP)
  */
 
+importScripts("semantic_runtime.js");
+
 const DEFAULT_RELAY_BASE = "ws://127.0.0.1:8000";
 const RELAY_PATH = "/api/team/webbridge/relay";
 const RELAY_TICKET_PATH = "/api/team/webbridge/relay-ticket";
 const PAIRING_EXCHANGE_PATH = "/api/team/webbridge/pairing/exchange";
 const LOCAL_PAIRING_PATH = "/api/team/webbridge/pairing/local";
-const BROWSER_SESSIONS_PATH = "/api/team/webbridge/sessions";
 const BINDINGS_PATH = "/api/team/webbridge/bindings";
 const INTERACTIONS_PATH = "/api/team/webbridge/interactions";
 const TEACH_DRAFTS_PATH = "/api/team/webbridge/teach-drafts";
@@ -39,10 +40,17 @@ const MAX_TEACH_VALUE_CHARS = 4_000;
 const HUMAN_LEASE_STORAGE_KEY = "webbridgeHumanControlLease";
 const HUMAN_LEASE_TTL_MS = 30 * 60 * 1000;
 const PICKED_ELEMENT_STORAGE_KEY = "webbridgePickedElements";
+const REGION_CAPTURE_STORAGE_KEY = "webbridgeRegionCaptures";
+const PANEL_CONTEXT_DRAFT_STORAGE_KEY = "webbridgePanelContextDraft";
+const TAB_PAGE_INSTANCE_STORAGE_KEY = "webbridgeTabPageInstance";
+const TAB_SESSION_ACTION_STORAGE_KEY = "webbridgeTabSessionAction";
+const DIAGNOSTIC_CAPTURE_TTL_MS = 15 * 60 * 1000;
+const MAX_DIAGNOSTIC_ENTRIES = 30;
 
 let ws = null;
 let extensionId = null; // loaded/persisted in chrome.storage.local (stable across SW restarts)
 const sessionGroupLocks = new Map();
+let textWatchMutation = Promise.resolve();
 let connected = false;
 let reconnectTimer = null;
 let reconnectAttempts = 0;
@@ -61,7 +69,8 @@ const COMMAND_CAPABILITIES = [
   "reload", "wait", "wait_for_selector", "wait_for_text", "wait_for_load",
   "wait_for_network_idle", "click_selector", "click_text", "hover", "focus",
   "select_option", "set_checked", "drag", "fill", "open_tab", "close_tab",
-  "snapshot", "extract_elements", "scroll_to_bottom", "status",
+  "snapshot", "semantic_snapshot", "semantic_read", "semantic_select",
+  "semantic_write", "extract_elements", "scroll_to_bottom", "status",
 ];
 
 // ── Config (persisted in chrome.storage.local, edited in Side Chat settings) ─
@@ -197,7 +206,7 @@ function isLiveTextWatch(watch, now = Date.now()) {
   );
 }
 
-async function readTextWatches() {
+async function readTextWatchesLocked() {
   const stored = await chrome.storage.local.get([TEXT_WATCH_STORAGE_KEY]);
   const watches = Array.isArray(stored[TEXT_WATCH_STORAGE_KEY])
     ? stored[TEXT_WATCH_STORAGE_KEY]
@@ -207,13 +216,31 @@ async function readTextWatches() {
     for (const watch of watches) {
       if (!isLiveTextWatch(watch)) clearWatchMatch(watch.tab_id);
     }
-    await chrome.storage.local.set({ [TEXT_WATCH_STORAGE_KEY]: live });
+    await writeTextWatches(live);
   }
   return live;
 }
 
 async function writeTextWatches(watches) {
   await chrome.storage.local.set({ [TEXT_WATCH_STORAGE_KEY]: watches });
+}
+
+async function withTextWatchMutation(operation) {
+  const previous = textWatchMutation;
+  let release;
+  const current = new Promise((resolve) => { release = resolve; });
+  textWatchMutation = current;
+  await previous.catch(() => {});
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (textWatchMutation === current) textWatchMutation = Promise.resolve();
+  }
+}
+
+async function readTextWatches() {
+  return withTextWatchMutation(readTextWatchesLocked);
 }
 
 function showWatchMatch(tabId) {
@@ -250,16 +277,19 @@ function ensureTextWatchAlarm() {
 }
 
 async function cancelTextWatchesForTab(tabId, currentUrl = null) {
-  const watches = await readTextWatches();
-  const currentPageUrl = currentUrl == null ? null : safePageUrl(currentUrl);
-  const retained = watches.filter((watch) => {
-    if (watch.tab_id !== tabId) return true;
-    return currentPageUrl !== null && watch.page_url === currentPageUrl;
+  return withTextWatchMutation(async () => {
+    const watches = await readTextWatchesLocked();
+    const currentPageUrl = currentUrl == null ? null : safePageUrl(currentUrl);
+    const retained = watches.filter((watch) => {
+      if (watch.tab_id !== tabId) return true;
+      return currentPageUrl !== null && watch.page_url === currentPageUrl;
+    });
+    if (retained.length !== watches.length) {
+      await writeTextWatches(retained);
+      clearWatchMatch(tabId);
+    }
+    return retained.length !== watches.length;
   });
-  if (retained.length !== watches.length) {
-    await writeTextWatches(retained);
-    clearWatchMatch(tabId);
-  }
 }
 
 async function watchTextPresent(tabId, needle) {
@@ -287,41 +317,56 @@ async function armTextWatch(tab, sessionId, needleValue, ttlValue) {
   await bindTabToSession(tab, normalizedSessionId, pageUrl);
 
   const now = Date.now();
-  const watches = await readTextWatches();
-  const retained = watches.filter((watch) => watch.tab_id !== tab.id);
-  if (retained.length >= MAX_TEXT_WATCHES) {
-    throw new Error(`WebBridge can keep at most ${MAX_TEXT_WATCHES} active watches.`);
-  }
-  const watch = {
-    id: interactionId(),
-    tab_id: tab.id,
-    origin: browserOrigin(pageUrl),
-    page_url: pageUrl,
-    session_id: normalizedSessionId,
-    needle,
-    state: "armed",
-    created_at: now,
-    expires_at: now + ttlMinutes * 60 * 1000,
-    matched_at: null,
-  };
-  await writeTextWatches([...retained, watch]);
+  const watch = await withTextWatchMutation(async () => {
+    const watches = await readTextWatchesLocked();
+    const retained = watches.filter((entry) => entry.tab_id !== tab.id);
+    if (retained.length >= MAX_TEXT_WATCHES) {
+      throw new Error(`WebBridge can keep at most ${MAX_TEXT_WATCHES} active watches.`);
+    }
+    const next = {
+      id: interactionId(),
+      tab_id: tab.id,
+      origin: browserOrigin(pageUrl),
+      page_url: pageUrl,
+      session_id: normalizedSessionId,
+      needle,
+      state: "armed",
+      created_at: now,
+      expires_at: now + ttlMinutes * 60 * 1000,
+      matched_at: null,
+    };
+    await writeTextWatches([...retained, next]);
+    return next;
+  });
   clearWatchMatch(tab.id);
   ensureTextWatchAlarm();
   return textWatchSummary(watch);
 }
 
 async function cancelTextWatch(watchId) {
-  const watches = await readTextWatches();
-  const watch = watches.find((entry) => entry.id === watchId);
-  if (!watch) return false;
-  await writeTextWatches(watches.filter((entry) => entry.id !== watchId));
-  clearWatchMatch(watch.tab_id);
-  return true;
+  return withTextWatchMutation(async () => {
+    const watches = await readTextWatchesLocked();
+    const watch = watches.find((entry) => entry.id === watchId);
+    if (!watch) return false;
+    await writeTextWatches(watches.filter((entry) => entry.id !== watchId));
+    clearWatchMatch(watch.tab_id);
+    return true;
+  });
+}
+
+async function cancelAllTextWatches() {
+  return withTextWatchMutation(async () => {
+    const watches = await readTextWatchesLocked();
+    await writeTextWatches([]);
+    for (const watch of watches) clearWatchMatch(watch.tab_id);
+    return watches.length;
+  });
 }
 
 async function pollTextWatches() {
-  const watches = await readTextWatches();
-  if (!watches.length) return [];
+  return withTextWatchMutation(async () => {
+    const watches = await readTextWatchesLocked();
+    if (!watches.length) return [];
 
   let changed = false;
   const retained = [];
@@ -359,43 +404,49 @@ async function pollTextWatches() {
       retained.push(watch);
     }
   }
-  if (changed) await writeTextWatches(retained);
-  return matched;
+    if (changed) await writeTextWatches(retained);
+    return matched;
+  });
 }
 
 async function sendMatchedTextWatch(watchId) {
-  const watches = await readTextWatches();
-  const watch = watches.find((entry) => entry.id === watchId);
-  if (!watch || watch.state !== "matched") {
-    throw new Error("This text watch is no longer ready to send.");
-  }
-  let tab;
-  try {
-    tab = await chrome.tabs.get(watch.tab_id);
-  } catch {
-    await cancelTextWatch(watch.id);
-    throw new Error("The watched tab was closed.");
-  }
-  const pageUrl = requireBrowserPageUrl(tab.url || tab.pendingUrl || "");
-  if (pageUrl !== watch.page_url) {
-    await cancelTextWatch(watch.id);
-    throw new Error("The watched page changed. Arm a new text watch for this page.");
-  }
-  const result = await submitBrowserContext(
-    tab,
-    {
-      context_type: "page_metadata",
-      prompt: `The page watch for "${watch.needle}" matched. Help me assess this page.`,
-      metadata: {
-        page_url: pageUrl,
-        page_title: boundedText(tab.title),
+  return withTextWatchMutation(async () => {
+    const watches = await readTextWatchesLocked();
+    const watch = watches.find((entry) => entry.id === watchId);
+    if (!watch || watch.state !== "matched") {
+      throw new Error("This text watch is no longer ready to send.");
+    }
+    let tab;
+    try {
+      tab = await chrome.tabs.get(watch.tab_id);
+    } catch {
+      await writeTextWatches(watches.filter((entry) => entry.id !== watch.id));
+      clearWatchMatch(watch.tab_id);
+      throw new Error("The watched tab was closed.");
+    }
+    const pageUrl = requireBrowserPageUrl(tab.url || tab.pendingUrl || "");
+    if (pageUrl !== watch.page_url) {
+      await writeTextWatches(watches.filter((entry) => entry.id !== watch.id));
+      clearWatchMatch(watch.tab_id);
+      throw new Error("The watched page changed. Arm a new text watch for this page.");
+    }
+    const result = await submitBrowserContext(
+      tab,
+      {
+        context_type: "page_metadata",
+        prompt: `The page watch for "${watch.needle}" matched. Help me assess this page.`,
+        metadata: {
+          page_url: pageUrl,
+          page_title: boundedText(tab.title),
+        },
       },
-    },
-    watch.session_id,
-    `${watch.id}:match`,
-  );
-  await cancelTextWatch(watch.id);
-  return result;
+      watch.session_id,
+      `${watch.id}:match`,
+    );
+    await writeTextWatches(watches.filter((entry) => entry.id !== watch.id));
+    clearWatchMatch(watch.tab_id);
+    return result;
+  });
 }
 
 function teachRecordingSummary(recording) {
@@ -625,6 +676,7 @@ async function createTeachDraft(recording) {
       start_url: recording.start_url,
       actions: recording.actions,
       warnings,
+      user_gesture: true,
     }),
   });
   return response.json();
@@ -675,21 +727,38 @@ async function pairingFetch(path, options = {}) {
   return response;
 }
 
-async function listBrowserSessions() {
-  const response = await pairingFetch(BROWSER_SESSIONS_PATH);
-  return response.json();
-}
-
-async function createBrowserSession(title, actionId) {
-  const response = await pairingFetch(BROWSER_SESSIONS_PATH, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Idempotency-Key": `${actionId}:session`,
+async function createAndBindBrowserSession(tab, title, actionId) {
+  const pageUrl = tab.url || tab.pendingUrl || "";
+  const origin = browserTabScope(tab);
+  const response = await pairingFetch(
+    `${BINDINGS_PATH}/${encodeURIComponent(tab.id)}/sessions`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": `${actionId}:session`,
+      },
+      body: JSON.stringify({
+        title,
+        origin,
+        page_instance_id: `${tab.id}:${origin}`.slice(0, 128),
+      }),
     },
-    body: JSON.stringify({ title }),
-  });
-  return response.json();
+  );
+  const result = await response.json();
+  return {
+    session_id: result.session.id,
+    binding_tab_id: result.binding.tab_id,
+    binding_origin: result.binding.origin,
+    grouped: false,
+    session: result.session,
+    tab: {
+      id: tab.id,
+      title: tab.title || "",
+      url: pageUrl,
+      group_id: Number.isInteger(tab.groupId) ? tab.groupId : -1,
+    },
+  };
 }
 
 async function listTabBindings() {
@@ -711,11 +780,11 @@ async function bindTabToSession(tab, sessionId, pageUrl) {
   return response.json();
 }
 
-async function ensureSessionForTab(tab, pageUrl, actionId) {
-  return (await ensureSessionContextForTab(tab, pageUrl, actionId)).session_id;
+async function ensureSessionForTab(tab, pageUrl) {
+  return (await ensureSessionContextForTab(tab, pageUrl)).session_id;
 }
 
-async function ensureSessionContextForTab(tab, pageUrl, actionId) {
+async function resolveExistingSessionContextForTab(tab, pageUrl) {
   const bindings = await listTabBindings();
   const binding = bindings.find((item) => item.tab_id === tab.id);
   const scope = browserTabScope(tab);
@@ -756,18 +825,19 @@ async function ensureSessionContextForTab(tab, pageUrl, actionId) {
     }
   }
 
+  return null;
+}
+
+async function ensureSessionContextForTab(tab, pageUrl) {
+  const existing = await resolveExistingSessionContextForTab(tab, pageUrl);
+  if (existing) return existing;
+
   const label = boundedText(tab.title) || browserOrigin(pageUrl) || "Browser tab";
-  const session = await createBrowserSession(
+  return createAndBindBrowserSession(
+    tab,
     `Browser: ${label}`.slice(0, 255),
-    actionId,
+    await tabSessionActionId(tab.id),
   );
-  const createdBinding = await bindTabToSession(tab, session.id, pageUrl);
-  return {
-    session_id: session.id,
-    binding_tab_id: createdBinding.tab_id,
-    binding_origin: createdBinding.origin,
-    grouped: false,
-  };
 }
 
 function contextMenuPayload(info, tab) {
@@ -826,7 +896,7 @@ async function submitBrowserContext(tab, payload, sessionIdOverride = null, acti
   await chrome.storage.local.set({ pendingInteraction: pending });
   const sessionId = sessionIdOverride
     ? (await bindTabToSession(tab, sessionIdOverride, pageUrl), sessionIdOverride)
-    : await ensureSessionForTab(tab, pageUrl, requestId);
+    : await ensureSessionForTab(tab, pageUrl);
   await chrome.storage.local.set({
     pendingInteraction: { ...pending, session_id: sessionId },
   });
@@ -895,9 +965,71 @@ async function readPendingInteraction() {
   return pending;
 }
 
+function panelDraftKey(tabId) {
+  return `${PANEL_CONTEXT_DRAFT_STORAGE_KEY}:${tabId}`;
+}
+
+function tabPageInstanceKey(tabId) {
+  return `${TAB_PAGE_INSTANCE_STORAGE_KEY}:${tabId}`;
+}
+
+function tabSessionActionKey(tabId) {
+  return `${TAB_SESSION_ACTION_STORAGE_KEY}:${tabId}`;
+}
+
+async function tabSessionActionId(tabId) {
+  const storage = chrome.storage.session || chrome.storage.local;
+  const key = tabSessionActionKey(tabId);
+  const stored = await storage.get([key]);
+  if (stored[key]) return stored[key];
+  const actionId = interactionId();
+  await storage.set({ [key]: actionId });
+  return actionId;
+}
+
+async function tabPageInstanceId(tabId) {
+  const storage = chrome.storage.session || chrome.storage.local;
+  const key = tabPageInstanceKey(tabId);
+  const stored = await storage.get([key]);
+  if (stored[key]) return stored[key];
+  const pageInstanceId = interactionId();
+  await storage.set({ [key]: pageInstanceId });
+  return pageInstanceId;
+}
+
+async function rotateTabPageInstance(tabId) {
+  const storage = chrome.storage.session || chrome.storage.local;
+  await storage.set({ [tabPageInstanceKey(tabId)]: interactionId() });
+  await storage.remove([panelDraftKey(tabId)]);
+}
+
+async function clearPanelTabState(tabId) {
+  const storage = chrome.storage.session || chrome.storage.local;
+  await storage.remove([
+    panelDraftKey(tabId),
+    tabPageInstanceKey(tabId),
+    tabSessionActionKey(tabId),
+  ]);
+}
+
 async function sendContextMenuInteraction(info, tab) {
   if (!tab || tab.id == null) throw new Error("No browser tab available");
-  return submitBrowserContext(tab, contextMenuPayload(info, tab));
+  const payload = contextMenuPayload(info, tab);
+  const storage = chrome.storage.session || chrome.storage.local;
+  const draftKey = panelDraftKey(tab.id);
+  await storage.set({
+    [draftKey]: {
+      tab_id: tab.id,
+      page_url: payload.metadata.page_url,
+      page_instance_id: await tabPageInstanceId(tab.id),
+      payload,
+      created_at: Date.now(),
+    },
+  });
+  if (chrome.sidePanel?.open) {
+    await chrome.sidePanel.open({ tabId: tab.id });
+  }
+  return { status: "draft", context_type: payload.context_type };
 }
 
 function removeAllContextMenus() {
@@ -1344,6 +1476,18 @@ async function handleCommand(msg) {
       case "snapshot":
         result = await cmdSnapshot(params);
         break;
+      case "semantic_snapshot":
+        result = await globalThis.WebBridgeSemantic.snapshot(params);
+        break;
+      case "semantic_read":
+        result = await globalThis.WebBridgeSemantic.read(params);
+        break;
+      case "semantic_select":
+        result = await globalThis.WebBridgeSemantic.select(params);
+        break;
+      case "semantic_write":
+        result = await globalThis.WebBridgeSemantic.write(params);
+        break;
       case "extract_elements":
         result = await cmdExtractElements(params);
         break;
@@ -1642,6 +1786,188 @@ async function cancelElementPicker(tab) {
   return true;
 }
 
+function regionCaptureStorage() {
+  return chrome.storage.session || chrome.storage.local;
+}
+
+async function readRegionCaptures() {
+  const stored = await regionCaptureStorage().get([REGION_CAPTURE_STORAGE_KEY]);
+  return stored[REGION_CAPTURE_STORAGE_KEY] || {};
+}
+
+async function regionCaptureForTab(tabId) {
+  const captures = await readRegionCaptures();
+  return captures[tabId] || null;
+}
+
+async function clearRegionCapture(tabId) {
+  const storage = regionCaptureStorage();
+  const captures = await readRegionCaptures();
+  if (!captures[tabId]) return false;
+  delete captures[tabId];
+  if (Object.keys(captures).length) {
+    await storage.set({ [REGION_CAPTURE_STORAGE_KEY]: captures });
+  } else {
+    await storage.remove([REGION_CAPTURE_STORAGE_KEY]);
+  }
+  return true;
+}
+
+function finiteRegionNumber(value, name) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) throw new Error(`Invalid region ${name}.`);
+  return number;
+}
+
+function sanitizeRegionSelection(tab, raw) {
+  const pageUrl = safePageUrl(tab.url || tab.pendingUrl || "");
+  if (!pageUrl || safePageUrl(raw?.page_url || "") !== pageUrl) {
+    throw new Error("Selected region does not belong to the active page.");
+  }
+  const clip = {
+    x: finiteRegionNumber(raw?.clip?.x, "x"),
+    y: finiteRegionNumber(raw?.clip?.y, "y"),
+    width: finiteRegionNumber(raw?.clip?.width, "width"),
+    height: finiteRegionNumber(raw?.clip?.height, "height"),
+  };
+  const viewport = {
+    width: finiteRegionNumber(raw?.viewport?.width, "viewport width"),
+    height: finiteRegionNumber(raw?.viewport?.height, "viewport height"),
+    page_x: finiteRegionNumber(raw?.viewport?.page_x, "page x"),
+    page_y: finiteRegionNumber(raw?.viewport?.page_y, "page y"),
+    scale: finiteRegionNumber(raw?.viewport?.scale, "scale"),
+    dpr: finiteRegionNumber(raw?.viewport?.dpr, "device pixel ratio"),
+  };
+  if (
+    clip.width < 8 || clip.height < 8 || viewport.width <= 0 || viewport.height <= 0 ||
+    viewport.scale <= 0 || viewport.dpr <= 0 ||
+    clip.x + clip.width > viewport.width + 1 || clip.y + clip.height > viewport.height + 1
+  ) {
+    throw new Error("Selected region is outside the current viewport.");
+  }
+  return { page_url: pageUrl, clip, viewport };
+}
+
+function closeRegionMetric(left, right, tolerance = 1) {
+  return Math.abs(Number(left) - Number(right)) <= tolerance;
+}
+
+async function captureSelectedRegion(tab, raw) {
+  if (!tab || tab.id == null) throw new Error("No active browser tab");
+  const selected = sanitizeRegionSelection(tab, raw);
+  const metrics = await cdpSend(tab.id, "Page.getLayoutMetrics");
+  const visual = metrics.cssVisualViewport || metrics.visualViewport;
+  if (!visual) throw new Error("Browser viewport metrics are unavailable.");
+  const current = {
+    width: Number(visual.clientWidth),
+    height: Number(visual.clientHeight),
+    page_x: Number(visual.pageX),
+    page_y: Number(visual.pageY),
+    scale: Number(visual.scale || 1),
+  };
+  const currentTab = await chrome.tabs.get(tab.id);
+  if (
+    safePageUrl(currentTab.url || currentTab.pendingUrl || "") !== selected.page_url ||
+    !closeRegionMetric(current.width, selected.viewport.width) ||
+    !closeRegionMetric(current.height, selected.viewport.height) ||
+    !closeRegionMetric(current.page_x, selected.viewport.page_x) ||
+    !closeRegionMetric(current.page_y, selected.viewport.page_y) ||
+    !closeRegionMetric(current.scale, selected.viewport.scale, 0.01)
+  ) {
+    throw new Error("The page moved or resized. Select the region again.");
+  }
+  const zoom = current.scale || 1;
+  const result = await cdpSend(tab.id, "Page.captureScreenshot", {
+    format: "png",
+    clip: {
+      x: (current.page_x + selected.clip.x) * zoom,
+      y: (current.page_y + selected.clip.y) * zoom,
+      width: selected.clip.width * zoom,
+      height: selected.clip.height * zoom,
+      scale: 1 / zoom,
+    },
+    captureBeyondViewport: false,
+    fromSurface: true,
+  });
+  if (!result?.data) throw new Error("Browser did not return a screenshot.");
+  const capture = {
+    tab_id: tab.id,
+    page_url: selected.page_url,
+    captured_at: new Date().toISOString(),
+    clip: selected.clip,
+    viewport: selected.viewport,
+    data_base64: result.data,
+  };
+  const captures = await readRegionCaptures();
+  captures[tab.id] = capture;
+  await regionCaptureStorage().set({ [REGION_CAPTURE_STORAGE_KEY]: captures });
+  return capture;
+}
+
+async function startRegionPicker(tab) {
+  if (!tab || tab.id == null) throw new Error("No active browser tab");
+  requireBrowserPageUrl(tab.url || tab.pendingUrl || "");
+  await clearRegionCapture(tab.id);
+  await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    files: ["region_picker.js"],
+  });
+  await chrome.tabs.sendMessage(tab.id, {
+    type: "webbridge_region_picker",
+    enabled: true,
+  });
+  return { tab_id: tab.id };
+}
+
+async function capturePanelContext(tab, kind) {
+  if (!tab || tab.id == null) throw new Error("No active browser tab");
+  const pageUrl = requireBrowserPageUrl(tab.url || tab.pendingUrl || "");
+  if (!new Set(["selection", "readable_page"]).has(kind)) {
+    throw new Error("Unsupported browser context type.");
+  }
+  const [{ result }] = await chrome.scripting.executeScript({
+    target: { tabId: tab.id, frameIds: [0] },
+    func: (captureKind, maxChars) => {
+      const normalize = (value) => String(value || "").replace(/\s+/g, " ").trim();
+      const safeUrl = `${location.origin}${location.pathname}`;
+      if (captureKind === "selection") {
+        return {
+          type: captureKind,
+          page_url: safeUrl,
+          title: document.title || "",
+          text: normalize(window.getSelection()?.toString()).slice(0, maxChars),
+        };
+      }
+      const root = document.querySelector("main,article,[role=main]") || document.body || document.documentElement;
+      const clone = root.cloneNode(true);
+      for (const node of clone.querySelectorAll("script,style,noscript,input,textarea,select,option,[hidden],[aria-hidden=true]")) {
+        node.remove();
+      }
+      return {
+        type: captureKind,
+        page_url: safeUrl,
+        title: document.title || "",
+        text: normalize(clone.innerText || clone.textContent).slice(0, maxChars),
+      };
+    },
+    args: [kind, MAX_CONTEXT_CHARS],
+  });
+  const current = await chrome.tabs.get(tab.id);
+  if (safePageUrl(current.url || current.pendingUrl || "") !== pageUrl) {
+    throw new Error("The page changed while context was being captured.");
+  }
+  const text = boundedText(result?.text).slice(0, MAX_CONTEXT_CHARS);
+  if (!text) {
+    throw new Error(kind === "selection" ? "Select text on the page first." : "No readable page text was found.");
+  }
+  return {
+    type: kind,
+    page_url: pageUrl,
+    title: boundedText(result?.title).slice(0, 500),
+    text,
+  };
+}
+
 // Resolve the tab a command targets: an explicit params.tab_id (so a session
 // can pin a tab and stay deterministic even if the user switches tabs), else
 // the active tab.
@@ -1764,6 +2090,7 @@ async function cdpSend(tabId, method, params = {}) {
 // Network.* debugger events below; only meaningful once Network.enable has
 // been sent for that tab (cmdWaitForNetworkIdle does that).
 const networkInflight = new Map();
+const diagnosticCaptures = new Map();
 function netInc(tabId, id) {
   let s = networkInflight.get(tabId);
   if (!s) { s = new Set(); networkInflight.set(tabId, s); }
@@ -1778,12 +2105,201 @@ function netCount(tabId) {
   return s ? s.size : 0;
 }
 
+function redactDiagnosticText(value) {
+  let text = String(value || "").slice(0, 4000);
+  const secretKeys = "authorization|proxy-authorization|cookie|set-cookie|password|passwd|access_token|refresh_token|id_token|token|secret|api[-_]?key";
+  text = text.replace(/https?:\/\/[^\s"'<>]+/gi, (url) => safePageUrl(url) || "[URL]");
+  text = text.replace(
+    new RegExp(`(["'])(${secretKeys})\\1\\s*:\\s*(["'])[^"'\\r\\n]*\\3`, "gi"),
+    (_match, keyQuote, key, valueQuote) => `${keyQuote}${key}${keyQuote}:${valueQuote}[REDACTED]${valueQuote}`
+  );
+  text = text.replace(
+    /\b(cookie|set-cookie)\b\s*["']?\s*[:=]\s*[^\r\n]*/gi,
+    "$1=[REDACTED]"
+  );
+  text = text.replace(
+    new RegExp(`\\b(${secretKeys})(?:%22|%27)?(?:%3a|%3d)(?:%22|%27)?(?:(?!%26)[^\\s&])+`, "gi"),
+    "$1%3D[REDACTED]"
+  );
+  text = text.replace(
+    new RegExp(`\\b(${secretKeys})\\b\\s*["']?\\s*[:=]\\s*["']?(?:Bearer\\s+)?[^"'\\s,;&}]+`, "gi"),
+    "$1=[REDACTED]"
+  );
+  text = text.replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [REDACTED]");
+  text = text.replace(/\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, "[REDACTED]");
+  text = text.replace(/\b[A-Za-z0-9_-]{40,}\b/g, "[REDACTED]");
+  return boundedText(text).slice(0, 1000);
+}
+
+function activeDiagnosticCapture(tabId) {
+  const capture = diagnosticCaptures.get(tabId);
+  if (!capture) return null;
+  if (capture.expires_at <= Date.now()) {
+    diagnosticCaptures.delete(tabId);
+    return null;
+  }
+  return capture;
+}
+
+function diagnosticSummary(capture) {
+  if (!capture) return null;
+  return {
+    tab_id: capture.tab_id,
+    page_url: capture.page_url,
+    expires_at: capture.expires_at,
+    entry_count: capture.entries.length,
+  };
+}
+
+function appendDiagnostic(tabId, entry) {
+  const capture = activeDiagnosticCapture(tabId);
+  if (!capture) return;
+  capture.entries.push({
+    ...entry,
+    page_url: capture.page_url,
+    captured_at: new Date().toISOString(),
+  });
+  if (capture.entries.length > MAX_DIAGNOSTIC_ENTRIES) {
+    capture.entries.splice(0, capture.entries.length - MAX_DIAGNOSTIC_ENTRIES);
+  }
+}
+
+async function startDiagnosticCapture(tab) {
+  if (!tab || tab.id == null) throw new Error("No active browser tab");
+  const pageUrl = requireBrowserPageUrl(tab.url || tab.pendingUrl || "");
+  await ensureDebuggerAttached(tab.id);
+  await Promise.all([
+    cdpSend(tab.id, "Runtime.enable"),
+    cdpSend(tab.id, "Network.enable"),
+    cdpSend(tab.id, "Log.enable").catch(() => ({})),
+  ]);
+  const capture = {
+    tab_id: tab.id,
+    page_url: pageUrl,
+    expires_at: Date.now() + DIAGNOSTIC_CAPTURE_TTL_MS,
+    entries: [],
+    requests: new Map(),
+  };
+  diagnosticCaptures.set(tab.id, capture);
+  return diagnosticSummary(capture);
+}
+
+async function stopDiagnosticCapture(tabId) {
+  return diagnosticCaptures.delete(tabId);
+}
+
+function consoleDiagnostic(params) {
+  const level = String(params?.type || "").toLowerCase();
+  if (!["warning", "error", "assert"].includes(level)) return null;
+  const values = (params.args || []).map((arg) => arg.value ?? arg.description ?? "");
+  return {
+    kind: "console",
+    level: level === "warning" ? "warning" : "error",
+    message: redactDiagnosticText(values.join(" ")),
+  };
+}
+
+async function captureIssueViewport(tab) {
+  const metrics = await cdpSend(tab.id, "Page.getLayoutMetrics");
+  const visual = metrics.cssVisualViewport || metrics.visualViewport;
+  if (!visual) throw new Error("Browser viewport metrics are unavailable.");
+  const dpr = await evalInPage(tab.id, "window.devicePixelRatio || 1");
+  return captureSelectedRegion(tab, {
+    page_url: safePageUrl(tab.url || tab.pendingUrl || ""),
+    clip: {
+      x: 0,
+      y: 0,
+      width: Number(visual.clientWidth),
+      height: Number(visual.clientHeight),
+    },
+    viewport: {
+      width: Number(visual.clientWidth),
+      height: Number(visual.clientHeight),
+      page_x: Number(visual.pageX),
+      page_y: Number(visual.pageY),
+      scale: Number(visual.scale || 1),
+      dpr: Number(dpr || 1),
+    },
+  });
+}
+
+async function collectIssueReport(tab) {
+  const diagnostic = activeDiagnosticCapture(tab?.id);
+  if (!diagnostic) throw new Error("Start issue capture before reporting an issue.");
+  if (safePageUrl(tab.url || tab.pendingUrl || "") !== diagnostic.page_url) {
+    diagnosticCaptures.delete(tab.id);
+    throw new Error("The page changed. Start issue capture again.");
+  }
+  const existingRegion = await regionCaptureForTab(tab.id);
+  const capture = existingRegion || await captureIssueViewport(tab);
+  const entries = diagnostic.entries.map((entry) => ({ ...entry }));
+  diagnosticCaptures.delete(tab.id);
+  return { capture, diagnostics: entries };
+}
+
 chrome.debugger.onEvent.addListener((source, method, params) => {
   const tabId = source.tabId;
   if (!tabId || !params) return;
-  if (method === "Network.requestWillBeSent") netInc(tabId, params.requestId);
-  else if (method === "Network.loadingFinished" || method === "Network.loadingFailed") netDec(tabId, params.requestId);
+  const diagnostics = activeDiagnosticCapture(tabId);
+  if (method === "Network.requestWillBeSent") {
+    netInc(tabId, params.requestId);
+    if (diagnostics) {
+      diagnostics.requests.set(params.requestId, {
+        request_url: safePageUrl(params.request?.url || ""),
+        method: boundedText(params.request?.method).slice(0, 16),
+      });
+    }
+  } else if (method === "Network.responseReceived") {
+    const status = Number(params.response?.status || 0);
+    if (diagnostics && status >= 400) {
+      const request = diagnostics.requests.get(params.requestId) || {};
+      appendDiagnostic(tabId, {
+        kind: "network",
+        level: "error",
+        message: `HTTP ${status}`,
+        request_url: request.request_url || safePageUrl(params.response?.url || ""),
+        method: request.method || "",
+        status,
+      });
+    }
+  } else if (method === "Network.loadingFinished" || method === "Network.loadingFailed") {
+    netDec(tabId, params.requestId);
+    if (method === "Network.loadingFailed" && diagnostics) {
+      const request = diagnostics.requests.get(params.requestId) || {};
+      appendDiagnostic(tabId, {
+        kind: "network",
+        level: "error",
+        message: redactDiagnosticText(params.errorText || "Network request failed"),
+        request_url: request.request_url || "",
+        method: request.method || "",
+      });
+    }
+    diagnostics?.requests.delete(params.requestId);
+  }
   else if (method === "Network.requestServedFromCache") netDec(tabId, params.requestId);
+  else if (method === "Runtime.consoleAPICalled") {
+    const entry = consoleDiagnostic(params);
+    if (entry) appendDiagnostic(tabId, entry);
+  } else if (method === "Runtime.exceptionThrown") {
+    appendDiagnostic(tabId, {
+      kind: "console",
+      level: "error",
+      message: redactDiagnosticText(
+        params.exceptionDetails?.exception?.description ||
+        params.exceptionDetails?.text ||
+        "Unhandled exception"
+      ),
+    });
+  } else if (method === "Log.entryAdded") {
+    const level = String(params.entry?.level || "").toLowerCase();
+    if (["warning", "error"].includes(level)) {
+      appendDiagnostic(tabId, {
+        kind: "console",
+        level,
+        message: redactDiagnosticText(params.entry?.text || ""),
+      });
+    }
+  }
 });
 
 // Chrome detached the debugger outside our control (infobar Cancel,
@@ -1791,6 +2307,7 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
 // state so the next command re-attaches instead of failing.
 chrome.debugger.onDetach.addListener((source) => {
   networkInflight.delete(source.tabId);
+  diagnosticCaptures.delete(source.tabId);
   if (source.tabId && attachedTabs.delete(source.tabId)) {
     console.warn("[WebBridge] Debugger detached from tab", source.tabId);
     broadcastTabInfo();
@@ -1800,6 +2317,7 @@ chrome.debugger.onDetach.addListener((source) => {
 chrome.tabs.onRemoved.addListener((tabId) => {
   attachedTabs.delete(tabId);
   networkInflight.delete(tabId);
+  diagnosticCaptures.delete(tabId);
   cancelTextWatchesForTab(tabId).catch((error) => {
     console.warn("[WebBridge] Failed to cancel tab text watches:", error.message);
   });
@@ -1811,6 +2329,12 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   });
   clearPickedElement(tabId).catch((error) => {
     console.warn("[WebBridge] Failed to clear picked element for a closed tab:", error.message);
+  });
+  clearRegionCapture(tabId).catch((error) => {
+    console.warn("[WebBridge] Failed to clear region capture for a closed tab:", error.message);
+  });
+  clearPanelTabState(tabId).catch((error) => {
+    console.warn("[WebBridge] Failed to clear Side Chat draft for a closed tab:", error.message);
   });
   broadcastTabInfo();
 });
@@ -2891,12 +3415,21 @@ async function broadcastTabInfo() {
 
 // Keep backend policy/status accurate for both active and background tabs.
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.url || changeInfo.status === "loading") {
+    rotateTabPageInstance(tabId).catch((error) => {
+      console.warn("[WebBridge] Failed to rotate Side Chat page identity:", error.message);
+    });
+  }
   if (changeInfo.url) {
+    diagnosticCaptures.delete(tabId);
     cancelTextWatchesForTab(tabId, changeInfo.url).catch((error) => {
       console.warn("[WebBridge] Failed to update text watch scope:", error.message);
     });
     clearPickedElement(tabId).catch((error) => {
       console.warn("[WebBridge] Failed to clear picked element after navigation:", error.message);
+    });
+    clearRegionCapture(tabId).catch((error) => {
+      console.warn("[WebBridge] Failed to clear region capture after navigation:", error.message);
     });
   }
   handleTeachTabUpdate(tabId, changeInfo).catch((error) => {
@@ -2927,6 +3460,30 @@ chrome.tabs.onMoved.addListener(() => {
 // ── Message handlers (Side Chat and content scripts) ─────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type === "region_selected") {
+    (async () => {
+      try {
+        if (!sender.tab || sender.tab.id == null || (sender.frameId != null && sender.frameId !== 0)) {
+          throw new Error("Screen regions must come from the top frame of a browser tab.");
+        }
+        const tab = await chrome.tabs.get(sender.tab.id);
+        const capture = await captureSelectedRegion(tab, msg.selection);
+        sendResponse({ ok: true, capture });
+        chrome.runtime.sendMessage({ type: "region_capture_ready", capture }).catch(() => {});
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+        chrome.runtime.sendMessage({ type: "region_capture_error", error: e.message }).catch(() => {});
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "region_picker_cancelled") {
+    chrome.runtime.sendMessage({ type: "region_capture_cancelled", reason: msg.reason || null }).catch(() => {});
+    sendResponse({ ok: true });
+    return true;
+  }
+
   if (msg.type === "element_picked") {
     (async () => {
       try {
@@ -3117,6 +3674,100 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  if (msg.type === "start_region_picker") {
+    (async () => {
+      try {
+        sendResponse({ ok: true, ...(await startRegionPicker(await getActiveTab())) });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "get_region_capture") {
+    (async () => {
+      try {
+        const tab = await getActiveTab();
+        sendResponse({ ok: true, capture: tab?.id == null ? null : await regionCaptureForTab(tab.id) });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "clear_region_capture") {
+    (async () => {
+      try {
+        const tab = await getActiveTab();
+        sendResponse({ ok: true, cleared: tab?.id == null ? false : await clearRegionCapture(tab.id) });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "capture_panel_context") {
+    (async () => {
+      try {
+        const tab = await getActiveTab();
+        sendResponse({ ok: true, context: await capturePanelContext(tab, msg.kind) });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "start_issue_capture") {
+    (async () => {
+      try {
+        sendResponse({ ok: true, capture: await startDiagnosticCapture(await getActiveTab()) });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "stop_issue_capture") {
+    (async () => {
+      try {
+        const tab = await getActiveTab();
+        sendResponse({ ok: true, stopped: tab?.id == null ? false : await stopDiagnosticCapture(tab.id) });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "get_issue_capture") {
+    (async () => {
+      try {
+        const tab = await getActiveTab();
+        sendResponse({ ok: true, capture: tab?.id == null ? null : diagnosticSummary(activeDiagnosticCapture(tab.id)) });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "collect_issue_report") {
+    (async () => {
+      try {
+        const tab = await getActiveTab();
+        sendResponse({ ok: true, report: await collectIssueReport(tab) });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
   if (msg.type === "take_human_control") {
     (async () => {
       try {
@@ -3159,17 +3810,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const tab = await getActiveTab();
         if (!tab || tab.id == null) throw new Error("No active tab");
         const pageUrl = tab.url || tab.pendingUrl || "";
-        const context = await ensureSessionContextForTab(
-          tab,
-          pageUrl,
-          msg.action_id || interactionId(),
-        );
-        const sessions = await listBrowserSessions();
-        const sessionList = Array.isArray(sessions) ? sessions : (sessions.data || []);
+        const context = await ensureSessionContextForTab(tab, pageUrl);
         sendResponse({
           ok: true,
           ...context,
-          session: sessionList.find((item) => item.id === context.session_id) || null,
+          session: context.session || null,
           tab: {
             id: tab.id,
             title: tab.title || "",
@@ -3190,7 +3835,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const tab = await getActiveTab();
         if (!tab || tab.id == null) throw new Error("No active tab");
         const pageUrl = tab.url || tab.pendingUrl || "";
-        const context = await ensureSessionContextForTab(tab, pageUrl, interactionId());
+        const context = await ensureSessionContextForTab(tab, pageUrl);
         if (context.session_id !== msg.session_id) {
           throw new Error("This tab is not part of that browser session.");
         }
@@ -3260,6 +3905,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     (async () => {
       try {
         sendResponse({ ok: true, cancelled: await cancelTextWatch(msg.watch_id) });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "cancel_all_text_watches") {
+    (async () => {
+      try {
+        sendResponse({ ok: true, cancelled: await cancelAllTextWatches() });
       } catch (e) {
         sendResponse({ ok: false, error: e.message });
       }

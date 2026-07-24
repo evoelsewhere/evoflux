@@ -20,10 +20,10 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 
 from loguru import logger
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.agent.schemas.chat import ContentBlock, ImageDataBlock, TextBlock, ToolResult
 from app.agent.tools.registry import InjectedArg, tool
@@ -394,6 +394,148 @@ class SnapshotAction(BaseModel):
     )
 
 
+class SemanticRefTarget(BaseModel):
+    kind: Literal["ref"]
+    snapshot_id: str = Field(min_length=1, max_length=128)
+    target_id: str = Field(min_length=1, max_length=128)
+
+
+class SemanticActiveTextTarget(BaseModel):
+    kind: Literal["active_text"]
+    scope: Literal["caret", "selection"] = "selection"
+
+
+class SemanticDocumentTarget(BaseModel):
+    kind: Literal["document"]
+    scope: Literal["visible", "all"] = "visible"
+
+
+class SemanticRangeTarget(BaseModel):
+    kind: Literal["range"]
+    address: str = Field(
+        min_length=1,
+        max_length=64,
+        pattern=r"^[A-Za-z]{1,3}[1-9][0-9]{0,6}(?::[A-Za-z]{1,3}[1-9][0-9]{0,6})?$",
+    )
+    sheet: str | None = Field(default=None, max_length=200)
+
+
+class SemanticSlideTarget(BaseModel):
+    kind: Literal["slide"]
+    index: int = Field(ge=1, le=10_000)
+
+
+class SemanticSlideObjectTarget(BaseModel):
+    kind: Literal["slide_object"]
+    slide_index: int = Field(ge=1, le=10_000)
+    role: Literal["title", "body", "notes", "text"] = "text"
+    ordinal: int = Field(default=0, ge=0, le=1_000)
+
+
+SemanticTarget = Annotated[
+    SemanticRefTarget
+    | SemanticActiveTextTarget
+    | SemanticDocumentTarget
+    | SemanticRangeTarget
+    | SemanticSlideTarget
+    | SemanticSlideObjectTarget,
+    Field(discriminator="kind"),
+]
+
+
+class SemanticTextChange(BaseModel):
+    kind: Literal["text"]
+    mode: Literal["insert", "replace"] = "replace"
+    at: Literal["caret", "start", "end"] = "caret"
+    text: str = Field(max_length=50_000)
+
+
+class SemanticMatrixCell(BaseModel):
+    kind: Literal["value", "formula", "blank", "skip"]
+    value: str | float | int | bool | None = None
+    formula: str | None = Field(default=None, max_length=4_000)
+
+    @model_validator(mode="after")
+    def _validate_payload(self) -> "SemanticMatrixCell":
+        if self.kind == "formula" and not self.formula:
+            raise ValueError("formula cells require formula")
+        if self.kind == "value" and self.value is None:
+            raise ValueError("value cells require value")
+        if self.kind in {"blank", "skip"} and (
+            self.value is not None or self.formula is not None
+        ):
+            raise ValueError(f"{self.kind} cells cannot carry value/formula")
+        return self
+
+
+class SemanticMatrixChange(BaseModel):
+    kind: Literal["matrix"]
+    rows: list[list[SemanticMatrixCell]] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def _validate_rectangle(self) -> "SemanticMatrixChange":
+        widths = {len(row) for row in self.rows}
+        if not widths or 0 in widths or len(widths) != 1:
+            raise ValueError("matrix rows must form a non-empty rectangle")
+        if sum(len(row) for row in self.rows) > 100:
+            raise ValueError("matrix writes support at most 100 cells")
+        if any(cell.kind == "skip" for row in self.rows for cell in row):
+            raise ValueError(
+                "skip cells are unsafe in matrix paste; read/merge existing values first"
+            )
+        return self
+
+
+class SemanticClearChange(BaseModel):
+    kind: Literal["clear"]
+
+
+SemanticChange = Annotated[
+    SemanticTextChange | SemanticMatrixChange | SemanticClearChange,
+    Field(discriminator="kind"),
+]
+
+
+class SemanticSnapshotAction(BaseModel):
+    action: Literal["semantic_snapshot"]
+    kinds: list[Literal["text", "grid", "slide", "control"]] = Field(
+        default_factory=lambda: cast(
+            list[Literal["text", "grid", "slide", "control"]],
+            ["text", "grid", "slide", "control"],
+        ),
+        min_length=1,
+        max_length=4,
+    )
+    include_values: bool = False
+    max_items: int = Field(default=80, ge=1, le=200)
+    max_chars: int = Field(default=20_000, ge=100, le=50_000)
+    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+
+
+class SemanticReadAction(BaseModel):
+    action: Literal["semantic_read"]
+    target: SemanticTarget
+    value_mode: Literal["display", "formula", "both"] = "both"
+    max_chars: int = Field(default=20_000, ge=100, le=50_000)
+    max_cells: int = Field(default=500, ge=1, le=500)
+    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+
+
+class SemanticSelectAction(BaseModel):
+    action: Literal["semantic_select"]
+    target: SemanticTarget
+    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+
+
+class SemanticWriteAction(BaseModel):
+    action: Literal["semantic_write"]
+    target: SemanticTarget
+    change: SemanticChange
+    verify: Literal["none", "normalized"] = "normalized"
+    timeout_ms: int = Field(default=15_000, ge=1_000, le=60_000)
+    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+
+
 class EvaluateAction(BaseModel):
     action: Literal["evaluate"]
     script: str = Field(description="JavaScript to evaluate.")
@@ -446,6 +588,10 @@ AnyAction = Annotated[
     | OpenTabAction
     | CloseTabAction
     | SnapshotAction
+    | SemanticSnapshotAction
+    | SemanticReadAction
+    | SemanticSelectAction
+    | SemanticWriteAction
     | ExtractElementsAction
     | ScrollToBottomAction
     | WaitForNetworkIdleAction
@@ -470,6 +616,10 @@ Actions:
   status          — Check if the extension is connected.
   navigate        — Go to a URL in the active tab.
   snapshot        — List interactive elements (selector, text, role, box) — use this to find click/fill targets.
+    semantic_snapshot — AX-first semantic targets for rich editors, grids, and slides.
+    semantic_read   — Read an opaque semantic target, active text, document, range, or slide object.
+    semantic_select — Select an opaque target, spreadsheet range, or slide object without coordinate fallback.
+    semantic_write  — Verified text or bounded matrix write; unsupported operations fail explicitly.
   click_selector  — Click the element matching a CSS selector.
   click_text      — Click the element whose visible text matches.
     hover           — Hover an element to reveal menus, tooltips, or controls.
@@ -529,6 +679,10 @@ _UNTRUSTED_BROWSER_ACTIONS = frozenset(
         "get_tabs",
         "screenshot",
         "snapshot",
+        "semantic_snapshot",
+        "semantic_read",
+        "semantic_select",
+        "semantic_write",
     }
 )
 _UNTRUSTED_BROWSER_NOTICE = (
@@ -668,6 +822,13 @@ async def _dispatch_webbridge(act: Any, session_id: str) -> str | ToolResult:
         return await _handle_close_tab(session_id, act)
     if action == "snapshot":
         return await _handle_snapshot(session_id, act)
+    if action in {
+        "semantic_snapshot",
+        "semantic_read",
+        "semantic_select",
+        "semantic_write",
+    }:
+        return await _handle_semantic(session_id, act)
     if action == "extract_elements":
         return await _handle_extract_elements(session_id, act)
     if action == "scroll_to_bottom":
@@ -1261,6 +1422,22 @@ async def _handle_snapshot(session_id: str, act: SnapshotAction) -> str:
             f"{label!r}{attribute_text} — {el.get('selector', '')}"
         )
     return "\n".join(lines)
+
+
+async def _handle_semantic(
+    session_id: str,
+    act: SemanticSnapshotAction
+    | SemanticReadAction
+    | SemanticSelectAction
+    | SemanticWriteAction,
+) -> str:
+    params = act.model_dump(exclude={"action", "tab_id"}, exclude_none=True)
+    params = _tab_params(act, **params)
+    resp = await _send_command(session_id, act.action, params)
+    if not resp.get("success"):
+        return f"{act.action} failed: {resp.get('error', 'unknown')}"
+    data = resp.get("data") or {}
+    return json.dumps(data, indent=2, ensure_ascii=False, default=str)
 
 
 async def _crawl_page(session_id: str, act: CrawlAction, url: str) -> dict[str, Any]:

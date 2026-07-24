@@ -2,8 +2,9 @@
 
 | | |
 |---|---|
-| **Trạng thái** | IN PROGRESS (v1.4 - P0/P1 implemented; P2/P3 MVP implemented) |
+| **Trạng thái** | IMPLEMENTED (WebBridge 2.0); authenticated Office smoke + advanced adapters remain |
 | **Ngày** | 2026-07-22 |
+| **Audit gần nhất** | 2026-07-23 |
 | **Phạm vi** | Mở rộng WebBridge từ kênh EvoFlux điều khiển browser thành lớp tương tác hai chiều browser <-> EvoFlux |
 | **Tài liệu liên quan** | [`forge-computer-use.md`](forge-computer-use.md), [`../../extensions/webbridge/README.md`](../../extensions/webbridge/README.md), [`../../docs/side-chat-spec.md`](../../docs/side-chat-spec.md) |
 
@@ -11,20 +12,28 @@
 
 ## Tóm tắt điều hành
 
-WebBridge hiện đã làm tốt một nửa khó của bài toán: extension giữ WebSocket bền
-vững với backend, điều khiển browser thật qua CDP, định tuyến theo session, áp
-domain policy và ghi audit. Tuy nhiên, mô hình sản phẩm và wire protocol vẫn
-chủ yếu là:
+WebBridge hiện không còn chỉ là command channel một chiều. Extension 2.0.0 đã
+có secure pairing, context menu gửi selection/link/page metadata, tự tạo và bind
+internal run/session theo tab group, Side Chat với fetch-SSE, AskUser reply, element picker,
+human-control lease, Teach Mode và text watch. Command plane qua CDP vẫn là phần
+hoàn thiện nhất:
 
 ```text
 EvoFlux -> command -> browser -> response
 ```
 
-Extension có gửi `tab_updated`, nhưng sự kiện này chỉ là trạng thái tạm thời;
-nó chưa thể hiện một **ý định của người dùng**, chưa được lưu bền vững, và chưa
-đi vào chat/workflow của EvoFlux. Popup hiện chỉ cấu hình kết nối, không có side
-panel, context action hay content script để người dùng khởi tạo công việc từ
-trang đang xem.
+Chiều ngược hiện đi qua canonical interaction/artifact/chat contracts:
+
+```text
+Browser user gesture -> preview/target -> context or artifact -> canonical chat
+  -> safe rich history/SSE projection -> browser Side Panel
+```
+
+Audit ngày 2026-07-23 tìm ra các gap về provenance, artifact/media, Side Chat,
+screen-region capture và productivity web app. Implementation 2.0 đã đóng các
+gap product/code có thể kiểm chứng cục bộ. Phần còn lại là authenticated smoke
+trên tenant Google/Microsoft thật, durable AskUser handoff qua process restart và các
+operation Office nâng cao đã được liệt kê explicit là unsupported.
 
 Đề xuất không biến WebBridge thành một bản sao Playwright có nhiều action hơn.
 Thay vào đó, định vị nó là **Browser Interaction Fabric**:
@@ -37,15 +46,15 @@ Thay vào đó, định vị nó là **Browser Interaction Fabric**:
 4. **Artifact plane** - selection, page extract, screenshot, DOM anchor và file
    được đóng gói thành context có nguồn gốc, không trộn thẳng vào prompt.
 
-Ba vertical slice nên làm trước:
+Ba vertical slice của audit đã được đóng trong 2.0:
 
-- **P1 - Send to EvoFlux:** gửi selection/link/page vào một session đã chọn
-  hoặc một browser session mới bằng context menu và popup quick action.
-- **P2 - EvoFlux Side Panel:** chat ngay cạnh trang, chọn/bind session, đính kèm
-  page context và theo dõi phản hồi streaming.
-- **P3 - Interactive Handoff:** agent yêu cầu người dùng đăng nhập, chọn element,
-  xác nhận hoặc thao tác thủ công; browser trả kết quả có cấu trúc rồi agent tiếp
-  tục.
+- **Slice A - Browser session identity:** một browser session bắt đầu với đúng
+  một primary tab; Chrome group chỉ được tạo khi có tab thứ hai. Backend
+  `ChatSession` là persistence/run ID tự tạo, không phải lựa chọn trong browser UI.
+- **Slice B - Side Chat parity + artifacts:** explicit target, context/file/
+  region capture, safe media projection, pagination và artifact lifecycle.
+- **Slice C - Productivity app interaction:** AX semantic runtime, verified
+  writes, bounded adapters và opt-in authenticated smoke runner.
 
 Không nên bắt đầu bằng theo dõi mọi thao tác browser, đồng bộ toàn bộ history,
 hay cho website bất kỳ gọi EvoFlux. Các hướng đó có giá trị về sau nhưng tạo
@@ -56,44 +65,109 @@ rủi ro privacy, prompt injection và event noise trước khi interaction cont
 
 ## 1. Hiện trạng đã xác minh trong codebase
 
+### 1.0 Historical baseline trước WebBridge 2.0
+
+Implementation đã có nhiều primitive P0-P3, nhưng trạng thái "MVP done" ở
+roadmap bên dưới chưa đồng nghĩa feature đã đạt trải nghiệm mô tả trong tài
+liệu. Gap đầu tiên đã xác minh là **session provenance**:
+
+- `webbridge` hiện là capability tag, dùng cả khi user bật WebBridge từ desktop.
+- `webbridge_pairing:<pairing_id>` hiện là ACL grant cho một paired browser; một
+  session desktop được grant cũng nhận tag này.
+- Session do browser tạo cũng chỉ có hai tag trên. Vì vậy backend/UI chưa thể
+  phân biệt session **được tạo từ browser** với session desktop chỉ **được phép
+  dùng qua WebBridge**.
+
+Audit yêu cầu tag backend-owned `webbridge_origin:browser` khi xử lý
+`POST /team/webbridge/sessions`. Không gắn tag này khi desktop tạo session rồi
+bật WebBridge hoặc grant session cho pairing. Tag không cấp capability và không
+được dùng thay ACL pairing. Yêu cầu này đã được implement và test trong 2.0.
+
+### 1.0.1 Implementation close-out - WebBridge 2.0
+
+- Backend gắn reserved tag `webbridge_origin:browser`; desktop create/grant
+  không thể giả tag và revoke pairing không xoá provenance.
+- Side Panel tự resolve tab session hoặc atomically create/bind primary tab;
+  primary đứng độc lập cho đến khi tab thứ hai tạo Chrome group. Không có
+  chat-session picker/rebind. Context-menu preview, Page/Selection/
+  File/Region chips và Open in EvoFlux vẫn dùng internal session đó.
+- History là global lead/member timeline có cursor; SSE giữ safe event subset,
+  provider status, agent attribution, attachment và image rendering qua bearer
+  fetch-to-blob.
+- Browser artifacts dùng canonical attachment pipeline, content hash,
+  provenance, pairing ownership, retention và delete; deleted/expired bytes
+  không được rehydrate vào model.
+- Region capture dùng trusted top-frame overlay và CDP CSS visual viewport;
+  scroll/zoom/DPR, navigation race, policy và idempotency đều có contract test.
+- AskUser hỗ trợ typed browser handoff; Report issue có opt-in redacted
+  console/network ring + screenshot + element evidence.
+- Semantic AX runtime có opaque refs, verified rich-text writes, bounded
+  spreadsheet matrix/range và PowerPoint text-object probes. Cross-origin frames
+  bị skip; unsupported không silent-fallback sang coordinate write.
+- Teach draft sinh workflow YAML hợp lệ và replay từng bước; watch có multi-item
+  triage và profile-wide kill switch.
+- Teach replay có execution/cursor/in-flight state trong DB, atomic step claim,
+  durable `Idempotency-Key` response và fail-closed ambiguity resolution. Secret
+  parameters chỉ tồn tại trong request/dispatch memory, không persist.
+- Remote Markdown image cần click rõ ràng trước khi load; diagnostics scrub JSON,
+  form/query credential, cookie, Bearer/JWT và short named token.
+- Context-menu draft dùng storage key + navigation nonce riêng từng tab; watch
+  mutations được serialize; history tự đi qua raw page không có browser-visible
+  message; generic session API không thể giả `webbridge_pairing:*`.
+- Command capability được enforce cho protocol v2; audit có `agent_out` và
+  `browser_in`; sharing policy phủ interaction, Side Panel, Teach và command read.
+
+Không có credential Google/Microsoft trong test environment. Vì vậy G9 chỉ là
+**implemented foundation, authenticated smoke pending**. Chạy
+`scripts/webbridge_office_smoke.py` với dedicated authenticated profile trước
+khi công bố compatibility cho một tenant cụ thể.
+
 ### 1.1 Những nền móng có thể tái sử dụng
 
 | Năng lực hiện có | Vị trí | Giá trị cho hướng hai chiều |
 |---|---|---|
 | Persistent WebSocket extension <-> backend | `extensions/webbridge/background.js`, `app/api/routes/team/webbridge.py` | Không cần transport mới |
-| Extension registration + heartbeat + reconnect | `background.js` | Dùng làm presence channel |
-| Extension -> relay event envelope | `type: "event"` với `tab_updated` | Có thể nâng thành event/interaction protocol có version |
-| Sticky routing session -> extension | `WebBridgeManager._session_targets` | Nền cho bind session với browser profile |
-| Event fan-out theo session | `WebBridgeManager.handle_event()` | Tái dùng cho live status; chưa đủ cho durable intent |
-| CDP capture/action primitives | `background.js`, `webbridge_tool.py` | Tái dùng để lấy page context, screenshot và DOM anchor |
-| Domain policy + command audit | `webbridge_service.py` | Mẫu để xây share policy + interaction audit |
-| WebBridge session tag | team chat + tier policy | Có thể dùng để nhận diện session có browser capability |
-| Side Chat độc lập, read-only | `docs/side-chat-spec.md` và implementation hiện có | Một target hợp lý cho câu hỏi ngắn từ browser |
+| Pairing credential, relay ticket, revoke, rate limit | pairing service + WebBridge API | Nền identity/authorization đã có |
+| Durable interaction + idempotent dispatch | WebBridge API + models | Selection/link/page metadata đã đi vào chat chuẩn |
+| Pairing-scoped tab/session binding | pairing service + extension worker | Có origin validation và command pinning |
+| Chrome Side Panel + fetch-SSE | `sidepanel.html/js`, panel routes | Text streaming, Stop, AskUser và reconnect đã có |
+| Element picker + local human-control lease | `element_picker.js`, `background.js` | Primitive cho shared focus và takeover |
+| CDP capture/action primitives | `background.js`, `webbridge_tool.py` | Có screenshot, keyboard, DOM extract và generic actions |
+| Domain/sharing settings + bidirectional audit | runtime settings + WebBridge service | Policy phủ mọi ingress/read path đã implement |
+| Teach workflow + multi-watch | extension recorder/worker + API | Workflow YAML, supervised replay và triage đã implement |
 
-### 1.2 Khoảng trống quyết định
+### 1.2 Các gap audit đã phát hiện (historical)
 
-1. `background.js` chỉ xử lý `registered` và `command` từ relay; chiều gửi lên
-   chủ yếu là `response`, `ping` và `tab_updated`.
-2. `WebBridgeManager.handle_event()` chỉ cập nhật state trong RAM và fan-out đến
-  agent WebSocket đang subscribe. Trong desktop path bình thường không có
-  consumer nào subscribe nên `tab_updated` thực tế bị drop sau khi cập nhật RAM.
-  Event không có ACK, deduplication, persistence hoặc dispatch vào chat pipeline.
-3. In-process `webbridge` tool gửi command trực tiếp qua manager nhưng không
-   subscribe event. Vì vậy `tab_updated` không tự đánh thức hay nhắn cho agent.
-4. Manifest chưa có `sidePanel`, `contextMenus`, `commands`, content script hoặc
-   extension page dành cho interaction UX.
-5. Popup chỉ có connect/disconnect, relay config và release debugger.
-6. Policy hiện bảo vệ **agent tác động lên page**. Chưa có policy riêng cho
-   **page data đi vào EvoFlux**.
-7. Session binding hiện là backend routing ngầm khi agent gọi tool. Người dùng
-   chưa nhìn thấy hoặc chủ động chọn tab đang gắn với session nào.
-8. Binding hiện tại có chiều `session_id -> extension_id`, không có tab
-  granularity. Mô hình tab -> session được đề xuất là một index mới có
-  cardinality và control lease riêng, không chỉ là UI hoá map cũ.
+1. Browser-created session không có provenance riêng. `webbridge` là capability,
+  còn `webbridge_pairing:<id>` là ACL; desktop session được grant cũng có cùng
+  hai tag với session do browser tạo.
+2. Historical implementation coi thiếu session picker/manual bind là gap. Quyết
+  định sau cùng supersede assumption này: browser session thuộc tab group và
+  internal chat/run session phải tự tạo, không được đưa ra cho user chọn.
+3. Browser-origin context chỉ có selection, link và page metadata, gửi ngay bằng
+  prompt cố định. Không có preview, readable page, screenshot hay artifact ref.
+4. Side Panel composer chỉ gửi text và tối đa một sanitized DOM anchor. Các chip
+  `Page`, `Selection`, `Screenshot` và file attachment chưa tồn tại.
+5. Fetch-SSE text hoạt động, nhưng backend cố ý lọc còn message/status/activity/
+  question/title/error/done. History bị flatten thành role/content/agent/time;
+  reasoning, tool blocks, metadata, attachment và pagination bị mất.
+6. Side Panel Markdown không có image rule và history schema không có media.
+  Vì vậy ảnh/attachment nhìn thấy trong desktop app không render trong browser.
+7. Screenshot hiện là command-plane action do agent gọi, chỉ có viewport hoặc
+  full page. User chưa thể kéo chọn một rectangle trên màn hình để hỏi.
+8. Automation là generic top-frame DOM/CDP. Không có frame-aware AX target,
+  canvas/grid/slide semantics, clipboard matrix paste hay adapter/test riêng cho
+  Google Docs/Sheets và Microsoft Excel/PowerPoint Online.
+9. Sharing policy chưa phủ đều Side Panel element context, Teach Mode và mọi
+  command-plane read option; artifact size/retention config chưa có artifact
+  store thực thi tương ứng.
+10. Handoff hiện gồm AskUser reply và local control lease. Chưa có agent-initiated
+   takeover/confirm/provide-secret request, run correlation hay structured
+   resume signal.
 
-Kết luận: không thiếu WebSocket hay browser automation primitive. Phần còn thiếu
-là **domain model cho interaction**, **UX tạo intent từ browser**, và **delivery
-path an toàn vào session/workflow**.
+Các mục 1-10 trên là baseline dùng để định tuyến implementation 2.0, không còn
+là current-state checklist. Kết luận của audit vẫn đúng: transport không phải
+nút thắt; contract dữ liệu, UX và semantic targeting mới là phần tạo giá trị.
 
 ### 1.3 Ràng buộc nền tảng và đối chiếu Playwright
 
@@ -108,8 +182,8 @@ path an toàn vào session/workflow**.
   chuyển tab. Tab-specific panel/binding là primitive có sẵn, không cần tự dựng
   cửa sổ nổi.
 - Chrome 116 cũng cải thiện WebSocket lifetime trong extension service worker
-  khi có traffic trong cửa sổ 30 giây. P2 nên nâng `minimum_chrome_version` từ
-  109 lên **116** để side-panel open và connection lifecycle có cùng baseline.
+  khi có traffic trong cửa sổ 30 giây. Manifest hiện đã đặt
+  `minimum_chrome_version` là **116**, đúng baseline cho Side Panel và lifecycle.
 - Chrome messaging dùng JSON serialization và cho kênh one-shot/long-lived giữa
   worker, extension page và content script. Tài liệu Chrome yêu cầu coi content
   script là không tin cậy, validate mọi message và không trao arbitrary
@@ -120,6 +194,180 @@ path an toàn vào session/workflow**.
   đã đăng nhập" một mình không còn là định vị khác biệt. Khoảng trống WebBridge
   nên chiếm là **browser-native user intent + session continuity + handoff hai
   chiều**, không phải chỉ thêm action automation.
+
+### 1.4 Ma trận gap sau audit
+
+`Done` dưới đây nghĩa là đã có code path và test contract phù hợp. `Partial`
+nghĩa là primitive tồn tại nhưng chưa đạt trải nghiệm hoặc exit criterion trong
+tài liệu. Các giới hạn runtime Office web cần xác nhận thêm bằng real-browser
+smoke test; việc không có adapter/schema/test là fact đã xác minh.
+
+| ID | Năng lực | Trạng thái thực tế | Gap cần đóng | Ưu tiên |
+|---|---|---|---|---:|
+| G1 | Pairing, ticket, revoke, idempotency | **Done** | Capability enforcement + bidirectional audit implemented | - |
+| G2 | Nguồn tạo session | **Done** | Reserved provenance tag + desktop badge + revoke preservation | - |
+| G3 | Target browser session | **Done** | Tab group + primary-tab binding tự resolve/create; không có chat-session picker | - |
+| G4 | Send context | **Done** | Context-menu preview, editable prompt, Page/Selection/artifacts | - |
+| G5 | Side Chat page interaction | **Done** | Context/file/region chips, element, handoff, retry/open-in-app | - |
+| G6 | Streaming + transcript | **Done (safe projection)** | Cursor lead/member history; rich unsupported blocks open in app | - |
+| G7 | Assistant images/attachments | **Done** | Authenticated blob render, Markdown media, lifecycle controls | - |
+| G8 | User screen-region capture | **Done** | Trusted overlay, CDP clip, preview/upload/provenance | - |
+| G9 | Docs/Sheets/Excel/PowerPoint Online | **Foundation done; authenticated smoke pending** | Advanced formatting/canvas/OOPIF operations remain unsupported | P2 |
+| G10 | Artifact/privacy plane | **Done** | Hash/provenance/retention/delete and unified ingress policy | - |
+| G11 | Interactive handoff | **Done for live run** | Durable process-restart resume remains P3+ | P3 |
+| G12 | Report issue diagnostics | **Done** | Opt-in redacted evidence bundle via canonical artifact route | - |
+| G13 | Teach/watch | **Done without Browser Inbox** | Workflow YAML, step replay, multi-watch triage/kill switch | - |
+
+Bằng chứng implementation chính:
+
+- `background.js`, `region_picker.js`, `semantic_runtime.js`: preview draft,
+  typed context, trusted region capture, diagnostics và AX semantic runtime.
+- `sidepanel.js/html`, `markdown.js`: automatic tab-group status, rich safe history,
+  authenticated media/files, handoff, artifacts, Teach/watch controls.
+- `webbridge.py`: provenance, pairing-scoped rich projection/media, multipart
+  artifact ingress, retention/delete, typed handoff, workflow YAML và audit.
+- `webbridge_service.py`: capability negotiation, command/share policy và
+  direction-aware audit.
+- `tests/webbridge_extension.test.cjs`: 51 behavior/contract tests, gồm capture
+  geometry, redaction, semantic refs/read-back, cross-origin frames và timers.
+- `tests/api/test_webbridge.py` + team/agent/service tests: pairing, provenance,
+  idempotency, media/artifact lifecycle, history, policy, handoff và Teach.
+
+### 1.5 Quyết định cho session provenance
+
+Dùng thêm tag **`webbridge_origin:browser`** trong MVP. Backend tự gắn tag này
+duy nhất tại `POST /team/webbridge/sessions`:
+
+| Cách session được tạo/dùng | `webbridge` | `webbridge_pairing:<id>` | `webbridge_origin:browser` |
+|---|---:|---:|---:|
+| Browser tạo session mới | Có | Có | **Có** |
+| Desktop tạo, bật WebBridge | Có | Không mặc định | **Không** |
+| Desktop session được grant cho paired browser | Có | Có | **Không** |
+| Desktop session không dùng WebBridge | Không | Không | **Không** |
+
+Tag provenance không cấp tool, không cấp pairing access và không bị extension
+tự khai. Prefix `webbridge_origin:` phải là namespace reserved: generic desktop
+session resolve/create phải reject hoặc strip tag này khỏi `body.tags`. Tag bất
+biến theo nguồn tạo; grant/revoke pairing không được thêm/xoá nó. Nếu sau này cần
+query/analytics mạnh hơn, có thể migrate sang field typed `created_source`, nhưng
+không được tiếp tục suy luận provenance từ hai tag capability/ACL hiện tại.
+
+**Acceptance:** API test phải chứng minh browser create có tag; desktop resolve
+với `webbridge_enabled=true` không có tag; client desktop không thể tự truyền tag
+reserved; assign/revoke pairing không thay đổi tag; idempotent browser retry vẫn
+trả cùng session và cùng provenance.
+
+### 1.6 Side Chat: interaction và safe rendering parity
+
+Side Chat 2.0 có text composer, model picker, Stop, progressive safe activity,
+AskUser/handoff, element picker, Take/Resume, grouped tabs và các UX sau:
+
+- Tự resolve session của primary/group tab hoặc atomically tạo internal session
+  và bind active tab làm primary; chỉ tạo Chrome group khi có tab thứ hai. User
+  không chọn/rebind chat session.
+- Preview/edit context-menu draft trước khi submit.
+- Composer chips `Page`, `Selection`, `Screenshot region`, DOM element và file.
+- Remove/retry artifact, retention/delete, Open in EvoFlux.
+- Typed `take_over`, `confirm_action`, `provide_secret`, `choose_option` handoff.
+
+Mục tiêu rendering không phải copy toàn bộ desktop renderer hoặc gửi raw tool
+argument/result vào extension. Cần một projection an toàn nhưng không làm mất
+output user cần thấy:
+
+- Chung cho history và live stream: text Markdown, agent/model attribution,
+  provider error/fallback, AskUser, Stop/done và sanitized tool activity.
+- Structured media: `attachments[]` tối thiểu có id, category, MIME, tên, kích
+  thước và URL pairing-scoped/short-lived; không trả filesystem path.
+- Markdown image: hỗ trợ URL `https`, `http` loopback và media URL nội bộ đã
+  authorize; chặn `javascript:`, arbitrary `data:` và credential trong URL.
+- Reconnect phải rebuild cùng output với lúc live, không mất ảnh, attachment,
+  subagent attribution hoặc completion state.
+- Event cố ý không hỗ trợ như reasoning, raw tool output, widget/MCP app phải có
+  contract rõ và affordance **Open in EvoFlux**, không biến mất im lặng.
+
+Nên định nghĩa một `BrowserPanelBlock` projection dùng chung cho history và SSE
+thay vì tiếp tục flatten database row một kiểu và stream event một kiểu. Side
+Panel render block schema đó bằng renderer allowlist; desktop vẫn giữ renderer
+đầy đủ của nó.
+
+**Acceptance:** response gồm text streaming + ảnh xuất hiện trong Side Chat khi
+live và sau reload; media bị revoke trả placeholder/error an toàn; reconnect
+không duplicate token hoặc ảnh; test SSE frame bị chia chunk và nhiều agent.
+
+### 1.7 Screen-region capture do user khởi tạo
+
+Đây là capture mode mới, khác element picker và agent screenshot:
+
+1. User bấm icon capture trong composer rồi kéo rectangle trên visible viewport.
+2. Overlay hiển thị kích thước, cho resize/cancel và preview trước khi gửi.
+3. Extension capture/crop theo CSS pixel + DPR, không capture ngoài rectangle.
+4. PNG được upload thành artifact; message chỉ mang `artifact_id` và provenance:
+   origin, safe page URL, capture time, viewport, rectangle, DPR và content hash.
+5. Nếu tab navigate/resize giữa select và capture thì yêu cầu chọn lại.
+6. Sharing policy, sensitive-domain prompt, byte cap, retention và delete áp dụng
+   trước khi dispatch chat.
+
+Không nhét base64 screenshot vào interaction JSON hoặc prompt. Có thể tái dùng
+`Page.captureScreenshot` với `clip`, nhưng cần browser-origin artifact upload và
+pairing-scoped media delivery trước.
+
+**Acceptance:** crop đúng trên DPR 1/2, không lệch khi page scroll, Escape hủy
+không gửi gì, navigation làm selection hết hiệu lực, policy block không upload,
+và ảnh gửi xong render lại được trong cả Side Chat lẫn desktop transcript.
+
+### 1.8 Compatibility gap với productivity web app
+
+| Lớp | Hiện tại | Gap với Docs/Sheets/Excel/PowerPoint Online |
+|---|---|---|
+| Semantic snapshot | CDP Accessibility tree + opaque refs | AX IDs/backend node IDs không lộ ra wire contract |
+| Frame/context | Same-origin frame AX; cross-origin frame bị skip + warning | OOPIF semantic capture sâu cần Chrome/runtime work tiếp |
+| Rich editor | Active/ref text insert/replace + normalized read-back | Advanced formatting/comments chưa hỗ trợ |
+| Virtual/canvas surface | Positive app probe, AX focus, bounded range/slide contracts | Canvas-only object không có AX trả `unsupported` |
+| Spreadsheet | Finite A1 range, max 100-cell matrix, formula/read-back | Merged range/chart/formatting chưa hỗ trợ |
+| Slides | Existing slide/text-object probe + verified text write | Create/reorder/layout/media/animation chưa hỗ trợ |
+| App contract | Revisioned adapter result + stable unsupported codes | Tenant rollout/localization vẫn cần smoke |
+| Verification | Mock-CDP/schema tests + opt-in smoke runner | Authenticated tenant smoke chưa chạy trong environment này |
+
+Thứ tự triển khai:
+
+1. **P0 compatibility harness:** real Chrome tests cho iframe, contenteditable,
+   canvas/virtual grid; opt-in authenticated smoke suite ngoài CI cho bốn app.
+2. **P1 semantic target layer:** frame + execution-context identity, AX node/
+   role/name/box, deterministic insert/replace/read-back và clipboard write có
+   consent.
+3. **P1 adapters:** Docs document/selection; Sheets + Excel sheet/cell/range/
+   formula/matrix; PowerPoint slide/placeholder/shape text.
+4. **P2 advanced operations:** comments/formatting, merged cells, charts, slide
+   layout/notes/reorder và compatibility telemetry/canary.
+
+Minimum acceptance flow cho mỗi app:
+
+- Google Docs: chọn đoạn, replace/insert text và verify lại đúng document range.
+- Google Sheets: chọn range, ghi matrix + formula và read-back value/formula.
+- Excel Online: chọn sheet/range, ghi dữ liệu và verify active cell/range.
+- PowerPoint Online: chọn slide + text placeholder, sửa text và verify đúng
+  slide/shape, không dựa duy nhất vào tọa độ viewport.
+
+### 1.9 Artifact/privacy và gap kiểm thử
+
+`WebBridgeSharingSettings` hiện áp dụng cho context menu/Side Panel/Teach,
+artifact screenshot/file và command-plane observation. Artifact có byte cap,
+hash, provenance, pairing owner, retention/delete; audit không giữ raw page body.
+
+Automated coverage hiện có cho pairing/idempotency/binding, provenance,
+attachment/media auth, region geometry, redaction, semantic read-back,
+cross-origin exclusion, global history cursor, sharing policy, durable workflow
+replay, named-sheet/skip refusal và exact slide targeting.
+Residual verification:
+
+- Real Chrome Side Panel/SSE lifecycle smoke trên packaged build.
+- Authenticated Google Docs/Sheets, Excel/PowerPoint Online smoke theo tenant.
+- Canvas/OOPIF/advanced Office operations được ghi explicit unsupported.
+- Durable AskUser/handoff qua backend process restart.
+
+Không dùng số lượng primitive hoặc source-shape assertion để kết luận product
+exit criterion đã đạt. Mỗi claim `Done` cần ít nhất một behavior test tại boundary
+sở hữu contract; workflow browser-facing cần thêm real-Chrome smoke test.
 
 ---
 
@@ -206,14 +454,16 @@ không cần automation loop hay monitoring nền.
 
 ### 3.2 EvoFlux Side Panel - companion sống cạnh trang
 
-Side panel là primary browser surface; popup giữ vai trò connection/settings.
+Side Panel là browser surface chính. Toolbar action mở Side Panel; connection,
+pairing và automation settings hiện nằm trong settings drawer của panel, không
+có popup riêng.
 
 Side panel gồm:
 
-- Session picker và trạng thái bind của tab hiện tại.
+- Trạng thái `Primary tab`/`Group tab`; không hiển thị chat-session picker.
 - Transcript tối giản, streaming response và stop.
 - Composer với chip `Page`, `Selection`, `Screenshot`, `Tab group`.
-- Nút tạo chat mới hoặc mở side chat read-only từ session đang chọn.
+- Nút mở child tab trong group và Open in EvoFlux cho internal run/session.
 - Activity strip: agent đang đọc/điều khiển tab nào, chờ user làm gì.
 - Privacy mode per-site: Off, Ask every time, Allow selected context types.
 
@@ -324,6 +574,9 @@ mọi page. Cần:
 |---|---:|---:|---:|---:|---:|
 | Send selection/page | Rất cao | Trung bình | Thấp | Thấp nếu explicit gesture | P1 |
 | Side panel + session binding | Rất cao | Cao | Trung bình | Trung bình | P1/P2 |
+| Assistant image/attachment parity | Rất cao | Trung bình | Trung bình | Trung bình | P1 |
+| User-selected screen region | Rất cao | Cao | Trung bình | Trung bình | P1 |
+| Docs/Sheets/Excel/PowerPoint adapters | Rất cao | Cao | Cao | Cao | P1/P2 |
 | Interactive handoff | Rất cao | Rất cao | Trung bình | Trung bình | P2 |
 | Pick/highlight element | Cao | Cao | Trung bình | Thấp | P2 |
 | Report issue + dev evidence | Rất cao | Rất cao | Trung bình | Trung bình | P2 |
@@ -494,11 +747,10 @@ scheduler đang gọi trực tiếp nó. Tuy nhiên, interactive REST route còn
 trách nhiệm resolve/start đúng team theo mode, restore session tags/permission,
 giữ `user_message_lock`, queue khi turn đang chạy và xử lý attachment. Browser
 channel cần các interactive semantics này, khác với scheduler cố ý fire trực
-tiếp. Implementation không nên HTTP-call ngược vào chính route và cũng không
-nên gọi thẳng primitive rồi vô tình bỏ qua chúng. P0 cần trích một
-`submit_interactive_message(...)` application service dùng chung cho REST route
-và WebBridge interaction dispatcher, trả discriminated outcome
-`accepted | queued | rejected`.
+tiếp. Implementation không HTTP-call ngược vào chính route: WebBridge hiện tái
+dùng `submit_persisted_interactive_message(...)` cho lock, persistence và queue
+semantics. Phần còn thiếu là chuẩn hoá rich attachment outcome và browser
+artifact ownership trong cùng application-service boundary.
 
 Existing `RawAttachment` +
 `validate_and_persist_attachments()` là đường tái sử dụng gần nhất cho selection,
@@ -523,8 +775,9 @@ Một bảng interaction/outbox nhỏ lưu, với unique constraint trên
 - `payload_metadata` đã redacted, artifact refs.
 - `created_at`, `processed_at`, `error`.
 
-Không lưu raw page content lặp lại trong row; dùng artifact store hiện có hoặc
-blob/file abstraction và retention policy riêng.
+Không lưu raw page content lặp lại trong interaction row. Browser artifacts tái
+dùng canonical session uploads, còn ownership/provenance/hash/expiry/deleted state
+nằm trong attachment metadata; bytes hết hạn/xoá không được model rehydrate.
 
 ### 6.3 Chọn transport: HTTP cho intent, SSE cho response
 
@@ -534,9 +787,10 @@ endpoint authenticated `POST /api/team/webbridge/interactions` (JSON hoặc
 multipart, `Idempotency-Key = interaction_id`). Relay WebSocket tiếp tục làm
 command/presence plane.
 
-Side panel dùng REST session APIs hiện có và đọc
-`GET /team/{session_id}/stream` bằng fetch-based SSE client với pairing bearer
-token. Cách này giữ nguyên replay/reconnect semantics của `memory_stream_store`;
+Side Panel dùng pairing-scoped REST APIs và đọc
+`GET /api/team/webbridge/sessions/{session_id}/stream` bằng fetch-based SSE với
+pairing bearer token. Cách này giữ replay/reconnect semantics của
+`memory_stream_store`;
 không giả định agent event tự xuất hiện trên WebBridge relay. Pairing credential
 chỉ được cấp scope tối thiểu như `sessions:list`, `interactions:write` và
 `session-stream:read`, không đồng nghĩa desktop token toàn quyền. Nếu sau này cần
@@ -564,22 +818,22 @@ sequenceDiagram
   EXT-->>User: Show outcome and Open in EvoFlux
 ```
 
-Ở P2, side panel subscribe SSE của target session để render response. P1 không
-phụ thuộc side panel transcript.
+Side Panel subscribe SSE của explicit bound session và load global lead/member
+history bằng cursor. Safe projection render text/media/provider/activity; raw
+tool output/widget mở qua full EvoFlux renderer.
 
-### 6.5 Surface thay đổi dự kiến
+### 6.5 Surface implementation 2.0
 
 | Khu vực | Thay đổi chính |
 |---|---|
-| `extensions/webbridge/manifest.json` | Nâng minimum Chrome lên 116; thêm `sidePanel`, `contextMenus`, `commands`; content script chỉ khi cần readable DOM/overlay/picker |
-| `background.js` | interaction outbox, ACK/retry, binding cache, capability register, message validation |
-| Extension UI | `sidepanel.html/js`, shared API client/state; popup thu gọn về connection/settings |
-| `webbridge_service.py` | presence, session/tab routing và control lease; giữ manager framework-light |
-| `api/routes/team/webbridge.py` | Giữ relay command/presence; thêm pairing lifecycle/status nếu dùng chung router |
-| API route mới | Authenticated idempotent interaction ingest + artifact upload |
-| Service mới | validation, policy, persistence, dispatch, idempotency |
-| Chat/service layer | `submit_interactive_message` giữ mode/tag/permission/queue semantics |
-| Web UI | Visible tab/session bindings, browser-origin badge, interaction audit/privacy settings |
+| `extensions/webbridge/manifest.json` | Chrome 116+, Side Panel, context menu và minimum permissions |
+| `background.js` | Pairing/outbox/binding, region/context/diagnostics, capability registration, watches/Teach |
+| `semantic_runtime.js` | AX opaque targets, same-origin frames, verified text/range/slide operations |
+| Extension UI | Automatic primary/group tab session, rich transcript/media, context/file/region chips, handoff, diagnostics, multi-watch |
+| `webbridge_service.py` | Routing, capability enforcement, control/share policy và bidirectional audit |
+| `api/routes/team/webbridge.py` | Pairing, rich panel projection, artifact lifecycle, handoff, Teach workflow/replay |
+| Chat/service layer | Canonical lock/queue/attachment dispatch; global lead/member history cursor |
+| Web UI | Browser-created marker, audit direction, Teach YAML/step review |
 
 ---
 
@@ -613,9 +867,10 @@ webbridge:
     default: ask
     blocked_domains: [mybank.com, mail.google.com]
     allow_selection: true
-    allow_readable_page: ask
-    allow_screenshot: ask
+    allow_readable_page: true
+    allow_screenshot: true
     max_artifact_bytes: 5000000
+    artifact_retention_hours: 24
   interactions:
     allow_background_triggers: false
     max_per_minute: 30
@@ -676,130 +931,29 @@ cho cả command-plane observation:
 
 ## 8. Roadmap theo vertical slice
 
-**Implementation note (2026-07-22):** P0 foundation hiện đã có durable pairing
-và interaction state, one-time pairing code, scoped credential, single-use relay
-ticket, revocation, protocol/capability registration, idempotent draft/submit,
-queue-aware chat dispatch, tab/session binding + command pinning, sharing policy
-và rate limit. P1 MVP hiện đã có Chrome context menu cho selection/link/page,
-browser session tự tạo hoặc bind tab với recent session, quick prompt trong popup,
-message provenance trong transcript và ACK badge ở toolbar. P1 chỉ gửi metadata,
-link và selected text từ `OnClickData`; readable DOM/page extract, screenshot,
-side panel/fetch-SSE transcript và handoff vẫn là P2.
+### 8.1 P0-P3 close-out trong 2.0
 
-**P1 ownership update (2026-07-23):** session chooser của extension chỉ thấy
-sessions thuộc pairing hiện tại. Session tạo từ browser được gắn owner tag theo
-pairing; muốn dùng chat có sẵn, user phải grant session đó cho pairing từ dialog
-WebBridge trong app. Pairing khác không thể enumerate, bind hoặc gửi context vào
-session chưa được grant. Context retry giữ một action/session identity ngắn hạn,
-bound tab fail-closed khi đổi origin, và URL query/fragment không được persist.
+- **P0:** pairing/ticket/revoke, capability enforcement, idempotency, binding,
+  provenance, sharing policy và audit hai chiều đã có behavior tests.
+- **P1:** context menu mở preview draft; active tab group tự resolve/create
+  internal session; Page/Selection/File/Region artifact đi qua canonical chat pipeline.
+- **P2:** cursor history + SSE safe projection, media, typed handoff, element/
+  control lease, Report issue và Open in EvoFlux đã implement.
+- **P3:** Teach workflow YAML + supervised step replay; multi-watch triage +
+  Stop all; replay cursor/idempotency/ambiguous outcome được persist; secret
+  values không persist ở source/backend.
 
-**P3 MVP update (2026-07-23):** extension đã có explicit text watch scoped theo
-tab + origin + path, TTL tối đa 24 giờ, kill switch tại popup, và alarm poll chỉ
-trả boolean. Match không tự gửi context hoặc tự chạy agent; user phải bấm Send
-matched watch để đi qua P1 interaction pipeline. Teach Mode ghi semantic
-navigation/click/fill/select/toggle theo user gesture, thay secret value bằng
-parameter placeholder tại source, và lưu pairing-scoped draft. Draft chỉ được
-approve/replay từ app; replay đi qua command policy, tab binding và audit hiện
-có. Browser credential không thể tự approve/replay draft.
+### 8.2 Residual roadmap đã xác minh
 
-**P2 MVP update (2026-07-23):** Chrome Side Panel hiện có pairing-scoped session
-picker, bind/unbind tab, composer, transcript fetch-SSE và restore pending
-AskUser questions. Browser pairing chỉ đọc/gửi vào session đã được grant; stream
-lọc tool arguments/results. User có thể Take control cho một tab; lease sống
-trong browser session, tự hết hạn/clear khi đổi origin hoặc đóng tab và chặn
-agent command vào tab đó cho đến Resume agent. Agent-initiated takeover prompt
-và Report issue diagnostics vẫn là slice P2 tiếp theo.
-
-**P0-P3 hardening review (2026-07-23):** local extension có code-free pairing
-chỉ từ `chrome-extension://` + loopback; website origin bị từ chối. Browser
-messages dùng persisted source state để dedupe lost ACK/process restart, binding
-giữ đúng một primary tab per pairing/session và fail-closed khi hết hạn. Revoke
-xóa pairing-owned metadata/tag và dừng capture/lease/stream. Teach recorder nhận
-OTP/MFA/PIN/payment/token fields tại source, review hiển thị non-secret values +
-capture warnings, replay serialized per session. Side Panel có Stop, auto-attach
-live runs, reconnect rebuild, và sanitized element picker.
-
-### P0 - Protocol + secure channel foundation (4-6 ngày)
-
-- Version/capability trong register frame, backward compatible với extension v1.
-- One-time pairing + scoped credential; inbound interaction đóng khi chưa pair.
-- HTTP ticket exchange cho relay WebSocket; ticket single-use, TTL ngắn và bị
-  ràng buộc với pairing.
-- Interaction ingest HTTP + ACK có error code; idempotency persistence ngay từ
-  đầu để service-worker retry không tạo message đôi.
-- Visible session/tab binding model.
-- Share policy tối thiểu và audit metadata.
-- Trích `submit_interactive_message` từ logic hiện nằm trong `POST /team/chat`,
-  giữ lock, mode, permission, tags, queue và attachment-busy outcome.
-- Contract tests extension <-> interaction API và relay registration.
-
-**Exit criterion:** extension pair thành công; gửi lặp cùng một synthetic
-`context.share` chỉ tạo đúng một interaction; target session sai hoặc unpaired
-đều bị từ chối; outcome accepted/queued/rejected được contract-test.
-
-### P1 - Send to EvoFlux MVP (4-6 ngày)
-
-- Context menu cho selection/page/link.
-- Dùng trực tiếp `OnClickData` cho selection/link/page metadata; chưa inject
-  content script ở lát cắt đầu tiên.
-- Popup cho bind tab với recent session hoặc tạo browser session mới; chưa tạo
-  Browser Inbox/system inbox trong MVP.
-- Quick prompt và preview context.
-- Backend tạo draft hoặc submit message qua pipeline chuẩn.
-- Web UI hiển thị browser-origin badge + source URL/artifact.
-
-**Exit criterion:** từ một trang bất kỳ, user chọn text, gửi câu hỏi vào session,
-thấy ACK trong browser và response + provenance trong EvoFlux; retry không tạo
-message đôi.
-
-### P2 - Side panel + live interactive handoff (7-12 ngày)
-
-- Chrome Side Panel với session picker, composer, transcript streaming. **MVP
-  done:** fetch-SSE only forwards transcript/status/question events, never raw
-  tool arguments/results.
-- Bind/unbind tab với session. **MVP done:** composer requires an active binding
-  whose persisted origin matches the current page.
-- Handoff mở rộng `AskUserService`: browser là thêm một answer channel cho
-  request ID hiện có; state live-only, mất hiệu lực khi process/run restart.
-  **MVP done:** side panel restores/replies to pending AskUser batches owned by
-  its assigned session.
-- Element picker + highlight overlay; secret completion không đọc value.
-  **MVP done:** opt-in hover highlight + click capture, form values are never
-  read, and the next message carries a sanitized untrusted DOM anchor.
-- Control lease per-tab; presence rõ agent hay human đang điều khiển, stop/release
-  luôn truy cập được. **MVP done:** explicit Take control/Resume agent lease,
-  stored only for the browser session and enforced by the extension command path.
-- Side panel dùng REST + fetch-SSE, giữ replay/reconnect của stream store.
-- **Report issue to EvoFlux:** opt-in diagnostics collector giữ ring buffer nhỏ,
-  redacted cho console/network; user gesture đóng gói evidence + element + ảnh.
-  Deferred to the next P2 slice.
-
-**P2 MVP exit criterion met:** user bind một tab, chat/see response cạnh page,
-trả lời AskUser request trong browser, Pick element, Take control để chặn agent
-commands trên tab rồi Resume agent. Full P2 criterion still needs
-agent-initiated takeover UI và opt-in diagnostics evidence.
-
-### P3 - Teach mode + explicit watches (10-15 ngày)
-
-- Semantic action recorder, parameter/secret handling. **MVP done:** captures
-  navigation/click/fill/select/toggle; values of secret fields never leave the
-  extension, only their parameter names do.
-- Draft workflow/test artifact + review/replay. **MVP done:** pairing-scoped
-  Teach draft review, app-side approval and supervised sequential replay.
-- Watch subscription có TTL, scope, debounce và kill switch. **MVP done:** one
-  literal text watch per tab, HTTP(S) page + exact path scope, 30-second poll,
-  bounded TTL, cancel-on-navigation/close, and explicit confirmation before
-  browser context is submitted.
-- Browser Inbox triage và notification routing. Deferred until multi-watch
-  telemetry justifies a dedicated inbox rather than popup state/badge.
-- Nếu cần resume qua backend restart: durable handoff/waiting-run state thay cho
-  future in-memory hiện có.
-
-**P3 MVP exit criterion met:** user record một flow ngắn, secret input được yêu
-cầu lại only at replay, app review/approve flow và replay qua binding thành
-công; watch không đọc content vào EvoFlux hay phát event ngoài exact page scope
-trước khi user xác nhận. Full P3 criterion still needs workflow-file generation,
-multi-watch Browser Inbox và durable handoff.
+1. Chạy authenticated smoke cho Google Docs/Sheets, Excel/PowerPoint Online bằng
+   `scripts/webbridge_office_smoke.py`; lưu compatibility matrix theo tenant/UI
+   rollout, không suy ra từ host name.
+2. Mở rộng adapter cho formatting/comments, merged ranges/charts, slide create/
+   reorder/layout/media/animation chỉ sau smoke data.
+3. Durable AskUser/handoff qua backend restart nếu product cần resume dài hạn.
+4. Browser Inbox riêng chỉ khi telemetry multi-watch chứng minh Side Panel triage
+   không đủ; hiện không tạo thêm inbox abstraction.
+5. Trusted connector SDK vẫn là P4 và không mở generic page API.
 
 ### P4 - Trusted connectors (sau khi P1-P3 có telemetry)
 
@@ -819,7 +973,7 @@ Không đo số command automation đơn thuần. Metrics chính:
 - Thời gian từ selection đến agent response đầu tiên.
 - Tỷ lệ user chọn `draft` so với `submit`.
 - Handoff completion rate và tỷ lệ agent resume thành công.
-- Số lần user phải sửa target session hoặc tab binding.
+- Tỷ lệ primary/group tab bị resolve sai hoặc cần recovery binding tự động.
 - Artifact rejection/redaction/rate-limit counts.
 - Privacy prompt acceptance theo capture type/domain category.
 - Teach-mode replay success sau 1, 3 và 10 lần.
@@ -836,51 +990,52 @@ gắn tự động và không cần user chuyển cửa sổ để copy/paste**.
 
 1. **WebBridge là capability/fabric, không phải chat mode mới.** Session vẫn là
    đơn vị hội thoại và quyền; tab chỉ bind vào session.
-2. **Side panel là browser UX chính; popup chỉ cho connection/settings.**
+2. **Side Panel là browser UX chính; toolbar mở panel và settings ở drawer.**
 3. **Intent phải khác presence event.** Intent có ACK, dedupe, persistence và
    audit.
 4. **Explicit user gesture trước, ambient automation sau.**
 5. **Browser-originated message đi qua chat pipeline chuẩn**, không tạo agent
    endpoint tắt.
 6. **Page content là artifact untrusted**, không phải prompt instruction.
-7. **P1/P2 tập trung interaction + handoff**, chưa làm history sync hoặc generic
-   page SDK.
+7. **Side Panel dùng safe projection**, không phơi raw tool output/widget; full
+  renderer mở qua EvoFlux.
 8. **MVP không có Browser Inbox mới.** User chọn/bind session hoặc tạo browser
   session; inbox chỉ làm khi telemetry chứng minh cần triage nhiều interaction.
 9. **Browser không quyết permission/tag.** Backend restore các giá trị persisted;
   UI chỉ hiển thị session nào context-only và session nào có WebBridge control.
 10. **P2 handoff là live-run.** Durable resume qua process restart là capability
    riêng của P3+, không được hứa ngầm trong interaction envelope.
+11. **Context menu luôn mở preview draft**, không submit prompt cố định.
+12. **Tab đổi origin làm page context/region/diagnostics hết hiệu lực**; chat có
+  thể giữ tab identity nhưng phải revalidate binding trước page tools.
+13. **Artifact browser mặc định giữ 24 giờ**, owner pairing có thể xoá sớm;
+  deleted/expired bytes không rehydrate vào model.
+14. **Chrome/Edge 116+ là baseline.** Cross-origin semantic frame bị skip; không
+  mở rộng Firefox abstraction trong 2.0.
 
-### Câu hỏi cần product decision
+### Câu hỏi còn mở
 
-1. `Ask EvoFlux` mặc định mở side chat read-only hay gửi vào main session?
-2. Side panel cần transcript đầy đủ hay chỉ current task + nút mở EvoFlux?
-3. Cho phép `submit` ngay từ context menu hay luôn mở preview/quick prompt trước?
-4. Tab binding sống qua navigation khác origin hay tự reset để tránh gửi nhầm?
-5. P1 chỉ Chrome/Edge hay cần thiết kế Firefox abstraction ngay từ đầu?
-6. Artifact retention mặc định theo session, theo ngày, hay xoá sau khi model xử
-   lý?
-7. Full durable handoff có cần trước Teach Mode hay live-run handoff đã đủ?
+1. Durable handoff có cần survive backend restart hay live-run semantics đủ cho
+  product hiện tại?
+2. Compatibility level nào cần đạt cho từng Office tenant trước khi bỏ nhãn
+  experimental: read-only, verified bounded write, hay cloud-save confirmed?
+3. Khi telemetry đạt ngưỡng nào thì multi-watch triage cần Browser Inbox riêng?
 
 ---
 
-## 11. Khuyến nghị triển khai ngay
+## 11. Khuyến nghị release/verification
 
-Bắt đầu bằng **P0 + P1**, nhưng demo theo một câu chuyện hoàn chỉnh thay vì xây
-API rời rạc:
-
-> User đọc một issue/spec trên web, bôi đen đoạn quan trọng, chọn Ask EvoFlux,
-> chọn coding session đã bind, nhập "đối chiếu đoạn này với implementation hiện
-> tại"; browser nhận ACK, EvoFlux nhận selection như artifact có URL và stream
-> câu trả lời trong session. P2 mới đưa transcript đó trở lại side panel.
-
-Demo này buộc giải quyết đúng các primitive nền: pairing, explicit consent,
-capture, artifact provenance, session routing, idempotent ACK và canonical chat
-dispatch. Demo P2 tiếp theo là **Report issue to EvoFlux** với element + console
-evidence và live handoff. Khi các primitive đó ổn, teach mode và watch là phần
-mở rộng tự nhiên; nếu demo không tạo giá trị, ta phát hiện sớm trước khi xây event
-platform lớn.
+1. Reload unpacked extension 2.0.0 và smoke Side Panel trên Chrome/Edge thật:
+  pair, auto-create primary tab không group, tạo group ở tab thứ hai, child-tab
+  reuse, context preview, file/region, media reload, handoff,
+   diagnostics, Teach step replay và multi-watch.
+2. Chạy bốn Office smoke case bằng dedicated profile; ghi adapter revision,
+   browser version, locale/view-only state và structured unsupported code.
+  Lần audit này chưa chạy được vì shell không có desktop/access token và chưa
+  có session Office đã pair/bind; automated smoke-runner tests vẫn pass.
+3. Không coi cloud persistence đã xác nhận chỉ vì immediate UI read-back pass.
+4. Theo dõi inbound/outbound audit, artifact rejection/redaction/rate-limit và
+   handoff completion trước khi mở advanced adapters/ambient triggers.
 
 ---
 

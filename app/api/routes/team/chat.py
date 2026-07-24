@@ -20,7 +20,6 @@ from app.agent.mode.team.team import (
     is_loop_command,
     parse_loop_command,
 )
-from app.agent.mode.team.tier_policy import WEBBRIDGE_SESSION_TAG
 from app.agent.schemas.chat import HumanMessage
 from app.agent.tools.builtin.skill import discover_skills
 from app.api.deps import ChatFormDep, DbSession
@@ -45,6 +44,7 @@ from app.api.schemas.sessions import (
     TeamSessionUpdateRequest,
     TeamWorkspaceVisibilityRequest,
 )
+from app.webbridge_tags import WEBBRIDGE_SESSION_TAG
 from app.api.schemas.team import TeamHistoryMember, TeamHistoryResponse
 from app.api.routes.team.worktrees import (
     WorktreeCreateRequest,
@@ -1235,18 +1235,12 @@ async def team_history(
     Pass ``before`` (ISO 8601 ``created_at`` of the oldest message from the
     previous response) to load an older page.
     """
-    from datetime import datetime
-
-    before_dt: datetime | None = None
-    if before is not None:
-        try:
-            before_dt = datetime.fromisoformat(before)
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=422, detail=f"Invalid before cursor: {before}"
-            ) from exc
-
-    history = await get_team_history(db, session_id, before=before_dt)
+    try:
+        history = await get_team_history(db, session_id, before=before)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422, detail=f"Invalid before cursor: {before}"
+        ) from exc
     if history is None:
         raise HTTPException(status_code=404, detail="Lead session not found.")
     # Loop status is an in-memory lookup on a live team. Only *peek* at the
@@ -1284,7 +1278,7 @@ async def team_history(
         for member in history.members
     ]
 
-    next_cursor = history.next_cursor.isoformat() if history.next_cursor else None
+    next_cursor = history.next_cursor
 
     workflow_execution: dict | None = None
     try:

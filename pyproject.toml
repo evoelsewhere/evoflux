@@ -41,10 +41,12 @@ dependencies = [
     # PDF and DOCX via extras, plus HTML through markitdown core. Heavier
     # features stay behind optional extras to keep the desktop bundle small.
     "markitdown[pdf,docx]>=0.1.5",
+    "markdown-it-py>=4.0.0",
     "pyyaml>=6.0.3",
     "fastapi>=0.135.2",
     "uvicorn>=0.42.0",
     "sse-starlette>=3.3.4",
+    "websockets>=15.0.1",
     "opentelemetry-api>=1.28.0",
     "opentelemetry-sdk>=1.28.0",
     "python-multipart>=0.0.24",

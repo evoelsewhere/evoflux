@@ -254,6 +254,18 @@ class TestTeamChatRoute:
         assert response.status_code == 202
         assert "webbridge" in test_team.session_tags
 
+    @pytest.mark.parametrize(
+        "tag",
+        ["webbridge_origin:browser", "webbridge_pairing:untrusted-client"],
+    )
+    def test_session_resolve_rejects_server_managed_webbridge_tag(self, tag):
+        from pydantic import ValidationError
+
+        from app.api.schemas.sessions import TeamSessionResolveRequest
+
+        with pytest.raises(ValidationError, match="server-managed"):
+            TeamSessionResolveRequest(tags=[tag])
+
     def test_team_chat_shell_dispatches_bang_command(self, app_with_team, test_team):
         client = TestClient(app_with_team)
         session_id = str(uuid.uuid7())

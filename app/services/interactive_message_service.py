@@ -10,7 +10,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models.chat import ChatSession, SessionMessage
 from app.services import agent_service, team_manager
-from app.services.agent_service import NoTeamConfigured
+from app.services.agent_service import NoTeamConfigured, RawAttachment
 from app.services.chat_service import cleanup_reverted_tail, save_queued_user_message
 
 
@@ -23,6 +23,10 @@ class InteractiveMessageResult:
 
 class InteractiveMessageConflict(ValueError):
     """One channel action key was reused with a different request payload."""
+
+
+class InteractiveMessageAttachmentsBusy(ValueError):
+    """Explicit attachments cannot be queued behind an active user turn."""
 
 
 async def find_interactive_message_by_source(
@@ -125,12 +129,13 @@ async def submit_persisted_interactive_message(
     session: ChatSession,
     team,
     content: str,
+    attachments: list[RawAttachment] | None = None,
     message_extra: dict | None = None,
     persisted_message: SessionMessage | None = None,
     source_key: str | None = None,
     source_request_hash: str | None = None,
 ) -> InteractiveMessageResult:
-    """Queue or dispatch one prepared, attachment-free interactive message."""
+    """Queue or dispatch one prepared interactive message."""
     session_id = str(session.id)
     team.session_tags = frozenset(session.tags or ())
     team.permission_mode = session.permission_mode
@@ -174,6 +179,10 @@ async def submit_persisted_interactive_message(
                 )
 
         if team.has_active_user_turn():
+            if attachments:
+                raise InteractiveMessageAttachmentsBusy(
+                    "Cannot queue messages with attachments while the agent is working."
+                )
             queued_extra: dict[str, object] = dict(message_extra or {})
             effective_model = session.model or team.lead.agent.model_id
             if effective_model:
@@ -205,6 +214,15 @@ async def submit_persisted_interactive_message(
             "thinking_level": session.thinking_level,
             "thinking_level_provided": session.thinking_level is not None,
         }
+        if attachments:
+            if persisted_message is None:
+                dispatch_kwargs["attachments"] = attachments
+            else:
+                persisted_metas = (persisted_message.extra or {}).get("attachments")
+                if isinstance(persisted_metas, list) and persisted_metas:
+                    dispatch_kwargs["attachment_metas"] = persisted_metas
+                else:
+                    dispatch_kwargs["attachments"] = attachments
         if message_extra is not None:
             dispatch_kwargs["message_extra"] = message_extra
         if persisted_message is not None:
@@ -225,6 +243,7 @@ async def submit_persisted_interactive_message(
 
 
 __all__ = [
+    "InteractiveMessageAttachmentsBusy",
     "InteractiveMessageConflict",
     "InteractiveMessageResult",
     "NoTeamConfigured",

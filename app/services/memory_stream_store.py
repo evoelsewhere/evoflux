@@ -416,6 +416,12 @@ def running_session_ids() -> set[str]:
     return {session_id for session_id, state in _turns.items() if state.is_streaming}
 
 
+def accumulated_content(session_id: str) -> dict[str, str]:
+    """Return a detached snapshot of assistant text accumulated for one turn."""
+    state = _turns.get(session_id)
+    return dict(state.content) if state is not None else {}
+
+
 async def attach(session_id: str) -> AsyncGenerator[dict[str, str], None]:
     """Yield events in SSE wire shape for the current in-flight turn.
 

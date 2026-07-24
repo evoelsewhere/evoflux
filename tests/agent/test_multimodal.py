@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 
 from app.agent.multimodal import build_parts_from_metas
 from app.agent.schemas.chat import ImageDataBlock, TextBlock
@@ -238,3 +239,19 @@ def test_no_attachments_returns_single_text_block():
     parts = build_parts_from_metas("only message", [])
     assert len(parts) == 1
     assert parts[0].text == "only message"
+
+
+def test_deleted_and_expired_browser_artifacts_are_not_rehydrated(tmp_path):
+    image = tmp_path / "browser.png"
+    image.write_bytes(b"\x89PNG\r\n\x1a\n")
+    base = _att_image(str(image), name="browser.png", mime="image/png")
+    deleted = {**base, "deleted_at": datetime.now(timezone.utc).isoformat()}
+    expired = {
+        **base,
+        "webbridge_artifact": {
+            "expires_at": (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+        },
+    }
+    parts = build_parts_from_metas("question", [deleted, expired])
+    assert len(parts) == 1
+    assert parts[0].text == "question"

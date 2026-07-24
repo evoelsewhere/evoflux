@@ -25,6 +25,11 @@ Chrome DevTools Protocol (`chrome.debugger`):
 - **Reading** — screenshot (viewport or full_page, at CSS-pixel scale),
   extract (text/Markdown/HTML), extract_elements (structured records), and
   evaluate.
+- **Semantic productivity surfaces** — semantic_snapshot/read/select/write use
+  accessibility-first opaque targets, verified rich-text writes, bounded
+  spreadsheet ranges/matrices, and PowerPoint text-object probes. Unsupported
+  or view-only operations return structured outcomes; writes never silently
+  fall back to coordinates.
 - **Crawling** — scroll_to_bottom for lazy content and the backend-composed
   crawl action for concurrent extraction across background tabs.
 
@@ -83,19 +88,24 @@ disconnecting the extension releases them automatically.
 After secure pairing, WebBridge adds three explicit, HTTP(S)-only context-menu
 actions:
 
-- **Ask EvoFlux about selection** sends the selected text with page provenance.
-- **Ask EvoFlux about link** sends the page and linked URL.
-- **Ask EvoFlux about page** sends the current page title and URL.
+- **Ask EvoFlux about selection** prepares selected text with page provenance.
+- **Ask EvoFlux about link** prepares the page and linked URL.
+- **Ask EvoFlux about page** prepares the current page title and URL.
 
-The extension creates a browser session for an unbound tab or reuses the tab's
-existing binding. A failed request keeps one short-lived pending action in
-local storage; use **Retry browser context** in Side Chat settings to replay the
-same session and interaction identity without creating a duplicate task.
+Context-menu actions open an editable Side Chat draft; nothing is submitted
+until the user reviews the prompt and presses Send. Opening Side Chat
+automatically creates the internal EvoFlux run/session for that primary tab when
+needed. The tab remains ungrouped until the session opens a second tab. A failed request keeps one
+short-lived pending action for idempotent retry. Drafts are stored per tab and
+bound to a navigation instance, so leaving and returning to the same URL cannot
+revive stale selected context.
 
-To grant an existing WebBridge-enabled chat to a browser, open the EvoFlux
-WebBridge dialog, select the paired browser and session, then choose **Grant**.
-The extension cannot make that cross-pairing grant itself.
-When a bound tab changes origin, the conversation stays attached to its tab ID
+One browser session starts with one primary tab. The primary tab owns the
+backend binding and default automation target. When a child tab is added,
+WebBridge creates one named Chrome group containing both tabs; later child tabs
+join that group and reuse the internal session. Users do not choose, grant, or
+rebind desktop chat sessions in Side Chat. When the primary tab changes origin,
+the session stays attached to its tab ID
 while browser tools pause until Side Chat refreshes the new origin scope. URL
 query strings and fragments are stripped from P1 browser context, while
 selected text remains bounded and is marked as untrusted data in the EvoFlux
@@ -103,21 +113,29 @@ transcript.
 
 ## P2: Side Panel and live handoff
 
-Click the extension toolbar icon to keep a browser-scoped conversation next to
-the current page. Side Chat automatically
-creates and binds one browser session to the current HTTP(S) tab; there is no
-session picker or manual bind step. It can:
+Click the extension toolbar icon to keep the tab-group session next to the
+current page. Side Chat resolves the current session or creates and binds the
+active tab automatically without grouping a lone tab. It can:
 
 - Send messages through the normal EvoFlux chat pipeline and select any
   configured, visible model for the next turn.
 - Keep one primary tab per session. Tabs opened by the agent, spawned
   subagents, or the Side Chat new-tab action join the same named Chrome tab
   group without stealing the primary binding.
-- Load the session transcript and stream live assistant output using fetch-SSE.
-  It renders agent lifecycle and sanitized tool activity while withholding raw
-  tool arguments and output.
-- Show a live `AskUser` handoff batch and send the user's answers back to the
-  active EvoFlux run. A browser restart or ended run clears that live request.
+- Load cursor-paginated lead/member transcript history and stream live assistant
+  output using fetch-SSE. It renders safe Markdown, authenticated images/files,
+  provider fallback/error state, agent attribution, and sanitized tool activity
+  while withholding raw tool arguments/output. **Open in EvoFlux** opens the
+  full renderer for unsupported rich blocks/widgets.
+  Absolute remote Markdown images are not loaded automatically; Side Chat shows
+  an explicit load control with a no-referrer request instead.
+- Attach readable page text, selection, files, or a user-dragged screen region.
+  Browser artifacts carry source/hash/capture provenance, pairing-scoped media
+  authorization, configurable retention, and owner-only delete controls.
+- Show live `AskUser` batches and typed browser handoffs (`take_over`,
+  `confirm_action`, `provide_secret`, `choose_option`). Secret handoff only
+  reports completion after the user enters it directly on the page; the value is
+  never read.
 - Use the crosshair button to highlight and select one element on the page. The next
   Side Panel message includes its sanitized selector, role, accessible name and
   non-form text as untrusted context; input/select/textarea values are never
@@ -127,32 +145,63 @@ session picker or manual bind step. It can:
   live lease. It clears when the tab changes origin, closes, expires, or the
   browser restarts.
 
-Side Panel messages require the session to be granted to the pairing and bound
-to the current tab. Conversation ownership follows the tab ID even on internal
-pages such as `chrome://newtab`; page-dependent browser tools remain disabled
-until that tab opens an HTTP(S) page, when the same binding is upgraded to the
-page origin. Opt-in issue diagnostics are not part of this P2 MVP yet.
+Side Panel messages use the pairing-owned internal session bound to the group's
+primary tab. Session ownership follows the primary tab ID even on internal pages
+such as `chrome://newtab`; page-dependent browser tools remain disabled until
+that tab opens an HTTP(S) page, when the same binding is upgraded to the page
+origin. **Report issue evidence** is opt-in and collects only a bounded,
+redacted ring of console warnings/errors and failed-network metadata; no
+headers, request/response bodies, cookies, query strings, or secrets are stored.
 
 ## P3: Teach Mode and text watches
 
-Side Chat settings provide two opt-in P3 controls after automatic session
+Side Chat settings provide two opt-in P3 controls after explicit session
 binding:
 
 - **Watch for page text** polls the current HTTP(S) page every 30 seconds for a
   literal phrase. A watch is scoped to that tab's exact origin and path, expires
   after the chosen TTL, and is cancelled when the page changes or tab closes.
-  A match only shows a `W` badge and waits; **Send matched watch** is a separate
-  user gesture that sends page metadata through the normal P1 context pipeline.
+  A match only shows a `W` badge and waits; the multi-watch list exposes Send or
+  Cancel per watch plus a profile-wide Stop all kill switch. Sending remains a
+  separate user gesture. Watch arm/poll/send/cancel mutations are serialized to
+  prevent a cancelled watch from being restored or sent concurrently.
 - **Teach Mode** records semantic click, fill, select, checkbox/radio, and
   same-origin navigation actions. It does not record raw keystrokes. Passwords
   and fields whose metadata looks secret are represented as parameter names;
   their values are never sent to EvoFlux or written to extension storage.
 
-Stopping Teach Mode saves a pairing-scoped draft. Review it in the EvoFlux
-WebBridge dialog, approve it, provide any secret parameters there, then replay
-it. The extension cannot approve or replay a draft on its own. Replay remains
-subject to the existing tab-binding, origin, domain-policy, and command-audit
-guards.
+Stopping Teach Mode saves a pairing-scoped draft and a valid workflow YAML
+artifact. Review/approve it in EvoFlux, provide secret parameters there, then
+run one supervised step at a time. Values remain runtime-only. Replay remains
+subject to tab-binding, origin, domain/sharing policy, capability negotiation,
+and bidirectional audit guards. Execution identity, next-step cursor and each
+request's idempotent result are durable. A lost browser response is never
+replayed automatically: EvoFlux asks the user to confirm whether the step ran
+before it can continue.
+
+## Google Docs, Sheets, Excel Online, and PowerPoint Online
+
+Version 2.0 adds AX-first semantic commands and revisioned positive probes for
+these app families. Initial support is intentionally bounded:
+
+- Docs: active selection/caret read/replace and visible semantic document read.
+- Sheets/Excel: finite A1 range select/read/write (maximum 100 written cells),
+  formulas, and accessibility read-back when the editor exposes it.
+- PowerPoint: existing slide/text-object discovery and verified text mutation
+  when the accessibility tree exposes a stable object.
+
+Canvas/OOPIF surfaces, merged ranges, charts, comments, advanced formatting,
+slide creation/layout/media/animation, and cloud-save confirmation may return
+`unsupported`; semantic writes never silently fall back to coordinates. Product
+claims for a Google/Microsoft tenant require an authenticated smoke with a
+dedicated profile:
+
+```bash
+uv run python scripts/webbridge_office_smoke.py google-docs <session-id> --read-only
+uv run python scripts/webbridge_office_smoke.py google-sheets <session-id>
+uv run python scripts/webbridge_office_smoke.py excel-online <session-id>
+uv run python scripts/webbridge_office_smoke.py powerpoint-online <session-id>
+```
 
 ## Security notes
 
@@ -200,9 +249,10 @@ webbridge:
       - mybank.com
       - mail.google.com
     allow_selection: true
-    allow_readable_page: false
-    allow_screenshot: false
+    allow_readable_page: true # still requires an explicit user gesture by default
+    allow_screenshot: true    # still requires an explicit user gesture by default
     max_artifact_bytes: 5000000
+    artifact_retention_hours: 24
   interactions:
     allow_background_triggers: false
     max_per_minute: 30
@@ -210,8 +260,8 @@ webbridge:
 
 Domain matching is suffix-based, so `example.com` also covers
 `app.example.com`. Navigations to a blocked (or non-allowlisted) domain are
-refused before anything reaches the browser, and every command — allowed or
-refused — is recorded in the audit trail at
+refused before anything reaches the browser, and every command or inbound
+browser interaction — allowed or refused — is recorded with direction in
 `GET /api/team/webbridge/audit`.
 
 ## Troubleshooting

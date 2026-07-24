@@ -3,7 +3,7 @@
 Runs ``alembic upgrade head`` against a temp database using the real
 ``app/alembic.ini`` and asserts the latest schema state lands (currently:
 WebBridge pairing, interaction, tab-binding, and Teach Mode state from revision
-00000032).
+00000033).
 Complements ``tests/core/test_db_extra.py``, which only covers
 ``run_migrations`` error paths with mocks.
 """
@@ -55,6 +55,7 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
             "webbridge_interactions",
             "webbridge_tab_bindings",
             "webbridge_teach_drafts",
+            "webbridge_teach_replays",
         } <= set(inspector.get_table_names())
         interaction_columns = {
             column["name"] for column in inspector.get_columns("webbridge_interactions")
@@ -75,7 +76,25 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
             "capture_warnings",
             "status",
             "replay_count",
+            "replay_execution_id",
+            "replay_next_step",
+            "replay_state",
+            "replay_in_flight_step",
         } <= teach_draft_columns
+        teach_replay_columns = {
+            column["name"] for column in inspector.get_columns("webbridge_teach_replays")
+        }
+        assert {
+            "draft_id",
+            "execution_id",
+            "idempotency_key",
+            "request_hash",
+            "start_step",
+            "end_step",
+            "state",
+            "steps",
+            "response_draft",
+        } <= teach_replay_columns
         binding_unique_indexes = {
             index["name"]
             for index in inspector.get_indexes("webbridge_tab_bindings")
@@ -86,7 +105,7 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
             version = conn.execute(
                 sa.text("SELECT version_num FROM alembic_version")
             ).scalar()
-        assert version == "00000032"
+        assert version == "00000033"
     finally:
         engine.dispose()
 
@@ -128,7 +147,7 @@ def test_webbridge_prompt_repair_migrates_drifted_revision_26_database(
             version = conn.execute(
                 sa.text("SELECT version_num FROM alembic_version")
             ).scalar()
-        assert version == "00000032"
+        assert version == "00000033"
     finally:
         engine.dispose()
 
@@ -175,7 +194,7 @@ def test_webbridge_tab_binding_repair_migrates_drifted_revision_27_database(
             version = conn.execute(
                 sa.text("SELECT version_num FROM alembic_version")
             ).scalar()
-        assert version == "00000032"
+        assert version == "00000033"
     finally:
         engine.dispose()
 
@@ -220,7 +239,7 @@ def test_webbridge_dispatch_lease_repair_migrates_drifted_revision_28_database(
             version = conn.execute(
                 sa.text("SELECT version_num FROM alembic_version")
             ).scalar()
-        assert version == "00000032"
+        assert version == "00000033"
     finally:
         engine.dispose()
 

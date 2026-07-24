@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Check, Copy, Download, KeyRound, Link2, Loader2, Play, RefreshCw, Trash2, Unplug } from 'lucide-react'
+import { Check, Copy, Download, KeyRound, Loader2, Play, RefreshCw, Trash2, Unplug } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -19,14 +19,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  assignWebBridgeSessionToPairing,
+  ApiValidationError,
   approveWebBridgeTeachDraft,
   deleteWebBridgeTeachDraft,
   downloadWebBridgeExtension,
@@ -34,16 +27,15 @@ import {
   getWebBridgeStatus,
   issueWebBridgePairingCode,
   listWebBridgePairings,
-  listTeamSessions,
   listWebBridgeTeachDrafts,
   revokeWebBridgePairing,
   replayWebBridgeTeachDraft,
+  resolveWebBridgeTeachReplay,
 } from '@/api/client'
 import { apiBaseUrl } from '@/api/base-url'
 import { useToastStore } from '@/stores/useToastStore'
 import type {
   WebBridgeAuditEntry,
-  SessionResponse,
   WebBridgePairingInfo,
   WebBridgeStatusResponse,
   WebBridgeTeachAction,
@@ -117,16 +109,15 @@ export function WebBridgeStatusDialog({
   const [downloading, setDownloading] = useState(false)
   const [pairingCode, setPairingCode] = useState<string | null>(null)
   const [pairings, setPairings] = useState<WebBridgePairingInfo[]>([])
-  const [webBridgeSessions, setWebBridgeSessions] = useState<SessionResponse[]>([])
-  const [selectedSessionByPairing, setSelectedSessionByPairing] = useState<Record<string, string>>({})
   const [pairing, setPairing] = useState(false)
   const [revokingPairingId, setRevokingPairingId] = useState<string | null>(null)
-  const [assigningPairingId, setAssigningPairingId] = useState<string | null>(null)
   const [teachDrafts, setTeachDrafts] = useState<WebBridgeTeachDraft[]>([])
   const [approvingDraftId, setApprovingDraftId] = useState<string | null>(null)
   const [replayingDraftId, setReplayingDraftId] = useState<string | null>(null)
+  const [resolvingDraftId, setResolvingDraftId] = useState<string | null>(null)
   const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null)
   const [draftParameters, setDraftParameters] = useState<Record<string, Record<string, string>>>({})
+  const replayRequestKeysRef = useRef<Record<string, string>>({})
   const pushToast = useToastStore((s) => s.push)
 
   // Ref-synced so `refresh` stays referentially stable for the open-effect
@@ -157,17 +148,9 @@ export function WebBridgeStatusDialog({
       setAudit([])
     }
     try {
-      const [nextPairings, page] = await Promise.all([
-        listWebBridgePairings(),
-        listTeamSessions(undefined, 100),
-      ])
-      setPairings(nextPairings)
-      setWebBridgeSessions(
-        page.data.filter((session) => session.tags?.includes('webbridge')),
-      )
+      setPairings(await listWebBridgePairings())
     } catch {
       setPairings([])
-      setWebBridgeSessions([])
     }
     try {
       setTeachDrafts(await listWebBridgeTeachDrafts())
@@ -232,34 +215,6 @@ export function WebBridgeStatusDialog({
     }
   }, [pushToast, refresh])
 
-  const handleAssign = useCallback(async (pairingId: string) => {
-    const sessionId = selectedSessionByPairing[pairingId]
-    if (!sessionId) {
-      pushToast({
-        tone: 'error',
-        title: 'Choose a WebBridge session',
-      })
-      return
-    }
-    setAssigningPairingId(pairingId)
-    try {
-      await assignWebBridgeSessionToPairing(pairingId, sessionId)
-      await refresh()
-      pushToast({
-        tone: 'success',
-        title: 'Session granted to browser pairing',
-      })
-    } catch (err) {
-      pushToast({
-        tone: 'error',
-        title: 'Could not grant session access',
-        description: err instanceof Error ? err.message : String(err),
-      })
-    } finally {
-      setAssigningPairingId(null)
-    }
-  }, [pushToast, refresh, selectedSessionByPairing])
-
   const handleApproveDraft = useCallback(async (draftId: string) => {
     setApprovingDraftId(draftId)
     try {
@@ -279,16 +234,43 @@ export function WebBridgeStatusDialog({
 
   const handleReplayDraft = useCallback(async (draft: WebBridgeTeachDraft) => {
     setReplayingDraftId(draft.id)
+    const restart = draft.replay_state === 'completed'
+    const executionId = restart || !draft.replay_execution_id
+      ? crypto.randomUUID()
+      : draft.replay_execution_id
+    const startStep = restart ? 0 : draft.replay_next_step
+    const requestIdentity = `${draft.id}:${executionId}:${startStep}:${restart}`
+    const idempotencyKey = replayRequestKeysRef.current[requestIdentity] ?? crypto.randomUUID()
+    replayRequestKeysRef.current[requestIdentity] = idempotencyKey
     try {
-      await replayWebBridgeTeachDraft(draft.id, draftParameters[draft.id] ?? {})
-      setDraftParameters((current) => {
-        const next = { ...current }
-        delete next[draft.id]
-        return next
-      })
+      const result = await replayWebBridgeTeachDraft(
+        draft.id,
+        draftParameters[draft.id] ?? {},
+        executionId,
+        startStep,
+        idempotencyKey,
+        restart,
+      )
+      delete replayRequestKeysRef.current[requestIdentity]
+      if (result.next_step === null) {
+        setDraftParameters((current) => {
+          const next = { ...current }
+          delete next[draft.id]
+          return next
+        })
+      }
       await refresh()
-      pushToast({ tone: 'success', title: 'Teach draft replay completed' })
+      pushToast({
+        tone: 'success',
+        title: result.next_step === null
+          ? 'Teach draft replay completed'
+          : `Teach step ${result.next_step} completed`,
+      })
     } catch (err) {
+      if (err instanceof ApiValidationError) {
+        delete replayRequestKeysRef.current[requestIdentity]
+      }
+      await refresh()
       pushToast({
         tone: 'error',
         title: 'Teach draft replay stopped',
@@ -298,6 +280,36 @@ export function WebBridgeStatusDialog({
       setReplayingDraftId(null)
     }
   }, [draftParameters, pushToast, refresh])
+
+  const handleResolveReplay = useCallback(async (
+    draft: WebBridgeTeachDraft,
+    outcome: 'completed' | 'not_completed',
+  ) => {
+    if (!draft.replay_execution_id) return
+    setResolvingDraftId(draft.id)
+    try {
+      await resolveWebBridgeTeachReplay(
+        draft.id,
+        draft.replay_execution_id,
+        outcome,
+      )
+      await refresh()
+      pushToast({
+        tone: 'success',
+        title: outcome === 'completed'
+          ? 'Teach step marked as completed'
+          : 'Teach step marked as not completed',
+      })
+    } catch (err) {
+      pushToast({
+        tone: 'error',
+        title: 'Could not resolve Teach step',
+        description: err instanceof Error ? err.message : String(err),
+      })
+    } finally {
+      setResolvingDraftId(null)
+    }
+  }, [pushToast, refresh])
 
   const handleDeleteDraft = useCallback(async (draftId: string) => {
     setDeletingDraftId(draftId)
@@ -488,46 +500,9 @@ export function WebBridgeStatusDialog({
                       )}
                     </button>
                   </div>
-                  {webBridgeSessions.length > 0 ? (
-                    <div className="flex min-w-0 items-center gap-2">
-                      <Select
-                        value={selectedSessionByPairing[paired.pairing_id] ?? null}
-                        onValueChange={(value) => setSelectedSessionByPairing((current) => ({
-                          ...current,
-                          [paired.pairing_id]: value ?? '',
-                        }))}
-                      >
-                        <SelectTrigger size="sm" className="min-w-0 flex-1">
-                          <SelectValue placeholder="Grant a WebBridge session" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {webBridgeSessions.map((session) => (
-                            <SelectItem key={session.id} value={session.id}>
-                              {session.title || 'Untitled session'}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => void handleAssign(paired.pairing_id)}
-                        disabled={assigningPairingId === paired.pairing_id}
-                      >
-                        {assigningPairingId === paired.pairing_id ? (
-                          <Loader2 className="animate-spin" aria-hidden="true" />
-                        ) : (
-                          <Link2 aria-hidden="true" />
-                        )}
-                        Grant
-                      </Button>
-                    </div>
-                  ) : (
-                    <p className="text-xs text-(--color-text-subtle)">
-                      Enable WebBridge in a chat session to grant it to this browser.
-                    </p>
-                  )}
+                  <p className="text-xs text-(--color-text-subtle)">
+                    Opening Side Chat creates one session for the active tab group automatically.
+                  </p>
                 </li>
               ))}
             </ul>
@@ -594,6 +569,41 @@ export function WebBridgeStatusDialog({
                   {draft.last_error && (
                     <p className="text-xs text-(--color-error)">{draft.last_error}</p>
                   )}
+                  {(draft.replay_state === 'ambiguous' || draft.replay_state === 'in_flight') && (
+                    <div className="space-y-1">
+                      <p className="text-xs text-(--color-warning)">
+                        Check the browser before confirming whether this step ran.
+                      </p>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void handleResolveReplay(draft, 'completed')}
+                          disabled={resolvingDraftId === draft.id}
+                          className="flex-1"
+                        >
+                          <Check aria-hidden="true" />
+                          It ran
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void handleResolveReplay(draft, 'not_completed')}
+                          disabled={resolvingDraftId === draft.id}
+                          className="flex-1"
+                        >
+                          <RefreshCw aria-hidden="true" />
+                          It did not run
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  <details className="text-xs text-(--color-text-subtle)">
+                    <summary className="cursor-pointer">Workflow YAML</summary>
+                    <pre className="mt-1 max-h-36 overflow-auto whitespace-pre-wrap rounded bg-(--bg-2) p-2 font-mono text-[10px]">{draft.workflow_yaml}</pre>
+                  </details>
                   <div className="flex gap-2">
                     {draft.status !== 'approved' ? (
                       <Button
@@ -611,7 +621,7 @@ export function WebBridgeStatusDialog({
                         )}
                         Approve
                       </Button>
-                    ) : (
+                    ) : draft.replay_state !== 'ambiguous' && draft.replay_state !== 'in_flight' ? (
                       <Button
                         type="button"
                         size="sm"
@@ -624,9 +634,13 @@ export function WebBridgeStatusDialog({
                         ) : (
                           <Play aria-hidden="true" />
                         )}
-                        Replay
+                        {draft.replay_state === 'completed'
+                          ? 'Run again from step 1'
+                          : draft.replay_next_step > 0
+                            ? `Run step ${draft.replay_next_step + 1}`
+                            : 'Run first step'}
                       </Button>
-                    )}
+                    ) : null}
                   </div>
                 </li>
               ))}
@@ -652,7 +666,7 @@ export function WebBridgeStatusDialog({
                     }`}
                   />
                   <span className="shrink-0 font-mono text-(--color-text-2)">
-                    {e.action}
+                    {e.direction === 'browser_in' ? 'in' : 'out'} · {e.action}
                   </span>
                   <span className="min-w-0 flex-1 truncate text-(--color-text-subtle)">
                     {e.error ? e.error : e.url}

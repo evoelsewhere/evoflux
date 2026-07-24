@@ -13,6 +13,7 @@ from .webbridge import (
     WebBridgePairing,
     WebBridgeTabBinding,
     WebBridgeTeachDraft,
+    WebBridgeTeachReplay,
 )
 
 __all__ = [
@@ -34,4 +35,5 @@ __all__ = [
     "WebBridgePairing",
     "WebBridgeTabBinding",
     "WebBridgeTeachDraft",
+    "WebBridgeTeachReplay",
 ]

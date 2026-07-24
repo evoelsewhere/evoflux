@@ -53,13 +53,13 @@ from app.agent.hooks.tool_result_offload import ToolResultOffloadHook
 from app.agent.mode.team.shared_state import format_state_snapshot
 from app.agent.mode.team.tier_policy import (
     SIDE_CHAT_SESSION_TAG,
-    WEBBRIDGE_SESSION_TAG,
     deferred_tools_for_run,
     denied_tools_for_tier,
     resolve_member_tier,
     side_chat_session_excluded_tools,
     webbridge_session_excluded_tools,
 )
+from app.webbridge_tags import WEBBRIDGE_SESSION_TAG
 from app.agent.plugins.role import reset_role, set_role
 from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
 from app.core.paths import session_workspace_dir

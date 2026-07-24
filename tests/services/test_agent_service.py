@@ -381,6 +381,7 @@ async def test_dispatch_passes_session_model_settings():
         session_id="my-sid-123",
         interrupt=False,
         attachment_metas=None,
+        message_extra=None,
         mode="forge",
         workspace=None,
         model="openai:gpt-5.5",
@@ -388,6 +389,8 @@ async def test_dispatch_passes_session_model_settings():
         thinking_level="high",
         thinking_level_provided=True,
         service_tier=None,
+        persist_message=True,
+        existing_message_id=None,
     )
 
 
@@ -413,6 +416,33 @@ async def test_dispatch_with_attachments_prefers_provided_session_id(tmp_path):
         )
     assert sid == "existing-123"
     assert n == 1
+
+
+@pytest.mark.asyncio
+async def test_dispatch_reuses_persisted_attachment_metadata():
+    team = _make_team()
+    metas = [
+        {
+            "filename": "existing.png",
+            "media_type": "image/png",
+            "category": "image",
+        }
+    ]
+    with patch(
+        "app.services.agent_service.validate_and_persist_attachments",
+        new_callable=AsyncMock,
+    ) as persist:
+        sid, count = await dispatch_user_message(
+            team,
+            content="Resume capture",
+            session_id="existing-123",
+            attachment_metas=metas,
+        )
+
+    persist.assert_not_awaited()
+    assert sid == "existing-123"
+    assert count == 1
+    assert team.handle_user_message.await_args.kwargs["attachment_metas"] == metas
 
 
 # ── interrupt_team ────────────────────────────────────────────────────────────
