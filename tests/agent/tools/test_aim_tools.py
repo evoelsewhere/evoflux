@@ -50,6 +50,18 @@ async def _make_aim_project(workspace_path: Path) -> CodingProject:
         return project
 
 
+def _substantive_unit_body(label: str) -> str:
+    detail = (
+        f"The {label} behavior is derived from source evidence and preserves "
+        "interfaces, error ordering, side effects, and externally visible state. "
+    )
+    return (
+        f"# {label}\n\n## Purpose\n\n{detail * 4}\n\n"
+        f"## Control flow and interfaces\n\n{detail * 4}\n\n"
+        f"## Dependencies and ambiguities\n\n{detail * 4}\n"
+    )
+
+
 async def _make_workflow_execution(name: str) -> WorkflowExecution:
     async with db_module.async_session_factory() as db:
         execution = WorkflowExecution(
@@ -399,7 +411,12 @@ async def test_owning_workflow_advances_ready_unit(sandbox_workspace):
     try:
         await aim_claim(action="acquire", unit="m/A")
         snapshot = json.loads(await aim_understanding(action="snapshot", units=["m/A"]))
-        kb_store.write_unit(sandbox_workspace, "m", "A", body="Documented behavior.")
+        kb_store.write_unit(
+            sandbox_workspace,
+            "m",
+            "A",
+            body=_substantive_unit_body("A behavior"),
+        )
         await aim_understanding(
             action="verify", units=["m/A"], baseline=snapshot["digests"]
         )
@@ -453,14 +470,14 @@ async def test_understand_workflow_advances_claimed_dependency_closure(
             sandbox_workspace,
             "shared",
             "DATE",
-            body="Documented date behavior.",
+            body=_substantive_unit_body("Date behavior"),
         )
         kb_store.write_unit(
             sandbox_workspace,
             "core",
             "PAY",
             depends_on=["shared/DATE"],
-            body="Documented payroll behavior.",
+            body=_substantive_unit_body("Payroll behavior"),
         )
         await aim_understanding(
             action="verify",
