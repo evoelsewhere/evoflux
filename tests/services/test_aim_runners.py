@@ -1,8 +1,14 @@
+import subprocess
 from pathlib import Path
 
 import pytest
 
 from app.services.aim import kb_store
+from app.services.aim.golden import (
+    GoldenCaseError,
+    load_golden_case_meta,
+    validate_expected_integrity,
+)
 from app.services.aim.runners import (
     RunnerExecutionError,
     capture_legacy_case,
@@ -106,15 +112,70 @@ async def test_capture_legacy_case_promotes_validated_output(tmp_path: Path):
     _root, kb_root = _project(tmp_path)
     case_dir = kb_root / "golden" / "units" / "core" / "Pay" / "cases" / "smoke"
     case_dir.mkdir(parents=True)
-    (case_dir / "meta.yaml").write_text("provenance: captured\n")
+    (case_dir / "meta.yaml").write_text(
+        "provenance: captured\n"
+        "canonicalizer_profile: default\n"
+        "source_revision: test-source-revision\n"
+        "environment_fingerprint: test-environment\n"
+        "capture_command: test-capture\n"
+    )
     (case_dir / "legacy.command").write_text(
         'printf "baseline\n" > "$AIM_OUT_DIR/out.txt"\n', encoding="utf-8"
     )
+    (case_dir / "target.command").write_text("true\n", encoding="utf-8")
 
     await capture_legacy_case(kb_root, "core/Pay", "smoke")
 
     assert (case_dir / "expected/out.txt").read_text() == "baseline\n"
+    captured = load_golden_case_meta(case_dir)
+    assert captured.expected_sha256
+    assert captured.captured_at is not None
+    (case_dir / "target.command").write_text("changed\n")
+    with pytest.raises(GoldenCaseError, match="target.command changed"):
+        validate_expected_integrity(case_dir, captured)
     with pytest.raises(RunnerExecutionError, match="already exists"):
+        await capture_legacy_case(kb_root, "core/Pay", "smoke")
+
+
+@pytest.mark.asyncio
+async def test_capture_rejects_dirty_or_mismatched_git_source(tmp_path: Path):
+    root, kb_root = _project(tmp_path)
+    source = root / "aim_source_base" / "legacy"
+    source.mkdir()
+    subprocess.run(["git", "-C", str(source), "init", "-q"], check=True)
+    subprocess.run(
+        ["git", "-C", str(source), "config", "user.email", "audit@example.test"],
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(source), "config", "user.name", "Audit"], check=True
+    )
+    (source / "source.txt").write_text("clean\n")
+    subprocess.run(["git", "-C", str(source), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(source), "commit", "-qm", "base"], check=True)
+    revision = subprocess.check_output(
+        ["git", "-C", str(source), "rev-parse", "HEAD"], text=True
+    ).strip()
+    case_dir = kb_root / "golden/units/core/Pay/cases/smoke"
+    case_dir.mkdir(parents=True)
+    (case_dir / "legacy.command").write_text(
+        'printf "baseline\\n" > "$AIM_OUT_DIR/out.txt"\n'
+    )
+    (case_dir / "meta.yaml").write_text(
+        "provenance: captured\n"
+        "canonicalizer_profile: default\n"
+        "source_revision: wrong\n"
+        "environment_fingerprint: test-environment\n"
+        "capture_command: test-capture\n"
+    )
+
+    with pytest.raises(RunnerExecutionError, match="does not match"):
+        await capture_legacy_case(kb_root, "core/Pay", "smoke")
+
+    text = (case_dir / "meta.yaml").read_text().replace("wrong", revision)
+    (case_dir / "meta.yaml").write_text(text)
+    (source / "source.txt").write_text("dirty\n")
+    with pytest.raises(RunnerExecutionError, match="repository is dirty"):
         await capture_legacy_case(kb_root, "core/Pay", "smoke")
 
 

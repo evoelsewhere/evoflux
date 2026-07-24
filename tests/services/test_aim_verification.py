@@ -38,7 +38,14 @@ async def test_verify_target_conversion_writes_attempt_evidence(tmp_path: Path):
     )
 
     assert evidence.is_file()
-    assert has_conversion_evidence(kb_root, "core/Pay", str(execution_id))
+    assert has_conversion_evidence(
+        kb_root, "core/Pay", str(execution_id), target_root=target_root
+    )
+
+    (target_root / "build.ok").write_text("changed after verification\n")
+    assert not has_conversion_evidence(
+        kb_root, "core/Pay", str(execution_id), target_root=target_root
+    )
 
 
 @pytest.mark.asyncio

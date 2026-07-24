@@ -449,8 +449,24 @@ async def _aim_units(
                         conversion_evidence = conversion_evidence_path(
                             kb_root, unit, workflow_execution_id
                         )
+                        target_root: Path | None = None
+                        if project_id is not None:
+                            from app.services.aim.project import (
+                                resolve_target_workspace_path,
+                            )
+
+                            project = await db.get(CodingProject, project_id)
+                            if project is not None:
+                                target_path = await resolve_target_workspace_path(
+                                    db, project
+                                )
+                                if target_path:
+                                    target_root = Path(target_path)
                         conversion_verified = has_conversion_evidence(
-                            kb_root, unit, workflow_execution_id
+                            kb_root,
+                            unit,
+                            workflow_execution_id,
+                            target_root=target_root,
                         )
                     readiness = evaluate_transition(
                         kb_root,
@@ -694,6 +710,14 @@ async def _aim_readiness(
     case_set: Annotated[
         str | None, Field(description="Optional golden case set input.")
     ] = None,
+    expected_units: Annotated[
+        list[str] | None,
+        BeforeValidator(_json_coerce),
+        Field(description="Optional exact selected-unit list to revalidate."),
+    ] = None,
+    overwrite: Annotated[
+        bool, Field(description="Whether an existing golden baseline may be replaced.")
+    ] = False,
 ) -> str:
     async with db_module.async_session_factory() as db:
         _project_id, kb_root = await _resolve_project_and_kb_root(db)
@@ -703,8 +727,17 @@ async def _aim_readiness(
         unit=unit,
         wave=wave,
         case_set=case_set,
+        overwrite=overwrite,
     )
-    return json.dumps(result.to_dict())
+    data = result.to_dict()
+    if expected_units is not None and list(result.selected_units) != expected_units:
+        data["status"] = "blocked"
+        data["allowed"] = False
+        data["blockers"] = [
+            *data["blockers"],
+            "selected units changed after approval; refresh and approve the batch again",
+        ]
+    return json.dumps(data)
 
 
 aim_readiness = Tool(
@@ -784,6 +817,104 @@ aim_understanding = Tool(
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# aim_rules
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+async def _aim_rules(
+    action: Annotated[
+        Literal["list", "confirm", "no_rules"], Field(description="Rule review operation.")
+    ],
+    unit: Annotated[str, Field(description="Unit key as module/name.")],
+) -> str:
+    async with db_module.async_session_factory() as db:
+        project_id, kb_root = await _resolve_project_and_kb_root(db)
+    from app.services.aim.business_rules import (
+        confirm_business_rules,
+        confirm_no_business_rules,
+        list_business_rules,
+    )
+
+    rules = list_business_rules(kb_root, unit)
+    if action == "list":
+        return json.dumps(
+            {
+                "unit": unit,
+                "count": len(rules),
+                "rules": [
+                    {
+                        "id": rule.id,
+                        "status": rule.status,
+                        "source_ref": rule.source_ref,
+                        "title": rule.title,
+                    }
+                    for rule in rules
+                ],
+            }
+        )
+    execution_id = _current_workflow_execution_id()
+    if not execution_id:
+        raise ValueError("AIM business-rule review requires a workflow execution.")
+    async with db_module.async_session_factory() as db:
+        workflow_name = await _current_workflow_name(db)
+    if workflow_name != "aim-review-rules":
+        raise ValueError("Business rules may only be confirmed by aim-review-rules.")
+    if project_id is None:
+        raise ValueError("Business-rule confirmation requires a resolved AIM project.")
+    module, name = _split_unit(unit)
+    async with db_module.async_session_factory() as db:
+        indexed_unit = (
+            await db.exec(
+                select(AimUnit).where(
+                    AimUnit.project_id == project_id,
+                    AimUnit.module == module,
+                    AimUnit.name == name,
+                )
+            )
+        ).first()
+        claim = None
+        if indexed_unit is not None:
+            claim = (
+                await db.exec(
+                    select(AimClaim).where(
+                        AimClaim.unit_id == indexed_unit.id,
+                        AimClaim.workflow_execution_id == UUID(execution_id),
+                        AimClaim.lease_expires_at > datetime.now(timezone.utc),
+                    )
+                )
+            ).first()
+        if claim is None:
+            raise ValueError(
+                f"Cannot confirm business rules for {unit}: workflow execution "
+                "does not hold an active unit claim."
+            )
+    path = (
+        confirm_business_rules(kb_root, unit, execution_id)
+        if action == "confirm"
+        else confirm_no_business_rules(kb_root, unit, execution_id)
+    )
+    return json.dumps(
+        {
+            "status": "confirmed" if action == "confirm" else "no_rules",
+            "unit": unit,
+            "review_path": str(path.relative_to(kb_root)),
+        }
+    )
+
+
+aim_rules = Tool(
+    _aim_rules,
+    name="aim_rules",
+    description=(
+        "List unit business rules or record a human-approved confirmation/no-rules review."
+    ),
+    tiers=("aim",),
+    deferred=True,
+    deferred_summary="Review AIM business rules before target design.",
+)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # aim_claim
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -835,6 +966,11 @@ async def _aim_claim(
             matched_units = [
                 row for row in matched_units if (row.module, row.name) in requested_keys
             ]
+            matched_keys = {(row.module, row.name) for row in matched_units}
+            missing_keys = sorted(requested_keys - matched_keys)
+            if missing_keys:
+                missing = ", ".join(f"{module}/{name}" for module, name in missing_keys)
+                raise ValueError(f"AIM claim scope is stale; missing units: {missing}")
         if action != "list" and not matched_units:
             raise ValueError("No AIM units matched the requested claim scope.")
 
@@ -966,11 +1102,12 @@ async def _aim_capture(
             description="Replace an existing expected baseline after explicit approval."
         ),
     ] = False,
+    _state: Annotated[AgentState | None, InjectedArg()] = None,
 ) -> str:
     from app.services.aim.runners import capture_legacy_case
 
     async with db_module.async_session_factory() as db:
-        _project_id, kb_root = await _resolve_project_and_kb_root(db)
+        project_id, kb_root = await _resolve_project_and_kb_root(db)
     result = await capture_legacy_case(
         kb_root,
         unit,
@@ -981,12 +1118,61 @@ async def _aim_capture(
     expected_dir = (
         kb_root / "golden" / "units" / module / name / "cases" / case_set / "expected"
     )
+    from app.services.aim.golden import load_golden_case_meta
+
+    meta = load_golden_case_meta(expected_dir.parent)
+    run_id = uuid7()
+    raw_sid = _state.metadata.get("session_id") if _state else None
+    session_id = UUID(raw_sid) if raw_sid else None
+    workflow_execution_id = _current_workflow_execution_id()
+    created_at = datetime.now(timezone.utc)
+    kb_store.write_run_meta(
+        kb_root,
+        module,
+        name,
+        run_id=run_id,
+        kind="capture",
+        verdict="pass",
+        case_set=case_set,
+        stats={"file_count": len(meta.expected_sha256)},
+        report_path=None,
+        session_id=session_id,
+        workflow_execution_id=workflow_execution_id,
+        created_at=created_at,
+    )
+    if project_id is not None:
+        async with db_module.async_session_factory() as db:
+            row = (
+                await db.exec(
+                    select(AimUnit).where(
+                        AimUnit.project_id == project_id,
+                        AimUnit.module == module,
+                        AimUnit.name == name,
+                    )
+                )
+            ).first()
+            if row is not None:
+                db.add(
+                    AimRun(
+                        id=run_id,
+                        unit_id=row.id,
+                        kind="capture",
+                        verdict="pass",
+                        case_set=case_set,
+                        stats={"file_count": len(meta.expected_sha256)},
+                        session_id=session_id,
+                        workflow_execution_id=workflow_execution_id,
+                        created_at=created_at,
+                    )
+                )
+                await db.commit()
     return json.dumps(
         {
             "status": "captured",
             "unit": result.unit,
             "case_set": result.case_set,
             "expected_dir": str(expected_dir),
+            "run_id": str(run_id),
             "stdout": result.stdout,
             "stderr": result.stderr,
         }
@@ -1143,17 +1329,81 @@ async def _resolve_canonical_profile(
     return CanonicalProfile(id=profile_id or "default")
 
 
-def _compare_error(kind: str, message: str) -> str:
-    return json.dumps(
-        {
-            "verdict": "error",
-            "diff_count": 0,
-            "clusters": [],
-            "report_path": None,
-            "error_kind": kind,
-            "error": message,
-        }
+async def _record_compare_error(
+    db,
+    *,
+    project_id: UUID | None,
+    kb_root: Path,
+    module: str,
+    name: str,
+    case_set: str,
+    kind: str,
+    message: str,
+    state: AgentState | None,
+) -> str:
+    run_id = uuid7()
+    report_dir = kb_root / "runs" / module / name / str(run_id)
+    report_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "verdict": "error",
+        "diff_count": 0,
+        "clusters": [],
+        "error_kind": kind,
+        "error": message,
+    }
+    json_path = report_dir / "report.json"
+    json_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    (report_dir / "report.md").write_text(
+        f"# Compare report — verdict: error\n\n## {kind}\n\n{message}\n",
+        encoding="utf-8",
     )
+    report_rel_path = str(json_path.relative_to(kb_root))
+    raw_sid = state.metadata.get("session_id") if state else None
+    session_id = UUID(raw_sid) if raw_sid else None
+    workflow_execution_id = _current_workflow_execution_id()
+    created_at = datetime.now(timezone.utc)
+    kb_store.write_run_meta(
+        kb_root,
+        module,
+        name,
+        run_id=run_id,
+        kind="compare",
+        verdict="error",
+        case_set=case_set,
+        stats={"diff_count": 0, "error_kind": kind},
+        report_path=report_rel_path,
+        session_id=session_id,
+        workflow_execution_id=workflow_execution_id,
+        created_at=created_at,
+    )
+    if project_id is not None:
+        row = (
+            await db.exec(
+                select(AimUnit).where(
+                    AimUnit.project_id == project_id,
+                    AimUnit.module == module,
+                    AimUnit.name == name,
+                )
+            )
+        ).first()
+        if row is not None:
+            db.add(
+                AimRun(
+                    id=run_id,
+                    unit_id=row.id,
+                    kind="compare",
+                    verdict="error",
+                    case_set=case_set,
+                    stats={"diff_count": 0, "error_kind": kind},
+                    report_path=report_rel_path,
+                    session_id=session_id,
+                    workflow_execution_id=workflow_execution_id,
+                    created_at=created_at,
+                )
+            )
+            await db.commit()
+    payload["report_path"] = report_rel_path
+    return json.dumps(payload)
 
 
 async def _aim_compare(
@@ -1193,17 +1443,31 @@ async def _aim_compare(
     async with db_module.async_session_factory() as db:
         project_id, kb_root = await _resolve_project_and_kb_root(db)
         module, name = _split_unit(unit)
+
+        async def fail(kind: str, message: str) -> str:
+            return await _record_compare_error(
+                db,
+                project_id=project_id,
+                kb_root=kb_root,
+                module=module,
+                name=name,
+                case_set=case_set,
+                kind=kind,
+                message=message,
+                state=_state,
+            )
+
         try:
             case_set = _safe_component(case_set, label="case_set")
         except ValueError as exc:
-            return _compare_error("invalid_input", str(exc))
+            return await fail("invalid_input", str(exc))
 
         golden_case_dir = (
             kb_root / "golden" / "units" / module / name / "cases" / case_set
         )
         expected_dir = golden_case_dir / "expected"
         if not expected_dir.is_dir():
-            return _compare_error(
+            return await fail(
                 "missing_golden_case", f"No golden case at {expected_dir}"
             )
 
@@ -1212,13 +1476,19 @@ async def _aim_compare(
         try:
             golden_meta = load_golden_case_meta(golden_case_dir)
         except GoldenCaseError as exc:
-            return _compare_error(exc.kind, str(exc))
+            return await fail(exc.kind, str(exc))
+        from app.services.aim.golden import validate_expected_integrity
+
+        try:
+            validate_expected_integrity(golden_case_dir, golden_meta)
+        except GoldenCaseError as exc:
+            return await fail(exc.kind, str(exc))
         if (
             profile
             and golden_meta.canonicalizer_profile
             and profile != golden_meta.canonicalizer_profile
         ):
-            return _compare_error(
+            return await fail(
                 "canonicalizer_mismatch",
                 f"Requested profile {profile!r} does not match golden metadata "
                 f"profile {golden_meta.canonicalizer_profile!r}",
@@ -1237,7 +1507,7 @@ async def _aim_compare(
             resolved_actual_dir = (kb_root / resolved_actual_dir).resolve()
             kb_root_resolved = kb_root.resolve()
             if not resolved_actual_dir.is_relative_to(kb_root_resolved):
-                return _compare_error("invalid_input", "actual_dir escapes the KB root")
+                return await fail("invalid_input", "actual_dir escapes the KB root")
 
         try:
             canonical_profile = await _resolve_canonical_profile(
@@ -1245,7 +1515,7 @@ async def _aim_compare(
                 profile or golden_meta.canonicalizer_profile,
             )
         except (FileNotFoundError, ValueError, OSError) as exc:
-            return _compare_error("missing_canonicalizer", str(exc))
+            return await fail("missing_canonicalizer", str(exc))
         report = compare_dirs(expected_dir, resolved_actual_dir, canonical_profile)
 
         run_id = uuid7()

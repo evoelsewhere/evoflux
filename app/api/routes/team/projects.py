@@ -1025,6 +1025,7 @@ async def get_aim_readiness(
     unit: str | None = None,
     wave: int | None = None,
     case_set: str | None = None,
+    overwrite: bool = False,
 ) -> AimReadinessResponse:
     from app.services.aim.project import resolve_kb_workspace_path
     from app.services.aim.readiness import evaluate_pipeline
@@ -1041,6 +1042,7 @@ async def get_aim_readiness(
         unit=unit,
         wave=wave,
         case_set=case_set,
+        overwrite=overwrite,
     )
     return AimReadinessResponse(**result.to_dict())
 

@@ -12,7 +12,11 @@ from pathlib import Path
 from typing import Literal
 
 from app.services.aim import kb_store
-from app.services.aim.golden import GoldenCaseError, load_golden_case_meta
+from app.services.aim.golden import (
+    GoldenCaseError,
+    load_golden_case_meta,
+    stamp_expected_integrity,
+)
 from app.services.aim.rulebook import resolve_rulebook_path, validate_rulebook_identity
 
 _UNIT_RE = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
@@ -31,6 +35,50 @@ class RunnerExecutionResult:
     actual_dir: Path
     stdout: str
     stderr: str
+
+
+def _source_revision_fingerprint(kb_root: Path) -> str | None:
+    source_base = kb_root.parent / "aim_source_base"
+    if not source_base.is_dir():
+        return None
+    candidates = [source_base]
+    candidates.extend(
+        child
+        for child in sorted(source_base.iterdir())
+        if child.is_dir() and not child.name.startswith(".")
+    )
+    revisions: list[tuple[str, str]] = []
+    for candidate in candidates:
+        if not (candidate / ".git").exists():
+            continue
+        revision = subprocess.run(
+            ["git", "-C", str(candidate), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if revision.returncode != 0 or not revision.stdout.strip():
+            continue
+        status = subprocess.run(
+            ["git", "-C", str(candidate), "status", "--porcelain=v1"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if status.returncode != 0:
+            raise RunnerExecutionError(
+                f"legacy source Git status is unavailable: {candidate}"
+            )
+        if status.stdout.strip():
+            raise RunnerExecutionError(
+                f"legacy source repository is dirty: {candidate}"
+            )
+        revisions.append((candidate.name, revision.stdout.strip()))
+    if not revisions:
+        return None
+    if len(revisions) == 1:
+        return revisions[0][1]
+    return ";".join(f"{name}@{revision}" for name, revision in revisions)
 
 
 def resolve_runner(kb_root: Path, role: Literal["legacy", "target"]) -> Path:
@@ -186,9 +234,15 @@ async def capture_legacy_case(
     module, name = unit.split("/", 1)
     case_dir = kb_root / "golden" / "units" / module / name / "cases" / case_set
     try:
-        load_golden_case_meta(case_dir)
+        meta = load_golden_case_meta(case_dir)
     except GoldenCaseError as exc:
         raise RunnerExecutionError(str(exc)) from exc
+    source_revision = _source_revision_fingerprint(kb_root)
+    if source_revision is not None and meta.source_revision != source_revision:
+        raise RunnerExecutionError(
+            "golden source_revision does not match the clean legacy source: "
+            f"metadata={meta.source_revision!r}, actual={source_revision!r}"
+        )
     expected_dir = case_dir / "expected"
     if expected_dir.exists() and any(path.is_file() for path in expected_dir.rglob("*")):
         if not overwrite:
@@ -209,4 +263,5 @@ async def capture_legacy_case(
     if expected_dir.exists():
         shutil.rmtree(expected_dir)
     staged_dir.replace(expected_dir)
+    stamp_expected_integrity(case_dir)
     return result

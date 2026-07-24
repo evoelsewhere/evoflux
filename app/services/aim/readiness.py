@@ -283,6 +283,7 @@ def evaluate_pipeline(
     unit: str | None = None,
     wave: int | None = None,
     case_set: str | None = None,
+    overwrite: bool = False,
 ) -> PipelineReadiness:
     """Evaluate whether a builtin AIM pipeline may be started now."""
     blockers: list[str] = []
@@ -300,6 +301,7 @@ def evaluate_pipeline(
     capability_by_pipeline = {
         "aim-assess": "inventory",
         "aim-understand": "understand",
+        "aim-review-rules": "understand",
         "aim-design-unit": "design",
         "aim-convert-unit": "convert",
         "aim-convert-wave": "convert",
@@ -330,6 +332,7 @@ def evaluate_pipeline(
             warnings.append(f"assessment will refresh {len(units)} existing units")
     elif pipeline in {
         "aim-understand",
+        "aim-review-rules",
         "aim-design-unit",
         "aim-convert-unit",
         "aim-capture-golden",
@@ -357,6 +360,12 @@ def evaluate_pipeline(
                         )
                         selected.extend(closure)
                         blockers.extend(closure_blockers)
+                elif pipeline == "aim-review-rules":
+                    selected.append(unit_key)
+                    if frontmatter.phase != "understood":
+                        blockers.append(
+                            f"unit {unit_key} is {frontmatter.phase}, not understood"
+                        )
                 elif pipeline == "aim-design-unit":
                     selected.append(unit_key)
                     if frontmatter.phase != "understood":
@@ -365,6 +374,15 @@ def evaluate_pipeline(
                         )
                     if not body.strip():
                         blockers.append("unit documentation body is empty")
+                    from app.services.aim.business_rules import (
+                        business_rule_review_ready,
+                    )
+
+                    rules_ready, rules_blocker = business_rule_review_ready(
+                        kb_root, unit_key
+                    )
+                    if not rules_ready:
+                        blockers.append(rules_blocker)
                     conventions = kb_root / "target-conventions.md"
                     if not conventions.is_file():
                         blockers.append("target-conventions.md is missing")
@@ -444,6 +462,19 @@ def evaluate_pipeline(
                         contract_issues.append(str(exc))
                     if pipeline == "aim-capture-golden-contract":
                         blockers.extend(contract_issues)
+                        expected_dir = case_dir / "expected"
+                        expected_exists = expected_dir.is_dir() and any(
+                            path.is_file() for path in expected_dir.rglob("*")
+                        )
+                        if expected_exists and not overwrite:
+                            blockers.append(
+                                "golden expected output already exists; enable overwrite "
+                                "and approve baseline replacement"
+                            )
+                        elif expected_exists:
+                            warnings.append(
+                                "existing trusted baseline will be replaced"
+                            )
                     else:
                         warnings.extend(
                             f"case contract pending: {issue}"
@@ -496,9 +527,36 @@ def evaluate_pipeline(
                         )
 
                         try:
-                            load_golden_case_meta(case_dir)
+                            golden_meta = load_golden_case_meta(case_dir)
+                            from app.services.aim.golden import (
+                                validate_expected_integrity,
+                            )
+
+                            validate_expected_integrity(case_dir, golden_meta)
+                            if (kb_root / "aim.yaml").is_file():
+                                from app.services.aim.canonicalize import load_profile
+                                from app.services.aim.rulebook import resolve_rulebook_dir
+
+                                project_manifest = kb_store.read_manifest(kb_root)
+                                profile_id = (
+                                    golden_meta.canonicalizer_profile
+                                    or project_manifest.compare_default_profile
+                                )
+                                profile_path = (
+                                    resolve_rulebook_dir(kb_root)
+                                    / "canonicalizers"
+                                    / f"{profile_id}.yaml"
+                                )
+                                if not profile_path.is_file():
+                                    blockers.append(
+                                        f"canonicalizer profile {profile_id!r} is missing"
+                                    )
+                                else:
+                                    load_profile(profile_path)
                         except GoldenCaseError as exc:
                             blockers.append(str(exc))
+                        except (OSError, ValueError) as exc:
+                            blockers.append(f"canonicalizer profile is invalid: {exc}")
                     from app.services.aim.runners import (
                         RunnerExecutionError,
                         resolve_target_runner,
@@ -631,6 +689,18 @@ def evaluate_transition(
             blockers.append("same-attempt understanding evidence is missing")
         blockers.extend(_dependency_blockers(kb_root, frontmatter.depends_on))
     elif target_phase == "designed":
+        from app.services.aim.business_rules import business_rule_review_ready
+
+        rules_ready, rules_blocker = business_rule_review_ready(kb_root, unit_key)
+        if not rules_ready:
+            blockers.append(rules_blocker)
+        conventions = kb_root / "target-conventions.md"
+        if not conventions.is_file() or not conventions.read_text(
+            encoding="utf-8"
+        ).strip():
+            blockers.append("target-conventions.md is empty or missing")
+        elif "baseline pending" in conventions.read_text(encoding="utf-8").lower():
+            blockers.append("target-conventions.md baseline is pending")
         if not _mapping_exists(kb_root, module, name):
             blockers.append("target mapping is missing")
         from app.services.aim.verification import (

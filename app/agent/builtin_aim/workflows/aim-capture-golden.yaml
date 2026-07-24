@@ -10,7 +10,8 @@ inputs:
     required: true
     description: "module/unit whose legacy behavior is being captured"
   - name: case_set
-    type: string
+    type: enum
+    options: [smoke, full]
     default: smoke
     description: "golden case set name"
   - name: overwrite
@@ -26,6 +27,7 @@ nodes:
       pipeline: aim-capture-golden
       unit: "{{inputs.unit}}"
       case_set: "{{inputs.case_set}}"
+      overwrite: "{{inputs.overwrite}}"
 
   - id: readiness_branch
     kind: switch
@@ -59,8 +61,10 @@ nodes:
       active rulebook runner contract. Create or validate the case directory,
       input/ fixtures, meta.yaml, legacy.command, and target.command. Commands
       must be deterministic, write only to AIM_OUT_DIR, and never edit expected/.
+      For captured provenance, meta.yaml must name canonicalizer_profile, the
+      clean source_revision, environment_fingerprint, and capture_command.
       Do not synthesize expected output. Summarize exactly what will execute,
-      provenance, coverage, and any trust concerns.
+      provenance, coverage, overwrite intent, and any trust concerns.
     timeout_s: 900
 
   - id: validate_contract
@@ -70,6 +74,7 @@ nodes:
       pipeline: aim-capture-golden-contract
       unit: "{{inputs.unit}}"
       case_set: "{{inputs.case_set}}"
+      overwrite: "{{inputs.overwrite}}"
 
   - id: contract_branch
     kind: switch
@@ -88,7 +93,7 @@ nodes:
   - id: approve
     kind: gate
     title: "Capture legacy baseline for {{inputs.unit}}?"
-    body: "{{nodes.prepare.output.text | truncate:2000}}"
+    body: "Overwrite existing baseline: {{inputs.overwrite}}. {{nodes.prepare.output.text | truncate:2000}}"
     choices: [capture, hold]
 
   - id: capture

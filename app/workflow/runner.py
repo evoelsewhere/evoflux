@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID, uuid7
 
@@ -38,6 +38,8 @@ _OUTPUT_CAP_BYTES = 32 * 1024
 #: abandoned gate eventually frees it. Restart recovery is handled separately
 #: (:func:`reconcile_orphaned_executions`).
 _GATE_TIMEOUT_S = 24 * 3600
+_CLAIM_HEARTBEAT_S = 60
+_CLAIM_HEARTBEAT_LEASE = timedelta(hours=4)
 
 #: Node kinds the M3 runner can execute inline. M4 extends this set.
 HEADLESS_KINDS = frozenset({"tool", "switch", "transform", "notify"})
@@ -92,6 +94,7 @@ class ExecutionState:
     #: is only owed when > 0 (headless-only runs never opened a turn).
     injected_turns: int = 0
     listener_task: asyncio.Task | None = None
+    claim_heartbeat_task: asyncio.Task | None = None
 
     def template_scope(self, extra: dict | None = None) -> dict:
         import os
@@ -151,6 +154,9 @@ class WorkflowRunner:
         self.active[session_id] = state
         await self._persist_execution_start(state, definition_hash)
         await self._emit_progress(state, node_id=None)
+        state.claim_heartbeat_task = asyncio.create_task(
+            self._claim_heartbeat_loop(state)
+        )
         state.drive_task = asyncio.create_task(self._drive_safely(state))
         return state
 
@@ -542,8 +548,13 @@ class WorkflowRunner:
                 await self._fail(state, node_id=node.id, error=error)
                 return
             outputs.append(output)
+            state.node_outputs[node.id] = {
+                "items": list(outputs),
+                "count": len(outputs),
+                "partial": True,
+            }
 
-        result_output = {"items": outputs, "count": len(outputs)}
+        result_output = {"items": outputs, "count": len(outputs), "partial": False}
         state.node_outputs[node.id] = result_output
         state.graph.mark_succeeded(node.id)
         await self._emit_progress(state, node_id=node.id)
@@ -780,6 +791,7 @@ class WorkflowRunner:
                     exc,
                 )
         state.status = "completed"
+        await self._stop_claim_heartbeat(state)
         await self._release_execution_claims(state.execution_id)
         await self._persist_execution_end(state, outputs=outputs)
         await self._emit_progress(state, node_id=None)
@@ -793,8 +805,14 @@ class WorkflowRunner:
             state.graph.mark_failed(node_id)
         state.status = "failed"
         state.error = error
+        await self._stop_claim_heartbeat(state)
         await self._release_execution_claims(state.execution_id)
-        await self._persist_execution_end(state, error=error)
+        partial_outputs = (
+            {"partial_nodes": state.node_outputs} if state.node_outputs else None
+        )
+        await self._persist_execution_end(
+            state, outputs=partial_outputs, error=error
+        )
         await self._emit_progress(state, node_id=node_id, error=error)
         self.active.pop(state.session_id, None)
         await self._emit_done_if_owned(state)
@@ -803,6 +821,7 @@ class WorkflowRunner:
         if self.active.get(state.session_id) is not state:
             return  # already finalised
         state.status = status
+        await self._stop_claim_heartbeat(state)
         await self._release_execution_claims(state.execution_id)
         await self._persist_execution_end(state)
         await self._emit_progress(state, node_id=state.current_node_id)
@@ -837,6 +856,52 @@ class WorkflowRunner:
                 execution_id,
                 exc,
             )
+
+    async def _claim_heartbeat_loop(self, state: ExecutionState) -> None:
+        while self.active.get(state.session_id) is state:
+            try:
+                await self._renew_execution_claims(state.execution_id)
+            except Exception as exc:  # noqa: BLE001 — retry on next heartbeat
+                logger.warning(
+                    "workflow_claim_heartbeat_failed execution={} error={}",
+                    state.execution_id,
+                    exc,
+                )
+            await asyncio.sleep(_CLAIM_HEARTBEAT_S)
+
+    async def _renew_execution_claims(self, execution_id: UUID) -> int:
+        from sqlmodel import select
+
+        from app.core import db as db_module
+        from app.models.aim import AimClaim
+
+        async with db_module.async_session_factory() as db:
+            claims = (
+                await db.exec(
+                    select(AimClaim).where(
+                        AimClaim.workflow_execution_id == execution_id
+                    )
+                )
+            ).all()
+            if not claims:
+                return 0
+            expires_at = _utcnow() + _CLAIM_HEARTBEAT_LEASE
+            for claim in claims:
+                claim.lease_expires_at = expires_at
+                db.add(claim)
+            await db.commit()
+            return len(claims)
+
+    async def _stop_claim_heartbeat(self, state: ExecutionState) -> None:
+        task = state.claim_heartbeat_task
+        state.claim_heartbeat_task = None
+        if task is None or task is asyncio.current_task():
+            return
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
     # -- side channels ------------------------------------------------------------
     @staticmethod

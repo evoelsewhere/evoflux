@@ -1,6 +1,9 @@
 from pathlib import Path
+from uuid import uuid4
 
 from app.services.aim.kb_store import write_cutover_checklist, write_unit
+from app.services.aim.business_rules import confirm_no_business_rules
+from app.services.aim.golden import stamp_expected_integrity
 from app.services.aim.models import CutoverChecklist
 from app.services.aim.readiness import evaluate_pipeline, evaluate_transition
 
@@ -102,6 +105,8 @@ def test_design_requires_mapping_and_verification_command(tmp_path: Path):
         phase="understood",
         body="Documented payroll behavior.",
     )
+    (tmp_path / "target-conventions.md").write_text("# Approved conventions\n")
+    confirm_no_business_rules(tmp_path, "core/PAY", str(uuid4()))
 
     missing = evaluate_transition(
         tmp_path,
@@ -422,6 +427,7 @@ def test_design_pipeline_requires_finalized_target_conventions(tmp_path: Path):
     (tmp_path / "target-conventions.md").write_text("Status: baseline pending\n")
     pending = evaluate_pipeline(tmp_path, "aim-design-unit", unit="core/PAY")
     (tmp_path / "target-conventions.md").write_text("# Approved target conventions\n")
+    confirm_no_business_rules(tmp_path, "core/PAY", str(uuid4()))
     ready = evaluate_pipeline(tmp_path, "aim-design-unit", unit="core/PAY")
 
     assert "target-conventions.md is missing" in missing.blockers
@@ -473,7 +479,13 @@ def test_capture_golden_contract_requires_all_case_files(tmp_path: Path):
     (case_dir / "input").mkdir(parents=True)
     (case_dir / "legacy.command").write_text("true\n")
     (case_dir / "target.command").write_text("true\n")
-    (case_dir / "meta.yaml").write_text("provenance: captured\n")
+    (case_dir / "meta.yaml").write_text(
+        "provenance: captured\n"
+        "canonicalizer_profile: default\n"
+        "source_revision: test-source-revision\n"
+        "environment_fingerprint: test-environment\n"
+        "capture_command: test-capture\n"
+    )
     ready = evaluate_pipeline(
         tmp_path,
         "aim-capture-golden-contract",
@@ -486,6 +498,47 @@ def test_capture_golden_contract_requires_all_case_files(tmp_path: Path):
     assert any("legacy.command" in blocker for blocker in missing.blockers)
     assert any("target.command" in blocker for blocker in missing.blockers)
     assert ready.allowed
+
+
+def test_capture_contract_requires_explicit_overwrite_for_existing_baseline(
+    tmp_path: Path,
+):
+    _write_capture_rulebook(tmp_path)
+    write_unit(tmp_path, "core", "PAY", kind="program", phase="understood")
+    case_dir = tmp_path / "golden/units/core/PAY/cases/smoke"
+    (case_dir / "input").mkdir(parents=True)
+    (case_dir / "expected").mkdir()
+    (case_dir / "expected/result.txt").write_text("trusted\n")
+    (case_dir / "legacy.command").write_text("true\n")
+    (case_dir / "target.command").write_text("true\n")
+    (case_dir / "meta.yaml").write_text(
+        "provenance: captured\n"
+        "canonicalizer_profile: default\n"
+        "source_revision: test-source-revision\n"
+        "environment_fingerprint: test-environment\n"
+        "capture_command: test-capture\n"
+    )
+    stamp_expected_integrity(case_dir)
+
+    blocked = evaluate_pipeline(
+        tmp_path,
+        "aim-capture-golden-contract",
+        unit="core/PAY",
+        case_set="smoke",
+        overwrite=False,
+    )
+    ready = evaluate_pipeline(
+        tmp_path,
+        "aim-capture-golden-contract",
+        unit="core/PAY",
+        case_set="smoke",
+        overwrite=True,
+    )
+
+    assert not blocked.allowed
+    assert any("enable overwrite" in blocker for blocker in blocked.blockers)
+    assert ready.allowed
+    assert "existing trusted baseline will be replaced" in ready.warnings
 
 
 def test_legacy_state_schema_blocks_lifecycle_pipeline(tmp_path: Path):
@@ -540,6 +593,10 @@ def test_compare_pipeline_requires_target_command(tmp_path: Path):
     )
     (tmp_path / "rulebook/runners").mkdir(parents=True)
     (tmp_path / "rulebook/runners/run_target.sh").write_text("#!/bin/sh\nexit 0\n")
+    (tmp_path / "rulebook/canonicalizers").mkdir()
+    (tmp_path / "rulebook/canonicalizers/default.yaml").write_text(
+        "id: default\n"
+    )
     (tmp_path / "rulebook/rulebook.yaml").write_text(
         "id: compare-test\nversion: '0.1'\n"
         "capabilities: {compare: ready}\n"
@@ -557,12 +614,19 @@ def test_compare_pipeline_requires_target_command(tmp_path: Path):
     (case_dir / "input").mkdir(parents=True)
     (case_dir / "expected").mkdir()
     (case_dir / "expected/result.txt").write_text("ok\n")
-    (case_dir / "meta.yaml").write_text("provenance: captured\n")
-
+    (case_dir / "legacy.command").write_text("true\n")
+    (case_dir / "meta.yaml").write_text(
+        "provenance: captured\n"
+        "canonicalizer_profile: default\n"
+        "source_revision: test-source-revision\n"
+        "environment_fingerprint: test-environment\n"
+        "capture_command: test-capture\n"
+    )
     missing = evaluate_pipeline(
         tmp_path, "aim-test-compare", unit="core/PAY", case_set="smoke"
     )
     (case_dir / "target.command").write_text("true\n")
+    stamp_expected_integrity(case_dir)
     ready = evaluate_pipeline(
         tmp_path, "aim-test-compare", unit="core/PAY", case_set="smoke"
     )
@@ -570,6 +634,51 @@ def test_compare_pipeline_requires_target_command(tmp_path: Path):
     assert not missing.allowed
     assert any("target.command" in blocker for blocker in missing.blockers)
     assert ready.allowed
+
+
+def test_compare_pipeline_requires_available_canonicalizer(tmp_path: Path):
+    (tmp_path / "aim.yaml").write_text(
+        "rulebook: {id: compare-test, version: '0.1'}\n"
+        "roles: {source: [], target: []}\n"
+        "state_schema: 2\n"
+        "compare_default_profile: missing\n"
+    )
+    (tmp_path / "rulebook/runners").mkdir(parents=True)
+    (tmp_path / "rulebook/runners/run_target.sh").write_text("#!/bin/sh\nexit 0\n")
+    (tmp_path / "rulebook/rulebook.yaml").write_text(
+        "id: compare-test\nversion: '0.1'\n"
+        "capabilities: {compare: ready}\n"
+        "runners: {target: runners/run_target.sh}\n"
+    )
+    write_unit(
+        tmp_path,
+        "core",
+        "PAY",
+        kind="program",
+        phase="converted",
+        target_paths=["src/Pay.rs"],
+    )
+    case_dir = tmp_path / "golden/units/core/PAY/cases/smoke"
+    (case_dir / "input").mkdir(parents=True)
+    (case_dir / "expected").mkdir()
+    (case_dir / "expected/result.txt").write_text("ok\n")
+    (case_dir / "legacy.command").write_text("true\n")
+    (case_dir / "target.command").write_text("true\n")
+    (case_dir / "meta.yaml").write_text(
+        "provenance: captured\n"
+        "canonicalizer_profile: missing\n"
+        "source_revision: test-source-revision\n"
+        "environment_fingerprint: test-environment\n"
+        "capture_command: test-capture\n"
+    )
+    stamp_expected_integrity(case_dir)
+
+    result = evaluate_pipeline(
+        tmp_path, "aim-test-compare", unit="core/PAY", case_set="smoke"
+    )
+
+    assert not result.allowed
+    assert "canonicalizer profile 'missing' is missing" in result.blockers
 
 
 def test_cutover_pipeline_blocks_incomplete_wave(tmp_path: Path):
