@@ -3,7 +3,7 @@
 # the foreach iterates deterministic data — not an agent's prose.
 schema_version: 1
 name: aim-convert-wave
-description: List a wave's designed units, approve the batch, convert each sequentially
+description: Convert a wave's designed units sequentially in dependency order
 scope: aim
 
 inputs:
@@ -29,6 +29,17 @@ nodes:
     title: "aim-convert-wave blocked"
     message: "Wave {{inputs.wave}} is not ready for conversion: {{nodes.readiness.output.blockers | json}}"
 
+  - id: approve_batch
+    kind: gate
+    title: "Convert wave {{inputs.wave}}?"
+    body: "{{nodes.readiness.output.selected_count}} designed unit(s) will be implemented in dependency order: {{nodes.readiness.output.selected_units | truncate:1500}}"
+    choices: [approve, cancel]
+
+  - id: cancelled
+    kind: notify
+    title: "aim-convert-wave"
+    message: "Wave {{inputs.wave}} conversion was cancelled before claims were acquired."
+
   - id: acquire
     kind: tool
     tool: aim_claim
@@ -45,31 +56,14 @@ nodes:
     title: "aim-convert-wave claim blocked"
     message: "Wave {{inputs.wave}} has claimed units: {{nodes.acquire.output.blockers | json}}"
 
-  - id: list_units
-    kind: tool
-    tool: aim_units
-    args: { action: list, phase_filter: designed, wave_filter: "{{inputs.wave}}", format: json }
-
-  - id: batch_summary
-    kind: transform
-    set:
-      units: "{{nodes.list_units.output.units | json}}"
-      count: "{{nodes.list_units.output.count}}"
-
-  - id: approve_batch
-    kind: gate
-    title: "Convert wave {{inputs.wave}}?"
-    body: "{{nodes.batch_summary.output.count}} designed unit(s) will be implemented in the target repo: {{nodes.batch_summary.output.units | truncate:1500}}"
-    choices: [approve, cancel]
-
   - id: convert_each
     kind: foreach
-    items: "{{nodes.list_units.output.units}}"
+    items: "{{nodes.readiness.output.selected_units}}"
     body:
       kind: agent
       subagents: [aim-converter]
       prompt: |
-        Convert unit {{item.module}}/{{item.name}} (wave {{inputs.wave}},
+        Convert unit {{item}} (wave {{inputs.wave}},
         item {{index}}): delegate to `aim-converter` — implement it in the
         target repo per its KB mapping and target-conventions (base source is
         read-only), verify the target builds, then update target_paths via
@@ -79,23 +73,23 @@ nodes:
 
   - id: mark_converted
     kind: foreach
-    items: "{{nodes.list_units.output.units}}"
+    items: "{{nodes.readiness.output.selected_units}}"
     body:
       kind: tool
       tool: aim_units
       args:
         action: set_phase
-        unit: "{{item.module}}/{{item.name}}"
+        unit: "{{item}}"
         phase: converted
 
   - id: verify_each
     kind: foreach
-    items: "{{nodes.list_units.output.units}}"
+    items: "{{nodes.readiness.output.selected_units}}"
     body:
       kind: tool
       tool: aim_verify
       args:
-        unit: "{{item.module}}/{{item.name}}"
+        unit: "{{item}}"
       timeout_s: 1800
 
   - id: done
@@ -113,19 +107,21 @@ nodes:
 edges:
   - { from: readiness, to: readiness_branch }
   - { from: readiness_branch, to: blocked, when: blocked }
-  - { from: readiness_branch, to: acquire, when: ready }
+  - { from: readiness_branch, to: approve_batch, when: ready }
+  - { from: approve_batch, to: acquire, when: approve }
+  - { from: approve_batch, to: cancelled, when: cancel }
   - { from: acquire, to: claim_branch }
   - { from: claim_branch, to: claim_blocked, when: blocked }
-  - { from: claim_branch, to: list_units, when: acquired }
-  - { from: list_units, to: batch_summary }
-  - { from: batch_summary, to: approve_batch }
-  - { from: approve_batch, to: convert_each, when: approve }
+  - { from: claim_branch, to: convert_each, when: acquired }
   - { from: convert_each, to: verify_each }
   - { from: verify_each, to: mark_converted }
-  - { from: approve_batch, to: release, when: cancel }
   - { from: mark_converted, to: release }
   - { from: release, to: done }
 
 outputs:
-  status: "{{nodes.readiness.output.status}}"
+  readiness_status: "{{nodes.readiness.output.status}}"
   blockers: "{{nodes.readiness.output.blockers | json}}"
+  selected_units: "{{nodes.readiness.output.selected_units}}"
+  decision: "{{nodes.approve_batch.output.choice}}"
+  verified_count: "{{nodes.verify_each.output.count}}"
+  converted_count: "{{nodes.mark_converted.output.count}}"

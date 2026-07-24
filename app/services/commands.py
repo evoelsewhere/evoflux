@@ -14,7 +14,7 @@ format so users can share a single library between the two tools:
 Discovery walks four roots in precedence order — first hit wins on a
 name collision, later sources are silently ignored:
 
-    1. ``{workspace}/.EvoFlux/commands/``  (project, EvoFlux-native;
+    1. ``{workspace}/.evoflux/commands/``  (project, EvoFlux-native;
                                                coding mode only)
     2. ``{workspace}/.opencode/commands/``    (project, opencode reuse;
                                                coding mode only)
@@ -76,7 +76,7 @@ def _candidate_roots(workspace: Path | None = None) -> list[tuple[Path, str]]:
     if workspace is not None:
         roots.extend(
             [
-                (workspace / ".EvoFlux" / "commands", "project-EvoFlux"),
+                (workspace / ".evoflux" / "commands", "project-EvoFlux"),
                 (workspace / ".opencode" / "commands", "project-opencode"),
             ]
         )

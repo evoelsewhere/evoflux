@@ -44,7 +44,7 @@ from typing import Any
 
 DEFAULT_BASE = "http://localhost:4082/api/mcp"
 DEFAULT_MCP_JSON = (
-    Path(os.environ.get("EVOFLUX_CONFIG_DIR", Path.home() / ".EvoFlux" / "config"))
+    Path(os.environ.get("EVOFLUX_CONFIG_DIR", Path.home() / ".evoflux" / "config"))
     / "mcp.json"
 )
 DEFAULT_ENV_FILE = DEFAULT_MCP_JSON.parent / ".env"

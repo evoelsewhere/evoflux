@@ -7,7 +7,7 @@
 # own turns — v1 forbids graph cycles.
 schema_version: 1
 name: aim-test-compare
-description: Run legacy vs target for one unit, compare deterministically, certify or triage
+description: Run one target unit against trusted golden output, then certify or triage
 scope: aim
 
 inputs:
@@ -96,8 +96,9 @@ nodes:
       {{nodes.compare.output.report_path}}). Delegate to `aim-triage-analyst`:
       follow the aim-diff-triage skill — classify each difference (target bug /
       legacy quirk / accepted difference / harness artifact), cite business
-      rules, record the triage verdict via aim_units record_run, and propose
-      the next fix or an ADR for accepted differences.
+      rules, and propose the next fix or an ADR for accepted differences.
+      aim_compare already recorded this attempt; do not create a duplicate run.
+      If report_path is null, triage the reported harness/configuration error.
     timeout_s: 1800
 
   - id: done
@@ -128,5 +129,8 @@ edges:
   - { from: release, to: done }
 
 outputs:
-  status: "{{nodes.readiness.output.status}}"
+  readiness_status: "{{nodes.readiness.output.status}}"
   blockers: "{{nodes.readiness.output.blockers | json}}"
+  verdict: "{{nodes.compare.output.verdict}}"
+  report_path: "{{nodes.compare.output.report_path}}"
+  decision: "{{nodes.certify.output.choice}}"

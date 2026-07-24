@@ -1089,7 +1089,7 @@ export interface RegistryResponse {
 
 // ── Workspace files (artifacts panel) ────────────────────────────────────────
 //
-// Flat recursive listing of a session's agent workspace (``.EvoFlux/team/{sid}``).
+// Flat recursive listing of a session's agent workspace (``.evoflux/team/{sid}``).
 // File bytes are fetched through ``/api/team/{sid}/media/{path}`` — the same
 // proxy that renders inline markdown images.
 

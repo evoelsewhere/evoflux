@@ -166,7 +166,7 @@ class TestWorkspaceFilesListing:
     ):
         """VCS/generated cache dirs are always pruned, but other dot-prefixed
         files and folders flow through so the InputBar @-mention picker can tag
-        things like ``.EvoFlux/`` skills, ``.github/`` workflows, or
+        things like ``.evoflux/`` skills, ``.github/`` workflows, or
         ``.env.example``. Filtering beyond common generated dirs is delegated to
         ``.gitignore``."""
         fake_root = tmp_path / "ws"
@@ -203,16 +203,16 @@ class TestWorkspaceFilesListing:
     def test_gitignore_negation_reincludes_dot_subdir(
         self, client, session_id, tmp_path, monkeypatch
     ):
-        """``.gitignore`` with ``.EvoFlux/*`` + ``!.EvoFlux/skills/``
+        """``.gitignore`` with ``.evoflux/*`` + ``!.evoflux/skills/``
         should hide the ignored siblings but surface the re-included subtree
         so users can @-mention their tracked skill files."""
         fake_root = tmp_path / "ws"
         fake_root.mkdir()
         (fake_root / ".gitignore").write_text(
-            ".EvoFlux/*\n!.EvoFlux/skills/\n",
+            ".evoflux/*\n!.evoflux/skills/\n",
             encoding="utf-8",
         )
-        oad = fake_root / ".EvoFlux"
+        oad = fake_root / ".evoflux"
         oad.mkdir()
         (oad / "data").mkdir()
         (oad / "data" / "runtime.db").write_text("x")
@@ -225,8 +225,8 @@ class TestWorkspaceFilesListing:
 
         resp = client.get(f"/api/team/{session_id}/files")
         paths = sorted(f["path"] for f in resp.json()["files"])
-        assert ".EvoFlux/skills/SKILL.md" in paths
-        assert ".EvoFlux/data/runtime.db" not in paths
+        assert ".evoflux/skills/SKILL.md" in paths
+        assert ".evoflux/data/runtime.db" not in paths
 
     def test_symlink_escaping_root_is_skipped(
         self, client, session_id, tmp_path, monkeypatch

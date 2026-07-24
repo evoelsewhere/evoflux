@@ -11,7 +11,7 @@ Snippets are markdown files with optional YAML frontmatter:
 Discovery walks EvoFlux-native snippet roots in precedence order — first hit
 wins on a name collision:
 
-    1. ``{workspace}/.EvoFlux/snippets/``      (project; coding mode only)
+    1. ``{workspace}/.evoflux/snippets/``      (project; coding mode only)
     2. ``{EVOFLUX_CONFIG_DIR}/snippets/``      (global)
 
 Nested folders are honoured one level deep: ``snippets/git/commit.md`` registers
@@ -42,7 +42,7 @@ class Snippet:
 def _candidate_roots(workspace: Path) -> list[tuple[Path, str]]:
     config = Path(settings.EVOFLUX_CONFIG_DIR)
     return [
-        (workspace / ".EvoFlux" / "snippets", "project-EvoFlux"),
+        (workspace / ".evoflux" / "snippets", "project-EvoFlux"),
         (config / "snippets", "global-EvoFlux"),
     ]
 

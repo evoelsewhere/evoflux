@@ -86,6 +86,21 @@ def test_undecodable_binary_files_are_compared_byte_exact(tmp_path: Path):
     assert "binary content differs" in report.files[0].detail
 
 
+def test_binary_mode_preserves_utf8_decodable_bytes(tmp_path: Path):
+    expected = tmp_path / "expected"
+    actual = tmp_path / "actual"
+    expected.mkdir()
+    actual.mkdir()
+    (expected / "result.db").write_bytes(b"same-content\n")
+    (actual / "result.db").write_bytes(b"same-content")
+
+    report = compare_dirs(expected, actual, _profile(mode="binary"))
+
+    assert report.verdict == "fail"
+    assert report.diff_count == 1
+    assert "binary content differs" in report.files[0].detail
+
+
 def test_json_numeric_tolerance_accepts_small_delta(tmp_path: Path):
     expected = tmp_path / "expected"
     actual = tmp_path / "actual"

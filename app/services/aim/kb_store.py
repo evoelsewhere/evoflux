@@ -501,3 +501,25 @@ def list_units(
     kb_root: Path,
 ) -> list[tuple[str, str, UnitFrontmatter, str]]:
     return scan_units(kb_root)[0]
+
+
+def sync_project_phase_from_units(kb_root: Path) -> str | None:
+    """Advance the project phase when every unit crosses a lifecycle boundary."""
+    units = list_units(kb_root)
+    if not units or not (kb_root / "aim.yaml").is_file():
+        return None
+    phases = {frontmatter.phase for _, _, frontmatter, _ in units}
+    if "inventory" in phases:
+        project_phase = "understand"
+    elif "understood" in phases:
+        project_phase = "design"
+    elif "designed" in phases:
+        project_phase = "convert"
+    elif "converted" in phases:
+        project_phase = "test"
+    else:
+        project_phase = "cutover"
+    manifest = read_manifest(kb_root)
+    if manifest.phase != project_phase:
+        write_manifest_phase(kb_root, project_phase)
+    return project_phase

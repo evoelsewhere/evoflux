@@ -15,6 +15,7 @@ markdown. The only rulebook is ``<kb>/rulebook/`` in the project KB.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 from uuid import UUID
 
 from loguru import logger
@@ -37,19 +38,58 @@ def extractor_config_paths(kb_root: Path) -> list[Path]:
     )
 
     try:
-        manifest = validate_rulebook_identity(kb_root).model_dump()
+        manifest = validate_rulebook_identity(kb_root)
     except (FileNotFoundError, ValueError):
         return []
-    declared = manifest.get("extractors")
-    if not isinstance(declared, list):
+    if manifest.parser_strategy == "none":
         return []
     paths: list[Path] = []
-    for relative in declared:
+    for relative in manifest.extractors:
         try:
             paths.append(resolve_rulebook_path(kb_root, str(relative)))
         except ValueError as exc:
             logger.warning("aim_extractor_path_invalid path={} error={}", relative, exc)
     return [path for path in paths if path.is_file()]
+
+
+async def parser_strategy_for_workspace(
+    db: AsyncSession, workspace_id: UUID
+) -> Literal["tree_sitter", "structural", "none"] | None:
+    from app.services.aim.project import resolve_kb_workspace_path
+    from app.services.aim.rulebook import validate_rulebook_identity
+
+    memberships = await db.exec(
+        select(CodingProject)
+        .join(
+            CodingProjectWorkspace,
+            col(CodingProjectWorkspace.project_id) == col(CodingProject.id),
+        )
+        .where(col(CodingProjectWorkspace.workspace_id) == workspace_id)
+        .where(col(CodingProject.kind) == "aim")
+    )
+    strategies: list[Literal["tree_sitter", "structural", "none"]] = []
+    for project in memberships.all():
+        source_ids = ((project.settings.get("aim") or {}).get("roles") or {}).get(
+            "source"
+        ) or []
+        if str(workspace_id) not in source_ids:
+            continue
+        kb_path = await resolve_kb_workspace_path(db, project)
+        if not kb_path:
+            continue
+        try:
+            strategies.append(
+                validate_rulebook_identity(Path(kb_path)).parser_strategy
+            )
+        except (FileNotFoundError, ValueError):
+            continue
+    if not strategies:
+        return None
+    if "tree_sitter" in strategies:
+        return "tree_sitter"
+    if "structural" in strategies:
+        return "structural"
+    return "none"
 
 
 async def structural_parsers_for_workspace(

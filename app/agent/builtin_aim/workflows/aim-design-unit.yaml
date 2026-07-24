@@ -45,9 +45,12 @@ nodes:
     prompt: |
       Prepare the target design for {{inputs.unit}}. Read its KB doc and
       confirmed business rules, consult the rulebook mappings and
-      target-conventions.md, then write mapping/<module>/<unit>.md in the KB.
-      Do NOT write target code and do NOT change phase; the approval and
-      deterministic mark_designed node own that transition.
+      target-conventions.md, then write both mapping/<module>/<unit>.md and
+      mapping/<module>/<unit>.verify.command in the KB. The command must run
+      deterministically from the target repository, return non-zero on failure,
+      and verify the exact mapped unit without implementing it. Do NOT write
+      target code and do NOT change phase; the approval and deterministic
+      mark_designed node own that transition.
     timeout_s: 1800
 
   - id: approve
@@ -67,7 +70,7 @@ nodes:
   - id: done
     kind: notify
     title: "aim-design-unit"
-    message: "{{inputs.unit}} design approved — ready for conversion."
+    message: "{{inputs.unit}} mapping and verification contract approved — ready for conversion."
 
   - id: release_success
     kind: tool
@@ -99,5 +102,6 @@ edges:
   - { from: release_rejected, to: rejected }
 
 outputs:
-  status: "{{nodes.readiness.output.status}}"
+  readiness_status: "{{nodes.readiness.output.status}}"
   blockers: "{{nodes.readiness.output.blockers | json}}"
+  decision: "{{nodes.approve.output.choice}}"

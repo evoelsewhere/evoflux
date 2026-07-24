@@ -1,7 +1,7 @@
-# AIM pipeline — understand one unit into the KB (comprehension phase).
+# AIM pipeline — understand one unit and its unresolved dependency closure.
 schema_version: 1
 name: aim-understand
-description: Reverse-engineer one unit into the KB (doc + candidate business rules)
+description: Reverse-engineer a unit dependency-first into the KB
 scope: aim
 
 inputs:
@@ -25,10 +25,24 @@ nodes:
     title: "aim-understand blocked"
     message: "{{inputs.unit}} is not ready for understanding: {{nodes.readiness.output.blockers | json}}"
 
+  - id: approve_batch
+    kind: gate
+    title: "Understand {{inputs.unit}} dependency-first?"
+    body: "{{nodes.readiness.output.selected_count}} unresolved unit(s) will be documented and advanced in dependency order: {{nodes.readiness.output.selected_units | truncate:1800}}"
+    choices: [approve, cancel]
+
+  - id: cancelled
+    kind: notify
+    title: "aim-understand"
+    message: "Dependency-first understanding for {{inputs.unit}} was cancelled."
+
   - id: acquire
     kind: tool
     tool: aim_claim
-    args: { action: acquire, unit: "{{inputs.unit}}" }
+    args:
+      action: acquire
+      units: "{{nodes.readiness.output.selected_units}}"
+      lease_seconds: 14400
 
   - id: claim_branch
     kind: switch
@@ -39,48 +53,100 @@ nodes:
     title: "aim-understand claim blocked"
     message: "{{inputs.unit}} is already owned: {{nodes.acquire.output.blockers | json}}"
 
-  - id: understand
-    kind: agent
-    subagents: [aim-archaeologist]
-    prompt: |
-      Run the UNDERSTAND-UNIT phase for unit {{inputs.unit}}. Delegate to
-      `aim-archaeologist`: follow the aim-legacy-comprehension skill —
-      bottom-up, dependencies' docs first (if a dependency has no doc yet,
-      document it first) — then write the unit doc into the KB (it MUST exist
-      after this step) and extract candidate business rules
-      (aim-business-rule-extraction). Do NOT change the unit's phase — the
-      pipeline marks it understood deterministically after you finish.
-    timeout_s: 1800
+  - id: snapshot
+    kind: tool
+    tool: aim_understanding
+    args:
+      action: snapshot
+      units: "{{nodes.readiness.output.selected_units}}"
+
+  - id: understand_each
+    kind: foreach
+    items: "{{nodes.readiness.output.selected_units}}"
+    body:
+      kind: agent
+      subagents: [aim-archaeologist]
+      prompt: |
+        Run UNDERSTAND-UNIT for {{item}} (dependency-order item {{index}})
+        while preparing selected unit {{inputs.unit}}. Follow the
+        aim-legacy-comprehension skill, write or enrich modules/{{item}}.md,
+        and extract candidate business rules with citations. Earlier items in
+        this batch are dependencies and their docs are already available.
+        Do NOT change phase; the deterministic mark_understood node owns it.
+      timeout_s: 1800
 
   - id: mark_understood
+    kind: foreach
+    items: "{{nodes.readiness.output.selected_units}}"
+    body:
+      kind: tool
+      tool: aim_units
+      args:
+        action: set_phase
+        unit: "{{item}}"
+        phase: understood
+
+  - id: verify_understanding
     kind: tool
-    tool: aim_units
+    tool: aim_understanding
     args:
-      action: set_phase
-      unit: "{{inputs.unit}}"
-      phase: understood
+      action: verify
+      units: "{{nodes.readiness.output.selected_units}}"
+      baseline: "{{nodes.snapshot.output.digests}}"
+
+  - id: approve_understanding
+    kind: gate
+    title: "Approve understanding for {{inputs.unit}}?"
+    body: "{{nodes.understand_each.output.items | truncate:2400}}"
+    choices: [approve, hold]
 
   - id: done
     kind: notify
     title: "aim-understand"
-    message: "{{inputs.unit}} documented — doc and candidate rules are in the KB."
+    message: "{{nodes.understand_each.output.count}} unit(s), ending with {{inputs.unit}}, were documented and marked understood in dependency order."
 
-  - id: release
+  - id: release_success
     kind: tool
     tool: aim_claim
-    args: { action: release, unit: "{{inputs.unit}}" }
+    args:
+      action: release
+      units: "{{nodes.readiness.output.selected_units}}"
+
+  - id: release_hold
+    kind: tool
+    tool: aim_claim
+    args:
+      action: release
+      units: "{{nodes.readiness.output.selected_units}}"
+
+  - id: held
+    kind: notify
+    title: "aim-understand"
+    message: "Understanding evidence was retained for review; no unit phase changed."
 
 edges:
   - { from: readiness, to: readiness_branch }
   - { from: readiness_branch, to: blocked, when: blocked }
-  - { from: readiness_branch, to: acquire, when: ready }
+  - { from: readiness_branch, to: approve_batch, when: ready }
+  - { from: approve_batch, to: acquire, when: approve }
+  - { from: approve_batch, to: cancelled, when: cancel }
   - { from: acquire, to: claim_branch }
   - { from: claim_branch, to: claim_blocked, when: blocked }
-  - { from: claim_branch, to: understand, when: acquired }
-  - { from: understand, to: mark_understood }
-  - { from: mark_understood, to: release }
-  - { from: release, to: done }
+  - { from: claim_branch, to: snapshot, when: acquired }
+  - { from: snapshot, to: understand_each }
+  - { from: understand_each, to: verify_understanding }
+  - { from: verify_understanding, to: approve_understanding }
+  - { from: approve_understanding, to: mark_understood, when: approve }
+  - { from: approve_understanding, to: release_hold, when: hold }
+  - { from: mark_understood, to: release_success }
+  - { from: release_success, to: done }
+  - { from: release_hold, to: held }
 
 outputs:
-  status: "{{nodes.readiness.output.status}}"
+  readiness_status: "{{nodes.readiness.output.status}}"
   blockers: "{{nodes.readiness.output.blockers | json}}"
+  selected_units: "{{nodes.readiness.output.selected_units}}"
+  understanding_evidence_count: "{{nodes.verify_understanding.output.count}}"
+  batch_decision: "{{nodes.approve_batch.output.choice}}"
+  review_decision: "{{nodes.approve_understanding.output.choice}}"
+  transitioned_count: "{{nodes.mark_understood.output.count}}"

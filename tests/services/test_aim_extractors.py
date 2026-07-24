@@ -101,6 +101,7 @@ JCL_EXTRACTOR = {
 def _configure_extractors(kb_root: Path, extractors: dict[str, dict]) -> None:
     rulebook_path = kb_root / "rulebook" / "rulebook.yaml"
     manifest = yaml.safe_load(rulebook_path.read_text(encoding="utf-8"))
+    manifest["parser_strategy"] = "structural"
     manifest["extractors"] = [f"extractors/{name}" for name in extractors]
     rulebook_path.write_text(
         yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8"
@@ -163,6 +164,28 @@ def test_extractor_examples_are_inert_until_declared(tmp_path):
     )
 
     assert extractor_config_paths(tmp_path) == []
+
+
+def test_none_parser_strategy_disables_declared_extractors(tmp_path):
+    kb_root = tmp_path / "kb"
+    (kb_root / "rulebook/extractors").mkdir(parents=True)
+    (kb_root / "rulebook/rulebook.yaml").write_text(
+        "id: local\nversion: '0.1'\nparser_strategy: none\n"
+        "extractors: [extractors/cobol.yaml]\n",
+        encoding="utf-8",
+    )
+    (kb_root / "rulebook/extractors/cobol.yaml").write_text(
+        yaml.safe_dump(COBOL_EXTRACTOR, sort_keys=False), encoding="utf-8"
+    )
+    kb_store.create_manifest(
+        kb_root,
+        rulebook_id="local",
+        rulebook_version="0.1",
+        source_identities=[],
+        target_identities=[],
+    )
+
+    assert extractor_config_paths(kb_root) == []
 
 
 def test_extractor_config_paths_empty_without_local_rulebook(tmp_path):

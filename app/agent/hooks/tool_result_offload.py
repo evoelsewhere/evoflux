@@ -208,7 +208,7 @@ class ToolResultOffloadHook(BaseAgentHook):
         content: str,
         session_id: str | None = None,
     ) -> Path:
-        """Write full tool result to session metadata below ``.EvoFlux``."""
+        """Write full tool result to session metadata below ``.evoflux``."""
         offload_dir = tool_results_dir(agent_name, session_id)
         offload_dir.mkdir(parents=True, exist_ok=True)
         dest = offload_dir / f"{tool_call_id}.txt"

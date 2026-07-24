@@ -172,10 +172,17 @@ async def reindex_workspace(
     # doesn't cover (aim-framework.md §3.9). Everyone else gets [] and the
     # registry is exactly the builtin set. Imported lazily: the aim domain
     # depends on code_graph, not the other way around.
-    from app.services.aim.extractors import structural_parsers_for_workspace
+    from app.services.aim.extractors import (
+        parser_strategy_for_workspace,
+        structural_parsers_for_workspace,
+    )
 
+    parser_strategy = await parser_strategy_for_workspace(db, workspace_id)
     extra_parsers = await structural_parsers_for_workspace(db, workspace_id)
-    registry = build_registry(languages, extra_parsers=extra_parsers)
+    builtin_languages = (
+        [] if parser_strategy in {"structural", "none"} else languages
+    )
+    registry = build_registry(builtin_languages, extra_parsers=extra_parsers)
     if incremental:
         return await _reindex_incremental(
             db,

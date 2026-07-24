@@ -47,7 +47,7 @@ Usage
     from pathlib import Path
     from app.agent.loader import load_team_from_dir
 
-    team = load_team_from_dir(Path(".EvoFlux/config/agents"))
+    team = load_team_from_dir(Path(".evoflux/config/agents"))
 """
 
 from __future__ import annotations
@@ -371,10 +371,12 @@ def _default_tool_registry() -> dict[str, Tool]:
     from app.agent.tools.builtin.visualize import visualize_read_me, show_widget
     from app.agent.tools.builtin.preview import preview_tool
     from app.agent.tools.builtin.aim import (
+        aim_capture,
         aim_claim,
         aim_compare,
         aim_execute,
         aim_readiness,
+        aim_understanding,
         aim_units,
         aim_verify,
     )
@@ -426,8 +428,10 @@ def _default_tool_registry() -> dict[str, Tool]:
         "visualize_read_me": visualize_read_me,
         "show_widget": show_widget,
         "aim_units": aim_units,
+        "aim_capture": aim_capture,
         "aim_compare": aim_compare,
         "aim_readiness": aim_readiness,
+        "aim_understanding": aim_understanding,
         "aim_claim": aim_claim,
         "aim_execute": aim_execute,
         "aim_verify": aim_verify,

@@ -25,7 +25,7 @@ def roots(tmp_path: Path, monkeypatch):
     """
     cwd = tmp_path / "project"
     cwd.mkdir()
-    proj_oad = cwd / ".EvoFlux" / "commands"
+    proj_oad = cwd / ".evoflux" / "commands"
     proj_oc = cwd / ".opencode" / "commands"
     global_config = tmp_path / "config"
     global_oad = global_config / "commands"

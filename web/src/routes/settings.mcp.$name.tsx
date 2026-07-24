@@ -144,7 +144,7 @@ export function McpServerDetailPage() {
       <EditorSubHeader
         kind="mcp"
         name={name}
-        path=".EvoFlux/config/mcp.json"
+        path=".evoflux/config/mcp.json"
         dirty={dirty}
         invalid={invalid}
         saving={updateMut.isPending}

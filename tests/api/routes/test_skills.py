@@ -199,7 +199,7 @@ async def test_list_skills_labels_project_EVOFLUX_source(
     client, fs_dirs, tmp_path, monkeypatch
 ):
     workspace = tmp_path / "workspace"
-    project_skills = workspace / ".EvoFlux" / "skills"
+    project_skills = workspace / ".evoflux" / "skills"
     skill_file = project_skills / "oad" / "commit" / "SKILL.md"
     skill_file.parent.mkdir(parents=True)
     skill_file.write_text(

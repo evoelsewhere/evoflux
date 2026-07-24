@@ -52,7 +52,7 @@ def _iter_skill_roots() -> list[Path]:
     Mirrors the slash-command precedence so a user's curated library
     works in both tools:
 
-    1. ``{workspace}/.EvoFlux/skills/``  (project, EvoFlux-native)
+    1. ``{workspace}/.evoflux/skills/``  (project, EvoFlux-native)
     2. ``{workspace}/.opencode/skills/``    (project, opencode reuse)
     3. ``_SKILLS_DIR``                     (global, EvoFlux — typically
                                              ``{EVOFLUX_CONFIG_DIR}/skills``)
@@ -65,7 +65,7 @@ def _iter_skill_roots() -> list[Path]:
     """
     project_root = _project_root()
     return [
-        project_root / ".EvoFlux" / "skills",
+        project_root / ".evoflux" / "skills",
         project_root / ".opencode" / "skills",
         _SKILLS_DIR,
         Path.home() / ".config" / "opencode" / "skills",

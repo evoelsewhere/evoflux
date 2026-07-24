@@ -16,7 +16,7 @@ def roots(tmp_path: Path, monkeypatch):
     """Isolate every command-discovery root inside tmp_path."""
     cwd = tmp_path / "project"
     cwd.mkdir()
-    project_EvoFlux = cwd / ".EvoFlux" / "commands"
+    project_EvoFlux = cwd / ".evoflux" / "commands"
     project_opencode = cwd / ".opencode" / "commands"
     global_config = tmp_path / "config"
     global_EvoFlux = global_config / "commands"
@@ -263,7 +263,7 @@ async def test_workspace_local_commands_do_not_leak_between_projects(
 ):
     workspace_a, workspace_b = workspaces
     _write(
-        workspace_a / ".EvoFlux" / "commands" / "run.md",
+        workspace_a / ".evoflux" / "commands" / "run.md",
         "---\ndescription: Run project A\n---\nrun a",
     )
 
@@ -280,7 +280,7 @@ async def test_workspace_local_commands_do_not_leak_between_projects(
 async def test_render_uses_workspace_local_command(client, workspaces):
     workspace_a, workspace_b = workspaces
     _write(
-        workspace_a / ".EvoFlux" / "commands" / "run.md",
+        workspace_a / ".evoflux" / "commands" / "run.md",
         "---\ndescription: Run project A\n---\nrun a",
     )
 

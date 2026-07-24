@@ -5,11 +5,11 @@ Covers:
 
 Requirements validated:
   - session_id validated as UUID (400 on malformed)
-  - Missing session-scoped .EvoFlux todo file returns empty list (fresh session)
+    - Missing session-scoped .evoflux todo file returns empty list (fresh session)
   - Missing workspace dir returns empty list
-  - Invalid JSON in session-scoped .EvoFlux todo file returns empty list
+    - Invalid JSON in session-scoped .evoflux todo file returns empty list
   - JSON list format (old format) returns empty list
-  - Valid session-scoped .EvoFlux todo file returns TodosResponse with all items
+    - Valid session-scoped .evoflux todo file returns TodosResponse with all items
   - Items missing required fields are skipped (caught by outer except)
   - Response schema matches TodoItemResponse
 """
