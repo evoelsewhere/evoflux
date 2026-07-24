@@ -67,8 +67,6 @@ async def create_aim_project(
     db: AsyncSession,
     *,
     name: str,
-    rulebook_id: str,
-    rulebook_version: str,
     source_paths: list[str],
     target_path: str,
     kb_path: str,
@@ -78,23 +76,26 @@ async def create_aim_project(
     repo identity — not this machine's local paths), and registers all
     workspaces.
     """
-    from app.services.aim.rulebook_install import _pack_dir, read_pack_manifest
+    from app.services.aim.rulebook import (
+        specialize_template_rulebook,
+        validate_rulebook_identity,
+    )
 
     kb_root = Path(kb_path).expanduser().resolve()
     kb_store.scaffold_kb_from_template(kb_root)
-    # The pack's own declared default profile, if it names one — no KB
-    # override can exist yet for a brand-new project, so the builtin pack
-    # dir is the only place this could come from at this point.
-    pack_manifest = read_pack_manifest(_pack_dir(rulebook_id))
-    compare_default_profile = pack_manifest.get("compare_default_profile") or "default"
+    local_rulebook = specialize_template_rulebook(
+        kb_root,
+        project_name=name,
+    )
     kb_store.create_manifest(
         kb_root,
-        rulebook_id=rulebook_id,
-        rulebook_version=rulebook_version,
+        rulebook_id=local_rulebook.id,
+        rulebook_version=local_rulebook.version,
         source_identities=[resolve_repo_identity(p) for p in source_paths],
         target_identities=[resolve_repo_identity(target_path)],
-        compare_default_profile=compare_default_profile,
+        compare_default_profile=local_rulebook.compare_default_profile,
     )
+    validate_rulebook_identity(kb_root)
 
     project = CodingProject(name=name, kind="aim", settings={})
     db.add(project)
@@ -105,24 +106,11 @@ async def create_aim_project(
         source_paths=source_paths,
         target_path=target_path,
         kb_path=str(kb_root),
-        rulebook_id=rulebook_id,
-        rulebook_version=rulebook_version,
+        rulebook_id=local_rulebook.id,
+        rulebook_version=local_rulebook.version,
     )
-    _install_rulebook_best_effort(kb_root, rulebook_id)
     await db.refresh(project)
     return project
-
-
-def _install_rulebook_best_effort(kb_root: Path, rulebook_id: str) -> None:
-    """Pack content installation must never fail project setup."""
-    from loguru import logger
-
-    try:
-        from app.services.aim.rulebook_install import install_rulebook_content
-
-        install_rulebook_content(kb_root, rulebook_id)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("aim_rulebook_install_failed rulebook={} error={}", rulebook_id, exc)
 
 
 async def preview_aim_manifest(kb_path: str) -> AimManifest:
@@ -148,6 +136,9 @@ async def join_aim_project(
     """
     kb_root = Path(kb_path).expanduser().resolve()
     manifest = kb_store.read_manifest(kb_root)
+    from app.services.aim.rulebook import validate_rulebook_identity
+
+    validate_rulebook_identity(kb_root, manifest)
 
     project = CodingProject(name=name, kind="aim", settings={})
     db.add(project)
@@ -161,7 +152,6 @@ async def join_aim_project(
         rulebook_id=manifest.rulebook.id,
         rulebook_version=manifest.rulebook.version,
     )
-    _install_rulebook_best_effort(kb_root, manifest.rulebook.id)
     # A joined KB already carries units in its ``modules/**`` frontmatter;
     # build the local index now so the dashboard isn't empty until the user
     # hits Reindex (create, by contrast, scaffolds an empty KB — nothing to

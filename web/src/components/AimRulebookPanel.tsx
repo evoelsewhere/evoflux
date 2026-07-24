@@ -1,13 +1,13 @@
 /**
- * AimRulebookPanel — read-only view of the project's rulebook pack
+ * AimRulebookPanel — read-only view of the project's local rulebook
  * (aim-mode-shell-ux-spec.md v2.2 J5): answers "what rules does this line
  * convert by?" without opening the EvoFlux repo.
  *
- * Two layers, mirroring how an architect reads a pack:
+ * Two layers, mirroring how an architect reads a rulebook:
  * - Overview (default): the manifest made legible — description, source →
  *   target stacks with their file extensions, unit kinds, parser strategy,
  *   extractors, agent/skill overlays, runners, compare profile.
- * - Files: the pack's artifacts in the same folder tree + kind-aware
+ * - Files: the rulebook artifacts in the same folder tree + kind-aware
  *   preview the KB screen uses (frontmatter strip + markdown for .md,
  *   code block for yaml/sh).
  */
@@ -37,10 +37,11 @@ interface ManifestShape {
   compare_default_profile?: string
   overlays?: { agents?: string[]; skills?: string[] }
   runners?: Record<string, string>
+  capabilities?: Record<string, 'ready' | 'template' | 'unavailable'>
 }
 
 export function AimRulebookPanel({ project }: { project: CodingProject }) {
-  // '' = the Overview pseudo-item; anything else is a pack file path.
+  // '' = the Overview pseudo-item; anything else is a rulebook file path.
   const [selected, setSelected] = useState<string>('')
 
   const rulebookQuery = useQuery({
@@ -52,7 +53,7 @@ export function AimRulebookPanel({ project }: { project: CodingProject }) {
   const manifest = (rulebook?.manifest ?? {}) as ManifestShape
 
   // The KB screen's tree wants WorkspaceFileInfo — synthesize it from the
-  // pack's inline files (content already came down with the response).
+  // rulebook's inline files (content already came down with the response).
   const treeFiles = useMemo<WorkspaceFileInfo[]>(
     () =>
       (rulebook?.files ?? []).map((file) => ({
@@ -81,13 +82,9 @@ export function AimRulebookPanel({ project }: { project: CodingProject }) {
             </span>
             <span
               className="rounded bg-(--bg-key) px-2 py-0.5 text-[10px] text-(--color-text-subtle)"
-              title={
-                rulebook.source === 'project'
-                  ? 'Defined in this project’s KB repo (rulebook/) — edit it there, not in EvoFlux.'
-                  : 'One of the shared packs bundled with EvoFlux.'
-              }
+              title="Defined in this project's KB repository at rulebook/."
             >
-              {rulebook.source === 'project' ? 'project rulebook' : 'shared pack'}
+              project-owned
             </span>
             <span className="text-[10px] text-(--color-text-subtle)">read-only</span>
           </>
@@ -102,12 +99,12 @@ export function AimRulebookPanel({ project }: { project: CodingProject }) {
         <p className="p-4 text-xs text-(--color-error)">
           {rulebookQuery.error instanceof Error
             ? rulebookQuery.error.message
-            : 'Rulebook pack is not installed on this machine.'}
+            : 'The KB-local rulebook is unavailable or invalid.'}
         </p>
       ) : (
         <div className="flex min-h-0 flex-1">
           <div className="w-72 shrink-0 overflow-y-auto border-r border-(--color-border) p-2">
-            {/* Overview pseudo-item above the pack's file tree */}
+            {/* Overview pseudo-item above the rulebook's file tree */}
             <button
               type="button"
               onClick={() => setSelected('')}
@@ -220,6 +217,27 @@ function ManifestOverview({
             <Chips values={manifest.unit_kinds} />
           </OverviewRow>
         )}
+        {manifest.capabilities && (
+          <OverviewRow label="Capabilities">
+            <span className="flex flex-wrap gap-1">
+              {Object.entries(manifest.capabilities).map(([name, status]) => (
+                <span
+                  key={name}
+                  className={cn(
+                    'rounded px-1.5 py-0.5 font-mono text-[11px]',
+                    status === 'ready'
+                      ? 'bg-(--color-success-bg,var(--bg-key)) text-(--color-success)'
+                      : status === 'template'
+                        ? 'bg-(--bg-key) text-(--color-warning,orange)'
+                        : 'bg-(--color-error-subtle,var(--bg-key)) text-(--color-error)',
+                  )}
+                >
+                  {name}: {status}
+                </span>
+              ))}
+            </span>
+          </OverviewRow>
+        )}
         {typeof manifest.parser_strategy === 'string' && (
           <OverviewRow label="Parser">
             <span className="font-mono">{manifest.parser_strategy}</span>
@@ -235,8 +253,8 @@ function ManifestOverview({
             <span className="flex flex-col gap-1">
               <Chips values={manifest.overlays.agents} />
               <span className="text-[10px] text-(--color-text-subtle)">
-                Merged onto the AIM roster (skills appended, prompt extended) when a
-                project installs this pack — see the pack's agents/ files below.
+                Project reference guidance only. These files are not merged into the
+                global AIM agent roster.
               </span>
             </span>
           </OverviewRow>
@@ -246,7 +264,8 @@ function ManifestOverview({
             <span className="flex flex-col gap-1">
               <Chips values={manifest.overlays.skills} />
               <span className="text-[10px] text-(--color-text-subtle)">
-                Installed into the skill library (gap-fill) at project create/join.
+                Project reference guidance only. These files are not installed into the
+                global skill library.
               </span>
             </span>
           </OverviewRow>
@@ -263,7 +282,7 @@ function ManifestOverview({
             <span className="font-mono">{manifest.compare_default_profile}</span>
           </OverviewRow>
         )}
-        <OverviewRow label="Pack files">
+        <OverviewRow label="Rulebook files">
           <span>
             {rulebook.files.length} readable file{rulebook.files.length === 1 ? '' : 's'} — browse
             them in the tree.

@@ -362,6 +362,23 @@ export interface AimUnitOut {
   assignee: string | null
   depends_on: string[]
   complexity: Record<string, unknown>
+  revision: number
+  last_transition_id: string | null
+  state_verified: boolean
+  state_error: string | null
+  next_action: {
+    pipeline: string
+    target_phase: string
+    allowed: boolean
+    blockers: string[]
+    warnings: string[]
+  } | null
+  claim: {
+    workflow_execution_id: string
+    workflow_name: string
+    session_id: string | null
+    lease_expires_at: string
+  } | null
   kb_doc_path: string | null
   updated_at: string
 }
@@ -409,8 +426,6 @@ export interface AimRunOut {
 
 export interface AimProjectCreateRequest {
   name: string
-  rulebook_id: string
-  rulebook_version?: string
   source_paths: string[]
   target_path: string
   kb_path: string
@@ -449,6 +464,61 @@ export interface AimReindexResponse {
   created: number
   updated: number
   unchanged: number
+  invalid: number
+  errors: string[]
+  runs_created: number
+  runs_updated: number
+  links_created: number
+  links_updated: number
+}
+
+export interface AimReadiness {
+  pipeline: string
+  status: 'ready' | 'blocked'
+  allowed: boolean
+  blockers: string[]
+  warnings: string[]
+  selected_units: string[]
+  selected_count: number
+}
+
+export interface AimProjectHealth {
+  status: 'ready' | 'degraded' | 'blocked'
+  checks: Array<{
+    id: string
+    label: string
+    status: 'pass' | 'warn' | 'fail'
+    message: string
+  }>
+  failed_count: number
+  warning_count: number
+}
+
+export interface AimApproval {
+  execution_id: string
+  session_id: string
+  session_title: string | null
+  workflow: string
+  request_id: string
+  question: string
+  options: string[]
+}
+
+export interface AimStateReconcileResponse {
+  reconciliation_id: string
+  reconciled: number
+  state_schema: number
+}
+
+export interface AimCutoverChecklist {
+  wave: number
+  deployment_ready: boolean
+  data_reconciled: boolean
+  rollback_ready: boolean
+  monitoring_ready: boolean
+  approved_by: string | null
+  notes: string
+  updated_at: string
 }
 
 export interface AimRulebookFile {
@@ -458,9 +528,6 @@ export interface AimRulebookFile {
 
 export interface AimRulebook {
   id: string
-  // 'project' = resolved from the KB repo's own rulebook/ override;
-  // 'builtin' = one of the shared packs shipped with EvoFlux.
-  source: 'project' | 'builtin'
   manifest: Record<string, unknown>
   files: AimRulebookFile[]
 }
@@ -657,6 +724,8 @@ export interface WorkflowExecutionSummary {
   // running | waiting_gate | completed | failed | stopped
   status: string
   error: string | null
+  inputs: Record<string, unknown>
+  retry_of_execution_id: string | null
   outputs: Record<string, unknown>
   started_at: string
   ended_at: string | null

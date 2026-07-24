@@ -198,7 +198,7 @@ Hệ quả UI: màn **Knowledge Base là cửa sổ ĐỌC** (tree + markdown vi
 | Mở run trong Runs & Reports | Report viewer (report.json/md) | `GET .../aim/runs/{id}` + đọc file report từ KB repo | report_path đã lưu trong AimRun |
 | Bấm **Discussion** (run đã xong) | Panel transcript trượt phải, composer hỏi thêm | Session per-run của run đó — `TeamChatView` singleton, CSS toggle | Chỗ DUY NHẤT có chat trong mode; đóng = layout state, session còn nguyên |
 | Click item KB | Tree + markdown viewer | Workspace-files API trên KB repo path (roles.kb) | Tái dùng `CodingWorkspacePanel`/`CodingFileViewerPanel`, read-only |
-| Mở Rulebook | Manifest + file configs read-only | **GAP: cần endpoint nhỏ** `GET /team/projects/{id}/aim/rulebook` | Backend ~1 route đọc từ `app/agent/builtin_aim/rulebooks/` |
+| Mở Rulebook | Manifest + file configs read-only | `GET /team/projects/{id}/aim/rulebook` | Chỉ đọc `<kb>/rulebook/`; thiếu hoặc lệch identity với `aim.yaml` là lỗi, không fallback |
 
 ## 7. Tái sử dụng component (R8 — không sáng chế design system riêng)
 

@@ -1,6 +1,6 @@
 """Resolve structural-extractor parsers for AIM source workspaces.
 
-The bridge described in aim-framework.md §3.9: a rulebook pack's
+The bridge described in aim-framework.md §3.9: a project rulebook's
 ``extractors/*.yaml`` configs become :class:`StructuralParser` instances
 that ``build_registry(extra_parsers=...)`` appends to the builtin
 tree-sitter parsers — so reindexing an AIM project's *source* workspace
@@ -9,11 +9,7 @@ and every existing code-graph tool works on it unchanged.
 
 Only source-role workspaces get extractors: the target repo is written in
 a modern stack the builtin parsers already cover, and the KB repo is
-markdown. Rulebooks resolve KB-first (:func:`resolve_rulebook_dir`) by
-the id recorded in ``project.settings["aim"]["rulebook"]`` at project
-setup — the same resolution ``aim_compare``'s canonicalizer lookup and
-the Rulebook screen already use, so a KB-local rulebook override's own
-``extractors/`` is honored here too, not just its canonicalizers.
+markdown. The only rulebook is ``<kb>/rulebook/`` in the project KB.
 """
 
 from __future__ import annotations
@@ -22,52 +18,37 @@ from pathlib import Path
 from uuid import UUID
 
 from loguru import logger
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col, select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models.chat import CodingProject, CodingProjectWorkspace, CodingWorkspace
 
 
-def extractor_config_paths(rulebook_id: str, kb_root: Path | None = None) -> list[Path]:
+def extractor_config_paths(kb_root: Path) -> list[Path]:
     """Extractor config files a rulebook declares, in manifest order.
 
-    Reads the pack's ``rulebook.yaml`` ``extractors:`` list; falls back to
-    globbing ``extractors/*.yaml`` for packs that predate the manifest key.
-    Unknown rulebook ids resolve to an empty list — a project created
-    against a rulebook this install doesn't ship simply indexes with the
-    builtin parsers only.
-
-    Resolves KB-first when *kb_root* is given (a KB-local ``rulebook/``
-    override wins over the builtin pack of the same id); falls back to
-    the builtin-only lookup when it isn't, for callers that haven't
-    resolved a KB workspace path.
+    Example files are inert until explicitly listed under ``extractors`` in
+    ``rulebook.yaml``. Missing or invalid local rulebooks resolve to an empty
+    list; Project Health surfaces the configuration error to the operator.
     """
-    import yaml
-
-    from app.services.aim.rulebook_install import _pack_dir, resolve_rulebook_dir
-
-    pack_dir = (
-        resolve_rulebook_dir(kb_root, rulebook_id)
-        if kb_root is not None
-        else _pack_dir(rulebook_id)
+    from app.services.aim.rulebook import (
+        resolve_rulebook_path,
+        validate_rulebook_identity,
     )
-    if pack_dir is None:
-        return []
-    manifest_path = pack_dir / "rulebook.yaml"
-    if not manifest_path.is_file():
-        return []
+
     try:
-        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
-    except yaml.YAMLError as exc:
-        logger.warning(
-            "aim_rulebook_manifest_invalid rulebook={} error={}", rulebook_id, exc
-        )
+        manifest = validate_rulebook_identity(kb_root).model_dump()
+    except (FileNotFoundError, ValueError):
         return []
     declared = manifest.get("extractors")
-    if isinstance(declared, list):
-        paths = [pack_dir / str(rel) for rel in declared]
-    else:
-        paths = sorted((pack_dir / "extractors").glob("*.yaml"))
+    if not isinstance(declared, list):
+        return []
+    paths: list[Path] = []
+    for relative in declared:
+        try:
+            paths.append(resolve_rulebook_path(kb_root, str(relative)))
+        except ValueError as exc:
+            logger.warning("aim_extractor_path_invalid path={} error={}", relative, exc)
     return [path for path in paths if path.is_file()]
 
 
@@ -85,7 +66,7 @@ async def structural_parsers_for_workspace(
     from app.services.aim.project import resolve_kb_workspace_path
     from app.services.code_graph.parsers.structural import load_structural_parsers
 
-    memberships = await db.execute(
+    memberships = await db.exec(
         select(CodingProject)
         .join(
             CodingProjectWorkspace,
@@ -95,19 +76,15 @@ async def structural_parsers_for_workspace(
         .where(col(CodingProject.kind) == "aim")
     )
     config_paths: list[Path] = []
-    seen: set[str] = set()
-    for project in memberships.scalars().all():
+    for project in memberships.all():
         aim_settings = project.settings.get("aim") or {}
         source_ids = (aim_settings.get("roles") or {}).get("source") or []
         if str(workspace_id) not in source_ids:
             continue
-        rulebook_id = (aim_settings.get("rulebook") or {}).get("id")
-        if not rulebook_id or rulebook_id in seen:
-            continue
-        seen.add(rulebook_id)
         kb_path = await resolve_kb_workspace_path(db, project)
-        kb_root = Path(kb_path) if kb_path else None
-        config_paths.extend(extractor_config_paths(rulebook_id, kb_root))
+        if not kb_path:
+            continue
+        config_paths.extend(extractor_config_paths(Path(kb_path)))
     if not config_paths:
         return []
     parsers = load_structural_parsers(config_paths)
@@ -123,10 +100,10 @@ async def structural_parsers_for_workspace(
 async def structural_parsers_for_path(db: AsyncSession, root_path: str) -> list:
     """Like :func:`structural_parsers_for_workspace`, keyed by path — for
     callers that haven't resolved a CodingWorkspace row yet."""
-    row = await db.execute(
+    row = await db.exec(
         select(CodingWorkspace).where(col(CodingWorkspace.path) == root_path)
     )
-    workspace = row.scalars().first()
+    workspace = row.first()
     if workspace is None or workspace.id is None:
         return []
     return await structural_parsers_for_workspace(db, workspace.id)

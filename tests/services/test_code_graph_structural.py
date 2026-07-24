@@ -1,9 +1,8 @@
 """Structural fallback parser (parsers/structural.py) — config-driven regex
 extraction for legacy languages without tree-sitter grammars.
 
-The COBOL/JCL/VB6 cases load the REAL extractor configs shipped in the AIM
-rulebook packs, so these tests double as validation that the shipped YAML
-stays parseable and behaviorally correct.
+The COBOL/JCL/VB6 cases use test-owned configs. Production stack extractors are
+project artifacts under ``<kb>/rulebook/``; EvoFlux ships no language catalog.
 """
 
 from __future__ import annotations
@@ -16,7 +15,6 @@ from app.services.code_graph.parsers.registry import build_registry
 from app.services.code_graph.parsers.structural import (
     StructuralConfig,
     StructuralParser,
-    load_structural_config,
     load_structural_parsers,
 )
 from app.services.code_graph.types import (
@@ -26,12 +24,146 @@ from app.services.code_graph.types import (
     EDGE_REFERENCES,
 )
 
-_RULEBOOKS = (
-    Path(__file__).resolve().parents[2] / "app" / "agent" / "builtin_aim" / "rulebooks"
+COBOL_CONFIG = StructuralConfig.model_validate(
+    {
+        "id": "cobol-structural",
+        "file_extensions": [".cbl", ".cob", ".cpy"],
+        "ignore_case": True,
+        "node_rules": [
+            {
+                "kind": "program",
+                "scope": "file",
+                "match": r"PROGRAM-ID\s*\.?\s+(?P<name>[A-Za-z0-9][A-Za-z0-9-]*)",
+            },
+            {
+                "kind": "division",
+                "scope": "block",
+                "match": r"^[\s0-9]{0,7}(?P<name>IDENTIFICATION|ENVIRONMENT|DATA|PROCEDURE)\s+DIVISION\b",
+            },
+            {
+                "kind": "section",
+                "scope": "block",
+                "match": r"^[\s0-9]{0,7}(?P<name>[A-Za-z][A-Za-z0-9-]*)\s+SECTION\s*\.",
+            },
+            {
+                "kind": "paragraph",
+                "scope": "block",
+                "match": r"^[\s0-9]{0,7}(?P<name>[A-Za-z][A-Za-z0-9-]*)\s*\.\s*$",
+            },
+        ],
+        "edge_rules": [
+            {
+                "kind": "calls",
+                "from": "paragraph",
+                "match": r"\bPERFORM\s+(?P<target>[A-Za-z][A-Za-z0-9-]*)",
+            },
+            {
+                "kind": "calls",
+                "from": "paragraph",
+                "match": r"\bCALL\s+['\"](?P<target>[A-Za-z0-9-]+)['\"]",
+            },
+            {
+                "kind": "imports",
+                "from": "section",
+                "match": r"\bCOPY\s+(?P<target>[A-Za-z0-9][A-Za-z0-9-]*)",
+            },
+            {
+                "kind": "imports",
+                "from": "paragraph",
+                "match": r"EXEC\s+SQL\s+INCLUDE\s+(?P<target>[A-Za-z0-9-]+)",
+            },
+        ],
+        "keyword_denylist": ["UNTIL", "VARYING", "TIMES"],
+    }
 )
-COBOL_CONFIG = _RULEBOOKS / "cobol-java21" / "extractors" / "cobol-structural.yaml"
-JCL_CONFIG = _RULEBOOKS / "cobol-java21" / "extractors" / "jcl-structural.yaml"
-VB6_CONFIG = _RULEBOOKS / "vb6-dotnet" / "extractors" / "vb6-structural.yaml"
+
+JCL_CONFIG = StructuralConfig.model_validate(
+    {
+        "id": "jcl-structural",
+        "file_extensions": [".jcl", ".proc"],
+        "ignore_case": True,
+        "node_rules": [
+            {
+                "kind": "job",
+                "scope": "file",
+                "match": r"^//(?P<name>[A-Z0-9@#$]+)\s+JOB\b",
+            },
+            {
+                "kind": "step",
+                "scope": "block",
+                "match": r"^//(?P<name>[A-Z0-9@#$]+)\s+EXEC\b",
+            },
+        ],
+        "edge_rules": [
+            {
+                "kind": "calls",
+                "from": "step",
+                "match": r"\bPGM=(?P<target>[A-Z0-9@#$]+)",
+            },
+            {
+                "kind": "imports",
+                "from": "step",
+                "match": r"\bPROC=(?P<target>[A-Z0-9@#$]+)",
+            },
+            {
+                "kind": "imports",
+                "from": "step",
+                "match": r"\bEXEC\s+(?P<target>[A-Z0-9@#$]+)(?![=A-Z0-9@#$])",
+            },
+            {
+                "kind": "references",
+                "from": "step",
+                "match": r"\bDSN=(?P<target>[A-Z0-9.@#$&+-]+)",
+            },
+        ],
+        "keyword_denylist": ["PGM", "PROC"],
+    }
+)
+
+VB6_CONFIG = StructuralConfig.model_validate(
+    {
+        "id": "vb6-structural",
+        "file_extensions": [".bas", ".cls", ".frm"],
+        "ignore_case": True,
+        "node_rules": [
+            {
+                "kind": "module",
+                "scope": "file",
+                "match": r'^Attribute\s+VB_Name\s*=\s*"(?P<name>[^"]+)"',
+            },
+            {
+                "kind": "procedure",
+                "scope": "block",
+                "match": r"^\s*(?:Public|Private|Friend|Static)?\s*(?:Sub|Function|Property\s+(?:Get|Let|Set))\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)",
+                "end_match": r"^\s*End\s+(?:Sub|Function|Property)\b",
+            },
+        ],
+        "edge_rules": [
+            {
+                "kind": "calls",
+                "from": "procedure",
+                "match": r"^\s*(?:Call\s+)?(?P<target>[A-Za-z_][A-Za-z0-9_]*)\s*(?:\(|$)",
+            },
+            {
+                "kind": "calls",
+                "from": "procedure",
+                "match": r"=\s*(?P<target>[A-Za-z_][A-Za-z0-9_]*)\s*\(",
+            },
+            {
+                "kind": "references",
+                "from": "procedure",
+                "match": r"\bOn\s+Error\s+GoTo\s+(?P<target>[A-Za-z_][A-Za-z0-9_]*)",
+            },
+            {
+                "kind": "references",
+                "from": "procedure",
+                "match": r"\b(?P<object>[A-Za-z_][A-Za-z0-9_]*)\.",
+                "target_group": "object",
+            },
+        ],
+        "keyword_denylist": ["IF", "MSGBOX", "ERR"],
+    }
+)
 
 
 def _names(nodes, kind):
@@ -67,7 +199,7 @@ COBOL_SOURCE = b"""\
 
 
 def test_cobol_config_extracts_program_and_paragraphs():
-    parser = StructuralParser(load_structural_config(COBOL_CONFIG))
+    parser = StructuralParser(COBOL_CONFIG)
     result = parser.parse(file_path="payroll01.cbl", source=COBOL_SOURCE)
 
     assert _names(result.nodes, "program") == ["PAYROLL01"]
@@ -83,7 +215,7 @@ def test_cobol_config_extracts_program_and_paragraphs():
 
 
 def test_cobol_config_extracts_perform_call_copy_edges():
-    parser = StructuralParser(load_structural_config(COBOL_CONFIG))
+    parser = StructuralParser(COBOL_CONFIG)
     result = parser.parse(file_path="payroll01.cbl", source=COBOL_SOURCE)
 
     calls = _edge_targets(result.edges, EDGE_CALLS)
@@ -99,7 +231,7 @@ def test_cobol_config_extracts_perform_call_copy_edges():
 
 
 def test_cobol_paragraph_spans_run_to_next_paragraph():
-    parser = StructuralParser(load_structural_config(COBOL_CONFIG))
+    parser = StructuralParser(COBOL_CONFIG)
     result = parser.parse(file_path="payroll01.cbl", source=COBOL_SOURCE)
 
     by_name = {n.name: n for n in result.nodes if n.kind == "paragraph"}
@@ -124,7 +256,7 @@ JCL_SOURCE = b"""\
 
 
 def test_jcl_config_extracts_job_steps_and_edges():
-    parser = StructuralParser(load_structural_config(JCL_CONFIG))
+    parser = StructuralParser(JCL_CONFIG)
     result = parser.parse(file_path="nightjob.jcl", source=JCL_SOURCE)
 
     assert _names(result.nodes, "job") == ["NIGHTJOB"]
@@ -145,13 +277,11 @@ def test_jcl_config_extracts_job_steps_and_edges():
 
 
 def test_jcl_dd_cards_attach_to_their_step():
-    parser = StructuralParser(load_structural_config(JCL_CONFIG))
+    parser = StructuralParser(JCL_CONFIG)
     result = parser.parse(file_path="nightjob.jcl", source=JCL_SOURCE)
 
     step010 = next(n for n in result.nodes if n.name == "STEP010")
-    dsn_edges = [
-        e for e in result.edges if e.kind == EDGE_REFERENCES and e.dst_name
-    ]
+    dsn_edges = [e for e in result.edges if e.kind == EDGE_REFERENCES and e.dst_name]
     assert dsn_edges and all(e.src_local_id == step010.local_id for e in dsn_edges)
 
 
@@ -179,7 +309,7 @@ End Sub
 
 
 def test_vb6_config_extracts_module_and_procedures():
-    parser = StructuralParser(load_structural_config(VB6_CONFIG))
+    parser = StructuralParser(VB6_CONFIG)
     result = parser.parse(file_path="modBilling.bas", source=VB6_SOURCE)
 
     assert _names(result.nodes, "module") == ["modBilling"]
@@ -193,7 +323,7 @@ def test_vb6_config_extracts_module_and_procedures():
 
 
 def test_vb6_config_extracts_calls_and_denies_keywords():
-    parser = StructuralParser(load_structural_config(VB6_CONFIG))
+    parser = StructuralParser(VB6_CONFIG)
     result = parser.parse(file_path="modBilling.bas", source=VB6_SOURCE)
 
     calls = _edge_targets(result.edges, EDGE_CALLS)
@@ -212,7 +342,7 @@ def test_vb6_config_extracts_calls_and_denies_keywords():
 
 
 def test_container_owns_blocks_and_file_owns_container():
-    parser = StructuralParser(load_structural_config(VB6_CONFIG))
+    parser = StructuralParser(VB6_CONFIG)
     result = parser.parse(file_path="modBilling.bas", source=VB6_SOURCE)
 
     module = next(n for n in result.nodes if n.kind == "module")
@@ -298,7 +428,7 @@ def test_load_structural_parsers_skips_broken_configs(tmp_path: Path):
 
 
 def test_build_registry_extra_parsers_extend_and_win_collisions():
-    cobol = StructuralParser(load_structural_config(COBOL_CONFIG))
+    cobol = StructuralParser(COBOL_CONFIG)
     registry = build_registry(extra_parsers=[cobol])
 
     assert registry.for_path("estate/payroll.cbl") is cobol

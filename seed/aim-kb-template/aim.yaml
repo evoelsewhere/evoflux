@@ -7,8 +7,9 @@
 # never by a local workspace_id — those differ per machine.
 
 rulebook:
-  id: REPLACE_ME               # e.g. cobol-java21, vb6-dotnet, java8-java21
+  id: project-rulebook         # specialized from rulebook/rulebook.yaml at create
   version: "0.1"
+  # The only rulebook is ./rulebook/ in this KB repository.
 
 roles:
   source:                      # base (legacy) repos — mounted read-only
@@ -19,5 +20,6 @@ roles:
 
 golden_dir: golden              # relative to this KB repo
 compare_default_profile: default
+state_schema: 2                 # transition events + optimistic unit revisions
 
 phase: assess                   # project-level phase: assess | understand | design | convert | test | cutover

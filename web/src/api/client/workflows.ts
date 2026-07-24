@@ -90,13 +90,18 @@ export async function runWorkflow(
   sessionId: string,
   inputs: Record<string, unknown>,
   workspace?: string | null,
+  retryOfExecutionId?: string | null,
 ): Promise<WorkflowRunResult> {
   const res = await fetch(
     withWorkspace(`${apiBaseUrl()}/workflows/${encodeURIComponent(name)}/run`, workspace),
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_id: sessionId, inputs }),
+      body: JSON.stringify({
+        session_id: sessionId,
+        inputs,
+        retry_of_execution_id: retryOfExecutionId ?? null,
+      }),
     },
   )
   if (!res.ok) await parseDetailOrThrow(res, 'runWorkflow')

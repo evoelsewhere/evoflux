@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from '@tanstack/react-router'
+import { AnimatePresence, motion } from 'framer-motion'
+import { Menu } from 'lucide-react'
 import { AimSidebar } from '@/components/AimSidebar'
 import { AIM_FEATURES, loadLastAimProject, saveLastAimProject } from '@/lib/aim-sidebar'
 import { AimSetupWizard } from '@/components/AimSetupWizard'
@@ -11,6 +13,7 @@ import { CommandPalette, type Command } from '@/components/CommandPalette'
 import { AppShell } from '@/components/shell/AppShell'
 import { useAimProjectsQuery } from '@/queries/useAimProjectsQuery'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { useUIStore } from '@/stores/useUIStore'
 import type { AimFeature } from '@/lib/aim-sidebar'
 import type { CodingProject } from '@/api/types'
@@ -36,6 +39,8 @@ function AimLayoutBase() {
   const navigate = useNavigate()
   const [wizardOpen, setWizardOpen] = useState(false)
   const [showPalette, setShowPalette] = useState(false)
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
+  const isMobile = useIsMobile()
 
   // Ctrl+P — same palette shortcut as the other two modes (shared hook).
   // Ctrl+B (sidebar collapse) is registered once by AppShell.
@@ -107,13 +112,71 @@ function AimLayoutBase() {
 
   return (
     <AppShell
-      sidebar={
+      sidebar={!isMobile ? (
         <AimSidebar
           activeProjectId={projectId}
           activeFeature={projectId ? feature : undefined}
           onNewProject={() => setWizardOpen(true)}
           onCommandPalette={() => setShowPalette(true)}
         />
+      ) : null}
+      mobileSidebar={
+        isMobile ? (
+          <AnimatePresence>
+            {mobileSidebarOpen && (
+              <>
+                <motion.button
+                  type="button"
+                  aria-label="Close AIM navigation"
+                  className="mobile-safe-top fixed inset-x-0 bottom-0 z-(--z-drawer) bg-(--color-overlay) md:hidden"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  onClick={() => setMobileSidebarOpen(false)}
+                />
+                <motion.aside
+                  aria-label="AIM navigation"
+                  className="mobile-safe-top fixed bottom-0 left-0 z-(--z-overlay) w-[min(288px,calc(100vw-2rem))] overflow-hidden bg-(--bg-sidebar) shadow-xl md:hidden"
+                  initial={{ x: '-100%' }}
+                  animate={{ x: 0 }}
+                  exit={{ x: '-100%' }}
+                  transition={{ duration: 0.18 }}
+                >
+                  <AimSidebar
+                    activeProjectId={projectId}
+                    activeFeature={projectId ? feature : undefined}
+                    onNewProject={() => setWizardOpen(true)}
+                    onCommandPalette={() => setShowPalette(true)}
+                    mobile
+                    onMobileClose={() => setMobileSidebarOpen(false)}
+                  />
+                </motion.aside>
+              </>
+            )}
+          </AnimatePresence>
+        ) : null
+      }
+      header={
+        isMobile ? (
+          <div className="mobile-safe-header flex h-11 shrink-0 items-center gap-2 border-b border-(--color-border) bg-(--bg-page) px-2 md:hidden">
+            <button
+              type="button"
+              onClick={() => setMobileSidebarOpen(true)}
+              aria-label="Open AIM navigation"
+              className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)"
+            >
+              <Menu size={16} />
+            </button>
+            <span className="min-w-0 flex-1 truncate text-xs font-medium text-(--color-text)">
+              {project?.name ?? 'AIM'}
+            </span>
+            {project && (
+              <span className="text-[10px] text-(--color-text-subtle)">
+                {AIM_FEATURES.find((item) => item.key === feature)?.label}
+              </span>
+            )}
+          </div>
+        ) : null
       }
       overlay={
         <>

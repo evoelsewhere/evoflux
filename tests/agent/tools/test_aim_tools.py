@@ -2,17 +2,26 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from uuid import uuid7
 
 import pytest
+import yaml
 from sqlmodel import select
 
 from app.agent.builtin_prompts import tier_tools
 from app.agent.loader import _default_tool_registry
 from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
-from app.agent.tools.builtin.aim import aim_compare, aim_units
+from app.agent.tools.builtin.aim import (
+    aim_claim,
+    aim_compare,
+    aim_readiness,
+    aim_units,
+)
 from app.core import db as db_module
 from app.models.aim import AimLink, AimRun, AimUnit
 from app.models.chat import CodingProject, CodingProjectWorkspace
+from app.models.workflow import WorkflowExecution
+from app.services.aim import kb_store
 from app.services.coding_workspace_service import upsert_coding_workspace
 
 
@@ -40,12 +49,45 @@ async def _make_aim_project(workspace_path: Path) -> CodingProject:
         return project
 
 
+async def _make_workflow_execution(name: str) -> WorkflowExecution:
+    async with db_module.async_session_factory() as db:
+        execution = WorkflowExecution(
+            definition_name=name,
+            definition_hash="test-hash",
+            session_id=uuid7(),
+            status="running",
+        )
+        db.add(execution)
+        await db.commit()
+        await db.refresh(execution)
+        return execution
+
+
 def _write_kb_skeleton(root: Path) -> None:
     (root / "aim.yaml").write_text(
         "rulebook:\n  id: default\n  version: '0.1'\n"
         "roles:\n  source: []\n  target: []\n"
         "golden_dir: golden\ncompare_default_profile: default\nphase: assess\n"
     )
+
+
+async def _seed_indexed_unit(
+    root: Path,
+    unit: str,
+    *,
+    phase: str,
+    target_paths: list[str] | None = None,
+) -> None:
+    module, name = unit.split("/", 1)
+    kb_store.write_unit(
+        root,
+        module,
+        name,
+        kind="program",
+        phase=phase,
+        target_paths=target_paths,
+    )
+    await aim_units(action="set_phase", unit=unit)
 
 
 # ---------------------------------------------------------------------------
@@ -60,8 +102,16 @@ def test_aim_tools_excluded_from_forge_and_coding_tiers():
     coding_names = tier_tools(registry, mode="coding", role="member")
     assert "aim_units" not in forge_names
     assert "aim_compare" not in forge_names
+    assert "aim_readiness" not in forge_names
+    assert "aim_claim" not in forge_names
+    assert "aim_execute" not in forge_names
+    assert "aim_verify" not in forge_names
     assert "aim_units" not in coding_names
     assert "aim_compare" not in coding_names
+    assert "aim_readiness" not in coding_names
+    assert "aim_claim" not in coding_names
+    assert "aim_execute" not in coding_names
+    assert "aim_verify" not in coding_names
 
 
 def test_aim_tools_included_in_aim_tier():
@@ -69,6 +119,98 @@ def test_aim_tools_included_in_aim_tier():
     aim_names = tier_tools(registry, mode="aim", role="member")
     assert "aim_units" in aim_names
     assert "aim_compare" in aim_names
+    assert "aim_readiness" in aim_names
+    assert "aim_claim" in aim_names
+    assert "aim_execute" in aim_names
+    assert "aim_verify" in aim_names
+
+
+@pytest.mark.asyncio
+async def test_aim_readiness_tool_blocks_incomplete_cutover(sandbox_workspace):
+    kb_store.write_unit(
+        sandbox_workspace,
+        "m",
+        "A",
+        kind="program",
+        phase="equivalent",
+        wave=1,
+    )
+    kb_store.write_unit(
+        sandbox_workspace,
+        "m",
+        "B",
+        kind="program",
+        phase="converted",
+        wave=1,
+        target_paths=["src/B.java"],
+    )
+
+    result = await aim_readiness(pipeline="aim-cutover-check", wave=1)
+
+    data = json.loads(result)
+    assert data["status"] == "blocked"
+    assert any("m/B" in blocker for blocker in data["blockers"])
+
+
+@pytest.mark.asyncio
+async def test_aim_claim_is_exclusive_and_owner_releases(sandbox_workspace):
+    from app.workflow.exec_context import current_execution_id
+
+    await _make_aim_project(sandbox_workspace)
+    await aim_units(action="set_phase", unit="m/A", kind="program", phase="inventory")
+    first = await _make_workflow_execution("aim-understand")
+    second = await _make_workflow_execution("aim-understand")
+
+    first_token = current_execution_id.set(str(first.id))
+    try:
+        acquired = json.loads(await aim_claim(action="acquire", unit="m/A"))
+    finally:
+        current_execution_id.reset(first_token)
+    assert acquired["status"] == "acquired"
+
+    second_token = current_execution_id.set(str(second.id))
+    try:
+        blocked = json.loads(await aim_claim(action="acquire", unit="m/A"))
+        with pytest.raises(ValueError, match="owned by workflow execution"):
+            await aim_claim(action="release", unit="m/A")
+    finally:
+        current_execution_id.reset(second_token)
+    assert blocked["status"] == "blocked"
+
+    first_token = current_execution_id.set(str(first.id))
+    try:
+        released = json.loads(await aim_claim(action="release", unit="m/A"))
+    finally:
+        current_execution_id.reset(first_token)
+    assert released["status"] == "released"
+
+
+@pytest.mark.asyncio
+async def test_aim_claim_locks_only_explicit_unit_list(sandbox_workspace):
+    from app.models.aim import AimClaim
+    from app.workflow.exec_context import current_execution_id
+
+    project = await _make_aim_project(sandbox_workspace)
+    await aim_units(
+        action="set_phase", unit="m/A", kind="program", phase="inventory", wave=1
+    )
+    await aim_units(
+        action="set_phase", unit="m/B", kind="program", phase="inventory", wave=1
+    )
+    execution = await _make_workflow_execution("aim-convert-wave")
+
+    token = current_execution_id.set(str(execution.id))
+    try:
+        acquired = json.loads(await aim_claim(action="acquire", units=["m/A"]))
+    finally:
+        current_execution_id.reset(token)
+
+    assert acquired["count"] == 1
+    async with db_module.async_session_factory() as db:
+        claims = (
+            await db.exec(select(AimClaim).where(AimClaim.project_id == project.id))
+        ).all()
+    assert len(claims) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +248,7 @@ async def test_set_phase_accepts_json_encoded_list_and_dict_args(sandbox_workspa
         action="set_phase",
         unit="core-batch/STRARGS",
         kind="program",
-        phase="converted",
+        phase="inventory",
         target_paths='["app/src/main/java/com/example/Addamt.java"]',
         depends_on='["core-batch/DATEUTIL"]',
         complexity='{"score": "low"}',
@@ -139,7 +281,7 @@ async def test_get_missing_unit_returns_message(sandbox_workspace):
 @pytest.mark.asyncio
 async def test_list_and_phase_filter(sandbox_workspace):
     await aim_units(action="set_phase", unit="m/A", kind="program", phase="inventory")
-    await aim_units(action="set_phase", unit="m/B", kind="program", phase="understood")
+    await _seed_indexed_unit(sandbox_workspace, "m/B", phase="understood")
 
     all_units = await aim_units(action="list")
     assert "m/A" in all_units and "m/B" in all_units
@@ -186,7 +328,10 @@ async def test_set_phase_syncs_db_index_when_project_resolved(sandbox_workspace)
     project = await _make_aim_project(sandbox_workspace)
 
     result = await aim_units(
-        action="set_phase", unit="core-batch/PAYROLL01", kind="program", phase="inventory"
+        action="set_phase",
+        unit="core-batch/PAYROLL01",
+        kind="program",
+        phase="inventory",
     )
     assert "no AIM project resolved" not in result
 
@@ -201,9 +346,74 @@ async def test_set_phase_syncs_db_index_when_project_resolved(sandbox_workspace)
 
 
 @pytest.mark.asyncio
+async def test_set_phase_rejects_skipping_lifecycle(sandbox_workspace):
+    await _make_aim_project(sandbox_workspace)
+    await aim_units(action="set_phase", unit="m/A", kind="program", phase="inventory")
+
+    with pytest.raises(
+        ValueError, match="illegal phase transition inventory -> converted"
+    ):
+        await aim_units(action="set_phase", unit="m/A", phase="converted")
+
+
+@pytest.mark.asyncio
+async def test_agent_turn_cannot_own_phase_transition(sandbox_workspace):
+    await _make_aim_project(sandbox_workspace)
+    await aim_units(action="set_phase", unit="m/A", kind="program", phase="inventory")
+    kb_store.write_unit(sandbox_workspace, "m", "A", body="Documented behavior.")
+
+    with pytest.raises(ValueError, match="must run through aim-understand"):
+        await aim_units(action="set_phase", unit="m/A", phase="understood")
+
+
+@pytest.mark.asyncio
+async def test_transition_requires_resolved_project(sandbox_workspace):
+    from app.workflow.exec_context import current_execution_id
+
+    await aim_units(action="set_phase", unit="m/A", kind="program", phase="inventory")
+    kb_store.write_unit(sandbox_workspace, "m", "A", body="Documented behavior.")
+    token = current_execution_id.set(str(uuid7()))
+    try:
+        with pytest.raises(ValueError, match="resolved AIM project"):
+            await aim_units(action="set_phase", unit="m/A", phase="understood")
+    finally:
+        current_execution_id.reset(token)
+
+
+@pytest.mark.asyncio
+async def test_owning_workflow_advances_ready_unit(sandbox_workspace):
+    from app.workflow.exec_context import current_execution_id
+
+    await _make_aim_project(sandbox_workspace)
+    await aim_units(action="set_phase", unit="m/A", kind="program", phase="inventory")
+    kb_store.write_unit(sandbox_workspace, "m", "A", body="Documented behavior.")
+    execution = await _make_workflow_execution("aim-understand")
+
+    token = current_execution_id.set(str(execution.id))
+    try:
+        await aim_claim(action="acquire", unit="m/A")
+        result = await aim_units(action="set_phase", unit="m/A", phase="understood")
+    finally:
+        current_execution_id.reset(token)
+
+    assert "phase=understood" in result
+    events = list(
+        (sandbox_workspace / "state" / "transitions" / "m" / "A").glob("*.yaml")
+    )
+    assert len(events) == 1
+    event = yaml.safe_load(events[0].read_text())
+    assert event["evidence_refs"] == ["modules/m/A.md"]
+
+
+@pytest.mark.asyncio
 async def test_record_run_creates_aim_run_row(sandbox_workspace):
     project = await _make_aim_project(sandbox_workspace)
-    await aim_units(action="set_phase", unit="m/A", kind="program", phase="converted")
+    await _seed_indexed_unit(
+        sandbox_workspace,
+        "m/A",
+        phase="converted",
+        target_paths=["src/A.java"],
+    )
 
     result = await aim_units(
         action="record_run",
@@ -219,10 +429,14 @@ async def test_record_run_creates_aim_run_row(sandbox_workspace):
         unit_row = (
             await db.exec(select(AimUnit).where(AimUnit.project_id == project.id))
         ).one()
-        runs = (await db.exec(select(AimRun).where(AimRun.unit_id == unit_row.id))).all()
+        runs = (
+            await db.exec(select(AimRun).where(AimRun.unit_id == unit_row.id))
+        ).all()
     assert len(runs) == 1
     assert runs[0].verdict == "pass"
     assert runs[0].stats == {"cases": 3}
+    meta_path = sandbox_workspace / "runs" / "m" / "A" / str(runs[0].id) / "meta.yaml"
+    assert meta_path.is_file()
 
 
 @pytest.mark.asyncio
@@ -253,6 +467,7 @@ async def test_add_link_creates_aim_link_row(sandbox_workspace):
     assert len(links) == 1
     assert links[0].kind == "implements"
     assert links[0].note == "cited from mapping/A.md"
+    assert (sandbox_workspace / "state" / "links" / f"{links[0].id}.yaml").is_file()
 
 
 # ---------------------------------------------------------------------------
@@ -260,10 +475,20 @@ async def test_add_link_creates_aim_link_row(sandbox_workspace):
 # ---------------------------------------------------------------------------
 
 
-def _write_golden_case(root: Path, module: str, name: str, case_set: str, content: str) -> None:
-    case_dir = root / "golden" / "units" / module / name / "cases" / case_set / "expected"
-    case_dir.mkdir(parents=True, exist_ok=True)
-    (case_dir / "out.txt").write_text(content)
+def _write_golden_case(
+    root: Path,
+    module: str,
+    name: str,
+    case_set: str,
+    content: str,
+    *,
+    meta: str = "provenance: captured\n",
+) -> None:
+    case_dir = root / "golden" / "units" / module / name / "cases" / case_set
+    expected_dir = case_dir / "expected"
+    expected_dir.mkdir(parents=True, exist_ok=True)
+    (expected_dir / "out.txt").write_text(content)
+    (case_dir / "meta.yaml").write_text(meta)
 
 
 @pytest.mark.asyncio
@@ -304,9 +529,43 @@ async def test_compare_missing_golden_case_returns_error(sandbox_workspace):
 
 
 @pytest.mark.asyncio
+async def test_compare_requires_golden_metadata(sandbox_workspace):
+    _write_golden_case(sandbox_workspace, "m", "A", "smoke", "hello\n", meta="")
+
+    result = await aim_compare(unit="m/A", case_set="smoke")
+
+    data = json.loads(result)
+    assert data["verdict"] == "error"
+    assert data["error_kind"] == "missing_golden_metadata"
+
+
+@pytest.mark.asyncio
+async def test_compare_requires_signoff_for_synthesized_golden(sandbox_workspace):
+    _write_golden_case(
+        sandbox_workspace,
+        "m",
+        "A",
+        "smoke",
+        "hello\n",
+        meta="provenance: synthesized\n",
+    )
+
+    result = await aim_compare(unit="m/A", case_set="smoke")
+
+    data = json.loads(result)
+    assert data["verdict"] == "error"
+    assert data["error_kind"] == "untrusted_golden"
+
+
+@pytest.mark.asyncio
 async def test_compare_records_aim_run_when_project_resolved(sandbox_workspace):
     project = await _make_aim_project(sandbox_workspace)
-    await aim_units(action="set_phase", unit="m/A", kind="program", phase="converted")
+    await _seed_indexed_unit(
+        sandbox_workspace,
+        "m/A",
+        phase="converted",
+        target_paths=["src/A.java"],
+    )
 
     _write_golden_case(sandbox_workspace, "m", "A", "smoke", "hello\n")
     actual_dir = sandbox_workspace / ".aim-actuals" / "m" / "A" / "smoke"
@@ -321,10 +580,15 @@ async def test_compare_records_aim_run_when_project_resolved(sandbox_workspace):
         unit_row = (
             await db.exec(select(AimUnit).where(AimUnit.project_id == project.id))
         ).one()
-        runs = (await db.exec(select(AimRun).where(AimRun.unit_id == unit_row.id))).all()
+        runs = (
+            await db.exec(select(AimRun).where(AimRun.unit_id == unit_row.id))
+        ).all()
     assert len(runs) == 1
     assert runs[0].kind == "compare"
     assert runs[0].verdict == "pass"
+    assert (
+        sandbox_workspace / "runs" / "m" / "A" / str(runs[0].id) / "meta.yaml"
+    ).is_file()
 
 
 @pytest.mark.asyncio
@@ -335,11 +599,12 @@ async def test_compare_uses_project_canonicalizer_profile(sandbox_workspace):
     actual_dir.mkdir(parents=True)
     (actual_dir / "out.txt").write_text("run-id: xyz789\nvalue: 1")
 
-    # No rulebook dir bundled for id "default" -> falls back to a bare
-    # profile (no masks), so this run-id difference should still fail.
+    # A project manifest pins a real rulebook profile. Missing content must
+    # fail closed rather than silently comparing with an empty profile.
     result = await aim_compare(unit="m/A", case_set="smoke")
     data = json.loads(result)
-    assert data["verdict"] == "fail"
+    assert data["verdict"] == "error"
+    assert data["error_kind"] == "missing_canonicalizer"
 
 
 # ---------------------------------------------------------------------------
@@ -350,9 +615,7 @@ async def test_compare_uses_project_canonicalizer_profile(sandbox_workspace):
 @pytest.mark.asyncio
 async def test_set_phase_rejects_invalid_phase(sandbox_workspace):
     with pytest.raises(ValueError, match="Invalid unit phase"):
-        await aim_units(
-            action="set_phase", unit="m/A", kind="program", phase="convert"
-        )
+        await aim_units(action="set_phase", unit="m/A", kind="program", phase="convert")
 
 
 @pytest.mark.asyncio
@@ -365,9 +628,7 @@ async def test_set_project_phase_rejects_invalid_phase(sandbox_workspace):
 @pytest.mark.asyncio
 async def test_unit_path_traversal_rejected(sandbox_workspace):
     with pytest.raises(ValueError, match="unit name"):
-        await aim_units(
-            action="set_phase", unit="m/../../etc/passwd", kind="program"
-        )
+        await aim_units(action="set_phase", unit="m/../../etc/passwd", kind="program")
 
 
 @pytest.mark.asyncio
@@ -383,11 +644,14 @@ async def test_compare_profile_override_still_loads_rulebook_canonicalizer(
     sandbox_workspace,
 ):
     # Regression: passing profile= used to skip rulebook resolution and
-    # return a bare mask-less profile. A KB-local rulebook/ override supplies
+    # return a bare mask-less profile. The KB-local rulebook supplies
     # a 'strict' profile whose mask neutralizes the run-id difference.
     _write_kb_skeleton(sandbox_workspace)
     canon_dir = sandbox_workspace / "rulebook" / "canonicalizers"
     canon_dir.mkdir(parents=True)
+    (sandbox_workspace / "rulebook" / "rulebook.yaml").write_text(
+        "id: default\nversion: '0.1'\n"
+    )
     (canon_dir / "strict.yaml").write_text(
         "id: strict\nmask:\n  - pattern: 'run-id: \\w+'\n    replace: 'run-id: <m>'\n"
     )
@@ -406,7 +670,12 @@ async def test_compare_stamps_workflow_execution_id(sandbox_workspace):
     from app.workflow.exec_context import current_execution_id
 
     project = await _make_aim_project(sandbox_workspace)
-    await aim_units(action="set_phase", unit="m/A", kind="program", phase="converted")
+    await _seed_indexed_unit(
+        sandbox_workspace,
+        "m/A",
+        phase="converted",
+        target_paths=["src/A.java"],
+    )
     _write_golden_case(sandbox_workspace, "m", "A", "smoke", "hello\n")
     actual_dir = sandbox_workspace / ".aim-actuals" / "m" / "A" / "smoke"
     actual_dir.mkdir(parents=True)
@@ -422,5 +691,7 @@ async def test_compare_stamps_workflow_execution_id(sandbox_workspace):
         unit_row = (
             await db.exec(select(AimUnit).where(AimUnit.project_id == project.id))
         ).one()
-        runs = (await db.exec(select(AimRun).where(AimRun.unit_id == unit_row.id))).all()
+        runs = (
+            await db.exec(select(AimRun).where(AimRun.unit_id == unit_row.id))
+        ).all()
     assert runs[0].workflow_execution_id == "exec-123"

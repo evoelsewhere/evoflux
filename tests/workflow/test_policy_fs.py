@@ -79,6 +79,42 @@ def test_builtin_corpus_parses_clean():
         assert definition.name == path.stem, path
 
 
+def test_aim_action_workflows_have_readiness_preflight():
+    app_dir = Path(__file__).resolve().parents[2] / "app"
+    workflow_dir = app_dir / "agent" / "builtin_aim" / "workflows"
+    for path in sorted(workflow_dir.glob("*.yaml")):
+        if path.stem == "aim-assess":
+            continue
+        definition = parse_definition(path.read_text(encoding="utf-8"))
+        assert any(
+            node.kind == "tool" and node.tool == "aim_readiness"
+            for node in definition.nodes
+        ), path
+        claim_actions = {
+            node.args.get("action")
+            for node in definition.nodes
+            if node.kind == "tool" and node.tool == "aim_claim"
+        }
+        assert {"acquire", "release"} <= claim_actions, path
+
+
+def test_aim_workflows_have_single_entry_node():
+    app_dir = Path(__file__).resolve().parents[2] / "app"
+    workflow_dir = app_dir / "agent" / "builtin_aim" / "workflows"
+    for path in sorted(workflow_dir.glob("*.yaml")):
+        definition = parse_definition(path.read_text(encoding="utf-8"))
+        assert definition.entry_nodes() == [definition.nodes[0].id], path
+
+
+def test_aim_test_compare_executes_actuals_deterministically():
+    app_dir = Path(__file__).resolve().parents[2] / "app"
+    path = app_dir / "agent" / "builtin_aim" / "workflows" / "aim-test-compare.yaml"
+    definition = parse_definition(path.read_text(encoding="utf-8"))
+    run_node = next(node for node in definition.nodes if node.id == "run")
+    assert run_node.kind == "tool"
+    assert run_node.tool == "aim_execute"
+
+
 def test_discovery_precedence_and_crud(tmp_path, monkeypatch):
     from app.core.config import settings as app_settings
 

@@ -12,7 +12,7 @@ is a human decision, not something a reindex should infer.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 from uuid import UUID
@@ -20,8 +20,8 @@ from uuid import UUID
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.models.aim import AimUnit
-from app.services.aim.kb_store import list_units
+from app.models.aim import AimLink, AimRun, AimUnit
+from app.services.aim import kb_store
 from app.services.aim.models import UnitFrontmatter
 
 
@@ -30,6 +30,12 @@ class ReindexResult:
     created: int
     updated: int
     unchanged: int
+    invalid: int = 0
+    errors: list[str] = field(default_factory=list)
+    runs_created: int = 0
+    runs_updated: int = 0
+    links_created: int = 0
+    links_updated: int = 0
 
 
 def _index_fields(frontmatter: UnitFrontmatter, kb_doc_path: str) -> dict:
@@ -42,6 +48,8 @@ def _index_fields(frontmatter: UnitFrontmatter, kb_doc_path: str) -> dict:
         "target_paths": frontmatter.target_paths,
         "depends_on": frontmatter.depends_on,
         "complexity": frontmatter.complexity,
+        "revision": frontmatter.revision,
+        "last_transition_id": frontmatter.last_transition_id,
         "kb_doc_path": kb_doc_path,
     }
 
@@ -89,9 +97,93 @@ async def reindex_project(
 ) -> ReindexResult:
     """Upsert every ``modules/**/*.md`` unit into ``aim_units`` for *project_id*."""
     counts = {"created": 0, "updated": 0, "unchanged": 0}
-    for module, name, frontmatter, doc_path in list_units(kb_root):
+    try:
+        state_schema = kb_store.read_manifest(kb_root).state_schema
+    except (FileNotFoundError, ValueError):
+        state_schema = 1
+    scanned_units, errors = kb_store.scan_units(kb_root)
+    for module, name, frontmatter, doc_path in scanned_units:
+        error = kb_store.validate_unit_state(
+            kb_root,
+            module,
+            name,
+            frontmatter,
+            state_schema=state_schema,
+        )
+        if error:
+            errors.append(error)
+            continue
         _row, status = await upsert_unit(
             db, project_id, module, name, frontmatter, doc_path
         )
         counts[status] += 1
-    return ReindexResult(**counts)
+    runs_created = 0
+    runs_updated = 0
+    run_metas, run_errors = kb_store.scan_run_metas(kb_root)
+    errors.extend(run_errors)
+    for module, name, meta in run_metas:
+        unit = (
+            await db.exec(
+                select(AimUnit).where(
+                    AimUnit.project_id == project_id,
+                    AimUnit.module == module,
+                    AimUnit.name == name,
+                )
+            )
+        ).first()
+        if unit is None:
+            errors.append(f"run {meta.id}: unit {module}/{name} is not indexed")
+            continue
+        row = await db.get(AimRun, meta.id)
+        fields = {
+            "unit_id": unit.id,
+            "kind": meta.kind,
+            "verdict": meta.verdict,
+            "case_set": meta.case_set,
+            "stats": meta.stats,
+            "report_path": meta.report_path,
+            "session_id": meta.session_id,
+            "workflow_execution_id": meta.workflow_execution_id,
+            "created_at": meta.created_at,
+        }
+        if row is None:
+            db.add(AimRun(id=meta.id, **fields))
+            runs_created += 1
+        else:
+            for key, value in fields.items():
+                setattr(row, key, value)
+            db.add(row)
+            runs_updated += 1
+
+    links_created = 0
+    links_updated = 0
+    link_metas, link_errors = kb_store.scan_link_metas(kb_root)
+    errors.extend(link_errors)
+    for meta in link_metas:
+        row = await db.get(AimLink, meta.id)
+        fields = {
+            "project_id": project_id,
+            "from_ref": meta.from_ref,
+            "to_ref": meta.to_ref,
+            "kind": meta.kind,
+            "note": meta.note,
+            "created_at": meta.created_at,
+        }
+        if row is None:
+            db.add(AimLink(id=meta.id, **fields))
+            links_created += 1
+        else:
+            for key, value in fields.items():
+                setattr(row, key, value)
+            db.add(row)
+            links_updated += 1
+
+    return ReindexResult(
+        **counts,
+        invalid=len(errors),
+        errors=errors,
+        runs_created=runs_created,
+        runs_updated=runs_updated,
+        links_created=links_created,
+        links_updated=links_updated,
+    )

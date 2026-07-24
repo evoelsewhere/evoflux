@@ -61,6 +61,7 @@ class WorkflowApproveRequest(BaseModel):
 class WorkflowRunRequest(BaseModel):
     session_id: str
     inputs: dict[str, Any] = Field(default_factory=dict)
+    retry_of_execution_id: UUID | None = None
 
 
 class WorkflowRunResponse(BaseModel):
@@ -86,6 +87,8 @@ class WorkflowExecutionOut(BaseModel):
     session_id: UUID
     status: str
     error: str | None
+    inputs: dict
+    retry_of_execution_id: UUID | None
     outputs: dict
     started_at: datetime
     ended_at: datetime | None

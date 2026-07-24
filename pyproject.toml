@@ -95,11 +95,10 @@ dev = [
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
 
-# Include non-Python data files inside the package: alembic config
-# and migration scripts, plus the seed bundle (mapped to app/_seed/ so
-# fresh installs seed offline — GitHub becomes the last resort; see
-# app/cli/seed.py). The web UI is packaged by the desktop shell,
-# not embedded in the FastAPI server wheel.
+# Include non-Python data files inside the package: Alembic resources and the
+# seed bundle (mapped to app/_seed/). The AIM KB seed includes a safe project
+# rulebook template. The web UI is packaged by the desktop shell, not embedded
+# in the FastAPI server wheel.
 [tool.hatch.build.targets.wheel.force-include]
 "app/alembic.ini" = "app/alembic.ini"
 "seed" = "app/_seed"

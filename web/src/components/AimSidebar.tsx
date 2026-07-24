@@ -80,6 +80,8 @@ interface AimSidebarProps {
   /** Opens the command palette (search input + footer help), same as
    * the forge/coding sidebars. */
   onCommandPalette?: () => void
+  mobile?: boolean
+  onMobileClose?: () => void
 }
 
 export function AimSidebar({
@@ -87,6 +89,8 @@ export function AimSidebar({
   activeFeature,
   onNewProject,
   onCommandPalette,
+  mobile = false,
+  onMobileClose,
 }: AimSidebarProps) {
   const navigate = useNavigate()
   const { isMacOverlay } = usePlatform()
@@ -161,23 +165,23 @@ export function AimSidebar({
     </>
   )
 
-  return (
-    <SidebarShell
-      collapsed={collapsed}
-      rail={rail}
-      resizeLabel="Resize AIM sidebar"
-    >
-      <SidebarCard className="h-full">
+  const content = (
+    <SidebarCard className="h-full">
         {/* Mode switch — shared tab strip, same as forge/coding sidebars */}
         <div className={`shrink-0 px-2 ${isMacOverlay ? 'pt-10' : 'pt-2'}`}>
-          <ModeSwitchTabs active="aim" />
+          <ModeSwitchTabs active="aim" onNavigate={onMobileClose} />
         </div>
 
         {/* Search trigger — opens the command palette (Ctrl+P), same
             placement + markup as the forge/coding sidebars. */}
         {onCommandPalette && (
           <div className="shrink-0 px-2 pt-2">
-            <SidebarSearchTrigger onClick={onCommandPalette} />
+            <SidebarSearchTrigger
+              onClick={() => {
+                onCommandPalette()
+                onMobileClose?.()
+              }}
+            />
           </div>
         )}
 
@@ -185,7 +189,10 @@ export function AimSidebar({
         <nav aria-label="AIM projects" className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
           <CollapsibleSection
             label="Projects"
-            onAdd={onNewProject}
+            onAdd={() => {
+              onNewProject()
+              onMobileClose?.()
+            }}
             addLabel="New / Join migration project"
           />
           {projectsQuery.isLoading ? (
@@ -214,6 +221,7 @@ export function AimSidebar({
                             to: '/aim/$projectId/$feature',
                             params: { projectId: project.id, feature: 'overview' },
                           })
+                          onMobileClose?.()
                         } else {
                           toggleProject(project.id)
                         }
@@ -271,6 +279,7 @@ export function AimSidebar({
                                     to: '/aim/$projectId/$feature',
                                     params: { projectId: project.id, feature: key },
                                   })
+                                  onMobileClose?.()
                                 }}
                                 className={cn(
                                   'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs transition-colors',
@@ -300,8 +309,21 @@ export function AimSidebar({
         {/* Footer trio — mirrors the forge/coding sidebars so all three
             modes feel like the same shell. */}
         <SidebarShellDivider />
-        <SidebarFooter onCommandPalette={onCommandPalette} />
+        <SidebarFooter onCommandPalette={onCommandPalette} onAction={onMobileClose} />
       </SidebarCard>
+  )
+
+  if (mobile) {
+    return <div className="h-full w-full overflow-hidden p-1">{content}</div>
+  }
+
+  return (
+    <SidebarShell
+      collapsed={collapsed}
+      rail={rail}
+      resizeLabel="Resize AIM sidebar"
+    >
+      {content}
     </SidebarShell>
   )
 }

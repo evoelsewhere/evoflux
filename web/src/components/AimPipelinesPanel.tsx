@@ -45,6 +45,7 @@ import {
 } from 'lucide-react'
 import {
   approveWorkflow,
+  getAimReadiness,
   getAimRun,
   getExecution,
   getPendingQuestions,
@@ -73,7 +74,7 @@ import { takeAimPipelinePrefill } from '@/lib/aimHandoff'
 import { cn } from '@/lib/utils'
 import type {
   AimRunListItem,
-  AimUnitOut,
+  AimReadiness,
   CodingProject,
   MessageResponse,
   SessionResponse,
@@ -262,10 +263,8 @@ export function AimPipelinesPanel({
   // consumed once, then this screen behaves as if hand-opened.
   const [prefill] = useState(() => takeAimPipelinePrefill())
 
-  // The pipeline picker is every discovered scope="aim" workflow — the 6
-  // builtin ones plus anything a rulebook's own workflows/ directory
-  // installed (rulebook_install.py copies those into the same global
-  // discovery root, so they show up here with zero special-casing).
+  // The pipeline picker is every discovered scope="aim" workflow. Project
+  // rulebooks never install or mutate workflows in the global discovery root.
   const workflowsQ = useWorkflowsQuery(targetWorkspace)
   const aimWorkflows = useMemo(
     () =>
@@ -355,6 +354,40 @@ export function AimPipelinesPanel({
     [units],
   )
 
+  const readinessInputs = useMemo(() => {
+    const unit = typeof inputValues.unit === 'string' ? inputValues.unit.trim() : undefined
+    const waveRaw = inputValues.wave
+    const wave =
+      waveRaw !== undefined && waveRaw !== '' && !Number.isNaN(Number(waveRaw))
+        ? Number(waveRaw)
+        : undefined
+    const caseSet =
+      typeof inputValues.case_set === 'string' ? inputValues.case_set.trim() : undefined
+    return { unit: unit || undefined, wave, case_set: caseSet || undefined }
+  }, [inputValues])
+
+  const requiredInputsPresent = (selectedWorkflow?.inputs ?? []).every((spec) => {
+    if (!spec.required) return true
+    const value = inputValues[spec.name]
+    return value !== undefined && value !== null && value !== ''
+  })
+
+  const readinessQuery = useQuery({
+    queryKey: [
+      'aim-pipeline-readiness',
+      project.id,
+      selectedWorkflow?.name ?? '',
+      readinessInputs,
+    ],
+    queryFn: () =>
+      getAimReadiness(project.id, {
+        pipeline: selectedWorkflow!.name,
+        ...readinessInputs,
+      }),
+    enabled: Boolean(selectedWorkflow?.valid) && requiredInputsPresent,
+    staleTime: 2_000,
+  })
+
   // Node chain + graph detail for the selected pipeline's info card.
   const detailQ = useQuery({
     queryKey: ['workflow-detail', selectedWorkflow?.name ?? '', targetWorkspace ?? ''],
@@ -413,11 +446,9 @@ export function AimPipelinesPanel({
   const canRun =
     !starting &&
     Boolean(selectedWorkflow?.valid) &&
-    (selectedWorkflow?.inputs ?? []).every((spec) => {
-      if (!spec.required) return true
-      const value = inputValues[spec.name]
-      return value !== undefined && value !== null && value !== ''
-    })
+    requiredInputsPresent &&
+    !readinessQuery.isFetching &&
+    readinessQuery.data?.allowed === true
 
   // Builds the run's `inputs` payload from whatever the selected workflow
   // itself declares — works identically for the 6 known pipelines and any
@@ -453,6 +484,13 @@ export function AimPipelinesPanel({
     setStarting(true)
     setError(null)
     try {
+      const readiness = await getAimReadiness(project.id, {
+        pipeline: selectedWorkflow.name,
+        ...readinessInputs,
+      })
+      if (!readiness.allowed) {
+        throw new Error(readiness.blockers.join(' · ') || 'Pipeline prerequisites are not met.')
+      }
       // Unapproved definitions get a one-click approve — the manifest is
       // the builtin pipeline's declared agents/tools (plan §7).
       if (!selectedWorkflow.approved) {
@@ -490,7 +528,15 @@ export function AimPipelinesPanel({
     } finally {
       setStarting(false)
     }
-  }, [selectedWorkflow, targetWorkspace, project.id, buildInputs, runLabel, queryClient])
+  }, [
+    selectedWorkflow,
+    targetWorkspace,
+    project.id,
+    readinessInputs,
+    buildInputs,
+    runLabel,
+    queryClient,
+  ])
 
   // §9.3: convert pipelines write to the target repo — require explicit confirm.
   const handleRun = useCallback(() => {
@@ -500,6 +546,33 @@ export function AimPipelinesPanel({
       void doRun()
     }
   }, [selectedWorkflow, doRun])
+
+  const retryExecution = useCallback(
+    async (run: SessionResponse, execution: WorkflowExecutionSummary) => {
+      setStarting(true)
+      setError(null)
+      try {
+        await runWorkflow(
+          execution.definition_name,
+          run.id,
+          execution.inputs,
+          targetWorkspace,
+          execution.id,
+        )
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.team.sessions.project(project.id),
+        })
+        setDiscussion(null)
+        setReportRun(null)
+        setMonitorSession({ id: run.id, title: run.title, running: true })
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to retry the pipeline run.')
+      } finally {
+        setStarting(false)
+      }
+    },
+    [project.id, queryClient, targetWorkspace],
+  )
 
   return (
     <div className="relative flex h-full min-h-0">
@@ -554,12 +627,8 @@ export function AimPipelinesPanel({
         <PipelineInfoCard
           workflow={selectedWorkflow}
           graph={detailQ.data?.graph}
-          units={units}
-          wave={
-            typeof inputValues.wave === 'string' && inputValues.wave !== ''
-              ? Number(inputValues.wave)
-              : null
-          }
+          readiness={readinessQuery.data}
+          readinessLoading={readinessQuery.isFetching}
         />
 
         {/* Run table */}
@@ -613,6 +682,10 @@ export function AimPipelinesPanel({
                         setMonitorSession(null)
                         setReportRun(null)
                         setDiscussion((prev) => (prev?.id === run.id ? null : run))
+                      }}
+                      onRetry={() => {
+                        const execution = executionBySession.get(run.id)
+                        if (execution) void retryExecution(run, execution)
                       }}
                     />
                   )
@@ -762,84 +835,16 @@ function NodeKindIcon({ kind }: { kind: string }) {
   }
 }
 
-/** Readiness line: which units the selected pipeline can actually act on
- * right now — surfaced up front so an empty wave or a phase gap is visible
- * before hitting Run, not after a confusing no-op. Hand-written per builtin
- * pipeline (there's no generic way to know what an arbitrary custom
- * rulebook workflow reads/writes); a workflow name that doesn't match one
- * of these six falls through to `null` — no hint shown, not an error. */
-function eligibility(
-  workflowName: string,
-  units: AimUnitOut[],
-  wave: number | null,
-): { text: string; warn: boolean } | null {
-  const count = (phase: string, w?: number | null) =>
-    units.filter((u) => u.phase === phase && (w == null || u.wave === w)).length
-  switch (workflowName) {
-    case 'aim-assess':
-      return {
-        text:
-          units.length === 0
-            ? 'Builds the unit inventory from the source estate — the KB has no units yet.'
-            : `Refreshes the inventory — ${units.length} unit(s) currently indexed.`,
-        warn: false,
-      }
-    case 'aim-understand': {
-      const n = count('inventory')
-      return {
-        text: `${n} unit(s) at phase inventory await documentation.`,
-        warn: n === 0 && units.length > 0,
-      }
-    }
-    case 'aim-convert-unit': {
-      const n = count('designed')
-      return {
-        text: `${n} unit(s) at phase designed (plan → gate → implement; the plan step designs first if needed).`,
-        warn: false,
-      }
-    }
-    case 'aim-convert-wave': {
-      if (wave == null || Number.isNaN(wave)) return null
-      const n = count('designed', wave)
-      return {
-        text:
-          n === 0
-            ? `No designed unit(s) in wave ${wave} — this pipeline selects by phase=designed; run aim-convert-unit's plan step (or aim-understand) first.`
-            : `${n} designed unit(s) in wave ${wave} will be converted sequentially.`,
-        warn: n === 0,
-      }
-    }
-    case 'aim-test-compare': {
-      const n = count('converted')
-      return {
-        text: `${n} unit(s) at phase converted awaiting an equivalence verdict.`,
-        warn: false,
-      }
-    }
-    case 'aim-cutover-check': {
-      if (wave == null || Number.isNaN(wave)) return null
-      const eq = count('equivalent', wave)
-      const total = units.filter((u) => u.wave === wave).length
-      return {
-        text: `${eq} of ${total} unit(s) in wave ${wave} are certified equivalent.`,
-        warn: total > 0 && eq < total,
-      }
-    }
-    default:
-      return null
-  }
-}
-
 function PipelineInfoCard({
   workflow,
   graph,
-  units,
-  wave,
+  readiness,
+  readinessLoading,
 }: {
   workflow: WorkflowListItem | undefined
   graph: Record<string, unknown> | undefined
-  units: AimUnitOut[]
-  wave: number | null
+  readiness: AimReadiness | undefined
+  readinessLoading: boolean
 }) {
   if (!workflow) return null
   const nodes = Array.isArray(graph?.nodes)
@@ -848,7 +853,6 @@ function PipelineInfoCard({
       )
     : []
   const gateCount = nodes.filter((n) => n.kind === 'gate' || n.kind === 'input').length
-  const hint = eligibility(workflow.name, units, wave)
 
   return (
     <div className="space-y-2 border-b border-(--color-border) px-4 py-3">
@@ -905,16 +909,36 @@ function PipelineInfoCard({
           </span>
         )}
       </div>
-      {hint && (
-        <p
+      {readinessLoading ? (
+        <p className="text-[11px] text-(--color-text-subtle)">Checking prerequisites…</p>
+      ) : readiness ? (
+        <div
           className={cn(
-            'text-[11px]',
-            hint.warn ? 'text-(--color-warning,orange)' : 'text-(--color-text-subtle)',
+            'rounded-md px-2.5 py-2 text-[11px]',
+            readiness.allowed
+              ? 'bg-(--color-success-bg,var(--bg-key)) text-(--color-success)'
+              : 'bg-(--color-error-subtle,var(--bg-key)) text-(--color-error)',
           )}
         >
-          {hint.text}
-        </p>
-      )}
+          <p className="font-medium">
+            {readiness.allowed
+              ? `Ready · ${readiness.selected_count} unit(s) selected`
+              : `Blocked · ${readiness.blockers.length} prerequisite(s)`}
+          </p>
+          {!readiness.allowed && (
+            <ul className="mt-1 list-disc space-y-0.5 pl-4">
+              {readiness.blockers.slice(0, 4).map((blocker) => (
+                <li key={blocker}>{blocker}</li>
+              ))}
+            </ul>
+          )}
+          {readiness.warnings.map((warning) => (
+            <p key={warning} className="mt-1 text-(--color-warning,orange)">
+              {warning}
+            </p>
+          ))}
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -1661,6 +1685,7 @@ function RunRow({
   onMonitor,
   onReport,
   onDiscuss,
+  onRetry,
 }: {
   run: SessionResponse
   execution?: WorkflowExecutionSummary
@@ -1672,9 +1697,17 @@ function RunRow({
   onMonitor: () => void
   onReport: () => void
   onDiscuss: () => void
+  onRetry: () => void
 }) {
   const status = displayStatus(Boolean(run.running), execution)
   const finished = !(status === 'running' || status === 'waiting_gate')
+  const retryable =
+    Boolean(execution) &&
+    (status === 'failed' ||
+      status === 'interrupted' ||
+      status === 'stopped' ||
+      aimRun?.verdict === 'fail' ||
+      aimRun?.verdict === 'error')
   return (
     <tr className="border-t border-(--color-border)">
       <td className="max-w-0 truncate py-2 pr-3 text-(--color-text)" title={run.title ?? run.id}>
@@ -1730,6 +1763,17 @@ function RunRow({
             >
               <FileText size={11} />
               Report
+            </button>
+          )}
+          {retryable && (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+              title="Retry with the same inputs as a linked new attempt"
+            >
+              <Repeat size={11} />
+              Retry
             </button>
           )}
           {finished && (

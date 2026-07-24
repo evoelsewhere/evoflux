@@ -8,16 +8,21 @@
 import { apiBaseUrl } from '../base-url'
 import { parseDetailOrThrow } from './_shared'
 import type {
+  AimApproval,
+  AimCutoverChecklist,
   AimLayoutDetection,
   AimManifestPreview,
   AimMeta,
   AimProjectCreateRequest,
+  AimProjectHealth,
   AimProjectJoinRequest,
   AimProjectSummary,
+  AimReadiness,
   AimReindexResponse,
   AimRulebook,
   AimRunListItem,
   AimRunOut,
+    AimStateReconcileResponse,
   AimUnitOut,
   CodingProject,
 } from '../types'
@@ -82,6 +87,65 @@ export async function getAimProjectSummary(projectId: string): Promise<AimProjec
   return res.json()
 }
 
+export async function getAimProjectHealth(projectId: string): Promise<AimProjectHealth> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/aim/health`,
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'getAimProjectHealth')
+  return res.json()
+}
+
+export async function listAimApprovals(projectId: string): Promise<AimApproval[]> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/aim/approvals`,
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'listAimApprovals')
+  return res.json()
+}
+
+export async function reconcileAimState(
+  projectId: string,
+): Promise<AimStateReconcileResponse> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/aim/reconcile-state`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmation: 'accept-current-state' }),
+    },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'reconcileAimState')
+  return res.json()
+}
+
+export async function getAimCutoverChecklist(
+  projectId: string,
+  wave: number,
+): Promise<AimCutoverChecklist> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/aim/waves/${wave}/cutover`,
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'getAimCutoverChecklist')
+  return res.json()
+}
+
+export async function updateAimCutoverChecklist(
+  projectId: string,
+  wave: number,
+  body: Omit<AimCutoverChecklist, 'wave' | 'updated_at'>,
+): Promise<AimCutoverChecklist> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/aim/waves/${wave}/cutover`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'updateAimCutoverChecklist')
+  return res.json()
+}
+
 export async function listAimUnits(
   projectId: string,
   options?: { phase?: string; wave?: number },
@@ -94,6 +158,21 @@ export async function listAimUnits(
     `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/aim/units${query ? `?${query}` : ''}`,
   )
   if (!res.ok) await parseDetailOrThrow(res, 'listAimUnits')
+  return res.json()
+}
+
+export async function getAimReadiness(
+  projectId: string,
+  options: { pipeline: string; unit?: string; wave?: number; case_set?: string },
+): Promise<AimReadiness> {
+  const params = new URLSearchParams({ pipeline: options.pipeline })
+  if (options.unit) params.set('unit', options.unit)
+  if (options.wave !== undefined) params.set('wave', String(options.wave))
+  if (options.case_set) params.set('case_set', options.case_set)
+  const res = await fetch(
+    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/aim/readiness?${params}`,
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'getAimReadiness')
   return res.json()
 }
 

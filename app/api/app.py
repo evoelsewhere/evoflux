@@ -137,6 +137,13 @@ async def lifespan(app: FastAPI):
         logger.info("code_graph_watcher_disabled enabled=false")
     app.state.code_graph_watcher = code_graph_watcher
 
+    from app.services.aim.watcher import AimIndexWatcher, set_global_aim_watcher
+
+    aim_index_watcher = AimIndexWatcher(db_factory=async_session_factory)
+    set_global_aim_watcher(aim_index_watcher)
+    await aim_index_watcher.start()
+    app.state.aim_index_watcher = aim_index_watcher
+
     # Start WebBridge extension cleanup task
     from app.services.webbridge_service import webbridge_manager
 
@@ -149,6 +156,7 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    await aim_index_watcher.stop()
     await code_graph_watcher.stop()
     webbridge_cleanup_task = getattr(app.state, "webbridge_cleanup_task", None)
     if webbridge_cleanup_task:

@@ -101,6 +101,23 @@ async def test_get_or_start_team_for_session_is_idempotent(monkeypatch):
     fake_team.start.assert_awaited_once()
 
 
+def test_existing_aim_blueprint_gets_managed_runtime_contract(tmp_path):
+    agents_dir = tmp_path / "aim"
+    agents_dir.mkdir()
+    converter = agents_dir / "aim-converter.md"
+    converter.write_text(
+        "---\nname: aim-converter\nrole: member\nmodel: custom:model\n---\nold body\n",
+        encoding="utf-8",
+    )
+
+    team_manager._ensure_aim_agents_installed(agents_dir)
+
+    content = converter.read_text(encoding="utf-8")
+    assert "model: custom:model" in content
+    assert "<!-- aim-runtime-contract:v2 -->" in content
+    assert "Phase transitions are workflow-owned" in content
+
+
 @pytest.mark.asyncio
 async def test_get_or_start_team_for_session_isolated_by_session(monkeypatch):
     first_team = _make_team("lead-a")

@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
+import yaml
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -20,6 +21,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 # fixture calls SQLModel.metadata.create_all (needed when running this file alone).
 import app.models.chat  # noqa: F401
 import app.models.code_graph  # noqa: F401
+from app.services.aim import kb_store
 from app.services.aim.extractors import (
     extractor_config_paths,
     structural_parsers_for_workspace,
@@ -43,59 +45,140 @@ JCL_SAMPLE = """\
 //INFILE   DD DSN=PROD.PAYROLL.INPUT,DISP=SHR
 """
 
+COBOL_EXTRACTOR = {
+    "id": "cobol-structural",
+    "file_extensions": [".cbl", ".cob"],
+    "ignore_case": True,
+    "node_rules": [
+        {
+            "kind": "program",
+            "scope": "file",
+            "match": r"PROGRAM-ID\s*\.?\s+(?P<name>[A-Za-z0-9][A-Za-z0-9-]*)",
+        },
+        {
+            "kind": "paragraph",
+            "scope": "block",
+            "match": r"^[\s0-9]{0,7}(?P<name>[A-Za-z][A-Za-z0-9-]*)\s*\.\s*$",
+        },
+    ],
+    "edge_rules": [
+        {
+            "kind": "calls",
+            "from": "paragraph",
+            "match": r"\bPERFORM\s+(?P<target>[A-Za-z][A-Za-z0-9-]*)",
+        }
+    ],
+    "keyword_denylist": ["UNTIL", "VARYING", "TIMES"],
+}
+
+JCL_EXTRACTOR = {
+    "id": "jcl-structural",
+    "file_extensions": [".jcl"],
+    "ignore_case": True,
+    "node_rules": [
+        {
+            "kind": "job",
+            "scope": "file",
+            "match": r"^//(?P<name>[A-Z0-9@#$]+)\s+JOB\b",
+        },
+        {
+            "kind": "step",
+            "scope": "block",
+            "match": r"^//(?P<name>[A-Z0-9@#$]+)\s+EXEC\b",
+        },
+    ],
+    "edge_rules": [
+        {
+            "kind": "calls",
+            "from": "step",
+            "match": r"\bPGM=(?P<target>[A-Z0-9@#$]+)",
+        }
+    ],
+    "keyword_denylist": [],
+}
+
+
+def _configure_extractors(kb_root: Path, extractors: dict[str, dict]) -> None:
+    rulebook_path = kb_root / "rulebook" / "rulebook.yaml"
+    manifest = yaml.safe_load(rulebook_path.read_text(encoding="utf-8"))
+    manifest["extractors"] = [f"extractors/{name}" for name in extractors]
+    rulebook_path.write_text(
+        yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8"
+    )
+    if not (kb_root / "aim.yaml").is_file():
+        kb_store.create_manifest(
+            kb_root,
+            rulebook_id=manifest["id"],
+            rulebook_version=str(manifest["version"]),
+            source_identities=[],
+            target_identities=[],
+        )
+    directory = kb_root / "rulebook" / "extractors"
+    directory.mkdir(parents=True, exist_ok=True)
+    for name, content in extractors.items():
+        (directory / name).write_text(
+            yaml.safe_dump(content, sort_keys=False), encoding="utf-8"
+        )
+
 
 # ── extractor_config_paths ────────────────────────────────────────────────────
 
 
-def test_extractor_config_paths_reads_manifest_list():
-    paths = extractor_config_paths("cobol-java21")
+def test_extractor_config_paths_reads_local_manifest_list(tmp_path):
+    kb_root = tmp_path / "kb"
+    (kb_root / "rulebook").mkdir(parents=True)
+    (kb_root / "rulebook" / "rulebook.yaml").write_text(
+        "id: local\nversion: '0.1'\n", encoding="utf-8"
+    )
+    _configure_extractors(
+        kb_root,
+        {
+            "cobol-structural.yaml": COBOL_EXTRACTOR,
+            "jcl-structural.yaml": JCL_EXTRACTOR,
+        },
+    )
+
+    paths = extractor_config_paths(kb_root)
     assert [p.name for p in paths] == [
         "cobol-structural.yaml",
         "jcl-structural.yaml",
     ]
 
 
-def test_extractor_config_paths_empty_for_tree_sitter_pack():
-    # java8-java21 declares parser_strategy: tree_sitter and ships no
-    # extractors — the manifest has no list and the glob finds nothing.
-    assert extractor_config_paths("java8-java21") == []
+def test_extractor_examples_are_inert_until_declared(tmp_path):
+    directory = tmp_path / "rulebook" / "extractors"
+    directory.mkdir(parents=True)
+    (tmp_path / "rulebook" / "rulebook.yaml").write_text(
+        "id: local\nversion: '0.1'\n", encoding="utf-8"
+    )
+    kb_store.create_manifest(
+        tmp_path,
+        rulebook_id="local",
+        rulebook_version="0.1",
+        source_identities=[],
+        target_identities=[],
+    )
+    (directory / "structural.example.yaml").write_text(
+        yaml.safe_dump(COBOL_EXTRACTOR, sort_keys=False), encoding="utf-8"
+    )
+
+    assert extractor_config_paths(tmp_path) == []
 
 
-def test_extractor_config_paths_empty_for_unknown_rulebook():
-    assert extractor_config_paths("not-a-rulebook") == []
+def test_extractor_config_paths_empty_without_local_rulebook(tmp_path):
+    assert extractor_config_paths(tmp_path) == []
 
 
-def test_extractor_config_paths_prefers_kb_override_over_builtin(tmp_path):
+def test_extractor_config_paths_reads_only_declared_local_files(tmp_path):
     kb_root = tmp_path / "kb"
-    override = kb_root / "rulebook" / "extractors"
-    override.mkdir(parents=True)
+    (kb_root / "rulebook").mkdir(parents=True)
     (kb_root / "rulebook" / "rulebook.yaml").write_text(
-        "id: cobol-java21\nversion: '0.1'\n"
-        "extractors:\n  - extractors/only.yaml\n",
+        "id: local\nversion: '0.1'\n",
         encoding="utf-8",
     )
-    (override / "only.yaml").write_text("id: only\n", encoding="utf-8")
+    _configure_extractors(kb_root, {"only.yaml": COBOL_EXTRACTOR})
 
-    # No kb_root -> builtin-only lookup, unaffected by the override.
-    assert [p.name for p in extractor_config_paths("cobol-java21")] == [
-        "cobol-structural.yaml",
-        "jcl-structural.yaml",
-    ]
-    # With kb_root -> the KB-local override wins.
-    assert [p.name for p in extractor_config_paths("cobol-java21", kb_root)] == [
-        "only.yaml",
-    ]
-
-
-def test_extractor_config_paths_kb_root_falls_back_to_builtin_without_override(
-    tmp_path,
-):
-    kb_root = tmp_path / "kb-no-override"
-    kb_root.mkdir()
-    assert [p.name for p in extractor_config_paths("cobol-java21", kb_root)] == [
-        "cobol-structural.yaml",
-        "jcl-structural.yaml",
-    ]
+    assert [p.name for p in extractor_config_paths(kb_root)] == ["only.yaml"]
 
 
 # ── structural_parsers_for_workspace (isolated in-memory DB) ─────────────────
@@ -131,11 +214,16 @@ async def _make_cobol_project(db, tmp_path: Path):
     project = await create_aim_project(
         db,
         name="estate migration",
-        rulebook_id="cobol-java21",
-        rulebook_version="0.1",
         source_paths=[str(source)],
         target_path=str(target),
         kb_path=str(tmp_path / "estate-kb"),
+    )
+    _configure_extractors(
+        tmp_path / "estate-kb",
+        {
+            "cobol-structural.yaml": COBOL_EXTRACTOR,
+            "jcl-structural.yaml": JCL_EXTRACTOR,
+        },
     )
     await db.commit()
     return project, source
@@ -163,31 +251,28 @@ async def test_source_workspace_gets_structural_parsers(db, tmp_path):
 
 @pytest.mark.asyncio
 async def test_kb_local_rulebook_override_wins_for_extractors(db, tmp_path):
-    """extractor_config_paths used to resolve the builtin pack dir only,
-    silently ignoring a KB-local rulebook/ override's own extractors/ —
-    this is the regression test for KB-first resolution (the same
-    resolve_rulebook_dir aim_compare's canonicalizer lookup already uses)."""
+    """Changing the KB-local declaration changes parser resolution."""
     from uuid import UUID
 
     project, _ = await _make_cobol_project(db, tmp_path)
     roles = project.settings["aim"]["roles"]
     kb_root = tmp_path / "estate-kb"
 
-    override_extractors = kb_root / "rulebook" / "extractors"
-    override_extractors.mkdir(parents=True)
-    (kb_root / "rulebook" / "rulebook.yaml").write_text(
-        "id: cobol-java21\nversion: '0.1'\n"
-        "extractors:\n  - extractors/solo-structural.yaml\n",
-        encoding="utf-8",
-    )
-    (override_extractors / "solo-structural.yaml").write_text(
-        "id: solo-structural\n"
-        "file_extensions: ['.cbl']\n"
-        "node_rules:\n"
-        "  - kind: program\n"
-        "    scope: file\n"
-        r"    match: 'PROGRAM-ID\s*\.?\s+(?P<name>[A-Za-z0-9][A-Za-z0-9-]*)'" "\n",
-        encoding="utf-8",
+    _configure_extractors(
+        kb_root,
+        {
+            "solo-structural.yaml": {
+                "id": "solo-structural",
+                "file_extensions": [".cbl"],
+                "node_rules": [
+                    {
+                        "kind": "program",
+                        "scope": "file",
+                        "match": r"PROGRAM-ID\s*\.?\s+(?P<name>[A-Za-z0-9][A-Za-z0-9-]*)",
+                    }
+                ],
+            }
+        },
     )
 
     parsers = await structural_parsers_for_workspace(db, UUID(roles["source"][0]))

@@ -22,6 +22,21 @@ class AimMetaResponse(BaseModel):
     phase_next_pipeline: dict[str, str | None]
 
 
+class AimUnitActionOut(BaseModel):
+    pipeline: str
+    target_phase: str
+    allowed: bool
+    blockers: list[str]
+    warnings: list[str]
+
+
+class AimUnitClaimOut(BaseModel):
+    workflow_execution_id: UUID
+    workflow_name: str
+    session_id: UUID | None
+    lease_expires_at: datetime
+
+
 class AimUnitOut(BaseModel):
     id: UUID
     module: str
@@ -32,6 +47,12 @@ class AimUnitOut(BaseModel):
     assignee: str | None
     depends_on: list[str]
     complexity: dict
+    revision: int
+    last_transition_id: str | None
+    state_verified: bool = False
+    state_error: str | None = None
+    next_action: AimUnitActionOut | None = None
+    claim: AimUnitClaimOut | None = None
     kb_doc_path: str | None
     updated_at: datetime
 
@@ -70,6 +91,76 @@ class AimReindexResponse(BaseModel):
     created: int
     updated: int
     unchanged: int
+    invalid: int = 0
+    errors: list[str] = Field(default_factory=list)
+    runs_created: int = 0
+    runs_updated: int = 0
+    links_created: int = 0
+    links_updated: int = 0
+
+
+class AimReadinessResponse(BaseModel):
+    pipeline: str
+    status: Literal["ready", "blocked"]
+    allowed: bool
+    blockers: list[str]
+    warnings: list[str]
+    selected_units: list[str]
+    selected_count: int
+
+
+class AimHealthCheckOut(BaseModel):
+    id: str
+    label: str
+    status: Literal["pass", "warn", "fail"]
+    message: str
+
+
+class AimProjectHealthOut(BaseModel):
+    status: Literal["ready", "degraded", "blocked"]
+    checks: list[AimHealthCheckOut]
+    failed_count: int
+    warning_count: int
+
+
+class AimStateReconcileRequest(BaseModel):
+    confirmation: Literal["accept-current-state"]
+
+
+class AimStateReconcileResponse(BaseModel):
+    reconciliation_id: str
+    reconciled: int
+    state_schema: int
+
+
+class AimCutoverChecklistOut(BaseModel):
+    wave: int
+    deployment_ready: bool
+    data_reconciled: bool
+    rollback_ready: bool
+    monitoring_ready: bool
+    approved_by: str | None
+    notes: str
+    updated_at: datetime
+
+
+class AimCutoverChecklistUpdate(BaseModel):
+    deployment_ready: bool
+    data_reconciled: bool
+    rollback_ready: bool
+    monitoring_ready: bool
+    approved_by: str | None = None
+    notes: str = ""
+
+
+class AimApprovalOut(BaseModel):
+    execution_id: UUID
+    session_id: UUID
+    session_title: str | None
+    workflow: str
+    request_id: str
+    question: str
+    options: list[str]
 
 
 class AimPhaseCounts(BaseModel):
@@ -94,8 +185,6 @@ class AimProjectSummaryOut(BaseModel):
 
 class AimProjectCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
-    rulebook_id: str = Field(min_length=1)
-    rulebook_version: str = "0.1"
     source_paths: list[str] = Field(min_length=1)
     target_path: str
     kb_path: str
@@ -122,13 +211,10 @@ class AimRulebookFile(BaseModel):
 
 
 class AimRulebookResponse(BaseModel):
-    """Read-only view of the project's rulebook pack (Rulebook screen) —
-    the parsed manifest plus every small text artifact in the pack."""
+    """Read-only view of the project's local rulebook (Rulebook screen) —
+    the parsed manifest plus every small text artifact in that directory."""
 
     id: str
-    #: 'project' when resolved from the KB repo's own rulebook/ override,
-    #: 'builtin' when it's one of the shared packs shipped with EvoFlux.
-    source: Literal["project", "builtin"]
     manifest: dict
     files: list[AimRulebookFile]
 
