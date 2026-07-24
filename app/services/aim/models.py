@@ -138,18 +138,45 @@ class GoldenCaseMeta(BaseModel):
     environment_fingerprint: str | None = None
     capture_command: str | None = None
     sme_sign_off: str | None = None
+    expected_sha256: dict[str, str] = Field(default_factory=dict)
+    legacy_command_sha256: str | None = None
+    target_command_sha256: str | None = None
+    captured_at: datetime | None = None
 
     @model_validator(mode="after")
     def _require_synthesized_sign_off(self) -> "GoldenCaseMeta":
+        if not self.canonicalizer_profile:
+            raise ValueError("golden cases require canonicalizer_profile")
         if self.provenance == "synthesized" and not self.sme_sign_off:
             raise ValueError("synthesized golden cases require sme_sign_off")
+        if self.provenance == "captured":
+            missing = [
+                name
+                for name, value in (
+                    ("source_revision", self.source_revision),
+                    ("environment_fingerprint", self.environment_fingerprint),
+                    ("capture_command", self.capture_command),
+                )
+                if not value
+            ]
+            if missing:
+                raise ValueError(
+                    "captured golden cases require " + ", ".join(missing)
+                )
+        if self.provenance == "prod_log_replay" and (
+            not self.environment_fingerprint or not self.capture_command
+        ):
+            raise ValueError(
+                "prod_log_replay golden cases require environment_fingerprint "
+                "and capture_command"
+            )
         return self
 
 
 class AimRunMeta(BaseModel):
     id: UUID
     unit: str
-    kind: Literal["compare", "convert", "test"]
+    kind: Literal["capture", "compare", "convert", "test"]
     verdict: Literal["pass", "fail", "acceptable_diff", "error"]
     case_set: str | None = None
     stats: dict = Field(default_factory=dict)

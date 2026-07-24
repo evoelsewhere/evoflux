@@ -640,3 +640,47 @@ async def test_terminal_cleanup_releases_execution_claims(setup_db):
 
     async with db_module.async_session_factory() as db:
         assert await db.get(AimClaim, claim_id) is None
+
+
+@pytest.mark.asyncio
+async def test_claim_heartbeat_extends_execution_lease(setup_db):
+    from datetime import datetime, timedelta, timezone
+    from uuid import uuid7
+
+    from app.core import db as db_module
+    from app.models.aim import AimClaim, AimUnit
+    from app.models.chat import CodingProject
+    from app.workflow.runner import WorkflowRunner
+
+    execution_id = uuid7()
+    async with db_module.async_session_factory() as db:
+        project = CodingProject(name="heartbeat-aim", kind="aim")
+        db.add(project)
+        await db.flush()
+        unit = AimUnit(
+            project_id=project.id,
+            module="m",
+            name="A",
+            kind="program",
+        )
+        db.add(unit)
+        await db.flush()
+        old_expiry = datetime.now(timezone.utc) + timedelta(minutes=5)
+        claim = AimClaim(
+            project_id=project.id,
+            unit_id=unit.id,
+            workflow_execution_id=execution_id,
+            workflow_name="aim-understand",
+            lease_expires_at=old_expiry,
+        )
+        db.add(claim)
+        await db.commit()
+        claim_id = claim.id
+
+    renewed = await WorkflowRunner()._renew_execution_claims(execution_id)
+
+    assert renewed == 1
+    async with db_module.async_session_factory() as db:
+        claim = await db.get(AimClaim, claim_id)
+        assert claim is not None
+        assert claim.lease_expires_at > old_expiry + timedelta(hours=3)

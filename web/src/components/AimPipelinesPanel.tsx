@@ -447,7 +447,9 @@ export function AimPipelinesPanel({
         : undefined
     const caseSet =
       typeof inputValues.case_set === 'string' ? inputValues.case_set.trim() : undefined
-    return { unit: unit || undefined, wave, case_set: caseSet || undefined }
+    const overwrite =
+      typeof inputValues.overwrite === 'boolean' ? inputValues.overwrite : undefined
+    return { unit: unit || undefined, wave, case_set: caseSet || undefined, overwrite }
   }, [inputValues])
 
   const requiredInputsPresent = (selectedWorkflow?.inputs ?? []).every((spec) => {

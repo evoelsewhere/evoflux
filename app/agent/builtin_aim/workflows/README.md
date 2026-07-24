@@ -1,6 +1,6 @@
 # AIM pipeline library (builtin, scope: aim)
 
-Eight stack-agnostic AIM pipelines per `documents/research/aim-framework.md`
+Nine stack-agnostic AIM pipelines per `documents/research/aim-framework.md`
 §3.11/§4.1 (AIM-4), conforming to the live Workflows v1 schema
 (`documents/plans/workflows-feature-plan.md` §4.2) and discovered as a
 builtin root by `app/services/workflows_fs.py`:
@@ -9,6 +9,7 @@ builtin root by `app/services/workflows_fs.py`:
 |---|---|
 | `aim-assess` | inventory + wave plan, gated |
 | `aim-understand` | selected unit + unresolved dependency closure → docs + candidate rules |
+| `aim-review-rules` | candidate rules → human confirmation or explicit no-rules evidence |
 | `aim-design-unit` | mapping → architect approval → designed |
 | `aim-convert-unit` | approved mapping → implement in target |
 | `aim-convert-wave` | deterministic unit list → batch gate → foreach convert |

@@ -274,7 +274,7 @@ def write_run_meta(
     name: str,
     *,
     run_id: UUID,
-    kind: Literal["compare", "convert", "test"],
+    kind: Literal["capture", "compare", "convert", "test"],
     verdict: Literal["pass", "fail", "acceptable_diff", "error"],
     case_set: str | None,
     stats: dict,

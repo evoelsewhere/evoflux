@@ -56,6 +56,30 @@ nodes:
     title: "aim-convert-wave claim blocked"
     message: "Wave {{inputs.wave}} has claimed units: {{nodes.acquire.output.blockers | json}}"
 
+  - id: revalidate
+    kind: tool
+    tool: aim_readiness
+    args:
+      pipeline: aim-convert-wave
+      wave: "{{inputs.wave}}"
+      expected_units: "{{nodes.readiness.output.selected_units}}"
+
+  - id: revalidate_branch
+    kind: switch
+    value: "{{nodes.revalidate.output.status}}"
+
+  - id: release_stale
+    kind: tool
+    tool: aim_claim
+    args:
+      action: release
+      units: "{{nodes.readiness.output.selected_units}}"
+
+  - id: stale
+    kind: notify
+    title: "aim-convert-wave selection changed"
+    message: "Wave {{inputs.wave}} changed after approval: {{nodes.revalidate.output.blockers | json}}"
+
   - id: convert_each
     kind: foreach
     items: "{{nodes.readiness.output.selected_units}}"
@@ -112,7 +136,11 @@ edges:
   - { from: approve_batch, to: cancelled, when: cancel }
   - { from: acquire, to: claim_branch }
   - { from: claim_branch, to: claim_blocked, when: blocked }
-  - { from: claim_branch, to: convert_each, when: acquired }
+  - { from: claim_branch, to: revalidate, when: acquired }
+  - { from: revalidate, to: revalidate_branch }
+  - { from: revalidate_branch, to: convert_each, when: ready }
+  - { from: revalidate_branch, to: release_stale, when: blocked }
+  - { from: release_stale, to: stale }
   - { from: convert_each, to: verify_each }
   - { from: verify_each, to: mark_converted }
   - { from: mark_converted, to: release }

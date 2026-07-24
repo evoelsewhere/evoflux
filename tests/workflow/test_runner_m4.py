@@ -384,6 +384,75 @@ outputs:
         assert iterations == [0, 1, 2]
 
 
+@pytest.mark.asyncio
+async def test_foreach_failure_persists_partial_outputs(
+    setup_db, fake_team, monkeypatch
+):
+    from textwrap import dedent
+
+    from app.core import db as db_module
+    from app.models.chat import ChatSession
+    from app.models.workflow import WorkflowExecution
+    from app.workflow.nodes import WorkflowNodeError
+
+    calls = 0
+
+    async def fail_second_iteration(_node, scope, *, workspace=None):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise WorkflowNodeError("iteration failed")
+        return {"text": str(scope["item"])}, None
+
+    monkeypatch.setattr("app.workflow.runner.run_tool_node", fail_second_iteration)
+
+    runner = WorkflowRunner()
+    definition = parse_definition(
+        dedent(
+            """
+            schema_version: 1
+            name: partial-loop
+            scope: forge
+            nodes:
+              - id: seed
+                kind: transform
+                set: { names: '["a", "b", "c"]' }
+              - id: each
+                kind: foreach
+                items: "{{nodes.seed.output.names}}"
+                body:
+                  kind: tool
+                  tool: shell
+                  args:
+                    command: 'if [[ "{{item}}" == "b" ]]; then exit 7; fi; echo {{item}}'
+            edges:
+              - { from: seed, to: each }
+            """
+        )
+    )
+    async with db_module.async_session_factory() as db:
+        session = ChatSession(mode="forge")
+        db.add(session)
+        await db.commit()
+        await db.refresh(session)
+
+    state = await runner.start(
+        definition,
+        definition_hash="0" * 64,
+        session_id=str(session.id),
+        inputs={},
+        scope_workspace=None,
+    )
+    await _wait(lambda: not runner.is_driving(str(session.id)), timeout=20)
+
+    assert state.node_outputs["each"]["count"] == 1
+    assert state.node_outputs["each"]["partial"] is True
+    async with db_module.async_session_factory() as db:
+        execution = await db.get(WorkflowExecution, state.execution_id)
+        assert execution.status == "failed"
+        assert execution.outputs["partial_nodes"]["each"]["count"] == 1
+
+
 # ── team-side integration points ─────────────────────────────────────────────
 
 

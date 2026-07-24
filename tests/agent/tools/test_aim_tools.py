@@ -12,9 +12,11 @@ from app.agent.builtin_prompts import tier_tools
 from app.agent.loader import _default_tool_registry
 from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
 from app.agent.tools.builtin.aim import (
+    aim_capture,
     aim_claim,
     aim_compare,
     aim_readiness,
+    aim_rules,
     aim_understanding,
     aim_units,
 )
@@ -23,6 +25,7 @@ from app.models.aim import AimLink, AimRun, AimUnit
 from app.models.chat import CodingProject, CodingProjectWorkspace
 from app.models.workflow import WorkflowExecution
 from app.services.aim import kb_store
+from app.services.aim.golden import GoldenCaseError, stamp_expected_integrity
 from app.services.coding_workspace_service import upsert_coding_workspace
 
 
@@ -117,6 +120,7 @@ def test_aim_tools_excluded_from_forge_and_coding_tiers():
     assert "aim_capture" not in forge_names
     assert "aim_compare" not in forge_names
     assert "aim_readiness" not in forge_names
+    assert "aim_rules" not in forge_names
     assert "aim_understanding" not in forge_names
     assert "aim_claim" not in forge_names
     assert "aim_execute" not in forge_names
@@ -125,6 +129,7 @@ def test_aim_tools_excluded_from_forge_and_coding_tiers():
     assert "aim_capture" not in coding_names
     assert "aim_compare" not in coding_names
     assert "aim_readiness" not in coding_names
+    assert "aim_rules" not in coding_names
     assert "aim_understanding" not in coding_names
     assert "aim_claim" not in coding_names
     assert "aim_execute" not in coding_names
@@ -138,6 +143,7 @@ def test_aim_tools_included_in_aim_tier():
     assert "aim_capture" in aim_names
     assert "aim_compare" in aim_names
     assert "aim_readiness" in aim_names
+    assert "aim_rules" in aim_names
     assert "aim_understanding" in aim_names
     assert "aim_claim" in aim_names
     assert "aim_execute" in aim_names
@@ -169,6 +175,38 @@ async def test_aim_readiness_tool_blocks_incomplete_cutover(sandbox_workspace):
     data = json.loads(result)
     assert data["status"] == "blocked"
     assert any("m/B" in blocker for blocker in data["blockers"])
+
+
+@pytest.mark.asyncio
+async def test_aim_readiness_rejects_stale_expected_unit_selection(
+    sandbox_workspace,
+):
+    kb_store.write_unit(
+        sandbox_workspace,
+        "shared",
+        "DATE",
+        kind="utility",
+        phase="inventory",
+    )
+    kb_store.write_unit(
+        sandbox_workspace,
+        "core",
+        "PAY",
+        kind="program",
+        phase="inventory",
+        depends_on=["shared/DATE"],
+    )
+
+    result = json.loads(
+        await aim_readiness(
+            pipeline="aim-understand",
+            unit="core/PAY",
+            expected_units=["core/PAY"],
+        )
+    )
+
+    assert result["status"] == "blocked"
+    assert any("changed after approval" in blocker for blocker in result["blockers"])
 
 
 @pytest.mark.asyncio
@@ -230,6 +268,22 @@ async def test_aim_claim_locks_only_explicit_unit_list(sandbox_workspace):
             await db.exec(select(AimClaim).where(AimClaim.project_id == project.id))
         ).all()
     assert len(claims) == 1
+
+
+@pytest.mark.asyncio
+async def test_aim_claim_rejects_partially_missing_explicit_scope(sandbox_workspace):
+    from app.workflow.exec_context import current_execution_id
+
+    await _make_aim_project(sandbox_workspace)
+    await aim_units(action="set_phase", unit="m/A", kind="program", phase="inventory")
+    execution = await _make_workflow_execution("aim-understand")
+
+    token = current_execution_id.set(str(execution.id))
+    try:
+        with pytest.raises(ValueError, match="missing units: m/B"):
+            await aim_claim(action="acquire", units=["m/A", "m/B"])
+    finally:
+        current_execution_id.reset(token)
 
 
 # ---------------------------------------------------------------------------
@@ -503,6 +557,45 @@ async def test_understand_workflow_advances_claimed_dependency_closure(
 
 
 @pytest.mark.asyncio
+async def test_rule_review_confirmation_unlocks_design(sandbox_workspace):
+    from app.services.aim.readiness import evaluate_pipeline
+    from app.workflow.exec_context import current_execution_id
+
+    await _make_aim_project(sandbox_workspace)
+    await aim_units(
+        action="set_phase", unit="m/A", kind="program", phase="inventory"
+    )
+    kb_store.write_unit(
+        sandbox_workspace,
+        "m",
+        "A",
+        phase="understood",
+        body=_substantive_unit_body("A behavior"),
+    )
+    (sandbox_workspace / "target-conventions.md").write_text("# Approved\n")
+    rules = sandbox_workspace / "business-rules"
+    rules.mkdir()
+    (rules / "BR-M-0001.md").write_text(
+        "---\nstatus: candidate\nunit: m/A\nsource_ref: src/a.c:1\n---\n\n"
+        "# BR-M-0001: Exact behavior\n\nCited behavior.\n"
+    )
+    execution = await _make_workflow_execution("aim-review-rules")
+
+    token = current_execution_id.set(str(execution.id))
+    try:
+        await aim_claim(action="acquire", unit="m/A")
+        result = json.loads(await aim_rules(action="confirm", unit="m/A"))
+        await aim_claim(action="release", unit="m/A")
+    finally:
+        current_execution_id.reset(token)
+
+    assert result["status"] == "confirmed"
+    assert evaluate_pipeline(
+        sandbox_workspace, "aim-design-unit", unit="m/A"
+    ).allowed
+
+
+@pytest.mark.asyncio
 async def test_record_run_creates_aim_run_row(sandbox_workspace):
     project = await _make_aim_project(sandbox_workspace)
     await _seed_indexed_unit(
@@ -579,13 +672,30 @@ def _write_golden_case(
     case_set: str,
     content: str,
     *,
-    meta: str = "provenance: captured\n",
+    meta: str | None = None,
 ) -> None:
     case_dir = root / "golden" / "units" / module / name / "cases" / case_set
     expected_dir = case_dir / "expected"
     expected_dir.mkdir(parents=True, exist_ok=True)
     (expected_dir / "out.txt").write_text(content)
-    (case_dir / "meta.yaml").write_text(meta)
+    (case_dir / "legacy.command").write_text("true\n")
+    (case_dir / "target.command").write_text("true\n")
+    (case_dir / "meta.yaml").write_text(
+        meta
+        if meta is not None
+        else (
+            "provenance: captured\n"
+            "canonicalizer_profile: default\n"
+            "source_revision: test-source-revision\n"
+            "environment_fingerprint: test-environment\n"
+            "capture_command: test-capture\n"
+        )
+    )
+    try:
+        stamp_expected_integrity(case_dir)
+    except GoldenCaseError:
+        # Tests that deliberately write invalid metadata exercise fail-closed paths.
+        pass
 
 
 @pytest.mark.asyncio
@@ -626,6 +736,87 @@ async def test_compare_missing_golden_case_returns_error(sandbox_workspace):
 
 
 @pytest.mark.asyncio
+async def test_compare_error_records_aim_run_when_project_resolved(
+    sandbox_workspace,
+):
+    project = await _make_aim_project(sandbox_workspace)
+    await _seed_indexed_unit(
+        sandbox_workspace,
+        "m/A",
+        phase="converted",
+        target_paths=["src/A.rs"],
+    )
+
+    result = await aim_compare(unit="m/A", case_set="smoke")
+    data = json.loads(result)
+
+    assert data["verdict"] == "error"
+    assert (sandbox_workspace / data["report_path"]).is_file()
+    async with db_module.async_session_factory() as db:
+        unit_row = (
+            await db.exec(select(AimUnit).where(AimUnit.project_id == project.id))
+        ).one()
+        runs = (
+            await db.exec(select(AimRun).where(AimRun.unit_id == unit_row.id))
+        ).all()
+    assert len(runs) == 1
+    assert runs[0].kind == "compare"
+    assert runs[0].verdict == "error"
+
+
+@pytest.mark.asyncio
+async def test_capture_records_domain_run(sandbox_workspace):
+    project = await _make_aim_project(sandbox_workspace)
+    _write_kb_skeleton(sandbox_workspace)
+    runners = sandbox_workspace / "rulebook/runners"
+    runners.mkdir(parents=True)
+    (sandbox_workspace / "rulebook/rulebook.yaml").write_text(
+        "id: default\nversion: '0.1'\n"
+        "runners: {legacy: runners/legacy.sh}\n"
+    )
+    (runners / "legacy.sh").write_text(
+        "#!/bin/sh\nbash \"$AIM_CASE_DIR/legacy.command\"\n"
+    )
+    (sandbox_workspace.parent / "aim_source_base").mkdir(exist_ok=True)
+    await _seed_indexed_unit(
+        sandbox_workspace,
+        "m/A",
+        phase="understood",
+    )
+    case_dir = sandbox_workspace / "golden/units/m/A/cases/smoke"
+    (case_dir / "input").mkdir(parents=True)
+    (case_dir / "legacy.command").write_text(
+        'printf "baseline\\n" > "$AIM_OUT_DIR/out.txt"\n'
+    )
+    (case_dir / "target.command").write_text("true\n")
+    (case_dir / "meta.yaml").write_text(
+        "provenance: captured\n"
+        "canonicalizer_profile: default\n"
+        "source_revision: external-test-source\n"
+        "environment_fingerprint: test-environment\n"
+        "capture_command: legacy.command\n"
+    )
+
+    result = json.loads(await aim_capture(unit="m/A", case_set="smoke"))
+
+    assert result["status"] == "captured"
+    assert (case_dir / "expected/out.txt").is_file()
+    async with db_module.async_session_factory() as db:
+        unit_row = (
+            await db.exec(select(AimUnit).where(AimUnit.project_id == project.id))
+        ).one()
+        runs = (
+            await db.exec(select(AimRun).where(AimRun.unit_id == unit_row.id))
+        ).all()
+    assert len(runs) == 1
+    assert runs[0].kind == "capture"
+    assert runs[0].verdict == "pass"
+    assert (
+        sandbox_workspace / "runs" / "m" / "A" / str(runs[0].id) / "meta.yaml"
+    ).is_file()
+
+
+@pytest.mark.asyncio
 async def test_compare_requires_golden_metadata(sandbox_workspace):
     _write_golden_case(sandbox_workspace, "m", "A", "smoke", "hello\n", meta="")
 
@@ -633,7 +824,7 @@ async def test_compare_requires_golden_metadata(sandbox_workspace):
 
     data = json.loads(result)
     assert data["verdict"] == "error"
-    assert data["report_path"] is None
+    assert (sandbox_workspace / data["report_path"]).is_file()
     assert data["error_kind"] == "missing_golden_metadata"
 
 
@@ -645,7 +836,7 @@ async def test_compare_requires_signoff_for_synthesized_golden(sandbox_workspace
         "A",
         "smoke",
         "hello\n",
-        meta="provenance: synthesized\n",
+        meta="provenance: synthesized\ncanonicalizer_profile: default\n",
     )
 
     result = await aim_compare(unit="m/A", case_set="smoke")
@@ -753,7 +944,20 @@ async def test_compare_profile_override_still_loads_rulebook_canonicalizer(
     (canon_dir / "strict.yaml").write_text(
         "id: strict\nmask:\n  - pattern: 'run-id: \\w+'\n    replace: 'run-id: <m>'\n"
     )
-    _write_golden_case(sandbox_workspace, "m", "A", "smoke", "run-id: abc\nv: 1")
+    _write_golden_case(
+        sandbox_workspace,
+        "m",
+        "A",
+        "smoke",
+        "run-id: abc\nv: 1",
+        meta=(
+            "provenance: captured\n"
+            "canonicalizer_profile: strict\n"
+            "source_revision: test-source-revision\n"
+            "environment_fingerprint: test-environment\n"
+            "capture_command: test-capture\n"
+        ),
+    )
     actual_dir = sandbox_workspace / ".aim-actuals" / "m" / "A" / "smoke"
     actual_dir.mkdir(parents=True)
     (actual_dir / "out.txt").write_text("run-id: xyz\nv: 1")

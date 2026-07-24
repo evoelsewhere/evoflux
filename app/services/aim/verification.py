@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import re
 import subprocess
 from datetime import datetime, timezone
@@ -51,7 +52,35 @@ def conversion_evidence_path(kb_root: Path, unit: str, execution_id: str) -> Pat
     )
 
 
-def has_conversion_evidence(kb_root: Path, unit: str, execution_id: str) -> bool:
+def _file_digest(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _path_digest(path: Path) -> str:
+    if path.is_file():
+        return _file_digest(path)
+    if not path.is_dir():
+        raise VerificationError(f"target artifact is not a file or directory: {path}")
+    digest = hashlib.sha256()
+    for child in sorted(item for item in path.rglob("*") if item.is_file()):
+        digest.update(child.relative_to(path).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(_file_digest(child).encode("ascii"))
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def has_conversion_evidence(
+    kb_root: Path,
+    unit: str,
+    execution_id: str,
+    *,
+    target_root: Path | None = None,
+) -> bool:
     path = conversion_evidence_path(kb_root, unit, execution_id)
     if not path.is_file():
         return False
@@ -59,11 +88,36 @@ def has_conversion_evidence(kb_root: Path, unit: str, execution_id: str) -> bool
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except (OSError, UnicodeDecodeError, yaml.YAMLError):
         return False
-    return (
+    structurally_valid = (
         data.get("unit") == unit
         and data.get("workflow_execution_id") == execution_id
         and data.get("status") == "pass"
     )
+    if not structurally_valid:
+        return False
+    if target_root is None:
+        return True
+    try:
+        command_path = resolve_verification_command(kb_root, unit)
+        if data.get("verification_command_sha256") != _file_digest(command_path):
+            return False
+        module, name = unit.split("/", 1)
+        unit_result = kb_store.read_unit(kb_root, module, name)
+        if unit_result is None:
+            return False
+        recorded_hashes = data.get("target_path_sha256")
+        if not isinstance(recorded_hashes, dict):
+            return False
+        current_hashes: dict[str, str] = {}
+        target_root_resolved = target_root.resolve()
+        for declared_path in unit_result[0].target_paths:
+            resolved = (target_root_resolved / declared_path).resolve()
+            if not resolved.is_relative_to(target_root_resolved) or not resolved.exists():
+                return False
+            current_hashes[declared_path] = _path_digest(resolved)
+        return current_hashes == recorded_hashes
+    except (OSError, VerificationError, ValueError):
+        return False
 
 
 async def verify_target_conversion(
@@ -89,6 +143,7 @@ async def verify_target_conversion(
     if not target_paths:
         raise VerificationError(f"unit {unit} records no target_paths")
     target_root_resolved = target_root.resolve()
+    resolved_target_paths: dict[str, Path] = {}
     for declared_path in target_paths:
         relative = Path(declared_path)
         if relative.is_absolute():
@@ -104,6 +159,7 @@ async def verify_target_conversion(
             raise VerificationError(
                 f"unit {unit} target path does not exist: {declared_path!r}"
             )
+        resolved_target_paths[declared_path] = resolved
     environment = {
         "AIM_UNIT": unit,
         "AIM_KB_ROOT": str(kb_root.resolve()),
@@ -145,6 +201,22 @@ async def verify_target_conversion(
     )
     if git_result.returncode == 0:
         revision = git_result.stdout.strip() or None
+    status_result = await asyncio.to_thread(
+        subprocess.run,
+        ["git", "-C", str(target_root), "status", "--porcelain=v1"],
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    target_status = (
+        [line for line in status_result.stdout.splitlines() if line.strip()]
+        if status_result.returncode == 0
+        else []
+    )
+    target_path_hashes = {
+        declared_path: _path_digest(path)
+        for declared_path, path in resolved_target_paths.items()
+    }
 
     evidence_id = str(uuid7())
     evidence_path = conversion_evidence_path(kb_root, unit, execution_id)
@@ -158,7 +230,11 @@ async def verify_target_conversion(
                 "workflow_execution_id": execution_id,
                 "status": "pass",
                 "command": str(command_path.relative_to(kb_root)),
+                "verification_command_sha256": _file_digest(command_path),
                 "target_revision": revision,
+                "target_dirty": bool(target_status),
+                "target_status": target_status,
+                "target_path_sha256": target_path_hashes,
                 "stdout": completed.stdout[-4000:],
                 "stderr": completed.stderr[-4000:],
                 "created_at": datetime.now(timezone.utc).isoformat(),

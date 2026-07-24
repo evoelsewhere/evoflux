@@ -163,12 +163,19 @@ export async function listAimUnits(
 
 export async function getAimReadiness(
   projectId: string,
-  options: { pipeline: string; unit?: string; wave?: number; case_set?: string },
+  options: {
+    pipeline: string
+    unit?: string
+    wave?: number
+    case_set?: string
+    overwrite?: boolean
+  },
 ): Promise<AimReadiness> {
   const params = new URLSearchParams({ pipeline: options.pipeline })
   if (options.unit) params.set('unit', options.unit)
   if (options.wave !== undefined) params.set('wave', String(options.wave))
   if (options.case_set) params.set('case_set', options.case_set)
+  if (options.overwrite !== undefined) params.set('overwrite', String(options.overwrite))
   const res = await fetch(
     `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/aim/readiness?${params}`,
   )
