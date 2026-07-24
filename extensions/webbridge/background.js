@@ -1876,17 +1876,18 @@ async function captureSelectedRegion(tab, raw) {
   ) {
     throw new Error("The page moved or resized. Select the region again.");
   }
-  const zoom = current.scale || 1;
+  // cssVisualViewport and pointer coordinates are already CSS page pixels.
+  // Applying visual scale or DPR again moves the clip off-surface at zoom.
   const result = await cdpSend(tab.id, "Page.captureScreenshot", {
     format: "png",
     clip: {
-      x: (current.page_x + selected.clip.x) * zoom,
-      y: (current.page_y + selected.clip.y) * zoom,
-      width: selected.clip.width * zoom,
-      height: selected.clip.height * zoom,
-      scale: 1 / zoom,
+      x: current.page_x + selected.clip.x,
+      y: current.page_y + selected.clip.y,
+      width: selected.clip.width,
+      height: selected.clip.height,
+      scale: 1,
     },
-    captureBeyondViewport: false,
+    captureBeyondViewport: true,
     fromSurface: true,
   });
   if (!result?.data) throw new Error("Browser did not return a screenshot.");

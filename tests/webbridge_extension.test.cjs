@@ -631,12 +631,13 @@ test("P2 region capture uses CSS viewport geometry without multiplying DPR", asy
   assert.equal(capture.data_base64, "cG5n");
   const screenshot = worker.cdpCalls.find((call) => call.method === "Page.captureScreenshot");
   assert.deepEqual(JSON.parse(JSON.stringify(screenshot.params.clip)), {
-    x: 162.5,
-    y: 562.5,
-    width: 400,
-    height: 225,
-    scale: 0.8,
+    x: 130,
+    y: 450,
+    width: 320,
+    height: 180,
+    scale: 1,
   });
+  assert.equal(screenshot.params.captureBeyondViewport, true);
   assert.equal(worker.storedSession.webbridgeRegionCaptures[1].page_url, "https://example.com/active");
 
   const picker = await worker.run("startRegionPicker({ id: 1, url: 'https://example.com/active' })");
