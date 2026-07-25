@@ -518,6 +518,7 @@ export function CodingFileViewerPanel({
       minWidth={420}
       maxWidth={Math.min(880, Math.max(420, Math.floor((typeof window === 'undefined' ? 880 : window.innerWidth) - 320)))}
       mobileOverlay
+      desktopOverlay
       mobile={mobile}
       resizeLabel="Resize file viewer"
       ariaLabel="File viewer"

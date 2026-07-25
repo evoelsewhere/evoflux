@@ -176,6 +176,7 @@ export function CodingWorkspacePanel({
       minWidth={360}
       maxWidth={Math.min(720, Math.max(360, Math.floor((typeof window === 'undefined' ? 720 : window.innerWidth) - 320)))}
       mobileOverlay
+      desktopOverlay
       mobile={mobile}
       resizeLabel="Resize workspace panel"
       className="bg-(--bg-page)"

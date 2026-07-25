@@ -912,16 +912,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   // sitting under the topbar with a negative-margin hack.
   const fullHeightTrailing = (
     <>
-      {mode === 'coding' && workspace && codingFileViewer !== null && (
-        <CodingFileViewerPanel
-          workspace={codingFileViewer.sourceWorkspace ?? workspace}
-          file={codingFileViewer}
-          mobile={isMobile}
-          onAddComment={handleAddFileComment}
-          onSendToChat={handleSendToChat}
-          onClose={() => setCodingFileViewer(null)}
-        />
-      )}
       {mode === 'coding' && workspace && codingPanel !== null && (
         <CodingWorkspacePanel
           key={codingPanel}
@@ -935,6 +925,16 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
           sessionId={sessionIdState}
           projectId={projectIdState}
           isWorking={isTeamWorking}
+        />
+      )}
+      {mode === 'coding' && workspace && codingFileViewer !== null && (
+        <CodingFileViewerPanel
+          workspace={codingFileViewer.sourceWorkspace ?? workspace}
+          file={codingFileViewer}
+          mobile={isMobile}
+          onAddComment={handleAddFileComment}
+          onSendToChat={handleSendToChat}
+          onClose={() => setCodingFileViewer(null)}
         />
       )}
       {mode !== 'coding' && showFilesPanel ? (

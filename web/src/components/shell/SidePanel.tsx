@@ -46,6 +46,8 @@ interface SidePanelProps {
   mobileOverlay?: boolean
   /** Force a viewport overlay even above the normal mobile breakpoint. */
   forceOverlay?: boolean
+  /** Desktop right-edge drawer that overlays content without shrinking it. */
+  desktopOverlay?: boolean
   /** Mobile state for a `mobileOverlay` panel — defaults to useIsMobile(). */
   mobile?: boolean
   /**
@@ -82,6 +84,7 @@ export function SidePanel({
   maxWidth,
   mobileOverlay = false,
   forceOverlay = false,
+  desktopOverlay = false,
   mobile: mobileProp,
   animated = true,
   width: widthOverride,
@@ -100,6 +103,7 @@ export function SidePanel({
   const motionPreset = useMotionPreset()
   const breakpointOverlay = mobileOverlay && (mobileProp ?? detectedMobile)
   const overlay = forceOverlay || breakpointOverlay
+  const fixedDesktopDrawer = desktopOverlay && !overlay
   const resizable = useResizableWidth({
     storageKey,
     defaultWidth,
@@ -126,6 +130,8 @@ export function SidePanel({
       className={cn(
         forceOverlay
           ? 'fixed inset-0 z-(--z-overlay) min-h-0 w-full max-w-none overflow-hidden border-l border-(--color-border) shadow-xl'
+          : fixedDesktopDrawer
+          ? 'fixed inset-y-0 right-0 z-(--z-overlay) flex min-h-0 shrink-0 flex-col overflow-hidden border-l border-(--color-border) shadow-xl'
           : mobileOverlay
           ? 'fixed bottom-0 right-0 z-(--z-overlay) min-h-0 w-full overflow-hidden border-l border-(--color-border) shadow-xl md:relative md:inset-y-auto md:right-auto md:z-auto md:w-auto md:shrink-0 md:shadow-none'
           : 'relative flex h-full shrink-0 flex-col overflow-hidden border-l border-(--color-border)',
