@@ -32,7 +32,6 @@ import {
   SettingsPage,
 } from '@/components/settings/SettingsLayout'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import {
@@ -370,7 +369,7 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
         type="button"
         onClick={() => setExpanded(true)}
         className={cn(
-          'group relative flex w-full items-center gap-3.5 rounded-lg border bg-(--bg-card) px-4 py-3.5 text-left transition-all',
+          'group relative flex w-full items-center gap-3.5 rounded-lg border bg-(--bg-card) px-4 py-3.5 text-left transition-colors',
           'hover:border-(--color-border-strong)',
           'focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-(--focus-ring)/40',
           isConfiguredButUnreachable
@@ -421,7 +420,7 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
               tabIndex={0}
               onClick={(e) => { e.stopPropagation(); void openExternalUrl(provider.docs_url) }}
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); void openExternalUrl(provider.docs_url) } }}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-(--color-text-muted) opacity-0 transition-all hover:bg-(--bg-key) hover:text-(--color-text) group-hover:opacity-100"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-(--color-text-muted) opacity-0 transition-opacity hover:bg-(--bg-key) hover:text-(--color-text) group-hover:opacity-100"
               aria-label={`${provider.label} documentation`}
             >
               <ExternalLink size={13} aria-hidden="true" />
@@ -429,7 +428,7 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
           )}
 
           {/* Expand arrow */}
-          <ChevronRight size={14} className="shrink-0 text-(--color-text-muted) transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-(--color-text)" aria-hidden="true" />
+          <ChevronRight size={14} className="shrink-0 text-(--color-text-muted) transition-transform duration-(--motion-fast) group-hover:translate-x-0.5 group-hover:text-(--color-text)" aria-hidden="true" />
         </div>
       </button>
     )
@@ -438,15 +437,15 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
   // ── Expanded card ──────────────────────────────────────────────────────
   return (
     <>
-      <Card size="sm" className={cn(
-        'rounded-xl transition-all duration-150',
+      <div className={cn(
+        'overflow-hidden rounded-lg border bg-(--bg-card)',
         isConfiguredButUnreachable
           ? 'border-(--color-error)/30'
           : isConnected
             ? 'border-(--color-success)/25'
             : 'border-(--color-border)',
       )}>
-        <CardContent className="space-y-4">
+        <div className="space-y-4 p-4">
           {/* ── Header ──────────────────────────────────────────────────────── */}
           <div className="flex items-start gap-3">
             <ProviderBrandIcon provider={provider} size="lg" />
@@ -483,7 +482,7 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
           </div>
 
           {/* ── Configuration section ───────────────────────────────────────── */}
-          <div className="rounded-xl border border-(--color-border-subtle) bg-(--bg-page)/50 p-4">
+          <div className="rounded-lg border border-(--color-border-subtle) bg-(--bg-page)/50 p-4">
             <div className="mb-3 flex items-center gap-2">
               <KeyRound size={13} className="text-(--color-text-muted)" aria-hidden="true" />
               <p className="text-[0.65rem] font-semibold uppercase tracking-wider text-(--color-text-muted)">Configuration</p>
@@ -741,8 +740,8 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
               savingVisibleModels={saveVisibleModelsMutation.isPending}
             />
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {provider.kind === 'oauth' && oauthOpen && (
         <OAuthLoginDialog provider={provider} open={oauthOpen} onOpenChange={setOauthOpen} />
@@ -821,7 +820,7 @@ function ModelsPanel({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-(--color-border) bg-(--bg-page)/50">
+    <div className="overflow-hidden rounded-lg border border-(--color-border) bg-(--bg-page)/50">
       <button
         type="button"
         onClick={onToggle}
@@ -844,7 +843,7 @@ function ModelsPanel({
         </span>
         <ChevronDown
           size={14}
-          className={cn('shrink-0 text-(--color-text-muted) transition-transform duration-150', expanded && 'rotate-180')}
+          className={cn('shrink-0 text-(--color-text-muted) transition-transform duration-(--motion-fast)', expanded && 'rotate-180')}
           aria-hidden="true"
         />
       </button>
@@ -968,9 +967,9 @@ function ModelRow({
         onClick={onToggleVisible}
         disabled={savingVisibleModels}
         className={cn(
-          'flex h-7 min-w-[5rem] items-center justify-center gap-1.5 rounded-lg px-2.5 text-[0.7rem] font-medium transition-all md:h-6',
+          'flex h-7 min-w-[5rem] items-center justify-center gap-1.5 rounded-lg px-2.5 text-[0.7rem] font-medium transition-colors md:h-6',
           selected
-            ? 'bg-(--color-success) text-white shadow-sm'
+            ? 'bg-(--color-success) text-white'
             : 'border border-(--color-border) text-(--color-text-muted) hover:border-(--color-border-strong) hover:bg-(--bg-card) hover:text-(--color-text)',
         )}
         aria-label={`${selected ? 'Remove' : 'Show'} ${qualifiedId} in model pickers`}

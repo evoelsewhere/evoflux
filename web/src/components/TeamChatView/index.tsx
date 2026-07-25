@@ -1150,6 +1150,10 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
             agentNames={agentNames}
             leadName={leadName}
             agentStreams={gridAgentStreams ?? EMPTY_AGENT_STREAMS}
+            onFocusAgent={(name) => {
+              setActiveAgent(name)
+              setViewMode(splitAgentNames.length > 1 ? 'split' : 'agent')
+            }}
           />
         ) : effectiveViewMode === 'split' && splitAgentNames.length > 0 ? (
           <div className="min-h-0 flex-1 p-3">
@@ -1277,8 +1281,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
             agentWorkspace={agentWorkspace}
             agentMode={mode === 'aim' ? 'aim' : 'coding'}
             todos={todos}
-            todosOpen={false}
-            onTodosOpenChange={() => {}}
             sessionId={sessionIdState}
             onWiki={toggleWiki}
             wikiActive={wikiOpen}

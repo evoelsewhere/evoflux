@@ -60,6 +60,7 @@ export function AskUserQuestionModal() {
         initial={{ opacity: 0, y: 6 * preset.distance }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 6 * preset.distance }}
+        transition={preset.spring}
         className="mx-auto w-full max-w-3xl px-4 pb-2"
       >
         <div className="rounded-xl border border-(--color-primary)/30 bg-(--bg-page) shadow-sm overflow-hidden">
@@ -79,6 +80,7 @@ export function AskUserQuestionModal() {
               initial={{ opacity: 0, x: 8 * preset.distance }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -8 * preset.distance }}
+              transition={preset.spring}
               className="space-y-2 px-4 py-3"
             >
               <p className="text-sm text-(--color-text)">{q.question}</p>

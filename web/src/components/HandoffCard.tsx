@@ -7,8 +7,10 @@
  */
 
 import { useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { ChevronDown, ChevronUp, CheckCircle2, AlertTriangle, ArrowRight } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { panelTransition, useMotionPreset } from '@/lib/motion'
 
 interface HandoffArtifact {
   summary: string
@@ -50,6 +52,7 @@ function ConfidenceMeter({ value, compact }: { value: number; compact?: boolean 
 }
 
 export function HandoffCard({ artifact, fromAgent, compact = false }: HandoffCardProps) {
+  const preset = useMotionPreset()
   const [expanded, setExpanded] = useState(false)
   const hasDetails = Boolean(
     (artifact.findings && artifact.findings.length > 0) ||
@@ -101,7 +104,7 @@ export function HandoffCard({ artifact, fromAgent, compact = false }: HandoffCar
                 'rounded-md border border-(--color-border)',
                 'bg-(--bg-page) text-(--color-text-muted)',
                 compact ? 'h-4 w-4' : 'h-5 w-5',
-                'transition-all duration-150',
+                'transition-all duration-(--motion-fast)',
                 'hover:border-(--color-accent) hover:text-(--color-accent)',
                 'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-(--color-accent)',
                 'active:scale-90',
@@ -134,45 +137,56 @@ export function HandoffCard({ artifact, fromAgent, compact = false }: HandoffCar
         )}
 
         {/* Expandable details */}
-        {expanded && hasDetails && (
-          <div className={`mt-3 space-y-2 border-t border-(--color-border) pt-2 ${labelSize}`}>
-            {artifact.findings && artifact.findings.length > 0 && (
-              <div>
-                <p className="mb-1 font-semibold text-(--color-text-2)">Findings</p>
-                <ul className="list-inside list-disc space-y-0.5 text-(--color-text)">
-                  {artifact.findings.map((f, i) => <li key={i}>{f}</li>)}
-                </ul>
+        <AnimatePresence initial={false}>
+          {expanded && hasDetails && (
+            <motion.div
+              key="handoff-details"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={panelTransition(preset)}
+              className="overflow-hidden"
+            >
+              <div className={`mt-3 space-y-2 border-t border-(--color-border) pt-2 ${labelSize}`}>
+                {artifact.findings && artifact.findings.length > 0 && (
+                  <div>
+                    <p className="mb-1 font-semibold text-(--color-text-2)">Findings</p>
+                    <ul className="list-inside list-disc space-y-0.5 text-(--color-text)">
+                      {artifact.findings.map((f, i) => <li key={i}>{f}</li>)}
+                    </ul>
+                  </div>
+                )}
+                {artifact.evidence && artifact.evidence.length > 0 && (
+                  <div>
+                    <p className="mb-1 font-semibold text-(--color-text-2)">Evidence</p>
+                    <ul className="list-inside list-disc space-y-0.5 text-(--color-text-muted)">
+                      {artifact.evidence.map((e, i) => <li key={i}>{e}</li>)}
+                    </ul>
+                  </div>
+                )}
+                {artifact.next_actions && artifact.next_actions.length > 0 && (
+                  <div>
+                    <p className="mb-1 font-semibold text-(--color-text-2)">Next Actions</p>
+                    <ul className="space-y-0.5 text-(--color-text)">
+                      {artifact.next_actions.map((a, i) => (
+                        <li key={i} className="flex items-start gap-1">
+                          <ArrowRight size={compact ? 10 : 12} className="mt-0.5 shrink-0 text-(--color-accent)" />
+                          <span>{a}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {artifact.verification?.result && (
+                  <div>
+                    <p className="mb-1 font-semibold text-(--color-text-2)">Verification Result</p>
+                    <p className="text-(--color-text-muted)">{artifact.verification.result}</p>
+                  </div>
+                )}
               </div>
-            )}
-            {artifact.evidence && artifact.evidence.length > 0 && (
-              <div>
-                <p className="mb-1 font-semibold text-(--color-text-2)">Evidence</p>
-                <ul className="list-inside list-disc space-y-0.5 text-(--color-text-muted)">
-                  {artifact.evidence.map((e, i) => <li key={i}>{e}</li>)}
-                </ul>
-              </div>
-            )}
-            {artifact.next_actions && artifact.next_actions.length > 0 && (
-              <div>
-                <p className="mb-1 font-semibold text-(--color-text-2)">Next Actions</p>
-                <ul className="space-y-0.5 text-(--color-text)">
-                  {artifact.next_actions.map((a, i) => (
-                    <li key={i} className="flex items-start gap-1">
-                      <ArrowRight size={compact ? 10 : 12} className="mt-0.5 shrink-0 text-(--color-accent)" />
-                      <span>{a}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {artifact.verification?.result && (
-              <div>
-                <p className="mb-1 font-semibold text-(--color-text-2)">Verification Result</p>
-                <p className="text-(--color-text-muted)">{artifact.verification.result}</p>
-              </div>
-            )}
-          </div>
-        )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   )

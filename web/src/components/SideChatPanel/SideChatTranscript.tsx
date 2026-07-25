@@ -165,7 +165,7 @@ export function SideChatTranscript({
                       const absIdx = blockAbsIdx.get(block.id) ?? item.startIndex + j
                       const isStreaming = isWorking && absIdx >= blocks.length
                       return (
-                        <div key={block.id} className={isStreaming ? 'block-reveal' : undefined}>
+                        <div key={block.id} className="block-reveal">
                           <BlockRenderer
                             block={block}
                             isStreaming={isStreaming}

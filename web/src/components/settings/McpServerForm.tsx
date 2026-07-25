@@ -13,9 +13,9 @@
 import { Plus, Trash2, KeyRound } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { SettingsGroup } from '@/components/settings/SettingsLayout'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 import type { KeyValuePair, McpServerDraft } from './McpServerDraft'
 
@@ -40,13 +40,8 @@ export function McpServerForm({
   const set = (patch: Partial<McpServerDraft>) => onChange({ ...value, ...patch })
   return (
     <div className="flex flex-col gap-4">
-      {/* Identity ─────────────────────────────────────────────────── */}
-      <Card size="sm">
-        <CardHeader>
-          <CardTitle>Identity</CardTitle>
-          <CardDescription>How agents and the runtime address this server.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-2">
+      <SettingsGroup title="Identity" description="How agents and the runtime address this server.">
+        <div className="grid gap-4 px-4 py-3.5 md:grid-cols-2">
           <Field
             label="Name"
             required
@@ -77,34 +72,25 @@ export function McpServerForm({
               disabled={disabled}
             />
           </Field>
-        </CardContent>
-      </Card>
+        </div>
+      </SettingsGroup>
 
-      {/* Transport ────────────────────────────────────────────────── */}
-      <Card size="sm">
-        <CardHeader>
-          <CardTitle>Transport</CardTitle>
-          <CardDescription>How the runtime talks to the server process.</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <SettingsGroup title="Transport" description="How the runtime talks to the server process.">
+        <div className="px-4 py-3.5">
           <TransportToggle
             value={value.transport}
             onChange={(transport) => set({ transport })}
             disabled={disabled}
           />
-        </CardContent>
-      </Card>
+        </div>
+      </SettingsGroup>
 
-      {/* Stdio fields ─────────────────────────────────────────────── */}
       {value.transport === 'stdio' && (
-        <Card size="sm">
-          <CardHeader>
-            <CardTitle>Stdio configuration</CardTitle>
-            <CardDescription>
-              The runtime spawns a subprocess and speaks MCP over stdin/stdout.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
+        <SettingsGroup
+          title="Stdio configuration"
+          description="The runtime spawns a subprocess and speaks MCP over stdin/stdout."
+        >
+          <div className="flex flex-col gap-4 px-4 py-3.5">
             <Field
               label="Command"
               required
@@ -143,20 +129,16 @@ export function McpServerForm({
               disabled={disabled}
               isEnvField
             />
-          </CardContent>
-        </Card>
+          </div>
+        </SettingsGroup>
       )}
 
-      {/* HTTP fields ──────────────────────────────────────────────── */}
       {value.transport === 'http' && (
-        <Card size="sm">
-          <CardHeader>
-            <CardTitle>HTTP configuration</CardTitle>
-            <CardDescription>
-              The runtime opens a Streamable HTTP session against the URL.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
+        <SettingsGroup
+          title="HTTP configuration"
+          description="The runtime opens a Streamable HTTP session against the URL."
+        >
+          <div className="flex flex-col gap-4 px-4 py-3.5">
             <Field
               label="URL"
               required
@@ -232,8 +214,8 @@ export function McpServerForm({
                 </Field>
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </SettingsGroup>
       )}
     </div>
   )

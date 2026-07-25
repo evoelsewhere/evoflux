@@ -102,7 +102,7 @@ type WebBridgeContext = {
   selection_text?: string
 }
 
-function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell, renderLeadingQuoteAsContext, webbridgeContext }: { content: string; timestamp?: Date; attachments?: MessageAttachment[]; onRevert?: () => void; modelId?: string | null; shell?: boolean; renderLeadingQuoteAsContext?: boolean; webbridgeContext?: WebBridgeContext }) {
+function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell, renderLeadingQuoteAsContext, webbridgeContext, compact }: { content: string; timestamp?: Date; attachments?: MessageAttachment[]; onRevert?: () => void; modelId?: string | null; shell?: boolean; renderLeadingQuoteAsContext?: boolean; webbridgeContext?: WebBridgeContext; compact?: boolean }) {
   const [showTime, setShowTime] = useState(false)
   const [copied, setCopied] = useState(false)
   const [expanded, setExpanded] = useState(false)
@@ -130,11 +130,11 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell,
 
   return (
     <div
-      className="group mb-4 flex justify-end"
+      className={compact ? 'group mb-2 flex justify-end' : 'group mb-4 flex justify-end'}
       onMouseEnter={() => setShowTime(true)}
       onMouseLeave={() => setShowTime(false)}
     >
-      <div className="flex max-w-full flex-col items-end gap-2 md:max-w-[78%]">
+      <div className={`flex max-w-full flex-col items-end gap-2 ${compact ? 'md:max-w-[90%]' : 'md:max-w-[78%]'}`}>
          {/* Attachments */}
          {attachments && attachments.length > 0 && (
            <div className="flex flex-wrap justify-end gap-2">
@@ -171,7 +171,7 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell,
                onClick={() => setExpanded((v) => !v)}
                aria-expanded={expanded}
                title={expanded ? 'Collapse' : 'Expand'}
-               className="absolute top-1.5 right-1.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-(--bg-key) text-(--color-text-2) transition-all duration-150 hover:text-(--color-text) active:scale-90"
+               className="absolute top-1.5 right-1.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-(--bg-key) text-(--color-text-2) transition-all duration-(--motion-fast) hover:text-(--color-text) active:scale-90"
              >
                {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
              </button>
@@ -222,7 +222,7 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell,
 
          {/* Copy button + timestamp row */}
           {(timestamp || modelName) && (
-            <div className={`flex items-center gap-1.5 transition-opacity duration-150 ${showTime ? 'opacity-100' : 'opacity-0'}`}>
+            <div className={`flex items-center gap-1.5 transition-opacity duration-(--motion-fast) ${showTime ? 'opacity-100' : 'opacity-0'}`}>
               {modelName && (
                 <span className="mr-1 font-mono text-xs text-(--color-text-subtle)" title={modelId ?? undefined}>
                   {modelName}
@@ -274,9 +274,11 @@ export interface BlockRendererProps {
   onRevert?: () => void
   latestMCPAppBlockIds?: Set<string>
   renderLeadingQuoteAsContext?: boolean
+  /** Denser layout for split panes (compact inbox bubbles, tighter user bubbles). */
+  compact?: boolean
 }
 
-export const BlockRenderer = memo(function BlockRenderer({ block, isStreaming, sessionId, onRevert, latestMCPAppBlockIds, renderLeadingQuoteAsContext }: BlockRendererProps) {
+export const BlockRenderer = memo(function BlockRenderer({ block, isStreaming, sessionId, onRevert, latestMCPAppBlockIds, renderLeadingQuoteAsContext, compact = false }: BlockRendererProps) {
   switch (block.type) {
     case 'user': {
       // Me check if this is an inbox message (from another agent, not real user)
@@ -286,12 +288,12 @@ export const BlockRenderer = memo(function BlockRenderer({ block, isStreaming, s
         if (handoffArtifact) {
           return <HandoffCard artifact={handoffArtifact as never} fromAgent={fromAgent} />
         }
-        return <InboxBubble content={block.content} fromAgent={fromAgent} />
+        return <InboxBubble content={block.content} fromAgent={fromAgent} compact={compact} />
       }
       const blockModel = typeof block.extra?.model === 'string' ? block.extra.model : null
       const shell = block.extra?.kind === 'user_shell'
       const webbridgeContext = block.extra?.webbridge_context as WebBridgeContext | undefined
-      return <UserBubble content={block.content} timestamp={block.timestamp} attachments={block.attachments} onRevert={onRevert} modelId={blockModel} shell={shell} renderLeadingQuoteAsContext={renderLeadingQuoteAsContext} webbridgeContext={webbridgeContext} />
+      return <UserBubble content={block.content} timestamp={block.timestamp} attachments={block.attachments} onRevert={onRevert} modelId={blockModel} shell={shell} renderLeadingQuoteAsContext={renderLeadingQuoteAsContext} webbridgeContext={webbridgeContext} compact={compact} />
     }
     case 'thinking':
       return <Thinking content={block.content} isStreaming={isStreaming} />

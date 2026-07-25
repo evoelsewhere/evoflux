@@ -146,7 +146,7 @@ export function AgentsListPage() {
     <SettingsListView
       title="Agents"
       icon={Wrench}
-      description="Each agent is a markdown file with YAML frontmatter. Forge, Coding and AIM are separate teams with their own roster."
+      lede="Each agent is a markdown file with YAML frontmatter. Forge, Coding and AIM are separate teams with their own roster."
       newTo="/settings/agents/new"
       newLabel="New agent"
       newAction={

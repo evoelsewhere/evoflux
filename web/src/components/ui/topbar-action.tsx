@@ -4,7 +4,7 @@
  * Pencil component `rFG6A` (TopbarAction): padding 6×10, gap 6,
  * radius-sm, transparent fill, lucide icon at 13px, label at 12px
  * weight-500, both in `--color-text-2`. Hover lifts the surface to
- * `--bg-key`.
+ * `--bg-key` via color — no positional nudge on press.
  *
  * Used for "Todos", "Files", "Agents" in the topbar.
  */
@@ -45,7 +45,7 @@ export const TopbarAction = forwardRef<HTMLButtonElement, TopbarActionProps>(
         ref={ref}
         type="button"
         className={cn(
-          'group inline-flex h-8 min-w-8 items-center justify-center gap-1.5 rounded-[9px] border border-transparent px-2 text-xs font-medium leading-none text-(--color-text-2) outline-none transition-[background-color,border-color,color,box-shadow,transform] duration-150 hover:border-(--color-border) hover:bg-(--bg-key) hover:text-(--color-text) active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-(--focus-ring)/40 aria-pressed:border-(--color-border) aria-pressed:bg-(--color-surface-2) aria-pressed:text-(--color-text) aria-pressed:shadow-[inset_0_1px_0_rgb(255_255_255/0.06)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent',
+          'group inline-flex h-8 min-w-8 items-center justify-center gap-1.5 rounded-[9px] border border-transparent px-2 text-xs font-medium leading-none text-(--color-text-2) outline-none transition-[background-color,border-color,color,box-shadow] duration-(--motion-fast) hover:border-(--color-border) hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:ring-2 focus-visible:ring-(--focus-ring)/40 aria-pressed:border-(--color-border) aria-pressed:bg-(--color-surface-2) aria-pressed:text-(--color-text) aria-pressed:shadow-[inset_0_1px_0_rgb(255_255_255/0.06)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent',
           className,
         )}
         {...rest}
@@ -53,7 +53,6 @@ export const TopbarAction = forwardRef<HTMLButtonElement, TopbarActionProps>(
         <Icon
           size={14}
           aria-hidden="true"
-          className="transition-transform duration-150 group-hover:-translate-y-px group-active:translate-y-0"
         />
         {label && (
           <span className={cn(hideLabelOnMobile && 'hidden md:inline')}>{label}</span>

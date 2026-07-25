@@ -1,5 +1,7 @@
+import { motion } from 'framer-motion'
 import { Square, SquareCheck, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import { fadeRise, staggerDelay, useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import { TierBadge } from './TierBadge'
 import type { TodoItem } from '@/api/types'
@@ -46,6 +48,8 @@ export function TodosList({
   emptyClassName,
   onClose,
 }: TodosListProps) {
+  const preset = useMotionPreset()
+  const enter = fadeRise(preset, 4)
   const finishedCount = todos.filter(
     (t) => t.status === 'completed' || t.status === 'cancelled',
   ).length
@@ -75,7 +79,7 @@ export function TodosList({
               type="button"
               onClick={onClose}
               aria-label="Dismiss tasks"
-              className="flex h-5 w-5 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-hover) hover:text-(--color-text)"
+              className="flex h-5 w-5 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
             >
               <X size={12} aria-hidden="true" />
             </button>
@@ -101,15 +105,18 @@ export function TodosList({
             listClassName,
           )}
         >
-          {sortedTodos.map((todo) => {
+          {sortedTodos.map((todo, index) => {
             const Icon = STATUS_ICON[todo.status]
             const isStruck =
               todo.status === 'completed' || todo.status === 'cancelled'
             const isInProgress = todo.status === 'in_progress'
             const agent = getAgentLabel(todo)
             return (
-              <li
+              <motion.li
                 key={todo.task_id}
+                initial={enter.initial}
+                animate={enter.animate}
+                transition={{ ...enter.transition, delay: staggerDelay(preset, index) }}
                 className="flex items-start gap-2.5 px-3 py-1.5"
               >
                 <Icon
@@ -139,7 +146,7 @@ export function TodosList({
                     {agent}
                   </span>
                 )}
-              </li>
+              </motion.li>
             )
           })}
         </ul>
