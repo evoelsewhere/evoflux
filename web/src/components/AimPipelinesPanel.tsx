@@ -744,6 +744,9 @@ export function AimPipelinesPanel({
         void queryClient.invalidateQueries({
           queryKey: queryKeys.team.sessions.project(project.id),
         })
+        void queryClient.invalidateQueries({
+          queryKey: ['aim-run-executions', project.id],
+        })
         void queryClient.invalidateQueries({ queryKey: ['aim-pipeline-options', project.id] })
         void queryClient.invalidateQueries({ queryKey: ['aim-pipeline-readiness', project.id] })
         setDiscussion(null)

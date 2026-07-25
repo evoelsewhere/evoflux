@@ -396,10 +396,12 @@ export const MarkdownBlock = memo(function MarkdownBlock({
   content,
   sessionId,
   isStreaming,
+  onLinkClick,
 }: {
   content: string
   sessionId?: string
   isStreaming?: boolean
+  onLinkClick?: (href: string) => boolean
 }) {
   // Trailing-edge throttle: while streaming, coalesce chunks arriving within
   // one window into a single flush of the latest content at the window
@@ -461,8 +463,22 @@ export const MarkdownBlock = memo(function MarkdownBlock({
           </CodeBlock>
         )
       },
-      a: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
-        <a {...props} target="_blank" rel="noopener noreferrer" />
+      a: ({ onClick, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
+        <a
+          {...props}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(event) => {
+            onClick?.(event)
+            if (
+              !event.defaultPrevented &&
+              typeof props.href === 'string' &&
+              onLinkClick?.(props.href)
+            ) {
+              event.preventDefault()
+            }
+          }}
+        />
       ),
       img: ({ src, alt, title }: React.ImgHTMLAttributes<HTMLImageElement>) => (
         <MarkdownImage
@@ -472,7 +488,7 @@ export const MarkdownBlock = memo(function MarkdownBlock({
         />
       ),
     }),
-    [sessionId],
+    [onLinkClick, sessionId],
   )
 
   // Me: fixNestedFences is pure; memoize so we don't re-walk the whole
