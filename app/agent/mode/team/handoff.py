@@ -65,6 +65,10 @@ class HandoffArtifact(BaseModel):
     fall back to ``team_message`` instead.
     """
 
+    task_id: str | None = Field(
+        default=None,
+        description="Delegation task UUID this artifact satisfies.",
+    )
     summary: str = Field(
         description="1–3 sentence TL;DR of the deliverable.",
     )
@@ -127,6 +131,49 @@ _HANDOFF_MEMBER_DESCRIPTION = (
 )
 
 
+def format_handoff_message(
+    agent_name: str,
+    artifact_data: HandoffArtifact | dict,
+) -> str:
+    """Render a handoff artifact for initial delivery or durable replay."""
+    artifact = (
+        artifact_data
+        if isinstance(artifact_data, HandoffArtifact)
+        else HandoffArtifact.model_validate(artifact_data)
+    )
+    status_label = "📋 PARTIAL" if artifact.status == "partial" else "📋 FINAL"
+    lines = [
+        f"[{agent_name}] {status_label} HANDOFF:",
+        f"Summary: {artifact.summary}",
+    ]
+    if artifact.task_id:
+        lines.insert(1, f"Task ID: {artifact.task_id}")
+    if artifact.findings:
+        lines.append("Findings:")
+        lines.extend(f"  • {finding}" for finding in artifact.findings)
+    if artifact.evidence:
+        lines.append("Evidence:")
+        lines.extend(f"  ◦ {evidence}" for evidence in artifact.evidence)
+    if artifact.confidence is not None:
+        lines.append(f"Confidence: {artifact.confidence:.0%}")
+    if artifact.next_actions:
+        lines.append("Next actions:")
+        lines.extend(f"  → {action}" for action in artifact.next_actions)
+    if artifact.verification is not None:
+        if artifact.verification.verified:
+            verification_line = f"Verification: ✅ {artifact.verification.method}"
+            if artifact.verification.result:
+                verification_line += f" — {artifact.verification.result}"
+        else:
+            verification_line = (
+                f"Verification: ⚠️ Not verified ({artifact.verification.method})"
+            )
+            if artifact.verification.result:
+                verification_line += f" — {artifact.verification.result}"
+        lines.append(verification_line)
+    return "\n".join(lines)
+
+
 # ── Tool factory ─────────────────────────────────────────────────────────────
 
 
@@ -157,6 +204,15 @@ def make_team_handoff_tool(
             str,
             Field(description="1–3 sentence TL;DR of the deliverable."),
         ],
+        task_id: Annotated[
+            str | None,
+            Field(
+                description=(
+                    "Delegation task UUID being reported. Required when more "
+                    "than one task from the same delegator is pending."
+                )
+            ),
+        ] = None,
         findings: Annotated[
             list[str],
             Field(
@@ -251,6 +307,39 @@ def make_team_handoff_tool(
         if errors:
             return " | ".join(errors)
 
+        linked_task_id = task_id
+        linked_task = None
+        if team is not None:
+            if linked_task_id is not None and len(resolved) != 1:
+                return "Error: a task-linked handoff must have exactly one recipient."
+            if linked_task_id is None:
+                matches = [
+                    (recipient, candidate)
+                    for recipient in resolved
+                    for candidate in team.pending_delegation_task_ids(
+                        recipient, agent_name
+                    )
+                ]
+                if len(matches) > 1:
+                    return (
+                        "Error: multiple pending delegation tasks match this handoff; "
+                        "pass the exact task_id."
+                    )
+                if len(matches) == 1:
+                    if len(resolved) != 1:
+                        return "Error: a task-linked handoff must have exactly one recipient."
+                    linked_task_id = matches[0][1]
+            if linked_task_id is not None:
+                try:
+                    linked_task = await team.validate_delegation(
+                        task_id=linked_task_id,
+                        delegator=resolved[0],
+                        recipient=agent_name,
+                        allow_completed=status == "final",
+                    )
+                except (TypeError, ValueError) as exc:
+                    return f"Error: {exc}"
+
         # Build verification if provided
         verification: Verification | None = None
         if verified is not None:
@@ -293,6 +382,7 @@ def make_team_handoff_tool(
 
         # Build artifact
         artifact = HandoffArtifact(
+            task_id=linked_task_id,
             summary=summary,
             status=status,
             findings=list(findings),
@@ -303,60 +393,47 @@ def make_team_handoff_tool(
             verification=verification,
         )
 
-        # Format the message content: human-readable summary + structured payload
-        # The text content includes the summary so agents without handoff parsing
-        # (older versions, tests) still see useful output.
         artifact_json = artifact.model_dump(mode="json", exclude_none=True)
-        status_label = "📋 PARTIAL" if status == "partial" else "📋 FINAL"
-        formatted_lines = [
-            f"[{agent_name}] {status_label} HANDOFF:",
-            f"Summary: {summary}",
-        ]
-        if findings:
-            formatted_lines.append("Findings:")
-            for f in findings:
-                formatted_lines.append(f"  • {f}")
-        if evidence:
-            formatted_lines.append("Evidence:")
-            for e in evidence:
-                formatted_lines.append(f"  ◦ {e}")
-        if confidence is not None:
-            formatted_lines.append(f"Confidence: {confidence:.0%}")
-        if next_actions:
-            formatted_lines.append("Next actions:")
-            for a in next_actions:
-                formatted_lines.append(f"  → {a}")
-        if verification is not None:
-            if verification.verified:
-                v_line = f"Verification: ✅ {verification.method}"
-                if verification.result:
-                    v_line += f" — {verification.result}"
-            else:
-                v_line = f"Verification: ⚠️ Not verified ({verification.method})"
-                if verification.result:
-                    v_line += f" — {verification.result}"
-            formatted_lines.append(v_line)
+        formatted = format_handoff_message(agent_name, artifact)
 
-        formatted = "\n".join(formatted_lines)
+        if team is not None and status == "final" and linked_task_id is not None:
+            try:
+                linked_task = await team.complete_delegation(
+                    task_id=linked_task_id,
+                    delegator=resolved[0],
+                    recipient=agent_name,
+                    artifact=artifact_json,
+                )
+            except (TypeError, ValueError) as exc:
+                return f"Error: {exc}"
 
-        # Emit SSE handoff event for the UI
+        # Emit only after the durable state transition succeeds.
         _emit_handoff_event(team, agent_name, resolved, artifact_json)
 
-        # A final handoff resolves whatever delegation/rejection *recipient*
-        # sent agent_name — partial handoffs leave the delegator still
-        # waiting for the eventual final one.
-        if team is not None and status == "final":
-            for recipient in resolved:
-                team.resolve_delegation(recipient, agent_name)
-
         for recipient in resolved:
-            msg = Message(
-                from_agent=agent_name,
-                to_agent=recipient,
-                content=formatted,
-            )
-            # Stash structured artifact in the message for DB persistence
-            msg.__dict__["_handoff_artifact"] = artifact_json
+            message_id = None
+            if status == "final" and linked_task_id and linked_task is not None:
+                message_id = f"{linked_task_id}:handoff:{linked_task.attempt}"
+            message_extra = {
+                "kind": "handoff",
+                "task_id": linked_task_id,
+                "_handoff_artifact": artifact_json,
+            }
+            if message_id:
+                msg = Message(
+                    id=message_id,
+                    from_agent=agent_name,
+                    to_agent=recipient,
+                    content=formatted,
+                    extra=message_extra,
+                )
+            else:
+                msg = Message(
+                    from_agent=agent_name,
+                    to_agent=recipient,
+                    content=formatted,
+                    extra=message_extra,
+                )
             await mailbox.send(to=recipient, message=msg)
 
         return f"Handoff delivered to {', '.join(resolved)}."

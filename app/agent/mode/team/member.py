@@ -105,7 +105,7 @@ LEAD_MESSAGE_FORMAT = """\
 MEMBER_MESSAGE_FORMAT = """\
 ## Message format
 - `[{lead_name}]: content` — message from the team lead
-- `[{lead_name}] ● TASK DELEGATION:` — structured task from the lead via `team_delegate` (contains Goal, Expected output, Constraints, Context)
+- `[{lead_name}] ● TASK DELEGATION:` — structured task from the lead via `team_delegate` (contains Task ID, Goal, Expected output, Constraints, Context)
 - `[{lead_name}] ❌ REJECTED — REWORK NEEDED:` — structured rejection via `team_reject` (contains Reason, Issues, Suggestions)
 - `[name]: content` — message from a teammate
 - `[name]  FINAL HANDOFF:` — structured deliverable received via `team_handoff`"""
@@ -130,7 +130,7 @@ LEAD_COMMUNICATION_RULES = """\
 - **Roster management — `team_manage`.** Members are spawned on demand. Use the `team_manage` tool description and schema for spawn/restore/dismiss usage and available blueprint discovery. Spawn what you need, address returned handles via `team_message`, and **keep useful members alive across turns** — reusing a live instance preserves its warm context and is faster and cheaper than dismiss-then-respawn. Dismiss only to free resources or clear clutter when an instance clearly won't be needed again.
 - Coordination with members must go through `team_delegate` (structured task assignments with goal + expected output + constraints), `team_message` (quick questions, instructions, status queries), or `team_handoff` (structured deliverables). Use `team_state` to share persistent key-value data (URLs, config, discoveries) across the team. Do not respond to the user until all assigned members have reported back.
 - **Waiting on a member? Respond with exactly `<sleep>`** — just the token, no tool calls and no plain text. After delegating you may send one brief "work is underway" note (see workflow step 3), but every wake after that where you're still waiting on outstanding delegations and have nothing new to verify or synthesise — no partial answer, no "here's what I have so far," no guessed conclusion — must be exactly `<sleep>`. Answering on your own before a member reports back defeats the delegation and shows the user an answer the team hasn't actually produced yet; your next real response after their handoff arrives is the answer.
-- **Structured delegation.** When assigning substantial work to a member, use `team_delegate` — it gives the member an explicit contract (goal, expected_output, constraints, context) so they know exactly what "done" looks like. Use `team_message` only for quick follow-ups, clarifications, or coordination that doesn't need a full task spec.
+- **Structured delegation.** When assigning substantial work to a member, use `team_delegate` — it gives the member an explicit contract (goal, expected_output, constraints, context) and returns a durable delegation Task ID. Use that UUID for `depends_on` and preserve it through handoff/rejection; it is separate from any todo `task_id`. Use `team_message` only for quick follow-ups, clarifications, or coordination that doesn't need a full task spec.
 - **Structured handoffs.** When a member delivers substantial work output, expect it via `team_handoff` with structured fields (summary, findings, evidence, confidence, next_actions). Use these fields to synthesise your response rather than re-parsing prose. If a handoff has `status: "partial"`, wait for the `"final"` handoff before synthesising.
 - Member capabilities come from their blueprint/root configuration at spawn time. If a member lacks a required capability, use an appropriately configured blueprint or update durable settings rather than mutating a live member.
 - Always format your responses in **Markdown**. No emoji."""
@@ -147,7 +147,7 @@ LEAD_PROTOCOL = """\
    - **Spawn before assigning member todos.** Call `team_manage` with the needed blueprints or restorable handles, then use the returned concrete handles in `assigned_to`.
    - Assign every relevant instance **in parallel** via `team_delegate(to=['<handle>'], goal=..., expected_output=..., constraints=[...])` for substantial tasks, or `team_message` for quick instructions that don't need a full spec.
    - **Once a task is delegated to a member, do not execute the same task in parallel yourself.** Stay in coordination/verification mode unless you explicitly reclaim or cancel the member task first.
-   - For dependent workflows, delegate a peer handoff chain from the todo dependencies. Tell prerequisite owners to use `team_handoff` to deliver output directly to the owner of each unblocked downstream task; spawn/message downstream owners only after their dependencies are complete so they can claim the task and start.
+    - For dependent workflows, keep a **peer handoff chain** and pass the prerequisite delegation UUIDs returned by `team_delegate` in the downstream call's `depends_on`. The runtime keeps that assignment blocked and dispatches it after every dependency has a final handoff.
    - Do not make yourself the default relay for member outputs. Use the lead as the synthesizer/final verifier, not as a message bus between members.
    - Briefly let the user know work is underway (plain text — 1 sentence max, and never a conclusion — you have not seen any results yet). After that, `<sleep>` until a member reports back (see communication protocol).
 4. When members report back:
@@ -158,7 +158,7 @@ LEAD_PROTOCOL = """\
      - Look for: missing edge cases, untested paths, unsupported claims, shallow research (only 1-2 sources), copy-paste without adaptation.
      - If confidence is self-reported > 0.8 but evidence is sparse, that's a red flag — challenge it.
    - **Check the `verification` field.** If a member set `verified: true`, review the method and result — this often saves you an independent check. If `verified: false` or verification is absent on work that mutated state (wrote files, ran commands), do a quick sanity-check yourself before reporting to the user.
-   - **Reject inadequate handoffs with `team_reject`.** If a handoff doesn't meet the `expected_output` from your delegation, or violates constraints, or has low confidence without evidence — use `team_reject(to=['<handle>'], reason=..., issues=[...], suggestions=[...], severity=...)` instead of sending a vague "try again" message. This re-activates the member with clear, structured feedback. Use severity: `minor` (small fixes), `major` (rework portions), or `redo` (wrong approach, start over).
+    - **Reject inadequate handoffs with `team_reject`.** If a handoff doesn't meet the `expected_output` from your delegation, or violates constraints, or has low confidence without evidence — use `team_reject(to=['<handle>'], task_id='<handoff task_id>', reason=..., issues=[...], suggestions=[...], severity=...)` instead of sending a vague "try again" message. This reopens the same durable task and increments its attempt. Use severity: `minor` (small fixes), `major` (rework portions), or `redo` (wrong approach, start over).
    - **Never say "great work" or "looks good" without evidence.** If you accept a handoff, state WHAT you verified and HOW. "Confirmed file exists at path X with expected content" — not "looks good, thanks!"
    - If a member uses `team_message` for a final deliverable instead of `team_handoff`, reject it — tell them to use `team_handoff` with proper structure.
    - When ALL assigned members have reported final results, respond to the user with the full synthesised answer.
@@ -181,7 +181,7 @@ MEMBER_COMMUNICATION_RULES = """\
 ## Communication protocol
 - **Do not use plain text output for responses/results.** Plain text is discarded — every deliverable MUST go through `team_handoff` (structured work output) or `team_message` (quick questions/clarifications).
 - **Use `team_handoff` for all substantial deliverables** — research findings, analysis, proposals, completed work. It produces structured artifacts (summary, findings, evidence, confidence, next_actions) that recipients can act on without re-parsing. Use `team_message` only for short questions, clarifications, or status queries. Use `team_state` to share persistent key-value data (URLs, config, discoveries) visible to all team members.
-- **Talk to peers directly — you are not limited to the lead.** If you need information, ask the teammate who has it. If your output feeds another member's work, `team_handoff` it straight to them. Do not route everything through the lead.
+- **Talk to peers directly for questions and unsolicited context — you are not limited to the lead.** A task-linked final `team_handoff` must go to the task's delegator so the durable task can complete; the runtime injects its artifact into dependent task briefs automatically. Do not manually relay dependency results that already use `depends_on`.
 - Message the lead specifically only when you owe *them* your final deliverable, or you are blocked and need a decision; otherwise prefer peer-to-peer.
 - **Idle, waiting, or done? Your only response is exactly `<sleep>`** — just the token, no tool calls and no plain text. Use it whenever you have nothing to send this turn (waiting on a peer's reply, no task to claim, or your work is finished).
 - NEVER send social messages ("hi", "got it", "working on it", "standing by") — `<sleep>` instead.
@@ -197,15 +197,15 @@ MEMBER_COMMUNICATION_RULES = """\
 MEMBER_PROTOCOL = """\
 ## Member workflow
 1. Receive task instructions via `[{lead_name}] ● TASK DELEGATION:` (structured — has Goal, Expected output, Constraints) or `[{lead_name}]: ...` (free-form) or from a peer.
-   - **When you receive a structured delegation:** your deliverable MUST satisfy the stated **Expected output** and respect all **Constraints**. Use the **Goal** as your north star and **Context** as starting knowledge. Do not deviate from the spec — if you believe the spec is wrong or unclear, ask the lead via `team_message` before proceeding.
-   - **When you receive a rejection (`❌ REJECTED`):** read **Reason** and **Issues** carefully. Address EVERY listed issue in your rework. Follow the **Suggestions** — they are actionable fixes, not optional hints. Then re-deliver via `team_handoff` with improvements. Do NOT argue with the rejection or repeat the same output — fix the problems.
+    - **When you receive a structured delegation:** retain its delegation **Task ID** and pass it as `task_id` in every partial/final `team_handoff`. This UUID is distinct from a todo `task_id`. Your deliverable MUST satisfy the stated **Expected output** and respect all **Constraints**. Use the **Goal** as your north star and **Context** as starting knowledge. Do not deviate from the spec — if you believe the spec is wrong or unclear, ask the lead via `team_message` before proceeding.
+    - **When you receive a rejection (`❌ REJECTED`):** retain the same delegation **Task ID**, read **Reason** and **Issues** carefully, and address EVERY listed issue. Follow the **Suggestions** — they are actionable fixes, not optional hints. Then re-deliver via `team_handoff(task_id='<same UUID>', ...)` with improvements. Do NOT argue with the rejection or repeat the same output — fix the problems.
 2. If the instruction names a todo task, call `todo_manage(actions=[{{"action":"claim","task_id":"..."}}])` before starting. If the claim is blocked, respond `<sleep>` and wait for the dependency owner to finish instead of starting early.
 3. **Before starting work, check your skills.** If your task matches one of your declared skills (visible in the `skill` tool description), call `skill(skill_name='<name>')` to load the relevant instructions before proceeding. Skills contain canonical procedures, file conventions, and quality gates that improve your output. Do not skip this step when a matching skill exists.
 4. Do your work (research, write, calculate, etc.).
 5. If you need help or input from any teammate, call `team_message(to=[teammate_name])`, then `<sleep>` — the answer arrives next wake.
-6. **Deliver output via `team_handoff`** (not `team_message`) to whoever needs it. Use `status: "partial"` for incremental batches and `status: "final"` for the complete deliverable. Fill `findings` with key points, `evidence` with supporting data, and `confidence` with your self-assessed certainty (0.0–1.0). If your result feeds a peer's task, `team_handoff` it directly to that peer.
+6. **Deliver output via `team_handoff`** (not `team_message`) to the task's delegator, always passing the delegation `task_id` shown in the task brief. Use `status: "partial"` for incremental batches and `status: "final"` for the complete deliverable. Fill `findings` with key points, `evidence` with supporting data, and `confidence` with your self-assessed certainty (0.0–1.0). For tasks declared with `depends_on`, the runtime forwards your final artifact to downstream owners.
    - **Verify before you hand off.** If your work mutated state (wrote a file, ran a command, changed config), confirm the result with a cheap follow-up check *before* handing off. Then set `verified=True` with `verification_method` describing how you checked and `verification_result` with what you found. For pure research/analysis with no side-effects, omit verification.
-7. When sending to the lead: `team_handoff(to=["{lead_name}"])` with your **final, complete result** (`status: "final"`) unless the lead explicitly asked for incremental updates.
+7. When sending to the lead: `team_handoff(to=["{lead_name}"], task_id="<delegation UUID>")` with your **final, complete result** (`status: "final"`) unless the lead explicitly asked for incremental updates.
 8. If you have nothing to do: `<sleep>` immediately.
 
 **NEVER write plain text for responses/results; use `team_handoff` for deliverables, `team_message` for questions/clarifications, or return exactly `<sleep>` when waiting or idle.**"""
@@ -301,14 +301,21 @@ def _open_task_nudge_content(open_todos: list[dict], lead_name: str) -> str:
     return "\n".join(lines)
 
 
-def _lead_wait_nudge_content(pending: list[str]) -> str:
+def _lead_wait_nudge_content(
+    pending: list[str], task_ids: list[str] | None = None
+) -> str:
     """Build the hidden wait-reminder prompt for a lead that answered early."""
     names = ", ".join(pending)
+    task_line = (
+        f"\nOutstanding delegation task IDs: {', '.join(task_ids)}."
+        if task_ids
+        else ""
+    )
     return (
         "[system]: You just responded to the user, but you are still waiting "
         f"on a team_handoff from: {names}. Answering on your own before they "
         "report back is not the team's real answer — it shows the user a "
-        "conclusion the team hasn't actually produced yet.\n\n"
+        f"conclusion the team hasn't actually produced yet.{task_line}\n\n"
         "Do not repeat, extend, or build on what you just said. Respond with "
         f"exactly `<sleep>` now and wait. Once {names} report back via "
         "`team_handoff`, synthesise your actual final response then."
@@ -676,7 +683,9 @@ class TeamMemberBase(abc.ABC):
                         "content": msg_obj.content,
                         "from_agent": raw_msg.from_agent,
                     }
-                    artifact = getattr(raw_msg, "_handoff_artifact", None)
+                    artifact = raw_msg.extra.get("_handoff_artifact") or getattr(
+                        raw_msg, "_handoff_artifact", None
+                    )
                     if artifact is not None:
                         inbox_extra["_handoff_artifact"] = artifact
                     await self._team._emit(
@@ -831,20 +840,84 @@ class TeamMemberBase(abc.ABC):
 
             human_msg = HumanMessage(content=content)
             extra = {
+                **msg.extra,
+                "message_id": msg.id,
                 "from_agent": msg.from_agent,
                 "is_broadcast": msg.is_broadcast,
             }
 
+            # Backward-compatible bridge for in-flight Message objects created
+            # by older tool factories before structured metadata became a
+            # first-class field. New messages populate ``extra`` directly.
+            for attr, key in (
+                ("_task_spec", "_task_spec"),
+                ("_handoff_artifact", "_handoff_artifact"),
+                ("_rejection_feedback", "_rejection_feedback"),
+            ):
+                value = getattr(msg, attr, None)
+                if value is not None and key not in extra:
+                    extra[key] = value
+
             # Let subclass decide whether to skip persistence
+            saved_row = None
             if not self._skip_inbox_persistence([msg.from_agent]):
                 db_factory = resolve_db_factory(self.db_factory)
                 session_uuid = uuid.UUID(self.session_id)
                 async with db_factory() as db:
                     async with db.begin():
-                        saved_row = await save_message(
-                            db, session_uuid, human_msg, extra=extra
-                        )
+                        existing_row = None
+                        if extra.get("kind") in {
+                            "delegation",
+                            "handoff",
+                            "rejection",
+                        }:
+                            existing_row = (
+                                await db.exec(
+                                    select(SessionMessage)
+                                    .where(
+                                        col(SessionMessage.session_id)
+                                        == session_uuid,
+                                        col(SessionMessage.extra)[
+                                            "message_id"
+                                        ].as_string()
+                                        == msg.id,
+                                    )
+                                    .limit(1)
+                                )
+                            ).first()
+                        if existing_row is not None:
+                            saved_row = existing_row
+                        else:
+                            saved_row = await save_message(
+                                db, session_uuid, human_msg, extra=extra
+                            )
                         human_msg.db_id = saved_row.id  # stash db_id for sync()
+
+            task_id = extra.get("task_id")
+            if saved_row is not None and isinstance(task_id, str) and self._team:
+                try:
+                    kind = extra.get("kind")
+                    if kind in {"delegation", "rejection"}:
+                        await self._team.mark_delegation_dispatched(task_id)
+                    artifact = extra.get("_handoff_artifact")
+                    if (
+                        kind == "handoff"
+                        and isinstance(artifact, dict)
+                        and artifact.get("status") == "final"
+                    ):
+                        await self._team.attach_delegation_handoff_message(
+                            task_id, saved_row.id
+                        )
+                except Exception as exc:
+                    # The inbox row and task ID are already durable. Leaving
+                    # dispatched_at/linkage unset makes recovery replayable;
+                    # failing the member turn here would only lose useful work.
+                    logger.warning(
+                        "delegation_message_link_failed task_id={} kind={} error={}",
+                        task_id,
+                        extra.get("kind"),
+                        exc,
+                    )
 
             result.append(human_msg)
 
@@ -1313,9 +1386,11 @@ class TeamMemberBase(abc.ABC):
         assert self._team is not None
         assert self._mailbox is not None
 
+        await self._team.refresh_delegations(dispatch=False)
         pending = self._team.pending_delegation_recipients(self.name)
         if not pending:
             return
+        pending_task_ids = sorted(self._team.pending_delegation_task_ids(self.name))
 
         try:
             async with resolve_db_factory(self.db_factory)() as db:
@@ -1344,7 +1419,7 @@ class TeamMemberBase(abc.ABC):
             return  # already complied
 
         pending_sorted = sorted(pending)
-        nudge_key = f"{self.session_id}:{'|'.join(pending_sorted)}"
+        nudge_key = f"{self.session_id}:{'|'.join(pending_task_ids)}"
         if self._lead_wait_nudge_counts.get(nudge_key, 0) >= MAX_LEAD_WAIT_NUDGES:
             logger.info(
                 "team_lead_wait_nudge_suppressed name={} pending={}",
@@ -1361,7 +1436,7 @@ class TeamMemberBase(abc.ABC):
             self.name,
             pending_sorted,
         )
-        content = _lead_wait_nudge_content(pending_sorted)
+        content = _lead_wait_nudge_content(pending_sorted, pending_task_ids)
         await self._mailbox.send(
             to=self.name,
             message=Message(

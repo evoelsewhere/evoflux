@@ -195,7 +195,7 @@ class TestHandoffToolVerification:
         )
 
         msg = await mb.receive("lead")
-        artifact = msg.__dict__.get("_handoff_artifact", {})
+        artifact = msg.extra.get("_handoff_artifact", {})
         assert artifact.get("verification", {}).get("verified") is True
         assert artifact["verification"]["method"] == "ran test suite"
         assert artifact["verification"]["result"] == "all 12 tests pass"
@@ -214,7 +214,7 @@ class TestHandoffToolVerification:
         )
 
         msg = await mb.receive("lead")
-        artifact = msg.__dict__.get("_handoff_artifact", {})
+        artifact = msg.extra.get("_handoff_artifact", {})
         assert "verification" not in artifact
 
     @pytest.mark.asyncio

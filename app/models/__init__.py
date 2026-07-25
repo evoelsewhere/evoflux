@@ -7,6 +7,7 @@ from .chat import (
     SessionMessage,
 )
 from .code_graph import CodeEdge, CodeIndexState, CodeNode
+from .team import DelegationTask
 from .workflow import WorkflowApproval, WorkflowExecution, WorkflowNodeRun
 from .webbridge import (
     WebBridgeInteraction,
@@ -25,6 +26,7 @@ __all__ = [
     "CodeEdge",
     "CodeIndexState",
     "CodeNode",
+    "DelegationTask",
     "DreamLog",
     "DreamNotesLog",
     "MemoryProcessedSource",

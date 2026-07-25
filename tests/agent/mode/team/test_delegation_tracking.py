@@ -297,7 +297,29 @@ class TestLeadWaitNudge:
         msg = team.mailbox.receive_nowait("lead")
         assert msg.from_agent == "system"
         assert "executor#1" in msg.content
-        assert msg.content == _lead_wait_nudge_content(["executor#1"])
+        task_ids = team.pending_delegation_task_ids("lead")
+        assert msg.content == _lead_wait_nudge_content(["executor#1"], task_ids)
+
+    async def test_nudge_identity_changes_when_one_of_two_same_recipient_tasks_finishes(
+        self,
+    ):
+        team = await _make_team(
+            rows=[_row("assistant", "Here's the final answer.", None)]
+        )
+        first, second = team.register_delegation(
+            "lead", ["executor#1", "executor#1"]
+        )
+
+        await team.lead._maybe_inject_delegation_wait_nudge()
+        first_nudge = team.mailbox.receive_nowait("lead")
+        assert first in first_nudge.content
+        assert second in first_nudge.content
+
+        team.resolve_delegation("lead", "executor#1", task_id=first)
+        await team.lead._maybe_inject_delegation_wait_nudge()
+        second_nudge = team.mailbox.receive_nowait("lead")
+        assert first not in second_nudge.content
+        assert second in second_nudge.content
 
     async def test_nudge_is_rate_limited(self):
         team = await _make_team(
