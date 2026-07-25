@@ -63,6 +63,7 @@ import { setAimKbOpenPath, setAimPipelinePrefill } from '@/lib/aimHandoff'
 import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
 import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Select,
   SelectContent,
@@ -505,7 +506,7 @@ export function AimOverviewPanel({ project }: { project: CodingProject }) {
 
         <div className="shrink-0 border-b border-(--color-border)">
           {summaryQuery.isLoading || unitsQuery.isLoading || approvalsQuery.isLoading ? (
-            <p className="px-4 py-3 text-xs text-(--color-text-subtle)">Loading project telemetry…</p>
+            <ProjectTelemetrySkeleton />
           ) : summaryQuery.isError || unitsQuery.isError ? (
             <p className="px-4 py-3 text-xs text-(--color-error)">Failed to load project telemetry</p>
           ) : (
@@ -544,10 +545,7 @@ export function AimOverviewPanel({ project }: { project: CodingProject }) {
             </MonitorGrid>
 
             {unitsQuery.isLoading ? (
-              <div className="flex items-center gap-1.5 rounded-md border border-(--color-border) bg-(--bg-page) px-3 py-8 text-xs text-(--color-text-subtle)">
-                <Loader2 size={12} className="animate-spin" />
-                Loading migration inventory…
-              </div>
+              <OverviewInventorySkeleton />
             ) : unitsQuery.isError ? (
               <div className="rounded-md border border-(--color-error) bg-(--color-error-subtle,var(--bg-key)) px-3 py-3 text-xs text-(--color-error)">
                 Failed to load migration inventory.
@@ -761,9 +759,7 @@ export function AimOverviewPanel({ project }: { project: CodingProject }) {
               Wave {cutoverWave} cutover readiness
             </h2>
             {cutoverLoading && !cutoverChecklist ? (
-              <p className="mt-4 flex items-center gap-1.5 text-xs text-(--color-text-muted)">
-                <Loader2 size={12} className="animate-spin" /> Loading checklist…
-              </p>
+              <CutoverChecklistSkeleton />
             ) : cutoverChecklist ? (
               <div className="mt-3 space-y-3">
                 {(
@@ -853,6 +849,129 @@ function MonitorGrid({ children }: { children: React.ReactNode }) {
   )
 }
 
+function ProjectTelemetrySkeleton() {
+  return (
+    <div aria-label="Loading project telemetry">
+      <div className="grid grid-cols-2 divide-x divide-y divide-(--color-border) sm:grid-cols-3 sm:divide-y-0 lg:grid-cols-[1.25fr_repeat(4,minmax(0,1fr))]">
+        <div className="col-span-2 space-y-2 px-4 py-2.5 sm:col-span-1">
+          <Skeleton className="h-2.5 w-28" />
+          <div className="flex items-end gap-2">
+            <Skeleton className="h-5 w-16" />
+            <Skeleton className="mb-0.5 h-2 w-12" />
+          </div>
+        </div>
+        {Array.from({ length: 4 }, (_, index) => (
+          <div key={index} className="space-y-2 px-3 py-2.5">
+            <Skeleton className="h-2.5 w-16" />
+            <Skeleton className="h-5 w-8" />
+          </div>
+        ))}
+      </div>
+      <div className="space-y-2 border-t border-(--color-border) px-4 py-2">
+        <Skeleton className="h-1.5 w-full rounded-full" />
+        <div className="flex flex-wrap gap-3">
+          {[18, 14, 16, 15, 17, 13].map((width, index) => (
+            <Skeleton key={index} className="h-2.5" style={{ width: `${width * 4}px` }} />
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function MonitorRowsSkeleton({ rows = 3 }: { rows?: number }) {
+  return (
+    <div className="border-t border-(--color-border)" aria-hidden="true">
+      {Array.from({ length: rows }, (_, index) => (
+        <div
+          key={index}
+          className="flex h-[52px] items-center gap-2 border-t border-(--color-border) px-3 first:border-t-0"
+        >
+          <Skeleton className="h-2 w-2 shrink-0 rounded-full" />
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <Skeleton className="h-2.5" style={{ width: `${58 + (index % 3) * 9}%` }} />
+            <Skeleton className="h-2 w-2/5" />
+          </div>
+          <Skeleton className="h-2 w-12 shrink-0" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function OverviewInventorySkeleton() {
+  return (
+    <div className="space-y-3" aria-label="Loading migration inventory">
+      <MonitorGrid>
+        <section className="overflow-hidden rounded-md border border-(--color-border) bg-(--bg-page)">
+          <SkeletonPanelHeader />
+          <div className="grid grid-cols-2 border-t border-(--color-border) xl:grid-cols-3">
+            {Array.from({ length: 6 }, (_, index) => (
+              <div key={index} className="space-y-2 border-b border-r border-(--color-border) px-3 py-2">
+                <div className="flex justify-between gap-3">
+                  <Skeleton className="h-3 w-14" />
+                  <Skeleton className="h-2.5 w-12" />
+                </div>
+                <Skeleton className="h-1 w-full rounded-full" />
+                <Skeleton className="h-2 w-2/3" />
+              </div>
+            ))}
+          </div>
+        </section>
+        <section className="overflow-hidden rounded-md border border-(--color-border) bg-(--bg-page)">
+          <SkeletonPanelHeader />
+          <MonitorRowsSkeleton rows={4} />
+        </section>
+      </MonitorGrid>
+      <section className="overflow-hidden rounded-md border border-(--color-border) bg-(--bg-page)">
+        <div className="flex items-center justify-between gap-3 border-b border-(--color-border) bg-(--bg-key)/60 px-3 py-2">
+          <div className="space-y-1.5">
+            <Skeleton className="h-2.5 w-20" />
+            <Skeleton className="h-2 w-40" />
+          </div>
+          <Skeleton className="h-7 w-52" />
+        </div>
+        {Array.from({ length: 4 }, (_, index) => (
+          <div key={index} className="grid h-[52px] grid-cols-[1.5fr_0.65fr_1fr] items-center gap-4 border-t border-(--color-border) px-3 first:border-t-0">
+            <div className="space-y-1.5">
+              <Skeleton className="h-2.5" style={{ width: `${55 + index * 7}%` }} />
+              <Skeleton className="h-2 w-24" />
+            </div>
+            <Skeleton className="h-2.5 w-16" />
+            <Skeleton className="h-2.5 w-3/4" />
+          </div>
+        ))}
+      </section>
+    </div>
+  )
+}
+
+function SkeletonPanelHeader() {
+  return (
+    <div className="flex h-[51px] items-center gap-2 bg-(--bg-key)/60 px-3 py-2" aria-hidden="true">
+      <Skeleton className="h-3 w-3 rounded-full" />
+      <div className="space-y-1.5">
+        <Skeleton className="h-2.5 w-24" />
+        <Skeleton className="h-2 w-32" />
+      </div>
+    </div>
+  )
+}
+
+function CutoverChecklistSkeleton() {
+  return (
+    <div className="mt-4 space-y-3" aria-label="Loading cutover checklist">
+      {Array.from({ length: 4 }, (_, index) => (
+        <div key={index} className="flex items-center gap-2">
+          <Skeleton className="h-3.5 w-3.5 shrink-0" />
+          <Skeleton className="h-3" style={{ width: `${62 + index * 5}%` }} />
+        </div>
+      ))}
+      <Skeleton className="h-12 w-full" />
+    </div>
+  )
+}
+
 function AttentionCenter({
   approvals,
   healthChecks,
@@ -878,7 +997,7 @@ function AttentionCenter({
       <header className="flex items-center justify-between gap-3 bg-(--bg-key)/60 px-3 py-2">
         <div className="flex items-center gap-2">
           {loading ? (
-            <Loader2 size={13} className="animate-spin text-(--color-text-subtle)" />
+            <Skeleton className="h-3 w-3 rounded-full" />
           ) : attentionCount > 0 ? (
             <CircleAlert size={13} className="text-(--color-warning,orange)" />
           ) : (
@@ -888,13 +1007,13 @@ function AttentionCenter({
             <p className="text-[10px] font-semibold uppercase text-(--color-text-subtle)">
               Needs attention
             </p>
-            <p className="text-[11px] text-(--color-text-muted)">
+            <div className="text-[11px] text-(--color-text-muted)">
               {loading
-                ? 'Checking project state'
+                ? <Skeleton className="mt-1 h-2.5 w-32" />
                 : attentionCount > 0
                 ? `${approvals.length} approvals · ${healthChecks.length} health issues`
                 : 'No operator action required'}
-            </p>
+            </div>
           </div>
         </div>
         {hasLegacyState && (
@@ -972,9 +1091,7 @@ function AttentionCenter({
       )}
 
       {loading && attentionCount === 0 && (
-        <p className="flex items-center gap-1.5 border-t border-(--color-border) px-3 py-4 text-[11px] text-(--color-text-subtle)">
-          <Loader2 size={11} className="animate-spin" /> Checking project state…
-        </p>
+        <MonitorRowsSkeleton rows={2} />
       )}
       {error && <p className="border-t border-(--color-border) px-3 py-2 text-[11px] text-(--color-error)">{error}</p>}
     </section>
@@ -1012,9 +1129,13 @@ function LiveOperations({
             <p className="text-[10px] font-semibold uppercase text-(--color-text-subtle)">
               Live operations
             </p>
-            <p className="text-[11px] text-(--color-text-muted)">
-              {units.length} active {units.length === 1 ? 'claim' : 'claims'}
-            </p>
+            <div className="text-[11px] text-(--color-text-muted)">
+              {loading ? (
+                <Skeleton className="mt-1 h-2.5 w-20" />
+              ) : (
+                `${units.length} active ${units.length === 1 ? 'claim' : 'claims'}`
+              )}
+            </div>
           </div>
         </div>
         <button
@@ -1028,9 +1149,7 @@ function LiveOperations({
         </button>
       </header>
       {loading ? (
-        <p className="flex items-center gap-1.5 border-t border-(--color-border) px-3 py-4 text-[11px] text-(--color-text-subtle)">
-          <Loader2 size={11} className="animate-spin" /> Loading active work…
-        </p>
+        <MonitorRowsSkeleton rows={3} />
       ) : units.length === 0 ? (
         <p className="border-t border-(--color-border) px-3 py-5 text-center text-[11px] text-(--color-text-subtle)">
           No pipelines are running.
@@ -1091,18 +1210,22 @@ function RecentRunsPanel({
             <p className="text-[10px] font-semibold uppercase text-(--color-text-subtle)">
               Recent outcomes
             </p>
-            <p className="text-[11px] text-(--color-text-muted)">
-              <span className="text-(--color-success)">{passing} pass</span>
-              {' · '}
-              <span className={failing > 0 ? 'text-(--color-error)' : undefined}>{failing} attention</span>
-            </p>
+            <div className="text-[11px] text-(--color-text-muted)">
+              {loading ? (
+                <Skeleton className="mt-1 h-2.5 w-24" />
+              ) : (
+                <>
+                  <span className="text-(--color-success)">{passing} pass</span>
+                  {' · '}
+                  <span className={failing > 0 ? 'text-(--color-error)' : undefined}>{failing} attention</span>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </header>
       {loading ? (
-        <p className="flex items-center justify-center gap-1.5 border-t border-(--color-border) px-3 py-5 text-[11px] text-(--color-text-subtle)">
-          <Loader2 size={11} className="animate-spin" /> Loading outcomes…
-        </p>
+        <MonitorRowsSkeleton rows={3} />
       ) : recent.length === 0 ? (
         <p className="border-t border-(--color-border) px-3 py-5 text-center text-[11px] text-(--color-text-subtle)">
           No recorded outcomes.

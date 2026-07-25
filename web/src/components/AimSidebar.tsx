@@ -34,6 +34,7 @@ import {
   SidebarFooter,
 } from '@/components/shell/SidebarShell'
 import { CollapsibleSection } from '@/components/shell/CollapsibleSection'
+import { Skeleton } from '@/components/ui/skeleton'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 import {
   AIM_FEATURES,
@@ -196,7 +197,7 @@ export function AimSidebar({
             addLabel="New / Join migration project"
           />
           {projectsQuery.isLoading ? (
-            <p className="px-2 py-1.5 text-xs text-(--color-text-subtle)">Loading projects…</p>
+            <AimProjectListSkeleton />
           ) : projects.length === 0 ? (
             <p className="px-2 py-1.5 text-xs text-(--color-text-subtle)">
               No migration projects yet.
@@ -324,5 +325,21 @@ export function AimSidebar({
     >
       {content}
     </SidebarShell>
+  )
+}
+
+function AimProjectListSkeleton() {
+  return (
+    <div className="space-y-1 px-1 py-1" aria-label="Loading AIM projects">
+      {Array.from({ length: 5 }, (_, index) => (
+        <div key={index} className="flex h-10 items-center gap-2 rounded-xs px-1.5">
+          <Skeleton className="h-4 w-4 shrink-0" />
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <Skeleton className="h-2.5" style={{ width: `${55 + (index % 3) * 12}%` }} />
+            <Skeleton className="h-2 w-2/5" />
+          </div>
+        </div>
+      ))}
+    </div>
   )
 }

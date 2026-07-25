@@ -70,6 +70,7 @@ import { resolveAimRolePath } from '@/lib/aim-kb'
 import { AimSidePanel } from '@/components/AimSidePanel'
 import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
+import { Skeleton } from '@/components/ui/skeleton'
 import { TeamChatView } from '@/components/TeamChatView'
 import { MarkdownBlock } from '@/utils/markdown'
 import { formatApprovalQuestion } from '@/utils/approvalQuestion'
@@ -695,23 +696,27 @@ export function AimPipelinesPanel({
         <div className="flex flex-wrap items-end gap-2 border-b border-(--color-border) p-4">
           <label className="flex w-full min-w-0 flex-col gap-1 text-xs text-(--color-text-muted) sm:w-auto">
             Pipeline
-            <Combobox
-              size="sm"
-              value={pipelineName}
-              onValueChange={setPipelineName}
-              items={aimWorkflows.map((wf) => ({
-                value: wf.name,
-                label: pipelineDisplayName(wf.name),
-                description: wf.description,
-                meta: `${wf.node_count} nodes · ${wf.root}`,
-                keywords: `${wf.name} ${wf.scope}`,
-              }))}
-              placeholder={workflowsQ.isLoading ? 'Loading…' : 'Select a pipeline…'}
-              emptyText="No pipelines found."
-              ariaLabel="Pipeline"
-              searchPlaceholder="Search pipelines…"
-              className="w-full sm:w-[320px]"
-            />
+            {workflowsQ.isLoading ? (
+              <Skeleton className="h-7 w-full sm:w-[320px]" aria-label="Loading pipelines" />
+            ) : (
+              <Combobox
+                size="sm"
+                value={pipelineName}
+                onValueChange={setPipelineName}
+                items={aimWorkflows.map((wf) => ({
+                  value: wf.name,
+                  label: pipelineDisplayName(wf.name),
+                  description: wf.description,
+                  meta: `${wf.node_count} nodes · ${wf.root}`,
+                  keywords: `${wf.name} ${wf.scope}`,
+                }))}
+                placeholder="Select a pipeline…"
+                emptyText="No pipelines found."
+                ariaLabel="Pipeline"
+                searchPlaceholder="Search pipelines…"
+                className="w-full sm:w-[320px]"
+              />
+            )}
           </label>
           {(selectedWorkflow?.inputs ?? []).map((spec) => (
             <WorkflowInputField
@@ -734,6 +739,7 @@ export function AimPipelinesPanel({
         <PipelineInfoCard
           workflow={selectedWorkflow}
           graph={detailQ.data?.graph}
+          graphLoading={detailQ.isLoading}
           readiness={readinessQuery.data}
           readinessLoading={readinessInitialLoading}
         />
@@ -741,7 +747,7 @@ export function AimPipelinesPanel({
         {/* Run table */}
         <div className="min-h-0 flex-1 overflow-auto p-4">
           {sessionsQuery.isLoading ? (
-            <p className="text-xs text-(--color-text-subtle)">Loading runs…</p>
+            <RunHistorySkeleton />
           ) : runs.length === 0 ? (
             <p className="text-xs text-(--color-text-subtle)">
               No runs yet — pick a pipeline and hit Run.
@@ -1632,11 +1638,13 @@ function WorkflowCanvasPreview({
 function PipelineInfoCard({
   workflow,
   graph,
+  graphLoading,
   readiness,
   readinessLoading,
 }: {
   workflow: WorkflowListItem | undefined
   graph: Record<string, unknown> | undefined
+  graphLoading: boolean
   readiness: AimReadiness | undefined
   readinessLoading: boolean
 }) {
@@ -1707,7 +1715,9 @@ function PipelineInfoCard({
       </p>
 
       {/* Theme-aware DAG preview from the workflow's real nodes and edges. */}
-      {nodes.length > 0 && (
+      {graphLoading ? (
+        <WorkflowCanvasSkeleton />
+      ) : nodes.length > 0 && (
         <WorkflowCanvasPreview nodes={nodes} edges={edges} />
       )}
 
@@ -1731,7 +1741,10 @@ function PipelineInfoCard({
         )}
       </div>
       {readinessLoading ? (
-        <p className="text-[11px] text-(--color-text-subtle)">Checking prerequisites…</p>
+        <div className="space-y-2 rounded-md border border-(--color-border) px-2.5 py-2" aria-label="Checking pipeline prerequisites">
+          <Skeleton className="h-2.5 w-36" />
+          <Skeleton className="h-2.5 w-3/5" />
+        </div>
       ) : readiness ? (
         <div
           className={cn(
@@ -1806,6 +1819,62 @@ function PipelineInfoCard({
         </div>
       ) : null}
     </div>
+  )
+}
+
+function WorkflowCanvasSkeleton() {
+  return (
+    <div className="overflow-hidden rounded-md border border-(--color-border) bg-(--bg-subtle)/30 px-3 py-4" aria-label="Loading workflow graph">
+      <div className="flex min-w-[520px] items-center justify-between gap-3">
+        {Array.from({ length: 5 }, (_, index) => (
+          <div key={index} className="contents">
+            <div className="w-24 space-y-2 rounded-md border border-(--color-border) bg-(--bg-page) p-2">
+              <Skeleton className="h-2.5 w-2/3" />
+              <Skeleton className="h-2 w-full" />
+              <Skeleton className="h-2 w-1/2" />
+            </div>
+            {index < 4 && <Skeleton className="h-px min-w-5 flex-1 rounded-none" />}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function RunHistorySkeleton() {
+  return (
+    <section className="overflow-hidden rounded-md border border-(--color-border) bg-(--bg-page)" aria-label="Loading run history">
+      <div className="flex h-11 items-center justify-between bg-(--bg-subtle)/45 px-3 py-2">
+        <div className="space-y-1.5">
+          <Skeleton className="h-3 w-20" />
+          <Skeleton className="h-2 w-24" />
+        </div>
+        <Skeleton className="h-6 w-16" />
+      </div>
+      <div className="grid h-8 grid-cols-[42%_18%_16%_10%_14%] items-center border-t border-(--color-border) bg-(--bg-subtle)/25 px-3">
+        {[20, 16, 14, 12, 14].map((width, index) => (
+          <Skeleton key={index} className="h-2" style={{ width: `${width * 3}px` }} />
+        ))}
+      </div>
+      {Array.from({ length: 6 }, (_, index) => (
+        <div key={index} className="grid h-[58px] grid-cols-[42%_18%_16%_10%_14%] items-center border-t border-(--color-border) px-3">
+          <div className="flex items-center gap-2.5">
+            <Skeleton className="h-7 w-7 shrink-0" />
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <Skeleton className="h-2.5" style={{ width: `${48 + (index % 3) * 13}%` }} />
+              <Skeleton className="h-2 w-2/5" />
+            </div>
+          </div>
+          <Skeleton className="h-5 w-16" />
+          <Skeleton className="h-2.5 w-14" />
+          <Skeleton className="h-5 w-10" />
+          <div className="flex justify-end gap-1">
+            <Skeleton className="h-6 w-6" />
+            <Skeleton className="h-6 w-6" />
+          </div>
+        </div>
+      ))}
+    </section>
   )
 }
 
@@ -1948,10 +2017,7 @@ export function RunMonitorPanel({
                 <span>No workflow execution is recorded for this run.</span>
               </div>
             ) : (
-              <div className="flex items-center gap-2 text-xs text-(--color-text-muted)">
-                <Loader2 size={13} className="animate-spin text-(--color-accent)" />
-                Waiting for the execution to register…
-              </div>
+              <RunExecutionSkeleton />
             )
           ) : (
             <div className="space-y-3">
@@ -2257,7 +2323,8 @@ function ActivityLogSection({ sessionId, active }: { sessionId: string; active: 
     if (el) el.scrollTop = el.scrollHeight
   }, [lines.length, active])
 
-  if (historyQ.isLoading || lines.length === 0) return null
+  if (historyQ.isLoading) return <ActivityLogSkeleton />
+  if (lines.length === 0) return null
 
   const timeOf = (at: string): string => {
     const date = new Date(at)
@@ -2453,6 +2520,55 @@ function ActivityLogSection({ sessionId, active }: { sessionId: string; active: 
             <span className="ml-auto font-mono">live</span>
           </div>
         )}
+      </div>
+    </section>
+  )
+}
+
+function RunExecutionSkeleton() {
+  return (
+    <div className="space-y-3" aria-label="Loading workflow execution">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 space-y-1.5">
+          <Skeleton className="h-3 w-2/5" />
+          <Skeleton className="h-2.5 w-1/4" />
+        </div>
+        <Skeleton className="h-7 w-16" />
+      </div>
+      <div className="grid grid-cols-3 gap-3 border-y border-(--color-border) py-2">
+        {Array.from({ length: 3 }, (_, index) => (
+          <div key={index} className="space-y-1.5 px-2 first:pl-0 last:pr-0">
+            <Skeleton className="h-2 w-12" />
+            <Skeleton className="h-2.5 w-16" />
+          </div>
+        ))}
+      </div>
+      <Skeleton className="h-0.5 w-full rounded-full" />
+    </div>
+  )
+}
+
+function ActivityLogSkeleton() {
+  return (
+    <section className="px-4 py-3" aria-label="Loading event stream">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <Skeleton className="h-2.5 w-24" />
+        <Skeleton className="h-2.5 w-28" />
+      </div>
+      <div className="overflow-hidden rounded-md border border-(--color-border) bg-(--bg-subtle)/30 px-3">
+        {Array.from({ length: 5 }, (_, index) => (
+          <div key={index} className="flex min-h-[54px] gap-3 border-b border-(--color-border)/60 py-2.5 last:border-b-0">
+            <Skeleton className="h-5 w-5 shrink-0 rounded-full" />
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className="flex justify-between gap-4">
+                <Skeleton className="h-2.5 w-20" />
+                <Skeleton className="h-2 w-12" />
+              </div>
+              <Skeleton className="h-2.5" style={{ width: `${62 + (index % 3) * 12}%` }} />
+              {index % 2 === 0 && <Skeleton className="h-2.5 w-2/5" />}
+            </div>
+          </div>
+        ))}
       </div>
     </section>
   )
@@ -2934,9 +3050,7 @@ function ReportPanel({
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {detailQuery.isLoading ? (
-          <p className="flex items-center gap-1.5 text-xs text-(--color-text-subtle)">
-            <Loader2 size={12} className="animate-spin" /> Loading report…
-          </p>
+          <ReportSkeleton />
         ) : detailQuery.isError || !detail ? (
           <p className="text-xs text-(--color-error)">Failed to load the run.</p>
         ) : (
@@ -2994,5 +3108,30 @@ function ReportPanel({
         )}
       </div>
     </AimSidePanel>
+  )
+}
+
+function ReportSkeleton() {
+  return (
+    <div className="space-y-4" aria-label="Loading run report">
+      <div className="flex items-center gap-2">
+        <Skeleton className="h-6 w-16" />
+        <Skeleton className="h-3 w-28" />
+        <Skeleton className="ml-auto h-7 w-16" />
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {Array.from({ length: 4 }, (_, index) => (
+          <div key={index} className="w-24 space-y-2 rounded-md bg-(--bg-key)/60 px-2.5 py-2">
+            <Skeleton className="h-2 w-12" />
+            <Skeleton className="h-3 w-16" />
+          </div>
+        ))}
+      </div>
+      <div className="space-y-2 rounded-md bg-(--bg-key)/60 p-3">
+        {[92, 74, 86, 61, 96, 68, 79, 54, 88].map((width, index) => (
+          <Skeleton key={index} className="h-2.5" style={{ width: `${width}%` }} />
+        ))}
+      </div>
+    </div>
   )
 }

@@ -14,12 +14,13 @@
 
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowRight, BookMarked, Loader2 } from 'lucide-react'
+import { ArrowRight, BookMarked } from 'lucide-react'
 import { getAimRulebook } from '@/api/client'
 import { MarkdownBlock, CodeBlock } from '@/utils/markdown'
 import { splitFrontmatter } from '@/lib/aim-kb'
 import { buildTree } from '@/utils/workspaceFileTree'
 import { TreeNodeView } from '@/components/CodingWorkspacePanel'
+import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import type { AimRulebook, CodingProject, WorkspaceFileInfo } from '@/api/types'
 
@@ -92,9 +93,7 @@ export function AimRulebookPanel({ project }: { project: CodingProject }) {
       </div>
 
       {rulebookQuery.isLoading ? (
-        <p className="flex items-center gap-1.5 p-4 text-xs text-(--color-text-subtle)">
-          <Loader2 size={12} className="animate-spin" /> Loading rulebook…
-        </p>
+        <RulebookPanelSkeleton />
       ) : rulebookQuery.isError ? (
         <p className="p-4 text-xs text-(--color-error)">
           {rulebookQuery.error instanceof Error
@@ -136,6 +135,39 @@ export function AimRulebookPanel({ project }: { project: CodingProject }) {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function RulebookPanelSkeleton() {
+  return (
+    <div className="flex min-h-0 flex-1" aria-label="Loading rulebook">
+      <div className="w-72 shrink-0 space-y-1 border-r border-(--color-border) p-2">
+        {Array.from({ length: 9 }, (_, index) => (
+          <div key={index} className="flex h-7 items-center gap-1.5 px-2" style={{ paddingLeft: `${8 + (index % 3) * 12}px` }}>
+            <Skeleton className="h-3 w-3 shrink-0" />
+            <Skeleton className="h-2.5" style={{ width: `${48 + (index % 4) * 9}%` }} />
+          </div>
+        ))}
+      </div>
+      <div className="min-w-0 flex-1 space-y-5 p-4">
+        <div className="space-y-2">
+          <Skeleton className="h-5 w-48" />
+          <Skeleton className="h-3 w-4/5" />
+          <Skeleton className="h-3 w-3/5" />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {Array.from({ length: 4 }, (_, index) => (
+            <div key={index} className="space-y-3 rounded-md border border-(--color-border) p-3">
+              <Skeleton className="h-2.5 w-20" />
+              <Skeleton className="h-4 w-3/5" />
+              <Skeleton className="h-2.5 w-full" />
+              <Skeleton className="h-2.5 w-4/5" />
+            </div>
+          ))}
+        </div>
+        <Skeleton className="h-28 w-full" />
+      </div>
     </div>
   )
 }
