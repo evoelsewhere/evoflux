@@ -22,10 +22,12 @@ import { useQuery } from '@tanstack/react-query'
 import {
   Activity,
   BookOpen,
+  ChevronRight,
   CircleAlert,
   CircleCheck,
   CirclePause,
   CircleX,
+  Clock3,
   FolderGit2,
   FolderInput,
   FolderOutput,
@@ -35,6 +37,8 @@ import {
   LockKeyhole,
   Loader2,
   Play,
+  Radio,
+  RefreshCw,
   Search,
   ShieldCheck,
   X,
@@ -58,6 +62,14 @@ import { AimSidePanel } from '@/components/AimSidePanel'
 import { setAimKbOpenPath, setAimPipelinePrefill } from '@/lib/aimHandoff'
 import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
+import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { formatApprovalQuestion } from '@/utils/approvalQuestion'
 import { MarkdownBlock } from '@/utils/markdown'
@@ -65,6 +77,7 @@ import type {
   AimPhaseCounts,
   AimApproval,
   AimCutoverChecklist,
+  AimProjectHealth,
   AimRunListItem,
   AimUnitOut,
   CodingProject,
@@ -157,7 +170,7 @@ export function AimOverviewPanel({ project }: { project: CodingProject }) {
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<'queue' | 'flow'>('queue')
   const [queueFilter, setQueueFilter] = useState<'attention' | 'ready' | 'active' | 'all'>(
-    'attention',
+    'all',
   )
   const [replyingApproval, setReplyingApproval] = useState<string | null>(null)
   const [approvalError, setApprovalError] = useState<string | null>(null)
@@ -225,6 +238,15 @@ export function AimOverviewPanel({ project }: { project: CodingProject }) {
     )
   }, [units, wave, moduleFilter, search])
 
+  const globalActiveUnits = units.filter((unit) => unit.claim !== null)
+  const globalBlockedUnits = units.filter(
+    (unit) =>
+      !unit.state_verified ||
+      (unit.next_action !== null && !unit.next_action.allowed && unit.claim === null),
+  )
+  const globalReadyUnits = units.filter(
+    (unit) => unit.state_verified && unit.next_action?.allowed && unit.claim === null,
+  )
   const activeUnits = visibleUnits.filter((unit) => unit.claim !== null)
   const blockedUnits = visibleUnits.filter(
     (unit) =>
@@ -247,7 +269,7 @@ export function AimOverviewPanel({ project }: { project: CodingProject }) {
   )
   const hasLegacyState = healthQuery.data?.checks.some(
     (check) => check.id === 'kb' && check.message.includes('Legacy state schema'),
-  )
+  ) ?? false
 
   const selectedUnit = units.find((u) => u.id === selectedUnitId) ?? null
 
@@ -257,6 +279,13 @@ export function AimOverviewPanel({ project }: { project: CodingProject }) {
   const kb = resolveAimRoleWorkspaces(project, 'kb')[0]
   const phaseCounts = summaryQuery.data?.phase_counts
   const totalUnits = summaryQuery.data?.total_units ?? 0
+  const lastUpdatedAt = Math.max(
+    summaryQuery.dataUpdatedAt,
+    unitsQuery.dataUpdatedAt,
+    healthQuery.dataUpdatedAt,
+    approvalsQuery.dataUpdatedAt,
+    recentRunsQuery.dataUpdatedAt,
+  )
 
   const goRunPipeline = (pipeline: string, unit?: AimUnitOut) => {
     setAimPipelinePrefill({
@@ -264,6 +293,13 @@ export function AimOverviewPanel({ project }: { project: CodingProject }) {
       unit: unit ? `${unit.module}/${unit.name}` : undefined,
       wave: unit?.wave ?? undefined,
     })
+    navigate({
+      to: '/aim/$projectId/$feature',
+      params: { projectId: project.id, feature: 'pipelines' },
+    })
+  }
+
+  const goOpenPipelines = () => {
     navigate({
       to: '/aim/$projectId/$feature',
       params: { projectId: project.id, feature: 'pipelines' },
@@ -388,90 +424,57 @@ export function AimOverviewPanel({ project }: { project: CodingProject }) {
               </span>
             )}
           </div>
-          <div className="grid grid-cols-2 gap-1.5 sm:flex sm:shrink-0 sm:items-center">
-            {/* Unit search — client-side, composes with wave + module. */}
-            {units.length > 0 && (
-              <span className="relative col-span-2 sm:col-span-1">
-                <Search
-                  size={11}
-                  className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-(--color-text-subtle)"
-                  aria-hidden="true"
-                />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Find unit…"
-                  className="w-full rounded bg-(--bg-key) py-1 pl-6 pr-2 text-xs text-(--color-text) placeholder:text-(--color-text-subtle) sm:w-36"
-                />
-              </span>
-            )}
-            {modules.length > 1 && (
-              <Combobox
-                size="sm"
-                value={moduleFilter === 'all' ? null : moduleFilter}
-                onValueChange={(v) => setModuleFilter(v ?? 'all')}
-                items={[
-                  { value: 'all', label: 'Module: all' },
-                  ...modules.map((m) => ({ value: m, label: m })),
-                ]}
-                placeholder="Module: all"
-                emptyText="No module matches."
-                className="w-full sm:w-40"
+          <div className="grid shrink-0 grid-cols-2 gap-2 sm:grid-cols-[13rem_11rem_8.5rem]">
+            <div className="relative col-span-2 sm:col-span-1">
+              <Search
+                size={14}
+                className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-(--color-text-subtle)"
+                aria-hidden="true"
               />
-            )}
-            {waves.length > 0 && (
-              <select
-                value={wave}
-                onChange={(e) => setWave(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-                className="w-full rounded bg-(--bg-key) px-2 py-1 text-xs text-(--color-text) sm:w-auto"
-              >
-                <option value="all">Wave: all</option>
-                {waves.map((w) => (
-                  <option key={w} value={w}>
-                    Wave {w}
-                  </option>
+              <Input
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Find unit…"
+                aria-label="Find migration unit"
+                disabled={unitsQuery.isLoading || units.length === 0}
+                className="h-9 rounded-[10px] bg-(--bg-page) pl-9 pr-3 text-sm"
+              />
+            </div>
+            <Combobox
+              value={moduleFilter === 'all' ? null : moduleFilter}
+              onValueChange={(value) => setModuleFilter(value ?? 'all')}
+              items={modules.map((moduleName) => ({ value: moduleName, label: moduleName }))}
+              placeholder="All modules"
+              searchPlaceholder="Find module…"
+              emptyText="No module matches."
+              ariaLabel="Filter by module"
+              disabled={modules.length <= 1}
+              className="w-full min-w-0"
+            />
+            <Select
+              value={wave === 'all' ? 'all' : String(wave)}
+              onValueChange={(value) => {
+                if (value !== null) setWave(value === 'all' ? 'all' : Number(value))
+              }}
+              disabled={waves.length === 0}
+            >
+              <SelectTrigger aria-label="Filter by wave" className="w-full">
+                <SelectValue>{wave === 'all' ? 'All waves' : `Wave ${wave}`}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All waves</SelectItem>
+                {waves.map((waveNumber) => (
+                  <SelectItem key={waveNumber} value={String(waveNumber)}>
+                    Wave {waveNumber}
+                  </SelectItem>
                 ))}
-              </select>
-            )}
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
-        {healthProblems.length > 0 && (
-          <div className="border-b border-(--color-border) bg-(--color-error-subtle,var(--bg-key)) px-4 py-2">
-            <div className="flex items-start gap-2">
-              <CircleAlert size={13} className="mt-0.5 shrink-0 text-(--color-error)" />
-              <div className="min-w-0 flex-1">
-                <p className="text-[11px] font-medium text-(--color-error)">
-                  Project prerequisites need attention
-                </p>
-                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5">
-                  {healthProblems.slice(0, 5).map((check) => (
-                    <span
-                      key={check.id}
-                      className={cn(
-                        'text-[10px]',
-                        check.status === 'fail'
-                          ? 'text-(--color-error)'
-                          : 'text-(--color-warning,orange)',
-                      )}
-                      title={check.message}
-                    >
-                      {check.label}: {check.message}
-                    </span>
-                  ))}
-                </div>
-              </div>
-              {hasLegacyState && (
-                <Button size="sm" variant="outline" onClick={() => setReconcileOpen(true)}>
-                  Reconcile state
-                </Button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* What this project is wired to — repos by role. */}
+        {/* Compact topology strip; operational state lives in the console below. */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-(--color-border) px-4 py-2 text-[11px] text-(--color-text-muted)">
           <span
             className="flex items-center gap-1.5"
@@ -500,187 +503,194 @@ export function AimOverviewPanel({ project }: { project: CodingProject }) {
           </span>
         </div>
 
-        <div className="grid shrink-0 grid-cols-2 gap-2 border-b border-(--color-border) p-3 sm:grid-cols-5">
-          {summaryQuery.isLoading ? (
-            <p className="col-span-5 text-xs text-(--color-text-subtle)">Loading summary…</p>
-          ) : summaryQuery.isError ? (
-            <p className="col-span-5 text-xs text-(--color-error)">Failed to load summary</p>
+        <div className="shrink-0 border-b border-(--color-border)">
+          {summaryQuery.isLoading || unitsQuery.isLoading || approvalsQuery.isLoading ? (
+            <p className="px-4 py-3 text-xs text-(--color-text-subtle)">Loading project telemetry…</p>
+          ) : summaryQuery.isError || unitsQuery.isError ? (
+            <p className="px-4 py-3 text-xs text-(--color-error)">Failed to load project telemetry</p>
           ) : (
-            <>
-              <MetricCard label="Total units" value={totalUnits} />
-              <MetricCard label="Ready next" value={readyUnits.length} tone="success" />
-              <MetricCard label="Blocked" value={blockedUnits.length} tone="error" />
-              <MetricCard label="Active claims" value={activeUnits.length} tone="accent" />
-              <MetricCard
-                label="Equivalent"
-                value={`${summaryQuery.data?.equivalent_pct.toFixed(1) ?? '0.0'}%`}
-              />
-              {phaseCounts && totalUnits > 0 && (
-                <div className="col-span-2 sm:col-span-5">
-                  <PhaseBar counts={phaseCounts} total={totalUnits} />
-                </div>
-              )}
-            </>
+            <ProjectTelemetry
+              total={totalUnits}
+              equivalentPct={summaryQuery.data?.equivalent_pct ?? 0}
+              ready={globalReadyUnits.length}
+              blocked={globalBlockedUnits.length}
+              active={globalActiveUnits.length}
+              approvals={approvalsQuery.data?.length ?? 0}
+              counts={phaseCounts}
+              updatedAt={lastUpdatedAt}
+            />
           )}
         </div>
 
-        {/* Recent runs — one line each, deep-links into Runs & Reports. */}
-        {allRuns.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5 border-b border-(--color-border) px-4 py-2">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-(--color-text-subtle)">
-              Recent runs
-            </span>
-            {allRuns.slice(0, 6).map((run) => (
-              <button
-                key={run.id}
-                type="button"
-                onClick={() =>
-                  navigate({
-                    to: '/aim/$projectId/runs/$runId',
-                    params: { projectId: project.id, runId: run.id },
-                  })
-                }
-                className="flex items-center gap-1 rounded bg-(--bg-key) px-1.5 py-0.5 text-[11px] text-(--color-text-2) transition-colors hover:text-(--color-text)"
-                title={`${run.unit} · ${run.kind} · ${new Date(run.created_at).toLocaleString()}`}
-              >
-                <VerdictDot verdict={run.verdict} />
-                <span className="max-w-40 truncate">{run.unit}</span>
-                <span className="text-(--color-text-subtle)">{run.kind}</span>
-              </button>
-            ))}
-          </div>
-        )}
-
-        {(approvalsQuery.data?.length ?? 0) > 0 && (
-          <ApprovalInbox
-            approvals={approvalsQuery.data ?? []}
-            replyingId={replyingApproval}
-            error={approvalError}
-            onReply={(approval, answer) => void replyApproval(approval, answer)}
-          />
-        )}
-
-        <div className="min-h-0 flex-1 overflow-auto p-3">
-          {unitsQuery.isLoading ? (
-            <p className="flex items-center gap-1.5 text-xs text-(--color-text-subtle)">
-              <Loader2 size={12} className="animate-spin" />
-              Loading units…
-            </p>
-          ) : unitsQuery.isError ? (
-            <p className="text-xs text-(--color-error)">Failed to load units</p>
-          ) : units.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center gap-3">
-              <p className="text-xs text-(--color-text-subtle)">
-                No units yet — the assess pipeline builds the inventory from the source estate.
-              </p>
-              <Button size="sm" onClick={() => goRunPipeline('aim-assess')}>
-                <Play size={12} />
-                Run assess
-              </Button>
-            </div>
-          ) : visibleUnits.length === 0 ? (
-            <p className="text-xs text-(--color-text-subtle)">
-              No units match the current filters.
-            </p>
-          ) : (
-            <div className="space-y-3">
-              <WaveControl
-                units={visibleUnits}
-                onConfigureCutover={(selectedWave) => void openCutoverChecklist(selectedWave)}
+        <div className="min-h-0 flex-1 overflow-auto bg-(--bg-subtle)/30 p-3">
+          <div className="mx-auto w-full max-w-[1600px] space-y-3">
+            <MonitorGrid>
+              <AttentionCenter
+                approvals={approvalsQuery.data ?? []}
+                healthChecks={healthProblems}
+                loading={approvalsQuery.isLoading || healthQuery.isLoading}
+                hasLegacyState={hasLegacyState}
+                replyingId={replyingApproval}
+                error={approvalError}
+                onReconcile={() => setReconcileOpen(true)}
+                onReply={(approval, answer) => void replyApproval(approval, answer)}
               />
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="inline-flex rounded-md bg-(--bg-key) p-0.5">
-                  {(
-                    [
-                      ['attention', `Attention ${blockedUnits.length}`],
-                      ['ready', `Ready ${readyUnits.length}`],
-                      ['active', `Active ${activeUnits.length}`],
-                      ['all', `All ${visibleUnits.length}`],
-                    ] as const
-                  ).map(([key, label]) => (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => setQueueFilter(key)}
-                      className={cn(
-                        'rounded px-2 py-1 text-[11px] transition-colors',
-                        queueFilter === key
-                          ? 'bg-(--bg-page) font-medium text-(--color-text) shadow-sm'
-                          : 'text-(--color-text-muted) hover:text-(--color-text)',
-                      )}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <div className="inline-flex rounded-md border border-(--color-border) p-0.5">
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('queue')}
-                    aria-label="Queue view"
-                    title="Queue view"
-                    className={cn(
-                      'rounded p-1',
-                      viewMode === 'queue'
-                        ? 'bg-(--bg-key) text-(--color-accent)'
-                        : 'text-(--color-text-subtle)',
-                    )}
-                  >
-                    <List size={13} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('flow')}
-                    aria-label="Flow view"
-                    title="Flow view"
-                    className={cn(
-                      'rounded p-1',
-                      viewMode === 'flow'
-                        ? 'bg-(--bg-key) text-(--color-accent)'
-                        : 'text-(--color-text-subtle)',
-                    )}
-                  >
-                    <LayoutGrid size={13} />
-                  </button>
-                </div>
-              </div>
+              <LiveOperations
+                units={globalActiveUnits}
+                loading={unitsQuery.isLoading}
+                onSelect={(unit) => setSelectedUnitId(unit.id)}
+                onOpenMonitor={goOpenPipelines}
+              />
+            </MonitorGrid>
 
-              {viewMode === 'queue' ? (
-                <UnitQueue
-                  units={queueUnits}
-                  selectedUnitId={selectedUnitId}
-                  onSelect={(unit) =>
-                    setSelectedUnitId(unit.id === selectedUnitId ? null : unit.id)
-                  }
-                />
-              ) : (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-                  {phases.map((phase) => {
-                    const phaseUnits = visibleUnits.filter((unit) => unit.phase === phase)
-                    return (
-                      <div key={phase} className="min-w-0">
-                        <p className="mb-1.5 truncate text-[11px] text-(--color-text-subtle)">
-                          {phaseLabels[phase] ?? phase} · {phaseUnits.length}
-                        </p>
-                        <div className="space-y-1.5">
-                          {phaseUnits.map((unit) => (
-                            <UnitCard
-                              key={unit.id}
-                              unit={unit}
-                              selected={unit.id === selectedUnitId}
-                              onClick={() =>
-                                setSelectedUnitId(unit.id === selectedUnitId ? null : unit.id)
-                              }
-                            />
-                          ))}
-                        </div>
+            {unitsQuery.isLoading ? (
+              <div className="flex items-center gap-1.5 rounded-md border border-(--color-border) bg-(--bg-page) px-3 py-8 text-xs text-(--color-text-subtle)">
+                <Loader2 size={12} className="animate-spin" />
+                Loading migration inventory…
+              </div>
+            ) : unitsQuery.isError ? (
+              <div className="rounded-md border border-(--color-error) bg-(--color-error-subtle,var(--bg-key)) px-3 py-3 text-xs text-(--color-error)">
+                Failed to load migration inventory.
+              </div>
+            ) : units.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-3 rounded-md border border-dashed border-(--color-border) bg-(--bg-page) px-4 py-12">
+                <p className="text-xs text-(--color-text-subtle)">
+                  No units yet. Run assessment to build the migration inventory.
+                </p>
+                <Button size="sm" onClick={() => goRunPipeline('aim-assess')}>
+                  <Play size={12} />
+                  Run assess
+                </Button>
+              </div>
+            ) : (
+              <>
+                <MonitorGrid>
+                  <WaveControl
+                    units={units}
+                    onConfigureCutover={(selectedWave) => void openCutoverChecklist(selectedWave)}
+                  />
+                  <RecentRunsPanel
+                    runs={allRuns}
+                    loading={recentRunsQuery.isLoading}
+                    onOpenRun={(runId) =>
+                      navigate({
+                        to: '/aim/$projectId/runs/$runId',
+                        params: { projectId: project.id, runId },
+                      })
+                    }
+                  />
+                </MonitorGrid>
+
+                <section className="overflow-hidden rounded-md border border-(--color-border) bg-(--bg-page)">
+                  <header className="flex flex-wrap items-center justify-between gap-2 border-b border-(--color-border) bg-(--bg-key)/60 px-3 py-2">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase text-(--color-text-subtle)">
+                        Work queue
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-(--color-text-muted)">
+                        {queueUnits.length} shown · {visibleUnits.length} match filters · {units.length} total
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="inline-flex rounded-md bg-(--bg-key) p-0.5">
+                        {(
+                          [
+                            ['attention', `Attention ${blockedUnits.length}`],
+                            ['ready', `Ready ${readyUnits.length}`],
+                            ['active', `Active ${activeUnits.length}`],
+                            ['all', `All ${visibleUnits.length}`],
+                          ] as const
+                        ).map(([key, label]) => (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() => setQueueFilter(key)}
+                            className={cn(
+                              'rounded px-2 py-1 text-[11px] transition-colors',
+                              queueFilter === key
+                                ? 'bg-(--bg-page) font-medium text-(--color-text) shadow-sm'
+                                : 'text-(--color-text-muted) hover:text-(--color-text)',
+                            )}
+                          >
+                            {label}
+                          </button>
+                        ))}
                       </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          )}
+                      <div className="inline-flex rounded-md border border-(--color-border) p-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setViewMode('queue')}
+                          aria-label="Queue view"
+                          title="Queue view"
+                          className={cn(
+                            'rounded p-1',
+                            viewMode === 'queue'
+                              ? 'bg-(--bg-key) text-(--color-accent)'
+                              : 'text-(--color-text-subtle)',
+                          )}
+                        >
+                          <List size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setViewMode('flow')}
+                          aria-label="Flow view"
+                          title="Flow view"
+                          className={cn(
+                            'rounded p-1',
+                            viewMode === 'flow'
+                              ? 'bg-(--bg-key) text-(--color-accent)'
+                              : 'text-(--color-text-subtle)',
+                          )}
+                        >
+                          <LayoutGrid size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  </header>
+
+                  {visibleUnits.length === 0 ? (
+                    <p className="px-3 py-8 text-center text-xs text-(--color-text-subtle)">
+                      No units match the current filters.
+                    </p>
+                  ) : viewMode === 'queue' ? (
+                    <UnitQueue
+                      units={queueUnits}
+                      selectedUnitId={selectedUnitId}
+                      onSelect={(unit) =>
+                        setSelectedUnitId(unit.id === selectedUnitId ? null : unit.id)
+                      }
+                    />
+                  ) : (
+                    <div className="grid grid-cols-2 gap-3 p-3 sm:grid-cols-3 lg:grid-cols-6">
+                      {phases.map((phase) => {
+                        const phaseUnits = visibleUnits.filter((unit) => unit.phase === phase)
+                        return (
+                          <div key={phase} className="min-w-0">
+                            <p className="mb-1.5 truncate text-[11px] text-(--color-text-subtle)">
+                              {phaseLabels[phase] ?? phase} · {phaseUnits.length}
+                            </p>
+                            <div className="space-y-1.5">
+                              {phaseUnits.map((unit) => (
+                                <UnitCard
+                                  key={unit.id}
+                                  unit={unit}
+                                  selected={unit.id === selectedUnitId}
+                                  onClick={() =>
+                                    setSelectedUnitId(unit.id === selectedUnitId ? null : unit.id)
+                                  }
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </section>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -835,36 +845,105 @@ export function AimOverviewPanel({ project }: { project: CodingProject }) {
   )
 }
 
-function ApprovalInbox({
+function MonitorGrid({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="grid items-stretch gap-3 md:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
+      {children}
+    </div>
+  )
+}
+
+function AttentionCenter({
   approvals,
+  healthChecks,
+  loading,
+  hasLegacyState,
   replyingId,
   error,
+  onReconcile,
   onReply,
 }: {
   approvals: AimApproval[]
+  healthChecks: AimProjectHealth['checks']
+  loading: boolean
+  hasLegacyState: boolean
   replyingId: string | null
   error: string | null
+  onReconcile: () => void
   onReply: (approval: AimApproval, answer: string) => void
 }) {
+  const attentionCount = approvals.length + healthChecks.length
   return (
-    <div className="border-b border-(--color-border) bg-(--bg-key)/60 px-4 py-2.5">
-      <div className="mb-1.5 flex items-center gap-1.5">
-        <CirclePause size={12} className="text-(--color-warning,orange)" />
-        <p className="text-[10px] font-semibold uppercase text-(--color-text-subtle)">
-          Approval inbox · {approvals.length}
-        </p>
-      </div>
-      <div className="space-y-1.5">
+    <section className="overflow-hidden rounded-md border border-(--color-border) bg-(--bg-page)">
+      <header className="flex items-center justify-between gap-3 bg-(--bg-key)/60 px-3 py-2">
+        <div className="flex items-center gap-2">
+          {loading ? (
+            <Loader2 size={13} className="animate-spin text-(--color-text-subtle)" />
+          ) : attentionCount > 0 ? (
+            <CircleAlert size={13} className="text-(--color-warning,orange)" />
+          ) : (
+            <CircleCheck size={13} className="text-(--color-success)" />
+          )}
+          <div>
+            <p className="text-[10px] font-semibold uppercase text-(--color-text-subtle)">
+              Needs attention
+            </p>
+            <p className="text-[11px] text-(--color-text-muted)">
+              {loading
+                ? 'Checking project state'
+                : attentionCount > 0
+                ? `${approvals.length} approvals · ${healthChecks.length} health issues`
+                : 'No operator action required'}
+            </p>
+          </div>
+        </div>
+        {hasLegacyState && (
+          <Button size="sm" variant="outline" onClick={onReconcile}>
+            Reconcile state
+          </Button>
+        )}
+      </header>
+
+      {healthChecks.length > 0 && (
+        <div className="border-t border-(--color-border)">
+          {healthChecks.map((check) => (
+            <div
+              key={check.id}
+              className="grid grid-cols-[auto_minmax(7rem,0.35fr)_minmax(0,1fr)] gap-2 border-t border-(--color-border) px-3 py-1.5 text-[11px] first:border-t-0"
+            >
+              <span
+                className={cn(
+                  'mt-1 h-1.5 w-1.5 rounded-full',
+                  check.status === 'fail'
+                    ? 'bg-(--color-error)'
+                    : 'bg-(--color-warning,orange)',
+                )}
+              />
+              <span className="font-medium text-(--color-text-2)">{check.label}</span>
+              <span className="min-w-0 break-words text-(--color-text-muted)">{check.message}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {approvals.length > 0 && (
+        <div className="border-t border-(--color-border)">
         {approvals.map((approval) => (
           <div
             key={`${approval.execution_id}:${approval.request_id}`}
-            className="flex flex-wrap items-start gap-2 rounded-md border border-(--color-border) bg-(--bg-page) px-3 py-2"
+            className="flex flex-wrap items-start gap-3 border-t border-(--color-border) px-3 py-2 first:border-t-0"
           >
-            <div className="min-w-0 flex-1 basis-[40rem]">
-              <p className="truncate text-xs font-medium text-(--color-text)">
-                {approval.session_title ?? approval.workflow}
-              </p>
-              <div className="mt-1 max-h-48 overflow-auto pr-1 text-[11px] leading-4 text-(--color-text-muted) [&_h1]:text-xs [&_h2]:text-xs [&_h3]:text-[11px] [&_li]:my-0 [&_ol]:my-1 [&_p]:my-1 [&_pre]:my-1 [&_table]:my-1 [&_table]:text-[10px] [&_ul]:my-1">
+            <div className="min-w-0 flex-1 basis-[28rem]">
+              <div className="flex min-w-0 items-center gap-2">
+                <CirclePause size={11} className="shrink-0 text-(--color-warning,orange)" />
+                <p className="truncate text-xs font-medium text-(--color-text)">
+                  {approval.session_title ?? approval.workflow}
+                </p>
+                <span className="shrink-0 rounded bg-(--bg-key) px-1.5 py-0.5 text-[9px] text-(--color-text-subtle)">
+                  {pipelineLabel(approval.workflow)}
+                </span>
+              </div>
+              <div className="mt-1.5 max-h-44 overflow-auto pr-1 text-[11px] leading-4 text-(--color-text-muted) [&_h1]:text-xs [&_h2]:text-xs [&_h3]:text-[11px] [&_li]:my-0 [&_ol]:my-1 [&_p]:my-1 [&_pre]:my-1 [&_table]:my-1 [&_table]:text-[10px] [&_ul]:my-1">
                 <MarkdownBlock
                   content={formatApprovalQuestion(approval.question)}
                   sessionId={approval.session_id}
@@ -889,9 +968,172 @@ function ApprovalInbox({
             </div>
           </div>
         ))}
-      </div>
-      {error && <p className="mt-1.5 text-[11px] text-(--color-error)">{error}</p>}
-    </div>
+        </div>
+      )}
+
+      {loading && attentionCount === 0 && (
+        <p className="flex items-center gap-1.5 border-t border-(--color-border) px-3 py-4 text-[11px] text-(--color-text-subtle)">
+          <Loader2 size={11} className="animate-spin" /> Checking project state…
+        </p>
+      )}
+      {error && <p className="border-t border-(--color-border) px-3 py-2 text-[11px] text-(--color-error)">{error}</p>}
+    </section>
+  )
+}
+
+function claimLeaseStatus(expiresAt: string): { label: string; tone: string } {
+  const minutes = Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 60_000)
+  if (minutes <= 0) return { label: 'Lease expired', tone: 'text-(--color-error)' }
+  if (minutes <= 5) return { label: `${minutes}m lease`, tone: 'text-(--color-warning,orange)' }
+  if (minutes < 60) return { label: `${minutes}m lease`, tone: 'text-(--color-success)' }
+  return { label: `${Math.ceil(minutes / 60)}h lease`, tone: 'text-(--color-success)' }
+}
+
+function LiveOperations({
+  units,
+  loading,
+  onSelect,
+  onOpenMonitor,
+}: {
+  units: AimUnitOut[]
+  loading: boolean
+  onSelect: (unit: AimUnitOut) => void
+  onOpenMonitor: () => void
+}) {
+  return (
+    <section className="overflow-hidden rounded-md border border-(--color-border) bg-(--bg-page)">
+      <header className="flex items-center justify-between gap-3 bg-(--bg-key)/60 px-3 py-2">
+        <div className="flex items-center gap-2">
+          <Radio
+            size={13}
+            className={units.length > 0 ? 'text-(--color-accent)' : 'text-(--color-text-subtle)'}
+          />
+          <div>
+            <p className="text-[10px] font-semibold uppercase text-(--color-text-subtle)">
+              Live operations
+            </p>
+            <p className="text-[11px] text-(--color-text-muted)">
+              {units.length} active {units.length === 1 ? 'claim' : 'claims'}
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onOpenMonitor}
+          aria-label="Open run monitor"
+          title="Open run monitor"
+          className="rounded p-1 text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-accent)"
+        >
+          <Activity size={14} />
+        </button>
+      </header>
+      {loading ? (
+        <p className="flex items-center gap-1.5 border-t border-(--color-border) px-3 py-4 text-[11px] text-(--color-text-subtle)">
+          <Loader2 size={11} className="animate-spin" /> Loading active work…
+        </p>
+      ) : units.length === 0 ? (
+        <p className="border-t border-(--color-border) px-3 py-5 text-center text-[11px] text-(--color-text-subtle)">
+          No pipelines are running.
+        </p>
+      ) : (
+        <div className="border-t border-(--color-border)">
+          {units.map((unit) => {
+            const lease = claimLeaseStatus(unit.claim!.lease_expires_at)
+            return (
+              <button
+                key={unit.id}
+                type="button"
+                onClick={() => onSelect(unit)}
+                className="group flex w-full items-center gap-2 border-t border-(--color-border) px-3 py-2 text-left first:border-t-0 hover:bg-(--bg-key)/70"
+              >
+                <span className="relative flex h-2 w-2 shrink-0">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-(--color-accent) opacity-40" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-(--color-accent)" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-mono text-[11px] text-(--color-text)">
+                    {unit.module}/{unit.name}
+                  </span>
+                  <span className="block truncate text-[10px] text-(--color-text-subtle)">
+                    {pipelineLabel(unit.claim!.workflow_name)} · {unit.phase}
+                    {unit.wave !== null ? ` · wave ${unit.wave}` : ''}
+                  </span>
+                </span>
+                <span className={cn('shrink-0 text-[9px]', lease.tone)}>{lease.label}</span>
+                <ChevronRight size={12} className="shrink-0 text-(--color-text-subtle) group-hover:text-(--color-accent)" />
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function RecentRunsPanel({
+  runs,
+  loading,
+  onOpenRun,
+}: {
+  runs: AimRunListItem[]
+  loading: boolean
+  onOpenRun: (runId: string) => void
+}) {
+  const recent = runs.slice(0, 7)
+  const passing = runs.filter((run) => ['pass', 'acceptable_diff'].includes(run.verdict)).length
+  const failing = runs.length - passing
+  return (
+    <section className="overflow-hidden rounded-md border border-(--color-border) bg-(--bg-page)">
+      <header className="flex items-center justify-between gap-3 bg-(--bg-key)/60 px-3 py-2">
+        <div className="flex items-center gap-2">
+          <Clock3 size={13} className="text-(--color-text-subtle)" />
+          <div>
+            <p className="text-[10px] font-semibold uppercase text-(--color-text-subtle)">
+              Recent outcomes
+            </p>
+            <p className="text-[11px] text-(--color-text-muted)">
+              <span className="text-(--color-success)">{passing} pass</span>
+              {' · '}
+              <span className={failing > 0 ? 'text-(--color-error)' : undefined}>{failing} attention</span>
+            </p>
+          </div>
+        </div>
+      </header>
+      {loading ? (
+        <p className="flex items-center justify-center gap-1.5 border-t border-(--color-border) px-3 py-5 text-[11px] text-(--color-text-subtle)">
+          <Loader2 size={11} className="animate-spin" /> Loading outcomes…
+        </p>
+      ) : recent.length === 0 ? (
+        <p className="border-t border-(--color-border) px-3 py-5 text-center text-[11px] text-(--color-text-subtle)">
+          No recorded outcomes.
+        </p>
+      ) : (
+        <div className="border-t border-(--color-border)">
+          {recent.map((run) => (
+            <button
+              key={run.id}
+              type="button"
+              onClick={() => onOpenRun(run.id)}
+              className="group flex w-full items-center gap-2 border-t border-(--color-border) px-3 py-1.5 text-left first:border-t-0 hover:bg-(--bg-key)/70"
+              title={new Date(run.created_at).toLocaleString()}
+            >
+              <VerdictDot verdict={run.verdict} />
+              <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-(--color-text-2)">
+                {run.unit}
+              </span>
+              <span className="shrink-0 text-[9px] text-(--color-text-subtle)">{run.kind}</span>
+              <span className="w-12 shrink-0 text-right text-[9px] text-(--color-text-subtle)">
+                {new Date(run.created_at).toLocaleTimeString([], {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </span>
+              <ChevronRight size={11} className="shrink-0 text-(--color-text-subtle) group-hover:text-(--color-accent)" />
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -907,62 +1149,79 @@ function WaveControl({
     if (right === null) return -1
     return left - right
   })
+  const totalComplete = units.filter((unit) =>
+    ['equivalent', 'cutover'].includes(unit.phase),
+  ).length
   return (
-    <div className="overflow-hidden rounded-md border border-(--color-border)">
-      <div className="grid grid-cols-[4rem_1fr_3rem_3rem] gap-2 bg-(--bg-key) px-3 py-1.5 text-[10px] font-semibold uppercase text-(--color-text-subtle) sm:grid-cols-[5rem_1fr_4rem_4rem_4rem]">
-        <span>Wave</span>
-        <span>Progress</span>
-        <span className="text-right">Ready</span>
-        <span className="text-right">Blocked</span>
-        <span className="hidden text-right sm:block">Active</span>
-      </div>
-      {waves.map((wave) => {
-        const waveUnits = units.filter((unit) => unit.wave === wave)
-        const complete = waveUnits.filter((unit) =>
-          ['equivalent', 'cutover'].includes(unit.phase),
-        ).length
-        const ready = waveUnits.filter(
-          (unit) => unit.next_action?.allowed && unit.claim === null,
-        ).length
-        const blocked = waveUnits.filter(
-          (unit) => !unit.state_verified || (unit.next_action && !unit.next_action.allowed),
-        ).length
-        const active = waveUnits.filter((unit) => unit.claim !== null).length
-        const pct = waveUnits.length > 0 ? (complete / waveUnits.length) * 100 : 0
-        return (
-          <div
-            key={wave ?? 'unassigned'}
-            className="grid grid-cols-[4rem_1fr_3rem_3rem] items-center gap-2 border-t border-(--color-border) px-3 py-2 text-xs sm:grid-cols-[5rem_1fr_4rem_4rem_4rem]"
-          >
-            <span className="flex items-center gap-1 font-medium text-(--color-text)">
-              {wave === null ? 'Unassigned' : `Wave ${wave}`}
-              {wave !== null && (
-                <button
-                  type="button"
-                  onClick={() => onConfigureCutover(wave)}
-                  aria-label={`Configure wave ${wave} cutover readiness`}
-                  title="Cutover readiness checklist"
-                  className="rounded p-0.5 text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-accent)"
-                >
-                  <ShieldCheck size={11} />
-                </button>
-              )}
-            </span>
-            <div className="flex items-center gap-2">
-              <div className="h-1.5 min-w-16 flex-1 overflow-hidden rounded-full bg-(--bg-key)">
+    <section className="overflow-hidden rounded-md border border-(--color-border) bg-(--bg-page)">
+      <header className="flex items-center justify-between gap-3 bg-(--bg-key)/60 px-3 py-2">
+        <div>
+          <p className="text-[10px] font-semibold uppercase text-(--color-text-subtle)">
+            Wave readiness
+          </p>
+          <p className="text-[11px] text-(--color-text-muted)">
+            {totalComplete}/{units.length} equivalent or cut over · {waves.length} waves
+          </p>
+        </div>
+        <ShieldCheck size={14} className="text-(--color-text-subtle)" />
+      </header>
+      <div className="grid grid-cols-2 border-t border-(--color-border) xl:grid-cols-3">
+        {waves.map((wave) => {
+          const waveUnits = units.filter((unit) => unit.wave === wave)
+          const complete = waveUnits.filter((unit) =>
+            ['equivalent', 'cutover'].includes(unit.phase),
+          ).length
+          const ready = waveUnits.filter(
+            (unit) => unit.next_action?.allowed && unit.claim === null,
+          ).length
+          const blocked = waveUnits.filter(
+            (unit) => !unit.state_verified || (unit.next_action && !unit.next_action.allowed),
+          ).length
+          const active = waveUnits.filter((unit) => unit.claim !== null).length
+          const pct = waveUnits.length > 0 ? (complete / waveUnits.length) * 100 : 0
+          return (
+            <div
+              key={wave ?? 'unassigned'}
+              className="min-w-0 border-b border-(--color-border) px-3 py-2 sm:border-r xl:[&:nth-child(3n)]:border-r-0"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex min-w-0 items-center gap-1 font-medium text-(--color-text)">
+                  <span className="truncate text-xs">
+                    {wave === null ? 'Unassigned' : `Wave ${wave}`}
+                  </span>
+                  {wave !== null && (
+                    <button
+                      type="button"
+                      onClick={() => onConfigureCutover(wave)}
+                      aria-label={`Configure wave ${wave} cutover readiness`}
+                      title="Cutover readiness checklist"
+                      className="rounded p-0.5 text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-accent)"
+                    >
+                      <ShieldCheck size={10} />
+                    </button>
+                  )}
+                </span>
+                <span className="shrink-0 text-[10px] text-(--color-text-subtle)">
+                  {complete}/{waveUnits.length} · {pct.toFixed(0)}%
+                </span>
+              </div>
+              <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-(--bg-key)">
                 <div className="h-full bg-(--color-success)" style={{ width: `${pct}%` }} />
               </div>
-              <span className="w-14 shrink-0 text-[10px] text-(--color-text-subtle)">
-                {complete}/{waveUnits.length}
-              </span>
+              <p className="mt-1.5 flex flex-wrap gap-x-2 text-[9px] text-(--color-text-subtle)">
+                <span className="text-(--color-success)">{ready} ready</span>
+                <span className={blocked > 0 ? 'text-(--color-error)' : undefined}>
+                  {blocked} blocked
+                </span>
+                <span className={active > 0 ? 'text-(--color-accent)' : undefined}>
+                  {active} live
+                </span>
+              </p>
             </div>
-            <span className="text-right text-(--color-success)">{ready}</span>
-            <span className="text-right text-(--color-error)">{blocked}</span>
-            <span className="hidden text-right text-(--color-accent) sm:block">{active}</span>
-          </div>
-        )
-      })}
-    </div>
+          )
+        })}
+      </div>
+    </section>
   )
 }
 
@@ -977,13 +1236,13 @@ function UnitQueue({
 }) {
   if (units.length === 0) {
     return (
-      <div className="rounded-md border border-dashed border-(--color-border) px-3 py-8 text-center text-xs text-(--color-text-subtle)">
+      <div className="px-3 py-8 text-center text-xs text-(--color-text-subtle)">
         No units in this queue.
       </div>
     )
   }
   return (
-    <div className="overflow-hidden rounded-md border border-(--color-border)">
+    <div className="overflow-hidden">
       <div className="hidden grid-cols-[minmax(12rem,1.5fr)_7rem_4rem_minmax(10rem,1fr)_8rem] gap-3 bg-(--bg-key) px-3 py-1.5 text-[10px] font-semibold uppercase text-(--color-text-subtle) md:grid">
         <span>Unit</span>
         <span>Phase</span>
@@ -1288,27 +1547,90 @@ function PhaseBar({ counts, total }: { counts: AimPhaseCounts; total: number }) 
   )
 }
 
-function MetricCard({
+function ProjectTelemetry({
+  total,
+  equivalentPct,
+  ready,
+  blocked,
+  active,
+  approvals,
+  counts,
+  updatedAt,
+}: {
+  total: number
+  equivalentPct: number
+  ready: number
+  blocked: number
+  active: number
+  approvals: number
+  counts: AimPhaseCounts | undefined
+  updatedAt: number
+}) {
+  return (
+    <div>
+      <div className="grid grid-cols-2 divide-x divide-y divide-(--color-border) sm:grid-cols-3 sm:divide-y-0 lg:grid-cols-[1.25fr_repeat(4,minmax(0,1fr))]">
+        <div className="col-span-2 px-4 py-2.5 sm:col-span-1">
+          <div className="flex items-baseline justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-semibold uppercase text-(--color-text-subtle)">
+                Migration progress
+              </p>
+              <p className="mt-0.5 text-lg font-medium text-(--color-text)">
+                {equivalentPct.toFixed(1)}%
+                <span className="ml-1.5 text-[10px] font-normal text-(--color-text-subtle)">
+                  {total} units
+                </span>
+              </p>
+            </div>
+            {updatedAt > 0 && (
+              <span
+                className="flex items-center gap-1 text-[9px] text-(--color-text-subtle)"
+                title={`Last synchronized ${new Date(updatedAt).toLocaleString()}`}
+              >
+                <RefreshCw size={9} />
+                {new Date(updatedAt).toLocaleTimeString([], {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </span>
+            )}
+          </div>
+        </div>
+        <TelemetryValue label="Ready next" value={ready} tone="success" />
+        <TelemetryValue label="Blocked" value={blocked} tone="error" />
+        <TelemetryValue label="In flight" value={active} tone="accent" />
+        <TelemetryValue label="Approvals" value={approvals} tone="warning" />
+      </div>
+      {counts && total > 0 && (
+        <div className="border-t border-(--color-border) px-4 py-2">
+          <PhaseBar counts={counts} total={total} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TelemetryValue({
   label,
   value,
-  tone = 'default',
+  tone,
 }: {
   label: string
-  value: string | number
-  tone?: 'default' | 'success' | 'error' | 'accent'
+  value: number
+  tone: 'success' | 'error' | 'accent' | 'warning'
 }) {
-  const valueTone =
+  const toneClass =
     tone === 'success'
       ? 'text-(--color-success)'
       : tone === 'error'
         ? 'text-(--color-error)'
         : tone === 'accent'
           ? 'text-(--color-accent)'
-          : 'text-(--color-text)'
+          : 'text-(--color-warning,orange)'
   return (
-    <div className="rounded bg-(--bg-key) px-3 py-2">
-      <p className="text-[10px] text-(--color-text-subtle)">{label}</p>
-      <p className={cn('text-base font-medium', valueTone)}>{value}</p>
+    <div className="px-3 py-2.5">
+      <p className="text-[10px] font-semibold uppercase text-(--color-text-subtle)">{label}</p>
+      <p className={cn('mt-0.5 text-lg font-medium', toneClass)}>{value}</p>
     </div>
   )
 }
