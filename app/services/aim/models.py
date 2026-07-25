@@ -160,9 +160,7 @@ class GoldenCaseMeta(BaseModel):
                 if not value
             ]
             if missing:
-                raise ValueError(
-                    "captured golden cases require " + ", ".join(missing)
-                )
+                raise ValueError("captured golden cases require " + ", ".join(missing))
         if self.provenance == "prod_log_replay" and (
             not self.environment_fingerprint or not self.capture_command
         ):

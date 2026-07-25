@@ -421,6 +421,15 @@ def evaluate_pipeline(
                     "aim-capture-golden-contract",
                 }:
                     selected.append(unit_key)
+                    from app.services.aim.business_rules import (
+                        business_rule_review_ready,
+                    )
+
+                    rules_ready, rules_blocker = business_rule_review_ready(
+                        kb_root, unit_key
+                    )
+                    if not rules_ready:
+                        blockers.append(rules_blocker)
                     if (
                         _PHASE_RANK.get(frontmatter.phase, -1)
                         < _PHASE_RANK["understood"]
@@ -491,6 +500,15 @@ def evaluate_pipeline(
                         blockers.append(str(exc))
                 else:
                     selected.append(unit_key)
+                    from app.services.aim.business_rules import (
+                        business_rule_review_ready,
+                    )
+
+                    rules_ready, rules_blocker = business_rule_review_ready(
+                        kb_root, unit_key
+                    )
+                    if not rules_ready:
+                        blockers.append(rules_blocker)
                     if frontmatter.phase != "converted":
                         blockers.append(
                             f"unit {unit_key} is {frontmatter.phase}, not converted"
@@ -535,7 +553,9 @@ def evaluate_pipeline(
                             validate_expected_integrity(case_dir, golden_meta)
                             if (kb_root / "aim.yaml").is_file():
                                 from app.services.aim.canonicalize import load_profile
-                                from app.services.aim.rulebook import resolve_rulebook_dir
+                                from app.services.aim.rulebook import (
+                                    resolve_rulebook_dir,
+                                )
 
                                 project_manifest = kb_store.read_manifest(kb_root)
                                 profile_id = (
@@ -695,9 +715,10 @@ def evaluate_transition(
         if not rules_ready:
             blockers.append(rules_blocker)
         conventions = kb_root / "target-conventions.md"
-        if not conventions.is_file() or not conventions.read_text(
-            encoding="utf-8"
-        ).strip():
+        if (
+            not conventions.is_file()
+            or not conventions.read_text(encoding="utf-8").strip()
+        ):
             blockers.append("target-conventions.md is empty or missing")
         elif "baseline pending" in conventions.read_text(encoding="utf-8").lower():
             blockers.append("target-conventions.md baseline is pending")
@@ -721,6 +742,11 @@ def evaluate_transition(
         if not conversion_verified:
             blockers.append("passing target verification evidence is missing")
     elif target_phase == "equivalent":
+        from app.services.aim.business_rules import business_rule_review_ready
+
+        rules_ready, rules_blocker = business_rule_review_ready(kb_root, unit_key)
+        if not rules_ready:
+            blockers.append(rules_blocker)
         if not compare_pass:
             blockers.append("passing compare evidence is missing")
     elif target_phase == "cutover":

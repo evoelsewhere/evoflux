@@ -919,6 +919,7 @@ async def list_aim_units(
     wave: int | None = None,
 ) -> list[AimUnitOut]:
     from app.services.aim import kb_store
+    from app.services.aim.business_rules import business_rule_review_ready
     from app.services.aim.models import UNIT_PHASE_NEXT_PIPELINE, next_unit_phase
     from app.services.aim.project import resolve_kb_workspace_path
     from app.services.aim.readiness import evaluate_pipeline
@@ -973,6 +974,13 @@ async def list_aim_units(
                 )
             pipeline = UNIT_PHASE_NEXT_PIPELINE.get(row.phase)
             target_phase = next_unit_phase(row.phase)
+            if row.phase == "understood":
+                rules_ready, _rules_blocker = business_rule_review_ready(
+                    kb_root, f"{row.module}/{row.name}"
+                )
+                if not rules_ready:
+                    pipeline = "aim-review-rules"
+                    target_phase = "understood"
             if pipeline and target_phase:
                 readiness = evaluate_pipeline(
                     kb_root,
