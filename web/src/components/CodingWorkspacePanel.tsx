@@ -128,6 +128,7 @@ export function CodingWorkspacePanel({
   sessionId = null,
   projectId = null,
   isWorking = false,
+  desktopOverlayInner = false,
 }: {
   workspace: string
   open: boolean
@@ -139,6 +140,7 @@ export function CodingWorkspacePanel({
   sessionId?: string | null
   projectId?: string | null
   isWorking?: boolean
+  desktopOverlayInner?: boolean
 }) {
   const [tab, setTab] = useState<'files' | 'changed' | 'graph' | 'progress'>(initialTab)
   const [scOpen, setScOpen] = useState(false)
@@ -177,6 +179,7 @@ export function CodingWorkspacePanel({
       maxWidth={Math.min(720, Math.max(360, Math.floor((typeof window === 'undefined' ? 720 : window.innerWidth) - 320)))}
       mobileOverlay
       desktopOverlay
+      desktopOverlayInner={desktopOverlayInner}
       mobile={mobile}
       resizeLabel="Resize workspace panel"
       className="bg-(--bg-page)"

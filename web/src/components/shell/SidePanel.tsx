@@ -23,6 +23,7 @@
  * BrowserViewer keeps its own drag handle — only their configs are shared.
  */
 
+import { useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { motion } from 'framer-motion'
 import { X } from 'lucide-react'
@@ -48,6 +49,16 @@ interface SidePanelProps {
   forceOverlay?: boolean
   /** Desktop right-edge drawer that overlays content without shrinking it. */
   desktopOverlay?: boolean
+  /** Extra right offset for desktop overlays so sibling drawers can sit beside each other. */
+  desktopOverlayOffset?: number
+  /** Whether a desktop overlay keeps its drop shadow. */
+  desktopOverlayShadow?: boolean
+  /**
+   * When true the panel renders as a normal relative flex column (no fixed
+   * positioning) so it can sit inside a parent fixed container alongside
+   * a sibling overlay panel without offset arithmetic.
+   */
+  desktopOverlayInner?: boolean
   /** Mobile state for a `mobileOverlay` panel — defaults to useIsMobile(). */
   mobile?: boolean
   /**
@@ -74,6 +85,8 @@ interface SidePanelProps {
   className?: string
   /** Extra classes on the inner column wrapper (e.g. the traffic-light pt-10). */
   contentClassName?: string
+  /** Emits the current panel width so sibling overlays can align beside it. */
+  onWidthChange?: (width: number) => void
   children: ReactNode
 }
 
@@ -85,6 +98,9 @@ export function SidePanel({
   mobileOverlay = false,
   forceOverlay = false,
   desktopOverlay = false,
+  desktopOverlayOffset = 0,
+  desktopOverlayShadow = true,
+  desktopOverlayInner = false,
   mobile: mobileProp,
   animated = true,
   width: widthOverride,
@@ -96,6 +112,7 @@ export function SidePanel({
   ariaLabel,
   className,
   contentClassName,
+  onWidthChange,
   children,
 }: SidePanelProps) {
   const detectedMobile = useIsMobile()
@@ -103,7 +120,7 @@ export function SidePanel({
   const motionPreset = useMotionPreset()
   const breakpointOverlay = mobileOverlay && (mobileProp ?? detectedMobile)
   const overlay = forceOverlay || breakpointOverlay
-  const fixedDesktopDrawer = desktopOverlay && !overlay
+  const fixedDesktopDrawer = desktopOverlay && !overlay && !desktopOverlayInner
   const resizable = useResizableWidth({
     storageKey,
     defaultWidth,
@@ -114,27 +131,41 @@ export function SidePanel({
   })
   const width = widthOverride ?? resizable.width
 
+  useEffect(() => {
+    onWidthChange?.(width)
+  }, [onWidthChange, width])
+
   // Mobile and reduced-motion both degrade the open/close animation to a
   // fade — width-tweening a full-screen overlay (or against the user's
   // motion preference) is wrong. Matches the panels' pre-extraction code.
   const fade = prefersReducedMotion || overlay
   const hasHeader = title != null || headerActions != null || onClose != null
+  const panelStyle = overlay
+    ? { width: '100%' }
+    : fixedDesktopDrawer
+    ? { right: desktopOverlayOffset }
+    : undefined
 
   return (
     <motion.aside
-      style={overlay ? { width: '100%' } : undefined}
+      style={panelStyle}
       initial={!animated ? false : fade ? { opacity: 0 } : { width: 0 }}
       animate={fade ? { opacity: 1 } : { width }}
       exit={fade ? { opacity: 0 } : { width: 0 }}
       transition={animated ? motionPreset.transition : { duration: 0 }}
       className={cn(
         forceOverlay
-          ? 'fixed inset-0 z-(--z-overlay) min-h-0 w-full max-w-none overflow-hidden border-l border-(--color-border) shadow-xl'
+          ? 'fixed inset-0 z-(--z-overlay) box-border min-h-0 w-full max-w-none overflow-hidden border-l border-(--color-border) shadow-xl'
           : fixedDesktopDrawer
-          ? 'fixed inset-y-0 right-0 z-(--z-overlay) flex min-h-0 shrink-0 flex-col overflow-hidden border-l border-(--color-border) shadow-xl'
+          ? cn(
+              'fixed inset-y-0 right-0 z-(--z-overlay) box-border flex min-h-0 shrink-0 flex-col overflow-hidden border-l border-(--color-border)',
+              desktopOverlayShadow ? 'shadow-xl' : 'shadow-none',
+            )
+          : desktopOverlayInner && !overlay
+          ? 'relative box-border flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-l border-(--color-border)'
           : mobileOverlay
-          ? 'fixed bottom-0 right-0 z-(--z-overlay) min-h-0 w-full overflow-hidden border-l border-(--color-border) shadow-xl md:relative md:inset-y-auto md:right-auto md:z-auto md:w-auto md:shrink-0 md:shadow-none'
-          : 'relative flex h-full shrink-0 flex-col overflow-hidden border-l border-(--color-border)',
+          ? 'fixed bottom-0 right-0 z-(--z-overlay) box-border min-h-0 w-full overflow-hidden border-l border-(--color-border) shadow-xl md:relative md:inset-y-auto md:right-auto md:z-auto md:w-auto md:shrink-0 md:shadow-none'
+          : 'relative box-border flex h-full shrink-0 flex-col overflow-hidden border-l border-(--color-border)',
         breakpointOverlay && !forceOverlay && 'mobile-safe-top max-w-none',
         forceOverlay && 'max-w-none',
         className,
