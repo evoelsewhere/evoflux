@@ -254,6 +254,72 @@ async def test_aim_readiness_blocks_active_claims_before_run(client, tmp_path):
     ]
     assert len(claim_blockers) == 1
 
+    options_response = await client.get(
+        f"/api/team/projects/{project_id}/aim/readiness-options",
+        params={"pipeline": "aim-understand"},
+    )
+
+    assert options_response.status_code == 200
+    assert options_response.json() == {
+        "pipeline": "aim-understand",
+        "units": [],
+        "waves": [],
+    }
+
+
+@pytest.mark.asyncio
+async def test_suggestions_are_live_and_manual_generation_writes_snapshot(
+    client, tmp_path
+):
+    from app.services.aim.kb_store import write_unit
+
+    source = _make_local_repo(tmp_path, "suggest-source")
+    target = _make_local_repo(tmp_path, "suggest-target")
+    kb_path = tmp_path / "suggest-kb"
+    create_resp = await client.post(
+        "/api/team/projects/aim",
+        json={
+            "name": "suggest-project",
+            "source_paths": [str(source)],
+            "target_path": str(target),
+            "kb_path": str(kb_path),
+        },
+    )
+    project_id = create_resp.json()["id"]
+    write_unit(kb_path, "shared", "DATE", kind="utility", phase="inventory")
+    write_unit(
+        kb_path,
+        "core",
+        "PAY",
+        kind="program",
+        phase="inventory",
+        depends_on=["shared/DATE"],
+    )
+    reindex = await client.post(f"/api/team/projects/{project_id}/aim/reindex")
+    assert reindex.status_code == 200
+
+    preview = await client.get(f"/api/team/projects/{project_id}/aim/suggestions")
+    assert preview.status_code == 200
+    assert preview.json()["enabled"] is False
+    pay = next(
+        action
+        for action in preview.json()["actions"]
+        if action["id"] == "aim-understand:core/PAY"
+    )
+    assert pay["scope_units"] == ["shared/DATE", "core/PAY"]
+
+    generated = await client.post(f"/api/team/projects/{project_id}/aim/suggestions")
+    assert generated.status_code == 200
+    assert generated.json()["enabled"] is True
+    assert generated.json()["stale"] is False
+    assert (kb_path / "planning/workflow-suggestions.yaml").is_file()
+
+    write_unit(kb_path, "core", "TAX", kind="program", phase="inventory")
+    refreshed = await client.get(f"/api/team/projects/{project_id}/aim/suggestions")
+    assert refreshed.status_code == 200
+    assert refreshed.json()["stale"] is True
+    assert any(action["unit"] == "core/TAX" for action in refreshed.json()["actions"])
+
 
 @pytest.mark.asyncio
 async def test_units_expose_backend_next_action_and_template_blocker(client, tmp_path):

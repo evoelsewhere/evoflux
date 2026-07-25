@@ -17,6 +17,7 @@ from app.agent.tools.builtin.aim import (
     aim_compare,
     aim_readiness,
     aim_rules,
+    aim_suggestions,
     aim_understanding,
     aim_units,
 )
@@ -121,6 +122,7 @@ def test_aim_tools_excluded_from_forge_and_coding_tiers():
     assert "aim_compare" not in forge_names
     assert "aim_readiness" not in forge_names
     assert "aim_rules" not in forge_names
+    assert "aim_suggestions" not in forge_names
     assert "aim_understanding" not in forge_names
     assert "aim_claim" not in forge_names
     assert "aim_execute" not in forge_names
@@ -130,6 +132,7 @@ def test_aim_tools_excluded_from_forge_and_coding_tiers():
     assert "aim_compare" not in coding_names
     assert "aim_readiness" not in coding_names
     assert "aim_rules" not in coding_names
+    assert "aim_suggestions" not in coding_names
     assert "aim_understanding" not in coding_names
     assert "aim_claim" not in coding_names
     assert "aim_execute" not in coding_names
@@ -144,10 +147,29 @@ def test_aim_tools_included_in_aim_tier():
     assert "aim_compare" in aim_names
     assert "aim_readiness" in aim_names
     assert "aim_rules" in aim_names
+    assert "aim_suggestions" in aim_names
     assert "aim_understanding" in aim_names
     assert "aim_claim" in aim_names
     assert "aim_execute" in aim_names
     assert "aim_verify" in aim_names
+
+
+@pytest.mark.asyncio
+async def test_aim_suggestions_tool_generates_audited_plan(sandbox_workspace):
+    kb_store.write_unit(
+        sandbox_workspace,
+        "m",
+        "A",
+        kind="program",
+        phase="inventory",
+    )
+
+    result = json.loads(await aim_suggestions(action="generate"))
+
+    assert result["status"] == "generated"
+    assert result["counts"]["ready"] == 1
+    assert result["actions"][0]["unit"] == "m/A"
+    assert (sandbox_workspace / result["plan_path"]).is_file()
 
 
 @pytest.mark.asyncio

@@ -11,6 +11,7 @@ import { AimKbPanel } from '@/components/AimKbPanel'
 import { AimRulebookPanel } from '@/components/AimRulebookPanel'
 import { CommandPalette, type Command } from '@/components/CommandPalette'
 import { AppShell } from '@/components/shell/AppShell'
+import { Skeleton } from '@/components/ui/skeleton'
 import { useAimProjectsQuery } from '@/queries/useAimProjectsQuery'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useIsMobile } from '@/hooks/use-mobile'
@@ -231,13 +232,46 @@ function EmptyState({
   notFound: boolean
   onNewProject: () => void
 }) {
+  if (loading) {
+    return (
+      <div className="h-full p-4" aria-label="Loading AIM project">
+        <div className="mx-auto w-full max-w-5xl space-y-4">
+          <div className="flex items-center justify-between gap-4 border-b border-(--color-border) pb-3">
+            <Skeleton className="h-4 w-36" />
+            <Skeleton className="h-8 w-48" />
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {Array.from({ length: 4 }, (_, index) => (
+              <div key={index} className="space-y-2 rounded-md border border-(--color-border) p-3">
+                <Skeleton className="h-2.5 w-16" />
+                <Skeleton className="h-6 w-12" />
+              </div>
+            ))}
+          </div>
+          <div className="grid gap-3 md:grid-cols-[2fr_1fr]">
+            <div className="space-y-3 rounded-md border border-(--color-border) p-3">
+              <Skeleton className="h-3 w-28" />
+              {Array.from({ length: 5 }, (_, index) => (
+                <Skeleton key={index} className="h-10 w-full" />
+              ))}
+            </div>
+            <div className="space-y-3 rounded-md border border-(--color-border) p-3">
+              <Skeleton className="h-3 w-24" />
+              {Array.from({ length: 4 }, (_, index) => (
+                <Skeleton key={index} className="h-12 w-full" />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-full items-center justify-center">
       <div className="text-center">
         <p className="text-sm text-(--color-text-muted)">
-          {loading
-            ? 'Loading projects…'
-            : notFound
+          {notFound
               ? 'Project not found.'
               : hasProjects
                 ? 'Pick a project from the sidebar.'

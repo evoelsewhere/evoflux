@@ -48,6 +48,8 @@ class PipelineReadiness:
     blockers: tuple[str, ...]
     warnings: tuple[str, ...] = ()
     selected_units: tuple[str, ...] = ()
+    primary_unit: str | None = None
+    included_dependencies: tuple[str, ...] = ()
 
     @property
     def allowed(self) -> bool:
@@ -66,6 +68,22 @@ class PipelineReadiness:
             "warnings": list(self.warnings),
             "selected_units": list(self.selected_units),
             "selected_count": len(self.selected_units),
+            "primary_unit": self.primary_unit,
+            "included_dependencies": list(self.included_dependencies),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class PipelineReadinessOptions:
+    pipeline: str
+    units: tuple[str, ...]
+    waves: tuple[int, ...]
+
+    def to_dict(self) -> dict:
+        return {
+            "pipeline": self.pipeline,
+            "units": list(self.units),
+            "waves": list(self.waves),
         }
 
 
@@ -300,6 +318,7 @@ def evaluate_pipeline(
 
     capability_by_pipeline = {
         "aim-assess": "inventory",
+        "aim-suggest-workflow": "inventory",
         "aim-understand": "understand",
         "aim-review-rules": "understand",
         "aim-design-unit": "design",
@@ -330,6 +349,9 @@ def evaluate_pipeline(
     if pipeline == "aim-assess":
         if units:
             warnings.append(f"assessment will refresh {len(units)} existing units")
+    elif pipeline == "aim-suggest-workflow":
+        if not units:
+            blockers.append("assessment inventory is empty")
     elif pipeline in {
         "aim-understand",
         "aim-review-rules",
@@ -655,11 +677,68 @@ def evaluate_pipeline(
             "tool permissions still apply"
         )
 
+    primary_unit = unit if unit in selected else None
+    included_dependencies = (
+        tuple(selected_unit for selected_unit in selected if selected_unit != unit)
+        if pipeline == "aim-understand" and primary_unit is not None
+        else ()
+    )
     return PipelineReadiness(
         pipeline=pipeline,
         blockers=tuple(blockers),
         warnings=tuple(warnings),
         selected_units=tuple(selected),
+        primary_unit=primary_unit,
+        included_dependencies=included_dependencies,
+    )
+
+
+def evaluate_pipeline_options(
+    kb_root: Path,
+    pipeline: str,
+    *,
+    case_set: str | None = None,
+    overwrite: bool = False,
+    claimed_units: frozenset[str] = frozenset(),
+) -> PipelineReadinessOptions:
+    """Return unit and wave inputs that pass the authoritative readiness policy."""
+    units = kb_store.list_units(kb_root)
+    unit_options: list[str] = []
+    for module, name, frontmatter, _body in units:
+        unit_key = f"{module}/{name}"
+        result = evaluate_pipeline(
+            kb_root,
+            pipeline,
+            unit=unit_key,
+            wave=frontmatter.wave,
+            case_set=case_set,
+            overwrite=overwrite,
+        )
+        if result.allowed and claimed_units.isdisjoint(result.selected_units):
+            unit_options.append(unit_key)
+
+    wave_options: list[int] = []
+    for wave in sorted(
+        {
+            frontmatter.wave
+            for _, _, frontmatter, _ in units
+            if frontmatter.wave is not None
+        }
+    ):
+        result = evaluate_pipeline(
+            kb_root,
+            pipeline,
+            wave=wave,
+            case_set=case_set,
+            overwrite=overwrite,
+        )
+        if result.allowed and claimed_units.isdisjoint(result.selected_units):
+            wave_options.append(wave)
+
+    return PipelineReadinessOptions(
+        pipeline=pipeline,
+        units=tuple(sorted(unit_options)),
+        waves=tuple(wave_options),
     )
 
 

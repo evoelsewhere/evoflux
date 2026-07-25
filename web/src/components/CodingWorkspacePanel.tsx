@@ -20,7 +20,9 @@ import { NativeFileTree } from './NativeFileTree'
 import { ProjectCodeGraphPanel } from './ProjectCodeGraphPanel'
 import { TaskTimelinePanel } from './TaskTimelinePanel'
 import type { WorkspaceFileInfo } from '@/api/types'
+import { isTauriAvailable } from '@/api/tauri-workspace'
 import {
+  buildTree,
   collectChangedFiles,
   type ChangedFileStatus,
   type TreeNode,
@@ -151,6 +153,7 @@ export function CodingWorkspacePanel({
   sessionId = null,
   projectId = null,
   isWorking = false,
+  desktopOverlayInner = false,
 }: {
   workspace: string
   open: boolean
@@ -162,6 +165,7 @@ export function CodingWorkspacePanel({
   sessionId?: string | null
   projectId?: string | null
   isWorking?: boolean
+  desktopOverlayInner?: boolean
 }) {
   const preset = useMotionPreset()
   const [tab, setTab] = useState<'files' | 'changed' | 'graph' | 'progress'>(initialTab)
@@ -200,6 +204,8 @@ export function CodingWorkspacePanel({
       minWidth={360}
       maxWidth={Math.min(720, Math.max(360, Math.floor((typeof window === 'undefined' ? 720 : window.innerWidth) - 320)))}
       mobileOverlay
+      desktopOverlay
+      desktopOverlayInner={desktopOverlayInner}
       mobile={mobile}
       resizeLabel="Resize workspace panel"
       className="bg-(--bg-page)"
@@ -360,7 +366,7 @@ export function CodingWorkspacePanel({
               <p className="px-2 py-4 text-xs text-(--color-error)">Failed to load files</p>
             ) : files.data?.files.length === 0 ? (
               <p className="px-2 py-4 text-xs text-(--color-text-subtle)">No files shown</p>
-            ) : (
+            ) : isTauriAvailable() ? (
               // Native file tree (desktop-only, lazy loading)
               <NativeFileTree
                 workspaceRoot={workspace}
@@ -381,6 +387,23 @@ export function CodingWorkspacePanel({
                 }}
                 className="flex-1 overflow-auto"
               />
+            ) : (
+              // Web fallback: HTTP-based tree
+              <div className="p-2">
+                {(files.data?.files ?? []).length === 0
+                  ? <p className="px-2 py-4 text-xs text-(--color-text-subtle)">No files shown</p>
+                  : Array.from(buildTree(files.data?.files ?? []).children.values()).map((node) => (
+                      <TreeNodeView
+                        key={node.path}
+                        node={node}
+                        depth={0}
+                        selectedPath={selectedFilePath}
+                        onFileSelect={onFileSelect}
+                        changedPaths={changedPaths}
+                      />
+                    ))
+                }
+              </div>
             )
           )}
         </div>

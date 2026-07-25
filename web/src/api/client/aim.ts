@@ -18,11 +18,13 @@ import type {
   AimProjectJoinRequest,
   AimProjectSummary,
   AimReadiness,
+  AimReadinessOptions,
   AimReindexResponse,
   AimRulebook,
   AimRunListItem,
   AimRunOut,
     AimStateReconcileResponse,
+    AimSuggestionPlan,
   AimUnitOut,
   CodingProject,
 } from '../types'
@@ -180,6 +182,43 @@ export async function getAimReadiness(
     `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/aim/readiness?${params}`,
   )
   if (!res.ok) await parseDetailOrThrow(res, 'getAimReadiness')
+  return res.json()
+}
+
+export async function getAimReadinessOptions(
+  projectId: string,
+  options: {
+    pipeline: string
+    case_set?: string
+    overwrite?: boolean
+  },
+): Promise<AimReadinessOptions> {
+  const params = new URLSearchParams({ pipeline: options.pipeline })
+  if (options.case_set) params.set('case_set', options.case_set)
+  if (options.overwrite !== undefined) params.set('overwrite', String(options.overwrite))
+  const res = await fetch(
+    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/aim/readiness-options?${params}`,
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'getAimReadinessOptions')
+  return res.json()
+}
+
+export async function getAimSuggestions(projectId: string): Promise<AimSuggestionPlan> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/aim/suggestions`,
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'getAimSuggestions')
+  return res.json()
+}
+
+export async function generateAimSuggestions(
+  projectId: string,
+): Promise<AimSuggestionPlan> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/aim/suggestions`,
+    { method: 'POST' },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'generateAimSuggestions')
   return res.json()
 }
 
