@@ -58,6 +58,47 @@ def _cap_output(output: dict | None) -> dict | None:
     return {"_truncated": True, "text": encoded[:_OUTPUT_CAP_BYTES]}
 
 
+def _normalize_agent_output(output: dict | None) -> dict:
+    normalized = dict(output or {})
+    if isinstance(normalized.get("text"), str):
+        return normalized
+
+    sections: list[str] = []
+    summary = normalized.get("summary")
+    if isinstance(summary, str) and summary.strip():
+        sections.append(summary.strip())
+
+    for key, heading in (
+        ("findings", "Findings"),
+        ("evidence", "Evidence"),
+        ("next_actions", "Next actions"),
+    ):
+        values = normalized.get(key)
+        if isinstance(values, list):
+            items = [
+                value.strip()
+                for value in values
+                if isinstance(value, str) and value.strip()
+            ]
+            if items:
+                sections.append(
+                    f"### {heading}\n" + "\n".join(f"- {item}" for item in items)
+                )
+
+    verification = normalized.get("verification")
+    if isinstance(verification, dict):
+        details = []
+        for key, label in (("method", "Method"), ("result", "Result")):
+            value = verification.get(key)
+            if isinstance(value, str) and value.strip():
+                details.append(f"- **{label}:** {value.strip()}")
+        if details:
+            sections.append("### Verification\n" + "\n".join(details))
+
+    normalized["text"] = "\n\n".join(sections) or json.dumps(normalized, default=str)
+    return normalized
+
+
 @dataclass
 class ExecutionState:
     execution_id: UUID
@@ -378,7 +419,7 @@ class WorkflowRunner:
             if self.active.get(state.session_id) is state:
                 await self._finish(state, status="stopped")
             return None
-        output = state.captured_output or {"text": ""}
+        output = _normalize_agent_output(state.captured_output)
         await self._persist_node_end(node_run_id, status="succeeded", output=output)
         return output
 
