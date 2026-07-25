@@ -15,13 +15,12 @@
  * active pipeline run.
  */
 
-import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { AnimatePresence, motion } from 'framer-motion'
 import {
-  ChevronDown,
+  Activity,
   ChevronRight,
+  FolderKanban,
   Plus,
   Search,
 } from 'lucide-react'
@@ -33,9 +32,7 @@ import {
   SidebarSearchTrigger,
   SidebarFooter,
 } from '@/components/shell/SidebarShell'
-import { CollapsibleSection } from '@/components/shell/CollapsibleSection'
 import { Skeleton } from '@/components/ui/skeleton'
-import { STORAGE_KEYS } from '@/lib/storage-keys'
 import {
   AIM_FEATURES,
   saveLastAimProject,
@@ -47,32 +44,6 @@ import { queryKeys } from '@/queries/keys'
 import { usePlatform } from '@/hooks/use-platform'
 import { useUIStore } from '@/stores/useUIStore'
 import { cn } from '@/lib/utils'
-
-// Runs & Reports folded into Pipelines (its run table now shows the
-// aim_runs verdict inline via a Report side panel) — one less place to
-// look for "what happened", since every compare/convert/test verdict
-// already traces back to a pipeline run.
-const AIM_EXPANDED_KEY = STORAGE_KEYS.aim.expanded
-
-function loadAimExpanded(): string[] {
-  try {
-    const raw = localStorage.getItem(AIM_EXPANDED_KEY)
-    if (!raw) return []
-    const parsed: unknown = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return []
-    return parsed.filter((id): id is string => typeof id === 'string')
-  } catch {
-    return []
-  }
-}
-
-function saveAimExpanded(ids: string[]): void {
-  try {
-    localStorage.setItem(AIM_EXPANDED_KEY, JSON.stringify(ids))
-  } catch {
-    // ignore storage failures
-  }
-}
 
 interface AimSidebarProps {
   activeProjectId?: string
@@ -100,15 +71,7 @@ export function AimSidebar({
   const collapsed = useUIStore((s) => s.sidebarCollapsed)
   const projectsQuery = useAimProjectsQuery()
   const projects = projectsQuery.data ?? []
-  // The active project is always expanded; others remember their toggle
-  // (persisted to localStorage as a plain string[] of project ids).
-  const [expanded, setExpanded] = useState<Set<string>>(
-    () =>
-      new Set([
-        ...loadAimExpanded(),
-        ...(activeProjectId ? [activeProjectId] : []),
-      ]),
-  )
+  const activeProject = projects.find((project) => project.id === activeProjectId)
 
   // One poll lights the running dot for every project (mirrors coding's
   // per-project running indicator without a per-project query).
@@ -122,16 +85,6 @@ export function AimSidebar({
       .filter((s) => s.running && s.project_id)
       .map((s) => s.project_id as string),
   )
-
-  const toggleProject = (projectId: string) => {
-    setExpanded((prev) => {
-      const next = new Set(prev)
-      if (next.has(projectId)) next.delete(projectId)
-      else next.add(projectId)
-      saveAimExpanded([...next])
-      return next
-    })
-  }
 
   // Collapsed icon rail — same two-card stack as the coding sidebar's rail.
   const rail = (
@@ -186,122 +139,170 @@ export function AimSidebar({
           </div>
         )}
 
-        {/* Project list */}
-        <nav aria-label="AIM projects" className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
-          <CollapsibleSection
-            label="Projects"
-            onAdd={() => {
-              onNewProject()
-              onMobileClose?.()
-            }}
-            addLabel="New / Join migration project"
-          />
+        <nav aria-label="AIM navigation" className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 pt-3">
           {projectsQuery.isLoading ? (
             <AimProjectListSkeleton />
           ) : projects.length === 0 ? (
-            <p className="px-2 py-1.5 text-xs text-(--color-text-subtle)">
-              No migration projects yet.
-            </p>
+            <div className="px-1">
+              <div className="flex items-center justify-between pb-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-(--color-text-muted)">
+                  Migration projects
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onNewProject()
+                    onMobileClose?.()
+                  }}
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+                  aria-label="New or join migration project"
+                  title="New or join migration project"
+                >
+                  <Plus size={14} aria-hidden="true" />
+                </button>
+              </div>
+              <div className="border-y border-(--color-border) py-6 text-center">
+                <FolderKanban size={18} className="mx-auto mb-2 text-(--color-text-subtle)" aria-hidden="true" />
+                <p className="text-xs font-medium text-(--color-text-2)">No migration projects</p>
+              </div>
+            </div>
           ) : (
-            <div className="space-y-0.5">
-              {projects.map((project) => {
-                const isActive = project.id === activeProjectId
-                const isExpanded = isActive || expanded.has(project.id)
-                const hasRunning = runningProjects.has(project.id)
-                const rulebook = (
-                  project.settings?.aim as { rulebook?: { id?: string } } | undefined
-                )?.rulebook
-                return (
-                  <div key={project.id}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!isActive) {
-                          saveLastAimProject(project.id)
-                          navigate({
-                            to: '/aim/$projectId/$feature',
-                            params: { projectId: project.id, feature: 'overview' },
-                          })
-                          onMobileClose?.()
-                        } else {
-                          toggleProject(project.id)
-                        }
-                      }}
-                      className={cn(
-                        'flex w-full items-center gap-1.5 rounded-xs px-2 py-1.5 text-left text-xs transition-colors',
-                        isActive
-                          ? 'bg-(--bg-key) font-medium text-(--color-text)'
-                          : 'text-(--color-text-2) hover:bg-(--bg-key) hover:text-(--color-text)',
-                      )}
-                      title={rulebook?.id ? `${project.name} · ${rulebook.id}` : project.name}
-                    >
-                      {isExpanded ? (
-                        <ChevronDown size={12} className="shrink-0 text-(--color-text-subtle)" />
-                      ) : (
-                        <ChevronRight size={12} className="shrink-0 text-(--color-text-subtle)" />
-                      )}
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate font-medium">{project.name}</span>
-                        {rulebook?.id && (
-                          <span className="block truncate font-mono text-[10px] font-normal text-(--color-text-subtle)">
-                            {rulebook.id}
-                          </span>
-                        )}
+            <div>
+              {activeProject && (
+                <section aria-labelledby="current-migration-label" className="px-1">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span id="current-migration-label" className="text-[10px] font-semibold uppercase tracking-wider text-(--color-text-muted)">
+                      Current migration
+                    </span>
+                    {runningProjects.has(activeProject.id) && (
+                      <span className="flex items-center gap-1 rounded-full bg-(--color-accent)/10 px-1.5 py-0.5 text-[9px] font-semibold text-(--color-accent)">
+                        <Activity size={9} aria-hidden="true" />
+                        Running
                       </span>
-                      {hasRunning && (
-                        <span
-                          className="h-1.5 w-1.5 shrink-0 rounded-full bg-(--color-accent)"
-                          aria-label="Project has a running pipeline"
-                          title="A pipeline is running in this project"
-                        />
-                      )}
-                    </button>
-                    <AnimatePresence initial={false}>
-                      {isExpanded && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: 'auto', opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          className="overflow-hidden"
-                        >
-                          {/* Feature rows read as children: quieter than the
-                              project row, hung off an indent guide aligned
-                              under the chevron — same text-xs/rounded-md/px-2
-                              sizing as Coding's nested repo/session rows. */}
-                          <div className="mb-1 ml-[13px] space-y-px border-l border-(--color-border) pl-1.5 pt-0.5">
-                            {AIM_FEATURES.map(({ key, label, Icon }) => (
-                              <button
-                                key={key}
-                                type="button"
-                                onClick={() => {
-                                  saveLastAimProject(project.id)
-                                  navigate({
-                                    to: '/aim/$projectId/$feature',
-                                    params: { projectId: project.id, feature: key },
-                                  })
-                                  onMobileClose?.()
-                                }}
-                                className={cn(
-                                  'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs transition-colors',
-                                  isActive && activeFeature === key
-                                    ? 'bg-(--bg-key) font-medium text-(--color-accent)'
-                                    : 'text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)',
-                                )}
-                              >
-                                <Icon size={11} className="shrink-0" aria-hidden="true" />
-                                <span className="truncate">{label}</span>
-                                {key === 'pipelines' && hasRunning && (
-                                  <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-(--color-accent)" />
-                                )}
-                              </button>
-                            ))}
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
+                    )}
                   </div>
-                )
-              })}
+                  <div className="flex min-w-0 items-center gap-2.5 pb-2.5">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-(--bg-key) text-(--color-accent) ring-1 ring-(--color-border)">
+                      <FolderKanban size={15} aria-hidden="true" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold text-(--color-text)">
+                        {activeProject.name}
+                      </span>
+                      <span className="block truncate font-mono text-[9px] text-(--color-text-subtle)">
+                        {getRulebookId(activeProject) ?? 'No rulebook linked'}
+                      </span>
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1" aria-label={`${activeProject.name} sections`}>
+                    {AIM_FEATURES.map(({ key, label, Icon }) => {
+                      const isFeatureActive = activeFeature === key
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => {
+                            saveLastAimProject(activeProject.id)
+                            navigate({
+                              to: '/aim/$projectId/$feature',
+                              params: { projectId: activeProject.id, feature: key },
+                            })
+                            onMobileClose?.()
+                          }}
+                          className={cn(
+                            'flex h-9 min-w-0 items-center gap-2 rounded-md px-2 text-left text-[11px] font-medium transition-colors',
+                            isFeatureActive
+                              ? 'bg-(--bg-key) text-(--color-text) shadow-sm ring-1 ring-(--color-border-strong)'
+                              : 'bg-(--bg-key)/60 text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)',
+                          )}
+                          aria-current={isFeatureActive ? 'page' : undefined}
+                        >
+                          <Icon
+                            size={13}
+                            className={cn('shrink-0', isFeatureActive && 'text-(--color-accent)')}
+                            aria-hidden="true"
+                          />
+                          <span className="min-w-0 truncate">{label}</span>
+                          {key === 'pipelines' && runningProjects.has(activeProject.id) && !isFeatureActive && (
+                            <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-(--color-accent)" aria-label="Pipeline running" />
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </section>
+              )}
+
+              <section aria-labelledby="project-switcher-label" className={cn('px-1', activeProject && 'mt-4 border-t border-(--color-border) pt-3')}>
+                <div className="mb-1.5 flex items-center justify-between gap-2">
+                  <span id="project-switcher-label" className="flex min-w-0 items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-(--color-text-muted)">
+                    {activeProject ? 'Switch project' : 'Migration projects'}
+                    <span className="rounded-full bg-(--bg-key) px-1.5 py-px text-[9px] font-semibold tracking-normal text-(--color-text-subtle)">
+                      {projects.length}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onNewProject()
+                      onMobileClose?.()
+                    }}
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+                    aria-label="New or join migration project"
+                    title="New or join migration project"
+                  >
+                    <Plus size={14} aria-hidden="true" />
+                  </button>
+                </div>
+                <div className="space-y-0.5">
+                  {projects
+                    .filter((project) => project.id !== activeProject?.id)
+                    .map((project) => {
+                      const hasRunning = runningProjects.has(project.id)
+                      return (
+                        <button
+                          key={project.id}
+                          type="button"
+                          onClick={() => {
+                            saveLastAimProject(project.id)
+                            navigate({
+                              to: '/aim/$projectId/$feature',
+                              params: { projectId: project.id, feature: 'overview' },
+                            })
+                            onMobileClose?.()
+                          }}
+                          className="group flex h-11 w-full items-center gap-2 rounded-md px-1.5 text-left transition-colors hover:bg-(--bg-key)"
+                          title={getRulebookId(project) ? `${project.name} · ${getRulebookId(project)}` : project.name}
+                        >
+                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-(--bg-key) text-(--color-text-muted) transition-colors group-hover:text-(--color-text)">
+                            <FolderKanban size={13} aria-hidden="true" />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-xs font-medium text-(--color-text-2) group-hover:text-(--color-text)">
+                              {project.name}
+                            </span>
+                            <span className="block truncate font-mono text-[9px] text-(--color-text-subtle)">
+                              {getRulebookId(project) ?? 'No rulebook linked'}
+                            </span>
+                          </span>
+                          {hasRunning ? (
+                            <span className="flex shrink-0 items-center gap-1 text-[9px] font-medium text-(--color-accent)">
+                              <Activity size={9} aria-hidden="true" />
+                              Live
+                            </span>
+                          ) : (
+                            <ChevronRight size={12} className="shrink-0 text-(--color-text-subtle) opacity-0 transition-opacity group-hover:opacity-100" aria-hidden="true" />
+                          )}
+                        </button>
+                      )
+                    })}
+                  {activeProject && projects.length === 1 && (
+                    <p className="px-1.5 py-2 text-[11px] text-(--color-text-subtle)">
+                      No other projects
+                    </p>
+                  )}
+                </div>
+              </section>
             </div>
           )}
         </nav>
@@ -328,14 +329,41 @@ export function AimSidebar({
   )
 }
 
+function getRulebookId(project: {
+  settings?: Record<string, unknown> | null
+}): string | undefined {
+  return (
+    project.settings?.aim as { rulebook?: { id?: string } } | undefined
+  )?.rulebook?.id
+}
+
 function AimProjectListSkeleton() {
   return (
-    <div className="space-y-1 px-1 py-1" aria-label="Loading AIM projects">
-      {Array.from({ length: 5 }, (_, index) => (
-        <div key={index} className="flex h-10 items-center gap-2 rounded-xs px-1.5">
-          <Skeleton className="h-4 w-4 shrink-0" />
+    <div className="px-1" aria-label="Loading AIM projects">
+      <div className="mb-2 flex items-center justify-between">
+        <Skeleton className="h-2.5 w-24" />
+        <Skeleton className="h-4 w-12 rounded-full" />
+      </div>
+      <div className="flex items-center gap-2.5 pb-2.5">
+        <Skeleton className="h-8 w-8 shrink-0 rounded-md" />
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <Skeleton className="h-3 w-2/3" />
+          <Skeleton className="h-2 w-4/5" />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-1">
+        {Array.from({ length: 4 }, (_, index) => (
+          <Skeleton key={index} className="h-9 rounded-md" />
+        ))}
+      </div>
+      <div className="mb-2 mt-4 border-t border-(--color-border) pt-3">
+        <Skeleton className="h-2.5 w-24" />
+      </div>
+      {Array.from({ length: 4 }, (_, index) => (
+        <div key={index} className="flex h-11 items-center gap-2 px-1.5">
+          <Skeleton className="h-7 w-7 shrink-0 rounded-md" />
           <div className="min-w-0 flex-1 space-y-1.5">
-            <Skeleton className="h-2.5" style={{ width: `${55 + (index % 3) * 12}%` }} />
+            <Skeleton className="h-2.5" style={{ width: `${52 + (index % 3) * 13}%` }} />
             <Skeleton className="h-2 w-2/5" />
           </div>
         </div>
