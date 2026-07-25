@@ -52,16 +52,35 @@ nodes:
       action: set_project_phase
       phase: understand
 
+  - id: suggest_next
+    kind: gate
+    title: "Generate a suggested workflow?"
+    body: "Build a dependency-aware board of what to run now, what comes next, and what needs operator input. It can also be generated later from Overview."
+    choices: [generate, skip]
+
+  - id: generate_suggestions
+    kind: tool
+    tool: aim_suggestions
+    args: { action: generate }
+
+  - id: suggestions_ready
+    kind: notify
+    title: "aim-assess"
+    message: "Inventory, wave plan, and suggested next actions are ready on Overview."
+
   - id: done
     kind: notify
     title: "aim-assess"
-    message: "Inventory and wave plan are in the KB — review them on the Overview board."
+    message: "Inventory and wave plan are in the KB. Suggested next actions were skipped and can be generated later from Overview."
 
 edges:
   - { from: assess, to: approve_plan }
   - { from: approve_plan, to: advance_phase, when: approve }
   - { from: approve_plan, to: rework, when: rework }
-  - { from: advance_phase, to: done }
+  - { from: advance_phase, to: suggest_next }
+  - { from: suggest_next, to: generate_suggestions, when: generate }
+  - { from: suggest_next, to: done, when: skip }
+  - { from: generate_suggestions, to: suggestions_ready }
   - { from: rework, to: approve_rework }
   - { from: approve_rework, to: advance_phase, when: approve }
   - { from: approve_rework, to: rework_stopped, when: stop }
@@ -72,3 +91,5 @@ outputs:
   initial_decision: "{{nodes.approve_plan.output.choice}}"
   revised_summary: "{{nodes.rework.output.text}}"
   revised_decision: "{{nodes.approve_rework.output.choice}}"
+  suggestion_decision: "{{nodes.suggest_next.output.choice}}"
+  suggestion_plan_path: "{{nodes.generate_suggestions.output.plan_path}}"

@@ -480,6 +480,8 @@ export interface AimReadiness {
   warnings: string[]
   selected_units: string[]
   selected_count: number
+  primary_unit: string | null
+  included_dependencies: string[]
   claim_dependencies: Array<{
     workflow_execution_id: string
     workflow_name: string
@@ -488,6 +490,37 @@ export interface AimReadiness {
     lease_expires_at: string
     units: string[]
   }>
+}
+
+export interface AimReadinessOptions {
+  pipeline: string
+  units: string[]
+  waves: number[]
+}
+
+export interface AimSuggestionAction {
+  id: string
+  lane: 'ready' | 'active' | 'up_next' | 'needs_input'
+  pipeline: string
+  title: string
+  reason: string
+  unit: string | null
+  wave: number | null
+  phase: string | null
+  scope_units: string[]
+  depends_on: string[]
+  blockers: string[]
+  warnings: string[]
+}
+
+export interface AimSuggestionPlan {
+  enabled: boolean
+  stale: boolean
+  generated_at: string | null
+  generated_by: string | null
+  fingerprint: string
+  counts: Record<'ready' | 'active' | 'up_next' | 'needs_input', number>
+  actions: AimSuggestionAction[]
 }
 
 export interface AimProjectHealth {

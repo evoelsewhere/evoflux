@@ -1,0 +1,43 @@
+# AIM planning workflow - generate dependency-aware next actions without transitions.
+schema_version: 1
+name: aim-suggest-workflow
+description: Build an auditable dependency-aware plan of the next AIM actions
+scope: aim
+
+nodes:
+  - id: readiness
+    kind: tool
+    tool: aim_readiness
+    args: { pipeline: aim-suggest-workflow }
+
+  - id: readiness_branch
+    kind: switch
+    value: "{{nodes.readiness.output.status}}"
+
+  - id: blocked
+    kind: notify
+    title: "aim-suggest-workflow blocked"
+    message: "A suggestion plan cannot be generated: {{nodes.readiness.output.blockers | json}}"
+
+  - id: generate
+    kind: tool
+    tool: aim_suggestions
+    args: { action: generate }
+
+  - id: done
+    kind: notify
+    title: "aim-suggest-workflow"
+    message: "Suggested next actions were generated from current phases, dependencies, evidence, and claims."
+
+edges:
+  - { from: readiness, to: readiness_branch }
+  - { from: readiness_branch, to: blocked, when: blocked }
+  - { from: readiness_branch, to: generate, when: ready }
+  - { from: generate, to: done }
+
+outputs:
+  readiness_status: "{{nodes.readiness.output.status}}"
+  blockers: "{{nodes.readiness.output.blockers | json}}"
+  plan_path: "{{nodes.generate.output.plan_path}}"
+  fingerprint: "{{nodes.generate.output.fingerprint}}"
+  action_count: "{{nodes.generate.output.actions | length}}"

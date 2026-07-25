@@ -5,7 +5,11 @@ from app.services.aim.kb_store import write_cutover_checklist, write_unit
 from app.services.aim.business_rules import confirm_no_business_rules
 from app.services.aim.golden import stamp_expected_integrity
 from app.services.aim.models import CutoverChecklist
-from app.services.aim.readiness import evaluate_pipeline, evaluate_transition
+from app.services.aim.readiness import (
+    evaluate_pipeline,
+    evaluate_pipeline_options,
+    evaluate_transition,
+)
 
 
 def test_transition_rejects_phase_skip(tmp_path: Path):
@@ -246,9 +250,11 @@ def test_understand_pipeline_expands_unresolved_dependencies(tmp_path: Path):
 
     assert result.allowed
     assert result.selected_units == ("shared/DATE", "core/PAY")
+    assert result.primary_unit == "core/PAY"
+    assert result.included_dependencies == ("shared/DATE",)
 
 
-def test_understand_pipeline_orders_transitive_dependency_closure(tmp_path: Path):
+def test_understand_pipeline_skips_already_understood_dependencies(tmp_path: Path):
     write_unit(
         tmp_path,
         "core",
@@ -262,29 +268,58 @@ def test_understand_pipeline_orders_transitive_dependency_closure(tmp_path: Path
         "shared",
         "DATE",
         kind="utility",
-        phase="inventory",
-        depends_on=["shared/CALENDAR"],
+        phase="understood",
+        body="Documented date behavior.",
     )
-    write_unit(tmp_path, "shared", "CALENDAR", kind="utility", phase="inventory")
 
     result = evaluate_pipeline(tmp_path, "aim-understand", unit="core/PAY")
 
     assert result.allowed
-    assert result.selected_units == (
-        "shared/CALENDAR",
-        "shared/DATE",
-        "core/PAY",
-    )
+    assert result.selected_units == ("core/PAY",)
+    assert result.included_dependencies == ()
 
 
-def test_understand_pipeline_rejects_dependency_cycle(tmp_path: Path):
+def test_understand_pipeline_excludes_same_wave_siblings(tmp_path: Path):
     write_unit(
         tmp_path,
         "core",
         "PAY",
         kind="program",
         phase="inventory",
+        wave=3,
+    )
+    write_unit(
+        tmp_path,
+        "core",
+        "TAX",
+        kind="program",
+        phase="inventory",
+        wave=3,
+    )
+
+    result = evaluate_pipeline(tmp_path, "aim-understand", unit="core/PAY")
+
+    assert result.allowed
+    assert result.selected_units == ("core/PAY",)
+
+
+def test_understand_options_only_include_unblocked_unclaimed_units(tmp_path: Path):
+    write_unit(
+        tmp_path,
+        "core",
+        "PAY",
+        kind="program",
+        phase="inventory",
+        wave=3,
         depends_on=["shared/DATE"],
+    )
+    write_unit(
+        tmp_path,
+        "core",
+        "TAX",
+        kind="program",
+        phase="inventory",
+        wave=3,
     )
     write_unit(
         tmp_path,
@@ -292,16 +327,17 @@ def test_understand_pipeline_rejects_dependency_cycle(tmp_path: Path):
         "DATE",
         kind="utility",
         phase="inventory",
-        depends_on=["core/PAY"],
+        wave=1,
     )
 
-    result = evaluate_pipeline(tmp_path, "aim-understand", unit="core/PAY")
-
-    assert not result.allowed
-    assert any(
-        "dependency cycle: core/PAY -> shared/DATE -> core/PAY" in blocker
-        for blocker in result.blockers
+    options = evaluate_pipeline_options(
+        tmp_path,
+        "aim-understand",
+        claimed_units=frozenset({"core/TAX"}),
     )
+
+    assert options.units == ("core/PAY", "shared/DATE")
+    assert options.waves == ()
 
 
 def test_blocked_understand_does_not_select_unit(tmp_path: Path):

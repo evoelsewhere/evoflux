@@ -116,7 +116,40 @@ class AimReadinessResponse(BaseModel):
     warnings: list[str]
     selected_units: list[str]
     selected_count: int
+    primary_unit: str | None = None
+    included_dependencies: list[str] = Field(default_factory=list)
     claim_dependencies: list[AimReadinessClaimDependency] = Field(default_factory=list)
+
+
+class AimReadinessOptionsResponse(BaseModel):
+    pipeline: str
+    units: list[str]
+    waves: list[int]
+
+
+class AimSuggestionActionOut(BaseModel):
+    id: str
+    lane: Literal["ready", "active", "up_next", "needs_input"]
+    pipeline: str
+    title: str
+    reason: str
+    unit: str | None = None
+    wave: int | None = None
+    phase: str | None = None
+    scope_units: list[str]
+    depends_on: list[str]
+    blockers: list[str]
+    warnings: list[str]
+
+
+class AimSuggestionPlanOut(BaseModel):
+    enabled: bool
+    stale: bool
+    generated_at: datetime | None = None
+    generated_by: str | None = None
+    fingerprint: str
+    counts: dict[str, int]
+    actions: list[AimSuggestionActionOut]
 
 
 class AimHealthCheckOut(BaseModel):
