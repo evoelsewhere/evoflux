@@ -9,10 +9,11 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from sqlmodel import select
 
 import app.core.db as db_module
 from app.api.routes.team.projects import router as projects_router
-from app.models.aim import AimRun, AimUnit
+from app.models.aim import AimLink, AimRun, AimUnit
 from app.models.chat import CodingProject, CodingProjectWorkspace
 from app.services.coding_workspace_service import upsert_coding_workspace
 
@@ -122,6 +123,126 @@ async def test_reindex_aim_project_rebuilds_units_from_kb(client, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_kb_documents_support_create_search_update_and_conflicts(
+    client, tmp_path
+):
+    source = _make_local_repo(tmp_path, "kb-doc-source")
+    target = _make_local_repo(tmp_path, "kb-doc-target")
+    kb_path = tmp_path / "kb-docs"
+    create_resp = await client.post(
+        "/api/team/projects/aim",
+        json={
+            "name": "kb-docs",
+            "source_paths": [str(source)],
+            "target_path": str(target),
+            "kb_path": str(kb_path),
+        },
+    )
+    project_id = create_resp.json()["id"]
+
+    created = await client.post(
+        f"/api/team/projects/{project_id}/aim/kb/documents",
+        json={
+            "path": "decisions/ADR-001.md",
+            "content": "# Decision\n\nPreserve payroll rounding behavior.\n",
+        },
+    )
+    assert created.status_code == 201
+    revision = created.json()["revision"]
+
+    search = await client.get(
+        f"/api/team/projects/{project_id}/aim/kb/search",
+        params={"q": "payroll rounding"},
+    )
+    assert search.status_code == 200
+    assert search.json()["results"][0]["path"] == "decisions/ADR-001.md"
+
+    updated = await client.put(
+        f"/api/team/projects/{project_id}/aim/kb/document",
+        params={"path": "decisions/ADR-001.md"},
+        json={"content": "# Updated decision\n", "expected_revision": revision},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["content"] == "# Updated decision\n"
+
+    stale = await client.put(
+        f"/api/team/projects/{project_id}/aim/kb/document",
+        params={"path": "decisions/ADR-001.md"},
+        json={"content": "# Stale\n", "expected_revision": revision},
+    )
+    assert stale.status_code == 409
+    assert stale.json()["detail"]["current_revision"] == updated.json()["revision"]
+
+    protected = await client.post(
+        f"/api/team/projects/{project_id}/aim/kb/documents",
+        json={"path": "state/manual.md", "content": "not allowed"},
+    )
+    assert protected.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_traceability_endpoint_combines_units_runs_and_links(client, tmp_path):
+    from app.services.aim.kb_store import write_unit
+
+    source = _make_local_repo(tmp_path, "trace-source")
+    target = _make_local_repo(tmp_path, "trace-target")
+    kb_path = tmp_path / "trace-kb"
+    create_resp = await client.post(
+        "/api/team/projects/aim",
+        json={
+            "name": "trace",
+            "source_paths": [str(source)],
+            "target_path": str(target),
+            "kb_path": str(kb_path),
+        },
+    )
+    project_id = UUID(create_resp.json()["id"])
+    write_unit(
+        kb_path,
+        "core",
+        "PAY",
+        kind="program",
+        phase="inventory",
+        body="Documented behavior.",
+    )
+    reindex = await client.post(f"/api/team/projects/{project_id}/aim/reindex")
+    assert reindex.status_code == 200
+
+    async with db_module.async_session_factory() as db:
+        unit = (
+            await db.exec(
+                select(AimUnit).where(
+                    AimUnit.project_id == project_id,
+                    AimUnit.module == "core",
+                    AimUnit.name == "PAY",
+                )
+            )
+        ).one()
+        unit.phase = "equivalent"
+        db.add(unit)
+        db.add(AimRun(unit_id=unit.id, kind="compare", verdict="pass"))
+        db.add(
+            AimLink(
+                project_id=project_id,
+                from_ref="rule:BR-CORE-001",
+                to_ref="unit:core/PAY",
+                kind="applies_to",
+            )
+        )
+        await db.commit()
+
+    response = await client.get(f"/api/team/projects/{project_id}/aim/traceability")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["summary"]["total_units"] == 1
+    assert body["summary"]["evidenced_units"] == 1
+    assert body["summary"]["explicit_links"] == 1
+    assert body["units"][0]["unit"] == "core/PAY"
+    assert body["units"][0]["links"][0]["kind"] == "applies_to"
+
+
+@pytest.mark.asyncio
 async def test_aim_readiness_endpoint_blocks_incomplete_cutover(client, tmp_path):
     from app.services.aim.kb_store import write_unit
 
@@ -160,7 +281,9 @@ async def test_aim_readiness_endpoint_blocks_incomplete_cutover(client, tmp_path
 
 
 @pytest.mark.asyncio
-async def test_aim_readiness_blocks_active_claims_before_run(client, tmp_path):
+async def test_aim_readiness_blocks_live_claims_but_releases_interrupted_claims(
+    client, tmp_path, monkeypatch
+):
     from datetime import datetime, timedelta, timezone
 
     import yaml
@@ -169,6 +292,7 @@ async def test_aim_readiness_blocks_active_claims_before_run(client, tmp_path):
     from app.models.aim import AimClaim
     from app.models.workflow import WorkflowExecution
     from app.services.aim.kb_store import write_unit
+    from app.workflow.runner import runner
 
     source = _make_local_repo(tmp_path, "claimed-source")
     target = _make_local_repo(tmp_path, "claimed-target")
@@ -232,6 +356,12 @@ async def test_aim_readiness_blocks_active_claims_before_run(client, tmp_path):
             )
         await db.commit()
 
+    monkeypatch.setattr(
+        runner,
+        "is_execution_driving",
+        lambda candidate: candidate == execution_id,
+    )
+
     response = await client.get(
         f"/api/team/projects/{project_id}/aim/readiness",
         params={"pipeline": "aim-understand", "unit": "core/PAY"},
@@ -265,6 +395,27 @@ async def test_aim_readiness_blocks_active_claims_before_run(client, tmp_path):
         "units": [],
         "waves": [],
     }
+
+    # Simulate the process losing its in-memory execution while the DB row and
+    # four-hour lease remain. The next options read must clean the stale claims
+    # and put the units back into the selector.
+    monkeypatch.setattr(runner, "is_execution_driving", lambda _candidate: False)
+    interrupted_options = await client.get(
+        f"/api/team/projects/{project_id}/aim/readiness-options",
+        params={"pipeline": "aim-understand"},
+    )
+
+    assert interrupted_options.status_code == 200
+    assert interrupted_options.json() == {
+        "pipeline": "aim-understand",
+        "units": ["core/PAY", "shared/DATE"],
+        "waves": [],
+    }
+    async with db_module.async_session_factory() as db:
+        remaining_claims = (
+            await db.exec(select(AimClaim).where(AimClaim.project_id == project_id))
+        ).all()
+    assert remaining_claims == []
 
 
 @pytest.mark.asyncio

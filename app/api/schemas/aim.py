@@ -152,6 +152,89 @@ class AimSuggestionPlanOut(BaseModel):
     actions: list[AimSuggestionActionOut]
 
 
+class AimKbDocumentOut(BaseModel):
+    path: str
+    content: str
+    revision: str
+    size: int
+    mtime: float
+    writable: bool
+
+
+class AimKbDocumentUpdate(BaseModel):
+    content: str
+    expected_revision: str = Field(min_length=64, max_length=64)
+
+
+class AimKbDocumentCreate(BaseModel):
+    path: str = Field(min_length=1, max_length=500)
+    content: str = ""
+
+
+class AimKbSearchResultOut(BaseModel):
+    path: str
+    line: int
+    excerpt: str
+    matches: int
+
+
+class AimKbSearchResponse(BaseModel):
+    query: str
+    results: list[AimKbSearchResultOut]
+    truncated: bool
+
+
+class AimTraceabilityLinkOut(BaseModel):
+    id: str
+    from_ref: str
+    to_ref: str
+    kind: str
+    note: str | None = None
+
+
+class AimTraceabilityRuleOut(BaseModel):
+    id: str
+    title: str
+    status: str
+    path: str
+    source_ref: str | None = None
+
+
+class AimTraceabilityUnitOut(BaseModel):
+    id: str
+    unit: str
+    kind: str
+    phase: str
+    wave: int | None
+    depends_on: list[str]
+    target_paths: list[str]
+    doc_path: str | None
+    mapping_path: str | None
+    rules_reviewed: bool
+    rules: list[AimTraceabilityRuleOut]
+    run_count: int
+    passing_run_id: str | None
+    latest_verdict: str | None
+    links: list[AimTraceabilityLinkOut]
+    gaps: list[str]
+
+
+class AimTraceabilitySummaryOut(BaseModel):
+    total_units: int
+    reviewed_units: int
+    mapped_units: int
+    evidenced_units: int
+    total_rules: int
+    confirmed_rules: int
+    explicit_links: int
+    total_gaps: int
+
+
+class AimTraceabilityResponse(BaseModel):
+    summary: AimTraceabilitySummaryOut
+    units: list[AimTraceabilityUnitOut]
+
+
 class AimHealthCheckOut(BaseModel):
     id: str
     label: str
