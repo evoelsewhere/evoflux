@@ -73,11 +73,10 @@ _EXEMPT_PREFIXES: tuple[str, ...] = (
 )
 
 # API endpoints that intentionally implement a separate, narrower credential
-# contract. Pairing exchange is authorized by a one-time code; relay-ticket and
-# interactions require a scoped WebBridge pairing bearer. Keep this list exact.
+# contract. Local bootstrap is loopback/origin restricted; relay-ticket and
+# interactions require a scoped WebBridge bearer. Keep this list exact.
 _CUSTOM_AUTH_EXACT: frozenset[str] = frozenset(
     {
-        "/api/team/webbridge/pairing/exchange",
         "/api/team/webbridge/pairing/local",
         "/api/team/webbridge/relay-ticket",
         "/api/team/webbridge/interactions",

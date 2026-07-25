@@ -77,47 +77,6 @@ class PairingGrant:
     scopes: frozenset[str]
 
 
-class WebBridgePairingCodeStore:
-    """Issue human-entered, one-time pairing codes with a short lifetime."""
-
-    _ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
-
-    def __init__(self, *, ttl_seconds: float = 300.0) -> None:
-        if ttl_seconds <= 0:
-            raise ValueError("ttl_seconds must be positive")
-        self._ttl_seconds = ttl_seconds
-        self._codes: dict[str, tuple[PairingGrant, float]] = {}
-        self._lock = threading.Lock()
-
-    def issue(
-        self,
-        label: str,
-        *,
-        scopes: frozenset[str] = DEFAULT_PAIRING_SCOPES,
-        now: float | None = None,
-    ) -> str:
-        issued_at = time.monotonic() if now is None else now
-        code = "-".join(
-            "".join(secrets.choice(self._ALPHABET) for _ in range(4)) for _ in range(3)
-        )
-        with self._lock:
-            self._codes[_token_digest(code)] = (
-                PairingGrant(label=label, scopes=scopes),
-                issued_at + self._ttl_seconds,
-            )
-        return code
-
-    def consume(self, code: str, *, now: float | None = None) -> PairingGrant | None:
-        consumed_at = time.monotonic() if now is None else now
-        normalized = code.strip().upper()
-        with self._lock:
-            entry = self._codes.pop(_token_digest(normalized), None)
-        if entry is None:
-            return None
-        grant, expires_at = entry
-        return grant if consumed_at <= expires_at else None
-
-
 class WebBridgeRateLimiter:
     """Per-pairing sliding-window limiter for inbound interactions."""
 
@@ -523,6 +482,5 @@ async def delete_tab_binding(
     return binding
 
 
-webbridge_pairing_code_store = WebBridgePairingCodeStore()
 webbridge_interaction_rate_limiter = WebBridgeRateLimiter()
 webbridge_ticket_store = WebBridgeTicketStore()

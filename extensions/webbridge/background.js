@@ -13,7 +13,6 @@ importScripts("semantic_runtime.js");
 const DEFAULT_RELAY_BASE = "ws://127.0.0.1:8000";
 const RELAY_PATH = "/api/team/webbridge/relay";
 const RELAY_TICKET_PATH = "/api/team/webbridge/relay-ticket";
-const PAIRING_EXCHANGE_PATH = "/api/team/webbridge/pairing/exchange";
 const LOCAL_PAIRING_PATH = "/api/team/webbridge/pairing/local";
 const BINDINGS_PATH = "/api/team/webbridge/bindings";
 const INTERACTIONS_PATH = "/api/team/webbridge/interactions";
@@ -61,6 +60,7 @@ let relayBase = DEFAULT_RELAY_BASE;
 let pairingCredential = "";
 let pairingId = "";
 let pairingRelayBase = "";
+let connectionCredentialInFlight = null;
 let connectInFlight = false;
 
 const COMMAND_CAPABILITIES = [
@@ -1090,16 +1090,7 @@ async function responseError(response, fallback) {
 
 async function buildAuthenticatedRelayUrl() {
   assertRelayTransportSecure();
-  if (!pairingCredential) {
-    const error = new Error("Pair WebBridge before connecting to the relay.");
-    error.code = "pairing_required";
-    throw error;
-  }
-  if (!pairingRelayBase || pairingRelayBase !== canonicalRelayBase()) {
-    const error = new Error("The relay URL changed. Pair WebBridge with this relay again.");
-    error.code = "pairing";
-    throw error;
-  }
+  await ensureConnectionCredential();
 
   const response = await fetch(buildHttpUrl(RELAY_TICKET_PATH), {
     method: "POST",
@@ -1117,32 +1108,9 @@ async function buildAuthenticatedRelayUrl() {
   return `${base}${RELAY_PATH}?_ticket=${encodeURIComponent(body.ticket)}`;
 }
 
-async function pairWithCode(code) {
-  await loadConfig();
-  assertRelayTransportSecure();
-  const response = await fetch(buildHttpUrl(PAIRING_EXCHANGE_PATH), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      code: String(code || "").trim(),
-      browser: detectBrowser(),
-      version: chrome.runtime.getManifest().version,
-    }),
-  });
-  if (!response.ok) {
-    throw new Error(await responseError(response, "Pairing code rejected"));
-  }
-  const body = await response.json();
+async function persistConnectionCredential(body) {
   if (!body?.credential || !body?.pairing_id) {
-    throw new Error("Pairing response was incomplete");
-  }
-  await persistPairing(body);
-  return { pairing_id: pairingId, scopes: body.scopes || [] };
-}
-
-async function persistPairing(body) {
-  if (!body?.credential || !body?.pairing_id) {
-    throw new Error("Pairing response was incomplete");
+    throw new Error("Connection response was incomplete");
   }
   pairingCredential = body.credential;
   pairingId = body.pairing_id;
@@ -1155,12 +1123,12 @@ async function persistPairing(body) {
   await chrome.storage.local.remove(["accessToken"]);
 }
 
-async function pairLocally() {
+async function bootstrapLocalConnection() {
   await loadConfig();
   assertRelayTransportSecure();
   const parsed = new URL(canonicalRelayBase());
   if (!["localhost", "127.0.0.1", "::1"].includes(parsed.hostname.toLowerCase())) {
-    throw new Error("Code-free pairing is only available for a loopback EvoFlux relay.");
+    throw new Error("The connection address must point to EvoFlux on this device.");
   }
   const response = await fetch(buildHttpUrl(LOCAL_PAIRING_PATH), {
     method: "POST",
@@ -1172,11 +1140,21 @@ async function pairLocally() {
     }),
   });
   if (!response.ok) {
-    throw new Error(await responseError(response, "Local pairing was rejected"));
+    throw new Error(await responseError(response, "Connection was rejected"));
   }
   const body = await response.json();
-  await persistPairing(body);
+  await persistConnectionCredential(body);
   return { pairing_id: pairingId, scopes: body.scopes || [] };
+}
+
+async function ensureConnectionCredential() {
+  if (pairingCredential && pairingRelayBase === canonicalRelayBase()) return;
+  if (!connectionCredentialInFlight) {
+    connectionCredentialInFlight = bootstrapLocalConnection().finally(() => {
+      connectionCredentialInFlight = null;
+    });
+  }
+  await connectionCredentialInFlight;
 }
 
 // ── Connection management ────────────────────────────────────────────────────
@@ -1197,9 +1175,8 @@ async function connect() {
       await clearRevokedPairingState();
       manualDisconnect = true;
     }
-    if (e.code === "pairing_required") manualDisconnect = true;
     if (e.code === "relay_security") manualDisconnect = true;
-    lastCloseReason = ["pairing", "pairing_required"].includes(e.code)
+    lastCloseReason = e.code === "pairing"
       ? "pairing"
       : e.code === "relay_security"
         ? "security"
@@ -3587,29 +3564,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
-  if (msg.type === "pair_with_code") {
+  if (msg.type === "ensure_connection") {
     (async () => {
       try {
-        const result = await pairWithCode(msg.code);
-        disconnect();
-        manualDisconnect = false;
-        connect();
-        sendResponse({ ok: true, ...result });
-      } catch (e) {
-        sendResponse({ ok: false, error: e.message });
-      }
-    })();
-    return true;
-  }
-
-  if (msg.type === "pair_locally") {
-    (async () => {
-      try {
-        const result = await pairLocally();
-        disconnect();
-        manualDisconnect = false;
-        connect();
-        sendResponse({ ok: true, ...result });
+        await loadConfig();
+        await ensureConnectionCredential();
+        sendResponse({ ok: true });
       } catch (e) {
         sendResponse({ ok: false, error: e.message });
       }

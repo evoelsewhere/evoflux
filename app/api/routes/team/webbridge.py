@@ -115,7 +115,6 @@ from app.services.webbridge_pairing_service import (
     revoke_pairing,
     upsert_tab_binding,
     webbridge_interaction_rate_limiter,
-    webbridge_pairing_code_store,
     webbridge_ticket_store,
 )
 from app.services.webbridge_service import (
@@ -269,58 +268,6 @@ async def _remove_stale_bindings(pairing_id: str, stale: list[tuple[str, int]]) 
 
 
 # ── REST status ───────────────────────────────────────────────────────────────
-
-
-class PairingCodeRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    label: str = Field(min_length=1, max_length=120)
-
-    @field_validator("label")
-    @classmethod
-    def _strip_label(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
-            raise ValueError("label must not be blank")
-        return value
-
-
-class PairingCodeResponse(BaseModel):
-    code: str
-    expires_in: int = 300
-
-
-@router.post("/pairing/code", response_model=PairingCodeResponse, status_code=201)
-async def issue_pairing_code(
-    body: PairingCodeRequest, request: Request
-) -> PairingCodeResponse:
-    """Create a one-time code from an already-authenticated EvoFlux UI."""
-    if not expected_desktop_token():
-        if not _is_loopback_client(request):
-            raise HTTPException(
-                status_code=503,
-                detail={
-                    "code": "pairing_requires_auth",
-                    "message": "Configure an EvoFlux access key before pairing WebBridge from a remote client.",
-                },
-            )
-        if not _trusted_local_origin(request.headers.get("origin")):
-            raise HTTPException(
-                status_code=403,
-                detail={
-                    "code": "pairing_origin_refused",
-                    "message": "Pairing codes can only be issued by the local EvoFlux UI.",
-                },
-            )
-    return PairingCodeResponse(code=webbridge_pairing_code_store.issue(body.label))
-
-
-class PairingExchangeRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    code: str = Field(min_length=1, max_length=32)
-    browser: str = Field(default="unknown", max_length=40)
-    version: str = Field(default="unknown", max_length=40)
 
 
 class PairingExchangeResponse(BaseModel):
@@ -620,39 +567,6 @@ async def _require_pairing_webbridge_session(
             },
         )
     return session
-
-
-@router.post(
-    "/pairing/exchange", response_model=PairingExchangeResponse, status_code=201
-)
-async def exchange_pairing_code(
-    body: PairingExchangeRequest,
-    db: DbSession,
-) -> PairingExchangeResponse:
-    """Exchange a one-time code for a revocable, scoped pairing credential."""
-    grant = webbridge_pairing_code_store.consume(body.code)
-    if grant is None:
-        raise HTTPException(
-            status_code=401,
-            detail={
-                "code": "invalid_pairing_code",
-                "message": "Code is invalid or expired.",
-            },
-        )
-    pairing, credential = await create_pairing(
-        db,
-        grant=grant,
-        browser=body.browser,
-        version=body.version,
-    )
-    logger.info(
-        "webbridge_paired pairing_id={} browser={}", pairing.id, pairing.browser
-    )
-    return PairingExchangeResponse(
-        pairing_id=str(pairing.id),
-        credential=credential,
-        scopes=pairing.scopes,
-    )
 
 
 @router.get("/pairings", response_model=list[PairingInfo])

@@ -24,14 +24,6 @@ def _make_app(token: str | None) -> FastAPI:
     def auth_check() -> dict:
         return {"ok": True}
 
-    @app.post("/api/team/webbridge/pairing/code")
-    def pairing_code() -> dict:
-        return {"code": "protected"}
-
-    @app.post("/api/team/webbridge/pairing/exchange")
-    def pairing_exchange() -> dict:
-        return {"exchange": True}
-
     @app.post("/api/team/webbridge/pairing/local")
     def pairing_local() -> dict:
         return {"local": True}
@@ -169,7 +161,6 @@ class TestMiddlewareEnabled:
         client = TestClient(app)
 
         for path in (
-            "/api/team/webbridge/pairing/exchange",
             "/api/team/webbridge/pairing/local",
             "/api/team/webbridge/relay-ticket",
             "/api/team/webbridge/interactions",
@@ -197,19 +188,6 @@ class TestMiddlewareEnabled:
         assert client.put(path).status_code == 401
         assert (
             client.put(path, headers={"Authorization": "Bearer secret"}).status_code
-            == 200
-        )
-
-    def test_pairing_code_issuance_still_requires_desktop_auth(self):
-        app = _make_app(token="secret")
-        client = TestClient(app)
-
-        assert client.post("/api/team/webbridge/pairing/code").status_code == 401
-        assert (
-            client.post(
-                "/api/team/webbridge/pairing/code",
-                headers={"Authorization": "Bearer secret"},
-            ).status_code
             == 200
         )
 
