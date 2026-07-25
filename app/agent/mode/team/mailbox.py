@@ -18,6 +18,7 @@ class Message(BaseModel):
     to_agent: str | None = None  # None = broadcast
     content: str
     is_broadcast: bool = False
+    extra: dict = Field(default_factory=dict)
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

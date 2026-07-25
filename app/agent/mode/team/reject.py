@@ -35,6 +35,10 @@ class RejectionFeedback(BaseModel):
     what was wrong.
     """
 
+    task_id: str | None = Field(
+        default=None,
+        description="Delegation task UUID being reopened.",
+    )
     reason: str = Field(
         description=(
             "Why the handoff was rejected — what specific criteria it failed "
@@ -73,6 +77,46 @@ _REJECT_DESCRIPTION = (
 )
 
 
+def format_rejection_message(
+    agent_name: str,
+    task_id: str,
+    feedback_data: RejectionFeedback | dict,
+    *,
+    attempt: int,
+) -> str:
+    feedback = (
+        feedback_data
+        if isinstance(feedback_data, RejectionFeedback)
+        else RejectionFeedback.model_validate(feedback_data)
+    )
+    severity_icon = {"minor": "⚠️", "major": "❌", "redo": "🚫"}[feedback.severity]
+    severity_label = {
+        "minor": "MINOR FIXES NEEDED",
+        "major": "REJECTED — REWORK NEEDED",
+        "redo": "REJECTED — REDO FROM SCRATCH",
+    }[feedback.severity]
+    lines = [
+        f"[{agent_name}] {severity_icon} {severity_label}:",
+        f"**Task ID:** {task_id}",
+        f"**Attempt:** {attempt}",
+        f"**Reason:** {feedback.reason}",
+    ]
+    if feedback.issues:
+        lines.append("**Issues found:**")
+        lines.extend(f"  ✗ {issue}" for issue in feedback.issues)
+    if feedback.suggestions:
+        lines.append("**Suggestions:**")
+        lines.extend(f"  → {suggestion}" for suggestion in feedback.suggestions)
+    lines.extend(
+        [
+            "",
+            "Fix the issues above and re-deliver via `team_handoff` using "
+            "the same Task ID. The original delegation constraints still apply.",
+        ]
+    )
+    return "\n".join(lines)
+
+
 # ── Tool factory ─────────────────────────────────────────────────────────────
 
 
@@ -103,6 +147,15 @@ def make_team_reject_tool(
                 ),
             ),
         ],
+        task_id: Annotated[
+            str | None,
+            Field(
+                description=(
+                    "Completed delegation task UUID to reopen. May be omitted "
+                    "only when exactly one completed task matches the member."
+                )
+            ),
+        ] = None,
         issues: Annotated[
             list[str],
             Field(
@@ -136,7 +189,6 @@ def make_team_reject_tool(
         ] = "major",
     ) -> str:
         """Reject a handoff with structured feedback for improvement."""
-        from app.agent.mode.team.mailbox import Message
         from app.agent.mode.team.tools import _recipient_error, _resolve
 
         if not reason.strip():
@@ -158,66 +210,63 @@ def make_team_reject_tool(
 
         if errors:
             return " | ".join(errors)
+        if task_id is not None and len(resolved) != 1:
+            return "Error: a task-linked rejection must have exactly one recipient."
 
         # Build feedback
         feedback = RejectionFeedback(
+            task_id=task_id,
             reason=reason,
             issues=list(issues),
             suggestions=list(suggestions),
             severity=severity,
         )
-        feedback_json = feedback.model_dump(mode="json")
+        feedback_json = feedback.model_dump(mode="json", exclude_none=True)
 
-        # Format human-readable rejection message
-        severity_icon = {
-            "minor": "⚠️",
-            "major": "❌",
-            "redo": "🚫",
-        }[severity]
-
-        severity_label = {
-            "minor": "MINOR FIXES NEEDED",
-            "major": "REJECTED — REWORK NEEDED",
-            "redo": "REJECTED — REDO FROM SCRATCH",
-        }[severity]
-
-        formatted_lines = [
-            f"[{agent_name}] {severity_icon} {severity_label}:",
-            f"**Reason:** {reason}",
-        ]
-        if issues:
-            formatted_lines.append("**Issues found:**")
-            for issue in issues:
-                formatted_lines.append(f"  ✗ {issue}")
-        if suggestions:
-            formatted_lines.append("**Suggestions:**")
-            for suggestion in suggestions:
-                formatted_lines.append(f"  → {suggestion}")
-        formatted_lines.append("")
-        formatted_lines.append(
-            "Fix the issues above and re-deliver via `team_handoff`. "
-            "Your original delegation constraints still apply."
-        )
-
-        formatted = "\n".join(formatted_lines)
+        reopened = []
+        if team is not None:
+            try:
+                for recipient in resolved:
+                    reopened_task = await team.reopen_delegation(
+                        task_id=task_id,
+                        delegator=agent_name,
+                        recipient=recipient,
+                        feedback=feedback_json,
+                    )
+                    reopened.append(reopened_task)
+            except (TypeError, ValueError) as exc:
+                return f"Error: {exc}"
+            if len(reopened) == 1:
+                task_id = str(reopened[0].id)
+                feedback.task_id = task_id
+                feedback_json = feedback.model_dump(mode="json", exclude_none=True)
 
         # Emit SSE rejection event for the UI
         _emit_rejection_event(team, agent_name, resolved, feedback_json)
 
-        # A rejection is a re-delegation: agent_name is awaiting an improved
-        # team_handoff from each recipient before its answer can be final.
         if team is not None:
-            team.register_delegation(agent_name, resolved)
+            await team.dispatch_delegation_tasks(reopened)
+        else:
+            from app.agent.mode.team.mailbox import Message
 
-        for recipient in resolved:
-            msg = Message(
-                from_agent=agent_name,
-                to_agent=recipient,
-                content=formatted,
-            )
-            # Stash structured feedback for DB persistence / frontend rendering
-            msg.__dict__["_rejection_feedback"] = feedback_json
-            await mailbox.send(to=recipient, message=msg)
+            for recipient in resolved:
+                untracked_id = task_id or "untracked"
+                msg = Message(
+                    from_agent=agent_name,
+                    to_agent=recipient,
+                    content=format_rejection_message(
+                        agent_name,
+                        untracked_id,
+                        feedback,
+                        attempt=1,
+                    ),
+                    extra={
+                        "kind": "rejection",
+                        "task_id": task_id,
+                        "_rejection_feedback": feedback_json,
+                    },
+                )
+                await mailbox.send(to=recipient, message=msg)
 
         return f"Rejection sent to {', '.join(resolved)} (severity: {severity})."
 

@@ -13,7 +13,10 @@ with acceptance criteria) than plain text instructions.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+import json
 from typing import TYPE_CHECKING, Annotated, Literal
+from uuid import uuid7  # ty: ignore[unresolved-import] - backported in app.__init__
 
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -67,9 +70,17 @@ class TaskSpec(BaseModel):
     depends_on: list[str] = Field(
         default_factory=list,
         description=(
-            "Task IDs or agent handles this task depends on. The agent should "
-            "wait for these before starting if they haven't delivered yet."
+            "Delegation task UUIDs this task depends on. The runtime keeps the "
+            "task blocked until all dependencies complete."
         ),
+    )
+    deadline_at: datetime | None = Field(
+        default=None,
+        description="Optional timezone-aware deadline for this task.",
+    )
+    dependency_results: list[dict] = Field(
+        default_factory=list,
+        description="Runtime-injected final results from prerequisite tasks.",
     )
 
 
@@ -82,6 +93,52 @@ _DELEGATE_DESCRIPTION = (
     "of what 'done' looks like, reducing back-and-forth and improving output "
     "quality. For quick questions or coordination, use team_message instead."
 )
+
+
+def format_delegation_message(
+    agent_name: str,
+    task_id: str,
+    spec_data: TaskSpec | dict,
+    *,
+    attempt: int = 1,
+) -> str:
+    """Render the durable task contract delivered through the mailbox."""
+    spec = (
+        spec_data
+        if isinstance(spec_data, TaskSpec)
+        else TaskSpec.model_validate(spec_data)
+    )
+    priority_icon = {
+        "low": "○",
+        "normal": "●",
+        "high": "◉",
+        "critical": "🔴",
+    }[spec.priority]
+    formatted_lines = [
+        f"[{agent_name}] {priority_icon} TASK DELEGATION:",
+        f"**Task ID:** {task_id}",
+        f"**Attempt:** {attempt}",
+        f"**Goal:** {spec.goal}",
+        f"**Expected output:** {spec.expected_output}",
+    ]
+    if spec.constraints:
+        formatted_lines.append("**Constraints:**")
+        formatted_lines.extend(f"  • {constraint}" for constraint in spec.constraints)
+    if spec.context:
+        formatted_lines.append(f"**Context:** {spec.context}")
+    if spec.depends_on:
+        formatted_lines.append(f"**Depends on:** {', '.join(spec.depends_on)}")
+    if spec.deadline_at:
+        formatted_lines.append(f"**Deadline:** {spec.deadline_at.isoformat()}")
+    if spec.dependency_results:
+        formatted_lines.append("**Dependency results:**")
+        for dependency in spec.dependency_results:
+            rendered = json.dumps(dependency, ensure_ascii=False, default=str)
+            formatted_lines.append(f"  - {rendered}")
+    formatted_lines.append(
+        "Use this exact Task ID in partial/final `team_handoff` calls."
+    )
+    return "\n".join(formatted_lines)
 
 
 # ── Tool factory ─────────────────────────────────────────────────────────────
@@ -153,11 +210,20 @@ def make_team_delegate_tool(
             list[str],
             Field(
                 description=(
-                    "Task IDs or agent handles this depends on. "
-                    "Agent should wait for these before starting."
+                    "Delegation task UUIDs this task depends on. The runtime "
+                    "will dispatch it only after all dependencies complete."
                 ),
             ),
         ] = [],  # noqa: B006
+        deadline_at: Annotated[
+            datetime | None,
+            Field(
+                description=(
+                    "Optional timezone-aware ISO 8601 deadline. "
+                    "Example: 2026-07-25T18:00:00+07:00."
+                )
+            ),
+        ] = None,
     ) -> str:
         """Delegate a structured task with explicit acceptance criteria."""
         from app.agent.mode.team.mailbox import Message
@@ -185,6 +251,12 @@ def make_team_delegate_tool(
         if errors:
             return " | ".join(errors)
 
+        if deadline_at is not None:
+            if deadline_at.tzinfo is None:
+                return "Error: deadline_at must include a timezone offset."
+            if deadline_at <= datetime.now(timezone.utc):
+                return "Error: deadline_at must be in the future."
+
         # Build task spec
         spec = TaskSpec(
             goal=goal,
@@ -193,52 +265,49 @@ def make_team_delegate_tool(
             context=context,
             priority=priority,
             depends_on=list(depends_on),
+            deadline_at=deadline_at,
         )
         spec_json = spec.model_dump(mode="json", exclude_none=True)
 
-        # Format human-readable message for the agent's inbox
-        priority_icon = {
-            "low": "○",
-            "normal": "●",
-            "high": "◉",
-            "critical": "🔴",
-        }[priority]
-
-        formatted_lines = [
-            f"[{agent_name}] {priority_icon} TASK DELEGATION:",
-            f"**Goal:** {goal}",
-            f"**Expected output:** {expected_output}",
-        ]
-        if constraints:
-            formatted_lines.append("**Constraints:**")
-            for c in constraints:
-                formatted_lines.append(f"  • {c}")
-        if context:
-            formatted_lines.append(f"**Context:** {context}")
-        if depends_on:
-            formatted_lines.append(f"**Depends on:** {', '.join(depends_on)}")
-
-        formatted = "\n".join(formatted_lines)
-
-        # Emit SSE delegation event for the UI
-        _emit_delegation_event(team, agent_name, resolved, spec_json)
-
-        # Track: agent_name is now awaiting a final team_handoff from each
-        # recipient before its own answer to the user can be final.
         if team is not None:
-            team.register_delegation(agent_name, resolved)
+            try:
+                tasks = await team.create_delegation_tasks(
+                    delegator=agent_name,
+                    recipients=resolved,
+                    spec=spec_json,
+                    dependencies=list(depends_on),
+                    deadline_at=deadline_at,
+                )
+            except (TypeError, ValueError) as exc:
+                return f"Error: {exc}"
+            await team.dispatch_delegation_tasks(tasks)
+            task_ids = [str(task.id) for task in tasks]
+            blocked = [str(task.id) for task in tasks if task.status == "blocked"]
+        else:
+            task_ids = []
+            for recipient in resolved:
+                task_id = str(uuid7())
+                msg = Message(
+                    from_agent=agent_name,
+                    to_agent=recipient,
+                    content=format_delegation_message(
+                        agent_name, task_id, spec, attempt=1
+                    ),
+                    extra={
+                        "kind": "delegation",
+                        "task_id": task_id,
+                        "_task_spec": spec_json,
+                    },
+                )
+                await mailbox.send(to=recipient, message=msg)
+                task_ids.append(task_id)
+            blocked = []
 
-        for recipient in resolved:
-            msg = Message(
-                from_agent=agent_name,
-                to_agent=recipient,
-                content=formatted,
-            )
-            # Stash structured task spec for DB persistence / frontend rendering
-            msg.__dict__["_task_spec"] = spec_json
-            await mailbox.send(to=recipient, message=msg)
-
-        return f"Task delegated to {', '.join(resolved)}."
+        _emit_delegation_event(team, agent_name, resolved, task_ids, spec_json)
+        suffix = f" Task IDs: {', '.join(task_ids)}."
+        if blocked:
+            suffix += f" Blocked on dependencies: {', '.join(blocked)}."
+        return f"Task delegated to {', '.join(resolved)}.{suffix}"
 
     return Tool(team_delegate, name="team_delegate", description=_DELEGATE_DESCRIPTION)
 
@@ -250,6 +319,7 @@ def _emit_delegation_event(
     team: "AgentTeam | None",
     from_agent: str,
     to_agents: list[str],
+    task_ids: list[str],
     spec: dict,
 ) -> None:
     """Push a ``delegation`` SSE event to the stream store (fire-and-forget).
@@ -272,6 +342,7 @@ def _emit_delegation_event(
             data={
                 "from": from_agent,
                 "to": to_agents,
+                "task_ids": task_ids,
                 "spec": spec,
             },
         )

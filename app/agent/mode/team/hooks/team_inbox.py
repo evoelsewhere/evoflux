@@ -69,7 +69,9 @@ class TeamInboxHook(BaseAgentHook):
                     "content": msg_obj.content,
                     "from_agent": raw_msg.from_agent,
                 }
-                artifact = getattr(raw_msg, "_handoff_artifact", None)
+                artifact = raw_msg.extra.get("_handoff_artifact") or getattr(
+                    raw_msg, "_handoff_artifact", None
+                )
                 if artifact is not None:
                     inbox_extra["_handoff_artifact"] = artifact
                 await member._team._emit(

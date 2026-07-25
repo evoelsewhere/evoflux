@@ -21,9 +21,10 @@ from __future__ import annotations
 import asyncio
 import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
-from uuid import UUID
+from uuid import UUID, uuid7  # ty: ignore[unresolved-import] - backported in app.__init__
 
 from loguru import logger
 from sqlmodel import col, select
@@ -49,6 +50,7 @@ from app.agent.tools.registry import Tool
 from app.core.db import DbFactory, resolve_db_factory
 from app.core.paths import session_workspace_dir
 from app.models.chat import ChatSession, SessionMessage
+from app.models.team import DelegationTask
 from app.services import memory_stream_store as stream_store
 from app.services import snapshot_service
 from app.services.commands import parse_slash_invocation
@@ -343,13 +345,17 @@ class AgentTeam:
         # turns). Set/cleared by the workflow runner.
         self.turn_allowed_blueprints: set[str] | None = None
 
-        # Delegator name -> recipients whose team_delegate/team_reject has not
-        # yet been resolved by a "final" team_handoff back to that delegator.
-        # team_delegate/team_reject populate this; team_handoff clears it.
+        # Delegator name -> {task_id: recipient} for durable delegation rows
+        # whose status is blocked/pending. The DB is the source of truth; this
+        # projection keeps the lead's wait-nudge path synchronous and cheap.
         # Used to catch a delegator (in practice, the lead) answering the user
         # on its own before delegated work actually reports back — see
         # TeamMemberBase._maybe_inject_delegation_wait_nudge.
-        self._pending_delegations: dict[str, set[str]] = {}
+        self._pending_delegations: dict[str, dict[str, str]] = {}
+        self._dispatching_delegations: set[str] = set()
+        self._dispatching_handoffs: set[str] = set()
+        self._ephemeral_delegation_ids: set[str] = set()
+        self._resolved_ephemeral_delegations: dict[tuple[str, str], str] = {}
 
         # Index agents by name for fast lookup in on_message.  Kept in sync
         # by spawn() / dismiss().
@@ -361,6 +367,11 @@ class AgentTeam:
         # work is short, but two concurrent roster-management calls from the
         # same lead turn could otherwise race the counter.
         self._roster_lock = asyncio.Lock()
+
+        # Serialise task-ledger state transitions and replay decisions. This
+        # prevents duplicate dispatch when a handoff releases dependencies at
+        # the same time as a session/member restore.
+        self._delegation_lock = asyncio.Lock()
 
         # Serialise user ingress so quick follow-ups queue behind the active
         # turn instead of racing in as adjacent normal user rows.
@@ -383,34 +394,535 @@ class AgentTeam:
         the boundary back."""
         self._has_active_turn = busy
 
-    def register_delegation(self, delegator: str, recipients: list[str]) -> None:
-        """Record that *delegator* is now awaiting a final handoff from *recipients*.
+    def register_delegation(
+        self,
+        delegator: str,
+        recipients: list[str],
+        *,
+        task_ids: list[str] | None = None,
+    ) -> list[str]:
+        """Cache tasks that *delegator* is awaiting final handoffs for.
 
-        Called by ``team_delegate`` and ``team_reject`` — both hand work to a
-        member and expect a ``team_handoff`` back before the delegator's
-        answer to the user can be considered final.
+        ``task_ids`` comes from the durable ledger. When omitted, UUIDs are
+        generated for compatibility with tests and callers that only exercise
+        the in-memory coordination contract.
         """
         if not recipients:
-            return
-        self._pending_delegations.setdefault(delegator, set()).update(recipients)
+            return []
+        generated = task_ids is None
+        ids = task_ids or [str(uuid7()) for _ in recipients]
+        if len(ids) != len(recipients):
+            raise ValueError("task_ids must match recipients one-for-one.")
+        pending = self._pending_delegations.setdefault(delegator, {})
+        for task_id, recipient in zip(ids, recipients):
+            pending[task_id] = recipient
+            if generated:
+                self._ephemeral_delegation_ids.add(task_id)
+        return ids
 
-    def resolve_delegation(self, delegator: str, recipient: str) -> None:
-        """Clear *recipient* from *delegator*'s outstanding delegations.
+    def resolve_delegation(
+        self,
+        delegator: str,
+        recipient: str,
+        *,
+        task_id: str | None = None,
+    ) -> bool:
+        """Remove exactly one completed task from the in-memory projection.
 
-        Called by ``team_handoff`` when *recipient* is the delegator being
-        reported back to. A no-op if *recipient* wasn't actually pending —
-        e.g. an unsolicited handoff, or *delegator* never delegated to them.
+        Recipient-only resolution remains supported when exactly one matching
+        task is open. Ambiguous resolution is rejected instead of silently
+        clearing multiple assignments to the same member.
         """
         pending = self._pending_delegations.get(delegator)
         if not pending:
-            return
-        pending.discard(recipient)
+            return False
+        if task_id is None:
+            matches = [tid for tid, target in pending.items() if target == recipient]
+            if len(matches) != 1:
+                return False
+            task_id = matches[0]
+        elif pending.get(task_id) != recipient:
+            return False
+        pending.pop(task_id, None)
+        if task_id in self._ephemeral_delegation_ids:
+            self._ephemeral_delegation_ids.discard(task_id)
+            self._resolved_ephemeral_delegations[(delegator, recipient)] = task_id
         if not pending:
             self._pending_delegations.pop(delegator, None)
+        self._dispatching_delegations.discard(task_id)
+        return True
 
     def pending_delegation_recipients(self, delegator: str) -> set[str]:
         """Return the recipients *delegator* is still awaiting a handoff from."""
-        return set(self._pending_delegations.get(delegator, ()))
+        return set(self._pending_delegations.get(delegator, {}).values())
+
+    def pending_delegation_task_ids(
+        self, delegator: str, recipient: str | None = None
+    ) -> list[str]:
+        pending = self._pending_delegations.get(delegator, {})
+        return [
+            task_id
+            for task_id, target in pending.items()
+            if recipient is None or target == recipient
+        ]
+
+    async def create_delegation_tasks(
+        self,
+        *,
+        delegator: str,
+        recipients: list[str],
+        spec: dict,
+        dependencies: list[str],
+        deadline_at: datetime | None,
+    ) -> list[DelegationTask]:
+        """Persist one task per recipient and cache their open identities."""
+        from app.agent.mode.team import delegation_ledger
+
+        lead_session_id = UUID(self.lead.session_id)
+        db_factory = resolve_db_factory(self._db_factory or self.lead.db_factory)
+        async with self._delegation_lock:
+            async with db_factory() as db:
+                tasks = await delegation_ledger.create_tasks(
+                    db,
+                    lead_session_id=lead_session_id,
+                    delegator=delegator,
+                    recipients=recipients,
+                    spec=spec,
+                    dependencies=dependencies,
+                    deadline_at=deadline_at,
+                )
+                await db.commit()
+            self.register_delegation(
+                delegator,
+                [task.recipient for task in tasks],
+                task_ids=[str(task.id) for task in tasks],
+            )
+        return tasks
+
+    async def refresh_delegations(self, *, dispatch: bool = True) -> None:
+        """Rehydrate open tasks, restore recipients, and optionally replay work."""
+        try:
+            lead_session_id = UUID(self.lead.session_id)
+        except (TypeError, ValueError):
+            return
+        try:
+            tasks, handoffs = await self._load_reconciled_delegations(lead_session_id)
+            if await self._restore_delegation_recipients(tasks):
+                tasks, handoffs = await self._load_reconciled_delegations(
+                    lead_session_id
+                )
+
+            self._pending_delegations.clear()
+            self._dispatching_delegations.clear()
+            self._dispatching_handoffs.clear()
+            for task in tasks:
+                self.register_delegation(
+                    task.delegator,
+                    [task.recipient],
+                    task_ids=[str(task.id)],
+                )
+            if dispatch:
+                await self.dispatch_recovered_coordination(handoffs=handoffs)
+        except Exception as exc:
+            logger.warning(
+                "team_delegation_restore_failed session_id={} error={}",
+                lead_session_id,
+                exc,
+            )
+
+    async def _load_reconciled_delegations(
+        self, lead_session_id: UUID
+    ) -> tuple[list[DelegationTask], list[DelegationTask]]:
+        from app.agent.mode.team import delegation_ledger
+
+        db_factory = resolve_db_factory(self._db_factory or self.lead.db_factory)
+        async with self._delegation_lock:
+            async with db_factory() as db:
+                await delegation_ledger.expire_overdue_tasks(db, lead_session_id)
+                await delegation_ledger.release_ready_tasks(
+                    db,
+                    lead_session_id=lead_session_id,
+                    live_recipients=set(self.mailbox.registered_agents),
+                )
+                tasks = await delegation_ledger.load_open_tasks(db, lead_session_id)
+                handoffs = await delegation_ledger.load_unacknowledged_handoffs(
+                    db,
+                    lead_session_id=lead_session_id,
+                    live_recipients=set(self.mailbox.registered_agents),
+                )
+                await db.commit()
+        return tasks, handoffs
+
+    async def _restore_delegation_recipients(self, tasks: list[DelegationTask]) -> bool:
+        """Materialise missing ``blueprint#N`` recipients from open task rows."""
+        restored = False
+        for recipient in sorted({task.recipient for task in tasks}):
+            if recipient in self.mailbox.registered_agents:
+                continue
+            parsed = parse_instance_handle(recipient)
+            if parsed is None or parsed[0] not in self.blueprints:
+                continue
+            try:
+                await self.spawn(
+                    parsed[0],
+                    instance_id=parsed[1],
+                    _refresh_delegations=False,
+                )
+            except ValueError as exc:
+                if "already live" not in str(exc):
+                    logger.warning(
+                        "delegation_recipient_restore_failed recipient={} error={}",
+                        recipient,
+                        exc,
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "delegation_recipient_restore_failed recipient={} error={}",
+                    recipient,
+                    exc,
+                )
+            else:
+                restored = True
+        return restored
+
+    async def dispatch_recovered_coordination(
+        self, *, handoffs: list[DelegationTask] | None = None
+    ) -> None:
+        """Best-effort ordered replay after a turn/session boundary is ready."""
+        try:
+            await self.dispatch_undelivered_delegations()
+            await self.dispatch_unacknowledged_handoffs(handoffs)
+        except Exception as exc:
+            logger.warning("delegation_replay_failed error={}", exc)
+
+    async def dispatch_delegation_tasks(self, tasks: list[DelegationTask]) -> None:
+        """Send pending, unacknowledged task rows through the live mailbox."""
+        from app.agent.mode.team.delegate import format_delegation_message
+        from app.agent.mode.team.reject import format_rejection_message
+
+        for task in tasks:
+            task_id = str(task.id)
+            if task.status != "pending" or task_id in self._dispatching_delegations:
+                continue
+            if task.recipient not in self.mailbox.registered_agents:
+                continue
+            self._dispatching_delegations.add(task_id)
+            if task.last_rejection:
+                content = format_rejection_message(
+                    task.delegator,
+                    task_id,
+                    task.last_rejection,
+                    attempt=task.attempt,
+                )
+                extra = {
+                    "kind": "rejection",
+                    "task_id": task_id,
+                    "_rejection_feedback": task.last_rejection,
+                }
+            else:
+                content = format_delegation_message(
+                    task.delegator,
+                    task_id,
+                    task.spec,
+                    attempt=task.attempt,
+                )
+                extra = {
+                    "kind": "delegation",
+                    "task_id": task_id,
+                    "_task_spec": task.spec,
+                }
+            message = Message(
+                id=f"{task_id}:attempt:{task.attempt}",
+                from_agent=task.delegator,
+                to_agent=task.recipient,
+                content=content,
+                extra=extra,
+            )
+            try:
+                await self.mailbox.send(to=task.recipient, message=message)
+            except Exception:
+                self._dispatching_delegations.discard(task_id)
+                raise
+
+    async def dispatch_undelivered_delegations(self) -> None:
+        """Replay pending tasks that have no durable inbox acknowledgement."""
+        from app.agent.mode.team import delegation_ledger
+
+        try:
+            lead_session_id = UUID(self.lead.session_id)
+        except (TypeError, ValueError):
+            return
+        db_factory = resolve_db_factory(self._db_factory or self.lead.db_factory)
+        async with self._delegation_lock:
+            async with db_factory() as db:
+                tasks = await delegation_ledger.load_undelivered_tasks(
+                    db,
+                    lead_session_id=lead_session_id,
+                    live_recipients=set(self.mailbox.registered_agents),
+                )
+        await self.dispatch_delegation_tasks(tasks)
+
+    async def dispatch_unacknowledged_handoffs(
+        self, tasks: list[DelegationTask] | None = None
+    ) -> None:
+        """Replay completed handoffs that lack a durable inbox acknowledgement."""
+        from app.agent.mode.team import delegation_ledger
+        from app.agent.mode.team.handoff import format_handoff_message
+
+        lead_session_id = UUID(self.lead.session_id)
+        if tasks is None:
+            db_factory = resolve_db_factory(self._db_factory or self.lead.db_factory)
+            async with self._delegation_lock:
+                async with db_factory() as db:
+                    tasks = await delegation_ledger.load_unacknowledged_handoffs(
+                        db,
+                        lead_session_id=lead_session_id,
+                        live_recipients=set(self.mailbox.registered_agents),
+                    )
+        for task in tasks:
+            task_id = str(task.id)
+            if task_id in self._dispatching_handoffs or not task.result:
+                continue
+            if task.delegator not in self.mailbox.registered_agents:
+                continue
+            self._dispatching_handoffs.add(task_id)
+            message = Message(
+                id=f"{task_id}:handoff:{task.attempt}",
+                from_agent=task.recipient,
+                to_agent=task.delegator,
+                content=format_handoff_message(task.recipient, task.result),
+                extra={
+                    "kind": "handoff",
+                    "task_id": task_id,
+                    "_handoff_artifact": task.result,
+                },
+            )
+            try:
+                await self.mailbox.send(to=task.delegator, message=message)
+            except Exception:
+                self._dispatching_handoffs.discard(task_id)
+                raise
+
+    async def complete_delegation(
+        self,
+        *,
+        task_id: str,
+        delegator: str,
+        recipient: str,
+        artifact: dict,
+    ) -> DelegationTask:
+        """Complete one task and dispatch newly dependency-ready assignments."""
+        from app.agent.mode.team import delegation_ledger
+
+        if task_id in self._ephemeral_delegation_ids:
+            self.resolve_delegation(delegator, recipient, task_id=task_id)
+            return DelegationTask(
+                id=UUID(task_id),
+                lead_session_id=UUID(self.lead.session_id),
+                delegator=delegator,
+                recipient=recipient,
+                status="completed",
+                spec={},
+                result=artifact,
+            )
+
+        lead_session_id = UUID(self.lead.session_id)
+        db_factory = resolve_db_factory(self._db_factory or self.lead.db_factory)
+        async with self._delegation_lock:
+            async with db_factory() as db:
+                expired = await delegation_ledger.expire_overdue_tasks(
+                    db, lead_session_id
+                )
+                if expired:
+                    await db.commit()
+                    for expired_task in expired:
+                        self.resolve_delegation(
+                            expired_task.delegator,
+                            expired_task.recipient,
+                            task_id=str(expired_task.id),
+                        )
+                if any(str(row.id) == task_id for row in expired):
+                    raise ValueError(
+                        f"Delegation task '{task_id}' missed its deadline."
+                    )
+                completed = await delegation_ledger.complete_task(
+                    db,
+                    lead_session_id=lead_session_id,
+                    task_id=task_id,
+                    delegator=delegator,
+                    recipient=recipient,
+                    result=artifact,
+                )
+                ready, failed = await delegation_ledger.release_ready_tasks(
+                    db,
+                    lead_session_id=lead_session_id,
+                    live_recipients=set(self.mailbox.registered_agents),
+                )
+                await db.commit()
+            self.resolve_delegation(
+                delegator,
+                recipient,
+                task_id=task_id,
+            )
+            for task in ready:
+                self.register_delegation(
+                    task.delegator,
+                    [task.recipient],
+                    task_ids=[str(task.id)],
+                )
+            for task in failed:
+                self.resolve_delegation(
+                    task.delegator,
+                    task.recipient,
+                    task_id=str(task.id),
+                )
+        await self.dispatch_delegation_tasks(ready)
+        return completed
+
+    async def validate_delegation(
+        self,
+        *,
+        task_id: str,
+        delegator: str,
+        recipient: str,
+        allow_completed: bool = False,
+    ) -> DelegationTask:
+        """Validate task ownership/status before accepting a linked artifact."""
+        from app.agent.mode.team import delegation_ledger
+
+        if task_id in self._ephemeral_delegation_ids:
+            return DelegationTask(
+                id=UUID(task_id),
+                lead_session_id=UUID(self.lead.session_id),
+                delegator=delegator,
+                recipient=recipient,
+                status="pending",
+                spec={},
+            )
+        lead_session_id = UUID(self.lead.session_id)
+        db_factory = resolve_db_factory(self._db_factory or self.lead.db_factory)
+        async with db_factory() as db:
+            task = await delegation_ledger.get_task(
+                db,
+                lead_session_id=lead_session_id,
+                task_id=task_id,
+            )
+        if task.delegator != delegator or task.recipient != recipient:
+            raise ValueError(
+                f"Delegation task '{task_id}' belongs to "
+                f"{task.delegator} -> {task.recipient}."
+            )
+        allowed = {"pending", "completed"} if allow_completed else {"pending"}
+        if task.status not in allowed:
+            raise ValueError(
+                f"Delegation task '{task_id}' is {task.status}, not pending."
+            )
+        return task
+
+    async def reopen_delegation(
+        self,
+        *,
+        task_id: str | None,
+        delegator: str,
+        recipient: str,
+        feedback: dict,
+    ) -> DelegationTask:
+        """Reopen the identified completed task for another attempt."""
+        from app.agent.mode.team import delegation_ledger
+
+        resolved_legacy_id = self._resolved_ephemeral_delegations.get(
+            (delegator, recipient)
+        )
+        legacy_id = task_id if task_id in self._ephemeral_delegation_ids else None
+        if task_id is None:
+            legacy_id = resolved_legacy_id
+        if legacy_id is not None:
+            self._resolved_ephemeral_delegations.pop((delegator, recipient), None)
+            self.register_delegation(
+                delegator,
+                [recipient],
+                task_ids=[legacy_id],
+            )
+            self._ephemeral_delegation_ids.add(legacy_id)
+            return DelegationTask(
+                id=UUID(legacy_id),
+                lead_session_id=UUID(self.lead.session_id),
+                delegator=delegator,
+                recipient=recipient,
+                status="pending",
+                spec={},
+                attempt=2,
+                last_rejection=feedback,
+            )
+
+        lead_session_id = UUID(self.lead.session_id)
+        db_factory = resolve_db_factory(self._db_factory or self.lead.db_factory)
+        async with self._delegation_lock:
+            async with db_factory() as db:
+                if task_id is None:
+                    candidates = await delegation_ledger.completed_tasks_for_pair(
+                        db,
+                        lead_session_id=lead_session_id,
+                        delegator=delegator,
+                        recipient=recipient,
+                    )
+                    if len(candidates) != 1:
+                        raise ValueError(
+                            "task_id is required when the member has zero or multiple "
+                            "completed delegation tasks."
+                        )
+                    task_id = str(candidates[0].id)
+                durable_feedback = {**feedback, "task_id": task_id}
+                task = await delegation_ledger.reopen_task(
+                    db,
+                    lead_session_id=lead_session_id,
+                    task_id=task_id,
+                    delegator=delegator,
+                    recipient=recipient,
+                    feedback=durable_feedback,
+                )
+                await db.commit()
+            self.register_delegation(
+                delegator,
+                [recipient],
+                task_ids=[str(task.id)],
+            )
+        return task
+
+    async def mark_delegation_dispatched(self, task_id: str) -> None:
+        """Acknowledge delivery after the recipient inbox row is durable."""
+        from app.agent.mode.team import delegation_ledger
+
+        lead_session_id = UUID(self.lead.session_id)
+        db_factory = resolve_db_factory(self._db_factory or self.lead.db_factory)
+        async with self._delegation_lock:
+            async with db_factory() as db:
+                await delegation_ledger.mark_task_dispatched(
+                    db,
+                    lead_session_id=lead_session_id,
+                    task_id=task_id,
+                )
+                await db.commit()
+            self._dispatching_delegations.discard(task_id)
+
+    async def attach_delegation_handoff_message(
+        self, task_id: str, message_id: UUID
+    ) -> None:
+        """Link a persisted final-handoff inbox row back to its task."""
+        from app.agent.mode.team import delegation_ledger
+
+        lead_session_id = UUID(self.lead.session_id)
+        db_factory = resolve_db_factory(self._db_factory or self.lead.db_factory)
+        async with self._delegation_lock:
+            async with db_factory() as db:
+                await delegation_ledger.attach_handoff_message(
+                    db,
+                    lead_session_id=lead_session_id,
+                    task_id=task_id,
+                    message_id=message_id,
+                )
+                await db.commit()
+            self._dispatching_handoffs.discard(task_id)
 
     def loop_status(self, session_id: str) -> dict[str, object] | None:
         """Return the current loop status for a session, if a loop is active."""
@@ -778,6 +1290,7 @@ class AgentTeam:
                 for bp in self.blueprints.values():
                     bp.counter_reconciled_for = None
                 await self._restore_or_drop_members_for_lead(session_id)
+                await self.refresh_delegations(dispatch=False)
             except Exception as exc:
                 logger.warning("workflow_lead_bind_failed error={}", exc)
                 return None
@@ -820,6 +1333,7 @@ class AgentTeam:
                 content=f"[user]: {prompt}",
             ),
         )
+        await self.dispatch_recovered_coordination()
         return str(row.id)
 
     def interrupt_turn(self) -> list[str]:
@@ -897,6 +1411,7 @@ class AgentTeam:
             # under THIS lead session.  Anything else is dropped from the
             # roster (the lead can re-spawn at will).
             await self._restore_or_drop_members_for_lead(session_id)
+            await self.refresh_delegations(dispatch=False)
 
         if interrupt:
             self._loop_states.pop(session_id, None)
@@ -1153,6 +1668,7 @@ class AgentTeam:
             await asyncio.shield(
                 self._mark_channel_source_delivered(session_id, saved_user_message_id)
             )
+        await self.dispatch_recovered_coordination()
 
         return session_id
 
@@ -1264,6 +1780,7 @@ class AgentTeam:
             for bp in self.blueprints.values():
                 bp.counter_reconciled_for = None
             await self._restore_or_drop_members_for_lead(session_id)
+            await self.refresh_delegations(dispatch=False)
 
         # Init the SSE stream blob synchronously so client GETs after this
         # find the bucket in place (same contract as handle_user_message).
@@ -1317,6 +1834,7 @@ class AgentTeam:
                         await db.delete(directive)
                         await db.commit()
             raise ContinuePreconditionError(str(exc)) from exc
+        await self.dispatch_recovered_coordination()
         return session_id
 
     async def handle_compact(self, session_id: str) -> str:
@@ -1345,6 +1863,7 @@ class AgentTeam:
 
         if self.lead.session_id != session_id:
             self.lead.session_id = session_id
+            await self.refresh_delegations(dispatch=False)
 
         try:
             await stream_store.init_turn(session_id)
@@ -1357,6 +1876,7 @@ class AgentTeam:
             raise ContinuePreconditionError(str(exc)) from exc
 
         self._has_active_turn = True
+        await self.dispatch_recovered_coordination()
 
         logger.info(
             "team_compact_dispatched session_id={} agent={}", session_id, self.lead.name
@@ -1524,6 +2044,7 @@ class AgentTeam:
         blueprint: str,
         *,
         instance_id: int | None = None,
+        _refresh_delegations: bool = True,
     ) -> TeamMember:
         """Materialise a member instance from a blueprint and register it.
 
@@ -1543,11 +2064,19 @@ class AgentTeam:
         try:
             async with asyncio.timeout(30):
                 async with self._roster_lock:
-                    return await self._spawn_locked(blueprint, instance_id=instance_id)
+                    member = await self._spawn_locked(
+                        blueprint, instance_id=instance_id
+                    )
         except TimeoutError:
             raise RuntimeError(
                 f"Timed out waiting to spawn '{blueprint}' — roster lock held too long."
             )
+        if _refresh_delegations:
+            # Reconciliation may materialise other task recipients, which
+            # calls spawn() recursively. Keep it outside the non-reentrant
+            # roster lock to avoid deadlocking on that nested restoration.
+            await self.refresh_delegations()
+        return member
 
     async def _spawn_locked(
         self,
