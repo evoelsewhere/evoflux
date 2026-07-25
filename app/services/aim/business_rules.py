@@ -60,7 +60,11 @@ def list_business_rules(kb_root: Path, unit: str) -> list[BusinessRule]:
                 f"business rule {path.name} has invalid status {status!r}"
             )
         title = next(
-            (line.removeprefix("# ").strip() for line in body.splitlines() if line.startswith("# ")),
+            (
+                line.removeprefix("# ").strip()
+                for line in body.splitlines()
+                if line.startswith("# ")
+            ),
             path.stem,
         )
         rules.append(
@@ -69,7 +73,9 @@ def list_business_rules(kb_root: Path, unit: str) -> list[BusinessRule]:
                 unit=unit,
                 status=status,
                 source_ref=(
-                    str(data["source_ref"]) if data.get("source_ref") is not None else None
+                    str(data["source_ref"])
+                    if data.get("source_ref") is not None
+                    else None
                 ),
                 path=path,
                 title=title,
@@ -128,13 +134,10 @@ def confirm_business_rules(kb_root: Path, unit: str, execution_id: str) -> Path:
         data, body = _parse_rule(rule.path)
         data["status"] = "confirmed"
         content = (
-            f"---\n{yaml.safe_dump(data, sort_keys=False).strip()}\n---\n\n"
-            f"{body}\n"
+            f"---\n{yaml.safe_dump(data, sort_keys=False).strip()}\n---\n\n{body}\n"
         )
         rule.path.write_text(content, encoding="utf-8")
-    return _write_review(
-        kb_root, unit, outcome="confirmed", execution_id=execution_id
-    )
+    return _write_review(kb_root, unit, outcome="confirmed", execution_id=execution_id)
 
 
 def confirm_no_business_rules(kb_root: Path, unit: str, execution_id: str) -> Path:
@@ -156,7 +159,10 @@ def business_rule_review_ready(kb_root: Path, unit: str) -> tuple[bool, str]:
     except (OSError, UnicodeDecodeError, yaml.YAMLError, BusinessRuleError) as exc:
         return False, str(exc)
     if data.get("unit") != unit:
-        return False, f"business-rule review names {data.get('unit')!r}, expected {unit}"
+        return (
+            False,
+            f"business-rule review names {data.get('unit')!r}, expected {unit}",
+        )
     outcome = data.get("outcome")
     recorded = {
         str(item.get("id")): (item.get("status"), item.get("sha256"))
@@ -165,7 +171,10 @@ def business_rule_review_ready(kb_root: Path, unit: str) -> tuple[bool, str]:
     }
     current = {rule.id: (rule.status, rule.sha256) for rule in rules}
     if outcome == "no_rules":
-        return (not current, "" if not current else f"unit {unit} now has unreviewed rules")
+        return (
+            not current,
+            "" if not current else f"unit {unit} now has unreviewed rules",
+        )
     if outcome != "confirmed":
         return False, f"business-rule review for {unit} has invalid outcome {outcome!r}"
     if not current:

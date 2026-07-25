@@ -823,7 +823,8 @@ aim_understanding = Tool(
 
 async def _aim_rules(
     action: Annotated[
-        Literal["list", "confirm", "no_rules"], Field(description="Rule review operation.")
+        Literal["list", "confirm", "no_rules"],
+        Field(description="Rule review operation."),
     ],
     unit: Annotated[str, Field(description="Unit key as module/name.")],
 ) -> str:

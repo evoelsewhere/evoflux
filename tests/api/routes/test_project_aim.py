@@ -160,9 +160,7 @@ async def test_aim_readiness_endpoint_blocks_incomplete_cutover(client, tmp_path
 
 
 @pytest.mark.asyncio
-async def test_units_expose_backend_next_action_and_template_blocker(
-    client, tmp_path
-):
+async def test_units_expose_backend_next_action_and_template_blocker(client, tmp_path):
     from app.services.aim.kb_store import write_unit
 
     source = _make_local_repo(tmp_path, "actions-source")
@@ -187,10 +185,67 @@ async def test_units_expose_backend_next_action_and_template_blocker(
     assert units[0]["state_verified"] is True
     assert units[0]["next_action"]["pipeline"] == "aim-understand"
     assert units[0]["next_action"]["allowed"] is False
-    assert "rulebook capability understand is template" in units[0]["next_action"][
-        "blockers"
-    ]
+    assert (
+        "rulebook capability understand is template"
+        in units[0]["next_action"]["blockers"]
+    )
     assert units[0]["claim"] is None
+
+
+@pytest.mark.asyncio
+async def test_understood_unit_routes_through_rule_review_before_design(
+    client, tmp_path
+):
+    from uuid import uuid4
+
+    from app.services.aim.business_rules import confirm_no_business_rules
+    from app.services.aim.kb_store import write_transition_event, write_unit
+
+    source = _make_local_repo(tmp_path, "rules-source")
+    target = _make_local_repo(tmp_path, "rules-target")
+    kb_path = tmp_path / "rules-kb"
+    create_resp = await client.post(
+        "/api/team/projects/aim",
+        json={
+            "name": "rules-project",
+            "source_paths": [str(source)],
+            "target_path": str(target),
+            "kb_path": str(kb_path),
+        },
+    )
+    project_id = create_resp.json()["id"]
+    transition_id = write_transition_event(
+        kb_path,
+        "core",
+        "PAY",
+        from_phase="inventory",
+        to_phase="understood",
+        revision=1,
+        workflow_name="aim-understand",
+        workflow_execution_id=str(uuid4()),
+        session_id=None,
+        evidence_refs=["modules/core/PAY.md"],
+    )
+    write_unit(
+        kb_path,
+        "core",
+        "PAY",
+        kind="program",
+        phase="understood",
+        body="Documented behavior.",
+        revision=1,
+        last_transition_id=transition_id,
+    )
+    await client.post(f"/api/team/projects/{project_id}/aim/reindex")
+
+    before = (await client.get(f"/api/team/projects/{project_id}/aim/units")).json()
+    confirm_no_business_rules(kb_path, "core/PAY", str(uuid4()))
+    after = (await client.get(f"/api/team/projects/{project_id}/aim/units")).json()
+
+    assert before[0]["next_action"]["pipeline"] == "aim-review-rules"
+    assert before[0]["next_action"]["target_phase"] == "understood"
+    assert after[0]["next_action"]["pipeline"] == "aim-design-unit"
+    assert after[0]["next_action"]["target_phase"] == "designed"
 
 
 @pytest.mark.asyncio

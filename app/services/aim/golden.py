@@ -64,7 +64,7 @@ def _command_digest(path: Path) -> str:
 
 
 def stamp_expected_integrity(case_dir: Path) -> GoldenCaseMeta:
-    meta = load_golden_case_meta(case_dir)
+    load_golden_case_meta(case_dir)
     manifest = expected_output_manifest(case_dir / "expected")
     if not manifest:
         raise GoldenCaseError(

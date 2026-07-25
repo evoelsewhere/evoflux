@@ -244,7 +244,9 @@ async def capture_legacy_case(
             f"metadata={meta.source_revision!r}, actual={source_revision!r}"
         )
     expected_dir = case_dir / "expected"
-    if expected_dir.exists() and any(path.is_file() for path in expected_dir.rglob("*")):
+    if expected_dir.exists() and any(
+        path.is_file() for path in expected_dir.rglob("*")
+    ):
         if not overwrite:
             raise RunnerExecutionError(
                 f"golden expected output already exists: {expected_dir}"

@@ -112,7 +112,10 @@ def has_conversion_evidence(
         target_root_resolved = target_root.resolve()
         for declared_path in unit_result[0].target_paths:
             resolved = (target_root_resolved / declared_path).resolve()
-            if not resolved.is_relative_to(target_root_resolved) or not resolved.exists():
+            if (
+                not resolved.is_relative_to(target_root_resolved)
+                or not resolved.exists()
+            ):
                 return False
             current_hashes[declared_path] = _path_digest(resolved)
         return current_hashes == recorded_hashes

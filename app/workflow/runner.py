@@ -810,9 +810,7 @@ class WorkflowRunner:
         partial_outputs = (
             {"partial_nodes": state.node_outputs} if state.node_outputs else None
         )
-        await self._persist_execution_end(
-            state, outputs=partial_outputs, error=error
-        )
+        await self._persist_execution_end(state, outputs=partial_outputs, error=error)
         await self._emit_progress(state, node_id=node_id, error=error)
         self.active.pop(state.session_id, None)
         await self._emit_done_if_owned(state)

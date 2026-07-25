@@ -176,6 +176,7 @@ def test_equivalent_requires_pass_from_same_attempt(tmp_path: Path):
         phase="converted",
         target_paths=["src/Pay.java"],
     )
+    confirm_no_business_rules(tmp_path, "core/PAY", str(uuid4()))
 
     missing = evaluate_transition(
         tmp_path,
@@ -454,6 +455,7 @@ def _write_capture_rulebook(tmp_path: Path) -> None:
 def test_capture_golden_prepares_missing_case_contract(tmp_path: Path):
     _write_capture_rulebook(tmp_path)
     write_unit(tmp_path, "core", "PAY", kind="program", phase="understood")
+    confirm_no_business_rules(tmp_path, "core/PAY", str(uuid4()))
 
     result = evaluate_pipeline(
         tmp_path, "aim-capture-golden", unit="core/PAY", case_set="smoke"
@@ -468,6 +470,7 @@ def test_capture_golden_prepares_missing_case_contract(tmp_path: Path):
 def test_capture_golden_contract_requires_all_case_files(tmp_path: Path):
     _write_capture_rulebook(tmp_path)
     write_unit(tmp_path, "core", "PAY", kind="program", phase="understood")
+    confirm_no_business_rules(tmp_path, "core/PAY", str(uuid4()))
 
     missing = evaluate_pipeline(
         tmp_path,
@@ -505,6 +508,7 @@ def test_capture_contract_requires_explicit_overwrite_for_existing_baseline(
 ):
     _write_capture_rulebook(tmp_path)
     write_unit(tmp_path, "core", "PAY", kind="program", phase="understood")
+    confirm_no_business_rules(tmp_path, "core/PAY", str(uuid4()))
     case_dir = tmp_path / "golden/units/core/PAY/cases/smoke"
     (case_dir / "input").mkdir(parents=True)
     (case_dir / "expected").mkdir()
@@ -594,9 +598,7 @@ def test_compare_pipeline_requires_target_command(tmp_path: Path):
     (tmp_path / "rulebook/runners").mkdir(parents=True)
     (tmp_path / "rulebook/runners/run_target.sh").write_text("#!/bin/sh\nexit 0\n")
     (tmp_path / "rulebook/canonicalizers").mkdir()
-    (tmp_path / "rulebook/canonicalizers/default.yaml").write_text(
-        "id: default\n"
-    )
+    (tmp_path / "rulebook/canonicalizers/default.yaml").write_text("id: default\n")
     (tmp_path / "rulebook/rulebook.yaml").write_text(
         "id: compare-test\nversion: '0.1'\n"
         "capabilities: {compare: ready}\n"
@@ -610,6 +612,7 @@ def test_compare_pipeline_requires_target_command(tmp_path: Path):
         phase="converted",
         target_paths=["src/Pay.rs"],
     )
+    confirm_no_business_rules(tmp_path, "core/PAY", str(uuid4()))
     case_dir = tmp_path / "golden/units/core/PAY/cases/smoke"
     (case_dir / "input").mkdir(parents=True)
     (case_dir / "expected").mkdir()
@@ -658,6 +661,7 @@ def test_compare_pipeline_requires_available_canonicalizer(tmp_path: Path):
         phase="converted",
         target_paths=["src/Pay.rs"],
     )
+    confirm_no_business_rules(tmp_path, "core/PAY", str(uuid4()))
     case_dir = tmp_path / "golden/units/core/PAY/cases/smoke"
     (case_dir / "input").mkdir(parents=True)
     (case_dir / "expected").mkdir()

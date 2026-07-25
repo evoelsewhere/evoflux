@@ -184,10 +184,7 @@ def test_target_runner_must_stay_inside_local_rulebook(tmp_path: Path):
     outside = kb_root / "outside.sh"
     outside.write_text(TARGET_RUNNER, encoding="utf-8")
     (kb_root / "rulebook" / "rulebook.yaml").write_text(
-        "id: java8-java21\n"
-        "version: '0.1'\n"
-        "runners:\n"
-        "  target: ../outside.sh\n",
+        "id: java8-java21\nversion: '0.1'\nrunners:\n  target: ../outside.sh\n",
         encoding="utf-8",
     )
 

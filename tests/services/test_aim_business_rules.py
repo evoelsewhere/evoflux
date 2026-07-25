@@ -24,9 +24,9 @@ def test_confirm_business_rules_records_hash_bound_review(tmp_path: Path):
 
     ready, blocker = business_rule_review_ready(tmp_path, "core/A")
     assert ready, blocker
-    assert "status: confirmed" in (
-        tmp_path / "business-rules/BR-CORE-0001.md"
-    ).read_text()
+    assert (
+        "status: confirmed" in (tmp_path / "business-rules/BR-CORE-0001.md").read_text()
+    )
 
 
 def test_review_invalidates_when_rule_changes(tmp_path: Path):

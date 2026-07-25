@@ -562,9 +562,7 @@ async def test_rule_review_confirmation_unlocks_design(sandbox_workspace):
     from app.workflow.exec_context import current_execution_id
 
     await _make_aim_project(sandbox_workspace)
-    await aim_units(
-        action="set_phase", unit="m/A", kind="program", phase="inventory"
-    )
+    await aim_units(action="set_phase", unit="m/A", kind="program", phase="inventory")
     kb_store.write_unit(
         sandbox_workspace,
         "m",
@@ -590,9 +588,7 @@ async def test_rule_review_confirmation_unlocks_design(sandbox_workspace):
         current_execution_id.reset(token)
 
     assert result["status"] == "confirmed"
-    assert evaluate_pipeline(
-        sandbox_workspace, "aim-design-unit", unit="m/A"
-    ).allowed
+    assert evaluate_pipeline(sandbox_workspace, "aim-design-unit", unit="m/A").allowed
 
 
 @pytest.mark.asyncio
@@ -771,11 +767,10 @@ async def test_capture_records_domain_run(sandbox_workspace):
     runners = sandbox_workspace / "rulebook/runners"
     runners.mkdir(parents=True)
     (sandbox_workspace / "rulebook/rulebook.yaml").write_text(
-        "id: default\nversion: '0.1'\n"
-        "runners: {legacy: runners/legacy.sh}\n"
+        "id: default\nversion: '0.1'\nrunners: {legacy: runners/legacy.sh}\n"
     )
     (runners / "legacy.sh").write_text(
-        "#!/bin/sh\nbash \"$AIM_CASE_DIR/legacy.command\"\n"
+        '#!/bin/sh\nbash "$AIM_CASE_DIR/legacy.command"\n'
     )
     (sandbox_workspace.parent / "aim_source_base").mkdir(exist_ok=True)
     await _seed_indexed_unit(
