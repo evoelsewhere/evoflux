@@ -48,7 +48,6 @@ from app.models.webbridge import (
 )
 from app.services.webbridge_pairing_service import (
     PairingGrant,
-    WebBridgePairingCodeStore,
     WebBridgeRateLimiter,
     WebBridgeTicketStore,
     authenticate_pairing,
@@ -57,7 +56,6 @@ from app.services.webbridge_pairing_service import (
     create_pairing,
     list_tab_bindings,
     upsert_tab_binding,
-    webbridge_pairing_code_store,
     webbridge_ticket_store,
 )
 from app.services.webbridge_service import WebBridgeManager
@@ -264,17 +262,18 @@ def _ticketed_relay_path(pairing_id: str | None = None) -> tuple[str, str]:
 
 
 def _pair_extension(client: TestClient, label: str = "Work Chrome") -> dict:
-    code = webbridge_pairing_code_store.issue(label)
-    exchange = client.post(
-        f"{_PREFIX}/pairing/exchange",
-        json={
-            "code": code,
-            "browser": "chrome",
-            "version": "1.2.0",
-        },
-    )
-    assert exchange.status_code == 201
-    return exchange.json()
+    with TestClient(client.app, client=("127.0.0.1", 5173)) as local_client:
+        response = local_client.post(
+            f"{_PREFIX}/pairing/local",
+            headers={"Origin": "chrome-extension://abcdefghijklmnop"},
+            json={
+                "label": label,
+                "browser": "chrome",
+                "version": "1.2.0",
+            },
+        )
+    assert response.status_code == 201
+    return response.json()
 
 
 def _assign_pairing_session(
@@ -919,20 +918,6 @@ def test_relay_ticket_is_single_use_and_expires():
     assert tickets.consume(revoked, now=301.0) is None
     with pytest.raises(ValueError, match="revoked"):
         tickets.issue("pairing-3", now=302.0)
-
-
-def test_pairing_code_is_single_use_case_insensitive_and_expires():
-    codes = WebBridgePairingCodeStore(ttl_seconds=10)
-
-    code = codes.issue("Work Chrome", now=100.0)
-    grant = codes.consume(code.lower(), now=109.0)
-    assert grant is not None
-    assert grant.label == "Work Chrome"
-    assert "relay" in grant.scopes
-    assert codes.consume(code, now=109.0) is None
-
-    expired = codes.issue("Expired", now=200.0)
-    assert codes.consume(expired, now=211.0) is None
 
 
 def test_interaction_rate_limiter_uses_sliding_window():
@@ -2936,19 +2921,15 @@ async def test_paired_relay_rehydrates_binding_without_client_get(
         )
 
 
-def test_pair_exchange_mints_scoped_credential_and_consumes_code(client: TestClient):
-    code = webbridge_pairing_code_store.issue("Work Chrome")
-    payload = {"code": code, "browser": "chrome", "version": "1.2.0"}
+def test_manual_pairing_code_endpoints_are_removed(client: TestClient):
+    code = client.post(f"{_PREFIX}/pairing/code", json={"label": "Work Chrome"})
+    exchange = client.post(
+        f"{_PREFIX}/pairing/exchange",
+        json={"code": "ABCD-EFGH-JKLM", "browser": "chrome"},
+    )
 
-    response = client.post(f"{_PREFIX}/pairing/exchange", json=payload)
-    assert response.status_code == 201
-    data = response.json()
-    assert data["pairing_id"]
-    assert data["credential"]
-    assert {"relay", "interactions:write"} <= set(data["scopes"])
-
-    replay = client.post(f"{_PREFIX}/pairing/exchange", json=payload)
-    assert replay.status_code == 401
+    assert code.status_code == 404
+    assert exchange.status_code == 404
 
 
 async def test_paired_extension_lists_and_creates_browser_sessions(
@@ -3323,42 +3304,6 @@ async def test_browser_binding_accepts_matching_tab_scope_and_normalizes_http_or
     )
     assert ok.status_code == 200
     assert ok.json()["origin"] == "https://example.com"
-
-
-def test_pairing_code_allows_unkeyed_loopback_but_rejects_remote_client(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-):
-    monkeypatch.setattr(
-        "app.api.routes.team.webbridge.expected_desktop_token", lambda: ""
-    )
-    loopback_client = TestClient(client.app, client=("127.0.0.1", 5173))
-    response = loopback_client.post(
-        f"{_PREFIX}/pairing/code", json={"label": "Work Chrome"}
-    )
-    assert response.status_code == 201
-    assert response.json()["code"]
-
-    remote_client = TestClient(client.app, client=("203.0.113.10", 5173))
-    response = remote_client.post(
-        f"{_PREFIX}/pairing/code", json={"label": "Work Chrome"}
-    )
-    assert response.status_code == 503
-    assert response.json()["detail"]["code"] == "pairing_requires_auth"
-
-    hostile_origin = loopback_client.post(
-        f"{_PREFIX}/pairing/code",
-        headers={"Origin": "https://attacker.example"},
-        json={"label": "Stolen browser"},
-    )
-    assert hostile_origin.status_code == 403
-    assert hostile_origin.json()["detail"]["code"] == "pairing_origin_refused"
-
-    local_origin = loopback_client.post(
-        f"{_PREFIX}/pairing/code",
-        headers={"Origin": "http://localhost:5173"},
-        json={"label": "Local browser"},
-    )
-    assert local_origin.status_code == 201
 
 
 def test_local_pairing_needs_no_code_but_stays_loopback_origin_scoped(

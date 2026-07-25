@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Check, Copy, Download, KeyRound, Loader2, Play, RefreshCw, Trash2, Unplug } from 'lucide-react'
+import { Check, Copy, Download, Loader2, Play, RefreshCw, Trash2 } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -25,10 +25,7 @@ import {
   downloadWebBridgeExtension,
   getWebBridgeAudit,
   getWebBridgeStatus,
-  issueWebBridgePairingCode,
-  listWebBridgePairings,
   listWebBridgeTeachDrafts,
-  revokeWebBridgePairing,
   replayWebBridgeTeachDraft,
   resolveWebBridgeTeachReplay,
 } from '@/api/client'
@@ -36,7 +33,6 @@ import { apiBaseUrl } from '@/api/base-url'
 import { useToastStore } from '@/stores/useToastStore'
 import type {
   WebBridgeAuditEntry,
-  WebBridgePairingInfo,
   WebBridgeStatusResponse,
   WebBridgeTeachAction,
   WebBridgeTeachDraft,
@@ -107,10 +103,6 @@ export function WebBridgeStatusDialog({
   const [audit, setAudit] = useState<WebBridgeAuditEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [downloading, setDownloading] = useState(false)
-  const [pairingCode, setPairingCode] = useState<string | null>(null)
-  const [pairings, setPairings] = useState<WebBridgePairingInfo[]>([])
-  const [pairing, setPairing] = useState(false)
-  const [revokingPairingId, setRevokingPairingId] = useState<string | null>(null)
   const [teachDrafts, setTeachDrafts] = useState<WebBridgeTeachDraft[]>([])
   const [approvingDraftId, setApprovingDraftId] = useState<string | null>(null)
   const [replayingDraftId, setReplayingDraftId] = useState<string | null>(null)
@@ -148,11 +140,6 @@ export function WebBridgeStatusDialog({
       setAudit([])
     }
     try {
-      setPairings(await listWebBridgePairings())
-    } catch {
-      setPairings([])
-    }
-    try {
       setTeachDrafts(await listWebBridgeTeachDrafts())
     } catch {
       setTeachDrafts([])
@@ -179,41 +166,9 @@ export function WebBridgeStatusDialog({
     }
   }, [pushToast])
 
-  const handlePairingCode = useCallback(async () => {
-    setPairing(true)
-    try {
-      const result = await issueWebBridgePairingCode()
-      setPairingCode(result.code)
-    } catch (err) {
-      pushToast({
-        tone: 'error',
-        title: 'Could not create pairing code',
-        description: err instanceof Error ? err.message : String(err),
-      })
-    } finally {
-      setPairing(false)
-    }
-  }, [pushToast])
-
   const extension = status?.extensions[0]
   const connected = status?.connected ?? false
   const relayUrl = deriveRelayUrl()
-
-  const handleRevoke = useCallback(async (pairingId: string) => {
-    setRevokingPairingId(pairingId)
-    try {
-      await revokeWebBridgePairing(pairingId)
-      await refresh()
-    } catch (err) {
-      pushToast({
-        tone: 'error',
-        title: 'Could not revoke pairing',
-        description: err instanceof Error ? err.message : String(err),
-      })
-    } finally {
-      setRevokingPairingId(null)
-    }
-  }, [pushToast, refresh])
 
   const handleApproveDraft = useCallback(async (draftId: string) => {
     setApprovingDraftId(draftId)
@@ -402,48 +357,9 @@ export function WebBridgeStatusDialog({
 
             <div className="min-w-0 space-y-1.5 rounded-md bg-(--bg-key) px-3 py-2">
               <p className="text-xs font-medium text-(--color-text-muted)">
-                Same device
-              </p>
-              <p className="text-xs text-(--color-text-subtle)">
-                Click the WebBridge toolbar icon, open Settings, then choose
-                Pair local EvoFlux. No code is generated.
-              </p>
-            </div>
-
-            <div className="min-w-0 space-y-2 rounded-md border border-(--color-border) px-3 py-2">
-              <p className="text-xs font-medium text-(--color-text-muted)">
-                Manual or remote pairing
-              </p>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => void handlePairingCode()}
-                disabled={pairing}
-                className="w-full"
-              >
-                {pairing ? (
-                  <Loader2 className="animate-spin" aria-hidden="true" />
-                ) : (
-                  <KeyRound aria-hidden="true" />
-                )}
-                Generate one-time pairing code
-              </Button>
-
-              {pairingCode && (
-                <div className="min-w-0 space-y-1.5">
-                  <CopyRow label="Pairing code" value={pairingCode} />
-                  <p className="text-xs text-(--color-text-subtle)">
-                    Single use. Expires in 5 minutes.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <div className="min-w-0 space-y-1.5 rounded-md bg-(--bg-key) px-3 py-2">
-              <p className="text-xs font-medium text-(--color-text-muted)">
                 Connection address
               </p>
-              <CopyRow label="Relay URL" value={relayUrl} />
+              <CopyRow label="Address" value={relayUrl} />
             </div>
 
             <ol className="list-decimal space-y-1.5 pl-4 text-xs text-(--color-text-2)">
@@ -461,51 +377,10 @@ export function WebBridgeStatusDialog({
                 folder.
               </li>
               <li>
-                Click the WebBridge toolbar icon and pair locally. Use the
-                one-time code only when local pairing is unavailable.
+                Click the WebBridge toolbar icon, enter the connection address,
+                then save and reconnect.
               </li>
             </ol>
-          </div>
-        )}
-
-        {pairings.length > 0 && (
-          <div className="min-w-0 space-y-2">
-            <p className="text-xs font-medium text-(--color-text-muted)">
-              Secure pairings
-            </p>
-            <ul className="space-y-1 rounded-md bg-(--bg-key) px-2 py-1.5">
-              {pairings.map((paired) => (
-                <li key={paired.pairing_id} className="min-w-0 space-y-2 border-b border-(--color-border-subtle) py-1.5 last:border-b-0">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs font-medium text-(--color-text)">
-                        {paired.label}
-                      </p>
-                      <p className="truncate text-xs text-(--color-text-subtle)">
-                        {paired.browser} · v{paired.version}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => void handleRevoke(paired.pairing_id)}
-                      disabled={revokingPairingId === paired.pairing_id}
-                      className="shrink-0 rounded-xs p-1 text-(--color-text-subtle) transition-colors hover:bg-(--bg-2) hover:text-(--color-error) disabled:opacity-50"
-                      aria-label={`Revoke ${paired.label}`}
-                      title={`Revoke ${paired.label}`}
-                    >
-                      {revokingPairingId === paired.pairing_id ? (
-                        <Loader2 size={14} className="animate-spin" aria-hidden="true" />
-                      ) : (
-                        <Unplug size={14} aria-hidden="true" />
-                      )}
-                    </button>
-                  </div>
-                  <p className="text-xs text-(--color-text-subtle)">
-                    Opening Side Chat creates one session for the active tab group automatically.
-                  </p>
-                </li>
-              ))}
-            </ul>
           </div>
         )}
 

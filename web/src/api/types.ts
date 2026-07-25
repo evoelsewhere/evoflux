@@ -1278,21 +1278,6 @@ export interface WebBridgeStatusResponse {
   extensions: WebBridgeExtensionInfo[]
 }
 
-export interface WebBridgePairingCodeResponse {
-  code: string
-  expires_in: number
-}
-
-export interface WebBridgePairingInfo {
-  pairing_id: string
-  label: string
-  browser: string
-  version: string
-  scopes: string[]
-  created_at: string
-  last_seen_at: string
-}
-
 export interface WebBridgeLaunchBrowserResponse {
   ok: boolean
   browser?: string

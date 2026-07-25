@@ -10,7 +10,8 @@ const nativeSetTimeout = globalThis.setTimeout;
 const nativeClearTimeout = globalThis.clearTimeout;
 const workerTimers = new Set();
 
-test.afterEach(() => {
+test.afterEach(async () => {
+  await new Promise((resolve) => setImmediate(resolve));
   for (const timer of workerTimers) nativeClearTimeout(timer);
   workerTimers.clear();
 });
@@ -569,7 +570,9 @@ test("P2 extension action opens Side Chat and settings live inside the panel", (
   assert.match(workerSource, /openPanelOnActionClick: true/);
   assert.match(sidePanelHtml, /id="settingsDrawer"/);
   assert.match(sidePanelHtml, /id="relayBaseInput"/);
-  assert.match(sidePanelHtml, /id="pairLocalBtn"/);
+  assert.match(sidePanelHtml, /Connection address/);
+  assert.doesNotMatch(sidePanelHtml, /pairLocalBtn|pairingCodeInput|pairCodeBtn|Manual or remote pairing/);
+  assert.doesNotMatch(workerSource, /pair_with_code|pair_locally|PAIRING_EXCHANGE_PATH/);
   assert.doesNotMatch(sidePanelHtml, /id="sessionSelect"|newConversation/);
   assert.match(sidePanelSource, /ensure_browser_session_for_tab/);
   assert.doesNotMatch(sidePanelHtml, /Legacy access token|accessTokenInput/);
@@ -1520,6 +1523,7 @@ test("retry reuses a pending browser action without creating another session", a
 test("retry rejects and clears browser context after cross-origin navigation", async () => {
   const worker = loadWorker({
     storedConfig: {
+      relayBase: "ws://relay.example",
       pendingInteraction: {
         action_id: "action-1",
         tab_id: 1,
@@ -1558,7 +1562,7 @@ test("expired pending browser context is purged during status reads", async () =
 test("P1 browser context rejects restricted pages before any network request", async () => {
   const worker = loadWorker({
     storedConfig: {
-      relayBase: "ws://127.0.0.1:8000",
+      relayBase: "ws://relay.example",
     },
     fetchResponder: async () => {
       throw new Error("network must not be reached");
@@ -1633,6 +1637,7 @@ test("P3 text watch matches without sending browser context until the user confi
 test("P3 text watch cancels on a page-path change without inspecting or sending page content", async () => {
   const worker = loadWorker({
     storedConfig: {
+      relayBase: "ws://relay.example",
       webbridgeTextWatches: [{
         id: "watch-1",
         tab_id: 1,
@@ -1659,6 +1664,7 @@ test("P3 text watch cancels on a page-path change without inspecting or sending 
 test("P3 text watch expiry clears a stale match badge without sending page content", async () => {
   const worker = loadWorker({
     storedConfig: {
+      relayBase: "ws://relay.example",
       webbridgeTextWatches: [{
         id: "expired-watch",
         tab_id: 1,
@@ -1684,7 +1690,7 @@ test("P3 text watch expiry clears a stale match badge without sending page conte
 
 test("P3 text watch rejects restricted pages before binding or polling", async () => {
   const worker = loadWorker({
-    storedConfig: { relayBase: "ws://127.0.0.1:8000" },
+    storedConfig: { relayBase: "ws://relay.example" },
     fetchResponder: async () => {
       throw new Error("network must not be reached");
     },
@@ -1981,81 +1987,49 @@ test("paired connection exchanges credential for a single-use relay ticket", asy
   assert.ok(register.capabilities.automation.includes("teach_mode"));
 });
 
-test("pairing code exchange persists the scoped credential", async () => {
-  const worker = loadWorker({
-    storedConfig: {
-      relayBase: "wss://evoflux.example",
-      accessToken: "legacy-secret",
-    },
-    fetchResponder: async () => ({
-      ok: true,
-      async json() {
-        return {
-          pairing_id: "pairing-2",
-          credential: "scoped-secret",
-          scopes: ["relay", "interactions:write"],
-        };
-      },
-    }),
-  });
-
-  const result = await worker.run('pairWithCode("ABCD-EFGH-JKLM")');
-
-  assert.equal(worker.fetchCalls.at(-1).url, "https://evoflux.example/api/team/webbridge/pairing/exchange");
-  assert.equal(worker.fetchCalls.at(-1).init.method, "POST");
-  assert.deepEqual(JSON.parse(worker.fetchCalls.at(-1).init.body), {
-    code: "ABCD-EFGH-JKLM",
-    browser: "chrome",
-    version: "test",
-  });
-  assert.equal(worker.storedConfig.pairingCredential, "scoped-secret");
-  assert.equal(worker.storedConfig.pairingId, "pairing-2");
-  assert.equal(worker.storedConfig.pairingRelayBase, "wss://evoflux.example");
-  assert.equal(worker.storedConfig.accessToken, undefined);
-  assert.equal(result.pairing_id, "pairing-2");
-});
-
-test("legacy stored access token is removed and cannot open the relay", async () => {
+test("connection address automatically bootstraps a local credential and opens the relay", async () => {
   const worker = loadWorker({
     storedConfig: {
       relayBase: "ws://127.0.0.1:8000",
-      accessToken: "must-be-deleted",
+      accessToken: "legacy-secret",
     },
-  });
-
-  await new Promise((resolve) => setImmediate(resolve));
-  await new Promise((resolve) => setImmediate(resolve));
-
-  assert.equal(worker.storedConfig.accessToken, undefined);
-  assert.equal(worker.sockets.length, 0);
-  assert.equal(worker.fetchCalls.length, 0);
-  assert.equal(worker.run("lastCloseReason"), "pairing");
-});
-
-test("local loopback pairing persists a scoped credential without a code", async () => {
-  const worker = loadWorker({
-    storedConfig: { relayBase: "ws://127.0.0.1:8000" },
     fetchResponder: async (url, init) => {
-      assert.equal(url, "http://127.0.0.1:8000/api/team/webbridge/pairing/local");
-      assert.equal(init.method, "POST");
-      return {
-        ok: true,
-        async json() {
-          return {
-            pairing_id: "pairing-local",
-            credential: "local-scoped-secret",
-            scopes: ["relay", "interactions:write"],
-          };
-        },
-      };
+      if (url.endsWith("/pairing/local")) {
+        assert.equal(init.method, "POST");
+        assert.equal(init.headers.Authorization, undefined);
+        return {
+          ok: true,
+          async json() {
+            return {
+              pairing_id: "pairing-local",
+              credential: "local-scoped-secret",
+              scopes: ["relay", "interactions:write"],
+            };
+          },
+        };
+      }
+      if (url.endsWith("/relay-ticket")) {
+        assert.equal(init.headers.Authorization, "Bearer local-scoped-secret");
+        return { ok: true, async json() { return { ticket: "ticket-once" }; } };
+      }
+      throw new Error(`Unexpected fetch ${url}`);
     },
   });
 
-  const result = await worker.run("pairLocally()");
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
 
-  assert.equal(result.pairing_id, "pairing-local");
+  assert.deepEqual(
+    worker.fetchCalls.map((call) => new URL(call.url).pathname),
+    ["/api/team/webbridge/pairing/local", "/api/team/webbridge/relay-ticket"],
+  );
   assert.equal(worker.storedConfig.pairingCredential, "local-scoped-secret");
+  assert.equal(worker.storedConfig.pairingId, "pairing-local");
   assert.equal(worker.storedConfig.pairingRelayBase, "ws://127.0.0.1:8000");
+  assert.equal(worker.storedConfig.accessToken, undefined);
+  assert.equal(worker.sockets.length, 1);
+  assert.equal(worker.sockets[0].url, "ws://127.0.0.1:8000/api/team/webbridge/relay?_ticket=ticket-once");
 });
 
 test("revoked pairing credential is removed before reconnect", async () => {
@@ -2129,26 +2103,40 @@ test("relay revocation close clears pairing without reconnect", async () => {
   assert.equal(worker.sockets.length, 1);
 });
 
-test("pairing credential is never sent after relay URL changes", async () => {
+test("a connection address change bootstraps without sending the old credential", async () => {
   const worker = loadWorker({
     storedConfig: {
-      relayBase: "wss://different.example",
+      relayBase: "ws://127.0.0.1:8000",
       pairingCredential: "relay-bound-secret",
       pairingId: "pairing-bound",
       pairingRelayBase: "wss://original.example",
     },
-    fetchResponder: async () => {
-      throw new Error("credential must not be sent");
+    fetchResponder: async (url, init) => {
+      assert.notEqual(init.headers?.Authorization, "Bearer relay-bound-secret");
+      if (url.endsWith("/pairing/local")) {
+        return {
+          ok: true,
+          async json() {
+            return { pairing_id: "pairing-new", credential: "new-secret", scopes: ["relay"] };
+          },
+        };
+      }
+      if (url.endsWith("/relay-ticket")) {
+        assert.equal(init.headers.Authorization, "Bearer new-secret");
+        return { ok: true, async json() { return { ticket: "new-ticket" }; } };
+      }
+      throw new Error(`Unexpected fetch ${url}`);
     },
   });
 
   await new Promise((resolve) => setImmediate(resolve));
   await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
 
-  assert.equal(worker.fetchCalls.length, 0);
-  assert.equal(worker.sockets.length, 0);
-  assert.equal(worker.storedConfig.pairingCredential, "");
-  assert.equal(worker.run("lastCloseReason"), "pairing");
+  assert.equal(worker.fetchCalls.length, 2);
+  assert.equal(worker.sockets.length, 1);
+  assert.equal(worker.storedConfig.pairingCredential, "new-secret");
+  assert.equal(worker.storedConfig.pairingRelayBase, "ws://127.0.0.1:8000");
 });
 
 test("insecure remote relay is rejected before network access", async () => {

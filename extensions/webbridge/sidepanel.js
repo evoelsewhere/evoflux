@@ -1,9 +1,4 @@
-/* EvoFlux WebBridge P2 Side Panel.
- *
- * The panel is an extension page, so it may safely read the pairing credential
- * from extension storage. It only sends that credential in Authorization
- * headers to the relay it was paired with; never in URLs or page contexts.
- */
+/* EvoFlux WebBridge P2 Side Panel. */
 
 const DEFAULT_RELAY_BASE = "ws://127.0.0.1:8000";
 const SESSIONS_PATH = "/api/team/webbridge/sessions";
@@ -57,11 +52,6 @@ const toggleConnectionBtn = document.getElementById("toggleConnectionBtn");
 const settingsStatusDot = document.getElementById("settingsStatusDot");
 const settingsStatusText = document.getElementById("settingsStatusText");
 const settingsStatusDetail = document.getElementById("settingsStatusDetail");
-const pairingSettings = document.getElementById("pairingSettings");
-const pairLocalBtn = document.getElementById("pairLocalBtn");
-const pairingCodeInput = document.getElementById("pairingCodeInput");
-const pairCodeBtn = document.getElementById("pairCodeBtn");
-const pairingSettingsDetail = document.getElementById("pairingSettingsDetail");
 const themeControl = document.getElementById("themeControl");
 const watchNeedleInput = document.getElementById("watchNeedleInput");
 const watchTtlSelect = document.getElementById("watchTtlSelect");
@@ -212,7 +202,7 @@ async function sha256(value) {
 }
 
 async function loadConfig() {
-  const cfg = await chrome.storage.local.get([
+  let cfg = await chrome.storage.local.get([
     "relayBase",
     "pairingCredential",
     "pairingRelayBase",
@@ -221,7 +211,14 @@ async function loadConfig() {
   pairingCredential = (cfg.pairingCredential || "").trim();
   pairingRelayBase = (cfg.pairingRelayBase || "").trim().replace(/\/+$/, "");
   if (!pairingCredential || pairingRelayBase !== canonicalRelayBase()) {
-    throw new Error("Pair WebBridge with this relay before opening the Side Panel.");
+    const response = await chrome.runtime.sendMessage({ type: "ensure_connection" });
+    if (!response?.ok) throw new Error(response?.error || "Could not connect to EvoFlux.");
+    cfg = await chrome.storage.local.get(["pairingCredential", "pairingRelayBase"]);
+    pairingCredential = (cfg.pairingCredential || "").trim();
+    pairingRelayBase = (cfg.pairingRelayBase || "").trim().replace(/\/+$/, "");
+    if (!pairingCredential || pairingRelayBase !== canonicalRelayBase()) {
+      throw new Error("The EvoFlux connection is still starting.");
+    }
   }
   let parsed;
   try {
@@ -1546,12 +1543,9 @@ async function refreshSettings() {
     settingsStatusDot.className = `status-dot ${connected ? "live" : "error"}`;
     settingsStatusText.textContent = connected ? "Connected" : "Disconnected";
     settingsStatusDetail.textContent = connected
-      ? `Secure pairing ${response.pairing_id || "active"}`
-      : response?.last_close_reason === "pairing"
-        ? "Pairing was rejected or revoked."
-        : "Reconnect or pair this extension to continue.";
+      ? `Connected to ${response.relay_base || DEFAULT_RELAY_BASE}`
+      : "Save the connection address or reconnect to continue.";
     toggleConnectionBtn.textContent = connected ? "Disconnect" : "Reconnect";
-    pairingSettings.style.display = response?.paired ? "none" : "block";
     textWatches = response?.text_watches || [];
     activeTextWatch = textWatches.find((item) => item.tab_id === activeTab?.id) || null;
     if (activeTextWatch?.state === "matched") {
@@ -1661,48 +1655,6 @@ async function saveConnectionSettings() {
     setTimeout(() => void refreshSettings(), 500);
   } finally {
     saveConnectionBtn.disabled = false;
-  }
-}
-
-async function pairLocally() {
-  pairLocalBtn.disabled = true;
-  pairCodeBtn.disabled = true;
-  pairingSettingsDetail.textContent = "Pairing with local EvoFlux…";
-  try {
-    await chrome.storage.local.set({ relayBase: relayBaseInput.value.trim() || DEFAULT_RELAY_BASE });
-    const response = await chrome.runtime.sendMessage({ type: "pair_locally" });
-    if (!response?.ok) throw new Error(response?.error || "Local pairing failed");
-    pairingSettingsDetail.textContent = "Paired. Connecting…";
-    setTimeout(() => { void refreshSettings(); void refreshPanel(); }, 500);
-  } catch (error) {
-    pairingSettingsDetail.textContent = error.message || String(error);
-  } finally {
-    pairLocalBtn.disabled = false;
-    pairCodeBtn.disabled = false;
-  }
-}
-
-async function pairWithCode() {
-  const code = pairingCodeInput.value.trim().toUpperCase();
-  if (!code) {
-    pairingSettingsDetail.textContent = "Enter the one-time code shown in EvoFlux.";
-    return;
-  }
-  pairLocalBtn.disabled = true;
-  pairCodeBtn.disabled = true;
-  pairingSettingsDetail.textContent = "Pairing…";
-  try {
-    await chrome.storage.local.set({ relayBase: relayBaseInput.value.trim() || DEFAULT_RELAY_BASE });
-    const response = await chrome.runtime.sendMessage({ type: "pair_with_code", code });
-    if (!response?.ok) throw new Error(response?.error || "Pairing failed");
-    pairingCodeInput.value = "";
-    pairingSettingsDetail.textContent = "Paired. Connecting…";
-    setTimeout(() => { void refreshSettings(); void refreshPanel(); }, 500);
-  } catch (error) {
-    pairingSettingsDetail.textContent = error.message || String(error);
-  } finally {
-    pairLocalBtn.disabled = false;
-    pairCodeBtn.disabled = false;
   }
 }
 
@@ -1837,8 +1789,6 @@ closeSettingsBtn.addEventListener("click", closeSettings);
 settingsBackdrop.addEventListener("click", closeSettings);
 saveConnectionBtn.addEventListener("click", () => void saveConnectionSettings());
 toggleConnectionBtn.addEventListener("click", () => void toggleConnection());
-pairLocalBtn.addEventListener("click", () => void pairLocally());
-pairCodeBtn.addEventListener("click", () => void pairWithCode());
 themeControl.addEventListener("click", (event) => {
   const button = event.target.closest("button[data-theme-value]");
   if (button) void setTheme(button.dataset.themeValue);
@@ -1911,8 +1861,8 @@ chrome.runtime.onMessage.addListener((message) => {
     renderModelTrigger();
     pendingQuestions.clear();
     renderQuestions();
-    showEmptyTranscript("WebBridge pairing was revoked. Pair the extension again to continue.");
-    setNotice("WebBridge pairing was revoked.", "error");
+    showEmptyTranscript("The WebBridge connection was reset. Reconnect to continue.");
+    setNotice("The WebBridge connection was reset.", "error");
     statusDot.className = "status-dot error";
     return;
   }
@@ -1956,7 +1906,7 @@ async function refreshRunningState() {
       await loadPendingQuestions();
     }
   } catch {
-    // The main refresh surface reports pairing/transport errors.
+    // The main refresh surface reports connection errors.
   }
 }
 

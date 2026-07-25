@@ -46,36 +46,28 @@ enforced against the tab actually being driven.
 2. Click **Load unpacked** and select this folder (`extensions/webbridge`) from
    the EvoFlux repository.
 3. Click the WebBridge icon in the toolbar to open Side Chat. Use its settings
-  button to configure and pair the connection.
+   button to configure the connection.
 
-## Secure pairing (recommended)
+## Connection
 
-1. Open Side Chat settings and set the EvoFlux relay URL.
-2. When EvoFlux runs on the same device, click **Pair local EvoFlux**. No code
-  is required; the endpoint accepts only a loopback Chrome-extension request.
-3. For a remote/manual setup, open **WebBridge** in EvoFlux, generate a one-time
-  code, enter it in Side Chat settings, and click **Pair with code**.
-4. The extension stores a revocable, scoped pairing credential locally. Before
-  every relay connection it exchanges that credential over HTTP for a
-  single-use, 30-second WebSocket ticket; the credential is never placed in a
-  URL.
+Open Side Chat settings, enter the **Connection address** shown in the EvoFlux
+WebBridge dialog, then click **Save & reconnect**. The default address is
+`ws://127.0.0.1:8000`.
 
-Pairing codes expire after five minutes and work once. A desktop app or keyed
-server requires its desktop token or access key before it can issue a code. The
-source-checkout `make dev` workflow runs on loopback and may issue codes only to
-loopback clients; a server exposed beyond loopback must configure an access key.
-Pairing survives desktop restarts, unlike the per-launch desktop token, and can
-be revoked from the WebBridge dialog.
+For a local desktop connection, the extension establishes its scoped internal
+credential automatically. No pairing code or separate pairing action is
+required. The bootstrap endpoint accepts only a loopback Chrome-extension
+request.
 
 ## Side Chat settings
 
-- **Relay URL** — base URL of the EvoFlux backend, default
+- **Connection address** — base URL of the EvoFlux backend, default
   `ws://127.0.0.1:8000`. `http(s)://` bases are accepted and normalized to
   `ws(s)://`. The extension appends `/api/team/webbridge/relay` itself.
 
-Connection fields are saved in `chrome.storage.local`; saving them triggers an
-immediate reconnect. The secure pairing credential is also stored locally but
-is only sent as an HTTP Bearer credential to mint relay tickets. The same
+The connection address is saved in `chrome.storage.local`; saving it triggers
+an immediate reconnect. The internal connection credential is stored locally
+and is only sent as an HTTP Bearer credential to mint relay tickets. The same
 settings drawer contains theme, text-watch, Teach Mode, retry, and browser
 control actions; the extension toolbar icon opens Side Chat directly.
 
@@ -85,7 +77,7 @@ disconnecting the extension releases them automatically.
 
 ## Send browser context to EvoFlux
 
-After secure pairing, WebBridge adds three explicit, HTTP(S)-only context-menu
+After connecting, WebBridge adds three explicit, HTTP(S)-only context-menu
 actions:
 
 - **Ask EvoFlux about selection** prepares selected text with page provenance.
@@ -95,19 +87,19 @@ actions:
 Context-menu actions open an editable Side Chat draft; nothing is submitted
 until the user reviews the prompt and presses Send. Opening Side Chat
 automatically creates the internal EvoFlux run/session for that primary tab when
-needed. The tab remains ungrouped until the session opens a second tab. A failed request keeps one
-short-lived pending action for idempotent retry. Drafts are stored per tab and
-bound to a navigation instance, so leaving and returning to the same URL cannot
-revive stale selected context.
+needed. The tab remains ungrouped until the session opens a second tab. A failed
+request keeps one short-lived pending action for idempotent retry. Drafts are
+stored per tab and bound to a navigation instance, so leaving and returning to
+the same URL cannot revive stale selected context.
 
 One browser session starts with one primary tab. The primary tab owns the
 backend binding and default automation target. When a child tab is added,
 WebBridge creates one named Chrome group containing both tabs; later child tabs
 join that group and reuse the internal session. Users do not choose, grant, or
 rebind desktop chat sessions in Side Chat. When the primary tab changes origin,
-the session stays attached to its tab ID
-while browser tools pause until Side Chat refreshes the new origin scope. URL
-query strings and fragments are stripped from P1 browser context, while
+the session stays attached to its tab ID while browser tools pause until Side
+Chat refreshes the new origin scope. URL query strings and fragments are
+stripped from P1 browser context, while
 selected text remains bounded and is marked as untrusted data in the EvoFlux
 transcript.
 
@@ -130,7 +122,7 @@ active tab automatically without grouping a lone tab. It can:
   Absolute remote Markdown images are not loaded automatically; Side Chat shows
   an explicit load control with a no-referrer request instead.
 - Attach readable page text, selection, files, or a user-dragged screen region.
-  Browser artifacts carry source/hash/capture provenance, pairing-scoped media
+  Browser artifacts carry source/hash/capture provenance, connection-scoped media
   authorization, configurable retention, and owner-only delete controls.
 - Show live `AskUser` batches and typed browser handoffs (`take_over`,
   `confirm_action`, `provide_secret`, `choose_option`). Secret handoff only
@@ -145,13 +137,14 @@ active tab automatically without grouping a lone tab. It can:
   live lease. It clears when the tab changes origin, closes, expires, or the
   browser restarts.
 
-Side Panel messages use the pairing-owned internal session bound to the group's
-primary tab. Session ownership follows the primary tab ID even on internal pages
-such as `chrome://newtab`; page-dependent browser tools remain disabled until
-that tab opens an HTTP(S) page, when the same binding is upgraded to the page
-origin. **Report issue evidence** is opt-in and collects only a bounded,
-redacted ring of console warnings/errors and failed-network metadata; no
-headers, request/response bodies, cookies, query strings, or secrets are stored.
+Side Panel messages use the connection-owned internal session bound to the
+group's primary tab. Session ownership follows the primary tab ID even on
+internal pages such as `chrome://newtab`; page-dependent browser tools remain
+disabled until that tab opens an HTTP(S) page, when the same binding is upgraded
+to the page origin. **Report issue evidence** is opt-in and collects only a
+bounded, redacted ring of console warnings/errors and failed-network metadata;
+no headers, request/response bodies, cookies, query strings, or secrets are
+stored.
 
 ## P3: Teach Mode and text watches
 
@@ -170,7 +163,7 @@ binding:
   and fields whose metadata looks secret are represented as parameter names;
   their values are never sent to EvoFlux or written to extension storage.
 
-Stopping Teach Mode saves a pairing-scoped draft and a valid workflow YAML
+Stopping Teach Mode saves a connection-scoped draft and a valid workflow YAML
 artifact. Review/approve it in EvoFlux, provide secret parameters there, then
 run one supervised step at a time. Values remain runtime-only. Replay remains
 subject to tab-binding, origin, domain/sharing policy, capability negotiation,
@@ -205,14 +198,14 @@ uv run python scripts/webbridge_office_smoke.py powerpoint-online <session-id>
 
 ## Security notes
 
-- Every connection uses a scoped pairing credential plus a single-use relay
+- Every connection uses a scoped internal credential plus a single-use relay
   ticket. The credential is sent only as an HTTP Bearer credential to mint that
-  ticket; it never appears in a WebSocket URL. Revoking a pairing invalidates
+  ticket; it never appears in a WebSocket URL. Resetting a connection invalidates
   its credential and outstanding tickets and closes its active relay connection.
 - Commands arrive **only** from the configured relay — point it at your own
-  local EvoFlux backend (the default is loopback, `127.0.0.1`). A valid pairing
-  can drive your browser, so revoke pairings you no longer recognize and keep
-  the default loopback binding unless you intentionally expose the backend.
+  local EvoFlux backend (the default is loopback, `127.0.0.1`). A connected
+  extension can drive your browser, so keep the default loopback binding unless
+  you intentionally expose the backend.
 - Domain policy checks explicit background-tab actions against that tab's URL,
   not the active tab. When a domain policy is configured and the target URL is
   unknown, the backend fails closed instead of forwarding the command.
@@ -231,7 +224,7 @@ uv run python scripts/webbridge_office_smoke.py powerpoint-online <session-id>
 ### Backend guardrails (`settings.yaml` → `webbridge`)
 
 Because the agent drives a **logged-in** browser, the backend enforces a
-policy on top of secure pairing. Configure it under a `webbridge:` block in
+policy on top of the scoped connection. Configure it under a `webbridge:` block in
 `settings.yaml`:
 
 ```yaml
@@ -267,14 +260,14 @@ browser interaction — allowed or refused — is recorded with direction in
 ## Troubleshooting
 
 - **Extension shows "Connected" but the agent says no extension is connected.**
-  The extension and the agent must talk to the *same* relay — check the Relay
-  URL in Side Chat settings matches the backend the app is using. Also make sure you
+  The extension and the agent must talk to the *same* relay — check the
+  Connection address in Side Chat settings matches the backend the app is using.
+  Also make sure you
   loaded the extension in the same browser profile you're checking from; the
   sidebar status (`WebBridge` item in the app) lists every registered
   extension.
 - **"Ticket rejected."** The relay closed the connection with 4401 because a
-  single-use ticket was invalid or expired. Reconnect to mint a fresh ticket;
-  re-pair only if the pairing was revoked.
+  single-use ticket was invalid or expired. Reconnect to mint a fresh ticket.
 - **Connection drops after the browser sits idle.** Chrome kills MV3 service
   workers aggressively. The extension uses a `chrome.alarms` heartbeat (every
   30 s) both to ping the relay and to wake the worker and reconnect — brief
