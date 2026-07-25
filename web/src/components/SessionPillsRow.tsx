@@ -2,11 +2,14 @@
 
 import { useMemo, useState } from 'react'
 import fuzzysort from 'fuzzysort'
+import { motion } from 'framer-motion'
 import { Check, ChevronDown, Search, Zap } from 'lucide-react'
 import { useRegistryQuery } from '@/queries'
 import { cn } from '@/lib/utils'
+import { fadeRise, staggerDelay, useListEnterIndex, useMotionPreset } from '@/lib/motion'
 import { DiscreteSlider } from '@/components/ui/discrete-slider'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { SegmentedControl } from '@/components/ui/segmented-control'
 import { AgentInfoPopover } from './AgentInfoPopover'
 import { ProviderBrandIcon } from '@/components/providers/ProviderBrandIcon'
 
@@ -33,7 +36,7 @@ const THINKING_MARK: Record<string, string> = {
 }
 
 const CONTROL_CLASS =
-  'flex h-7 min-w-0 items-center rounded-md px-1.5 text-xs text-(--color-text-muted) outline-none transition-colors hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:ring-2 focus-visible:ring-(--color-accent)/30'
+  'flex h-7 min-w-0 items-center rounded-md px-2 text-xs text-(--color-text-muted) outline-none transition-colors duration-(--motion-fast) hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:ring-2 focus-visible:ring-(--color-accent)/30'
 
 type ThinkingOption = {
   value: string | null
@@ -84,6 +87,7 @@ function ModelOptions({
   selectedModel: string
   onSelect: (modelId: string) => void
 }) {
+  const preset = useMotionPreset()
   const registry = useRegistryQuery()
   const [query, setQuery] = useState('')
   const models = useMemo(() => registry.data?.models ?? [], [registry.data?.models])
@@ -92,6 +96,7 @@ function ModelOptions({
     if (!value) return models.slice(0, 30)
     return fuzzysort.go(value, models, { key: 'id', limit: 30 }).map((result) => result.obj)
   }, [models, query])
+  const enterIndex = useListEnterIndex(visibleModels.map((model) => model.id))
 
   return (
     <div className="flex min-h-0 flex-col gap-2">
@@ -116,9 +121,10 @@ function ModelOptions({
             {visibleModels.map((model) => {
               const selected = model.id === selectedModel
               const provider = providerOf(model.id)
-              return (
+              const index = enterIndex(model.id)
+              const enter = index !== undefined ? fadeRise(preset, 6) : null
+              const option = (
                 <button
-                  key={model.id}
                   type="button"
                   role="option"
                   aria-selected={selected}
@@ -150,6 +156,19 @@ function ModelOptions({
                     className={cn('shrink-0 text-(--color-accent)', selected ? 'opacity-100' : 'opacity-0')}
                   />
                 </button>
+              )
+              if (!enter || index === undefined) {
+                return <div key={model.id}>{option}</div>
+              }
+              return (
+                <motion.div
+                  key={model.id}
+                  initial={enter.initial}
+                  animate={enter.animate}
+                  transition={{ ...enter.transition, delay: staggerDelay(preset, index) }}
+                >
+                  {option}
+                </motion.div>
               )
             })}
           </div>
@@ -367,44 +386,23 @@ function AdvancedComposerControl({
               <span className="text-[10px] text-(--color-text-subtle)">Fast unavailable</span>
             )}
           </div>
-          <div
-            className="grid h-8 grid-cols-2 rounded-md border border-(--color-border) bg-(--bg-key)/60 p-0.5"
-            role="group"
-            aria-label="Response speed"
-          >
-            {([false, true] as const).map((fast) => {
-              const active = fast === effectiveFastMode
-              const disabled = fast && !fastAvailable
-              return (
-                <button
-                  key={String(fast)}
-                  type="button"
-                  disabled={disabled}
-                  aria-pressed={active}
-                  title={disabled ? 'Fast mode is unavailable for this model' : undefined}
-                  onClick={() => onChange?.(sessionModel, currentThinkingLevel, fast)}
-                  className={cn(
-                    'relative flex items-center justify-center gap-1 rounded-[7px] px-2 text-xs outline-none transition-colors',
-                    'focus-visible:ring-2 focus-visible:ring-(--color-accent)/30 disabled:cursor-not-allowed disabled:opacity-40',
-                    active
-                      ? 'bg-(--bg-card) text-(--color-text) shadow-sm'
-                      : 'text-(--color-text-muted) hover:text-(--color-text)',
-                  )}
-                >
-                  {fast && (
-                    <Zap
-                      data-testid="fast-mode-zap"
-                      data-fast-active={String(effectiveFastMode)}
-                      aria-hidden="true"
-                      size={11}
-                      className={effectiveFastMode ? 'text-(--thinking-low)' : undefined}
-                    />
-                  )}
-                  {fast ? 'Fast' : 'Standard'}
-                </button>
-              )
-            })}
-          </div>
+          <SegmentedControl
+            layoutId="composer-speed"
+            ariaLabel="Response speed"
+            className="h-8 w-full [&>button]:flex-1"
+            options={[
+              { value: 'standard', label: 'Standard' },
+              {
+                value: 'fast',
+                label: 'Fast',
+                disabled: !fastAvailable,
+              },
+            ]}
+            value={effectiveFastMode ? 'fast' : 'standard'}
+            onChange={(speed) =>
+              onChange?.(sessionModel, currentThinkingLevel, speed === 'fast')
+            }
+          />
         </div>
       </PopoverContent>
     </Popover>
@@ -437,7 +435,7 @@ export function SessionPillsRow({
   mode,
 }: SessionPillsRowProps) {
   return (
-    <div className="flex min-w-0 items-center gap-0.5">
+    <div className="flex min-w-0 items-center gap-1">
       <AdvancedComposerControl
         sessionModel={sessionModel ?? null}
         defaultModel={defaultModel ?? null}

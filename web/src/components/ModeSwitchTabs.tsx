@@ -59,7 +59,7 @@ export function ModeSwitchTabs({
             title={label}
             aria-current={mode === active ? 'page' : undefined}
             className={cn(
-              'relative z-10 flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-[6px] px-1 text-xs font-medium outline-none transition-[color,transform] duration-150 active:translate-y-px focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--color-accent)/35 @[12.5rem]/modeswitch:px-2',
+              'relative z-10 flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-[6px] px-1 text-xs font-medium outline-none transition-[color,transform] duration-(--motion-fast) active:translate-y-px focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--color-accent)/35 @[12.5rem]/modeswitch:px-2',
               mode === active
                 ? 'text-(--color-text)'
                 : 'text-(--color-text-muted) hover:text-(--color-text)',
@@ -83,6 +83,7 @@ export function ModeSwitchRail({
   className?: string
 }) {
   const navigate = useNavigate()
+  const preset = useMotionPreset()
   return (
     <div className={cn('flex flex-col items-center gap-0.5', className)}>
       {TABS.map(({ mode, label, Icon, to }) => (
@@ -95,13 +96,21 @@ export function ModeSwitchRail({
           title={label}
           aria-current={mode === active ? 'page' : undefined}
           className={cn(
-            'flex h-8 w-8 items-center justify-center rounded-lg outline-none transition-[background-color,color,transform] duration-150 active:translate-y-px focus-visible:ring-2 focus-visible:ring-(--color-accent)/35',
+            'relative flex h-8 w-8 items-center justify-center rounded-lg outline-none transition-[color,transform] duration-(--motion-fast) active:translate-y-px focus-visible:ring-2 focus-visible:ring-(--color-accent)/35',
             mode === active
-              ? 'bg-(--bg-key) text-(--color-accent)'
-              : 'text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-text-2)',
+              ? 'text-(--color-accent)'
+              : 'text-(--color-text-subtle) hover:text-(--color-text-2)',
           )}
         >
-          <Icon size={16} aria-hidden="true" />
+          {mode === active && (
+            <motion.span
+              layoutId="mode-switch-rail-indicator"
+              transition={preset.spring}
+              className="absolute inset-0 rounded-lg bg-(--bg-key)"
+              aria-hidden="true"
+            />
+          )}
+          <Icon size={16} className="relative z-10" aria-hidden="true" />
         </button>
       ))}
     </div>

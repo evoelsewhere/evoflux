@@ -30,7 +30,7 @@ import { X } from 'lucide-react'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useReducedMotion } from '@/hooks/useReducedMotion'
 import { useResizableWidth } from '@/hooks/use-resizable-width'
-import { useMotionPreset } from '@/lib/motion'
+import { panelTransition, useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 
 interface SidePanelProps {
@@ -152,7 +152,13 @@ export function SidePanel({
       initial={!animated ? false : fade ? { opacity: 0 } : { width: 0 }}
       animate={fade ? { opacity: 1 } : { width }}
       exit={fade ? { opacity: 0 } : { width: 0 }}
-      transition={animated ? motionPreset.transition : { duration: 0 }}
+      transition={
+        !animated
+          ? { duration: 0 }
+          : fade
+            ? motionPreset.transition
+            : panelTransition(motionPreset)
+      }
       className={cn(
         forceOverlay
           ? 'fixed inset-0 z-(--z-overlay) box-border min-h-0 w-full max-w-none overflow-hidden border-l border-(--color-border) shadow-xl'

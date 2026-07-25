@@ -191,7 +191,7 @@ export function TaskTimelinePanel({
         </div>
         <div className="h-1 w-full rounded-full bg-(--border-subtle)">
           <div
-            className="h-1 rounded-full bg-green-500 transition-all duration-500"
+            className="h-1 rounded-full bg-green-500 transition-[width] duration-(--motion-base)"
             style={{ width: `${progress}%` }}
           />
         </div>

@@ -11,13 +11,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
+  Bandage,
   CheckCircle2,
   ClipboardList,
+  Code,
+  FilePen,
   ListChecks,
   MessageSquarePlus,
   PencilLine,
+  Settings,
+  Terminal,
+  Trash2,
+  Wrench,
   XCircle,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 
 import { replyPlanApproval } from '@/api/client'
 import { useTeamStore } from '@/stores/useTeamStore'
@@ -30,23 +38,21 @@ import { cn } from '@/lib/utils'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 import type { PlanStep } from '@/api/types'
 
-const TOOL_ICON_MAP: Record<string, string> = {
-  edit: '✏️',
-  write: '📝',
-  patch: '🩹',
-  rm: '🗑️',
-  shell: '💻',
-  python: '🐍',
-  bg: '⚙️',
+const TOOL_ICON_MAP: Record<string, LucideIcon> = {
+  edit: PencilLine,
+  write: FilePen,
+  patch: Bandage,
+  rm: Trash2,
+  shell: Terminal,
+  python: Code,
+  bg: Settings,
 }
 
 function StepRow({ step, index }: { step: PlanStep; index: number }) {
-  const icon = TOOL_ICON_MAP[step.tool] ?? '🔧'
+  const Icon = TOOL_ICON_MAP[step.tool] ?? Wrench
   return (
     <div className="flex items-start gap-2.5 rounded-lg border border-(--color-border) bg-(--bg-card) p-2.5">
-      <span className="mt-0.5 shrink-0 text-sm leading-none" aria-hidden="true">
-        {icon}
-      </span>
+      <Icon size={14} className="mt-0.5 shrink-0 text-(--color-text-muted)" aria-hidden="true" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="rounded-xs bg-(--bg-key) px-1.5 py-0.5 font-mono text-xs text-(--color-text-muted)">
@@ -80,6 +86,7 @@ function SelectionCommentPopover({
   onSubmit: (comment: string) => void
   onDismiss: () => void
 }) {
+  const preset = useMotionPreset()
   const [comment, setComment] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
 
@@ -93,7 +100,11 @@ function SelectionCommentPopover({
   const top = Math.min(selection.top, window.innerHeight - 140)
 
   return (
-    <div
+    <motion.div
+      initial={{ opacity: 0, y: 4 * preset.distance, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 4 * preset.distance, scale: 0.98 }}
+      transition={preset.spring}
       className="fixed z-(--z-modal) rounded-xl border border-(--color-border) bg-(--bg-page) p-2 shadow-xl"
       style={{ top, left, width }}
       role="dialog"
@@ -139,7 +150,7 @@ function SelectionCommentPopover({
           Add to chat
         </button>
       </div>
-    </div>
+    </motion.div>
   )
 }
 
@@ -151,6 +162,7 @@ export function PlanReviewPanel({
 }) {
   const planApproval = useTeamStore((s) => s.planApproval)
   const isMobile = useIsMobile()
+  const preset = useMotionPreset()
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const [selection, setSelection] = useState<SelectionState | null>(null)
   const [stepsOpen, setStepsOpen] = useState(false)
@@ -250,24 +262,36 @@ export function PlanReviewPanel({
                     Steps to execute ({planApproval.steps.length})
                     <span className="ml-auto text-(--color-text-subtle)">{stepsOpen ? '−' : '+'}</span>
                   </button>
-                  {stepsOpen && (
-                    <div className="mt-2 space-y-1.5">
-                      {planApproval.steps.map((step, i) => (
-                        <StepRow key={i} step={step} index={i} />
-                      ))}
-                    </div>
-                  )}
+                  <AnimatePresence initial={false}>
+                    {stepsOpen && (
+                      <motion.div
+                        key="plan-steps"
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={preset.transition}
+                        className="mt-2 space-y-1.5 overflow-hidden"
+                      >
+                        {planApproval.steps.map((step, i) => (
+                          <StepRow key={i} step={step} index={i} />
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               )}
             </div>
 
-          {selection && (
-            <SelectionCommentPopover
-              selection={selection}
-              onSubmit={submitComment}
-              onDismiss={dismissPopover}
-            />
-          )}
+          <AnimatePresence>
+            {selection && (
+              <SelectionCommentPopover
+                key="plan-selection-popover"
+                selection={selection}
+                onSubmit={submitComment}
+                onDismiss={dismissPopover}
+              />
+            )}
+          </AnimatePresence>
         </SidePanel>
       )}
     </AnimatePresence>

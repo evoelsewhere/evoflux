@@ -46,12 +46,13 @@ export function PermissionApprovalModal() {
           initial={{ opacity: 0, y: 6 * preset.distance }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 6 * preset.distance }}
+          transition={preset.spring}
           className="mx-auto w-full max-w-3xl px-4 pb-2"
         >
-          <div className="rounded-xl border border-amber-500/30 bg-(--bg-page) shadow-sm overflow-hidden">
+          <div className="rounded-xl border border-(--color-warning)/30 bg-(--bg-page) shadow-sm overflow-hidden">
             {/* Top bar */}
-            <div className="flex items-center gap-2 border-b border-(--color-border) bg-amber-500/5 px-4 py-2.5">
-              <ShieldAlert size={14} className="shrink-0 text-amber-500" aria-hidden="true" />
+            <div className="flex items-center gap-2 border-b border-(--color-border) bg-(--color-warning)/5 px-4 py-2.5">
+              <ShieldAlert size={14} className="shrink-0 text-(--color-warning)" aria-hidden="true" />
               <span className="text-xs font-semibold text-(--color-text)">Permission required</span>
               <span className="text-xs text-(--color-text-muted)">— agent wants to run:</span>
               <span className="ml-0.5 rounded bg-(--bg-key) px-1.5 py-0.5 font-mono text-xs text-(--color-text)">

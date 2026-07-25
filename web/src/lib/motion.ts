@@ -22,7 +22,7 @@
  * - `web/public/appearance-init.js` pre-paint script
  * - `documents/styling-specs/motion.md` (semantic meaning of each value)
  */
-import { useSyncExternalStore } from 'react'
+import { useCallback, useState, useSyncExternalStore } from 'react'
 import type { Transition } from 'framer-motion'
 
 import {
@@ -191,4 +191,63 @@ export function fadeRise(preset: MotionPreset, basePx = 8) {
     exit: { opacity: 0, y: offset * 0.5 },
     transition: preset.transition,
   }
+}
+
+/** Stagger container transition for sequential children. */
+export function staggerChildren(preset: MotionPreset, delayChildren = 0) {
+  return {
+    ...preset.transition,
+    staggerChildren: preset.stagger,
+    delayChildren,
+  } satisfies Transition
+}
+
+/** Panel / drawer open — spring when intensity allows, else instant. */
+export function panelTransition(preset: MotionPreset): Transition {
+  return preset.intensity === 'reduced' ? { duration: 0 } : preset.spring
+}
+
+/** Per-child delay in seconds for map indexes. */
+export function staggerDelay(preset: MotionPreset, index: number): number {
+  return index * preset.stagger
+}
+
+function assignListEnterIndices(
+  ids: string[],
+  prevMap: Map<string, number>,
+  prevSeen: Set<string>,
+  cap: number,
+): Map<string, number> {
+  let batchIndex = 0
+  const map = new Map(prevMap)
+  for (const id of ids) {
+    if (!prevSeen.has(id) && !map.has(id)) {
+      map.set(id, Math.min(batchIndex, cap))
+      batchIndex += 1
+    }
+  }
+  return map
+}
+
+/**
+ * Returns a stable enter index per list id — first paint and each newly
+ * loaded batch only. Caps stagger depth so long lists stay snappy.
+ */
+export function useListEnterIndex(ids: string[], cap = 12): (id: string) => number | undefined {
+  const idsKey = ids.join('\0')
+  const [snapshot, setSnapshot] = useState(() => ({
+    key: idsKey,
+    map: assignListEnterIndices(ids, new Map(), new Set(), cap),
+    seen: new Set(ids),
+  }))
+
+  let map = snapshot.map
+  if (snapshot.key !== idsKey) {
+    const nextMap = assignListEnterIndices(ids, snapshot.map, snapshot.seen, cap)
+    const next = { key: idsKey, map: nextMap, seen: new Set(ids) }
+    setSnapshot(next)
+    map = nextMap
+  }
+
+  return useCallback((id: string) => map.get(id), [map])
 }

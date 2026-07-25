@@ -14,8 +14,11 @@
  *                   slightly higher opacity (≈0.65) for readability.
  */
 import { ChevronRight } from 'lucide-react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { ThinkingDots } from '@/components/motion/ThinkingDots'
+import { panelTransition, useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import { splitSections } from '@/utils/thinking'
 
@@ -25,6 +28,7 @@ interface ThinkingProps {
 }
 
 export function Thinking({ content, isStreaming }: ThinkingProps) {
+  const preset = useMotionPreset()
   const [open, setOpen] = useState(true)
   const contentRef = useRef<HTMLDivElement>(null)
 
@@ -49,78 +53,69 @@ export function Thinking({ content, isStreaming }: ThinkingProps) {
 
   const charCount = content.length
 
-  // ── Collapsed pill ──────────────────────────────────────────────
-  // A single, quiet line — no card, no border, just faded text.
-  // Clicking toggles the full content below.
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="group/my-2 flex items-center gap-1.5 py-0.5 text-[11px] leading-none text-(--color-text-subtle) opacity-75 transition-opacity hover:opacity-80"
-        aria-expanded={false}
-      >
-        <span className="italic">
-          {isStreaming
-            ? 'Thinking…'
-            : charCount > 0
-              ? `Thought · ${charCount.toLocaleString()} chars`
-              : 'Thinking'}
-        </span>
-        <ChevronRight
-          size={10}
-          className="shrink-0 text-(--color-text-subtle) opacity-0 transition-all group-hover/my-2:opacity-60"
-          aria-hidden="true"
-        />
-      </button>
-    )
-  }
+  const label = isStreaming
+    ? 'Thinking'
+    : charCount > 0
+      ? `Thought · ${charCount.toLocaleString()} chars`
+      : 'Thinking'
 
-  // ── Expanded / streaming ────────────────────────────────────────
-  // Content rendered at low opacity for the ghosted/faded effect.
-  // No heavy border — just a faint left accent line to anchor the block.
   return (
     <div className="my-2 min-w-0">
-      {/* Toggle row — minimal, same style as collapsed */}
       <button
         type="button"
-        onClick={() => setOpen(false)}
+        onClick={() => setOpen((v) => !v)}
         className="group/my-2 flex items-center gap-1.5 py-0.5 text-[11px] leading-none text-(--color-text-subtle) opacity-75 transition-opacity hover:opacity-100"
-        aria-expanded={true}
+        aria-expanded={open}
       >
         <ChevronRight
           size={10}
-          className="shrink-0 rotate-90 text-(--color-text-subtle) opacity-0 transition-all group-hover/my-2:opacity-60"
+          className={cn(
+            'shrink-0 text-(--color-text-subtle) opacity-0 transition-transform duration-(--motion-fast) group-hover/my-2:opacity-60',
+            open && 'rotate-90',
+          )}
           aria-hidden="true"
         />
+        <span className="italic">{label}</span>
+        {isStreaming && <ThinkingDots className="text-(--color-text-subtle)" />}
       </button>
 
-      {/* Ghosted content — low opacity, faint left border */}
-      <div
-        ref={contentRef}
-        className={cn(
-          'ml-2 max-h-60 overflow-y-auto border-l border-(--color-border) pl-3',
-          // Streaming: very faded (watermark feel). Finalized: slightly more readable.
-          isStreaming ? 'opacity-60' : 'opacity-80',
-        )}
-      >
-        <div className="min-w-0 space-y-1.5 font-mono text-[11px] leading-relaxed text-(--color-text-muted) [overflow-wrap:anywhere]">
-          {sections.map((s, i) => (
-            <div key={i} className="min-w-0">
-              {s.header && (
-                <p className="mb-0.5 break-words text-[11px] font-medium text-(--color-text-subtle) [overflow-wrap:anywhere]">
-                  {s.header}
-                </p>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            key="thinking-body"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={panelTransition(preset)}
+            className="overflow-hidden"
+          >
+            <div
+              ref={contentRef}
+              className={cn(
+                'ml-2 max-h-60 overflow-y-auto border-l border-(--color-border) pl-3',
+                isStreaming ? 'opacity-60' : 'opacity-80',
               )}
-              {s.body && (
-                <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                  {s.body}
-                </p>
-              )}
+            >
+              <div className="min-w-0 space-y-1.5 font-mono text-[11px] leading-relaxed text-(--color-text-muted) [overflow-wrap:anywhere]">
+                {sections.map((s, i) => (
+                  <div key={i} className="min-w-0">
+                    {s.header && (
+                      <p className="mb-0.5 break-words text-[11px] font-medium text-(--color-text-subtle) [overflow-wrap:anywhere]">
+                        {s.header}
+                      </p>
+                    )}
+                    {s.body && (
+                      <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                        {s.body}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
-          ))}
-        </div>
-      </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

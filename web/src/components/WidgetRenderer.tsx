@@ -291,7 +291,7 @@ export function WidgetRenderer({
         width={width}
         height={effectiveHeight - 32} // Account for title bar
         sandbox="allow-scripts allow-same-origin"
-        className="border-0 transition-[height] duration-150"
+        className="border-0 transition-[height] duration-(--motion-fast)"
         onLoad={handleLoad}
         onError={handleError}
       />

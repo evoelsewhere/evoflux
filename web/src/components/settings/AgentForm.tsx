@@ -22,7 +22,7 @@ import { createPortal } from 'react-dom'
 import { AlertCircle, ChevronDown } from 'lucide-react'
 import fuzzysort from 'fuzzysort'
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { SettingsGroup } from '@/components/settings/SettingsLayout'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -210,15 +210,11 @@ export function AgentForm({
           updateFromForm={updateFromForm}
         />
       ) : (
-        <Card size="sm">
-          <CardHeader>
-            <CardTitle>Raw .md</CardTitle>
-            <CardDescription>
-              Edit the raw frontmatter and body. Useful for fields the form
-              doesn&rsquo;t expose (e.g. custom hook configuration).
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+        <SettingsGroup
+          title="Raw .md"
+          description="Edit the raw frontmatter and body. Useful for fields the form doesn't expose (e.g. custom hook configuration)."
+        >
+          <div className="px-4 py-3.5">
             <Textarea
               value={raw}
               onChange={(e) => updateFromRaw(e.target.value)}
@@ -227,8 +223,8 @@ export function AgentForm({
               spellCheck={false}
               className="min-h-72 font-mono text-[13px] leading-relaxed"
             />
-          </CardContent>
-        </Card>
+          </div>
+        </SettingsGroup>
       )}
     </div>
   )
@@ -258,7 +254,7 @@ function ParseErrorBanner({
 // ── Form mode ───────────────────────────────────────────────────────────────
 
 /**
- * The Form-mode UI, organised into Cards so each concern has a clear title
+ * The Form-mode UI, organised into grouped sections so each concern has a clear title
  * and the form scans top-to-bottom: who → what model → behaviour → tools
  * & skills → system prompt.
  */
@@ -375,12 +371,8 @@ function FormFields({
       )}
 
       {/* Identity ─────────────────────────────────────────────── */}
-      <Card size="sm">
-        <CardHeader>
-          <CardTitle>Identity</CardTitle>
-          <CardDescription>Who is this agent and what is its role?</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-2">
+      <SettingsGroup title="Identity" description="Who is this agent and what is its role?">
+        <div className="grid gap-4 px-4 py-3.5 md:grid-cols-2">
           <Field
             label="Name"
             required
@@ -438,18 +430,14 @@ function FormFields({
               aria-invalid={!!descriptionError || undefined}
             />
           </Field>
-        </CardContent>
-      </Card>
+        </div>
+      </SettingsGroup>
 
-      {/* Model & behaviour ─────────────────────────────────────── */}
-      <Card size="sm">
-        <CardHeader>
-          <CardTitle>Model &amp; behaviour</CardTitle>
-          <CardDescription>
-            Which provider, plus sampling temperature and reasoning depth.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-2">
+      <SettingsGroup
+        title="Model & behaviour"
+        description="Which provider, plus sampling temperature and reasoning depth."
+      >
+        <div className="grid gap-4 px-4 py-3.5 md:grid-cols-2">
           <Field label="Model" required error={modelError} className="md:col-span-2">
             <ModelCombobox
               value={fm.model ?? ''}
@@ -514,19 +502,14 @@ function FormFields({
               </SelectContent>
             </Select>
           </Field>
-        </CardContent>
-      </Card>
+        </div>
+      </SettingsGroup>
 
-      {/* Capabilities ──────────────────────────────────────────── */}
-      <Card size="sm">
-        <CardHeader>
-          <CardTitle>Capabilities</CardTitle>
-          <CardDescription>
-            Tier tools are granted automatically. Add extra tools, MCP
-            servers, and skills on top.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
+      <SettingsGroup
+        title="Capabilities"
+        description="Tier tools are granted automatically. Add extra tools, MCP servers, and skills on top."
+      >
+        <div className="flex flex-col gap-4 px-4 py-3.5">
           <Field
             label="Tools"
             hint={
@@ -581,20 +564,18 @@ function FormFields({
               placeholder="Pick skills the agent can load on demand…"
             />
           </Field>
-        </CardContent>
-      </Card>
+        </div>
+      </SettingsGroup>
 
-      {/* System prompt ─────────────────────────────────────────── */}
-      <Card size="sm">
-        <CardHeader>
-          <CardTitle>{hasBuiltInProfile ? 'Extra prompt' : 'System prompt'}</CardTitle>
-          <CardDescription>
-            {hasBuiltInProfile
-              ? 'Additional instructions appended after the built-in prompt.'
-              : 'The instructions placed at the top of every conversation with this agent.'}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+      <SettingsGroup
+        title={hasBuiltInProfile ? 'Extra prompt' : 'System prompt'}
+        description={
+          hasBuiltInProfile
+            ? 'Additional instructions appended after the built-in prompt.'
+            : 'The instructions placed at the top of every conversation with this agent.'
+        }
+      >
+        <div className="px-4 py-3.5">
           <Textarea
             value={body}
             onChange={(e) => updateFromForm(fm, e.target.value)}
@@ -603,8 +584,8 @@ function FormFields({
             placeholder="You are …"
             className="min-h-72 font-mono text-[13px] leading-relaxed"
           />
-        </CardContent>
-      </Card>
+        </div>
+      </SettingsGroup>
     </div>
   )
 }

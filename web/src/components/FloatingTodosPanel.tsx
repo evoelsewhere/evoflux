@@ -231,7 +231,7 @@ export function FloatingTodosPanel({ todos, className }: FloatingTodosPanelProps
                 <button
                   type="button"
                   onClick={() => setIsMinimized(true)}
-                  className="flex h-6 w-6 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-hover) hover:text-(--color-text)"
+                  className="flex h-6 w-6 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
                   title="Minimize"
                 >
                   <Minimize2 size={12} />
@@ -239,7 +239,7 @@ export function FloatingTodosPanel({ todos, className }: FloatingTodosPanelProps
                 <button
                   type="button"
                   onClick={() => setIsOpen(false)}
-                  className="flex h-6 w-6 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-hover) hover:text-(--color-text)"
+                  className="flex h-6 w-6 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
                   title="Close"
                 >
                   <X size={12} />
