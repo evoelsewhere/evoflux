@@ -475,6 +475,8 @@ export function AimPipelinesPanel({
     staleTime: 2_000,
     refetchInterval: requiredInputsPresent ? 5_000 : false,
   })
+  const readinessInitialLoading =
+    readinessQuery.isFetching && readinessQuery.data === undefined
 
   // Node chain + graph detail for the selected pipeline's info card.
   const detailQ = useQuery({
@@ -545,7 +547,7 @@ export function AimPipelinesPanel({
     !starting &&
     Boolean(selectedWorkflow?.valid) &&
     requiredInputsPresent &&
-    !readinessQuery.isFetching &&
+    !readinessInitialLoading &&
     readinessQuery.data?.allowed === true
 
   // Builds the run's `inputs` payload from whatever the selected workflow
@@ -732,7 +734,7 @@ export function AimPipelinesPanel({
           workflow={selectedWorkflow}
           graph={detailQ.data?.graph}
           readiness={readinessQuery.data}
-          readinessLoading={readinessQuery.isFetching}
+          readinessLoading={readinessInitialLoading}
         />
 
         {/* Run table */}
