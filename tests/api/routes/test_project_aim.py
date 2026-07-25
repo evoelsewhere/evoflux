@@ -160,6 +160,102 @@ async def test_aim_readiness_endpoint_blocks_incomplete_cutover(client, tmp_path
 
 
 @pytest.mark.asyncio
+async def test_aim_readiness_blocks_active_claims_before_run(client, tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    import yaml
+    from sqlmodel import select
+
+    from app.models.aim import AimClaim
+    from app.models.workflow import WorkflowExecution
+    from app.services.aim.kb_store import write_unit
+
+    source = _make_local_repo(tmp_path, "claimed-source")
+    target = _make_local_repo(tmp_path, "claimed-target")
+    kb_path = tmp_path / "claimed-kb"
+    create_resp = await client.post(
+        "/api/team/projects/aim",
+        json={
+            "name": "claimed-project",
+            "source_paths": [str(source)],
+            "target_path": str(target),
+            "kb_path": str(kb_path),
+        },
+    )
+    project_id = UUID(create_resp.json()["id"])
+    rulebook_path = kb_path / "rulebook/rulebook.yaml"
+    rulebook = yaml.safe_load(rulebook_path.read_text())
+    rulebook["capabilities"]["understand"] = "ready"
+    rulebook_path.write_text(yaml.safe_dump(rulebook, sort_keys=False))
+    write_unit(
+        kb_path,
+        "shared",
+        "DATE",
+        kind="utility",
+        phase="inventory",
+    )
+    write_unit(
+        kb_path,
+        "core",
+        "PAY",
+        kind="program",
+        phase="inventory",
+        depends_on=["shared/DATE"],
+    )
+    reindex = await client.post(f"/api/team/projects/{project_id}/aim/reindex")
+    assert reindex.status_code == 200
+
+    execution_id = uuid4()
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=4)
+    async with db_module.async_session_factory() as db:
+        units = (
+            await db.exec(select(AimUnit).where(AimUnit.project_id == project_id))
+        ).all()
+        db.add(
+            WorkflowExecution(
+                id=execution_id,
+                definition_name="aim-understand",
+                definition_hash="hash",
+                session_id=uuid4(),
+                status="running",
+            )
+        )
+        for unit in units:
+            db.add(
+                AimClaim(
+                    project_id=project_id,
+                    unit_id=unit.id,
+                    workflow_execution_id=execution_id,
+                    workflow_name="aim-understand",
+                    lease_expires_at=expires_at,
+                )
+            )
+        await db.commit()
+
+    response = await client.get(
+        f"/api/team/projects/{project_id}/aim/readiness",
+        params={"pipeline": "aim-understand", "unit": "core/PAY"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "blocked"
+    assert body["allowed"] is False
+    assert len(body["claim_dependencies"]) == 1
+    dependency = body["claim_dependencies"][0]
+    assert dependency["workflow_execution_id"] == str(execution_id)
+    assert dependency["workflow_name"] == "aim-understand"
+    assert dependency["execution_status"] == "running"
+    assert dependency["units"] == ["core/PAY", "shared/DATE"]
+    claim_blockers = [
+        blocker
+        for blocker in body["blockers"]
+        if "selected unit(s) are owned" in blocker
+    ]
+    assert len(claim_blockers) == 1
+
+
+@pytest.mark.asyncio
 async def test_units_expose_backend_next_action_and_template_blocker(client, tmp_path):
     from app.services.aim.kb_store import write_unit
 

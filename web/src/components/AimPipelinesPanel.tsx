@@ -377,6 +377,7 @@ export function AimPipelinesPanel({
 
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [runHistoryCollapsed, setRunHistoryCollapsed] = useState(false)
   // §9.3: convert pipelines write to the target repo — confirm before run.
   const [confirmOpen, setConfirmOpen] = useState(false)
   // The one chat surface in the whole mode: a finished run's transcript.
@@ -472,6 +473,7 @@ export function AimPipelinesPanel({
       }),
     enabled: Boolean(selectedWorkflow?.valid) && requiredInputsPresent,
     staleTime: 2_000,
+    refetchInterval: requiredInputsPresent ? 5_000 : false,
   })
 
   // Node chain + graph detail for the selected pipeline's info card.
@@ -508,6 +510,16 @@ export function AimPipelinesPanel({
     }
     return map
   }, [executionsQuery.data])
+  const runSummary = useMemo(() => {
+    let active = 0
+    let attention = 0
+    for (const run of runs) {
+      const status = displayStatus(Boolean(run.running), executionBySession.get(run.id))
+      if (status === 'running' || status === 'waiting_gate') active += 1
+      if (status === 'failed' || status === 'interrupted') attention += 1
+    }
+    return { total: runs.length, active, attention }
+  }, [executionBySession, runs])
 
   // Runs & Reports folded in here: not every pipeline run produces an
   // aim_runs verdict (only compare/convert/test-kind calls do — assess,
@@ -732,58 +744,121 @@ export function AimPipelinesPanel({
               No runs yet — pick a pipeline and hit Run.
             </p>
           ) : (
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="text-[10px] uppercase text-(--color-text-subtle)">
-                  <th className="pb-2 font-medium">Run</th>
-                  <th className="pb-2 font-medium">Pipeline</th>
-                  <th className="pb-2 font-medium">Status</th>
-                  <th className="pb-2 font-medium">Started</th>
-                  <th className="pb-2 font-medium">Took</th>
-                  <th className="pb-2" />
-                </tr>
-              </thead>
-              <tbody>
-                {runs.map((run) => {
-                  const aimRun = runBySessionId.get(run.id)
-                  return (
-                    <RunRow
-                      key={run.id}
-                      run={run}
-                      execution={executionBySession.get(run.id)}
-                      aimRun={aimRun}
-                      monitorOpen={monitorSession?.id === run.id}
-                      reportOpen={reportRun?.runId === aimRun?.id}
-                      discussionOpen={discussion?.id === run.id}
-                      onMonitor={() => {
-                        setDiscussion(null)
-                        setReportRun(null)
-                        setMonitorSession((prev) => (prev?.id === run.id ? null : run))
-                      }}
-                      onReport={() => {
-                        if (!aimRun) return
-                        setMonitorSession(null)
-                        setDiscussion(null)
-                        setReportRun((prev) =>
-                          prev?.runId === aimRun.id
-                            ? null
-                            : { runId: aimRun.id, title: `${aimRun.unit} · ${aimRun.kind}` },
-                        )
-                      }}
-                      onDiscuss={() => {
-                        setMonitorSession(null)
-                        setReportRun(null)
-                        setDiscussion((prev) => (prev?.id === run.id ? null : run))
-                      }}
-                      onRetry={() => {
-                        const execution = executionBySession.get(run.id)
-                        if (execution) void retryExecution(run, execution)
-                      }}
-                    />
-                  )
-                })}
-              </tbody>
-            </table>
+            <section className="overflow-hidden rounded-md border border-(--color-border) bg-(--bg-page)">
+              <div
+                className={cn(
+                  'flex min-h-11 flex-wrap items-center justify-between gap-2 bg-(--bg-subtle)/45 px-3 py-2',
+                  !runHistoryCollapsed && 'border-b border-(--color-border)',
+                )}
+              >
+                <div>
+                  <p className="text-xs font-medium text-(--color-text)">Run history</p>
+                  <p className="font-mono text-[9px] text-(--color-text-subtle)">
+                    latest {runSummary.total} attempts
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 text-[9px]">
+                    {runSummary.active > 0 && (
+                      <span className="inline-flex items-center gap-1 rounded border border-(--color-accent)/25 bg-(--color-accent)/5 px-1.5 py-0.5 text-(--color-accent)">
+                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />
+                        {runSummary.active} active
+                      </span>
+                    )}
+                    {runSummary.attention > 0 && (
+                      <span className="inline-flex items-center gap-1 rounded border border-(--color-error)/25 bg-(--color-error)/5 px-1.5 py-0.5 text-(--color-error)">
+                        <CircleAlert size={9} />
+                        {runSummary.attention} attention
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setRunHistoryCollapsed((value) => !value)}
+                    aria-expanded={!runHistoryCollapsed}
+                    aria-controls="aim-run-history-table"
+                    className="ml-1 inline-flex h-6 items-center gap-1 rounded px-1.5 text-[9px] font-medium text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)"
+                    title={runHistoryCollapsed ? 'Expand run history' : 'Collapse run history'}
+                  >
+                    {runHistoryCollapsed ? (
+                      <ChevronRight size={10} aria-hidden="true" />
+                    ) : (
+                      <ChevronDown size={10} aria-hidden="true" />
+                    )}
+                    {runHistoryCollapsed ? 'Expand' : 'Collapse'}
+                  </button>
+                </div>
+              </div>
+              {!runHistoryCollapsed && (
+              <div id="aim-run-history-table" className="overflow-x-auto">
+                <table className="w-full min-w-[760px] table-fixed text-left text-xs">
+                  <colgroup>
+                    <col className="w-[42%]" />
+                    <col className="w-[18%]" />
+                    <col className="w-[16%]" />
+                    <col className="w-[10%]" />
+                    <col className="w-[14%]" />
+                  </colgroup>
+                  <thead className="bg-(--bg-subtle)/25">
+                    <tr className="h-8 text-[9px] uppercase text-(--color-text-subtle)">
+                      <th className="px-3 font-medium">Run</th>
+                      <th className="px-2 font-medium">State</th>
+                      <th className="px-2 font-medium">Started</th>
+                      <th className="px-2 font-medium">Duration</th>
+                      <th className="px-2 text-right font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {runs.map((run) => {
+                      const aimRun = runBySessionId.get(run.id)
+                      return (
+                        <RunRow
+                          key={run.id}
+                          run={run}
+                          execution={executionBySession.get(run.id)}
+                          aimRun={aimRun}
+                          monitorOpen={monitorSession?.id === run.id}
+                          reportOpen={reportRun?.runId === aimRun?.id}
+                          discussionOpen={discussion?.id === run.id}
+                          onMonitor={() => {
+                            setDiscussion(null)
+                            setReportRun(null)
+                            setMonitorSession((prev) =>
+                              prev?.id === run.id ? null : run,
+                            )
+                          }}
+                          onReport={() => {
+                            if (!aimRun) return
+                            setMonitorSession(null)
+                            setDiscussion(null)
+                            setReportRun((prev) =>
+                              prev?.runId === aimRun.id
+                                ? null
+                                : {
+                                    runId: aimRun.id,
+                                    title: `${aimRun.unit} · ${aimRun.kind}`,
+                                  },
+                            )
+                          }}
+                          onDiscuss={() => {
+                            setMonitorSession(null)
+                            setReportRun(null)
+                            setDiscussion((prev) =>
+                              prev?.id === run.id ? null : run,
+                            )
+                          }}
+                          onRetry={() => {
+                            const execution = executionBySession.get(run.id)
+                            if (execution) void retryExecution(run, execution)
+                          }}
+                        />
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              )}
+            </section>
           )}
         </div>
       </div>
@@ -1185,13 +1260,16 @@ function WorkflowCanvasPreview({
 }) {
   const viewportRef = useRef<HTMLDivElement>(null)
   const [zoom, setZoom] = useState(0.82)
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(nodes[0]?.id ?? null)
+  const [collapsed, setCollapsed] = useState(false)
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const layout = useMemo(() => layoutWorkflowGraph(nodes, edges), [edges, nodes])
   const nodeById = useMemo(
     () => new Map(layout.nodes.map((node) => [node.id, node])),
     [layout.nodes],
   )
-  const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? nodes[0] ?? null
+  const selectedNode = selectedNodeId
+    ? (nodes.find((node) => node.id === selectedNodeId) ?? null)
+    : null
   const incomingEdges = selectedNode
     ? edges.filter((edge) => edge.to === selectedNode.id)
     : []
@@ -1207,11 +1285,18 @@ function WorkflowCanvasPreview({
 
   return (
     <div className="overflow-hidden rounded-md border border-(--color-border) bg-(--bg-page)">
-      <div className="flex h-8 items-center justify-between border-b border-(--color-border) bg-(--bg-subtle)/70 px-2.5">
+      <div
+        className={cn(
+          'flex h-8 items-center justify-between bg-(--bg-subtle)/70 px-2.5',
+          !collapsed && 'border-b border-(--color-border)',
+        )}
+      >
         <span className="font-mono text-[9px] text-(--color-text-subtle)">
           graph · {nodes.length} nodes · {edges.length} routes
         </span>
         <div className="flex items-center gap-0.5">
+          {!collapsed && (
+            <>
           <button
             type="button"
             onClick={() => setZoom((value) => Math.max(WORKFLOW_MIN_ZOOM, value - 0.1))}
@@ -1242,9 +1327,28 @@ function WorkflowCanvasPreview({
           >
             <Maximize2 size={10} />
           </button>
+            </>
+          )}
+          <button
+            type="button"
+            onClick={() => setCollapsed((value) => !value)}
+            aria-expanded={!collapsed}
+            aria-controls="workflow-canvas-content"
+            className="ml-1 inline-flex h-5 items-center gap-1 rounded px-1.5 text-[9px] font-medium text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)"
+            title={collapsed ? 'Expand canvas preview' : 'Collapse canvas preview'}
+          >
+            {collapsed ? (
+              <ChevronRight size={10} aria-hidden="true" />
+            ) : (
+              <ChevronDown size={10} aria-hidden="true" />
+            )}
+            {collapsed ? 'Expand' : 'Collapse'}
+          </button>
         </div>
       </div>
 
+      {!collapsed && (
+      <div id="workflow-canvas-content">
       <div
         ref={viewportRef}
         className="h-[272px] overflow-auto"
@@ -1368,7 +1472,9 @@ function WorkflowCanvasPreview({
               <button
                 type="button"
                 key={node.id}
-                onClick={() => setSelectedNodeId(node.id)}
+                onClick={() =>
+                  setSelectedNodeId((current) => (current === node.id ? null : node.id))
+                }
                 aria-pressed={selectedNode?.id === node.id}
                 className={cn(
                   'absolute rounded-lg border bg-(--bg-card) text-left shadow-sm outline-none transition-[border-color,box-shadow,opacity] hover:border-(--color-border-strong) focus-visible:ring-2 focus-visible:ring-(--focus-ring)/40',
@@ -1514,6 +1620,8 @@ function WorkflowCanvasPreview({
           )}
         </div>
       )}
+      </div>
+      )}
     </div>
   )
 }
@@ -1530,6 +1638,9 @@ function PipelineInfoCard({
   readinessLoading: boolean
 }) {
   if (!workflow) return null
+  const workflowInputs = workflow.inputs ?? []
+  const workflowErrors = workflow.errors ?? []
+  const readinessWarnings = readiness?.warnings ?? []
   const nodes = Array.isArray(graph?.nodes)
     ? (graph.nodes as Array<Record<string, unknown>>)
         .filter((node) => typeof node?.id === 'string' && typeof node?.kind === 'string')
@@ -1573,6 +1684,13 @@ function PipelineInfoCard({
         }))
     : []
   const gateCount = nodes.filter((n) => n.kind === 'gate' || n.kind === 'input').length
+  const claimDependencies = readiness?.claim_dependencies ?? []
+  const claimBlockerPrefix = 'selected unit(s) are owned by'
+  const visibleBlockers = claimDependencies.length
+    ? (readiness?.blockers ?? []).filter(
+        (blocker) => !blocker.includes(claimBlockerPrefix),
+      )
+    : (readiness?.blockers ?? [])
 
   return (
     <div className="space-y-2 border-b border-(--color-border) px-4 py-3">
@@ -1592,10 +1710,10 @@ function PipelineInfoCard({
 
       {/* Inputs + readiness */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-        {workflow.inputs.length > 0 && (
+        {workflowInputs.length > 0 && (
           <span className="flex items-center gap-1.5 text-[11px] text-(--color-text-subtle)">
             inputs:
-            {workflow.inputs.map((input) => (
+            {workflowInputs.map((input) => (
               <span key={input.name} className="rounded bg-(--bg-key) px-1.5 py-0.5 font-mono text-[10px] text-(--color-text-2)">
                 {input.name}: {input.type}
                 {input.required ? '' : '?'}
@@ -1604,8 +1722,8 @@ function PipelineInfoCard({
           </span>
         )}
         {!workflow.valid && (
-          <span className="text-[11px] text-(--color-error)" title={workflow.errors.join('\n')}>
-            definition invalid — {workflow.errors[0] ?? 'see errors'}
+          <span className="text-[11px] text-(--color-error)" title={workflowErrors.join('\n')}>
+            definition invalid — {workflowErrors[0] ?? 'see errors'}
           </span>
         )}
       </div>
@@ -1623,16 +1741,61 @@ function PipelineInfoCard({
           <p className="font-medium">
             {readiness.allowed
               ? `Ready · ${readiness.selected_count} unit(s) selected`
-              : `Blocked · ${readiness.blockers.length} prerequisite(s)`}
+              : `Blocked · ${visibleBlockers.length + claimDependencies.length} prerequisite(s)`}
           </p>
-          {!readiness.allowed && (
+          {claimDependencies.length > 0 && (
+            <div className="mt-2 space-y-1.5">
+              {claimDependencies.map((dependency) => (
+                <div
+                  key={dependency.workflow_execution_id}
+                  className="rounded-md border border-(--color-warning,orange)/35 bg-(--bg-page)/70 px-2.5 py-2 text-(--color-text-2)"
+                >
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="inline-flex items-center gap-1 font-medium text-(--color-warning,orange)">
+                      <CirclePause size={11} aria-hidden="true" />
+                      Active workflow dependency
+                    </span>
+                    <span className="rounded bg-(--bg-key) px-1.5 py-0.5 font-mono text-[9px] uppercase text-(--color-text-muted)">
+                      {dependency.execution_status}
+                    </span>
+                  </div>
+                  <p className="mt-1 font-mono text-[10px]">
+                    {dependency.workflow_name}
+                    <span className="ml-1.5 text-(--color-text-subtle)">
+                      · {dependency.workflow_execution_id.slice(0, 8)}
+                    </span>
+                  </p>
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {(dependency.units ?? []).map((unit) => (
+                      <span
+                        key={unit}
+                        className="rounded border border-(--color-border) bg-(--bg-subtle) px-1.5 py-0.5 font-mono text-[9px] text-(--color-text-muted)"
+                      >
+                        {unit}
+                      </span>
+                    ))}
+                  </div>
+                  <p className="mt-1.5 text-[9px] text-(--color-text-subtle)">
+                    Locked until{' '}
+                    {new Date(dependency.lease_expires_at).toLocaleString([], {
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+          {!readiness.allowed && visibleBlockers.length > 0 && (
             <ul className="mt-1 list-disc space-y-0.5 pl-4">
-              {readiness.blockers.slice(0, 4).map((blocker) => (
+              {visibleBlockers.slice(0, 4).map((blocker) => (
                 <li key={blocker}>{blocker}</li>
               ))}
             </ul>
           )}
-          {readiness.warnings.map((warning) => (
+          {readinessWarnings.map((warning) => (
             <p key={warning} className="mt-1 text-(--color-warning,orange)">
               {warning}
             </p>
@@ -2553,93 +2716,168 @@ function RunRow({
       status === 'stopped' ||
       aimRun?.verdict === 'fail' ||
       aimRun?.verdict === 'error')
+  const selected = monitorOpen || reportOpen || discussionOpen
+  const pipelineName = execution?.definition_name ?? 'No workflow execution'
   return (
-    <tr className="border-t border-(--color-border)">
-      <td className="max-w-0 truncate py-2 pr-3 text-(--color-text)" title={run.title ?? run.id}>
-        {run.title ?? run.id.slice(0, 8)}
+    <tr
+      className={cn(
+        'group h-[58px] border-t border-(--color-border) transition-colors first:border-t-0',
+        selected
+          ? 'bg-(--bg-key)/80'
+          : status === 'running' || status === 'waiting_gate'
+            ? 'bg-(--color-accent)/[0.025] hover:bg-(--bg-subtle)/55'
+            : 'hover:bg-(--bg-subtle)/55',
+      )}
+    >
+      <td className="px-3 py-2" title={run.title ?? run.id}>
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span
+            className={cn(
+              'flex h-7 w-7 shrink-0 items-center justify-center rounded-md border bg-(--bg-page)',
+              status === 'running' && 'border-(--color-accent)/30 text-(--color-accent)',
+              status === 'waiting_gate' &&
+                'border-(--color-warning,orange)/35 text-(--color-warning,orange)',
+              status === 'failed' && 'border-(--color-error)/30 text-(--color-error)',
+              status === 'completed' && 'border-(--color-success)/30 text-(--color-success)',
+              !['running', 'waiting_gate', 'failed', 'completed'].includes(status) &&
+                'border-(--color-border) text-(--color-text-muted)',
+            )}
+          >
+            {status === 'running' ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : status === 'waiting_gate' ? (
+              <CirclePause size={12} />
+            ) : status === 'failed' ? (
+              <CircleX size={12} />
+            ) : (
+              <Shuffle size={12} />
+            )}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[12px] font-medium text-(--color-text)">
+              {run.title ?? run.id.slice(0, 8)}
+            </p>
+            <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[9px] text-(--color-text-subtle)">
+              <span className="truncate font-mono" title={pipelineName}>
+                {pipelineName}
+              </span>
+              <span aria-hidden="true">·</span>
+              <span className="shrink-0 font-mono">{run.id.slice(0, 8)}</span>
+              {execution?.retry_of_execution_id && (
+                <span className="shrink-0 rounded bg-(--bg-key) px-1 py-px uppercase">
+                  retry
+                </span>
+              )}
+            </p>
+          </div>
+        </div>
       </td>
-      <td className="py-2 pr-3 font-mono text-[11px] text-(--color-text-muted)">
-        {execution?.definition_name ?? '—'}
-      </td>
-      <td className="py-2 pr-3" title={execution?.error ?? undefined}>
-        <span className="flex items-center gap-2">
-          <StatusBadge status={status} />
+      <td className="px-2 py-2" title={execution?.error ?? undefined}>
+        <div className="flex flex-col items-start gap-1">
+          <RunStatusPill status={status} />
           {aimRun && <VerdictChip verdict={aimRun.verdict} />}
-        </span>
+        </div>
       </td>
       <td
-        className="py-2 pr-3 text-(--color-text-muted)"
+        className="px-2 py-2 text-[10px] text-(--color-text-muted)"
         title={run.created_at ? new Date(run.created_at).toLocaleString() : undefined}
       >
         {formatRelativeDate(run.created_at)}
       </td>
-      <td className="py-2 pr-3 text-(--color-text-muted)">
-        {executionDuration(execution)}
+      <td className="px-2 py-2 font-mono text-[10px] text-(--color-text-muted)">
+        <span className="rounded bg-(--bg-subtle)/65 px-1.5 py-1">
+          {executionDuration(execution)}
+        </span>
       </td>
-      <td className="py-2 text-right">
-        <span className="inline-flex items-center gap-1">
+      <td className="px-2 py-2 text-right">
+        <span className="inline-flex items-center rounded-md border border-(--color-border) bg-(--bg-page) p-0.5 shadow-sm opacity-80 transition-opacity group-hover:opacity-100">
           <button
             type="button"
             onClick={onMonitor}
+            aria-label={status === 'waiting_gate' ? 'Answer pending gate' : 'Open run monitor'}
+            aria-pressed={monitorOpen}
             className={cn(
-              'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] transition-colors',
+              'flex h-7 w-7 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)',
               monitorOpen
                 ? 'bg-(--bg-key) text-(--color-accent)'
                 : status === 'waiting_gate'
-                  ? 'text-(--color-warning,orange) hover:bg-(--bg-key)'
-                  : 'text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)',
+                  ? 'text-(--color-warning,orange)'
+                  : '',
             )}
             title="Node progress, per-node log, and the gate if one is waiting"
           >
             {status === 'waiting_gate' ? <CirclePause size={11} /> : <Activity size={11} />}
-            {status === 'waiting_gate' ? 'Answer' : 'Monitor'}
           </button>
           {aimRun && (
             <button
               type="button"
               onClick={onReport}
+              aria-label="Open run report"
+              aria-pressed={reportOpen}
               className={cn(
-                'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] transition-colors',
+                'flex h-7 w-7 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)',
                 reportOpen
                   ? 'bg-(--bg-key) text-(--color-accent)'
-                  : 'text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)',
+                  : '',
               )}
               title="Verdict, stats, and the full report for this run"
             >
               <FileText size={11} />
-              Report
             </button>
           )}
           {retryable && (
             <button
               type="button"
               onClick={onRetry}
-              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+              aria-label="Retry pipeline with the same inputs"
+              className="flex h-7 w-7 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
               title="Retry with the same inputs as a linked new attempt"
             >
               <Repeat size={11} />
-              Retry
             </button>
           )}
           {finished && (
             <button
               type="button"
               onClick={onDiscuss}
+              aria-label="Open run discussion"
+              aria-pressed={discussionOpen}
               className={cn(
-                'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] transition-colors',
+                'flex h-7 w-7 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)',
                 discussionOpen
                   ? 'bg-(--bg-key) text-(--color-accent)'
-                  : 'text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)',
+                  : '',
               )}
               title="Open this run's transcript (post-run only)"
             >
               <MessageSquareText size={11} />
-              Discussion
             </button>
           )}
         </span>
       </td>
     </tr>
+  )
+}
+
+function RunStatusPill({ status }: { status: RunDisplayStatus }) {
+  return (
+    <span
+      className={cn(
+        'inline-flex min-w-[82px] items-center justify-center rounded-md border px-1.5 py-1 text-[10px] font-medium',
+        status === 'running' && 'border-(--color-accent)/25 bg-(--color-accent)/5',
+        status === 'waiting_gate' &&
+          'border-(--color-warning,orange)/30 bg-(--color-warning,orange)/5',
+        status === 'completed' &&
+          'border-(--color-success)/25 bg-(--color-success)/5',
+        status === 'failed' && 'border-(--color-error)/25 bg-(--color-error)/5',
+        (status === 'stopped' || status === 'done') &&
+          'border-(--color-border) bg-(--bg-subtle)/55',
+        status === 'interrupted' &&
+          'border-(--color-warning,orange)/25 bg-(--color-warning,orange)/5',
+      )}
+    >
+      <StatusBadge status={status} />
+    </span>
   )
 }
 
