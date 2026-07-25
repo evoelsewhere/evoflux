@@ -200,11 +200,30 @@ class AimTraceabilityRuleOut(BaseModel):
     source_ref: str | None = None
 
 
+class AimTraceabilityIssueOut(BaseModel):
+    code: str
+    severity: Literal["blocker", "warning", "info"]
+    message: str
+    related_units: list[str] = Field(default_factory=list)
+    path: str | None = None
+    pipeline: str | None = None
+
+
+class AimTraceabilityNextActionOut(BaseModel):
+    pipeline: str
+    target_phase: str
+    allowed: bool
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    scope_units: list[str] = Field(default_factory=list)
+
+
 class AimTraceabilityUnitOut(BaseModel):
     id: str
     unit: str
     kind: str
     phase: str
+    indexed_phase: str
     wave: int | None
     depends_on: list[str]
     target_paths: list[str]
@@ -215,7 +234,11 @@ class AimTraceabilityUnitOut(BaseModel):
     run_count: int
     passing_run_id: str | None
     latest_verdict: str | None
+    dependent_units: list[str] = Field(default_factory=list)
+    impact_count: int = 0
+    next_action: AimTraceabilityNextActionOut | None = None
     links: list[AimTraceabilityLinkOut]
+    issues: list[AimTraceabilityIssueOut] = Field(default_factory=list)
     gaps: list[str]
 
 
@@ -228,10 +251,17 @@ class AimTraceabilitySummaryOut(BaseModel):
     confirmed_rules: int
     explicit_links: int
     total_gaps: int
+    blocker_count: int = 0
+    warning_count: int = 0
+    info_count: int = 0
+    at_risk_units: int = 0
+    ready_actions: int = 0
+    project_issue_count: int = 0
 
 
 class AimTraceabilityResponse(BaseModel):
     summary: AimTraceabilitySummaryOut
+    project_issues: list[AimTraceabilityIssueOut] = Field(default_factory=list)
     units: list[AimTraceabilityUnitOut]
 
 

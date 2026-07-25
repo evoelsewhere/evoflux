@@ -536,11 +536,30 @@ export interface AimTraceabilityRule {
   source_ref: string | null
 }
 
+export interface AimTraceabilityIssue {
+  code: string
+  severity: 'blocker' | 'warning' | 'info'
+  message: string
+  related_units: string[]
+  path: string | null
+  pipeline: string | null
+}
+
+export interface AimTraceabilityNextAction {
+  pipeline: string
+  target_phase: string
+  allowed: boolean
+  blockers: string[]
+  warnings: string[]
+  scope_units: string[]
+}
+
 export interface AimTraceabilityUnit {
   id: string
   unit: string
   kind: string
   phase: string
+  indexed_phase: string
   wave: number | null
   depends_on: string[]
   target_paths: string[]
@@ -551,7 +570,11 @@ export interface AimTraceabilityUnit {
   run_count: number
   passing_run_id: string | null
   latest_verdict: string | null
+  dependent_units: string[]
+  impact_count: number
+  next_action: AimTraceabilityNextAction | null
   links: AimTraceabilityLink[]
+  issues: AimTraceabilityIssue[]
   gaps: string[]
 }
 
@@ -565,7 +588,14 @@ export interface AimTraceability {
     confirmed_rules: number
     explicit_links: number
     total_gaps: number
+    blocker_count: number
+    warning_count: number
+    info_count: number
+    at_risk_units: number
+    ready_actions: number
+    project_issue_count: number
   }
+  project_issues: AimTraceabilityIssue[]
   units: AimTraceabilityUnit[]
 }
 

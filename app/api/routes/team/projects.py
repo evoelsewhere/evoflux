@@ -1060,9 +1060,16 @@ async def get_aim_traceability(
     project_id: UUID,
     db: DbSession,
 ) -> AimTraceabilityResponse:
+    from app.services.aim.claims import effective_project_claims
+    from app.services.aim.project import resolve_target_workspace_path
     from app.services.aim.traceability import build_traceability
 
+    project = await _get_aim_project_or_404(db, project_id)
     kb_root = await _get_aim_kb_root(db, project_id)
+    target_path = await resolve_target_workspace_path(db, project)
+    target_root = (
+        Path(target_path) if target_path and Path(target_path).is_dir() else None
+    )
     units = (
         await db.exec(
             select(AimUnit)
@@ -1080,7 +1087,20 @@ async def get_aim_traceability(
     links = (
         await db.exec(select(AimLink).where(AimLink.project_id == project_id))
     ).all()
-    data = await asyncio.to_thread(build_traceability, kb_root, units, runs, links)
+    claims = await effective_project_claims(db, project_id)
+    claimed_ids = {claim.unit_id for claim in claims}
+    claimed_units = frozenset(
+        f"{unit.module}/{unit.name}" for unit in units if unit.id in claimed_ids
+    )
+    data = await asyncio.to_thread(
+        build_traceability,
+        kb_root,
+        units,
+        runs,
+        links,
+        target_root=target_root,
+        claimed_units=claimed_units,
+    )
     return AimTraceabilityResponse(**data)
 
 

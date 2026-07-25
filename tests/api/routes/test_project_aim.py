@@ -240,6 +240,11 @@ async def test_traceability_endpoint_combines_units_runs_and_links(client, tmp_p
     assert body["summary"]["explicit_links"] == 1
     assert body["units"][0]["unit"] == "core/PAY"
     assert body["units"][0]["links"][0]["kind"] == "applies_to"
+    assert body["summary"]["warning_count"] >= 1
+    assert body["units"][0]["next_action"]["pipeline"] == "aim-understand"
+    assert {issue["code"] for issue in body["units"][0]["issues"]} >= {
+        "index_out_of_sync"
+    }
 
 
 @pytest.mark.asyncio
