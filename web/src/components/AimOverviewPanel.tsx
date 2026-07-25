@@ -39,6 +39,7 @@ import {
   Play,
   Radio,
   RefreshCw,
+  Route,
   Search,
   ShieldCheck,
   X,
@@ -47,6 +48,8 @@ import {
   getAimProjectHealth,
   getAimProjectSummary,
   getAimCutoverChecklist,
+  generateAimSuggestions,
+  getAimSuggestions,
   listAimApprovals,
   listAimRuns,
   listAimUnits,
@@ -80,6 +83,8 @@ import type {
   AimCutoverChecklist,
   AimProjectHealth,
   AimRunListItem,
+  AimSuggestionAction,
+  AimSuggestionPlan,
   AimUnitOut,
   CodingProject,
 } from '@/api/types'
@@ -185,6 +190,8 @@ export function AimOverviewPanel({ project }: { project: CodingProject }) {
   )
   const [cutoverLoading, setCutoverLoading] = useState(false)
   const [cutoverError, setCutoverError] = useState<string | null>(null)
+  const [generatingSuggestions, setGeneratingSuggestions] = useState(false)
+  const [suggestionError, setSuggestionError] = useState<string | null>(null)
 
   const summaryQuery = useQuery({
     queryKey: queryKeys.projects.aimSummary(project.id),
@@ -196,6 +203,12 @@ export function AimOverviewPanel({ project }: { project: CodingProject }) {
     queryKey: queryKeys.projects.aimUnits(project.id, undefined),
     queryFn: () => listAimUnits(project.id),
     refetchInterval: 10_000,
+  })
+
+  const suggestionsQuery = useQuery({
+    queryKey: [...queryKeys.projects.detail(project.id), 'aim-suggestions'],
+    queryFn: () => getAimSuggestions(project.id),
+    refetchInterval: 5_000,
   })
 
   const healthQuery = useQuery({
@@ -286,6 +299,7 @@ export function AimOverviewPanel({ project }: { project: CodingProject }) {
     healthQuery.dataUpdatedAt,
     approvalsQuery.dataUpdatedAt,
     recentRunsQuery.dataUpdatedAt,
+    suggestionsQuery.dataUpdatedAt,
   )
 
   const goRunPipeline = (pipeline: string, unit?: AimUnitOut) => {
@@ -298,6 +312,34 @@ export function AimOverviewPanel({ project }: { project: CodingProject }) {
       to: '/aim/$projectId/$feature',
       params: { projectId: project.id, feature: 'pipelines' },
     })
+  }
+
+  const goRunSuggestion = (action: AimSuggestionAction) => {
+    setAimPipelinePrefill({
+      pipeline: action.pipeline,
+      unit: action.unit ?? undefined,
+      wave: action.wave ?? undefined,
+    })
+    navigate({
+      to: '/aim/$projectId/$feature',
+      params: { projectId: project.id, feature: 'pipelines' },
+    })
+  }
+
+  const generateSuggestions = async () => {
+    if (generatingSuggestions) return
+    setGeneratingSuggestions(true)
+    setSuggestionError(null)
+    try {
+      await generateAimSuggestions(project.id)
+      await suggestionsQuery.refetch()
+    } catch (error) {
+      setSuggestionError(
+        error instanceof Error ? error.message : 'Failed to generate suggested workflow.',
+      )
+    } finally {
+      setGeneratingSuggestions(false)
+    }
   }
 
   const goOpenPipelines = () => {
@@ -326,6 +368,7 @@ export function AimOverviewPanel({ project }: { project: CodingProject }) {
       void summaryQuery.refetch()
       void unitsQuery.refetch()
       void healthQuery.refetch()
+      void suggestionsQuery.refetch()
     } catch (error) {
       setApprovalError(error instanceof Error ? error.message : 'Failed to answer approval.')
     } finally {
@@ -562,6 +605,20 @@ export function AimOverviewPanel({ project }: { project: CodingProject }) {
               </div>
             ) : (
               <>
+                <SuggestedWorkflowBoard
+                  plan={suggestionsQuery.data}
+                  loading={suggestionsQuery.isLoading}
+                  generating={generatingSuggestions}
+                  error={
+                    suggestionError ??
+                    (suggestionsQuery.isError
+                      ? 'Suggested workflow could not be loaded.'
+                      : null)
+                  }
+                  onGenerate={() => void generateSuggestions()}
+                  onRetry={() => void suggestionsQuery.refetch()}
+                  onRun={goRunSuggestion}
+                />
                 <MonitorGrid>
                   <WaveControl
                     units={units}
@@ -846,6 +903,210 @@ function MonitorGrid({ children }: { children: React.ReactNode }) {
     <div className="grid items-stretch gap-3 md:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
       {children}
     </div>
+  )
+}
+
+const SUGGESTION_LANES = [
+  {
+    key: 'ready',
+    label: 'Ready now',
+    icon: CircleCheck,
+    tone: 'text-(--color-success)',
+  },
+  {
+    key: 'active',
+    label: 'In progress',
+    icon: Activity,
+    tone: 'text-(--color-accent)',
+  },
+  {
+    key: 'up_next',
+    label: 'Up next',
+    icon: Clock3,
+    tone: 'text-(--color-warning,orange)',
+  },
+  {
+    key: 'needs_input',
+    label: 'Needs input',
+    icon: CircleAlert,
+    tone: 'text-(--color-error)',
+  },
+] as const
+
+function SuggestedWorkflowBoard({
+  plan,
+  loading,
+  generating,
+  error,
+  onGenerate,
+  onRetry,
+  onRun,
+}: {
+  plan: AimSuggestionPlan | undefined
+  loading: boolean
+  generating: boolean
+  error: string | null
+  onGenerate: () => void
+  onRetry: () => void
+  onRun: (action: AimSuggestionAction) => void
+}) {
+  if (loading && !plan) {
+    return (
+      <section className="overflow-hidden rounded-md border border-(--color-border) bg-(--bg-page)" aria-label="Loading suggested workflow">
+        <div className="flex items-center justify-between border-b border-(--color-border) px-3 py-2.5">
+          <Skeleton className="h-3 w-36" />
+          <Skeleton className="h-7 w-24" />
+        </div>
+        <div className="grid grid-cols-2 gap-2 p-3 lg:grid-cols-4">
+          {Array.from({ length: 4 }, (_, index) => (
+            <Skeleton key={index} className="h-28 rounded-md" />
+          ))}
+        </div>
+      </section>
+    )
+  }
+
+  if (error && !plan) {
+    return (
+      <section className="flex items-center justify-between gap-3 rounded-md border border-(--color-error)/35 bg-(--color-error-subtle,var(--bg-page)) px-3 py-3">
+        <p className="text-xs text-(--color-error)">{error}</p>
+        <Button size="sm" variant="outline" onClick={onRetry}>
+          <RefreshCw size={11} />
+          Retry
+        </Button>
+      </section>
+    )
+  }
+
+  if (!plan?.enabled) {
+    return (
+      <section className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-(--color-border) bg-(--bg-page) px-3 py-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-(--color-border) bg-(--bg-key) text-(--color-accent)">
+            <Route size={15} aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-(--color-text)">Suggested workflow</p>
+            <p className="mt-0.5 text-[10px] text-(--color-text-subtle)">
+              {plan?.actions.length ?? 0} current actions found from dependency and readiness state.
+            </p>
+          </div>
+        </div>
+        <Button size="sm" onClick={onGenerate} disabled={generating}>
+          {generating ? <Loader2 size={11} className="animate-spin" /> : <Route size={11} />}
+          Generate plan
+        </Button>
+      </section>
+    )
+  }
+
+  return (
+    <section className="overflow-hidden rounded-md border border-(--color-border) bg-(--bg-page)">
+      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-(--color-border) bg-(--bg-key)/45 px-3 py-2.5">
+        <div className="flex min-w-0 items-center gap-2">
+          <Route size={14} className="shrink-0 text-(--color-accent)" aria-hidden="true" />
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase text-(--color-text-subtle)">
+              Suggested workflow
+            </p>
+            <p className="mt-0.5 truncate text-[10px] text-(--color-text-muted)">
+              {plan.actions.length} actions · dependency and evidence aware
+            </p>
+          </div>
+          {plan.stale && (
+            <span className="rounded border border-(--color-warning,orange)/35 bg-(--color-warning,orange)/10 px-1.5 py-0.5 text-[9px] text-(--color-warning,orange)">
+              live state changed
+            </span>
+          )}
+        </div>
+        <Button size="sm" variant="outline" onClick={onGenerate} disabled={generating}>
+          <RefreshCw size={11} className={generating ? 'animate-spin' : undefined} />
+          Refresh plan
+        </Button>
+      </header>
+
+      {error && (
+        <p className="border-b border-(--color-border) px-3 py-2 text-[10px] text-(--color-error)">
+          {error}
+        </p>
+      )}
+
+      {plan.actions.length === 0 ? (
+        <div className="flex items-center gap-2 px-3 py-6 text-xs text-(--color-success)">
+          <CircleCheck size={14} />
+          No remaining migration actions.
+        </div>
+      ) : (
+        <div className="overflow-x-auto p-3">
+          <div className="grid min-w-[860px] grid-cols-4 gap-2.5">
+            {SUGGESTION_LANES.map(({ key, label, icon: Icon, tone }) => {
+              const actions = plan.actions.filter((action) => action.lane === key)
+              return (
+                <div key={key} className="min-w-0 rounded-md bg-(--bg-subtle)/55 p-2">
+                  <div className="mb-2 flex items-center justify-between gap-2 px-0.5">
+                    <span className={cn('flex items-center gap-1.5 text-[10px] font-semibold uppercase', tone)}>
+                      <Icon size={11} aria-hidden="true" />
+                      {label}
+                    </span>
+                    <span className="rounded bg-(--bg-key) px-1.5 py-px font-mono text-[9px] text-(--color-text-subtle)">
+                      {actions.length}
+                    </span>
+                  </div>
+                  <div className="max-h-72 space-y-1.5 overflow-y-auto">
+                    {actions.length === 0 ? (
+                      <p className="px-1 py-5 text-center text-[10px] text-(--color-text-subtle)">None</p>
+                    ) : (
+                      actions.map((action) => {
+                        const target = action.unit ?? (action.wave !== null ? `Wave ${action.wave}` : 'Project')
+                        const disabled = action.lane === 'active'
+                        return (
+                          <button
+                            key={action.id}
+                            type="button"
+                            onClick={() => onRun(action)}
+                            disabled={disabled}
+                            className="group w-full rounded-md border border-(--color-border) bg-(--bg-page) px-2.5 py-2 text-left transition-colors hover:border-(--color-border-strong) hover:bg-(--bg-key)/45 disabled:cursor-default disabled:opacity-65"
+                            title={disabled ? 'This scope is owned by an active workflow.' : `Open ${action.pipeline}`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <span className="min-w-0">
+                                <span className="block truncate font-mono text-[10px] font-medium text-(--color-text)">
+                                  {target}
+                                </span>
+                                <span className="mt-0.5 block text-[9px] text-(--color-text-muted)">
+                                  {action.title}
+                                </span>
+                              </span>
+                              {!disabled && (
+                                <ChevronRight size={11} className="mt-0.5 shrink-0 text-(--color-text-subtle) group-hover:text-(--color-text)" />
+                              )}
+                            </div>
+                            <span className="mt-1.5 block text-[9px] leading-4 text-(--color-text-subtle)">
+                              {action.reason}
+                            </span>
+                            {action.scope_units.length > 1 && (
+                              <span className="mt-1.5 block rounded bg-(--bg-key) px-1.5 py-1 font-mono text-[8px] leading-3 text-(--color-text-muted)">
+                                affects {action.scope_units.length}: {action.scope_units.slice(0, 3).join(' → ')}
+                                {action.scope_units.length > 3 ? ` +${action.scope_units.length - 3}` : ''}
+                              </span>
+                            )}
+                            {action.blockers.length > 0 && (
+                              <span className="mt-1.5 block truncate text-[8px] text-(--color-warning,orange)" title={action.blockers.join('\n')}>
+                                {action.blockers[0]}
+                              </span>
+                            )}
+                          </button>
+                        )
+                      })
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </section>
   )
 }
 

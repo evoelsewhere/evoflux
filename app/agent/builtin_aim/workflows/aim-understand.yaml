@@ -28,7 +28,7 @@ nodes:
   - id: approve_batch
     kind: gate
     title: "Understand {{inputs.unit}} dependency-first?"
-    body: "{{nodes.readiness.output.selected_count}} unresolved unit(s) will be documented and advanced in dependency order: {{nodes.readiness.output.selected_units | truncate:1800}}"
+    body: "This run will document and advance {{nodes.readiness.output.selected_count}} unit(s), dependencies first: {{nodes.readiness.output.selected_units | truncate:1800}}"
     choices: [approve, cancel]
 
   - id: cancelled
@@ -120,8 +120,8 @@ nodes:
 
   - id: approve_understanding
     kind: gate
-    title: "Approve understanding for {{inputs.unit}}?"
-    body: "{{nodes.understand_each.output.items.-1.text | truncate:2400}}"
+    title: "Approve understanding for {{nodes.readiness.output.selected_count}} unit(s)?"
+    body: "Approval advances this dependency-ordered scope to understood: {{nodes.readiness.output.selected_units | truncate:1200}}. Latest unit summary: {{nodes.understand_each.output.items.-1.text | truncate:1800}}"
     choices: [approve, hold]
 
   - id: done

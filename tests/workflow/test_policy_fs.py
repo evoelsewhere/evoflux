@@ -90,12 +90,13 @@ def test_aim_action_workflows_have_readiness_preflight():
             node.kind == "tool" and node.tool == "aim_readiness"
             for node in definition.nodes
         ), path
-        claim_actions = {
-            node.args.get("action")
-            for node in definition.nodes
-            if node.kind == "tool" and node.tool == "aim_claim"
-        }
-        assert {"acquire", "release"} <= claim_actions, path
+        if path.stem != "aim-suggest-workflow":
+            claim_actions = {
+                node.args.get("action")
+                for node in definition.nodes
+                if node.kind == "tool" and node.tool == "aim_claim"
+            }
+            assert {"acquire", "release"} <= claim_actions, path
 
 
 def test_aim_workflows_have_single_entry_node():
@@ -129,6 +130,25 @@ def test_aim_assess_rework_requires_second_approval():
     assert ("rework", "approve_rework", None) in edges
     assert ("approve_rework", "advance_phase", "approve") in edges
     assert ("approve_rework", "rework_stopped", "stop") in edges
+
+
+def test_aim_assess_offers_suggestion_generation_after_approval():
+    app_dir = Path(__file__).resolve().parents[2] / "app"
+    path = app_dir / "agent" / "builtin_aim" / "workflows" / "aim-assess.yaml"
+    definition = parse_definition(path.read_text(encoding="utf-8"))
+
+    suggest = next(node for node in definition.nodes if node.id == "suggest_next")
+    generate = next(
+        node for node in definition.nodes if node.id == "generate_suggestions"
+    )
+    edges = {(edge.from_, edge.to, edge.when) for edge in definition.edges}
+
+    assert suggest.kind == "gate"
+    assert suggest.choices == ["generate", "skip"]
+    assert generate.kind == "tool" and generate.tool == "aim_suggestions"
+    assert ("advance_phase", "suggest_next", None) in edges
+    assert ("suggest_next", "generate_suggestions", "generate") in edges
+    assert ("suggest_next", "done", "skip") in edges
 
 
 def test_aim_action_workflow_outputs_distinguish_readiness_from_outcome():

@@ -2,7 +2,7 @@
 
 Bundled AIM content, per `documents/research/aim-framework.md` in the EvoFlux repo:
 
-- `workflows/` — seven stack-agnostic AIM pipeline definitions (§3.11, see `workflows/README.md`).
+- `workflows/` — ten stack-agnostic AIM pipeline definitions (§3.11, see `workflows/README.md`).
 - `seed/aim-kb-template/rulebook/` — a safe sample copied into each new KB.
 
 Stack and engagement policy belongs only to `<kb>/rulebook/`. Builtin AIM code
@@ -23,3 +23,4 @@ project has production runners, mappings, or cutover automation.
 | AIM-2 | `aim` mode shell (sidebar → project → features) |
 | AIM-3 | Overview board, KB browser, Runs & Reports, post-run Discussion |
 | AIM-4 | Pipelines wired to real Workflows engine; Gate panel for in-flight gates |
+| AIM-5 | Dependency-aware suggested workflow board with live readiness and audited snapshots |

@@ -9,7 +9,7 @@
  * The run table joins each per-run session with its workflow execution
  * (GET /workflows/executions?session_ids=) so rows show the real outcome
  * (● running / ⏸ needs input / ✓ pass / ✗ fail / ◼ stopped), and every row
- * opens a Run Monitor side panel: the execution's node-by-node progress,
+ * opens a centered Run Monitor: the execution's node-by-node progress,
  * per-node debug output (the "log"), an inline gate answerer while the
  * workflow is waiting, and a Stop button. None of that is chat — post-run
  * Discussion stays the mode's only chat entry point.
@@ -49,6 +49,7 @@ import {
 import {
   approveWorkflow,
   getAimReadiness,
+  getAimReadinessOptions,
   getAimRun,
   getExecution,
   getPendingQuestions,
@@ -70,6 +71,7 @@ import { resolveAimRolePath } from '@/lib/aim-kb'
 import { AimSidePanel } from '@/components/AimSidePanel'
 import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TeamChatView } from '@/components/TeamChatView'
 import { MarkdownBlock } from '@/utils/markdown'
@@ -119,12 +121,14 @@ function WorkflowInputField({
   onChange,
   unitOptions,
   waveOptions,
+  optionsLoading,
 }: {
   spec: WorkflowInputSpec
   value: unknown
   onChange: (value: unknown) => void
   unitOptions: { key: string; phase: string; kind: string; wave: number | null }[]
   waveOptions: { wave: number; count: number }[]
+  optionsLoading: boolean
 }) {
   const label = spec.name
     .split('_')
@@ -135,38 +139,29 @@ function WorkflowInputField({
     return (
       <label className="flex min-w-52 flex-col gap-1 text-xs text-(--color-text-muted)">
         {label}
-        {unitOptions.length > 0 ? (
-          <Combobox
-            size="sm"
-            value={(value as string) || null}
-            onValueChange={(v) => onChange(v ?? '')}
-            items={unitOptions.map((unit) => ({
-              value: unit.key,
-              label: unit.key,
-              meta: unit.phase,
-              description: `${unit.kind}${unit.wave === null ? '' : ` · wave ${unit.wave}`}`,
-              keywords: `${unit.kind} ${unit.phase} ${unit.wave ?? ''}`,
-            }))}
-            placeholder="Select a unit…"
-            emptyText="No unit matches."
-            ariaLabel={label}
-            searchPlaceholder="Search units…"
-            className="w-60"
-          />
-        ) : (
-          <input
-            type="text"
-            value={(value as string) ?? ''}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder="module/UNIT (run assess first)"
-            className="rounded-md border border-(--color-border) bg-(--bg-subtle) px-2 py-1.5 text-xs text-(--color-text) placeholder:text-(--color-text-muted)"
-          />
-        )}
+        <Combobox
+          size="sm"
+          value={(value as string) || null}
+          onValueChange={(v) => onChange(v ?? '')}
+          items={unitOptions.map((unit) => ({
+            value: unit.key,
+            label: unit.key,
+            meta: unit.phase,
+            description: `${unit.kind}${unit.wave === null ? '' : ` · wave ${unit.wave}`}`,
+            keywords: `${unit.kind} ${unit.phase} ${unit.wave ?? ''}`,
+          }))}
+          placeholder={optionsLoading ? 'Loading runnable units…' : 'Select a unit…'}
+          emptyText="No runnable units for this pipeline."
+          ariaLabel={label}
+          searchPlaceholder="Search runnable units…"
+          className="w-60"
+          disabled={optionsLoading}
+        />
       </label>
     )
   }
 
-  if (spec.name === 'wave' && waveOptions.length > 0) {
+  if (spec.name === 'wave') {
     const selectedWave =
       value !== undefined && value !== null && value !== '' ? String(value) : null
     return (
@@ -182,10 +177,11 @@ function WorkflowInputField({
             meta: `${option.count} units`,
             keywords: `${option.wave} ${option.count}`,
           }))}
-          placeholder="Select wave…"
-          emptyText="No wave matches."
+          placeholder={optionsLoading ? 'Loading runnable waves…' : 'Select wave…'}
+          emptyText="No runnable waves for this pipeline."
           ariaLabel={label}
-          searchPlaceholder="Search waves…"
+          searchPlaceholder="Search runnable waves…"
+          disabled={optionsLoading}
         />
       </label>
     )
@@ -416,31 +412,9 @@ export function AimPipelinesPanel({
     queryKey: queryKeys.projects.aimUnits(project.id, undefined),
     queryFn: () => listAimUnits(project.id),
     staleTime: 30_000,
+    refetchInterval: 5_000,
   })
   const units = useMemo(() => unitsQuery.data ?? [], [unitsQuery.data])
-  const unitOptions = useMemo(
-    () =>
-      units
-        .map((u) => ({
-          key: `${u.module}/${u.name}`,
-          phase: u.phase,
-          kind: u.kind,
-          wave: u.wave,
-        }))
-        .sort((a, b) => a.key.localeCompare(b.key)),
-    [units],
-  )
-  const waveOptions = useMemo(() => {
-    const counts = new Map<number, number>()
-    for (const unit of units) {
-      if (unit.wave === null) continue
-      counts.set(unit.wave, (counts.get(unit.wave) ?? 0) + 1)
-    }
-    return [...counts.entries()]
-      .sort(([left], [right]) => left - right)
-      .map(([wave, count]) => ({ wave, count }))
-  }, [units])
-
   const readinessInputs = useMemo(() => {
     const unit = typeof inputValues.unit === 'string' ? inputValues.unit.trim() : undefined
     const waveRaw = inputValues.wave
@@ -454,6 +428,82 @@ export function AimPipelinesPanel({
       typeof inputValues.overwrite === 'boolean' ? inputValues.overwrite : undefined
     return { unit: unit || undefined, wave, case_set: caseSet || undefined, overwrite }
   }, [inputValues])
+  const hasReadinessOptions = (selectedWorkflow?.inputs ?? []).some(
+    (spec) => spec.name === 'unit' || spec.name === 'wave',
+  )
+  const readinessOptionsQuery = useQuery({
+    queryKey: [
+      'aim-pipeline-options',
+      project.id,
+      selectedWorkflow?.name ?? '',
+      readinessInputs.case_set ?? '',
+      readinessInputs.overwrite ?? false,
+    ],
+    queryFn: () =>
+      getAimReadinessOptions(project.id, {
+        pipeline: selectedWorkflow!.name,
+        case_set: readinessInputs.case_set,
+        overwrite: readinessInputs.overwrite,
+      }),
+    enabled: Boolean(selectedWorkflow?.valid) && hasReadinessOptions,
+    staleTime: 2_000,
+    refetchInterval: hasReadinessOptions ? 5_000 : false,
+  })
+  const optionsLoading =
+    unitsQuery.isLoading ||
+    (readinessOptionsQuery.isFetching && readinessOptionsQuery.data === undefined)
+  const runnableUnits = useMemo(
+    () => new Set(readinessOptionsQuery.data?.units ?? []),
+    [readinessOptionsQuery.data?.units],
+  )
+  const unitOptions = useMemo(
+    () =>
+      units
+        .filter((unit) => runnableUnits.has(`${unit.module}/${unit.name}`))
+        .map((u) => ({
+          key: `${u.module}/${u.name}`,
+          phase: u.phase,
+          kind: u.kind,
+          wave: u.wave,
+        }))
+        .sort((a, b) => a.key.localeCompare(b.key)),
+    [runnableUnits, units],
+  )
+  const waveOptions = useMemo(() => {
+    const runnableWaves = new Set(readinessOptionsQuery.data?.waves ?? [])
+    const counts = new Map<number, number>()
+    for (const unit of units) {
+      if (unit.wave === null || !runnableWaves.has(unit.wave)) continue
+      counts.set(unit.wave, (counts.get(unit.wave) ?? 0) + 1)
+    }
+    return [...counts.entries()]
+      .sort(([left], [right]) => left - right)
+      .map(([wave, count]) => ({ wave, count }))
+  }, [readinessOptionsQuery.data?.waves, units])
+
+  useEffect(() => {
+    const options = readinessOptionsQuery.data
+    if (!options || !pipelineName) return
+    const hasUnitInput = (selectedWorkflow?.inputs ?? []).some((spec) => spec.name === 'unit')
+    const hasWaveInput = (selectedWorkflow?.inputs ?? []).some((spec) => spec.name === 'wave')
+    setInputValuesByPipeline((previous) => {
+      const values = previous[pipelineName] ?? {}
+      const unit = typeof values.unit === 'string' ? values.unit : ''
+      const wave = values.wave === undefined || values.wave === '' ? null : Number(values.wave)
+      const clearUnit = hasUnitInput && unit !== '' && !options.units.includes(unit)
+      const clearWave =
+        hasWaveInput && wave !== null && !Number.isNaN(wave) && !options.waves.includes(wave)
+      if (!clearUnit && !clearWave) return previous
+      return {
+        ...previous,
+        [pipelineName]: {
+          ...values,
+          ...(clearUnit ? { unit: '' } : {}),
+          ...(clearWave ? { wave: '' } : {}),
+        },
+      }
+    })
+  }, [pipelineName, readinessOptionsQuery.data, selectedWorkflow])
 
   const requiredInputsPresent = (selectedWorkflow?.inputs ?? []).every((spec) => {
     if (!spec.required) return true
@@ -514,6 +564,31 @@ export function AimPipelinesPanel({
     }
     return map
   }, [executionsQuery.data])
+  const previousExecutionStatuses = useRef<Map<string, string> | null>(null)
+  useEffect(() => {
+    const executions = executionsQuery.data?.executions
+    if (!executions) return
+    const previous = previousExecutionStatuses.current
+    const current = new Map(executions.map((execution) => [execution.id, execution.status]))
+    previousExecutionStatuses.current = current
+    if (previous === null) return
+    const executionChanged = executions.some(
+      (execution) => previous.get(execution.id) !== execution.status,
+    )
+    const executionSettled = executions.some((execution) => {
+      if (execution.status === 'running' || execution.status === 'waiting_gate') return false
+      return previous.get(execution.id) !== execution.status
+    })
+    if (executionChanged) {
+      void queryClient.invalidateQueries({ queryKey: ['aim-pipeline-options', project.id] })
+      void queryClient.invalidateQueries({ queryKey: ['aim-pipeline-readiness', project.id] })
+    }
+    if (executionSettled) {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.projects.aimUnits(project.id, undefined),
+      })
+    }
+  }, [executionsQuery.data?.executions, project.id, queryClient])
   const runSummary = useMemo(() => {
     let active = 0
     let attention = 0
@@ -621,6 +696,8 @@ export function AimPipelinesPanel({
       )
       void queryClient.invalidateQueries({ queryKey: queryKeys.team.sessions.project(project.id) })
       void queryClient.invalidateQueries({ queryKey: ['aim-run-executions', project.id] })
+      void queryClient.invalidateQueries({ queryKey: ['aim-pipeline-options', project.id] })
+      void queryClient.invalidateQueries({ queryKey: ['aim-pipeline-readiness', project.id] })
       // Open the monitor right away — the whole point is watching it run.
       setDiscussion(null)
       setReportRun(null)
@@ -664,6 +741,8 @@ export function AimPipelinesPanel({
         void queryClient.invalidateQueries({
           queryKey: queryKeys.team.sessions.project(project.id),
         })
+        void queryClient.invalidateQueries({ queryKey: ['aim-pipeline-options', project.id] })
+        void queryClient.invalidateQueries({ queryKey: ['aim-pipeline-readiness', project.id] })
         setDiscussion(null)
         setReportRun(null)
         setMonitorSession({ id: run.id, title: run.title, running: true })
@@ -726,6 +805,7 @@ export function AimPipelinesPanel({
               onChange={(value) => setInputValue(spec.name, value)}
               unitOptions={unitOptions}
               waveOptions={waveOptions}
+              optionsLoading={optionsLoading}
             />
           ))}
           <Button size="sm" onClick={() => handleRun()} disabled={!canRun || starting}>
@@ -923,10 +1003,14 @@ export function AimPipelinesPanel({
       {/* Post-run Discussion — TeamChatView is a global singleton; exactly one
           instance, mounted only while a finished run's transcript is open. */}
       {discussion && !monitorSession && !reportRun && (
-        <AimSidePanel storageKey={STORAGE_KEYS.panels.aimDiscussion} defaultWidth={420}>
+        <Dialog open onOpenChange={(open) => { if (!open) setDiscussion(null) }}>
+          <DialogContent
+            showCloseButton={false}
+            className="flex h-[calc(100dvh-1rem)] min-w-0 w-[calc(100vw-1rem)] max-w-none flex-col gap-0 overflow-hidden rounded-lg bg-(--bg-page) p-0 shadow-xl sm:h-[min(820px,calc(100dvh-2rem))] sm:w-[min(1100px,calc(100vw-2rem))] sm:max-w-none"
+          >
           <header className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-4 py-3">
             <div className="min-w-0">
-              <h2 className="text-sm font-semibold text-(--color-text)">Discussion</h2>
+              <DialogTitle className="text-sm font-semibold text-(--color-text)">Discussion</DialogTitle>
               <p className="mt-0.5 truncate text-xs text-(--color-text-subtle)">
                 {discussion.title ?? discussion.id.slice(0, 8)}
               </p>
@@ -941,14 +1025,15 @@ export function AimPipelinesPanel({
               <X size={16} />
             </button>
           </header>
-          <div className="min-h-0 flex-1 overflow-hidden">
+          <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
             <TeamChatView
               sessionId={discussion.id}
               mode="aim"
               workspace={discussion.workspace ?? null}
             />
           </div>
-        </AimSidePanel>
+          </DialogContent>
+        </Dialog>
       )}
 
       {/* §9.3 — Confirm dialog for convert pipelines (write to target repo) */}
@@ -1759,6 +1844,36 @@ function PipelineInfoCard({
               ? `Ready · ${readiness.selected_count} unit(s) selected`
               : `Blocked · ${visibleBlockers.length + claimDependencies.length} prerequisite(s)`}
           </p>
+          {readiness.selected_count > 1 && (
+            <div className="mt-2 rounded-md border border-current/20 bg-(--bg-page)/70 px-2.5 py-2 text-(--color-text-2)">
+              <p className="font-medium">
+                {readiness.included_dependencies.length > 0
+                  ? `${readiness.included_dependencies.length} prerequisite unit(s) are included automatically`
+                  : `${readiness.selected_count} units are included in this run`}
+              </p>
+              <p className="mt-0.5 text-[9px] text-(--color-text-subtle)">
+                Execution order is left to right. Every listed unit may be changed by this run.
+              </p>
+              <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                {readiness.selected_units.map((unit, index) => (
+                  <span key={unit} className="inline-flex items-center gap-1">
+                    {index > 0 && <ArrowRight size={9} className="text-(--color-text-subtle)" />}
+                    <span
+                      className={cn(
+                        'rounded border px-1.5 py-0.5 font-mono text-[9px]',
+                        unit === readiness.primary_unit
+                          ? 'border-(--color-accent)/40 bg-(--color-accent)/10 text-(--color-text)'
+                          : 'border-(--color-border) bg-(--bg-subtle) text-(--color-text-muted)',
+                      )}
+                    >
+                      {unit}
+                      {unit === readiness.primary_unit ? ' · selected' : ''}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           {claimDependencies.length > 0 && (
             <div className="mt-2 space-y-1.5">
               {claimDependencies.map((dependency) => (
@@ -1958,12 +2073,11 @@ export function RunMonitorPanel({
   }
 
   return (
-    <AimSidePanel
-      storageKey={STORAGE_KEYS.panels.aimMonitor}
-      defaultWidth={500}
-      minWidth={340}
-      maxWidth={840}
-    >
+    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent
+        showCloseButton={false}
+        className="flex h-[calc(100dvh-1rem)] min-w-0 w-[calc(100vw-1rem)] max-w-none flex-col gap-0 overflow-hidden rounded-lg bg-(--bg-page) p-0 shadow-xl sm:h-[min(820px,calc(100dvh-2rem))] sm:w-[min(920px,calc(100vw-2rem))] sm:max-w-none"
+      >
       <div className="sticky top-0 z-10 border-b border-(--color-border) bg-(--bg-page)/95 backdrop-blur-sm">
         <div className="flex h-11 items-center justify-between gap-3 px-4">
           <div className="flex min-w-0 items-center gap-2.5">
@@ -1971,9 +2085,9 @@ export function RunMonitorPanel({
               <Activity size={13} aria-hidden="true" />
             </span>
             <div className="min-w-0">
-              <p className="text-[10px] font-semibold uppercase text-(--color-text-subtle)">
+              <DialogTitle className="text-[10px] font-semibold uppercase text-(--color-text-subtle)">
                 Run monitor
-              </p>
+              </DialogTitle>
               <p
                 className="truncate text-xs font-medium text-(--color-text)"
                 title={title ?? undefined}
@@ -2146,7 +2260,8 @@ export function RunMonitorPanel({
           </div>
         )}
       </div>
-    </AimSidePanel>
+      </DialogContent>
+    </Dialog>
   )
 }
 
