@@ -37,6 +37,10 @@ def test_list_index_path():
     assert render("{{nodes.fetch.output.tags.1}}", SCOPE) == "auth"
 
 
+def test_negative_list_index_path():
+    assert render("{{nodes.plan.output.repos.-1.path}}", SCOPE) == "/b"
+
+
 def test_json_filter():
     assert render("{{nodes.fetch.output.tags | json}}", SCOPE) == '["p1", "auth"]'
 

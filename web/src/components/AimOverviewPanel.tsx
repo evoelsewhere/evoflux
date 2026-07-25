@@ -59,6 +59,8 @@ import { setAimKbOpenPath, setAimPipelinePrefill } from '@/lib/aimHandoff'
 import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
 import { cn } from '@/lib/utils'
+import { formatApprovalQuestion } from '@/utils/approvalQuestion'
+import { MarkdownBlock } from '@/utils/markdown'
 import type {
   AimPhaseCounts,
   AimApproval,
@@ -856,15 +858,18 @@ function ApprovalInbox({
         {approvals.map((approval) => (
           <div
             key={`${approval.execution_id}:${approval.request_id}`}
-            className="flex flex-wrap items-center gap-2 rounded-md border border-(--color-border) bg-(--bg-page) px-3 py-2"
+            className="flex flex-wrap items-start gap-2 rounded-md border border-(--color-border) bg-(--bg-page) px-3 py-2"
           >
-            <div className="min-w-48 flex-1">
+            <div className="min-w-0 flex-1 basis-[40rem]">
               <p className="truncate text-xs font-medium text-(--color-text)">
                 {approval.session_title ?? approval.workflow}
               </p>
-              <p className="mt-0.5 text-[11px] text-(--color-text-muted)">
-                {approval.question}
-              </p>
+              <div className="mt-1 max-h-48 overflow-auto pr-1 text-[11px] leading-4 text-(--color-text-muted) [&_h1]:text-xs [&_h2]:text-xs [&_h3]:text-[11px] [&_li]:my-0 [&_ol]:my-1 [&_p]:my-1 [&_pre]:my-1 [&_table]:my-1 [&_table]:text-[10px] [&_ul]:my-1">
+                <MarkdownBlock
+                  content={formatApprovalQuestion(approval.question)}
+                  sessionId={approval.session_id}
+                />
+              </div>
             </div>
             <div className="flex shrink-0 gap-1">
               {approval.options.map((option) => (
