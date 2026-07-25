@@ -655,7 +655,7 @@ a svg[aria-hidden="true"],
   50%      { opacity: 1; }
 }
 .thinking-dot {
-  animation: thinking-dot 1400ms var(--ease-in-out) infinite;
+  animation: thinking-dot calc(1400ms * var(--motion-user-scale, 1)) var(--ease-in-out) infinite;
 }
 
 @keyframes tool-row-enter {

@@ -204,7 +204,18 @@ function AimLayoutBase() {
           onNewProject={() => setWizardOpen(true)}
         />
       ) : (
-        <FeaturePanel project={project} feature={feature} runId={runId} />
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={`${project.id}:${feature}:${runId ?? ''}`}
+            className="flex h-full min-h-0 flex-1 flex-col"
+            initial={{ opacity: 0, y: 6 * preset.distance }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 * preset.distance }}
+            transition={preset.transition}
+          >
+            <FeaturePanel project={project} feature={feature} runId={runId} />
+          </motion.div>
+        </AnimatePresence>
       )}
     </AppShell>
   )

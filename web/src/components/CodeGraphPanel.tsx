@@ -92,7 +92,7 @@ export function CodeGraphPanel({
                 {indexProgress != null && (
                   <div className="h-1.5 w-full overflow-hidden rounded-full bg-(--color-border)">
                     <div
-                      className="h-full rounded-full bg-(--color-accent) transition-all duration-300"
+                      className="h-full rounded-full bg-(--color-accent) transition-[width] duration-(--motion-base)"
                       style={{ width: `${Math.round(indexProgress * 100)}%` }}
                     />
                   </div>
@@ -132,7 +132,7 @@ export function CodeGraphPanel({
                 {indexProgress != null && (
                   <div className="h-1 w-full overflow-hidden rounded-full bg-(--color-border)">
                     <div
-                      className="h-full rounded-full bg-(--color-accent) transition-all duration-300"
+                      className="h-full rounded-full bg-(--color-accent) transition-[width] duration-(--motion-base)"
                       style={{ width: `${Math.round(indexProgress * 100)}%` }}
                     />
                   </div>

@@ -10,6 +10,11 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { Copy, Check, Play } from 'lucide-react'
 import { formatTime, lastTurnText } from '@/utils/format'
+import {
+  groupConsecutiveToolCalls,
+  ToolCallGroupCard,
+  type ToolBlockGroup,
+} from './ToolCallGroup'
 import type { ContentBlock } from '@/api/types'
 
 export interface AssistantTurnFooterProps {
@@ -155,14 +160,28 @@ export function AssistantTurn({
 }: AssistantTurnProps) {
   const turnIsStreaming = isWorking && isTrailingTurn
   const canContinue = isTrailingTurn && !isWorking ? onContinue : undefined
+  const renderItems = turnIsStreaming ? blocks : groupConsecutiveToolCalls(blocks)
+  const blockAbsIdx = useMemo(
+    () => new Map(blocks.map((b, j) => [b.id, startIndex + j])),
+    [blocks, startIndex],
+  )
 
   return (
     <div className="space-y-2">
-      {blocks.map((block, j) => {
-        const absoluteIdx = startIndex + j
+      {renderItems.map((renderItem, j) => {
+        if ('kind' in renderItem && (renderItem as ToolBlockGroup).kind === 'group') {
+          return (
+            <ToolCallGroupCard
+              key={`group-${startIndex}-${j}`}
+              group={renderItem as ToolBlockGroup}
+            />
+          )
+        }
+        const block = renderItem as ContentBlock
+        const absoluteIdx = blockAbsIdx.get(block.id) ?? startIndex + j
         const isStreaming = isWorking && absoluteIdx >= finalizedCount
         return (
-          <div key={block.id} className={isStreaming ? 'block-reveal' : undefined}>
+          <div key={block.id} className="block-reveal">
             {renderBlock({
               block,
               isStreaming,

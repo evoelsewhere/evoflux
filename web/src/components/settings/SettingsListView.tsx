@@ -74,7 +74,7 @@ export interface SettingsListViewProps {
   title: string
   /** Icon for the page header. */
   icon: LucideIcon
-  description: string
+  lede: string
   /** Route for the primary "+ New" CTA. */
   newTo: NewRoute
   newLabel: string
@@ -98,7 +98,7 @@ export interface SettingsListViewProps {
 export function SettingsListView({
   title,
   icon,
-  description,
+  lede,
   newTo,
   newLabel,
   newAction,
@@ -132,7 +132,7 @@ export function SettingsListView({
     <SettingsPage
       icon={icon}
       title={title}
-      lede={description}
+      lede={lede}
       actions={newAction ?? <NewButton to={newTo} label={newLabel} />}
     >
       {(tabs || headerExtra) && (

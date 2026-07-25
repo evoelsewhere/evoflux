@@ -111,6 +111,7 @@ export function SplitGrid({
         initial={{ opacity: 0, y: paneTravel, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: paneTravel, scale: 0.98 }}
+        transition={preset.intensity === 'reduced' ? { duration: 0 } : preset.spring}
         className={fill}
       >
         <AgentPane

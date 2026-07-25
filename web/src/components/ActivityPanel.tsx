@@ -5,10 +5,12 @@
  * completions as a compact timeline in a slide-over panel.
  */
 
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useState } from 'react'
+import { motion } from 'framer-motion'
 import { ArrowRightLeft, CheckCircle2, LogIn, LogOut, Mail, AlertTriangle, CircleDot } from 'lucide-react'
 import { useTeamStore, type ActivityItem } from '@/stores/useTeamStore'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { fadeRise, staggerDelay, useMotionPreset } from '@/lib/motion'
 
 function kindIcon(kind: ActivityItem['kind']) {
   const size = 14
@@ -49,6 +51,13 @@ function ActivityRow({ item }: { item: ActivityItem }) {
 export function ActivityPanel() {
   const activityLog = useTeamStore((s) => s.activityLog)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const preset = useMotionPreset()
+  const enter = fadeRise(preset, 6)
+  const [bootstrapLen, setBootstrapLen] = useState<number | null>(null)
+  if (bootstrapLen === null && activityLog.length > 0) {
+    setBootstrapLen(activityLog.length)
+  }
+  const staggerInitial = bootstrapLen !== null && activityLog.length === bootstrapLen
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -65,8 +74,18 @@ export function ActivityPanel() {
   return (
     <ScrollArea className="h-full">
       <div className="divide-y divide-(--color-border)/50">
-        {activityLog.map((item) => (
-          <ActivityRow key={item.id} item={item} />
+        {activityLog.map((item, index) => (
+          <motion.div
+            key={item.id}
+            initial={enter.initial}
+            animate={enter.animate}
+            transition={{
+              ...enter.transition,
+              delay: staggerInitial ? staggerDelay(preset, index) : 0,
+            }}
+          >
+            <ActivityRow item={item} />
+          </motion.div>
         ))}
         <div ref={bottomRef} />
       </div>

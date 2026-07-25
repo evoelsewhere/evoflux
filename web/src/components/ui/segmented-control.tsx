@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 export interface SegmentedOption<T extends string | number> {
   value: T
   label: string
+  disabled?: boolean
 }
 
 export function SegmentedControl<T extends string | number>({
@@ -48,10 +49,15 @@ export function SegmentedControl<T extends string | number>({
             type="button"
             role="tab"
             aria-selected={active}
-            onClick={() => onChange(option.value)}
+            disabled={option.disabled}
+            onClick={() => {
+              if (option.disabled) return
+              onChange(option.value)
+            }}
             className={cn(
               'relative rounded-[7px] px-2.5 py-1 text-xs transition-colors',
               active ? 'text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text)',
+              option.disabled && 'cursor-not-allowed opacity-40',
             )}
           >
             {active && (

@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { AnimatePresence, motion } from 'framer-motion'
 import { ChevronRight, FileText, Folder, GitBranch, Network, RefreshCw, Timer, X } from 'lucide-react'
+import { useMotionPreset } from '@/lib/motion'
 import { getCodingWorkspaceGitDiff, listCodingWorkspaceFiles } from '@/api/client'
 import { cn } from '@/lib/utils'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
@@ -32,6 +34,13 @@ const CHANGED_STATUS_LABELS: Record<ChangedFileStatus, string> = {
   D: 'Deleted',
 }
 
+const WORKSPACE_TABS = [
+  { key: 'changed' as const, label: 'Source control', Icon: GitBranch },
+  { key: 'files' as const, label: 'Files', Icon: Folder },
+  { key: 'graph' as const, label: 'Graph', Icon: Network },
+  { key: 'progress' as const, label: 'Progress', Icon: Timer },
+]
+
 function pathHasChangedDescendant(path: string, changedPaths: Set<string>): boolean {
   const prefix = `${path}/`
   for (const changedPath of changedPaths) {
@@ -53,6 +62,7 @@ export function TreeNodeView({
   onFileSelect?: (file: WorkspaceFileInfo | null) => void
   changedPaths: Set<string>
 }) {
+  const preset = useMotionPreset()
   const [open, setOpen] = useState(false)
   const isDir = node.children.size > 0 && !node.file
   const children = Array.from(node.children.values()).sort((a, b) => {
@@ -112,9 +122,22 @@ export function TreeNodeView({
           {hasChangedDescendant && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-(--accent-orange-text)" aria-label="Contains modified files" />}
         </button>
       )}
-      {(open || !node.path) && children.map((child) => (
-        <TreeNodeView key={child.path} node={child} depth={node.path ? depth + 1 : 0} selectedPath={selectedPath} onFileSelect={onFileSelect} changedPaths={changedPaths} />
-      ))}
+      <AnimatePresence initial={false}>
+        {(open || !node.path) && (
+          <motion.div
+            key="tree-children"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={preset.transition}
+            className="overflow-hidden"
+          >
+            {children.map((child) => (
+              <TreeNodeView key={child.path} node={child} depth={node.path ? depth + 1 : 0} selectedPath={selectedPath} onFileSelect={onFileSelect} changedPaths={changedPaths} />
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
@@ -144,6 +167,7 @@ export function CodingWorkspacePanel({
   isWorking?: boolean
   desktopOverlayInner?: boolean
 }) {
+  const preset = useMotionPreset()
   const [tab, setTab] = useState<'files' | 'changed' | 'graph' | 'progress'>(initialTab)
   const [scOpen, setScOpen] = useState(false)
   const [scWorkspace, setScWorkspace] = useState('')
@@ -193,15 +217,15 @@ export function CodingWorkspacePanel({
             </h2>
             {isProjectMode ? (
               project ? (
-                <p className="mt-0.5 truncate text-xs text-(--color-text-subtle)">
+                <p className="truncate text-xs text-(--color-text-subtle)">
                   {project.name}
                   <span className="text-(--color-text-muted)"> · {project.workspaces.length} repos</span>
                 </p>
               ) : (
-                <p className="mt-0.5 truncate text-xs text-(--color-text-subtle)">Loading project…</p>
+                <p className="truncate text-xs text-(--color-text-subtle)">Loading project…</p>
               )
             ) : (
-              <p className="mt-0.5 truncate font-mono text-xs text-(--color-text-subtle)" title={workspace}>
+              <p className="truncate font-mono text-xs text-(--color-text-subtle)" title={workspace}>
                 {workspaceLabel(workspace)}
               </p>
             )}
@@ -216,20 +240,37 @@ export function CodingWorkspacePanel({
             <X size={16} />
           </button>
         </header>
-        <div className="flex border-b border-(--color-border) p-1">
-          <button type="button" onClick={() => setTab('changed')} className={cn('flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs', tab === 'changed' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted)')}>
-            <GitBranch size={13} /> Source Control
-            {!isProjectMode && changedPaths.size > 0 && <span className="rounded-full bg-(--color-warning)/15 px-1.5 py-0.5 font-mono text-xs text-(--accent-orange-text)">{changedPaths.size}</span>}
-          </button>
-          <button type="button" onClick={() => setTab('files')} className={cn('flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs', tab === 'files' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted)')}>
-            <Folder size={13} /> Files
-          </button>
-          <button type="button" onClick={() => setTab('graph')} className={cn('flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs', tab === 'graph' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted)')}>
-            <Network size={13} /> Graph
-          </button>
-          <button type="button" onClick={() => setTab('progress')} className={cn('flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs', tab === 'progress' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted)')}>
-            <Timer size={13} /> Progress
-          </button>
+        <div className="border-b border-(--color-border) p-1">
+          <div className="relative grid grid-cols-4 items-center rounded-lg border border-(--color-border) bg-(--bg-page) p-0.5">
+            <motion.div
+              aria-hidden="true"
+              className="pointer-events-none absolute bottom-0.5 left-0.5 top-0.5 w-[calc((100%-0.25rem)/4)] rounded-[6px] bg-(--bg-key) shadow-sm"
+              initial={false}
+              animate={{ x: `${WORKSPACE_TABS.findIndex((t) => t.key === tab) * 100}%` }}
+              transition={preset.spring}
+            />
+            {WORKSPACE_TABS.map(({ key, label, Icon }) => {
+              const active = tab === key
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setTab(key)}
+                  title={label}
+                  className={cn(
+                    'relative z-10 flex min-w-0 items-center justify-center gap-1 rounded-[6px] px-1 py-1.5 text-xs outline-none transition-[color,transform] duration-(--motion-fast) active:translate-y-px focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--color-accent)/35',
+                    active ? 'font-medium text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)',
+                  )}
+                >
+                  <Icon size={13} className="shrink-0" aria-hidden="true" />
+                  <span className="truncate">{key === 'changed' ? 'Source' : label}</span>
+                  {key === 'changed' && !isProjectMode && changedPaths.size > 0 && (
+                    <span className="rounded-full bg-(--color-warning)/15 px-1 py-px font-mono text-[10px] text-(--accent-orange-text)">{changedPaths.size}</span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
         </div>
         {tab === 'graph' ? (
           <div className="flex min-h-0 flex-1 flex-col">

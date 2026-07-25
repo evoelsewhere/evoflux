@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 
 import { cn } from '@/lib/utils'
+import { useMotionPreset } from '@/lib/motion'
 import { Button } from '@/components/ui/button'
 import {
   XIcon,
@@ -43,6 +45,7 @@ export function BrowserViewer({
   const [interactive, setInteractive] = useState(false)
   const [width, setWidth] = useState(DEFAULT_WIDTH)
   const resizingRef = useRef(false)
+  const preset = useMotionPreset()
 
   const currentUrl = status?.url ?? ''
 
@@ -129,20 +132,24 @@ export function BrowserViewer({
     }
   }, [status])
 
-  if (!open || !sessionId) return null
-
   const isWaiting = connected && !frameReceived
   const isActive = status?.active !== false
 
   return (
-    <>
+    <AnimatePresence>
+      {open && sessionId && (
+        <>
       {/* Backdrop — click to close on mobile */}
-      <div
+      <motion.div
         className="fixed inset-0 z-(--z-overlay) bg-(--color-overlay) backdrop-blur-sm sm:hidden"
         onClick={onClose}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={preset.transition}
       />
 
-      <div
+      <motion.div
         className={cn(
           'flex flex-col overflow-hidden',
           'border-l-2 border-(--color-border-strong)',
@@ -156,6 +163,10 @@ export function BrowserViewer({
           className,
         )}
         style={{ '--browser-viewer-width': `${width}px` } as React.CSSProperties}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={preset.transition}
       >
         {/* ── Resize handle ───────────────────────────────────── */}
         <div
@@ -323,8 +334,10 @@ export function BrowserViewer({
             })}
           </div>
         )}
-      </div>
-    </>
+      </motion.div>
+        </>
+      )}
+    </AnimatePresence>
   )
 }
 

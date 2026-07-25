@@ -27,7 +27,8 @@ import { TaskProgressPill } from '@/components/TaskProgressPill'
 import { WorkflowProgressPill } from '@/components/WorkflowProgressPill'
 import { SessionTOC } from '@/components/SessionTOC'
 import { SessionScheduleIndicator } from '@/components/SessionScheduleIndicator'
-import { isAgentRole, type AgentRole } from '@/lib/agent-roles'
+import { resolveAgentRole } from '@/lib/agent-roles'
+import { AgentChip } from '@/components/ui/agent-chip'
 import { useMotionPreset } from '@/lib/motion'
 import type { ActiveLoop, ActiveWorkflowExecution, AgentStream } from '@/stores/useTeamStore/types'
 import type { Chapter } from '@/api/types'
@@ -335,6 +336,13 @@ function MobileLoopStatusCard({ activeLoop }: { activeLoop: ActiveLoop }) {
   )
 }
 
+function statusDotClass(status: AgentStatus | undefined): string | undefined {
+  if (status === 'error') return 'bg-(--color-error)'
+  if (status === 'working') return 'animate-pulse bg-(--color-accent)'
+  if (status === 'offline') return 'bg-(--color-text-subtle) opacity-50'
+  return undefined
+}
+
 // ─── MobileChatActions ─────────────────────────────────────────────────────
 
 function MobileHeaderAction({
@@ -469,19 +477,20 @@ function MobileChatActions({
                 )}
                 {activeAgent && agents.length > 1 && (
                   <>
-                    <div className="px-2 py-2 text-xs font-medium text-(--color-text-muted)">Agents</div>
-                    {agents.map((name) => (
-                      <button
-                        type="button"
-                        key={name}
-                        onClick={() => { onSelectAgent(name); onOpenChange(false) }}
-                        className="flex min-h-10 w-full items-center gap-2 rounded-md px-2 text-left text-sm transition-colors hover:bg-(--bg-key)"
-                      >
-                        <span className={`h-2 w-2 rounded-full ${dotClassFor(name, statuses[name])}`} aria-hidden="true" />
-                        <span className="min-w-0 flex-1 truncate font-mono text-xs">{name}</span>
-                        {name === activeAgent && <Check size={13} className="text-(--color-accent)" aria-hidden="true" />}
-                      </button>
-                    ))}
+                    <div className="px-2 py-2 text-xs font-medium text-(--color-text-muted)">Team</div>
+                    <div className="mb-2 flex flex-wrap gap-1.5 px-2">
+                      {agents.map((name) => (
+                        <AgentChip
+                          key={name}
+                          role={resolveAgentRole(name)}
+                          label={name}
+                          active={name === activeAgent}
+                          className="px-2 py-1"
+                          dotClassName={statusDotClass(statuses[name])}
+                          onClick={() => { onSelectAgent(name); onOpenChange(false) }}
+                        />
+                      ))}
+                    </div>
                   </>
                 )}
 
@@ -521,21 +530,6 @@ interface ActiveAgentSwitcherProps {
   onSelect: (agent: string) => void
 }
 
-const DOT_BY_ROLE: Record<AgentRole, string> = {
-  EvoFlux: 'bg-(--color-marker-mint)',
-  executor: 'bg-(--color-marker-orange)',
-  consultant: 'bg-(--color-marker-blue)',
-  explorer: 'bg-(--color-text-muted)',
-}
-
-function dotClassFor(agent: string, status: AgentStatus | undefined): string {
-  if (status === 'error') return 'bg-(--color-error)'
-  if (status === 'working') return 'animate-pulse bg-(--color-accent)'
-  if (status === 'offline') return 'bg-(--color-text-subtle) opacity-50'
-  if (isAgentRole(agent)) return DOT_BY_ROLE[agent]
-  return 'bg-(--color-success)'
-}
-
 function ActiveAgentSwitcher({
   activeAgent,
   agents,
@@ -546,14 +540,16 @@ function ActiveAgentSwitcher({
     <DropdownMenu>
       <DropdownMenuTrigger
         data-no-drag
-        className="inline-flex h-9 min-w-0 shrink items-center gap-2 rounded-md px-2 font-mono text-xs leading-none font-semibold text-(--color-text) outline-none transition-all hover:bg-(--bg-key) focus-visible:ring-2 focus-visible:ring-(--color-accent)/40 sm:h-8 sm:px-3 sm:py-0"
+        className="inline-flex h-9 min-w-0 shrink items-center gap-1.5 rounded-md px-1.5 outline-none transition-colors hover:bg-(--bg-key) focus-visible:ring-2 focus-visible:ring-(--color-accent)/40 sm:h-8 sm:px-2"
         aria-label={`Switch active agent (current: ${activeAgent})`}
       >
-        <span
-          className={`h-2 w-2 shrink-0 rounded-full ${dotClassFor(activeAgent, statuses[activeAgent])}`}
-          aria-hidden="true"
+        <AgentChip
+          role={resolveAgentRole(activeAgent)}
+          label={activeAgent}
+          active
+          className="min-w-0 truncate px-2 py-1"
+          dotClassName={statusDotClass(statuses[activeAgent])}
         />
-        <span className="min-w-0 truncate">{activeAgent}</span>
         <ChevronDown size={12} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
       </DropdownMenuTrigger>
 
@@ -568,13 +564,15 @@ function ActiveAgentSwitcher({
           <DropdownMenuItem
             key={name}
             onClick={() => onSelect(name)}
-            className="flex min-w-40 items-center gap-2 font-mono text-xs whitespace-nowrap"
+            className="flex min-w-40 items-center gap-2 whitespace-nowrap"
           >
-            <span
-              className={`h-2 w-2 shrink-0 rounded-full ${dotClassFor(name, statuses[name])}`}
-              aria-hidden="true"
+            <AgentChip
+              role={resolveAgentRole(name)}
+              label={name}
+              active={name === activeAgent}
+              className="min-w-0 flex-1 truncate px-2 py-1"
+              dotClassName={statusDotClass(statuses[name])}
             />
-            <span>{name}</span>
             {name === activeAgent && (
               <Check size={12} className="ml-auto shrink-0 text-(--color-accent)" aria-hidden="true" />
             )}

@@ -10,6 +10,8 @@
  */
 
 import { useEffect, useMemo, useRef } from 'react'
+import { motion } from 'framer-motion'
+import { fadeRise, useMotionPreset } from '@/lib/motion'
 import {
   ArrowRight,
   CheckCircle2,
@@ -20,9 +22,10 @@ import {
 } from 'lucide-react'
 import { useTeamStore } from '@/stores/useTeamStore'
 import type { ActivityItem } from '@/stores/useTeamStore'
-import { isAgentRole } from '@/lib/agent-roles'
+import { isAgentRole, resolveAgentRole } from '@/lib/agent-roles'
 import { cn } from '@/lib/utils'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { AgentChip } from '@/components/ui/agent-chip'
 import type { AgentStream } from '@/stores/useTeamStore'
 import type { ContentBlock } from '@/api/types'
 
@@ -90,11 +93,13 @@ function AgentStatusCard({
   stream,
   isLead,
   maxTokens,
+  onFocus,
 }: {
   name: string
   stream: AgentStream
   isLead: boolean
   maxTokens: number
+  onFocus?: (name: string) => void
 }) {
   const total = stream.usage.totalTokens ?? 0
   const hasTokens = total > 0
@@ -102,27 +107,34 @@ function AgentStatusCard({
   const tool = stream.status === 'working' ? activeTool(stream.currentBlocks) : null
   const isError = stream.status === 'error'
   const isWorking = stream.status === 'working'
+  const interactive = Boolean(onFocus)
 
   return (
-    <div
+    <button
+      type="button"
+      onClick={() => onFocus?.(name)}
+      disabled={!interactive}
       className={cn(
-        'flex w-44 shrink-0 flex-col gap-2.5 rounded-xl border p-3 transition-colors',
+        'flex w-44 shrink-0 flex-col gap-2.5 rounded-lg border p-3 text-left transition-colors',
+        interactive && 'cursor-pointer hover:border-(--color-border-strong) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)',
+        !interactive && 'cursor-default',
         isError
           ? 'border-(--color-error)/30 bg-(--color-error)/5'
           : isWorking
           ? 'border-(--color-accent)/25 bg-(--bg-card)'
           : 'border-(--color-border) bg-(--bg-card)',
       )}
+      aria-label={`Focus agent ${name}`}
     >
-      {/* Name + lead badge + status dot */}
+      {/* Name + lead badge */}
       <div className="flex items-center gap-2">
-        <span
-          className={cn('h-2 w-2 shrink-0 rounded-full', dotClass(name, stream))}
-          aria-hidden="true"
+        <AgentChip
+          role={resolveAgentRole(name)}
+          label={name}
+          active={isLead || isWorking}
+          className="min-w-0 flex-1 truncate px-2 py-1"
+          dotClassName={dotClass(name, stream)}
         />
-        <span className="min-w-0 flex-1 truncate font-mono text-xs font-semibold text-(--color-text)">
-          {name}
-        </span>
         {isLead && (
           <span className="shrink-0 rounded bg-(--bg-key) px-1.5 py-0.5 font-mono text-[10px] text-(--color-text-muted)">
             lead
@@ -159,7 +171,7 @@ function AgentStatusCard({
           {hasTokens && (
             <div
               className={cn(
-                'h-full rounded-full transition-[width] duration-500',
+                'h-full rounded-full transition-[width] duration-(--motion-base)',
                 isError ? 'bg-(--color-error)' : 'bg-(--color-accent)',
               )}
               style={{ width: `${fillPct}%` }}
@@ -170,7 +182,7 @@ function AgentStatusCard({
           {hasTokens ? formatTokens(total) : '—'}
         </span>
       </div>
-    </div>
+    </button>
   )
 }
 
@@ -273,10 +285,13 @@ export function MonitorView({
   agentNames,
   leadName,
   agentStreams,
+  onFocusAgent,
 }: {
   agentNames: string[]
   leadName: string | null
   agentStreams: Record<string, AgentStream>
+  /** Focus an agent and leave monitor (caller switches view mode). */
+  onFocusAgent?: (name: string) => void
 }) {
   const activityLog = useTeamStore((s) => s.activityLog)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -314,10 +329,16 @@ export function MonitorView({
     [liveAgents, agentStreams],
   )
 
+  const preset = useMotionPreset()
+  const sectionEnter = fadeRise(preset, 6)
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* Agent status strip */}
-      <div className="shrink-0 border-b border-(--color-border) bg-(--bg-page)">
+      <motion.div
+        className="shrink-0 border-b border-(--color-border) bg-(--bg-page)"
+        {...sectionEnter}
+      >
         {liveAgents.length === 0 ? (
           <p className="px-4 py-3 text-xs text-(--color-text-subtle)">No active agents</p>
         ) : (
@@ -346,15 +367,20 @@ export function MonitorView({
                   stream={agentStreams[name]}
                   isLead={name === leadName}
                   maxTokens={maxTokens}
+                  onFocus={onFocusAgent}
                 />
               ))}
             </div>
           </>
         )}
-      </div>
+      </motion.div>
 
       {/* Comms feed */}
-      <div className="min-h-0 flex-1 bg-(--bg-page)">
+      <motion.div
+        className="min-h-0 flex-1 bg-(--bg-page)"
+        {...sectionEnter}
+        transition={{ ...sectionEnter.transition, delay: preset.stagger * 2 }}
+      >
         {feedItems.length === 0 ? (
           <FeedEmptyState />
         ) : (
@@ -367,7 +393,7 @@ export function MonitorView({
             </div>
           </ScrollArea>
         )}
-      </div>
+      </motion.div>
     </div>
   )
 }

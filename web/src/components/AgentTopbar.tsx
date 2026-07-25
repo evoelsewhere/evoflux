@@ -68,7 +68,7 @@ function ViewModeSwitch({
           aria-label={label}
           onClick={() => onValueChange(key)}
           className={cn(
-            'relative flex h-7 min-w-[3.2rem] items-center justify-center rounded-[8px] px-2.5 text-xs font-medium outline-none transition-[color,transform] duration-150 active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-(--focus-ring)/40',
+            'relative flex h-7 min-w-[3.2rem] items-center justify-center rounded-[8px] px-2.5 text-xs font-medium outline-none transition-[color,transform] duration-(--motion-fast) active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-(--focus-ring)/40',
             value === key
               ? 'text-(--color-text)'
               : 'text-(--color-text-muted) hover:text-(--color-text-2)',

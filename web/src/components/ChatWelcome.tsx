@@ -3,8 +3,7 @@ import { motion } from 'framer-motion'
 
 import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
 import type { ObservabilitySummary } from '@/api/client'
-import { useReducedMotion } from '@/hooks/useReducedMotion'
-import { useMotionPreset } from '@/lib/motion'
+import { fadeRise, useMotionPreset } from '@/lib/motion'
 import { useObservabilitySummaryQuery } from '@/queries'
 import { formatCompact, formatInt } from '@/utils/telemetryFormat'
 
@@ -97,18 +96,19 @@ function heatLevel(turns: number, maxTurns: number): number {
 export function ChatWelcome({ context }: ChatWelcomeProps) {
   const [view, setView] = useState<UsageView>('overview')
   const [period, setPeriod] = useState<UsagePeriod>('all')
-  const prefersReducedMotion = useReducedMotion()
   const preset = useMotionPreset()
+  const enter = fadeRise(preset, 12)
   const queryDays = period === 'all' ? 90 : period
   const summary = useObservabilitySummaryQuery(queryDays)
 
   return (
     <motion.div
-      initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 12 * preset.distance }}
-      animate={{ opacity: 1, y: 0 }}
+      initial={enter.initial}
+      animate={enter.animate}
+      transition={enter.transition}
       className="mx-auto flex w-full max-w-[480px] select-none flex-col items-center gap-6 py-9 sm:py-12"
     >
-      <div className="flex flex-col items-center gap-4 text-center">
+      <div className="flex flex-col items-center gap-3 text-center">
         <img
           src={EvoFluxLogo}
           className="h-16 w-16 rounded-2xl opacity-95"
@@ -117,7 +117,7 @@ export function ChatWelcome({ context }: ChatWelcomeProps) {
           alt=""
           aria-hidden="true"
         />
-        <h2 className="font-hand text-3xl font-bold text-(--color-text)">
+        <h2 className="font-hand text-3xl font-bold tracking-tight text-(--color-text)">
           what&rsquo;s on your mind?
         </h2>
       </div>

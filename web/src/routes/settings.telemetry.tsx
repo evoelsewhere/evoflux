@@ -6,7 +6,7 @@ import { useMemo, useState } from 'react'
 import { ArrowLeft, BarChart3 } from 'lucide-react'
 
 import { useIsMobile } from '@/hooks/use-mobile'
-import { SettingsPageHeader } from '@/components/settings/SettingsLayout'
+import { SettingsGroup, SettingsPage } from '@/components/settings/SettingsLayout'
 import { SegmentedControl } from '@/components/ui/segmented-control'
 import {
   useInfiniteTracesQuery,
@@ -36,23 +36,26 @@ export function TelemetrySettingsPage() {
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null)
 
   return (
-    <>
-      <SettingsPageHeader
-        icon={BarChart3}
-        title="Telemetry"
-        actions={
-          !selectedTraceId && (
-            <SegmentedControl
-              options={RANGES}
-              value={days}
-              onChange={setDays}
-              layoutId="telemetry-range"
-              ariaLabel="Time window"
-            />
-          )
-        }
-      />
-
+    <SettingsPage
+      icon={BarChart3}
+      title="Telemetry"
+      lede={
+        selectedTraceId
+          ? undefined
+          : 'Span aggregates and recent traces for debugging agent runs on this machine.'
+      }
+      actions={
+        !selectedTraceId ? (
+          <SegmentedControl
+            options={RANGES}
+            value={days}
+            onChange={setDays}
+            layoutId="telemetry-range"
+            ariaLabel="Time window"
+          />
+        ) : undefined
+      }
+    >
       {selectedTraceId ? (
         <TraceDetail
           traceId={selectedTraceId}
@@ -61,7 +64,7 @@ export function TelemetrySettingsPage() {
       ) : (
         <SummaryBody days={days} onSelectTrace={setSelectedTraceId} />
       )}
-    </>
+    </SettingsPage>
   )
 }
 
@@ -81,7 +84,7 @@ function SummaryBody({
   const traceTotal = traces.data?.pages[0]?.total ?? traceRows.length
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+    <>
       {summary.isLoading ? (
         <LoadingState label="Loading span aggregates…" />
       ) : summary.isError ? (
@@ -106,7 +109,7 @@ function SummaryBody({
           />
         </div>
       ) : null}
-    </div>
+    </>
   )
 }
 
@@ -123,8 +126,8 @@ function TraceDetail({
   const selectedSpan = data?.spans.find((span) => span.span_id === selectedSpanId) ?? null
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="flex shrink-0 items-center gap-2 border-b border-(--color-border) px-4 py-2">
+    <SettingsGroup bare className="-mx-4 overflow-hidden sm:-mx-6">
+      <div className="flex shrink-0 items-center gap-2 border-b border-(--color-border) px-4 py-2 sm:px-6">
         <button
           type="button"
           onClick={onBack}
@@ -137,8 +140,8 @@ function TraceDetail({
           Trace {formatShortId(traceId)}
         </p>
       </div>
-      <div className="relative flex min-h-0 flex-1 overflow-hidden">
-        <div className="min-w-0 flex-1 overflow-y-auto p-4">
+      <div className="relative flex min-h-64 overflow-hidden">
+        <div className="min-w-0 flex-1 overflow-y-auto p-4 sm:px-6">
           {isLoading ? (
             <LoadingState label="Loading trace…" />
           ) : isError ? (
@@ -160,6 +163,6 @@ function TraceDetail({
           </div>
         )}
       </div>
-    </div>
+    </SettingsGroup>
   )
 }

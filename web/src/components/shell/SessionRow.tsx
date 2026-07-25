@@ -19,7 +19,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { Globe2, Loader2, MessageSquarePlus, Pencil, Trash2 } from 'lucide-react'
 import { LongPressButton } from '@/components/ui/long-press-button'
 import { formatRelativeDate } from '@/utils/format'
-import { useMotionPreset } from '@/lib/motion'
+import { useMotionPreset, fadeRise, staggerDelay } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import type { SessionResponse } from '@/api/types'
 
@@ -41,6 +41,8 @@ export interface SessionRowProps {
     session: SessionResponse,
     event: React.MouseEvent,
   ) => void
+  /** When set, plays a fade-rise enter with stagger derived from this index. */
+  enterIndex?: number
 }
 
 /**
@@ -62,14 +64,17 @@ export function SessionRow({
   mobileLongPressActions = false,
   onLongPress,
   onContextActions,
+  enterIndex,
 }: SessionRowProps) {
   const preset = useMotionPreset()
+  const index = enterIndex
+  const enter = index !== undefined ? fadeRise(preset, 6) : null
   const compact = density === 'compact'
   const isScheduled = Boolean(session.scheduled_task_name)
   const isRunning = session.running === true
   const isBrowserCreated = session.tags?.includes('webbridge_origin:browser') ?? false
 
-  return (
+  const row = (
     <div className="group relative">
       <LongPressButton
         enabled={mobileLongPressActions}
@@ -260,5 +265,17 @@ export function SessionRow({
         </div>
       )}
     </div>
+  )
+
+  if (!enter || index === undefined) return row
+
+  return (
+    <motion.div
+      initial={enter.initial}
+      animate={enter.animate}
+      transition={{ ...enter.transition, delay: staggerDelay(preset, index) }}
+    >
+      {row}
+    </motion.div>
   )
 }

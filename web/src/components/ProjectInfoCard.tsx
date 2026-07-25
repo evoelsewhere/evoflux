@@ -8,9 +8,11 @@
  */
 
 import { useQueries } from '@tanstack/react-query'
+import { motion } from 'framer-motion'
 import { FolderPlus, GitBranch } from 'lucide-react'
 
 import { getCodingWorkspaceStatus } from '@/api/client'
+import { fadeRise, useMotionPreset } from '@/lib/motion'
 import { queryKeys } from '@/queries'
 import type { CodingProject } from '@/api/types'
 
@@ -23,6 +25,8 @@ function repoLabel(path: string): string {
 }
 
 export function ProjectInfoCard({ project }: Props) {
+  const preset = useMotionPreset()
+  const enter = fadeRise(preset, 10)
   const statusQueries = useQueries({
     queries: project.workspaces.map((w) => ({
       queryKey: queryKeys.coding.status(w.path),
@@ -32,10 +36,15 @@ export function ProjectInfoCard({ project }: Props) {
   })
 
   return (
-    <div className="mx-auto w-full max-w-md rounded-xl bg-(--bg-card) px-4 py-4">
+    <motion.div
+      initial={enter.initial}
+      animate={enter.animate}
+      transition={enter.transition}
+      className="mx-auto w-full max-w-md rounded-xl bg-(--bg-card) px-4 py-4"
+    >
       <div className="flex min-w-0 items-center gap-2">
         <FolderPlus size={16} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
-        <h2 className="truncate text-sm font-medium text-(--color-text)" title={project.name}>
+        <h2 className="truncate text-sm font-semibold text-(--color-text)" title={project.name}>
           {project.name}
         </h2>
         <span className="shrink-0 rounded-full bg-(--bg-key) px-1.5 py-0.5 text-[10px] text-(--color-text-muted)">
@@ -44,7 +53,7 @@ export function ProjectInfoCard({ project }: Props) {
       </div>
 
       {project.workspaces.length === 0 ? (
-        <p className="mt-3 text-xs text-(--color-text-subtle)">No repositories yet.</p>
+        <p className="mt-3 text-xs text-(--color-text-muted)">No repositories yet.</p>
       ) : (
         <div className="mt-3 space-y-1.5">
           {project.workspaces.map((w, i) => {
@@ -85,6 +94,6 @@ export function ProjectInfoCard({ project }: Props) {
           })}
         </div>
       )}
-    </div>
+    </motion.div>
   )
 }

@@ -165,7 +165,7 @@ export function WikiPanel({ open, onClose }: WikiPanelProps) {
                 {isMobile && mobilePane === 'editor' && (
                   <button
                     onClick={handleBack}
-                    className="rounded-xs p-1 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+                    className="rounded-md p-1 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
                     aria-label="Back to file list"
                   >
                     <ArrowLeft size={16} />
@@ -180,7 +180,7 @@ export function WikiPanel({ open, onClose }: WikiPanelProps) {
               </div>
               <button
                 onClick={onClose}
-                className="rounded-xs p-1 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+                className="rounded-md p-1 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
                 aria-label="Close wiki panel"
               >
                 <X size={16} />
@@ -305,6 +305,7 @@ function WikiSection({
   selectedPath: string | null
   onSelect: (path: string) => void
 }) {
+  const preset = useMotionPreset()
   const [isExpanded, setIsExpanded] = useState(section.key !== 'imports')
   const childCount = section.files.length
 
@@ -313,7 +314,7 @@ function WikiSection({
       <button
         type="button"
         onClick={() => setIsExpanded((value) => !value)}
-         className="group flex h-8 w-full items-center gap-1.5 rounded-xs px-1.5 text-left text-xs text-(--color-text-2) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+         className="group flex h-8 w-full items-center gap-1.5 rounded-md px-1.5 text-left text-xs text-(--color-text-2) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
         aria-expanded={isExpanded}
         title={section.hint}
       >
@@ -328,23 +329,32 @@ function WikiSection({
           <span className="text-xs text-(--color-text-subtle)">{childCount}</span>
         )}
       </button>
-      {isExpanded && (
-        <div className="pb-1">
-          {section.files.length === 0 ? (
-            <p className="h-6 truncate py-1 pl-8 pr-2 text-xs italic text-(--color-text-subtle)">empty</p>
-          ) : (
-            section.files.map((file) => (
-              <WikiFileRow
-                key={file.path}
-                file={file}
-                depth={1}
-                selectedPath={selectedPath}
-                onSelect={onSelect}
-              />
-            ))
-          )}
-        </div>
-      )}
+      <AnimatePresence initial={false}>
+        {isExpanded && (
+          <motion.div
+            key="wiki-section-children"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={preset.transition}
+            className="overflow-hidden pb-1"
+          >
+            {section.files.length === 0 ? (
+              <p className="h-6 truncate py-1 pl-8 pr-2 text-xs italic text-(--color-text-subtle)">empty</p>
+            ) : (
+              section.files.map((file) => (
+                <WikiFileRow
+                  key={file.path}
+                  file={file}
+                  depth={1}
+                  selectedPath={selectedPath}
+                  onSelect={onSelect}
+                />
+              ))
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
@@ -413,7 +423,7 @@ function WikiFileRow({
       onPointerCancel={clearLongPress}
       onPointerLeave={clearLongPress}
       className={cn(
-        'group flex h-8 w-full items-center gap-1.5 rounded-xs px-1.5 text-left text-xs transition-colors',
+        'group flex h-8 w-full items-center gap-1.5 rounded-md px-1.5 text-left text-xs transition-colors',
         isActive
           ? 'bg-(--bg-key) text-(--color-accent)'
           : 'text-(--color-text-2) hover:bg-(--bg-key) hover:text-(--color-text)',
@@ -552,7 +562,7 @@ function WikiEditor({
               onClick={handleSave}
               disabled={!dirty || writeMutation.isPending}
               className={cn(
-                'flex items-center gap-1 rounded-xs px-2.5 py-1 text-xs font-medium transition-colors',
+                'flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
                 dirty
                   ? 'text-(--color-success) hover:bg-(--accent-green-soft)'
                   : 'cursor-not-allowed text-(--color-text-subtle)',
@@ -567,7 +577,7 @@ function WikiEditor({
             <button
               onClick={handleDelete}
               disabled={deleteMutation.isPending}
-              className="flex items-center gap-1 rounded-xs px-2.5 py-1 text-xs font-medium text-(--color-error) transition-colors hover:bg-(--color-error-subtle)"
+              className="flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium text-(--color-error) transition-colors hover:bg-(--color-error-subtle)"
               title="Delete file"
             >
               <Trash2 size={12} />

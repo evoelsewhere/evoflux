@@ -8,7 +8,7 @@
 import { AnimatePresence, motion, useMotionValue, useTransform } from 'framer-motion'
 import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react'
 import { useToastStore, type Toast } from '@/stores/useToastStore'
-import { useReducedMotion } from '@/hooks/useReducedMotion'
+import { useMotionPreset } from '@/lib/motion'
 
 const TONE_STYLES: Record<
   Toast['tone'],
@@ -38,7 +38,8 @@ interface ToastItemProps {
 
 function ToastItem({ t, dismiss }: ToastItemProps) {
   const { icon: Icon, iconClass } = TONE_STYLES[t.tone]
-  const prefersReducedMotion = useReducedMotion()
+  const preset = useMotionPreset()
+  const reduced = preset.intensity === 'reduced'
 
   const x = useMotionValue(0)
   const y = useMotionValue(0)
@@ -63,9 +64,15 @@ function ToastItem({ t, dismiss }: ToastItemProps) {
       layout
       style={{ x, y, opacity }}
       variants={{
-        enter: prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -12, scale: 0.96, transition: { type: 'spring', damping: 26, stiffness: 320 } },
-        visible: prefersReducedMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1, transition: { type: 'spring', damping: 26, stiffness: 320 } },
-        exit: prefersReducedMotion ? { opacity: 0 } : { opacity: 0, x: 40, scale: 0.96, transition: { type: 'tween', duration: 0.15, ease: 'easeIn' } },
+        enter: reduced
+          ? { opacity: 0 }
+          : { opacity: 0, y: -12 * preset.distance, scale: 0.96, transition: preset.spring },
+        visible: reduced
+          ? { opacity: 1 }
+          : { opacity: 1, y: 0, scale: 1, transition: preset.spring },
+        exit: reduced
+          ? { opacity: 0 }
+          : { opacity: 0, x: 40 * preset.distance, scale: 0.96, transition: preset.transition },
       }}
       initial="enter"
       animate="visible"

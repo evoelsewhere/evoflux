@@ -71,7 +71,7 @@ function LightboxIconButton({
       </button>
       <span
         role="tooltip"
-        className="pointer-events-none absolute top-full right-0 mt-2 whitespace-nowrap rounded-md bg-(--bg-key) px-2 py-1 text-xs text-(--color-text) opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+        className="pointer-events-none absolute top-full right-0 mt-2 whitespace-nowrap rounded-md bg-(--bg-key) px-2 py-1 text-xs text-(--color-text) opacity-0 shadow-md transition-opacity duration-(--motion-fast) group-hover:opacity-100 group-focus-within:opacity-100"
       >
         {tooltip}
       </span>
@@ -190,7 +190,7 @@ export function ImageLightbox({ src, alt, isOpen, onClose }: ImageLightboxProps)
 
   return createPortal(
     <div
-      className="mobile-safe-overlay fixed inset-0 z-(--z-modal) flex items-center justify-center bg-(--color-overlay) backdrop-blur-sm transition-opacity duration-200"
+      className="mobile-safe-overlay fixed inset-0 z-(--z-modal) flex items-center justify-center bg-(--color-overlay) backdrop-blur-sm transition-opacity duration-(--motion-base)"
       onClick={closeLightbox}
       role="dialog"
       aria-modal="true"
@@ -228,7 +228,7 @@ export function ImageLightbox({ src, alt, isOpen, onClose }: ImageLightboxProps)
         <img
           src={src}
           alt={alt}
-          className="max-h-[75vh] max-w-[75vw] rounded-lg object-contain shadow-2xl transition-transform duration-150"
+          className="max-h-[75vh] max-w-[75vw] rounded-lg object-contain shadow-2xl transition-transform duration-(--motion-fast)"
           style={{ transform: `translateY(${translateY}px) scale(${scale})` }}
           onClick={handleImageClick}
         />

@@ -19,9 +19,11 @@ import {
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
+import { motion } from 'framer-motion'
 import { Plus, Send, X, TerminalSquare } from 'lucide-react'
 import { apiBaseUrl } from '@/api/base-url'
 import { withTokenParam } from '@/api/auth'
+import { panelTransition, useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 
 // Conventional dark terminal surface (terminals read as dark regardless of
@@ -261,9 +263,17 @@ export function TerminalPanel({
   }
 
   const sendActiveToAgent = () => instancesRef.current.get(activeId)?.sendToAgent()
+  const preset = useMotionPreset()
+  const slideOffset = 16 * preset.distance
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-l-xl bg-[#0d1117]">
+    <motion.div
+      className="flex h-full min-h-0 flex-col overflow-hidden rounded-l-xl bg-[#0d1117]"
+      initial={{ opacity: 0, x: slideOffset }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: slideOffset * 0.5 }}
+      transition={panelTransition(preset)}
+    >
       <div className="flex items-center gap-1 border-b border-(--color-border) bg-(--bg-key) pl-2 pr-1">
         <TerminalSquare size={13} className="shrink-0 text-(--color-text-subtle)" />
         <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto py-1">
@@ -353,6 +363,6 @@ export function TerminalPanel({
           Start a session to open a terminal.
         </div>
       )}
-    </div>
+    </motion.div>
   )
 }

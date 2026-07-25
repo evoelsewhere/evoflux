@@ -1118,7 +1118,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   const messageSlot = (
     <div
       aria-hidden={minimized}
-      className={`flex w-full items-center transition-opacity duration-150 ${
+      className={`flex w-full items-center transition-opacity duration-(--motion-fast) ${
         minimized ? 'pointer-events-none opacity-0' : 'opacity-100'
       }`}
     >
@@ -1375,7 +1375,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
             onDragOver={handleDragOver}
             onDrop={handleDrop}
             className={cn(
-              'relative block border bg-(--color-surface) transition-[background-color,border-color,box-shadow] duration-200',
+              'relative block border bg-(--color-surface) transition-[background-color,border-color,box-shadow] duration-(--motion-base)',
               minimized
                 ? cn(
                     'w-fit border-(--color-border) hover:bg-(--bg-key)',
