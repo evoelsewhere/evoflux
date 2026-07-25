@@ -5,7 +5,7 @@
  *   - the form is a pure controlled view of `value`; on every edit it
  *     emits a fresh `McpServerDraft` via `onChange`.
  *   - the route owns persistence, dirty/invalid bookkeeping, and the
- *     sticky save bar (rendered separately via `EditorSubHeader`).
+ *     header save bar (rendered separately via `EditorHeaderActions`).
  *
  * Draft model + validators live in `./McpServerDraft` so this module
  * stays component-only (Vite fast-refresh requirement).

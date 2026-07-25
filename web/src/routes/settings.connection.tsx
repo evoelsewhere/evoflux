@@ -5,8 +5,17 @@
  * but rendered inline as a settings sub-page.
  */
 import { useEffect, useState } from 'react'
-import { Server } from 'lucide-react'
+import { AlertCircle, Pencil, Server, Trash2 } from 'lucide-react'
 
+import {
+  SettingsCallout,
+  SettingsGroup,
+  SettingsPage,
+  SettingsRow,
+} from '@/components/settings/SettingsLayout'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { apiBaseUrl, setApiBaseUrl } from '@/api/base-url'
 import { queryClient } from '@/lib/query-client'
 import { queryKeys } from '@/queries/keys'
@@ -154,188 +163,221 @@ export function BackendConnectionPage() {
     }
   }
 
+  const connectedUrl = status?.base_url || apiBaseUrl().replace(/\/api$/, '')
+  const usingExternal = status?.mode === 'external' || status?.external
+
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-2xl space-y-6 px-3 pt-4 pb-8 sm:px-8 sm:pt-8 sm:pb-12">
-        <header className="flex items-center gap-3">
-          <span
-            className="flex h-10 w-10 items-center justify-center rounded-xl bg-(--bg-key) text-(--color-text-muted) ring-1 ring-(--color-border)"
-            aria-hidden="true"
-          >
-            <Server size={18} />
-          </span>
-          <div>
-            <h1 className="text-lg font-semibold text-(--color-text)">Backend connection</h1>
-            <p className="text-xs text-(--color-text-muted)">
-              Use the builtin sidecar or connect to one of your saved EvoFlux servers.
-            </p>
-          </div>
-        </header>
-
-        <section className="space-y-4">
-          <div className="rounded-md border border-(--color-border) bg-(--bg-card) px-3 py-2 text-xs text-(--color-text-muted)">
-            Connected backend: <span className="font-mono text-(--color-text)">{status?.base_url || apiBaseUrl().replace(/\/api$/, '')}</span>
-            <span className="ml-2 rounded bg-(--bg-key) px-1.5 py-0.5 text-xs">
-              {status?.mode === 'external' || status?.external ? 'saved server' : 'builtin sidecar'}
+    <SettingsPage
+      icon={Server}
+      title="Connection"
+      lede="Run against the sidecar bundled with this app, or point it at an EvoFlux server you host. Saved servers reconnect automatically after a reload."
+    >
+      <SettingsGroup title="Current backend">
+        <SettingsRow
+          label={<span className="font-mono text-sm break-all">{connectedUrl}</span>}
+          description={usingExternal ? 'Connected to a saved server.' : 'Connected to the builtin sidecar.'}
+          control={
+            <span className="rounded-full bg-(--bg-key) px-2 py-0.5 text-[11px] text-(--color-text-muted)">
+              {usingExternal ? 'saved server' : 'builtin'}
             </span>
-          </div>
+          }
+        />
+      </SettingsGroup>
 
-          <div>
-            <div className="mb-2 text-xs font-medium text-(--color-text)">Connection options</div>
-            <div className="space-y-1">
-              {status?.supports_bundled !== false ? (
-                <div className="flex items-center gap-2 rounded-md border border-(--color-border) px-3 py-2 text-xs hover:bg-(--bg-page)">
-                  <button
-                    type="button"
-                    onClick={() => {}}
-                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                    disabled={pending}
-                  >
-                    <ServerStatusDot status={status?.sidecar_running ? 'online' : undefined} />
-                    <span className="truncate font-medium">Builtin sidecar</span>
-                  </button>
-                  {!status?.external ? (
-                    <span className="rounded bg-(--bg-key) px-1.5 py-0.5 text-xs text-(--color-text-muted)">active</span>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => { void connectBundled() }}
-                    className="rounded bg-(--bg-key) px-1.5 py-0.5 text-xs text-(--color-text-muted) hover:text-(--color-text)"
-                    disabled={pending}
-                  >
-                    use builtin
-                  </button>
-                </div>
-              ) : null}
-              {(status?.servers ?? DEFAULT_SERVERS).map((server) => {
-                const normalizedServerUrl = normalizeServerBaseUrl(server.base_url)
-                const active = status?.mode === 'external' && normalizeServerBaseUrl(status.base_url) === normalizedServerUrl
-                return (
-                  <div
-                    key={server.base_url}
-                    className="flex items-center gap-2 rounded-md border border-(--color-border) px-3 py-2 text-xs hover:bg-(--bg-page)"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => { setBaseUrl(normalizedServerUrl); setServerName(server.name ?? '') }}
-                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                      disabled={pending}
-                    >
-                      <ServerStatusDot status={serverHealth[normalizedServerUrl] ?? serverHealth[server.base_url]} />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate font-medium">{server.name || server.base_url}</span>
-                        {server.name ? <span className="block truncate font-mono text-xs text-(--color-text-muted)">{server.base_url}</span> : null}
-                      </span>
-                    </button>
-                    {active ? (
-                      <span className="rounded bg-(--bg-key) px-1.5 py-0.5 text-xs text-(--color-text-muted)">active</span>
-                    ) : null}
-                    <button
-                      type="button"
-                      onClick={() => { void checkExternal(normalizedServerUrl, server.name ?? '', true) }}
-                      className="rounded bg-(--bg-key) px-1.5 py-0.5 text-xs text-(--color-text-muted) hover:text-(--color-text)"
-                      disabled={pending}
-                    >
-                      connect
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setBaseUrl(normalizedServerUrl); setServerName(server.name ?? '') }}
-                      className="rounded bg-(--bg-key) px-1.5 py-0.5 text-xs text-(--color-text-muted) hover:text-(--color-text)"
-                      disabled={pending}
-                    >
-                      edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { void removeServer(server.base_url) }}
-                      className="rounded bg-(--bg-key) px-1.5 py-0.5 text-xs text-(--color-error) hover:bg-(--color-error)/10"
-                      disabled={pending}
-                    >
-                      remove
-                    </button>
-                  </div>
-                )
-              })}
+      <SettingsGroup
+        title="Available backends"
+        description="Connect switches this app over after verifying the server responds."
+      >
+        {status?.supports_bundled !== false && (
+          <div className="flex items-center gap-3 px-4 py-3">
+            <ServerStatusDot status={status?.sidecar_running ? 'online' : undefined} />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm text-(--color-text)">Builtin sidecar</p>
+              <p className="text-xs text-(--color-text-muted)">Ships with the desktop app.</p>
             </div>
+            {!status?.external ? (
+              <span className="shrink-0 rounded-full bg-(--bg-key) px-2 py-0.5 text-[11px] text-(--color-text-muted)">
+                active
+              </span>
+            ) : (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  void connectBundled()
+                }}
+                disabled={pending}
+              >
+                Use builtin
+              </Button>
+            )}
           </div>
+        )}
 
-          <label className="block text-xs font-medium text-(--color-text)" htmlFor="settings-backend-url">
-            Server URL
-          </label>
-          <div className="flex gap-2">
-            <input
-              id="settings-backend-url"
-              value={baseUrl}
-              onChange={(event) => setBaseUrl(event.target.value)}
-              placeholder="http://<backend-host>:4082"
-              className="min-w-0 flex-1 rounded-md border border-(--color-border) bg-(--bg-page) px-3 py-2 font-mono text-sm text-(--color-text) outline-none transition-colors placeholder:text-(--color-text-muted) focus:border-(--focus-ring) focus:ring-3 focus:ring-(--focus-ring)/30"
-            />
-            <button
-              type="button"
-              onClick={() => void checkExternal()}
-              className="rounded-md border border-(--color-border-strong) bg-(--bg-key) px-3 py-2 text-xs font-medium text-(--color-text) hover:bg-(--bg-page) disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={pending}
-            >
-              {pending ? 'Connecting…' : 'Connect'}
-            </button>
-          </div>
-          <label className="flex items-center gap-2 text-xs text-(--color-text-muted)">
-            <input
-              type="checkbox"
+        {(status?.servers ?? DEFAULT_SERVERS).map((server) => {
+          const normalizedServerUrl = normalizeServerBaseUrl(server.base_url)
+          const active =
+            status?.mode === 'external' && normalizeServerBaseUrl(status.base_url) === normalizedServerUrl
+          const loadIntoForm = () => {
+            setBaseUrl(normalizedServerUrl)
+            setServerName(server.name ?? '')
+          }
+          return (
+            <div key={server.base_url} className="flex items-center gap-3 px-4 py-3">
+              <ServerStatusDot status={serverHealth[normalizedServerUrl] ?? serverHealth[server.base_url]} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm text-(--color-text)">{server.name || server.base_url}</p>
+                {server.name && (
+                  <p className="truncate font-mono text-xs text-(--color-text-muted)">{server.base_url}</p>
+                )}
+              </div>
+              {active && (
+                <span className="shrink-0 rounded-full bg-(--bg-key) px-2 py-0.5 text-[11px] text-(--color-text-muted)">
+                  active
+                </span>
+              )}
+              <div className="flex shrink-0 items-center gap-1">
+                {!active && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      void checkExternal(normalizedServerUrl, server.name ?? '', true)
+                    }}
+                    disabled={pending}
+                  >
+                    Connect
+                  </Button>
+                )}
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  onClick={loadIntoForm}
+                  disabled={pending}
+                  aria-label={`Edit ${server.name || server.base_url}`}
+                >
+                  <Pencil size={13} />
+                </Button>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  onClick={() => {
+                    void removeServer(server.base_url)
+                  }}
+                  disabled={pending}
+                  aria-label={`Remove ${server.name || server.base_url}`}
+                  className="text-(--color-error) hover:bg-(--color-error)/10"
+                >
+                  <Trash2 size={13} />
+                </Button>
+              </div>
+            </div>
+          )
+        })}
+      </SettingsGroup>
+
+      <SettingsGroup
+        title="Add or edit a server"
+        description="Save stores or renames an entry without switching to it."
+      >
+        <SettingsRow
+          label="Server URL"
+          description="Include the scheme and port, for example http://192.168.1.20:4082."
+          htmlFor="settings-backend-url"
+          stacked
+          control={
+            <div className="flex gap-2">
+              <Input
+                id="settings-backend-url"
+                value={baseUrl}
+                onChange={(event) => setBaseUrl(event.target.value)}
+                placeholder="http://<backend-host>:4082"
+                className="min-w-0 flex-1 font-mono text-sm"
+              />
+              <Button
+                size="sm"
+                className="shrink-0"
+                onClick={() => void checkExternal()}
+                disabled={pending}
+              >
+                {pending ? 'Connecting…' : 'Connect'}
+              </Button>
+            </div>
+          }
+        />
+
+        <SettingsRow
+          label="Remember this server"
+          description="Keep it in the list above and reconnect after a reload."
+          control={
+            <Switch
               checked={rememberServer}
-              onChange={(event) => setRememberServer(event.target.checked)}
-              className="h-3.5 w-3.5 rounded border-(--color-border)"
+              onCheckedChange={setRememberServer}
               disabled={pending}
+              aria-label="Remember this server"
             />
-            Save this server and reconnect to it after reload
-          </label>
-          <label className="block text-xs font-medium text-(--color-text)" htmlFor="settings-backend-key">
-            Access key
-          </label>
-          <input
-            id="settings-backend-key"
-            value={accessKey}
-            onChange={(event) => {
-              setAccessKeyInput(event.target.value)
-              setAccessKey(event.target.value)
-            }}
-            placeholder="Required when server was started with --key"
-            type="password"
-            className="w-full rounded-md border border-(--color-border) bg-(--bg-page) px-3 py-2 text-sm text-(--color-text) outline-none transition-colors placeholder:text-(--color-text-muted) focus:border-(--focus-ring) focus:ring-3 focus:ring-(--focus-ring)/30"
-          />
-          <label className="block text-xs font-medium text-(--color-text)" htmlFor="settings-backend-name">
-            Server name
-          </label>
-          <div className="flex gap-2">
-            <input
-              id="settings-backend-name"
-              value={serverName}
-              onChange={(event) => setServerName(event.target.value)}
-              placeholder="Work laptop, Home server, Local CLI"
-              className="min-w-0 flex-1 rounded-md border border-(--color-border) bg-(--bg-page) px-3 py-2 text-sm text-(--color-text) outline-none transition-colors placeholder:text-(--color-text-muted) focus:border-(--focus-ring) focus:ring-3 focus:ring-(--focus-ring)/30"
-            />
-            <button
-              type="button"
-              onClick={() => void saveServer()}
-              className="rounded-md border border-(--color-border-strong) bg-(--bg-key) px-3 py-2 text-xs font-medium text-(--color-text) hover:bg-(--bg-page) disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={pending}
-            >
-              Save server
-            </button>
-          </div>
-          <p className="text-xs leading-5 text-(--color-text-muted)">
-            Connect verifies and switches to a saved server. Save only stores or renames an entry. Use builtin returns this app to the bundled sidecar. If a LAN server fails, confirm the backend is not bound to localhost only and that firewall/local-network permissions allow access.
-          </p>
+          }
+        />
 
-          {error ? (
-            <div className="rounded-md border border-(--color-error)/40 bg-(--color-error)/10 px-3 py-2 text-xs text-(--color-error)" role="alert">
-              {error}
+        <SettingsRow
+          label="Access key"
+          description="Required when the server was started with --key."
+          htmlFor="settings-backend-key"
+          stacked
+          control={
+            <Input
+              id="settings-backend-key"
+              value={accessKey}
+              onChange={(event) => {
+                setAccessKeyInput(event.target.value)
+                setAccessKey(event.target.value)
+              }}
+              placeholder="Paste the server access key"
+              type="password"
+              className="w-full text-sm"
+            />
+          }
+        />
+
+        <SettingsRow
+          label="Display name"
+          description="Only used to label the entry in the list."
+          htmlFor="settings-backend-name"
+          stacked
+          control={
+            <div className="flex gap-2">
+              <Input
+                id="settings-backend-name"
+                value={serverName}
+                onChange={(event) => setServerName(event.target.value)}
+                placeholder="Work laptop, Home server, Local CLI"
+                className="min-w-0 flex-1 text-sm"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                className="shrink-0"
+                onClick={() => void saveServer()}
+                disabled={pending}
+              >
+                Save server
+              </Button>
             </div>
-          ) : null}
-        </section>
-      </div>
-    </div>
+          }
+        />
+      </SettingsGroup>
+
+      {error && (
+        <SettingsCallout tone="error" icon={AlertCircle}>
+          {error}
+        </SettingsCallout>
+      )}
+
+      <p className="text-xs leading-relaxed text-(--color-text-muted)">
+        If a server on your network refuses to connect, check that the backend is not bound to localhost
+        only, and that the firewall and local-network permissions allow access.
+      </p>
+    </SettingsPage>
   )
 }
 
@@ -411,5 +453,5 @@ function ServerStatusDot({ status }: { status: 'checking' | 'online' | 'offline'
       ? 'bg-(--color-error)'
       : 'animate-pulse bg-(--color-text-muted)'
   const label = status === 'online' ? 'Online' : status === 'offline' ? 'Offline' : 'Checking'
-  return <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${className}`} title={label} aria-label={label} />
+  return <span className={`size-2 shrink-0 rounded-full ${className}`} title={label} aria-label={label} />
 }

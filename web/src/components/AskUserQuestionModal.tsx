@@ -10,11 +10,13 @@ import { motion, AnimatePresence } from 'framer-motion'
 
 import { replyAskUserQuestion } from '@/api/client'
 import { useTeamStore } from '@/stores/useTeamStore'
+import { useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 
 export function AskUserQuestionModal() {
   const askUserQuestion = useTeamStore((s) => s.askUserQuestion)
   const sessionId = useTeamStore((s) => s.sessionId)
+  const preset = useMotionPreset()
   const [answers, setAnswers] = useState<string[]>([])
   const [step, setStep] = useState(0)
   const [replying, setReplying] = useState(false)
@@ -55,10 +57,9 @@ export function AskUserQuestionModal() {
     <AnimatePresence>
       <motion.div
         key={askUserQuestion.requestId}
-        initial={{ opacity: 0, y: 6 }}
+        initial={{ opacity: 0, y: 6 * preset.distance }}
         animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 6 }}
-        transition={{ duration: 0.15 }}
+        exit={{ opacity: 0, y: 6 * preset.distance }}
         className="mx-auto w-full max-w-3xl px-4 pb-2"
       >
         <div className="rounded-xl border border-(--color-primary)/30 bg-(--bg-page) shadow-sm overflow-hidden">
@@ -75,10 +76,9 @@ export function AskUserQuestionModal() {
           <AnimatePresence mode="wait">
             <motion.div
               key={step}
-              initial={{ opacity: 0, x: 8 }}
+              initial={{ opacity: 0, x: 8 * preset.distance }}
               animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -8 }}
-              transition={{ duration: 0.12 }}
+              exit={{ opacity: 0, x: -8 * preset.distance }}
               className="space-y-2 px-4 py-3"
             >
               <p className="text-sm text-(--color-text)">{q.question}</p>

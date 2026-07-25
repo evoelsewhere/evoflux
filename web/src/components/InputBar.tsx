@@ -10,7 +10,7 @@ import { TodosList } from './TodosList'
 import { cn } from '@/lib/utils'
 import type { AgentCapabilities, TodoItem } from '@/api/types'
 import { useIsMobile } from '@/hooks/use-mobile'
-import { useReducedMotion } from '@/hooks/useReducedMotion'
+import { useMotionPreset } from '@/lib/motion'
 
 // Re-export the public type so callers can import ``FileRef`` from this module
 // alongside the component. (The helper ``findActiveMention`` is imported from
@@ -245,7 +245,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dragCounterRef = useRef(0)
   const isMobile = useIsMobile()
-  const prefersReducedMotion = useReducedMotion()
+  const preset = useMotionPreset()
 
   // Terminal → composer handoff: the AI Terminal's "Send to agent" dispatches
   // this event so selected output lands in the chat draft, without coupling
@@ -1369,7 +1369,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
             layout
             initial={false}
             animate={{ padding: minimized ? 8 : 0 }}
-            transition={{ duration: prefersReducedMotion ? 0.01 : 0.24, ease: [0.32, 0.72, 0, 1] }}
+            transition={preset.spring}
             onDragEnter={handleDragEnter}
             onDragLeave={handleDragLeave}
             onDragOver={handleDragOver}

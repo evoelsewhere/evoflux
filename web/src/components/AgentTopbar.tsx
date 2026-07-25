@@ -22,7 +22,7 @@ import { motion } from 'framer-motion'
 import { TopbarAction } from '@/components/ui/topbar-action'
 import { TokenMeter } from '@/components/ui/token-meter'
 import { ContextBudgetBar } from '@/components/ContextBudgetBar'
-import { useReducedMotion } from '@/hooks/useReducedMotion'
+import { useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 
 export type ViewMode = 'agent' | 'split' | 'monitor'
@@ -51,7 +51,7 @@ function ViewModeSwitch({
   onValueChange: (mode: ViewMode) => void
   contextBudget?: { used: number; max?: number }
 }) {
-  const reducedMotion = Boolean(useReducedMotion())
+  const preset = useMotionPreset()
 
   return (
     <div
@@ -81,9 +81,7 @@ function ViewModeSwitch({
               aria-hidden="true"
               className="absolute inset-0 -z-10 rounded-[8px] bg-(--color-surface-2) shadow-[0_1px_2px_rgb(0_0_0/0.14),inset_0_1px_0_rgb(255_255_255/0.06)]"
               initial={false}
-              transition={reducedMotion
-                ? { duration: 0 }
-                : { type: 'spring', stiffness: 480, damping: 38, mass: 0.55 }}
+              transition={preset.spring}
             />
           )}
           <span className="relative z-10">{label}</span>

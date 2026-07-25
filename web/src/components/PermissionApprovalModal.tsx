@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 
 import { replyPermissionRequest } from '@/api/client'
 import { useTeamStore } from '@/stores/useTeamStore'
+import { useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 
 const TOOL_ICON_MAP: Record<string, string> = {
@@ -20,6 +21,7 @@ const TOOL_ICON_MAP: Record<string, string> = {
 export function PermissionApprovalModal() {
   const permissionRequest = useTeamStore((s) => s.permissionRequest)
   const sessionId = useTeamStore((s) => s.sessionId)
+  const preset = useMotionPreset()
   const [replying, setReplying] = useState(false)
 
   const handleReply = async (reply: 'once' | 'always' | 'reject') => {
@@ -41,10 +43,9 @@ export function PermissionApprovalModal() {
       {permissionRequest && (
         <motion.div
           key={permissionRequest.requestId}
-          initial={{ opacity: 0, y: 6 }}
+          initial={{ opacity: 0, y: 6 * preset.distance }}
           animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 6 }}
-          transition={{ duration: 0.15 }}
+          exit={{ opacity: 0, y: 6 * preset.distance }}
           className="mx-auto w-full max-w-3xl px-4 pb-2"
         >
           <div className="rounded-xl border border-amber-500/30 bg-(--bg-page) shadow-sm overflow-hidden">

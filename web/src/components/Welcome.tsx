@@ -6,6 +6,7 @@ import { Wifi, Users, CheckCircle2, AlertCircle } from 'lucide-react'
 import { useHealthQuery } from '@/queries/useHealthQuery'
 import { useTeamStatusQuery } from '@/queries/useTeamStatusQuery'
 import { useReducedMotion } from '@/hooks/useReducedMotion'
+import { useMotionPreset } from '@/lib/motion'
 
 interface WelcomeProps {
   onReady: (isTeam: boolean) => void
@@ -31,6 +32,7 @@ export function Welcome({ onReady }: WelcomeProps) {
   const health = useHealthQuery()
   const teamStatus = useTeamStatusQuery()
   const prefersReducedMotion = useReducedMotion()
+  const preset = useMotionPreset()
 
   useEffect(() => {
     if (health.isSuccess && teamStatus.isSuccess) {
@@ -55,7 +57,6 @@ export function Welcome({ onReady }: WelcomeProps) {
       <motion.div
         initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 20 }}
         animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
-        transition={{ duration: prefersReducedMotion ? 0.01 : 0.5, ease: 'easeOut' }}
         className="flex flex-col items-center gap-8 text-center"
       >
         {/* Logo with glow */}
@@ -67,7 +68,6 @@ export function Welcome({ onReady }: WelcomeProps) {
                 ? { scale: [1, 1.06, 1] }
                 : { scale: 1 }
             }
-            transition={{ duration: prefersReducedMotion ? 0.01 : 0.5, ease: 'easeInOut' }}
             className="relative flex h-20 w-20 items-center justify-center rounded-3xl bg-(--bg-key) ring-1 ring-(--color-border-strong)"
           >
             <img src={EvoFluxAppIcon} width={72} height={72} alt="EvoFlux logo" className="rounded-2xl" />
@@ -96,7 +96,6 @@ export function Welcome({ onReady }: WelcomeProps) {
               }`}
               initial={{ width: '0%' }}
               animate={{ width: STEP_PROGRESS[step] }}
-              transition={{ duration: prefersReducedMotion ? 0.01 : 0.4, ease: 'easeOut' }}
             />
           </div>
 
@@ -131,10 +130,9 @@ export function Welcome({ onReady }: WelcomeProps) {
           <AnimatePresence mode="wait">
             <motion.p
               key={step}
-              initial={{ opacity: 0, y: 4 }}
+              initial={{ opacity: 0, y: 4 * preset.distance }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.25 }}
+              exit={{ opacity: 0, y: -4 * preset.distance }}
               className={`text-sm ${
                 step === 'error'
                   ? 'text-(--color-error)'

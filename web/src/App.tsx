@@ -2,6 +2,7 @@ import { Suspense } from 'react'
 import { RouterProvider } from '@tanstack/react-router'
 import { useAppBackendBootstrap } from './hooks/use-app-backend-bootstrap'
 import { router } from './router'
+import { AppMotionConfig } from '@/components/motion/AppMotionConfig'
 import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
 
 function App() {
@@ -10,9 +11,11 @@ function App() {
   if (!backendReady) return <AppLoadingScreen />
 
   return (
-    <Suspense fallback={<AppLoadingScreen />}>
-      <RouterProvider router={router} />
-    </Suspense>
+    <AppMotionConfig>
+      <Suspense fallback={<AppLoadingScreen />}>
+        <RouterProvider router={router} />
+      </Suspense>
+    </AppMotionConfig>
   )
 }
 

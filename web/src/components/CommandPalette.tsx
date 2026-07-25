@@ -12,6 +12,7 @@ import { Search, CornerDownLeft } from 'lucide-react'
 import { useProximityTracker, useProximityIntensity } from '@/hooks/useProximity'
 import { useModalFocus } from '@/hooks/useModalFocus'
 import { useReducedMotion } from '@/hooks/useReducedMotion'
+import { useMotionPreset } from '@/lib/motion'
 import { usePlatform } from '@/hooks/use-platform'
 import { useIsMobile } from '@/hooks/use-mobile'
 
@@ -37,6 +38,7 @@ export function CommandPalette({ commands, onClose }: CommandPaletteProps) {
   const listRef = useRef<HTMLDivElement>(null)
   const mouseY = useProximityTracker(listRef)
   const prefersReducedMotion = useReducedMotion()
+  const preset = useMotionPreset()
   const isMobile = useIsMobile()
   const { isTauri, os } = usePlatform()
   const isTauriMobile = isMobile && isTauri && (os === 'ios' || os === 'android')
@@ -132,16 +134,15 @@ export function CommandPalette({ commands, onClose }: CommandPaletteProps) {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        transition={{ duration: 0.15 }}
         className={`fixed inset-0 z-(--z-modal) flex items-start justify-center bg-(--color-overlay) px-3 backdrop-blur-sm sm:px-0 sm:pt-[15vh] ${isTauriMobile ? 'pt-[max(5rem,calc(env(safe-area-inset-top)+3.5rem))]' : 'pt-4'}`}
         onClick={onClose}
       >
         <motion.div
           key="panel"
-          initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: -8 }}
+          initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: -8 * preset.distance }}
           animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 }}
-          exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: -8 }}
-          transition={prefersReducedMotion ? { duration: 0.01 } : { type: 'spring', damping: 30, stiffness: 380 }}
+          exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: -8 * preset.distance }}
+          transition={preset.spring}
           onClick={(e) => e.stopPropagation()}
           className="flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-(--color-border) bg-(--bg-card) shadow-2xl"
           role="dialog"

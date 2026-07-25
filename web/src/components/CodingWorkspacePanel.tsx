@@ -7,7 +7,6 @@ import { STORAGE_KEYS } from '@/lib/storage-keys'
 import { queryKeys } from '@/queries'
 import { formatBytes } from '@/utils/format'
 import { workspaceLabel } from '@/utils/workspace'
-import { usePlatform } from '@/hooks/use-platform'
 import { useProjectQuery } from '@/queries/useProjectsQuery'
 import { SidePanel } from './shell/SidePanel'
 import { CodeGraphPanel } from './CodeGraphPanel'
@@ -141,7 +140,6 @@ export function CodingWorkspacePanel({
   projectId?: string | null
   isWorking?: boolean
 }) {
-  const { isMacOverlay } = usePlatform()
   const [tab, setTab] = useState<'files' | 'changed' | 'graph' | 'progress'>(initialTab)
   const [scOpen, setScOpen] = useState(false)
   const [scWorkspace, setScWorkspace] = useState('')
@@ -180,33 +178,38 @@ export function CodingWorkspacePanel({
       mobileOverlay
       mobile={mobile}
       resizeLabel="Resize workspace panel"
-      className={cn('bg-(--bg-page)', !mobile && (isMacOverlay ? 'h-full' : '-mt-10 h-[calc(100%+2.5rem)]'))}
-      contentClassName={!mobile && !isMacOverlay ? 'pt-10' : undefined}
+      className="bg-(--bg-page)"
     >
-        <div className="flex items-center justify-between border-b border-(--color-border) px-3 py-3">
+        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-4 py-3">
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-(--color-text-subtle)">
+            <h2 className="text-sm font-semibold text-(--color-text)">
               {isProjectMode ? 'Project' : 'Workspace'}
-            </p>
+            </h2>
             {isProjectMode ? (
               project ? (
-                <div className="mt-1 flex items-center gap-1.5">
-                  <p className="truncate text-xs font-medium text-(--color-text)">{project.name}</p>
-                  <span className="shrink-0 rounded-full bg-(--bg-key) px-1.5 py-0.5 text-[10px] text-(--color-text-muted)">
-                    {project.workspaces.length} repos
-                  </span>
-                </div>
+                <p className="mt-0.5 truncate text-xs text-(--color-text-subtle)">
+                  {project.name}
+                  <span className="text-(--color-text-muted)"> · {project.workspaces.length} repos</span>
+                </p>
               ) : (
-                <p className="mt-1 truncate text-xs text-(--color-text-subtle)">Loading project…</p>
+                <p className="mt-0.5 truncate text-xs text-(--color-text-subtle)">Loading project…</p>
               )
             ) : (
-              <p className="mt-1 truncate font-mono text-xs text-(--color-text)" title={workspace}>{workspaceLabel(workspace)}</p>
+              <p className="mt-0.5 truncate font-mono text-xs text-(--color-text-subtle)" title={workspace}>
+                {workspaceLabel(workspace)}
+              </p>
             )}
           </div>
-          <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-md text-(--color-text-muted) hover:bg-(--bg-key) md:h-auto md:w-auto md:p-1" aria-label="Close workspace panel">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+            aria-label="Close workspace panel"
+            title="Close"
+          >
             <X size={16} />
           </button>
-        </div>
+        </header>
         <div className="flex border-b border-(--color-border) p-1">
           <button type="button" onClick={() => setTab('changed')} className={cn('flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs', tab === 'changed' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted)')}>
             <GitBranch size={13} /> Source Control

@@ -1,35 +1,35 @@
 /**
- * SettingsListView — single-column list shown inside the settings detail
- * pane (right of the sidebar). Renders cards stacked vertically with a
- * page title, description, filter input, and a primary "+ New X" CTA.
+ * SettingsListView — the list surface shared by Agents, Skills and MCP.
+ *
+ * It composes the same `SettingsPage` frame as the form pages, so a list and
+ * a form feel like one product: sticky header with the primary action, one
+ * sentence of context, then a single grouped surface of hairline rows.
  *
  *   ┌─────────────────────────────────────────────┐
- *   │ Agents                          [+ New …]   │
+ *   │ ⚙ Agents                        [+ New …]   │  ← sticky header
+ *   ├─────────────────────────────────────────────┤
  *   │ short description sentence                  │
- *   │                                             │
- *   │ [tabs slot — optional]                      │
- *   │ ┌─────────────────────────────────┐         │
- *   │ │ 🔎  Filter …            6 items │         │
- *   │ └─────────────────────────────────┘         │
- *   │ ┌─────────────────────────────────┐         │
- *   │ │ ▌ name        description  ⋯   │         │  ← active card
- *   │ └─────────────────────────────────┘         │
- *   │ ┌─────────────────────────────────┐         │
- *   │ │   name        description  ⋯   │         │
- *   │ └─────────────────────────────────┘         │
+ *   │ [tabs slot] [bulk-action slot]              │
+ *   │ ┌ 🔎 Filter …                    6 items ─┐ │
+ *   │ ├─ ▌ name       description             ─┤ │  ← active row
+ *   │ ├─   name       description             ─┤ │
+ *   │ └─────────────────────────────────────────┘ │
  *   └─────────────────────────────────────────────┘
  *
- * The view is purely presentational — callers are responsible for
- * producing the `rows` array, including any per-card actions.
+ * The view is purely presentational — callers produce the `rows` array,
+ * including any per-row actions.
  */
-import { AlertCircle, Plus, Search } from 'lucide-react'
+import { AlertCircle, Plus, Search, type LucideIcon } from 'lucide-react'
 import { useId, useMemo, useState, type ReactNode } from 'react'
+import { motion } from 'framer-motion'
 
+import { SettingsGroup, SettingsPage } from '@/components/settings/SettingsLayout'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useSettingsNavigate } from '@/contexts/SettingsContext'
+import { useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -37,7 +37,7 @@ import { cn } from '@/lib/utils'
 export interface ListViewRow {
   /** Stable key per row. */
   key: string
-  /** Route target rendered as a `<Link>`. Omit for non-clickable group rows. */
+  /** Route target. Omit for non-clickable group rows. */
   to?: string
   /** Path params for parameterised routes (e.g. `{ name }`). */
   params?: Record<string, string>
@@ -45,7 +45,7 @@ export interface ListViewRow {
   active?: boolean
   /** Render as a non-clickable group header. */
   kind?: 'item' | 'group'
-  /** Main label of the card. */
+  /** Main label of the row. */
   title: string
   /** Optional secondary inline tag (e.g. role badge). */
   badge?: string
@@ -72,6 +72,8 @@ type NewRoute =
 
 export interface SettingsListViewProps {
   title: string
+  /** Icon for the page header. */
+  icon: LucideIcon
   description: string
   /** Route for the primary "+ New" CTA. */
   newTo: NewRoute
@@ -81,7 +83,7 @@ export interface SettingsListViewProps {
   filterPlaceholder: string
   /** Optional tab strip rendered above the filter input. */
   tabs?: ReactNode
-  /** Optional content rendered between the tabs and the filter input (e.g. a bulk-action bar). */
+  /** Optional content rendered between the tabs and the list (e.g. a bulk-action bar). */
   headerExtra?: ReactNode
   rows: ListViewRow[]
   isLoading: boolean
@@ -95,6 +97,7 @@ export interface SettingsListViewProps {
 
 export function SettingsListView({
   title,
+  icon,
   description,
   newTo,
   newLabel,
@@ -122,105 +125,72 @@ export function SettingsListView({
     )
   }, [rows, query])
 
-  const total = rows.length
-  const countLabel =
-    total === 1 ? '1 item' : `${total} items`
+  const total = rows.filter((row) => row.kind !== 'group').length
+  const countLabel = total === 1 ? '1 item' : `${total} items`
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-3xl px-4 pt-8 pb-12 sm:px-8">
-        {/* ── Title row ─────────────────────────────────────────────────── */}
-        <header className="flex items-start gap-4">
-          <div className="min-w-0 flex-1">
-            <h1 className="text-2xl font-semibold tracking-tight text-(--color-text)">
-              {title}
-            </h1>
-            <p className="mt-1 text-sm text-(--color-text-muted)">
-              {description}
-            </p>
-          </div>
-          {newAction ?? (
-            <NewButton to={newTo} label={newLabel} />
-          )}
-        </header>
+    <SettingsPage
+      icon={icon}
+      title={title}
+      lede={description}
+      actions={newAction ?? <NewButton to={newTo} label={newLabel} />}
+    >
+      {(tabs || headerExtra) && (
+        <div className="space-y-3">
+          {tabs}
+          {headerExtra}
+        </div>
+      )}
 
-        {/* ── Optional tabs ─────────────────────────────────────────────── */}
-        {tabs && <div className="mt-6">{tabs}</div>}
+      {isLoading && <p className="py-10 text-center text-sm text-(--color-text-muted)">Loading…</p>}
+      {isError && <p className="py-10 text-center text-sm text-(--color-error)">Failed to load.</p>}
 
-        {/* ── Optional header extra (e.g. bulk-action bar) ─────────────── */}
-        {headerExtra && <div className="mt-3">{headerExtra}</div>}
+      {!isLoading && !isError && total === 0 && (
+        <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-(--color-border) px-4 py-12 text-center">
+          <p className="text-sm font-medium text-(--color-text)">{emptyTitle}</p>
+          <p className="max-w-md text-xs leading-relaxed text-(--color-text-muted)">{emptyBody}</p>
+          <NewButton to={newTo} label={newLabel} />
+        </div>
+      )}
 
-        {/* ── Filter ────────────────────────────────────────────────────── */}
-        {(isLoading || rows.length > 0) && (
-          <div className="mt-4">
+      {!isLoading && !isError && total > 0 && (
+        <SettingsGroup className="divide-y-0">
+          <div className="flex h-10 items-center gap-2 border-b border-(--color-border-subtle) px-3">
+            <Search size={13} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
             <label htmlFor={filterId} className="sr-only">
               {filterPlaceholder}
             </label>
-            <div className="relative flex h-9 items-center rounded-lg border border-(--color-border) bg-(--bg-card) focus-within:border-(--focus-ring) focus-within:ring-3 focus-within:ring-(--focus-ring)/30">
-              <Search
-                size={13}
-                className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-(--color-text-muted)"
-                aria-hidden="true"
-              />
-              <Input
-                id={filterId}
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={filterPlaceholder}
-                aria-label={filterPlaceholder}
-                className="h-full flex-1 border-0 bg-transparent pr-3 pl-9 text-sm focus:ring-0 focus-visible:ring-0"
-              />
-              {!isLoading && (
-                <span className="pr-3 font-mono text-xs tabular-nums text-(--color-text-muted)">
-                  {countLabel}
-                </span>
-              )}
-            </div>
+            <Input
+              id={filterId}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={filterPlaceholder}
+              aria-label={filterPlaceholder}
+              className="h-full flex-1 border-0 bg-transparent px-0 text-sm shadow-none focus:ring-0 focus-visible:ring-0"
+            />
+            <span className="shrink-0 font-mono text-xs tabular-nums text-(--color-text-muted)">
+              {query.trim() ? `${filtered.filter((r) => r.kind !== 'group').length} / ${total}` : countLabel}
+            </span>
           </div>
-        )}
 
-        {/* ── Body ──────────────────────────────────────────────────────── */}
-        <div className="mt-3 space-y-2">
-          {isLoading && (
-            <p className="py-10 text-center text-sm text-(--color-text-muted)">
-              Loading…
-            </p>
-          )}
-          {isError && (
-            <p className="py-10 text-center text-sm text-(--color-error)">
-              Failed to load.
-            </p>
-          )}
-          {!isLoading && !isError && total === 0 && (
-            <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-(--color-border) bg-(--bg-card) px-4 py-12 text-center">
-              <p className="text-sm font-medium text-(--color-text)">{emptyTitle}</p>
-              <p className="max-w-md text-xs leading-relaxed text-(--color-text-muted)">
-                {emptyBody}
-              </p>
-              <NewButton to={newTo} label={newLabel} />
-            </div>
-          )}
-          {!isLoading && !isError && total > 0 && filtered.length === 0 && (
-            <p className="py-10 text-center text-sm text-(--color-text-muted)">
+          {filtered.length === 0 ? (
+            <p className="px-4 py-10 text-center text-sm text-(--color-text-muted)">
               No matches for &ldquo;{query}&rdquo;.
             </p>
-          )}
-          {!isLoading && !isError && filtered.length > 0 && (
-            <ul className="space-y-2">
+          ) : (
+            <ul>
               {filtered.map((row) => (
-                <li key={row.key}>
-                  <ListCardLink row={row} />
-                </li>
+                <ListRow key={row.key} row={row} />
               ))}
             </ul>
           )}
-        </div>
-      </div>
-    </div>
+        </SettingsGroup>
+      )}
+    </SettingsPage>
   )
 }
 
-// ─── Card ──────────────────────────────────────────────────────────────────
+// ─── Row ───────────────────────────────────────────────────────────────────
 
 function NewButton({ to, label }: { to: string; label: string }) {
   const navigate = useSettingsNavigate()
@@ -232,38 +202,49 @@ function NewButton({ to, label }: { to: string; label: string }) {
   )
 }
 
-function ListCardLink({ row }: { row: ListViewRow }) {
+function ListRow({ row }: { row: ListViewRow }) {
   const navigate = useSettingsNavigate()
+  const preset = useMotionPreset()
 
   if (row.kind === 'group') {
     return (
-      <div className="px-1 pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-(--color-text-muted)">
+      <li className="border-b border-(--color-border-subtle) bg-(--bg-key)/40 px-4 py-1.5 text-[11px] font-medium tracking-wide text-(--color-text-subtle) uppercase">
         {row.title}
-      </div>
+      </li>
     )
   }
 
-  const card = (
+  const body = (
     <button
       type="button"
-      onClick={() => { if (row.to) navigate(row.to, { params: row.params }) }}
+      onClick={() => {
+        if (row.to) navigate(row.to, { params: row.params })
+      }}
       aria-current={row.active ? 'page' : undefined}
       className={cn(
-        'group flex w-full min-h-11 items-start gap-3 rounded-lg border bg-(--bg-card) px-4 py-3 text-left transition-colors',
-        'hover:border-(--color-border-strong)',
-        'focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-(--focus-ring)/40',
-        row.active
-          ? 'border-(--color-accent)'
-          : 'border-(--color-border)',
+        'group relative flex min-h-11 w-full items-start gap-3 py-3 pr-4 pl-4 text-left transition-colors',
+        'hover:bg-(--bg-key)/50',
+        'focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-(--focus-ring)/40 focus-visible:outline-none',
+        row.active && 'bg-(--bg-key)/70',
       )}
     >
+      {/* A single marker slides to the selected row, so changing selection
+          reads as one movement rather than two separate blinks. */}
+      {row.active && (
+        <motion.span
+          layoutId="settings-list-active"
+          transition={preset.spring}
+          className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-(--color-accent)"
+          aria-hidden="true"
+        />
+      )}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-semibold text-(--color-text)">
+          <span className={cn('truncate text-sm text-(--color-text)', row.active && 'font-medium')}>
             {row.title}
           </span>
           {row.badge && (
-            <span className="rounded-md bg-(--bg-key) px-1.5 py-0.5 font-mono text-xs text-(--color-text-muted) ring-1 ring-(--color-border)">
+            <span className="rounded bg-(--bg-key) px-1.5 py-0.5 font-mono text-[10px] text-(--color-text-muted) ring-1 ring-(--color-border)">
               {row.badge}
             </span>
           )}
@@ -281,32 +262,34 @@ function ListCardLink({ row }: { row: ListViewRow }) {
           )}
         </div>
         {row.description && (
-          <p className="mt-0.5 line-clamp-2 text-xs text-(--color-text-muted)">
+          <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-(--color-text-muted)">
             {row.description}
           </p>
         )}
         {row.meta && (
-          <p className="mt-1 truncate font-mono text-xs text-(--color-text-muted)/70">
-            {row.meta}
-          </p>
+          <p className="mt-1 truncate font-mono text-[11px] text-(--color-text-subtle)">{row.meta}</p>
         )}
       </div>
-      {row.trailing && <div className="shrink-0">{row.trailing}</div>}
+      {row.trailing && <div className="shrink-0 pt-0.5">{row.trailing}</div>}
     </button>
   )
 
-  if (!row.onToggleSelect) return card
-
   return (
-    <div className="flex items-start gap-2">
-      <label className="flex h-11 shrink-0 cursor-pointer items-center pl-0.5">
-        <Checkbox
-          checked={!!row.selected}
-          onCheckedChange={() => row.onToggleSelect?.()}
-          aria-label={`Select ${row.title}`}
-        />
-      </label>
-      <div className="min-w-0 flex-1">{card}</div>
-    </div>
+    <li className="not-last:border-b not-last:border-(--color-border-subtle)">
+      {row.onToggleSelect ? (
+        <div className="flex items-start">
+          <label className="flex h-11 shrink-0 cursor-pointer items-center pl-4">
+            <Checkbox
+              checked={!!row.selected}
+              onCheckedChange={() => row.onToggleSelect?.()}
+              aria-label={`Select ${row.title}`}
+            />
+          </label>
+          <div className="min-w-0 flex-1">{body}</div>
+        </div>
+      ) : (
+        body
+      )}
+    </li>
   )
 }

@@ -14,6 +14,7 @@ import { AppShell } from '@/components/shell/AppShell'
 import { useAimProjectsQuery } from '@/queries/useAimProjectsQuery'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { useMotionPreset } from '@/lib/motion'
 import { useUIStore } from '@/stores/useUIStore'
 import type { AimFeature } from '@/lib/aim-sidebar'
 import type { CodingProject } from '@/api/types'
@@ -41,6 +42,7 @@ function AimLayoutBase() {
   const [showPalette, setShowPalette] = useState(false)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const isMobile = useIsMobile()
+  const preset = useMotionPreset()
 
   // Ctrl+P — same palette shortcut as the other two modes (shared hook).
   // Ctrl+B (sidebar collapse) is registered once by AppShell.
@@ -140,7 +142,7 @@ function AimLayoutBase() {
                   initial={{ x: '-100%' }}
                   animate={{ x: 0 }}
                   exit={{ x: '-100%' }}
-                  transition={{ duration: 0.18 }}
+                  transition={preset.spring}
                 >
                   <AimSidebar
                     activeProjectId={projectId}
