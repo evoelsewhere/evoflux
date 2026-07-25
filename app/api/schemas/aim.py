@@ -99,6 +99,15 @@ class AimReindexResponse(BaseModel):
     links_updated: int = 0
 
 
+class AimReadinessClaimDependency(BaseModel):
+    workflow_execution_id: UUID
+    workflow_name: str
+    execution_status: str
+    session_id: UUID | None
+    lease_expires_at: datetime
+    units: list[str]
+
+
 class AimReadinessResponse(BaseModel):
     pipeline: str
     status: Literal["ready", "blocked"]
@@ -107,6 +116,7 @@ class AimReadinessResponse(BaseModel):
     warnings: list[str]
     selected_units: list[str]
     selected_count: int
+    claim_dependencies: list[AimReadinessClaimDependency] = Field(default_factory=list)
 
 
 class AimHealthCheckOut(BaseModel):

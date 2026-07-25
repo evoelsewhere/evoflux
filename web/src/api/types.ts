@@ -480,6 +480,14 @@ export interface AimReadiness {
   warnings: string[]
   selected_units: string[]
   selected_count: number
+  claim_dependencies: Array<{
+    workflow_execution_id: string
+    workflow_name: string
+    execution_status: string
+    session_id: string | null
+    lease_expires_at: string
+    units: string[]
+  }>
 }
 
 export interface AimProjectHealth {

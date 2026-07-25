@@ -1037,6 +1037,7 @@ async def get_aim_readiness(
 ) -> AimReadinessResponse:
     from app.services.aim.project import resolve_kb_workspace_path
     from app.services.aim.readiness import evaluate_pipeline
+    from app.models.workflow import WorkflowExecution
 
     project = await _get_aim_project_or_404(db, project_id)
     kb_path = await resolve_kb_workspace_path(db, project)
@@ -1052,7 +1053,76 @@ async def get_aim_readiness(
         case_set=case_set,
         overwrite=overwrite,
     )
-    return AimReadinessResponse(**result.to_dict())
+    data = result.to_dict()
+    dependencies: list[dict] = []
+    selected_keys = set(result.selected_units)
+    if selected_keys:
+        unit_rows = (
+            await db.exec(select(AimUnit).where(AimUnit.project_id == project_id))
+        ).all()
+        selected_by_id = {
+            row.id: f"{row.module}/{row.name}"
+            for row in unit_rows
+            if f"{row.module}/{row.name}" in selected_keys
+        }
+        if selected_by_id:
+            now = datetime.now(timezone.utc)
+            claims = (
+                await db.exec(
+                    select(AimClaim).where(
+                        AimClaim.project_id == project_id,
+                        AimClaim.lease_expires_at > now,
+                    )
+                )
+            ).all()
+            claims = [claim for claim in claims if claim.unit_id in selected_by_id]
+            grouped: dict[UUID, dict] = {}
+            for claim in claims:
+                dependency = grouped.setdefault(
+                    claim.workflow_execution_id,
+                    {
+                        "workflow_execution_id": claim.workflow_execution_id,
+                        "workflow_name": claim.workflow_name,
+                        "execution_status": "unknown",
+                        "session_id": claim.session_id,
+                        "lease_expires_at": claim.lease_expires_at,
+                        "units": [],
+                    },
+                )
+                dependency["units"].append(selected_by_id[claim.unit_id])
+                if claim.lease_expires_at > dependency["lease_expires_at"]:
+                    dependency["lease_expires_at"] = claim.lease_expires_at
+            for execution_id, dependency in grouped.items():
+                execution = await db.get(WorkflowExecution, execution_id)
+                if execution is not None:
+                    dependency["execution_status"] = execution.status
+                    dependency["session_id"] = execution.session_id
+                dependency["units"].sort()
+                dependencies.append(dependency)
+            dependencies.sort(
+                key=lambda item: (
+                    item["workflow_name"],
+                    str(item["workflow_execution_id"]),
+                )
+            )
+
+    if dependencies:
+        data["status"] = "blocked"
+        data["allowed"] = False
+        data["blockers"] = [
+            *data["blockers"],
+            *[
+                (
+                    f"{len(dependency['units'])} selected unit(s) are owned by "
+                    f"{dependency['workflow_name']} execution "
+                    f"{dependency['workflow_execution_id']} until "
+                    f"{dependency['lease_expires_at'].isoformat()}"
+                )
+                for dependency in dependencies
+            ],
+        ]
+    data["claim_dependencies"] = dependencies
+    return AimReadinessResponse(**data)
 
 
 @router.get("/{project_id}/aim/health", response_model=AimProjectHealthOut)
