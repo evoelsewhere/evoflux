@@ -11,6 +11,8 @@ import type {
   AimApproval,
   AimCutoverChecklist,
   AimLayoutDetection,
+  AimKbDocument,
+  AimKbSearchResponse,
   AimManifestPreview,
   AimMeta,
   AimProjectCreateRequest,
@@ -25,6 +27,7 @@ import type {
   AimRunOut,
     AimStateReconcileResponse,
     AimSuggestionPlan,
+  AimTraceability,
   AimUnitOut,
   CodingProject,
 } from '../types'
@@ -160,6 +163,77 @@ export async function listAimUnits(
     `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/aim/units${query ? `?${query}` : ''}`,
   )
   if (!res.ok) await parseDetailOrThrow(res, 'listAimUnits')
+  return res.json()
+}
+
+export async function getAimKbDocument(
+  projectId: string,
+  path: string,
+): Promise<AimKbDocument> {
+  const params = new URLSearchParams({ path })
+  const res = await fetch(
+    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/aim/kb/document?${params}`,
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'getAimKbDocument')
+  return res.json()
+}
+
+export async function updateAimKbDocument(
+  projectId: string,
+  path: string,
+  content: string,
+  expectedRevision: string,
+): Promise<AimKbDocument> {
+  const params = new URLSearchParams({ path })
+  const res = await fetch(
+    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/aim/kb/document?${params}`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content, expected_revision: expectedRevision }),
+    },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'updateAimKbDocument')
+  return res.json()
+}
+
+export async function createAimKbDocument(
+  projectId: string,
+  path: string,
+  content: string,
+): Promise<AimKbDocument> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/aim/kb/documents`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, content }),
+    },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'createAimKbDocument')
+  return res.json()
+}
+
+export async function searchAimKb(
+  projectId: string,
+  query: string,
+  options?: { pathPrefix?: string; limit?: number },
+): Promise<AimKbSearchResponse> {
+  const params = new URLSearchParams({ q: query })
+  if (options?.pathPrefix) params.set('path_prefix', options.pathPrefix)
+  if (options?.limit) params.set('limit', String(options.limit))
+  const res = await fetch(
+    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/aim/kb/search?${params}`,
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'searchAimKb')
+  return res.json()
+}
+
+export async function getAimTraceability(projectId: string): Promise<AimTraceability> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/aim/traceability`,
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'getAimTraceability')
   return res.json()
 }
 

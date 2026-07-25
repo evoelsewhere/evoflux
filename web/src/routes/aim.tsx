@@ -8,7 +8,7 @@ import { AimSetupWizard } from '@/components/AimSetupWizard'
 import { AimOverviewPanel } from '@/components/AimOverviewPanel'
 import { AimPipelinesPanel } from '@/components/AimPipelinesPanel'
 import { AimKbPanel } from '@/components/AimKbPanel'
-import { AimRulebookPanel } from '@/components/AimRulebookPanel'
+import { AimTraceabilityPanel } from '@/components/AimTraceabilityPanel'
 import { CommandPalette, type Command } from '@/components/CommandPalette'
 import { AppShell } from '@/components/shell/AppShell'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -80,6 +80,8 @@ function AimLayoutBase() {
 
   const feature: AimFeature = runId
     ? 'pipelines'
+    : rawFeature === 'rulebook'
+      ? 'traceability'
     : AIM_FEATURES.some((f) => f.key === rawFeature)
       ? (rawFeature as AimFeature)
       : 'overview'
@@ -104,7 +106,7 @@ function AimLayoutBase() {
     if (!projectId || runId || rawFeature === feature) return
     navigate({
       to: '/aim/$projectId/$feature',
-      params: { projectId, feature: 'overview' },
+      params: { projectId, feature },
       replace: true,
     })
   }, [projectId, rawFeature, runId, feature, navigate])
@@ -307,8 +309,8 @@ function FeaturePanel({
       return <AimPipelinesPanel project={project} runId={runId} />
     case 'kb':
       return <AimKbPanel project={project} />
-    case 'rulebook':
-      return <AimRulebookPanel project={project} />
+    case 'traceability':
+      return <AimTraceabilityPanel project={project} />
   }
 }
 

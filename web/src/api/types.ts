@@ -498,6 +498,77 @@ export interface AimReadinessOptions {
   waves: number[]
 }
 
+export interface AimKbDocument {
+  path: string
+  content: string
+  revision: string
+  size: number
+  mtime: number
+  writable: boolean
+}
+
+export interface AimKbSearchResult {
+  path: string
+  line: number
+  excerpt: string
+  matches: number
+}
+
+export interface AimKbSearchResponse {
+  query: string
+  results: AimKbSearchResult[]
+  truncated: boolean
+}
+
+export interface AimTraceabilityLink {
+  id: string
+  from_ref: string
+  to_ref: string
+  kind: string
+  note: string | null
+}
+
+export interface AimTraceabilityRule {
+  id: string
+  title: string
+  status: string
+  path: string
+  source_ref: string | null
+}
+
+export interface AimTraceabilityUnit {
+  id: string
+  unit: string
+  kind: string
+  phase: string
+  wave: number | null
+  depends_on: string[]
+  target_paths: string[]
+  doc_path: string | null
+  mapping_path: string | null
+  rules_reviewed: boolean
+  rules: AimTraceabilityRule[]
+  run_count: number
+  passing_run_id: string | null
+  latest_verdict: string | null
+  links: AimTraceabilityLink[]
+  gaps: string[]
+}
+
+export interface AimTraceability {
+  summary: {
+    total_units: number
+    reviewed_units: number
+    mapped_units: number
+    evidenced_units: number
+    total_rules: number
+    confirmed_rules: number
+    explicit_links: number
+    total_gaps: number
+  }
+  units: AimTraceabilityUnit[]
+}
+
 export interface AimSuggestionAction {
   id: string
   lane: 'ready' | 'active' | 'up_next' | 'needs_input'

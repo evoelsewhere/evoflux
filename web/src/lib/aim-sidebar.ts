@@ -1,18 +1,18 @@
 import {
-  BookMarked,
   BookOpen,
   LayoutDashboard,
+  Waypoints,
   Workflow,
   type LucideIcon,
 } from 'lucide-react'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 
-export type AimFeature = 'overview' | 'kb' | 'rulebook' | 'pipelines'
+export type AimFeature = 'overview' | 'kb' | 'traceability' | 'pipelines'
 
 export const AIM_FEATURES: { key: AimFeature; label: string; Icon: LucideIcon }[] = [
   { key: 'overview', label: 'Overview', Icon: LayoutDashboard },
   { key: 'kb', label: 'Knowledge Base', Icon: BookOpen },
-  { key: 'rulebook', label: 'Rulebook', Icon: BookMarked },
+  { key: 'traceability', label: 'Traceability', Icon: Waypoints },
   { key: 'pipelines', label: 'Pipelines', Icon: Workflow },
 ]
 
