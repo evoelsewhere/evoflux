@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
 
@@ -36,6 +36,10 @@ from app.api.schemas.aim import (
     AimCutoverChecklistOut,
     AimCutoverChecklistUpdate,
     AimLayoutDetectionResponse,
+    AimKbDocumentCreate,
+    AimKbDocumentOut,
+    AimKbDocumentUpdate,
+    AimKbSearchResponse,
     AimManifestPreviewResponse,
     AimMetaResponse,
     AimPhaseCounts,
@@ -53,12 +57,13 @@ from app.api.schemas.aim import (
     AimStateReconcileRequest,
     AimStateReconcileResponse,
     AimSuggestionPlanOut,
+    AimTraceabilityResponse,
     AimUnitOut,
     AimUnitActionOut,
     AimUnitClaimOut,
 )
 from app.api.schemas.projects import ProjectResponse, ProjectWorkspaceItem
-from app.models.aim import AimClaim, AimRun, AimUnit
+from app.models.aim import AimLink, AimRun, AimUnit
 from app.models.chat import CodingProjectWorkspace, CodingWorkspace
 from app.models.code_graph import CrossRepoEdge
 from app.services import code_graph_service as cg_svc
@@ -847,6 +852,18 @@ async def _get_aim_project_or_404(db: DbSession, project_id: UUID):
     return project
 
 
+async def _get_aim_kb_root(db: DbSession, project_id: UUID) -> Path:
+    from app.services.aim.project import resolve_kb_workspace_path
+
+    project = await _get_aim_project_or_404(db, project_id)
+    kb_path = await resolve_kb_workspace_path(db, project)
+    if not kb_path or not Path(kb_path).is_dir():
+        raise HTTPException(
+            status_code=422, detail="Project has no KB repo on this machine."
+        )
+    return Path(kb_path)
+
+
 def _aim_unit_out(
     row: AimUnit,
     *,
@@ -913,6 +930,160 @@ async def get_aim_project_summary(
     )
 
 
+@router.get(
+    "/{project_id}/aim/kb/document",
+    response_model=AimKbDocumentOut,
+)
+async def get_aim_kb_document(
+    project_id: UUID,
+    db: DbSession,
+    path: str,
+) -> AimKbDocumentOut:
+    from app.services.aim.documents import DocumentError, read_document
+
+    kb_root = await _get_aim_kb_root(db, project_id)
+    try:
+        document = await asyncio.to_thread(read_document, kb_root, path)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="KB document not found.") from exc
+    except DocumentError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return AimKbDocumentOut(**document.to_dict())
+
+
+@router.put(
+    "/{project_id}/aim/kb/document",
+    response_model=AimKbDocumentOut,
+)
+async def update_aim_kb_document(
+    project_id: UUID,
+    db: DbSession,
+    body: AimKbDocumentUpdate,
+    path: str,
+) -> AimKbDocumentOut:
+    from app.services.aim.documents import (
+        DocumentConflictError,
+        DocumentError,
+        update_document,
+    )
+    from app.services.aim.reindex import reindex_project
+
+    kb_root = await _get_aim_kb_root(db, project_id)
+    try:
+        document = await asyncio.to_thread(
+            update_document,
+            kb_root,
+            path,
+            body.content,
+            expected_revision=body.expected_revision,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="KB document not found.") from exc
+    except DocumentConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": str(exc),
+                "current_revision": exc.current_revision,
+            },
+        ) from exc
+    except DocumentError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if document.path.startswith("modules/"):
+        await reindex_project(db, project_id, kb_root)
+        await db.commit()
+    return AimKbDocumentOut(**document.to_dict())
+
+
+@router.post(
+    "/{project_id}/aim/kb/documents",
+    response_model=AimKbDocumentOut,
+    status_code=201,
+)
+async def create_aim_kb_document(
+    project_id: UUID,
+    db: DbSession,
+    body: AimKbDocumentCreate,
+) -> AimKbDocumentOut:
+    from app.services.aim.documents import DocumentError, create_document
+
+    kb_root = await _get_aim_kb_root(db, project_id)
+    try:
+        document = await asyncio.to_thread(
+            create_document, kb_root, body.path, body.content
+        )
+    except FileExistsError as exc:
+        raise HTTPException(
+            status_code=409, detail="KB document already exists."
+        ) from exc
+    except DocumentError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return AimKbDocumentOut(**document.to_dict())
+
+
+@router.get(
+    "/{project_id}/aim/kb/search",
+    response_model=AimKbSearchResponse,
+)
+async def search_aim_kb_documents(
+    project_id: UUID,
+    db: DbSession,
+    q: str = Query(min_length=2, max_length=200),
+    path_prefix: str | None = None,
+    limit: int = Query(default=50, ge=1, le=100),
+) -> AimKbSearchResponse:
+    from app.services.aim.documents import DocumentError, search_documents
+
+    kb_root = await _get_aim_kb_root(db, project_id)
+    try:
+        results = await asyncio.to_thread(
+            search_documents,
+            kb_root,
+            q,
+            path_prefix=path_prefix,
+            limit=limit,
+        )
+    except DocumentError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return AimKbSearchResponse(
+        query=q,
+        results=[result.to_dict() for result in results],
+        truncated=len(results) == limit,
+    )
+
+
+@router.get(
+    "/{project_id}/aim/traceability",
+    response_model=AimTraceabilityResponse,
+)
+async def get_aim_traceability(
+    project_id: UUID,
+    db: DbSession,
+) -> AimTraceabilityResponse:
+    from app.services.aim.traceability import build_traceability
+
+    kb_root = await _get_aim_kb_root(db, project_id)
+    units = (
+        await db.exec(
+            select(AimUnit)
+            .where(AimUnit.project_id == project_id)
+            .order_by(AimUnit.module, AimUnit.name)
+        )
+    ).all()
+    runs = (
+        await db.exec(
+            select(AimRun)
+            .join(AimUnit, col(AimRun.unit_id) == col(AimUnit.id))
+            .where(AimUnit.project_id == project_id)
+        )
+    ).all()
+    links = (
+        await db.exec(select(AimLink).where(AimLink.project_id == project_id))
+    ).all()
+    data = await asyncio.to_thread(build_traceability, kb_root, units, runs, links)
+    return AimTraceabilityResponse(**data)
+
+
 @router.get("/{project_id}/aim/units", response_model=list[AimUnitOut])
 async def list_aim_units(
     project_id: UUID,
@@ -922,6 +1093,7 @@ async def list_aim_units(
 ) -> list[AimUnitOut]:
     from app.services.aim import kb_store
     from app.services.aim.business_rules import business_rule_review_ready
+    from app.services.aim.claims import effective_project_claims
     from app.services.aim.models import UNIT_PHASE_NEXT_PIPELINE, next_unit_phase
     from app.services.aim.project import resolve_kb_workspace_path
     from app.services.aim.readiness import evaluate_pipeline
@@ -934,15 +1106,7 @@ async def list_aim_units(
     if wave is not None:
         stmt = stmt.where(AimUnit.wave == wave)
     rows = (await db.exec(stmt.order_by(AimUnit.module, AimUnit.name))).all()
-    now = datetime.now(timezone.utc)
-    claims = (
-        await db.exec(
-            select(AimClaim).where(
-                AimClaim.project_id == project_id,
-                AimClaim.lease_expires_at > now,
-            )
-        )
-    ).all()
+    claims = await effective_project_claims(db, project_id)
     claims_by_unit = {claim.unit_id: claim for claim in claims}
     kb_path = await resolve_kb_workspace_path(db, project)
     kb_root = Path(kb_path) if kb_path and Path(kb_path).is_dir() else None
@@ -1036,6 +1200,7 @@ async def get_aim_readiness_options(
     overwrite: bool = False,
 ) -> AimReadinessOptionsResponse:
     from app.services.aim.project import resolve_kb_workspace_path
+    from app.services.aim.claims import effective_project_claims
     from app.services.aim.readiness import evaluate_pipeline_options
 
     project = await _get_aim_project_or_404(db, project_id)
@@ -1045,15 +1210,7 @@ async def get_aim_readiness_options(
             status_code=422, detail="Project has no KB repo on this machine."
         )
 
-    now = datetime.now(timezone.utc)
-    claims = (
-        await db.exec(
-            select(AimClaim).where(
-                AimClaim.project_id == project_id,
-                AimClaim.lease_expires_at > now,
-            )
-        )
-    ).all()
+    claims = await effective_project_claims(db, project_id)
     claimed_ids = {claim.unit_id for claim in claims}
     claimed_rows: list[AimUnit] = []
     if claimed_ids:
@@ -1083,6 +1240,7 @@ async def _aim_suggestion_plan(
     generate: bool,
 ) -> AimSuggestionPlanOut:
     from app.services.aim.project import resolve_kb_workspace_path
+    from app.services.aim.claims import effective_project_claims
     from app.services.aim.suggestions import (
         build_suggestion_plan,
         read_suggestion_snapshot,
@@ -1096,15 +1254,7 @@ async def _aim_suggestion_plan(
             status_code=422, detail="Project has no KB repo on this machine."
         )
 
-    now = datetime.now(timezone.utc)
-    claims = (
-        await db.exec(
-            select(AimClaim).where(
-                AimClaim.project_id == project_id,
-                AimClaim.lease_expires_at > now,
-            )
-        )
-    ).all()
+    claims = await effective_project_claims(db, project_id)
     claimed_ids = {claim.unit_id for claim in claims}
     unit_rows = (
         await db.exec(select(AimUnit).where(AimUnit.project_id == project_id))
@@ -1160,6 +1310,7 @@ async def get_aim_readiness(
     overwrite: bool = False,
 ) -> AimReadinessResponse:
     from app.services.aim.project import resolve_kb_workspace_path
+    from app.services.aim.claims import effective_project_claims
     from app.services.aim.readiness import evaluate_pipeline
     from app.models.workflow import WorkflowExecution
 
@@ -1190,15 +1341,7 @@ async def get_aim_readiness(
             if f"{row.module}/{row.name}" in selected_keys
         }
         if selected_by_id:
-            now = datetime.now(timezone.utc)
-            claims = (
-                await db.exec(
-                    select(AimClaim).where(
-                        AimClaim.project_id == project_id,
-                        AimClaim.lease_expires_at > now,
-                    )
-                )
-            ).all()
+            claims = await effective_project_claims(db, project_id)
             claims = [claim for claim in claims if claim.unit_id in selected_by_id]
             grouped: dict[UUID, dict] = {}
             for claim in claims:

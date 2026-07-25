@@ -6,6 +6,7 @@ grows them in place so the router mount stays singular.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -408,7 +409,16 @@ async def run_workflow_route(
                     "run it as a new attempt."
                 ),
             )
-        if parent.status not in {"completed", "failed", "stopped"}:
+        parent_live = runner.is_execution_driving(parent.id)
+        if parent.status in {"running", "waiting_gate"} and not parent_live:
+            parent.status = "failed"
+            parent.error = (
+                "Execution was interrupted because its workflow runner is no "
+                "longer active. It was reconciled when retrying."
+            )
+            parent.ended_at = datetime.now(timezone.utc)
+            db.add(parent)
+        elif parent.status not in {"completed", "failed", "stopped"}:
             raise HTTPException(
                 status_code=409,
                 detail=f"Execution in status {parent.status!r} cannot be retried.",
@@ -422,7 +432,7 @@ async def run_workflow_route(
         ).all()
         for stale_claim in stale_claims:
             await db.delete(stale_claim)
-        if stale_claims:
+        if stale_claims or not parent_live:
             await db.commit()
 
     # Scope rules (§6.2 + aim extension): forge runs anywhere; coding/aim

@@ -168,6 +168,9 @@ class WorkflowRunner:
     def is_driving(self, session_id: str) -> bool:
         return session_id in self.active
 
+    def is_execution_driving(self, execution_id: UUID) -> bool:
+        return any(state.execution_id == execution_id for state in self.active.values())
+
     def get(self, session_id: str) -> ExecutionState | None:
         return self.active.get(session_id)
 

@@ -318,11 +318,48 @@ async def test_run_endpoint_contract(setup_db, tmp_path, monkeypatch):
         # 'calm' hits the '*' default branch.
         assert "chill" in node_ids
 
+        # A crashed process can leave an execution row as running even though
+        # the in-memory runner no longer owns it. Retry must reconcile that
+        # orphan instead of rejecting the exact state the UI calls interrupted.
+        from uuid import uuid7
+
+        interrupted_id = uuid7()
+        async with db_module.async_session_factory() as db:
+            db.add(
+                WorkflowExecution(
+                    id=interrupted_id,
+                    definition_name="headless",
+                    definition_hash=file_hash,
+                    session_id=session.id,
+                    status="running",
+                    inputs={"level": "calm"},
+                )
+            )
+            await db.commit()
+
+        retry = await client.post(
+            "/api/workflows/headless/run",
+            json={
+                "session_id": session_id,
+                "inputs": {"level": "calm"},
+                "retry_of_execution_id": str(interrupted_id),
+            },
+        )
+        assert retry.status_code == 200
+        await _wait_done(global_runner, session_id)
+        retry_id = retry.json()["execution_id"]
+
     async with db_module.async_session_factory() as db:
         from uuid import UUID as _UUID
 
         execution = await db.get(WorkflowExecution, _UUID(execution_id))
         assert execution.outputs == {"level": "calm"}
+        interrupted = await db.get(WorkflowExecution, interrupted_id)
+        assert interrupted.status == "failed"
+        assert "interrupted" in interrupted.error
+        retried = await db.get(WorkflowExecution, _UUID(retry_id))
+        assert retried.retry_of_execution_id == interrupted_id
+        assert retried.status == "completed"
 
 
 @pytest.mark.asyncio
