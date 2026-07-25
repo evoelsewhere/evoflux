@@ -18,7 +18,9 @@ import { NativeFileTree } from './NativeFileTree'
 import { ProjectCodeGraphPanel } from './ProjectCodeGraphPanel'
 import { TaskTimelinePanel } from './TaskTimelinePanel'
 import type { WorkspaceFileInfo } from '@/api/types'
+import { isTauriAvailable } from '@/api/tauri-workspace'
 import {
+  buildTree,
   collectChangedFiles,
   type ChangedFileStatus,
   type TreeNode,
@@ -323,7 +325,7 @@ export function CodingWorkspacePanel({
               <p className="px-2 py-4 text-xs text-(--color-error)">Failed to load files</p>
             ) : files.data?.files.length === 0 ? (
               <p className="px-2 py-4 text-xs text-(--color-text-subtle)">No files shown</p>
-            ) : (
+            ) : isTauriAvailable() ? (
               // Native file tree (desktop-only, lazy loading)
               <NativeFileTree
                 workspaceRoot={workspace}
@@ -344,6 +346,23 @@ export function CodingWorkspacePanel({
                 }}
                 className="flex-1 overflow-auto"
               />
+            ) : (
+              // Web fallback: HTTP-based tree
+              <div className="p-2">
+                {(files.data?.files ?? []).length === 0
+                  ? <p className="px-2 py-4 text-xs text-(--color-text-subtle)">No files shown</p>
+                  : Array.from(buildTree(files.data?.files ?? []).children.values()).map((node) => (
+                      <TreeNodeView
+                        key={node.path}
+                        node={node}
+                        depth={0}
+                        selectedPath={selectedFilePath}
+                        onFileSelect={onFileSelect}
+                        changedPaths={changedPaths}
+                      />
+                    ))
+                }
+              </div>
             )
           )}
         </div>
