@@ -31,6 +31,51 @@ export function splitFrontmatter(raw: string): { fm: string; body: string } {
   return { fm: m[1], body: m[2].replace(/^\r?\n/, '') }
 }
 
+export function normalizeYamlScalarContinuations(text: string): string {
+  const lines = text.split(/\r?\n/)
+  const normalized: string[] = []
+  let descriptionIndex: number | null = null
+
+  for (const line of lines) {
+    const continuationIndex = descriptionIndex
+    const previous = continuationIndex === null ? null : normalized[continuationIndex]
+    const trimmedLine = line.trim()
+    if (
+      continuationIndex !== null &&
+      previous != null &&
+      /^\s+/.test(line) &&
+      trimmedLine &&
+      !trimmedLine.startsWith('#') &&
+      !trimmedLine.startsWith('- ')
+    ) {
+      normalized[continuationIndex] = previous.endsWith('\\') && trimmedLine.startsWith('\\')
+        ? `${previous.slice(0, -1)}${trimmedLine.slice(1)}`
+        : `${previous} ${trimmedLine}`
+      continue
+    }
+    normalized.push(line)
+    descriptionIndex = /^description:\s*\S/.test(line) ? normalized.length - 1 : null
+  }
+
+  return normalized.join('\n')
+}
+
+export function unquoteYamlScalar(value: string): string {
+  const trimmed = value.trim()
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    let decoded: unknown = null
+    try {
+      decoded = JSON.parse(trimmed)
+    } catch {
+      decoded = null
+    }
+    if (typeof decoded === 'string') return decoded
+    return trimmed.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+  }
+  if (trimmed.startsWith("'") && trimmed.endsWith("'")) return trimmed.slice(1, -1)
+  return trimmed
+}
+
 /**
  * Serialise form fields into a canonical YAML frontmatter block. Skips
  * ``null`` / empty values so we don't emit ``description: null`` noise.
@@ -132,7 +177,7 @@ function yamlEquals(a: Record<string, unknown>, b: Record<string, unknown>): boo
  */
 function parseLooseYaml(text: string): Record<string, unknown> | null {
   const out: Record<string, unknown> = {}
-  const lines = text.split(/\r?\n/)
+  const lines = normalizeYamlScalarContinuations(text).split(/\r?\n/)
   let currentKey: string | null = null
   let currentList: string[] | null = null
 
@@ -143,7 +188,7 @@ function parseLooseYaml(text: string): Record<string, unknown> | null {
 
     const listMatch = /^\s+-\s+(.*)$/.exec(line)
     if (currentList && listMatch) {
-      currentList.push(unquote(listMatch[1]))
+      currentList.push(unquoteYamlScalar(listMatch[1]))
       continue
     }
 
@@ -159,20 +204,9 @@ function parseLooseYaml(text: string): Record<string, unknown> | null {
       out[currentKey] = currentList
       continue
     }
-    out[currentKey] = coerceScalar(unquote(rawValue))
+    out[currentKey] = coerceScalar(unquoteYamlScalar(rawValue))
   }
   return out
-}
-
-function unquote(v: string): string {
-  const t = v.trim()
-  if (
-    (t.startsWith('"') && t.endsWith('"')) ||
-    (t.startsWith("'") && t.endsWith("'"))
-  ) {
-    return t.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\')
-  }
-  return t
 }
 
 function coerceScalar(v: string): unknown {

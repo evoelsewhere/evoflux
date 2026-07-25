@@ -37,7 +37,13 @@ import { cn } from '@/lib/utils'
 
 import { useAgentFilesQuery, useMcpServersQuery, useRegistryQuery } from '@/queries'
 import { MultiSelect, type MultiSelectOption } from './MultiSelect'
-import { combine, splitFrontmatter, type AgentFrontmatter } from './frontmatter'
+import {
+  combine,
+  normalizeYamlScalarContinuations,
+  splitFrontmatter,
+  unquoteYamlScalar,
+  type AgentFrontmatter,
+} from './frontmatter'
 import {
   parseTemperatureInput,
   validateAgentName,
@@ -963,7 +969,7 @@ function parseFormState(raw: string): {
  */
 function parseSimpleYaml(text: string): Record<string, unknown> {
   const out: Record<string, unknown> = {}
-  const lines = text.split(/\r?\n/)
+  const lines = normalizeYamlScalarContinuations(text).split(/\r?\n/)
   let currentKey: string | null = null
   let currentList: string[] | null = null
 
@@ -974,7 +980,7 @@ function parseSimpleYaml(text: string): Record<string, unknown> {
     // List continuation
     const listMatch = /^\s+-\s+(.*)$/.exec(line)
     if (currentList && listMatch) {
-      currentList.push(unquote(listMatch[1]))
+      currentList.push(unquoteYamlScalar(listMatch[1]))
       continue
     }
 
@@ -993,20 +999,9 @@ function parseSimpleYaml(text: string): Record<string, unknown> {
       out[currentKey] = currentList
       continue
     }
-    out[currentKey] = coerce(unquote(rawValue))
+    out[currentKey] = coerce(unquoteYamlScalar(rawValue))
   }
   return out
-}
-
-function unquote(v: string): string {
-  const t = v.trim()
-  if (
-    (t.startsWith('"') && t.endsWith('"')) ||
-    (t.startsWith("'") && t.endsWith("'"))
-  ) {
-    return t.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\')
-  }
-  return t
 }
 
 function coerce(v: string): unknown {
