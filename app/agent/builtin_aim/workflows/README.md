@@ -1,13 +1,14 @@
 # AIM pipeline library (builtin, scope: aim)
 
-Nine stack-agnostic AIM pipelines per `documents/research/aim-framework.md`
+Ten stack-agnostic AIM pipelines per `documents/research/aim-framework.md`
 §3.11/§4.1 (AIM-4), conforming to the live Workflows v1 schema
 (`documents/plans/workflows-feature-plan.md` §4.2) and discovered as a
 builtin root by `app/services/workflows_fs.py`:
 
 | Workflow | What it drives |
 |---|---|
-| `aim-assess` | inventory + wave plan, gated |
+| `aim-assess` | inventory + wave plan, gated, then optional suggestion plan |
+| `aim-suggest-workflow` | dependency-aware next-action board snapshot; no phase transitions |
 | `aim-understand` | selected unit + unresolved dependency closure → docs + candidate rules |
 | `aim-review-rules` | candidate rules → human confirmation or explicit no-rules evidence |
 | `aim-design-unit` | mapping → architect approval → designed |

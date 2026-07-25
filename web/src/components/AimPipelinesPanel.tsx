@@ -9,13 +9,13 @@
  * The run table joins each per-run session with its workflow execution
  * (GET /workflows/executions?session_ids=) so rows show the real outcome
  * (● running / ⏸ needs input / ✓ pass / ✗ fail / ◼ stopped), and every row
- * opens a Run Monitor side panel: the execution's node-by-node progress,
+ * opens a centered Run Monitor: the execution's node-by-node progress,
  * per-node debug output (the "log"), an inline gate answerer while the
  * workflow is waiting, and a Stop button. None of that is chat — post-run
  * Discussion stays the mode's only chat entry point.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 import {
@@ -31,6 +31,7 @@ import {
   CircleDashed,
   CirclePause,
   CircleX,
+  Clock3,
   CornerDownLeft,
   FileText,
   Loader2,
@@ -49,6 +50,7 @@ import {
 import {
   approveWorkflow,
   getAimReadiness,
+  getAimReadinessOptions,
   getAimRun,
   getExecution,
   getPendingQuestions,
@@ -70,6 +72,8 @@ import { resolveAimRolePath } from '@/lib/aim-kb'
 import { AimSidePanel } from '@/components/AimSidePanel'
 import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
+import { Skeleton } from '@/components/ui/skeleton'
 import { TeamChatView } from '@/components/TeamChatView'
 import { MarkdownBlock } from '@/utils/markdown'
 import { formatApprovalQuestion } from '@/utils/approvalQuestion'
@@ -118,12 +122,14 @@ function WorkflowInputField({
   onChange,
   unitOptions,
   waveOptions,
+  optionsLoading,
 }: {
   spec: WorkflowInputSpec
   value: unknown
   onChange: (value: unknown) => void
   unitOptions: { key: string; phase: string; kind: string; wave: number | null }[]
   waveOptions: { wave: number; count: number }[]
+  optionsLoading: boolean
 }) {
   const label = spec.name
     .split('_')
@@ -134,38 +140,29 @@ function WorkflowInputField({
     return (
       <label className="flex min-w-52 flex-col gap-1 text-xs text-(--color-text-muted)">
         {label}
-        {unitOptions.length > 0 ? (
-          <Combobox
-            size="sm"
-            value={(value as string) || null}
-            onValueChange={(v) => onChange(v ?? '')}
-            items={unitOptions.map((unit) => ({
-              value: unit.key,
-              label: unit.key,
-              meta: unit.phase,
-              description: `${unit.kind}${unit.wave === null ? '' : ` · wave ${unit.wave}`}`,
-              keywords: `${unit.kind} ${unit.phase} ${unit.wave ?? ''}`,
-            }))}
-            placeholder="Select a unit…"
-            emptyText="No unit matches."
-            ariaLabel={label}
-            searchPlaceholder="Search units…"
-            className="w-60"
-          />
-        ) : (
-          <input
-            type="text"
-            value={(value as string) ?? ''}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder="module/UNIT (run assess first)"
-            className="rounded-md border border-(--color-border) bg-(--bg-subtle) px-2 py-1.5 text-xs text-(--color-text) placeholder:text-(--color-text-muted)"
-          />
-        )}
+        <Combobox
+          size="sm"
+          value={(value as string) || null}
+          onValueChange={(v) => onChange(v ?? '')}
+          items={unitOptions.map((unit) => ({
+            value: unit.key,
+            label: unit.key,
+            meta: unit.phase,
+            description: `${unit.kind}${unit.wave === null ? '' : ` · wave ${unit.wave}`}`,
+            keywords: `${unit.kind} ${unit.phase} ${unit.wave ?? ''}`,
+          }))}
+          placeholder={optionsLoading ? 'Loading runnable units…' : 'Select a unit…'}
+          emptyText="No runnable units for this pipeline."
+          ariaLabel={label}
+          searchPlaceholder="Search runnable units…"
+          className="w-60"
+          disabled={optionsLoading}
+        />
       </label>
     )
   }
 
-  if (spec.name === 'wave' && waveOptions.length > 0) {
+  if (spec.name === 'wave') {
     const selectedWave =
       value !== undefined && value !== null && value !== '' ? String(value) : null
     return (
@@ -181,10 +178,11 @@ function WorkflowInputField({
             meta: `${option.count} units`,
             keywords: `${option.wave} ${option.count}`,
           }))}
-          placeholder="Select wave…"
-          emptyText="No wave matches."
+          placeholder={optionsLoading ? 'Loading runnable waves…' : 'Select wave…'}
+          emptyText="No runnable waves for this pipeline."
           ariaLabel={label}
-          searchPlaceholder="Search waves…"
+          searchPlaceholder="Search runnable waves…"
+          disabled={optionsLoading}
         />
       </label>
     )
@@ -415,31 +413,9 @@ export function AimPipelinesPanel({
     queryKey: queryKeys.projects.aimUnits(project.id, undefined),
     queryFn: () => listAimUnits(project.id),
     staleTime: 30_000,
+    refetchInterval: 5_000,
   })
   const units = useMemo(() => unitsQuery.data ?? [], [unitsQuery.data])
-  const unitOptions = useMemo(
-    () =>
-      units
-        .map((u) => ({
-          key: `${u.module}/${u.name}`,
-          phase: u.phase,
-          kind: u.kind,
-          wave: u.wave,
-        }))
-        .sort((a, b) => a.key.localeCompare(b.key)),
-    [units],
-  )
-  const waveOptions = useMemo(() => {
-    const counts = new Map<number, number>()
-    for (const unit of units) {
-      if (unit.wave === null) continue
-      counts.set(unit.wave, (counts.get(unit.wave) ?? 0) + 1)
-    }
-    return [...counts.entries()]
-      .sort(([left], [right]) => left - right)
-      .map(([wave, count]) => ({ wave, count }))
-  }, [units])
-
   const readinessInputs = useMemo(() => {
     const unit = typeof inputValues.unit === 'string' ? inputValues.unit.trim() : undefined
     const waveRaw = inputValues.wave
@@ -453,6 +429,82 @@ export function AimPipelinesPanel({
       typeof inputValues.overwrite === 'boolean' ? inputValues.overwrite : undefined
     return { unit: unit || undefined, wave, case_set: caseSet || undefined, overwrite }
   }, [inputValues])
+  const hasReadinessOptions = (selectedWorkflow?.inputs ?? []).some(
+    (spec) => spec.name === 'unit' || spec.name === 'wave',
+  )
+  const readinessOptionsQuery = useQuery({
+    queryKey: [
+      'aim-pipeline-options',
+      project.id,
+      selectedWorkflow?.name ?? '',
+      readinessInputs.case_set ?? '',
+      readinessInputs.overwrite ?? false,
+    ],
+    queryFn: () =>
+      getAimReadinessOptions(project.id, {
+        pipeline: selectedWorkflow!.name,
+        case_set: readinessInputs.case_set,
+        overwrite: readinessInputs.overwrite,
+      }),
+    enabled: Boolean(selectedWorkflow?.valid) && hasReadinessOptions,
+    staleTime: 2_000,
+    refetchInterval: hasReadinessOptions ? 5_000 : false,
+  })
+  const optionsLoading =
+    unitsQuery.isLoading ||
+    (readinessOptionsQuery.isFetching && readinessOptionsQuery.data === undefined)
+  const runnableUnits = useMemo(
+    () => new Set(readinessOptionsQuery.data?.units ?? []),
+    [readinessOptionsQuery.data?.units],
+  )
+  const unitOptions = useMemo(
+    () =>
+      units
+        .filter((unit) => runnableUnits.has(`${unit.module}/${unit.name}`))
+        .map((u) => ({
+          key: `${u.module}/${u.name}`,
+          phase: u.phase,
+          kind: u.kind,
+          wave: u.wave,
+        }))
+        .sort((a, b) => a.key.localeCompare(b.key)),
+    [runnableUnits, units],
+  )
+  const waveOptions = useMemo(() => {
+    const runnableWaves = new Set(readinessOptionsQuery.data?.waves ?? [])
+    const counts = new Map<number, number>()
+    for (const unit of units) {
+      if (unit.wave === null || !runnableWaves.has(unit.wave)) continue
+      counts.set(unit.wave, (counts.get(unit.wave) ?? 0) + 1)
+    }
+    return [...counts.entries()]
+      .sort(([left], [right]) => left - right)
+      .map(([wave, count]) => ({ wave, count }))
+  }, [readinessOptionsQuery.data?.waves, units])
+
+  useEffect(() => {
+    const options = readinessOptionsQuery.data
+    if (!options || !pipelineName) return
+    const hasUnitInput = (selectedWorkflow?.inputs ?? []).some((spec) => spec.name === 'unit')
+    const hasWaveInput = (selectedWorkflow?.inputs ?? []).some((spec) => spec.name === 'wave')
+    setInputValuesByPipeline((previous) => {
+      const values = previous[pipelineName] ?? {}
+      const unit = typeof values.unit === 'string' ? values.unit : ''
+      const wave = values.wave === undefined || values.wave === '' ? null : Number(values.wave)
+      const clearUnit = hasUnitInput && unit !== '' && !options.units.includes(unit)
+      const clearWave =
+        hasWaveInput && wave !== null && !Number.isNaN(wave) && !options.waves.includes(wave)
+      if (!clearUnit && !clearWave) return previous
+      return {
+        ...previous,
+        [pipelineName]: {
+          ...values,
+          ...(clearUnit ? { unit: '' } : {}),
+          ...(clearWave ? { wave: '' } : {}),
+        },
+      }
+    })
+  }, [pipelineName, readinessOptionsQuery.data, selectedWorkflow])
 
   const requiredInputsPresent = (selectedWorkflow?.inputs ?? []).every((spec) => {
     if (!spec.required) return true
@@ -513,15 +565,42 @@ export function AimPipelinesPanel({
     }
     return map
   }, [executionsQuery.data])
+  const previousExecutionStatuses = useRef<Map<string, string> | null>(null)
+  useEffect(() => {
+    const executions = executionsQuery.data?.executions
+    if (!executions) return
+    const previous = previousExecutionStatuses.current
+    const current = new Map(executions.map((execution) => [execution.id, execution.status]))
+    previousExecutionStatuses.current = current
+    if (previous === null) return
+    const executionChanged = executions.some(
+      (execution) => previous.get(execution.id) !== execution.status,
+    )
+    const executionSettled = executions.some((execution) => {
+      if (execution.status === 'running' || execution.status === 'waiting_gate') return false
+      return previous.get(execution.id) !== execution.status
+    })
+    if (executionChanged) {
+      void queryClient.invalidateQueries({ queryKey: ['aim-pipeline-options', project.id] })
+      void queryClient.invalidateQueries({ queryKey: ['aim-pipeline-readiness', project.id] })
+    }
+    if (executionSettled) {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.projects.aimUnits(project.id, undefined),
+      })
+    }
+  }, [executionsQuery.data?.executions, project.id, queryClient])
   const runSummary = useMemo(() => {
     let active = 0
     let attention = 0
+    let completed = 0
     for (const run of runs) {
       const status = displayStatus(Boolean(run.running), executionBySession.get(run.id))
       if (status === 'running' || status === 'waiting_gate') active += 1
       if (status === 'failed' || status === 'interrupted') attention += 1
+      if (status === 'completed' || status === 'done') completed += 1
     }
-    return { total: runs.length, active, attention }
+    return { total: runs.length, active, attention, completed }
   }, [executionBySession, runs])
 
   // Runs & Reports folded in here: not every pipeline run produces an
@@ -620,6 +699,8 @@ export function AimPipelinesPanel({
       )
       void queryClient.invalidateQueries({ queryKey: queryKeys.team.sessions.project(project.id) })
       void queryClient.invalidateQueries({ queryKey: ['aim-run-executions', project.id] })
+      void queryClient.invalidateQueries({ queryKey: ['aim-pipeline-options', project.id] })
+      void queryClient.invalidateQueries({ queryKey: ['aim-pipeline-readiness', project.id] })
       // Open the monitor right away — the whole point is watching it run.
       setDiscussion(null)
       setReportRun(null)
@@ -663,6 +744,8 @@ export function AimPipelinesPanel({
         void queryClient.invalidateQueries({
           queryKey: queryKeys.team.sessions.project(project.id),
         })
+        void queryClient.invalidateQueries({ queryKey: ['aim-pipeline-options', project.id] })
+        void queryClient.invalidateQueries({ queryKey: ['aim-pipeline-readiness', project.id] })
         setDiscussion(null)
         setReportRun(null)
         setMonitorSession({ id: run.id, title: run.title, running: true })
@@ -695,23 +778,27 @@ export function AimPipelinesPanel({
         <div className="flex flex-wrap items-end gap-2 border-b border-(--color-border) p-4">
           <label className="flex w-full min-w-0 flex-col gap-1 text-xs text-(--color-text-muted) sm:w-auto">
             Pipeline
-            <Combobox
-              size="sm"
-              value={pipelineName}
-              onValueChange={setPipelineName}
-              items={aimWorkflows.map((wf) => ({
-                value: wf.name,
-                label: pipelineDisplayName(wf.name),
-                description: wf.description,
-                meta: `${wf.node_count} nodes · ${wf.root}`,
-                keywords: `${wf.name} ${wf.scope}`,
-              }))}
-              placeholder={workflowsQ.isLoading ? 'Loading…' : 'Select a pipeline…'}
-              emptyText="No pipelines found."
-              ariaLabel="Pipeline"
-              searchPlaceholder="Search pipelines…"
-              className="w-full sm:w-[320px]"
-            />
+            {workflowsQ.isLoading ? (
+              <Skeleton className="h-7 w-full sm:w-[320px]" aria-label="Loading pipelines" />
+            ) : (
+              <Combobox
+                size="sm"
+                value={pipelineName}
+                onValueChange={setPipelineName}
+                items={aimWorkflows.map((wf) => ({
+                  value: wf.name,
+                  label: pipelineDisplayName(wf.name),
+                  description: wf.description,
+                  meta: `${wf.node_count} nodes · ${wf.root}`,
+                  keywords: `${wf.name} ${wf.scope}`,
+                }))}
+                placeholder="Select a pipeline…"
+                emptyText="No pipelines found."
+                ariaLabel="Pipeline"
+                searchPlaceholder="Search pipelines…"
+                className="w-full sm:w-[320px]"
+              />
+            )}
           </label>
           {(selectedWorkflow?.inputs ?? []).map((spec) => (
             <WorkflowInputField
@@ -721,6 +808,7 @@ export function AimPipelinesPanel({
               onChange={(value) => setInputValue(spec.name, value)}
               unitOptions={unitOptions}
               waveOptions={waveOptions}
+              optionsLoading={optionsLoading}
             />
           ))}
           <Button size="sm" onClick={() => handleRun()} disabled={!canRun || starting}>
@@ -734,42 +822,57 @@ export function AimPipelinesPanel({
         <PipelineInfoCard
           workflow={selectedWorkflow}
           graph={detailQ.data?.graph}
+          graphLoading={detailQ.isLoading}
           readiness={readinessQuery.data}
           readinessLoading={readinessInitialLoading}
         />
 
         {/* Run table */}
-        <div className="min-h-0 flex-1 overflow-auto p-4">
+        <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain p-4">
           {sessionsQuery.isLoading ? (
-            <p className="text-xs text-(--color-text-subtle)">Loading runs…</p>
+            <RunHistorySkeleton />
           ) : runs.length === 0 ? (
             <p className="text-xs text-(--color-text-subtle)">
               No runs yet — pick a pipeline and hit Run.
             </p>
           ) : (
-            <section className="overflow-hidden rounded-md border border-(--color-border) bg-(--bg-page)">
+            <section className="min-w-0 overflow-hidden rounded-md border border-(--color-border) bg-(--bg-page)">
               <div
                 className={cn(
-                  'flex min-h-11 flex-wrap items-center justify-between gap-2 bg-(--bg-subtle)/45 px-3 py-2',
+                  'flex min-h-12 flex-wrap items-center justify-between gap-2 bg-(--bg-key)/45 px-3 py-2.5',
                   !runHistoryCollapsed && 'border-b border-(--color-border)',
                 )}
               >
-                <div>
-                  <p className="text-xs font-medium text-(--color-text)">Run history</p>
-                  <p className="font-mono text-[9px] text-(--color-text-subtle)">
-                    latest {runSummary.total} attempts
-                  </p>
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-(--color-border) bg-(--bg-page) text-(--color-text-muted)">
+                    <Activity size={13} aria-hidden="true" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-(--color-text)">Run history</p>
+                    <p className="truncate text-[9px] text-(--color-text-subtle)">
+                      Workflow attempts, outcomes, reports, and discussions
+                    </p>
+                  </div>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <div className="flex items-center gap-1.5 text-[9px]">
+                  <div className="flex flex-wrap items-center justify-end gap-1 text-[9px]">
+                    <span className="inline-flex items-center gap-1 rounded border border-(--color-border) bg-(--bg-page) px-1.5 py-0.5 text-(--color-text-muted)">
+                      {runSummary.total} attempts
+                    </span>
                     {runSummary.active > 0 && (
-                      <span className="inline-flex items-center gap-1 rounded border border-(--color-accent)/25 bg-(--color-accent)/5 px-1.5 py-0.5 text-(--color-accent)">
+                      <span className="inline-flex items-center gap-1 rounded border border-(--color-info)/30 bg-(--color-info-subtle)/35 px-1.5 py-0.5 text-(--color-info)">
                         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />
                         {runSummary.active} active
                       </span>
                     )}
+                    {runSummary.completed > 0 && (
+                      <span className="inline-flex items-center gap-1 rounded border border-(--color-success)/25 bg-(--color-success-subtle)/25 px-1.5 py-0.5 text-(--color-success)">
+                        <CircleCheck size={9} />
+                        {runSummary.completed} completed
+                      </span>
+                    )}
                     {runSummary.attention > 0 && (
-                      <span className="inline-flex items-center gap-1 rounded border border-(--color-error)/25 bg-(--color-error)/5 px-1.5 py-0.5 text-(--color-error)">
+                      <span className="inline-flex items-center gap-1 rounded border border-(--color-error)/25 bg-(--color-error-subtle)/40 px-1.5 py-0.5 text-(--color-error)">
                         <CircleAlert size={9} />
                         {runSummary.attention} attention
                       </span>
@@ -793,25 +896,17 @@ export function AimPipelinesPanel({
                 </div>
               </div>
               {!runHistoryCollapsed && (
-              <div id="aim-run-history-table" className="overflow-x-auto">
-                <table className="w-full min-w-[760px] table-fixed text-left text-xs">
-                  <colgroup>
-                    <col className="w-[42%]" />
-                    <col className="w-[18%]" />
-                    <col className="w-[16%]" />
-                    <col className="w-[10%]" />
-                    <col className="w-[14%]" />
-                  </colgroup>
-                  <thead className="bg-(--bg-subtle)/25">
-                    <tr className="h-8 text-[9px] uppercase text-(--color-text-subtle)">
-                      <th className="px-3 font-medium">Run</th>
-                      <th className="px-2 font-medium">State</th>
-                      <th className="px-2 font-medium">Started</th>
-                      <th className="px-2 font-medium">Duration</th>
-                      <th className="px-2 text-right font-medium">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+              <div id="aim-run-history-table" role="table" aria-label="Run history" className="min-w-0">
+                <div
+                  role="row"
+                  className="hidden min-h-8 grid-cols-[minmax(0,2.1fr)_minmax(9.5rem,.8fr)_minmax(10.5rem,.85fr)_auto] items-center border-b border-(--color-border) bg-(--bg-subtle)/30 px-3 text-[9px] font-medium uppercase text-(--color-text-subtle) md:grid"
+                >
+                  <span role="columnheader">Run</span>
+                  <span role="columnheader">Outcome</span>
+                  <span role="columnheader">Timing</span>
+                  <span role="columnheader" className="text-right">Actions</span>
+                </div>
+                <div role="rowgroup" className="divide-y divide-(--color-border)">
                     {runs.map((run) => {
                       const aimRun = runBySessionId.get(run.id)
                       return (
@@ -857,8 +952,7 @@ export function AimPipelinesPanel({
                         />
                       )
                     })}
-                  </tbody>
-                </table>
+                </div>
               </div>
               )}
             </section>
@@ -876,6 +970,7 @@ export function AimPipelinesPanel({
             title={liveRun.title}
             sessionRunning={Boolean(liveRun.running)}
             executionId={executionBySession.get(liveRun.id)?.id}
+            workspace={targetWorkspace}
             onClose={() => setMonitorSession(null)}
             onDiscuss={() => {
               setMonitorSession(null)
@@ -917,10 +1012,14 @@ export function AimPipelinesPanel({
       {/* Post-run Discussion — TeamChatView is a global singleton; exactly one
           instance, mounted only while a finished run's transcript is open. */}
       {discussion && !monitorSession && !reportRun && (
-        <AimSidePanel storageKey={STORAGE_KEYS.panels.aimDiscussion} defaultWidth={420}>
+        <Dialog open onOpenChange={(open) => { if (!open) setDiscussion(null) }}>
+          <DialogContent
+            showCloseButton={false}
+            className="flex h-[calc(100dvh-1rem)] min-w-0 w-[calc(100vw-1rem)] max-w-none flex-col gap-0 overflow-hidden rounded-lg bg-(--bg-page) p-0 shadow-xl sm:h-[min(820px,calc(100dvh-2rem))] sm:w-[min(1100px,calc(100vw-2rem))] sm:max-w-none"
+          >
           <header className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-4 py-3">
             <div className="min-w-0">
-              <h2 className="text-sm font-semibold text-(--color-text)">Discussion</h2>
+              <DialogTitle className="text-sm font-semibold text-(--color-text)">Discussion</DialogTitle>
               <p className="mt-0.5 truncate text-xs text-(--color-text-subtle)">
                 {discussion.title ?? discussion.id.slice(0, 8)}
               </p>
@@ -935,14 +1034,15 @@ export function AimPipelinesPanel({
               <X size={16} />
             </button>
           </header>
-          <div className="min-h-0 flex-1 overflow-hidden">
+          <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
             <TeamChatView
               sessionId={discussion.id}
               mode="aim"
               workspace={discussion.workspace ?? null}
             />
           </div>
-        </AimSidePanel>
+          </DialogContent>
+        </Dialog>
       )}
 
       {/* §9.3 — Confirm dialog for convert pipelines (write to target repo) */}
@@ -1026,6 +1126,66 @@ interface WorkflowCanvasEdge {
   from: string
   to: string
   when?: string
+}
+
+type WorkflowRuntimeStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped'
+
+function parseWorkflowCanvasGraph(graph: Record<string, unknown> | undefined): {
+  nodes: WorkflowCanvasNode[]
+  edges: WorkflowCanvasEdge[]
+} {
+  const nodes = Array.isArray(graph?.nodes)
+    ? (graph.nodes as Array<Record<string, unknown>>)
+        .filter((node) => typeof node?.id === 'string' && typeof node?.kind === 'string')
+        .map((node): WorkflowCanvasNode => ({
+          id: node.id as string,
+          kind: node.kind as string,
+          tool: typeof node.tool === 'string' ? node.tool : undefined,
+          title: typeof node.title === 'string' ? node.title : undefined,
+          prompt: typeof node.prompt === 'string' ? node.prompt : undefined,
+          body: typeof node.body === 'string' ? node.body : undefined,
+          message: typeof node.message === 'string' ? node.message : undefined,
+          question: typeof node.question === 'string' ? node.question : undefined,
+          items: typeof node.items === 'string' ? node.items : undefined,
+          value: typeof node.value === 'string' ? node.value : undefined,
+          choices: Array.isArray(node.choices)
+            ? node.choices.filter((choice): choice is string => typeof choice === 'string')
+            : undefined,
+          subagents: Array.isArray(node.subagents)
+            ? node.subagents.filter((agent): agent is string => typeof agent === 'string')
+            : undefined,
+          args:
+            typeof node.args === 'object' && node.args !== null
+              ? (node.args as Record<string, unknown>)
+              : undefined,
+        }))
+    : []
+  const nodeIds = new Set(nodes.map((node) => node.id))
+  const edges = Array.isArray(graph?.edges)
+    ? (graph.edges as Array<{ from?: string; to?: string; when?: string }>)
+        .filter(
+          (edge) =>
+            typeof edge?.from === 'string' &&
+            typeof edge?.to === 'string' &&
+            nodeIds.has(edge.from) &&
+            nodeIds.has(edge.to),
+        )
+        .map((edge) => ({
+          from: edge.from as string,
+          to: edge.to as string,
+          when: typeof edge.when === 'string' ? edge.when : undefined,
+        }))
+    : []
+  return { nodes, edges }
+}
+
+function aggregateNodeRunStatus(nodeRuns: WorkflowNodeRun[]): WorkflowRuntimeStatus {
+  if (nodeRuns.length === 0) return 'pending'
+  if (nodeRuns.some((run) => run.status === 'running')) return 'running'
+  if (nodeRuns.some((run) => run.status === 'failed')) return 'failed'
+  if (nodeRuns.every((run) => run.status === 'skipped')) return 'skipped'
+  if (nodeRuns.some((run) => run.status === 'succeeded')) return 'succeeded'
+  return 'pending'
 }
 
 interface PositionedWorkflowNode extends WorkflowCanvasNode {
@@ -1156,6 +1316,36 @@ function workflowNodeIconTone(kind: string): string {
   }
 }
 
+function runtimeNodeTone(status: WorkflowRuntimeStatus): string {
+  switch (status) {
+    case 'running':
+      return 'border-(--color-accent) bg-(--color-accent)/10 ring-2 ring-(--color-accent)/25 shadow-[0_0_24px_color-mix(in_srgb,var(--color-accent)_18%,transparent)]'
+    case 'succeeded':
+      return 'border-(--color-success)/60 bg-(--color-success-bg,var(--bg-card))'
+    case 'failed':
+      return 'border-(--color-error)/70 bg-(--color-error-subtle,var(--bg-card))'
+    case 'skipped':
+      return 'border-(--color-border) bg-(--bg-subtle) opacity-55'
+    default:
+      return 'border-(--color-border) bg-(--bg-card)'
+  }
+}
+
+function runtimeStatusTone(status: WorkflowRuntimeStatus): string {
+  switch (status) {
+    case 'running':
+      return 'bg-(--color-accent) text-(--color-text-on-accent)'
+    case 'succeeded':
+      return 'bg-(--color-success) text-white'
+    case 'failed':
+      return 'bg-(--color-error) text-white'
+    case 'skipped':
+      return 'bg-(--color-text-subtle) text-(--bg-page)'
+    default:
+      return 'bg-(--bg-key) text-(--color-text-subtle)'
+  }
+}
+
 function workflowNodeSummary(node: WorkflowCanvasNode): string {
   switch (node.kind) {
     case 'agent':
@@ -1257,28 +1447,77 @@ function orthogonalWorkflowEdge(
 function WorkflowCanvasPreview({
   nodes,
   edges,
+  nodeRuns = [],
+  runtime = false,
+  collapsible = true,
 }: {
   nodes: WorkflowCanvasNode[]
   edges: WorkflowCanvasEdge[]
+  nodeRuns?: WorkflowNodeRun[]
+  runtime?: boolean
+  collapsible?: boolean
 }) {
+  const markerPrefix = useId().replace(/:/g, '')
   const viewportRef = useRef<HTMLDivElement>(null)
-  const [zoom, setZoom] = useState(0.82)
+  const lastFocusedRuntimeNodeRef = useRef<string | null>(null)
+  const [zoom, setZoom] = useState(() => (runtime ? 0.9 : 0.82))
   const [collapsed, setCollapsed] = useState(false)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const layout = useMemo(() => layoutWorkflowGraph(nodes, edges), [edges, nodes])
+  const canvasHeight = runtime ? 320 : WORKFLOW_VIEWPORT_HEIGHT
   const nodeById = useMemo(
     () => new Map(layout.nodes.map((node) => [node.id, node])),
     [layout.nodes],
   )
-  const selectedNode = selectedNodeId
-    ? (nodes.find((node) => node.id === selectedNodeId) ?? null)
+  const runsByNode = useMemo(() => {
+    const grouped = new Map<string, WorkflowNodeRun[]>()
+    for (const run of nodeRuns) {
+      grouped.set(run.node_id, [...(grouped.get(run.node_id) ?? []), run])
+    }
+    return grouped
+  }, [nodeRuns])
+  const statusByNode = useMemo(
+    () =>
+      new Map(
+        nodes.map((node) => [
+          node.id,
+          aggregateNodeRunStatus(runsByNode.get(node.id) ?? []),
+        ]),
+      ),
+    [nodes, runsByNode],
+  )
+  const runningNodeId = runtime
+    ? (nodes.find((node) => statusByNode.get(node.id) === 'running')?.id ?? null)
     : null
+  const effectiveSelectedNodeId = selectedNodeId ?? runningNodeId
+  const selectedNode = effectiveSelectedNodeId
+    ? (nodes.find((node) => node.id === effectiveSelectedNodeId) ?? null)
+    : null
+  const selectedNodeRuns = selectedNode ? (runsByNode.get(selectedNode.id) ?? []) : []
   const incomingEdges = selectedNode
     ? edges.filter((edge) => edge.to === selectedNode.id)
     : []
   const outgoingEdges = selectedNode
     ? edges.filter((edge) => edge.from === selectedNode.id)
     : []
+
+  useEffect(() => {
+    if (!runtime) return
+    const runningNode = layout.nodes.find(
+      (node) => statusByNode.get(node.id) === 'running',
+    )
+    if (!runningNode || lastFocusedRuntimeNodeRef.current === runningNode.id) return
+    lastFocusedRuntimeNodeRef.current = runningNode.id
+    const viewport = viewportRef.current
+    if (!viewport) return
+    const nodeCenterX = (runningNode.x + WORKFLOW_NODE_WIDTH / 2) * zoom
+    const nodeCenterY = (runningNode.y + WORKFLOW_NODE_HEIGHT / 2) * zoom
+    viewport.scrollTo({
+      left: Math.max(0, nodeCenterX - viewport.clientWidth / 2),
+      top: Math.max(0, nodeCenterY - viewport.clientHeight / 2),
+      behavior: 'smooth',
+    })
+  }, [layout.nodes, runtime, statusByNode, zoom])
 
   const fit = () => {
     const viewportWidth = viewportRef.current?.clientWidth ?? layout.width
@@ -1295,7 +1534,7 @@ function WorkflowCanvasPreview({
         )}
       >
         <span className="font-mono text-[9px] text-(--color-text-subtle)">
-          graph · {nodes.length} nodes · {edges.length} routes
+          {runtime ? 'execution graph' : 'graph'} · {nodes.length} nodes · {edges.length} routes
         </span>
         <div className="flex items-center gap-0.5">
           {!collapsed && (
@@ -1332,7 +1571,7 @@ function WorkflowCanvasPreview({
           </button>
             </>
           )}
-          <button
+          {collapsible && <button
             type="button"
             onClick={() => setCollapsed((value) => !value)}
             aria-expanded={!collapsed}
@@ -1346,7 +1585,7 @@ function WorkflowCanvasPreview({
               <ChevronDown size={10} aria-hidden="true" />
             )}
             {collapsed ? 'Expand' : 'Collapse'}
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -1354,7 +1593,7 @@ function WorkflowCanvasPreview({
       <div id="workflow-canvas-content">
       <div
         ref={viewportRef}
-        className="h-[272px] overflow-auto"
+        className={cn('overflow-auto', runtime ? 'h-[320px]' : 'h-[272px]')}
         style={{
           backgroundImage:
             'radial-gradient(color-mix(in srgb, var(--color-border) 80%, transparent) 1px, transparent 1px)',
@@ -1365,7 +1604,7 @@ function WorkflowCanvasPreview({
           className="relative"
           style={{
             width: layout.width * zoom,
-            height: Math.max(WORKFLOW_VIEWPORT_HEIGHT, layout.height * zoom),
+            height: Math.max(canvasHeight, layout.height * zoom),
           }}
         >
           <div
@@ -1373,7 +1612,7 @@ function WorkflowCanvasPreview({
             style={{
               width: layout.width,
               height: layout.height,
-              top: Math.max(0, (WORKFLOW_VIEWPORT_HEIGHT - layout.height * zoom) / 2),
+              top: Math.max(0, (canvasHeight - layout.height * zoom) / 2),
               transform: `scale(${zoom})`,
             }}
           >
@@ -1384,7 +1623,7 @@ function WorkflowCanvasPreview({
             >
               <defs>
                 <marker
-                  id="workflow-edge-arrow"
+                  id={`${markerPrefix}-edge-arrow`}
                   markerWidth="8"
                   markerHeight="8"
                   refX="7"
@@ -1394,7 +1633,7 @@ function WorkflowCanvasPreview({
                   <path d="M0,0 L8,4 L0,8 Z" fill="var(--color-text-muted)" />
                 </marker>
                 <marker
-                  id="workflow-edge-arrow-branch"
+                  id={`${markerPrefix}-edge-arrow-branch`}
                   markerWidth="8"
                   markerHeight="8"
                   refX="7"
@@ -1428,6 +1667,20 @@ function WorkflowCanvasPreview({
                   outerLaneY,
                 )
                 const conditional = Boolean(edge.when && edge.when !== '*')
+                const sourceStatus = statusByNode.get(edge.from) ?? 'pending'
+                const targetStatus = statusByNode.get(edge.to) ?? 'pending'
+                const runtimeStroke =
+                  targetStatus === 'running'
+                    ? 'var(--color-accent)'
+                    : targetStatus === 'failed'
+                      ? 'var(--color-error)'
+                      : targetStatus === 'succeeded'
+                        ? 'var(--color-success)'
+                        : targetStatus === 'skipped'
+                          ? 'var(--color-text-subtle)'
+                          : sourceStatus === 'succeeded'
+                            ? 'var(--color-text-muted)'
+                            : 'var(--color-border-strong)'
                 const connected = Boolean(
                   selectedNode &&
                     (edge.from === selectedNode.id || edge.to === selectedNode.id),
@@ -1440,16 +1693,27 @@ function WorkflowCanvasPreview({
                     <path
                       d={routed.path}
                       fill="none"
-                      stroke={conditional ? 'var(--color-warning)' : 'var(--color-text-muted)'}
-                      strokeOpacity={conditional ? 0.82 : 0.68}
-                      strokeWidth={connected ? 2 : 1.35}
+                      stroke={runtime ? runtimeStroke : conditional ? 'var(--color-warning)' : 'var(--color-text-muted)'}
+                      strokeDasharray={runtime && (targetStatus === 'running' || targetStatus === 'skipped') ? '7 5' : undefined}
+                      strokeOpacity={runtime && targetStatus === 'pending' ? 0.42 : conditional ? 0.82 : 0.76}
+                      strokeWidth={targetStatus === 'running' || connected ? 2.25 : 1.35}
                       strokeLinejoin="round"
                       markerEnd={
                         conditional
-                          ? 'url(#workflow-edge-arrow-branch)'
-                          : 'url(#workflow-edge-arrow)'
+                          ? `url(#${markerPrefix}-edge-arrow-branch)`
+                          : `url(#${markerPrefix}-edge-arrow)`
                       }
-                    />
+                    >
+                      {runtime && targetStatus === 'running' && (
+                        <animate
+                          attributeName="stroke-dashoffset"
+                          from="24"
+                          to="0"
+                          dur="0.9s"
+                          repeatCount="indefinite"
+                        />
+                      )}
+                    </path>
                     {conditional && (
                       <text
                         x={routed.labelX}
@@ -1471,7 +1735,9 @@ function WorkflowCanvasPreview({
               })}
             </svg>
 
-            {layout.nodes.map((node) => (
+            {layout.nodes.map((node) => {
+              const runtimeStatus = statusByNode.get(node.id) ?? 'pending'
+              return (
               <button
                 type="button"
                 key={node.id}
@@ -1481,7 +1747,7 @@ function WorkflowCanvasPreview({
                 aria-pressed={selectedNode?.id === node.id}
                 className={cn(
                   'absolute rounded-lg border bg-(--bg-card) text-left shadow-sm outline-none transition-[border-color,box-shadow,opacity] hover:border-(--color-border-strong) focus-visible:ring-2 focus-visible:ring-(--focus-ring)/40',
-                  workflowNodeTone(node.kind),
+                  runtime ? runtimeNodeTone(runtimeStatus) : workflowNodeTone(node.kind),
                   selectedNode?.id === node.id
                     ? 'ring-2 ring-(--color-accent)/35 shadow-md'
                     : selectedNode && 'opacity-80 hover:opacity-100',
@@ -1494,8 +1760,8 @@ function WorkflowCanvasPreview({
                 }}
                 title={`Inspect ${node.id}`}
               >
-                <span className="absolute -left-[5px] top-[28px] h-2.5 w-2.5 rounded-full border-2 border-(--bg-page) bg-(--color-text-muted) shadow-sm" />
-                <span className={cn('absolute -right-[5px] top-[28px] h-2.5 w-2.5 rounded-full border-2 border-(--bg-page) shadow-sm', workflowNodeAccent(node.kind))} />
+                <span className={cn('absolute -left-[5px] top-[28px] h-2.5 w-2.5 rounded-full border-2 border-(--bg-page) shadow-sm', runtime ? runtimeStatusTone(runtimeStatus) : 'bg-(--color-text-muted)')} />
+                <span className={cn('absolute -right-[5px] top-[28px] h-2.5 w-2.5 rounded-full border-2 border-(--bg-page) shadow-sm', runtime ? runtimeStatusTone(runtimeStatus) : workflowNodeAccent(node.kind))} />
                 <span className="flex h-full min-w-0 items-center gap-2.5 px-3">
                   <span
                     className={cn(
@@ -1506,8 +1772,13 @@ function WorkflowCanvasPreview({
                     <NodeKindIcon kind={node.kind} />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block text-[8px] font-semibold uppercase text-(--color-text-subtle)">
-                      {node.kind}
+                    <span className="flex items-center justify-between gap-1 text-[8px] font-semibold uppercase text-(--color-text-subtle)">
+                      <span>{node.kind}</span>
+                      {runtime && (
+                        <span className={cn('rounded px-1 py-px text-[7px]', runtimeStatusTone(runtimeStatus))}>
+                          {runtimeStatus}
+                        </span>
+                      )}
                     </span>
                     <span className="mt-0.5 line-clamp-2 block font-mono text-[11px] font-semibold leading-3.5 text-(--color-text)">
                       {node.id}
@@ -1518,7 +1789,8 @@ function WorkflowCanvasPreview({
                   </span>
                 </span>
               </button>
-            ))}
+              )
+            })}
           </div>
         </div>
       </div>
@@ -1600,6 +1872,19 @@ function WorkflowCanvasPreview({
             </div>
           )}
 
+          {runtime && selectedNodeRuns.length > 0 && (
+            <div className="mt-2 overflow-hidden rounded border border-(--color-border) bg-(--bg-page)">
+              <div className="border-b border-(--color-border) px-2 py-1.5 text-[9px] font-semibold uppercase text-(--color-text-subtle)">
+                Run details · {selectedNodeRuns.length} attempt{selectedNodeRuns.length === 1 ? '' : 's'}
+              </div>
+              <div className="max-h-48 overflow-auto px-2 py-1">
+                {selectedNodeRuns.map((run) => (
+                  <NodeRunRow key={run.id} node={run} />
+                ))}
+              </div>
+            </div>
+          )}
+
           {workflowNodeInstruction(selectedNode) && (
             <details className="mt-2 rounded border border-(--color-border) bg-(--bg-page)">
               <summary className="cursor-pointer px-2 py-1.5 text-[9px] font-medium text-(--color-text-muted)">
@@ -1632,11 +1917,13 @@ function WorkflowCanvasPreview({
 function PipelineInfoCard({
   workflow,
   graph,
+  graphLoading,
   readiness,
   readinessLoading,
 }: {
   workflow: WorkflowListItem | undefined
   graph: Record<string, unknown> | undefined
+  graphLoading: boolean
   readiness: AimReadiness | undefined
   readinessLoading: boolean
 }) {
@@ -1644,48 +1931,7 @@ function PipelineInfoCard({
   const workflowInputs = workflow.inputs ?? []
   const workflowErrors = workflow.errors ?? []
   const readinessWarnings = readiness?.warnings ?? []
-  const nodes = Array.isArray(graph?.nodes)
-    ? (graph.nodes as Array<Record<string, unknown>>)
-        .filter((node) => typeof node?.id === 'string' && typeof node?.kind === 'string')
-        .map((node): WorkflowCanvasNode => ({
-          id: node.id as string,
-          kind: node.kind as string,
-          tool: typeof node.tool === 'string' ? node.tool : undefined,
-          title: typeof node.title === 'string' ? node.title : undefined,
-          prompt: typeof node.prompt === 'string' ? node.prompt : undefined,
-          body: typeof node.body === 'string' ? node.body : undefined,
-          message: typeof node.message === 'string' ? node.message : undefined,
-          question: typeof node.question === 'string' ? node.question : undefined,
-          items: typeof node.items === 'string' ? node.items : undefined,
-          value: typeof node.value === 'string' ? node.value : undefined,
-          choices: Array.isArray(node.choices)
-            ? node.choices.filter((choice): choice is string => typeof choice === 'string')
-            : undefined,
-          subagents: Array.isArray(node.subagents)
-            ? node.subagents.filter((agent): agent is string => typeof agent === 'string')
-            : undefined,
-          args:
-            typeof node.args === 'object' && node.args !== null
-              ? (node.args as Record<string, unknown>)
-              : undefined,
-        }))
-    : []
-  const nodeIds = new Set(nodes.map((node) => node.id))
-  const edges = Array.isArray(graph?.edges)
-    ? (graph.edges as Array<{ from?: string; to?: string; when?: string }>)
-        .filter(
-          (edge) =>
-            typeof edge?.from === 'string' &&
-            typeof edge?.to === 'string' &&
-            nodeIds.has(edge.from) &&
-            nodeIds.has(edge.to),
-        )
-        .map((edge) => ({
-          from: edge.from as string,
-          to: edge.to as string,
-          when: typeof edge.when === 'string' ? edge.when : undefined,
-        }))
-    : []
+  const { nodes, edges } = parseWorkflowCanvasGraph(graph)
   const gateCount = nodes.filter((n) => n.kind === 'gate' || n.kind === 'input').length
   const claimDependencies = readiness?.claim_dependencies ?? []
   const claimBlockerPrefix = 'selected unit(s) are owned by'
@@ -1707,7 +1953,9 @@ function PipelineInfoCard({
       </p>
 
       {/* Theme-aware DAG preview from the workflow's real nodes and edges. */}
-      {nodes.length > 0 && (
+      {graphLoading ? (
+        <WorkflowCanvasSkeleton />
+      ) : nodes.length > 0 && (
         <WorkflowCanvasPreview nodes={nodes} edges={edges} />
       )}
 
@@ -1731,7 +1979,10 @@ function PipelineInfoCard({
         )}
       </div>
       {readinessLoading ? (
-        <p className="text-[11px] text-(--color-text-subtle)">Checking prerequisites…</p>
+        <div className="space-y-2 rounded-md border border-(--color-border) px-2.5 py-2" aria-label="Checking pipeline prerequisites">
+          <Skeleton className="h-2.5 w-36" />
+          <Skeleton className="h-2.5 w-3/5" />
+        </div>
       ) : readiness ? (
         <div
           className={cn(
@@ -1746,6 +1997,36 @@ function PipelineInfoCard({
               ? `Ready · ${readiness.selected_count} unit(s) selected`
               : `Blocked · ${visibleBlockers.length + claimDependencies.length} prerequisite(s)`}
           </p>
+          {readiness.selected_count > 1 && (
+            <div className="mt-2 rounded-md border border-current/20 bg-(--bg-page)/70 px-2.5 py-2 text-(--color-text-2)">
+              <p className="font-medium">
+                {readiness.included_dependencies.length > 0
+                  ? `${readiness.included_dependencies.length} prerequisite unit(s) are included automatically`
+                  : `${readiness.selected_count} units are included in this run`}
+              </p>
+              <p className="mt-0.5 text-[9px] text-(--color-text-subtle)">
+                Execution order is left to right. Every listed unit may be changed by this run.
+              </p>
+              <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                {readiness.selected_units.map((unit, index) => (
+                  <span key={unit} className="inline-flex items-center gap-1">
+                    {index > 0 && <ArrowRight size={9} className="text-(--color-text-subtle)" />}
+                    <span
+                      className={cn(
+                        'rounded border px-1.5 py-0.5 font-mono text-[9px]',
+                        unit === readiness.primary_unit
+                          ? 'border-(--color-accent)/40 bg-(--color-accent)/10 text-(--color-text)'
+                          : 'border-(--color-border) bg-(--bg-subtle) text-(--color-text-muted)',
+                      )}
+                    >
+                      {unit}
+                      {unit === readiness.primary_unit ? ' · selected' : ''}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           {claimDependencies.length > 0 && (
             <div className="mt-2 space-y-1.5">
               {claimDependencies.map((dependency) => (
@@ -1809,15 +2090,75 @@ function PipelineInfoCard({
   )
 }
 
+function WorkflowCanvasSkeleton() {
+  return (
+    <div className="overflow-hidden rounded-md border border-(--color-border) bg-(--bg-subtle)/30 px-3 py-4" aria-label="Loading workflow graph">
+      <div className="flex min-w-[520px] items-center justify-between gap-3">
+        {Array.from({ length: 5 }, (_, index) => (
+          <div key={index} className="contents">
+            <div className="w-24 space-y-2 rounded-md border border-(--color-border) bg-(--bg-page) p-2">
+              <Skeleton className="h-2.5 w-2/3" />
+              <Skeleton className="h-2 w-full" />
+              <Skeleton className="h-2 w-1/2" />
+            </div>
+            {index < 4 && <Skeleton className="h-px min-w-5 flex-1 rounded-none" />}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function RunHistorySkeleton() {
+  return (
+    <section className="min-w-0 overflow-hidden rounded-md border border-(--color-border) bg-(--bg-page)" aria-label="Loading run history">
+      <div className="flex min-h-12 items-center justify-between gap-3 bg-(--bg-key)/45 px-3 py-2.5">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <Skeleton className="h-7 w-7 shrink-0" />
+          <div className="min-w-0 space-y-1.5">
+            <Skeleton className="h-3 w-20" />
+            <Skeleton className="h-2 w-40 max-w-full" />
+          </div>
+        </div>
+        <Skeleton className="h-6 w-20 shrink-0" />
+      </div>
+      <div className="hidden min-h-8 grid-cols-[minmax(0,2.1fr)_minmax(9.5rem,.8fr)_minmax(10.5rem,.85fr)_auto] items-center border-y border-(--color-border) bg-(--bg-subtle)/30 px-3 md:grid">
+        {[16, 18, 14, 12].map((width, index) => (
+          <Skeleton key={index} className={cn('h-2', index === 3 && 'justify-self-end')} style={{ width: `${width * 3}px` }} />
+        ))}
+      </div>
+      {Array.from({ length: 6 }, (_, index) => (
+        <div key={index} className="grid min-h-[84px] grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2 border-t border-(--color-border) px-3 py-3 first:border-t-0 md:grid-cols-[minmax(0,2.1fr)_minmax(9.5rem,.8fr)_minmax(10.5rem,.85fr)_auto] md:items-center md:gap-x-4">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <Skeleton className="h-8 w-8 shrink-0" />
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <Skeleton className="h-2.5" style={{ width: `${48 + (index % 3) * 13}%` }} />
+              <Skeleton className="h-2 w-3/5" />
+              <Skeleton className="h-3.5 w-2/5" />
+            </div>
+          </div>
+          <Skeleton className="col-span-2 h-6 w-20 md:col-span-1" />
+          <div className="col-span-2 flex gap-2 md:col-span-1 md:flex-col">
+            <Skeleton className="h-2.5 w-16" />
+            <Skeleton className="h-4 w-12" />
+          </div>
+          <Skeleton className="col-start-2 row-start-1 h-8 w-16 justify-self-end md:col-start-auto md:row-start-auto" />
+        </div>
+      ))}
+    </section>
+  )
+}
+
 // ── Run Monitor ───────────────────────────────────────────────────────────────
 
-/** Node progress + per-node debug log + inline gate for one run. Reused by
+/** Live workflow canvas + per-node debug detail + inline gate for one run. Reused by
  * Runs & Reports for finished runs (pass `executionId` directly). */
 export function RunMonitorPanel({
   sessionId,
   title,
   sessionRunning,
   executionId: knownExecutionId,
+  workspace,
   onClose,
   onDiscuss,
 }: {
@@ -1825,6 +2166,7 @@ export function RunMonitorPanel({
   title?: string | null
   sessionRunning: boolean
   executionId?: string | null
+  workspace?: string | null
   onClose: () => void
   onDiscuss?: () => void
 }) {
@@ -1864,6 +2206,17 @@ export function RunMonitorPanel({
   })
   const execution = detailQ.data?.execution
   const nodeRuns = detailQ.data?.node_runs ?? []
+  const workflowQ = useQuery({
+    queryKey: [
+      'aim-monitor-workflow-graph',
+      execution?.definition_name ?? '',
+      workspace ?? '',
+    ],
+    queryFn: () => getWorkflow(execution!.definition_name, workspace),
+    enabled: Boolean(execution?.definition_name),
+    staleTime: 60_000,
+  })
+  const runtimeGraph = parseWorkflowCanvasGraph(workflowQ.data?.graph)
   const status = displayStatus(sessionRunning, execution)
   const active = status === 'running' || status === 'waiting_gate'
   const completedNodeCount = nodeRuns.filter((node) =>
@@ -1889,12 +2242,11 @@ export function RunMonitorPanel({
   }
 
   return (
-    <AimSidePanel
-      storageKey={STORAGE_KEYS.panels.aimMonitor}
-      defaultWidth={500}
-      minWidth={340}
-      maxWidth={840}
-    >
+    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent
+        showCloseButton={false}
+        className="flex h-[calc(100dvh-1rem)] min-w-0 w-[calc(100vw-1rem)] max-w-none flex-col gap-0 overflow-hidden rounded-lg bg-(--bg-page) p-0 shadow-xl sm:h-[80dvh] sm:w-[86vw] sm:max-w-none"
+      >
       <div className="sticky top-0 z-10 border-b border-(--color-border) bg-(--bg-page)/95 backdrop-blur-sm">
         <div className="flex h-11 items-center justify-between gap-3 px-4">
           <div className="flex min-w-0 items-center gap-2.5">
@@ -1902,9 +2254,9 @@ export function RunMonitorPanel({
               <Activity size={13} aria-hidden="true" />
             </span>
             <div className="min-w-0">
-              <p className="text-[10px] font-semibold uppercase text-(--color-text-subtle)">
+              <DialogTitle className="text-[10px] font-semibold uppercase text-(--color-text-subtle)">
                 Run monitor
-              </p>
+              </DialogTitle>
               <p
                 className="truncate text-xs font-medium text-(--color-text)"
                 title={title ?? undefined}
@@ -1940,7 +2292,7 @@ export function RunMonitorPanel({
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {/* Execution summary */}
-        <section className="border-b border-(--color-border) bg-(--bg-subtle)/35 px-4 py-3">
+        <section className="border-b border-(--color-border) bg-(--bg-subtle)/35 px-4 py-2.5">
           {!execution ? (
             lookupExhausted ? (
               <div className="flex items-start gap-2 text-xs text-(--color-text-muted)">
@@ -1948,13 +2300,10 @@ export function RunMonitorPanel({
                 <span>No workflow execution is recorded for this run.</span>
               </div>
             ) : (
-              <div className="flex items-center gap-2 text-xs text-(--color-text-muted)">
-                <Loader2 size={13} className="animate-spin text-(--color-accent)" />
-                Waiting for the execution to register…
-              </div>
+              <RunExecutionSkeleton />
             )
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p
@@ -1974,7 +2323,7 @@ export function RunMonitorPanel({
                 </span>
               </div>
 
-              <div className="grid grid-cols-3 divide-x divide-(--color-border) border-y border-(--color-border) py-2">
+              <div className="grid grid-cols-3 divide-x divide-(--color-border) border-y border-(--color-border) py-1.5">
                 <div className="pr-2">
                   <p className="text-[9px] font-semibold uppercase text-(--color-text-subtle)">Elapsed</p>
                   <p className="mt-0.5 font-mono text-[11px] text-(--color-text-2)">
@@ -2049,22 +2398,47 @@ export function RunMonitorPanel({
           </div>
         )}
 
-        {/* Node-by-node progress + debug output. */}
-        {nodeRuns.length > 0 && (
-          <section className="border-b border-(--color-border) px-4 py-3">
+        {/* Live DAG from the workflow definition, overlaid with polled node-run state. */}
+        {execution && (
+          <section className="border-b border-(--color-border) px-4 py-2.5">
             <div className="mb-2 flex items-center justify-between gap-2">
               <p className="text-[10px] font-semibold uppercase text-(--color-text-subtle)">
-                Node timeline
+                Running canvas
               </p>
               <span className="font-mono text-[10px] text-(--color-text-subtle)">
-                {completedNodeCount}/{nodeRuns.length} settled
+                {completedNodeCount}/{runtimeGraph.nodes.length || nodeRuns.length} settled
               </span>
             </div>
-            <div className="relative ml-1 border-l border-(--color-border)">
-              {nodeRuns.map((node) => (
-                <NodeRunRow key={node.id} node={node} />
-              ))}
-            </div>
+            {workflowQ.isLoading ? (
+              <div className="h-[320px] space-y-3 rounded-md border border-(--color-border) bg-(--bg-subtle)/35 p-4" aria-label="Loading execution graph">
+                <div className="flex justify-between">
+                  <Skeleton className="h-2.5 w-36" />
+                  <Skeleton className="h-5 w-24" />
+                </div>
+                <div className="grid h-[250px] grid-cols-3 items-center gap-12 px-8">
+                  {Array.from({ length: 3 }, (_, index) => (
+                    <Skeleton key={index} className="h-16 rounded-lg" />
+                  ))}
+                </div>
+              </div>
+            ) : workflowQ.isError ? (
+              <div className="flex items-start gap-2 rounded-md border border-(--color-error)/35 bg-(--color-error-subtle,var(--bg-key)) px-3 py-3 text-xs text-(--color-error)">
+                <CircleAlert size={14} className="mt-0.5 shrink-0" />
+                <span>The workflow definition is unavailable, so its execution canvas cannot be rendered.</span>
+              </div>
+            ) : runtimeGraph.nodes.length > 0 ? (
+              <WorkflowCanvasPreview
+                nodes={runtimeGraph.nodes}
+                edges={runtimeGraph.edges}
+                nodeRuns={nodeRuns}
+                runtime
+                collapsible={false}
+              />
+            ) : (
+              <p className="rounded-md border border-(--color-border) px-3 py-4 text-xs text-(--color-text-subtle)">
+                This workflow has no graph nodes to display.
+              </p>
+            )}
           </section>
         )}
 
@@ -2080,7 +2454,8 @@ export function RunMonitorPanel({
           </div>
         )}
       </div>
-    </AimSidePanel>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -2257,7 +2632,8 @@ function ActivityLogSection({ sessionId, active }: { sessionId: string; active: 
     if (el) el.scrollTop = el.scrollHeight
   }, [lines.length, active])
 
-  if (historyQ.isLoading || lines.length === 0) return null
+  if (historyQ.isLoading) return <ActivityLogSkeleton />
+  if (lines.length === 0) return null
 
   const timeOf = (at: string): string => {
     const date = new Date(at)
@@ -2458,6 +2834,55 @@ function ActivityLogSection({ sessionId, active }: { sessionId: string; active: 
   )
 }
 
+function RunExecutionSkeleton() {
+  return (
+    <div className="space-y-3" aria-label="Loading workflow execution">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 space-y-1.5">
+          <Skeleton className="h-3 w-2/5" />
+          <Skeleton className="h-2.5 w-1/4" />
+        </div>
+        <Skeleton className="h-7 w-16" />
+      </div>
+      <div className="grid grid-cols-3 gap-3 border-y border-(--color-border) py-2">
+        {Array.from({ length: 3 }, (_, index) => (
+          <div key={index} className="space-y-1.5 px-2 first:pl-0 last:pr-0">
+            <Skeleton className="h-2 w-12" />
+            <Skeleton className="h-2.5 w-16" />
+          </div>
+        ))}
+      </div>
+      <Skeleton className="h-0.5 w-full rounded-full" />
+    </div>
+  )
+}
+
+function ActivityLogSkeleton() {
+  return (
+    <section className="px-4 py-3" aria-label="Loading event stream">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <Skeleton className="h-2.5 w-24" />
+        <Skeleton className="h-2.5 w-28" />
+      </div>
+      <div className="overflow-hidden rounded-md border border-(--color-border) bg-(--bg-subtle)/30 px-3">
+        {Array.from({ length: 5 }, (_, index) => (
+          <div key={index} className="flex min-h-[54px] gap-3 border-b border-(--color-border)/60 py-2.5 last:border-b-0">
+            <Skeleton className="h-5 w-5 shrink-0 rounded-full" />
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className="flex justify-between gap-4">
+                <Skeleton className="h-2.5 w-20" />
+                <Skeleton className="h-2 w-12" />
+              </div>
+              <Skeleton className="h-2.5" style={{ width: `${62 + (index % 3) * 12}%` }} />
+              {index % 2 === 0 && <Skeleton className="h-2.5 w-2/5" />}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function NodeRunRow({ node }: { node: WorkflowNodeRun }) {
   const [open, setOpen] = useState(false)
   const hasDetail = Boolean(node.error) || Boolean(node.output && Object.keys(node.output).length)
@@ -2605,7 +3030,7 @@ function StatusBadge({ status }: { status: RunDisplayStatus }) {
   switch (status) {
     case 'running':
       return (
-        <span className="inline-flex items-center gap-1 text-(--color-accent)">
+        <span className="inline-flex items-center gap-1 text-(--color-info)">
           <Loader2 size={11} className="animate-spin" /> running
         </span>
       )
@@ -2644,8 +3069,8 @@ function StatusBadge({ status }: { status: RunDisplayStatus }) {
       )
     case 'done':
       return (
-        <span className="inline-flex items-center gap-1 text-(--color-text-muted)">
-          <CircleCheck size={11} className="text-(--color-success)" /> done
+        <span className="inline-flex items-center gap-1 text-(--color-success)">
+          <CircleCheck size={11} /> done
         </span>
       )
   }
@@ -2674,17 +3099,43 @@ function NodeStatusIcon({ status }: { status: string }) {
 function VerdictChip({ verdict }: { verdict: string }) {
   const tone =
     verdict === 'pass'
-      ? 'text-(--color-success)'
+      ? 'border-(--color-success)/25 bg-(--color-success-subtle)/25 text-(--color-success)'
       : verdict === 'acceptable_diff'
-        ? 'text-(--color-warning,orange)'
-        : 'text-(--color-error)'
+        ? 'border-(--color-warning)/30 bg-(--color-warning-subtle)/25 text-(--color-warning)'
+        : 'border-(--color-error)/25 bg-(--color-error-subtle)/35 text-(--color-error)'
   const Icon = verdict === 'pass' || verdict === 'acceptable_diff' ? CircleCheck : CircleX
   return (
-    <span className={cn('inline-flex items-center gap-0.5', tone)} title={`Verdict: ${verdict}`}>
+    <span
+      className={cn('inline-flex items-center gap-1 rounded-md border px-1.5 py-1 text-[9px] font-medium', tone)}
+      title={`Domain verdict: ${verdict}`}
+    >
       <Icon size={10} />
       {verdict}
     </span>
   )
+}
+
+function executionInputLabels(execution?: WorkflowExecutionSummary): string[] {
+  const inputs = execution?.inputs ?? {}
+  return ['unit', 'wave', 'case_set']
+    .flatMap((key) => {
+      const value = inputs[key]
+      if (value === undefined || value === null || value === '') return []
+      return [`${key.replace('_', ' ')} ${String(value)}`]
+    })
+}
+
+function runPrimaryLabel(
+  run: SessionResponse,
+  execution?: WorkflowExecutionSummary,
+): string {
+  const unit = execution?.inputs.unit
+  if (typeof unit === 'string' && unit.trim()) return unit.trim()
+  const wave = execution?.inputs.wave
+  if (typeof wave === 'number' || (typeof wave === 'string' && wave.trim())) {
+    return `Wave ${String(wave)}`
+  }
+  return run.title ?? run.id.slice(0, 8)
 }
 
 function RunRow({
@@ -2722,28 +3173,37 @@ function RunRow({
       aimRun?.verdict === 'error')
   const selected = monitorOpen || reportOpen || discussionOpen
   const pipelineName = execution?.definition_name ?? 'No workflow execution'
+  const startedAt = execution?.started_at ?? run.created_at
+  const inputLabels = executionInputLabels(execution)
+  const primaryLabel = runPrimaryLabel(run, execution)
   return (
-    <tr
+    <div
+      role="row"
       className={cn(
-        'group h-[58px] border-t border-(--color-border) transition-colors first:border-t-0',
+        'group grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2 px-3 py-3 transition-colors md:grid-cols-[minmax(0,2.1fr)_minmax(9.5rem,.8fr)_minmax(10.5rem,.85fr)_auto] md:items-center md:gap-x-4',
         selected
-          ? 'bg-(--bg-key)/80'
-          : status === 'running' || status === 'waiting_gate'
-            ? 'bg-(--color-accent)/[0.025] hover:bg-(--bg-subtle)/55'
-            : 'hover:bg-(--bg-subtle)/55',
+          ? 'bg-(--bg-key)/85'
+          : status === 'running'
+            ? 'bg-(--color-info-subtle)/15 hover:bg-(--color-info-subtle)/25'
+            : status === 'waiting_gate'
+              ? 'bg-(--color-warning-subtle)/15 hover:bg-(--color-warning-subtle)/25'
+              : status === 'failed'
+                ? 'bg-(--color-error-subtle)/15 hover:bg-(--color-error-subtle)/25'
+                : 'hover:bg-(--bg-subtle)/55',
       )}
     >
-      <td className="px-3 py-2" title={run.title ?? run.id}>
+      <div role="cell" className="min-w-0" title={run.title ?? run.id}>
         <div className="flex min-w-0 items-center gap-2.5">
           <span
             className={cn(
-              'flex h-7 w-7 shrink-0 items-center justify-center rounded-md border bg-(--bg-page)',
-              status === 'running' && 'border-(--color-accent)/30 text-(--color-accent)',
+              'flex h-8 w-8 shrink-0 items-center justify-center rounded-md border bg-(--bg-page)',
+              status === 'running' && 'border-(--color-info)/30 bg-(--color-info-subtle)/30 text-(--color-info)',
               status === 'waiting_gate' &&
-                'border-(--color-warning,orange)/35 text-(--color-warning,orange)',
-              status === 'failed' && 'border-(--color-error)/30 text-(--color-error)',
-              status === 'completed' && 'border-(--color-success)/30 text-(--color-success)',
-              !['running', 'waiting_gate', 'failed', 'completed'].includes(status) &&
+                'border-(--color-warning)/35 bg-(--color-warning-subtle)/25 text-(--color-warning)',
+              status === 'failed' && 'border-(--color-error)/30 bg-(--color-error-subtle)/30 text-(--color-error)',
+              (status === 'completed' || status === 'done') &&
+                'border-(--color-success)/30 bg-(--color-success-subtle)/25 text-(--color-success)',
+              !['running', 'waiting_gate', 'failed', 'completed', 'done'].includes(status) &&
                 'border-(--color-border) text-(--color-text-muted)',
             )}
           >
@@ -2753,48 +3213,61 @@ function RunRow({
               <CirclePause size={12} />
             ) : status === 'failed' ? (
               <CircleX size={12} />
+            ) : status === 'completed' || status === 'done' ? (
+              <CircleCheck size={12} />
+            ) : status === 'stopped' ? (
+              <OctagonX size={12} />
             ) : (
               <Shuffle size={12} />
             )}
           </span>
           <div className="min-w-0 flex-1">
             <p className="truncate text-[12px] font-medium text-(--color-text)">
-              {run.title ?? run.id.slice(0, 8)}
+              {primaryLabel}
             </p>
-            <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[9px] text-(--color-text-subtle)">
-              <span className="truncate font-mono" title={pipelineName}>
-                {pipelineName}
+            <p className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-[9px] text-(--color-text-subtle)">
+              <span className="truncate font-medium text-(--color-text-muted)" title={pipelineName}>
+                {pipelineDisplayName(pipelineName)}
               </span>
               <span aria-hidden="true">·</span>
-              <span className="shrink-0 font-mono">{run.id.slice(0, 8)}</span>
+              <span className="shrink-0 font-mono">#{execution?.id.slice(0, 8) ?? run.id.slice(0, 8)}</span>
               {execution?.retry_of_execution_id && (
-                <span className="shrink-0 rounded bg-(--bg-key) px-1 py-px uppercase">
+                <span className="shrink-0 rounded border border-(--color-border) bg-(--bg-key) px-1 py-px uppercase">
                   retry
                 </span>
               )}
             </p>
+            {inputLabels.length > 0 && (
+              <div className="mt-1 flex min-w-0 flex-wrap gap-1">
+                {inputLabels.map((label) => (
+                  <span key={label} className="max-w-full truncate rounded bg-(--bg-key) px-1.5 py-0.5 font-mono text-[8px] text-(--color-text-muted)" title={label}>
+                    {label}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </div>
-      </td>
-      <td className="px-2 py-2" title={execution?.error ?? undefined}>
-        <div className="flex flex-col items-start gap-1">
+      </div>
+      <div role="cell" className="col-span-2 flex min-w-0 flex-wrap items-center gap-1.5 md:col-span-1 md:flex-col md:items-start" title={execution?.error ?? undefined}>
           <RunStatusPill status={status} />
           {aimRun && <VerdictChip verdict={aimRun.verdict} />}
-        </div>
-      </td>
-      <td
-        className="px-2 py-2 text-[10px] text-(--color-text-muted)"
-        title={run.created_at ? new Date(run.created_at).toLocaleString() : undefined}
+      </div>
+      <div
+        role="cell"
+        className="col-span-2 flex min-w-0 items-center gap-3 text-[10px] text-(--color-text-muted) md:col-span-1 md:flex-col md:items-start md:gap-1"
+        title={startedAt ? new Date(startedAt).toLocaleString() : undefined}
       >
-        {formatRelativeDate(run.created_at)}
-      </td>
-      <td className="px-2 py-2 font-mono text-[10px] text-(--color-text-muted)">
-        <span className="rounded bg-(--bg-subtle)/65 px-1.5 py-1">
+        <span className="inline-flex items-center gap-1.5">
+          <Clock3 size={10} className="shrink-0 text-(--color-text-subtle)" />
+          {formatRelativeDate(startedAt)}
+        </span>
+        <span className="rounded bg-(--bg-key) px-1.5 py-0.5 font-mono text-[9px]">
           {executionDuration(execution)}
         </span>
-      </td>
-      <td className="px-2 py-2 text-right">
-        <span className="inline-flex items-center rounded-md border border-(--color-border) bg-(--bg-page) p-0.5 shadow-sm opacity-80 transition-opacity group-hover:opacity-100">
+      </div>
+      <div role="cell" className="col-start-2 row-start-1 justify-self-end md:col-start-auto md:row-start-auto">
+        <span className="inline-flex items-center rounded-md border border-(--color-border) bg-(--bg-page) p-0.5 shadow-sm">
           <button
             type="button"
             onClick={onMonitor}
@@ -2803,9 +3276,9 @@ function RunRow({
             className={cn(
               'flex h-7 w-7 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)',
               monitorOpen
-                ? 'bg-(--bg-key) text-(--color-accent)'
+                ? 'bg-(--color-info-subtle)/35 text-(--color-info)'
                 : status === 'waiting_gate'
-                  ? 'text-(--color-warning,orange)'
+                  ? 'text-(--color-warning)'
                   : '',
             )}
             title="Node progress, per-node log, and the gate if one is waiting"
@@ -2821,7 +3294,7 @@ function RunRow({
               className={cn(
                 'flex h-7 w-7 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)',
                 reportOpen
-                  ? 'bg-(--bg-key) text-(--color-accent)'
+                  ? 'bg-(--color-info-subtle)/35 text-(--color-info)'
                   : '',
               )}
               title="Verdict, stats, and the full report for this run"
@@ -2849,7 +3322,7 @@ function RunRow({
               className={cn(
                 'flex h-7 w-7 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)',
                 discussionOpen
-                  ? 'bg-(--bg-key) text-(--color-accent)'
+                  ? 'bg-(--color-info-subtle)/35 text-(--color-info)'
                   : '',
               )}
               title="Open this run's transcript (post-run only)"
@@ -2858,8 +3331,18 @@ function RunRow({
             </button>
           )}
         </span>
-      </td>
-    </tr>
+      </div>
+      {execution?.error && (
+        <p
+          role="cell"
+          className="col-span-2 flex min-w-0 items-center gap-1.5 truncate rounded bg-(--color-error-subtle)/35 px-2 py-1 text-[9px] text-(--color-error) md:col-span-4"
+          title={execution.error}
+        >
+          <CircleAlert size={10} className="shrink-0" />
+          <span className="truncate">{execution.error}</span>
+        </p>
+      )}
+    </div>
   )
 }
 
@@ -2868,16 +3351,18 @@ function RunStatusPill({ status }: { status: RunDisplayStatus }) {
     <span
       className={cn(
         'inline-flex min-w-[82px] items-center justify-center rounded-md border px-1.5 py-1 text-[10px] font-medium',
-        status === 'running' && 'border-(--color-accent)/25 bg-(--color-accent)/5',
+        status === 'running' && 'border-(--color-info)/30 bg-(--color-info-subtle)/35',
         status === 'waiting_gate' &&
-          'border-(--color-warning,orange)/30 bg-(--color-warning,orange)/5',
+          'border-(--color-warning)/30 bg-(--color-warning-subtle)/25',
         status === 'completed' &&
-          'border-(--color-success)/25 bg-(--color-success)/5',
-        status === 'failed' && 'border-(--color-error)/25 bg-(--color-error)/5',
-        (status === 'stopped' || status === 'done') &&
+          'border-(--color-success)/25 bg-(--color-success-subtle)/25',
+        status === 'failed' && 'border-(--color-error)/25 bg-(--color-error-subtle)/35',
+        status === 'stopped' &&
           'border-(--color-border) bg-(--bg-subtle)/55',
+        status === 'done' &&
+          'border-(--color-success)/20 bg-(--color-success-subtle)/20',
         status === 'interrupted' &&
-          'border-(--color-warning,orange)/25 bg-(--color-warning,orange)/5',
+          'border-(--color-warning)/25 bg-(--color-warning-subtle)/20',
       )}
     >
       <StatusBadge status={status} />
@@ -2934,9 +3419,7 @@ function ReportPanel({
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {detailQuery.isLoading ? (
-          <p className="flex items-center gap-1.5 text-xs text-(--color-text-subtle)">
-            <Loader2 size={12} className="animate-spin" /> Loading report…
-          </p>
+          <ReportSkeleton />
         ) : detailQuery.isError || !detail ? (
           <p className="text-xs text-(--color-error)">Failed to load the run.</p>
         ) : (
@@ -2994,5 +3477,30 @@ function ReportPanel({
         )}
       </div>
     </AimSidePanel>
+  )
+}
+
+function ReportSkeleton() {
+  return (
+    <div className="space-y-4" aria-label="Loading run report">
+      <div className="flex items-center gap-2">
+        <Skeleton className="h-6 w-16" />
+        <Skeleton className="h-3 w-28" />
+        <Skeleton className="ml-auto h-7 w-16" />
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {Array.from({ length: 4 }, (_, index) => (
+          <div key={index} className="w-24 space-y-2 rounded-md bg-(--bg-key)/60 px-2.5 py-2">
+            <Skeleton className="h-2 w-12" />
+            <Skeleton className="h-3 w-16" />
+          </div>
+        ))}
+      </div>
+      <div className="space-y-2 rounded-md bg-(--bg-key)/60 p-3">
+        {[92, 74, 86, 61, 96, 68, 79, 54, 88].map((width, index) => (
+          <Skeleton key={index} className="h-2.5" style={{ width: `${width}%` }} />
+        ))}
+      </div>
+    </div>
   )
 }

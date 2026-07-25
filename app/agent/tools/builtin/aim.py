@@ -754,6 +754,73 @@ aim_readiness = Tool(
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# aim_suggestions
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+async def _aim_suggestions(
+    action: Annotated[
+        Literal["generate", "preview"],
+        Field(description="Generate an audited snapshot or preview the current plan."),
+    ] = "generate",
+) -> str:
+    async with db_module.async_session_factory() as db:
+        project_id, kb_root = await _resolve_project_and_kb_root(db)
+        claimed_units: frozenset[str] = frozenset()
+        if project_id is not None:
+            now = datetime.now(timezone.utc)
+            claims = (
+                await db.exec(
+                    select(AimClaim).where(
+                        AimClaim.project_id == project_id,
+                        AimClaim.lease_expires_at > now,
+                    )
+                )
+            ).all()
+            claimed_ids = {claim.unit_id for claim in claims}
+            if claimed_ids:
+                rows = (
+                    await db.exec(
+                        select(AimUnit).where(AimUnit.project_id == project_id)
+                    )
+                ).all()
+                claimed_units = frozenset(
+                    f"{row.module}/{row.name}" for row in rows if row.id in claimed_ids
+                )
+
+    from app.services.aim.suggestions import (
+        build_suggestion_plan,
+        write_suggestion_snapshot,
+    )
+
+    plan = build_suggestion_plan(kb_root, claimed_units=claimed_units)
+    data = plan.to_dict()
+    data["status"] = "generated" if action == "generate" else "preview"
+    if action == "generate":
+        execution_id = _current_workflow_execution_id()
+        path = write_suggestion_snapshot(
+            kb_root,
+            plan,
+            generated_by=f"workflow:{execution_id}" if execution_id else "tool",
+        )
+        data["plan_path"] = path.relative_to(kb_root).as_posix()
+    return json.dumps(data)
+
+
+aim_suggestions = Tool(
+    _aim_suggestions,
+    name="aim_suggestions",
+    description=(
+        "Build a deterministic dependency-aware AIM work plan and optionally "
+        "persist an auditable snapshot in the KB. This never transitions units."
+    ),
+    tiers=("aim",),
+    deferred=True,
+    deferred_summary="Generate the next recommended AIM workflow actions.",
+)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # aim_understanding
 # ═══════════════════════════════════════════════════════════════════════════
 

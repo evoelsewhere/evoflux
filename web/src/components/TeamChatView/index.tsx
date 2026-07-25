@@ -910,31 +910,67 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   // Full-height right column beside the main card — same slot Forge uses for
   // session files, so Coding's workspace covers the right corner instead of
   // sitting under the topbar with a negative-margin hack.
+  //
+  // Desktop: when one or both coding panels are open, a single `fixed` flex
+  // container holds them side-by-side so resizing the workspace drawer never
+  // shifts the file viewer — it simply changes the split within the wrapper.
+  // Mobile: panels mount individually and rely on their own mobileOverlay logic.
   const fullHeightTrailing = (
     <>
-      {mode === 'coding' && workspace && codingFileViewer !== null && (
-        <CodingFileViewerPanel
-          workspace={codingFileViewer.sourceWorkspace ?? workspace}
-          file={codingFileViewer}
-          mobile={isMobile}
-          onAddComment={handleAddFileComment}
-          onSendToChat={handleSendToChat}
-          onClose={() => setCodingFileViewer(null)}
-        />
+      {mode === 'coding' && workspace && !isMobile && (codingPanel !== null || codingFileViewer !== null) && (
+        <div className="fixed inset-y-0 right-0 z-(--z-overlay) flex shadow-xl">
+          {codingFileViewer !== null && (
+            <CodingFileViewerPanel
+              workspace={codingFileViewer.sourceWorkspace ?? workspace}
+              file={codingFileViewer}
+              mobile={false}
+              desktopOverlayInner
+              onAddComment={handleAddFileComment}
+              onSendToChat={handleSendToChat}
+              onClose={() => setCodingFileViewer(null)}
+            />
+          )}
+          {codingPanel !== null && (
+            <CodingWorkspacePanel
+              key={codingPanel}
+              workspace={workspace}
+              open
+              initialTab={codingPanel}
+              mobile={false}
+              desktopOverlayInner
+              selectedFilePath={codingFileViewer?.path ?? null}
+              onFileSelect={handleCodingFileSelect}
+              onClose={closeCodingPanels}
+              sessionId={sessionIdState}
+              projectId={projectIdState}
+              isWorking={isTeamWorking}
+            />
+          )}
+        </div>
       )}
-      {mode === 'coding' && workspace && codingPanel !== null && (
+      {mode === 'coding' && workspace && isMobile && codingPanel !== null && (
         <CodingWorkspacePanel
           key={codingPanel}
           workspace={workspace}
           open
           initialTab={codingPanel}
-          mobile={isMobile}
+          mobile
           selectedFilePath={codingFileViewer?.path ?? null}
           onFileSelect={handleCodingFileSelect}
           onClose={closeCodingPanels}
           sessionId={sessionIdState}
           projectId={projectIdState}
           isWorking={isTeamWorking}
+        />
+      )}
+      {mode === 'coding' && workspace && isMobile && codingFileViewer !== null && (
+        <CodingFileViewerPanel
+          workspace={codingFileViewer.sourceWorkspace ?? workspace}
+          file={codingFileViewer}
+          mobile
+          onAddComment={handleAddFileComment}
+          onSendToChat={handleSendToChat}
+          onClose={() => setCodingFileViewer(null)}
         />
       )}
       {mode !== 'coding' && showFilesPanel ? (

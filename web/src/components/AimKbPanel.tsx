@@ -32,6 +32,7 @@ import { queryKeys } from '@/queries/keys'
 import { MarkdownBlock, CodeBlock } from '@/utils/markdown'
 import { buildTree } from '@/utils/workspaceFileTree'
 import { TreeNodeView } from '@/components/CodingWorkspacePanel'
+import { Skeleton } from '@/components/ui/skeleton'
 import { formatBytes } from '@/utils/format'
 import type { CodingProject, WorkspaceFileInfo } from '@/api/types'
 
@@ -133,12 +134,19 @@ export function AimKbPanel({ project }: { project: CodingProject }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex items-center justify-between gap-2 border-b border-(--color-border) px-4 py-3">
-        <p className="min-w-0 truncate text-sm font-medium text-(--color-text)">
+        <div className="flex min-w-0 items-center text-sm font-medium text-(--color-text)">
           Knowledge Base
           <span className="ml-2 text-[10px] font-normal text-(--color-text-subtle)">
-            {kbPath.split(/[\\/]/).filter(Boolean).pop()} · {fileCount} files · read-only
+            {kbPath.split(/[\\/]/).filter(Boolean).pop()} ·
           </span>
-        </p>
+          {filesQuery.isLoading ? (
+            <Skeleton className="ml-1.5 h-2.5 w-14" />
+          ) : (
+            <span className="ml-1.5 text-[10px] font-normal text-(--color-text-subtle)">
+              {fileCount} files · read-only
+            </span>
+          )}
+        </div>
         <button
           type="button"
           onClick={() => reindex.mutate()}
@@ -172,7 +180,7 @@ export function AimKbPanel({ project }: { project: CodingProject }) {
         {/* Folder tree — same component the coding workspace uses (§7). */}
         <div className="w-72 shrink-0 overflow-y-auto border-r border-(--color-border) p-2">
           {filesQuery.isLoading ? (
-            <p className="px-2 py-1 text-xs text-(--color-text-subtle)">Loading…</p>
+            <KbTreeSkeleton />
           ) : fileCount === 0 ? (
             <p className="px-2 py-1 text-xs text-(--color-text-subtle)">
               KB is empty — run the assess pipeline.
@@ -190,7 +198,11 @@ export function AimKbPanel({ project }: { project: CodingProject }) {
 
         {/* Preview */}
         <div className="min-w-0 flex-1 overflow-y-auto">
-          {!selected ? (
+          {filesQuery.isLoading ? (
+            <div className="p-4">
+              <FileContentSkeleton />
+            </div>
+          ) : !selected ? (
             <p className="p-4 text-xs text-(--color-text-subtle)">Select a file to read.</p>
           ) : (
             <div className="flex h-full min-h-0 flex-col">
@@ -249,11 +261,7 @@ function FilePreview({
     )
   }
   if (loading) {
-    return (
-      <p className="flex items-center gap-1.5 text-xs text-(--color-text-subtle)">
-        <Loader2 size={12} className="animate-spin" /> Loading {file.path}…
-      </p>
-    )
+    return <FileContentSkeleton />
   }
   if (error) {
     return <p className="text-xs text-(--color-error)">Failed to read {file.path}</p>
@@ -295,5 +303,40 @@ function FilePreview({
 
   return (
     <pre className="whitespace-pre-wrap font-mono text-xs text-(--color-text-2)">{text}</pre>
+  )
+}
+
+function KbTreeSkeleton() {
+  return (
+    <div className="space-y-1" aria-label="Loading knowledge base files">
+      {[0, 1, 1, 2, 2, 1, 2, 2, 0].map((depth, index) => (
+        <div key={index} className="flex h-7 items-center gap-1.5" style={{ paddingLeft: `${depth * 12 + 8}px` }}>
+          <Skeleton className="h-3 w-3 shrink-0" />
+          <Skeleton className="h-2.5" style={{ width: `${42 + (index % 4) * 11}%` }} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function FileContentSkeleton() {
+  return (
+    <div className="space-y-4" aria-label="Loading file content">
+      <div className="space-y-2 rounded-md bg-(--bg-key)/60 px-3 py-3">
+        {Array.from({ length: 4 }, (_, index) => (
+          <div key={index} className="grid grid-cols-[5rem_1fr] items-center gap-3">
+            <Skeleton className="h-2.5 w-14" />
+            <Skeleton className="h-2.5" style={{ width: `${45 + index * 10}%` }} />
+          </div>
+        ))}
+      </div>
+      <Skeleton className="h-5 w-2/5" />
+      <div className="space-y-2.5">
+        {[100, 94, 86, 97, 72, 91, 63, 82].map((width, index) => (
+          <Skeleton key={index} className="h-3" style={{ width: `${width}%` }} />
+        ))}
+      </div>
+      <Skeleton className="h-24 w-full" />
+    </div>
   )
 }

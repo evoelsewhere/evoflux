@@ -43,6 +43,7 @@ from app.api.schemas.aim import (
     AimProjectHealthOut,
     AimProjectJoinRequest,
     AimProjectSummaryOut,
+    AimReadinessOptionsResponse,
     AimReadinessResponse,
     AimReindexResponse,
     AimRulebookFile,
@@ -51,6 +52,7 @@ from app.api.schemas.aim import (
     AimRunOut,
     AimStateReconcileRequest,
     AimStateReconcileResponse,
+    AimSuggestionPlanOut,
     AimUnitOut,
     AimUnitActionOut,
     AimUnitClaimOut,
@@ -1020,6 +1022,128 @@ async def list_aim_units(
             )
         )
     return output
+
+
+@router.get(
+    "/{project_id}/aim/readiness-options",
+    response_model=AimReadinessOptionsResponse,
+)
+async def get_aim_readiness_options(
+    project_id: UUID,
+    db: DbSession,
+    pipeline: str,
+    case_set: str | None = None,
+    overwrite: bool = False,
+) -> AimReadinessOptionsResponse:
+    from app.services.aim.project import resolve_kb_workspace_path
+    from app.services.aim.readiness import evaluate_pipeline_options
+
+    project = await _get_aim_project_or_404(db, project_id)
+    kb_path = await resolve_kb_workspace_path(db, project)
+    if not kb_path or not Path(kb_path).is_dir():
+        raise HTTPException(
+            status_code=422, detail="Project has no KB repo on this machine."
+        )
+
+    now = datetime.now(timezone.utc)
+    claims = (
+        await db.exec(
+            select(AimClaim).where(
+                AimClaim.project_id == project_id,
+                AimClaim.lease_expires_at > now,
+            )
+        )
+    ).all()
+    claimed_ids = {claim.unit_id for claim in claims}
+    claimed_rows: list[AimUnit] = []
+    if claimed_ids:
+        claimed_rows = (
+            await db.exec(
+                select(AimUnit).where(
+                    AimUnit.project_id == project_id,
+                    col(AimUnit.id).in_(claimed_ids),
+                )
+            )
+        ).all()
+    claimed_units = frozenset(f"{row.module}/{row.name}" for row in claimed_rows)
+    options = evaluate_pipeline_options(
+        Path(kb_path),
+        pipeline,
+        case_set=case_set,
+        overwrite=overwrite,
+        claimed_units=claimed_units,
+    )
+    return AimReadinessOptionsResponse(**options.to_dict())
+
+
+async def _aim_suggestion_plan(
+    project_id: UUID,
+    db: DbSession,
+    *,
+    generate: bool,
+) -> AimSuggestionPlanOut:
+    from app.services.aim.project import resolve_kb_workspace_path
+    from app.services.aim.suggestions import (
+        build_suggestion_plan,
+        read_suggestion_snapshot,
+        write_suggestion_snapshot,
+    )
+
+    project = await _get_aim_project_or_404(db, project_id)
+    kb_path = await resolve_kb_workspace_path(db, project)
+    if not kb_path or not Path(kb_path).is_dir():
+        raise HTTPException(
+            status_code=422, detail="Project has no KB repo on this machine."
+        )
+
+    now = datetime.now(timezone.utc)
+    claims = (
+        await db.exec(
+            select(AimClaim).where(
+                AimClaim.project_id == project_id,
+                AimClaim.lease_expires_at > now,
+            )
+        )
+    ).all()
+    claimed_ids = {claim.unit_id for claim in claims}
+    unit_rows = (
+        await db.exec(select(AimUnit).where(AimUnit.project_id == project_id))
+    ).all()
+    claimed_units = frozenset(
+        f"{row.module}/{row.name}" for row in unit_rows if row.id in claimed_ids
+    )
+    kb_root = Path(kb_path)
+    plan = build_suggestion_plan(kb_root, claimed_units=claimed_units)
+    if generate:
+        write_suggestion_snapshot(kb_root, plan, generated_by="manual")
+    snapshot = read_suggestion_snapshot(kb_root)
+    return AimSuggestionPlanOut(
+        enabled=snapshot is not None,
+        stale=(
+            snapshot is not None and snapshot.get("fingerprint") != plan.fingerprint
+        ),
+        generated_at=snapshot.get("generated_at") if snapshot else None,
+        generated_by=snapshot.get("generated_by") if snapshot else None,
+        **plan.to_dict(),
+    )
+
+
+@router.get(
+    "/{project_id}/aim/suggestions",
+    response_model=AimSuggestionPlanOut,
+)
+async def get_aim_suggestions(project_id: UUID, db: DbSession) -> AimSuggestionPlanOut:
+    return await _aim_suggestion_plan(project_id, db, generate=False)
+
+
+@router.post(
+    "/{project_id}/aim/suggestions",
+    response_model=AimSuggestionPlanOut,
+)
+async def generate_aim_suggestions(
+    project_id: UUID, db: DbSession
+) -> AimSuggestionPlanOut:
+    return await _aim_suggestion_plan(project_id, db, generate=True)
 
 
 @router.get(

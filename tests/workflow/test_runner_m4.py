@@ -138,6 +138,68 @@ outputs:
 
 
 @pytest.mark.asyncio
+async def test_agent_node_structured_handoff_has_text_contract(setup_db, fake_team):
+    from app.core import db as db_module
+    from app.models.chat import ChatSession
+    from app.models.workflow import WorkflowExecution
+
+    runner = WorkflowRunner()
+    definition = parse_definition("""
+schema_version: 1
+name: structured-agent-output
+scope: forge
+nodes:
+    - { id: work, kind: agent, subagents: [researcher], prompt: "Research it" }
+    - { id: shape, kind: transform, set: { got: "{{nodes.work.output.text}}" } }
+edges:
+    - { from: work, to: shape }
+outputs:
+    final: "{{nodes.shape.output.got}}"
+""")
+
+    async with db_module.async_session_factory() as db:
+        session = ChatSession(mode="forge")
+        db.add(session)
+        await db.commit()
+        await db.refresh(session)
+        session_id = str(session.id)
+
+    state = await runner.start(
+        definition,
+        definition_hash="0" * 64,
+        session_id=session_id,
+        inputs={},
+        scope_workspace=None,
+    )
+    await _wait(lambda: len(fake_team.injected) == 1)
+    state.captured_artifact = {
+        "task_id": "task-1",
+        "summary": "Delegated research completed.",
+        "status": "final",
+        "findings": ["Found the root cause."],
+        "evidence": ["Focused tests pass."],
+        "next_actions": ["Review the patch."],
+        "verification": {"method": "pytest", "result": "1 passed"},
+    }
+
+    await runner.on_turn_boundary_capture(session_id)
+    await runner.on_turn_boundary_advance(session_id)
+    await _wait(lambda: not runner.is_driving(session_id))
+
+    output = state.node_outputs["work"]
+    assert output["summary"] == "Delegated research completed."
+    assert output["task_id"] == "task-1"
+    assert "Delegated research completed." in output["text"]
+    assert "### Findings\n- Found the root cause." in output["text"]
+    assert "### Verification\n- **Method:** pytest" in output["text"]
+
+    async with db_module.async_session_factory() as db:
+        execution = await db.get(WorkflowExecution, state.execution_id)
+        assert execution.status == "completed"
+        assert "Delegated research completed." in execution.outputs["final"]
+
+
+@pytest.mark.asyncio
 async def test_advance_is_ignored_when_not_awaiting_boundary(setup_db, fake_team):
     runner = WorkflowRunner()
     assert await runner.on_turn_boundary_advance("no-such-session") is False
