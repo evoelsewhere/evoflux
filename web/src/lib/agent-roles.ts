@@ -19,3 +19,14 @@ export const AGENT_ROLES: readonly AgentRole[] = [
 export function isAgentRole(name: string): name is AgentRole {
   return (AGENT_ROLES as readonly string[]).includes(name)
 }
+
+/**
+ * Map a free-form agent name onto a chip role. Unknown / custom agents
+ * fall back to the muted explorer palette while keeping their real label.
+ */
+export function resolveAgentRole(name: string): AgentRole {
+  if (isAgentRole(name)) return name
+  const lower = name.toLowerCase()
+  if (lower === 'lead' || lower === 'evoflux') return 'EvoFlux'
+  return 'explorer'
+}

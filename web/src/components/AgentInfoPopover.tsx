@@ -22,7 +22,10 @@ import {
 } from 'lucide-react'
 import { useTeamAgentsQuery } from '@/queries/useAgentsQuery'
 import { useMcpServersQuery } from '@/queries/useMcpQuery'
+import { useTeamStore } from '@/stores/useTeamStore'
 import { useMotionPreset } from '@/lib/motion'
+import { resolveAgentRole } from '@/lib/agent-roles'
+import { AgentChip } from '@/components/ui/agent-chip'
 import type {
   AgentInfo,
   AgentCapabilities as AgentCapabilitiesType,
@@ -109,7 +112,7 @@ function ToolRow({ name, description }: { name: string; description: string }) {
         {hasDesc && (
           <ChevronDown
             size={10}
-            className={`shrink-0 text-(--color-text-muted) transition-transform duration-150 ${open ? 'rotate-180' : ''}`}
+            className={`shrink-0 text-(--color-text-muted) transition-transform duration-(--motion-fast) ${open ? 'rotate-180' : ''}`}
           />
         )}
       </button>
@@ -167,25 +170,42 @@ function ToolGroupHeader({
   count,
   collapsed,
   onToggle,
+  mcpStatus,
 }: {
   server: string | null
   count: number
   collapsed: boolean
   onToggle: () => void
+  mcpStatus?: string | null
 }) {
   const label = server === null ? 'Built-in' : `MCP · ${server}`
+  const statusTone =
+    mcpStatus === 'ready'
+      ? 'bg-(--color-success)'
+      : mcpStatus === 'error'
+        ? 'bg-(--color-error)'
+        : mcpStatus === 'starting' || mcpStatus === 'auth_required'
+          ? 'bg-(--color-accent)'
+          : 'bg-(--color-text-subtle)'
   return (
     <button
       type="button"
       onClick={onToggle}
-      className="flex w-full items-center gap-2 pt-2 pb-1 text-left hover:opacity-80 transition-opacity"
+      className="flex w-full items-center gap-2 pt-2 pb-1 text-left transition-opacity hover:opacity-80"
     >
-      {server !== null && <Plug size={10} className="text-(--color-text-muted) shrink-0" aria-hidden />}
+      {server !== null && <Plug size={10} className="shrink-0 text-(--color-text-muted)" aria-hidden />}
       <span className="text-xs font-semibold uppercase tracking-widest text-(--color-text-muted)">{label}</span>
+      {server !== null && mcpStatus && (
+        <span
+          className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusTone}`}
+          title={mcpStatus}
+          aria-label={`MCP status: ${mcpStatus}`}
+        />
+      )}
       <span className="rounded-md bg-(--bg-key) px-1.5 py-0.5 text-xs text-(--color-text-muted)">{count}</span>
       <ChevronDown
         size={10}
-        className={`ml-auto shrink-0 text-(--color-text-muted) transition-transform duration-150 ${
+        className={`ml-auto shrink-0 text-(--color-text-muted) transition-transform duration-(--motion-fast) ${
           collapsed ? '' : 'rotate-180'
         }`}
       />
@@ -250,8 +270,7 @@ export function AgentInfoPopover({
     () => new Map((mcpServersQuery.data?.servers ?? []).map((server) => [server.name, server])),
     [mcpServersQuery.data?.servers],
   )
-
-  void mcpServerStatuses // available for future MCP status display
+  const agentStreams = useTeamStore((s) => s.agentStreams)
 
   const toolGroups = useMemo(
     () => (leadAgent ? groupTools(leadAgent.tools, leadAgent.mcp_servers ?? []) : []),
@@ -316,6 +335,42 @@ export function AgentInfoPopover({
                   </p>
                 </div>
 
+                {/* Team roster */}
+                {display.length > 1 && (
+                  <div className="mb-2 border-t border-(--color-border) pt-2">
+                    <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-widest text-(--color-text-muted)">
+                      Team
+                    </h4>
+                    <div className="flex flex-col gap-1">
+                      {display.map((member) => {
+                        const status = agentStreams[member.name]?.status
+                        return (
+                          <div key={member.name} className="flex items-center gap-2">
+                            <AgentChip
+                              role={resolveAgentRole(member.name)}
+                              label={member.name}
+                              active={member.is_lead || status === 'working'}
+                              className="min-w-0 flex-1 truncate px-2 py-1"
+                              dotClassName={
+                                status === 'error'
+                                  ? 'bg-(--color-error)'
+                                  : status === 'working'
+                                    ? 'animate-pulse bg-(--color-accent)'
+                                    : status === 'offline'
+                                      ? 'bg-(--color-text-subtle) opacity-50'
+                                      : undefined
+                              }
+                            />
+                            {member.is_lead && (
+                              <span className="shrink-0 text-[10px] text-(--color-accent)">lead</span>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {/* Capabilities */}
                 {leadAgent.capabilities && (
                   <CapabilitiesSection caps={leadAgent.capabilities} />
@@ -330,6 +385,9 @@ export function AgentInfoPopover({
                     {toolGroups.map((group) => {
                       const key = group.server ?? '__builtin__'
                       const collapsed = collapsedGroups.has(key)
+                      const mcpStatus = group.server
+                        ? (mcpServerStatuses.get(group.server)?.state ?? null)
+                        : null
                       return (
                         <div key={key} className="mb-1">
                           <ToolGroupHeader
@@ -337,6 +395,7 @@ export function AgentInfoPopover({
                             count={group.tools.length}
                             collapsed={collapsed}
                             onToggle={() => toggleGroup(key)}
+                            mcpStatus={mcpStatus}
                           />
                           <AnimatePresence initial={false}>
                             {!collapsed && (

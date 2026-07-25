@@ -33,8 +33,6 @@ interface FloatingInputBarProps {
   agentWorkspace?: string | null
   agentMode?: 'coding' | 'aim' | null
   todos?: TodoItem[]
-  todosOpen?: boolean
-  onTodosOpenChange?: (open: boolean) => void
   sessionId?: string | null
   onWiki?: () => void
   wikiActive?: boolean
@@ -74,7 +72,7 @@ export const FloatingInputBar = forwardRef<InputBarHandle, FloatingInputBarProps
     if (isMobile) {
       return (
         <div
-          className="pointer-events-auto shrink-0 border-t border-(--color-border) bg-(--bg-page) pb-safe transition-[padding-bottom] duration-150"
+          className="pointer-events-auto shrink-0 border-t border-(--color-border) bg-(--bg-page) pb-safe transition-[padding-bottom] duration-(--motion-fast)"
           style={keyboardInset > 0 ? { paddingBottom: `calc(${keyboardInset}px + 0.5rem)` } : undefined}
         >
           <RevertNotice count={revertedCount ?? 0} messages={revertedMessages ?? []} onRedo={onRedo} />

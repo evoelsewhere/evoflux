@@ -46,7 +46,7 @@ function LongPressButton({
       {...props}
       data-pressing={pressing || undefined}
       className={cn(
-        'origin-center transition-transform duration-200 ease-out data-pressing:scale-[0.97] data-pressing:duration-300',
+        'origin-center transition-transform duration-(--motion-base) ease-out data-pressing:scale-[0.97] data-pressing:duration-300',
         className,
       )}
       onPointerDown={(event) => {

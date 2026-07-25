@@ -34,7 +34,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { usePlatform } from "@/hooks/use-platform";
-import { useMotionPreset } from "@/lib/motion";
+import { useMotionPreset, useListEnterIndex } from "@/lib/motion";
 import { STORAGE_KEYS } from "@/lib/storage-keys";
 import {
   CalendarClock,
@@ -234,6 +234,7 @@ function SessionListPanel({
     .sort(
       (a, b) => Number(pinnedIdSet.has(b.id)) - Number(pinnedIdSet.has(a.id)),
     );
+  const sessionEnterIndex = useListEnterIndex(projectSessions.map((s) => s.id));
 
   return (
     <div className="space-y-0.5 pb-2 pl-4 pr-2">
@@ -253,6 +254,7 @@ function SessionListPanel({
           key={session.id}
           session={session}
           isActive={session.id === currentSessionId}
+          enterIndex={sessionEnterIndex(session.id)}
           density="compact"
           onSelect={onSessionSelect}
           onOpenSideChat={onSessionSideChat}

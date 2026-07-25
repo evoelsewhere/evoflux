@@ -12,9 +12,11 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { formatDistanceToNowStrict } from 'date-fns'
+import { motion } from 'framer-motion'
 import { Folder, GitBranch } from 'lucide-react'
 
 import { getCodingWorkspaceStatus } from '@/api/client'
+import { fadeRise, useMotionPreset } from '@/lib/motion'
 import { queryKeys } from '@/queries'
 
 interface Props {
@@ -22,6 +24,8 @@ interface Props {
 }
 
 export function WorkspaceInfoCard({ workspace }: Props) {
+  const preset = useMotionPreset()
+  const enter = fadeRise(preset, 10)
   const { data, isLoading } = useQuery({
     queryKey: queryKeys.coding.status(workspace),
     queryFn: () => getCodingWorkspaceStatus(workspace),
@@ -36,23 +40,28 @@ export function WorkspaceInfoCard({ workspace }: Props) {
   const dirtyTotal = dirty ? dirty.staged + dirty.unstaged + dirty.untracked : 0
 
   return (
-    <div className="mx-auto w-full max-w-md rounded-xl bg-(--bg-card) px-4 py-4">
+    <motion.div
+      initial={enter.initial}
+      animate={enter.animate}
+      transition={enter.transition}
+      className="mx-auto w-full max-w-md rounded-xl bg-(--bg-card) px-4 py-4"
+    >
       <div className="flex min-w-0 items-center gap-2">
         <Folder size={16} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
-        <h2 className="truncate text-sm font-medium text-(--color-text)" title={name}>
+        <h2 className="truncate text-sm font-semibold text-(--color-text)" title={name}>
           {name}
         </h2>
       </div>
 
       <p
-        className="mt-1 truncate font-mono text-xs text-(--color-text-muted)"
+        className="mt-1 truncate font-mono text-xs text-(--color-text-subtle)"
         title={workspace}
       >
         {workspace}
       </p>
 
       {isLoading ? (
-        <p className="mt-3 text-xs text-(--color-text-subtle)">Loading…</p>
+        <p className="mt-3 text-xs text-(--color-text-muted)">Loading…</p>
       ) : data?.is_git_repo ? (
         <div className="mt-3 space-y-2 text-xs">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -94,8 +103,8 @@ export function WorkspaceInfoCard({ workspace }: Props) {
           )}
         </div>
       ) : (
-        <p className="mt-3 text-xs text-(--color-text-subtle)">Not a git repository</p>
+        <p className="mt-3 text-xs text-(--color-text-muted)">Not a git repository</p>
       )}
-    </div>
+    </motion.div>
   )
 }

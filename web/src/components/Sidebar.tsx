@@ -8,7 +8,7 @@ import {
 import { useNavigate } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { useMotionPreset } from "@/lib/motion";
+import { useMotionPreset, useListEnterIndex } from "@/lib/motion";
 
 import {
   CalendarClock,
@@ -136,6 +136,7 @@ export function Sidebar({
     .map((id) => normalSessions.find((s) => s.id === id))
     .filter((s): s is SessionResponse => s !== undefined);
   const unpinnedSessions = normalSessions.filter((s) => !pinnedIdSet.has(s.id));
+  const sessionEnterIndex = useListEnterIndex(normalSessions.map((s) => s.id));
 
   // Collapse state is shared by all three mode sidebars and owned by
   // useUIStore (persisted); AppShell owns the toggle button + Ctrl+B.
@@ -275,6 +276,7 @@ export function Sidebar({
       key={session.id}
       session={session}
       isActive={session.id === currentSessionId}
+      enterIndex={sessionEnterIndex(session.id)}
       onSelect={(s) => handleSelect(s.id)}
       onOpenSideChat={(s) => handleSideChat(s.id)}
       onDelete={handleDelete}
@@ -558,7 +560,7 @@ export function Sidebar({
           >
             {canPullRefresh && (
               <div
-                className="pointer-events-none sticky top-0 z-(--z-panel) flex justify-center overflow-hidden transition-[height] duration-150"
+                className="pointer-events-none sticky top-0 z-(--z-panel) flex justify-center overflow-hidden transition-[height] duration-(--motion-fast)"
                 style={{ height: pullDistance }}
                 aria-hidden
               >

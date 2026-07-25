@@ -35,6 +35,7 @@ import {
 } from '@/components/shell/SidebarShell'
 import { CollapsibleSection } from '@/components/shell/CollapsibleSection'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
+import { useMotionPreset } from '@/lib/motion'
 import {
   AIM_FEATURES,
   saveLastAimProject,
@@ -94,6 +95,7 @@ export function AimSidebar({
 }: AimSidebarProps) {
   const navigate = useNavigate()
   const { isMacOverlay } = usePlatform()
+  const preset = useMotionPreset()
   // Collapse state is shared by all three mode sidebars and owned by
   // useUIStore; AppShell owns the toggle button + Ctrl+B.
   const collapsed = useUIStore((s) => s.sidebarCollapsed)
@@ -261,6 +263,7 @@ export function AimSidebar({
                           initial={{ height: 0, opacity: 0 }}
                           animate={{ height: 'auto', opacity: 1 }}
                           exit={{ height: 0, opacity: 0 }}
+                          transition={preset.transition}
                           className="overflow-hidden"
                         >
                           {/* Feature rows read as children: quieter than the

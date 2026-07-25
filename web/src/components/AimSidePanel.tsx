@@ -5,9 +5,8 @@
  * viewer. Width persists per storageKey, so the Discussion keeps its
  * size across Pipelines and Runs & Reports.
  *
- * Thin wrapper over the shared ``SidePanel`` chrome with the width
- * animation off — these panels never animated open/close, and their
- * drag stays 1:1 instant.
+ * Thin wrapper over the shared ``SidePanel`` chrome — open/close follows
+ * the Appearance motion preset (instant under reduced).
  */
 
 import { SidePanel } from '@/components/shell/SidePanel'
@@ -32,7 +31,7 @@ export function AimSidePanel({
       minWidth={minWidth}
       maxWidth={maxWidth}
       mobileOverlay
-      animated={false}
+      animated
       resizeLabel="Resize panel"
       className="bg-(--bg-page)"
     >

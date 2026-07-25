@@ -22,6 +22,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
 import { ChatWelcome } from './ChatWelcome'
 import { ChevronDown, ChevronUp } from 'lucide-react'
+import { AgentChip } from './ui/agent-chip'
 import { BlockRenderer } from './BlockRenderer'
 import { AssistantTurnFooter } from './AssistantTurnFooter'
 import { groupConsecutiveToolCalls, ToolCallGroupCard } from './ToolCallGroup'
@@ -30,6 +31,7 @@ import { PendingMessageQueue } from './PendingMessageQueue'
 import { getVisibleTurnWindow, partitionTurns, type TurnItem } from '@/utils/turns'
 import { isDirectUserBlock, latestDirectUserBlockId } from '@/utils/blocks'
 import { mcpAppResourceUri } from '@/utils/mcp-app-artifacts'
+import { resolveAgentRole } from '@/lib/agent-roles'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { LoadingVerb } from './motion/LoadingVerb'
 import { TextSelectionAction } from './TextSelectionAction'
@@ -281,6 +283,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
   }, [totalLen, lastContent])
 
   const isEmpty = visibleCount === 0 && !isWorking
+  const agentLabel = activeAgent ?? 'evoflux'
 
   useEffect(() => {
     if (!isEmpty) return
@@ -349,8 +352,14 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                  return (
                    <div key={`turn-${item.startIndex}-${item.blocks[0]?.id ?? k}`}>
                      <div className="mb-2 flex items-center gap-1.5">
-                       <img src={EvoFluxLogo} width={14} height={14} className="rounded-xs opacity-70" alt="" aria-hidden="true" />
-                       <span className="text-xs font-medium text-(--color-text-muted)">{activeAgent ?? 'evoflux'}</span>
+                       <img src={EvoFluxLogo} width={12} height={12} className="shrink-0 rounded-xs opacity-70" alt="" aria-hidden="true" />
+                       <AgentChip
+                         role={resolveAgentRole(agentLabel)}
+                         label={agentLabel}
+                         active={turnIsStreaming}
+                         className="min-w-0 truncate px-2 py-0.5 text-[11px]"
+                         dotClassName={turnIsStreaming ? 'animate-pulse bg-(--color-accent)' : undefined}
+                       />
                      </div>
                      <div className="space-y-2">
                        {groupedBlocks.map((renderItem, j) => {
@@ -366,7 +375,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                          const absIdx = blockAbsIdx.get(block.id) ?? item.startIndex + j
                          const isStreaming = isWorking && absIdx >= blocks.length
                          return (
-                           <div key={block.id} className={isStreaming ? 'block-reveal' : undefined}>
+                           <div key={block.id} className="block-reveal">
                              <BlockRenderer
                                block={block}
                                isStreaming={isStreaming}
@@ -406,8 +415,14 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
               ))) && (
               <div>
                 <div className="mb-2 flex items-center gap-1.5">
-                  <img src={EvoFluxLogo} width={14} height={14} className="rounded-xs opacity-70" alt="" aria-hidden="true" />
-                  <span className="text-xs font-medium text-(--color-text-muted)">{activeAgent ?? 'evoflux'}</span>
+                  <img src={EvoFluxLogo} width={12} height={12} className="shrink-0 rounded-xs opacity-70" alt="" aria-hidden="true" />
+                  <AgentChip
+                    role={resolveAgentRole(agentLabel)}
+                    label={agentLabel}
+                    active
+                    className="min-w-0 truncate px-2 py-0.5 text-[11px]"
+                    dotClassName="animate-pulse bg-(--color-accent)"
+                  />
                 </div>
                 <LoadingVerb className="py-1 pl-0.5" />
               </div>

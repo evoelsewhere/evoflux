@@ -13,6 +13,7 @@ import { DateTimePicker } from '@/components/ui/date-time-picker'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { SegmentedControl } from '@/components/ui/segmented-control'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   useScheduledTasksQuery,
@@ -28,7 +29,7 @@ import { formatRelativeDate, formatInTimezone, wallClockToISO, isoToWallClock } 
 import { useModalFocus } from '@/hooks/useModalFocus'
 import { loadCodingWorkspaceEntries, workspaceLabel } from '@/utils/workspace'
 import { useReducedMotion } from '@/hooks/useReducedMotion'
-import { useMotionPreset } from '@/lib/motion'
+import { fadeRise, staggerDelay, useListEnterIndex, useMotionPreset } from '@/lib/motion'
 
 interface SchedulerPanelProps {
   open: boolean
@@ -121,53 +122,6 @@ function SessionIdField({
         {mode === 'auto' && 'Reuses the same session across all runs of this task.'}
         {mode === 'custom' && 'Continues a specific existing session by UUID.'}
       </p>
-    </div>
-  )
-}
-
-function ScheduleTypeSegmented({
-  value,
-  onChange,
-}: {
-  value: ScheduledTaskCreate['schedule_type']
-  onChange: (v: ScheduledTaskCreate['schedule_type']) => void
-}) {
-  const options: { key: ScheduledTaskCreate['schedule_type']; label: string }[] = [
-    { key: 'every', label: 'Every' },
-    { key: 'cron', label: 'Cron' },
-    { key: 'at', label: 'At' },
-  ]
-  return (
-    <div
-      role="tablist"
-      aria-label="Schedule type"
-      // ``inline-flex`` (not ``flex w-full``) so the control sizes to its
-      // contents — three short labels do not need the full form width.
-      className="mt-2 inline-flex gap-1 rounded-md border border-(--color-border) bg-(--bg-page) p-1"
-    >
-      {options.map((opt) => {
-        const active = value === opt.key
-        return (
-          <button
-            key={opt.key}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            onClick={() => onChange(opt.key)}
-            className={
-              // Drop ``flex-1`` — let each button hug its label with
-              // comfortable horizontal padding instead of stretching to
-              // fill the container.
-              'rounded-sm px-3 py-1 text-xs font-medium transition-colors ' +
-              (active
-                ? 'bg-(--bg-card) text-(--color-text) shadow-sm ring-1 ring-(--color-border-strong)'
-                : 'text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text-2)')
-            }
-          >
-            {opt.label}
-          </button>
-        )
-      })}
     </div>
   )
 }
@@ -369,6 +323,7 @@ export function SchedulerPanel({
     )
   })
   const selectedTask = selectedTaskId ? tasks.find((t) => t.id === selectedTaskId) : null
+  const taskEnterIndex = useListEnterIndex(filteredTasks.map((t) => t.id))
 
   const handleSelectTask = (id: string) => { setSelectedTaskId(id); setPane('detail') }
   const handleBackToList = () => { setPane('list'); setSelectedTaskId(null) }
@@ -451,6 +406,7 @@ export function SchedulerPanel({
                   initial={prefersReducedMotion ? { opacity: 0 } : { x: -20 * preset.distance, opacity: 0 }}
                   animate={prefersReducedMotion ? { opacity: 1 } : { x: 0, opacity: 1 }}
                   exit={prefersReducedMotion ? { opacity: 0 } : { x: -20 * preset.distance, opacity: 0 }}
+                  transition={preset.spring}
                   className="flex flex-1 flex-col overflow-hidden"
                 >
                   {/* Search */}
@@ -495,6 +451,7 @@ export function SchedulerPanel({
                             key={task.id}
                             task={task}
                             isSelected={selectedTaskId === task.id}
+                            enterIndex={taskEnterIndex(task.id)}
                             onSelect={() => handleSelectTask(task.id)}
                           />
                         ))}
@@ -510,6 +467,7 @@ export function SchedulerPanel({
                   initial={prefersReducedMotion ? { opacity: 0 } : { x: 20 * preset.distance, opacity: 0 }}
                   animate={prefersReducedMotion ? { opacity: 1 } : { x: 0, opacity: 1 }}
                   exit={prefersReducedMotion ? { opacity: 0 } : { x: 20 * preset.distance, opacity: 0 }}
+                  transition={preset.spring}
                   className="flex flex-1 flex-col overflow-hidden"
                 >
                   <TaskDetailView
@@ -526,6 +484,7 @@ export function SchedulerPanel({
                   initial={prefersReducedMotion ? { opacity: 0 } : { x: 20 * preset.distance, opacity: 0 }}
                   animate={prefersReducedMotion ? { opacity: 1 } : { x: 0, opacity: 1 }}
                   exit={prefersReducedMotion ? { opacity: 0 } : { x: 20 * preset.distance, opacity: 0 }}
+                  transition={preset.spring}
                   className="flex flex-1 flex-col overflow-hidden"
                 >
                   <CreateTaskForm
@@ -548,14 +507,18 @@ export function SchedulerPanel({
 function TaskRow({
   task,
   isSelected,
+  enterIndex,
   onSelect,
 }: {
   task: ScheduledTaskResponse
   isSelected: boolean
+  enterIndex?: number
   onSelect: () => void
 }) {
+  const preset = useMotionPreset()
+  const enter = enterIndex !== undefined ? fadeRise(preset, 6) : null
   const dot = STATUS_DOT[task.status] ?? STATUS_DOT.pending
-  return (
+  const row = (
     <button
       onClick={onSelect}
       className={cn(
@@ -581,6 +544,18 @@ function TaskRow({
       {/* Chevron */}
       <ChevronRight size={14} className="shrink-0 text-(--color-text-subtle) transition-transform group-hover:translate-x-0.5 group-hover:text-(--color-text-muted)" />
     </button>
+  )
+
+  if (!enter || enterIndex === undefined) return row
+
+  return (
+    <motion.div
+      initial={enter.initial}
+      animate={enter.animate}
+      transition={{ ...enter.transition, delay: staggerDelay(preset, enterIndex) }}
+    >
+      {row}
+    </motion.div>
   )
 }
 
@@ -713,9 +688,17 @@ function CreateTaskForm({
           {/* Schedule Type */}
           <div>
             <label className="block text-sm font-medium text-(--color-text)">Schedule Type</label>
-            <ScheduleTypeSegmented
+            <SegmentedControl
+              layoutId="scheduler-schedule-type-create"
+              ariaLabel="Schedule type"
+              className="mt-2"
               value={formData.schedule_type}
               onChange={(v) => setFormData({ ...formData, schedule_type: v })}
+              options={[
+                { value: 'every', label: 'Every' },
+                { value: 'cron', label: 'Cron' },
+                { value: 'at', label: 'At' },
+              ]}
             />
           </div>
 
@@ -1177,9 +1160,17 @@ function EditTaskForm({
           {/* Schedule Type */}
           <div>
             <label className="block text-sm font-medium text-(--color-text)">Schedule Type</label>
-            <ScheduleTypeSegmented
+            <SegmentedControl
+              layoutId="scheduler-schedule-type-edit"
+              ariaLabel="Schedule type"
+              className="mt-2"
               value={formData.schedule_type}
               onChange={(v) => setFormData({ ...formData, schedule_type: v })}
+              options={[
+                { value: 'every', label: 'Every' },
+                { value: 'cron', label: 'Cron' },
+                { value: 'at', label: 'At' },
+              ]}
             />
           </div>
 
