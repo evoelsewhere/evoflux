@@ -72,6 +72,7 @@ import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
 import { TeamChatView } from '@/components/TeamChatView'
 import { MarkdownBlock } from '@/utils/markdown'
+import { formatApprovalQuestion } from '@/utils/approvalQuestion'
 import { formatRelativeDate } from '@/utils/format'
 import { takeAimPipelinePrefill } from '@/lib/aimHandoff'
 import { cn } from '@/lib/utils'
@@ -2527,6 +2528,7 @@ function GateSection({ sessionId }: { sessionId: string }) {
   })
   const batch = pendingQ.data?.questions[0]
   const item = batch?.items[0]
+  const formattedQuestion = item ? formatApprovalQuestion(item.question) : ''
 
   const answer = async (value: string) => {
     if (!batch) return
@@ -2555,9 +2557,9 @@ function GateSection({ sessionId }: { sessionId: string }) {
         <CirclePause size={11} />
         Waiting for you
       </p>
-      <p className="whitespace-pre-wrap text-xs leading-5 text-(--color-text)">
-        {item.question}
-      </p>
+      <div className="max-h-96 overflow-auto text-xs leading-5 text-(--color-text)">
+        <MarkdownBlock content={formattedQuestion} sessionId={sessionId} />
+      </div>
       {item.options.length > 0 ? (
         <div className="flex flex-wrap gap-2">
           {item.options.map((option) => (

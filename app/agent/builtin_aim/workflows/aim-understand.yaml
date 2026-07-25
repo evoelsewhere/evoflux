@@ -121,7 +121,7 @@ nodes:
   - id: approve_understanding
     kind: gate
     title: "Approve understanding for {{inputs.unit}}?"
-    body: "{{nodes.understand_each.output.items | truncate:2400}}"
+    body: "{{nodes.understand_each.output.items.-1.text | truncate:2400}}"
     choices: [approve, hold]
 
   - id: done
