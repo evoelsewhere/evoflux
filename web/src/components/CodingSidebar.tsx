@@ -112,6 +112,7 @@ import { LongPressButton } from "@/components/ui/long-press-button";
 import {
   useAddWorkspaceMutation,
   useCodingOverviewQuery,
+  useDeleteProjectMutation,
   useRemoveWorkspaceMutation,
 } from "@/queries/useProjectsQuery";
 import { ProjectSetupModal } from "@/components/ProjectSetupModal";
@@ -331,8 +332,11 @@ export function CodingSidebar({
   const overviewQuery = useCodingOverviewQuery();
   const projects = overviewQuery.data?.projects ?? [];
   const addWorkspaceMutation = useAddWorkspaceMutation();
+  const deleteProjectMutation = useDeleteProjectMutation();
   const removeWorkspaceMutation = useRemoveWorkspaceMutation();
   const [showProjectModal, setShowProjectModal] = useState(false);
+  const [deleteProjectTarget, setDeleteProjectTarget] =
+    useState<CodingProject | null>(null);
   const [pendingProject, setPendingProject] = useState<string | null>(null);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(
     () => new Set(loadCodingExpanded().projects),
@@ -1111,16 +1115,31 @@ export function CodingSidebar({
                   {isPending ? (
                     <Loader2 size={11} className="ml-1 shrink-0 animate-spin text-(--color-text-muted)" />
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() => void openProjectSession(project)}
-                      disabled={!canCreateSession}
-                      className={`ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-xs border border-(--color-border) text-(--color-text-muted) transition-all hover:bg-(--bg-key) hover:text-(--color-text-2) disabled:cursor-not-allowed disabled:opacity-40 ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
-                      aria-label={canCreateSession ? `New session in ${project.name}` : `${project.name} has no repositories yet`}
-                      title={canCreateSession ? `New session in ${project.name}` : "Add a repository to this project first"}
-                    >
-                      <Plus size={11} aria-hidden="true" />
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => void openProjectSession(project)}
+                        disabled={!canCreateSession}
+                        className={`ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-xs border border-(--color-border) text-(--color-text-muted) transition-all hover:bg-(--bg-key) hover:text-(--color-text-2) disabled:cursor-not-allowed disabled:opacity-40 ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                        aria-label={canCreateSession ? `New session in ${project.name}` : `${project.name} has no repositories yet`}
+                        title={canCreateSession ? `New session in ${project.name}` : "Add a repository to this project first"}
+                      >
+                        <Plus size={11} aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setDeleteProjectTarget(project);
+                        }}
+                        disabled={deleteProjectMutation.isPending}
+                        className={`ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-xs text-(--color-text-subtle) transition-all hover:bg-(--color-error-subtle) hover:text-(--color-error) disabled:cursor-not-allowed disabled:opacity-40 ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                        aria-label={`Delete project ${project.name}`}
+                        title={`Delete project ${project.name}`}
+                      >
+                        <Trash2 size={11} aria-hidden="true" />
+                      </button>
+                    </>
                   )}
                 </div>
                 {isExpanded && (
@@ -2191,6 +2210,61 @@ export function CodingSidebar({
               onClick={confirmRemoveWorkspace}
             >
               Remove from sidebar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={deleteProjectTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteProjectTarget(null);
+        }}
+      >
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Delete project</DialogTitle>
+            <DialogDescription>
+              {deleteProjectTarget
+                ? `Delete ${deleteProjectTarget.name}? This removes the project grouping only; repositories remain available in Workspaces.`
+                : "Delete this project?"}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="p-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDeleteProjectTarget(null)}
+              disabled={deleteProjectMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={!deleteProjectTarget || deleteProjectMutation.isPending}
+              onClick={() => {
+                const target = deleteProjectTarget;
+                if (!target) return;
+                deleteProjectMutation.mutate(target.id, {
+                  onSuccess: () => {
+                    if (currentProjectId === target.id) {
+                      useTeamStore.setState({ projectId: null });
+                      navigate({ to: "/coding", replace: true });
+                    }
+                    setDeleteProjectTarget(null);
+                  },
+                  onError: (err) => {
+                    useToastStore.getState().push({
+                      tone: "error",
+                      title: "Couldn't delete project",
+                      description: err instanceof Error ? err.message : String(err),
+                    });
+                  },
+                });
+              }}
+            >
+              {deleteProjectMutation.isPending ? "Deleting..." : "Delete project"}
             </Button>
           </DialogFooter>
         </DialogContent>
