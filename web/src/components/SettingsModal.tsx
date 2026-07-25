@@ -3,12 +3,12 @@
  * Uses useUIStore for open/close and internal path navigation.
  */
 import { useEffect, useCallback, useMemo } from 'react'
-import { Menu, X } from 'lucide-react'
+import { ChevronRight, X } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 
 import { useUIStore } from '@/stores/useUIStore'
 import { useIsMobile } from '@/hooks/use-mobile'
-import { useReducedMotion } from '@/hooks/useReducedMotion'
+import { useMotionPreset } from '@/lib/motion'
 import { SettingsSidebar } from '@/components/settings/SettingsSidebar'
 import { SettingsProvider } from '@/contexts/SettingsContext'
 import { SettingsHubPage } from '@/routes/settings.index'
@@ -28,19 +28,62 @@ import { NotificationSettingsPage } from '@/routes/settings.notifications'
 import { AppearanceSettingsPage } from '@/routes/settings.appearance'
 import { BackendConnectionPage } from '@/routes/settings.connection'
 import { DiagnosticsPage } from '@/routes/settings.diagnostics'
+import { TelemetrySettingsPage } from '@/routes/settings.telemetry'
+
+/** Sections that own a list page plus per-item editor routes. */
+const LIST_SECTIONS: Readonly<Record<string, string>> = {
+  agents: 'Agents',
+  skills: 'Skills',
+  mcp: 'MCP servers',
+}
+
+const LEAF_SECTIONS: Readonly<Record<string, string>> = {
+  providers: 'Providers',
+  connection: 'Connection',
+  sandbox: 'Sandbox',
+  dream: 'Dream',
+  notifications: 'Notifications',
+  appearance: 'Appearance',
+  telemetry: 'Telemetry',
+  diagnostics: 'Diagnostics',
+}
+
+interface Crumb {
+  label: string
+  /** Store path to navigate to. Omitted for the current, non-clickable crumb. */
+  to?: string
+}
+
+/**
+ * Trail for the modal header. On editor paths the section crumb stays
+ * clickable, which is the only way back to the list on desktop — the page
+ * header renders its back button on mobile only.
+ */
+function crumbsFor(path: string): Crumb[] {
+  const [section, ...rest] = path.split('/').filter(Boolean)
+  if (!section) return [{ label: 'Settings' }]
+
+  const listLabel = LIST_SECTIONS[section]
+  if (listLabel) {
+    const item = rest.join('/')
+    const trail: Crumb[] = [{ label: 'Settings', to: '' }]
+    if (item) {
+      trail.push({ label: listLabel, to: section })
+      trail.push({ label: item === 'new' ? 'New' : item })
+    } else {
+      trail.push({ label: listLabel })
+    }
+    return trail
+  }
+
+  const leafLabel = LEAF_SECTIONS[section]
+  if (!leafLabel) return [{ label: 'Settings' }]
+  return [{ label: 'Settings', to: '' }, { label: leafLabel }]
+}
 
 function pageTitleFor(path: string): string {
-  if (path.startsWith('agents')) return 'Agents'
-  if (path.startsWith('skills')) return 'Skills'
-  if (path.startsWith('mcp')) return 'MCP servers'
-  if (path === 'connection') return 'Connection'
-  if (path === 'providers') return 'Providers'
-  if (path === 'sandbox') return 'Sandbox'
-  if (path === 'dream') return 'Dream'
-  if (path === 'notifications') return 'Notifications'
-  if (path === 'appearance') return 'Appearance'
-  if (path === 'diagnostics') return 'Diagnostics'
-  return 'Settings'
+  const crumbs = crumbsFor(path)
+  return crumbs[crumbs.length - 1]?.label ?? 'Settings'
 }
 
 function SettingsContent({ path }: { path: string }) {
@@ -65,6 +108,7 @@ function SettingsContent({ path }: { path: string }) {
   if (section === 'notifications') return <NotificationSettingsPage />
   if (section === 'appearance') return <AppearanceSettingsPage />
   if (section === 'diagnostics') return <DiagnosticsPage />
+  if (section === 'telemetry') return <TelemetrySettingsPage />
   return <SettingsHubPage />
 }
 
@@ -75,7 +119,7 @@ export function SettingsModal() {
   const closeSettings = useUIStore((s) => s.closeSettings)
   const navigateSettings = useUIStore((s) => s.navigateSettings)
   const isMobile = useIsMobile()
-  const prefersReducedMotion = useReducedMotion()
+  const motionPreset = useMotionPreset()
 
   // Close on Escape
   useEffect(() => {
@@ -104,6 +148,8 @@ export function SettingsModal() {
   // Convert store path to full settings path for sidebar active state
   const fullPath = settingsPath ? `/settings/${settingsPath}` : '/settings'
 
+  const crumbs = useMemo(() => crumbsFor(settingsPath), [settingsPath])
+
   const handleSidebarNavigate = useCallback((path: string) => {
     // Convert "/settings/agents" → "agents", "/settings" → ""
     const stripped = path.replace(/^\/settings\/?/, '')
@@ -118,7 +164,7 @@ export function SettingsModal() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: prefersReducedMotion ? 0.01 : 0.15 }}
+          transition={motionPreset.transition}
           className="fixed inset-0 z-(--z-modal) flex items-center justify-center bg-(--color-overlay) p-4 md:p-8"
           role="dialog"
           aria-modal="true"
@@ -126,27 +172,49 @@ export function SettingsModal() {
           onClick={closeSettings}
         >
           <motion.div
-            initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.96 }}
-            animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, scale: 1 }}
-            exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.96 }}
-            transition={{ duration: prefersReducedMotion ? 0.01 : 0.15 }}
+            initial={{ opacity: 0, scale: 1 - 0.04 * motionPreset.distance, y: 6 * motionPreset.distance }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 1 - 0.03 * motionPreset.distance, y: 4 * motionPreset.distance }}
+            transition={motionPreset.spring}
             className="flex h-full w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-(--color-border) bg-(--bg-page) shadow-2xl md:h-[min(85vh,720px)] md:w-full"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
             <header className="flex shrink-0 items-center gap-2 border-b border-(--color-border) px-4 py-3">
-              {isMobile && (
-                <button
-                  type="button"
-                  aria-label="Open settings navigation"
-                  className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+              {isMobile ? (
+                <span className="min-w-0 flex-1 truncate text-sm font-semibold text-(--color-text)">
+                  {pageTitleFor(settingsPath)}
+                </span>
+              ) : (
+                <nav
+                  aria-label="Breadcrumb"
+                  className="flex min-w-0 flex-1 items-center gap-0.5 text-xs text-(--color-text-muted)"
                 >
-                  <Menu size={14} aria-hidden="true" />
-                </button>
+                  {crumbs.map((crumb, index) => {
+                    const isLast = index === crumbs.length - 1
+                    return (
+                      <span key={`${crumb.label}-${index}`} className="flex min-w-0 items-center gap-0.5">
+                        {index > 0 && (
+                          <ChevronRight size={11} aria-hidden="true" className="shrink-0 opacity-40" />
+                        )}
+                        {isLast || crumb.to === undefined ? (
+                          <span className="min-w-0 truncate px-0.5 font-medium text-(--color-text)" title={crumb.label}>
+                            {crumb.label}
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => navigateSettings(crumb.to ?? '')}
+                            className="shrink-0 truncate rounded px-0.5 transition-colors hover:text-(--color-text)"
+                          >
+                            {crumb.label}
+                          </button>
+                        )}
+                      </span>
+                    )
+                  })}
+                </nav>
               )}
-              <span className="min-w-0 flex-1 text-sm font-semibold text-(--color-text)">
-                {pageTitleFor(settingsPath)}
-              </span>
               <button
                 type="button"
                 onClick={closeSettings}

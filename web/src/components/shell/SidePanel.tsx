@@ -29,6 +29,7 @@ import { X } from 'lucide-react'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useReducedMotion } from '@/hooks/useReducedMotion'
 import { useResizableWidth } from '@/hooks/use-resizable-width'
+import { useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 
 interface SidePanelProps {
@@ -96,6 +97,7 @@ export function SidePanel({
 }: SidePanelProps) {
   const detectedMobile = useIsMobile()
   const prefersReducedMotion = useReducedMotion()
+  const motionPreset = useMotionPreset()
   const breakpointOverlay = mobileOverlay && (mobileProp ?? detectedMobile)
   const overlay = forceOverlay || breakpointOverlay
   const resizable = useResizableWidth({
@@ -120,11 +122,7 @@ export function SidePanel({
       initial={!animated ? false : fade ? { opacity: 0 } : { width: 0 }}
       animate={fade ? { opacity: 1 } : { width }}
       exit={fade ? { opacity: 0 } : { width: 0 }}
-      transition={
-        animated
-          ? { duration: prefersReducedMotion ? 0.01 : 0.22, ease: [0.4, 0, 0.2, 1] }
-          : { duration: 0 }
-      }
+      transition={animated ? motionPreset.transition : { duration: 0 }}
       className={cn(
         forceOverlay
           ? 'fixed inset-0 z-(--z-overlay) min-h-0 w-full max-w-none overflow-hidden border-l border-(--color-border) shadow-xl'

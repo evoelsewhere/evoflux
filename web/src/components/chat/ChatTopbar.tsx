@@ -28,6 +28,7 @@ import { WorkflowProgressPill } from '@/components/WorkflowProgressPill'
 import { SessionTOC } from '@/components/SessionTOC'
 import { SessionScheduleIndicator } from '@/components/SessionScheduleIndicator'
 import { isAgentRole, type AgentRole } from '@/lib/agent-roles'
+import { useMotionPreset } from '@/lib/motion'
 import type { ActiveLoop, ActiveWorkflowExecution, AgentStream } from '@/stores/useTeamStore/types'
 import type { Chapter } from '@/api/types'
 import type { ViewMode } from '@/components/TeamChatView/types'
@@ -254,6 +255,17 @@ export function ChatTopbar({
             />
           )}
           <SessionTOC sessionId={sessionId} />
+          <TopbarAction
+            Icon={FolderOpen}
+            label={mode === 'coding' ? 'Workspace' : 'Files'}
+            onClick={mode === 'coding'
+              ? (workspace ? onWorkspaceFiles : undefined)
+              : (sessionId ? onToggleFilesPanel : undefined)}
+            title={mode === 'coding' ? 'Workspace panel' : 'Session files'}
+            aria-pressed={mode === 'coding' ? codingPanelOpen : showFilesPanel}
+            indicator={mode === 'coding' ? codingPanelOpen : showFilesPanel}
+            disabled={mode === 'coding' ? !workspace : !sessionId}
+          />
           <AgentTopbar
             isMobile={false}
             tokens={headerTokens}
@@ -390,6 +402,7 @@ function MobileChatActions({
   onCompact,
   activeLoop,
 }: MobileChatActionsProps) {
+  const preset = useMotionPreset()
   return (
     <>
       <button
@@ -411,7 +424,6 @@ function MobileChatActions({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.18 }}
               className="mobile-safe-top fixed inset-x-0 bottom-0 z-(--z-drawer) bg-(--color-overlay) md:hidden"
               aria-hidden="true"
               onClick={() => onOpenChange(false)}
@@ -421,7 +433,7 @@ function MobileChatActions({
               initial={{ x: 280 }}
               animate={{ x: 0 }}
               exit={{ x: 280 }}
-              transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+              transition={preset.spring}
               className="mobile-safe-top fixed bottom-0 right-0 z-(--z-overlay) flex w-[min(272px,calc(100vw-2rem))] flex-col overflow-hidden border-l border-(--color-border) bg-(--bg-page) shadow-xl md:hidden"
               role="dialog"
               aria-modal="true"

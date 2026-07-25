@@ -14,6 +14,7 @@ import {
 import { SettingsListView, type ListViewRow } from '@/components/settings/SettingsListView'
 import { ModelCombobox } from '@/components/settings/AgentForm'
 import { useAgentFilesQuery, useRegistryQuery, useBulkUpdateAgentModelMutation } from '@/queries'
+import { SegmentedControl } from '@/components/ui/segmented-control'
 import { useToastStore } from '@/stores/useToastStore'
 import { useSettingsParams, useSettingsNavigate } from '@/contexts/SettingsContext'
 
@@ -144,7 +145,8 @@ export function AgentsListPage() {
     <>
     <SettingsListView
       title="Agents"
-      description="Markdown files with YAML frontmatter. Forge, Coding, and AIM agents are separate teams."
+      icon={Wrench}
+      description="Each agent is a markdown file with YAML frontmatter. Forge, Coding and AIM are separate teams with their own roster."
       newTo="/settings/agents/new"
       newLabel="New agent"
       newAction={
@@ -155,28 +157,18 @@ export function AgentsListPage() {
       }
       filterPlaceholder="Filter agents…"
       tabs={
-        <div className="flex gap-1 rounded-lg border border-(--color-border) bg-(--bg-key) p-0.5">
-          {(['all', 'forge', 'coding', 'aim'] as const).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setTab(t)}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                tab === t
-                  ? 'bg-(--bg-card) text-(--color-text) shadow-sm'
-                  : 'text-(--color-text-muted) hover:text-(--color-text)'
-              }`}
-            >
-              {t === 'all'
-                ? 'All'
-                : t === 'forge'
-                ? `Forge (${forgeAgents.length})`
-                : t === 'coding'
-                ? `Coding (${codingAgents.length})`
-                : `AIM (${aimAgents.length})`}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          options={[
+            { value: 'all', label: 'All' },
+            { value: 'forge', label: `Forge (${forgeAgents.length})` },
+            { value: 'coding', label: `Coding (${codingAgents.length})` },
+            { value: 'aim', label: `AIM (${aimAgents.length})` },
+          ]}
+          value={tab}
+          onChange={setTab}
+          layoutId="agents-tab"
+          ariaLabel="Agent teams"
+        />
       }
       headerExtra={
         agents.length > 0 ? (

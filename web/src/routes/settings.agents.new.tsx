@@ -1,11 +1,17 @@
 import { useState } from 'react'
+import { Wrench } from 'lucide-react'
 
 import { useCreateAgentMutation } from '@/queries'
 import { Button } from '@/components/ui/button'
 import { useToastStore } from '@/stores/useToastStore'
 import { ApiValidationError } from '@/api/client'
 import { AgentForm } from '@/components/settings/AgentForm'
-import { EditorSubHeader } from '@/components/settings/EditorSubHeader'
+import { EditorHeaderActions } from '@/components/settings/EditorHeaderActions'
+import {
+  SettingsGroup,
+  SettingsPage,
+  SettingsRow,
+} from '@/components/settings/SettingsLayout'
 import { validateAgentDraft } from '@/components/settings/schema'
 import { useSettingsSearch, useSettingsNavigate } from '@/contexts/SettingsContext'
 
@@ -76,25 +82,34 @@ export function NewAgentPage() {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <EditorSubHeader
-        kind="agent"
-        name="New agent"
-        dirty={draft !== TEMPLATE}
-        invalid={invalid}
-        saving={createMut.isPending}
-        error={saveError}
-        validationHint={firstDraftError}
-        mode={mode}
-        onModeChange={setMode}
-        onSave={handleCreate}
-      />
-
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-3xl p-6">
-          <div className="mb-4 rounded-lg border border-(--color-border) bg-(--bg-card) px-4 py-3">
-            <p className="text-xs font-medium text-(--color-text)">Create in</p>
-            <div className="mt-2 flex gap-2">
+    <SettingsPage
+      icon={Wrench}
+      title="New agent"
+      actions={
+        <EditorHeaderActions
+          dirty={draft !== TEMPLATE}
+          invalid={invalid}
+          saving={createMut.isPending}
+          error={saveError}
+          validationHint={firstDraftError}
+          mode={mode}
+          onModeChange={setMode}
+          onSave={handleCreate}
+        />
+      }
+    >
+      <SettingsGroup title="Create in">
+        <SettingsRow
+          stacked
+          description={
+            agentMode === 'coding'
+              ? `Will create coding/${name}.md for coding sessions.`
+              : agentMode === 'aim'
+                ? `Will create aim/${name}.md for AIM sessions.`
+                : `Will create ${name}.md for forge sessions.`
+          }
+          control={
+            <div className="flex gap-2">
               <Button
                 type="button"
                 size="xs"
@@ -123,24 +138,20 @@ export function NewAgentPage() {
                 AIM
               </Button>
             </div>
-            <p className="mt-2 text-xs text-(--color-text-muted)">
-              {agentMode === 'coding'
-                ? `Will create coding/${name}.md for coding sessions.`
-                : agentMode === 'aim'
-                ? `Will create aim/${name}.md for AIM sessions.`
-                : `Will create ${name}.md for forge sessions.`}
-            </p>
-          </div>
-          <AgentForm
-            initial={TEMPLATE}
-            onChange={handleDraftChange}
-            disabled={createMut.isPending}
-            isNew
-            mode={mode}
-            onModeChange={setMode}
-          />
-        </div>
-      </div>
-    </div>
+          }
+        />
+      </SettingsGroup>
+
+      <SettingsGroup bare>
+        <AgentForm
+          initial={TEMPLATE}
+          onChange={handleDraftChange}
+          disabled={createMut.isPending}
+          isNew
+          mode={mode}
+          onModeChange={setMode}
+        />
+      </SettingsGroup>
+    </SettingsPage>
   )
 }

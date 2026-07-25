@@ -17,7 +17,7 @@ import type { ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Panel, Group, Separator } from 'react-resizable-panels'
 import { AgentPane } from '../AgentPane'
-import { useReducedMotion } from '@/hooks/useReducedMotion'
+import { useMotionPreset } from '@/lib/motion'
 import type { AgentStream } from '@/stores/useTeamStore'
 import type { TodoItem } from '@/api/types'
 
@@ -30,9 +30,6 @@ interface SplitGridProps {
   onContinue?: () => void
 }
 
-const SPRING_SOFT = [0.34, 1.2, 0.64, 1] as const
-const MOTION_BASE_S = 0.24
-const MOTION_FAST_S = 0.15
 const COMMAND_CENTER_THRESHOLD = 5
 
 function statusPriority(status: AgentStream['status']): number {
@@ -62,7 +59,7 @@ function VResizeHandle() {
 export function SplitGrid({
   agentNames, leadName, agentStreams, todos, isContinuing = false, onContinue,
 }: SplitGridProps) {
-  const prefersReducedMotion = useReducedMotion()
+  const preset = useMotionPreset()
 
   // User-controlled ordering — new agents appended, gone agents pruned.
   const [orderedNames, setOrderedNames] = useState(agentNames)
@@ -102,12 +99,7 @@ export function SplitGrid({
 
   if (visibleNames.length === 0) return null
 
-  const enterTransition = prefersReducedMotion
-    ? { duration: 0 }
-    : { duration: MOTION_BASE_S, ease: SPRING_SOFT }
-  const exitTransition = prefersReducedMotion
-    ? { duration: 0 }
-    : { duration: MOTION_FAST_S, ease: SPRING_SOFT }
+  const paneTravel = 10 * preset.distance
 
   const renderPane = (name: string, fill = 'h-full') => {
     const stream = agentStreams[name]
@@ -116,10 +108,9 @@ export function SplitGrid({
     return (
       <motion.div
         key={name}
-        initial={{ opacity: 0, y: 10, scale: 0.98 }}
+        initial={{ opacity: 0, y: paneTravel, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 10, scale: 0.98, transition: exitTransition }}
-        transition={enterTransition}
+        exit={{ opacity: 0, y: paneTravel, scale: 0.98 }}
         className={fill}
       >
         <AgentPane

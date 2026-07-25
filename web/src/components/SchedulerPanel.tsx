@@ -28,6 +28,7 @@ import { formatRelativeDate, formatInTimezone, wallClockToISO, isoToWallClock } 
 import { useModalFocus } from '@/hooks/useModalFocus'
 import { loadCodingWorkspaceEntries, workspaceLabel } from '@/utils/workspace'
 import { useReducedMotion } from '@/hooks/useReducedMotion'
+import { useMotionPreset } from '@/lib/motion'
 
 interface SchedulerPanelProps {
   open: boolean
@@ -337,6 +338,7 @@ export function SchedulerPanel({
   contextWorkspace = null,
 }: SchedulerPanelProps) {
   const prefersReducedMotion = useReducedMotion()
+  const preset = useMotionPreset()
 
   // Single-pane navigation for all screen sizes
   const [pane, setPane] = useState<'list' | 'detail' | 'create'>('list')
@@ -382,7 +384,6 @@ export function SchedulerPanel({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.18 }}
             onClick={onClose}
             className="fixed inset-0 z-(--z-overlay) bg-(--color-overlay)"
           />
@@ -393,7 +394,7 @@ export function SchedulerPanel({
             initial={prefersReducedMotion ? { opacity: 0 } : { x: '100%', opacity: 0 }}
             animate={prefersReducedMotion ? { opacity: 1 } : { x: 0, opacity: 1 }}
             exit={prefersReducedMotion ? { opacity: 0 } : { x: '100%', opacity: 0 }}
-            transition={{ duration: prefersReducedMotion ? 0.01 : 0.22, ease: [0.4, 0, 0.2, 1] }}
+            transition={preset.spring}
             className="fixed bottom-0 right-0 top-[env(safe-area-inset-top,0px)] z-(--z-modal) flex w-full flex-col overflow-hidden border-l border-(--color-border) bg-(--bg-page) shadow-2xl sm:w-[460px]"
             role="dialog"
             aria-modal="true"
@@ -447,10 +448,9 @@ export function SchedulerPanel({
               {pane === 'list' && (
                 <motion.div
                   key="list"
-                  initial={prefersReducedMotion ? { opacity: 0 } : { x: -20, opacity: 0 }}
+                  initial={prefersReducedMotion ? { opacity: 0 } : { x: -20 * preset.distance, opacity: 0 }}
                   animate={prefersReducedMotion ? { opacity: 1 } : { x: 0, opacity: 1 }}
-                  exit={prefersReducedMotion ? { opacity: 0 } : { x: -20, opacity: 0 }}
-                  transition={{ duration: 0.14 }}
+                  exit={prefersReducedMotion ? { opacity: 0 } : { x: -20 * preset.distance, opacity: 0 }}
                   className="flex flex-1 flex-col overflow-hidden"
                 >
                   {/* Search */}
@@ -507,10 +507,9 @@ export function SchedulerPanel({
               {pane === 'detail' && selectedTask && (
                 <motion.div
                   key={`detail-${selectedTask.id}`}
-                  initial={prefersReducedMotion ? { opacity: 0 } : { x: 20, opacity: 0 }}
+                  initial={prefersReducedMotion ? { opacity: 0 } : { x: 20 * preset.distance, opacity: 0 }}
                   animate={prefersReducedMotion ? { opacity: 1 } : { x: 0, opacity: 1 }}
-                  exit={prefersReducedMotion ? { opacity: 0 } : { x: 20, opacity: 0 }}
-                  transition={{ duration: 0.14 }}
+                  exit={prefersReducedMotion ? { opacity: 0 } : { x: 20 * preset.distance, opacity: 0 }}
                   className="flex flex-1 flex-col overflow-hidden"
                 >
                   <TaskDetailView
@@ -524,10 +523,9 @@ export function SchedulerPanel({
               {pane === 'create' && (
                 <motion.div
                   key="create"
-                  initial={prefersReducedMotion ? { opacity: 0 } : { x: 20, opacity: 0 }}
+                  initial={prefersReducedMotion ? { opacity: 0 } : { x: 20 * preset.distance, opacity: 0 }}
                   animate={prefersReducedMotion ? { opacity: 1 } : { x: 0, opacity: 1 }}
-                  exit={prefersReducedMotion ? { opacity: 0 } : { x: 20, opacity: 0 }}
-                  transition={{ duration: 0.14 }}
+                  exit={prefersReducedMotion ? { opacity: 0 } : { x: 20 * preset.distance, opacity: 0 }}
                   className="flex flex-1 flex-col overflow-hidden"
                 >
                   <CreateTaskForm

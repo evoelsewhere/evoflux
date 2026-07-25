@@ -523,10 +523,9 @@ export function CodingFileViewerPanel({
       ariaLabel="File viewer"
       className="bg-(--bg-card)"
     >
-        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-3 py-3">
+        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-4 py-3">
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-(--color-text-subtle)">File</p>
-            <p className="mt-1 truncate font-mono text-xs text-(--color-text)" title={file.path}>{file.path}</p>
+            <h2 className="truncate text-sm font-semibold text-(--color-text)" title={file.path}>{file.path}</h2>
             <p className="mt-0.5 text-xs text-(--color-text-subtle)">{formatBytes(file.size)} · {file.mime}</p>
           </div>
           <div className="flex shrink-0 items-center gap-1">
@@ -543,11 +542,11 @@ export function CodingFileViewerPanel({
                 <GitCompare size={11} /> Diff
               </button>
             </div>
-            <button type="button" onClick={() => void downloadCodingWorkspaceFile(workspace, file)} title="Download" className="flex h-9 w-9 items-center justify-center rounded-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) md:h-auto md:w-auto md:p-1.5">
+            <button type="button" onClick={() => void downloadCodingWorkspaceFile(workspace, file)} title="Download" className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)">
               <Download size={14} />
             </button>
             {(kind === 'text' || kind === 'drawio') && <CopyButton workspace={workspace} file={file} />}
-            <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) md:h-auto md:w-auto md:p-1.5" aria-label="Close file viewer">
+            <button type="button" onClick={onClose} className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)" aria-label="Close file viewer" title="Close">
               <X size={16} />
             </button>
           </div>

@@ -25,6 +25,7 @@ import { useToastStore } from '@/stores/useToastStore'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { LazyMarkdownBlock } from '@/utils/LazyMarkdownBlock'
 import { SidePanel } from './shell/SidePanel'
+import { useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 import type { PlanStep } from '@/api/types'
@@ -282,6 +283,7 @@ export function PlanReviewPanel({
 export function PlanActionBar({ onRevise }: { onRevise: () => void }) {
   const planApproval = useTeamStore((s) => s.planApproval)
   const sessionId = useTeamStore((s) => s.sessionId)
+  const preset = useMotionPreset()
   const [replying, setReplying] = useState(false)
   const [replyError, setReplyError] = useState<string | null>(null)
 
@@ -307,10 +309,9 @@ export function PlanActionBar({ onRevise }: { onRevise: () => void }) {
       {planApproval && (
         <motion.div
           key={planApproval.requestId}
-          initial={{ opacity: 0, y: 6 }}
+          initial={{ opacity: 0, y: 6 * preset.distance }}
           animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 6 }}
-          transition={{ duration: 0.15 }}
+          exit={{ opacity: 0, y: 6 * preset.distance }}
           className="mx-auto w-full max-w-3xl px-4 pb-2"
         >
           <div className="overflow-hidden rounded-xl border border-(--color-primary)/30 bg-(--bg-page) shadow-sm">
