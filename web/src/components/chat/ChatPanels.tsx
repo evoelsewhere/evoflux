@@ -9,7 +9,7 @@
  *     beside the main card instead of sitting under the topbar.
  *   - ``ChatOverlayPanels`` — rendered after the body row (fixed-position —
  *     DOM order only matters for z-stacking): CommandPalette,
- *     RunInputsDialog, FloatingTodosPanel. WikiPanel and SchedulerPanel
+ *     RunInputsDialog. WikiPanel and SchedulerPanel
  *     moved to the route root (``__root.tsx``) so they open in every mode.
  *
  * Props-driven; every conditional and the exact DOM order are preserved.
@@ -21,11 +21,9 @@ import { BrowserViewer } from '../BrowserViewer'
 import { TerminalPanel } from '../TerminalPanel'
 import { CommandPalette, type Command } from '../CommandPalette'
 import { RunInputsDialog, type RunInputsRequest } from '../RunInputsDialog'
-import { FloatingTodosPanel } from '../FloatingTodosPanel'
 import { SidePanel } from '@/components/shell/SidePanel'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 import type { useResizableWidth } from '@/hooks/use-resizable-width'
-import type { TodoItem } from '@/api/types'
 
 interface ChatTrailingPanelsProps {
   mode: 'forge' | 'coding' | 'aim'
@@ -110,10 +108,9 @@ interface ChatOverlayPanelsProps {
   runInputsRequest: RunInputsRequest | null
   onCancelRunInputs: () => void
   onRunInputs: (values: Record<string, unknown>) => Promise<void>
-  todos: TodoItem[]
 }
 
-// Modals / floating panels rendered after the body row (fixed-position —
+// Modals rendered after the body row (fixed-position —
 // DOM order only matters for z-stacking).
 export function ChatOverlayPanels({
   showPalette,
@@ -122,7 +119,6 @@ export function ChatOverlayPanels({
   runInputsRequest,
   onCancelRunInputs,
   onRunInputs,
-  todos,
 }: ChatOverlayPanelsProps) {
   return (
     <>
@@ -136,7 +132,6 @@ export function ChatOverlayPanels({
           onRun={onRunInputs}
         />
       )}
-      <FloatingTodosPanel todos={todos} />
     </>
   )
 }
