@@ -196,7 +196,7 @@ export function SettingsModal() {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={motionPreset.transition}
-          className="fixed inset-0 z-(--z-modal) flex items-center justify-center bg-(--color-overlay) p-0 backdrop-blur-[2px] md:p-8"
+          className="fixed inset-0 z-(--z-modal) flex items-center justify-center bg-(--color-overlay) p-0 backdrop-blur-[2px] md:p-3"
           role="dialog"
           aria-modal="true"
           aria-labelledby="settings-dialog-title"
@@ -208,11 +208,11 @@ export function SettingsModal() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 1 - 0.03 * motionPreset.distance, y: 4 * motionPreset.distance }}
             transition={motionPreset.spring}
-            className="flex h-[100dvh] w-full flex-col overflow-hidden bg-(--bg-page) shadow-2xl md:h-[min(90dvh,800px)] md:max-w-6xl md:rounded-2xl md:border md:border-(--color-border)"
+            className="flex h-[100dvh] w-full flex-col overflow-hidden bg-(--bg-page) shadow-2xl md:h-[min(94dvh,960px)] md:w-[min(94vw,1600px)] md:max-w-none md:rounded-xl md:border md:border-(--color-border)"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <header className="flex min-h-14 shrink-0 items-center gap-2 border-b border-(--color-border) bg-(--bg-card)/70 px-3 pt-[env(safe-area-inset-top)] backdrop-blur-xl md:px-4 md:pt-0">
+            <header className="flex min-h-14 shrink-0 items-center gap-2 border-b border-(--color-border) bg-(--bg-card)/70 px-3 pt-[env(safe-area-inset-top)] backdrop-blur-xl md:min-h-12 md:pt-0">
               {isMobile ? (
                 <h2 id="settings-dialog-title" className="min-w-0 flex-1 truncate text-sm font-semibold text-(--color-text)">
                   Settings
@@ -263,7 +263,7 @@ export function SettingsModal() {
             </header>
 
             {/* Body */}
-            <div className="flex min-h-0 flex-1 gap-2 overflow-hidden md:p-2">
+            <div className="flex min-h-0 flex-1 gap-1.5 overflow-hidden md:p-1.5">
               {!isMobile && (
                 <SettingsSidebar
                   currentPath={fullPath}

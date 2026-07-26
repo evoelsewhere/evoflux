@@ -2,9 +2,9 @@
  * TeamChatView — top-level layout for the team chat route.
  *
  * Owns:
- *   - View-mode state (``agent`` / ``split``).
+ *   - View-mode state (``agent`` / ``split`` / ``monitor``).
  *   - The composition: stores/queries wiring, one sidebar per mode, the
- *     ``AppShell`` frame, the view switch (AgentView / SplitGrid /
+ *     ``AppShell`` frame, the view switch (AgentView / SplitWorkbench /
  *     MonitorView), the ``FloatingInputBar`` and keyboard shortcuts.
  *
  * Delegates:
@@ -12,7 +12,7 @@
  *     workflow / task pills, ``AgentTopbar`` cluster).
  *   - ``ChatTrailingPanels`` / ``ChatOverlayPanels`` — side panels and
  *     fixed overlays (``components/chat/ChatPanels``).
- *   - ``SplitGrid``            — fixed n-pane grid layout (split mode).
+ *   - ``SplitWorkbench``       — focused agent + status rail + comparison.
  *   - ``useTeamSse``           — mount-time SSE connect + session restore
  *     (carefully sequenced so ``loadSession`` runs *before*
  *     ``connectStream`` to avoid wiping replayed mid-turn state — see the
@@ -73,7 +73,7 @@ import { FloatingInputBar } from '../FloatingInputBar'
 import { SideChatPanel } from '../SideChatPanel'
 import { useSideChat } from '../SideChatPanel/useSideChat'
 import type { AgentCapabilities as AgentCapabilitiesType, WorkspaceFileInfo } from '@/api/types'
-import { SplitGrid } from './SplitGrid'
+import { SplitWorkbench } from './SplitWorkbench'
 import { useTeamCommands } from './useTeamCommands'
 import { useTeamSse } from './useTeamSse'
 import { useSlashCommandRegistry } from './useSlashCommandRegistry'
@@ -1188,13 +1188,15 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
           />
         ) : effectiveViewMode === 'split' && splitAgentNames.length > 0 ? (
           <div className="min-h-0 flex-1 p-3">
-            <SplitGrid
+            <SplitWorkbench
               agentNames={splitAgentNames}
               leadName={leadName}
+              activeAgent={activeAgent}
               agentStreams={gridAgentStreams ?? EMPTY_AGENT_STREAMS}
               todos={todos}
               isContinuing={isContinuing}
               onContinue={continueTeam}
+              onSelectAgent={setActiveAgent}
             />
           </div>
         ) : isCodingSessionLoading ? (

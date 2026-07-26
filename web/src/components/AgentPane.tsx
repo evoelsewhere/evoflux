@@ -43,6 +43,7 @@ interface AgentPaneProps {
   canMoveRight?: boolean
   onMoveLeft?: () => void
   onMoveRight?: () => void
+  collapsible?: boolean
 }
 
 function isDirectUserBlock(block: ContentBlock): boolean {
@@ -52,6 +53,7 @@ function isDirectUserBlock(block: ContentBlock): boolean {
 export function AgentPane({
   name, stream, isLead, todos, isContinuing = false, onContinue,
   canMoveLeft, canMoveRight, onMoveLeft, onMoveRight,
+  collapsible = true,
 }: AgentPaneProps) {
   const [paneCollapsed, setPaneCollapsed] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -264,20 +266,22 @@ export function AgentPane({
                <ChevronRight size={14} aria-hidden="true" />
              </button>
            )}
-           <button
-             onClick={() => setPaneCollapsed((c) => !c)}
-             className="flex h-7 w-7 items-center justify-center rounded-xs text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
-             title={paneCollapsed ? 'Expand' : 'Collapse'}
-           >
-             {paneCollapsed
-               ? <ChevronDown size={14} aria-hidden="true" />
-               : <ChevronUp size={14} aria-hidden="true" />}
-           </button>
+           {collapsible && (
+             <button
+               onClick={() => setPaneCollapsed((c) => !c)}
+               className="flex h-7 w-7 items-center justify-center rounded-xs text-(--color-text-subtle) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
+               title={paneCollapsed ? 'Expand' : 'Collapse'}
+             >
+               {paneCollapsed
+                 ? <ChevronDown size={14} aria-hidden="true" />
+                 : <ChevronUp size={14} aria-hidden="true" />}
+             </button>
+           )}
          </div>
        </div>
 
       {/* Body */}
-      <div className={paneCollapsed ? 'hidden' : 'relative flex min-h-0 flex-1 flex-col'}>
+      <div className={collapsible && paneCollapsed ? 'hidden' : 'relative flex min-h-0 flex-1 flex-col'}>
       <div ref={scrollRef} className="flex-1 overflow-y-auto" style={{ minHeight: 0 }}>
         {isEmpty && !isWorking && (isError || isOffline) && (
             <div className="flex h-full select-none flex-col items-center justify-center py-8">

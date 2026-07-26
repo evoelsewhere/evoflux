@@ -3,10 +3,11 @@
  *
  * `ViewMode` is the layout mode the user is currently in:
  *   - `agent` — single AgentView pane for the active agent.
- *   - `split` — automatic grid of all AgentPanes.
+ *   - `split` — focused agent workbench with a team rail and 2-pane compare.
+ *   - `monitor` — activity and communication overview.
  *
  * `VIEW_MODES` is the rotation order used by the Ctrl+V shortcut and the
- * 2-way segmented control in the header.
+ * 3-way segmented control in the header.
  */
 
 export type ViewMode = 'agent' | 'split' | 'monitor'
