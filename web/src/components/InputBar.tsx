@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useImperativeHandle, forwardRef, useEffect, useMemo } from 'react'
-import { Activity, ArrowUp, File, Folder, Globe, Loader2, MessageCircle, Paperclip, Square, Terminal } from 'lucide-react'
+import { Activity, ArrowUp, ChevronDown, File, Folder, Globe, Loader2, MessageCircle, Paperclip, Square, SquareCheck, Terminal } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { FilePreviewStrip } from './FilePreviewStrip'
 import { findActiveMention, rankFileRefs, type FileRef } from './InputBar.mentions'
@@ -140,9 +140,8 @@ interface InputBarProps {
   /** Roster mode for the workspace team ('coding' | 'aim'). */
   agentMode?: 'coding' | 'aim' | null
   /**
-   * Inline task list shown above the textarea. ``todosOpen`` controls
-   * visibility and ``onTodosOpenChange`` is fired by the tasks toggle
-   * button in the bottom action bar.
+   * Composer-anchored task popover. ``todosOpen`` controls visibility and
+   * ``onTodosOpenChange`` is fired by the progress pill above the input card.
    */
   todos?: TodoItem[]
   todosOpen?: boolean
@@ -1002,7 +1001,19 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     : actionBtnClass
 
   const todoCount = todos?.length ?? 0
-  const showTodosInline = todosOpen && todoCount > 0
+  const finishedTodoCount = todos?.filter(
+    (todo) => todo.status === 'completed' || todo.status === 'cancelled',
+  ).length ?? 0
+  const activeTodoIndex = todos?.findIndex((todo) => todo.status === 'in_progress') ?? -1
+  const pendingTodoIndex = todos?.findIndex((todo) => todo.status === 'pending') ?? -1
+  const currentTodoIndex = activeTodoIndex >= 0
+    ? activeTodoIndex
+    : pendingTodoIndex >= 0
+      ? pendingTodoIndex
+      : Math.max(todoCount - 1, 0)
+  const currentTodoStep = todoCount > 0 ? currentTodoIndex + 1 : 0
+  const allTodosFinished = todoCount > 0 && finishedTodoCount === todoCount
+  const showTodosPopover = todosOpen && todoCount > 0
 
   // Three states share one DOM tree: minimized, single-line, multi-line.
   // Multi-line is triggered by the slot's flex-basis:100% which wraps the
@@ -1358,6 +1369,64 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
           </div>
         )}
 
+        {!minimized && todoCount > 0 && (
+          <div className="relative z-(--z-panel) mb-2 flex justify-center">
+            {showTodosPopover && (
+              <div className="absolute bottom-full left-1/2 mb-2 w-[min(40rem,calc(100vw-2rem))] -translate-x-1/2">
+                <motion.div
+                  id="composer-task-list"
+                  initial={{ opacity: 0, y: 6 * preset.distance, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={preset.spring}
+                  className="overflow-hidden rounded-lg border border-(--color-border) bg-(--bg-card)/95 shadow-xl backdrop-blur-xl"
+                >
+                  <TodosList
+                    todos={todos ?? []}
+                    headerClassName="hidden"
+                    listClassName="max-h-[min(48vh,20rem)] py-2"
+                  />
+                </motion.div>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => onTodosOpenChange?.(!todosOpen)}
+              aria-expanded={todosOpen}
+              aria-controls="composer-task-list"
+              className={cn(
+                'flex h-9 items-center gap-2 rounded-full border border-(--color-border) bg-(--bg-card) px-3.5',
+                'text-sm text-(--color-text-muted) shadow-md outline-none transition-[background-color,border-color,color]',
+                'hover:border-(--color-border-strong) hover:bg-(--bg-key) hover:text-(--color-text)',
+                'focus-visible:ring-2 focus-visible:ring-(--color-accent)/30',
+              )}
+              title={todosOpen ? 'Hide task list' : 'Show task list'}
+            >
+              {allTodosFinished ? (
+                <SquareCheck size={15} className="text-(--color-success)" aria-hidden="true" />
+              ) : (
+                <Loader2
+                  size={15}
+                  className={cn(
+                    'text-(--color-info)',
+                    activeTodoIndex >= 0 && 'animate-spin',
+                  )}
+                  aria-hidden="true"
+                />
+              )}
+              <span className="tabular-nums">Step {currentTodoStep} / {todoCount}</span>
+              <ChevronDown
+                size={14}
+                className={cn(
+                  'text-(--color-text-subtle) transition-transform duration-(--motion-fast)',
+                  todosOpen && 'rotate-180',
+                )}
+                aria-hidden="true"
+              />
+            </button>
+          </div>
+        )}
+
         {/* Input card — minimized: compact pill · expanded: Gemini-style card */}
         <div className={`relative ${minimized ? 'flex justify-center' : ''}`}>
           {renderDragHandle?.()}
@@ -1398,15 +1467,6 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
             {/* ── Expanded: Gemini-style vertical card ── */}
             {!minimized && (
               <>
-                {showTodosInline && (
-                  <div className="border-b border-(--color-border)">
-                    <TodosList
-                      todos={todos ?? []}
-                      listClassName="max-h-[min(40vh,16rem)]"
-                      onClose={() => onTodosOpenChange?.(false)}
-                    />
-                  </div>
-                )}
                 {/* Textarea area */}
                 <div className={cn('px-4 pt-3', isMobile ? 'pb-1' : 'pb-2')}>
                   {shellMode && (

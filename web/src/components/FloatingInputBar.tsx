@@ -33,6 +33,8 @@ interface FloatingInputBarProps {
   agentWorkspace?: string | null
   agentMode?: 'coding' | 'aim' | null
   todos?: TodoItem[]
+  todosOpen?: boolean
+  onTodosOpenChange?: (open: boolean) => void
   sessionId?: string | null
   onWiki?: () => void
   wikiActive?: boolean

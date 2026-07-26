@@ -122,6 +122,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const [openWorkspaceDialogKey, setOpenWorkspaceDialogKey] = useState(0)
   const [codingWorkspacePickerPortal, setCodingWorkspacePickerPortal] = useState<HTMLDivElement | null>(null)
   const [showActivity, setShowActivity] = useState(false)
+  const [todosOpen, setTodosOpen] = useState(true)
   const [permissionMode, setPermissionMode] = useState<import('@/api/types').PermissionMode>('auto')
   const [showMobileActions, setShowMobileActions] = useState(false)
   const [showPalette, setShowPalette] = useState(false)
@@ -1050,7 +1051,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
     workspace,
   ])
 
-  // Modals / floating panels rendered after the body row (fixed-position —
+  // Modals rendered after the body row (fixed-position —
   // DOM order only matters for z-stacking). WikiPanel/SchedulerPanel live
   // at the route root now (``RootOverlayPanels`` in __root.tsx) so they
   // open in every mode.
@@ -1067,7 +1068,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
         setRunInputsRequest(null)
         pushToast({ tone: 'success', title: `${runInputsRequest.name} started` })
       }}
-      todos={todos}
     />
   )
 
@@ -1351,6 +1351,8 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
             agentWorkspace={agentWorkspace}
             agentMode={mode === 'aim' ? 'aim' : 'coding'}
             todos={todos}
+            todosOpen={todosOpen}
+            onTodosOpenChange={setTodosOpen}
             sessionId={sessionIdState}
             onWiki={toggleWiki}
             wikiActive={wikiOpen}
