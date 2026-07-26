@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Check, Copy, Download, ExternalLink, FileText, GitCompare, Loader2, Pencil, Save, Undo2, X } from 'lucide-react'
+import { Check, Copy, Download, ExternalLink, FileText, GitCompare, Loader2, Pencil, Save, Undo2, X, Eye } from 'lucide-react'
 import Editor, { DiffEditor, useMonaco } from '@monaco-editor/react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+
 import { codingWorkspaceFileUrl, getCodingWorkspaceGitDiff, writeCodingWorkspaceFile } from '@/api/client'
 import { downloadCodingWorkspaceFile } from '@/lib/coding-workspace-download'
 import { cn } from '@/lib/utils'
@@ -479,6 +482,59 @@ function DiffPreview({ diff }: { diff: string }) {
   )
 }
 
+/* -------------------------------------------------------------------------
+ * RichPreview component for HTML and Markdown rendering
+ * ------------------------------------------------------------------------- */
+function RichPreview({ workspace, file, isHtml }: { workspace: string; file: WorkspaceFileInfo; isHtml: boolean }) {
+  const [content, setContent] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(codingWorkspaceFileUrl(workspace, file.path))
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return res.text()
+      })
+      .then((text) => {
+        if (!cancelled) { setContent(text); setLoading(false) }
+      })
+      .catch((e) => {
+        if (!cancelled) { setError(e instanceof Error ? e.message : String(e)); setLoading(false) }
+      })
+    return () => { cancelled = true }
+  }, [workspace, file.path])
+
+  if (loading) return <div className="flex h-full items-center justify-center"><Loader2 size={16} className="animate-spin text-(--color-text-subtle)" /></div>
+  if (error) return <div className="flex h-full items-center justify-center px-4 text-center text-xs text-(--color-error)">Failed to load: {error}</div>
+  if (content === null) return null
+
+  if (isHtml) {
+    return (
+      <div className="flex h-full min-h-0 flex-col bg-white">
+        <iframe
+          srcDoc={content}
+          title={file.name}
+          className="h-full w-full border-0"
+          sandbox="allow-scripts allow-same-origin allow-popups"
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div className="h-full min-h-0 overflow-auto bg-(--bg-page) p-6">
+      <div className="prose prose-sm max-w-none dark:prose-invert">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+      </div>
+    </div>
+  )
+}
+
+/* -------------------------------------------------------------------------
+ * Main File Viewer Panel
+ * ------------------------------------------------------------------------- */
 export function CodingFileViewerPanel({
   workspace,
   file,
@@ -509,17 +565,30 @@ export function CodingFileViewerPanel({
   desktopOverlay?: boolean
   desktopOverlayInner?: boolean
 }) {
-  const [viewMode, setViewMode] = useState<'file' | 'diff'>('file')
+  const [viewMode, setViewMode] = useState<'file' | 'diff' | 'preview'>('file')
   const [editing, setEditing] = useState(false)
+  
   const scopedDiff = useQuery({
     queryKey: [...queryKeys.coding.diff(workspace), file?.path ?? null] as const,
     queryFn: () => getCodingWorkspaceGitDiff(workspace, file ? [file.path] : []),
     enabled: file !== null && viewMode === 'diff',
     staleTime: 5_000,
   })
-  if (!file) return null
 
-  const kind = kindOf(file)
+  // Control preview mode fallback
+  const kind = file ? kindOf(file) : 'binary'
+  const ext = file ? extOf(file.name) : ''
+  const isHtml = ext === 'html' || ext === 'htm'
+  const isMarkdown = ext === 'md' || ext === 'markdown'
+  const canPreview = isHtml || isMarkdown
+
+  useEffect(() => {
+    if (viewMode === 'preview' && !canPreview) {
+      setViewMode('file')
+    }
+  }, [file?.path, canPreview, viewMode])
+
+  if (!file) return null
 
   return (
     <SidePanel
@@ -535,60 +604,88 @@ export function CodingFileViewerPanel({
       ariaLabel="File viewer"
       className="bg-(--bg-card)"
     >
-        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-4 py-3">
-          <div className="min-w-0 flex-1">
-            <h2 className="truncate text-sm font-semibold text-(--color-text)" title={file.path}>{file.path}</h2>
-            <p className="mt-0.5 text-xs text-(--color-text-subtle)">{formatBytes(file.size)} · {file.mime}</p>
-          </div>
-          <div className="flex shrink-0 items-center gap-1">
-            <div className="mr-1 flex rounded-md border border-(--color-border) p-0.5">
-              <button type="button" onClick={() => { setViewMode('file'); setEditing(false) }} className={cn('h-8 rounded-xs px-2 text-xs md:h-auto md:py-1', viewMode === 'file' && !editing ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}>
-                File
-              </button>
-              {kind === 'text' && (
-                <button type="button" onClick={() => { setViewMode('file'); setEditing(true) }} className={cn('flex h-8 items-center gap-1 rounded-xs px-2 text-xs md:h-auto md:py-1', editing ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}>
-                  <Pencil size={11} /> Edit
-                </button>
-              )}
-              <button type="button" onClick={() => { setViewMode('diff'); setEditing(false) }} className={cn('flex h-8 items-center gap-1 rounded-xs px-2 text-xs md:h-auto md:py-1', viewMode === 'diff' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}>
-                <GitCompare size={11} /> Diff
-              </button>
-            </div>
-            <button type="button" onClick={() => void downloadCodingWorkspaceFile(workspace, file)} title="Download" className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)">
-              <Download size={14} />
-            </button>
-            {(kind === 'text' || kind === 'drawio') && <CopyButton workspace={workspace} file={file} />}
-            <button type="button" onClick={onClose} className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)" aria-label="Close file viewer" title="Close">
-              <X size={16} />
-            </button>
-          </div>
-        </header>
-        <div className="min-h-0 flex-1 overflow-hidden">
-          {viewMode === 'diff' ? (
-            <div className="h-full min-h-0 w-full overflow-hidden">
-              {scopedDiff.isLoading ? <div className="flex h-full items-center justify-center"><Loader2 size={16} className="animate-spin text-(--color-text-subtle)" /></div>
-                : scopedDiff.isError ? <div className="flex h-full items-center justify-center px-4 text-center text-xs text-(--color-error)">Failed to load diff</div>
-                  : !scopedDiff.data?.is_git_repo ? <div className="flex h-full items-center justify-center px-4 text-center text-xs text-(--color-text-subtle)">Not a git repository</div>
-                    : !scopedDiff.data.diff ? <div className="flex h-full items-center justify-center px-4 text-center text-xs text-(--color-text-subtle)">No diff for this file</div>
-                      : <DiffPreview diff={scopedDiff.data.diff} />}
-            </div>
-          ) : kind === 'image' ? <ImagePreview workspace={workspace} file={file} />
-            : kind === 'drawio' ? <DrawioPreview key={file.path} workspace={workspace} file={file} />
-            : kind === 'text' ? (
-              <TextPreview
-                key={file.path}
-                workspace={workspace}
-                file={file}
-                onAddComment={onAddComment}
-                onSendToChat={onSendToChat}
-                editing={editing}
-                pendingDiff={pendingDiff}
-                onAcceptDiff={onAcceptDiff}
-                onRejectDiff={onRejectDiff}
-              />
-            )
-            : <BinaryPreview workspace={workspace} file={file} />}
+      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-4 py-3">
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-sm font-semibold text-(--color-text)" title={file.path}>{file.path}</h2>
+          <p className="mt-0.5 text-xs text-(--color-text-subtle)">{formatBytes(file.size)} · {file.mime}</p>
         </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <div className="mr-1 flex rounded-md border border-(--color-border) p-0.5">
+            <button 
+              type="button" 
+              onClick={() => { setViewMode('file'); setEditing(false) }} 
+              className={cn('h-8 rounded-xs px-2 text-xs md:h-auto md:py-1', viewMode === 'file' && !editing ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}
+            >
+              File
+            </button>
+            
+            {canPreview && (
+              <button 
+                type="button" 
+                onClick={() => { setViewMode('preview'); setEditing(false) }} 
+                className={cn('flex h-8 items-center gap-1 rounded-xs px-2 text-xs md:h-auto md:py-1', viewMode === 'preview' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}
+              >
+                <Eye size={11} /> Preview
+              </button>
+            )}
+            
+            {kind === 'text' && (
+              <button 
+                type="button" 
+                onClick={() => { setViewMode('file'); setEditing(true) }} 
+                className={cn('flex h-8 items-center gap-1 rounded-xs px-2 text-xs md:h-auto md:py-1', editing ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}
+              >
+                <Pencil size={11} /> Edit
+              </button>
+            )}
+            <button 
+              type="button" 
+              onClick={() => { setViewMode('diff'); setEditing(false) }} 
+              className={cn('flex h-8 items-center gap-1 rounded-xs px-2 text-xs md:h-auto md:py-1', viewMode === 'diff' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}
+            >
+              <GitCompare size={11} /> Diff
+            </button>
+          </div>
+          <button type="button" onClick={() => void downloadCodingWorkspaceFile(workspace, file)} title="Download" className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)">
+            <Download size={14} />
+          </button>
+          {(kind === 'text' || kind === 'drawio') && <CopyButton workspace={workspace} file={file} />}
+          <button type="button" onClick={onClose} className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)" aria-label="Close file viewer" title="Close">
+            <X size={16} />
+          </button>
+        </div>
+      </header>
+      <div className="min-h-0 flex-1 overflow-hidden">
+        {viewMode === 'diff' ? (
+          <div className="h-full min-h-0 w-full overflow-hidden">
+            {scopedDiff.isLoading ? <div className="flex h-full items-center justify-center"><Loader2 size={16} className="animate-spin text-(--color-text-subtle)" /></div>
+              : scopedDiff.isError ? <div className="flex h-full items-center justify-center px-4 text-center text-xs text-(--color-error)">Failed to load diff</div>
+                : !scopedDiff.data?.is_git_repo ? <div className="flex h-full items-center justify-center px-4 text-center text-xs text-(--color-text-subtle)">Not a git repository</div>
+                  : !scopedDiff.data.diff ? <div className="flex h-full items-center justify-center px-4 text-center text-xs text-(--color-text-subtle)">No diff for this file</div>
+                    : <DiffPreview diff={scopedDiff.data.diff} />}
+          </div>
+        ) : viewMode === 'preview' && canPreview ? (
+          <RichPreview workspace={workspace} file={file} isHtml={isHtml} />
+        ) : kind === 'image' ? (
+          <ImagePreview workspace={workspace} file={file} />
+        ) : kind === 'drawio' ? (
+          <DrawioPreview key={file.path} workspace={workspace} file={file} />
+        ) : kind === 'text' ? (
+          <TextPreview
+            key={file.path}
+            workspace={workspace}
+            file={file}
+            onAddComment={onAddComment}
+            onSendToChat={onSendToChat}
+            editing={editing}
+            pendingDiff={pendingDiff}
+            onAcceptDiff={onAcceptDiff}
+            onRejectDiff={onRejectDiff}
+          />
+        ) : (
+          <BinaryPreview workspace={workspace} file={file} />
+        )}
+      </div>
     </SidePanel>
   )
 }
