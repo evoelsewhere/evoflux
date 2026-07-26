@@ -4,14 +4,14 @@ Use this file as routing guidance. The live `capabilities` object returned by `g
 
 ## Capability matrix
 
-| Provider | Comments | Inline | Reply | Resolve | Approve | Request changes | Checks | Draft/ready | Merge | Close/reopen |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| GitHub / Enterprise | Yes | Yes | Inline threads | No via REST | Yes | Yes | Yes | No via REST | Yes | Yes |
-| GitLab self-managed | Yes | Yes | Yes | Yes | Yes | No formal REST event | Yes | Yes | Yes | Yes |
-| Bitbucket Cloud | Yes | Yes | Yes | Yes | Yes | Yes | Yes | No | Yes | Yes |
-| Bitbucket Data Center | Yes | Yes | Yes | Yes | Yes | Adapter-dependent | Not normalized | No | Yes | Yes |
-| Gitea / Forgejo | Yes | Review comments | Limited | No | Yes | Yes | Yes | No | Yes | Yes |
-| Azure DevOps | Yes | Yes | Yes | Yes | Yes with reviewer ID | Yes with reviewer ID | Yes | Yes | Yes | Yes |
+| Provider | Comments / inline | Threads | Decision | Checks | Metadata update | Draft/ready | Merge | Close/reopen |
+|---|---|---|---|---|---|---|---|---|
+| GitHub / Enterprise | Yes / yes | Reply; no REST resolve | Approve and request changes | Yes | Title, body, labels, reviewers, assignees | No via REST | Yes | Yes |
+| GitLab self-managed | Yes / yes | Reply and resolve | Approve; no formal request-changes event | Yes | Title, body, labels, reviewers, assignees | Yes | Yes | Yes |
+| Bitbucket Cloud | Yes / yes | Reply and resolve | Approve and request changes | Yes | Title, body, reviewers; others vary | No | Yes | Yes |
+| Bitbucket Data Center | Yes / yes | Reply and resolve | Adapter/version-dependent | Often unavailable | Title, body, reviewers; version-dependent | No | Yes | Yes |
+| Gitea / Forgejo | Yes / review comments | Version-limited | Approve and request changes when supported | Yes when supported | Title, body, labels, reviewers, assignees; version-dependent | No | Yes | Yes |
+| Azure DevOps | Yes / yes | Reply and resolve | Approve and request changes with reviewer ID | Yes | Title, body, labels, reviewers; assignees vary | Yes | Yes | Yes |
 
 ## Important semantic differences
 
@@ -57,3 +57,5 @@ When a live capability is false:
 2. State which provider REST limitation blocks the action.
 3. Offer the closest safe supported action, such as a conversation comment.
 4. Do not fall back to `gh`, `glab`, raw HTTP, GraphQL, browser automation, or shell commands.
+
+“Full support” means the normalized workflow covers every capability exposed by the connected server and reports genuine REST limitations precisely. It does not mean pretending that every provider implements the same review model.
