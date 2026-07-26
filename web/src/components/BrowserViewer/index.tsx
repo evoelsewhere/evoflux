@@ -28,6 +28,7 @@ interface BrowserViewerProps {
   open: boolean
   onClose: () => void
   className?: string
+  embedded?: boolean
 }
 
 export function BrowserViewer({
@@ -35,6 +36,7 @@ export function BrowserViewer({
   open,
   onClose,
   className,
+  embedded = false,
 }: BrowserViewerProps) {
   const screencastRef = useRef<ScreencastHandle>(null)
   const [status, setStatus] = useState<ScreencastStatus | null>(null)
@@ -140,43 +142,40 @@ export function BrowserViewer({
       {open && sessionId && (
         <>
       {/* Backdrop — click to close on mobile */}
-      <motion.div
+      {!embedded && <motion.div
         className="fixed inset-0 z-(--z-overlay) bg-(--color-overlay) backdrop-blur-sm sm:hidden"
         onClick={onClose}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={preset.transition}
-      />
+      />}
 
       <motion.div
         className={cn(
           'flex flex-col overflow-hidden',
           'border-l-2 border-(--color-border-strong)',
           'bg-(--bg-page)',
-          // Mobile: full-screen fixed overlay
-          'fixed z-(--z-modal) inset-x-0 bottom-0 top-[env(safe-area-inset-top,0px)]',
-          // Desktop: in-flow sibling of the chat column — the chat resizes
-          // instead of being covered. Width driven by the drag handle via
-          // a CSS var so the mobile overlay stays full-width.
-          'sm:relative sm:inset-auto sm:h-full sm:min-h-0 sm:shrink-0 sm:w-[var(--browser-viewer-width)]',
+          embedded
+            ? 'relative h-full w-full min-h-0'
+            : 'fixed z-(--z-modal) inset-x-0 bottom-0 top-[env(safe-area-inset-top,0px)] sm:relative sm:inset-auto sm:h-full sm:min-h-0 sm:shrink-0 sm:w-[var(--browser-viewer-width)]',
           className,
         )}
-        style={{ '--browser-viewer-width': `${width}px` } as React.CSSProperties}
+        style={embedded ? undefined : { '--browser-viewer-width': `${width}px` } as React.CSSProperties}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={preset.transition}
       >
         {/* ── Resize handle ───────────────────────────────────── */}
-        <div
+        {!embedded && <div
           className="absolute left-0 top-0 bottom-0 z-(--z-panel) hidden w-2 cursor-col-resize sm:block group/handle"
           onMouseDown={handleResizeStart}
           onDoubleClick={handleResizeDoubleClick}
           title="Drag to resize · Double-click to reset"
         >
           <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-(--color-border-strong) transition-colors group-hover/handle:bg-(--accent-blue)" />
-        </div>
+        </div>}
 
         {/* ── Header ──────────────────────────────────────────── */}
         <div className="flex items-center gap-1.5 border-b-2 border-(--color-border-strong) bg-(--color-surface-2) px-3 py-2">

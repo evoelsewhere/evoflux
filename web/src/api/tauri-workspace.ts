@@ -109,6 +109,19 @@ export async function tauriOpenWorkspaceFile(root: string, path: string): Promis
   return tauriInvoke<void>('open_workspace_file_with_handle', { root, path })
 }
 
+/** Open the workspace root in Finder / File Explorer. */
+export async function tauriOpenWorkspaceRoot(root: string): Promise<void> {
+  return tauriInvoke<void>('open_workspace_root_with_handle', { root })
+}
+
+/** Reveal a workspace file, or the root folder when path is omitted. */
+export async function tauriRevealWorkspacePath(root: string, path?: string): Promise<void> {
+  return tauriInvoke<void>('reveal_workspace_path_with_handle', {
+    root,
+    path: path ?? null,
+  })
+}
+
 /** A single directory entry from list_directory. */
 export interface DirEntry {
   name: string

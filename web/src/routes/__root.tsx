@@ -8,45 +8,12 @@ import { Home } from 'lucide-react'
 import { ToastStack } from '@/components/ToastStack'
 import { MacTitleBar } from '@/components/MacTitleBar'
 import { SettingsScreen } from '@/components/SettingsScreen'
-import { WikiPanel } from '@/components/WikiPanel'
-import { SchedulerPanel } from '@/components/SchedulerPanel'
 import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
 import { useHistorySwipeNavigation } from '@/hooks/use-history-swipe-navigation'
 import { useMobileViewportGuards } from '@/hooks/use-mobile-viewport'
 import { useDesktopCommands } from '@/lib/desktop-commands'
-import { useTeamStore } from '@/stores/useTeamStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
-
-/**
- * RootOverlayPanels — fixed-position utility overlays that must open in
- * every mode (forge / coding / aim), not just where a TeamChatView happens
- * to be mounted. Open state lives in useUIStore (with mutual exclusion).
- * The scheduler's create-form context used to come from TeamChatView
- * props; the /coding routes prime ``useTeamStore._workspace`` from the URL
- * (see routes/forge.tsx), so the same values are derivable here from the
- * router + team store.
- */
-function RootOverlayPanels() {
-  const wikiOpen = useUIStore((s) => s.wikiOpen)
-  const schedulerOpen = useUIStore((s) => s.schedulerOpen)
-  const closeWiki = useUIStore((s) => s.closeWiki)
-  const closeScheduler = useUIStore((s) => s.closeScheduler)
-  const location = useLocation()
-  const contextMode: 'forge' | 'coding' = location.pathname.startsWith('/coding') ? 'coding' : 'forge'
-  const codingWorkspace = useTeamStore((s) => s._workspace)
-  return (
-    <>
-      <WikiPanel open={wikiOpen} onClose={closeWiki} />
-      <SchedulerPanel
-        open={schedulerOpen}
-        onClose={closeScheduler}
-        contextMode={contextMode}
-        contextWorkspace={contextMode === 'coding' ? codingWorkspace : null}
-      />
-    </>
-  )
-}
 
 export function Root() {
   useMobileViewportGuards()
@@ -85,7 +52,6 @@ export function Root() {
           <Suspense fallback={<RouteLoadingFallback />}>
             <Outlet />
           </Suspense>
-          <RootOverlayPanels />
         </>
       )}
       <ToastStack />

@@ -1631,6 +1631,8 @@ fn main() {
             workspace::list_workspace_files,
             workspace::read_workspace_file,
             workspace::open_workspace_file_with_handle,
+            workspace::open_workspace_root_with_handle,
+            workspace::reveal_workspace_path_with_handle,
             workspace::list_directory,
             workspace::start_file_watcher,
             workspace::stop_file_watcher,

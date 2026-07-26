@@ -17,39 +17,22 @@
 import { AnimatePresence } from 'framer-motion'
 import { PlanReviewPanel } from '../PlanReviewPanel'
 import { ActivityPanel } from '../ActivityPanel'
-import { BrowserViewer } from '../BrowserViewer'
-import { TerminalPanel } from '../TerminalPanel'
 import { CommandPalette, type Command } from '../CommandPalette'
 import { RunInputsDialog, type RunInputsRequest } from '../RunInputsDialog'
 import { SidePanel } from '@/components/shell/SidePanel'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
-import type { useResizableWidth } from '@/hooks/use-resizable-width'
 
 interface ChatTrailingPanelsProps {
-  mode: 'forge' | 'coding' | 'aim'
-  sessionId: string | null
   onQuoteComment: (quote: string, comment: string) => void
   showActivity: boolean
   onCloseActivity: () => void
-  browserOpen: boolean
-  onCloseBrowser: () => void
-  terminalOpen: boolean
-  onCloseTerminal: () => void
-  terminalResize: ReturnType<typeof useResizableWidth>
 }
 
 // Side panels rendered after <main> inside AppShell's body row.
 export function ChatTrailingPanels({
-  mode,
-  sessionId,
   onQuoteComment,
   showActivity,
   onCloseActivity,
-  browserOpen,
-  onCloseBrowser,
-  terminalOpen,
-  onCloseTerminal,
-  terminalResize,
 }: ChatTrailingPanelsProps) {
   return (
     <>
@@ -74,29 +57,6 @@ export function ChatTrailingPanels({
           </SidePanel>
         )}
       </AnimatePresence>
-      <BrowserViewer
-        sessionId={sessionId}
-        open={browserOpen}
-        onClose={onCloseBrowser}
-      />
-      {terminalOpen && (
-        <aside
-          className="relative flex h-full shrink-0 flex-col"
-          style={{ width: terminalResize.width }}
-        >
-          <div
-            onPointerDown={terminalResize.startResize}
-            onDoubleClick={terminalResize.resetWidth}
-            className="absolute -left-1 top-0 z-(--z-panel) h-full w-2 cursor-col-resize"
-            aria-hidden="true"
-          />
-          <TerminalPanel
-            sessionId={sessionId}
-            mode={mode}
-            onClose={onCloseTerminal}
-          />
-        </aside>
-      )}
     </>
   )
 }

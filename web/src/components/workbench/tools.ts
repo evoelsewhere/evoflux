@@ -1,0 +1,81 @@
+import {
+  BookOpen,
+  CalendarClock,
+  Files,
+  GitCompareArrows,
+  Globe2,
+  MessageSquarePlus,
+  Terminal,
+  type LucideIcon,
+} from 'lucide-react'
+import type { WorkbenchTool } from '@/stores/useUIStore'
+
+export interface WorkbenchContext {
+  mode: 'forge' | 'coding' | 'aim'
+  sessionId: string | null
+  workspace: string | null
+}
+
+export const WORKBENCH_TOOLS: Record<
+  WorkbenchTool,
+  { label: string; description: string; icon: LucideIcon; shortcut?: string }
+> = {
+  review: {
+    label: 'Review',
+    description: 'Inspect source changes and prepare pull requests',
+    icon: GitCompareArrows,
+    shortcut: '⌃⇧G',
+  },
+  terminal: {
+    label: 'Terminal',
+    description: 'Run commands in the active workspace',
+    icon: Terminal,
+  },
+  browser: {
+    label: 'Browser',
+    description: 'View and interact with the agent browser',
+    icon: Globe2,
+    shortcut: '⌘T',
+  },
+  files: {
+    label: 'Files',
+    description: 'Browse workspace files and generated artifacts',
+    icon: Files,
+    shortcut: '⌘P',
+  },
+  'side-chat': {
+    label: 'Side chat',
+    description: 'Ask a focused question without interrupting the run',
+    icon: MessageSquarePlus,
+    shortcut: '⌥⌘S',
+  },
+  wiki: {
+    label: 'Wiki',
+    description: 'Browse the shared agent knowledge base',
+    icon: BookOpen,
+    shortcut: '⌃M',
+  },
+  scheduler: {
+    label: 'Scheduler',
+    description: 'Create and manage scheduled tasks',
+    icon: CalendarClock,
+    shortcut: '⌃S',
+  },
+}
+
+export const WORKBENCH_TOOL_ORDER = Object.keys(WORKBENCH_TOOLS) as WorkbenchTool[]
+
+export function isWorkbenchToolEnabled(
+  tool: WorkbenchTool,
+  context: WorkbenchContext,
+): boolean {
+  if (tool === 'review') {
+    return context.mode === 'coding' && Boolean(context.workspace)
+  }
+  if (tool === 'files') return Boolean(context.sessionId || context.workspace)
+  if (tool === 'terminal' || tool === 'browser' || tool === 'side-chat') {
+    return Boolean(context.sessionId)
+  }
+  return true
+}
+

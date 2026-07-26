@@ -16,6 +16,7 @@ interface ImageLightboxProps {
   alt: string
   isOpen: boolean
   onClose: () => void
+  allowDownload?: boolean
 }
 
 /**
@@ -83,7 +84,13 @@ function distance(a: Touch | ReactTouch, b: Touch | ReactTouch): number {
   return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)
 }
 
-export function ImageLightbox({ src, alt, isOpen, onClose }: ImageLightboxProps) {
+export function ImageLightbox({
+  src,
+  alt,
+  isOpen,
+  onClose,
+  allowDownload = true,
+}: ImageLightboxProps) {
   const [scale, setScale] = useState(1)
   const [translateY, setTranslateY] = useState(0)
   const touchStartYRef = useRef(0)
@@ -201,12 +208,14 @@ export function ImageLightbox({ src, alt, isOpen, onClose }: ImageLightboxProps)
         className="absolute right-[max(1rem,env(safe-area-inset-right,0px))] top-[max(1rem,env(safe-area-inset-top,0px))] flex items-center gap-2 [[data-mobile-shell='ios']_&]:top-[max(4rem,calc(env(safe-area-inset-top)+1rem))]"
         onClick={(e) => e.stopPropagation()}
       >
-        <LightboxIconButton
-          onClick={handleDownload}
-          icon={<Download size={20} />}
-          label="Download image"
-          tooltip="Download"
-        />
+        {allowDownload && (
+          <LightboxIconButton
+            onClick={handleDownload}
+            icon={<Download size={20} />}
+            label="Download image"
+            tooltip="Download"
+          />
+        )}
         <LightboxIconButton
           onClick={closeLightbox}
           icon={<X size={20} />}

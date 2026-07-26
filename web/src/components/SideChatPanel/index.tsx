@@ -38,6 +38,7 @@ interface SideChatPanelProps {
   sideChatId: string | null
   onSend: (content: string) => Promise<SideChatSendResult>
   onStop: () => void
+  embedded?: boolean
 }
 
 export function SideChatPanel({
@@ -52,6 +53,7 @@ export function SideChatPanel({
   sideChatId,
   onSend,
   onStop,
+  embedded = false,
 }: SideChatPanelProps) {
   const inputRef = useRef<InputBarHandle>(null)
   const quote = initialQuote
@@ -117,6 +119,7 @@ export function SideChatPanel({
       ariaLabel="Side chat panel"
       className="bg-(--bg-page)"
       mobileOverlay
+      fillParent={embedded}
     >
       <div className="flex min-h-0 flex-1 flex-col">
         {/* Message list — shared main-chat render pipeline */}

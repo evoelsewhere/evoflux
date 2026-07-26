@@ -34,6 +34,7 @@ import { fadeRise, staggerDelay, useListEnterIndex, useMotionPreset } from '@/li
 interface SchedulerPanelProps {
   open: boolean
   onClose: () => void
+  embedded?: boolean
   /** Routing target inherited from the surrounding chat view. When the
    *  scheduler is opened inside a coding workspace, the Create form
    *  pre-fills mode='coding' + that workspace. Edit forms always start
@@ -288,6 +289,7 @@ export function ModeWorkspaceFields({
 export function SchedulerPanel({
   open,
   onClose,
+  embedded = false,
   contextMode = 'forge',
   contextWorkspace = null,
 }: SchedulerPanelProps) {
@@ -300,7 +302,7 @@ export function SchedulerPanel({
   const [searchQuery, setSearchQuery] = useState('')
 
   const tasksQuery = useScheduledTasksQuery()
-  useModalFocus(open, onClose)
+  useModalFocus(open && !embedded, onClose)
 
   useEffect(() => {
     if (open) tasksQuery.refetch()
@@ -334,27 +336,32 @@ export function SchedulerPanel({
       {open && (
         <>
           {/* Backdrop */}
-          <motion.div
+          {!embedded && <motion.div
             key="backdrop"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
             className="fixed inset-0 z-(--z-overlay) bg-(--color-overlay)"
-          />
+          />}
 
           {/* Right-side drawer */}
           <motion.aside
             key="drawer"
-            initial={prefersReducedMotion ? { opacity: 0 } : { x: '100%', opacity: 0 }}
-            animate={prefersReducedMotion ? { opacity: 1 } : { x: 0, opacity: 1 }}
-            exit={prefersReducedMotion ? { opacity: 0 } : { x: '100%', opacity: 0 }}
+            initial={embedded ? false : prefersReducedMotion ? { opacity: 0 } : { x: '100%', opacity: 0 }}
+            animate={embedded ? undefined : prefersReducedMotion ? { opacity: 1 } : { x: 0, opacity: 1 }}
+            exit={embedded ? undefined : prefersReducedMotion ? { opacity: 0 } : { x: '100%', opacity: 0 }}
             transition={preset.spring}
-            className="fixed bottom-0 right-0 top-[env(safe-area-inset-top,0px)] z-(--z-modal) flex w-full flex-col overflow-hidden border-l border-(--color-border) bg-(--bg-page) shadow-2xl sm:w-[460px]"
-            role="dialog"
-            aria-modal="true"
+            className={cn(
+              'flex flex-col overflow-hidden border-l border-(--color-border) bg-(--bg-page)',
+              embedded
+                ? 'relative h-full w-full'
+                : 'fixed bottom-0 right-0 top-[env(safe-area-inset-top,0px)] z-(--z-modal) w-full shadow-2xl sm:w-[460px]',
+            )}
+            role={embedded ? 'region' : 'dialog'}
+            aria-modal={embedded ? undefined : 'true'}
             aria-label="Scheduled tasks"
-            data-modal-focus="true"
+            data-modal-focus={embedded ? undefined : 'true'}
           >
             {/* ── Header ── */}
             <header className="flex shrink-0 items-center gap-2 border-b border-(--color-border) px-4 py-3">

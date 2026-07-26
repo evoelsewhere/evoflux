@@ -46,6 +46,7 @@ import type { WikiFileInfo } from '@/api/types'
 interface WikiPanelProps {
   open: boolean
   onClose: () => void
+  embedded?: boolean
 }
 
 
@@ -69,14 +70,14 @@ type Section = {
   files: WikiFileInfo[]
 }
 
-export function WikiPanel({ open, onClose }: WikiPanelProps) {
+export function WikiPanel({ open, onClose, embedded = false }: WikiPanelProps) {
   const isMobile = useIsMobile()
   const prefersReducedMotion = useReducedMotion()
   const preset = useMotionPreset()
   const { data: tree, isLoading, isError } = useWikiTreeQuery(true)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [mobilePane, setMobilePane] = useState<'tree' | 'editor'>('tree')
-  useModalFocus(open, onClose)
+  useModalFocus(open && !embedded, onClose)
 
   const handleSelect = (path: string) => {
     setSelectedPath(path)
@@ -141,24 +142,29 @@ export function WikiPanel({ open, onClose }: WikiPanelProps) {
     <AnimatePresence>
       {open && (
         <>
-          <motion.div
+          {!embedded && <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
             className="fixed inset-0 z-(--z-overlay) bg-(--color-overlay)"
-          />
+          />}
 
           <motion.div
-            initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: 8 * preset.distance }}
-            animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 }}
-            exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: 8 * preset.distance }}
+            initial={embedded ? false : prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: 8 * preset.distance }}
+            animate={embedded ? undefined : prefersReducedMotion ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 }}
+            exit={embedded ? undefined : prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: 8 * preset.distance }}
             transition={preset.spring}
-            className="fixed inset-x-0 bottom-0 top-[env(safe-area-inset-top,0px)] z-(--z-modal) flex flex-col overflow-hidden border-(--color-border) bg-(--bg-page) shadow-2xl sm:left-1/2 sm:top-1/2 sm:inset-auto sm:h-[min(90vh,860px)] sm:w-[min(90vw,1180px)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:border"
-            role="dialog"
-            aria-modal="true"
+            className={cn(
+              'flex flex-col overflow-hidden border-(--color-border) bg-(--bg-page)',
+              embedded
+                ? 'relative h-full w-full'
+                : 'fixed inset-x-0 bottom-0 top-[env(safe-area-inset-top,0px)] z-(--z-modal) shadow-2xl sm:left-1/2 sm:top-1/2 sm:inset-auto sm:h-[min(90vh,860px)] sm:w-[min(90vw,1180px)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:border',
+            )}
+            role={embedded ? 'region' : 'dialog'}
+            aria-modal={embedded ? undefined : 'true'}
             aria-label="Wiki"
-            data-modal-focus="true"
+            data-modal-focus={embedded ? undefined : 'true'}
           >
             <header className="flex items-center justify-between border-b border-(--color-border) px-4 py-3">
               <div className="flex items-center gap-2">
