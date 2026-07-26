@@ -22,6 +22,7 @@ from app.services.code_graph.types import (
     NODE_FUNCTION,
     NODE_INTERFACE,
     NODE_METHOD,
+    NODE_NAMESPACE,
     NODE_VARIABLE,
 )
 
@@ -38,7 +39,11 @@ class EcmaScriptParser(TreeSitterParser):
         self, node: Node, source: bytes, *, inside_class: bool
     ) -> Definition | None:
         ntype = node.type
-        if ntype in {"class_declaration", "abstract_class_declaration"}:
+        if ntype == "internal_module":
+            name = self._name(node, source)
+            if name:
+                return Definition(kind=NODE_NAMESPACE, name=name, is_class=False)
+        elif ntype in {"class_declaration", "abstract_class_declaration"}:
             name = self._name(node, source)
             if name:
                 return Definition(kind=NODE_CLASS, name=name, is_class=True)
@@ -179,6 +184,10 @@ class EcmaScriptParser(TreeSitterParser):
         return None
 
     def import_refs(self, node: Node, source: bytes) -> list[ImportRef]:
+        if node.type == "export_statement":
+            return self._export_refs(node, source)
+        if node.type == "call_expression":
+            return self._dynamic_import_ref(node, source)
         if node.type != "import_statement":
             return []
         source_node = node.child_by_field_name("source")
@@ -191,7 +200,58 @@ class EcmaScriptParser(TreeSitterParser):
         for child in node.children:
             if child.type == "import_clause":
                 out.extend(self._import_clause_names(child, source, module_path))
-        return out
+        return out or [
+            ImportRef(name=_module_ref_name(module_path), module_path=module_path)
+        ]
+
+    def _export_refs(self, node: Node, source: bytes) -> list[ImportRef]:
+        source_node = node.child_by_field_name("source")
+        if source_node is None:
+            return []
+        module_path = _string_content(source_node, source)
+        if not module_path:
+            return []
+
+        out: list[ImportRef] = []
+        for descendant in _named_descendants(node):
+            if descendant.type != "export_specifier":
+                continue
+            name_node = descendant.child_by_field_name("name")
+            if name_node is None:
+                continue
+            alias_node = descendant.child_by_field_name("alias")
+            out.append(
+                ImportRef(
+                    name=node_text(name_node, source),
+                    module_path=module_path,
+                    local_name=(
+                        node_text(alias_node, source)
+                        if alias_node is not None
+                        else None
+                    ),
+                )
+            )
+        return out or [ImportRef(name="*", module_path=module_path)]
+
+    def _dynamic_import_ref(self, node: Node, source: bytes) -> list[ImportRef]:
+        function = node.child_by_field_name("function")
+        if function is None or function.type != "import":
+            return []
+        arguments = node.child_by_field_name("arguments")
+        if arguments is None:
+            return []
+        specifier = next(
+            (child for child in arguments.named_children if child.type == "string"),
+            None,
+        )
+        if specifier is None:
+            return []
+        module_path = _string_content(specifier, source)
+        return (
+            [ImportRef(name=_module_ref_name(module_path), module_path=module_path)]
+            if module_path
+            else []
+        )
 
     def _import_clause_names(
         self, clause: Node, source: bytes, module_path: str
@@ -319,6 +379,20 @@ def _string_content(node: Node, source: bytes) -> str:
     # Fallback: strip quotes manually
     text = node_text(node, source)
     return text.strip("'\"")
+
+
+def _module_ref_name(module_path: str) -> str:
+    tail = module_path.rstrip("/").rsplit("/", 1)[-1]
+    for suffix in (".d.ts", ".tsx", ".ts", ".jsx", ".js", ".mjs", ".cjs"):
+        if tail.endswith(suffix):
+            return tail[: -len(suffix)]
+    return tail or module_path
+
+
+def _named_descendants(node: Node):
+    for child in node.named_children:
+        yield child
+        yield from _named_descendants(child)
 
 
 def _decorator_name(node: Node, source: bytes) -> str | None:

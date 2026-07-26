@@ -29,6 +29,18 @@ class KotlinParser(TreeSitterParser):
     extensions: ClassVar[tuple[str, ...]] = (".kt", ".kts")
     grammar: ClassVar[str] = "kotlin"
 
+    def root_prefix(self, root: Node, source: bytes) -> str:
+        for child in root.children:
+            if child.type != "package_header":
+                continue
+            package = next(
+                (sub for sub in child.children if sub.type == "identifier"), None
+            )
+            if package is not None:
+                return f"{node_text(package, source)}."
+            break
+        return ""
+
     def classify(
         self, node: Node, source: bytes, *, inside_class: bool
     ) -> Definition | None:

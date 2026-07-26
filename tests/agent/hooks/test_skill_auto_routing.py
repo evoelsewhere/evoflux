@@ -15,6 +15,7 @@ from app.agent.schemas.chat import (
     ToolMessage,
 )
 from app.agent.state import AgentState
+from app.agent.tools.builtin.skill import _builtin_skills_dir, extract_triggers
 
 
 def _make_state(messages=None):
@@ -62,6 +63,26 @@ class TestSkillAutoRoutingHook:
         triggers = ["fix"]
         score = SkillAutoRoutingHook._score_message("suffix of the string", triggers)
         assert score == 0.0
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "show the code graph",
+            "find callers of process_event",
+            "run change impact analysis",
+            "trace a dependency path through the code graph",
+        ],
+    )
+    def test_code_graph_navigation_common_intents_clear_default_threshold(
+        self, message
+    ):
+        """Keep the bundled skill's trigger list focused enough to auto-route."""
+        skill_dir = _builtin_skills_dir() / "code-graph-navigation"
+        triggers = extract_triggers(skill_dir)
+
+        score = SkillAutoRoutingHook._score_message(message, triggers)
+
+        assert score > 0.3
 
     @pytest.mark.asyncio
     async def test_no_injection_when_no_human_message(self):

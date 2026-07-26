@@ -125,6 +125,25 @@ import express from 'express';
     assert "express" in names
 
 
+def test_ecmascript_module_dependency_forms():
+    source = b"""import './polyfill';
+export { Config as PublicConfig } from './config';
+export * from './models';
+async function load() { return import('./lazy'); }
+async function unknown(path) { return import(path); }
+"""
+    result = TypeScriptParser().parse(file_path="main.ts", source=source)
+    imports = [edge for edge in result.edges if edge.kind == EDGE_IMPORTS]
+
+    assert [(edge.dst_name, edge.module_path) for edge in imports] == [
+        ("polyfill", "./polyfill"),
+        ("Config", "./config"),
+        ("*", "./models"),
+        ("lazy", "./lazy"),
+    ]
+    assert imports[1].local_name == "PublicConfig"
+
+
 # ── Go imports ───────────────────────────────────────────────────────────────
 
 

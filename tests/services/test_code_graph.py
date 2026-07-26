@@ -167,6 +167,21 @@ def test_typescript_type_literal_signatures_are_not_methods():
     assert "area" not in names
 
 
+def test_typescript_namespace_qualifies_declarations():
+        source = b"""namespace Validation {
+    export interface Rule {}
+    export class Validator { run() {} }
+}
+"""
+        result = TypeScriptParser().parse(file_path="validation.ts", source=source)
+        qualified = {node.name: node.qualified_name for node in result.nodes}
+
+        assert qualified["Validation"] == "Validation"
+        assert qualified["Rule"] == "Validation.Rule"
+        assert qualified["Validator"] == "Validation.Validator"
+        assert qualified["run"] == "Validation.Validator.run"
+
+
 # ── Registry ──────────────────────────────────────────────────────────────────
 
 

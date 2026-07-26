@@ -28,6 +28,21 @@ class GoParser(TreeSitterParser):
     name: ClassVar[str] = "go"
     extensions: ClassVar[tuple[str, ...]] = (".go",)
     grammar: ClassVar[str] = "go"
+    _package_prefix: str = ""
+
+    def root_prefix(self, root: Node, source: bytes) -> str:
+        self._package_prefix = ""
+        for child in root.children:
+            if child.type != "package_clause":
+                continue
+            package = next(
+                (sub for sub in child.children if sub.type == "package_identifier"),
+                None,
+            )
+            if package is not None:
+                self._package_prefix = f"{node_text(package, source)}."
+            break
+        return self._package_prefix
 
     def classify(
         self, node: Node, source: bytes, *, inside_class: bool
@@ -68,7 +83,11 @@ class GoParser(TreeSitterParser):
             name_node = node.child_by_field_name("name")
             if name_node is not None:
                 receiver_type = self._receiver_type(node, source)
-                prefix = f"{receiver_type}." if receiver_type else None
+                prefix = (
+                    f"{self._package_prefix}{receiver_type}."
+                    if receiver_type
+                    else None
+                )
                 return Definition(
                     kind=NODE_METHOD,
                     name=node_text(name_node, source),

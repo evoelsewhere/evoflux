@@ -90,12 +90,26 @@ class DartParser(TreeSitterParser):
         return None
 
     def call_target(self, node: Node, source: bytes) -> str | None:
-        # Dart doesn't have a straightforward call_expression in all grammars.
-        # Look for identifiers in selector chains.
-        if node.type == "identifier":
-            # Handled by parent walk
-            pass
-        return None
+        if node.type != "selector" or not any(
+            child.type == "argument_part" for child in node.children
+        ):
+            return None
+
+        parts: list[str] = []
+        current = node.prev_named_sibling
+        while current is not None:
+            if current.type in {"identifier", "type_identifier"}:
+                parts.insert(0, node_text(current, source))
+                break
+            if current.type == "selector":
+                name = _dart_selector_name(current, source)
+                if name is None:
+                    break
+                parts.insert(0, name)
+                current = current.prev_named_sibling
+                continue
+            break
+        return ".".join(parts) if parts else None
 
     def import_refs(self, node: Node, source: bytes) -> list[ImportRef]:
         # `import 'uri' [as alias] [show/hide ...];` parses as
@@ -215,6 +229,21 @@ def _dart_type_name(node: Node, source: bytes) -> str | None:
     for child in node.children:
         if child.type == "identifier" or child.type == "type_identifier":
             return node_text(child, source)
+    return None
+
+
+def _dart_selector_name(node: Node, source: bytes) -> str | None:
+    if any(child.type == "argument_part" for child in node.children):
+        return None
+    for child in node.children:
+        if child.type in {
+            "assignable_selector",
+            "conditional_assignable_selector",
+            "unconditional_assignable_selector",
+        }:
+            for sub in child.children:
+                if sub.type == "identifier":
+                    return node_text(sub, source)
     return None
 
 

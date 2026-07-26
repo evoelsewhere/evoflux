@@ -17,6 +17,7 @@ from app.services.code_graph.types import (
     NODE_FUNCTION,
     NODE_INTERFACE,
     NODE_METHOD,
+    NODE_NAMESPACE,
 )
 
 if TYPE_CHECKING:
@@ -28,11 +29,34 @@ class ScalaParser(TreeSitterParser):
     extensions: ClassVar[tuple[str, ...]] = (".scala", ".sc")
     grammar: ClassVar[str] = "scala"
 
+    def root_prefix(self, root: Node, source: bytes) -> str:
+        packages = [
+            child for child in root.children if child.type == "package_clause"
+        ]
+        if len(packages) != 1:
+            return ""
+        package = packages[0]
+        if package.child_by_field_name("body") is not None:
+            return ""
+        name = package.child_by_field_name("name")
+        return f"{node_text(name, source)}." if name is not None else ""
+
     def classify(
         self, node: Node, source: bytes, *, inside_class: bool
     ) -> Definition | None:
         ntype = node.type
-        if ntype == "trait_definition":
+        if ntype == "package_clause":
+            name = self._name(node, source)
+            if name:
+                return Definition(
+                    kind=NODE_NAMESPACE,
+                    name=name,
+                    is_class=False,
+                    prefix=(
+                        "" if node.child_by_field_name("body") is None else None
+                    ),
+                )
+        elif ntype == "trait_definition":
             name = self._name(node, source)
             if name:
                 return Definition(kind=NODE_INTERFACE, name=name, is_class=True)

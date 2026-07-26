@@ -137,6 +137,12 @@ class TreeSitterParser:
         """Return a :class:`Definition` if ``node`` is a symbol, else ``None``."""
         return None
 
+    def synthetic_definitions(
+        self, node: Node, source: bytes, *, inside_class: bool
+    ) -> list[Definition]:
+        """Return implicit leaf symbols represented by ``node``."""
+        return []
+
     def call_target(self, node: Node, source: bytes) -> str | None:
         """Return the callee name if ``node`` is a call, else ``None``."""
         return None
@@ -182,6 +188,48 @@ class TreeSitterParser:
             first = first[:_MAX_SIGNATURE_LEN].rstrip() + "…"
         return first
 
+    def _emit_definition(
+        self,
+        definition: Definition,
+        node: Node,
+        source: bytes,
+        result: ParseResult,
+        *,
+        prefix: str,
+        parent_local_id: str,
+        local_id_suffix: str = "",
+    ) -> tuple[str, str]:
+        line_start = node.start_point[0] + 1
+        line_end = node.end_point[0] + 1
+        if definition.prefix is not None:
+            qualified = f"{definition.prefix}{definition.name}"
+        elif prefix:
+            qualified = f"{prefix}{definition.name}"
+        else:
+            qualified = definition.name
+        local_id = f"{qualified}#{line_start}{local_id_suffix}"
+        result.nodes.append(
+            ExtractedNode(
+                local_id=local_id,
+                kind=definition.kind,
+                name=definition.name,
+                qualified_name=qualified,
+                line_start=line_start,
+                line_end=line_end,
+                signature=self._signature(node, source),
+                docstring=self.docstring(node, source),
+            )
+        )
+        result.edges.append(
+            ExtractedEdge(
+                src_local_id=parent_local_id,
+                kind=EDGE_CONTAINS,
+                dst_local_id=local_id,
+                line=line_start,
+            )
+        )
+        return local_id, qualified
+
     def _walk(
         self,
         node: Node,
@@ -197,35 +245,18 @@ class TreeSitterParser:
             return
 
         definition = self.classify(node, source, inside_class=inside_class)
+        synthetic = self.synthetic_definitions(
+            node, source, inside_class=inside_class
+        )
         if definition is not None:
             line_start = node.start_point[0] + 1
-            line_end = node.end_point[0] + 1
-            if definition.prefix is not None:
-                qualified = f"{definition.prefix}{definition.name}"
-            elif prefix:
-                qualified = f"{prefix}{definition.name}"
-            else:
-                qualified = definition.name
-            local_id = f"{qualified}#{line_start}"
-            result.nodes.append(
-                ExtractedNode(
-                    local_id=local_id,
-                    kind=definition.kind,
-                    name=definition.name,
-                    qualified_name=qualified,
-                    line_start=line_start,
-                    line_end=line_end,
-                    signature=self._signature(node, source),
-                    docstring=self.docstring(node, source),
-                )
-            )
-            result.edges.append(
-                ExtractedEdge(
-                    src_local_id=parent_local_id,
-                    kind=EDGE_CONTAINS,
-                    dst_local_id=local_id,
-                    line=line_start,
-                )
+            local_id, qualified = self._emit_definition(
+                definition,
+                node,
+                source,
+                result,
+                prefix=prefix,
+                parent_local_id=parent_local_id,
             )
             for sup in self.supertypes(node, source):
                 result.edges.append(
@@ -258,7 +289,7 @@ class TreeSitterParser:
             child_parent = local_id
             child_inside_class = definition.is_class
         else:
-            callee = self.call_target(node, source)
+            callee = None if synthetic else self.call_target(node, source)
             if callee:
                 result.edges.append(
                     ExtractedEdge(
@@ -292,6 +323,19 @@ class TreeSitterParser:
             child_prefix = prefix
             child_parent = parent_local_id
             child_inside_class = inside_class
+
+        for index, implicit in enumerate(synthetic):
+            if len(result.nodes) > _MAX_NODES_PER_FILE:
+                break
+            self._emit_definition(
+                implicit,
+                node,
+                source,
+                result,
+                prefix=prefix,
+                parent_local_id=parent_local_id,
+                local_id_suffix=f":implicit:{index}",
+            )
 
         for child in node.children:
             self._walk(

@@ -18,6 +18,7 @@ from app.services.code_graph.types import (
     NODE_FUNCTION,
     NODE_INTERFACE,
     NODE_METHOD,
+    NODE_PROPERTY,
 )
 
 if TYPE_CHECKING:
@@ -57,6 +58,10 @@ class ObjCParser(TreeSitterParser):
             selector = self._selector_name(node, source)
             if selector:
                 return Definition(kind=NODE_METHOD, name=selector, is_class=False)
+        elif ntype == "property_declaration":
+            name = _property_name(node, source)
+            if name:
+                return Definition(kind=NODE_PROPERTY, name=name, is_class=False)
         elif ntype == "function_definition":
             name = node.child_by_field_name("declarator")
             if name is not None:
@@ -66,6 +71,22 @@ class ObjCParser(TreeSitterParser):
                     is_class=False,
                 )
         return None
+
+    def synthetic_definitions(
+        self, node: Node, source: bytes, *, inside_class: bool
+    ) -> list[Definition]:
+        if node.type != "property_declaration" or not inside_class:
+            return []
+        name = _property_name(node, source)
+        if not name:
+            return []
+        getter, setter = _property_accessors(node, name, source)
+        definitions = [Definition(kind=NODE_METHOD, name=getter, is_class=False)]
+        if setter is not None:
+            definitions.append(
+                Definition(kind=NODE_METHOD, name=setter, is_class=False)
+            )
+        return definitions
 
     def import_refs(self, node: Node, source: bytes) -> list[ImportRef]:
         # #import/#include are preproc_include nodes (shared with the C/C++
@@ -184,6 +205,10 @@ class ObjCParser(TreeSitterParser):
         return out
 
     def type_refs(self, node: Node, source: bytes) -> list[str]:
+        if node.type == "property_declaration":
+            out: list[str] = []
+            _collect_objc_type_ids(node, source, out)
+            return out
         if node.type not in {
             "method_declaration",
             "implementation_definition",
@@ -247,11 +272,62 @@ class ObjCParser(TreeSitterParser):
 def _declarator_name(node: Node, source: bytes) -> str | None:
     if node.type == "identifier":
         return node_text(node, source)
-    if node.type == "function_declarator":
-        decl = node.child_by_field_name("declarator")
-        if decl is not None:
-            return _declarator_name(decl, source)
+    declarator = node.child_by_field_name("declarator")
+    if declarator is not None:
+        return _declarator_name(declarator, source)
+    for child in reversed(node.named_children):
+        name = _declarator_name(child, source)
+        if name:
+            return name
     return None
+
+
+def _property_name(node: Node, source: bytes) -> str | None:
+    declaration = next(
+        (child for child in node.children if child.type == "struct_declaration"), None
+    )
+    if declaration is None:
+        return None
+    declarator = next(
+        (
+            child
+            for child in reversed(declaration.named_children)
+            if child.type == "struct_declarator"
+        ),
+        None,
+    )
+    return _declarator_name(declarator, source) if declarator is not None else None
+
+
+def _property_accessors(
+    node: Node, name: str, source: bytes
+) -> tuple[str, str | None]:
+    getter = name
+    setter: str | None = f"set{name[:1].upper()}{name[1:]}"
+    for child in node.children:
+        if child.type != "property_attributes_declaration":
+            continue
+        for attribute in child.named_children:
+            if attribute.type != "property_attribute":
+                continue
+            text = "".join(node_text(attribute, source).split())
+            if text == "readonly":
+                setter = None
+            elif text.startswith("getter="):
+                getter = text.removeprefix("getter=").rstrip(":")
+            elif text.startswith("setter="):
+                setter = text.removeprefix("setter=").rstrip(":")
+    return getter, setter
+
+
+def _collect_objc_type_ids(node: Node, source: bytes, out: list[str]) -> None:
+    if node.type == "type_identifier":
+        name = node_text(node, source)
+        if name not in _OBJC_BUILTIN_TYPES:
+            out.append(name)
+        return
+    for child in node.named_children:
+        _collect_objc_type_ids(child, source, out)
 
 
 def _string_literal_content(node: Node, source: bytes) -> str:

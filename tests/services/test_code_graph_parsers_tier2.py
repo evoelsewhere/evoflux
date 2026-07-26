@@ -136,6 +136,21 @@ void helper() {}
     result = CppParser().parse(file_path="utils.cpp", source=source)
     functions = _by_kind(result.nodes, NODE_FUNCTION)
     assert [f.name for f in functions] == ["helper"]
+    assert functions[0].qualified_name == "utils.helper"
+
+
+def test_cpp_nested_namespace_qualifies_members():
+    source = b"""namespace acme::billing {
+class Service { public: void run(); };
+void top() {}
+}
+"""
+    result = CppParser().parse(file_path="billing.cpp", source=source)
+    qualified = {node.name: node.qualified_name for node in result.nodes}
+
+    assert qualified["Service"] == "acme.billing.Service"
+    assert qualified["run"] == "acme.billing.Service.run"
+    assert qualified["top"] == "acme.billing.top"
 
 
 # ── Swift parser ──────────────────────────────────────────────────────────────
@@ -282,6 +297,19 @@ def test_kotlin_parser_top_level_function():
     result = KotlinParser().parse(file_path="util.kt", source=source)
     functions = _by_kind(result.nodes, NODE_FUNCTION)
     assert [f.name for f in functions] == ["topLevel"]
+
+
+def test_kotlin_package_qualifies_top_level_and_class_members():
+    source = b"""package com.acme.billing
+class Service { fun run() {} }
+fun top() {}
+"""
+    result = KotlinParser().parse(file_path="Service.kt", source=source)
+    qualified = {node.name: node.qualified_name for node in result.nodes}
+
+    assert qualified["Service"] == "com.acme.billing.Service"
+    assert qualified["run"] == "com.acme.billing.Service.run"
+    assert qualified["top"] == "com.acme.billing.top"
 
 
 # ── Registry integration ──────────────────────────────────────────────────────
