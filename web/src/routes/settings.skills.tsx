@@ -9,7 +9,7 @@ import { useSkillFilesQuery } from '@/queries'
 import { useSettingsParams } from '@/contexts/SettingsContext'
 
 export function SkillsListPage() {
-  const { data, isLoading, isError } = useSkillFilesQuery()
+  const { data, isLoading, isFetching, isError, error, refetch } = useSkillFilesQuery()
   const { name: selected } = useSettingsParams() as { name?: string }
 
   const rows = useMemo<ListViewRow[]>(() => {
@@ -76,7 +76,10 @@ export function SkillsListPage() {
       filterPlaceholder="Filter skills…"
       rows={rows}
       isLoading={isLoading}
+      isFetching={isFetching}
       isError={isError}
+      error={error}
+      onRetry={() => void refetch()}
       emptyTitle="No skills yet"
       emptyBody="Skills are reusable instruction modules agents load on demand via the skill tool."
     />

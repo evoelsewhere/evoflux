@@ -24,6 +24,7 @@ import { useId, useMemo, useState, type ReactNode } from 'react'
 import { motion } from 'framer-motion'
 
 import { SettingsGroup, SettingsPage } from '@/components/settings/SettingsLayout'
+import { SettingsAsyncBoundary } from '@/components/settings/SettingsLoading'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -87,7 +88,10 @@ export interface SettingsListViewProps {
   headerExtra?: ReactNode
   rows: ListViewRow[]
   isLoading: boolean
+  isFetching?: boolean
   isError: boolean
+  error?: unknown
+  onRetry?: () => void
   /** Empty-state body when there are no rows at all (before filtering). */
   emptyTitle: string
   emptyBody: string
@@ -107,7 +111,10 @@ export function SettingsListView({
   headerExtra,
   rows,
   isLoading,
+  isFetching = false,
   isError,
+  error,
+  onRetry,
   emptyTitle,
   emptyBody,
 }: SettingsListViewProps) {
@@ -133,28 +140,35 @@ export function SettingsListView({
       icon={icon}
       title={title}
       lede={lede}
+      size="wide"
       actions={newAction ?? <NewButton to={newTo} label={newLabel} />}
     >
-      {(tabs || headerExtra) && (
-        <div className="space-y-3">
-          {tabs}
-          {headerExtra}
-        </div>
-      )}
+      <SettingsAsyncBoundary
+        loading={isLoading || isFetching}
+        hasData={!isLoading && !isError}
+        error={isError ? (error ?? new Error(`Failed to load ${title.toLowerCase()}.`)) : undefined}
+        variant="list"
+        loadingLabel={`Loading ${title.toLowerCase()}`}
+        errorTitle={`Failed to load ${title.toLowerCase()}`}
+        onRetry={onRetry}
+      >
+        {(tabs || headerExtra) && (
+          <div className="space-y-3">
+            {tabs}
+            {headerExtra}
+          </div>
+        )}
 
-      {isLoading && <p className="py-10 text-center text-sm text-(--color-text-muted)">Loading…</p>}
-      {isError && <p className="py-10 text-center text-sm text-(--color-error)">Failed to load.</p>}
+        {total === 0 && (
+          <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-(--color-border) bg-(--bg-card)/55 px-4 py-12 text-center">
+            <p className="text-sm font-medium text-(--color-text)">{emptyTitle}</p>
+            <p className="max-w-md text-xs leading-relaxed text-(--color-text-muted)">{emptyBody}</p>
+            <NewButton to={newTo} label={newLabel} />
+          </div>
+        )}
 
-      {!isLoading && !isError && total === 0 && (
-        <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-(--color-border) px-4 py-12 text-center">
-          <p className="text-sm font-medium text-(--color-text)">{emptyTitle}</p>
-          <p className="max-w-md text-xs leading-relaxed text-(--color-text-muted)">{emptyBody}</p>
-          <NewButton to={newTo} label={newLabel} />
-        </div>
-      )}
-
-      {!isLoading && !isError && total > 0 && (
-        <SettingsGroup className="divide-y-0">
+        {total > 0 && (
+        <SettingsGroup className="divide-y-0 shadow-[0_12px_36px_rgba(0,0,0,0.035)]">
           <div className="flex h-10 items-center gap-2 border-b border-(--color-border-subtle) px-3">
             <Search size={13} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
             <label htmlFor={filterId} className="sr-only">
@@ -184,8 +198,9 @@ export function SettingsListView({
               ))}
             </ul>
           )}
-        </SettingsGroup>
-      )}
+          </SettingsGroup>
+        )}
+      </SettingsAsyncBoundary>
     </SettingsPage>
   )
 }

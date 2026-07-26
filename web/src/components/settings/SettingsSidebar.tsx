@@ -37,6 +37,7 @@ import {
   useSkillFilesQuery,
 } from '@/queries'
 import { useUIStore } from '@/stores/useUIStore'
+import { Skeleton } from '@/components/ui/skeleton'
 
 type SidebarPath =
   | '/settings/providers'
@@ -94,7 +95,7 @@ function SidebarRow({
       onClick={go}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'group relative mx-2 flex h-9 items-center gap-2.5 rounded-md px-3 text-left text-sm transition-colors',
+        'group relative mx-2 flex min-h-11 items-center gap-2.5 rounded-lg px-3 text-left text-sm transition-[background-color,color,transform] duration-200 active:scale-[0.985]',
         'text-(--color-text-2) hover:bg-(--bg-key)/70 hover:text-(--color-text)',
         'focus-visible:ring-3 focus-visible:ring-(--focus-ring)/40 focus-visible:outline-none',
         active && 'text-(--color-text)',
@@ -116,11 +117,13 @@ function SidebarRow({
         aria-hidden="true"
       />
       <span className={cn('min-w-0 flex-1 truncate', active && 'font-semibold')}>{item.label}</span>
-      {item.count !== undefined && item.count !== null && (
+      {item.count === null ? (
+        <Skeleton className="h-3 w-5 shrink-0 rounded" />
+      ) : item.count !== undefined ? (
         <span className="shrink-0 font-mono text-xs tabular-nums text-(--color-text-muted)">
           {item.count}
         </span>
-      )}
+      ) : null}
     </button>
   )
 }
@@ -258,7 +261,7 @@ export function SettingsSidebar({ currentPath, onNavigate }: SettingsSidebarProp
   return (
     <nav
       aria-label="Settings categories"
-      className="flex h-full w-[min(18rem,calc(100vw-2rem))] shrink-0 flex-col gap-4 overflow-y-auto rounded-[10px] bg-(--bg-sidebar)/80 py-3 shadow-sm backdrop-blur-xl md:w-60"
+      className="flex h-full w-[min(18rem,calc(100vw-2rem))] shrink-0 flex-col gap-4 overflow-y-auto rounded-xl border border-(--color-border-subtle) bg-(--bg-sidebar)/88 py-3 shadow-[0_18px_50px_rgba(0,0,0,0.055)] backdrop-blur-xl md:w-60"
     >
       {sections.map((section) => (
         <div key={section.label} className="flex flex-col">

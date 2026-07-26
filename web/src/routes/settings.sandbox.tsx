@@ -3,18 +3,15 @@
  * cannot access (system-level files like ``.env``, ``db/``, etc).
  */
 import { useMemo, useState } from 'react'
-import { AlertCircle, ChevronDown, Plus, Save, Shield, Trash2 } from 'lucide-react'
+import { ChevronDown, Plus, Save, Shield, Trash2 } from 'lucide-react'
 
 import {
   useSandboxSettingsQuery,
   useUpdateSandboxSettingsMutation,
 } from '@/queries'
 import { useToastStore } from '@/stores/useToastStore'
-import {
-  SettingsCallout,
-  SettingsGroup,
-  SettingsPage,
-} from '@/components/settings/SettingsLayout'
+import { SettingsGroup, SettingsPage } from '@/components/settings/SettingsLayout'
+import { SettingsAsyncBoundary } from '@/components/settings/SettingsLoading'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -26,7 +23,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils'
 
 export function SandboxSettingsPage() {
-  const { data, isLoading, error } = useSandboxSettingsQuery()
+  const { data, isLoading, error, refetch } = useSandboxSettingsQuery()
   const updateMut = useUpdateSandboxSettingsMutation()
   const push = useToastStore((s) => s.push)
 
@@ -113,15 +110,16 @@ export function SandboxSettingsPage() {
         </div>
       }
     >
-      {isLoading && <p className="text-sm text-(--color-text-muted)">Loading…</p>}
-
-      {error && (
-        <SettingsCallout tone="error" icon={AlertCircle}>
-          {error instanceof Error ? error.message : String(error)}
-        </SettingsCallout>
-      )}
-
-      {!isLoading && !error && patterns.length === 0 && (
+      <SettingsAsyncBoundary
+        loading={isLoading}
+        hasData={Boolean(data)}
+        error={error}
+        variant="detail"
+        loadingLabel="Loading sandbox settings"
+        errorTitle="Failed to load sandbox settings"
+        onRetry={() => void refetch()}
+      >
+      {data && patterns.length === 0 && (
         <SettingsGroup title="Denied patterns" bare>
           <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-(--color-border) p-10 text-center">
             <p className="text-sm font-medium text-(--color-text)">Nothing is blocked yet</p>
@@ -139,7 +137,7 @@ export function SandboxSettingsPage() {
         </SettingsGroup>
       )}
 
-      {!isLoading && !error && patterns.length > 0 && (
+      {data && patterns.length > 0 && (
         <SettingsGroup
           title="Denied patterns"
           description={`${patterns.length} ${patterns.length === 1 ? 'pattern is' : 'patterns are'} matched with logical OR. One match blocks access.`}
@@ -184,6 +182,7 @@ export function SandboxSettingsPage() {
           </ul>
         </SettingsGroup>
       )}
+      </SettingsAsyncBoundary>
     </SettingsPage>
   )
 }

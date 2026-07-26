@@ -9,13 +9,14 @@ import {
 } from '@/queries'
 import { useToastStore } from '@/stores/useToastStore'
 import {
-  SettingsCallout,
   SettingsGroup,
   SettingsPage,
   SettingsRow,
 } from '@/components/settings/SettingsLayout'
+import { SettingsAsyncBoundary } from '@/components/settings/SettingsLoading'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { ModelCombobox } from '@/components/settings/AgentForm'
 import { validateModel } from '@/components/settings/schema'
@@ -37,7 +38,7 @@ function normalized(form: DreamConfig): DreamConfig {
 }
 
 export function DreamSettingsPage() {
-  const { data, isLoading, error } = useDreamConfigQuery()
+  const { data, isLoading, error, refetch } = useDreamConfigQuery()
   const updateMut = useUpdateDreamConfigMutation()
   const dreamMut = useTriggerDreamMutation()
   const registry = useRegistryQuery()
@@ -125,6 +126,7 @@ export function DreamSettingsPage() {
             className="min-h-11 md:min-h-0"
             onClick={handleRunNow}
             disabled={dreamMut.isPending}
+            aria-label={dreamMut.isPending ? 'Running Dream now' : 'Run Dream now'}
           >
             <Play size={12} aria-hidden="true" />
             <span className="hidden sm:inline">{dreamMut.isPending ? 'Running…' : 'Run now'}</span>
@@ -134,6 +136,7 @@ export function DreamSettingsPage() {
             className="min-h-11 md:min-h-0"
             onClick={handleSave}
             disabled={!dirty || !!modelError || updateMut.isPending}
+            aria-label={updateMut.isPending ? 'Saving Dream settings' : 'Save Dream settings'}
           >
             <Save size={12} aria-hidden="true" />
             <span className="hidden sm:inline">{updateMut.isPending ? 'Saving…' : 'Save'}</span>
@@ -141,14 +144,16 @@ export function DreamSettingsPage() {
         </div>
       }
     >
-      {isLoading && <p className="text-sm text-(--color-text-muted)">Loading…</p>}
-      {error && (
-        <SettingsCallout tone="error">
-          {error instanceof Error ? error.message : String(error)}
-        </SettingsCallout>
-      )}
-
-      {!isLoading && !error && (
+      <SettingsAsyncBoundary
+        loading={isLoading}
+        hasData={Boolean(data)}
+        error={error}
+        variant="detail"
+        loadingLabel="Loading Dream settings"
+        errorTitle="Failed to load Dream settings"
+        onRetry={() => void refetch()}
+      >
+      {data && (
         <>
           <SettingsGroup title="Schedule">
             <SettingsRow
@@ -187,13 +192,20 @@ export function DreamSettingsPage() {
               stacked
               control={
                 <div className="space-y-1.5">
-                  <ModelCombobox
-                    value={form.model}
-                    onChange={(value) => setField('model', value)}
-                    options={modelOptions}
-                    invalid={!!modelError}
-                    placeholder="codex:gpt-5.5"
-                  />
+                  {registry.isLoading ? (
+                    <div role="status" aria-live="polite" aria-label="Loading model registry">
+                      <span className="sr-only">Loading model registry</span>
+                      <Skeleton className="h-9 w-full rounded-md" />
+                    </div>
+                  ) : (
+                    <ModelCombobox
+                      value={form.model}
+                      onChange={(value) => setField('model', value)}
+                      options={modelOptions}
+                      invalid={!!modelError}
+                      placeholder="codex:gpt-5.5"
+                    />
+                  )}
                   {modelError && <p className="text-xs text-(--color-error)">{modelError}</p>}
                 </div>
               }
@@ -201,6 +213,7 @@ export function DreamSettingsPage() {
           </SettingsGroup>
         </>
       )}
+      </SettingsAsyncBoundary>
     </SettingsPage>
   )
 }

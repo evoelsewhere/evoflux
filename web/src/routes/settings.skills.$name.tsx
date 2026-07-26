@@ -1,16 +1,16 @@
 import { useState } from 'react'
-import { AlertCircle, Sparkles, Trash2 } from 'lucide-react'
+import { Sparkles, Trash2 } from 'lucide-react'
 
 import { useDeleteSkillMutation, useSkillFileQuery, useUpdateSkillMutation } from '@/queries'
 import { useToastStore } from '@/stores/useToastStore'
 import { ApiValidationError } from '@/api/client'
 import { EditorHeaderActions } from '@/components/settings/EditorHeaderActions'
 import {
-  SettingsCallout,
   SettingsGroup,
   SettingsPage,
   SettingsRow,
 } from '@/components/settings/SettingsLayout'
+import { SettingsAsyncBoundary } from '@/components/settings/SettingsLoading'
 import { contentEquals } from '@/components/settings/frontmatter'
 import { validateSkillDraft } from '@/components/settings/schema'
 import { Button } from '@/components/ui/button'
@@ -109,13 +109,16 @@ export function SkillEditorPage() {
           />
         }
       >
-        {isLoading && <p className="text-sm text-(--color-text-muted)">Loading…</p>}
-        {isError && (
-          <SettingsCallout tone="error" icon={AlertCircle}>
-            Failed to load: {String(error)}
-          </SettingsCallout>
-        )}
-        {data && (
+        <SettingsAsyncBoundary
+          loading={isLoading}
+          hasData={Boolean(data)}
+          error={isError ? error : undefined}
+          variant="detail"
+          loadingLabel={`Loading skill ${name}`}
+          errorTitle={`Failed to load skill ${name}`}
+          onRetry={() => void refetch()}
+        >
+          {data && (
           <SettingsGroup
             title="Skill source"
             description={
@@ -131,6 +134,7 @@ export function SkillEditorPage() {
               stacked
               control={
                 <Textarea
+                  aria-label="Skill source"
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
                   disabled={updateMut.isPending}
@@ -143,7 +147,8 @@ export function SkillEditorPage() {
               }
             />
           </SettingsGroup>
-        )}
+          )}
+        </SettingsAsyncBoundary>
         <div className="flex items-center justify-between gap-2 text-xs text-(--color-text-muted)">
           <div className="flex items-center gap-2">
             {dirty && (

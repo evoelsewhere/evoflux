@@ -41,16 +41,23 @@ export function Stat({
 type Cell = React.ReactNode
 
 export function Table({
+  ariaLabel,
   headers,
   rows,
   align,
 }: {
+  ariaLabel: string
   headers: string[]
   rows: Cell[][]
   align: ('left' | 'right')[]
 }) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-(--color-border) bg-(--bg-card)">
+    <div
+      aria-label={ariaLabel}
+      className="overflow-x-auto rounded-lg border border-(--color-border) bg-(--bg-card) outline-none focus-visible:ring-2 focus-visible:ring-(--color-accent)/45 focus-visible:ring-offset-2 focus-visible:ring-offset-(--bg-primary)"
+      role="region"
+      tabIndex={0}
+    >
       <table className="w-full min-w-[320px] text-xs sm:min-w-[360px]">
         <thead>
           <tr className="border-b border-(--color-border) bg-(--bg-key)">

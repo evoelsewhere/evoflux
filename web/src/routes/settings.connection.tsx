@@ -453,5 +453,12 @@ function ServerStatusDot({ status }: { status: 'checking' | 'online' | 'offline'
       ? 'bg-(--color-error)'
       : 'animate-pulse bg-(--color-text-muted)'
   const label = status === 'online' ? 'Online' : status === 'offline' ? 'Offline' : 'Checking'
-  return <span className={`size-2 shrink-0 rounded-full ${className}`} title={label} aria-label={label} />
+  return (
+    <span
+      role="img"
+      className={`size-2 shrink-0 rounded-full ${className}`}
+      title={label}
+      aria-label={label}
+    />
+  )
 }
