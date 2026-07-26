@@ -1,9 +1,9 @@
 /**
- * ToastStack — renders all toasts from ``useToastStore`` in the top-right
- * corner.  Handles its own mount/unmount animations and auto-dismiss is
- * driven by the store.
+ * ToastStack — renders all toasts from ``useToastStore`` at the bottom
+ * edge: bottom-right on desktop, bottom-centered on mobile. Auto-dismiss
+ * is driven by the store.
  *
- * Swipe right or up to dismiss.
+ * Swipe right or down to dismiss.
  */
 import { AnimatePresence, motion, useMotionValue, useTransform } from 'framer-motion'
 import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react'
@@ -52,8 +52,8 @@ function ToastItem({ t, dismiss }: ToastItemProps) {
   function handleDragEnd() {
     const dx = x.get()
     const dy = y.get()
-    // Dismiss on swipe right or swipe up
-    if (dx > SWIPE_THRESHOLD || dy < -SWIPE_THRESHOLD) {
+    // Dismiss on swipe right or swipe down
+    if (dx > SWIPE_THRESHOLD || dy > SWIPE_THRESHOLD) {
       dismiss(t.id)
     }
   }
@@ -66,7 +66,7 @@ function ToastItem({ t, dismiss }: ToastItemProps) {
       variants={{
         enter: reduced
           ? { opacity: 0 }
-          : { opacity: 0, y: -12 * preset.distance, scale: 0.96, transition: preset.spring },
+          : { opacity: 0, y: 12 * preset.distance, scale: 0.96, transition: preset.spring },
         visible: reduced
           ? { opacity: 1 }
           : { opacity: 1, y: 0, scale: 1, transition: preset.spring },
@@ -78,8 +78,8 @@ function ToastItem({ t, dismiss }: ToastItemProps) {
       animate="visible"
       exit="exit"
       drag
-      dragConstraints={{ left: 0, right: 200, top: -200, bottom: 0 }}
-      dragElastic={{ left: 0.05, right: 0.4, top: 0.4, bottom: 0.05 }}
+      dragConstraints={{ left: 0, right: 200, top: 0, bottom: 200 }}
+      dragElastic={{ left: 0.05, right: 0.4, top: 0.05, bottom: 0.4 }}
       dragMomentum={false}
       onDragEnd={handleDragEnd}
       whileDrag={{ cursor: 'grabbing' }}
@@ -110,7 +110,7 @@ export function ToastStack() {
   const dismiss = useToastStore((s) => s.dismiss)
 
   return (
-    <div className="mobile-safe-toast pointer-events-none fixed z-(--z-toast) flex w-auto flex-col gap-2 sm:left-auto sm:w-full sm:max-w-sm">
+    <div className="mobile-safe-toast pointer-events-none fixed z-(--z-toast) flex w-auto flex-col items-end gap-2 sm:w-full sm:max-w-sm">
       <AnimatePresence initial={false}>
         {toasts.map((t) => (
           <ToastItem key={t.id} t={t} dismiss={dismiss} />
