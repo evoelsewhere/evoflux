@@ -100,6 +100,7 @@ export interface TeamStoreState {
   sessionId: string | null
   projectId: string | null
   sessionTitle: string | null
+  sessionTags: string[]
   sessionModel: string | null
   sessionThinkingLevel: string | null
   sessionFastMode: boolean

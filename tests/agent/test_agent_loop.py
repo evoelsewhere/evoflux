@@ -1071,3 +1071,22 @@ async def test_load_tool_batch_activation_is_atomic():
 
     assert "not available" in failed
     assert state.metadata["activated_deferred_tools"] == {"bg_start", "bg_wait"}
+
+
+async def test_load_tool_accepts_double_encoded_json_array_from_model():
+    from app.agent.state import AgentState
+    from app.agent.tools.builtin.load_tool import load_tool
+
+    state = AgentState(messages=[], tool_names=["load_tool", "bg_start", "bg_wait"])
+    state.metadata["deferred_tool_catalog"] = {
+        "bg_start": "Start background work.",
+        "bg_wait": "Wait for background work.",
+    }
+
+    result = await load_tool.arun(
+        tool_names='["bg_start", "bg_wait"]',
+        _injected={"_state": state},
+    )
+
+    assert "bg_start, bg_wait" in result
+    assert state.metadata["activated_deferred_tools"] == {"bg_start", "bg_wait"}

@@ -1,0 +1,568 @@
+from __future__ import annotations
+
+from uuid import uuid4
+
+import pytest
+
+from app.models.chat import GitServerConnection
+from app.services import code_review_service as service
+
+
+@pytest.mark.parametrize(
+    ("remote", "host", "repository"),
+    [
+        (
+            "git@github.com:openai/codex.git",
+            "github.com",
+            "openai/codex",
+        ),
+        (
+            "https://oauth2:secret@gitlab.example.com/group/sub/repo.git",
+            "gitlab.example.com",
+            "group/sub/repo",
+        ),
+        (
+            "ssh://git@bitbucket.example.com:7999/scm/TEAM/repo.git",
+            "bitbucket.example.com",
+            "scm/TEAM/repo",
+        ),
+        (
+            "https://dev.azure.com/acme/payments/_git/api",
+            "dev.azure.com",
+            "acme/payments/_git/api",
+        ),
+        (
+            "git@ssh.dev.azure.com:v3/acme/payments/api",
+            "dev.azure.com",
+            "acme/payments/_git/api",
+        ),
+    ],
+)
+def test_parse_remote_url(remote, host, repository):
+    parsed_host, parsed_repository, sanitized = service.parse_remote_url(remote)
+
+    assert parsed_host == host
+    assert parsed_repository == repository
+    assert "secret" not in sanitized
+
+
+@pytest.mark.parametrize(
+    ("host", "repository", "provider"),
+    [
+        ("github.com", "org/repo", "github"),
+        ("gitlab.corp.test", "group/repo", "gitlab"),
+        ("bitbucket.org", "workspace/repo", "bitbucket_cloud"),
+        ("bitbucket.corp.test", "scm/TEAM/repo", "bitbucket_server"),
+        ("dev.azure.com", "org/project/_git/repo", "azure_devops"),
+        ("forgejo.corp.test", "org/repo", "gitea"),
+        ("git.corp.test", "org/repo", None),
+    ],
+)
+def test_infer_provider(host, repository, provider):
+    assert service.infer_provider(host, repository) == provider
+
+
+def test_resolve_connection_prefers_repository_override():
+    workspace_id = uuid4()
+    target = service.RepositoryTarget(
+        workspace_id=str(workspace_id),
+        workspace="/repo",
+        name="repo",
+        remote_url="git@github.com:org/repo.git",
+        host="github.com",
+        repository="org/repo",
+        detected_provider="github",
+    )
+    shared = GitServerConnection(
+        name="Shared",
+        provider="github",
+        base_url="https://api.github.com",
+        host="github.com",
+        scope="server",
+        token_env_var="SHARED_TOKEN",
+    )
+    override = GitServerConnection(
+        name="Override",
+        provider="github",
+        base_url="https://api.github.com",
+        host="github.com",
+        scope="repository",
+        workspace_id=workspace_id,
+        token_env_var="OVERRIDE_TOKEN",
+    )
+
+    assert service.resolve_connection(target, [shared, override]) is override
+
+
+def test_default_public_api_bases_and_server_hosts():
+    assert service.default_api_base("github", "github.com") == "https://api.github.com"
+    assert service.server_host("github", "https://api.github.com") == "github.com"
+    assert (
+        service.default_api_base("gitlab", "gitlab.corp.test")
+        == "https://gitlab.corp.test/api/v4"
+    )
+    assert (
+        service.server_host(
+            "bitbucket_cloud",
+            "https://api.bitbucket.org/2.0",
+        )
+        == "bitbucket.org"
+    )
+
+
+def test_bitbucket_cloud_supports_bearer_and_basic_tokens():
+    bearer = GitServerConnection(
+        name="Workspace token",
+        provider="bitbucket_cloud",
+        base_url="https://api.bitbucket.org/2.0",
+        host="bitbucket.org",
+        token_env_var="BITBUCKET_TOKEN",
+    )
+    basic = GitServerConnection(
+        name="API token",
+        provider="bitbucket_cloud",
+        base_url="https://api.bitbucket.org/2.0",
+        host="bitbucket.org",
+        token_env_var="BITBUCKET_TOKEN",
+        username="dev@example.com",
+    )
+
+    assert service._auth_headers(bearer, "secret") == {
+        "Authorization": "Bearer secret"
+    }
+    assert service._auth_headers(basic, "secret") == {
+        "Authorization": "Basic ZGV2QGV4YW1wbGUuY29tOnNlY3JldA=="
+    }
+
+
+@pytest.mark.asyncio
+async def test_github_list_is_normalized_and_uses_api_not_cli(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("GITHUB_TEST_TOKEN", "secret")
+    calls = []
+
+    async def fake_request(connection, token, path, *, params=None):
+        calls.append((connection, token, path, params))
+        return [
+            {
+                "number": 42,
+                "title": "Ship the feature",
+                "state": "open",
+                "draft": False,
+                "user": {"login": "octocat"},
+                "head": {"ref": "feature"},
+                "base": {"ref": "main"},
+                "updated_at": "2026-07-27T00:00:00Z",
+                "html_url": "https://github.com/acme/repo/pull/42",
+                "labels": [{"name": "feature"}],
+                "comments": 3,
+            }
+        ]
+
+    monkeypatch.setattr(service, "_request_json", fake_request)
+    connection = GitServerConnection(
+        name="GitHub",
+        provider="github",
+        base_url="https://api.github.com",
+        host="github.com",
+        scope="server",
+        token_env_var="GITHUB_TEST_TOKEN",
+    )
+    target = service.RepositoryTarget(
+        workspace_id=str(uuid4()),
+        workspace="/repo",
+        name="repo",
+        remote_url="git@github.com:acme/repo.git",
+        host="github.com",
+        repository="acme/repo",
+        detected_provider="github",
+    )
+
+    result = await service.list_repository_reviews(target, connection)
+
+    assert result.error is None
+    assert result.items[0].number == 42
+    assert result.items[0].source_branch == "feature"
+    assert result.items[0].labels == ["feature"]
+    assert calls[0][1:] == (
+        "secret",
+        "repos/acme/repo/pulls",
+        {
+            "state": "open",
+            "per_page": 100,
+            "page": 1,
+            "sort": "updated",
+            "direction": "desc",
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_gitlab_nested_repository_path_is_url_encoded(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("GITLAB_TEST_TOKEN", "secret")
+    seen_path = ""
+
+    async def fake_request(connection, token, path, *, params=None):
+        nonlocal seen_path
+        seen_path = path
+        return []
+
+    monkeypatch.setattr(service, "_request_json", fake_request)
+    connection = GitServerConnection(
+        name="GitLab",
+        provider="gitlab",
+        base_url="https://gitlab.example.com/api/v4",
+        host="gitlab.example.com",
+        token_env_var="GITLAB_TEST_TOKEN",
+    )
+    target = service.RepositoryTarget(
+        workspace_id=str(uuid4()),
+        workspace="/repo",
+        name="repo",
+        remote_url="git@gitlab.example.com:group/sub/repo.git",
+        host="gitlab.example.com",
+        repository="group/sub/repo",
+        detected_provider="gitlab",
+    )
+
+    result = await service.list_repository_reviews(target, connection)
+
+    assert result.error is None
+    assert seen_path == "projects/group%2Fsub%2Frepo/merge_requests"
+
+
+@pytest.mark.asyncio
+async def test_github_review_context_reads_files_and_both_comment_streams(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("GITHUB_CONTEXT_TOKEN", "secret")
+    paths: list[str] = []
+
+    async def fake_request(
+        connection,
+        token,
+        path,
+        *,
+        params=None,
+        method="GET",
+        json_body=None,
+    ):
+        paths.append(path)
+        if path.endswith("/files"):
+            return [{"filename": "app.py", "patch": "+fixed"}]
+        if path.endswith("/reviews"):
+            return [{"id": 7, "state": "APPROVED", "user": {"login": "reviewer"}}]
+        if path.endswith("/check-runs"):
+            return {
+                "check_runs": [
+                    {"id": 9, "name": "tests", "conclusion": "success"}
+                ]
+            }
+        if path.endswith("/comments"):
+            return [{"id": 3, "body": "Looks good", "user": {"login": "octocat"}}]
+        return {
+            "number": 42,
+            "title": "Ship it",
+            "state": "open",
+            "head": {"sha": "abc123"},
+        }
+
+    monkeypatch.setattr(service, "_request_json", fake_request)
+    connection = GitServerConnection(
+        name="GitHub",
+        provider="github",
+        base_url="https://api.github.com",
+        host="github.com",
+        token_env_var="GITHUB_CONTEXT_TOKEN",
+    )
+    target = service.RepositoryTarget(
+        workspace_id=str(uuid4()),
+        workspace="/repo",
+        name="repo",
+        remote_url="git@github.com:acme/repo.git",
+        host="github.com",
+        repository="acme/repo",
+        detected_provider="github",
+    )
+
+    context = await service.get_repository_review_context(target, connection, 42)
+
+    assert context["review"]["number"] == 42
+    assert context["changes"][0]["filename"] == "app.py"
+    assert len(context["comments"]) == 2
+    assert context["comments"][0]["stable_id"].startswith("github:")
+    assert context["comments"][0]["author"] == "octocat"
+    assert context["approvals"][0]["state"] == "approved"
+    assert context["checks"]["summary"] == "success"
+    assert context["capabilities"]["resolve_thread"] is False
+    assert paths == [
+        "repos/acme/repo/pulls/42",
+        "repos/acme/repo/pulls/42/files",
+        "repos/acme/repo/issues/42/comments",
+        "repos/acme/repo/pulls/42/comments",
+        "repos/acme/repo/pulls/42/reviews",
+        "repos/acme/repo/commits/abc123/check-runs",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_gitlab_create_review_uses_saved_api_connection(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("GITLAB_CREATE_TOKEN", "secret")
+    seen: dict = {}
+
+    async def fake_request(
+        connection,
+        token,
+        path,
+        *,
+        params=None,
+        method="GET",
+        json_body=None,
+    ):
+        seen.update(
+            token=token,
+            path=path,
+            method=method,
+            json_body=json_body,
+        )
+        return {
+            "iid": 17,
+            "title": json_body["title"],
+            "web_url": "https://gitlab.example.com/group/repo/-/merge_requests/17",
+        }
+
+    monkeypatch.setattr(service, "_request_json", fake_request)
+    connection = GitServerConnection(
+        name="GitLab",
+        provider="gitlab",
+        base_url="https://gitlab.example.com/api/v4",
+        host="gitlab.example.com",
+        token_env_var="GITLAB_CREATE_TOKEN",
+    )
+    target = service.RepositoryTarget(
+        workspace_id=str(uuid4()),
+        workspace="/repo",
+        name="repo",
+        remote_url="git@gitlab.example.com:group/repo.git",
+        host="gitlab.example.com",
+        repository="group/repo",
+        detected_provider="gitlab",
+    )
+
+    created = await service.create_repository_review(
+        target,
+        connection,
+        title="API review",
+        body="Details",
+        source_branch="feature",
+        target_branch="main",
+    )
+
+    assert created["number"] == 17
+    assert seen == {
+        "token": "secret",
+        "path": "projects/group%2Frepo/merge_requests",
+        "method": "POST",
+        "json_body": {
+            "title": "API review",
+            "description": "Details",
+            "source_branch": "feature",
+            "target_branch": "main",
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_bitbucket_server_create_review_reads_self_link(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("BITBUCKET_SERVER_CREATE_TOKEN", "secret")
+
+    async def fake_request(
+        connection,
+        token,
+        path,
+        *,
+        params=None,
+        method="GET",
+        json_body=None,
+    ):
+        assert path == "projects/TEAM/repos/repo/pull-requests"
+        assert method == "POST"
+        return {
+            "id": 23,
+            "title": json_body["title"],
+            "links": {
+                "self": [
+                    {
+                        "href": (
+                            "https://bitbucket.example.com/projects/TEAM/"
+                            "repos/repo/pull-requests/23"
+                        )
+                    }
+                ]
+            },
+        }
+
+    monkeypatch.setattr(service, "_request_json", fake_request)
+    connection = GitServerConnection(
+        name="Bitbucket Data Center",
+        provider="bitbucket_server",
+        base_url="https://bitbucket.example.com/rest/api/1.0",
+        host="bitbucket.example.com",
+        token_env_var="BITBUCKET_SERVER_CREATE_TOKEN",
+    )
+    target = service.RepositoryTarget(
+        workspace_id=str(uuid4()),
+        workspace="/repo",
+        name="repo",
+        remote_url="ssh://git@bitbucket.example.com:7999/TEAM/repo.git",
+        host="bitbucket.example.com",
+        repository="TEAM/repo",
+        detected_provider="bitbucket_server",
+    )
+
+    created = await service.create_repository_review(
+        target,
+        connection,
+        title="API review",
+        body="Details",
+        source_branch="feature",
+        target_branch="main",
+    )
+
+    assert created["number"] == 23
+    assert created["web_url"].endswith("/pull-requests/23")
+
+
+@pytest.mark.asyncio
+async def test_gitlab_resolve_thread_uses_discussion_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("GITLAB_ACTION_TOKEN", "secret")
+    seen: dict = {}
+
+    async def fake_request(
+        connection,
+        token,
+        path,
+        *,
+        params=None,
+        method="GET",
+        json_body=None,
+        extra_headers=None,
+    ):
+        seen.update(path=path, method=method, json_body=json_body)
+        return {"id": "discussion-1", "resolved": True}
+
+    monkeypatch.setattr(service, "_request_json", fake_request)
+    connection = GitServerConnection(
+        name="GitLab",
+        provider="gitlab",
+        base_url="https://gitlab.example.com/api/v4",
+        host="gitlab.example.com",
+        token_env_var="GITLAB_ACTION_TOKEN",
+    )
+    target = service.RepositoryTarget(
+        workspace_id=str(uuid4()),
+        workspace="/repo",
+        name="repo",
+        remote_url="git@gitlab.example.com:group/repo.git",
+        host="gitlab.example.com",
+        repository="group/repo",
+        detected_provider="gitlab",
+    )
+
+    await service.set_code_review_thread_resolved(
+        target, connection, 8, "discussion-1", resolved=True
+    )
+
+    assert seen == {
+        "path": "projects/group%2Frepo/merge_requests/8/discussions/discussion-1",
+        "method": "PUT",
+        "json_body": {"resolved": True},
+    }
+
+
+@pytest.mark.asyncio
+async def test_github_inline_comment_maps_position_and_idempotency(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("GITHUB_ACTION_TOKEN", "secret")
+    seen: list[dict] = []
+
+    async def fake_request(
+        connection,
+        token,
+        path,
+        *,
+        params=None,
+        method="GET",
+        json_body=None,
+        extra_headers=None,
+    ):
+        seen.append(
+            {
+                "path": path,
+                "method": method,
+                "json_body": json_body,
+                "extra_headers": extra_headers,
+            }
+        )
+        return {"id": 11}
+
+    monkeypatch.setattr(service, "_request_json", fake_request)
+    connection = GitServerConnection(
+        name="GitHub",
+        provider="github",
+        base_url="https://api.github.com",
+        host="github.com",
+        token_env_var="GITHUB_ACTION_TOKEN",
+    )
+    target = service.RepositoryTarget(
+        workspace_id=str(uuid4()),
+        workspace="/repo",
+        name="repo",
+        remote_url="git@github.com:acme/repo.git",
+        host="github.com",
+        repository="acme/repo",
+        detected_provider="github",
+    )
+
+    await service.add_code_review_comment(
+        target, connection, 5, "General", idempotency_key="call-1"
+    )
+    await service.add_code_review_inline_comment(
+        target,
+        connection,
+        5,
+        "Inline",
+        path="app.py",
+        line=12,
+        commit_id="abc",
+    )
+
+    assert seen[0]["extra_headers"] == {"Idempotency-Key": "call-1"}
+    assert seen[1]["path"] == "repos/acme/repo/pulls/5/comments"
+    assert seen[1]["json_body"] == {
+        "body": "Inline",
+        "path": "app.py",
+        "line": 12,
+        "side": "RIGHT",
+        "commit_id": "abc",
+    }
+
+
+def test_provider_capability_reports_rest_only_limitations():
+    github = service.provider_capabilities("github")
+    gitlab = service.provider_capabilities("gitlab")
+
+    assert github["inline_comment"] is True
+    assert github["resolve_thread"] is False
+    assert github["draft"] is False
+    assert gitlab["resolve_thread"] is True

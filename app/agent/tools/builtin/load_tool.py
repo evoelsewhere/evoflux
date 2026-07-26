@@ -2,20 +2,34 @@
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Annotated, Any
 
 from loguru import logger
-from pydantic import Field
+from pydantic import BeforeValidator, Field
 
 from app.agent.tools.registry import InjectedArg, tool
+
+
+def _coerce_tool_names(value: Any) -> Any:
+    """Accept a JSON-array string emitted by models that double-encode arguments."""
+    if not isinstance(value, str):
+        return value
+    try:
+        decoded = json.loads(value)
+    except (TypeError, ValueError):
+        return value
+    return decoded if isinstance(decoded, list) else value
+
 
 @tool(
     name="load_tool",
     description=(
         "Find and activate a specialized tool whose full schema is hidden by "
-        "default. Search with query first, then pass an exact tool_name or "
-        "tool_names list to make the needed tools available on the next turn."
+        "default. Search with query first, then pass one exact tool_name. "
+        "For batching, tool_names must be a native JSON array, not a quoted "
+        "or stringified array. Activated tools become available next turn."
     ),
     read_only=True,
 )
@@ -26,6 +40,7 @@ async def load_tool(
     ] = None,
     tool_names: Annotated[
         list[str] | None,
+        BeforeValidator(_coerce_tool_names),
         Field(description="Exact deferred tool names to activate together."),
     ] = None,
     query: Annotated[

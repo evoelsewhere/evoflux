@@ -3,6 +3,7 @@ from .chat import (
     ChatSession,
     DreamLog,
     DreamNotesLog,
+    GitServerConnection,
     MemoryProcessedSource,
     SessionMessage,
 )
@@ -29,6 +30,7 @@ __all__ = [
     "DelegationTask",
     "DreamLog",
     "DreamNotesLog",
+    "GitServerConnection",
     "MemoryProcessedSource",
     "SessionMessage",
     "WorkflowApproval",

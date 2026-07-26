@@ -1410,6 +1410,160 @@ export interface GitConflictsResponse {
   files: { path: string; status: string }[]
 }
 
+export type GitServerProvider =
+  | 'github'
+  | 'gitlab'
+  | 'bitbucket_cloud'
+  | 'bitbucket_server'
+  | 'gitea'
+  | 'azure_devops'
+
+export type GitServerConnectionScope = 'server' | 'repository'
+
+export interface GitServerConnection {
+  id: string
+  name: string
+  provider: GitServerProvider
+  base_url: string
+  host: string
+  scope: GitServerConnectionScope
+  workspace_id: string | null
+  token_env_var: string
+  has_token: boolean
+  username: string | null
+  verify_ssl: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface GitServerConnectionInput {
+  name: string
+  provider: GitServerProvider
+  base_url: string
+  scope: GitServerConnectionScope
+  workspace_id: string | null
+  token?: string
+  token_env_var?: string | null
+  username?: string | null
+  verify_ssl: boolean
+}
+
+export interface CodeReviewItem {
+  number: number
+  title: string
+  state: string
+  draft: boolean
+  author: string | null
+  source_branch: string
+  target_branch: string
+  updated_at: string
+  web_url: string
+  labels: string[]
+  review_status: string | null
+  pipeline_status: string | null
+  comment_count: number | null
+}
+
+export interface RepositoryCodeReviews {
+  workspace_id: string
+  project_id: string | null
+  workspace: string
+  name: string
+  remote_url: string | null
+  repository: string | null
+  detected_provider: GitServerProvider | null
+  suggested_base_url: string | null
+  connection_id: string | null
+  provider: GitServerProvider | null
+  items: CodeReviewItem[]
+  error: string | null
+}
+
+export interface CodeReviewsResponse {
+  repositories: RepositoryCodeReviews[]
+  total: number
+}
+
+export interface CodeReviewComment {
+  stable_id: string
+  id: string
+  thread_id: string
+  parent_id: string | null
+  kind: 'conversation' | 'inline' | string
+  body: string
+  author: string | null
+  created_at: string
+  updated_at: string
+  resolved: boolean | null
+  path: string | null
+  line: number | null
+  side: string | null
+  commit_id: string | null
+  can_reply: boolean
+  can_resolve: boolean
+}
+
+export interface CodeReviewCheck {
+  id: string
+  name: string
+  status: string
+  url: string
+}
+
+export interface CodeReviewContext {
+  provider: GitServerProvider
+  repository: string
+  number: number
+  review: Record<string, unknown>
+  changes: unknown
+  comments: CodeReviewComment[]
+  approvals: Array<{ id: string; author: string | null; state: string }>
+  checks: { summary: string; items: CodeReviewCheck[] }
+  state: string
+  draft: boolean
+  mergeability: {
+    mergeable: unknown
+    conflicts: boolean
+    merged: boolean
+  }
+  permissions: {
+    connection_scope: GitServerConnectionScope
+    credential_configured: boolean
+  }
+  capabilities: Record<string, boolean>
+}
+
+export type CodeReviewAction =
+  | 'comment'
+  | 'inline_comment'
+  | 'reply'
+  | 'resolve_thread'
+  | 'reopen_thread'
+  | 'approve'
+  | 'request_changes'
+  | 'update'
+  | 'checks'
+  | 'merge'
+  | 'close'
+  | 'reopen'
+
+export interface CodeReviewActionInput {
+  action: CodeReviewAction
+  body?: string
+  thread_id?: string
+  path?: string
+  line?: number
+  side?: 'LEFT' | 'RIGHT'
+  commit_id?: string
+  base_commit_id?: string
+  start_commit_id?: string
+  reviewer_id?: string
+  idempotency_key?: string
+  updates?: Record<string, unknown>
+  merge_method?: string
+  commit_title?: string
+}
+
 // ── WebBridge ────────────────────────────────────────────────────────────────
 
 export interface WebBridgeExtensionInfo {

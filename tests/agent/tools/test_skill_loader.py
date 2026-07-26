@@ -610,6 +610,7 @@ class TestBuiltinSkills:
             "skill-installer",
             "mcp-installer",
             "plugin-installer",
+            "review-pull-requests",
         }.issubset(result)
         assert (_builtin_skills_dir() / "mcp-installer" / "mcp_apply.py").is_file()
 

@@ -4,7 +4,7 @@ import shutil
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import NamedTuple
+from typing import Literal, NamedTuple
 from uuid import UUID
 
 from loguru import logger
@@ -961,6 +961,7 @@ async def get_latest_top_level_session(
     workspace: str | None,
     project_id: UUID | None = None,
     tags: list[str] | None = None,
+    tag_match: Literal["exact", "contains"] = "exact",
 ) -> ChatSession | None:
     """Return the newest top-level session for a mode/workspace pair.
 
@@ -971,11 +972,9 @@ async def get_latest_top_level_session(
     or a different project sharing that path).
 
     ``tags=None`` (the default) keeps the historical behaviour — no tag
-    filtering at all.  Any other value (including ``[]``) requires tag-SET
-    equality: only a session whose stored tag set equals the requested set
-    matches, so a tagged resolve never reuses an untagged session and vice
-    versa.  Stored tags are written sorted+deduped by the resolve endpoint,
-    so equality on the normalised array is exact.
+    filtering at all. Any other value uses exact tag-SET equality unless
+    ``tag_match="contains"`` is requested. Contains matching is useful for
+    feature-context tags that must survive additional capability tags.
     """
     stmt = (
         select(ChatSession)
@@ -997,11 +996,22 @@ async def get_latest_top_level_session(
             stmt = stmt.where(ChatSession.workspace == workspace)
     if tags is not None:
         requested = sorted(set(tags))
-        if requested:
+        if requested and tag_match == "exact":
             stmt = stmt.where(col(ChatSession.tags) == requested)
-        else:
+        elif not requested:
             stmt = stmt.where(
                 or_(col(ChatSession.tags).is_(None), col(ChatSession.tags) == [])
+            )
+        elif tag_match == "contains":
+            requested_set = set(requested)
+            rows = (await db.exec(stmt)).all()
+            return next(
+                (
+                    session
+                    for session in rows
+                    if requested_set.issubset(session.tags or ())
+                ),
+                None,
             )
     return (await db.exec(stmt.limit(1))).first()
 

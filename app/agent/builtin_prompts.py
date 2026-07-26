@@ -380,6 +380,7 @@ Summarize what exists, where it lives, what patterns to follow, and any risks or
             "description": "Code critic. Challenges implementation choices, hunts for bugs, edge cases, and security holes, then argues for the better approach.",
             "skills": [
                 "code-review-and-quality",
+                "review-pull-requests",
                 "security-and-hardening",
                 "performance-optimization",
             ],

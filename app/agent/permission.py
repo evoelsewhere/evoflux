@@ -147,6 +147,7 @@ _SAFE_TOOLS: frozenset[str] = frozenset(
         # read-only web / info retrieval
         "date", "web_search", "web_fetch", "image_search",
         "memory_search", "wiki_search",
+        "list_code_reviews", "get_code_review", "get_code_review_checks",
         # session bookkeeping / UI-only output
         "note", "mark_chapter", "show_widget", "read_me", "todo_manage",
         # user interaction & plan flow (already block on the user)
@@ -249,6 +250,8 @@ class PermissionService:
         patterns: list[str],
         always_patterns: list[str] | None = None,
         metadata: dict | None = None,
+        *,
+        important: bool = False,
     ) -> None:
         """Check permission for *tool* against *patterns*.
 
@@ -283,7 +286,7 @@ class PermissionService:
 
         if not needs_ask:
             return
-        if not self._blocks(tool):
+        if not important and not self._blocks(tool):
             return
 
         req = PermissionRequest.create(

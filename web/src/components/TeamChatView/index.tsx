@@ -46,7 +46,6 @@ import { WebBridgeStatusDialog } from '@/components/shell/WebBridgeStatusDialog'
 import { useTodosQuery } from '@/queries/useTodosQuery'
 import { useSessionChapters } from '@/hooks/useSessionChapters'
 import { useProvidersQuery, useRegistryQuery, useTriggerDreamMutation } from '@/queries'
-import { useTeamSessionsQuery } from '@/queries/useSessionsQuery'
 import { getTeamSession, getWebBridgeStatus, replyPlanApproval, resolveTeamSession, setSessionPermissionMode } from '@/api/client'
 import { useShallow } from 'zustand/react/shallow'
 import { useTeamStore } from '@/stores/useTeamStore'
@@ -71,10 +70,16 @@ import { BrowserViewer } from '@/components/BrowserViewer'
 import { TerminalPanel } from '@/components/TerminalPanel'
 import { WikiPanel } from '@/components/WikiPanel'
 import { SchedulerPanel } from '@/components/SchedulerPanel'
+import { PullRequestsPanel } from '@/components/PullRequestsPanel'
 import { WorkbenchBar } from '@/components/workbench/WorkbenchBar'
 import { WorkbenchDock, WorkbenchSurface } from '@/components/workbench/WorkbenchDock'
 import { useSideChat } from '../SideChatPanel/useSideChat'
-import type { AgentCapabilities as AgentCapabilitiesType, WorkspaceFileInfo } from '@/api/types'
+import type {
+  AgentCapabilities as AgentCapabilitiesType,
+  CodeReviewItem,
+  RepositoryCodeReviews,
+  WorkspaceFileInfo,
+} from '@/api/types'
 import { SplitWorkbench } from './SplitWorkbench'
 import { useTeamCommands } from './useTeamCommands'
 import { useTeamSse } from './useTeamSse'
@@ -83,6 +88,12 @@ import { useMobileEdgeSwipes } from './useMobileEdgeSwipes'
 import { VIEW_MODES, type ViewMode } from './types'
 import { codingFocusId, saveLastCodingWorkspace, workspaceLabel } from '@/utils/workspace'
 import { setTraySession } from '@/lib/tray'
+import { queryKeys } from '@/queries/keys'
+import {
+  codeReviewSessionPrompt,
+  codeReviewSessionTags,
+  parseCodeReviewSessionTags,
+} from '@/lib/code-review-session'
 
 interface TeamChatViewProps {
   sessionId?: string
@@ -96,6 +107,15 @@ interface TeamChatViewProps {
 const EMPTY_AGENT_STREAMS: Record<string, AgentStream> = {}
 const EMPTY_BLOCKS: AgentStream['blocks'] = []
 const EMPTY_REVERTED_MESSAGES: Array<{ role: string; content: string }> = []
+
+interface PendingCodeReviewStart {
+  sessionId: string
+  prompt: string
+  workspace: string
+  model: string | null
+  thinkingLevel: string | null
+  fastMode: boolean
+}
 
 export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codingSessionLoading = false }: TeamChatViewProps) {
   // A handful of child components/hooks (file refs, command palette,
@@ -129,6 +149,8 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const [sideChatQuote, setSideChatQuote] = useState<string | null>(null)
   const [webBridgeEnabled, setWebBridgeEnabled] = useState(false)
   const [webBridgeDialogOpen, setWebBridgeDialogOpen] = useState(false)
+  const [pendingCodeReviewStart, setPendingCodeReviewStart] =
+    useState<PendingCodeReviewStart | null>(null)
 
   // On mobile, always force agent view — split/monitor require a wide screen.
   // Also close any desktop-only panels when shrinking to mobile.
@@ -170,6 +192,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
         : workspaceLabel(workspace)
       : null
   const sessionTitle   = useTeamStore((s) => s.sessionTitle)
+  const sessionTags    = useTeamStore((s) => s.sessionTags)
   const sessionModel   = useTeamStore((s) => s.sessionModel)
   const sessionThinkingLevel = useTeamStore((s) => s.sessionThinkingLevel)
   const sessionFastMode = useTeamStore((s) => s.sessionFastMode)
@@ -180,6 +203,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const activeWorkbenchTool = useUIStore((s) => s.activeWorkbenchTool)
   const workbenchOpen = useUIStore((s) => s.workbenchOpen)
   const workbenchMaximized = useUIStore((s) => s.workbenchMaximized)
+  const pullRequestsScope = useUIStore((s) => s.pullRequestsScope)
   const openWorkbenchTool = useUIStore((s) => s.openWorkbenchTool)
   const toggleWorkbenchTool = useUIStore((s) => s.toggleWorkbenchTool)
   const closeWorkbenchTool = useUIStore((s) => s.closeWorkbenchTool)
@@ -247,18 +271,11 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const todos = todosData?.todos ?? []
   const { data: chapters = [] } = useSessionChapters(sessionIdState)
 
-  // Tags ride on session-list rows — the stream store intentionally keeps no
-  // session metadata. WebBridge remains a session capability, not a chat mode.
-  const { data: sessionsData } = useTeamSessionsQuery(mode)
   const activeSessionId = sessionIdState ?? sessionId ?? null
-  const sessionTags = useMemo(() => {
-    if (!activeSessionId) return null
-    for (const page of sessionsData?.pages ?? []) {
-      const found = page.data.find((s) => s.id === activeSessionId)
-      if (found) return found.tags ?? []
-    }
-    return null
-  }, [sessionsData, activeSessionId])
+  const reviewSessionContext = useMemo(
+    () => parseCodeReviewSessionTags(sessionTags),
+    [sessionTags],
+  )
   const persistedWebBridgeEnabled = sessionTags?.includes('webbridge')
   useEffect(() => {
     if (!activeSessionId) {
@@ -337,6 +354,39 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
     inputRef,
   })
 
+  // A newly-created review session is routed first, restored by useTeamSse,
+  // and only then receives its one-time context prompt. Waiting for the route
+  // and restore avoids racing the previous session's stream with the new send.
+  useEffect(() => {
+    const pending = pendingCodeReviewStart
+    if (!pending || sessionId !== pending.sessionId) return
+    const state = useTeamStore.getState()
+    if (state.sessionId !== pending.sessionId || state.isSessionLoading) return
+    setPendingCodeReviewStart(null)
+    void state.sendMessage(pending.prompt, undefined, {
+      mode: 'coding',
+      workspace: pending.workspace,
+      model: pending.model,
+      thinkingLevel: pending.thinkingLevel,
+      fastMode: pending.fastMode,
+    }).then(() => {
+      const error = useTeamStore.getState().error
+      pushToast(
+        error
+          ? {
+              tone: 'error',
+              title: 'Review chat could not start',
+              description: error,
+            }
+          : {
+              tone: 'success',
+              title: 'Review context sent',
+              description: 'This PR/MR is now linked to its Coding session.',
+            },
+      )
+    })
+  }, [pendingCodeReviewStart, pushToast, sessionId, isSessionLoading])
+
   // ── Commands / shortcuts ───────────────────────────────────────────────────
 
   const isEmptyIdleSession = useCallback(() => useTeamStore.getState().isEmptyIdleSession(), [])
@@ -393,6 +443,108 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
       }
     })()
   }, [beginResolvedSession, isEmptyIdleSession, mode, navigate, queryClient, sessionIdState, sessionModel, sessionThinkingLevel, workspace, abortRef])
+
+  const handleOpenCodeReviewChat = useCallback(async (
+    repository: RepositoryCodeReviews,
+    item: CodeReviewItem,
+  ) => {
+    const tags = codeReviewSessionTags(repository, item)
+    const carryModel = sessionIdState ? sessionModel : null
+    const carryThinkingLevel = sessionIdState ? sessionThinkingLevel : null
+    const carryFastMode = sessionIdState ? sessionFastMode : false
+    try {
+      const session = await resolveTeamSession({
+        mode: 'coding',
+        workspace: repository.project_id ? undefined : repository.workspace,
+        project_id: repository.project_id,
+        model: carryModel,
+        thinkingLevel: carryThinkingLevel,
+        tags,
+        tagMatch: 'contains',
+      })
+      if (session.id === sessionIdState) {
+        useTeamStore.setState({ sessionTags: session.tags ?? tags })
+        useUIStore.getState().closeWorkbench()
+        pushToast({
+          tone: 'info',
+          title: 'Already in this review chat',
+          description: `Review #${item.number} is linked to the current session.`,
+        })
+        return
+      }
+      abortRef.current?.abort()
+      abortRef.current = null
+      inputRef.current?.setValue('')
+      inputRef.current?.setFiles([])
+      beginResolvedSession(session.id, {
+        mode: 'coding',
+        workspace: session.workspace ?? repository.workspace,
+        model: session.model ?? carryModel,
+        thinkingLevel: session.thinking_level ?? carryThinkingLevel,
+        fastMode: carryFastMode,
+        skipInitialRestore: session.created,
+      })
+      useTeamStore.setState({
+        projectId: session.project_id ?? repository.project_id,
+        sessionTags: session.tags ?? tags,
+      })
+      prependSession(queryClient, session)
+      if (repository.project_id) {
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.team.sessions.project(repository.project_id),
+        })
+      } else {
+        prependWorkspaceSession(queryClient, repository.workspace, session)
+        saveLastCodingWorkspace(repository.workspace)
+      }
+      const resolvedWorkspace = session.workspace ?? repository.workspace
+      const focusId = codingFocusId({
+        project_id: session.project_id ?? repository.project_id,
+        workspace: resolvedWorkspace,
+      })
+      if (session.created) {
+        setPendingCodeReviewStart({
+          sessionId: session.id,
+          prompt: codeReviewSessionPrompt(repository, item),
+          workspace: resolvedWorkspace,
+          model: session.model ?? carryModel,
+          thinkingLevel: session.thinking_level ?? carryThinkingLevel,
+          fastMode: carryFastMode,
+        })
+      } else {
+        pushToast({
+          tone: 'info',
+          title: 'Review chat reopened',
+          description: `Continuing the linked session for review #${item.number}.`,
+        })
+      }
+      useUIStore.getState().closeWorkbench()
+      navigate(
+        focusId
+          ? {
+              to: '/coding/$focusId/$sessionId',
+              params: { focusId, sessionId: session.id },
+            }
+          : { to: '/coding' },
+      )
+    } catch (err) {
+      pushToast({
+        tone: 'error',
+        title: 'Unable to open review chat',
+        description: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }, [
+    abortRef,
+    beginResolvedSession,
+    navigate,
+    pushToast,
+    queryClient,
+    sessionFastMode,
+    sessionIdState,
+    sessionModel,
+    sessionThinkingLevel,
+  ])
 
   const handleWorkspaceFiles = useCallback(() => {
     if (mode === 'coding') {
@@ -941,6 +1093,18 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
             contextWorkspace={mode === 'coding' ? workspace : null}
           />
         </WorkbenchSurface>
+        {mode === 'coding' && (
+          <WorkbenchSurface tool="pull-requests">
+            <PullRequestsPanel
+              open={workbenchTabs.some((tab) => tab.tool === 'pull-requests')}
+              scope={pullRequestsScope}
+              workspace={workspace}
+              projectId={projectIdState}
+              focus={reviewSessionContext}
+              onOpenInChat={handleOpenCodeReviewChat}
+            />
+          </WorkbenchSurface>
+        )}
     </WorkbenchDock>
   )
 
@@ -1094,6 +1258,9 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
           viewMode={effectiveViewMode}
           onViewModeChange={setViewMode}
           onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
+          workspace={agentWorkspace}
+          reviewContext={mode === 'coding' ? reviewSessionContext : null}
+          onOpenReviewContext={() => openWorkbenchTool('pull-requests')}
         />
       }
     >

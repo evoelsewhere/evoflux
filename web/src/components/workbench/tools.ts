@@ -3,6 +3,7 @@ import {
   CalendarClock,
   Files,
   GitCompareArrows,
+  GitPullRequest,
   Globe2,
   MessageSquarePlus,
   Terminal,
@@ -61,6 +62,11 @@ export const WORKBENCH_TOOLS: Record<
     icon: CalendarClock,
     shortcut: '⌃S',
   },
+  'pull-requests': {
+    label: 'Pull Requests',
+    description: 'Review PRs and MRs across every coding repository',
+    icon: GitPullRequest,
+  },
 }
 
 export const WORKBENCH_TOOL_ORDER = Object.keys(WORKBENCH_TOOLS) as WorkbenchTool[]
@@ -72,10 +78,10 @@ export function isWorkbenchToolEnabled(
   if (tool === 'review') {
     return context.mode === 'coding' && Boolean(context.workspace)
   }
+  if (tool === 'pull-requests') return context.mode === 'coding'
   if (tool === 'files') return Boolean(context.sessionId || context.workspace)
   if (tool === 'terminal' || tool === 'browser' || tool === 'side-chat') {
     return Boolean(context.sessionId)
   }
   return true
 }
-

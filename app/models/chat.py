@@ -228,6 +228,57 @@ class CodingWorkspace(SQLModel, table=True):
     )
 
 
+class GitServerConnection(SQLModel, table=True):
+    """API connection used to read reviews from a Git server.
+
+    Secret material is deliberately not stored in this table. ``token_env_var``
+    points at a value in EvoFlux's config ``.env`` (or the process environment),
+    while this row contains only routing metadata safe to return to the UI.
+    """
+
+    __tablename__: str = "git_server_connections"  # type: ignore[reportIncompatibleVariableOverride]
+    __table_args__ = (
+        sa.Index("ix_git_server_connections_host", "host"),
+        sa.Index("ix_git_server_connections_workspace", "workspace_id"),
+    )
+
+    id: UUID = Field(default_factory=uuid7, primary_key=True)
+    name: str = Field(sa_column=Column(sa.String(255), nullable=False))
+    provider: str = Field(sa_column=Column(sa.String(40), nullable=False))
+    base_url: str = Field(sa_column=Column(sa.String(2048), nullable=False))
+    host: str = Field(sa_column=Column(sa.String(255), nullable=False))
+    scope: str = Field(
+        default="server",
+        sa_column=Column(sa.String(20), nullable=False, server_default="server"),
+    )
+    workspace_id: UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            sa.Uuid(),
+            ForeignKey("coding_workspaces.id", ondelete="CASCADE"),
+            nullable=True,
+        ),
+    )
+    token_env_var: str = Field(
+        sa_column=Column(sa.String(255), nullable=False, unique=True)
+    )
+    username: str | None = Field(
+        default=None, sa_column=Column(sa.String(255), nullable=True)
+    )
+    verify_ssl: bool = Field(
+        default=True,
+        sa_column=Column(sa.Boolean, nullable=False, server_default=sa.true()),
+    )
+    created_at: datetime = Field(
+        default_factory=_utcnow,
+        sa_column=Column(TZDateTime(), nullable=False),
+    )
+    updated_at: datetime = Field(
+        default_factory=_utcnow,
+        sa_column=Column(TZDateTime(), nullable=False, onupdate=_utcnow),
+    )
+
+
 class SessionMessage(SQLModel, table=True):
     __tablename__: str = "session_messages"  # type: ignore[reportIncompatibleVariableOverride]
     __table_args__ = (

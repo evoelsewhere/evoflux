@@ -330,6 +330,35 @@ class TestResolveTeamSession:
         assert second["id"] == first["id"]
         assert second["tags"] == ["webbridge"]
 
+    def test_resolve_contains_tags_reuses_session_with_extra_capability(
+        self, app_with_team
+    ):
+        client = TestClient(app_with_team)
+
+        first = client.post(
+            "/api/team/sessions/resolve",
+            json={
+                "mode": "forge",
+                "tags": ["code-review", "code-review:v1:workspace:42", "webbridge"],
+            },
+        ).json()
+        second = client.post(
+            "/api/team/sessions/resolve",
+            json={
+                "mode": "forge",
+                "tags": ["code-review", "code-review:v1:workspace:42"],
+                "tag_match": "contains",
+            },
+        ).json()
+
+        assert second["created"] is False
+        assert second["id"] == first["id"]
+        assert second["tags"] == [
+            "code-review",
+            "code-review:v1:workspace:42",
+            "webbridge",
+        ]
+
     def test_resolve_untagged_does_not_return_tagged_session(self, app_with_team):
         client = TestClient(app_with_team)
 
