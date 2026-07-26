@@ -28,8 +28,10 @@
  */
 
 import type { ReactNode, Ref, TouchEventHandler } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { PanelLeft } from 'lucide-react'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
+import { useMotionPreset } from '@/lib/motion'
 import { useUIStore } from '@/stores/useUIStore'
 
 interface AppShellProps {
@@ -42,6 +44,8 @@ interface AppShellProps {
   /** Forwarded to <main> (TeamChatView anchors the floating input bar on it). */
   mainId?: string
   mainRef?: Ref<HTMLDivElement>
+  /** Hide the conversation canvas while a workbench tool is maximized. */
+  mainHidden?: boolean
   onTouchStart?: TouchEventHandler<HTMLDivElement>
   onTouchMove?: TouchEventHandler<HTMLDivElement>
   onTouchEnd?: TouchEventHandler<HTMLDivElement>
@@ -58,6 +62,7 @@ export function AppShell({
   overlay,
   mainId,
   mainRef,
+  mainHidden = false,
   onTouchStart,
   onTouchMove,
   onTouchEnd,
@@ -66,6 +71,7 @@ export function AppShell({
 }: AppShellProps) {
   const toggleSidebarCollapsed = useUIStore((s) => s.toggleSidebarCollapsed)
   const hasSidebar = sidebar != null
+  const motionPreset = useMotionPreset()
 
   // Ctrl+B — the single shell-level sidebar toggle. See the file header for
   // why registration is gated on this shell having a sidebar.
@@ -85,15 +91,18 @@ export function AppShell({
       {/* Sidebar toggle — same placement + affordance in every mode. */}
       {hasSidebar && (
         <div className="flex shrink-0 flex-col items-center pt-2">
-          <button
+          <motion.button
             type="button"
             onClick={toggleSidebarCollapsed}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.9 }}
+            transition={motionPreset.spring}
             aria-label="Toggle sidebar"
             title="Toggle sidebar (Ctrl+B)"
             className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
           >
             <PanelLeft size={15} aria-hidden="true" />
-          </button>
+          </motion.button>
         </div>
       )}
 
@@ -103,13 +112,23 @@ export function AppShell({
           {header}
           <div className="flex min-h-0 flex-1 overflow-hidden">
             {mobileSidebar}
-            <main
-              id={mainId}
-              ref={mainRef}
-              className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[10px] bg-(--bg-page) shadow-sm"
-            >
-              {children}
-            </main>
+            <AnimatePresence initial={false} mode="popLayout">
+              {!mainHidden && (
+                <motion.main
+                  key="app-main-canvas"
+                  layout="size"
+                  id={mainId}
+                  ref={mainRef}
+                  initial={{ opacity: 0, scale: 0.995 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.99 }}
+                  transition={motionPreset.transition}
+                  className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[10px] bg-(--bg-page) shadow-sm"
+                >
+                  {children}
+                </motion.main>
+              )}
+            </AnimatePresence>
             {trailing}
           </div>
           {overlay}

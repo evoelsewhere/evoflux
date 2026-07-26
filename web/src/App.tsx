@@ -8,13 +8,15 @@ import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
 function App() {
   const backendReady = useAppBackendBootstrap()
 
-  if (!backendReady) return <AppLoadingScreen />
-
   return (
     <AppMotionConfig>
-      <Suspense fallback={<AppLoadingScreen />}>
-        <RouterProvider router={router} />
-      </Suspense>
+      {backendReady ? (
+        <Suspense fallback={<AppLoadingScreen />}>
+          <RouterProvider router={router} />
+        </Suspense>
+      ) : (
+        <AppLoadingScreen />
+      )}
     </AppMotionConfig>
   )
 }

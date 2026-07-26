@@ -793,6 +793,26 @@ a svg[aria-hidden="true"],
   box-shadow: var(--shadow-depth);
 }
 
+/* The topbar shares horizontal space with the resizable Workbench. Container
+ * queries keep its controls compact based on the space it actually receives,
+ * rather than the width of the whole desktop window. */
+.workbench-topbar {
+  container-name: workbench-topbar;
+  container-type: inline-size;
+}
+
+@container workbench-topbar (max-width: 480px) {
+  .workbench-view-label {
+    display: none;
+  }
+}
+
+@container workbench-topbar (max-width: 360px) {
+  .workbench-identity-label {
+    max-width: 7rem;
+  }
+}
+
 /* Runtime typography tokens. Appearance selects a preset through data-font;
  * Tailwind utilities stay connected to these variables instead of compiling
  * Inter into every .font-sans/.font-heading rule. */

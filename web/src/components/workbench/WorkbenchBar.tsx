@@ -1,0 +1,229 @@
+import type { MouseEvent as ReactMouseEvent } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
+import {
+  Check,
+  ChevronDown,
+  Menu,
+  MessageSquare,
+  Monitor,
+  Orbit,
+  PanelRight,
+} from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { cn } from '@/lib/utils'
+import { useMotionPreset } from '@/lib/motion'
+import { useUIStore } from '@/stores/useUIStore'
+import type { ViewMode } from '@/components/TeamChatView/types'
+
+interface WorkbenchBarProps {
+  identity: string
+  activeAgent: string | null
+  agentNames: string[]
+  viewMode: ViewMode
+  onViewModeChange: (mode: ViewMode) => void
+  onSelectAgent: (agent: string) => void
+  onOpenMobileSidebar: () => void
+  isMobile: boolean
+  isMacOverlay: boolean
+  dragHandlers?: {
+    onMouseDown?: (event: ReactMouseEvent<HTMLElement>) => void
+  }
+}
+
+export function WorkbenchBar(props: WorkbenchBarProps) {
+  const workbenchOpen = useUIStore((state) => state.workbenchOpen)
+  const toggleWorkbench = useUIStore((state) => state.toggleWorkbench)
+  const motionPreset = useMotionPreset()
+  const viewModeLabel =
+    props.viewMode === 'agent'
+      ? 'Agent'
+      : props.viewMode === 'split'
+        ? 'Split'
+        : 'Monitor'
+  const ViewModeIcon =
+    props.viewMode === 'agent'
+      ? MessageSquare
+      : props.viewMode === 'split'
+        ? PanelRight
+        : Monitor
+
+  return (
+    <motion.header
+      layout="position"
+      transition={motionPreset.spring}
+      {...props.dragHandlers}
+      className={cn(
+        'workbench-topbar flex h-12 shrink-0 items-center gap-2 overflow-hidden border-b border-(--color-border)/75 bg-(--bg-page) px-3 will-change-transform',
+        props.isMacOverlay && 'mac-drag-region pt-3',
+      )}
+    >
+      {props.isMobile && (
+        <motion.button
+          layout
+          type="button"
+          onClick={props.onOpenMobileSidebar}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.92 }}
+          transition={motionPreset.spring}
+          className="flex h-8 w-8 items-center justify-center rounded-xl text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+          aria-label="Open navigation"
+          data-no-drag
+        >
+          <Menu size={16} />
+        </motion.button>
+      )}
+
+      <motion.div
+        layout="position"
+        transition={motionPreset.spring}
+        className="flex min-w-0 flex-1"
+      >
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            className="group flex h-9 min-w-0 max-w-full items-center gap-2 rounded-xl border border-transparent bg-(--bg-card)/45 py-1 pl-1.5 pr-2.5 text-sm font-medium text-(--color-text) outline-none transition-[background-color,border-color,box-shadow] hover:border-(--color-border) hover:bg-(--bg-card) hover:shadow-sm data-[popup-open]:border-(--color-border) data-[popup-open]:bg-(--bg-card)"
+            aria-label="Choose active agent"
+            data-no-drag
+          >
+            <span className="relative flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-(--color-border) bg-(--bg-page) text-(--color-accent) shadow-[inset_0_1px_0_rgb(255_255_255/0.06)]">
+              <span className="absolute inset-1 rounded-full bg-(--color-accent)/10 blur-[3px]" />
+              <Orbit size={14} strokeWidth={1.8} className="relative z-10" />
+              <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-(--bg-card) bg-(--color-success)" />
+            </span>
+            <AnimatePresence initial={false} mode="popLayout">
+              <motion.span
+                key={props.identity}
+                initial={{ opacity: 0, y: 4 * motionPreset.distance }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 * motionPreset.distance }}
+                transition={motionPreset.transition}
+                className="workbench-identity-label max-w-44 truncate"
+              >
+                {props.identity}
+              </motion.span>
+            </AnimatePresence>
+            <ChevronDown
+              size={13}
+              className="shrink-0 text-(--color-text-subtle) transition-transform group-data-[popup-open]:rotate-180"
+            />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-56">
+            <div className="px-1.5 py-1 text-xs font-medium text-(--color-text-muted)">
+              Active agent
+            </div>
+            {props.agentNames.map((agent) => (
+              <DropdownMenuItem
+                key={agent}
+                onClick={() => props.onSelectAgent(agent)}
+                className={cn(agent === props.activeAgent && 'bg-(--bg-key)')}
+              >
+                <span className="truncate">{agent}</span>
+                {agent === props.activeAgent && (
+                  <Check size={13} className="ml-auto text-(--color-accent)" />
+                )}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </motion.div>
+
+      <motion.div
+        layout="position"
+        transition={motionPreset.spring}
+        className="flex shrink-0 items-center rounded-xl border border-(--color-border) bg-(--bg-card)/55 p-0.5 shadow-sm"
+        data-no-drag
+      >
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            className="group flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-(--color-text-muted) outline-none transition-colors hover:bg-(--bg-key) hover:text-(--color-text) data-[popup-open]:bg-(--bg-key) data-[popup-open]:text-(--color-text)"
+            aria-label="Choose conversation layout"
+          >
+            <ViewModeIcon size={14} />
+            <span className="workbench-view-label overflow-hidden">
+              <AnimatePresence initial={false} mode="popLayout">
+                <motion.span
+                  key={viewModeLabel}
+                  initial={{ opacity: 0, y: 4 * motionPreset.distance }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 * motionPreset.distance }}
+                  transition={motionPreset.transition}
+                  className="inline-block"
+                >
+                  {viewModeLabel}
+                </motion.span>
+              </AnimatePresence>
+            </span>
+            <ChevronDown
+              size={11}
+              className="text-(--color-text-subtle) transition-transform group-data-[popup-open]:rotate-180"
+            />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44">
+            <div className="px-1.5 py-1 text-xs font-medium text-(--color-text-muted)">
+              Conversation layout
+            </div>
+            <DropdownMenuItem onClick={() => props.onViewModeChange('agent')}>
+              <MessageSquare size={15} />
+              <span>Agent</span>
+              {props.viewMode === 'agent' && <Check size={13} className="ml-auto text-(--color-accent)" />}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={props.isMobile}
+              onClick={() => props.onViewModeChange('split')}
+            >
+              <PanelRight size={15} />
+              <span>Split</span>
+              {props.viewMode === 'split' && <Check size={13} className="ml-auto text-(--color-accent)" />}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={props.isMobile}
+              onClick={() => props.onViewModeChange('monitor')}
+            >
+              <Monitor size={15} />
+              <span>Monitor</span>
+              {props.viewMode === 'monitor' && <Check size={13} className="ml-auto text-(--color-accent)" />}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <span className="mx-0.5 h-4 w-px bg-(--color-border)" aria-hidden="true" />
+
+        <motion.button
+          layout
+          type="button"
+          onClick={toggleWorkbench}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.9 }}
+          transition={motionPreset.spring}
+          className={cn(
+            'relative flex h-7 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg transition-colors',
+            workbenchOpen
+              ? 'text-(--color-text)'
+              : 'text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)',
+          )}
+          aria-label={workbenchOpen ? 'Hide side panel' : 'Show side panel'}
+          title={workbenchOpen ? 'Hide side panel' : 'Show side panel'}
+        >
+          {workbenchOpen && (
+            <motion.span
+              layoutId="workbench-toggle-active"
+              className="absolute inset-0 rounded-lg bg-(--bg-key)"
+              transition={motionPreset.spring}
+            />
+          )}
+          <motion.span
+            className="relative z-10"
+            animate={{ scaleX: workbenchOpen ? 1 : 0.92 }}
+            transition={motionPreset.spring}
+          >
+            <PanelRight size={15} />
+          </motion.span>
+        </motion.button>
+      </motion.div>
+    </motion.header>
+  )
+}

@@ -363,7 +363,9 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
 
 function SeeBrowserButton() {
   const toggleBrowser = useUIStore((s) => s.toggleBrowser)
-  const browserOpen = useUIStore((s) => s.browserOpen)
+  const browserOpen = useUIStore((s) =>
+    s.workbenchTabs.some((tab) => tab.tool === 'browser'),
+  )
   const browserActive = useTeamStore((s) => s.browserSession?.active ?? false)
 
   return (

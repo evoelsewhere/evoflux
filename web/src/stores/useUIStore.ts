@@ -17,6 +17,57 @@ import { STORAGE_KEYS } from '@/lib/storage-keys'
 
 const SIDEBAR_COLLAPSED_KEY = STORAGE_KEYS.sidebar.collapsed
 
+export type WorkbenchTool =
+  | 'review'
+  | 'terminal'
+  | 'browser'
+  | 'files'
+  | 'side-chat'
+  | 'wiki'
+  | 'scheduler'
+
+export interface WorkbenchTab {
+  id: WorkbenchTool
+  tool: WorkbenchTool
+}
+
+interface WorkbenchState {
+  workbenchTabs: WorkbenchTab[]
+  activeWorkbenchTool: WorkbenchTool | null
+  workbenchOpen: boolean
+  workbenchMaximized: boolean
+}
+
+function toggleTool(state: WorkbenchState, tool: WorkbenchTool): void {
+  const index = state.workbenchTabs.findIndex((tab) => tab.tool === tool)
+  if (index === -1) {
+    state.workbenchTabs.push({ id: tool, tool })
+    state.activeWorkbenchTool = tool
+    state.workbenchOpen = true
+    return
+  }
+  if (state.activeWorkbenchTool === tool && state.workbenchOpen) {
+    state.workbenchOpen = false
+    state.workbenchMaximized = false
+    return
+  }
+  state.activeWorkbenchTool = tool
+  state.workbenchOpen = true
+}
+
+function closeTool(state: WorkbenchState, tool: WorkbenchTool): void {
+  const index = state.workbenchTabs.findIndex((tab) => tab.tool === tool)
+  if (index === -1) return
+  state.workbenchTabs.splice(index, 1)
+  if (state.activeWorkbenchTool === tool) {
+    state.activeWorkbenchTool =
+      state.workbenchTabs[Math.min(index, state.workbenchTabs.length - 1)]?.tool
+      ?? state.workbenchTabs.at(-1)?.tool
+      ?? null
+  }
+  if (state.workbenchTabs.length === 0) state.workbenchMaximized = false
+}
+
 export const SIDEBAR_WIDTH = {
   default: 280,
   min: 248,
@@ -77,10 +128,10 @@ function persistSidebarCollapsed(collapsed: boolean): void {
 }
 
 interface UIStore {
-  wikiOpen: boolean
-  schedulerOpen: boolean
-  browserOpen: boolean
-  terminalOpen: boolean
+  workbenchTabs: WorkbenchTab[]
+  activeWorkbenchTool: WorkbenchTool | null
+  workbenchOpen: boolean
+  workbenchMaximized: boolean
   sidebarCollapsed: boolean
   sidebarWidth: number
   settingsOpen: boolean
@@ -92,6 +143,15 @@ interface UIStore {
    * TeamChatView once that session is active.
    */
   sideChatRequest: string | null
+  openWorkbenchTool: (tool: WorkbenchTool) => void
+  toggleWorkbenchTool: (tool: WorkbenchTool) => void
+  selectWorkbenchTool: (tool: WorkbenchTool) => void
+  closeWorkbenchTool: (tool: WorkbenchTool) => void
+  closeActiveWorkbenchTool: () => void
+  toggleWorkbench: () => void
+  closeWorkbench: () => void
+  showWorkbenchLauncher: () => void
+  toggleWorkbenchMaximized: () => void
   toggleWiki: () => void
   toggleScheduler: () => void
   toggleBrowser: () => void
@@ -113,47 +173,68 @@ interface UIStore {
 
 export const useUIStore = create<UIStore>()(
   immer((set) => ({
-    wikiOpen: false,
-    schedulerOpen: false,
-    browserOpen: false,
-    terminalOpen: false,
-    toggleWiki: () => set((state) => {
-      const nextOpen = !state.wikiOpen
-      state.wikiOpen = nextOpen
-      if (nextOpen) {
-        state.schedulerOpen = false
-        state.browserOpen = false
+    workbenchTabs: [],
+    activeWorkbenchTool: null,
+    workbenchOpen: false,
+    workbenchMaximized: false,
+    openWorkbenchTool: (tool) => set((state) => {
+      if (!state.workbenchTabs.some((tab) => tab.tool === tool)) {
+        state.workbenchTabs.push({ id: tool, tool })
+      }
+      state.activeWorkbenchTool = tool
+      state.workbenchOpen = true
+    }),
+    toggleWorkbenchTool: (tool) => set((state) => {
+      toggleTool(state, tool)
+    }),
+    selectWorkbenchTool: (tool) => set((state) => {
+      if (state.workbenchTabs.some((tab) => tab.tool === tool)) {
+        state.activeWorkbenchTool = tool
+        state.workbenchOpen = true
       }
     }),
-    toggleScheduler: () => set((state) => {
-      const nextOpen = !state.schedulerOpen
-      state.schedulerOpen = nextOpen
-      if (nextOpen) {
-        state.wikiOpen = false
-        state.browserOpen = false
+    closeWorkbenchTool: (tool) => set((state) => {
+      closeTool(state, tool)
+    }),
+    closeActiveWorkbenchTool: () => set((state) => {
+      const tool = state.activeWorkbenchTool
+      if (!tool) return
+      const index = state.workbenchTabs.findIndex((tab) => tab.tool === tool)
+      if (index !== -1) state.workbenchTabs.splice(index, 1)
+      state.activeWorkbenchTool =
+        state.workbenchTabs[Math.min(index, state.workbenchTabs.length - 1)]?.tool
+        ?? state.workbenchTabs.at(-1)?.tool
+        ?? null
+      if (state.workbenchTabs.length === 0) state.workbenchMaximized = false
+    }),
+    toggleWorkbench: () => set((state) => {
+      state.workbenchOpen = !state.workbenchOpen
+      if (!state.workbenchOpen) state.workbenchMaximized = false
+    }),
+    closeWorkbench: () => set((state) => {
+      state.workbenchOpen = false
+      state.workbenchMaximized = false
+    }),
+    showWorkbenchLauncher: () => set((state) => {
+      state.workbenchOpen = true
+      state.activeWorkbenchTool = null
+      state.workbenchMaximized = false
+    }),
+    toggleWorkbenchMaximized: () => set((state) => {
+      if (state.activeWorkbenchTool) {
+        state.workbenchMaximized = !state.workbenchMaximized
       }
     }),
-    toggleBrowser: () => set((state) => {
-      const nextOpen = !state.browserOpen
-      state.browserOpen = nextOpen
-      if (nextOpen) {
-        state.wikiOpen = false
-        state.schedulerOpen = false
-        state.terminalOpen = false
-      }
-    }),
-    // The terminal is a right-side aside (mounted in ChatTrailingPanels),
-    // not a full-screen overlay — it can sit open alongside
-    // wiki/scheduler/browser, so toggling it doesn't close them.
-    toggleTerminal: () => set((state) => {
-      const nextOpen = !state.terminalOpen
-      state.terminalOpen = nextOpen
-      if (nextOpen) state.browserOpen = false
-    }),
-    closeWiki: () => set((state) => { state.wikiOpen = false }),
-    closeScheduler: () => set((state) => { state.schedulerOpen = false }),
-    closeBrowser: () => set((state) => { state.browserOpen = false }),
-    closeTerminal: () => set((state) => { state.terminalOpen = false }),
+    // Compatibility entry points used by desktop commands, sidebar actions,
+    // and streamed tool calls. They now all target the shared workbench.
+    toggleWiki: () => set((state) => { toggleTool(state, 'wiki') }),
+    toggleScheduler: () => set((state) => { toggleTool(state, 'scheduler') }),
+    toggleBrowser: () => set((state) => { toggleTool(state, 'browser') }),
+    toggleTerminal: () => set((state) => { toggleTool(state, 'terminal') }),
+    closeWiki: () => set((state) => { closeTool(state, 'wiki') }),
+    closeScheduler: () => set((state) => { closeTool(state, 'scheduler') }),
+    closeBrowser: () => set((state) => { closeTool(state, 'browser') }),
+    closeTerminal: () => set((state) => { closeTool(state, 'terminal') }),
     sidebarCollapsed: loadSidebarCollapsed(),
     sidebarWidth: loadSidebarWidth(),
     toggleSidebarCollapsed: () => set((state) => {

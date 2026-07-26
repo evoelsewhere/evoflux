@@ -348,11 +348,60 @@ pub fn open_workspace_file_with_handle(
     }
 
     app.opener()
-        .open_path(
-            target_resolved.to_string_lossy().into_owned(),
-            None::<&str>,
-        )
+        .open_path(target_resolved.to_string_lossy().into_owned(), None::<&str>)
         .map_err(|e| format!("Failed to open file: {e}"))
+}
+
+/// Open the workspace root in the platform file manager.
+#[tauri::command]
+pub fn open_workspace_root_with_handle(app: tauri::AppHandle, root: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+
+    let root_path = Path::new(&root);
+    if !root_path.is_dir() {
+        return Err("Workspace root does not exist".into());
+    }
+    let resolved = root_path
+        .canonicalize()
+        .unwrap_or_else(|_| root_path.to_path_buf());
+
+    app.opener()
+        .open_path(resolved.to_string_lossy().into_owned(), None::<&str>)
+        .map_err(|e| format!("Failed to open workspace: {e}"))
+}
+
+/// Reveal a workspace file in Finder / File Explorer.
+///
+/// Passing no relative path reveals the workspace folder itself.
+#[tauri::command]
+pub fn reveal_workspace_path_with_handle(
+    app: tauri::AppHandle,
+    root: String,
+    path: Option<String>,
+) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+
+    let root_path = Path::new(&root);
+    if !root_path.is_dir() {
+        return Err("Workspace root does not exist".into());
+    }
+    let root_resolved = root_path
+        .canonicalize()
+        .unwrap_or_else(|_| root_path.to_path_buf());
+    let target = path
+        .filter(|value| !value.is_empty())
+        .map(|value| root_path.join(value))
+        .unwrap_or_else(|| root_path.to_path_buf());
+    let target_resolved = target
+        .canonicalize()
+        .map_err(|_| "Workspace path not found".to_string())?;
+    if !target_resolved.starts_with(&root_resolved) {
+        return Err("Path escapes workspace root".into());
+    }
+
+    app.opener()
+        .reveal_item_in_dir(&target_resolved)
+        .map_err(|e| format!("Failed to reveal workspace path: {e}"))
 }
 
 /// Read a single workspace file and return its content as a base64 string.

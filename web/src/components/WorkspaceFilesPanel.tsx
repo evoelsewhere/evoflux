@@ -10,7 +10,7 @@
  * Images render inline via the ``/media/`` proxy (with lightbox on click).
  * Text/code files render as-is in a plain monospace view. Office documents
  * (.docx/.xlsx/.pptx) render via docx-preview / xlsx / pptx-renderer.
- * Everything else shows a "Download" fallback.
+ * Everything else can be opened in the system's default desktop app.
  *
  * Data flow:
  *   - GET /api/team/{sid}/files      → listing (polled on open, invalidated
@@ -31,7 +31,6 @@ import {
   Presentation as PresentationIcon,
   File as FileIcon,
   Folder,
-  Download,
   RefreshCw,
   Loader2,
   ExternalLink,
@@ -47,12 +46,19 @@ import {
   Trash2,
   Pencil,
   FolderUp,
+  MoreHorizontal,
+  LocateFixed,
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
 import { workspaceMediaUrl, updateSessionWorkspace, uploadWorkspaceFiles, moveWorkspaceFile, deleteWorkspaceFile, browseWorkspaces } from '@/api/client'
-import { isTauriAvailable, tauriReadWorkspaceFile } from '@/api/tauri-workspace'
-import { downloadWorkspaceFile } from '@/lib/workspace-download'
+import {
+  isTauriAvailable,
+  tauriOpenWorkspaceFile,
+  tauriOpenWorkspaceRoot,
+  tauriReadWorkspaceFile,
+  tauriRevealWorkspacePath,
+} from '@/api/tauri-workspace'
 import { useWorkspaceFilesQuery } from '@/queries'
 import { queryKeys } from '@/queries/keys'
 import { useIsMobile } from '@/hooks/use-mobile'
@@ -66,11 +72,18 @@ import { useUIStore } from '@/stores/useUIStore'
 import { getWorkspacePanelLayout } from '@/lib/workspace-panel-layout'
 import { ImageLightbox } from './ImageLightbox'
 import { DocxPreview, XlsxPreview, PptxPreview } from './workspace-office-preview'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu'
+import { openExternalUrl } from '@/lib/open-external'
 import type { WorkspaceFileInfo } from '@/api/types'
 
 // ── File-type helpers ─────────────────────────────────────────────────────────
 
-// Extensions we preview as plain text.  Anything else falls back to "Download".
+// Extensions we preview as plain text. Other formats open in their desktop app.
 const FILE_LONG_PRESS_MS = 520
 const FILE_LONG_PRESS_MOVE_TOLERANCE = 10
 
@@ -126,21 +139,6 @@ function FileTypeIcon({ file, size = 12 }: { file: WorkspaceFileInfo; size?: num
     return isCode ? <FileCode size={size} className={cls} /> : <FileText size={size} className={cls} />
   }
   return <FileIcon size={size} className={cls} />
-}
-
-function VscodeIcon({ size = 14 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
-      <path fill="#007ACC" d="M23.15 2.587L18.21.21a1.494 1.494 0 0 0-1.705.29l-9.46 8.63-4.12-3.128a.999.999 0 0 0-1.276.057L.327 7.261A1 1 0 0 0 .326 8.74L3.899 12 .326 15.26a1 1 0 0 0 .001 1.479L1.65 17.94a.999.999 0 0 0 1.276.057l4.12-3.128 9.46 8.63a1.492 1.492 0 0 0 1.704.29l4.942-2.377A1.5 1.5 0 0 0 24 19.881V4.099a1.5 1.5 0 0 0-.85-1.512zm-5.146 14.861L10.826 12l7.178-5.448v10.896z" />
-    </svg>
-  )
-}
-
-function vscodeWorkspaceUrl(workspaceRoot: string): string {
-  // vscode://file/{folder} opens the folder as a workspace in VS Code.
-  // Convert backslashes to forward slashes for Windows paths.
-  const root = workspaceRoot.replace(/\\/g, '/')
-  return `vscode://file/${root}`
 }
 
 // ── Resize constants ─────────────────────────────────────────────────────────
@@ -220,9 +218,10 @@ function TreeNodeView({
   node,
   depth,
   selectedPath,
-  sessionId,
   workspaceRoot,
   onSelect,
+  onOpen,
+  onReveal,
   onRename,
   onDelete,
   visiblePaths,
@@ -231,9 +230,10 @@ function TreeNodeView({
   node: TreeNode
   depth: number
   selectedPath: string | null
-  sessionId: string
   workspaceRoot: string | null
   onSelect: (file: WorkspaceFileInfo) => void
+  onOpen: (file: WorkspaceFileInfo) => void
+  onReveal: (file: WorkspaceFileInfo) => void
   onRename: (file: WorkspaceFileInfo, newPath: string) => Promise<void>
   onDelete: (file: WorkspaceFileInfo) => Promise<void>
   visiblePaths: Set<string> | null
@@ -276,7 +276,11 @@ function TreeNodeView({
   }
 
   const copyPath = async () => {
-    await navigator.clipboard.writeText(node.file!.path)
+    const relativePath = node.file!.path
+    const fullPath = workspaceRoot
+      ? `${workspaceRoot.replace(/[\\/]+$/, '')}/${relativePath}`
+      : relativePath
+    await navigator.clipboard.writeText(fullPath)
   }
 
   // If filtering and nothing matches under this node, hide the whole subtree.
@@ -330,6 +334,7 @@ function TreeNodeView({
         ) : (
         <button
           onClick={() => onSelect(node.file!)}
+          onDoubleClick={() => onOpen(node.file!)}
           onContextMenu={(event) => {
             if (isTauriMobile) return
             event.preventDefault()
@@ -396,6 +401,18 @@ function TreeNodeView({
                 className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-(--bg-key) focus-visible:bg-(--bg-key) focus-visible:outline-none"
                 onClick={() => {
                   setActionsPoint(null)
+                  onOpen(node.file!)
+                }}
+              >
+                <ExternalLink size={14} aria-hidden="true" />
+                Open in default app
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-(--bg-key) focus-visible:bg-(--bg-key) focus-visible:outline-none"
+                onClick={() => {
+                  setActionsPoint(null)
                   onSelect(node.file!)
                 }}
               >
@@ -412,20 +429,26 @@ function TreeNodeView({
                 }}
               >
                 <Copy size={14} aria-hidden="true" />
-                Copy path
+                Copy full path
               </button>
-              <button
-                type="button"
-                role="menuitem"
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-(--bg-key) focus-visible:bg-(--bg-key) focus-visible:outline-none"
-                onClick={() => {
-                  setActionsPoint(null)
-                  void downloadWorkspaceFile(sessionId, node.file!)
-                }}
-              >
-                <Download size={14} aria-hidden="true" />
-                Download
-              </button>
+              {isTauri && workspaceRoot && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-(--bg-key) focus-visible:bg-(--bg-key) focus-visible:outline-none"
+                  onClick={() => {
+                    setActionsPoint(null)
+                    onReveal(node.file!)
+                  }}
+                >
+                  <LocateFixed size={14} aria-hidden="true" />
+                  {os === 'macos'
+                    ? 'Reveal in Finder'
+                    : os === 'windows'
+                      ? 'Show in File Explorer'
+                      : 'Show in folder'}
+                </button>
+              )}
               <button
                 type="button"
                 role="menuitem"
@@ -453,17 +476,6 @@ function TreeNodeView({
                 {isBusyDelete ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} aria-hidden="true" />}
                 Delete
               </button>
-              {workspaceRoot && (
-                <a
-                  href={vscodeWorkspaceUrl(workspaceRoot)}
-                  role="menuitem"
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-(--bg-key) focus-visible:bg-(--bg-key) focus-visible:outline-none"
-                  onClick={() => setActionsPoint(null)}
-                >
-                  <VscodeIcon size={14} />
-                  Open in VS Code
-                </a>
-              )}
             </div>
           </div>
         )}
@@ -482,9 +494,10 @@ function TreeNodeView({
             node={child}
             depth={0}
             selectedPath={selectedPath}
-            sessionId={sessionId}
             workspaceRoot={workspaceRoot}
             onSelect={onSelect}
+            onOpen={onOpen}
+            onReveal={onReveal}
             onRename={onRename}
             onDelete={onDelete}
             visiblePaths={visiblePaths}
@@ -517,9 +530,10 @@ function TreeNodeView({
             node={child}
             depth={depth + 1}
             selectedPath={selectedPath}
-            sessionId={sessionId}
             workspaceRoot={workspaceRoot}
             onSelect={onSelect}
+            onOpen={onOpen}
+            onReveal={onReveal}
             onRename={onRename}
             onDelete={onDelete}
             visiblePaths={visiblePaths}
@@ -545,13 +559,19 @@ function ImagePreview({ sessionId, file }: { sessionId: string; file: WorkspaceF
           className="max-h-full max-w-full cursor-zoom-in rounded border border-(--color-border) object-contain"
         />
       </div>
-      <ImageLightbox src={url} alt={file.name} isOpen={open} onClose={() => setOpen(false)} />
+      <ImageLightbox
+        src={url}
+        alt={file.name}
+        isOpen={open}
+        onClose={() => setOpen(false)}
+        allowDownload={false}
+      />
     </>
   )
 }
 
 // Cap on bytes fetched for text preview — avoids loading a 50 MB log into
-// the browser.  Beyond this we show a notice + download button.
+// the browser. Beyond this we show a notice and offer desktop opening.
 const MAX_TEXT_PREVIEW_BYTES = 512 * 1024  // 512 KB
 
 function TextPreview({ sessionId, file, workspaceRoot }: { sessionId: string; file: WorkspaceFileInfo; workspaceRoot?: string | null }) {
@@ -659,8 +679,7 @@ function TextPreview({ sessionId, file, workspaceRoot }: { sessionId: string; fi
   )
 }
 
-function BinaryPreview({ sessionId, file }: { sessionId: string; file: WorkspaceFileInfo }) {
-  const url = workspaceMediaUrl(sessionId, file.path)
+function BinaryPreview({ file }: { file: WorkspaceFileInfo }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
       <FileIcon size={28} className="text-(--color-text-subtle)" />
@@ -669,49 +688,11 @@ function BinaryPreview({ sessionId, file }: { sessionId: string; file: Workspace
         <p className="mt-0.5 text-xs text-(--color-text-subtle)">
           {file.mime} · {formatBytes(file.size)}
         </p>
-      </div>
-      <div className="flex items-center gap-2">
-        <a
-          href={url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-1.5 rounded-md bg-(--bg-key) px-3 py-1.5 text-xs text-(--color-accent) transition-colors hover:bg-(--bg-key)"
-        >
-          <ExternalLink size={12} /> Open in new tab
-        </a>
-        <DownloadWorkspaceFileButton
-          sessionId={sessionId}
-          file={file}
-          className="flex items-center gap-1.5 rounded-md border border-(--color-border) px-3 py-1.5 text-xs text-(--color-text-2) transition-colors hover:border-(--color-border-strong)"
-        >
-          <Download size={12} /> Download
-        </DownloadWorkspaceFileButton>
+        <p className="mt-2 text-xs text-(--color-text-subtle)">
+          Use Open to view it in the default app on this computer.
+        </p>
       </div>
     </div>
-  )
-}
-
-export function DownloadWorkspaceFileButton({
-  sessionId,
-  file,
-  className,
-  children,
-}: {
-  sessionId: string
-  file: WorkspaceFileInfo
-  className?: string
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      onClick={() => void downloadWorkspaceFile(sessionId, file)}
-      className={className}
-      title="Download"
-      aria-label="Download"
-    >
-      {children}
-    </button>
   )
 }
 
@@ -746,9 +727,7 @@ export function CopyContentsButton({
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1500)
     } catch {
-      // Swallow — the button is best-effort.  Failure is rare (clipboard
-      // permission denied, or the media proxy returned non-2xx) and the user
-      // can fall back to Download.
+      // Best-effort: opening the file in its desktop app remains available.
     } finally {
       setBusy(false)
     }
@@ -784,10 +763,16 @@ function PreviewArea({
   sessionId,
   file,
   workspaceRoot,
+  onOpen,
+  onReveal,
+  isDesktop,
 }: {
   sessionId: string
   file: WorkspaceFileInfo
   workspaceRoot: string | null
+  onOpen: (file: WorkspaceFileInfo) => void
+  onReveal: (file: WorkspaceFileInfo) => void
+  isDesktop: boolean
 }) {
   const kind = kindOf(file)
   return (
@@ -803,13 +788,26 @@ function PreviewArea({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <DownloadWorkspaceFileButton
-            sessionId={sessionId}
-            file={file}
-            className="flex items-center gap-1 rounded px-2 py-1 text-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
+          <button
+            type="button"
+            onClick={() => onOpen(file)}
+            className="flex items-center gap-1.5 rounded-md bg-(--bg-key) px-2.5 py-1 text-xs font-medium text-(--color-text) transition-colors hover:bg-(--bg-key-hover)"
+            title="Open in default app"
           >
-            <Download size={12} />
-          </DownloadWorkspaceFileButton>
+            <ExternalLink size={12} />
+            Open
+          </button>
+          {isDesktop && workspaceRoot && (
+            <button
+              type="button"
+              onClick={() => onReveal(file)}
+              className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+              title="Show file in folder"
+              aria-label="Show file in folder"
+            >
+              <LocateFixed size={12} />
+            </button>
+          )}
           {kind === 'text' && <CopyContentsButton sessionId={sessionId} file={file} workspaceRoot={workspaceRoot} />}
         </div>
       </div>
@@ -825,7 +823,7 @@ function PreviewArea({
         ) : kind === 'pptx' ? (
           <PptxPreview sessionId={sessionId} file={file} />
         ) : (
-          <BinaryPreview sessionId={sessionId} file={file} />
+          <BinaryPreview file={file} />
         )}
       </div>
     </div>
@@ -852,11 +850,12 @@ interface WorkspaceFilesPanelProps {
   open: boolean
   sessionId: string | null
   onClose: () => void
+  embedded?: boolean
 }
 
-export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFilesPanelProps) {
+export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false }: WorkspaceFilesPanelProps) {
   const isMobile = useIsMobile()
-  const { isMacOverlay } = usePlatform()
+  const { isMacOverlay, isTauri } = usePlatform()
   const sidebarWidth = useUIStore((state) => state.sidebarWidth)
   const sidebarCollapsed = useUIStore((state) => state.sidebarCollapsed)
   const [viewportWidth, setViewportWidth] = useState(() =>
@@ -892,8 +891,6 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
   const [browseParent, setBrowseParent] = useState<string | null>(null)
   const [browseLoading, setBrowseLoading] = useState(false)
   const [browseError, setBrowseError] = useState<string | null>(null)
-  const { isTauri } = usePlatform()
-
   // Upload state
   const [isUploading, setIsUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
@@ -1119,6 +1116,57 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
   }, [files, selectedPath])
 
   const selected = selectedPath ? files.find((f) => f.path === selectedPath) ?? null : null
+  const workspaceName = useMemo(() => {
+    if (!workspaceRoot) return 'Session workspace'
+    const segments = workspaceRoot.split(/[\\/]/).filter(Boolean)
+    const folderName = segments.at(-1) ?? workspaceRoot
+    return folderName === sessionId ? 'Session workspace' : folderName
+  }, [sessionId, workspaceRoot])
+
+  const handleOpenFile = useCallback(async (file: WorkspaceFileInfo) => {
+    setUploadError(null)
+    try {
+      if (isTauri && workspaceRoot) {
+        await tauriOpenWorkspaceFile(workspaceRoot, file.path)
+        return
+      }
+      if (sessionId) {
+        await openExternalUrl(workspaceMediaUrl(sessionId, file.path))
+      }
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Failed to open file')
+    }
+  }, [isTauri, sessionId, workspaceRoot])
+
+  const handleOpenWorkspace = useCallback(async () => {
+    if (!isTauri || !workspaceRoot) return
+    setUploadError(null)
+    try {
+      await tauriOpenWorkspaceRoot(workspaceRoot)
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Failed to open workspace')
+    }
+  }, [isTauri, workspaceRoot])
+
+  const handleRevealFile = useCallback(async (file: WorkspaceFileInfo) => {
+    if (!isTauri || !workspaceRoot) return
+    setUploadError(null)
+    try {
+      await tauriRevealWorkspacePath(workspaceRoot, file.path)
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Failed to show file in folder')
+    }
+  }, [isTauri, workspaceRoot])
+
+  const handleRevealWorkspace = useCallback(async () => {
+    if (!isTauri || !workspaceRoot) return
+    setUploadError(null)
+    try {
+      await tauriRevealWorkspacePath(workspaceRoot)
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Failed to show workspace in folder')
+    }
+  }, [isTauri, workspaceRoot])
 
   const handleSelectFile = (f: WorkspaceFileInfo) => {
     setSelectedPath(f.path)
@@ -1157,6 +1205,7 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
       mobileOverlay
       mobile={isMobile}
       forceOverlay={isOverlay}
+      fillParent={embedded}
       ariaLabel="Workspace files"
       className="bg-(--bg-card)"
     >
@@ -1178,40 +1227,53 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
             <p className="truncate text-xs text-(--color-text-subtle)">
               {isMobile && mobilePane === 'preview' && selected
                 ? selected.name
-                : <>Files the agent has written into this session{data?.truncated ? ' · list truncated' : ''}</>
+                : <>Local files for this session{data?.truncated ? ' · list truncated' : ''}</>
               }
             </p>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          {workspaceRoot && (
-            <a
-              href={vscodeWorkspaceUrl(workspaceRoot)}
-              title="Open in VS Code"
-              aria-label="Open in VS Code"
-              className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+          {isTauri && workspaceRoot && (
+            <button
+              type="button"
+              onClick={() => void handleOpenWorkspace()}
+              title="Open workspace folder"
+              className="flex items-center gap-1.5 rounded-md bg-(--bg-key) px-2.5 py-1.5 text-xs font-medium text-(--color-text) transition-colors hover:bg-(--bg-key-hover)"
             >
-              <VscodeIcon size={14} />
-            </a>
+              <FolderOpen size={14} />
+              <span className="hidden xl:inline">Open folder</span>
+            </button>
           )}
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={!sessionId || isUploading}
-            className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-50"
-            title="Upload files"
-            aria-label="Upload files"
-          >
-            {isUploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-          </button>
-          <button
-            onClick={() => folderInputRef.current?.click()}
-            disabled={!sessionId || isUploading}
-            className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-50"
-            title="Import folder"
-            aria-label="Import folder"
-          >
-            <FolderUp size={14} />
-          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              disabled={!sessionId}
+              className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-50"
+              title="Workspace actions"
+              aria-label="Workspace actions"
+            >
+              {isUploading ? <Loader2 size={14} className="animate-spin" /> : <MoreHorizontal size={14} />}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuItem
+                disabled={isUploading}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Upload size={14} />
+                Import files
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={isUploading}
+                onClick={() => folderInputRef.current?.click()}
+              >
+                <FolderUp size={14} />
+                Import folder
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => void openPicker()}>
+                <Edit2 size={14} />
+                Change workspace
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <button
             onClick={() => refetch()}
             disabled={!sessionId || isFetching}
@@ -1235,11 +1297,27 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
       {/* Workspace path bar + inline picker */}
       {sessionId && (
         <div className="shrink-0 border-b border-(--color-border)">
-          <div className="flex items-center gap-2 px-3 py-1.5">
-            <FolderOpen size={12} className="shrink-0 text-(--color-text-muted)" />
-            <span className="flex-1 truncate font-mono text-xs text-(--color-text-subtle)" title={workspaceRoot ?? undefined}>
-              {workspaceRoot ?? 'Session sandbox (default)'}
-            </span>
+          <div className="flex items-center gap-2 px-3 py-2">
+            <button
+              type="button"
+              onClick={() => void handleRevealWorkspace()}
+              disabled={!isTauri || !workspaceRoot}
+              className="flex min-w-0 flex-1 items-center gap-2 rounded-md text-left disabled:cursor-default"
+              title={isTauri ? 'Show workspace in folder' : workspaceRoot ?? undefined}
+            >
+              <FolderOpen size={14} className="shrink-0 text-(--color-text-muted)" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-xs font-medium text-(--color-text-2)">
+                  {workspaceName}
+                </span>
+                <span className="block truncate font-mono text-xs text-(--color-text-subtle)">
+                  {workspaceRoot ?? 'Session sandbox (default)'}
+                </span>
+              </span>
+              {isTauri && workspaceRoot && (
+                <LocateFixed size={12} className="shrink-0 text-(--color-text-subtle)" />
+              )}
+            </button>
             <button
               onClick={openPicker}
               className={cn(
@@ -1355,7 +1433,7 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
             {isDragging && (
               <div className="pointer-events-none absolute inset-0 z-(--z-panel) flex flex-col items-center justify-center gap-2 rounded border-2 border-dashed border-(--color-accent) bg-(--color-accent)/8">
                 <Upload size={22} className="text-(--color-accent)" />
-                <span className="text-xs font-medium text-(--color-accent)">Drop to upload</span>
+                <span className="text-xs font-medium text-(--color-accent)">Drop to import</span>
               </div>
             )}
             {/* Search bar */}
@@ -1398,9 +1476,13 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
                   Failed to load workspace files
                 </p>
               ) : files.length === 0 ? (
-                <p className="px-2 py-4 text-xs italic text-(--color-text-subtle)">
-                  No files yet.  Anything the agent writes will appear here.
-                </p>
+                <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
+                  <FolderOpen size={22} className="text-(--color-text-subtle)" />
+                  <p className="text-xs font-medium text-(--color-text-2)">Workspace is empty</p>
+                  <p className="max-w-44 text-xs text-(--color-text-subtle)">
+                    Files created by the agent appear here automatically.
+                  </p>
+                </div>
               ) : visiblePaths && visiblePaths.size === 0 ? (
                 <p className="px-2 py-4 text-xs italic text-(--color-text-subtle)">
                   No files match "{searchQuery}"
@@ -1410,9 +1492,10 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
                   node={tree}
                   depth={0}
                   selectedPath={selectedPath}
-                  sessionId={sessionId}
                   workspaceRoot={workspaceRoot}
                   onSelect={handleSelectFile}
+                  onOpen={(file) => void handleOpenFile(file)}
+                  onReveal={(file) => void handleRevealFile(file)}
                   onRename={handleRenameFile}
                   onDelete={handleDeleteFile}
                   visiblePaths={visiblePaths}
@@ -1436,11 +1519,21 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
         {showPreview && (
           <div className="min-w-0 flex-1">
             {selected && sessionId ? (
-              <PreviewArea key={selected.path} sessionId={sessionId} file={selected} workspaceRoot={workspaceRoot} />
+              <PreviewArea
+                key={selected.path}
+                sessionId={sessionId}
+                file={selected}
+                workspaceRoot={workspaceRoot}
+                onOpen={(file) => void handleOpenFile(file)}
+                onReveal={(file) => void handleRevealFile(file)}
+                isDesktop={isTauri}
+              />
             ) : (
               <EmptyState
                 message="Select a file"
-                hint="Images, markdown, and code files render inline. Other formats offer download."
+                hint={isTauri
+                  ? 'Single-click to preview. Double-click to open with the default app.'
+                  : 'Single-click to preview. Double-click opens the debug media URL.'}
               />
             )}
           </div>
@@ -1458,7 +1551,7 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose }: WorkspaceFiles
             {' · '}
           </span>
         )}
-        {isMobile && 'Tap a file to preview'}
+        {isMobile ? 'Tap a file to preview' : 'Double-click a file to open it'}
       </div>
 
       {/* Hidden file input for upload button */}

@@ -8,8 +8,7 @@
  *     MonitorView), the ``FloatingInputBar`` and keyboard shortcuts.
  *
  * Delegates:
- *   - ``ChatTopbar``           — the header strip (agent switcher, loop /
- *     workflow / task pills, ``AgentTopbar`` cluster).
+ *   - ``WorkbenchBar``         — compact identity, tool tabs and layout menu.
  *   - ``ChatTrailingPanels`` / ``ChatOverlayPanels`` — side panels and
  *     fixed overlays (``components/chat/ChatPanels``).
  *   - ``SplitWorkbench``       — focused agent + status rail + comparison.
@@ -31,13 +30,11 @@ import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { AgentView } from '../AgentView'
 import { AppShell } from '@/components/shell/AppShell'
-import { STORAGE_KEYS } from '@/lib/storage-keys'
 import { WorkspaceInfoCard } from '../WorkspaceInfoCard'
 import { ProjectInfoCard } from '../ProjectInfoCard'
 import { useProjectQuery } from '@/queries/useProjectsQuery'
 import { CodingSidebar } from '../CodingSidebar'
 import { Sidebar } from '../Sidebar'
-import { ChatTopbar } from '@/components/chat/ChatTopbar'
 import { ChatOverlayPanels, ChatTrailingPanels } from '@/components/chat/ChatPanels'
 import { WorkspaceFilesPanel } from '@/components/WorkspaceFilesPanel'
 import { CodingFileViewerPanel } from '@/components/CodingFileViewerPanel'
@@ -56,7 +53,6 @@ import { useTeamStore } from '@/stores/useTeamStore'
 import { useToastStore } from '@/stores/useToastStore'
 import { prependSession, prependWorkspaceSession } from '@/stores/cache-invalidation-bridge'
 import { useUIStore } from '@/stores/useUIStore'
-import { useResizableWidth } from '@/hooks/use-resizable-width'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useTeamAgentsQuery } from '@/queries/useAgentsQuery'
 import { useFileRefsQuery } from '@/queries/useFileRefsQuery'
@@ -71,6 +67,12 @@ import { PlanActionBar } from '../PlanReviewPanel'
 import { type InputBarHandle } from '../InputBar'
 import { FloatingInputBar } from '../FloatingInputBar'
 import { SideChatPanel } from '../SideChatPanel'
+import { BrowserViewer } from '@/components/BrowserViewer'
+import { TerminalPanel } from '@/components/TerminalPanel'
+import { WikiPanel } from '@/components/WikiPanel'
+import { SchedulerPanel } from '@/components/SchedulerPanel'
+import { WorkbenchBar } from '@/components/workbench/WorkbenchBar'
+import { WorkbenchDock, WorkbenchSurface } from '@/components/workbench/WorkbenchDock'
 import { useSideChat } from '../SideChatPanel/useSideChat'
 import type { AgentCapabilities as AgentCapabilitiesType, WorkspaceFileInfo } from '@/api/types'
 import { SplitWorkbench } from './SplitWorkbench'
@@ -88,8 +90,6 @@ interface TeamChatViewProps {
   workspace?: string | null
   codingSessionLoading?: boolean
 }
-
-type AgentStatus = AgentStream['status']
 
 // Stable fallbacks so narrowed selectors below never return a fresh
 // reference when the underlying stream field is absent.
@@ -116,8 +116,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const inputRef = useRef<InputBarHandle>(null)
   const mainColumnRef = useRef<HTMLDivElement>(null)
-  const [showFilesPanel, setShowFilesPanel] = useState(false)
-  const [codingPanel, setCodingPanel] = useState<null | 'changed' | 'files'>(null)
   const [codingFileViewer, setCodingFileViewer] = useState<WorkspaceFileInfo | null>(null)
   const [openWorkspaceDialogKey, setOpenWorkspaceDialogKey] = useState(0)
   const [codingWorkspacePickerPortal, setCodingWorkspacePickerPortal] = useState<HTMLDivElement | null>(null)
@@ -128,7 +126,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const [showPalette, setShowPalette] = useState(false)
   const [fileRefsEnabled, setFileRefsEnabled] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('agent')
-  const [sideChatOpen, setSideChatOpen] = useState(false)
   const [sideChatQuote, setSideChatQuote] = useState<string | null>(null)
   const [webBridgeEnabled, setWebBridgeEnabled] = useState(false)
   const [webBridgeDialogOpen, setWebBridgeDialogOpen] = useState(false)
@@ -177,38 +174,39 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const sessionThinkingLevel = useTeamStore((s) => s.sessionThinkingLevel)
   const sessionFastMode = useTeamStore((s) => s.sessionFastMode)
   const leadName       = useTeamStore((s) => s.leadName)
-  const activeLoop     = useTeamStore((s) => s.activeLoop)
-  const activeWorkflowExecution = useTeamStore((s) => s.activeWorkflowExecution)
   const isConnected    = useTeamStore((s) => s.isConnected)
   const isSessionLoading = useTeamStore((s) => s.isSessionLoading)
-  // Utility modal state lives in useUIStore so only one can be open at a time.
-  const wikiOpen = useUIStore((s) => s.wikiOpen)
-  const browserOpen = useUIStore((s) => s.browserOpen)
-  const terminalOpen = useUIStore((s) => s.terminalOpen)
+  const workbenchTabs = useUIStore((s) => s.workbenchTabs)
+  const activeWorkbenchTool = useUIStore((s) => s.activeWorkbenchTool)
+  const workbenchOpen = useUIStore((s) => s.workbenchOpen)
+  const workbenchMaximized = useUIStore((s) => s.workbenchMaximized)
+  const openWorkbenchTool = useUIStore((s) => s.openWorkbenchTool)
+  const toggleWorkbenchTool = useUIStore((s) => s.toggleWorkbenchTool)
+  const closeWorkbenchTool = useUIStore((s) => s.closeWorkbenchTool)
+  const wikiOpen = workbenchTabs.some((tab) => tab.tool === 'wiki')
+  const browserOpen = workbenchTabs.some((tab) => tab.tool === 'browser')
+  const sideChatOpen = workbenchTabs.some((tab) => tab.tool === 'side-chat')
   const toggleWiki = useUIStore((s) => s.toggleWiki)
   const toggleScheduler = useUIStore((s) => s.toggleScheduler)
   const toggleTerminal = useUIStore((s) => s.toggleTerminal)
-  const closeBrowser = useUIStore((s) => s.closeBrowser)
-  const closeTerminal = useUIStore((s) => s.closeTerminal)
 
   useEffect(() => {
-    if (browserOpen || terminalOpen) {
-      setShowFilesPanel(false)
-      setShowActivity(false)
+    if (!sessionIdState) {
+      closeWorkbenchTool('terminal')
+      closeWorkbenchTool('browser')
+      closeWorkbenchTool('side-chat')
+      if (mode !== 'coding') closeWorkbenchTool('files')
     }
-  }, [browserOpen, terminalOpen])
+    if (mode === 'coding' && !workspace) {
+      closeWorkbenchTool('review')
+      closeWorkbenchTool('files')
+    }
+  }, [closeWorkbenchTool, mode, sessionIdState, workspace])
   // Sidebar collapse is shell-level state shared by all three mode sidebars;
   // AppShell renders the toggle button + Ctrl+B, these are the programmatic
   // entry points (workspace CTAs, command palette, mobile hamburger).
   const toggleSidebarCollapsed = useUIStore((s) => s.toggleSidebarCollapsed)
   const setSidebarCollapsed = useUIStore((s) => s.setSidebarCollapsed)
-  const terminalResize = useResizableWidth({
-    storageKey: STORAGE_KEYS.panels.terminal,
-    defaultWidth: 480,
-    minWidth: 320,
-    maxWidth: 900,
-    edge: 'left',
-  })
 
   // Subscribe to active-agent stream fields directly to avoid recomputing on
   // every other agent's tick.
@@ -225,11 +223,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const splitAgentNames = useTeamStore(useShallow(
     (s) => s.agentNames.filter((name) => s.agentStreams[name]?.status !== 'offline'),
   ))
-  const agentStatuses = useTeamStore(useShallow((s) => {
-    const statuses: Record<string, AgentStatus | undefined> = {}
-    for (const name of s.agentNames) statuses[name] = s.agentStreams[name]?.status
-    return statuses
-  }))
   // Only monitor/split views render every agent's stream — gate the
   // whole-map subscription on the view mode so the default agent view
   // stops re-rendering this shell on every token of every agent.
@@ -296,7 +289,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const leadAgent = teamAgentsData?.agents?.find((a) => a.is_lead)
   const leadCapabilities: AgentCapabilitiesType | undefined = leadAgent?.capabilities
   const selectedModel = sessionModel ?? ''
-  const summaryTriggerTokens = leadAgent?.summary_trigger_tokens
   const selectedThinkingLevel = sessionThinkingLevel ?? 'none'
 
   // When the user selects a session model override, derive capabilities from
@@ -324,14 +316,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
     }
   }, [sessionModel, registryQ.data, leadCapabilities, leadAgent?.model])
 
-  // Context window size from the model registry for the topbar budget bar.
-  const contextWindowSize = useMemo(() => {
-    const modelToLookup = sessionModel || leadAgent?.model
-    if (!modelToLookup || !registryQ.data) return undefined
-    const entry = registryQ.data.models.find((m) => m.id === modelToLookup)
-    return entry?.context_length ?? undefined
-  }, [sessionModel, registryQ.data, leadAgent?.model])
-
   // Workspace file/folder list for the InputBar's @-mention picker. Fetched
   // lazily — the query is keyed on workspace/session so coding and normal
   // modes don't share cache entries.
@@ -341,31 +325,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
     workspace,
     enabled: fileRefsEnabled && (mode === 'coding' ? Boolean(workspace) : Boolean(sessionIdState)),
   })
-
-  // Sum tokens — four primitive selectors, no new object returned (avoids infinite loop).
-  const totalPrompt     = useTeamStore((s) => Object.values(s.agentStreams).reduce((n, st) => n + st.usage.promptTokens, 0))
-  const totalCompletion = useTeamStore((s) => Object.values(s.agentStreams).reduce((n, st) => n + st.usage.completionTokens, 0))
-  const totalCached     = useTeamStore((s) => Object.values(s.agentStreams).reduce((n, st) => n + st.usage.cachedTokens, 0))
-  const totalAll        = useTeamStore((s) => Object.values(s.agentStreams).reduce((n, st) => n + st.usage.totalTokens, 0))
-  // Route transitions render before the stream store finishes loading the
-  // next session. Do not leak the previous mode/session's usage into that gap.
-  const usageMatchesRoute = Boolean(sessionId && sessionIdState === sessionId)
-  const visiblePrompt = usageMatchesRoute ? totalPrompt : 0
-  const visibleCompletion = usageMatchesRoute ? totalCompletion : 0
-  const visibleCached = usageMatchesRoute ? totalCached : 0
-  // Live context-window occupancy = latest-turn input (+ cached), which is what
-  // the summarization threshold actually compares against. Cumulative
-  // totalTokens grows with completion tokens across turns and would falsely
-  // push the budget bar toward 100% on long sessions.
-  const contextUsed = visiblePrompt + visibleCached
-  const headerTokens = (usageMatchesRoute && totalAll > 0) || contextWindowSize !== undefined
-    ? {
-        input: visiblePrompt,
-        output: visibleCompletion,
-        cached: visibleCached,
-        trigger: summaryTriggerTokens,
-      }
-    : undefined
 
   // ── Init / reconnect ───────────────────────────────────────────────────────
 
@@ -439,11 +398,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
     if (mode === 'coding') {
       if (workspace) {
         if (isMobile) setMobileSidebarOpen(false)
-        setCodingPanel((value) => {
-          const next = value === null ? 'changed' : null
-          if (next === null) setCodingFileViewer(null)
-          return next
-        })
+        toggleWorkbenchTool('files')
       } else {
         setSidebarCollapsed(false)
         setOpenWorkspaceDialogKey((value) => value + 1)
@@ -451,29 +406,16 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
       return
     }
     if (sessionIdState) {
-      setShowFilesPanel((value) => {
-        const nextOpen = !value
-        if (nextOpen) {
-          setShowActivity(false)
-          closeBrowser()
-          closeTerminal()
-        }
-        return nextOpen
-      })
+      toggleWorkbenchTool('files')
     }
-  }, [closeBrowser, closeTerminal, isMobile, mode, workspace, sessionIdState, setSidebarCollapsed])
+  }, [isMobile, mode, workspace, sessionIdState, setSidebarCollapsed, toggleWorkbenchTool])
 
   const handleActivityToggle = useCallback(() => {
     setShowActivity((value) => {
       const nextOpen = !value
-      if (nextOpen) {
-        setShowFilesPanel(false)
-        closeBrowser()
-        closeTerminal()
-      }
       return nextOpen
     })
-  }, [closeBrowser, closeTerminal])
+  }, [])
 
   const handlePermissionModeChange = useCallback(async (newMode: import('@/api/types').PermissionMode) => {
     setPermissionMode(newMode)
@@ -488,7 +430,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
 
   const handleCodingSidebarToggle = useCallback(() => {
     if (isMobile) {
-      setCodingPanel(null)
       setCodingFileViewer(null)
       setMobileSidebarOpen((value) => !value)
       return
@@ -601,8 +542,8 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
 
   const handleSendToSideChat = useCallback((selectedText: string) => {
     setSideChatQuote(selectedText)
-    setSideChatOpen(true)
-  }, [])
+    openWorkbenchTool('side-chat')
+  }, [openWorkbenchTool])
 
   const handleAddSelectionToChat = useCallback((selectedText: string) => {
     const quoted = selectedText
@@ -639,10 +580,10 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const sideChatRequest = useUIStore((s) => s.sideChatRequest)
   useEffect(() => {
     if (sideChatRequest && sessionIdState === sideChatRequest) {
-      setSideChatOpen(true)
+      openWorkbenchTool('side-chat')
       useUIStore.getState().clearSideChatRequest()
     }
-  }, [sideChatRequest, sessionIdState])
+  }, [openWorkbenchTool, sideChatRequest, sessionIdState])
 
   // Create the side chat session eagerly on first open so history and the
   // stream are attached before the first message is sent. Depending on the
@@ -659,8 +600,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
 
   const handleCodingFileSelect = useCallback((file: WorkspaceFileInfo | null) => {
     setCodingFileViewer(file)
-    if (isMobile && file) setCodingPanel(null)
-  }, [isMobile])
+  }, [])
 
   // Restore a queued message's text into the composer (fired by the
   // X button on PendingMessageQueue). Overwrites any current draft —
@@ -745,8 +685,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
     })
   }, [])
 
-  const closeMobileActionsMenu = useCallback(() => setShowMobileActions(false), [])
-
   const commands = useTeamCommands({
     viewMode,
     cycleViewMode,
@@ -778,8 +716,8 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
     // Ctrl+I — focus the chat input (dispatched via CustomEvent so future
     // callers don't need a ref to the input).
     'i': () => window.dispatchEvent(new CustomEvent('focus-chat-input')),
-    // Ctrl+; — toggle the side chat panel
-    ';': () => setSideChatOpen((v) => !v),
+    // Ctrl+; — toggle the side chat tool.
+    ';': () => toggleWorkbenchTool('side-chat'),
   })
 
   // Tab / Shift+Tab — cycle the active agent in the store (agent view tabs
@@ -795,9 +733,10 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   }, [cycleActiveAgent])
 
   const closeCodingPanels = useCallback(() => {
-    setCodingPanel(null)
+    closeWorkbenchTool('review')
+    closeWorkbenchTool('files')
     setCodingFileViewer(null)
-  }, [])
+  }, [closeWorkbenchTool])
 
   const { onTouchStart, onTouchMove, onTouchEnd, onTouchCancel } = useMobileEdgeSwipes({
     os,
@@ -903,37 +842,117 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
       )
     : null
 
-  // Side panels rendered after <main> inside AppShell's body row.
+  // Workbench lives in AppShell's full-height trailing column so opening it
+  // constrains both the conversation canvas and the compact topbar.
+  const workbenchPanel = (
+    <WorkbenchDock
+        mode={mode}
+        sessionId={sessionIdState}
+        workspace={workspace}
+      >
+        {mode === 'coding' && workspace && (
+          <>
+            <WorkbenchSurface tool="review">
+              <CodingWorkspacePanel
+                workspace={workspace}
+                open
+                initialTab="changed"
+                embedded
+                selectedFilePath={codingFileViewer?.path ?? null}
+                onFileSelect={handleCodingFileSelect}
+                onClose={() => closeWorkbenchTool('review')}
+                sessionId={sessionIdState}
+                projectId={projectIdState}
+                isWorking={isTeamWorking}
+              />
+            </WorkbenchSurface>
+            <WorkbenchSurface tool="files">
+              <CodingWorkspacePanel
+                workspace={workspace}
+                open
+                initialTab="files"
+                embedded
+                selectedFilePath={codingFileViewer?.path ?? null}
+                onFileSelect={handleCodingFileSelect}
+                onClose={() => closeWorkbenchTool('files')}
+                sessionId={sessionIdState}
+                projectId={projectIdState}
+                isWorking={isTeamWorking}
+              />
+            </WorkbenchSurface>
+          </>
+        )}
+        {mode !== 'coding' && (
+          <WorkbenchSurface tool="files">
+            <WorkspaceFilesPanel
+              open
+              embedded
+              sessionId={sessionIdState}
+              onClose={() => closeWorkbenchTool('files')}
+            />
+          </WorkbenchSurface>
+        )}
+        <WorkbenchSurface tool="terminal">
+          <TerminalPanel
+            sessionId={sessionIdState}
+            mode={mode}
+            onClose={() => closeWorkbenchTool('terminal')}
+          />
+        </WorkbenchSurface>
+        <WorkbenchSurface tool="browser">
+          <BrowserViewer
+            sessionId={sessionIdState}
+            open={browserOpen}
+            embedded
+            onClose={() => closeWorkbenchTool('browser')}
+          />
+        </WorkbenchSurface>
+        {sessionIdState && (
+          <WorkbenchSurface tool="side-chat">
+            <SideChatPanel
+              isOpen={sideChatOpen}
+              embedded
+              onClose={() => closeWorkbenchTool('side-chat')}
+              initialQuote={sideChatQuote}
+              onQuoteConsumed={() => setSideChatQuote(null)}
+              blocks={sideChat.blocks}
+              currentBlocks={sideChat.currentBlocks}
+              isWorking={sideChat.isWorking}
+              error={sideChat.error}
+              sideChatId={sideChat.sideChatId}
+              onSend={sideChat.sendMessage}
+              onStop={() => void sideChat.stopGeneration()}
+            />
+          </WorkbenchSurface>
+        )}
+        <WorkbenchSurface tool="wiki">
+          <WikiPanel
+            open={wikiOpen}
+            embedded
+            onClose={() => closeWorkbenchTool('wiki')}
+          />
+        </WorkbenchSurface>
+        <WorkbenchSurface tool="scheduler">
+          <SchedulerPanel
+            open={workbenchTabs.some((tab) => tab.tool === 'scheduler')}
+            embedded
+            onClose={() => closeWorkbenchTool('scheduler')}
+            contextMode={forgeOrCodingMode}
+            contextWorkspace={mode === 'coding' ? workspace : null}
+          />
+        </WorkbenchSurface>
+    </WorkbenchDock>
+  )
+
+  // Contextual panels that only constrain the body row.
   const trailingPanels = (
     <>
       <ChatTrailingPanels
-        mode={mode}
-        sessionId={sessionIdState}
         onQuoteComment={handlePlanQuoteComment}
         showActivity={showActivity}
         onCloseActivity={() => setShowActivity(false)}
-        browserOpen={browserOpen}
-        onCloseBrowser={closeBrowser}
-        terminalOpen={terminalOpen}
-        onCloseTerminal={closeTerminal}
-        terminalResize={terminalResize}
       />
       {mode === 'coding' && <div ref={setCodingWorkspacePickerPortal} className="contents" />}
-      {sideChatOpen && sessionIdState && (
-        <SideChatPanel
-          isOpen={sideChatOpen}
-          onClose={() => setSideChatOpen(false)}
-          initialQuote={sideChatQuote}
-          onQuoteConsumed={() => setSideChatQuote(null)}
-          blocks={sideChat.blocks}
-          currentBlocks={sideChat.currentBlocks}
-          isWorking={sideChat.isWorking}
-          error={sideChat.error}
-          sideChatId={sideChat.sideChatId}
-          onSend={sideChat.sendMessage}
-          onStop={() => void sideChat.stopGeneration()}
-        />
-      )}
     </>
   )
 
@@ -942,6 +961,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   // topbar*; mobile keeps its full-screen overlay behavior.
   const fullHeightTrailing = (
     <>
+      {workbenchPanel}
       {mode === 'coding' && workspace && !isMobile && codingFileViewer !== null && (
         <CodingFileViewerPanel
           workspace={codingFileViewer.sourceWorkspace ?? workspace}
@@ -953,54 +973,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
           onClose={() => setCodingFileViewer(null)}
         />
       )}
-      {mode === 'coding' && workspace && !isMobile && codingPanel !== null && (
-        <CodingWorkspacePanel
-          key={codingPanel}
-          workspace={workspace}
-          open
-          initialTab={codingPanel}
-          mobile={false}
-          desktopOverlay={false}
-          selectedFilePath={codingFileViewer?.path ?? null}
-          onFileSelect={handleCodingFileSelect}
-          onClose={closeCodingPanels}
-          sessionId={sessionIdState}
-          projectId={projectIdState}
-          isWorking={isTeamWorking}
-        />
-      )}
-      {mode === 'coding' && workspace && isMobile && codingPanel !== null && (
-        <CodingWorkspacePanel
-          key={codingPanel}
-          workspace={workspace}
-          open
-          initialTab={codingPanel}
-          mobile
-          selectedFilePath={codingFileViewer?.path ?? null}
-          onFileSelect={handleCodingFileSelect}
-          onClose={closeCodingPanels}
-          sessionId={sessionIdState}
-          projectId={projectIdState}
-          isWorking={isTeamWorking}
-        />
-      )}
-      {mode === 'coding' && workspace && isMobile && codingFileViewer !== null && (
-        <CodingFileViewerPanel
-          workspace={codingFileViewer.sourceWorkspace ?? workspace}
-          file={codingFileViewer}
-          mobile
-          onAddComment={handleAddFileComment}
-          onSendToChat={handleSendToChat}
-          onClose={() => setCodingFileViewer(null)}
-        />
-      )}
-      {mode !== 'coding' && showFilesPanel ? (
-        <WorkspaceFilesPanel
-          open
-          sessionId={sessionIdState}
-          onClose={() => setShowFilesPanel(false)}
-        />
-      ) : null}
     </>
   )
   const handleComposerSubmit = useCallback(async (content: string, files?: File[]) => {
@@ -1103,6 +1075,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
       trailing={trailingPanels}
       fullHeightTrailing={fullHeightTrailing}
       overlay={overlayPanels}
+      mainHidden={workbenchMaximized && activeWorkbenchTool !== null}
       mainId="main"
       mainRef={mainColumnRef}
       onTouchStart={onTouchStart}
@@ -1110,51 +1083,17 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
       onTouchEnd={onTouchEnd}
       onTouchCancel={onTouchCancel}
       header={
-        <ChatTopbar
+        <WorkbenchBar
           dragHandlers={dragHandlers}
           isMacOverlay={isMacOverlay}
           isMobile={isMobile}
-          mode={mode}
-          workspace={workspace}
-          sessionId={sessionIdState}
-          sessionTitle={sessionTitle}
-          codingIdentityLabel={codingIdentityLabel}
+          identity={codingIdentityLabel ?? activeAgent ?? sessionTitle ?? 'EvoFlux'}
           activeAgent={activeAgent}
           agentNames={agentNames}
-          agentStatuses={agentStatuses}
           onSelectAgent={setActiveAgent}
-          effectiveViewMode={effectiveViewMode}
-          viewMode={viewMode}
+          viewMode={effectiveViewMode}
           onViewModeChange={setViewMode}
-          activeLoop={activeLoop}
-          activeWorkflowExecution={activeWorkflowExecution}
-          onDismissWorkflowFailed={() =>
-            useTeamStore.setState((state) => {
-              state.activeWorkflowExecution = null
-            })
-          }
-          isTeamWorking={isTeamWorking}
-          chapters={chapters}
-          splitAgentCount={splitAgentNames.length}
-          headerTokens={headerTokens}
-          contextUsed={contextUsed}
-          contextWindowSize={contextWindowSize}
-          dreamRunning={dreamMutation.isPending}
-          terminalOpen={terminalOpen}
-          onToggleTerminal={toggleTerminal}
-          onOpenScheduler={toggleScheduler}
           onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
-          onCodingSidebarToggle={handleCodingSidebarToggle}
-          codingPanelOpen={codingPanel !== null}
-          showFilesPanel={showFilesPanel}
-          onWorkspaceFiles={handleWorkspaceFiles}
-          onToggleFilesPanel={handleWorkspaceFiles}
-          mobileActionsOpen={showMobileActions}
-          onMobileActionsOpenChange={setShowMobileActions}
-          onWiki={() => { toggleWiki(); closeMobileActionsMenu() }}
-          wikiActive={wikiOpen}
-          onScheduler={() => { toggleScheduler(); closeMobileActionsMenu() }}
-          onCompact={() => { useTeamStore.getState().compactTeam(); closeMobileActionsMenu() }}
         />
       }
     >
@@ -1342,7 +1281,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
             onStop={() => useTeamStore.getState().stopTeam()}
             onSlashCommand={(id) => {
               if (id === 'btw') {
-                setSideChatOpen(true)
+                openWorkbenchTool('side-chat')
               } else {
                 handleSlashCommand(id)
               }
@@ -1381,7 +1320,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
             onTodosOpenChange={setTodosOpen}
             sessionId={sessionIdState}
             onWiki={toggleWiki}
-            wikiActive={wikiOpen}
+            wikiActive={workbenchOpen && wikiOpen && activeWorkbenchTool === 'wiki'}
             onActivity={handleActivityToggle}
             activityActive={showActivity}
             webBridgeEnabled={webBridgeEnabled}

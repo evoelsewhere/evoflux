@@ -155,6 +155,7 @@ export function CodingWorkspacePanel({
   isWorking = false,
   desktopOverlay = true,
   desktopOverlayInner = false,
+  embedded = false,
 }: {
   workspace: string
   open: boolean
@@ -169,6 +170,7 @@ export function CodingWorkspacePanel({
   /** Dock into AppShell's body row instead of covering it. */
   desktopOverlay?: boolean
   desktopOverlayInner?: boolean
+  embedded?: boolean
 }) {
   const preset = useMotionPreset()
   const [tab, setTab] = useState<'files' | 'changed' | 'graph' | 'progress'>(initialTab)
@@ -209,6 +211,7 @@ export function CodingWorkspacePanel({
       mobileOverlay
       desktopOverlay={desktopOverlay}
       desktopOverlayInner={desktopOverlayInner}
+      fillParent={embedded}
       mobile={mobile}
       resizeLabel="Resize workspace panel"
       className="bg-(--bg-page)"

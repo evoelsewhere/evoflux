@@ -59,6 +59,11 @@ interface SidePanelProps {
    * a sibling overlay panel without offset arithmetic.
    */
   desktopOverlayInner?: boolean
+  /**
+   * Fill an existing workbench surface. The parent owns resizing and
+   * animation, so this panel becomes a plain relative content container.
+   */
+  fillParent?: boolean
   /** Mobile state for a `mobileOverlay` panel — defaults to useIsMobile(). */
   mobile?: boolean
   /**
@@ -101,6 +106,7 @@ export function SidePanel({
   desktopOverlayOffset = 0,
   desktopOverlayShadow = true,
   desktopOverlayInner = false,
+  fillParent = false,
   mobile: mobileProp,
   animated = true,
   width: widthOverride,
@@ -119,7 +125,7 @@ export function SidePanel({
   const prefersReducedMotion = useReducedMotion()
   const motionPreset = useMotionPreset()
   const breakpointOverlay = mobileOverlay && (mobileProp ?? detectedMobile)
-  const overlay = forceOverlay || breakpointOverlay
+  const overlay = !fillParent && (forceOverlay || breakpointOverlay)
   const fixedDesktopDrawer = desktopOverlay && !overlay && !desktopOverlayInner
   const resizable = useResizableWidth({
     storageKey,
@@ -127,7 +133,7 @@ export function SidePanel({
     minWidth,
     maxWidth,
     edge: 'left',
-    disabled: overlay,
+    disabled: overlay || fillParent,
   })
   const width = widthOverride ?? resizable.width
   const isResizing = resizable.isResizing
@@ -139,10 +145,13 @@ export function SidePanel({
   // For desktopOverlayInner panels, apply width directly via style (bypassing
   // framer-motion's spring animation) so resize drag is always instant.
   // The wrapper fixed container in TeamChatView handles open/close visuals.
-  const isInner = desktopOverlayInner && !overlay
+  const isInner = (desktopOverlayInner && !overlay) || fillParent
   const fade = prefersReducedMotion || overlay
   const hasHeader = title != null || headerActions != null || onClose != null
-  const panelStyle = overlay
+  const travel = 14 * motionPreset.distance
+  const panelStyle = fillParent
+    ? { width: '100%' }
+    : overlay
     ? { width: '100%' }
     : fixedDesktopDrawer
     ? { right: desktopOverlayOffset, width }
@@ -152,10 +161,29 @@ export function SidePanel({
 
   return (
     <motion.aside
+      layout={isInner || isResizing ? false : 'size'}
       style={panelStyle}
-      initial={isInner || !animated ? false : fade ? { opacity: 0 } : { width: 0 }}
-      animate={isInner ? undefined : (fade ? { opacity: 1 } : { width })}
-      exit={isInner ? undefined : (fade ? { opacity: 0 } : { width: 0 })}
+      initial={
+        isInner || !animated
+          ? false
+          : fade
+            ? { opacity: 0, x: travel }
+            : { width: 0, opacity: 0, x: travel * 0.5 }
+      }
+      animate={
+        isInner
+          ? undefined
+          : fade
+            ? { opacity: 1, x: 0 }
+            : { width, opacity: 1, x: 0 }
+      }
+      exit={
+        isInner
+          ? undefined
+          : fade
+            ? { opacity: 0, x: travel }
+            : { width: 0, opacity: 0, x: travel * 0.5 }
+      }
       transition={
         isInner || !animated
           ? { duration: 0 }
@@ -166,7 +194,9 @@ export function SidePanel({
             : panelTransition(motionPreset)
       }
       className={cn(
-        forceOverlay
+        fillParent
+          ? 'relative box-border flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden'
+          : forceOverlay
           ? 'fixed inset-0 z-(--z-overlay) box-border min-h-0 min-w-0 w-full max-w-none overflow-hidden border-l border-(--color-border) shadow-xl'
           : fixedDesktopDrawer
           ? cn(
@@ -186,7 +216,7 @@ export function SidePanel({
     >
       {/* Resize handle sits outside the overflow-hidden content wrapper so
           it is never clipped and always receives pointer events. */}
-      {!overlay && widthOverride === undefined && (
+      {!fillParent && !overlay && widthOverride === undefined && (
         <div
           role="separator"
           aria-orientation="vertical"
@@ -210,7 +240,10 @@ export function SidePanel({
         )}
       >
         {hasHeader && (
-          <div className="flex shrink-0 items-center justify-between border-b border-(--color-border) px-3 py-2">
+          <motion.div
+            layout="position"
+            className="flex shrink-0 items-center justify-between border-b border-(--color-border) px-3 py-2"
+          >
             {typeof title === 'string' ? (
               <span className="text-xs font-semibold text-(--color-text-2)">{title}</span>
             ) : (
@@ -219,17 +252,20 @@ export function SidePanel({
             <div className="flex items-center gap-1">
               {headerActions}
               {onClose && (
-                <button
+                <motion.button
                   type="button"
                   onClick={onClose}
+                  whileHover={{ scale: 1.06 }}
+                  whileTap={{ scale: 0.9 }}
+                  transition={motionPreset.spring}
                   aria-label={closeLabel}
                   className="flex h-5 w-5 items-center justify-center rounded-md text-(--color-text-muted) hover:text-(--color-text)"
                 >
                   <X size={12} aria-hidden="true" />
-                </button>
+                </motion.button>
               )}
             </div>
-          </div>
+          </motion.div>
         )}
         {children}
       </div>

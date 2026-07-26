@@ -1,10 +1,11 @@
 /**
- * Applies the Appearance → UI animations choice to every framer-motion
- * component in the tree. Components that pass their own `transition` still
- * win; everything else inherits the user's intensity.
+ * Applies the Appearance → UI animations choice to the complete application
+ * tree. The shared LayoutGroup also lets shell surfaces (topbar, main canvas,
+ * workbench and side panels) coordinate their geometry instead of snapping
+ * independently when one of them opens or closes.
  */
 import type { ReactNode } from 'react'
-import { MotionConfig } from 'framer-motion'
+import { LayoutGroup, MotionConfig } from 'framer-motion'
 
 import { useMotionPreset } from '@/lib/motion'
 
@@ -15,7 +16,7 @@ export function AppMotionConfig({ children }: { children: ReactNode }) {
       transition={preset.transition}
       reducedMotion={preset.intensity === 'reduced' ? 'always' : 'user'}
     >
-      {children}
+      <LayoutGroup id="evoflux-app-shell">{children}</LayoutGroup>
     </MotionConfig>
   )
 }
