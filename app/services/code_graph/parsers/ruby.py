@@ -33,13 +33,19 @@ class RubyParser(TreeSitterParser):
     ) -> Definition | None:
         ntype = node.type
         if ntype == "class":
-            name = self._class_name(node, source)
-            if name:
-                return Definition(kind=NODE_CLASS, name=name, is_class=True)
+            scoped_name = self._definition_name(node, source)
+            if scoped_name:
+                name, prefix = scoped_name
+                return Definition(
+                    kind=NODE_CLASS, name=name, is_class=True, prefix=prefix
+                )
         elif ntype == "module":
-            name = self._module_name(node, source)
-            if name:
-                return Definition(kind=NODE_MODULE, name=name, is_class=True)
+            scoped_name = self._definition_name(node, source)
+            if scoped_name:
+                name, prefix = scoped_name
+                return Definition(
+                    kind=NODE_MODULE, name=name, is_class=True, prefix=prefix
+                )
         elif ntype == "method":
             name = node.child_by_field_name("name")
             if name is not None:
@@ -132,21 +138,8 @@ class RubyParser(TreeSitterParser):
         sup = node.child_by_field_name("superclass")
         if sup is None:
             return []
-        # superclass node contains '< ClassName'
-        for child in sup.children:
-            if child.type == "constant":
-                return [
-                    SuperType(name=node_text(child, source), edge_kind=EDGE_INHERITS)
-                ]
-            if child.type == "scope_resolution":
-                for sub in reversed(child.children):
-                    if sub.type == "constant":
-                        return [
-                            SuperType(
-                                name=node_text(sub, source), edge_kind=EDGE_INHERITS
-                            )
-                        ]
-        return []
+        name = _ruby_constant_descendant(sup, source)
+        return [SuperType(name=name, edge_kind=EDGE_INHERITS)] if name else []
 
     def decorators(self, node: Node, source: bytes) -> list[str]:
         out: list[str] = []
@@ -198,17 +191,17 @@ class RubyParser(TreeSitterParser):
             return "\n".join(ln for ln in cleaned if ln) or None
         return None
 
-    def _class_name(self, node: Node, source: bytes) -> str | None:
-        for child in node.children:
-            if child.type == "constant":
-                return node_text(child, source)
-        return None
-
-    def _module_name(self, node: Node, source: bytes) -> str | None:
-        for child in node.children:
-            if child.type == "constant":
-                return node_text(child, source)
-        return None
+    def _definition_name(
+        self, node: Node, source: bytes
+    ) -> tuple[str, str | None] | None:
+        name_node = node.child_by_field_name("name")
+        if name_node is None:
+            return None
+        path = _ruby_constant_path(name_node, source)
+        if not path:
+            return None
+        owner, separator, name = path.rpartition(".")
+        return name, f"{owner}." if separator else None
 
 
 _RUBY_MODIFIER_KEYWORDS = frozenset(
@@ -243,6 +236,23 @@ def _ruby_static_attribute_name(node: Node, source: bytes) -> str | None:
         )
         if content is not None:
             return node_text(content, source)
+    return None
+
+
+def _ruby_constant_path(node: Node, source: bytes) -> str | None:
+    if node.type not in {"constant", "scope_resolution"}:
+        return None
+    return node_text(node, source).removeprefix("::").replace("::", ".")
+
+
+def _ruby_constant_descendant(node: Node, source: bytes) -> str | None:
+    path = _ruby_constant_path(node, source)
+    if path:
+        return path
+    for child in node.named_children:
+        path = _ruby_constant_descendant(child, source)
+        if path:
+            return path
     return None
 
 
@@ -285,10 +295,4 @@ def _collect_ruby_sig_call_types(
 
 
 def _ruby_type_name_from_node(node: Node, source: bytes) -> str | None:
-    if node.type == "constant":
-        return node_text(node, source)
-    if node.type == "scope_resolution":
-        for child in reversed(node.children):
-            if child.type == "constant":
-                return node_text(child, source)
-    return None
+    return _ruby_constant_path(node, source)

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from app.services.code_graph.parsers.base import (
     Definition,
+    ImportRef,
     SuperType,
     TreeSitterParser,
     node_text,
@@ -178,6 +179,8 @@ class LiquidParser(TreeSitterParser):
         fields = {
             "assignment_statement": "variable_name",
             "capture_statement": "variable",
+            "for_loop_statement": "item",
+            "tablerow_statement": "item",
         }
         name_node = node.child_by_field_name(fields.get(node.type, ""))
         if name_node is None and node.type in {
@@ -199,14 +202,30 @@ class LiquidParser(TreeSitterParser):
         ]
 
     def call_target(self, node: Node, source: bytes) -> str | None:
-        if node.type == "render_statement":
-            for child in node.children:
-                if child.type == "string":
-                    return node_text(child, source).strip("'\"")
-        return None
+        return _liquid_template_name(node, source)
+
+    def import_refs(self, node: Node, source: bytes) -> list[ImportRef]:
+        template = _liquid_template_name(node, source)
+        if not template:
+            return []
+        return [ImportRef(name=template.rsplit("/", 1)[-1], module_path=template)]
 
     def supertypes(self, node: Node, source: bytes) -> list[SuperType]:
         return []
 
     def docstring(self, node: Node, source: bytes) -> str | None:
         return None
+
+
+def _liquid_template_name(node: Node, source: bytes) -> str | None:
+    if node.type not in {"include_statement", "render_statement"}:
+        return None
+    file_node = node.child_by_field_name("file")
+    if file_node is None:
+        file_node = next(
+            (child for child in node.named_children if child.type == "string"),
+            None,
+        )
+    if file_node is None or file_node.type != "string":
+        return None
+    return node_text(file_node, source).strip("'\"")

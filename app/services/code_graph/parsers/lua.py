@@ -29,35 +29,12 @@ class LuaParser(TreeSitterParser):
     def classify(
         self, node: Node, source: bytes, *, inside_class: bool
     ) -> Definition | None:
-        if node.type != "function_declaration":
-            return None
-        name_node = node.child_by_field_name("name")
-        if name_node is None:
-            return None
-        ntype = name_node.type
-        name = node_text(name_node, source)
-        if ntype == "method_index_expression":
-            # Animal:run → method
-            parts = name.split(":")
-            if len(parts) == 2:
-                return Definition(
-                    kind=NODE_METHOD,
-                    name=parts[1],
-                    is_class=False,
-                    prefix=parts[0],
-                )
-        elif ntype == "dot_index_expression":
-            # Animal.new → class method
-            parts = name.split(".")
-            if len(parts) == 2:
-                return Definition(
-                    kind=NODE_METHOD,
-                    name=parts[1],
-                    is_class=False,
-                    prefix=parts[0],
-                )
-        elif ntype == "identifier":
-            return Definition(kind=NODE_FUNCTION, name=name, is_class=False)
+        if node.type == "assignment_statement":
+            return _assigned_function_definition(node, source)
+        if node.type == "function_declaration":
+            name_node = node.child_by_field_name("name")
+            if name_node is not None:
+                return _lua_function_definition(name_node, source)
         return None
 
     def call_target(self, node: Node, source: bytes) -> str | None:
@@ -112,29 +89,28 @@ class LuauParser(TreeSitterParser):
     def classify(
         self, node: Node, source: bytes, *, inside_class: bool
     ) -> Definition | None:
-        if node.type == "type_declaration":
+        if node.type in {"type_definition", "type_declaration"}:
             name = node.child_by_field_name("name")
             if name is not None:
+                if name.type == "generic_type":
+                    name = next(
+                        (
+                            child
+                            for child in name.named_children
+                            if child.type == "identifier"
+                        ),
+                        name,
+                    )
                 return Definition(
                     kind=NODE_CLASS, name=node_text(name, source), is_class=True
                 )
+        if node.type == "assignment_statement":
+            return _assigned_function_definition(node, source)
         if node.type in ("function_declaration", "local_function"):
             name_node = node.child_by_field_name("name")
             if name_node is None:
                 return None
-            name = node_text(name_node, source)
-            if name_node.type == "identifier":
-                return Definition(kind=NODE_FUNCTION, name=name, is_class=False)
-            if ":" in name:
-                parts = name.split(":")
-                return Definition(
-                    kind=NODE_METHOD, name=parts[-1], is_class=False, prefix=parts[0]
-                )
-            if "." in name:
-                parts = name.split(".")
-                return Definition(
-                    kind=NODE_METHOD, name=parts[-1], is_class=False, prefix=parts[0]
-                )
+            return _lua_function_definition(name_node, source)
         return None
 
     def call_target(self, node: Node, source: bytes) -> str | None:
@@ -158,20 +134,41 @@ class LuauParser(TreeSitterParser):
         return []
 
     def type_refs(self, node: Node, source: bytes) -> list[str]:
-        if node.type not in {"function_declaration", "local_function"}:
-            return []
         out: list[str] = []
-        params = node.child_by_field_name("parameters")
-        if params is not None:
-            for param in params.children:
-                if param.type == "parameter":
-                    type_node = param.child_by_field_name("type")
-                    if type_node is not None:
-                        _collect_luau_type_ids(type_node, source, out)
-        ret = node.child_by_field_name("return_type")
-        if ret is not None:
-            _collect_luau_type_ids(ret, source, out)
-        return out
+        if node.type in {"type_definition", "type_declaration"}:
+            name = node.child_by_field_name("name")
+            excluded: set[str] = set()
+            if name is not None and name.type == "generic_type":
+                excluded.update(
+                    node_text(child, source)
+                    for child in name.named_children[1:]
+                    if child.type == "identifier"
+                )
+            value = next(
+                (child for child in reversed(node.named_children) if child != name),
+                None,
+            )
+            if value is not None:
+                _collect_luau_type_ids(value, source, out, excluded=excluded)
+        elif node.type in {"function_declaration", "local_function"}:
+            _collect_luau_function_type_ids(node, source, out)
+        elif node.type == "assignment_statement":
+            variable_list = next(
+                (child for child in node.children if child.type == "variable_list"),
+                None,
+            )
+            if variable_list is not None:
+                for annotation in variable_list.named_children[1:]:
+                    _collect_luau_type_ids(annotation, source, out)
+            expression_list = next(
+                (child for child in node.children if child.type == "expression_list"),
+                None,
+            )
+            if expression_list is not None:
+                for expression in expression_list.named_children:
+                    if expression.type == "function_definition":
+                        _collect_luau_function_type_ids(expression, source, out)
+        return list(dict.fromkeys(out))
 
     def docstring(self, node: Node, source: bytes) -> str | None:
         return None
@@ -206,6 +203,43 @@ def _require_refs(node: Node, source: bytes) -> list[ImportRef]:
     return [
         ImportRef(name=_bound_name(node, module_path, source), module_path=module_path)
     ]
+
+
+def _lua_function_definition(name_node: Node, source: bytes) -> Definition | None:
+    name = node_text(name_node, source).replace(":", ".")
+    if name_node.type == "identifier":
+        return Definition(kind=NODE_FUNCTION, name=name, is_class=False)
+    if name_node.type in {"dot_index_expression", "method_index_expression"}:
+        owner, separator, leaf = name.rpartition(".")
+        if separator:
+            return Definition(
+                kind=NODE_METHOD,
+                name=leaf,
+                is_class=False,
+                prefix=f"{owner}.",
+            )
+    return None
+
+
+def _assigned_function_definition(node: Node, source: bytes) -> Definition | None:
+    variable_list = next(
+        (child for child in node.children if child.type == "variable_list"), None
+    )
+    expression_list = next(
+        (child for child in node.children if child.type == "expression_list"), None
+    )
+    if variable_list is None or expression_list is None:
+        return None
+    targets = [
+        child
+        for child in variable_list.named_children
+        if child.type
+        in {"identifier", "dot_index_expression", "method_index_expression"}
+    ]
+    values = expression_list.named_children
+    if len(targets) != 1 or len(values) != 1 or values[0].type != "function_definition":
+        return None
+    return _lua_function_definition(targets[0], source)
 
 
 def _first_arg(args_node: Node) -> Node | None:
@@ -258,21 +292,55 @@ _LUAU_BUILTIN_TYPES = frozenset(
 )
 
 
-def _collect_luau_type_ids(node: Node, source: bytes, out: list[str]) -> None:
+def _collect_luau_function_type_ids(
+    node: Node, source: bytes, out: list[str]
+) -> None:
+    params = node.child_by_field_name("parameters")
+    if params is not None:
+        for param in params.named_children:
+            if param.type != "parameter":
+                continue
+            for annotation in param.named_children[1:]:
+                _collect_luau_type_ids(annotation, source, out)
+
+    body = node.child_by_field_name("body")
+    after_params = False
+    for child in node.children:
+        if child == params:
+            after_params = True
+            continue
+        if child == body:
+            break
+        if after_params and child.is_named:
+            _collect_luau_type_ids(child, source, out)
+
+
+def _collect_luau_type_ids(
+    node: Node,
+    source: bytes,
+    out: list[str],
+    *,
+    excluded: set[str] | None = None,
+) -> None:
     """Recursively collect user-defined type identifiers from Luau type nodes."""
-    if node.type == "type_identifier":
+    excluded = excluded or set()
+    if node.type in {"identifier", "type_identifier"}:
         name = node_text(node, source)
-        if name not in _LUAU_BUILTIN_TYPES:
+        if name not in _LUAU_BUILTIN_TYPES and name not in excluded:
             out.append(name)
         return
-    if node.type in (
-        "generic_type",
-        "nullable_type",
-        "type_intersection",
-        "type_union",
-    ):
-        for child in node.children:
-            _collect_luau_type_ids(child, source, out)
+    if node.type == "builtin_type":
         return
-    for child in node.children:
-        _collect_luau_type_ids(child, source, out)
+    if node.type == "object_type":
+        for index, child in enumerate(node.children):
+            if not child.is_named:
+                continue
+            next_child = node.children[index + 1] if index + 1 < len(node.children) else None
+            if child.type == "identifier" and next_child is not None and next_child.type == ":":
+                continue
+            _collect_luau_type_ids(
+                child, source, out, excluded=excluded
+            )
+        return
+    for child in node.named_children:
+        _collect_luau_type_ids(child, source, out, excluded=excluded)
