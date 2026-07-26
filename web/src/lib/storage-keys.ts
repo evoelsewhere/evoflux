@@ -29,6 +29,7 @@ export const STORAGE_KEYS = {
     activity: 'oa.activityPanel.width',
     terminal: 'oa.terminalPanel.width',
     codingWorkspace: 'oa.codingWorkspacePanel.width',
+    codingWorkspacePicker: 'oa.codingWorkspacePicker.width',
     codingFileViewer: 'oa.codingFileViewer.width',
     plan: 'planPanelWidth',
     workspace: 'workspace-panel-width',

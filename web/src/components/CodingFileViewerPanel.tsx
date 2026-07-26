@@ -489,6 +489,7 @@ export function CodingFileViewerPanel({
   onAcceptDiff,
   onRejectDiff,
   mobile = false,
+  desktopOverlay = true,
   desktopOverlayInner = false,
 }: {
   workspace: string
@@ -504,6 +505,8 @@ export function CodingFileViewerPanel({
   /** Reject the pending diff — keep original */
   onRejectDiff?: () => void
   mobile?: boolean
+  /** Dock into AppShell's body row instead of covering it. */
+  desktopOverlay?: boolean
   desktopOverlayInner?: boolean
 }) {
   const [viewMode, setViewMode] = useState<'file' | 'diff'>('file')
@@ -525,7 +528,7 @@ export function CodingFileViewerPanel({
       minWidth={420}
       maxWidth={Math.min(880, Math.max(420, Math.floor((typeof window === 'undefined' ? 880 : window.innerWidth) - 320)))}
       mobileOverlay
-      desktopOverlay
+      desktopOverlay={desktopOverlay}
       desktopOverlayInner={desktopOverlayInner}
       mobile={mobile}
       resizeLabel="Resize file viewer"

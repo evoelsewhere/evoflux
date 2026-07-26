@@ -36,8 +36,6 @@ interface FloatingInputBarProps {
   sessionId?: string | null
   onWiki?: () => void
   wikiActive?: boolean
-  onFiles?: () => void
-  filesDisabled?: boolean
   onActivity?: () => void
   activityActive?: boolean
   webBridgeEnabled?: boolean

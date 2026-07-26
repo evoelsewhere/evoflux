@@ -490,3 +490,39 @@ class TestWorkspaceMediaEndpoint:
         resp = client.get(f"/api/team/{session_id}/media/./file.txt")
         assert resp.status_code == 200
         assert resp.text == "content"
+
+
+class TestWorkspaceOfficePreviewEndpoint:
+    def test_invalid_session_id_returns_400(self, client):
+        resp = client.get("/api/team/not-a-uuid/office-preview/report.docx")
+        assert resp.status_code == 400
+
+    def test_success_returns_sandboxed_html(
+        self, client, session_id, tmp_path, monkeypatch
+    ):
+        fake_root = tmp_path / "ws"
+        fake_root.mkdir()
+        source = fake_root / "report.docx"
+        source.write_bytes(b"docx")
+        rendered = tmp_path / "preview.html"
+        rendered.write_text("<html><body>preview</body></html>")
+
+        from app.api.routes.team import files as team_routes
+
+        monkeypatch.setattr(team_routes, "workspace_dir", lambda sid: fake_root)
+        monkeypatch.setattr(team_routes, "render_office_preview", lambda path: rendered)
+
+        resp = client.get(f"/api/team/{session_id}/office-preview/report.docx")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/html")
+        assert "default-src 'none'" in resp.headers["content-security-policy"]
+        assert resp.text == "<html><body>preview</body></html>"
+
+    def test_missing_source_returns_404(
+        self, client, session_id, tmp_path, monkeypatch
+    ):
+        from app.api.routes.team import files as team_routes
+
+        monkeypatch.setattr(team_routes, "workspace_dir", lambda sid: tmp_path)
+        resp = client.get(f"/api/team/{session_id}/office-preview/missing.docx")
+        assert resp.status_code == 404

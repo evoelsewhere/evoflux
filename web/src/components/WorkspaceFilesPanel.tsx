@@ -87,7 +87,7 @@ const TEXT_EXTENSIONS = new Set([
 
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'])
 const DOCX_EXTENSIONS = new Set(['docx'])
-const XLSX_EXTENSIONS = new Set(['xlsx', 'xlsm'])
+const XLSX_EXTENSIONS = new Set(['xlsx'])
 const PPTX_EXTENSIONS = new Set(['pptx'])
 
 function extOf(name: string): string {
@@ -819,11 +819,11 @@ function PreviewArea({
         ) : kind === 'text' ? (
           <TextPreview sessionId={sessionId} file={file} workspaceRoot={workspaceRoot} />
         ) : kind === 'docx' ? (
-          <DocxPreview sessionId={sessionId} file={file} workspaceRoot={workspaceRoot} />
+          <DocxPreview sessionId={sessionId} file={file} />
         ) : kind === 'xlsx' ? (
-          <XlsxPreview sessionId={sessionId} file={file} workspaceRoot={workspaceRoot} />
+          <XlsxPreview sessionId={sessionId} file={file} />
         ) : kind === 'pptx' ? (
-          <PptxPreview sessionId={sessionId} file={file} workspaceRoot={workspaceRoot} />
+          <PptxPreview sessionId={sessionId} file={file} />
         ) : (
           <BinaryPreview sessionId={sessionId} file={file} />
         )}

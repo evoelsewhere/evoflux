@@ -153,6 +153,7 @@ export function CodingWorkspacePanel({
   sessionId = null,
   projectId = null,
   isWorking = false,
+  desktopOverlay = true,
   desktopOverlayInner = false,
 }: {
   workspace: string
@@ -165,6 +166,8 @@ export function CodingWorkspacePanel({
   sessionId?: string | null
   projectId?: string | null
   isWorking?: boolean
+  /** Dock into AppShell's body row instead of covering it. */
+  desktopOverlay?: boolean
   desktopOverlayInner?: boolean
 }) {
   const preset = useMotionPreset()
@@ -204,7 +207,7 @@ export function CodingWorkspacePanel({
       minWidth={360}
       maxWidth={Math.min(720, Math.max(360, Math.floor((typeof window === 'undefined' ? 720 : window.innerWidth) - 320)))}
       mobileOverlay
-      desktopOverlay
+      desktopOverlay={desktopOverlay}
       desktopOverlayInner={desktopOverlayInner}
       mobile={mobile}
       resizeLabel="Resize workspace panel"

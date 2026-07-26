@@ -46,6 +46,13 @@ from app.core.db import async_session_factory
 from app.core.paths import session_workspace_dir, uploads_dir, workspace_dir
 from app.models.chat import ChatSession
 from app.services import team_manager
+from app.services.office_preview_service import (
+    OFFICE_PREVIEW_CSP,
+    OfficePreviewError,
+    OfficePreviewUnavailableError,
+    OfficePreviewUnsupportedError,
+    render_office_preview,
+)
 from app.services.workspace_file_watcher import workspace_file_watcher
 
 
@@ -170,6 +177,40 @@ async def get_workspace_media(
         media_type=_guess_media_type(resolved),
         filename=resolved.name,
         content_disposition_type="attachment" if download else "inline",
+    )
+
+
+@router.get("/{session_id}/office-preview/{file_path:path}")
+async def get_workspace_office_preview(
+    session_id: str,
+    file_path: str,
+) -> FileResponse:
+    """Render an OpenXML workspace document as sandbox-friendly HTML."""
+    try:
+        uuid.UUID(session_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid session id.")
+
+    resolved = _safe_resolve(await _session_workspace(session_id), file_path)
+    try:
+        preview = await asyncio.to_thread(render_office_preview, resolved)
+    except OfficePreviewUnsupportedError as exc:
+        raise HTTPException(status_code=415, detail=str(exc))
+    except OfficePreviewUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except OfficePreviewError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    return FileResponse(
+        path=str(preview),
+        media_type="text/html",
+        content_disposition_type="inline",
+        headers={
+            "Cache-Control": "private, no-cache",
+            "Content-Security-Policy": OFFICE_PREVIEW_CSP,
+            "Referrer-Policy": "no-referrer",
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 
