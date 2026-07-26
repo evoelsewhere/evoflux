@@ -54,3 +54,19 @@ y <- MASS::select
     names = _import_names(result)
     assert "stats" in names
     assert "MASS" in names
+
+
+def test_r_namespace_loaders_and_literal_source_file():
+    source = b"""requireNamespace("dplyr")
+loadNamespace("rlang")
+source("helpers.R")
+source(dynamic_path)
+"""
+    result = RParser().parse(file_path="main.R", source=source)
+    imports = [edge for edge in result.edges if edge.kind == EDGE_IMPORTS]
+
+    assert [(edge.dst_name, edge.module_path) for edge in imports] == [
+        ("dplyr", "dplyr"),
+        ("rlang", "rlang"),
+        ("helpers", "helpers.R"),
+    ]

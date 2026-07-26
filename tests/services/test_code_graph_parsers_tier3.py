@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from app.services.code_graph.parsers.dart import DartParser
-from app.services.code_graph.parsers.lua import LuaParser
+from app.services.code_graph.parsers.lua import LuaParser, LuauParser
 from app.services.code_graph.parsers.objc import ObjCParser
 from app.services.code_graph.parsers.pascal import PascalParser
 from app.services.code_graph.parsers.php import PhpParser
@@ -26,11 +26,13 @@ from app.services.code_graph.types import (
     EDGE_INHERITS,
     EDGE_REFERENCES,
     NODE_CLASS,
+    NODE_ENUM,
     NODE_FUNCTION,
     NODE_INTERFACE,
     NODE_METHOD,
     NODE_MODULE,
     NODE_PROPERTY,
+    NODE_STRUCT,
     NODE_VARIABLE,
 )
 
@@ -201,6 +203,19 @@ end
     )
 
 
+def test_ruby_compact_namespace_preserves_owner_and_superclass():
+        source = b"""class Admin::Account < Core::Record
+    def self.build; end
+end
+"""
+        result = RubyParser().parse(file_path="account.rb", source=source)
+        qualified = {node.name: node.qualified_name for node in result.nodes}
+
+        assert qualified["Account"] == "Admin.Account"
+        assert qualified["build"] == "Admin.Account.build"
+        assert _edge_names(result.edges, EDGE_INHERITS) == ["Core.Record"]
+
+
 # ── Scala ────────────────────────────────────────────────────────────────────
 
 
@@ -311,26 +326,26 @@ def test_dart_inheritance():
 
 
 def test_dart_extracts_function_constructor_and_method_calls():
-        source = b"""void test() {
-    helper();
-    final animal = Animal();
-    final named = Animal.named();
-    animal.run();
-    Service.instance.execute<String>();
-    await fetchData();
+    source = b"""void test() {
+  helper();
+  final animal = Animal();
+  final named = Animal.named();
+  animal.run();
+  Service.instance.execute<String>();
+  await fetchData();
 }
 """
-        result = DartParser().parse(file_path="main.dart", source=source)
-        calls = set(_edge_names(result.edges, EDGE_CALLS))
+    result = DartParser().parse(file_path="main.dart", source=source)
+    calls = set(_edge_names(result.edges, EDGE_CALLS))
 
-        assert calls == {
-                "helper",
-                "Animal",
-                "Animal.named",
-                "animal.run",
-                "Service.instance.execute",
-                "fetchData",
-        }
+    assert calls == {
+        "helper",
+        "Animal",
+        "Animal.named",
+        "animal.run",
+        "Service.instance.execute",
+        "fetchData",
+    }
 
 
 # ── Objective-C ──────────────────────────────────────────────────────────────
@@ -393,6 +408,39 @@ def test_objc_properties_emit_implicit_accessors():
     assert methods == {"User.name", "User.setName", "User.active"}
 
 
+def test_objc_categories_protocol_inheritance_calls_and_type_coalescing():
+    source = b"""@protocol Child <Parent, Logging>
+- (void)run;
+@end
+@interface NSString (Uppercase) <Logging>
+- (NSString *)uppercase;
+@end
+@implementation NSString (Uppercase)
+- (NSString *)uppercase { return [self uppercaseString]; }
+@end
+@interface User : NSObject
+@end
+@implementation User
+@end
+"""
+    result = ObjCParser().parse(file_path="Models.m", source=source)
+    classes = [node for node in result.nodes if node.kind == NODE_CLASS]
+    qualified = {node.name: node.qualified_name for node in result.nodes}
+
+    assert [node.qualified_name for node in classes] == [
+        "NSString+Uppercase",
+        "User",
+    ]
+    assert qualified["uppercase"] == "NSString+Uppercase.uppercase"
+    assert set(_edge_names(result.edges, EDGE_INHERITS)) == {
+        "Parent",
+        "Logging",
+        "NSObject",
+    }
+    assert "Logging" in _edge_names(result.edges, EDGE_IMPLEMENTS)
+    assert "uppercaseString" in _edge_names(result.edges, EDGE_CALLS)
+
+
 # ── Lua ──────────────────────────────────────────────────────────────────────
 
 
@@ -432,6 +480,29 @@ end
     assert "helper" in calls
 
 
+@pytest.mark.parametrize("parser", [LuaParser(), LuauParser()])
+def test_lua_function_values_and_deep_method_owners(parser):
+    source = b"""local first = function() helper() end
+second = function() end
+M.run = function() end
+function M.Sub.deep() end
+"""
+    result = parser.parse(file_path=f"main{parser.extensions[0]}", source=source)
+    qualified = {node.name: node.qualified_name for node in result.nodes}
+
+    assert qualified["first"] == "first"
+    assert qualified["second"] == "second"
+    assert qualified["run"] == "M.run"
+    assert qualified["deep"] == "M.Sub.deep"
+    first = next(node for node in result.nodes if node.name == "first")
+    assert any(
+        edge.kind == EDGE_CALLS
+        and edge.src_local_id == first.local_id
+        and edge.dst_name == "helper"
+        for edge in result.edges
+    )
+
+
 # ── R ────────────────────────────────────────────────────────────────────────
 
 
@@ -464,6 +535,17 @@ def test_r_calls():
     assert "print" in calls
 
 
+def test_r_member_calls_and_right_assigned_functions():
+    source = b"""obj$run()
+(function(x) x) -> handler
+"""
+    result = RParser().parse(file_path="main.R", source=source)
+
+    assert "run" in _edge_names(result.edges, EDGE_CALLS)
+    functions = {node.name for node in result.nodes if node.kind == NODE_FUNCTION}
+    assert "handler" in functions
+
+
 # ── Pascal ───────────────────────────────────────────────────────────────────
 
 
@@ -486,23 +568,60 @@ end.
 
 
 def test_pascal_nested_procedure_keeps_lexical_owner():
-        source = b"""program Main;
+    source = b"""program Main;
 procedure Outer;
-    procedure Inner;
-    begin
-    end;
+  procedure Inner;
+  begin
+  end;
 begin
-    Inner;
+  Inner;
 end;
 begin
-    Outer;
+  Outer;
 end.
 """
-        result = PascalParser().parse(file_path="main.pas", source=source)
-        qualified = {node.name: node.qualified_name for node in result.nodes}
+    result = PascalParser().parse(file_path="main.pas", source=source)
+    qualified = {node.name: node.qualified_name for node in result.nodes}
 
-        assert qualified["Outer"] == "Outer"
-        assert qualified["Inner"] == "Outer.Inner"
+    assert qualified["Outer"] == "Outer"
+    assert qualified["Inner"] == "Outer.Inner"
+
+
+def test_pascal_unit_types_properties_inheritance_and_calls():
+    source = b"""unit Billing.Service;
+interface
+type
+  TState = (Idle, Running);
+  TRecord = record Value: Integer; end;
+  TService = class(TObject, IRunner)
+    property Name: String read FName write FName;
+    procedure Run(input: TInput): TResult;
+  end;
+implementation
+procedure TService.Run(input: TInput): TResult;
+begin
+  Helper();
+  Utils.Work();
+end;
+end.
+"""
+    result = PascalParser().parse(file_path="Billing.Service.pas", source=source)
+    by_kind = {
+        kind: {node.qualified_name for node in result.nodes if node.kind == kind}
+        for kind in (NODE_MODULE, NODE_ENUM, NODE_STRUCT, NODE_CLASS, NODE_PROPERTY)
+    }
+
+    assert by_kind[NODE_MODULE] == {"Billing.Service"}
+    assert by_kind[NODE_ENUM] == {"Billing.Service.TState"}
+    assert by_kind[NODE_STRUCT] == {"Billing.Service.TRecord"}
+    assert "Billing.Service.TService" in by_kind[NODE_CLASS]
+    assert by_kind[NODE_PROPERTY] == {"Billing.Service.TService.Name"}
+    assert "TObject" in _edge_names(result.edges, EDGE_INHERITS)
+    assert "IRunner" in _edge_names(result.edges, EDGE_IMPLEMENTS)
+    assert {"Helper", "Work"}.issubset(_edge_names(result.edges, EDGE_CALLS))
+    assert {"TInput", "TResult"}.issubset(
+        _edge_names(result.edges, EDGE_REFERENCES)
+    )
 
 
 # ── Web components ───────────────────────────────────────────────────────────
@@ -643,6 +762,24 @@ def test_liquid_variable_tags_emit_definitions():
     }
 
     assert variables == {"title", "body", "counter", "remaining"}
+
+
+def test_liquid_loop_bindings_and_template_dependencies():
+    source = b"""{% for item in items %}{{ item }}{% endfor %}
+{% tablerow product in products %}{{ product.name }}{% endtablerow %}
+{% include 'shared' %}
+{% render 'isolated' %}
+"""
+    result = LiquidParser().parse(file_path="collection.liquid", source=source)
+
+    variables = {node.name for node in result.nodes if node.kind == NODE_VARIABLE}
+    assert variables == {"item", "product"}
+    assert _edge_names(result.edges, EDGE_CALLS) == ["shared", "isolated"]
+    assert [
+        (edge.dst_name, edge.module_path)
+        for edge in result.edges
+        if edge.kind == EDGE_IMPORTS
+    ] == [("shared", "shared"), ("isolated", "isolated")]
 
 
 # ── Registry coverage ────────────────────────────────────────────────────────

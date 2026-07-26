@@ -6,6 +6,7 @@ from app.services.code_graph.parsers.csharp import CSharpParser
 from app.services.code_graph.parsers.ecmascript import TypeScriptParser
 from app.services.code_graph.parsers.go import GoParser
 from app.services.code_graph.parsers.java import JavaParser
+from app.services.code_graph.parsers.lua import LuauParser
 from app.services.code_graph.parsers.python import PythonParser
 from app.services.code_graph.types import EDGE_REFERENCES
 
@@ -15,6 +16,7 @@ _ts = TypeScriptParser()
 _java = JavaParser()
 _go = GoParser()
 _csharp = CSharpParser()
+_luau = LuauParser()
 
 
 def _refs(source: str, parser) -> list[tuple[str, str]]:
@@ -110,6 +112,30 @@ function load(id: number, opts?: Options): void {
         assert ("load", "Options") in refs
         assert ("load", "number") not in refs
         assert ("load", "void") not in refs
+
+
+# ── Luau ───────────────────────────────────────────────────────────────────
+
+
+class TestLuauTypeRefs:
+    def test_aliases_and_typed_functions(self) -> None:
+        src = """\
+export type User = { friend: Other?, mapper: (Input) -> Result }
+type Mapper<T> = (T) -> Result
+local function typed(x: Input, count: number): Result return x end
+local callback: (Input) -> Result = function(x: Input): Result return x end
+"""
+        refs = _refs(src, _luau)
+
+        assert ("User", "Other") in refs
+        assert ("User", "Input") in refs
+        assert ("User", "Result") in refs
+        assert ("Mapper", "Result") in refs
+        assert ("Mapper", "T") not in refs
+        assert ("typed", "Input") in refs
+        assert ("typed", "Result") in refs
+        assert ("callback", "Input") in refs
+        assert ("callback", "Result") in refs
 
 
 # ── Java ────────────────────────────────────────────────────────────────────

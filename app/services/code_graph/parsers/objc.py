@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING, ClassVar
 
 from app.services.code_graph.parsers.base import (
@@ -24,11 +25,18 @@ from app.services.code_graph.types import (
 if TYPE_CHECKING:
     from tree_sitter import Node
 
+    from app.services.code_graph.types import ParseResult
+
 
 class ObjCParser(TreeSitterParser):
     name: ClassVar[str] = "objc"
     extensions: ClassVar[tuple[str, ...]] = (".m", ".mm")
     grammar: ClassVar[str] = "objc"
+
+    def parse(self, *, file_path: str, source: bytes) -> ParseResult:
+        result = super().parse(file_path=file_path, source=source)
+        _coalesce_objc_classes(result)
+        return result
 
     def classify(
         self, node: Node, source: bytes, *, inside_class: bool
@@ -37,10 +45,16 @@ class ObjCParser(TreeSitterParser):
         if ntype == "class_interface":
             name = self._ident(node, source)
             if name:
+                category = node.child_by_field_name("category")
+                if category is not None:
+                    name = f"{name}+{node_text(category, source)}"
                 return Definition(kind=NODE_CLASS, name=name, is_class=True)
         elif ntype == "class_implementation":
             name = self._ident(node, source)
             if name:
+                category = node.child_by_field_name("category")
+                if category is not None:
+                    name = f"{name}+{node_text(category, source)}"
                 return Definition(kind=NODE_CLASS, name=name, is_class=True)
         elif ntype == "protocol_declaration":
             name = self._ident(node, source)
@@ -134,8 +148,11 @@ class ObjCParser(TreeSitterParser):
             for child in node.children:
                 if child.type == "keyword_selector":
                     return node_text(child, source).replace(":", "").replace(" ", "")
-                if child.type == "identifier":
-                    return node_text(child, source)
+            identifiers = [
+                child for child in node.children if child.type == "identifier"
+            ]
+            if identifiers:
+                return node_text(identifiers[-1], source)
         elif node.type == "call_expression":
             func = node.child_by_field_name("function")
             if func is not None and func.type == "identifier":
@@ -143,6 +160,19 @@ class ObjCParser(TreeSitterParser):
         return None
 
     def supertypes(self, node: Node, source: bytes) -> list[SuperType]:
+        if node.type == "protocol_declaration":
+            out: list[SuperType] = []
+            for child in node.children:
+                if child.type != "protocol_reference_list":
+                    continue
+                out.extend(
+                    SuperType(
+                        name=node_text(protocol, source), edge_kind=EDGE_INHERITS
+                    )
+                    for protocol in child.named_children
+                    if protocol.type == "identifier"
+                )
+            return out
         if node.type not in ("class_interface", "class_implementation"):
             return []
         out: list[SuperType] = []
@@ -328,6 +358,38 @@ def _collect_objc_type_ids(node: Node, source: bytes, out: list[str]) -> None:
         return
     for child in node.named_children:
         _collect_objc_type_ids(child, source, out)
+
+
+def _coalesce_objc_classes(result: ParseResult) -> None:
+    canonical: dict[str, str] = {}
+    replacements: dict[str, str] = {}
+    nodes = []
+    for node in result.nodes:
+        if node.kind != NODE_CLASS:
+            nodes.append(node)
+            continue
+        existing = canonical.get(node.qualified_name)
+        if existing is None:
+            canonical[node.qualified_name] = node.local_id
+            nodes.append(node)
+        else:
+            replacements[node.local_id] = existing
+    if not replacements:
+        return
+
+    result.nodes[:] = nodes
+    edges = []
+    seen = set()
+    for edge in result.edges:
+        rewritten = replace(
+            edge,
+            src_local_id=replacements.get(edge.src_local_id, edge.src_local_id),
+            dst_local_id=replacements.get(edge.dst_local_id, edge.dst_local_id),
+        )
+        if rewritten not in seen:
+            edges.append(rewritten)
+            seen.add(rewritten)
+    result.edges[:] = edges
 
 
 def _string_literal_content(node: Node, source: bytes) -> str:
