@@ -421,6 +421,10 @@ provider = ProviderPlugin(
         listed = client.get("/api/settings/providers")
         sample = next(p for p in listed.json()["providers"] if p["id"] == "sample")
         assert sample["is_configured"] is True
+        # The UI can restore safe connection details, but never the API key.
+        assert sample["saved_credentials"] == {
+            "SAMPLE_BASE_URL": "https://local.test/v1"
+        }
         assert [field["name"] for field in sample["credentials"]] == [
             "SAMPLE_KEY",
             "SAMPLE_BASE_URL",
