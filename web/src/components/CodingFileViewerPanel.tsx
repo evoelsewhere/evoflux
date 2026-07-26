@@ -280,29 +280,32 @@ function TextPreview({
             </button>
           </div>
         </div>
-        <DiffEditor
-          theme={theme}
-          language={language}
-          original={pendingDiff.original}
-          modified={pendingDiff.modified}
-          loading={<div className="flex h-full items-center justify-center"><Loader2 size={16} className="animate-spin text-(--color-text-subtle)" /></div>}
-          options={{
-            readOnly: true,
-            renderSideBySide: false,
-            minimap: { enabled: false },
-            scrollBeyondLastLine: false,
-            fontSize: 12,
-            lineHeight: 20,
-            fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
-            glyphMargin: false,
-            folding: false,
-            wordWrap: 'on',
-            scrollbar: { verticalScrollbarSize: 8, horizontalScrollbarSize: 8, useShadows: false },
-            overviewRulerLanes: 0,
-            padding: { top: 8, bottom: 8 },
-            automaticLayout: true,
-          }}
-        />
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <DiffEditor
+            className="h-full w-full"
+            theme={theme}
+            language={language}
+            original={pendingDiff.original}
+            modified={pendingDiff.modified}
+            loading={<div className="flex h-full items-center justify-center"><Loader2 size={16} className="animate-spin text-(--color-text-subtle)" /></div>}
+            options={{
+              readOnly: true,
+              renderSideBySide: false,
+              minimap: { enabled: false },
+              scrollBeyondLastLine: false,
+              fontSize: 12,
+              lineHeight: 20,
+              fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
+              glyphMargin: false,
+              folding: false,
+              wordWrap: 'on',
+              scrollbar: { verticalScrollbarSize: 8, horizontalScrollbarSize: 8, useShadows: false },
+              overviewRulerLanes: 0,
+              padding: { top: 8, bottom: 8 },
+              automaticLayout: true,
+            }}
+          />
+        </div>
       </div>
     )
   }
@@ -466,11 +469,13 @@ function diffLineClass(line: string) {
 
 function DiffPreview({ diff }: { diff: string }) {
   return (
-    <pre className="h-full overflow-auto bg-(--bg-page) p-3 font-mono text-xs leading-relaxed">
-      {diff.split('\n').map((line, index) => (
-        <span key={index} className={cn('block whitespace-pre-wrap break-all px-1', diffLineClass(line))}>{line || ' '}</span>
-      ))}
-    </pre>
+    <div className="h-full min-h-0 w-full overflow-hidden" style={{ contain: 'layout paint size' }}>
+      <pre className="h-full min-h-0 w-full max-w-full overflow-auto bg-(--bg-page) p-3 font-mono text-xs leading-relaxed">
+        {diff.split('\n').map((line, index) => (
+          <span key={index} className={cn('block max-w-full whitespace-pre-wrap break-all px-1', diffLineClass(line))}>{line || ' '}</span>
+        ))}
+      </pre>
+    </div>
   )
 }
 
@@ -557,11 +562,13 @@ export function CodingFileViewerPanel({
         </header>
         <div className="min-h-0 flex-1 overflow-hidden">
           {viewMode === 'diff' ? (
-            scopedDiff.isLoading ? <div className="flex h-full items-center justify-center"><Loader2 size={16} className="animate-spin text-(--color-text-subtle)" /></div>
-              : scopedDiff.isError ? <div className="flex h-full items-center justify-center px-4 text-center text-xs text-(--color-error)">Failed to load diff</div>
-                : !scopedDiff.data?.is_git_repo ? <div className="flex h-full items-center justify-center px-4 text-center text-xs text-(--color-text-subtle)">Not a git repository</div>
-                  : !scopedDiff.data.diff ? <div className="flex h-full items-center justify-center px-4 text-center text-xs text-(--color-text-subtle)">No diff for this file</div>
-                    : <DiffPreview diff={scopedDiff.data.diff} />
+            <div className="h-full min-h-0 w-full overflow-hidden">
+              {scopedDiff.isLoading ? <div className="flex h-full items-center justify-center"><Loader2 size={16} className="animate-spin text-(--color-text-subtle)" /></div>
+                : scopedDiff.isError ? <div className="flex h-full items-center justify-center px-4 text-center text-xs text-(--color-error)">Failed to load diff</div>
+                  : !scopedDiff.data?.is_git_repo ? <div className="flex h-full items-center justify-center px-4 text-center text-xs text-(--color-text-subtle)">Not a git repository</div>
+                    : !scopedDiff.data.diff ? <div className="flex h-full items-center justify-center px-4 text-center text-xs text-(--color-text-subtle)">No diff for this file</div>
+                      : <DiffPreview diff={scopedDiff.data.diff} />}
+            </div>
           ) : kind === 'image' ? <ImagePreview workspace={workspace} file={file} />
             : kind === 'drawio' ? <DrawioPreview key={file.path} workspace={workspace} file={file} />
             : kind === 'text' ? (

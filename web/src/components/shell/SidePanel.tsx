@@ -161,17 +161,17 @@ export function SidePanel({
       }
       className={cn(
         forceOverlay
-          ? 'fixed inset-0 z-(--z-overlay) box-border min-h-0 w-full max-w-none overflow-hidden border-l border-(--color-border) shadow-xl'
+          ? 'fixed inset-0 z-(--z-overlay) box-border min-h-0 min-w-0 w-full max-w-none overflow-hidden border-l border-(--color-border) shadow-xl'
           : fixedDesktopDrawer
           ? cn(
-              'fixed inset-y-0 right-0 z-(--z-overlay) box-border flex min-h-0 shrink-0 flex-col overflow-hidden border-l border-(--color-border)',
+              'fixed inset-y-0 right-0 z-(--z-overlay) box-border flex min-h-0 min-w-0 shrink-0 flex-col overflow-hidden border-l border-(--color-border)',
               desktopOverlayShadow ? 'shadow-xl' : 'shadow-none',
             )
           : desktopOverlayInner && !overlay
-          ? 'relative box-border flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-l border-(--color-border)'
+          ? 'relative box-border flex h-full min-h-0 min-w-0 shrink-0 flex-col overflow-hidden border-l border-(--color-border)'
           : mobileOverlay
-          ? 'fixed bottom-0 right-0 z-(--z-overlay) box-border min-h-0 w-full overflow-hidden border-l border-(--color-border) shadow-xl md:relative md:inset-y-auto md:right-auto md:z-auto md:w-auto md:shrink-0 md:shadow-none'
-          : 'relative box-border flex h-full shrink-0 flex-col overflow-hidden border-l border-(--color-border)',
+          ? 'fixed bottom-0 right-0 z-(--z-overlay) box-border min-h-0 min-w-0 w-full overflow-hidden border-l border-(--color-border) shadow-xl md:relative md:inset-y-auto md:right-auto md:z-auto md:w-auto md:shrink-0 md:shadow-none'
+          : 'relative box-border flex h-full min-w-0 shrink-0 flex-col overflow-hidden border-l border-(--color-border)',
         breakpointOverlay && !forceOverlay && 'mobile-safe-top max-w-none',
         forceOverlay && 'max-w-none',
         className,
@@ -180,7 +180,7 @@ export function SidePanel({
     >
       <div
         className={cn(
-          'relative flex h-full min-h-0 w-full flex-col',
+          'relative flex h-full min-h-0 min-w-0 w-full flex-col',
           mobileOverlay && (overlay ? 'max-w-none' : 'md:w-full'),
           contentClassName,
         )}
