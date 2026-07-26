@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 
 interface ResizableWidthOptions {
   storageKey: string
@@ -27,7 +27,11 @@ export function useResizableWidth({
     const parsed = stored ? Number(stored) : Number.NaN
     return Number.isFinite(parsed) ? clamp(parsed, minWidth, maxWidth) : defaultWidth
   })
+  const [isResizing, setIsResizing] = useState(false)
   const clampedWidth = clamp(width, minWidth, maxWidth)
+  // Always-current live width — updated during drag without triggering renders.
+  const liveWidthRef = useRef(clampedWidth)
+  liveWidthRef.current = clampedWidth
 
   useEffect(() => {
     if (disabled) return
@@ -39,26 +43,41 @@ export function useResizableWidth({
   const startResize = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     if (disabled || event.pointerType === 'touch') return
     event.preventDefault()
-    const startX = event.clientX
-    const startWidth = clampedWidth
+    event.stopPropagation()
 
-    const handleMove = (moveEvent: PointerEvent) => {
-      const delta = edge === 'right' ? moveEvent.clientX - startX : startX - moveEvent.clientX
-      setWidth(clamp(startWidth + delta, minWidth, maxWidth))
+    // The resize handle is a direct child of the resizable panel element.
+    // Direct DOM style writes bypass React/framer-motion entirely — zero lag.
+    const panelEl = event.currentTarget.parentElement as HTMLElement | null
+    const startX = event.clientX
+    const startWidth = liveWidthRef.current
+
+    setIsResizing(true)
+
+    const handleMove = (e: PointerEvent) => {
+      const delta = edge === 'right' ? e.clientX - startX : startX - e.clientX
+      const newWidth = clamp(startWidth + delta, minWidth, maxWidth)
+      liveWidthRef.current = newWidth
+      // Direct DOM write — no React re-render during drag.
+      if (panelEl) panelEl.style.width = `${newWidth}px`
     }
 
     const handleUp = () => {
       window.removeEventListener('pointermove', handleMove)
       window.removeEventListener('pointerup', handleUp)
+      window.removeEventListener('pointercancel', handleUp)
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
+      setIsResizing(false)
+      // Sync final width to React state once (localStorage + one re-render).
+      setWidth(liveWidthRef.current)
     }
 
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
     window.addEventListener('pointermove', handleMove)
     window.addEventListener('pointerup', handleUp, { once: true })
-  }, [clampedWidth, disabled, edge, maxWidth, minWidth])
+    window.addEventListener('pointercancel', handleUp, { once: true })
+  }, [disabled, edge, maxWidth, minWidth])
 
-  return { width: clampedWidth, startResize, resetWidth }
+  return { width: clampedWidth, startResize, resetWidth, isResizing }
 }

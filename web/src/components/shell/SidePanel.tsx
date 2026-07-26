@@ -130,30 +130,36 @@ export function SidePanel({
     disabled: overlay,
   })
   const width = widthOverride ?? resizable.width
+  const isResizing = resizable.isResizing
 
   useEffect(() => {
     onWidthChange?.(width)
   }, [onWidthChange, width])
 
-  // Mobile and reduced-motion both degrade the open/close animation to a
-  // fade — width-tweening a full-screen overlay (or against the user's
-  // motion preference) is wrong. Matches the panels' pre-extraction code.
+  // For desktopOverlayInner panels, apply width directly via style (bypassing
+  // framer-motion's spring animation) so resize drag is always instant.
+  // The wrapper fixed container in TeamChatView handles open/close visuals.
+  const isInner = desktopOverlayInner && !overlay
   const fade = prefersReducedMotion || overlay
   const hasHeader = title != null || headerActions != null || onClose != null
   const panelStyle = overlay
     ? { width: '100%' }
     : fixedDesktopDrawer
-    ? { right: desktopOverlayOffset }
+    ? { right: desktopOverlayOffset, width }
+    : isInner
+    ? { width }
     : undefined
 
   return (
     <motion.aside
       style={panelStyle}
-      initial={!animated ? false : fade ? { opacity: 0 } : { width: 0 }}
-      animate={fade ? { opacity: 1 } : { width }}
-      exit={fade ? { opacity: 0 } : { width: 0 }}
+      initial={isInner || !animated ? false : fade ? { opacity: 0 } : { width: 0 }}
+      animate={isInner ? undefined : (fade ? { opacity: 1 } : { width })}
+      exit={isInner ? undefined : (fade ? { opacity: 0 } : { width: 0 })}
       transition={
-        !animated
+        isInner || !animated
+          ? { duration: 0 }
+          : isResizing
           ? { duration: 0 }
           : fade
             ? motionPreset.transition
@@ -168,7 +174,7 @@ export function SidePanel({
               desktopOverlayShadow ? 'shadow-xl' : 'shadow-none',
             )
           : desktopOverlayInner && !overlay
-          ? 'relative box-border flex h-full min-h-0 min-w-0 shrink-0 flex-col overflow-hidden border-l border-(--color-border)'
+          ? 'relative box-border flex h-full min-h-0 min-w-0 shrink-0 flex-col border-l border-(--color-border)'
           : mobileOverlay
           ? 'fixed bottom-0 right-0 z-(--z-overlay) box-border min-h-0 min-w-0 w-full overflow-hidden border-l border-(--color-border) shadow-xl md:relative md:inset-y-auto md:right-auto md:z-auto md:w-auto md:shrink-0 md:shadow-none'
           : 'relative box-border flex h-full min-w-0 shrink-0 flex-col overflow-hidden border-l border-(--color-border)',
@@ -178,24 +184,31 @@ export function SidePanel({
       )}
       aria-label={ariaLabel}
     >
+      {/* Resize handle sits outside the overflow-hidden content wrapper so
+          it is never clipped and always receives pointer events. */}
+      {!overlay && widthOverride === undefined && (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={resizeLabel}
+          title="Drag to resize · double-click to reset"
+          className={cn(
+            'absolute top-0 h-full cursor-col-resize transition-colors hover:bg-(--color-accent)/40',
+            desktopOverlayInner && !overlay
+              ? '-left-1 z-(--z-overlay) w-2'
+              : 'left-0 z-(--z-header) w-1',
+          )}
+          onPointerDown={resizable.startResize}
+          onDoubleClick={resizable.resetWidth}
+        />
+      )}
       <div
         className={cn(
-          'relative flex h-full min-h-0 min-w-0 w-full flex-col',
+          'relative flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden',
           mobileOverlay && (overlay ? 'max-w-none' : 'md:w-full'),
           contentClassName,
         )}
       >
-        {!overlay && widthOverride === undefined && (
-          <div
-            role="separator"
-            aria-orientation="vertical"
-            aria-label={resizeLabel}
-            title="Drag to resize · double-click to reset"
-            className="absolute left-0 top-0 z-(--z-header) h-full w-1 cursor-col-resize transition-colors hover:bg-(--color-accent)/40"
-            onPointerDown={resizable.startResize}
-            onDoubleClick={resizable.resetWidth}
-          />
-        )}
         {hasHeader && (
           <div className="flex shrink-0 items-center justify-between border-b border-(--color-border) px-3 py-2">
             {typeof title === 'string' ? (
