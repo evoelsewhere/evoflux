@@ -15,18 +15,23 @@ from app.services.code_graph.parsers.ruby import RubyParser
 from app.services.code_graph.parsers.scala import ScalaParser
 from app.services.code_graph.parsers.web_components import (
     AstroParser,
+    LiquidParser,
     SvelteParser,
     VueParser,
 )
 from app.services.code_graph.types import (
     EDGE_CALLS,
     EDGE_IMPLEMENTS,
+    EDGE_IMPORTS,
     EDGE_INHERITS,
+    EDGE_REFERENCES,
     NODE_CLASS,
     NODE_FUNCTION,
     NODE_INTERFACE,
     NODE_METHOD,
     NODE_MODULE,
+    NODE_PROPERTY,
+    NODE_VARIABLE,
 )
 
 
@@ -105,6 +110,20 @@ function test() {
     assert "create" in calls
 
 
+def test_php_namespace_qualifies_classes_functions_and_methods():
+    source = b"""<?php
+namespace App\\Billing;
+class Service { function run() {} }
+function top() {}
+"""
+    result = PhpParser().parse(file_path="Service.php", source=source)
+    qualified = {node.name: node.qualified_name for node in result.nodes}
+
+    assert qualified["Service"] == "App.Billing.Service"
+    assert qualified["run"] == "App.Billing.Service.run"
+    assert qualified["top"] == "App.Billing.top"
+
+
 # ── Ruby ─────────────────────────────────────────────────────────────────────
 
 
@@ -156,6 +175,30 @@ end
     result = RubyParser().parse(file_path="dog.rb", source=source)
     inherits = _edge_names(result.edges, EDGE_INHERITS)
     assert "Animal" in inherits
+
+
+def test_ruby_attribute_macros_emit_implicit_methods():
+    source = b"""class User
+  attr_reader :name, :age
+  attr_writer :secret
+  attr_accessor :email, :phone
+end
+"""
+    result = RubyParser().parse(file_path="user.rb", source=source)
+    methods = {node.qualified_name for node in result.nodes if node.kind == NODE_METHOD}
+
+    assert methods == {
+        "User.name",
+        "User.age",
+        "User.secret=",
+        "User.email",
+        "User.email=",
+        "User.phone",
+        "User.phone=",
+    }
+    assert not {"attr_reader", "attr_writer", "attr_accessor"}.intersection(
+        _edge_names(result.edges, EDGE_CALLS)
+    )
 
 
 # ── Scala ────────────────────────────────────────────────────────────────────
@@ -212,6 +255,19 @@ def test_scala_calls():
     assert "helper" in calls
 
 
+def test_scala_package_qualifies_declarations():
+    source = b"""package com.acme.billing
+class Service { def run(): Unit = {} }
+def top(): Unit = {}
+"""
+    result = ScalaParser().parse(file_path="Service.scala", source=source)
+    qualified = {node.name: node.qualified_name for node in result.nodes}
+
+    assert qualified["Service"] == "com.acme.billing.Service"
+    assert qualified["run"] == "com.acme.billing.Service.run"
+    assert qualified["top"] == "com.acme.billing.top"
+
+
 # ── Dart ─────────────────────────────────────────────────────────────────────
 
 
@@ -252,6 +308,29 @@ def test_dart_inheritance():
     implements = _edge_names(result.edges, EDGE_IMPLEMENTS)
     assert "Animal" in inherits
     assert "Runner" in implements
+
+
+def test_dart_extracts_function_constructor_and_method_calls():
+        source = b"""void test() {
+    helper();
+    final animal = Animal();
+    final named = Animal.named();
+    animal.run();
+    Service.instance.execute<String>();
+    await fetchData();
+}
+"""
+        result = DartParser().parse(file_path="main.dart", source=source)
+        calls = set(_edge_names(result.edges, EDGE_CALLS))
+
+        assert calls == {
+                "helper",
+                "Animal",
+                "Animal.named",
+                "animal.run",
+                "Service.instance.execute",
+                "fetchData",
+        }
 
 
 # ── Objective-C ──────────────────────────────────────────────────────────────
@@ -296,6 +375,22 @@ def test_objc_inheritance():
     implements = _edge_names(result.edges, EDGE_IMPLEMENTS)
     assert "Animal" in inherits
     assert "Runner" in implements
+
+
+def test_objc_properties_emit_implicit_accessors():
+    source = b"""@interface User : NSObject
+@property (nonatomic, copy) NSString *name;
+@property (readonly) BOOL active;
+@end
+"""
+    result = ObjCParser().parse(file_path="User.h", source=source)
+    methods = {node.qualified_name for node in result.nodes if node.kind == NODE_METHOD}
+    properties = {
+        node.qualified_name for node in result.nodes if node.kind == NODE_PROPERTY
+    }
+
+    assert properties == {"User.name", "User.active"}
+    assert methods == {"User.name", "User.setName", "User.active"}
 
 
 # ── Lua ──────────────────────────────────────────────────────────────────────
@@ -390,6 +485,26 @@ end.
     assert len(all_nodes) >= 1
 
 
+def test_pascal_nested_procedure_keeps_lexical_owner():
+        source = b"""program Main;
+procedure Outer;
+    procedure Inner;
+    begin
+    end;
+begin
+    Inner;
+end;
+begin
+    Outer;
+end.
+"""
+        result = PascalParser().parse(file_path="main.pas", source=source)
+        qualified = {node.name: node.qualified_name for node in result.nodes}
+
+        assert qualified["Outer"] == "Outer"
+        assert qualified["Inner"] == "Outer.Inner"
+
+
 # ── Web components ───────────────────────────────────────────────────────────
 
 
@@ -410,6 +525,29 @@ const count = 0;
     functions = _by_kind(result.nodes, NODE_FUNCTION)
     assert len(functions) >= 1
     assert "handleClick" in {f.name for f in functions}
+
+
+def test_svelte_merges_script_blocks_with_absolute_locations():
+    source = b"""<h1>Title</h1>
+<script module lang="ts">
+import type { Config } from './types';
+export function load(config: Config) {}
+</script>
+<script lang="ts">
+function click(): Result { return run(); }
+</script>
+"""
+    result = SvelteParser().parse(file_path="App.svelte", source=source)
+    functions = {
+        node.name: node.line_start
+        for node in result.nodes
+        if node.kind == NODE_FUNCTION
+    }
+
+    assert result.language == "svelte"
+    assert functions == {"load": 4, "click": 7}
+    assert _edge_names(result.edges, EDGE_IMPORTS) == ["Config"]
+    assert set(_edge_names(result.edges, EDGE_REFERENCES)) == {"Config", "Result"}
 
 
 def test_vue_script_extraction():
@@ -433,6 +571,34 @@ export default {
     assert len(result.nodes) >= 1
 
 
+def test_vue_merges_normal_and_setup_scripts():
+    source = b"""<template><button /></template>
+<script lang="ts">
+export function shared(config: Config): SharedResult { return build(); }
+</script>
+<script setup lang="ts">
+import type { Props } from './types';
+function setup(props: Props): SetupResult { return mount(); }
+</script>
+"""
+    result = VueParser().parse(file_path="App.vue", source=source)
+    functions = {
+        node.name: node.line_start
+        for node in result.nodes
+        if node.kind == NODE_FUNCTION
+    }
+
+    assert result.language == "vue"
+    assert functions == {"shared": 3, "setup": 7}
+    assert _edge_names(result.edges, EDGE_IMPORTS) == ["Props"]
+    assert set(_edge_names(result.edges, EDGE_REFERENCES)) == {
+        "Config",
+        "SharedResult",
+        "Props",
+        "SetupResult",
+    }
+
+
 def test_astro_frontmatter():
     source = b"""---
 function getData() {
@@ -447,6 +613,36 @@ const items = await getData();
     result = AstroParser().parse(file_path="Page.astro", source=source)
     # The frontmatter JS should be parsed
     assert len(result.nodes) >= 1
+
+
+def test_astro_preserves_frontmatter_language_and_locations():
+    source = b"""---
+import type { Layout } from './Layout';
+function render(layout: Layout): Result { return build(); }
+---
+<main />
+"""
+    result = AstroParser().parse(file_path="Page.astro", source=source)
+    render = next(node for node in result.nodes if node.name == "render")
+
+    assert result.language == "astro"
+    assert render.line_start == 3
+    assert _edge_names(result.edges, EDGE_IMPORTS) == ["Layout"]
+    assert set(_edge_names(result.edges, EDGE_REFERENCES)) == {"Layout", "Result"}
+
+
+def test_liquid_variable_tags_emit_definitions():
+    source = b"""{% assign title = product.title %}
+{% capture body %}Hi{% endcapture %}
+{% increment counter %}
+{% decrement remaining %}
+"""
+    result = LiquidParser().parse(file_path="card.liquid", source=source)
+    variables = {
+        node.name for node in result.nodes if node.kind == NODE_VARIABLE
+    }
+
+    assert variables == {"title", "body", "counter", "remaining"}
 
 
 # ── Registry coverage ────────────────────────────────────────────────────────

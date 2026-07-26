@@ -18,6 +18,7 @@ from app.services.code_graph.types import (
     NODE_FUNCTION,
     NODE_INTERFACE,
     NODE_METHOD,
+    NODE_NAMESPACE,
 )
 
 if TYPE_CHECKING:
@@ -29,11 +30,34 @@ class PhpParser(TreeSitterParser):
     extensions: ClassVar[tuple[str, ...]] = (".php",)
     grammar: ClassVar[str] = "php"
 
+    def root_prefix(self, root: Node, source: bytes) -> str:
+        namespaces = [
+            child for child in root.children if child.type == "namespace_definition"
+        ]
+        if len(namespaces) != 1:
+            return ""
+        namespace = namespaces[0]
+        if namespace.child_by_field_name("body") is not None:
+            return ""
+        name = namespace.child_by_field_name("name")
+        return f"{_php_namespace_name(name, source)}." if name is not None else ""
+
     def classify(
         self, node: Node, source: bytes, *, inside_class: bool
     ) -> Definition | None:
         ntype = node.type
-        if ntype == "class_declaration":
+        if ntype == "namespace_definition":
+            name_node = node.child_by_field_name("name")
+            if name_node is not None:
+                return Definition(
+                    kind=NODE_NAMESPACE,
+                    name=_php_namespace_name(name_node, source),
+                    is_class=False,
+                    prefix=(
+                        "" if node.child_by_field_name("body") is None else None
+                    ),
+                )
+        elif ntype == "class_declaration":
             name = self._field_name(node, source)
             if name:
                 return Definition(kind=NODE_CLASS, name=name, is_class=True)
@@ -274,6 +298,10 @@ def _last_name(node: Node, source: bytes) -> str | None:
         if child.type == "name":
             return node_text(child, source)
     return None
+
+
+def _php_namespace_name(node: Node, source: bytes) -> str:
+    return node_text(node, source).strip("\\").replace("\\", ".")
 
 
 def _strip_phpdoc(text: str) -> str:

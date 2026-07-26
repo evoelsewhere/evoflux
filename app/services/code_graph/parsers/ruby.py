@@ -66,6 +66,38 @@ class RubyParser(TreeSitterParser):
                 return node_text(method, source)
         return None
 
+    def synthetic_definitions(
+        self, node: Node, source: bytes, *, inside_class: bool
+    ) -> list[Definition]:
+        if (
+            node.type != "call"
+            or not inside_class
+            or node.child_by_field_name("receiver") is not None
+        ):
+            return []
+        method = node.child_by_field_name("method")
+        arguments = node.child_by_field_name("arguments")
+        if method is None or arguments is None:
+            return []
+        macro = node_text(method, source)
+        if macro not in _RUBY_ATTRIBUTE_MACROS:
+            return []
+
+        definitions: list[Definition] = []
+        for argument in arguments.named_children:
+            name = _ruby_static_attribute_name(argument, source)
+            if not name:
+                continue
+            if macro != "attr_writer":
+                definitions.append(
+                    Definition(kind=NODE_METHOD, name=name, is_class=False)
+                )
+            if macro != "attr_reader":
+                definitions.append(
+                    Definition(kind=NODE_METHOD, name=f"{name}=", is_class=False)
+                )
+        return definitions
+
     def import_refs(self, node: Node, source: bytes) -> list[ImportRef]:
         # Ruby has no dedicated import grammar node: `require`/`require_relative`
         # are ordinary method calls with one or more string-literal arguments.
@@ -196,6 +228,22 @@ _RUBY_MODIFIER_KEYWORDS = frozenset(
         "override",
     }
 )
+
+_RUBY_ATTRIBUTE_MACROS = frozenset(
+    {"attr_reader", "attr_writer", "attr_accessor"}
+)
+
+
+def _ruby_static_attribute_name(node: Node, source: bytes) -> str | None:
+    if node.type == "simple_symbol":
+        return node_text(node, source).removeprefix(":")
+    if node.type == "string":
+        content = next(
+            (child for child in node.children if child.type == "string_content"), None
+        )
+        if content is not None:
+            return node_text(content, source)
+    return None
 
 
 def _collect_ruby_sig_types(sig_node: Node, source: bytes, out: list[str]) -> None:

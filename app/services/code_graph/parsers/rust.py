@@ -17,6 +17,7 @@ from app.services.code_graph.types import (
     NODE_FUNCTION,
     NODE_INTERFACE,
     NODE_METHOD,
+    NODE_MODULE,
     NODE_VARIABLE,
 )
 
@@ -33,7 +34,11 @@ class RustParser(TreeSitterParser):
         self, node: Node, source: bytes, *, inside_class: bool
     ) -> Definition | None:
         ntype = node.type
-        if ntype == "struct_item":
+        if ntype == "mod_item":
+            name = self._name(node, source)
+            if name:
+                return Definition(kind=NODE_MODULE, name=name, is_class=False)
+        elif ntype == "struct_item":
             name = self._name(node, source)
             if name:
                 return Definition(kind=NODE_CLASS, name=name, is_class=True)

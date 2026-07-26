@@ -22,6 +22,7 @@ from app.services.code_graph.types import (
     NODE_CLASS,
     NODE_FUNCTION,
     NODE_METHOD,
+    NODE_NAMESPACE,
 )
 
 if TYPE_CHECKING:
@@ -35,8 +36,13 @@ class CFamilyParser(TreeSitterParser):
         self, node: Node, source: bytes, *, inside_class: bool
     ) -> Definition | None:
         ntype = node.type
+        if ntype == "namespace_definition":
+            name_node = node.child_by_field_name("name")
+            if name_node is not None:
+                name = node_text(name_node, source).replace("::", ".")
+                return Definition(kind=NODE_NAMESPACE, name=name, is_class=False)
         # struct/union/enum definitions (with a name)
-        if ntype in ("struct_specifier", "union_specifier"):
+        elif ntype in ("struct_specifier", "union_specifier"):
             name = self._specifier_name(node, source)
             if name and self._has_body(node):
                 return Definition(kind=NODE_CLASS, name=name, is_class=True)

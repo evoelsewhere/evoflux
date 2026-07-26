@@ -6,6 +6,7 @@ The parser extracts the script content and delegates to the EcmaScript parser.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING, ClassVar
 
 from app.services.code_graph.parsers.base import (
@@ -14,8 +15,12 @@ from app.services.code_graph.parsers.base import (
     TreeSitterParser,
     node_text,
 )
-from app.services.code_graph.parsers.ecmascript import TypeScriptParser
-from app.services.code_graph.types import ParseResult
+from app.services.code_graph.parsers.ecmascript import (
+    JavaScriptParser,
+    TsxParser,
+    TypeScriptParser,
+)
+from app.services.code_graph.types import NODE_VARIABLE, ExtractedNode, ParseResult
 
 if TYPE_CHECKING:
     from tree_sitter import Node
@@ -26,21 +31,13 @@ class _ScriptExtractParser(TreeSitterParser):
 
     _script_node_type: ClassVar[str] = "script_element"
     _content_node_type: ClassVar[str] = "raw_text"
+    _default_script_parser: ClassVar[type[TreeSitterParser]] = JavaScriptParser
 
     def parse(self, *, file_path: str, source: bytes) -> ParseResult:
-        """Extract script blocks and delegate to the TypeScript parser."""
+        """Parse and merge every embedded script block."""
         parser = self._get_parser()
         tree = parser.parse(source)
         root = tree.root_node
-
-        # Find script content
-        script_bytes = self._extract_script(root, source)
-        if script_bytes:
-            ts_parser = TypeScriptParser()
-            return ts_parser.parse(file_path=file_path, source=script_bytes)
-
-        # Fallback: return empty result with just the file node
-        from app.services.code_graph.types import ExtractedNode
 
         file_node = ExtractedNode(
             local_id="<file>",
@@ -50,19 +47,75 @@ class _ScriptExtractParser(TreeSitterParser):
             line_start=1,
             line_end=root.end_point[0] + 1,
         )
-        return ParseResult(language=self.name, file_path=file_path, nodes=[file_node])
+        result = ParseResult(language=self.name, file_path=file_path, nodes=[file_node])
 
-    def _extract_script(self, root: Node, source: bytes) -> bytes | None:
-        """Walk tree to find script content node."""
+        for block_index, (script_node, content_node) in enumerate(
+            self._extract_scripts(root)
+        ):
+            script_bytes = source[content_node.start_byte : content_node.end_byte]
+            delegated = self._parser_for_script(script_node, content_node, source).parse(
+                file_path=file_path,
+                source=script_bytes,
+            )
+            line_offset = content_node.start_point[0]
+            local_ids = {"<file>": "<file>"}
+
+            for node in delegated.nodes:
+                if node.local_id == "<file>":
+                    continue
+                local_id = f"<script:{block_index}>{node.local_id}"
+                local_ids[node.local_id] = local_id
+                result.nodes.append(
+                    replace(
+                        node,
+                        local_id=local_id,
+                        line_start=node.line_start + line_offset,
+                        line_end=node.line_end + line_offset,
+                    )
+                )
+
+            for edge in delegated.edges:
+                result.edges.append(
+                    replace(
+                        edge,
+                        src_local_id=local_ids.get(
+                            edge.src_local_id, edge.src_local_id
+                        ),
+                        dst_local_id=(
+                            local_ids.get(edge.dst_local_id, edge.dst_local_id)
+                            if edge.dst_local_id is not None
+                            else None
+                        ),
+                        line=(
+                            edge.line + line_offset
+                            if edge.line is not None
+                            else None
+                        ),
+                    )
+                )
+
+        return result
+
+    def _extract_scripts(self, root: Node) -> list[tuple[Node, Node]]:
+        """Return top-level script containers and their content nodes."""
+        scripts: list[tuple[Node, Node]] = []
         for child in root.children:
             if child.type == self._script_node_type:
                 for sub in child.children:
                     if sub.type == self._content_node_type:
-                        return source[sub.start_byte : sub.end_byte]
-            # Astro frontmatter is a direct child
-            if child.type == self._content_node_type:
-                return source[child.start_byte : child.end_byte]
-        return None
+                        scripts.append((child, sub))
+                        break
+        return scripts
+
+    def _parser_for_script(
+        self, script_node: Node, content_node: Node, source: bytes
+    ) -> TreeSitterParser:
+        opening_tag = source[script_node.start_byte : content_node.start_byte].lower()
+        if b'lang="tsx"' in opening_tag or b"lang='tsx'" in opening_tag:
+            return TsxParser()
+        if b'lang="ts"' in opening_tag or b"lang='ts'" in opening_tag:
+            return TypeScriptParser()
+        return self._default_script_parser()
 
     def classify(
         self, node: Node, source: bytes, *, inside_class: bool
@@ -104,6 +157,7 @@ class AstroParser(_ScriptExtractParser):
 
     _script_node_type: ClassVar[str] = "frontmatter"
     _content_node_type: ClassVar[str] = "frontmatter_js_block"
+    _default_script_parser: ClassVar[type[TreeSitterParser]] = TypeScriptParser
 
 
 class LiquidParser(TreeSitterParser):
@@ -116,8 +170,33 @@ class LiquidParser(TreeSitterParser):
     def classify(
         self, node: Node, source: bytes, *, inside_class: bool
     ) -> Definition | None:
-        # Liquid doesn't have classes/functions, but we can capture assignments
         return None
+
+    def synthetic_definitions(
+        self, node: Node, source: bytes, *, inside_class: bool
+    ) -> list[Definition]:
+        fields = {
+            "assignment_statement": "variable_name",
+            "capture_statement": "variable",
+        }
+        name_node = node.child_by_field_name(fields.get(node.type, ""))
+        if name_node is None and node.type in {
+            "increment_statement",
+            "decrement_statement",
+        }:
+            name_node = next(
+                (child for child in node.named_children if child.type == "identifier"),
+                None,
+            )
+        if name_node is None:
+            return []
+        return [
+            Definition(
+                kind=NODE_VARIABLE,
+                name=node_text(name_node, source),
+                is_class=False,
+            )
+        ]
 
     def call_target(self, node: Node, source: bytes) -> str | None:
         if node.type == "render_statement":

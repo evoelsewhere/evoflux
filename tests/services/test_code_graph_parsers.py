@@ -103,6 +103,20 @@ type ReadWriter interface {
     assert "Writer" in names
 
 
+def test_go_package_qualifies_declarations_and_receiver_methods():
+    source = b"""package billing
+func Charge() {}
+type Service struct{}
+func (s *Service) Run() {}
+"""
+    result = GoParser().parse(file_path="service.go", source=source)
+    qualified = {node.name: node.qualified_name for node in result.nodes}
+
+    assert qualified["Charge"] == "billing.Charge"
+    assert qualified["Service"] == "billing.Service"
+    assert qualified["Run"] == "billing.Service.Run"
+
+
 # ── Rust parser ───────────────────────────────────────────────────────────────
 
 
@@ -482,8 +496,8 @@ func (s Server) Stop() {}
     result = GoParser().parse(file_path="main.go", source=source)
     methods = _by_kind(result.nodes, NODE_METHOD)
     qnames = {m.qualified_name for m in methods}
-    assert "Server.Start" in qnames
-    assert "Server.Stop" in qnames
+    assert "main.Server.Start" in qnames
+    assert "main.Server.Stop" in qnames
 
 
 def test_go_type_alias():
@@ -526,6 +540,25 @@ def test_rust_macro_invocations():
     call_names = {e.dst_name for e in calls}
     assert "println" in call_names
     assert "vec" in call_names
+
+
+def test_rust_modules_qualify_nested_items():
+    source = b"""mod billing {
+    pub struct Service;
+    impl Service { pub fn run(&self) {} }
+    pub fn top() {}
+    mod nested { pub fn inner() {} }
+}
+"""
+    result = RustParser().parse(file_path="lib.rs", source=source)
+    qualified = {node.name: node.qualified_name for node in result.nodes}
+
+    assert qualified["billing"] == "billing"
+    assert qualified["Service"] == "billing.Service"
+    assert qualified["run"] == "billing.Service.run"
+    assert qualified["top"] == "billing.top"
+    assert qualified["nested"] == "billing.nested"
+    assert qualified["inner"] == "billing.nested.inner"
 
 
 # ── Coverage audit: C# ────────────────────────────────────────────────────────

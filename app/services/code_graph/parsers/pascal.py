@@ -48,8 +48,16 @@ class PascalParser(TreeSitterParser):
             name = self._proc_name(node, source)
             if name:
                 kind = NODE_METHOD if "." in name else NODE_FUNCTION
-                return Definition(kind=kind, name=name.split(".")[-1], is_class=False)
+                owner = name.rsplit(".", 1)[0] if "." in name else None
+                return Definition(
+                    kind=kind,
+                    name=name.rsplit(".", 1)[-1],
+                    is_class=False,
+                    prefix=f"{owner}." if owner else None,
+                )
         elif ntype == "declProc":
+            if node.parent is not None and node.parent.type == "defProc":
+                return None
             name = self._proc_name(node, source)
             if name:
                 return Definition(kind=NODE_METHOD, name=name, is_class=False)
@@ -131,6 +139,9 @@ class PascalParser(TreeSitterParser):
         return None
 
     def _proc_name(self, node: Node, source: bytes) -> str | None:
+        header = node.child_by_field_name("header")
+        if header is not None:
+            return self._proc_name(header, source)
         for child in node.children:
             if child.type == "moduleName":
                 return node_text(child, source)
