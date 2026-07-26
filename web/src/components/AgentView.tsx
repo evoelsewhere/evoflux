@@ -34,6 +34,7 @@ import { mcpAppResourceUri } from '@/utils/mcp-app-artifacts'
 import { resolveAgentRole } from '@/lib/agent-roles'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { LoadingVerb } from './motion/LoadingVerb'
+import { SessionChapterRail } from './SessionChapterRail'
 import { TextSelectionAction } from './TextSelectionAction'
 import type { Chapter, ContentBlock } from '@/api/types'
 
@@ -62,11 +63,15 @@ interface AgentViewProps {
   emptyState?: React.ReactNode
   /** Session chapters for anchor markers and TOC dividers. */
   chapters?: Chapter[]
-  /** When provided, a floating text-selection action sends the selection to the side chat. */
+  /** Quote selected transcript text into the primary composer. */
+  onAddSelectionToChat?: (selectedText: string) => void
+  /** Prepare a primary-chat prompt requesting more detail about selected text. */
+  onRequestSelectionDetails?: (selectedText: string) => void
+  /** Open a side-chat thread grounded in selected transcript text. */
   onSendToSideChat?: (selectedText: string) => void
 }
 
-export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError, isContinuing = false, onContinue, emptyState, chapters, onSendToSideChat }: AgentViewProps) {
+export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError, isContinuing = false, onContinue, emptyState, chapters, onAddSelectionToChat, onRequestSelectionDetails, onSendToSideChat }: AgentViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const pinnedRef = useRef(true)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
@@ -295,7 +300,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
     <div ref={scrollRef} className="flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-3xl px-4 py-6">
+      <div className={`mx-auto max-w-3xl px-4 py-6 ${chapterByMessageId.size > 0 ? 'lg:pl-16' : ''}`}>
         {isEmpty && (
            emptyState ?? <ChatWelcome />
          )}
@@ -439,6 +444,11 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
          </div>
       </div>
     </div>
+    <SessionChapterRail
+      chapters={chapters ?? []}
+      containerRef={scrollRef}
+      sessionId={sessionId}
+    />
     {showScrollBtn && !isEmpty && (
         <button
           onClick={() => scrollToBottom(true)}
@@ -450,9 +460,11 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
 
     )}
 
-    {onSendToSideChat && (
+    {onAddSelectionToChat && onRequestSelectionDetails && onSendToSideChat && (
       <TextSelectionAction
         containerRef={scrollRef}
+        onAddToChat={onAddSelectionToChat}
+        onMoreDetails={onRequestSelectionDetails}
         onSendToSideChat={onSendToSideChat}
         enabled={!isEmpty}
       />

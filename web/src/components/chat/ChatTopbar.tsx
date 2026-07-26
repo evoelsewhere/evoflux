@@ -4,8 +4,8 @@
  * Owns the full <header> chrome: mobile hamburger + title, the desktop
  * ``ActiveAgentSwitcher`` dropdown, ``LoopStatusPill``,
  * ``WorkflowProgressPill``, coding-only ``TaskProgressPill``,
- * ``SessionTOC`` and the ``AgentTopbar`` right cluster with its action
- * descriptors. Props-driven — TeamChatView passes everything it needs.
+ * and the ``AgentTopbar`` right cluster with its action descriptors.
+ * Props-driven — TeamChatView passes everything it needs.
  *
  * The Tauri drag handlers are spread onto the <header> by the caller
  * (see ``useTauriDrag``); ``data-no-drag`` on the interactive controls
@@ -26,7 +26,6 @@ import { TopbarAction } from '@/components/ui/topbar-action'
 import { AgentTopbar, type AgentTopbarTokens } from '@/components/AgentTopbar'
 import { TaskProgressPill } from '@/components/TaskProgressPill'
 import { WorkflowProgressPill } from '@/components/WorkflowProgressPill'
-import { SessionTOC } from '@/components/SessionTOC'
 import { SessionScheduleIndicator } from '@/components/SessionScheduleIndicator'
 import { resolveAgentRole } from '@/lib/agent-roles'
 import { AgentChip } from '@/components/ui/agent-chip'
@@ -258,9 +257,7 @@ export function ChatTopbar({
         ) : (
           <>
           {compactHeader ? (
-            <>
-              <SessionTOC sessionId={sessionId} />
-              <DesktopHeaderOverflow
+            <DesktopHeaderOverflow
                 mode={mode}
                 workspace={workspace}
                 sessionId={sessionId}
@@ -275,7 +272,6 @@ export function ChatTopbar({
                 onScheduler={onScheduler}
                 onCompact={onCompact}
               />
-            </>
           ) : (
             <>
           {!isMobile && onWiki && (
@@ -289,7 +285,6 @@ export function ChatTopbar({
               indicatorClassName="bg-(--color-success)"
             />
           )}
-          <SessionTOC sessionId={sessionId} />
           <TopbarAction
             Icon={FolderOpen}
             label={mode === 'coding' ? (workspace ? 'Workspace' : 'Open workspace') : 'Files'}

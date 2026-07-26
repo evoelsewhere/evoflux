@@ -599,6 +599,26 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
     setSideChatOpen(true)
   }, [])
 
+  const handleAddSelectionToChat = useCallback((selectedText: string) => {
+    const quoted = selectedText
+      .trim()
+      .split('\n')
+      .map((line) => `> ${line}`)
+      .join('\n')
+    inputRef.current?.appendValue(`${quoted}\n\n`)
+    inputRef.current?.focus()
+  }, [])
+
+  const handleRequestSelectionDetails = useCallback((selectedText: string) => {
+    const quoted = selectedText
+      .trim()
+      .split('\n')
+      .map((line) => `> ${line}`)
+      .join('\n')
+    inputRef.current?.appendValue(`Please provide more details about this:\n\n${quoted}\n`)
+    inputRef.current?.focus()
+  }, [])
+
   const handleWebBridgeEnabledChange = useCallback((enabled: boolean) => {
     setWebBridgeEnabled(enabled)
     if (enabled) setWebBridgeDialogOpen(true)
@@ -1279,6 +1299,8 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
             isContinuing={isContinuing && activeAgent === leadName}
             onContinue={activeAgent === leadName ? continueTeam : undefined}
             chapters={activeAgent === leadName ? chapters : undefined}
+            onAddSelectionToChat={handleAddSelectionToChat}
+            onRequestSelectionDetails={handleRequestSelectionDetails}
             onSendToSideChat={handleSendToSideChat}
             emptyState={
               mode === 'coding' && workspace ? (
