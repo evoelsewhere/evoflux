@@ -583,9 +583,17 @@ a svg[aria-hidden="true"],
 }
 
 .mobile-safe-toast {
-  top: max(1rem, env(safe-area-inset-top, 0px));
+  bottom: max(1rem, env(safe-area-inset-bottom, 0px));
   right: max(1rem, env(safe-area-inset-right, 0px));
   left: max(1rem, env(safe-area-inset-left, 0px));
+}
+
+/* Desktop: pin the toast stack to the bottom-right corner instead of
+ * stretching across the bottom edge. */
+@media (min-width: 640px) {
+  .mobile-safe-toast {
+    left: auto;
+  }
 }
 
 @supports (height: 100svh) {
