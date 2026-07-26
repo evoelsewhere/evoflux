@@ -12,6 +12,7 @@ import type {
   RegistryResponse,
   SkillListResponse,
   SkillDetail,
+  SkillBundleFileWrite,
   SkillDeleteResponse,
   CommandListResponse,
   CommandRenderResponse,
@@ -90,21 +91,30 @@ export async function getSkill(name: string): Promise<SkillDetail> {
   return res.json()
 }
 
-export async function createSkill(name: string, content: string): Promise<SkillDetail> {
+export async function createSkill(
+  name: string,
+  content: string,
+  files: SkillBundleFileWrite[] = [],
+): Promise<SkillDetail> {
   const res = await fetch(`${apiBaseUrl()}/skills`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, content }),
+    body: JSON.stringify({ name, content, files }),
   })
   if (!res.ok) await parseDetailOrThrow(res, 'POST /skills')
   return res.json()
 }
 
-export async function updateSkill(name: string, content: string): Promise<SkillDetail> {
+export async function updateSkill(
+  name: string,
+  content: string,
+  files: SkillBundleFileWrite[] = [],
+  deletedFiles: string[] = [],
+): Promise<SkillDetail> {
   const res = await fetch(`${apiBaseUrl()}/skills/${encodeURIComponent(name)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, content }),
+    body: JSON.stringify({ name, content, files, deleted_files: deletedFiles }),
   })
   if (!res.ok) await parseDetailOrThrow(res, `PUT /skills/${name}`)
   return res.json()

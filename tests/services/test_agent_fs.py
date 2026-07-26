@@ -179,6 +179,43 @@ def test_delete_skill_preserves_dir_with_siblings(fs_dirs):
     assert not (skills_dir / "a" / "SKILL.md").exists()
 
 
+def test_skill_bundle_files_round_trip(fs_dirs):
+    _, skills_dir = fs_dirs
+    record = agent_fs.write_skill("research", "body", create=True)
+    agent_fs.apply_skill_bundle_files(
+        Path(record.path).parent,
+        [
+            ("references/guide.md", "# Guide\n", "utf-8"),
+            ("assets/icon.bin", "AAEC", "base64"),
+        ],
+        [],
+    )
+
+    files = {
+        file.path: file
+        for file in agent_fs.list_skill_bundle_files(skills_dir / "research")
+    }
+    assert files["references/guide.md"].content == "# Guide\n"
+    assert files["references/guide.md"].editable is True
+    assert files["assets/icon.bin"].content is None
+    assert files["assets/icon.bin"].editable is False
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["", "../secret", "nested/SKILL.md", "/absolute.md", "bad\\path.md"],
+)
+def test_skill_bundle_rejects_unsafe_resource_paths(fs_dirs, path):
+    _, skills_dir = fs_dirs
+    agent_fs.write_skill("research", "body", create=True)
+    with pytest.raises(AgentFsPathError):
+        agent_fs.apply_skill_bundle_files(
+            skills_dir / "research",
+            [(path, "bad", "utf-8")],
+            [],
+        )
+
+
 def test_delete_skill_not_found(fs_dirs):
     with pytest.raises(AgentFsNotFoundError):
         agent_fs.delete_skill("missing")

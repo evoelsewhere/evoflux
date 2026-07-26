@@ -2,10 +2,7 @@
  * ContextBudgetBar — compact token-usage bar for the chat topbar.
  *
  * Shows:  [████████░░░] 68%  with color transitions at 80% and 95%.
- * A tooltip explains the usage and warns when summarization is near.
- *
- * Intended to sit beside the existing TokenMeter inside AgentTopbar or as
- * a standalone element in any header.
+ * Hovering or focusing the bar reveals the full input/output/cache breakdown.
  */
 
 import { cn } from '@/lib/utils'
@@ -24,6 +21,14 @@ export interface ContextBudgetBarProps {
   showLabel?: boolean
   /** Compact mode for embedding in ViewModeSwitch. */
   compact?: boolean
+  /** Latest input-token count shown in the detail tooltip. */
+  input?: number
+  /** Cumulative output-token count shown in the detail tooltip. */
+  output?: number
+  /** Latest cache-token count shown in the detail tooltip. */
+  cached?: number
+  /** Auto-summary input threshold shown in the detail tooltip. */
+  trigger?: number
 }
 
 function formatTokens(n: number): string {
@@ -38,8 +43,13 @@ export function ContextBudgetBar({
   className,
   showLabel = true,
   compact = false,
+  input = 0,
+  output = 0,
+  cached = 0,
+  trigger,
 }: ContextBudgetBarProps) {
-  const pct = Math.min(100, Math.round((used / max) * 100))
+  const safeMax = Math.max(max, 1)
+  const pct = Math.min(100, Math.round((used / safeMax) * 100))
   const isDanger = pct >= 95
   const isWarn = pct >= 80
 
@@ -50,16 +60,35 @@ export function ContextBudgetBar({
       : 'bg-(--accent-blue)'
 
   const tooltip = isDanger
-    ? `Context ${pct}% full — auto-summarization imminent (${formatTokens(used)} / ${formatTokens(max)})`
+    ? `Context ${pct}% full — auto-summarization imminent (${formatTokens(used)} / ${formatTokens(safeMax)})`
     : isWarn
-      ? `Context ${pct}% full — summarization may trigger soon (${formatTokens(used)} / ${formatTokens(max)})`
-      : `Context ${pct}% used (${formatTokens(used)} / ${formatTokens(max)})`
+      ? `Context ${pct}% full — summarization may trigger soon (${formatTokens(used)} / ${formatTokens(safeMax)})`
+      : `Context ${pct}% used (${formatTokens(used)} / ${formatTokens(safeMax)})`
+
+  const detailTooltip = (
+    <div
+      className="pointer-events-none invisible absolute right-0 top-full z-(--z-modal) mt-2 min-w-48 rounded-lg border border-(--color-border) bg-(--bg-page)/95 px-3 py-2.5 font-mono text-xs leading-5 text-(--color-text) opacity-0 shadow-xl backdrop-blur-xl transition-[opacity,visibility] group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+      role="tooltip"
+    >
+      <div className="flex justify-between gap-5"><span className="text-(--color-text-muted)">input</span><span>{input.toLocaleString()}</span></div>
+      {trigger !== undefined && (
+        <div className="flex justify-between gap-5"><span className="text-(--color-text-muted)">trigger</span><span>{trigger.toLocaleString()}</span></div>
+      )}
+      <div className="flex justify-between gap-5"><span className="text-(--color-text-muted)">used</span><span>{pct}%</span></div>
+      <div className="flex justify-between gap-5"><span className="text-(--color-text-muted)">output</span><span>{output.toLocaleString()}</span></div>
+      <div className="flex justify-between gap-5"><span className="text-(--color-text-muted)">cache</span><span>{cached.toLocaleString()}</span></div>
+    </div>
+  )
 
   if (compact) {
     return (
       <div
-        className={cn('flex items-center gap-1 px-2', className)}
-        title={tooltip}
+        className={cn('group relative flex items-center gap-1 px-2 outline-none', className)}
+        role="meter"
+        tabIndex={0}
+        aria-valuemin={0}
+        aria-valuemax={safeMax}
+        aria-valuenow={Math.min(used, safeMax)}
         aria-label={tooltip}
       >
         <div className="relative h-1.5 w-10 overflow-hidden rounded-full bg-(--border-subtle)">
@@ -80,14 +109,19 @@ export function ContextBudgetBar({
         >
           {pct}%
         </span>
+        {detailTooltip}
       </div>
     )
   }
 
   return (
     <div
-      className={cn('inline-flex h-8 items-center gap-1.5 rounded-md px-2', className)}
-      title={tooltip}
+      className={cn('group relative inline-flex h-8 items-center gap-1.5 rounded-md px-2 outline-none', className)}
+      role="meter"
+      tabIndex={0}
+      aria-valuemin={0}
+      aria-valuemax={safeMax}
+      aria-valuenow={Math.min(used, safeMax)}
       aria-label={tooltip}
     >
       {/* Bar track */}
@@ -113,6 +147,7 @@ export function ContextBudgetBar({
           {pct}%
         </span>
       )}
+      {detailTooltip}
     </div>
   )
 }

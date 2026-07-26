@@ -20,7 +20,6 @@ import {
 import { motion } from 'framer-motion'
 
 import { TopbarAction } from '@/components/ui/topbar-action'
-import { TokenMeter } from '@/components/ui/token-meter'
 import { ContextBudgetBar } from '@/components/ContextBudgetBar'
 import { useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
@@ -32,7 +31,6 @@ export interface AgentTopbarTokens {
   output: number
   cached?: number
   trigger?: number
-  pulsing?: boolean
 }
 
 const VIEW_MODES: { key: ViewMode; label: string }[] = [
@@ -46,10 +44,12 @@ function ViewModeSwitch({
   value,
   onValueChange,
   contextBudget,
+  tokens,
 }: {
   value: ViewMode
   onValueChange: (mode: ViewMode) => void
   contextBudget?: { used: number; max?: number }
+  tokens?: AgentTopbarTokens
 }) {
   const preset = useMotionPreset()
 
@@ -87,10 +87,18 @@ function ViewModeSwitch({
           <span className="relative z-10">{label}</span>
         </button>
       ))}
-      {contextBudget && contextBudget.used > 0 && (
+      {contextBudget && (
         <>
           <div className="mx-0.5 h-4 w-px bg-(--color-border)" />
-          <ContextBudgetBar used={contextBudget.used} max={contextBudget.max} compact />
+          <ContextBudgetBar
+            used={contextBudget.used}
+            max={contextBudget.max}
+            input={tokens?.input}
+            output={tokens?.output}
+            cached={tokens?.cached}
+            trigger={tokens?.trigger}
+            compact
+          />
         </>
       )}
     </div>
@@ -116,12 +124,11 @@ export interface AgentTopbarActionDescriptor {
 }
 
 export interface AgentTopbarProps {
-  /** Token totals; when omitted (or all zero) the TokenMeter is hidden. */
+  /** Token totals shown when the context-window bar is hovered or focused. */
   tokens?: AgentTopbarTokens
   /**
-   * Context window budget. When provided, shows a mini usage bar alongside
-   * the token meter. `used` = input + output + cached tokens; `max` defaults
-   * to 200 000 if omitted.
+  * Context window budget. `used` is the current context occupancy and `max`
+  * defaults to 200 000 if omitted.
    */
   contextBudget?: { used: number; max?: number }
   /** Show "Dream…" indicator when the dream loop is running. */
@@ -172,10 +179,6 @@ export function AgentTopbar({
   extraActions,
   className,
 }: AgentTopbarProps) {
-  const totalAll = tokens
-    ? tokens.input + tokens.output + (tokens.cached ?? 0)
-    : 0
-  const showTokens = !isMobile && tokens && totalAll > 0
   const showViewToggle = !isMobile && viewMode && onViewModeChange
 
   return (
@@ -195,22 +198,12 @@ export function AgentTopbar({
         </div>
       )}
 
-      {showTokens && tokens && (
-        <TokenMeter
-          input={tokens.input}
-          output={tokens.output}
-          cached={tokens.cached}
-          trigger={tokens.trigger}
-          pulsing={tokens.pulsing}
-          className="mr-0.5"
-        />
-      )}
-
       {!isMobile && showViewToggle && viewMode && onViewModeChange && (
         <ViewModeSwitch
           value={viewMode}
           onValueChange={onViewModeChange}
           contextBudget={contextBudget}
+          tokens={tokens}
         />
       )}
 

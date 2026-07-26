@@ -3,11 +3,7 @@ name: using-agent-skills
 description: Discovers and invokes agent skills. Use when starting a session or when you need to discover which skill applies to the current task. This is the meta-skill that governs how all other skills are discovered and invoked.
 ---
 
-
-
-## When to Use
-
-- Use when Starting a session or when you need to discover which skill applies to the current task# Using Agent Skills
+# Using Agent Skills
 
 ## Overview
 
@@ -168,9 +164,9 @@ Not every task needs every skill. A bug fix might only need: `debugging-and-erro
 
 ## Verification
 
-- Don't silently fill in ambiguous requirements. The most common failure mode is making wrong assumptions and running with them unchecked. Surface uncertainty early — it's cheaper than rework.
-- ### 6. Verify, Don't Assume
-- 1. Making wrong assumptions without checking
+- Confirm the selected skill's description actually matches the request.
+- Load each applicable skill before acting and follow its verification steps.
+- If no skill applies, proceed normally instead of forcing a near match.
 
 ## Quick Reference
 

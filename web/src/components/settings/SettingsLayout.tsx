@@ -22,8 +22,8 @@ import { cn } from '@/lib/utils'
 export type SettingsContentSize = 'narrow' | 'wide' | 'full'
 
 const CONTENT_WIDTHS: Record<SettingsContentSize, string> = {
-  narrow: 'max-w-3xl',
-  wide: 'max-w-5xl',
+  narrow: 'max-w-none',
+  wide: 'max-w-none',
   full: 'max-w-none',
 }
 
@@ -112,7 +112,7 @@ export function SettingsPage({
           animate={{ opacity: 1, y: 0 }}
           transition={preset.transition}
           className={cn(
-            'mx-auto w-full space-y-6 px-4 py-4 sm:px-5 sm:py-5',
+            'w-full space-y-6 px-4 py-4 sm:px-6 sm:py-7',
             actions && 'pb-24 sm:pb-5',
             CONTENT_WIDTHS[size],
           )}

@@ -1,6 +1,6 @@
 /**
  * SettingsContext — provides navigation primitives for settings sub-pages
- * so they don't depend on TanStack Router (settings is a store-driven modal).
+ * so they don't depend on TanStack Router (the screen preserves the app URL).
  */
 import { createContext, useContext, useMemo } from 'react'
 import { useUIStore } from '@/stores/useUIStore'
@@ -42,7 +42,7 @@ export function useSettingsSearch(): Record<string, string> {
   return useContext(SettingsContext).search
 }
 
-/** Navigate within settings modal. Accepts full /settings/... paths or relative paths. */
+/** Navigate within the settings screen. Accepts full /settings/... paths or relative paths. */
 // eslint-disable-next-line react-refresh/only-export-components
 export function useSettingsNavigate() {
   const navigateSettings = useUIStore((s) => s.navigateSettings)

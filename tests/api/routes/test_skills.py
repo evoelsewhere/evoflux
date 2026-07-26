@@ -332,6 +332,69 @@ async def test_get_skill_returns_detail(client):
     assert data["name"] == "research"
     assert data["description"] == "A research skill."
     assert "Do research" in data["content"]
+    assert data["files"] == []
+
+
+@pytest.mark.asyncio
+async def test_create_and_update_skill_bundle(client, fs_dirs):
+    create = await client.post(
+        "/api/skills",
+        json={
+            "name": "research",
+            "content": VALID_SKILL,
+            "files": [
+                {
+                    "path": "references/method.md",
+                    "content": "# Method\n",
+                    "encoding": "utf-8",
+                },
+                {
+                    "path": "scripts/run.py",
+                    "content": "cHJpbnQoJ29rJykK",
+                    "encoding": "base64",
+                },
+            ],
+        },
+    )
+    assert create.status_code == 201
+    files = {file["path"]: file for file in create.json()["files"]}
+    assert files["references/method.md"]["content"] == "# Method\n"
+    assert files["scripts/run.py"]["content"] == "print('ok')\n"
+
+    update = await client.put(
+        "/api/skills/research",
+        json={
+            "name": "research",
+            "content": VALID_SKILL,
+            "files": [
+                {
+                    "path": "references/guide.md",
+                    "content": "# Guide\n",
+                    "encoding": "utf-8",
+                }
+            ],
+            "deleted_files": ["references/method.md"],
+        },
+    )
+    assert update.status_code == 200
+    paths = {file["path"] for file in update.json()["files"]}
+    assert paths == {"references/guide.md", "scripts/run.py"}
+    skills_dir = fs_dirs[1]
+    assert not (skills_dir / "research" / "references" / "method.md").exists()
+
+
+@pytest.mark.asyncio
+async def test_skill_bundle_rejects_traversal_and_reserved_skill_file(client):
+    for path in ("../outside.md", "references\\outside.md", "nested/SKILL.md"):
+        response = await client.post(
+            "/api/skills",
+            json={
+                "name": "research",
+                "content": VALID_SKILL,
+                "files": [{"path": path, "content": "bad"}],
+            },
+        )
+        assert response.status_code == 400
 
 
 @pytest.mark.asyncio
@@ -456,11 +519,24 @@ async def test_update_skill_bad_path_returns_400(client, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_delete_skill_success(client):
-    await client.post("/api/skills", json={"name": "research", "content": VALID_SKILL})
+async def test_delete_skill_success(client, fs_dirs):
+    await client.post(
+        "/api/skills",
+        json={
+            "name": "research",
+            "content": VALID_SKILL,
+            "files": [
+                {
+                    "path": "references/guide.md",
+                    "content": "# Guide\n",
+                }
+            ],
+        },
+    )
     resp = await client.delete("/api/skills/research")
     assert resp.status_code == 200
     assert resp.json() == {"name": "research"}
+    assert not (fs_dirs[1] / "research").exists()
 
 
 @pytest.mark.asyncio
@@ -492,7 +568,7 @@ async def test_delete_skill_bad_path_returns_400(client, monkeypatch):
     def bad_delete(*_args, **_kwargs):
         raise OSError("bad")
 
-    monkeypatch.setattr(skills_routes, "_delete_skill_file", bad_delete)
+    monkeypatch.setattr(skills_routes, "_delete_skill_bundle", bad_delete)
     resp = await client.delete("/api/skills/research")
     assert resp.status_code == 400
 

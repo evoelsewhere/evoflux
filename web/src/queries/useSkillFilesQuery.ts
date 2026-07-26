@@ -7,6 +7,7 @@ import {
   updateSkill,
   deleteSkill,
 } from '@/api/client'
+import type { SkillBundleFileWrite } from '@/api/types'
 import { queryKeys } from './keys'
 
 export function useSkillFilesQuery() {
@@ -36,8 +37,15 @@ function invalidateAll(client: ReturnType<typeof useQueryClient>) {
 export function useCreateSkillMutation() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: ({ name, content }: { name: string; content: string }) =>
-      createSkill(name, content),
+    mutationFn: ({
+      name,
+      content,
+      files = [],
+    }: {
+      name: string
+      content: string
+      files?: SkillBundleFileWrite[]
+    }) => createSkill(name, content, files),
     onSuccess: () => invalidateAll(client),
   })
 }
@@ -45,8 +53,17 @@ export function useCreateSkillMutation() {
 export function useUpdateSkillMutation() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: ({ name, content }: { name: string; content: string }) =>
-      updateSkill(name, content),
+    mutationFn: ({
+      name,
+      content,
+      files = [],
+      deletedFiles = [],
+    }: {
+      name: string
+      content: string
+      files?: SkillBundleFileWrite[]
+      deletedFiles?: string[]
+    }) => updateSkill(name, content, files, deletedFiles),
     onSuccess: (_data, { name }) => {
       invalidateAll(client)
       client.invalidateQueries({ queryKey: queryKeys.skillFiles.detail(name) })

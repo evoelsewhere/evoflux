@@ -545,8 +545,8 @@ html[data-mobile-shell] .text-\[10px\] {
  * Icon scaling — lift Lucide SVG icons to match the 17.6 px rem
  * base.  The element selector (specificity 0,0,2) wins over HTML
  * width/height attributes but loses to any Tailwind utility class
- * (specificity 0,1,0), so explicitly-sized SVGs (TokenMeter ring,
- * progress arcs, etc.) are unaffected.
+ * (specificity 0,1,0), so explicitly-sized SVGs (progress arcs,
+ * status rings, etc.) are unaffected.
  * ───────────────────────────────────────────────────────────── */
 button svg[aria-hidden="true"],
 a svg[aria-hidden="true"],

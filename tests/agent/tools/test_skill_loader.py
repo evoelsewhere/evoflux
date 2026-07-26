@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -611,6 +612,34 @@ class TestBuiltinSkills:
             "plugin-installer",
         }.issubset(result)
         assert (_builtin_skills_dir() / "mcp-installer" / "mcp_apply.py").is_file()
+
+    def test_all_builtin_skills_follow_bundle_contract(self):
+        """Keep bundled skills portable and compatible with progressive disclosure."""
+        root = _builtin_skills_dir()
+        for skill_file in sorted(root.glob("*/SKILL.md")):
+            text = skill_file.read_text(encoding="utf-8")
+            meta, body = _parse_frontmatter(text)
+            assert set(meta) == {"name", "description"}, skill_file
+            assert meta["name"] == skill_file.parent.name, skill_file
+            assert isinstance(meta["description"], str) and meta["description"].strip()
+            assert body.strip(), skill_file
+
+    def test_builtin_skill_resource_links_exist(self):
+        root = _builtin_skills_dir()
+        resource_link = re.compile(
+            r"(?:\[[^\]]+\]\(([^)]+)\)|"
+            r"`((?:references?|scripts?|assets?|templates?|themes?)/[^`]+)`)"
+        )
+        missing: list[str] = []
+        for skill_file in sorted(root.glob("*/SKILL.md")):
+            text = skill_file.read_text(encoding="utf-8")
+            for match in resource_link.finditer(text):
+                raw = (match.group(1) or match.group(2)).split("#", 1)[0]
+                if raw.startswith(("http:", "https:", "#")):
+                    continue
+                if not (skill_file.parent / raw).exists():
+                    missing.append(f"{skill_file.parent.name}: {raw}")
+        assert missing == []
 
     @pytest.mark.asyncio
     async def test_builtin_skill_dir_points_at_auxiliary_files(self):

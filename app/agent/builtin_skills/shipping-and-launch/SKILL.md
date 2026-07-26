@@ -270,9 +270,9 @@ Every deployment needs a rollback plan before it happens:
 ```
 ## See Also
 
-- For security pre-launch checks, see `references/security-checklist.md`
-- For performance pre-launch checklist, see `references/performance-checklist.md`
-- For accessibility verification before launch, see `references/accessibility-checklist.md`
+- For security pre-launch checks, load `security-and-hardening`.
+- For performance verification, load `performance-optimization`.
+- For accessibility verification, load `frontend-ui-engineering`.
 
 ## Common Rationalizations
 

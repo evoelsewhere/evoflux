@@ -21,7 +21,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { TokenMeter } from '@/components/ui/token-meter'
+import { ContextBudgetBar } from '@/components/ContextBudgetBar'
 import { TopbarAction } from '@/components/ui/topbar-action'
 import { AgentTopbar, type AgentTopbarTokens } from '@/components/AgentTopbar'
 import { TaskProgressPill } from '@/components/TaskProgressPill'
@@ -66,7 +66,6 @@ interface ChatTopbarProps {
   headerTokens: AgentTopbarTokens | undefined
   contextUsed: number
   contextWindowSize: number | undefined
-  summaryTriggerTokens: number | undefined
   dreamRunning: boolean
   terminalOpen: boolean
   onToggleTerminal: () => void
@@ -223,14 +222,15 @@ export function ChatTopbar({
         <div className="flex shrink-0 items-center gap-0.5">
         {isMobile ? (
           <>
-            {headerTokens && (
-              <TokenMeter
-                input={headerTokens.input}
-                output={headerTokens.output}
-                cached={headerTokens.cached}
-                trigger={headerTokens.trigger}
-                pulsing={headerTokens.pulsing}
-                className="mr-0.5"
+            {(contextWindowSize !== undefined || contextUsed > 0) && (
+              <ContextBudgetBar
+                used={contextUsed}
+                max={contextWindowSize}
+                input={headerTokens?.input}
+                output={headerTokens?.output}
+                cached={headerTokens?.cached}
+                trigger={headerTokens?.trigger}
+                compact
               />
             )}
             <MobileHeaderAction
@@ -257,7 +257,19 @@ export function ChatTopbar({
         ) : (
           <>
           {compactHeader ? (
-            <DesktopHeaderOverflow
+            <>
+              {(contextWindowSize !== undefined || contextUsed > 0) && (
+                <ContextBudgetBar
+                  used={contextUsed}
+                  max={contextWindowSize}
+                  input={headerTokens?.input}
+                  output={headerTokens?.output}
+                  cached={headerTokens?.cached}
+                  trigger={headerTokens?.trigger}
+                  compact
+                />
+              )}
+              <DesktopHeaderOverflow
                 mode={mode}
                 workspace={workspace}
                 sessionId={sessionId}
@@ -272,6 +284,7 @@ export function ChatTopbar({
                 onScheduler={onScheduler}
                 onCompact={onCompact}
               />
+            </>
           ) : (
             <>
           {!isMobile && onWiki && (
@@ -297,7 +310,11 @@ export function ChatTopbar({
           <AgentTopbar
             isMobile={false}
             tokens={headerTokens}
-            contextBudget={contextUsed > 0 ? { used: contextUsed, max: contextWindowSize } : undefined}
+            contextBudget={
+              contextWindowSize !== undefined || contextUsed > 0
+                ? { used: contextUsed, max: contextWindowSize }
+                : undefined
+            }
             dreamRunning={dreamRunning}
             viewMode={viewMode}
             onViewModeChange={onViewModeChange}

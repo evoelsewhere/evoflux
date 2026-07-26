@@ -7,6 +7,7 @@ skills are edited/deleted in place; bundled skills remain read-only.
 
 from __future__ import annotations
 
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from app.core.config import settings
 
 from app.api.schemas.skills import (
     SkillDeleteResponse,
+    SkillBundleFile,
     SkillDetail,
     SkillListResponse,
     SkillSummary,
@@ -97,31 +99,40 @@ def _atomic_write(path: Path, content: str) -> None:
     tmp_path.replace(path)
 
 
-def _delete_skill_file(path: Path) -> None:
+def _delete_skill_bundle(name: str, path: Path) -> None:
+    """Delete a complete skill bundle while preserving sibling sub-skills."""
     if not path.is_file():
-        raise AgentFsNotFoundError(f"Skill '{path}' not found.")
-    path.unlink()
-    try:
-        path.parent.rmdir()
-    except OSError:
-        pass
+        raise AgentFsNotFoundError(f"Skill '{name}' not found.")
+    skill_dir = path.parent
+    if "/" in name:
+        shutil.rmtree(skill_dir)
     else:
-        parent = path.parent.parent
-        # Clean up an empty parent for one-level nested skills, but never walk
-        # above a known skill root.
-        source = _skill_source(path)
-        root_by_source = {
-            "project-EvoFlux": Path.cwd() / ".evoflux" / "skills",
-            "project-opencode": Path.cwd() / ".opencode" / "skills",
-            "global-EvoFlux": Path(settings.SKILLS_DIR),
-            "global-opencode": Path.home() / ".config" / "opencode" / "skills",
-        }
-        root = root_by_source.get(source)
-        if root is not None and parent.resolve() != root.resolve():
-            try:
-                parent.rmdir()
-            except OSError:
-                pass
+        for child in skill_dir.iterdir():
+            if child.is_dir() and (child / "SKILL.md").is_file():
+                continue
+            if child.is_dir() and not child.is_symlink():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+        try:
+            skill_dir.rmdir()
+        except OSError:
+            pass
+
+    parent = skill_dir.parent
+    source = _skill_source(path)
+    root_by_source = {
+        "project-EvoFlux": Path.cwd() / ".evoflux" / "skills",
+        "project-opencode": Path.cwd() / ".opencode" / "skills",
+        "global-EvoFlux": Path(settings.SKILLS_DIR),
+        "global-opencode": Path.home() / ".config" / "opencode" / "skills",
+    }
+    root = root_by_source.get(source)
+    if root is not None and parent.resolve() != root.resolve():
+        try:
+            parent.rmdir()
+        except OSError:
+            pass
 
 
 def _discover_runtime_skills() -> dict[str, dict]:
@@ -170,6 +181,28 @@ def _parse_skill(name: str, content: str) -> tuple[str, str | None]:
             f"name '{name}'."
         )
     return desc.strip(), None
+
+
+def _bundle_files(path: Path, *, editable: bool) -> list[SkillBundleFile]:
+    return [
+        SkillBundleFile(
+            path=file.path,
+            size=file.size,
+            media_type=file.media_type,
+            content=file.content,
+            encoding=file.encoding,
+            editable=editable and file.editable,
+        )
+        for file in agent_fs.list_skill_bundle_files(path.parent)
+    ]
+
+
+def _apply_bundle_updates(path: Path, body: SkillWriteRequest) -> None:
+    agent_fs.apply_skill_bundle_files(
+        path.parent,
+        [(file.path, file.content, file.encoding) for file in body.files],
+        body.deleted_files,
+    )
 
 
 # ── Routes ──────────────────────────────────────────────────────────────────
@@ -233,6 +266,7 @@ async def get_skill(name: str) -> SkillDetail:
         built_in=source == "builtin",
         editable=_is_editable_skill(path),
         source=source,
+        files=_bundle_files(path, editable=_is_editable_skill(path)),
     )
 
 
@@ -242,11 +276,23 @@ async def create_skill(body: SkillWriteRequest) -> SkillDetail:
     if err is not None:
         raise HTTPException(status_code=422, detail=err)
 
+    record = None
     try:
+        with tempfile.TemporaryDirectory(prefix="evoflux-skill-validate-") as tmp:
+            agent_fs.apply_skill_bundle_files(
+                Path(tmp),
+                [(file.path, file.content, file.encoding) for file in body.files],
+                body.deleted_files,
+            )
         record = agent_fs.write_skill(body.name, body.content, create=True)
+        _apply_bundle_updates(Path(record.path), body)
     except AgentFsConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except AgentFsPathError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OSError as exc:
+        if record is not None:
+            _delete_skill_bundle(body.name, Path(record.path))
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     team_manager.invalidate_skill_cache()
@@ -255,6 +301,7 @@ async def create_skill(body: SkillWriteRequest) -> SkillDetail:
         path=record.path,
         content=record.content,
         description=desc,
+        files=_bundle_files(Path(record.path), editable=True),
     )
 
 
@@ -282,6 +329,9 @@ async def update_skill(name: str, body: SkillWriteRequest) -> SkillDetail:
 
     try:
         _atomic_write(existing_path, body.content)
+        _apply_bundle_updates(existing_path, body)
+    except (AgentFsPathError, AgentFsConflictError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except OSError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -295,6 +345,7 @@ async def update_skill(name: str, body: SkillWriteRequest) -> SkillDetail:
         editable=True,
         source=source,
         built_in=source == "builtin",
+        files=_bundle_files(existing_path, editable=True),
     )
 
 
@@ -311,7 +362,7 @@ async def delete_skill(name: str) -> SkillDeleteResponse:
             detail=f"Skill '{name}' is read-only because it comes from {_skill_source(path)}.",
         )
     try:
-        _delete_skill_file(path)
+        _delete_skill_bundle(name, path)
     except AgentFsNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except OSError as exc:
