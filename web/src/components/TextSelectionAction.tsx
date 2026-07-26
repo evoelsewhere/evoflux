@@ -1,34 +1,36 @@
 /**
- * TextSelectionAction — floating button that appears when the user selects
- * text inside a constrained container. Clicking the button fires
- * `onSendToSideChat` with the selected text and clears the selection.
+ * TextSelectionAction — floating action toolbar for transcript selections.
  *
- * Follows the same `window.getSelection()` approach used in
- * PlanReviewPanel (lines 157-174) but renders via a portal so it sits
- * above all other UI without interfering with the container's layout.
+ * Follows the same `window.getSelection()` approach used in PlanReviewPanel
+ * but renders via a portal so it sits above all other UI without affecting
+ * transcript layout.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { MessageSquarePlus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface Position {
   top: number
   left: number
+  placement: 'above' | 'below'
 }
 
 interface TextSelectionActionProps {
   /** Ref to the scrollable container whose text should be monitored. */
   containerRef: React.RefObject<HTMLDivElement | null>
-  /** Called with the selected text when the user clicks the action button. */
+  /** Quote the selection into the primary composer. */
+  onAddToChat: (selectedText: string) => void
+  /** Prepare a primary-chat request to explain the selection in more detail. */
+  onMoreDetails: (selectedText: string) => void
+  /** Open a side-chat thread grounded in the selection. */
   onSendToSideChat: (selectedText: string) => void
-  /** When true the listener is active and the button can appear. */
+  /** When true the listener is active and the toolbar can appear. */
   enabled?: boolean
 }
 
 /**
- * Floating popover that tracks the current text selection inside
- * `containerRef` and renders a tiny "Send to side chat" action button.
+ * Floating toolbar that tracks the current text selection inside
+ * `containerRef` and exposes primary-chat and side-chat actions.
  *
  * The button is absolutely positioned near the end of the selection and
  * disappears as soon as the selection collapses or the user clicks
@@ -36,6 +38,8 @@ interface TextSelectionActionProps {
  */
 export function TextSelectionAction({
   containerRef,
+  onAddToChat,
+  onMoreDetails,
   onSendToSideChat,
   enabled = true,
 }: TextSelectionActionProps) {
@@ -80,7 +84,13 @@ export function TextSelectionAction({
     }
 
     const rect = sel.getRangeAt(0).getBoundingClientRect()
-    setPosition({ top: rect.bottom + 6, left: rect.left })
+    const toolbarWidth = Math.min(430, window.innerWidth - 16)
+    const placement = rect.top >= 56 ? 'above' : 'below'
+    setPosition({
+      top: placement === 'above' ? rect.top - 8 : rect.bottom + 8,
+      left: Math.max(8, Math.min(rect.left, window.innerWidth - toolbarWidth - 8)),
+      placement,
+    })
     setSelectedText(text)
     activeRef.current = true
   }, [containerRef, dismiss, enabled])
@@ -112,8 +122,8 @@ export function TextSelectionAction({
 
   if (!position || !selectedText) return null
 
-  const handleSend = () => {
-    onSendToSideChat(selectedText)
+  const runAction = (action: (text: string) => void) => {
+    action(selectedText)
     // Give the parent a tick to react before we clear the browser selection.
     requestAnimationFrame(() => {
       window.getSelection()?.removeAllRanges()
@@ -123,26 +133,37 @@ export function TextSelectionAction({
 
   return createPortal(
     <div
-      style={{ position: 'fixed', top: position.top, left: position.left }}
-      className="pointer-events-auto z-(--z-toast) animate-in fade-in-0 zoom-in-95"
+      role="toolbar"
+      aria-label="Text selection actions"
+      style={{
+        position: 'fixed',
+        top: position.top,
+        left: position.left,
+        transform: position.placement === 'above' ? 'translateY(-100%)' : undefined,
+      }}
+      className="pointer-events-auto z-(--z-toast) flex max-w-[calc(100vw-1rem)] divide-x divide-(--color-border) overflow-x-auto rounded-lg border border-(--color-border) bg-(--bg-page)/95 shadow-xl backdrop-blur-xl animate-in fade-in-0 zoom-in-95"
     >
-      <button
-        type="button"
-        onMouseDown={(e) => {
-          // Prevent the mousedown from collapsing the selection.
-          e.preventDefault()
-          e.stopPropagation()
-        }}
-        onClick={handleSend}
-        className={cn(
-          'flex items-center gap-1.5 rounded-md border border-(--color-border) bg-(--bg-page) px-2 py-1 text-xs font-medium shadow-md',
-          'text-(--color-text-2) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)',
-        )}
-        title="Send to side chat"
-      >
-        <MessageSquarePlus size={14} aria-hidden="true" />
-        <span className="hidden sm:inline">Send to side chat</span>
-      </button>
+      {([
+        ['Add to chat', onAddToChat],
+        ['More details', onMoreDetails],
+        ['Ask in side chat', onSendToSideChat],
+      ] as const).map(([label, action]) => (
+        <button
+          key={label}
+          type="button"
+          onMouseDown={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+          }}
+          onClick={() => runAction(action)}
+          className={cn(
+            'min-h-10 shrink-0 whitespace-nowrap px-3 text-sm font-medium text-(--color-text-2) outline-none transition-colors',
+            'hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:bg-(--bg-key) focus-visible:text-(--color-text)',
+          )}
+        >
+          {label}
+        </button>
+      ))}
     </div>,
     document.body,
   )
