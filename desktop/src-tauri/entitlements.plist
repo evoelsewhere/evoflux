@@ -2,31 +2,21 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- Required for spawning the Python sidecar process. -->
-    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
-    <true/>
-    <key>com.apple.security.cs.allow-jit</key>
-    <true/>
-    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
-    <true/>
-    <key>com.apple.security.cs.disable-library-validation</key>
-    <true/>
-
-    <!-- Required for the sidecar to bind 127.0.0.1 sockets and for the
-         WebView to talk to it. The app does NOT need outgoing network
-         access; the user's chosen LLM provider is reached *by the
-         sidecar*, not by the WebView. -->
-    <key>com.apple.security.network.client</key>
-    <true/>
-    <key>com.apple.security.network.server</key>
-    <true/>
-
-    <!-- Required for user-chosen workspace directories. -->
-    <key>com.apple.security.files.user-selected.read-write</key>
-    <true/>
-
-    <!-- Microphone input for client-side speech recognition. -->
-    <key>com.apple.security.device.audio-input</key>
-    <true/>
+        <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+        <true/>
+        <key>com.apple.security.cs.allow-jit</key>
+        <true/>
+        <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+        <true/>
+        <key>com.apple.security.cs.disable-library-validation</key>
+        <true/>
+        <key>com.apple.security.device.audio-input</key>
+        <true/>
+        <key>com.apple.security.files.user-selected.read-write</key>
+        <true/>
+        <key>com.apple.security.network.client</key>
+        <true/>
+        <key>com.apple.security.network.server</key>
+        <true/>
 </dict>
 </plist>
