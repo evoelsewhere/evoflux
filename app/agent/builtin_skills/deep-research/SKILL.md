@@ -9,11 +9,7 @@ description: |
   V6 adds: source-type governance, AS_OF freshness checks, mandatory counter-review, and citation registry. V6.1 adds: source accessibility (circular verification forbidden, exclusive advantage encouraged).
 ---
 
-
-
-## When to Use
-
-- See skill description for trigger conditions# Deep Research
+# Deep Research
 
 Create high-fidelity research reports with strict format control, evidence mapping, source governance, and multi-pass synthesis.
 
@@ -230,7 +226,8 @@ Follow [references/enterprise_research_methodology.md](references/enterprise_res
 - Restrained judgment: mark speculation explicitly, avoid unsubstantiated claims
 - Structured presentation: complex information via tables, lists, hierarchies
 
-Run L1 quality check after completing each dimension (see enterprise_quality_checklist.md).
+Run the L1 quality check after each dimension using
+[references/enterprise_quality_checklist.md](references/enterprise_quality_checklist.md).
 
 Status per task: `[P2 task-{id} complete] {N} sources, {M} findings.`
 Status all: `[P2 complete] {N} tasks done, {M} total sources. Building registry.`

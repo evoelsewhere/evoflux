@@ -347,18 +347,23 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const totalCompletion = useTeamStore((s) => Object.values(s.agentStreams).reduce((n, st) => n + st.usage.completionTokens, 0))
   const totalCached     = useTeamStore((s) => Object.values(s.agentStreams).reduce((n, st) => n + st.usage.cachedTokens, 0))
   const totalAll        = useTeamStore((s) => Object.values(s.agentStreams).reduce((n, st) => n + st.usage.totalTokens, 0))
+  // Route transitions render before the stream store finishes loading the
+  // next session. Do not leak the previous mode/session's usage into that gap.
+  const usageMatchesRoute = Boolean(sessionId && sessionIdState === sessionId)
+  const visiblePrompt = usageMatchesRoute ? totalPrompt : 0
+  const visibleCompletion = usageMatchesRoute ? totalCompletion : 0
+  const visibleCached = usageMatchesRoute ? totalCached : 0
   // Live context-window occupancy = latest-turn input (+ cached), which is what
   // the summarization threshold actually compares against. Cumulative
   // totalTokens grows with completion tokens across turns and would falsely
   // push the budget bar toward 100% on long sessions.
-  const contextUsed = totalPrompt + totalCached
-  const headerTokens = totalAll > 0
+  const contextUsed = visiblePrompt + visibleCached
+  const headerTokens = (usageMatchesRoute && totalAll > 0) || contextWindowSize !== undefined
     ? {
-        input: totalPrompt,
-        output: totalCompletion,
-        cached: totalCached,
+        input: visiblePrompt,
+        output: visibleCompletion,
+        cached: visibleCached,
         trigger: summaryTriggerTokens,
-        pulsing: isTeamWorking,
       }
     : undefined
 
@@ -1134,7 +1139,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
           headerTokens={headerTokens}
           contextUsed={contextUsed}
           contextWindowSize={contextWindowSize}
-          summaryTriggerTokens={summaryTriggerTokens}
           dreamRunning={dreamMutation.isPending}
           terminalOpen={terminalOpen}
           onToggleTerminal={toggleTerminal}

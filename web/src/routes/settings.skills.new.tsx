@@ -8,10 +8,15 @@ import { EditorHeaderActions } from '@/components/settings/EditorHeaderActions'
 import {
   SettingsGroup,
   SettingsPage,
-  SettingsRow,
 } from '@/components/settings/SettingsLayout'
+import {
+  SkillBundleEditor,
+} from '@/components/settings/SkillBundleEditor'
+import {
+  getSkillBundleChanges,
+  type SkillBundleDraftFile,
+} from '@/components/settings/skillBundle'
 import { validateSkillDraft } from '@/components/settings/schema'
-import { Textarea } from '@/components/ui/textarea'
 import { useSettingsNavigate } from '@/contexts/SettingsContext'
 
 const TEMPLATE = `---
@@ -27,6 +32,7 @@ this skill. Keep it focused on a single concern.
 
 export function NewSkillPage() {
   const [content, setContent] = useState(TEMPLATE)
+  const [files, setFiles] = useState<SkillBundleDraftFile[]>([])
   const [name, setName] = useState('new-skill')
   const createMut = useCreateSkillMutation()
   const push = useToastStore((s) => s.push)
@@ -50,7 +56,8 @@ export function NewSkillPage() {
       return
     }
     try {
-      await createMut.mutateAsync({ name, content })
+      const bundle = getSkillBundleChanges(files, [])
+      await createMut.mutateAsync({ name, content, files: bundle.files })
       push({
         tone: 'success',
         title: `Created skill "${name}"`,
@@ -70,7 +77,7 @@ export function NewSkillPage() {
       title="New skill"
       actions={
         <EditorHeaderActions
-          dirty={content !== TEMPLATE}
+          dirty={content !== TEMPLATE || files.length > 0}
           invalid={invalid}
           saving={createMut.isPending}
           error={saveError}
@@ -80,30 +87,21 @@ export function NewSkillPage() {
       }
     >
       <SettingsGroup
-        title="Skill source"
+        title="Skill bundle"
         description={
           <>
-            Frontmatter (<span className="font-mono">name</span>,{' '}
-            <span className="font-mono">description</span>) is required; use{' '}
-            <span className="font-mono">parent/sub</span> for a one-level sub-skill. The body is the
-            instruction the agent loads on demand.
+            Keep the core workflow in <span className="font-mono">SKILL.md</span>. Add supporting
+            docs, scripts, and assets as bundle files so agents can load only what they need.
           </>
         }
       >
-        <SettingsRow
-          stacked
-          control={
-            <Textarea
-              aria-label="Skill source"
-              value={content}
-              onChange={(e) => handleContentChange(e.target.value)}
-              disabled={createMut.isPending}
-              rows={28}
-              spellCheck={false}
-              aria-invalid={invalid || undefined}
-              className="min-h-96 font-mono text-[13px] leading-relaxed"
-            />
-          }
+        <SkillBundleEditor
+          skillContent={content}
+          onSkillContentChange={handleContentChange}
+          files={files}
+          onFilesChange={setFiles}
+          disabled={createMut.isPending}
+          invalid={invalid}
         />
       </SettingsGroup>
     </SettingsPage>

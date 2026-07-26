@@ -1,5 +1,5 @@
 /**
- * Telemetry panel for the settings modal — compact summary + recent traces
+ * Telemetry settings page — compact summary + recent traces
  * without the full-page Telemetry chrome/sidebar.
  */
 import { useMemo, useState } from 'react'

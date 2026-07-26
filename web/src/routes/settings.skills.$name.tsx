@@ -8,9 +8,16 @@ import { EditorHeaderActions } from '@/components/settings/EditorHeaderActions'
 import {
   SettingsGroup,
   SettingsPage,
-  SettingsRow,
 } from '@/components/settings/SettingsLayout'
 import { SettingsAsyncBoundary } from '@/components/settings/SettingsLoading'
+import {
+  SkillBundleEditor,
+} from '@/components/settings/SkillBundleEditor'
+import {
+  getSkillBundleChanges,
+  skillBundleFilesFromApi,
+  type SkillBundleDraftFile,
+} from '@/components/settings/skillBundle'
 import { contentEquals } from '@/components/settings/frontmatter'
 import { validateSkillDraft } from '@/components/settings/schema'
 import { Button } from '@/components/ui/button'
@@ -22,7 +29,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Textarea } from '@/components/ui/textarea'
 import { useSettingsParams, useSettingsNavigate } from '@/contexts/SettingsContext'
 
 /**
@@ -38,16 +44,25 @@ export function SkillEditorPage() {
   const updateMut = useUpdateSkillMutation()
   const deleteMut = useDeleteSkillMutation()
   const [draft, setDraft] = useState<string>(() => data?.content ?? '')
+  const [files, setFiles] = useState<SkillBundleDraftFile[]>(() =>
+    skillBundleFilesFromApi(data?.files ?? []),
+  )
+  const [deletedFiles, setDeletedFiles] = useState<string[]>([])
   const [saveError, setSaveError] = useState<string | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [seeded, setSeeded] = useState(!!data?.content)
   if (!seeded && data?.content) {
     setSeeded(true)
     setDraft(data.content)
+    setFiles(skillBundleFilesFromApi(data.files))
   }
 
   const readOnly = data ? !data.editable : false
-  const dirty = !!data && !contentEquals(draft, data.content)
+  const resourcesDirty =
+    !!data &&
+    JSON.stringify(files) !== JSON.stringify(skillBundleFilesFromApi(data.files)) ||
+    deletedFiles.length > 0
+  const dirty = !!data && (!contentEquals(draft, data.content) || resourcesDirty)
   const draftErrors = dirty ? validateSkillDraft(draft) : null
   const invalid = draftErrors !== null
   const firstDraftError = draftErrors ? Object.values(draftErrors)[0] : null
@@ -63,13 +78,21 @@ export function SkillEditorPage() {
       return
     }
     try {
-      const res = await updateMut.mutateAsync({ name, content: draft })
+      const bundle = getSkillBundleChanges(files, deletedFiles)
+      const res = await updateMut.mutateAsync({
+        name,
+        content: draft,
+        files: bundle.files,
+        deletedFiles: bundle.deletedFiles,
+      })
       push({
         tone: 'success',
         title: `Saved "${name}"`,
         description: 'Active on next turn.',
       })
       setDraft(res.content)
+      setFiles(skillBundleFilesFromApi(res.files))
+      setDeletedFiles([])
       refetch()
     } catch (err) {
       const msg = err instanceof ApiValidationError ? err.message : String(err)
@@ -87,6 +110,24 @@ export function SkillEditorPage() {
       const msg = err instanceof ApiValidationError ? err.message : String(err)
       push({ tone: 'error', title: 'Delete failed', description: msg })
     }
+  }
+
+  const handleFilesChange = (nextFiles: SkillBundleDraftFile[]) => {
+    const nextPaths = new Set(nextFiles.map((file) => file.path))
+    const removed = files
+      .filter((file) => !nextPaths.has(file.path) && file.originalPath)
+      .map((file) => file.originalPath as string)
+    if (removed.length > 0) {
+      setDeletedFiles((current) => [...new Set([...current, ...removed])])
+    }
+    setFiles(nextFiles)
+  }
+
+  const discardChanges = () => {
+    if (!data) return
+    setDraft(data.content)
+    setFiles(skillBundleFilesFromApi(data.files))
+    setDeletedFiles([])
   }
 
   return (
@@ -120,31 +161,23 @@ export function SkillEditorPage() {
         >
           {data && (
           <SettingsGroup
-            title="Skill source"
+            title="Skill bundle"
             description={
               <>
-                Frontmatter (<span className="font-mono">name</span>,{' '}
-                <span className="font-mono">description</span>) is required; use{' '}
-                <span className="font-mono">parent/sub</span> for a one-level sub-skill. The body is
-                the instruction the agent loads on demand.
+                <span className="font-mono">SKILL.md</span> holds the core workflow. Related
+                references, scripts, assets, and UI metadata live beside it and remain part of the
+                same portable skill.
               </>
             }
           >
-            <SettingsRow
-              stacked
-              control={
-                <Textarea
-                  aria-label="Skill source"
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  disabled={updateMut.isPending}
-                  readOnly={readOnly}
-                  rows={28}
-                  spellCheck={false}
-                  aria-invalid={invalid || undefined}
-                  className="min-h-96 font-mono text-[13px] leading-relaxed"
-                />
-              }
+            <SkillBundleEditor
+              skillContent={draft}
+              onSkillContentChange={setDraft}
+              files={files}
+              onFilesChange={handleFilesChange}
+              disabled={updateMut.isPending}
+              readOnly={readOnly}
+              invalid={invalid}
             />
           </SettingsGroup>
           )}
@@ -157,7 +190,7 @@ export function SkillEditorPage() {
                   variant="ghost"
                   size="xs"
                   className="min-h-11 md:min-h-0"
-                  onClick={() => data && setDraft(data.content)}
+                  onClick={discardChanges}
                 >
                   Discard changes
                 </Button>

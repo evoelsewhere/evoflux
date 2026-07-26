@@ -5,11 +5,7 @@ description: >-
   Use when the user provides a URL and asks to add / install a plugin.
 ---
 
-
-
-## When to Use
-
-- See skill description for trigger conditions# Plugin Installer
+# Plugin Installer
 
 A plugin is a single `.py` file in `{EVOFLUX_CONFIG_DIR}/plugins/` that
 hooks into the agent loop. Two contracts are valid:
@@ -97,9 +93,9 @@ Plugin installs are global in `{EVOFLUX_CONFIG_DIR}/plugins/`.
 
 ## Verification
 
-- 2. **Validate** the body contains `async def plugin(` or `class Plugin(`.
-- 4. **Collision** → read existing, show diff, confirm before overwrite.
-- - **Never silently overwrite.** Always diff and confirm.
+- Validate the body contains `async def plugin(` or `class Plugin(`.
+- On collision, read the existing file, show the diff, and confirm before overwrite.
+- Read the installed file back and report its exact path.
 
 ## Failure modes
 

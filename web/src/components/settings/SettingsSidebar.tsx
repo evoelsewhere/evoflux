@@ -1,17 +1,14 @@
 /**
- * SettingsSidebar — labeled category rail for the settings modal.
+ * SettingsSidebar — the persistent navigation rail for the settings screen.
  *
  * Items are grouped by what the user is actually configuring (models, the
  * agent team, machine-level behavior, then the app itself) so the list reads
  * as four short scans instead of one long one.
- *
- * Supports two modes:
- *   - Route-driven (default): reads the router location
- *   - Store-driven: uses useUIStore.navigateSettings for modal popup mode
  */
 import { useLocation } from '@tanstack/react-router'
 import { motion } from 'framer-motion'
 import {
+  ArrowLeft,
   BarChart3,
   Bell,
   Info,
@@ -19,17 +16,21 @@ import {
   Moon,
   Palette,
   Plug,
+  Search,
   Server,
   Shield,
   Sparkles,
   Stethoscope,
   Wrench,
+  X,
   type LucideIcon,
 } from 'lucide-react'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 
 import { cn } from '@/lib/utils'
 import { useMotionPreset } from '@/lib/motion'
+import { usePlatform } from '@/hooks/use-platform'
+import { useTauriDrag } from '@/hooks/use-tauri-drag'
 import {
   useAgentFilesQuery,
   useMcpServersQuery,
@@ -129,15 +130,20 @@ function SidebarRow({
 }
 
 interface SettingsSidebarProps {
-  /** Override the active path (for store-driven modal mode). */
+  /** Override the active path for the store-driven settings screen. */
   currentPath?: string
   /** When provided, row clicks call this instead of navigating via the store. */
   onNavigate?: (path: string) => void
+  /** Return to the app surface that opened Settings. */
+  onBack?: () => void
 }
 
-export function SettingsSidebar({ currentPath, onNavigate }: SettingsSidebarProps = {}) {
+export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSidebarProps = {}) {
   const { pathname: routePathname } = useLocation()
   const pathname = currentPath ?? routePathname
+  const [query, setQuery] = useState('')
+  const { isMacOverlay } = usePlatform()
+  const dragHandlers = useTauriDrag()
   const agentsQ = useAgentFilesQuery()
   const skillsQ = useSkillFilesQuery()
   const mcpQ = useMcpServersQuery()
@@ -258,26 +264,100 @@ export function SettingsSidebar({ currentPath, onNavigate }: SettingsSidebarProp
     return pathname === matchPrefix || pathname.startsWith(`${matchPrefix}/`)
   }
 
+  const normalizedQuery = query.trim().toLocaleLowerCase()
+  const visibleSections = normalizedQuery
+    ? sections
+        .map((section) => ({
+          ...section,
+          items: section.items.filter((item) =>
+            `${section.label} ${item.label}`.toLocaleLowerCase().includes(normalizedQuery),
+          ),
+        }))
+        .filter((section) => section.items.length > 0)
+    : sections
+
+  const handleNavigate = (path: string) => {
+    setQuery('')
+    onNavigate?.(path)
+  }
+
   return (
-    <nav
-      aria-label="Settings categories"
-      className="flex h-full w-[min(18rem,calc(100vw-2rem))] shrink-0 flex-col gap-3 overflow-y-auto rounded-lg border border-(--color-border-subtle) bg-(--bg-sidebar)/88 py-2.5 shadow-[0_18px_50px_rgba(0,0,0,0.055)] backdrop-blur-xl md:w-60"
+    <aside
+      className="flex h-full w-[17rem] shrink-0 flex-col border-r border-(--color-border) bg-(--bg-sidebar)"
     >
-      {sections.map((section) => (
-        <div key={section.label} className="flex flex-col">
-          <p className="px-5 pb-1.5 text-[11px] font-medium tracking-wide text-(--color-text-subtle) uppercase">
-            {section.label}
-          </p>
-          {section.items.map((item) => (
-            <SidebarRow
-              key={item.to}
-              item={item}
-              active={isActive(item.matchPrefix)}
-              onNavigate={onNavigate}
-            />
-          ))}
+      <div
+        {...dragHandlers}
+        className={cn('shrink-0 px-3 pb-3 pt-3', isMacOverlay && 'pt-11')}
+      >
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="mb-3 flex h-9 items-center gap-2 rounded-md px-2 text-sm text-(--color-text-muted) transition-[background-color,color,transform] hover:bg-(--bg-key) hover:text-(--color-text) active:scale-[0.985] focus-visible:ring-3 focus-visible:ring-(--focus-ring)/40 focus-visible:outline-none"
+          >
+            <ArrowLeft size={15} aria-hidden="true" />
+            <span>Back to app</span>
+          </button>
+        )}
+        <div role="search" className="relative">
+          <Search
+            size={14}
+            aria-hidden="true"
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-(--color-text-subtle)"
+          />
+          <input
+            type="search"
+            aria-label="Search settings"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search settings..."
+            className="h-9 w-full rounded-lg border border-(--color-border) bg-(--bg-input) pl-9 pr-8 text-sm text-(--color-text) outline-none transition-[border-color,box-shadow] placeholder:text-(--color-text-subtle) focus:border-(--color-accent)/55 focus:ring-3 focus:ring-(--focus-ring)/25"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery('')}
+              aria-label="Clear settings search"
+              className="absolute right-1.5 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-text)"
+            >
+              <X size={12} aria-hidden="true" />
+            </button>
+          )}
         </div>
-      ))}
-    </nav>
+      </div>
+
+      <nav
+        aria-label="Settings categories"
+        className="min-h-0 flex-1 space-y-4 overflow-y-auto px-1 pb-5 pt-1"
+      >
+        {visibleSections.map((section) => (
+          <div key={section.label} className="flex flex-col">
+            <p className="px-4 pb-1.5 text-[11px] font-medium tracking-wide text-(--color-text-subtle) uppercase">
+              {section.label}
+            </p>
+            {section.items.map((item) => (
+              <SidebarRow
+                key={item.to}
+                item={item}
+                active={isActive(item.matchPrefix)}
+                onNavigate={onNavigate ? handleNavigate : undefined}
+              />
+            ))}
+          </div>
+        ))}
+        {visibleSections.length === 0 && (
+          <div className="px-4 py-8 text-center">
+            <p className="text-sm text-(--color-text-muted)">No settings found</p>
+            <button
+              type="button"
+              onClick={() => setQuery('')}
+              className="mt-2 text-xs font-medium text-(--color-accent) hover:underline"
+            >
+              Clear search
+            </button>
+          </div>
+        )}
+      </nav>
+    </aside>
   )
 }

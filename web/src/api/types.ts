@@ -1110,6 +1110,21 @@ export interface SkillSummary {
   source: string
 }
 
+export interface SkillBundleFile {
+  path: string
+  size: number
+  media_type: string
+  content: string | null
+  encoding: 'utf-8' | 'base64' | null
+  editable: boolean
+}
+
+export interface SkillBundleFileWrite {
+  path: string
+  content: string
+  encoding: 'utf-8' | 'base64'
+}
+
 export interface SkillDetail {
   name: string
   path: string
@@ -1119,6 +1134,7 @@ export interface SkillDetail {
   built_in: boolean
   editable: boolean
   source: string
+  files: SkillBundleFile[]
 }
 
 export interface SkillDeleteResponse {

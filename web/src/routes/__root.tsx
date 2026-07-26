@@ -7,7 +7,7 @@ import { queryClient } from '@/lib/query-client'
 import { Home } from 'lucide-react'
 import { ToastStack } from '@/components/ToastStack'
 import { MacTitleBar } from '@/components/MacTitleBar'
-import { SettingsModal } from '@/components/SettingsModal'
+import { SettingsScreen } from '@/components/SettingsScreen'
 import { WikiPanel } from '@/components/WikiPanel'
 import { SchedulerPanel } from '@/components/SchedulerPanel'
 import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
@@ -25,9 +25,7 @@ import { STORAGE_KEYS } from '@/lib/storage-keys'
  * The scheduler's create-form context used to come from TeamChatView
  * props; the /coding routes prime ``useTeamStore._workspace`` from the URL
  * (see routes/forge.tsx), so the same values are derivable here from the
- * router + team store. Mounted before ToastStack/SettingsModal so the
- * z-modal tie against SettingsModal keeps resolving the way it did when these
- * panels lived inside TeamChatView (settings on top).
+ * router + team store.
  */
 function RootOverlayPanels() {
   const wikiOpen = useUIStore((s) => s.wikiOpen)
@@ -59,6 +57,7 @@ export function Root() {
   // it would override the user's preference.
   const navigate = useNavigate()
   const location = useLocation()
+  const settingsOpen = useUIStore((state) => state.settingsOpen)
 
   useEffect(() => {
     if (window.location.pathname === '/' && window.location.search === '') {
@@ -77,12 +76,19 @@ export function Root() {
   return (
     <QueryClientProvider client={queryClient}>
       <MacTitleBar />
-      <Suspense fallback={<RouteLoadingFallback />}>
-        <Outlet />
-      </Suspense>
-      <RootOverlayPanels />
+      {settingsOpen ? (
+        <Suspense fallback={<RouteLoadingFallback />}>
+          <SettingsScreen />
+        </Suspense>
+      ) : (
+        <>
+          <Suspense fallback={<RouteLoadingFallback />}>
+            <Outlet />
+          </Suspense>
+          <RootOverlayPanels />
+        </>
+      )}
       <ToastStack />
-      <SettingsModal />
       {/* <ReactQueryDevtools initialIsOpen={false} /> */}
     </QueryClientProvider>
   )

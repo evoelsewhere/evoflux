@@ -7,11 +7,7 @@ description: >-
   X", "make yourself faster/smarter".
 ---
 
-
-
-## When to Use
-
-- See skill description for trigger conditions# Self-Healing Skill
+# Self-Healing Skill
 
 This skill lets the agent modify its own on-disk configuration in
 response to a user request. All changes are surgical edits to files
@@ -293,9 +289,9 @@ and floor (0.0) are obvious. Apply and confirm "Active on my next turn."
 
 ## Verification
 
-- For those, follow the read → diff → confirm → edit recipe.
-- 5. **Wait for confirmation** — do NOT write until the user says "go" /
-- ### Provider sanity check before swapping `model`
+- Read the resulting file and confirm the requested values exactly.
+- Validate the provider and model before changing `model`.
+- Report which agent changes on its next turn and which runtime changes need a restart.
 
 ## Failure modes — bail out instead of guessing
 

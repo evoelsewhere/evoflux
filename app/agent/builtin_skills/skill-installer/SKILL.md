@@ -1,91 +1,81 @@
 ---
 name: skill-installer
-description: >-
-  Install new skills into the agent's skills directory by fetching from a URL
-  or writing from scratch.
+description: Install or create portable skill bundles in the agent's skills directory. Use when the user asks to add, import, author, or update a skill, including skills with references, scripts, assets, or UI metadata.
 ---
 
+# Skill Installer
 
-
-## When to Use
-
-- See skill description for trigger conditions# Skill Installer
-
-Use this skill when the user wants to add a **new skill body**. Do not use it
-for changing models, tools, MCP servers, plugins, or other agent configuration.
+Treat a skill as a directory bundle, not a single Markdown file.
 
 ## Discovery order
 
-EvoFlux discovers skills from these roots, in order. The first skill with a
-given `name` wins:
+The first matching skill name wins:
 
-1. `{cwd}/.evoflux/skills/{skill-name}/SKILL.md`
-2. `{cwd}/.opencode/skills/{skill-name}/SKILL.md`
-3. `{SKILLS_DIR}/{skill-name}/SKILL.md`
-4. `~/.config/opencode/skills/{skill-name}/SKILL.md`
-5. Bundled EvoFlux operational skills — read-only fallback.
+1. `{cwd}/.evoflux/skills/{skill-name}/`
+2. `{cwd}/.opencode/skills/{skill-name}/`
+3. `{SKILLS_DIR}/{skill-name}/`
+4. `~/.config/opencode/skills/{skill-name}/`
+5. Bundled EvoFlux skills (read-only fallback)
 
-Default to `{SKILLS_DIR}` unless the user explicitly asks for a project-local or
-opencode-shared skill. If the target name exists only as a bundled skill, install
-a writable override; never edit bundled files.
+Default to `{SKILLS_DIR}` unless the user requests project-local or opencode
+sharing. A writable skill may intentionally override a bundled skill.
 
-## Skill file format
+## Bundle contract
 
-A skill is a directory containing at minimum a `SKILL.md` file with YAML
-frontmatter and a Markdown body:
-
-```markdown
----
-name: skill-name
-description: One-sentence description shown in the skill registry.
----
-
-# Skill Title
-
-Full instructions the agent reads when it calls skill("skill-name").
+```text
+skill-name/
+├── SKILL.md              # required
+├── agents/openai.yaml    # optional UI metadata
+├── references/           # optional docs loaded on demand
+├── scripts/              # optional deterministic helpers
+└── assets/               # optional output templates/media
 ```
 
-Rules:
+`SKILL.md` frontmatter contains only:
 
-- Directory name should match the `name` field for flat skills.
-- Prefer lowercase kebab-case names unless the user intentionally wants a
-  one-level namespace such as `oad/debug`.
-- Keep `description:` short and trigger-oriented.
-- Never overwrite an existing skill without reading it first and confirming with
-  the user.
+```yaml
+---
+name: skill-name
+description: What the skill does and the requests that should trigger it.
+---
+```
 
+Keep the core workflow in `SKILL.md`. Put detailed schemas, examples, policies,
+and variant-specific guidance in `references/`; repeated deterministic work in
+`scripts/`; and output resources in `assets/`. Link every relevant resource
+directly from `SKILL.md` and state when to read or run it.
 
+## Install from a URL
+
+1. Determine whether the URL identifies one file or a bundle archive/repository.
+2. Fetch to a temporary location. Reject HTML returned in place of raw content.
+3. Inspect every extracted path before writing; reject absolute paths, `..`, and
+   symlinks that escape the bundle.
+4. Validate `SKILL.md`, the directory/name match, and all referenced resources.
+5. On collision, read the existing bundle and show the material differences
+   before overwriting.
+6. Copy the complete bundle to the selected writable root.
+
+## Create or update
+
+1. Derive concrete trigger examples from the request.
+2. Plan which content belongs in `SKILL.md`, `references/`, `scripts/`, and
+   `assets/`.
+3. Read the existing bundle before modifying it.
+4. Write the minimum complete bundle. Do not add README, changelog, or setup
+   documents that the agent does not need at runtime.
+5. Test added scripts and remove placeholders.
 
 ## Verification
 
-- - Never overwrite an existing skill without reading it first and confirming with
-- 5. Read it back to verify the file landed correctly.
-- 6. Confirm the exact path and skill name.
+- Parse `SKILL.md`; require non-empty `name`, `description`, and body.
+- Confirm the skill name matches its directory.
+- Confirm every resource referenced by `SKILL.md` exists.
+- Read back the complete file list and report the bundle root.
+- Confirm the skill appears in discovery; refresh the Skills page only if its
+  cached catalog is stale.
 
-## How to install
+## Boundaries
 
-### From a URL
-
-1. Fetch the raw content with `web_fetch`.
-2. If the response is HTML, ask for the raw URL and stop.
-3. Parse the frontmatter `name` field; that is the skill name.
-4. Write the content to the selected writable skill root.
-5. Read it back to verify the file landed correctly.
-6. Confirm the exact path and skill name.
-
-### From scratch
-
-1. Ask what the skill should do only if the request does not already specify it.
-2. Write a `SKILL.md` following the format above to the selected writable skill
-   root.
-3. Add supporting files in the same directory only if they are useful.
-4. Read it back to verify the file landed correctly.
-5. Confirm the exact path and skill name.
-
-A new skill can be loaded by exact name immediately. If a UI catalog looks stale,
-refresh the Skills page or restart as a fallback.
-
-## When NOT to Use
-
-- When the task doesn't match this skill's domain
-- For simple tasks that don't require structured workflows
+Do not use this skill to change agent models/tools, install MCP servers, or
+install plugins. Use the corresponding configuration skill instead.
