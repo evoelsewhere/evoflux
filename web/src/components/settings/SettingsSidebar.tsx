@@ -261,7 +261,7 @@ export function SettingsSidebar({ currentPath, onNavigate }: SettingsSidebarProp
   return (
     <nav
       aria-label="Settings categories"
-      className="flex h-full w-[min(18rem,calc(100vw-2rem))] shrink-0 flex-col gap-4 overflow-y-auto rounded-xl border border-(--color-border-subtle) bg-(--bg-sidebar)/88 py-3 shadow-[0_18px_50px_rgba(0,0,0,0.055)] backdrop-blur-xl md:w-60"
+      className="flex h-full w-[min(18rem,calc(100vw-2rem))] shrink-0 flex-col gap-3 overflow-y-auto rounded-lg border border-(--color-border-subtle) bg-(--bg-sidebar)/88 py-2.5 shadow-[0_18px_50px_rgba(0,0,0,0.055)] backdrop-blur-xl md:w-60"
     >
       {sections.map((section) => (
         <div key={section.label} className="flex flex-col">

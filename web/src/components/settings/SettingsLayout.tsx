@@ -44,7 +44,7 @@ export function SettingsPageHeader({
   const settingsNavigate = useSettingsNavigate()
 
   return (
-    <header className="relative flex items-start gap-3 border-b border-(--color-border-subtle) pb-5 sm:gap-4 sm:pb-6">
+    <header className="relative flex items-start gap-3 border-b border-(--color-border-subtle) pb-4 sm:gap-4 sm:pb-5">
       {isMobile && (
         <button
           type="button"
@@ -112,8 +112,8 @@ export function SettingsPage({
           animate={{ opacity: 1, y: 0 }}
           transition={preset.transition}
           className={cn(
-            'mx-auto w-full space-y-7 px-4 py-5 sm:px-7 sm:py-7',
-            actions && 'pb-24 sm:pb-7',
+            'mx-auto w-full space-y-6 px-4 py-4 sm:px-5 sm:py-5',
+            actions && 'pb-24 sm:pb-5',
             CONTENT_WIDTHS[size],
           )}
         >
