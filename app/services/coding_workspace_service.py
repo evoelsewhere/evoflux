@@ -49,6 +49,13 @@ async def upsert_coding_workspace(
 
 
 async def hide_coding_workspace(db: AsyncSession, path: str) -> int:
+    """Hide a repository and every worktree registered beneath it.
+
+    The coding sidebar synthesizes a repository row for visible worktrees
+    whose source repository is hidden. Hiding only the source therefore made
+    a removed workspace appear again. Removing a repository from the sidebar
+    must hide its whole worktree group.
+    """
     resolved_path = str(Path(path).expanduser().resolve())
     rows = list(
         (
@@ -57,6 +64,16 @@ async def hide_coding_workspace(db: AsyncSession, path: str) -> int:
             )
         ).all()
     )
+    worktree_rows = list(
+        (
+            await db.exec(
+                select(CodingWorkspace).where(
+                    CodingWorkspace.source_path == resolved_path
+                )
+            )
+        ).all()
+    )
+    rows.extend(worktree_rows)
     if not rows:
         row = CodingWorkspace(
             path=resolved_path, name=Path(resolved_path).name, hidden=True
