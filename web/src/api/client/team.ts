@@ -514,6 +514,12 @@ export function workspaceMediaUrl(sessionId: string, path: string, options?: { d
   return withTokenParam(`${url}${separator}download=1`)
 }
 
+/** Build the URL for the backend-rendered, sandboxed Office preview. */
+export function workspaceOfficePreviewUrl(sessionId: string, path: string): string {
+  const encoded = path.split('/').map(encodeURIComponent).join('/')
+  return withTokenParam(apiUrl(`/team/${encodeURIComponent(sessionId)}/office-preview/${encoded}`))
+}
+
 /** Build the URL for serving a raw file from a *coding* workspace (not a
  *  session workspace).  Hits ``GET /api/team/workspace/files/read``.
  *

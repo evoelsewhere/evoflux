@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useImperativeHandle, forwardRef, useEffect, useMemo } from 'react'
-import { Activity, ArrowUp, File, Folder, FolderOpen, Globe, Loader2, MessageCircle, Paperclip, Square, Terminal } from 'lucide-react'
+import { Activity, ArrowUp, File, Folder, Globe, Loader2, MessageCircle, Paperclip, Square, Terminal } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { FilePreviewStrip } from './FilePreviewStrip'
 import { findActiveMention, rankFileRefs, type FileRef } from './InputBar.mentions'
@@ -150,8 +150,6 @@ interface InputBarProps {
   sessionId?: string | null
   onWiki?: () => void
   wikiActive?: boolean
-  onFiles?: () => void
-  filesDisabled?: boolean
   onActivity?: () => void
   activityActive?: boolean
   /** Enables the current chat's real-browser WebBridge capability. */
@@ -214,8 +212,6 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   todos,
   todosOpen = false,
   onTodosOpenChange,
-  onFiles,
-  filesDisabled,
   onActivity,
   activityActive,
   webBridgeEnabled = false,
@@ -1449,18 +1445,6 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                   {/* Left: content & navigation actions */}
                   {!shellMode && attachmentsEnabled && attachEl}
                   {!shellMode && webBridgeEl}
-                  {onFiles && (
-                    <button
-                      type="button"
-                      onClick={(e) => { stopClick(e); onFiles() }}
-                      disabled={filesDisabled}
-                      aria-label="Workspace files"
-                      title={filesDisabled ? 'No active session' : 'Workspace files (Ctrl+F)'}
-                      className={actionBtnClass}
-                    >
-                      <FolderOpen size={14} aria-hidden="true" />
-                    </button>
-                  )}
                   {/* Wiki moved to topbar */}
                   {onActivity && (
                     <button

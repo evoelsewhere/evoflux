@@ -60,7 +60,7 @@ import { useResizableWidth } from '@/hooks/use-resizable-width'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useTeamAgentsQuery } from '@/queries/useAgentsQuery'
 import { useFileRefsQuery } from '@/queries/useFileRefsQuery'
-import { AlertCircle, FolderCode, X } from 'lucide-react'
+import { AlertCircle, ArrowRight, FolderPlus, GitBranch, X } from 'lucide-react'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { usePlatform } from '@/hooks/use-platform'
 import { useTauriDrag } from '@/hooks/use-tauri-drag'
@@ -120,6 +120,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const [codingPanel, setCodingPanel] = useState<null | 'changed' | 'files'>(null)
   const [codingFileViewer, setCodingFileViewer] = useState<WorkspaceFileInfo | null>(null)
   const [openWorkspaceDialogKey, setOpenWorkspaceDialogKey] = useState(0)
+  const [codingWorkspacePickerPortal, setCodingWorkspacePickerPortal] = useState<HTMLDivElement | null>(null)
   const [showActivity, setShowActivity] = useState(false)
   const [permissionMode, setPermissionMode] = useState<import('@/api/types').PermissionMode>('auto')
   const [showMobileActions, setShowMobileActions] = useState(false)
@@ -832,6 +833,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
           currentSessionId={sessionIdState || undefined}
           workspace={workspace}
           openWorkspaceDialogKey={openWorkspaceDialogKey}
+          workspacePickerPortal={codingWorkspacePickerPortal}
           onCommandPalette={() => setShowPalette(true)}
           mobileOpen={false}
           onMobileClose={() => {}}
@@ -857,6 +859,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
           currentSessionId={sessionIdState || undefined}
           workspace={workspace}
           openWorkspaceDialogKey={openWorkspaceDialogKey}
+          workspacePickerPortal={codingWorkspacePickerPortal}
           onCommandPalette={() => setShowPalette(true)}
           mobileOpen={mobileSidebarOpen}
           onMobileClose={() => setMobileSidebarOpen(false)}
@@ -889,6 +892,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
         onCloseTerminal={closeTerminal}
         terminalResize={terminalResize}
       />
+      {mode === 'coding' && <div ref={setCodingWorkspacePickerPortal} className="contents" />}
       {sideChatOpen && sessionIdState && (
         <SideChatPanel
           isOpen={sideChatOpen}
@@ -907,46 +911,37 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
     </>
   )
 
-  // Full-height right column beside the main card — same slot Forge uses for
-  // session files, so Coding's workspace covers the right corner instead of
-  // sitting under the topbar with a negative-margin hack.
-  //
-  // Desktop: when one or both coding panels are open, a single `fixed` flex
-  // container holds them side-by-side so resizing the workspace drawer never
-  // shifts the file viewer — it simply changes the split within the wrapper.
-  // Mobile: panels mount individually and rely on their own mobileOverlay logic.
+  // On desktop, Coding panels sit in AppShell's outer trailing column — the
+  // same structural slot Forge uses. This constrains both the chat *and its
+  // topbar*; mobile keeps its full-screen overlay behavior.
   const fullHeightTrailing = (
     <>
-      {mode === 'coding' && workspace && !isMobile && (codingPanel !== null || codingFileViewer !== null) && (
-        <div className="fixed inset-y-0 right-0 z-(--z-overlay) flex shadow-xl">
-          {codingFileViewer !== null && (
-            <CodingFileViewerPanel
-              workspace={codingFileViewer.sourceWorkspace ?? workspace}
-              file={codingFileViewer}
-              mobile={false}
-              desktopOverlayInner
-              onAddComment={handleAddFileComment}
-              onSendToChat={handleSendToChat}
-              onClose={() => setCodingFileViewer(null)}
-            />
-          )}
-          {codingPanel !== null && (
-            <CodingWorkspacePanel
-              key={codingPanel}
-              workspace={workspace}
-              open
-              initialTab={codingPanel}
-              mobile={false}
-              desktopOverlayInner
-              selectedFilePath={codingFileViewer?.path ?? null}
-              onFileSelect={handleCodingFileSelect}
-              onClose={closeCodingPanels}
-              sessionId={sessionIdState}
-              projectId={projectIdState}
-              isWorking={isTeamWorking}
-            />
-          )}
-        </div>
+      {mode === 'coding' && workspace && !isMobile && codingFileViewer !== null && (
+        <CodingFileViewerPanel
+          workspace={codingFileViewer.sourceWorkspace ?? workspace}
+          file={codingFileViewer}
+          mobile={false}
+          desktopOverlay={false}
+          onAddComment={handleAddFileComment}
+          onSendToChat={handleSendToChat}
+          onClose={() => setCodingFileViewer(null)}
+        />
+      )}
+      {mode === 'coding' && workspace && !isMobile && codingPanel !== null && (
+        <CodingWorkspacePanel
+          key={codingPanel}
+          workspace={workspace}
+          open
+          initialTab={codingPanel}
+          mobile={false}
+          desktopOverlay={false}
+          selectedFilePath={codingFileViewer?.path ?? null}
+          onFileSelect={handleCodingFileSelect}
+          onClose={closeCodingPanels}
+          sessionId={sessionIdState}
+          projectId={projectIdState}
+          isWorking={isTeamWorking}
+        />
       )}
       {mode === 'coding' && workspace && isMobile && codingPanel !== null && (
         <CodingWorkspacePanel
@@ -1219,19 +1214,56 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
             </div>
           </div>
         ) : mode === 'coding' && !workspace ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-(--bg-key) text-(--color-accent)">
-              <FolderCode size={24} />
+          <div className="relative flex flex-1 items-center justify-center overflow-hidden px-5 py-8 sm:px-8">
+            <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+              <div className="absolute left-1/2 top-1/2 h-80 w-80 -translate-x-1/2 -translate-y-1/2 rounded-full bg-(--color-accent)/10 blur-3xl" />
+              <div className="absolute left-[calc(50%-10rem)] top-[calc(50%-8rem)] h-40 w-40 rounded-full border border-(--color-border-subtle)" />
+              <div className="absolute bottom-[calc(50%-12rem)] left-[calc(50%+7rem)] h-24 w-24 rounded-full border border-(--color-border-subtle)" />
             </div>
-            <div>
-              <h2 className="text-base font-medium text-(--color-text)">No workspace attached</h2>
-              <p className="mt-1 max-w-sm text-sm text-(--color-text-muted)">
-                Choose a local project folder from the sidebar to start a coding session.
-              </p>
-            </div>
-            <Button type="button" onClick={handleOpenWorkspaceDialog}>
-              Open workspace
-            </Button>
+            <section className="relative w-full max-w-lg overflow-hidden rounded-3xl border border-(--color-border) bg-(--bg-card)/95 shadow-xl shadow-black/10">
+              <div className="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-(--color-accent)/60 to-transparent" aria-hidden="true" />
+              <div className="p-5 sm:p-6">
+                <div className="flex flex-col items-center text-center">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-(--color-accent)/12 text-(--color-accent) ring-1 ring-inset ring-(--color-accent)/20 shadow-lg shadow-(--color-accent)/10">
+                    <FolderPlus size={23} strokeWidth={1.8} aria-hidden="true" />
+                  </div>
+                  <div className="mt-3.5 inline-flex items-center gap-1.5 rounded-full border border-(--color-border-subtle) bg-(--bg-page)/70 px-2.5 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-(--color-text-muted)">
+                    <GitBranch size={12} aria-hidden="true" />
+                    Coding workspace
+                  </div>
+                  <h2 className="mt-2.5 text-xl font-semibold tracking-tight text-(--color-text)">Start with a project folder</h2>
+                  <p className="mt-1.5 max-w-sm text-sm leading-5 text-(--color-text-muted)">
+                    Open a local repository to give your coding team files, source control, and project context.
+                  </p>
+                </div>
+
+                <div className="mt-5 grid gap-1 rounded-2xl border border-(--color-border-subtle) bg-(--bg-page)/65 p-1.5 text-left sm:grid-cols-2">
+                  <div className="flex gap-2.5 rounded-xl px-2.5 py-2.5">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-(--bg-key) font-mono text-[0.65rem] font-semibold text-(--color-accent) ring-1 ring-(--color-border)">1</span>
+                    <div>
+                      <p className="text-xs font-semibold text-(--color-text)">Choose a folder</p>
+                      <p className="mt-0.5 text-xs leading-4 text-(--color-text-muted)">Select any local repository or project directory.</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2.5 rounded-xl border-t border-(--color-border-subtle) px-2.5 py-2.5 sm:border-l sm:border-t-0">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-(--bg-key) font-mono text-[0.65rem] font-semibold text-(--color-accent) ring-1 ring-(--color-border)">2</span>
+                    <div>
+                      <p className="text-xs font-semibold text-(--color-text)">Start building</p>
+                      <p className="mt-0.5 text-xs leading-4 text-(--color-text-muted)">Create a focused coding session with your team.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-5 flex flex-col items-center gap-2.5">
+                  <Button type="button" className="h-10 rounded-xl px-4 shadow-lg shadow-(--color-accent)/20" onClick={handleOpenWorkspaceDialog}>
+                    <FolderPlus size={17} aria-hidden="true" />
+                    Open workspace
+                    <ArrowRight size={16} aria-hidden="true" />
+                  </Button>
+                  <p className="text-center text-xs text-(--color-text-subtle)">You can also reopen a recent workspace from the sidebar.</p>
+                </div>
+              </div>
+            </section>
           </div>
         ) : showHistorySkeleton ? (
           historySkeleton
@@ -1320,12 +1352,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
             sessionId={sessionIdState}
             onWiki={toggleWiki}
             wikiActive={wikiOpen}
-            onFiles={
-              mode === 'coding'
-                ? workspace ? handleWorkspaceFiles : undefined
-                : handleWorkspaceFiles
-            }
-            filesDisabled={mode !== 'coding' && !sessionIdState}
             onActivity={handleActivityToggle}
             activityActive={showActivity}
             webBridgeEnabled={webBridgeEnabled}

@@ -29,6 +29,7 @@
  * workspace/worktree dialogs in-file.
  */
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
@@ -92,6 +93,7 @@ import {
   SidebarFooter,
 } from "@/components/shell/SidebarShell";
 import { SidebarItem } from "@/components/ui/sidebar-item";
+import { SidePanel } from "@/components/shell/SidePanel";
 import { SessionRow } from "@/components/shell/SessionRow";
 import {
   SessionContextMenu,
@@ -193,6 +195,8 @@ interface CodingSidebarProps {
   openWorkspaceDialogKey?: number;
   /** Open the command palette (search input + footer help). */
   onCommandPalette?: () => void;
+  /** Body-row mount point so the picker occupies Forge's trailing-panel slot. */
+  workspacePickerPortal?: HTMLElement | null;
   /** Mobile only: whether the overlay drawer is open. */
   mobileOpen?: boolean;
   /** Mobile only: called when the drawer should close (backdrop tap, navigation). */
@@ -312,6 +316,7 @@ export function CodingSidebar({
   workspace,
   openWorkspaceDialogKey = 0,
   onCommandPalette,
+  workspacePickerPortal = null,
   mobileOpen = false,
   onMobileClose,
 }: CodingSidebarProps) {
@@ -1539,53 +1544,30 @@ export function CodingSidebar({
         onOpenChange={setShowProjectModal}
       />
 
-      <Dialog
-        open={dialogOpen}
-        onOpenChange={(open) => {
-          if (!open) closeWorkspaceDialog();
-          else setDialogOpen(true);
-        }}
-      >
-        <DialogContent showCloseButton={false} className="min-w-0">
-          {trustWorkspace ? (
+      {workspacePickerPortal && createPortal(<AnimatePresence>
+        {dialogOpen && !trustWorkspace && (
+          <SidePanel
+            storageKey={STORAGE_KEYS.panels.codingWorkspacePicker}
+            defaultWidth={480}
+            minWidth={400}
+            maxWidth={720}
+            mobileOverlay
+            mobile={isMobile}
+            title={addRepoProject ? `Add repository to ${addRepoProject.name}` : "Open workspace"}
+            onClose={closeWorkspaceDialog}
+            closeLabel="Close workspace picker"
+            resizeLabel="Resize workspace picker"
+            ariaLabel="Open workspace"
+            className="bg-(--bg-card)"
+          >
+            <div className="flex min-h-0 flex-1 flex-col gap-4 p-4">
+              <p className="text-sm text-(--color-text-subtle)">
+                {nativeFolderPickerEnabled && !isTauriMobile
+                  ? "Use the desktop folder picker to choose a local project folder."
+                  : "Choose a server-local project folder."}
+              </p>
+              {nativeFolderPickerEnabled && !isTauriMobile ? (
             <>
-              <DialogHeader>
-                <DialogTitle>Trust this workspace?</DialogTitle>
-                <DialogDescription>
-                  {addRepoProject
-                    ? `Coding mode grants agents filesystem and shell access. The workspace directory is the primary working area, but agents may access other paths outside it (excluding system directories). Once added to ${addRepoProject.name}.`
-                    : "Coding mode grants agents filesystem and shell access. The workspace directory is the primary working area, but agents may access other paths outside it (excluding system directories)."}
-                </DialogDescription>
-              </DialogHeader>
-              <div className="rounded-lg border border-(--color-border) bg-(--bg-page) px-3 py-2">
-                <p className="break-all font-mono text-xs text-(--color-text-muted)">
-                  {trustWorkspace}
-                </p>
-              </div>
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setTrustWorkspace(null)}
-                >
-                  Back
-                </Button>
-                <Button type="button" onClick={confirmTrustedWorkspace}>
-                  {addRepoProject ? "Trust and add" : "Trust and open"}
-                </Button>
-              </DialogFooter>
-            </>
-          ) : nativeFolderPickerEnabled && !isTauriMobile ? (
-            <>
-              <DialogHeader>
-                <DialogTitle>
-                  {addRepoProject ? `Add repository to ${addRepoProject.name}` : "Open workspace"}
-                </DialogTitle>
-                <DialogDescription>
-                  Use the desktop folder picker to choose a local project
-                  folder.
-                </DialogDescription>
-              </DialogHeader>
               <div className="min-w-0 space-y-2">
                 {selectedWorkspace && (
                   <div className="min-w-0 rounded-lg border border-(--color-border) bg-(--bg-page) px-3 py-2">
@@ -1601,7 +1583,7 @@ export function CodingSidebar({
                   <p className="text-xs text-(--color-error)">{error}</p>
                 )}
               </div>
-              <DialogFooter>
+              <div className="mt-auto flex items-center justify-end gap-2">
                 <Button
                   type="button"
                   variant="outline"
@@ -1618,19 +1600,11 @@ export function CodingSidebar({
                 >
                   {loading ? "Opening…" : "Choose folder…"}
                 </Button>
-              </DialogFooter>
+              </div>
             </>
           ) : (
             <>
-              <DialogHeader>
-                <DialogTitle>
-                  {addRepoProject ? `Add repository to ${addRepoProject.name}` : "Open workspace"}
-                </DialogTitle>
-                <DialogDescription>
-                  Choose a server-local project folder.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="min-w-0 space-y-2">
+              <div className="min-h-0 flex-1 space-y-2 overflow-auto">
                 <div className="min-w-0 rounded-lg border border-(--color-border) bg-(--bg-page) px-3 py-2">
                   <p
                     className="min-w-0 font-mono text-xs text-(--color-text-muted) [overflow-wrap:anywhere]"
@@ -1675,7 +1649,7 @@ export function CodingSidebar({
                   <p className="text-xs text-(--color-error)">{error}</p>
                 )}
               </div>
-              <DialogFooter>
+              <div className="flex items-center justify-end gap-2">
                 <Button
                   type="button"
                   variant="outline"
@@ -1690,9 +1664,39 @@ export function CodingSidebar({
                 >
                   Open this folder
                 </Button>
-              </DialogFooter>
+              </div>
             </>
           )}
+            </div>
+          </SidePanel>
+        )}
+      </AnimatePresence>, workspacePickerPortal)}
+
+      <Dialog open={trustWorkspace !== null} onOpenChange={(open) => {
+        if (!open) setTrustWorkspace(null);
+      }}>
+        <DialogContent showCloseButton={false} className="min-w-0">
+          <DialogHeader>
+            <DialogTitle>Trust this workspace?</DialogTitle>
+            <DialogDescription>
+              {addRepoProject
+                ? `Coding mode grants agents filesystem and shell access. The workspace directory is the primary working area, but agents may access other paths outside it (excluding system directories). Once added to ${addRepoProject.name}.`
+                : "Coding mode grants agents filesystem and shell access. The workspace directory is the primary working area, but agents may access other paths outside it (excluding system directories)."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-lg border border-(--color-border) bg-(--bg-page) px-3 py-2">
+            <p className="break-all font-mono text-xs text-(--color-text-muted)">
+              {trustWorkspace}
+            </p>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setTrustWorkspace(null)}>
+              Back
+            </Button>
+            <Button type="button" onClick={confirmTrustedWorkspace}>
+              {addRepoProject ? "Trust and add" : "Trust and open"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

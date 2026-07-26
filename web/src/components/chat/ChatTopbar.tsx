@@ -12,6 +12,7 @@
  * opts them out of the window-drag guard.
  */
 import { AnimatePresence, motion } from 'framer-motion'
+import { useEffect, useRef, useState } from 'react'
 import { BookOpen, Brain, CalendarClock, Check, ChevronDown, FolderOpen, Menu, Minimize2, MoreHorizontal, Terminal, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import {
@@ -127,6 +128,19 @@ export function ChatTopbar({
   onScheduler,
   onCompact,
 }: ChatTopbarProps) {
+  const headerRef = useRef<HTMLElement>(null)
+  const [compactHeader, setCompactHeader] = useState(false)
+
+  useEffect(() => {
+    const header = headerRef.current
+    if (!header || isMobile) return
+    const update = () => setCompactHeader(header.clientWidth < 760)
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(header)
+    return () => observer.disconnect()
+  }, [isMobile])
+
   const loopLabel = activeLoop
     ? `${activeLoop.paused ? 'Loop paused' : activeLoop.prompt ? 'Loop active' : 'Loop ready'}${activeLoop.prompt ? `: "${activeLoop.prompt}"` : ''}`
     : null
@@ -134,6 +148,7 @@ export function ChatTopbar({
 
   return (
     <header
+      ref={headerRef}
       {...dragHandlers}
       className={`mobile-safe-header relative z-(--z-header) flex shrink-0 items-center gap-1.5 px-1.5 py-1.5 ${
         isMacOverlay && isMobile ? 'select-none' : ''
@@ -171,7 +186,7 @@ export function ChatTopbar({
 
         {/* LEFT — agent switcher + loop status (desktop only) */}
         <div className="flex min-w-0 flex-1 items-center gap-2 overflow-visible">
-          {effectiveViewMode === 'agent' && activeAgent && !isMobile && (
+          {!compactHeader && effectiveViewMode === 'agent' && activeAgent && !isMobile && (
             <ActiveAgentSwitcher
               activeAgent={activeAgent}
               agents={agentNames}
@@ -179,26 +194,26 @@ export function ChatTopbar({
               onSelect={onSelectAgent}
             />
           )}
-          {!isMobile && activeLoop && loopLabel && loopProgress && (
+          {!compactHeader && !isMobile && activeLoop && loopLabel && loopProgress && (
             <LoopStatusPill
               label={loopLabel}
               progress={loopProgress}
               compact={false}
             />
           )}
-          {!isMobile && activeWorkflowExecution && (
+          {!compactHeader && !isMobile && activeWorkflowExecution && (
             <WorkflowProgressPill
               execution={activeWorkflowExecution}
               onDismissFailed={onDismissWorkflowFailed}
             />
           )}
-          {!isMobile && mode === 'coding' && (
+          {!compactHeader && !isMobile && mode === 'coding' && (
             <TaskProgressPill
               isWorking={isTeamWorking}
               chapters={chapters}
             />
           )}
-          {effectiveViewMode === 'split' && (
+          {!compactHeader && effectiveViewMode === 'split' && (
             <span className="text-xs text-(--color-text-muted)">
               Split · {splitAgentCount} agents
             </span>
@@ -221,12 +236,10 @@ export function ChatTopbar({
             )}
             <MobileHeaderAction
               Icon={FolderOpen}
-              label={mode === 'coding' ? 'Workspace files' : 'Session files'}
-              onClick={mode === 'coding'
-                ? workspace ? onWorkspaceFiles : undefined
-                : sessionId ? onToggleFilesPanel : undefined}
+              label={mode === 'coding' ? (workspace ? 'Workspace files' : 'Open workspace') : 'Session files'}
+              onClick={mode === 'coding' ? onWorkspaceFiles : sessionId ? onToggleFilesPanel : undefined}
               active={mode === 'coding' ? codingPanelOpen : showFilesPanel}
-              disabled={mode === 'coding' ? !workspace : !sessionId}
+              disabled={mode !== 'coding' && !sessionId}
             />
             <MobileChatActions
               open={mobileActionsOpen}
@@ -244,6 +257,27 @@ export function ChatTopbar({
           </>
         ) : (
           <>
+          {compactHeader ? (
+            <>
+              <SessionTOC sessionId={sessionId} />
+              <DesktopHeaderOverflow
+                mode={mode}
+                workspace={workspace}
+                sessionId={sessionId}
+                activeAgent={activeAgent}
+                agents={agentNames}
+                onSelectAgent={onSelectAgent}
+                viewMode={viewMode}
+                onViewModeChange={onViewModeChange}
+                onWiki={onWiki}
+                onWorkspaceFiles={onWorkspaceFiles}
+                onToggleTerminal={onToggleTerminal}
+                onScheduler={onScheduler}
+                onCompact={onCompact}
+              />
+            </>
+          ) : (
+            <>
           {!isMobile && onWiki && (
             <TopbarAction
               Icon={BookOpen}
@@ -258,14 +292,12 @@ export function ChatTopbar({
           <SessionTOC sessionId={sessionId} />
           <TopbarAction
             Icon={FolderOpen}
-            label={mode === 'coding' ? 'Workspace' : 'Files'}
-            onClick={mode === 'coding'
-              ? (workspace ? onWorkspaceFiles : undefined)
-              : (sessionId ? onToggleFilesPanel : undefined)}
-            title={mode === 'coding' ? 'Workspace panel' : 'Session files'}
+            label={mode === 'coding' ? (workspace ? 'Workspace' : 'Open workspace') : 'Files'}
+            onClick={mode === 'coding' ? onWorkspaceFiles : sessionId ? onToggleFilesPanel : undefined}
+            title={mode === 'coding' ? (workspace ? 'Workspace panel' : 'Open workspace') : 'Session files'}
             aria-pressed={mode === 'coding' ? codingPanelOpen : showFilesPanel}
             indicator={mode === 'coding' ? codingPanelOpen : showFilesPanel}
-            disabled={mode === 'coding' ? !workspace : !sessionId}
+            disabled={mode !== 'coding' && !sessionId}
           />
           <AgentTopbar
             isMobile={false}
@@ -288,10 +320,91 @@ export function ChatTopbar({
               />
             }
           />
+            </>
+          )}
           </>
         )}
         </div>
     </header>
+  )
+}
+
+function DesktopHeaderOverflow({
+  mode,
+  workspace,
+  sessionId,
+  activeAgent,
+  agents,
+  onSelectAgent,
+  viewMode,
+  onViewModeChange,
+  onWiki,
+  onWorkspaceFiles,
+  onToggleTerminal,
+  onScheduler,
+  onCompact,
+}: {
+  mode: ChatTopbarProps['mode']
+  workspace: string | null
+  sessionId: string | null
+  activeAgent: string | null
+  agents: string[]
+  onSelectAgent: (agent: string) => void
+  viewMode: ViewMode
+  onViewModeChange: (mode: ViewMode) => void
+  onWiki: () => void
+  onWorkspaceFiles: () => void
+  onToggleTerminal: () => void
+  onScheduler: () => void
+  onCompact: () => void
+}) {
+  const workspaceLabel = mode === 'coding'
+    ? workspace ? 'Workspace' : 'Open workspace'
+    : 'Files'
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        data-no-drag
+        className="flex h-8 w-8 items-center justify-center rounded-[9px] text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:ring-2 focus-visible:ring-(--focus-ring)/40"
+        aria-label="More chat actions"
+        title="More chat actions"
+      >
+        <MoreHorizontal size={17} aria-hidden="true" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56">
+        {activeAgent && agents.map((agent) => (
+          <DropdownMenuItem key={agent} onClick={() => onSelectAgent(agent)}>
+            <span className="min-w-0 flex-1 truncate">{agent}</span>
+            {agent === activeAgent && <Check size={14} className="text-(--color-accent)" aria-hidden="true" />}
+          </DropdownMenuItem>
+        ))}
+        <DropdownMenuItem onClick={onWiki}>
+          <BookOpen size={14} aria-hidden="true" /> Wiki
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={onWorkspaceFiles}
+          disabled={mode !== 'coding' && !sessionId}
+        >
+          <FolderOpen size={14} aria-hidden="true" /> {workspaceLabel}
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onToggleTerminal}>
+          <Terminal size={14} aria-hidden="true" /> Terminal
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onScheduler}>
+          <CalendarClock size={14} aria-hidden="true" /> Scheduler
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onCompact}>
+          <Minimize2 size={14} aria-hidden="true" /> Compact context
+        </DropdownMenuItem>
+        {(['agent', 'split', 'monitor'] as ViewMode[]).map((candidate) => (
+          <DropdownMenuItem key={candidate} onClick={() => onViewModeChange(candidate)}>
+            <span className="min-w-0 flex-1 capitalize">{candidate} view</span>
+            {candidate === viewMode && <Check size={14} className="text-(--color-accent)" aria-hidden="true" />}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
