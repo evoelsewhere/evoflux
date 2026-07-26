@@ -607,6 +607,41 @@ class TestResolveTeamSession:
         assert tree.status_code == 200
         assert tree.json()["repositories"] == []
 
+    @pytest.mark.asyncio
+    async def test_workspace_visibility_hides_owned_worktrees(
+        self, app_with_team, tmp_path
+    ):
+        """Removing a repo must not leave a synthesized row for its worktrees."""
+        import app.core.db as _db
+
+        repo = tmp_path / "repo"
+        worktree = tmp_path / "worktrees" / "task-a"
+        repo.mkdir()
+        worktree.mkdir(parents=True)
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                db.add(CodingWorkspace(path=str(repo), kind="repo", name="repo"))
+                db.add(
+                    CodingWorkspace(
+                        path=str(worktree),
+                        kind="worktree",
+                        source_path=str(repo),
+                        name="task-a",
+                        managed=True,
+                    )
+                )
+
+        client = TestClient(app_with_team)
+        resp = client.patch(
+            "/api/team/workspace/visibility",
+            json={"workspace": str(repo), "hidden": True},
+        )
+        assert resp.status_code == 200
+
+        tree = client.get("/api/team/workspace/tree")
+        assert tree.status_code == 200
+        assert tree.json()["repositories"] == []
+
 
 # ---------------------------------------------------------------------------
 # DELETE /team/sessions/{session_id}

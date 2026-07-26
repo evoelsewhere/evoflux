@@ -29,7 +29,7 @@
  * workspace/worktree dialogs in-file.
  */
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useParams } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -77,7 +77,13 @@ import {
   prependSession,
   prependWorkspaceSession,
 } from "@/stores/cache-invalidation-bridge";
-import { codingFocusId, saveLastCodingWorkspace, workspaceLabel } from "@/utils/workspace";
+import {
+  clearLastCodingFocus,
+  codingFocusId,
+  isProjectFocusId,
+  saveLastCodingWorkspace,
+  workspaceLabel,
+} from "@/utils/workspace";
 import { isTransientNetworkError } from "@/utils/errors";
 import {
   SidebarShell,
@@ -324,6 +330,7 @@ export function CodingSidebar({
   const togglePin = usePinnedSessions((s) => s.togglePin);
   const pinnedIdSet = new Set(pinnedIds);
   const navigate = useNavigate();
+  const params = useParams({ strict: false }) as { focusId?: string };
   const queryClient = useQueryClient();
   const sessions = useTeamSessionsQuery("coding");
   const deleteSession = useDeleteTeamSessionMutation();
@@ -388,7 +395,13 @@ export function CodingSidebar({
     null;
 
   const workspaceTree = overviewQuery.data?.repositories ?? [];
-  const activeWorkspace = workspace ?? null;
+  // When a workspace has been moved, /coding/$focusId fails before a session
+  // exists and ``workspace`` is still null. The route parameter is enough to
+  // identify the stale workspace and let its removal return the user to a
+  // safe empty Coding page.
+  const routeWorkspace =
+    params.focusId && !isProjectFocusId(params.focusId) ? params.focusId : null;
+  const activeWorkspace = workspace ?? routeWorkspace;
   const worktreeSourceByDirectory = new Map<string, string>();
   for (const repo of workspaceTree) {
     for (const item of repo.worktrees)
@@ -718,6 +731,16 @@ export function CodingSidebar({
   const confirmRemoveWorkspace = () => {
     const path = removeWorkspaceTarget;
     if (!path) return;
+
+    // Do this before navigating: otherwise bare /coding immediately restores
+    // the old local "last workspace" pointer and retries the missing folder.
+    clearLastCodingFocus(path);
+    setExpandedWorkspaces((current) => {
+      if (!current.has(path)) return current;
+      const next = new Set(current);
+      next.delete(path);
+      return next;
+    });
     void setCodingWorkspaceVisibility(path, true)
       .then(() => {
         void queryClient.invalidateQueries({
@@ -725,7 +748,13 @@ export function CodingSidebar({
         });
         void refreshWorkspaceTree();
       })
-      .catch(() => undefined);
+      .catch((err) => {
+        useToastStore.getState().push({
+          tone: "error",
+          title: "Couldn't remove workspace",
+          description: err instanceof Error ? err.message : String(err),
+        });
+      });
     if (path === activeWorkspace) {
       navigate({ to: "/coding", replace: true });
     }
