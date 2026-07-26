@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 GitProvider = Literal[
     "github",
@@ -22,7 +22,8 @@ ConnectionScope = Literal["server", "repository"]
 class GitServerConnectionCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     provider: GitProvider
-    base_url: str = Field(min_length=1, max_length=2048)
+    domain: str | None = Field(default=None, min_length=1, max_length=2048)
+    base_url: str | None = Field(default=None, min_length=1, max_length=2048)
     scope: ConnectionScope = "server"
     workspace_id: UUID | None = None
     token: str = Field(default="", max_length=10000)
@@ -30,7 +31,7 @@ class GitServerConnectionCreate(BaseModel):
     username: str | None = Field(default=None, max_length=255)
     verify_ssl: bool = True
 
-    @field_validator("name", "base_url")
+    @field_validator("name")
     @classmethod
     def strip_required(cls, value: str) -> str:
         value = value.strip()
@@ -38,10 +39,17 @@ class GitServerConnectionCreate(BaseModel):
             raise ValueError("Value cannot be blank.")
         return value
 
+    @model_validator(mode="after")
+    def require_domain(self) -> GitServerConnectionCreate:
+        if not (self.domain or self.base_url):
+            raise ValueError("Git server domain is required.")
+        return self
+
 
 class GitServerConnectionUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     provider: GitProvider | None = None
+    domain: str | None = Field(default=None, min_length=1, max_length=2048)
     base_url: str | None = Field(default=None, min_length=1, max_length=2048)
     scope: ConnectionScope | None = None
     workspace_id: UUID | None = None
@@ -53,17 +61,26 @@ class GitServerConnectionUpdate(BaseModel):
 
 class GitServerConnectionTest(BaseModel):
     provider: GitProvider
-    base_url: str = Field(min_length=1, max_length=2048)
+    domain: str | None = Field(default=None, min_length=1, max_length=2048)
+    base_url: str | None = Field(default=None, min_length=1, max_length=2048)
     token: str = Field(min_length=1, max_length=10000)
     username: str | None = Field(default=None, max_length=255)
     verify_ssl: bool = True
+
+    @model_validator(mode="after")
+    def require_domain(self) -> GitServerConnectionTest:
+        if not (self.domain or self.base_url):
+            raise ValueError("Git server domain is required.")
+        return self
 
 
 class GitServerConnectionOut(BaseModel):
     id: UUID
     name: str
     provider: GitProvider
+    domain: str
     base_url: str
+    token_url: str
     host: str
     scope: ConnectionScope
     workspace_id: UUID | None
@@ -99,6 +116,7 @@ class RepositoryReviewsOut(BaseModel):
     remote_url: str | None
     repository: str | None
     detected_provider: GitProvider | None
+    suggested_domain: str | None
     suggested_base_url: str | None
     connection_id: UUID | None
     provider: GitProvider | None

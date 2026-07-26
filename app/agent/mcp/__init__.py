@@ -1,33 +1,35 @@
-"""MCP (Model Context Protocol) client integration.
+"""Model Context Protocol client integration with lazy runtime imports.
 
-Connects to external MCP servers (stdio subprocesses or remote Streamable HTTP
-endpoints) and exposes their tools to agents via the standard ``Tool`` registry.
-
-Tools are namespaced ``mcp_<server>_<tool>`` to avoid collisions with built-ins
-and across servers. Sessions are long-lived: spawned best-effort in
-``lifespan()`` startup, kept alive for the server's lifetime, and shut down on
-stop.
-
-Public API:
-
-* :class:`MCPManager` — lifecycle owner, accessed via :data:`mcp_manager`.
-* :class:`MCPServerConfig` / :class:`MCPConfig` — config schema for ``mcp.json``.
-* :func:`load_config` / :func:`save_config` — file I/O helpers.
-
-See ``documents/docs/agent/tools.md`` for user-facing docs.
+Configuration schemas stay cheap to import. The MCP SDK, OAuth stack, and tool
+registry are loaded only when the manager is first used.
 """
 
 from __future__ import annotations
 
-from app.agent.mcp.config import (
-    MCPConfig,
-    MCPServerConfig,
-    StdioServerConfig,
-    HttpServerConfig,
-    load_config,
-    save_config,
-)
-from app.agent.mcp.manager import MCPManager, MCPServerStatus, mcp_manager
+from importlib import import_module
+from typing import Any
+
+_LAZY_EXPORTS = {
+    "MCPConfig": ("app.agent.mcp.config", "MCPConfig"),
+    "MCPServerConfig": ("app.agent.mcp.config", "MCPServerConfig"),
+    "StdioServerConfig": ("app.agent.mcp.config", "StdioServerConfig"),
+    "HttpServerConfig": ("app.agent.mcp.config", "HttpServerConfig"),
+    "load_config": ("app.agent.mcp.config", "load_config"),
+    "save_config": ("app.agent.mcp.config", "save_config"),
+    "MCPManager": ("app.agent.mcp.manager", "MCPManager"),
+    "MCPServerStatus": ("app.agent.mcp.manager", "MCPServerStatus"),
+    "mcp_manager": ("app.agent.mcp.lazy", "mcp_manager"),
+}
+
+
+def __getattr__(name: str) -> Any:  # noqa: ANN401 - public lazy re-export
+    target = _LAZY_EXPORTS.get(name)
+    if target is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module_name, attribute = target
+    value = getattr(import_module(module_name), attribute)
+    globals()[name] = value
+    return value
 
 __all__ = [
     "MCPConfig",

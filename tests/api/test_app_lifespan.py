@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import subprocess
+import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -8,6 +10,38 @@ import pytest
 from fastapi import FastAPI
 
 from app.api import app as app_module
+
+
+def test_app_import_keeps_optional_runtime_modules_lazy() -> None:
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; import app.api.app; "
+                "print('app.agent.mcp.manager' in sys.modules); "
+                "print('mcp.client' in sys.modules); "
+                "print('app.agent.loader' in sys.modules); "
+                "print('app.agent.agent_loop.core' in sys.modules); "
+                "print('app.agent.tools.builtin.browser_use_tool' in sys.modules); "
+                "print('app.agent.tools.builtin.webbridge_tool' in sys.modules); "
+                "print('app.services.code_graph.indexer' in sys.modules)"
+            ),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert completed.stdout.splitlines() == [
+        "False",
+        "False",
+        "False",
+        "False",
+        "False",
+        "False",
+        "False",
+    ]
 
 
 @asynccontextmanager

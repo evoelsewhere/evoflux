@@ -413,7 +413,7 @@ export function AimPipelinesPanel({
     queryKey: queryKeys.projects.aimUnits(project.id, undefined),
     queryFn: () => listAimUnits(project.id),
     staleTime: 30_000,
-    refetchInterval: 5_000,
+    refetchInterval: 15_000,
   })
   const units = useMemo(() => unitsQuery.data ?? [], [unitsQuery.data])
   const readinessInputs = useMemo(() => {
@@ -448,7 +448,7 @@ export function AimPipelinesPanel({
       }),
     enabled: Boolean(selectedWorkflow?.valid) && hasReadinessOptions,
     staleTime: 2_000,
-    refetchInterval: hasReadinessOptions ? 5_000 : false,
+    refetchInterval: hasReadinessOptions ? 15_000 : false,
   })
   const optionsLoading =
     unitsQuery.isLoading ||
@@ -526,7 +526,7 @@ export function AimPipelinesPanel({
       }),
     enabled: Boolean(selectedWorkflow?.valid) && requiredInputsPresent,
     staleTime: 2_000,
-    refetchInterval: requiredInputsPresent ? 5_000 : false,
+    refetchInterval: requiredInputsPresent ? 15_000 : false,
   })
   const readinessInitialLoading =
     readinessQuery.isFetching && readinessQuery.data === undefined

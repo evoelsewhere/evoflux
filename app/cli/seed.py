@@ -52,15 +52,12 @@ from pathlib import Path
 import yaml
 
 import app
+from app.agent.config import PROVIDER_MODEL_TOKEN
 from app.core.version import VERSION
 
 #: GitHub ``owner/repo`` that hosts the seed bundle.
 #: Update this if the canonical repo location changes.
 REPO = "khuonghung/evoflux"
-
-#: Token used as the ``model:`` value in seed agent files.  Replaced at
-#: install time with the provider/model the user picked in ``EvoFlux init``.
-PROVIDER_MODEL_TOKEN = "__PROVIDER_MODEL__"
 
 #: Top-level files inside ``seed/`` that ship as user-editable config.
 #: Anything else at seed root (README.md, etc.) is **not** copied.

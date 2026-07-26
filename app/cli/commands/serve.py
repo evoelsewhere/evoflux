@@ -60,6 +60,43 @@ import threading
 from typing import Any
 
 
+def _configure_serve_parser(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Bind host (default: 127.0.0.1 — desktop must stay local).",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=0,
+        help="Bind port. 0 (default) picks an OS-assigned ephemeral port.",
+    )
+    parser.add_argument(
+        "--handshake",
+        action="store_true",
+        help="Emit a single JSON line on stdout once bound (for Tauri/IPC).",
+    )
+    parser.add_argument(
+        "--generate-token",
+        action="store_true",
+        help=(
+            "Generate a random desktop session token and require it for API "
+            "access. The token is included in the handshake line."
+        ),
+    )
+    parser.add_argument(
+        "--parent-pid",
+        type=int,
+        default=None,
+        help=(
+            "Exit if the given PID is no longer alive. Used by the desktop "
+            "shell to clean up the backend when it crashes."
+        ),
+    )
+    parser.set_defaults(func=cmd_serve)
+
+
 def _add_serve_subparser(sub: argparse._SubParsersAction) -> None:
     """Register the ``serve`` subcommand on the given subparsers action."""
     p = sub.add_parser(
@@ -71,40 +108,17 @@ def _add_serve_subparser(sub: argparse._SubParsersAction) -> None:
             "daemon use 'EvoFlux start' instead."
         ),
     )
-    p.add_argument(
-        "--host",
-        default="127.0.0.1",
-        help="Bind host (default: 127.0.0.1 — desktop must stay local).",
+    _configure_serve_parser(p)
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(
+        prog="EvoFlux serve",
+        description="Run the API server in the foreground for an embedding host.",
     )
-    p.add_argument(
-        "--port",
-        type=int,
-        default=0,
-        help="Bind port. 0 (default) picks an OS-assigned ephemeral port.",
-    )
-    p.add_argument(
-        "--handshake",
-        action="store_true",
-        help="Emit a single JSON line on stdout once bound (for Tauri/IPC).",
-    )
-    p.add_argument(
-        "--generate-token",
-        action="store_true",
-        help=(
-            "Generate a random desktop session token and require it for API "
-            "access. The token is included in the handshake line."
-        ),
-    )
-    p.add_argument(
-        "--parent-pid",
-        type=int,
-        default=None,
-        help=(
-            "Exit if the given PID is no longer alive. Used by the desktop "
-            "shell to clean up the backend when it crashes."
-        ),
-    )
-    p.set_defaults(func=cmd_serve)
+    _configure_serve_parser(parser)
+    args = parser.parse_args(argv)
+    cmd_serve(args)
 
 
 def _pid_alive(pid: int) -> bool:

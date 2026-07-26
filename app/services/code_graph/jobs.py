@@ -15,15 +15,29 @@ import asyncio
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from importlib import import_module
+from typing import Any
 from uuid import UUID
 
 from loguru import logger
 
 from app.core.db import DbFactory, resolve_db_factory
-from app.services import code_graph_service as svc
 
 # Type for the progress callback used by reindex_workspace.
 ProgressCallback = Callable[[str, float, str], None]
+
+
+class _LazyCodeGraphService:
+    def __init__(self) -> None:
+        self._service: Any | None = None
+
+    def __getattr__(self, name: str) -> Any:
+        if self._service is None:
+            self._service = import_module("app.services.code_graph_service")
+        return getattr(self._service, name)
+
+
+svc = _LazyCodeGraphService()
 
 
 def _make_progress_cb(job: IndexJob) -> ProgressCallback:

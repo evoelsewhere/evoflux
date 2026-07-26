@@ -1,6 +1,9 @@
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
+
+from app.services.aim import kb_store
 from app.services.aim.kb_store import write_cutover_checklist, write_unit
 from app.services.aim.business_rules import confirm_no_business_rules
 from app.services.aim.golden import stamp_expected_integrity
@@ -338,6 +341,35 @@ def test_understand_options_only_include_unblocked_unclaimed_units(tmp_path: Pat
 
     assert options.units == ("core/PAY", "shared/DATE")
     assert options.waves == ()
+
+
+def test_pipeline_options_scans_unit_inventory_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    for name in ("PAY", "TAX", "DATE"):
+        write_unit(
+            tmp_path,
+            "core",
+            name,
+            kind="program",
+            phase="inventory",
+            body="Documented behavior.",
+        )
+
+    original = kb_store.list_units
+    calls = 0
+
+    def counted(kb_root: Path):
+        nonlocal calls
+        calls += 1
+        return original(kb_root)
+
+    monkeypatch.setattr(kb_store, "list_units", counted)
+
+    options = evaluate_pipeline_options(tmp_path, "aim-understand")
+
+    assert options.units == ("core/DATE", "core/PAY", "core/TAX")
+    assert calls == 1
 
 
 def test_blocked_understand_does_not_select_unit(tmp_path: Path):

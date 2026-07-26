@@ -50,15 +50,28 @@ import asyncio
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
-from app.agent.loader import load_team_from_dir
 from app.core.config import settings
 
 if TYPE_CHECKING:
     from app.agent.mode.team.team import AgentTeam
+
+
+def load_team_from_dir(*args: Any, **kwargs: Any) -> Any:
+    """Lazy compatibility wrapper for the heavyweight agent loader."""
+    from app.agent.loader import load_team_from_dir as load
+
+    return load(*args, **kwargs)
+
+
+def validate_agent_config_dir(agents_dir: Path) -> str | None:
+    """Patch-compatible lazy wrapper for parse-only startup validation."""
+    from app.agent.config import validate_agent_config_dir as validate
+
+    return validate(agents_dir)
 
 
 # ── Diff dataclass ───────────────────────────────────────────────────────────
@@ -357,15 +370,12 @@ def validate_agents_dir() -> bool:
     on parse errors.
     """
     agents_dir = _resolve_agents_dir()
-    try:
-        team = load_team_from_dir(agents_dir)
-    except ValueError:
-        raise
-    if team is None:
+    lead_name = validate_agent_config_dir(agents_dir)
+    if lead_name is None:
         logger.warning("team_manager_agents_dir_empty path={}", agents_dir)
         return False
     logger.info(
-        "team_manager_agents_dir_validated path={} lead={}", agents_dir, team.lead.name
+        "team_manager_agents_dir_validated path={} lead={}", agents_dir, lead_name
     )
     return True
 

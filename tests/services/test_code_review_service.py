@@ -110,6 +110,87 @@ def test_default_public_api_bases_and_server_hosts():
     )
 
 
+@pytest.mark.parametrize(
+    ("provider", "domain", "repository", "api_base", "token_url"),
+    [
+        (
+            "github",
+            "github.com",
+            "acme/repo",
+            "https://api.github.com",
+            "https://github.com/settings/tokens/new",
+        ),
+        (
+            "github",
+            "https://github.corp.test",
+            "acme/repo",
+            "https://github.corp.test/api/v3",
+            "https://github.corp.test/settings/tokens/new",
+        ),
+        (
+            "gitlab",
+            "https://git.corp.test/gitlab",
+            "group/repo",
+            "https://git.corp.test/gitlab/api/v4",
+            "https://git.corp.test/gitlab/-/user_settings/personal_access_tokens",
+        ),
+        (
+            "bitbucket_cloud",
+            "bitbucket.org",
+            "team/repo",
+            "https://api.bitbucket.org/2.0",
+            "https://id.atlassian.com/manage-profile/security/api-tokens",
+        ),
+        (
+            "bitbucket_server",
+            "https://git.corp.test/bitbucket",
+            "scm/TEAM/repo",
+            "https://git.corp.test/bitbucket/rest/api/1.0",
+            "https://git.corp.test/bitbucket/plugins/servlet/access-tokens/manage",
+        ),
+        (
+            "gitea",
+            "https://code.corp.test",
+            "acme/repo",
+            "https://code.corp.test/api/v1",
+            "https://code.corp.test/user/settings/applications",
+        ),
+        (
+            "azure_devops",
+            "https://dev.azure.com/acme",
+            "acme/project/_git/repo",
+            "https://dev.azure.com/acme",
+            "https://dev.azure.com/acme/_usersSettings/tokens",
+        ),
+    ],
+)
+def test_domain_derives_api_and_token_urls(
+    provider,
+    domain,
+    repository,
+    api_base,
+    token_url,
+):
+    assert service.api_base_from_domain(provider, domain, repository) == api_base
+    assert service.token_creation_url(provider, domain, repository) == token_url
+
+
+def test_domain_accepts_existing_api_url_and_rejects_embedded_credentials():
+    assert (
+        service.server_domain(
+            "gitlab",
+            "https://gitlab.corp.test/api/v4",
+        )
+        == "https://gitlab.corp.test"
+    )
+
+    with pytest.raises(ValueError, match="without credentials"):
+        service.server_domain(
+            "gitlab",
+            "https://oauth2:secret@gitlab.corp.test",
+        )
+
+
 def test_bitbucket_cloud_supports_bearer_and_basic_tokens():
     bearer = GitServerConnection(
         name="Workspace token",

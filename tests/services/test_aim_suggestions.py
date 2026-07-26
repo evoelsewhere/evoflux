@@ -1,5 +1,8 @@
 from pathlib import Path
 
+import pytest
+
+from app.services.aim import kb_store
 from app.services.aim.kb_store import write_unit
 from app.services.aim.suggestions import (
     build_suggestion_plan,
@@ -159,3 +162,32 @@ def test_snapshot_fingerprint_detects_lifecycle_change(tmp_path: Path):
     assert snapshot is not None
     assert snapshot["fingerprint"] == original.fingerprint
     assert current.fingerprint != original.fingerprint
+
+
+def test_suggestion_plan_scans_unit_inventory_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    for name in ("PAY", "TAX", "DATE"):
+        write_unit(
+            tmp_path,
+            "core",
+            name,
+            kind="program",
+            phase="inventory",
+            body="Documented behavior.",
+        )
+
+    original = kb_store.list_units
+    calls = 0
+
+    def counted(kb_root: Path):
+        nonlocal calls
+        calls += 1
+        return original(kb_root)
+
+    monkeypatch.setattr(kb_store, "list_units", counted)
+
+    plan = build_suggestion_plan(tmp_path)
+
+    assert len(plan.actions) == 3
+    assert calls == 1

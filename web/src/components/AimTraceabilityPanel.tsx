@@ -61,7 +61,7 @@ export function AimTraceabilityPanel({ project }: { project: CodingProject }) {
   const traceabilityQuery = useQuery({
     queryKey: ['projects', 'detail', project.id, 'aim-traceability'],
     queryFn: () => getAimTraceability(project.id),
-    refetchInterval: 10_000,
+    refetchInterval: 30_000,
   })
   const reindexMutation = useMutation({
     mutationFn: () => reindexAimProject(project.id),

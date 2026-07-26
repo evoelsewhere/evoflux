@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from pydantic import BaseModel, Field
 
 from app.api.schemas.cross_repo import CrossRepoEdgeOut
-from app.services.code_graph_service import (
-    ReindexStats,
-    WorkspaceOverview,
-)
 from app.models.code_graph import CodeNode
+
+if TYPE_CHECKING:
+    from app.services.code_graph_service import ReindexStats, WorkspaceOverview
 
 
 class CodeNodeOut(BaseModel):

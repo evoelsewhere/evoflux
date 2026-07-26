@@ -9,7 +9,19 @@ bundled site-packages directory.
 
 from __future__ import annotations
 
-from app.cli.main import main
+import sys
+
+
+def main() -> None:
+    if sys.argv[1:2] == ["serve"]:
+        from app.cli.commands.serve import main as serve_main
+
+        serve_main(sys.argv[2:])
+        return
+
+    from app.cli.main import main as cli_main
+
+    cli_main()
 
 if __name__ == "__main__":
     main()

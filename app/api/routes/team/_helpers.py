@@ -10,11 +10,11 @@ from __future__ import annotations
 import mimetypes
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from fastapi import HTTPException, UploadFile
 from loguru import logger
 
-from app.agent.mode.team.team import AgentTeam
 from app.api.schemas.sessions import MessageResponse
 from app.core.paths import session_workspace_dir
 from app.services import agent_service
@@ -25,6 +25,9 @@ from app.services.agent_service import (
     RawAttachment,
     categorize,
 )
+
+if TYPE_CHECKING:
+    from app.agent.mode.team.team import AgentTeam
 
 
 # Server-internal attachment fields that must never leak to clients:

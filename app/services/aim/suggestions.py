@@ -13,6 +13,7 @@ import yaml
 
 from app.services.aim import kb_store
 from app.services.aim.business_rules import business_rule_review_ready
+from app.services.aim.models import UnitFrontmatter
 from app.services.aim.readiness import PipelineReadiness, evaluate_pipeline
 
 SuggestionLane = Literal["ready", "active", "up_next", "needs_input"]
@@ -123,6 +124,7 @@ def _unit_action(
     wave: int | None,
     depends_on: list[str],
     claimed_units: frozenset[str],
+    inventory: list[tuple[str, str, UnitFrontmatter, str]],
 ) -> SuggestionAction | None:
     reason: str
     if phase == "inventory":
@@ -143,7 +145,11 @@ def _unit_action(
         reason = "Implement the approved mapping after converted dependencies."
     elif phase == "converted":
         compare = evaluate_pipeline(
-            kb_root, "aim-test-compare", unit=unit_key, case_set="smoke"
+            kb_root,
+            "aim-test-compare",
+            unit=unit_key,
+            case_set="smoke",
+            inventory=inventory,
         )
         baseline_pending = any(
             "golden case" in blocker.lower() or "expected output" in blocker.lower()
@@ -166,6 +172,7 @@ def _unit_action(
         unit=unit_key,
         wave=wave,
         case_set="smoke",
+        inventory=inventory,
     )
     scope_units = readiness.selected_units or (unit_key,)
     lane = _lane_for(readiness, scope_units, claimed_units)
@@ -211,6 +218,7 @@ def build_suggestion_plan(
             wave=frontmatter.wave,
             depends_on=frontmatter.depends_on,
             claimed_units=claimed_units,
+            inventory=units,
         )
         if action is not None:
             actions.append(action)
@@ -223,7 +231,12 @@ def build_suggestion_plan(
             for module, name, frontmatter, _body in units
             if frontmatter.wave == wave
         )
-        readiness = evaluate_pipeline(kb_root, "aim-cutover-check", wave=wave)
+        readiness = evaluate_pipeline(
+            kb_root,
+            "aim-cutover-check",
+            wave=wave,
+            inventory=units,
+        )
         lane = _lane_for(readiness, wave_units, claimed_units)
         actions.append(
             SuggestionAction(

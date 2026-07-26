@@ -27,6 +27,24 @@ from app.cli.main import build_parser
 
 
 class TestParserWiring:
+    def test_importing_serve_does_not_load_full_cli_registry(self):
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import sys; import app.cli.commands.serve; "
+                    "print('app.cli.main' in sys.modules); "
+                    "print('app.cli.commands.start' in sys.modules)"
+                ),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+        assert completed.stdout.splitlines() == ["False", "False"]
+
     def test_serve_subcommand_exists(self):
         parser = build_parser()
         args = parser.parse_args(["serve"])

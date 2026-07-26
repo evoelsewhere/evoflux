@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -136,7 +137,6 @@ def _git_check(label: str, path: Path) -> HealthCheck:
 async def evaluate_project_health(
     db: AsyncSession, project: CodingProject
 ) -> ProjectHealth:
-    checks: list[HealthCheck] = []
     source_paths = [
         Path(path) for path in await resolve_source_workspace_paths(db, project)
     ]
@@ -144,6 +144,19 @@ async def evaluate_project_health(
     kb_raw = await resolve_kb_workspace_path(db, project)
     target = Path(target_raw) if target_raw else None
     kb_root = Path(kb_raw) if kb_raw else None
+
+    return await asyncio.to_thread(
+        _evaluate_project_health_paths,
+        source_paths,
+        target,
+        kb_root,
+    )
+
+
+def _evaluate_project_health_paths(
+    source_paths: list[Path], target: Path | None, kb_root: Path | None
+) -> ProjectHealth:
+    checks: list[HealthCheck] = []
 
     missing_sources = [str(path) for path in source_paths if not path.is_dir()]
     if not source_paths or missing_sources:

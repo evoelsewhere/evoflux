@@ -22,7 +22,7 @@ def test_create_connection_keeps_token_out_of_api_response(
         json={
             "name": "GitHub",
             "provider": "github",
-            "base_url": "https://api.github.com",
+            "domain": "github.com",
             "scope": "server",
             "workspace_id": None,
             "token": "github-secret",
@@ -32,16 +32,47 @@ def test_create_connection_keeps_token_out_of_api_response(
 
     assert response.status_code == 201
     payload = response.json()
+    assert payload["domain"] == "https://github.com"
+    assert payload["base_url"] == "https://api.github.com"
+    assert payload["token_url"] == "https://github.com/settings/tokens/new"
     assert payload["host"] == "github.com"
     assert payload["has_token"] is True
     assert "token" not in payload
     assert "github-secret" not in response.text
     assert "github-secret" in (tmp_path / ".env").read_text()
 
+    changed_domain = client.put(
+        f"/api/team/reviews/connections/{payload['id']}",
+        json={"domain": "github.example.com"},
+    )
+    assert changed_domain.status_code == 422
+    assert "new access token" in changed_domain.json()["detail"]
+
     listed = client.get("/api/team/reviews/connections")
     assert listed.status_code == 200
     assert len(listed.json()) == 1
     assert "github-secret" not in listed.text
+
+
+def test_create_connection_rejects_invalid_domain(tmp_path, monkeypatch):
+    from app.api.app import create_app
+
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(tmp_path))
+    response = TestClient(create_app()).post(
+        "/api/team/reviews/connections",
+        json={
+            "name": "Unsafe",
+            "provider": "gitlab",
+            "domain": "https://oauth2:secret@gitlab.example.com",
+            "scope": "server",
+            "token": "gitlab-secret",
+            "verify_ssl": True,
+        },
+    )
+
+    assert response.status_code == 422
+    assert "without credentials" in response.json()["detail"]
+    assert "secret" not in response.text
 
 
 def test_repository_connection_requires_workspace(tmp_path, monkeypatch):
