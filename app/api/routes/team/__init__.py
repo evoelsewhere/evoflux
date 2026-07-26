@@ -28,6 +28,7 @@ from app.api.routes.team import (
     permissions,
     projects,
     questions,
+    reviews,
     terminal,
     todos,
     webbridge,
@@ -46,6 +47,7 @@ router.include_router(git.router)
 router.include_router(todos.router)
 router.include_router(permissions.router)
 router.include_router(questions.router)
+router.include_router(reviews.router)
 router.include_router(terminal.router)
 router.include_router(worktrees.router)
 router.include_router(projects.router)

@@ -2,6 +2,21 @@ from .browser_use_tool import browser_use
 from .chapter import mark_chapter
 from .webbridge_tool import webbridge
 from .pr import create_pull_request
+from .code_reviews import (
+    add_code_review_comment,
+    add_code_review_inline_comment,
+    close_code_review,
+    get_code_review,
+    get_code_review_checks,
+    list_code_reviews,
+    merge_code_review,
+    reopen_code_review,
+    reopen_code_review_thread,
+    reply_code_review_thread,
+    resolve_code_review_thread,
+    submit_code_review,
+    update_code_review,
+)
 from .date import get_date
 from .filesystem import (
     edit_file,
@@ -28,6 +43,19 @@ __all__ = [
     "background_process",
     "browser_use",
     "create_pull_request",
+    "add_code_review_comment",
+    "add_code_review_inline_comment",
+    "close_code_review",
+    "get_code_review",
+    "get_code_review_checks",
+    "list_code_reviews",
+    "merge_code_review",
+    "reopen_code_review",
+    "reopen_code_review_thread",
+    "reply_code_review_thread",
+    "resolve_code_review_thread",
+    "submit_code_review",
+    "update_code_review",
     "webbridge",
     "discover_skills",
     "mark_chapter",

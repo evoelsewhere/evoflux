@@ -44,6 +44,7 @@ import {
   Folder,
   FolderPlus,
   GitBranch,
+  GitPullRequest,
   CircleHelp,
   Loader2,
   Plus,
@@ -331,6 +332,7 @@ export function CodingSidebar({
   // useUIStore; AppShell owns the toggle button + Ctrl+B.
   const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed);
   const toggleScheduler = useUIStore((s) => s.toggleScheduler);
+  const togglePullRequests = useUIStore((s) => s.togglePullRequests);
   const pinnedIds = usePinnedSessions((s) => s.pinnedIds);
   const togglePin = usePinnedSessions((s) => s.togglePin);
   const pinnedIdSet = new Set(pinnedIds);
@@ -1061,6 +1063,12 @@ export function CodingSidebar({
           collapsed
           onClick={toggleScheduler}
         />
+        <SidebarItem
+          Icon={GitPullRequest}
+          label="Pull Requests"
+          collapsed
+          onClick={togglePullRequests}
+        />
       </SidebarCard>
       <div className="flex-1" />
       <SidebarCard className="w-full shrink-0">
@@ -1460,6 +1468,11 @@ export function CodingSidebar({
           kbd="^S"
           onClick={toggleScheduler}
         />
+        <SidebarItem
+          Icon={GitPullRequest}
+          label="Pull Requests"
+          onClick={togglePullRequests}
+        />
       </SidebarCard>
 
       {/* Unified workspace navigator */}
@@ -1504,6 +1517,11 @@ export function CodingSidebar({
           label="Scheduler"
           kbd="^S"
           onClick={toggleScheduler}
+        />
+        <SidebarItem
+          Icon={GitPullRequest}
+          label="Pull Requests"
+          onClick={togglePullRequests}
         />
       </div>
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review Pull Requests"
+  short_description: "Review PRs and MRs through saved REST credentials"
+  default_prompt: "Use $review-pull-requests to inspect and review the current PR or MR safely."

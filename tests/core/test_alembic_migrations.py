@@ -2,8 +2,9 @@
 
 Runs ``alembic upgrade head`` against a temp database using the real
 ``app/alembic.ini`` and asserts the latest schema state lands (currently:
-WebBridge pairing, interaction, tab-binding, Teach Mode state, and AIM unit
-revision state and workflow recovery from revision 00000035).
+WebBridge pairing, interaction, tab-binding, Teach Mode state, AIM unit
+recovery, delegation tasks, and Git server connections through revision
+00000037).
 Complements ``tests/core/test_db_extra.py``, which only covers
 ``run_migrations`` error paths with mocks.
 """
@@ -56,6 +57,7 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
             "webbridge_tab_bindings",
             "webbridge_teach_drafts",
             "webbridge_teach_replays",
+            "git_server_connections",
         } <= set(inspector.get_table_names())
         interaction_columns = {
             column["name"] for column in inspector.get_columns("webbridge_interactions")
@@ -115,7 +117,7 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
             version = conn.execute(
                 sa.text("SELECT version_num FROM alembic_version")
             ).scalar()
-        assert version == "00000035"
+        assert version == "00000037"
     finally:
         engine.dispose()
 
@@ -157,7 +159,7 @@ def test_webbridge_prompt_repair_migrates_drifted_revision_26_database(
             version = conn.execute(
                 sa.text("SELECT version_num FROM alembic_version")
             ).scalar()
-        assert version == "00000035"
+        assert version == "00000037"
     finally:
         engine.dispose()
 
@@ -204,7 +206,7 @@ def test_webbridge_tab_binding_repair_migrates_drifted_revision_27_database(
             version = conn.execute(
                 sa.text("SELECT version_num FROM alembic_version")
             ).scalar()
-        assert version == "00000035"
+        assert version == "00000037"
     finally:
         engine.dispose()
 
@@ -249,7 +251,7 @@ def test_webbridge_dispatch_lease_repair_migrates_drifted_revision_28_database(
             version = conn.execute(
                 sa.text("SELECT version_num FROM alembic_version")
             ).scalar()
-        assert version == "00000035"
+        assert version == "00000037"
     finally:
         engine.dispose()
 

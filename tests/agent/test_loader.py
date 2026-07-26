@@ -845,6 +845,9 @@ def test_builtin_member_profiles_are_curated_to_default_agents():
         "debate",
         "architect",
     }
+    assert "review-pull-requests" in BUILTIN_MEMBER_PROFILES["coding"]["debate"][
+        "skills"
+    ]
 
 
 def test_builtin_member_user_description_overrides_code_default(tmp_path):

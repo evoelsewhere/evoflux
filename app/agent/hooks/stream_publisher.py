@@ -35,6 +35,8 @@ if TYPE_CHECKING:
     from app.agent.schemas.chat import AssistantMessage, ChatCompletionChunk, ToolCall
     from app.agent.state import AgentState, ModelRequest, RunContext, ToolCallHandler
 
+_IMPORTANT_ACTION_TOOLS = frozenset({"merge_code_review", "close_code_review"})
+
 
 class StreamPublisherHook(BaseAgentHook):
     """Publishes every agent event to the stream store via stream_store.push_event().
@@ -243,7 +245,12 @@ class StreamPublisherHook(BaseAgentHook):
             tool=fn_name,
             patterns=patterns,
             always_patterns=always_patterns,
-            metadata={"tool_call_id": tc_id, "agent": self._agent_name},
+            metadata={
+                "tool_call_id": tc_id,
+                "agent": self._agent_name,
+                "important": fn_name in _IMPORTANT_ACTION_TOOLS,
+            },
+            important=fn_name in _IMPORTANT_ACTION_TOOLS,
         )
 
         # ── Execute tool ──────────────────────────────────────────────

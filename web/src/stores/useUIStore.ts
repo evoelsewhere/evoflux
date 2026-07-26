@@ -25,17 +25,21 @@ export type WorkbenchTool =
   | 'side-chat'
   | 'wiki'
   | 'scheduler'
+  | 'pull-requests'
 
 export interface WorkbenchTab {
   id: WorkbenchTool
   tool: WorkbenchTool
 }
 
+export type PullRequestsScope = 'all' | 'session'
+
 interface WorkbenchState {
   workbenchTabs: WorkbenchTab[]
   activeWorkbenchTool: WorkbenchTool | null
   workbenchOpen: boolean
   workbenchMaximized: boolean
+  pullRequestsScope: PullRequestsScope
 }
 
 function toggleTool(state: WorkbenchState, tool: WorkbenchTool): void {
@@ -132,6 +136,7 @@ interface UIStore {
   activeWorkbenchTool: WorkbenchTool | null
   workbenchOpen: boolean
   workbenchMaximized: boolean
+  pullRequestsScope: PullRequestsScope
   sidebarCollapsed: boolean
   sidebarWidth: number
   settingsOpen: boolean
@@ -154,6 +159,7 @@ interface UIStore {
   toggleWorkbenchMaximized: () => void
   toggleWiki: () => void
   toggleScheduler: () => void
+  togglePullRequests: () => void
   toggleBrowser: () => void
   toggleTerminal: () => void
   closeWiki: () => void
@@ -177,7 +183,9 @@ export const useUIStore = create<UIStore>()(
     activeWorkbenchTool: null,
     workbenchOpen: false,
     workbenchMaximized: false,
+    pullRequestsScope: 'session',
     openWorkbenchTool: (tool) => set((state) => {
+      if (tool === 'pull-requests') state.pullRequestsScope = 'session'
       if (!state.workbenchTabs.some((tab) => tab.tool === tool)) {
         state.workbenchTabs.push({ id: tool, tool })
       }
@@ -185,10 +193,12 @@ export const useUIStore = create<UIStore>()(
       state.workbenchOpen = true
     }),
     toggleWorkbenchTool: (tool) => set((state) => {
+      if (tool === 'pull-requests') state.pullRequestsScope = 'session'
       toggleTool(state, tool)
     }),
     selectWorkbenchTool: (tool) => set((state) => {
       if (state.workbenchTabs.some((tab) => tab.tool === tool)) {
+        if (tool === 'pull-requests') state.pullRequestsScope = 'session'
         state.activeWorkbenchTool = tool
         state.workbenchOpen = true
       }
@@ -209,6 +219,12 @@ export const useUIStore = create<UIStore>()(
     }),
     toggleWorkbench: () => set((state) => {
       state.workbenchOpen = !state.workbenchOpen
+      if (
+        state.workbenchOpen
+        && state.activeWorkbenchTool === 'pull-requests'
+      ) {
+        state.pullRequestsScope = 'session'
+      }
       if (!state.workbenchOpen) state.workbenchMaximized = false
     }),
     closeWorkbench: () => set((state) => {
@@ -229,6 +245,15 @@ export const useUIStore = create<UIStore>()(
     // and streamed tool calls. They now all target the shared workbench.
     toggleWiki: () => set((state) => { toggleTool(state, 'wiki') }),
     toggleScheduler: () => set((state) => { toggleTool(state, 'scheduler') }),
+    togglePullRequests: () => set((state) => {
+      const switchScopeOnly =
+        state.pullRequestsScope === 'session'
+        && state.activeWorkbenchTool === 'pull-requests'
+        && state.workbenchOpen
+      state.pullRequestsScope = 'all'
+      if (switchScopeOnly) return
+      toggleTool(state, 'pull-requests')
+    }),
     toggleBrowser: () => set((state) => { toggleTool(state, 'browser') }),
     toggleTerminal: () => set((state) => { toggleTool(state, 'terminal') }),
     closeWiki: () => set((state) => { closeTool(state, 'wiki') }),

@@ -120,6 +120,11 @@ export const queryKeys = {
       ['projects', 'detail', id, 'aim-run', runId] as const,
   },
   git: {
+    reviews: (scope?: string) =>
+      scope
+        ? ['git', 'reviews', scope] as const
+        : ['git', 'reviews'] as const,
+    connections: () => ['git', 'review-connections'] as const,
     changes: (ws: string) => ['git', ws, 'changes'] as const,
     branches: (ws: string) => ['git', ws, 'branches'] as const,
     log: (ws: string, page: number) => ['git', ws, 'log', page] as const,

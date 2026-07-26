@@ -192,6 +192,23 @@ async def test_auto_mode_allows_without_blocking():
 
 
 @pytest.mark.asyncio
+async def test_important_action_still_confirms_in_auto_mode():
+    service = PermissionService(session_id="s1", mode="auto")
+
+    async def _reply_later():
+        while not service.list_pending():
+            await asyncio.sleep(0)
+        service.reply(service.list_pending()[0].id, "once")
+
+    asyncio.create_task(_reply_later())
+    await service.ask(
+        "merge_code_review",
+        ["merge_code_review"],
+        important=True,
+    )
+
+
+@pytest.mark.asyncio
 async def test_auto_mode_still_denies_deny_rules():
     service = PermissionService(
         session_id="s1",

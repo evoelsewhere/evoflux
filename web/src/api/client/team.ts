@@ -397,6 +397,7 @@ export async function resolveTeamSession(options: {
   thinkingLevel?: string | null
   create?: boolean
   tags?: string[]
+  tagMatch?: 'exact' | 'contains'
   worktreeFrom?: string | null
   worktreeName?: string | null
   worktreeBranch?: string | null
@@ -410,6 +411,7 @@ export async function resolveTeamSession(options: {
   if (options.thinkingLevel !== undefined) body.thinking_level = options.thinkingLevel
   if (options.create !== undefined) body.create = options.create
   if (options.tags !== undefined) body.tags = options.tags
+  if (options.tagMatch !== undefined) body.tag_match = options.tagMatch
   if (options.worktreeFrom !== undefined) body.worktree_from = options.worktreeFrom
   if (options.worktreeName !== undefined) body.worktree_name = options.worktreeName
   if (options.worktreeBranch !== undefined) body.worktree_branch = options.worktreeBranch

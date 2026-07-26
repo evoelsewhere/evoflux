@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
@@ -33,6 +34,10 @@ class TeamSessionResolveRequest(BaseModel):
     # vice versa. Persisted on the session when ``create`` (or no match)
     # yields a new row.
     tags: list[str] = []
+    # Exact set matching remains the default for capability-scoped sessions.
+    # Feature contexts such as a code review can request "contains" so the
+    # same session is reused even after another capability tag is added.
+    tag_match: Literal["exact", "contains"] = "exact"
 
     @field_validator("tags")
     @classmethod

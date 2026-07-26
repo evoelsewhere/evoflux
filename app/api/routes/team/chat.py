@@ -955,6 +955,7 @@ async def resolve_team_session(
                 workspace=workspace,
                 project_id=project_id,
                 tags=session_tags,
+                tag_match=body.tag_match,
             )
         created = session is None
         if session is None:

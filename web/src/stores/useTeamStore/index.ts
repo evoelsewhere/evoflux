@@ -72,6 +72,7 @@ function resetSessionState(
   state.sessionId = options.sessionId
   state.projectId = null
   state.sessionTitle = null
+  state.sessionTags = []
   state.sessionModel = options.model ?? null
   state.sessionThinkingLevel = options.thinkingLevel ?? null
   state.sessionFastMode = options.fastMode ?? false
@@ -183,6 +184,7 @@ export const useTeamStore = create<TeamStore>()(
     sessionId: null,
     projectId: null,
     sessionTitle: null,
+    sessionTags: [],
     sessionModel: null,
     sessionThinkingLevel: null,
     sessionFastMode: false,
@@ -797,6 +799,7 @@ export const useTeamStore = create<TeamStore>()(
         set((draft) => {
           draft.sessionId = sessionId
           draft.projectId = history.lead.project_id ?? null
+          draft.sessionTags = history.lead.tags ?? []
           draft.sessionModel = history.lead.model ?? null
           draft.sessionThinkingLevel = history.lead.thinking_level ?? null
           draft.sessionFastMode = fastModeFromMessages(history.lead.messages)
