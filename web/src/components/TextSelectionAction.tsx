@@ -56,10 +56,14 @@ export function TextSelectionAction({
   const activeRef = useRef(false)
   // True while any mouse button is held — suppresses the toolbar mid-drag.
   const mouseDownRef = useRef(false)
-  // Settle timer: the toolbar shows only after the selection text has been
+  // Settle timer: the toolbar shows only after the selection has been
   // unchanged (and the mouse released) for SETTLE_MS.
   const settleTimerRef = useRef<number | null>(null)
+  // Latest selection-derived facts, refreshed on every captureSelection so
+  // the settle timer can re-validate before showing (avoids acting on a
+  // selection that changed or collapsed while the timer was pending).
   const pendingTextRef = useRef('')
+  const pendingRectRef = useRef<{ top: number; bottom: number; left: number } | null>(null)
   // Always-current enabled flag so stable callbacks can read it without
   // being recreated (which would re-register the listeners).
   const enabledRef = useRef(enabled)
@@ -82,12 +86,10 @@ export function TextSelectionAction({
     setSelectedText('')
   }, [clearSettle])
 
-  const showForSelection = useCallback((text: string) => {
-    const sel = window.getSelection()
-    if (!sel || sel.rangeCount === 0) return
-    const rect = sel.getRangeAt(0).getBoundingClientRect()
-    // Skip stale rects (selection changed again while the timer ran).
-    if (rect.width === 0 && rect.height === 0) return
+  const showPending = useCallback(() => {
+    const text = pendingTextRef.current
+    const rect = pendingRectRef.current
+    if (!text || !rect) return
     const toolbarWidth = Math.min(430, window.innerWidth - 16)
     const placement = rect.top >= 56 ? 'above' : 'below'
     setPosition({
@@ -103,9 +105,9 @@ export function TextSelectionAction({
     clearSettle()
     settleTimerRef.current = window.setTimeout(() => {
       settleTimerRef.current = null
-      if (!mouseDownRef.current) showForSelection(pendingTextRef.current)
+      if (!mouseDownRef.current) showPending()
     }, SETTLE_MS)
-  }, [clearSettle, showForSelection])
+  }, [clearSettle, showPending])
 
   const captureSelection = useCallback(() => {
     if (!enabledRef.current) {
@@ -137,7 +139,13 @@ export function TextSelectionAction({
       return
     }
 
-    // Mid-drag: hide any visible toolbar and just remember the latest text —
+    // Snapshot the anchor rect now — the selection may be gone by the time
+    // the settle timer fires, and getBoundingClientRect on a dead selection
+    // returns zeros.
+    const rect = sel.getRangeAt(0).getBoundingClientRect()
+    pendingRectRef.current = { top: rect.top, bottom: rect.bottom, left: rect.left }
+
+    // Mid-drag: hide any visible toolbar and just remember the latest facts —
     // the mouseup handler will schedule the settle window.
     if (mouseDownRef.current) {
       if (activeRef.current) dismiss()
