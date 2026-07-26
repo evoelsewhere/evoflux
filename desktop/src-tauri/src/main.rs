@@ -1,6 +1,7 @@
 // Prevents additional console window on Windows in release.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod openers;
 mod sidecar;
 mod workspace;
 
@@ -1636,6 +1637,8 @@ fn main() {
             workspace::list_directory,
             workspace::start_file_watcher,
             workspace::stop_file_watcher,
+            openers::list_workspace_openers,
+            openers::open_workspace_with,
         ])
         .setup(|app| {
             install_desktop_menus(app)?;

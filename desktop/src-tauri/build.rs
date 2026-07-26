@@ -9,6 +9,8 @@ fn main() {
             "set_tray_session",
             "list_workspace_files",
             "read_workspace_file",
+            "list_workspace_openers",
+            "open_workspace_with",
         ]),
     ))
     .expect("failed to build Tauri application");

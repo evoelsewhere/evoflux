@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import {
   Check,
   ChevronDown,
+  GitPullRequest,
   Menu,
   MessageSquare,
   Monitor,
@@ -17,8 +18,11 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { useMotionPreset } from '@/lib/motion'
+import { usePlatform } from '@/hooks/use-platform'
 import { useUIStore } from '@/stores/useUIStore'
+import { OpenWithMenu } from '@/components/workbench/OpenWithMenu'
 import type { ViewMode } from '@/components/TeamChatView/types'
+import type { CodeReviewSessionContext } from '@/lib/code-review-session'
 
 interface WorkbenchBarProps {
   identity: string
@@ -30,6 +34,10 @@ interface WorkbenchBarProps {
   onOpenMobileSidebar: () => void
   isMobile: boolean
   isMacOverlay: boolean
+  /** Absolute workspace root for the "Open in" menu; null hides it. */
+  workspace?: string | null
+  reviewContext?: CodeReviewSessionContext | null
+  onOpenReviewContext?: () => void
   dragHandlers?: {
     onMouseDown?: (event: ReactMouseEvent<HTMLElement>) => void
   }
@@ -39,6 +47,9 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
   const workbenchOpen = useUIStore((state) => state.workbenchOpen)
   const toggleWorkbench = useUIStore((state) => state.toggleWorkbench)
   const motionPreset = useMotionPreset()
+  const { isTauri, os } = usePlatform()
+  const isDesktopShell = isTauri && os !== 'ios' && os !== 'android'
+  const showOpenWith = isDesktopShell && !props.isMobile
   const viewModeLabel =
     props.viewMode === 'agent'
       ? 'Agent'
@@ -81,7 +92,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
       <motion.div
         layout="position"
         transition={motionPreset.spring}
-        className="flex min-w-0 flex-1"
+        className="flex min-w-0 flex-1 items-center gap-2"
       >
         <DropdownMenu>
           <DropdownMenuTrigger
@@ -129,6 +140,23 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+        {props.reviewContext && props.onOpenReviewContext && (
+          <motion.button
+            layout
+            type="button"
+            onClick={props.onOpenReviewContext}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.96 }}
+            transition={motionPreset.spring}
+            className="flex h-7 shrink-0 items-center gap-1.5 rounded-lg border border-(--color-accent)/25 bg-(--color-accent)/8 px-2 text-[11px] font-medium text-(--color-accent) transition-colors hover:border-(--color-accent)/45 hover:bg-(--color-accent)/12"
+            aria-label={`Open linked review #${props.reviewContext.number}`}
+            title="Open linked PR/MR"
+            data-no-drag
+          >
+            <GitPullRequest size={13} />
+            <span>Review #{props.reviewContext.number}</span>
+          </motion.button>
+        )}
       </motion.div>
 
       <motion.div
@@ -137,6 +165,12 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
         className="flex shrink-0 items-center rounded-xl border border-(--color-border) bg-(--bg-card)/55 p-0.5 shadow-sm"
         data-no-drag
       >
+        {showOpenWith && (
+          <>
+            <OpenWithMenu workspace={props.workspace ?? null} />
+            <span className="mx-0.5 h-4 w-px bg-(--color-border)" aria-hidden="true" />
+          </>
+        )}
         <DropdownMenu>
           <DropdownMenuTrigger
             className="group flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-(--color-text-muted) outline-none transition-colors hover:bg-(--bg-key) hover:text-(--color-text) data-[popup-open]:bg-(--bg-key) data-[popup-open]:text-(--color-text)"

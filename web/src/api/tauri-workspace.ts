@@ -122,6 +122,38 @@ export async function tauriRevealWorkspacePath(root: string, path?: string): Pro
   })
 }
 
+// ── "Open with" ─────────────────────────────────────────────────────────────
+
+/** A desktop app that can open the workspace root. */
+export interface WorkspaceOpener {
+  /** Stable identifier passed to tauriOpenWorkspaceWith. */
+  id: string
+  /** Display name shown in the menu. */
+  name: string
+  /** Category — drives icon choice and menu ordering. */
+  kind: 'editor' | 'file_manager' | 'terminal'
+}
+
+/**
+ * List desktop apps available to open the workspace root.
+ *
+ * Detection happens in Rust against a curated catalog (editors, file
+ * managers, terminals) — only apps actually installed are returned.
+ */
+export async function tauriListWorkspaceOpeners(): Promise<WorkspaceOpener[]> {
+  return tauriInvoke<WorkspaceOpener[]>('list_workspace_openers')
+}
+
+/**
+ * Open the workspace root with a specific app from the opener catalog.
+ *
+ * @param root - Absolute path to the workspace root directory.
+ * @param openerId - An `id` returned by tauriListWorkspaceOpeners.
+ */
+export async function tauriOpenWorkspaceWith(root: string, openerId: string): Promise<void> {
+  return tauriInvoke<void>('open_workspace_with', { root, openerId })
+}
+
 /** A single directory entry from list_directory. */
 export interface DirEntry {
   name: string
