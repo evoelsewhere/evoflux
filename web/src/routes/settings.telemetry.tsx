@@ -7,6 +7,7 @@ import { ArrowLeft, BarChart3 } from 'lucide-react'
 
 import { useIsMobile } from '@/hooks/use-mobile'
 import { SettingsGroup, SettingsPage } from '@/components/settings/SettingsLayout'
+import { SettingsAsyncBoundary } from '@/components/settings/SettingsLoading'
 import { SegmentedControl } from '@/components/ui/segmented-control'
 import {
   useInfiniteTracesQuery,
@@ -14,7 +15,6 @@ import {
   useTraceDetailQuery,
 } from '@/queries'
 import { formatShortId } from '@/utils/telemetryFormat'
-import { ErrorState, LoadingState } from '@/routes/telemetry/chrome'
 import { SummaryView } from '@/routes/telemetry/summary/SummaryView'
 import { TracesSection } from '@/routes/telemetry/traces/TracesSection'
 import { SpanDetailPanel } from '@/routes/telemetry/waterfall/SpanDetailPanel'
@@ -39,6 +39,7 @@ export function TelemetrySettingsPage() {
     <SettingsPage
       icon={BarChart3}
       title="Telemetry"
+      size="full"
       lede={
         selectedTraceId
           ? undefined
@@ -84,15 +85,16 @@ function SummaryBody({
   const traceTotal = traces.data?.pages[0]?.total ?? traceRows.length
 
   return (
-    <>
-      {summary.isLoading ? (
-        <LoadingState label="Loading span aggregates…" />
-      ) : summary.isError ? (
-        <ErrorState
-          message={String(summary.error)}
-          onRetry={() => summary.refetch()}
-        />
-      ) : summary.data ? (
+    <SettingsAsyncBoundary
+      loading={summary.isLoading || summary.isFetching}
+      hasData={Boolean(summary.data)}
+      error={summary.isError ? summary.error : undefined}
+      variant="telemetry"
+      loadingLabel="Loading span aggregates"
+      errorTitle="Failed to load telemetry"
+      onRetry={() => void summary.refetch()}
+    >
+      {summary.data ? (
         <div className="flex flex-col gap-6">
           <SummaryView data={summary.data} />
           <TracesSection
@@ -109,7 +111,7 @@ function SummaryBody({
           />
         </div>
       ) : null}
-    </>
+    </SettingsAsyncBoundary>
   )
 }
 
@@ -142,17 +144,23 @@ function TraceDetail({
       </div>
       <div className="relative flex min-h-64 overflow-hidden">
         <div className="min-w-0 flex-1 overflow-y-auto p-4 sm:px-6">
-          {isLoading ? (
-            <LoadingState label="Loading trace…" />
-          ) : isError ? (
-            <ErrorState message={String(error)} onRetry={() => refetch()} />
-          ) : data ? (
+          <SettingsAsyncBoundary
+            loading={isLoading}
+            hasData={Boolean(data)}
+            error={isError ? error : undefined}
+            variant="telemetry"
+            loadingLabel="Loading trace"
+            errorTitle="Failed to load trace"
+            onRetry={() => void refetch()}
+          >
+          {data ? (
             <Waterfall
               spans={data.spans}
               selectedSpanId={selectedSpanId}
               onSelectSpan={setSelectedSpanId}
             />
           ) : null}
+          </SettingsAsyncBoundary>
         </div>
         {selectedSpan && (
           <div className={isMobile

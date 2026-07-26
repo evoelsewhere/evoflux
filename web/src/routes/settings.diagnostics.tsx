@@ -1,9 +1,10 @@
 /** /settings/diagnostics — active health checks across all EvoFlux subsystems. */
 import { motion } from 'framer-motion'
-import { AlertTriangle, CheckCircle2, Loader2, RefreshCw, Stethoscope, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, RefreshCw, Stethoscope, XCircle } from 'lucide-react'
 
 import { useDiagnosticsQuery } from '@/queries'
 import { SettingsCallout, SettingsGroup, SettingsPage } from '@/components/settings/SettingsLayout'
+import { SettingsAsyncBoundary } from '@/components/settings/SettingsLoading'
 import { Button } from '@/components/ui/button'
 import { useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
@@ -27,8 +28,8 @@ function CheckRow({ check, index }: { check: DiagnosticsCheck; index: number }) 
   const preset = useMotionPreset()
   return (
     <motion.div
-      initial={{ opacity: 0, y: 6 * preset.distance }}
-      animate={{ opacity: 1, y: 0 }}
+      initial={{ y: 6 * preset.distance }}
+      animate={{ y: 0 }}
       transition={{ ...preset.transition, delay: index * preset.stagger }}
       className={cn(
         'flex items-start gap-3 px-4 py-3.5',
@@ -57,6 +58,7 @@ export function DiagnosticsPage() {
       icon={Stethoscope}
       title="Diagnostics"
       lede="Live health checks across every EvoFlux subsystem. Start here when a provider key, sandbox path or background job is misbehaving."
+      size="wide"
       actions={
         <Button
           variant="ghost"
@@ -74,19 +76,15 @@ export function DiagnosticsPage() {
         </Button>
       }
     >
-      {isLoading && (
-        <div className="flex items-center gap-2 py-8 text-sm text-(--color-text-muted)">
-          <Loader2 size={16} className="animate-spin" aria-hidden="true" />
-          Running checks…
-        </div>
-      )}
-
-      {error && !isLoading && (
-        <SettingsCallout tone="error" icon={XCircle}>
-          Could not reach the backend. {error instanceof Error ? error.message : String(error)}
-        </SettingsCallout>
-      )}
-
+      <SettingsAsyncBoundary
+        loading={isLoading || isRefetching}
+        hasData={Boolean(data)}
+        error={error}
+        variant="diagnostics"
+        loadingLabel="Running diagnostic checks"
+        errorTitle="Could not reach the backend"
+        onRetry={() => void refetch()}
+      >
       {data && summary && (
         <>
           <SettingsCallout tone={summary.tone} icon={data.summary === 'ok' ? CheckCircle2 : AlertTriangle}>
@@ -105,6 +103,7 @@ export function DiagnosticsPage() {
           </SettingsGroup>
         </>
       )}
+      </SettingsAsyncBoundary>
     </SettingsPage>
   )
 }

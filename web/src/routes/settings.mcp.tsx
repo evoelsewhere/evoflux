@@ -40,7 +40,7 @@ function StatusDot({ server }: { server: ServerStatus }) {
 }
 
 export function McpListPage() {
-  const { data, isLoading, isError } = useMcpServersQuery()
+  const { data, isLoading, isFetching, isError, error, refetch } = useMcpServersQuery()
   const { name: selected } = useSettingsParams() as { name?: string }
 
   const rows = useMemo<ListViewRow[]>(
@@ -78,7 +78,10 @@ export function McpListPage() {
       filterPlaceholder="Filter servers…"
       rows={rows}
       isLoading={isLoading}
+      isFetching={isFetching}
       isError={isError}
+      error={error}
+      onRetry={() => void refetch()}
       emptyTitle="No MCP servers yet"
       emptyBody="MCP servers expose tools and resources to your agents over stdio or HTTP."
     />
