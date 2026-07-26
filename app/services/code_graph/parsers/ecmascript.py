@@ -208,10 +208,16 @@ class EcmaScriptParser(TreeSitterParser):
                     if spec.type == "import_specifier":
                         name_node = spec.child_by_field_name("name")
                         if name_node is not None:
+                            alias_node = spec.child_by_field_name("alias")
                             out.append(
                                 ImportRef(
                                     name=node_text(name_node, source),
                                     module_path=module_path,
+                                    local_name=(
+                                        node_text(alias_node, source)
+                                        if alias_node is not None
+                                        else None
+                                    ),
                                 )
                             )
             elif child.type == "namespace_import":

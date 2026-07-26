@@ -5,6 +5,7 @@ model: __PROVIDER_MODEL__
 temperature: 0.2
 thinking_level: high
 skills:
+  - code-graph-navigation
   - spec-driven-development
   - planning-and-task-breakdown
   - api-and-interface-design

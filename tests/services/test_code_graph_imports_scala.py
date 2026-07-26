@@ -40,6 +40,8 @@ def test_scala_renamed_import():
     # We record the original name, not the alias
     assert "Qux" in names
     assert "AliasQux" not in names
+    edge = next(edge for edge in result.edges if edge.kind == EDGE_IMPORTS)
+    assert edge.local_name == "AliasQux"
 
 
 def test_scala_wildcard_import_scala2():

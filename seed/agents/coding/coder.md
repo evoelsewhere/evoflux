@@ -5,6 +5,7 @@ model: __PROVIDER_MODEL__
 temperature: 0.2
 thinking_level: low
 skills:
+  - code-graph-navigation
   - incremental-implementation
   - test-driven-development
   - debugging-and-error-recovery

@@ -10,8 +10,8 @@ uses.
 Per-ecosystem file resolution:
 - **Relative** (``.``/``..`` prefix): universal, resolved against the
   importing file's directory.
-- **Python absolute**: when the first dotted segment is one of this repo's
-  own top-level packages.
+- **Python absolute**: indexed top-level modules and packages, including
+    ``src/`` layouts.
 - **Go absolute**: ``go.mod`` module path prefix; resolves to a directory.
 - **TS path aliases**: ``tsconfig.json`` ``compilerOptions.baseUrl``/``paths``.
 """
@@ -44,13 +44,16 @@ class ResolvedImport:
     dst_file_path: str | None
     dst_key: str | None
     imported_name: str
+    local_name: str
 
 
 @dataclass(slots=True)
 class ModuleResolution:
     """Aggregated resolution results for all import edges in a workspace."""
 
-    by_import_edge: dict[tuple[str, str], ResolvedImport] = field(default_factory=dict)
+    by_import_edge: dict[tuple[str, str, str | None, str | None], ResolvedImport] = (
+        field(default_factory=dict)
+    )
     imports_by_file: dict[str, dict[str, ResolvedImport]] = field(default_factory=dict)
 
 
@@ -131,8 +134,18 @@ def _read_ts_path_aliases(root: Path) -> dict[str, list[str]]:
 
 
 def resolve_module_paths(
-    raw_edges: list[tuple[str, str | None, str | None, str, int | None, str | None]],
-    files_by_path: dict[str, list[str]],
+    raw_edges: list[
+        tuple[
+            str,
+            str | None,
+            str | None,
+            str,
+            int | None,
+            str | None,
+            str | None,
+        ]
+    ],
+    symbols_by_file: dict[str, dict[str, list[str]]],
     known_files: frozenset[str],
     repo_ctx: RepoContext,
 ) -> ModuleResolution:
@@ -142,7 +155,15 @@ def resolve_module_paths(
     pairs to resolved targets. Non-import edges are ignored.
     """
     resolution = ModuleResolution()
-    for src_key, _dst_local, dst_name, kind, _line, module_path in raw_edges:
+    for (
+        src_key,
+        _dst_local,
+        dst_name,
+        kind,
+        _line,
+        module_path,
+        local_name,
+    ) in raw_edges:
         if kind != "imports" or not module_path:
             continue
         src_file = src_key.split("::", 1)[0] if "::" in src_key else ""
@@ -152,16 +173,20 @@ def resolve_module_paths(
         if target_file is None:
             continue
         imported_name = dst_name or module_path.rsplit(".", 1)[-1].split("/", 1)[-1]
-        dst_key = _find_symbol_in_file(imported_name, target_file, files_by_path)
+        binding_name = local_name or imported_name
+        dst_key = _find_symbol_in_file(imported_name, target_file, symbols_by_file)
         resolved = ResolvedImport(
             src_key=src_key,
             dst_file_path=target_file,
             dst_key=dst_key,
             imported_name=imported_name,
+            local_name=binding_name,
         )
-        resolution.by_import_edge[(src_key, module_path)] = resolved
+        resolution.by_import_edge[(src_key, module_path, dst_name, local_name)] = (
+            resolved
+        )
         file_imports = resolution.imports_by_file.setdefault(src_file, {})
-        file_imports[imported_name] = resolved
+        file_imports[binding_name] = resolved
     return resolution
 
 
@@ -226,7 +251,7 @@ def _resolve_python_absolute(
     repo_ctx: RepoContext,
 ) -> str | None:
     segments = module_path.split(".")
-    if not segments or segments[0] not in repo_ctx.py_top_level_packages:
+    if not segments:
         return None
     rel = "/".join(segments)
 
@@ -330,16 +355,17 @@ def _candidate_paths(base: str, importing_ext: str, repo_ctx: RepoContext) -> li
 def _find_symbol_in_file(
     name: str,
     file_path: str,
-    files_by_path: dict[str, list[str]],
+    symbols_by_file: dict[str, dict[str, list[str]]],
 ) -> str | None:
     """Find a symbol by name within a specific file's node keys.
 
     Returns the node key if exactly one match is found, ``None`` otherwise.
     """
-    file_keys = files_by_path.get(file_path, [])
-    matches = [
-        k for k in file_keys if k.split("::")[-1] == name or k.endswith(f"::{name}")
-    ]
+    file_symbols = symbols_by_file.get(file_path, {})
+    matches = file_symbols.get(name, [])
     if len(matches) == 1:
         return matches[0]
+    file_nodes = file_symbols.get(file_path, [])
+    if not matches and len(file_nodes) == 1:
+        return file_nodes[0]
     return None

@@ -18,6 +18,7 @@ from app.services.code_graph.types import (
     NODE_FUNCTION,
     NODE_INTERFACE,
     NODE_METHOD,
+    NODE_NAMESPACE,
 )
 
 if TYPE_CHECKING:
@@ -29,11 +30,28 @@ class CSharpParser(TreeSitterParser):
     extensions: ClassVar[tuple[str, ...]] = (".cs",)
     grammar: ClassVar[str] = "csharp"
 
+    def root_prefix(self, root: Node, source: bytes) -> str:
+        for child in root.children:
+            if child.type == "file_scoped_namespace_declaration":
+                name = child.child_by_field_name("name")
+                if name is not None:
+                    return f"{node_text(name, source)}."
+        return ""
+
     def classify(
         self, node: Node, source: bytes, *, inside_class: bool
     ) -> Definition | None:
         ntype = node.type
-        if ntype == "class_declaration":
+        if ntype in {"namespace_declaration", "file_scoped_namespace_declaration"}:
+            name = self._name(node, source)
+            if name:
+                return Definition(
+                    kind=NODE_NAMESPACE,
+                    name=name,
+                    is_class=False,
+                    prefix="" if ntype == "file_scoped_namespace_declaration" else None,
+                )
+        elif ntype == "class_declaration":
             name = self._name(node, source)
             if name:
                 return Definition(kind=NODE_CLASS, name=name, is_class=True)
@@ -99,7 +117,13 @@ class CSharpParser(TreeSitterParser):
             return []
         dotted = node_text(target, source)
         if alias_node is not None:
-            return [ImportRef(name=node_text(alias_node, source), module_path=dotted)]
+            return [
+                ImportRef(
+                    name=dotted.rsplit(".", 1)[-1],
+                    module_path=dotted,
+                    local_name=node_text(alias_node, source),
+                )
+            ]
         local_name = dotted.rsplit(".", 1)[-1]
         return [ImportRef(name=local_name, module_path=dotted)]
 
@@ -119,6 +143,45 @@ class CSharpParser(TreeSitterParser):
             if type_node is not None:
                 return _simple_type_name(type_node, source)
         return None
+
+    def uses_target(self, node: Node, source: bytes) -> str | None:
+        if node.type != "field_declaration":
+            return None
+
+        attributes = set(self.decorators(node, source))
+        modifiers = {
+            node_text(child, source)
+            for child in node.children
+            if child.type == "modifier"
+        }
+        is_injected = bool(attributes.intersection(_INJECTION_ATTRIBUTES))
+        if not is_injected and "readonly" not in modifiers:
+            return None
+
+        declaration = next(
+            (child for child in node.children if child.type == "variable_declaration"),
+            None,
+        )
+        if declaration is None:
+            return None
+        if not is_injected:
+            declarators = (
+                child
+                for child in declaration.children
+                if child.type == "variable_declarator"
+            )
+            if any(
+                any(child.type != "identifier" for child in declarator.named_children)
+                for declarator in declarators
+            ):
+                return None
+
+        type_node = declaration.child_by_field_name("type")
+        if type_node is None:
+            return None
+        names: list[str] = []
+        _collect_csharp_type_ids(type_node, source, names)
+        return names[0] if names else None
 
     def supertypes(self, node: Node, source: bytes) -> list[SuperType]:
         if node.type not in (
@@ -173,6 +236,47 @@ class CSharpParser(TreeSitterParser):
                 cleaned.append(stripped)
         return "\n".join(cleaned) if cleaned else None
 
+    def decorators(self, node: Node, source: bytes) -> list[str]:
+        out: list[str] = []
+        for child in node.children:
+            if child.type != "attribute_list":
+                continue
+            for attribute in child.children:
+                if attribute.type != "attribute":
+                    continue
+                name_node = attribute.child_by_field_name("name")
+                if name_node is not None:
+                    name = _simple_type_name(name_node, source)
+                    if name:
+                        out.append(name)
+        return out
+
+    def type_refs(self, node: Node, source: bytes) -> list[str]:
+        if node.type not in {
+            "method_declaration",
+            "constructor_declaration",
+            "property_declaration",
+            "delegate_declaration",
+        }:
+            return []
+
+        out: list[str] = []
+        return_type = node.child_by_field_name("returns")
+        if return_type is None and node.type == "property_declaration":
+            return_type = node.child_by_field_name("type")
+        if return_type is not None:
+            _collect_csharp_type_ids(return_type, source, out)
+
+        parameters = node.child_by_field_name("parameters")
+        if parameters is not None:
+            for parameter in parameters.children:
+                if parameter.type != "parameter":
+                    continue
+                type_node = parameter.child_by_field_name("type")
+                if type_node is not None:
+                    _collect_csharp_type_ids(type_node, source, out)
+        return list(dict.fromkeys(out))
+
     def _name(self, node: Node, source: bytes) -> str | None:
         name_node = node.child_by_field_name("name")
         return node_text(name_node, source) if name_node is not None else None
@@ -193,6 +297,72 @@ def _simple_type_name(node: Node, source: bytes) -> str | None:
         right = node.child_by_field_name("right")
         return node_text(right, source) if right is not None else None
     return None
+
+
+_INJECTION_ATTRIBUTES = frozenset({"Autowired", "Dependency", "FromServices", "Inject"})
+
+_CSHARP_BUILTIN_TYPES = frozenset(
+    {
+        "bool",
+        "byte",
+        "char",
+        "decimal",
+        "double",
+        "dynamic",
+        "float",
+        "int",
+        "long",
+        "nint",
+        "nuint",
+        "object",
+        "sbyte",
+        "short",
+        "string",
+        "uint",
+        "ulong",
+        "ushort",
+        "void",
+        "Boolean",
+        "Byte",
+        "Char",
+        "Decimal",
+        "Double",
+        "Int16",
+        "Int32",
+        "Int64",
+        "Object",
+        "SByte",
+        "Single",
+        "String",
+        "UInt16",
+        "UInt32",
+        "UInt64",
+    }
+)
+
+
+def _collect_csharp_type_ids(node: Node, source: bytes, out: list[str]) -> None:
+    if node.type == "predefined_type":
+        return
+    if node.type == "identifier":
+        name = node_text(node, source)
+        if name not in _CSHARP_BUILTIN_TYPES:
+            out.append(name)
+        return
+    if node.type == "generic_name":
+        for child in node.children:
+            if child.type == "identifier":
+                _collect_csharp_type_ids(child, source, out)
+            elif child.type == "type_argument_list":
+                _collect_csharp_type_ids(child, source, out)
+        return
+    if node.type == "qualified_name":
+        right = node.child_by_field_name("right")
+        if right is not None:
+            _collect_csharp_type_ids(right, source, out)
+        return
+    for child in node.children:
+        _collect_csharp_type_ids(child, source, out)
 
 
 def _looks_like_interface(name: str) -> bool:

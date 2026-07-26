@@ -25,6 +25,8 @@ def test_kotlin_aliased_import():
     names = _import_names(result)
     # We record the original name, not the alias
     assert "Bar" in names
+    edge = next(edge for edge in result.edges if edge.kind == EDGE_IMPORTS)
+    assert edge.local_name == "AliasBar"
 
 
 def test_kotlin_wildcard_import():

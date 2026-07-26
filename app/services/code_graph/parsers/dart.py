@@ -125,12 +125,14 @@ class DartParser(TreeSitterParser):
         if not module_path:
             return []
         alias = next((c for c in container.children if c.type == "identifier"), None)
-        name = (
-            node_text(alias, source)
-            if alias is not None
-            else _dart_local_name(module_path)
-        )
-        return [ImportRef(name=name, module_path=module_path)]
+        target_name = _dart_local_name(module_path)
+        return [
+            ImportRef(
+                name=target_name,
+                module_path=module_path,
+                local_name=node_text(alias, source) if alias is not None else None,
+            )
+        ]
 
     def supertypes(self, node: Node, source: bytes) -> list[SuperType]:
         if node.type != "class_definition":

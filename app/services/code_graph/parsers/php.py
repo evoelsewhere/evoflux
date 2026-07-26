@@ -103,7 +103,11 @@ class PhpParser(TreeSitterParser):
         module_path = f"{prefix}{node_text(base, source)}"
         alias = clause.child_by_field_name("alias")
         if alias is not None:
-            return ImportRef(name=node_text(alias, source), module_path=module_path)
+            return ImportRef(
+                name=_last_name(base, source) or node_text(base, source),
+                module_path=module_path,
+                local_name=node_text(alias, source),
+            )
         return ImportRef(
             name=_last_name(base, source) or node_text(base, source),
             module_path=module_path,

@@ -343,8 +343,12 @@ async def _resolve_static(
     project_id: UUID,
     changed_workspaces: set[UUID] | None = None,
 ) -> int:
-    """If ``changed_workspaces`` is provided, only (re-)resolve edges whose
-    source is in one of those workspaces (incremental optimization)."""
+    """Resolve unresolved edges against sibling repositories.
+
+    During an incremental pass, references from a changed source may target
+    any sibling, while references from an unchanged source only need to be
+    retried against changed siblings that may have gained the target symbol.
+    """
     siblings = await _load_sibling_repos(db, project_id=project_id)
     if len(siblings) < 2:
         return 0  # nothing to link against
@@ -353,12 +357,16 @@ async def _resolve_static(
         col(CrossRepoEdge.project_id) == project_id,
         col(CrossRepoEdge.status) == "unresolved",
     )
-    if changed_workspaces is not None and len(changed_workspaces) > 0:
-        query = query.where(col(CrossRepoEdge.src_workspace_id).in_(changed_workspaces))
 
     rows = (await db.exec(query)).all()
     if not rows:
         return 0
+
+    indexed_workspace_ids = set(siblings)
+    if changed_workspaces is not None:
+        indexed_workspace_ids = set(changed_workspaces)
+        if any(row.src_workspace_id in changed_workspaces for row in rows):
+            indexed_workspace_ids = set(siblings)
 
     # Built once per sibling and reused for every row below. The previous
     # version rebuilt this (a full node fetch + compute_importable_id over
@@ -375,12 +383,20 @@ async def _resolve_static(
     sibling_indexes = {
         ws_id: await _build_sibling_indexes(db, sibling)
         for ws_id, sibling in siblings.items()
+        if ws_id in indexed_workspace_ids
     }
 
     resolved = 0
     for row in rows:
         others = [
-            s for s in siblings.values() if s.workspace_id != row.src_workspace_id
+            sibling
+            for sibling in siblings.values()
+            if sibling.workspace_id != row.src_workspace_id
+            and (
+                changed_workspaces is None
+                or row.src_workspace_id in changed_workspaces
+                or sibling.workspace_id in changed_workspaces
+            )
         ]
         if not others:
             continue

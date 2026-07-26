@@ -24,12 +24,13 @@ def test_dart_bare_package_import():
 
 
 def test_dart_aliased_import():
-    source = b"""import 'package:shared/src/utils.dart' as utils;
+    source = b"""import 'package:shared/src/utils.dart' as sharedUtils;
 """
     result = DartParser().parse(file_path="lib/main.dart", source=source)
-    edges = _import_edges(result)
-    assert "utils" in edges
-    assert edges["utils"] == "package:shared/src/utils.dart"
+    edge = next(edge for edge in result.edges if edge.kind == EDGE_IMPORTS)
+    assert edge.dst_name == "utils"
+    assert edge.local_name == "sharedUtils"
+    assert edge.module_path == "package:shared/src/utils.dart"
 
 
 def test_dart_sdk_import():

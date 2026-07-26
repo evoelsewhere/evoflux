@@ -264,8 +264,17 @@ def _scala_import_segment(segment: list[Node], source: bytes) -> list[ImportRef]
         elif sub.type == "arrow_renamed_identifier":
             name_node = sub.child_by_field_name("name")
             if name_node is not None:
+                alias_node = sub.child_by_field_name("alias")
                 out.append(
-                    ImportRef(name=node_text(name_node, source), module_path=base_path)
+                    ImportRef(
+                        name=node_text(name_node, source),
+                        module_path=base_path,
+                        local_name=(
+                            node_text(alias_node, source)
+                            if alias_node is not None
+                            else None
+                        ),
+                    )
                 )
     return out
 

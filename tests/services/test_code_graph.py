@@ -387,6 +387,34 @@ async def test_code_tools_against_indexed_workspace(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_code_graph_surfaces_ambiguous_relationship_candidates(tmp_path):
+    from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
+    from app.agent.tools.builtin.code_graph import code_graph
+    from app.core.db import async_session_factory
+    from app.services.code_graph_service import reindex_workspace
+    from app.services.coding_workspace_service import upsert_coding_workspace
+
+    (tmp_path / "a.py").write_text("def dup():\n    pass\n", encoding="utf-8")
+    (tmp_path / "b.py").write_text("def dup():\n    pass\n", encoding="utf-8")
+    (tmp_path / "caller.py").write_text("def caller():\n    dup()\n", encoding="utf-8")
+    async with async_session_factory() as db:
+        workspace = await upsert_coding_workspace(db, path=str(tmp_path))
+        await db.commit()
+        await reindex_workspace(db, workspace_id=workspace.id, root_path=str(tmp_path))
+        await db.commit()
+
+    token = set_sandbox(SandboxConfig(workspace=str(tmp_path)))
+    try:
+        output = await code_graph(name="caller", direction="out")
+    finally:
+        _sandbox_ctx.reset(token)
+
+    assert "ambiguous calls 'dup' (2 candidates)" in output
+    assert "a.py:1-2" in output
+    assert "b.py:1-2" in output
+
+
+@pytest.mark.asyncio
 async def test_code_graph_limit_param(tmp_path):
     """code_graph's `limit` must actually cap output for symbols with a
     large fan-out (e.g. an interface with 80+ methods) — regression test
@@ -551,8 +579,61 @@ async def test_code_graph_cross_repo_limit_param(tmp_path):
         assert "referenced by (3 cross-repo)" in out
         assert out.count(" ← repo-a/") == 1
         assert "and 2 more" in out
+
+        outbound_only = await code_graph(name="shared", direction="out", limit=1)
+        assert "referenced by" not in outbound_only
     finally:
         _sandbox_ctx.reset(token)
+
+
+def test_code_graph_renders_all_indexed_relationship_kinds():
+    """The agent tool must not discard relationship kinds stored by the indexer."""
+    from uuid import uuid4
+
+    from app.agent.tools.builtin.code_graph import _render_graph
+    from app.models.code_graph import CodeNode
+
+    workspace_id = uuid4()
+
+    def node(name: str) -> CodeNode:
+        return CodeNode(
+            workspace_id=workspace_id,
+            file_path="main.py",
+            language="python",
+            kind="class",
+            name=name,
+            qualified_name=name,
+            line_start=1,
+            line_end=1,
+        )
+
+    subject = node("Subject")
+    output = _render_graph(
+        subject,
+        [
+            ("implements", node("Protocol")),
+            ("uses", node("Dependency")),
+            ("references", node("Payload")),
+            ("decorated_by", node("Decorator")),
+            ("contains", node("member")),
+        ],
+        [
+            ("uses", node("Consumer")),
+            ("references", node("Api")),
+            ("decorated_by", node("Route")),
+            ("contains", node("module")),
+        ],
+    )
+
+    assert "implements (1): Protocol" in output
+    assert "uses (1): Dependency" in output
+    assert "references (1): Payload" in output
+    assert "decorated by (1): Decorator" in output
+    assert "contains (1): member" in output
+    assert "used by (1): Consumer" in output
+    assert "referenced by (1): Api" in output
+    assert "decorates (1): Route" in output
+    assert "contained by (1): module" in output
 
 
 @pytest.mark.asyncio

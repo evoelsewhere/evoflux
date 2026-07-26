@@ -12,8 +12,10 @@ from app.services.code_graph.parsers.registry import default_registry
 from app.services.code_graph.parsers.rust import RustParser
 from app.services.code_graph.types import (
     EDGE_CALLS,
+    EDGE_DECORATED_BY,
     EDGE_IMPLEMENTS,
     EDGE_INHERITS,
+    EDGE_USES,
     NODE_CLASS,
     NODE_FUNCTION,
     NODE_INTERFACE,
@@ -367,6 +369,58 @@ def test_csharp_parser_docstring():
     methods = _by_kind(result.nodes, NODE_METHOD)
     assert methods[0].docstring is not None
     assert "Helper function" in methods[0].docstring
+
+
+def test_csharp_namespace_qualifies_symbols():
+    file_scoped = CSharpParser().parse(
+        file_path="UserService.cs",
+        source=b"namespace Company.Services;\npublic class UserService { public void Run() {} }\n",
+    )
+    block_scoped = CSharpParser().parse(
+        file_path="AuditService.cs",
+        source=b"namespace Company.Services { public class AuditService {} }\n",
+    )
+
+    assert any(
+        node.qualified_name == "Company.Services.UserService"
+        for node in file_scoped.nodes
+    )
+    assert any(
+        node.qualified_name == "Company.Services.UserService.Run"
+        for node in file_scoped.nodes
+    )
+    assert any(
+        node.qualified_name == "Company.Services.AuditService"
+        for node in block_scoped.nodes
+    )
+
+
+def test_csharp_attributes_and_required_fields_are_relationships():
+    source = b"""[Service]
+public class UserService {
+    [Inject] private IRepository<User> repository;
+    private readonly AuditClient auditClient;
+    private readonly Cache cache = new Cache();
+}
+"""
+    result = CSharpParser().parse(file_path="UserService.cs", source=source)
+    names = {node.local_id: node.name for node in result.nodes}
+    decorated = {
+        (names.get(edge.src_local_id), edge.dst_name)
+        for edge in result.edges
+        if edge.kind == EDGE_DECORATED_BY
+    }
+    dependencies = {
+        (names.get(edge.src_local_id), edge.dst_name)
+        for edge in result.edges
+        if edge.kind == EDGE_USES
+    }
+
+    assert ("UserService", "Service") in decorated
+    assert dependencies == {
+        ("UserService", "IRepository"),
+        ("UserService", "AuditClient"),
+    }
 
 
 # ── Registry integration ──────────────────────────────────────────────────────
