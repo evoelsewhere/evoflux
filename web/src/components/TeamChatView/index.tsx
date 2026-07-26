@@ -122,7 +122,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const [openWorkspaceDialogKey, setOpenWorkspaceDialogKey] = useState(0)
   const [codingWorkspacePickerPortal, setCodingWorkspacePickerPortal] = useState<HTMLDivElement | null>(null)
   const [showActivity, setShowActivity] = useState(false)
-  const [todosOpen, setTodosOpen] = useState(true)
+  const [todosOpen, setTodosOpen] = useState(false)
   const [permissionMode, setPermissionMode] = useState<import('@/api/types').PermissionMode>('auto')
   const [showMobileActions, setShowMobileActions] = useState(false)
   const [showPalette, setShowPalette] = useState(false)
