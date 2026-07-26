@@ -242,7 +242,7 @@ export function SidePanel({
         {hasHeader && (
           <motion.div
             layout="position"
-            className="flex shrink-0 items-center justify-between border-b border-(--color-border) px-3 py-2"
+            className="flex shrink-0 items-center justify-between px-3 py-2"
           >
             {typeof title === 'string' ? (
               <span className="text-xs font-semibold text-(--color-text-2)">{title}</span>
