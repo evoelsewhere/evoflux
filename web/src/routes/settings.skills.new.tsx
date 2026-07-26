@@ -94,6 +94,7 @@ export function NewSkillPage() {
           stacked
           control={
             <Textarea
+              aria-label="Skill source"
               value={content}
               onChange={(e) => handleContentChange(e.target.value)}
               disabled={createMut.isPending}

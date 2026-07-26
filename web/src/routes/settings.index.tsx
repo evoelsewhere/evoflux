@@ -27,6 +27,7 @@ import { useIsMobile } from '@/hooks/use-mobile'
 import { useSettingsNavigate } from '@/contexts/SettingsContext'
 import { SettingsGroup, SettingsPage, SettingsRow } from '@/components/settings/SettingsLayout'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   useAgentFilesQuery,
   useHealthQuery,
@@ -63,11 +64,13 @@ function SettingsNavRow({ row }: { row: NavRow }) {
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2">
           <span className="truncate text-sm text-(--color-text)">{row.title}</span>
-          {row.count != null && (
+          {row.count === null ? (
+            <Skeleton className="h-3 w-12 rounded" />
+          ) : row.count !== undefined ? (
             <span className="font-mono text-[11px] tabular-nums text-(--color-text-subtle)">
               {row.count} {row.countLabel}
             </span>
-          )}
+          ) : null}
         </span>
         <span className="mt-0.5 block truncate text-xs text-(--color-text-muted)">
           {row.description}
@@ -203,9 +206,21 @@ export function SettingsHubPage() {
       icon={Info}
       title="About EvoFlux"
       lede={
-        version
-          ? `On-machine AI assistant, version ${version}. Everything below is stored locally on this machine.`
-          : 'On-machine AI assistant. Everything below is stored locally on this machine.'
+        <span className="inline-flex flex-wrap items-center gap-x-1">
+          <span>On-machine AI assistant, version</span>
+          {version ? (
+            <span>{version}.</span>
+          ) : (
+            <>
+              <span
+                aria-hidden="true"
+                className="skeleton-shimmer inline-block h-3.5 w-14 rounded"
+              />
+              <span className="sr-only">Loading version</span>
+            </>
+          )}
+          <span>Everything below is stored locally on this machine.</span>
+        </span>
       }
     >
       <SettingsGroup title="Backend">

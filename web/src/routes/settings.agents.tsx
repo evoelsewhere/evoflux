@@ -21,7 +21,7 @@ import { useSettingsParams, useSettingsNavigate } from '@/contexts/SettingsConte
 type Tab = 'all' | 'forge' | 'coding' | 'aim'
 
 export function AgentsListPage() {
-  const { data, isLoading, isError } = useAgentFilesQuery()
+  const { data, isLoading, isFetching, isError, error, refetch } = useAgentFilesQuery()
   const registry = useRegistryQuery()
   const bulkModelMut = useBulkUpdateAgentModelMutation()
   const push = useToastStore((s) => s.push)
@@ -197,7 +197,10 @@ export function AgentsListPage() {
       }
       rows={rows}
       isLoading={isLoading}
+      isFetching={isFetching}
       isError={isError}
+      error={error}
+      onRetry={() => void refetch()}
       emptyTitle="No agents yet"
       emptyBody="Define a team member with a model, tools, and a system prompt."
     />

@@ -30,6 +30,7 @@ interface Props {
   onChange: (next: string[]) => void
   placeholder?: string
   emptyLabel?: string
+  ariaLabel?: string
   /** Optional id forwarded to the search input (for label association). */
   searchId?: string
 }
@@ -40,6 +41,7 @@ export function MultiSelect({
   onChange,
   placeholder = 'Select…',
   emptyLabel = 'No matches',
+  ariaLabel = placeholder,
   searchId,
 }: Props) {
   const [open, setOpen] = useState(false)
@@ -116,6 +118,7 @@ export function MultiSelect({
         render={
           <div
             role="combobox"
+            aria-label={ariaLabel}
             aria-expanded={open}
             aria-haspopup="listbox"
             tabIndex={0}

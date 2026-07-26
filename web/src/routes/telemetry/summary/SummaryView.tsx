@@ -55,6 +55,7 @@ export function SummaryView({ data }: { data: ObservabilitySummary }) {
           <EmptyTable label="No LLM calls recorded in this window." />
         ) : (
           <Table
+            ariaLabel="Usage by provider and model"
             headers={['Provider:model', 'Calls', 'Input', 'Output', 'Cache hit', 'Cost']}
             rows={data.by_model.map((m) => [
               m.provider_model,
@@ -80,6 +81,7 @@ export function SummaryView({ data }: { data: ObservabilitySummary }) {
           <EmptyTable label="No cache usage recorded in this window." />
         ) : (
           <Table
+            ariaLabel="Cache usage by step"
             headers={['Step', 'Provider:model', 'Calls', 'Hit', 'Miss', 'Hit rate', 'Cost']}
             rows={data.cache_by_step.map((step) => {
               return [
