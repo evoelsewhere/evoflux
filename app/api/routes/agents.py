@@ -10,24 +10,13 @@ from __future__ import annotations
 import asyncio
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, HTTPException
 from loguru import logger
 from pydantic import ValidationError
 
-from app.agent.loader import AgentConfig
-from app.agent.hooks.summarization import prompt_token_threshold_for_model
-from app.agent.providers.capabilities import get_capabilities
-from app.agent.providers.catalog import ProviderEntry, all_providers
-from app.agent.providers.model_metadata import get_model_limits
-from app.agent.providers.model_discovery import (
-    discover_provider_models,
-    filter_agent_model_ids,
-)
-from app.agent.providers.model_metadata import get_model_thinking_levels
 from app.core.runtime_settings import provider_visible_models
-from app.agent.tools.builtin.skill import discover_skills
 from app.api.schemas.agents import (
     AgentBulkModelRequest,
     AgentBulkModelResponse,
@@ -49,6 +38,10 @@ from app.services.agent_fs import (
     AgentFsPathError,
 )
 
+if TYPE_CHECKING:
+    from app.agent.config import AgentConfig
+    from app.agent.providers.catalog import ProviderEntry
+
 router = APIRouter()
 
 # Live-discovered provider models are cached per-provider so each
@@ -56,6 +49,15 @@ router = APIRouter()
 # TTL is short so newly-added models become visible without a restart.
 _REGISTRY_MODEL_CACHE_TTL_S = 60.0
 _registry_model_cache: dict[str, tuple[float, list[str]]] = {}
+
+
+async def discover_provider_models(
+    entry: ProviderEntry, *, overrides: dict[str, str]
+) -> list[str]:
+    """Patch-compatible lazy wrapper for live provider discovery."""
+    from app.agent.providers.model_discovery import discover_provider_models as discover
+
+    return await discover(entry, overrides=overrides)
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -150,7 +152,7 @@ def _effective_config(cfg: AgentConfig, *, mode: str) -> AgentConfig:
 
 def _parse_content(name: str, content: str) -> AgentConfig:
     """Parse raw .md text into an ``AgentConfig`` (no disk I/O)."""
-    from app.agent.loader import _FRONTMATTER_RE
+    from app.agent.config import AgentConfig, _FRONTMATTER_RE
 
     m = _FRONTMATTER_RE.match(content)
     if not m:
@@ -263,7 +265,15 @@ async def list_agents() -> AgentListResponse:
 @router.get("/registry")
 async def get_registry() -> RegistryResponse:
     """Dropdown catalog: tools, skills, providers, known models."""
+    from app.agent.hooks.summarization import prompt_token_threshold_for_model
     from app.agent.loader import _default_tool_registry
+    from app.agent.providers.capabilities import get_capabilities
+    from app.agent.providers.catalog import all_providers
+    from app.agent.providers.model_metadata import (
+        get_model_limits,
+        get_model_thinking_levels,
+    )
+    from app.agent.tools.builtin.skill import discover_skills
 
     tool_registry = _default_tool_registry()
     hidden_tools = {"skill", "load_tool", "todo_manage", "schedule_task", "note"}
@@ -272,7 +282,7 @@ async def get_registry() -> RegistryResponse:
             ToolCatalogEntry(
                 name=t.name,
                 description=t.description or "",
-                tiers=sorted(t.tiers) if getattr(t, "tiers", None) else None,
+                tiers=sorted(t.tiers or ()) or None,
                 lead_only=getattr(t, "lead_only", False),
             )
             for t in tool_registry.values()
@@ -354,6 +364,8 @@ async def _discover_configured_registry_models() -> list[tuple[str, str]]:
         _provider_is_configured,
         _provider_saved_overrides,
     )
+    from app.agent.providers.catalog import all_providers
+    from app.agent.providers.model_discovery import filter_agent_model_ids
 
     configured: list[ProviderEntry] = [
         entry for entry in all_providers() if _provider_is_configured(entry)
@@ -398,6 +410,7 @@ async def is_registered_model_id(model_id: str) -> bool:
         return False
 
     from app.api.routes.settings import _provider_is_configured
+    from app.agent.providers.catalog import all_providers
 
     for entry in all_providers():
         if entry["id"] != provider or not _provider_is_configured(entry):
@@ -422,7 +435,7 @@ async def bulk_update_model(body: AgentBulkModelRequest) -> AgentBulkModelRespon
     """
     import yaml
 
-    from app.agent.loader import _FRONTMATTER_RE
+    from app.agent.config import _FRONTMATTER_RE
 
     results: list[AgentBulkModelResult] = []
     for name in body.names:

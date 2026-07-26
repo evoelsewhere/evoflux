@@ -97,7 +97,7 @@ export async function deleteGitServerConnection(id: string): Promise<void> {
 
 export async function testGitServerConnection(body: {
   provider: GitServerConnectionInput['provider']
-  base_url: string
+  domain: string
   token: string
   username?: string | null
   verify_ssl: boolean

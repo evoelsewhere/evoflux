@@ -1424,7 +1424,9 @@ export interface GitServerConnection {
   id: string
   name: string
   provider: GitServerProvider
+  domain: string
   base_url: string
+  token_url: string
   host: string
   scope: GitServerConnectionScope
   workspace_id: string | null
@@ -1439,7 +1441,8 @@ export interface GitServerConnection {
 export interface GitServerConnectionInput {
   name: string
   provider: GitServerProvider
-  base_url: string
+  domain: string
+  base_url?: string
   scope: GitServerConnectionScope
   workspace_id: string | null
   token?: string
@@ -1472,6 +1475,7 @@ export interface RepositoryCodeReviews {
   remote_url: string | null
   repository: string | null
   detected_provider: GitServerProvider | null
+  suggested_domain: string | null
   suggested_base_url: string | null
   connection_id: string | null
   provider: GitServerProvider | null

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import threading
+import time
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -890,6 +893,111 @@ async def test_list_units_returns_all_and_filters_by_phase(client, tmp_path):
     body = resp.json()
     assert len(body) == 1
     assert body[0]["name"] == "TAXCALC"
+
+
+@pytest.mark.asyncio
+async def test_list_units_reuses_one_kb_inventory_snapshot(
+    client, tmp_path, monkeypatch: pytest.MonkeyPatch
+):
+    from app.services.aim import kb_store
+
+    source = _make_local_repo(tmp_path, "units-snapshot-source")
+    target = _make_local_repo(tmp_path, "units-snapshot-target")
+    kb_path = tmp_path / "units-snapshot-kb"
+    created = await client.post(
+        "/api/team/projects/aim",
+        json={
+            "name": "units-snapshot",
+            "source_paths": [str(source)],
+            "target_path": str(target),
+            "kb_path": str(kb_path),
+        },
+    )
+    project_id = created.json()["id"]
+    for name in ("PAY", "TAX", "DATE"):
+        kb_store.write_unit(
+            kb_path,
+            "core",
+            name,
+            kind="program",
+            phase="inventory",
+            body="Documented behavior.",
+        )
+    await client.post(f"/api/team/projects/{project_id}/aim/reindex")
+
+    original = kb_store.list_units
+    calls = 0
+
+    def counted(kb_root: Path):
+        nonlocal calls
+        calls += 1
+        return original(kb_root)
+
+    monkeypatch.setattr(kb_store, "list_units", counted)
+
+    response = await client.get(f"/api/team/projects/{project_id}/aim/units")
+
+    assert response.status_code == 200
+    assert len(response.json()) == 3
+    assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_list_units_filesystem_scan_does_not_block_event_loop(
+    client, tmp_path, monkeypatch: pytest.MonkeyPatch
+):
+    from app.services.aim import kb_store
+
+    source = _make_local_repo(tmp_path, "units-async-source")
+    target = _make_local_repo(tmp_path, "units-async-target")
+    kb_path = tmp_path / "units-async-kb"
+    created = await client.post(
+        "/api/team/projects/aim",
+        json={
+            "name": "units-async",
+            "source_paths": [str(source)],
+            "target_path": str(target),
+            "kb_path": str(kb_path),
+        },
+    )
+    project_id = created.json()["id"]
+    kb_store.write_unit(
+        kb_path,
+        "core",
+        "PAY",
+        kind="program",
+        phase="inventory",
+        body="Documented behavior.",
+    )
+    await client.post(f"/api/team/projects/{project_id}/aim/reindex")
+
+    original = kb_store.list_units
+    entered = threading.Event()
+    release = threading.Event()
+
+    def blocked(kb_root: Path):
+        entered.set()
+        release.wait(timeout=2)
+        return original(kb_root)
+
+    monkeypatch.setattr(kb_store, "list_units", blocked)
+    safety_release = threading.Timer(1.0, release.set)
+    safety_release.start()
+    started = time.perf_counter()
+    request = asyncio.create_task(
+        client.get(f"/api/team/projects/{project_id}/aim/units")
+    )
+    try:
+        await asyncio.sleep(0.05)
+        heartbeat_elapsed = time.perf_counter() - started
+        assert await asyncio.to_thread(entered.wait, 1.5)
+        assert heartbeat_elapsed < 0.5
+    finally:
+        release.set()
+        safety_release.cancel()
+
+    response = await request
+    assert response.status_code == 200
 
 
 @pytest.mark.asyncio

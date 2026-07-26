@@ -63,18 +63,22 @@ from app.api.schemas.aim import (
     AimUnitClaimOut,
 )
 from app.api.schemas.projects import ProjectResponse, ProjectWorkspaceItem
-from app.models.aim import AimLink, AimRun, AimUnit
+from app.models.aim import AimClaim, AimLink, AimRun, AimUnit
 from app.models.chat import CodingProjectWorkspace, CodingWorkspace
 from app.models.code_graph import CrossRepoEdge
-from app.services import code_graph_service as cg_svc
 from app.services import coding_project_service as svc
 from app.services import team_manager
-from app.services.aim import project_setup as aim_project_setup
 from app.services.code_graph.cross_repo import METHOD_MANUAL_REJECT
 from app.services.code_graph.cross_repo_jobs import cross_repo_jobs
 from app.services.code_graph.jobs import index_jobs
 
 router = APIRouter(prefix="/projects", tags=["projects"])
+
+
+def _code_graph_service():  # noqa: ANN202 - lazy module boundary
+    from app.services import code_graph_service
+
+    return code_graph_service
 
 
 def _validate_path_or_422(path: str) -> str:
@@ -515,7 +519,9 @@ async def get_project_code_graph_status(
     pairs = await svc.get_project_workspaces(db, project_id)
     statuses: list[ProjectRepoStatus] = []
     for _link, ws in pairs:
-        workspace_id = await cg_svc.resolve_workspace_id(db, path=ws.path)
+        workspace_id = await _code_graph_service().resolve_workspace_id(
+            db, path=ws.path
+        )
         if workspace_id is None:
             statuses.append(
                 ProjectRepoStatus(
@@ -526,7 +532,9 @@ async def get_project_code_graph_status(
                 )
             )
             continue
-        counts = await cg_svc.get_index_status(db, workspace_id=workspace_id)
+        counts = await _code_graph_service().get_index_status(
+            db, workspace_id=workspace_id
+        )
         job = index_jobs.snapshot(workspace_id)
         indexing = job is not None and job.status == "running"
         index_error = job.error if job is not None and job.status == "error" else None
@@ -571,7 +579,7 @@ async def search_project_code_graph(
 
     paths = await svc.get_project_workspace_paths(db, project_id)
     capped = max(1, min(limit_per_repo, 20))
-    results = await cg_svc.search_across_workspaces(
+    results = await _code_graph_service().search_across_workspaces(
         db, workspace_paths=paths, query=query, kind=kind, limit_per_workspace=capped
     )
     return ProjectCodeSearchResponse(
@@ -593,7 +601,9 @@ async def get_project_code_graph_overview(
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    overviews = await cg_svc.get_project_overview(db, project_id=project_id)
+    overviews = await _code_graph_service().get_project_overview(
+        db, project_id=project_id
+    )
     return ProjectCodeGraphOverviewResponse(
         overviews={
             path: CodeOverviewResponse.from_overview(overview)
@@ -629,7 +639,9 @@ async def get_project_code_graph_data(
     total_edge_count = 0
 
     for _link, ws in pairs:
-        workspace_id = await cg_svc.resolve_workspace_id(db, path=ws.path)
+        workspace_id = await _code_graph_service().resolve_workspace_id(
+            db, path=ws.path
+        )
         if workspace_id is None:
             repos.append(
                 ProjectRepoStatus(
@@ -641,7 +653,9 @@ async def get_project_code_graph_data(
             )
             continue
 
-        counts = await cg_svc.get_index_status(db, workspace_id=workspace_id)
+        counts = await _code_graph_service().get_index_status(
+            db, workspace_id=workspace_id
+        )
         job = index_jobs.snapshot(workspace_id)
         indexing = job is not None and job.status == "running"
         index_error = job.error if job is not None and job.status == "error" else None
@@ -670,7 +684,7 @@ async def get_project_code_graph_data(
             repo_edges,
             repo_total_nodes,
             repo_total_edges,
-        ) = await cg_svc.get_workspace_graph_data(
+        ) = await _code_graph_service().get_workspace_graph_data(
             db,
             workspace_id=workspace_id,
             node_limit=node_limit_per_repo,
@@ -770,6 +784,8 @@ async def preview_aim_project(kb_path: str) -> AimManifestPreviewResponse:
     """Read an existing KB repo's aim.yaml — the "Join existing" wizard
     step's preview, before asking the user for local repo path mappings.
     """
+    from app.services.aim import project_setup as aim_project_setup
+
     try:
         manifest = await aim_project_setup.preview_aim_manifest(kb_path)
     except FileNotFoundError:
@@ -789,6 +805,8 @@ async def preview_aim_project(kb_path: str) -> AimManifestPreviewResponse:
 async def create_aim_project_route(
     body: AimProjectCreateRequest, db: DbSession
 ) -> ProjectResponse:
+    from app.services.aim import project_setup as aim_project_setup
+
     source_paths = [_validate_path_or_422(p) for p in body.source_paths]
     target_path = _validate_path_or_422(body.target_path)
     kb_root = Path(body.kb_path).expanduser().resolve()
@@ -823,6 +841,8 @@ async def create_aim_project_route(
 async def join_aim_project_route(
     body: AimProjectJoinRequest, db: DbSession
 ) -> ProjectResponse:
+    from app.services.aim import project_setup as aim_project_setup
+
     kb_path = _validate_path_or_422(body.kb_path)
     try:
         project = await aim_project_setup.join_aim_project(
@@ -891,6 +911,102 @@ def _aim_unit_out(
         kb_doc_path=row.kb_doc_path,
         updated_at=row.updated_at,
     )
+
+
+def _build_aim_unit_outputs(
+    rows: list[AimUnit],
+    claims_by_unit: dict[UUID, AimClaim],
+    kb_root: Path | None,
+) -> list[AimUnitOut]:
+    from app.services.aim import kb_store
+    from app.services.aim.business_rules import business_rule_review_ready
+    from app.services.aim.models import UNIT_PHASE_NEXT_PIPELINE, next_unit_phase
+    from app.services.aim.readiness import evaluate_pipeline
+
+    state_schema = 1
+    inventory = None
+    inventory_by_key = {}
+    if kb_root is not None:
+        inventory = kb_store.list_units(kb_root)
+        inventory_by_key = {
+            (module, name): frontmatter
+            for module, name, frontmatter, _path in inventory
+        }
+        try:
+            state_schema = kb_store.read_manifest(kb_root).state_schema
+        except (FileNotFoundError, ValueError):
+            state_schema = 1
+
+    output: list[AimUnitOut] = []
+    for row in rows:
+        state_error: str | None = "KB repo is not available on this machine"
+        action: AimUnitActionOut | None = None
+        if kb_root is not None:
+            unit_state = inventory_by_key.get((row.module, row.name))
+            if unit_state is None:
+                state_error = "unit document is missing from the KB"
+            elif state_schema < 2:
+                state_error = (
+                    "legacy state schema: reconcile this unit before running "
+                    "lifecycle actions"
+                )
+            else:
+                state_error = kb_store.validate_unit_state(
+                    kb_root,
+                    row.module,
+                    row.name,
+                    unit_state,
+                    state_schema=state_schema,
+                )
+            pipeline = UNIT_PHASE_NEXT_PIPELINE.get(row.phase)
+            target_phase = next_unit_phase(row.phase)
+            if row.phase == "understood":
+                rules_ready, _rules_blocker = business_rule_review_ready(
+                    kb_root, f"{row.module}/{row.name}"
+                )
+                if not rules_ready:
+                    pipeline = "aim-review-rules"
+                    target_phase = "understood"
+            if pipeline and target_phase:
+                readiness = evaluate_pipeline(
+                    kb_root,
+                    pipeline,
+                    unit=f"{row.module}/{row.name}",
+                    wave=row.wave,
+                    case_set="smoke",
+                    inventory=inventory,
+                )
+                action = AimUnitActionOut(
+                    pipeline=pipeline,
+                    target_phase=target_phase,
+                    allowed=readiness.allowed and state_error is None,
+                    blockers=[
+                        *([state_error] if state_error else []),
+                        *readiness.blockers,
+                    ],
+                    warnings=list(readiness.warnings),
+                )
+        claim_row = claims_by_unit.get(row.id)
+        claim = (
+            AimUnitClaimOut(
+                workflow_execution_id=claim_row.workflow_execution_id,
+                workflow_name=claim_row.workflow_name,
+                session_id=claim_row.session_id,
+                lease_expires_at=claim_row.lease_expires_at,
+            )
+            if claim_row is not None
+            else None
+        )
+        output.append(
+            _aim_unit_out(
+                row,
+                state_verified=state_error is None,
+                state_error=state_error,
+                next_action=action,
+                claim=claim,
+            )
+        )
+    return output
 
 
 @router.get("/{project_id}/aim/summary", response_model=AimProjectSummaryOut)
@@ -1111,12 +1227,8 @@ async def list_aim_units(
     phase: str | None = None,
     wave: int | None = None,
 ) -> list[AimUnitOut]:
-    from app.services.aim import kb_store
-    from app.services.aim.business_rules import business_rule_review_ready
     from app.services.aim.claims import effective_project_claims
-    from app.services.aim.models import UNIT_PHASE_NEXT_PIPELINE, next_unit_phase
     from app.services.aim.project import resolve_kb_workspace_path
-    from app.services.aim.readiness import evaluate_pipeline
 
     project = await _get_aim_project_or_404(db, project_id)
 
@@ -1130,82 +1242,12 @@ async def list_aim_units(
     claims_by_unit = {claim.unit_id: claim for claim in claims}
     kb_path = await resolve_kb_workspace_path(db, project)
     kb_root = Path(kb_path) if kb_path and Path(kb_path).is_dir() else None
-    state_schema = 1
-    if kb_root is not None:
-        try:
-            state_schema = kb_store.read_manifest(kb_root).state_schema
-        except (FileNotFoundError, ValueError):
-            state_schema = 1
-
-    output: list[AimUnitOut] = []
-    for row in rows:
-        state_error: str | None = "KB repo is not available on this machine"
-        action: AimUnitActionOut | None = None
-        if kb_root is not None:
-            unit_state = kb_store.read_unit(kb_root, row.module, row.name)
-            if unit_state is None:
-                state_error = "unit document is missing from the KB"
-            elif state_schema < 2:
-                state_error = (
-                    "legacy state schema: reconcile this unit before running "
-                    "lifecycle actions"
-                )
-            else:
-                state_error = kb_store.validate_unit_state(
-                    kb_root,
-                    row.module,
-                    row.name,
-                    unit_state[0],
-                    state_schema=state_schema,
-                )
-            pipeline = UNIT_PHASE_NEXT_PIPELINE.get(row.phase)
-            target_phase = next_unit_phase(row.phase)
-            if row.phase == "understood":
-                rules_ready, _rules_blocker = business_rule_review_ready(
-                    kb_root, f"{row.module}/{row.name}"
-                )
-                if not rules_ready:
-                    pipeline = "aim-review-rules"
-                    target_phase = "understood"
-            if pipeline and target_phase:
-                readiness = evaluate_pipeline(
-                    kb_root,
-                    pipeline,
-                    unit=f"{row.module}/{row.name}",
-                    wave=row.wave,
-                    case_set="smoke",
-                )
-                action = AimUnitActionOut(
-                    pipeline=pipeline,
-                    target_phase=target_phase,
-                    allowed=readiness.allowed and state_error is None,
-                    blockers=[
-                        *([state_error] if state_error else []),
-                        *readiness.blockers,
-                    ],
-                    warnings=list(readiness.warnings),
-                )
-        claim_row = claims_by_unit.get(row.id)
-        claim = (
-            AimUnitClaimOut(
-                workflow_execution_id=claim_row.workflow_execution_id,
-                workflow_name=claim_row.workflow_name,
-                session_id=claim_row.session_id,
-                lease_expires_at=claim_row.lease_expires_at,
-            )
-            if claim_row is not None
-            else None
-        )
-        output.append(
-            _aim_unit_out(
-                row,
-                state_verified=state_error is None,
-                state_error=state_error,
-                next_action=action,
-                claim=claim,
-            )
-        )
-    return output
+    return await asyncio.to_thread(
+        _build_aim_unit_outputs,
+        list(rows),
+        claims_by_unit,
+        kb_root,
+    )
 
 
 @router.get(
@@ -1243,7 +1285,8 @@ async def get_aim_readiness_options(
             )
         ).all()
     claimed_units = frozenset(f"{row.module}/{row.name}" for row in claimed_rows)
-    options = evaluate_pipeline_options(
+    options = await asyncio.to_thread(
+        evaluate_pipeline_options,
         Path(kb_path),
         pipeline,
         case_set=case_set,
@@ -1283,10 +1326,13 @@ async def _aim_suggestion_plan(
         f"{row.module}/{row.name}" for row in unit_rows if row.id in claimed_ids
     )
     kb_root = Path(kb_path)
-    plan = build_suggestion_plan(kb_root, claimed_units=claimed_units)
-    if generate:
-        write_suggestion_snapshot(kb_root, plan, generated_by="manual")
-    snapshot = read_suggestion_snapshot(kb_root)
+    def build_plan():  # noqa: ANN202 - local worker tuple
+        plan = build_suggestion_plan(kb_root, claimed_units=claimed_units)
+        if generate:
+            write_suggestion_snapshot(kb_root, plan, generated_by="manual")
+        return plan, read_suggestion_snapshot(kb_root)
+
+    plan, snapshot = await asyncio.to_thread(build_plan)
     return AimSuggestionPlanOut(
         enabled=snapshot is not None,
         stale=(
@@ -1340,7 +1386,8 @@ async def get_aim_readiness(
         raise HTTPException(
             status_code=422, detail="Project has no KB repo on this machine."
         )
-    result = evaluate_pipeline(
+    result = await asyncio.to_thread(
+        evaluate_pipeline,
         Path(kb_path),
         pipeline,
         unit=unit,

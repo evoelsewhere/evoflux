@@ -112,22 +112,105 @@ function remoteHost(remoteUrl: string | null): string {
   }
 }
 
-function suggestedApiBase(
+function suggestedServerDomain(
   target: RepositoryCodeReviews,
   provider: GitServerProvider,
 ): string {
   const host = remoteHost(target.remote_url)
   if (host === 'this host') return ''
-  const origin = `https://${host}`
-  if (provider === 'github') {
-    return host === 'github.com' ? 'https://api.github.com' : `${origin}/api/v3`
-  }
-  if (provider === 'gitlab') return `${origin}/api/v4`
-  if (provider === 'bitbucket_cloud') return 'https://api.bitbucket.org/2.0'
-  if (provider === 'bitbucket_server') return `${origin}/rest/api/1.0`
-  if (provider === 'gitea') return `${origin}/api/v1`
+  if (provider === 'bitbucket_cloud') return 'https://bitbucket.org'
   const organization = target.repository?.split('/')[0] ?? ''
-  return `https://dev.azure.com/${organization}`
+  if (provider === 'azure_devops') {
+    return `https://dev.azure.com/${organization}`
+  }
+  return `https://${host}`
+}
+
+function normalizeServerDomain(
+  provider: GitServerProvider,
+  value: string,
+): string {
+  const trimmed = value.trim().replace(/\/+$/, '')
+  if (!trimmed) return ''
+  try {
+    const url = new URL(
+      trimmed.includes('://') ? trimmed : `https://${trimmed}`,
+    )
+    if (provider === 'github' && url.hostname === 'api.github.com') {
+      return 'https://github.com'
+    }
+    if (
+      provider === 'bitbucket_cloud' &&
+      url.hostname === 'api.bitbucket.org'
+    ) {
+      return 'https://bitbucket.org'
+    }
+    if (
+      provider === 'azure_devops' &&
+      url.hostname.endsWith('.visualstudio.com')
+    ) {
+      return `https://dev.azure.com/${url.hostname.split('.')[0]}`
+    }
+    const suffixes: Partial<Record<GitServerProvider, string>> = {
+      github: '/api/v3',
+      gitlab: '/api/v4',
+      bitbucket_cloud: '/2.0',
+      bitbucket_server: '/rest/api/1.0',
+      gitea: '/api/v1',
+    }
+    const suffix = suffixes[provider]
+    let path = url.pathname.replace(/\/+$/, '')
+    if (suffix && path.toLowerCase().endsWith(suffix)) {
+      path = path.slice(0, -suffix.length).replace(/\/+$/, '')
+    }
+    return `${url.protocol}//${url.host}${path}`
+  } catch {
+    return ''
+  }
+}
+
+function inferredApiBase(
+  provider: GitServerProvider,
+  domain: string,
+  repository: string | null,
+): string {
+  const root = normalizeServerDomain(provider, domain)
+  if (!root) return ''
+  const host = new URL(root).hostname
+  if (provider === 'github') {
+    return host === 'github.com' ? 'https://api.github.com' : `${root}/api/v3`
+  }
+  if (provider === 'gitlab') return `${root}/api/v4`
+  if (provider === 'bitbucket_cloud') return 'https://api.bitbucket.org/2.0'
+  if (provider === 'bitbucket_server') return `${root}/rest/api/1.0`
+  if (provider === 'gitea') return `${root}/api/v1`
+  const organization =
+    new URL(root).pathname.split('/').filter(Boolean)[0] ??
+    repository?.split('/')[0] ??
+    ''
+  return organization ? `https://dev.azure.com/${organization}` : ''
+}
+
+function tokenCreationUrl(
+  provider: GitServerProvider,
+  domain: string,
+  repository: string | null,
+): string {
+  const root = normalizeServerDomain(provider, domain)
+  if (!root) return ''
+  if (provider === 'github') return `${root}/settings/tokens/new`
+  if (provider === 'gitlab') {
+    return `${root}/-/user_settings/personal_access_tokens`
+  }
+  if (provider === 'bitbucket_cloud') {
+    return 'https://id.atlassian.com/manage-profile/security/api-tokens'
+  }
+  if (provider === 'bitbucket_server') {
+    return `${root}/plugins/servlet/access-tokens/manage`
+  }
+  if (provider === 'gitea') return `${root}/user/settings/applications`
+  const apiBase = inferredApiBase(provider, root, repository)
+  return apiBase ? `${apiBase}/_usersSettings/tokens` : ''
 }
 
 function ReviewRow({
@@ -556,8 +639,13 @@ function ConnectionDialog({
   const [provider, setProvider] = useState<GitServerProvider>(
     connection?.provider ?? target.detected_provider ?? 'github',
   )
-  const [baseUrl, setBaseUrl] = useState(
-    connection?.base_url ?? target.suggested_base_url ?? '',
+  const [domain, setDomain] = useState(
+    connection?.domain ??
+      target.suggested_domain ??
+      suggestedServerDomain(
+        target,
+        connection?.provider ?? target.detected_provider ?? 'github',
+      ),
   )
   const [scope, setScope] = useState<GitServerConnectionScope>(
     connection?.scope ?? 'server',
@@ -568,18 +656,33 @@ function ConnectionDialog({
     connection?.verify_ssl ?? true,
   )
   const [tested, setTested] = useState(false)
+  const apiBasePreview = inferredApiBase(
+    provider,
+    domain,
+    target.repository,
+  )
+  const createTokenUrl = tokenCreationUrl(
+    provider,
+    domain,
+    target.repository,
+  )
+  const savedCredentialMatches =
+    connection?.has_token === true &&
+    connection.scope === scope &&
+    connection.provider === provider &&
+    normalizeServerDomain(provider, connection.domain) ===
+      normalizeServerDomain(provider, domain)
 
   const canSubmit =
-    Boolean(name.trim() && baseUrl.trim()) &&
-    (Boolean(token.trim()) ||
-      Boolean(connection?.has_token && connection.scope === scope))
+    Boolean(name.trim() && apiBasePreview) &&
+    (Boolean(token.trim()) || savedCredentialMatches)
 
   const testValues = async () => {
     if (!token.trim()) return
     try {
       await test.mutateAsync({
         provider,
-        base_url: baseUrl.trim(),
+        domain: domain.trim(),
         token: token.trim(),
         username: username.trim() || null,
         verify_ssl: verifySsl,
@@ -595,7 +698,7 @@ function ConnectionDialog({
     const body: GitServerConnectionInput = {
       name: name.trim(),
       provider,
-      base_url: baseUrl.trim(),
+      domain: domain.trim(),
       scope,
       workspace_id: scope === 'repository' ? target.workspace_id : null,
       username: username.trim() || null,
@@ -641,7 +744,7 @@ function ConnectionDialog({
               onChange={(event) => {
                 const nextProvider = event.target.value as GitServerProvider
                 setProvider(nextProvider)
-                setBaseUrl(suggestedApiBase(target, nextProvider))
+                setDomain(suggestedServerDomain(target, nextProvider))
                 setTested(false)
               }}
             >
@@ -654,17 +757,22 @@ function ConnectionDialog({
           </label>
           <label className="grid gap-1">
             <span className="text-xs font-medium text-(--color-text-muted)">
-              API base URL
+              Git server domain
             </span>
             <Input
-              value={baseUrl}
+              value={domain}
               onChange={(event) => {
-                setBaseUrl(event.target.value)
+                setDomain(event.target.value)
                 setTested(false)
               }}
-              placeholder="https://git.example.com/api/v4"
+              placeholder="git.example.com"
               spellCheck={false}
             />
+            <span className="truncate text-[11px] text-(--color-text-subtle)">
+              {apiBasePreview
+                ? `API endpoint: ${apiBasePreview}`
+                : 'Enter the server domain or root URL. The API endpoint is detected automatically.'}
+            </span>
           </label>
           <div className="grid gap-1">
             <span className="text-xs font-medium text-(--color-text-muted)">
@@ -698,11 +806,27 @@ function ConnectionDialog({
               />
             </label>
           )}
-          <label className="grid gap-1">
-            <span className="text-xs font-medium text-(--color-text-muted)">
-              API key / access token
+          <div className="grid gap-1">
+            <span className="flex items-center justify-between gap-3">
+              <label
+                htmlFor="git-server-access-token"
+                className="text-xs font-medium text-(--color-text-muted)"
+              >
+                API key / access token
+              </label>
+              <Button
+                type="button"
+                variant="link"
+                size="xs"
+                disabled={!createTokenUrl}
+                onClick={() => void openExternalUrl(createTokenUrl)}
+              >
+                Generate token
+                <ExternalLink data-icon="inline-end" />
+              </Button>
             </span>
             <Input
+              id="git-server-access-token"
               type="password"
               value={token}
               onChange={(event) => {
@@ -710,13 +834,19 @@ function ConnectionDialog({
                 setTested(false)
               }}
               placeholder={
-                connection?.has_token
+                savedCredentialMatches
                   ? 'Leave blank to keep the saved key'
-                  : 'Paste a read-only repository token'
+                  : connection?.has_token
+                    ? 'Paste a token for this provider and domain'
+                    : 'Paste a repository access token'
               }
               autoComplete="off"
             />
-          </label>
+            <span className="text-[11px] text-(--color-text-subtle)">
+              Generate token opens the provider page in your browser. Paste the
+              token here after creating it.
+            </span>
+          </div>
           <div className="flex items-center justify-between rounded-lg border border-(--color-border) px-3 py-2">
             <span>
               <span className="block text-xs font-medium text-(--color-text)">

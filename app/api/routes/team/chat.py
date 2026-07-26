@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import AsyncGenerator, Literal
+from typing import TYPE_CHECKING, AsyncGenerator, Literal
 from uuid import UUID
 from uuid import uuid7
 
@@ -13,15 +13,6 @@ from pydantic import BaseModel, field_validator
 from sqlmodel import select
 from sse_starlette.sse import EventSourceResponse
 
-from app.agent.agent_loop import Agent
-from app.agent.mode.team.member import TeamMemberBase
-from app.agent.mode.team.team import (
-    ContinuePreconditionError,
-    is_loop_command,
-    parse_loop_command,
-)
-from app.agent.schemas.chat import HumanMessage
-from app.agent.tools.builtin.skill import discover_skills
 from app.api.deps import ChatFormDep, DbSession
 from app.api.routes.team._helpers import (
     _message_response,
@@ -82,7 +73,17 @@ from app.services.chat_service import (
     update_session_title,
 )
 
+if TYPE_CHECKING:
+    from app.agent.agent_loop import Agent
+    from app.agent.mode.team.member import TeamMemberBase
+
 router = APIRouter()
+
+
+def discover_skills():  # noqa: ANN201 - compatibility wrapper
+    from app.agent.tools.builtin.skill import discover_skills as discover
+
+    return discover()
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -249,6 +250,11 @@ async def team_chat(
     Returns the session_id. Subscribe to GET /team/{session_id}/stream to
     receive the SSE event stream (supports reconnect + replay).
     """
+    from app.agent.mode.team.team import (
+        is_loop_command,
+        parse_loop_command,
+    )
+
     message = body.message
     session_id = body.session_id
     interrupt = body.interrupt
@@ -585,6 +591,8 @@ async def team_command(
     be continued (no assistant message, last message has unfinished tool
     calls, lead is already working, etc.).
     """
+    from app.agent.mode.team.team import ContinuePreconditionError
+
     # Resolve by the session's persisted mode — booting the default
     # (forge) team here for a coding/aim session would poison the
     # session→team lookup for the rest of the process (see
@@ -1514,6 +1522,7 @@ async def send_side_chat_message(
     # persists the user message itself (AgentTeam.handle_user_message), so
     # only save it here as a fallback when no run could be dispatched —
     # saving unconditionally would double every user message.
+    from app.agent.schemas.chat import HumanMessage
     from app.services import agent_service
     from app.services.chat_service import save_message
 

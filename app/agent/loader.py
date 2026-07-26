@@ -52,21 +52,25 @@ Usage
 
 from __future__ import annotations
 
-import re
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
 from app.agent.schemas.agent import AgentContext
+from app.agent.config import (
+    PROVIDER_MODEL_TOKEN,
+    AgentConfig,
+    _FRONTMATTER_RE,
+    member_model_is_configured,
+    parse_agent_md,
+)
 
 if TYPE_CHECKING:
     from app.agent.mode.team.team import AgentTeam
 
 from loguru import logger
-from pydantic import BaseModel, model_validator
-
 from app.agent.agent_loop import Agent
 from app.agent.drift import ConfigStamp, detect_drift, stamp_agent_files
 from app.agent.providers.factory import ProviderFactory, build_provider
@@ -76,85 +80,16 @@ from app.core.db import DbFactory, resolve_db_factory
 # Re-exports for callers that historically imported these symbols from
 # ``app.agent.loader``.
 __all__ = [
+    "AgentConfig",
     "ConfigStamp",
+    "PROVIDER_MODEL_TOKEN",
     "ProviderFactory",
+    "_FRONTMATTER_RE",
     "detect_drift",
+    "member_model_is_configured",
+    "parse_agent_md",
     "stamp_agent_files",
 ]
-
-
-# ---------------------------------------------------------------------------
-# Schema models
-# ---------------------------------------------------------------------------
-
-_FRONTMATTER_RE = re.compile(r"^\s*---\r?\n(.*?)\r?\n---\r?\n?(.*)", re.DOTALL)
-
-
-def member_model_is_configured(model: str | None) -> bool:
-    """Return whether a member model is configured enough to join a team."""
-    from app.cli.seed import PROVIDER_MODEL_TOKEN
-
-    return bool(model and model.strip() and model.strip() != PROVIDER_MODEL_TOKEN)
-
-
-class AgentConfig(BaseModel):
-    """Schema for a single agent defined in a .md frontmatter block."""
-
-    name: str
-    role: Literal["lead", "member"] = "member"
-    description: str | None = None
-    system_prompt: str = ""  # populated from .md body by parse_agent_md
-    tools: list[str] = []
-    mcp: list[str] = []  # MCP server names; agent gets all tools from each
-    skills: list[str] = []
-    model: str | None = None  # e.g. "googlegenai:gemini-3.1-flash"
-    fallback_model: str | None = None
-    temperature: float | None = None
-    thinking_level: str | None = None
-    responses_api: bool | None = None
-
-    @model_validator(mode="after")
-    def _validate(self) -> "AgentConfig":
-        # Allow the seed placeholder unchanged — the loader substitutes an
-        # UnconfiguredProvider stub at build time so first-run installs
-        # without a real model still load cleanly.
-        from app.cli.seed import PROVIDER_MODEL_TOKEN
-
-        if self.model and self.model != PROVIDER_MODEL_TOKEN and ":" not in self.model:
-            raise ValueError(
-                f"Agent '{self.name}': invalid model '{self.model}' "
-                f"(expected 'provider:model', e.g. 'googlegenai:gemini-3.1-flash')."
-            )
-        return self
-
-
-# ---------------------------------------------------------------------------
-# Parser
-# ---------------------------------------------------------------------------
-
-
-def parse_agent_md(path: Path) -> AgentConfig:
-    """Parse a single agent ``.md`` file — frontmatter config + body prompt.
-
-    The file must have a YAML frontmatter block delimited by ``---``.
-    The body (after the closing ``---``) becomes ``system_prompt``.
-    """
-    text = path.read_text(encoding="utf-8")
-    m = _FRONTMATTER_RE.match(text)
-    if not m:
-        raise ValueError(
-            f"Agent file '{path}' is missing YAML frontmatter. "
-            "Expected '---\\n<yaml>\\n---\\n<system prompt>'."
-        )
-    raw_meta = yaml.safe_load(m.group(1)) or {}
-    body = m.group(2).strip()
-
-    # name defaults to filename stem if not provided
-    if "name" not in raw_meta:
-        raw_meta["name"] = path.stem
-
-    raw_meta["system_prompt"] = body or "You are a helpful assistant."
-    return AgentConfig.model_validate(raw_meta)
 
 
 def _builtin_agent_md(
@@ -167,7 +102,7 @@ def _builtin_agent_md(
     thinking_level: str,
     skills: list[str] | None = None,
 ) -> str:
-    frontmatter = {
+    frontmatter: dict[str, Any] = {
         "name": name,
         "role": role,
         "description": description,
@@ -203,8 +138,6 @@ def ensure_builtin_agent_blueprints(agents_dir: Path, *, mode: str) -> list[str]
     existing ``.md`` files are never overwritten.
     """
     from app.agent.builtin_prompts import BUILTIN_AGENT_BLUEPRINTS
-    from app.cli.seed import PROVIDER_MODEL_TOKEN
-
     agents_dir.mkdir(parents=True, exist_ok=True)
     model = _lead_model_for_dir(agents_dir) or PROVIDER_MODEL_TOKEN
     written: list[str] = []
@@ -277,8 +210,6 @@ def ensure_builtin_lead_blueprint(agents_dir: Path, *, mode: str) -> str | None:
         CODING_EVOFLUX_DESCRIPTION,
         FORGE_EVOFLUX_DESCRIPTION,
     )
-    from app.cli.seed import PROVIDER_MODEL_TOKEN
-
     agents_dir.mkdir(parents=True, exist_ok=True)
     if _dir_has_lead(agents_dir):
         return None
@@ -337,8 +268,6 @@ def _default_tool_registry() -> dict[str, Tool]:
         list_directory,
         list_code_reviews,
         load_skill,
-        load_tool,
-        memory_search,
         merge_code_review,
         patch_file,
         python_tool,
@@ -359,6 +288,8 @@ def _default_tool_registry() -> dict[str, Tool]:
         image_search,
         write_file,
     )
+    from app.agent.tools.builtin.load_tool import load_tool
+    from app.agent.tools.builtin.memory_search import memory_search
     from app.agent.tools.builtin.note import note_tool
     from app.agent.tools.builtin.wiki_search import wiki_search
     from app.agent.tools.builtin.code_graph import (

@@ -302,12 +302,13 @@ def evaluate_pipeline(
     wave: int | None = None,
     case_set: str | None = None,
     overwrite: bool = False,
+    inventory: list[tuple[str, str, UnitFrontmatter, str]] | None = None,
 ) -> PipelineReadiness:
     """Evaluate whether a builtin AIM pipeline may be started now."""
     blockers: list[str] = []
     warnings: list[str] = []
     selected: list[str] = []
-    units = kb_store.list_units(kb_root)
+    units = inventory if inventory is not None else kb_store.list_units(kb_root)
 
     if pipeline != "aim-assess" and (kb_root / "aim.yaml").is_file():
         manifest_state = kb_store.read_manifest(kb_root)
@@ -713,6 +714,7 @@ def evaluate_pipeline_options(
             wave=frontmatter.wave,
             case_set=case_set,
             overwrite=overwrite,
+            inventory=units,
         )
         if result.allowed and claimed_units.isdisjoint(result.selected_units):
             unit_options.append(unit_key)
@@ -731,6 +733,7 @@ def evaluate_pipeline_options(
             wave=wave,
             case_set=case_set,
             overwrite=overwrite,
+            inventory=units,
         )
         if result.allowed and claimed_units.isdisjoint(result.selected_units):
             wave_options.append(wave)

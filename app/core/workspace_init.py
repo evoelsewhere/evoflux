@@ -68,10 +68,21 @@ def ensure_workspace_initialized() -> None:
     # bundle normally supplies the lead; the builtin fallback above only
     # covers members). Runs every start, not just on a fully empty dir, so
     # an already-broken workspace recovers without manual intervention.
-    from app.agent.loader import ensure_builtin_lead_blueprint
+    from app.agent.config import agent_dir_has_lead
 
-    healed_forge = ensure_builtin_lead_blueprint(agents_dir, mode="forge")
-    healed_coding = ensure_builtin_lead_blueprint(agents_dir / "coding", mode="coding")
+    healed_forge = None
+    healed_coding = None
+    forge_has_lead = agent_dir_has_lead(agents_dir)
+    coding_has_lead = agent_dir_has_lead(agents_dir / "coding")
+    if not forge_has_lead or not coding_has_lead:
+        from app.agent.loader import ensure_builtin_lead_blueprint
+
+        if not forge_has_lead:
+            healed_forge = ensure_builtin_lead_blueprint(agents_dir, mode="forge")
+        if not coding_has_lead:
+            healed_coding = ensure_builtin_lead_blueprint(
+                agents_dir / "coding", mode="coding"
+            )
     if healed_forge or healed_coding:
         logger.warning(
             "workspace_lead_agent_healed forge={} coding={}",

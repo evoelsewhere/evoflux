@@ -5,24 +5,19 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
 from sqlmodel import col, select
 
-from app.agent.mcp import MCPServerStatus, mcp_manager
+from app.agent.mcp import mcp_manager
 from app.agent.mcp.config import (
     HttpServerConfig,
     StdioServerConfig,
     load_config,
     save_config,
     validate_server_name,
-)
-from app.agent.mcp.oauth import (
-    allow_interactive_oauth,
-    clear_cached_oauth,
-    disallow_interactive_oauth,
 )
 from app.api.schemas.mcp import (
     CreateServerRequest,
@@ -40,10 +35,31 @@ from app.api.deps import DbSession
 from app.core.config import settings
 from app.models.chat import SessionMessage
 
+if TYPE_CHECKING:
+    from app.agent.mcp.manager import MCPServerStatus
+
 router = APIRouter()
 _MASKED_SECRET = "********"
 _ENV_REF_RE = re.compile(r"^\$\{[A-Za-z_][A-Za-z0-9_]*\}$")
 # ── Helpers ─────────────────────────────────────────────────────────────────
+
+
+def allow_interactive_oauth(name: str) -> None:
+    from app.agent.mcp.oauth import allow_interactive_oauth as allow
+
+    allow(name)
+
+
+def clear_cached_oauth(name: str) -> None:
+    from app.agent.mcp.oauth import clear_cached_oauth as clear
+
+    clear(name)
+
+
+def disallow_interactive_oauth(name: str) -> None:
+    from app.agent.mcp.oauth import disallow_interactive_oauth as disallow
+
+    disallow(name)
 
 
 def _config_to_body(

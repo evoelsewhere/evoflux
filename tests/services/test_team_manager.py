@@ -184,7 +184,9 @@ async def test_validate_agents_dir_false_when_empty(tmp_path, monkeypatch):
     from app.core.config import settings
 
     monkeypatch.setattr(settings, "AGENTS_DIR", str(tmp_path / "empty"))
-    monkeypatch.setattr("app.services.team_manager.load_team_from_dir", lambda _: None)
+    monkeypatch.setattr(
+        "app.services.team_manager.validate_agent_config_dir", lambda _: None
+    )
 
     assert team_manager.validate_agents_dir() is False
     # Does not cache a team.
@@ -195,7 +197,8 @@ async def test_validate_agents_dir_false_when_empty(tmp_path, monkeypatch):
 async def test_validate_agents_dir_true_when_loadable(monkeypatch):
     fake_team = _make_team()
     monkeypatch.setattr(
-        "app.services.team_manager.load_team_from_dir", lambda _: fake_team
+        "app.services.team_manager.validate_agent_config_dir",
+        lambda _: fake_team.lead.name,
     )
 
     assert team_manager.validate_agents_dir() is True
@@ -205,11 +208,33 @@ async def test_validate_agents_dir_true_when_loadable(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_validate_agents_dir_does_not_build_runtime_team(
+    tmp_path, monkeypatch
+):
+    from app.core.config import settings
+
+    agents = tmp_path / "agents"
+    agents.mkdir()
+    (agents / "lead.md").write_text(
+        "---\nname: lead\nrole: lead\nmodel: test:model\n---\nLead prompt.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings, "AGENTS_DIR", str(agents))
+
+    def fail(*_args, **_kwargs):
+        raise AssertionError("startup validation must not build an AgentTeam")
+
+    monkeypatch.setattr(team_manager, "load_team_from_dir", fail)
+
+    assert team_manager.validate_agents_dir() is True
+
+
+@pytest.mark.asyncio
 async def test_validate_agents_dir_raises_on_parse_error(monkeypatch):
     def fail(_):
         raise ValueError("malformed agent.md")
 
-    monkeypatch.setattr("app.services.team_manager.load_team_from_dir", fail)
+    monkeypatch.setattr("app.services.team_manager.validate_agent_config_dir", fail)
 
     with pytest.raises(ValueError, match="malformed agent.md"):
         team_manager.validate_agents_dir()

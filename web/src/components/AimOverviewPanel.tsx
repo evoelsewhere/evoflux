@@ -202,19 +202,19 @@ export function AimOverviewPanel({ project }: { project: CodingProject }) {
   const unitsQuery = useQuery({
     queryKey: queryKeys.projects.aimUnits(project.id, undefined),
     queryFn: () => listAimUnits(project.id),
-    refetchInterval: 10_000,
+    refetchInterval: 15_000,
   })
 
   const suggestionsQuery = useQuery({
     queryKey: [...queryKeys.projects.detail(project.id), 'aim-suggestions'],
     queryFn: () => getAimSuggestions(project.id),
-    refetchInterval: 5_000,
+    refetchInterval: 30_000,
   })
 
   const healthQuery = useQuery({
     queryKey: [...queryKeys.projects.detail(project.id), 'aim-health'],
     queryFn: () => getAimProjectHealth(project.id),
-    refetchInterval: 15_000,
+    refetchInterval: 60_000,
   })
 
   const approvalsQuery = useQuery({

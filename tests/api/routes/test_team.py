@@ -126,13 +126,20 @@ def app_with_team(test_team, monkeypatch):
 
 
 @pytest.fixture
-def app_without_team():
+def app_without_team(monkeypatch):
     """Create FastAPI app without team."""
     from app.api.app import create_app
     from app.services.team_manager import set_team
 
     app = create_app()
     set_team(None)
+
+    async def no_team(_session_id: str):
+        return None
+
+    monkeypatch.setattr(
+        "app.services.team_manager.get_or_start_team_for_session", no_team
+    )
     return app
 
 

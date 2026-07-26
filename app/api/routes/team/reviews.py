@@ -38,6 +38,7 @@ from app.services.code_review_service import (
     aggregate_reviews,
     add_code_review_comment,
     add_code_review_inline_comment,
+    api_base_from_domain,
     connection_host,
     connection_token,
     default_api_base,
@@ -47,11 +48,12 @@ from app.services.code_review_service import (
     merge_code_review,
     reply_code_review_thread,
     resolve_connection,
-    server_host,
+    server_domain,
     set_code_review_state,
     set_code_review_thread_resolved,
     submit_code_review,
     test_connection,
+    token_creation_url,
     update_code_review,
 )
 from app.services.coding_workspace_service import list_visible_coding_workspaces
@@ -66,6 +68,14 @@ def _normalize_base_url(value: str) -> str:
     value = value.strip().rstrip("/")
     connection_host(value)
     return value
+
+
+def _derive_connection_urls(provider: str, value: str) -> tuple[str, str]:
+    try:
+        domain = server_domain(provider, value)
+        return domain, _normalize_base_url(api_base_from_domain(provider, domain))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 def _validate_scope(scope: str, workspace_id: UUID | None) -> None:
@@ -105,11 +115,14 @@ def _save_token(env_name: str, token: str) -> None:
 
 
 def _connection_out(connection: GitServerConnection) -> GitServerConnectionOut:
+    domain = server_domain(connection.provider, connection.base_url)
     return GitServerConnectionOut(
         id=connection.id,
         name=connection.name,
         provider=cast(GitProvider, connection.provider),
+        domain=domain,
         base_url=connection.base_url,
+        token_url=token_creation_url(connection.provider, domain),
         host=connection.host,
         scope=cast(ConnectionScope, connection.scope),
         workspace_id=connection.workspace_id,
@@ -162,12 +175,16 @@ async def create_connection(
         env_name = _validate_env_name(body.token_env_var)
     else:
         env_name = f"{_MANAGED_ENV_PREFIX}{connection_id.hex.upper()}_TOKEN"
+    domain, base_url = _derive_connection_urls(
+        body.provider,
+        body.domain or body.base_url or "",
+    )
     connection = GitServerConnection(
         id=connection_id,
         name=body.name.strip(),
         provider=body.provider,
-        base_url=_normalize_base_url(body.base_url),
-        host=server_host(body.provider, body.base_url),
+        base_url=base_url,
+        host=connection_host(domain),
         scope=body.scope,
         workspace_id=body.workspace_id,
         token_env_var=env_name,
@@ -214,15 +231,29 @@ async def update_connection(
         await _require_workspace(db, workspace_id)
     if body.name is not None:
         connection.name = body.name.strip()
-    if body.provider is not None:
-        connection.provider = body.provider
-    if body.base_url is not None:
-        connection.base_url = _normalize_base_url(body.base_url)
-    if body.provider is not None or body.base_url is not None:
-        connection.host = server_host(
-            connection.provider,
-            connection.base_url,
+    previous_provider = connection.provider
+    previous_domain = server_domain(previous_provider, connection.base_url)
+    next_provider = body.provider or previous_provider
+    if (
+        body.provider is not None
+        or body.domain is not None
+        or body.base_url is not None
+    ):
+        requested_domain = body.domain or body.base_url or previous_domain
+        domain, base_url = _derive_connection_urls(
+            next_provider,
+            requested_domain,
         )
+        if (
+            next_provider != previous_provider or domain != previous_domain
+        ) and not body.token:
+            raise HTTPException(
+                status_code=422,
+                detail="Provide a new access token when changing the Git provider or domain.",
+            )
+        connection.provider = next_provider
+        connection.base_url = base_url
+        connection.host = connection_host(domain)
     connection.scope = scope
     connection.workspace_id = workspace_id
     if body.token_env_var is not None:
@@ -262,12 +293,15 @@ async def delete_connection(
 @router.post("/connections/test")
 async def check_connection(body: GitServerConnectionTest) -> dict[str, bool]:
     try:
-        base_url = _normalize_base_url(body.base_url)
+        domain, base_url = _derive_connection_urls(
+            body.provider,
+            body.domain or body.base_url or "",
+        )
         connection = GitServerConnection(
             name="Connection test",
             provider=body.provider,
             base_url=base_url,
-            host=connection_host(base_url),
+            host=connection_host(domain),
             token_env_var="EVOFLUX_GIT_CONNECTION_TEST_TOKEN",
             username=body.username,
             verify_ssl=body.verify_ssl,
@@ -341,12 +375,17 @@ async def list_reviews(
     for repository in repositories:
         target = repository.target
         suggested_base_url = None
+        suggested_domain = None
         if target.host and target.detected_provider:
             try:
                 suggested_base_url = default_api_base(
                     target.detected_provider,
                     target.host,
                     target.repository,
+                )
+                suggested_domain = server_domain(
+                    target.detected_provider,
+                    suggested_base_url,
                 )
             except ValueError:
                 pass
@@ -362,6 +401,7 @@ async def list_reviews(
                     GitProvider | None,
                     target.detected_provider,
                 ),
+                suggested_domain=suggested_domain,
                 suggested_base_url=suggested_base_url,
                 connection_id=(
                     UUID(repository.connection_id) if repository.connection_id else None

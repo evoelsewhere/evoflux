@@ -265,6 +265,103 @@ def default_api_base(provider: str, host: str, repository: str | None = None) ->
     raise ValueError(f"Unsupported Git provider: {provider}")
 
 
+def server_domain(provider: str, value: str) -> str:
+    """Return the user-facing Git server root for a domain or API URL."""
+    raw = value.strip().rstrip("/")
+    if "://" not in raw:
+        raw = f"https://{raw}"
+    parsed = urlparse(raw)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError(
+            "Git server domain must be an HTTP(S) domain or root URL without credentials, query, or fragment."
+        )
+
+    host = parsed.hostname.lower()
+    if provider == "github" and host == "api.github.com":
+        return "https://github.com"
+    if provider == "bitbucket_cloud" and host == "api.bitbucket.org":
+        return "https://bitbucket.org"
+    if provider == "azure_devops" and host.endswith(".visualstudio.com"):
+        organization = host.split(".", 1)[0]
+        return f"https://dev.azure.com/{organization}"
+
+    suffixes = {
+        "github": "/api/v3",
+        "gitlab": "/api/v4",
+        "bitbucket_cloud": "/2.0",
+        "bitbucket_server": "/rest/api/1.0",
+        "gitea": "/api/v1",
+    }
+    path = parsed.path.rstrip("/")
+    suffix = suffixes.get(provider)
+    if suffix and path.lower().endswith(suffix):
+        path = path[: -len(suffix)].rstrip("/")
+    return urlunparse((parsed.scheme, parsed.netloc, path, "", "", ""))
+
+
+def api_base_from_domain(
+    provider: str,
+    domain: str,
+    repository: str | None = None,
+) -> str:
+    """Derive the provider REST base from a Git server domain/root URL."""
+    root = server_domain(provider, domain)
+    parsed = urlparse(root)
+    host = parsed.hostname.lower() if parsed.hostname else ""
+    if provider == "github":
+        return "https://api.github.com" if host == "github.com" else f"{root}/api/v3"
+    if provider == "gitlab":
+        return f"{root}/api/v4"
+    if provider == "bitbucket_cloud":
+        return "https://api.bitbucket.org/2.0"
+    if provider == "bitbucket_server":
+        return f"{root}/rest/api/1.0"
+    if provider == "gitea":
+        return f"{root}/api/v1"
+    if provider == "azure_devops":
+        path_parts = [part for part in parsed.path.split("/") if part]
+        organization = path_parts[0] if path_parts else ""
+        if not organization:
+            organization = ((repository or "").split("/") or [""])[0]
+        if not organization:
+            raise ValueError(
+                "Azure DevOps domain must include the organization, for example https://dev.azure.com/acme."
+            )
+        return f"https://dev.azure.com/{organization}"
+    raise ValueError(f"Unsupported Git provider: {provider}")
+
+
+def token_creation_url(
+    provider: str,
+    domain: str,
+    repository: str | None = None,
+) -> str:
+    """Return the provider's browser page for creating a personal token."""
+    root = server_domain(provider, domain)
+    if provider == "github":
+        return f"{root}/settings/tokens/new"
+    if provider == "gitlab":
+        return f"{root}/-/user_settings/personal_access_tokens"
+    if provider == "bitbucket_cloud":
+        return "https://id.atlassian.com/manage-profile/security/api-tokens"
+    if provider == "bitbucket_server":
+        return f"{root}/plugins/servlet/access-tokens/manage"
+    if provider == "gitea":
+        return f"{root}/user/settings/applications"
+    if provider == "azure_devops":
+        return (
+            f"{api_base_from_domain(provider, root, repository)}/_usersSettings/tokens"
+        )
+    raise ValueError(f"Unsupported Git provider: {provider}")
+
+
 def connection_host(base_url: str) -> str:
     parsed = urlparse(base_url)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:

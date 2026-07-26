@@ -24,11 +24,16 @@ from app.api.schemas.code_graph import (
     ReindexRequest,
     ReindexStartedResponse,
 )
-from app.services import code_graph_service as svc
 from app.services.code_graph.jobs import index_jobs
 from app.services.coding_workspace_service import upsert_coding_workspace
 
 router = APIRouter()
+
+
+def _service():  # noqa: ANN202 - lazy module boundary
+    from app.services import code_graph_service
+
+    return code_graph_service
 
 
 def _workspace_path(workspace: str | None) -> Path:
@@ -45,6 +50,7 @@ def _workspace_path(workspace: str | None) -> Path:
 
 async def _require_workspace_id(db: DbSession, workspace: str | None) -> UUID:
     path = _workspace_path(workspace)
+    svc = _service()
     workspace_id = await svc.resolve_workspace_id(db, path=str(path))
     if workspace_id is None:
         raise HTTPException(
@@ -60,6 +66,7 @@ async def get_status(
     workspace: str | None = Query(None, description="Coding workspace directory."),
 ) -> CodeGraphStatusResponse:
     path = _workspace_path(workspace)
+    svc = _service()
     workspace_id = await svc.resolve_workspace_id(db, path=str(path))
     if workspace_id is None:
         return CodeGraphStatusResponse(indexed=False)
@@ -109,6 +116,7 @@ async def search(
     kind: str | None = Query(None, description="Restrict to a single symbol kind."),
     limit: int = Query(20, ge=1, le=100),
 ) -> CodeSearchResponse:
+    svc = _service()
     workspace_id = await _require_workspace_id(db, workspace)
     nodes = await svc.search_nodes(
         db, workspace_id=workspace_id, query=query, kind=kind, limit=limit
@@ -124,6 +132,7 @@ async def neighbors(
     direction: str = Query("both", pattern="^(out|in|both)$"),
     edge_kind: str | None = Query(None, description="Restrict to one relation kind."),
 ) -> NeighborsResponse:
+    svc = _service()
     workspace_id = await _require_workspace_id(db, workspace)
     node = await svc.get_node(db, workspace_id=workspace_id, node_id=node_id)
     if node is None:
@@ -149,6 +158,7 @@ async def overview(
     db: DbSession,
     workspace: str | None = Query(None, description="Coding workspace directory."),
 ) -> CodeOverviewResponse:
+    svc = _service()
     workspace_id = await _require_workspace_id(db, workspace)
     ov = await svc.get_overview(db, workspace_id=workspace_id)
     return CodeOverviewResponse.from_overview(ov)
