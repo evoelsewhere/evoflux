@@ -87,6 +87,8 @@ from app.services.chat_service import get_messages_for_llm, save_message
 
 MAX_OPEN_TASK_NUDGES = 3
 MAX_LEAD_WAIT_NUDGES = 3
+_MAX_RATE_LIMIT_RETRIES = 3
+_RATE_LIMIT_BASE_DELAY = 5  # seconds
 
 if TYPE_CHECKING:
     from app.agent.mode.team.mailbox import TeamMailbox
@@ -374,6 +376,10 @@ class TeamMemberBase(abc.ABC):
         # Bound at register() time
         self._team: AgentTeam | None = None
         self._mailbox: TeamMailbox | None = None
+
+        # Rate-limit retry state
+        self._rate_limit_retry_count: int = 0
+        self._rate_limit_retry_task: asyncio.Task | None = None
         self._open_task_nudge_counts: dict[str, int] = {}
         self._lead_wait_nudge_counts: dict[str, int] = {}
         # id of the last SessionMessage row a nudge was already sent for —
@@ -450,6 +456,20 @@ class TeamMemberBase(abc.ABC):
 
     async def stop(self) -> None:
         """Gracefully shut down: cancel any active task and deregister."""
+        # Cancel any pending rate-limit retry
+        if (
+            self._rate_limit_retry_task is not None
+            and not self._rate_limit_retry_task.done()
+        ):
+            self._rate_limit_retry_task.cancel()
+            try:
+                await asyncio.wait_for(
+                    asyncio.shield(self._rate_limit_retry_task), timeout=5.0
+                )
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                pass
+            self._rate_limit_retry_task = None
+
         if self._active_task is not None and not self._active_task.done():
             self._cancel_event.set()
             self._active_task.cancel()
@@ -490,6 +510,35 @@ class TeamMemberBase(abc.ABC):
         self._active_task = asyncio.create_task(
             self._run_activation(), name=f"activate:{self.name}"
         )
+
+    def _maybe_activate_for_rate_limit_retry(self) -> None:
+        """Spawn an activation task that resumes after a rate-limit delay.
+
+        Skips inbox drain/persist/SSE — the original messages are already
+        in the DB from the first (failed) activation.  Used exclusively by
+        :meth:`_delayed_rate_limit_retry`.
+        """
+        if self.state == "working":
+            return
+        self.state = "working"
+        self._active_task = asyncio.create_task(
+            self._run_activation(is_rate_limit_retry=True),
+            name=f"rate-limit-retry:{self.name}",
+        )
+
+    async def _delayed_rate_limit_retry(self, delay: float) -> None:
+        """Sleep for *delay* seconds, then clear the retry-task handle and re-activate.
+
+        The handle must be cleared *before* re-activation so the ``finally``
+        block in :meth:`_run_activation` does not suppress a subsequent
+        late-inbox activation.
+        """
+        try:
+            await asyncio.sleep(delay)
+        except asyncio.CancelledError:
+            return
+        self._rate_limit_retry_task = None
+        self._maybe_activate_for_rate_limit_retry()
 
     def activate_for_continuation(self) -> None:
         """Spawn an activation task that resumes from existing DB history.
@@ -620,7 +669,11 @@ class TeamMemberBase(abc.ABC):
             )
 
     async def _run_activation(
-        self, *, is_continuation: bool = False, force_compaction: bool = False
+        self,
+        *,
+        is_continuation: bool = False,
+        force_compaction: bool = False,
+        is_rate_limit_retry: bool = False,
     ) -> None:
         """One-shot activation: drain inbox, process, return to idle.
 
@@ -629,14 +682,18 @@ class TeamMemberBase(abc.ABC):
         verbatim, which (for /continue) ends in the prior assistant turn so
         the provider continues from there.  The resulting first assistant
         message is stamped via :class:`ContinuationHook`.
+
+        When ``is_rate_limit_retry`` is True the inbox drain/persist/SSE-emit
+        steps are also skipped — this activation resumes after a rate-limit
+        delay and the original messages are already persisted in the DB.
         """
         assert self._mailbox is not None
         assert self._team is not None
 
         self._cancel_event.clear()
 
-        if is_continuation or force_compaction:
-            # Control-command path — no inbox messages; run on DB history.
+        if is_continuation or force_compaction or is_rate_limit_retry:
+            # Control-command / retry path — no inbox messages; run on DB history.
             pending: list[Message] = []
         else:
             # Drain all queued messages
@@ -656,10 +713,12 @@ class TeamMemberBase(abc.ABC):
         # state was already set to "working" by _maybe_activate
         await self._team._emit(agent=self.name, event="agent_status", status="working")
         logger.info(
-            "team_member_activated name={} messages={} continuation={}",
+            "team_member_activated name={} messages={} "
+            "continuation={} rate_limit_retry={}",
             self.name,
             len(pending),
             is_continuation,
+            is_rate_limit_retry,
         )
 
         # Re-check drift at turn start so edits made between turns
@@ -672,7 +731,7 @@ class TeamMemberBase(abc.ABC):
         # Let subclass reset bookkeeping
         self._on_wake(pending)
 
-        if not is_continuation:
+        if not is_continuation and not is_rate_limit_retry:
             # Format + persist inbox RIGHT AFTER receiving (one row per message)
             inbox_msgs = await self._persist_inbox(pending)
 
@@ -699,6 +758,7 @@ class TeamMemberBase(abc.ABC):
                 is_continuation=is_continuation,
                 force_compaction=force_compaction,
             )
+            self._rate_limit_retry_count = 0  # Reset on success
             await self._on_turn_success()
 
         except Exception as exc:
@@ -709,22 +769,76 @@ class TeamMemberBase(abc.ABC):
 
             if isinstance(exc, ProviderRateLimitError):
                 logger.warning(
-                    "team_member_provider_rate_limit name={} error={}", self.name, exc
+                    "team_member_provider_rate_limit name={} attempt={}/{} error={}",
+                    self.name,
+                    self._rate_limit_retry_count + 1,
+                    _MAX_RATE_LIMIT_RETRIES,
+                    exc,
                 )
+                if self._rate_limit_retry_count < _MAX_RATE_LIMIT_RETRIES:
+                    # Schedule delayed re-activation with exponential backoff
+                    self._rate_limit_retry_count += 1
+                    delay = _RATE_LIMIT_BASE_DELAY * (
+                        2 ** (self._rate_limit_retry_count - 1)
+                    )
+                    logger.info(
+                        "team_member_rate_limit_retry name={} attempt={}/{} delay={}s",
+                        self.name,
+                        self._rate_limit_retry_count,
+                        _MAX_RATE_LIMIT_RETRIES,
+                        delay,
+                    )
+                    # Cancel any previously scheduled retry
+                    if (
+                        self._rate_limit_retry_task is not None
+                        and not self._rate_limit_retry_task.done()
+                    ):
+                        self._rate_limit_retry_task.cancel()
+                    self._rate_limit_retry_task = asyncio.create_task(
+                        self._delayed_rate_limit_retry(delay)
+                    )
+                else:
+                    # Exhausted retries
+                    logger.warning(
+                        "team_member_rate_limit_exhausted name={} attempts={}",
+                        self.name,
+                        _MAX_RATE_LIMIT_RETRIES,
+                    )
+                    await self._on_turn_error(exc)
+                    self.state = "error"
+                    await self._team._emit(
+                        agent=self.name,
+                        event="agent_status",
+                        status="error",
+                        extra={
+                            "message": (
+                                f"Rate limit exceeded after "
+                                f"{_MAX_RATE_LIMIT_RETRIES} retries: {exc}"
+                            )
+                        },
+                    )
             elif isinstance(exc, ProviderAuthenticationError):
                 logger.warning(
                     "team_member_provider_auth_failed name={} error={}", self.name, exc
                 )
+                await self._on_turn_error(exc)
+                self.state = "error"
+                await self._team._emit(
+                    agent=self.name,
+                    event="agent_status",
+                    status="error",
+                    extra={"message": str(exc)},
+                )
             else:
                 logger.exception("team_member_error name={} error={}", self.name, exc)
-            await self._on_turn_error(exc)
-            self.state = "error"
-            await self._team._emit(
-                agent=self.name,
-                event="agent_status",
-                status="error",
-                extra={"message": str(exc)},
-            )
+                await self._on_turn_error(exc)
+                self.state = "error"
+                await self._team._emit(
+                    agent=self.name,
+                    event="agent_status",
+                    status="error",
+                    extra={"message": str(exc)},
+                )
 
         finally:
             self._on_turn_finally()
@@ -747,7 +861,13 @@ class TeamMemberBase(abc.ABC):
             # sits in the inbox.  Calling _maybe_activate here is safe: state is
             # already "idle", so it spawns a fresh activation task that loads
             # history from DB and wakes the agent — exactly like a normal wakeup.
-            if not self._mailbox.inbox_empty(self.name):
+            #
+            # Skip this when a rate-limit retry is already scheduled — the
+            # delayed task will re-activate us when the backoff expires.
+            if (
+                not self._mailbox.inbox_empty(self.name)
+                and self._rate_limit_retry_task is None
+            ):
                 logger.info(
                     "team_member_late_inbox_reactivate name={}",
                     self.name,
@@ -773,7 +893,9 @@ class TeamMemberBase(abc.ABC):
         """Assemble role-specific protocol-injected system prompt."""
 
     def _on_wake(self, pending: list[Message]) -> None:
-        """Called after draining inbox, before processing. Override to reset bookkeeping."""
+        """Called after draining inbox, before processing.
+        Override to reset bookkeeping.
+        """
 
     def _skip_inbox_persistence(self, senders: list[str]) -> bool:
         """Return True to skip DB persistence for this inbox batch."""
