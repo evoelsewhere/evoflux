@@ -4,6 +4,9 @@ import { Check, Copy, Download, ExternalLink, FileText, GitCompare, Loader2, Pen
 import Editor, { DiffEditor, useMonaco } from '@monaco-editor/react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import 'github-markdown-css/github-markdown.css'
 
 import { codingWorkspaceFileUrl, getCodingWorkspaceGitDiff, writeCodingWorkspaceFile } from '@/api/client'
 import { downloadCodingWorkspaceFile } from '@/lib/coding-workspace-download'
@@ -524,9 +527,32 @@ function RichPreview({ workspace, file, isHtml }: { workspace: string; file: Wor
   }
 
   return (
-    <div className="h-full min-h-0 overflow-auto bg-(--bg-page) p-6">
-      <div className="prose prose-sm max-w-none dark:prose-invert">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+    <div className="h-full min-h-0 overflow-auto bg-(--bg-page)">
+      <div className="markdown-body" style={{ padding: '24px', backgroundColor: 'transparent' }}>
+        <ReactMarkdown 
+          remarkPlugins={[remarkGfm]}
+          components={{
+            code({ inline, className, children, ...props }: any) {
+              const match = /language-(\w+)/.exec(className || '')
+              return !inline && match ? (
+                <SyntaxHighlighter
+                  style={vscDarkPlus as any}
+                  language={match[1]}
+                  PreTag="div"
+                  {...props}
+                >
+                  {String(children).replace(/\n$/, '')}
+                </SyntaxHighlighter>
+              ) : (
+                <code className={className} {...props}>
+                  {children}
+                </code>
+              )
+            }
+          }}
+        >
+          {content}
+        </ReactMarkdown>
       </div>
     </div>
   )
