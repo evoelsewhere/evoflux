@@ -984,6 +984,71 @@ async def get_neighbors(
     return results
 
 
+async def get_ambiguous_relationships(
+    db: AsyncSession,
+    *,
+    workspace_id: UUID,
+    node_id: UUID,
+) -> list[tuple[CodeAmbiguousEdge, list[CodeNode]]]:
+    """Return unresolved outbound relationships and their candidate nodes."""
+    import json
+
+    relationships = list(
+        (
+            await db.exec(
+                select(CodeAmbiguousEdge)
+                .where(
+                    CodeAmbiguousEdge.workspace_id == workspace_id,
+                    CodeAmbiguousEdge.src_id == node_id,
+                )
+                .order_by(col(CodeAmbiguousEdge.id))
+            )
+        ).all()
+    )
+    if not relationships:
+        return []
+
+    ids_by_relationship: list[list[UUID]] = []
+    all_ids: set[UUID] = set()
+    for relationship in relationships:
+        parsed_ids: list[UUID] = []
+        try:
+            raw_ids = json.loads(relationship.candidate_node_ids)
+        except (TypeError, ValueError):
+            raw_ids = []
+        if isinstance(raw_ids, list):
+            for raw_id in raw_ids:
+                try:
+                    candidate_id = UUID(str(raw_id))
+                except (TypeError, ValueError):
+                    continue
+                parsed_ids.append(candidate_id)
+                all_ids.add(candidate_id)
+        ids_by_relationship.append(parsed_ids)
+
+    nodes_by_id: dict[UUID, CodeNode] = {}
+    if all_ids:
+        candidates = (
+            await db.exec(
+                select(CodeNode).where(
+                    CodeNode.workspace_id == workspace_id,
+                    col(CodeNode.id).in_(all_ids),
+                )
+            )
+        ).all()
+        nodes_by_id = {candidate.id: candidate for candidate in candidates}
+
+    return [
+        (
+            relationship,
+            [nodes_by_id[node_id] for node_id in node_ids if node_id in nodes_by_id],
+        )
+        for relationship, node_ids in zip(
+            relationships, ids_by_relationship, strict=True
+        )
+    ]
+
+
 async def _adjacent(
     db: AsyncSession,
     *,

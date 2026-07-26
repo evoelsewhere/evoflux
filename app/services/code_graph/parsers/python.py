@@ -203,9 +203,16 @@ class PythonParser(TreeSitterParser):
             elif child.type == "aliased_import":
                 name_node = child.child_by_field_name("name")
                 if name_node is not None:
+                    alias_node = child.child_by_field_name("alias")
                     out.append(
                         ImportRef(
-                            name=node_text(name_node, source), module_path=module_path
+                            name=node_text(name_node, source),
+                            module_path=module_path,
+                            local_name=(
+                                node_text(alias_node, source)
+                                if alias_node is not None
+                                else None
+                            ),
                         )
                     )
         return out
@@ -224,7 +231,18 @@ class PythonParser(TreeSitterParser):
                 if name_node is not None:
                     text = node_text(name_node, source)
                     parts = text.split(".")
-                    out.append(ImportRef(name=parts[-1], module_path=text))
+                    alias_node = child.child_by_field_name("alias")
+                    out.append(
+                        ImportRef(
+                            name=parts[-1],
+                            module_path=text,
+                            local_name=(
+                                node_text(alias_node, source)
+                                if alias_node is not None
+                                else None
+                            ),
+                        )
+                    )
         return out
 
 

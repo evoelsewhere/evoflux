@@ -643,6 +643,9 @@ def test_load_team_from_dir_materializes_coding_builtin_members(tmp_path):
         team.blueprints["explorer"].description
         == BUILTIN_MEMBER_PROFILES["coding"]["explorer"]["description"]
     )
+    for name in team.blueprints:
+        materialized = (d / f"{name}.md").read_text(encoding="utf-8")
+        assert "- code-graph-navigation" in materialized
 
 
 def test_load_team_from_dir_does_not_overwrite_existing_builtin_member(tmp_path):
@@ -848,6 +851,9 @@ def test_builtin_member_profiles_are_curated_to_default_agents():
     assert "review-pull-requests" in BUILTIN_MEMBER_PROFILES["coding"]["debate"][
         "skills"
     ]
+    for profile in BUILTIN_MEMBER_PROFILES["coding"].values():
+        assert "code-graph-navigation" in profile["skills"]
+        assert "## Navigation strategy" not in profile["prompt"]
 
 
 def test_builtin_member_user_description_overrides_code_default(tmp_path):
@@ -902,6 +908,7 @@ def test_coding_explorer_builtin_member_profile_checks_codebase(tmp_path):
     profile = BUILTIN_MEMBER_PROFILES["coding"]["explorer"]
     assert coding_agent.description == profile["description"]
     assert coding_agent.system_prompt == profile["prompt"]
+    assert "code-graph-navigation" in coding_agent.skills
     assert "current codebase" in coding_agent.system_prompt
     assert "grep" in coding_agent._tools
     # Tier grant: members get every tier tool, including write — but never

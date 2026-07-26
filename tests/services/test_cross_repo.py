@@ -146,3 +146,51 @@ async def test_resolve_project_changed_workspaces_skips_other_workspaces(
         refreshed = await db.get(CrossRepoEdge, edge_id)
         assert refreshed is not None
         assert refreshed.src_node_id is None
+
+
+@pytest.mark.asyncio
+async def test_changed_target_resolves_unresolved_edge_from_unchanged_source(
+    setup_db, tmp_path: Path
+):
+    from app.models.code_graph import CrossRepoEdge
+
+    project_id, repo_a_id, repo_b_id = await _setup_project(tmp_path)
+
+    async with db_module.async_session_factory() as db:
+        edge = CrossRepoEdge(
+            project_id=project_id,
+            src_workspace_id=repo_a_id,
+            src_file_path="Client.java",
+            raw_reference="com.example.NewService",
+            dst_name_hint="NewService",
+            status="unresolved",
+            kind="imports",
+        )
+        db.add(edge)
+        await db.commit()
+        edge_id = edge.id
+
+    async with db_module.async_session_factory() as db:
+        target = await _seed_node(
+            db,
+            workspace_id=repo_b_id,
+            name="NewService",
+            file_path="NewService.java",
+        )
+        target.qualified_name = "com.example.NewService"
+        db.add(target)
+        await db.commit()
+        target_id = target.id
+
+    async with db_module.async_session_factory() as db:
+        stats = await resolve_project(
+            db, project_id=project_id, changed_workspaces={repo_b_id}
+        )
+
+    assert stats.static_resolved == 1
+    async with db_module.async_session_factory() as db:
+        refreshed = await db.get(CrossRepoEdge, edge_id)
+        assert refreshed is not None
+        assert refreshed.status == "resolved"
+        assert refreshed.dst_workspace_id == repo_b_id
+        assert refreshed.dst_node_id == target_id

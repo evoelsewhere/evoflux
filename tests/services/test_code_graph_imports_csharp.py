@@ -38,10 +38,10 @@ namespace MyApp {
 }
 """
     result = CSharpParser().parse(file_path="Program.cs", source=source)
-    names = _import_names(result)
-    assert "Json" in names
-    edges = {e.dst_name: e.module_path for e in _import_edges(result)}
-    assert edges["Json"] == "Newtonsoft.Json.Linq"
+    edge = _import_edges(result)[0]
+    assert edge.dst_name == "Linq"
+    assert edge.local_name == "Json"
+    assert edge.module_path == "Newtonsoft.Json.Linq"
 
 
 def test_csharp_multi_using():

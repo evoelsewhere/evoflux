@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from app.services.code_graph.parsers.csharp import CSharpParser
 from app.services.code_graph.parsers.ecmascript import TypeScriptParser
 from app.services.code_graph.parsers.go import GoParser
 from app.services.code_graph.parsers.java import JavaParser
@@ -13,6 +14,7 @@ _py = PythonParser()
 _ts = TypeScriptParser()
 _java = JavaParser()
 _go = GoParser()
+_csharp = CSharpParser()
 
 
 def _refs(source: str, parser) -> list[tuple[str, str]]:
@@ -182,3 +184,31 @@ func (s *Server) Listen(addr string) error {
         # string and error are builtins
         assert ("Listen", "Server") not in refs  # receiver not a type ref
         assert refs == []
+
+
+# ── C# ──────────────────────────────────────────────────────────────────────
+
+
+class TestCSharpTypeRefs:
+    def test_nested_generic_nullable_and_array_types(self) -> None:
+        src = """\
+public class UserService {
+    public Task<Result<User[]>> Handle(Request? request, int limit) {}
+}
+"""
+        refs = _refs(src, _csharp)
+        assert ("Handle", "Task") in refs
+        assert ("Handle", "Result") in refs
+        assert ("Handle", "User") in refs
+        assert ("Handle", "Request") in refs
+        assert ("Handle", "int") not in refs
+
+    def test_constructor_parameter_types(self) -> None:
+        src = """\
+public class UserService {
+    public UserService(IRepository<User> repository) {}
+}
+"""
+        refs = _refs(src, _csharp)
+        assert ("UserService", "IRepository") in refs
+        assert ("UserService", "User") in refs

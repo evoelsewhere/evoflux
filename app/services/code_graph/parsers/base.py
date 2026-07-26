@@ -71,13 +71,15 @@ class SuperType:
 class ImportRef:
     """A symbol imported from another module.
 
-    ``name`` is the symbol name as used locally (or the module name for bare
-    imports).  ``module_path`` is the raw import source string (e.g.
+    ``name`` is the symbol's name in the target module. ``local_name`` is the
+    binding used by this source file when the import is aliased and otherwise
+    defaults to ``name``. ``module_path`` is the raw import source string (e.g.
     ``"./utils"``, ``"app.services"``, ``"fmt"``).
     """
 
     name: str
     module_path: str
+    local_name: str | None = None
 
 
 def node_text(node: Node, source: bytes) -> str:
@@ -284,6 +286,7 @@ class TreeSitterParser:
                         dst_name=imp.name,
                         line=node.start_point[0] + 1,
                         module_path=imp.module_path,
+                        local_name=imp.local_name or imp.name,
                     )
                 )
             child_prefix = prefix

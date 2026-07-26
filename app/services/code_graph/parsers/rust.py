@@ -170,17 +170,25 @@ class RustParser(TreeSitterParser):
                 # use something; (rare)
                 out.append(ImportRef(name=node_text(child, source), module_path=""))
             elif child.type == "use_as_clause":
-                for sub in child.children:
-                    if sub.type == "scoped_identifier":
-                        name_n = sub.child_by_field_name("name")
-                        if name_n:
-                            out.append(
-                                ImportRef(
-                                    name=node_text(name_n, source),
-                                    module_path=node_text(sub, source),
-                                )
+                path_node = child.child_by_field_name("path")
+                alias_node = child.child_by_field_name("alias")
+                if path_node is not None:
+                    if path_node.type == "scoped_identifier":
+                        name_node = path_node.child_by_field_name("name")
+                    else:
+                        name_node = path_node
+                    if name_node is not None:
+                        out.append(
+                            ImportRef(
+                                name=node_text(name_node, source),
+                                module_path=node_text(path_node, source),
+                                local_name=(
+                                    node_text(alias_node, source)
+                                    if alias_node is not None
+                                    else None
+                                ),
                             )
-                        break
+                        )
         return out
 
     def decorators(self, node: Node, source: bytes) -> list[str]:
@@ -305,13 +313,20 @@ def _rust_use_list(use_list: Node, source: bytes, module_path: str) -> list[Impo
                 ImportRef(name=node_text(child, source), module_path=module_path)
             )
         elif child.type == "use_as_clause":
-            # Post as Alias — use original name
-            for sub in child.children:
-                if sub.type == "identifier":
-                    out.append(
-                        ImportRef(name=node_text(sub, source), module_path=module_path)
+            path_node = child.child_by_field_name("path")
+            alias_node = child.child_by_field_name("alias")
+            if path_node is not None:
+                out.append(
+                    ImportRef(
+                        name=node_text(path_node, source),
+                        module_path=module_path,
+                        local_name=(
+                            node_text(alias_node, source)
+                            if alias_node is not None
+                            else None
+                        ),
                     )
-                    break
+                )
         elif child.type == "scoped_identifier":
             name_node = child.child_by_field_name("name")
             if name_node is not None:

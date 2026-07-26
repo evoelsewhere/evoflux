@@ -26,7 +26,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.agent.sandbox import get_sandbox
 from app.agent.tools.registry import Tool
 from app.core.db import async_session_factory
-from app.models.code_graph import CodeNode, CrossRepoEdge
+from app.models.code_graph import CodeAmbiguousEdge, CodeNode, CrossRepoEdge
 from app.services import code_graph_service as svc
 from app.services import coding_project_service as proj_svc
 
@@ -36,6 +36,21 @@ _NOT_INDEXED = (
 )
 
 _DOCSTRING_CLAMP = 320
+
+_RELATION_LABELS = {
+    "calls": ("calls", "called by"),
+    "inherits": ("extends", "extended by"),
+    "implements": ("implements", "implemented by"),
+    "imports": ("imports", "imported by"),
+    "uses": ("uses", "used by"),
+    "references": ("references", "referenced by"),
+    "decorated_by": ("decorated by", "decorates"),
+    "contains": ("contains", "contained by"),
+    "overrides": ("overrides", "overridden by"),
+    "throws": ("throws", "thrown by"),
+    "reads": ("reads", "read by"),
+    "writes": ("writes", "written by"),
+}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -345,9 +360,15 @@ async def _code_graph(
                     db, workspace_id=match_ws_id, node_id=node.id, direction="in"
                 )
 
+            ambiguous_edges = []
+            if direction in ("out", "both"):
+                ambiguous_edges = await svc.get_ambiguous_relationships(
+                    db, workspace_id=match_ws_id, node_id=node.id
+                )
+
             # Get cross-repo references (both directions)
             cross_repo = await _find_cross_repo_references(
-                db, project_ids, node.id, direction="both"
+                db, project_ids, node.id, direction=direction
             )
 
             sections.append(
@@ -369,6 +390,7 @@ async def _code_graph(
                     limit=capped,
                     import_note=import_note,
                     cross_repo_labels=repo_labels,
+                    ambiguous_edges=ambiguous_edges,
                 )
             )
 
@@ -384,6 +406,7 @@ def _render_graph(
     limit: int = 40,
     import_note: str | None = None,
     cross_repo_labels: dict | None = None,
+    ambiguous_edges: Sequence[tuple[CodeAmbiguousEdge, list[CodeNode]]] = (),
 ) -> str:
     head = f"[{node.kind}] {node.qualified_name} — {_loc(node)}"
     if repo_label:
@@ -406,28 +429,34 @@ def _render_graph(
             shown += f" … and {len(names) - limit} more"
         return shown
 
-    # Outbound (what it calls/extends/imports)
-    if out_edges:
-        calls = [n.qualified_name for k, n in out_edges if k == "calls"]
-        bases = [n.qualified_name for k, n in out_edges if k in ("inherits", "implements")]
-        imports = [n.qualified_name for k, n in out_edges if k == "imports"]
-        if calls:
-            lines.append(f"  calls ({len(calls)}): {_joined(calls)}")
-        if bases:
-            lines.append(f"  extends: {_joined(bases)}")
-        if imports:
-            lines.append(f"  imports ({len(imports)}): {_joined(imports)}")
-            if import_note:
+    def _append_relationships(
+        edges: list[tuple[str, CodeNode]], *, label_index: int
+    ) -> None:
+        grouped: dict[str, list[str]] = {}
+        for kind, related in edges:
+            grouped.setdefault(kind, []).append(related.qualified_name)
+
+        ordered_kinds = [kind for kind in _RELATION_LABELS if kind in grouped]
+        ordered_kinds.extend(kind for kind in grouped if kind not in _RELATION_LABELS)
+        for kind in ordered_kinds:
+            names = grouped[kind]
+            labels = _RELATION_LABELS.get(kind, (kind, f"{kind} by"))
+            lines.append(f"  {labels[label_index]} ({len(names)}): {_joined(names)}")
+            if kind == "imports" and label_index == 0 and import_note:
                 lines.append(f"  ({import_note})")
 
-    # Inbound (who calls it)
-    if in_edges:
-        callers = [n.qualified_name for k, n in in_edges if k == "calls"]
-        importers = [n.qualified_name for k, n in in_edges if k == "imports"]
-        if callers:
-            lines.append(f"  called by ({len(callers)}): {_joined(callers)}")
-        if importers:
-            lines.append(f"  imported by ({len(importers)}): {_joined(importers)}")
+    _append_relationships(out_edges, label_index=0)
+    _append_relationships(in_edges, label_index=1)
+
+    for relationship, candidates in ambiguous_edges[:limit]:
+        candidate_labels = [
+            f"{candidate.qualified_name} — {_loc(candidate)}"
+            for candidate in candidates
+        ]
+        lines.append(
+            f"  ambiguous {relationship.kind} '{relationship.dst_name}' "
+            f"({len(candidates)} candidates): {_joined(candidate_labels)}"
+        )
 
     # Cross-repo inbound (who references me from other repos)
     cross_in = [e for e in cross_repo if e.dst_node_id == node.id]
@@ -469,13 +498,14 @@ code_graph = Tool(
     _code_graph,
     name="code_graph",
     description=(
-        "Explore a symbol's relationships — callers, callees, inheritance, "
-        "cross-repo references. Shows both inbound and outbound in one view."
+        "Explore a symbol's callers, callees, imports, inheritance, type and DI "
+        "references, decorators, containment, ambiguous targets, and cross-repo "
+        "links. Shows inbound and outbound relationships in one view."
     ),
     concurrency_safe=True,
     read_only=True,
     deferred=True,
-    deferred_summary="Explore callers, callees, inheritance, and cross-repo references.",
+    deferred_summary="Explore structural relationships, ambiguity, and cross-repo links.",
 )
 
 

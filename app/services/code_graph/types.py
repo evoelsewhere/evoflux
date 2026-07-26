@@ -71,6 +71,8 @@ class ExtractedEdge:
     # unresolved-import bookkeeping even when dst_name can't be resolved
     # within this workspace — see ImportRef.module_path.
     module_path: str | None = None
+    # Binding visible in the importing file. Differs from dst_name for aliases.
+    local_name: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -212,14 +212,22 @@ class GoParser(TreeSitterParser):
             return []
         # Strip quotes from the path string
         raw = node_text(path_node, source).strip('"')
-        # The imported name is the last path segment (or alias if present)
+        # The target package is conventionally the last path segment; an
+        # explicit package identifier changes only the local binding.
+        target_name = raw.rsplit("/", 1)[-1]
         name_node = spec.child_by_field_name("name")
-        if name_node is not None and name_node.type == "package_identifier":
-            name = node_text(name_node, source)
-        else:
-            parts = raw.rsplit("/", 1)
-            name = parts[-1] if parts else raw
-        return [ImportRef(name=name, module_path=raw)]
+        local_name = (
+            node_text(name_node, source)
+            if name_node is not None and name_node.type == "package_identifier"
+            else None
+        )
+        return [
+            ImportRef(
+                name=target_name,
+                module_path=raw,
+                local_name=local_name,
+            )
+        ]
 
 
 def _first_child_of_type(node: Node, type_name: str) -> Node | None:

@@ -2,10 +2,9 @@
 
 This module is pure (no database, no async): it produces a :class:`WorkspaceIndex`
 that the service layer persists. Cross-file edges (``calls``, ``inherits``, …) are
-resolved by name with a high-precision heuristic: a name target is linked only
-when it resolves to a *single* definition in the workspace. Ambiguous or external
-targets are dropped, keeping the P1 graph clean. Scope-aware resolution is future
-work.
+resolved with import scope and qualified/simple-name fallbacks. A target is linked
+only when it resolves to a single definition; ambiguous targets and plausible
+cross-repository references are retained explicitly for later resolution.
 """
 
 from __future__ import annotations
@@ -268,22 +267,25 @@ def _build_index(
     name_to_keys: dict[str, list[str]] = {}
     qname_to_keys: dict[str, list[str]] = {}
     extra_kinds: dict[str, str] = {}
+    extra_files: dict[str, str] = {}
     for definition in existing_defs:
         name_to_keys.setdefault(definition.name, []).append(definition.key)
         extra_kinds[definition.key] = definition.kind
+        extra_files[definition.key] = definition.file_path
 
     raw_edges: list[
-        tuple[str, str | None, str | None, str, int | None, str | None]
+        tuple[str, str | None, str | None, str, int | None, str | None, str | None]
     ] = []
-    # (src_key, dst_local_id, dst_name, kind, line, module_path)
+    # (src_key, dst_local_id, dst_name, kind, line, module_path, local_name)
     local_to_key: dict[tuple[str, str], str] = {}
-    files_by_path: dict[str, list[str]] = {}
+    symbols_by_file: dict[str, dict[str, list[str]]] = {}
 
-    # Seed files_by_path from existing defs so path-aware resolution can find
+    # Seed symbols_by_file from existing defs so path-aware resolution can find
     # symbols in unchanged files during incremental reindex.
     for definition in existing_defs:
         if definition.file_path:
-            files_by_path.setdefault(definition.file_path, []).append(definition.key)
+            file_symbols = symbols_by_file.setdefault(definition.file_path, {})
+            file_symbols.setdefault(definition.name, []).append(definition.key)
 
     for file_path, source in files_iter:
         parser = registry.for_path(file_path)
@@ -316,7 +318,8 @@ def _build_index(
             name_to_keys.setdefault(node.name, []).append(key)
             if node.qualified_name != node.name:
                 qname_to_keys.setdefault(node.qualified_name, []).append(key)
-            files_by_path.setdefault(file_path, []).append(key)
+            file_symbols = symbols_by_file.setdefault(file_path, {})
+            file_symbols.setdefault(node.name, []).append(key)
             node_count += 1
 
         for edge in result.edges:
@@ -331,6 +334,7 @@ def _build_index(
                     edge.kind,
                     edge.line,
                     edge.module_path,
+                    edge.local_name,
                 )
             )
 
@@ -347,10 +351,10 @@ def _build_index(
     # Build path-aware module resolution.
     module_resolution = ModuleResolution()
     if root_path is not None:
-        all_known = frozenset(files_by_path.keys()) | known_file_paths
+        all_known = frozenset(symbols_by_file.keys()) | known_file_paths
         repo_ctx = build_repo_context(root_path)
         module_resolution = resolve_module_paths(
-            raw_edges, files_by_path, all_known, repo_ctx
+            raw_edges, symbols_by_file, all_known, repo_ctx
         )
 
     _resolve_edges(
@@ -360,6 +364,7 @@ def _build_index(
         name_to_keys,
         qname_to_keys,
         extra_kinds,
+        extra_files,
         module_resolution=module_resolution,
     )
     _backfill_edge_counts(index)
@@ -368,21 +373,43 @@ def _build_index(
 
 def _resolve_edges(
     index: WorkspaceIndex,
-    raw_edges: list[tuple[str, str | None, str | None, str, int | None, str | None]],
+    raw_edges: list[
+        tuple[
+            str,
+            str | None,
+            str | None,
+            str,
+            int | None,
+            str | None,
+            str | None,
+        ]
+    ],
     local_to_key: dict[tuple[str, str], str],
     name_to_keys: dict[str, list[str]],
     qname_to_keys: dict[str, list[str]],
     extra_kinds: dict[str, str] | None = None,
+    extra_files: dict[str, str] | None = None,
     module_resolution: ModuleResolution | None = None,
 ) -> None:
     kind_by_key = {n.key: n.kind for n in index.nodes}
     if extra_kinds:
         kind_by_key.update(extra_kinds)
     file_by_key = {n.key: n.file_path for n in index.nodes}
+    if extra_files:
+        file_by_key.update(extra_files)
     seen: set[tuple[str, str, str]] = set()
 
-    for src_key, dst_local_id, dst_name, kind, line, module_path in raw_edges:
+    for (
+        src_key,
+        dst_local_id,
+        dst_name,
+        kind,
+        line,
+        module_path,
+        local_name,
+    ) in raw_edges:
         dst_key: str | None = None
+        local_import_target_found = False
         if dst_local_id is not None:
             src_file = file_by_key.get(src_key, "")
             dst_key = local_to_key.get((src_file, dst_local_id))
@@ -392,14 +419,16 @@ def _resolve_edges(
                 # Try path-aware resolution first for import edges.
                 if module_resolution is not None and module_path:
                     resolved = module_resolution.by_import_edge.get(
-                        (src_key, module_path)
+                        (src_key, module_path, dst_name, local_name)
                     )
                     if resolved is not None and resolved.dst_key is not None:
+                        local_import_target_found = True
                         dst_key = resolved.dst_key
                         # Skip _resolve_qualified — we have a precise match.
                     elif resolved is not None and resolved.dst_file_path is not None:
+                        local_import_target_found = True
                         # File resolved but specific symbol didn't disambiguate.
-                        # Leave as unresolved rather than guessing.
+                        # Keep its scope for later edges without guessing a symbol.
                         pass
                     else:
                         dst_key = _resolve_qualified(
@@ -430,6 +459,7 @@ def _resolve_edges(
                         module_resolution,
                         name_to_keys,
                         kind_by_key,
+                        file_by_key,
                         allowed,
                     )
                 if dst_key is None:
@@ -442,7 +472,12 @@ def _resolve_edges(
             # still resolve to a sibling repo in the same project — keep the
             # raw reference instead of dropping it outright like every other
             # unresolved edge kind.
-            if dst_key is None and kind == EDGE_IMPORTS and module_path:
+            if (
+                dst_key is None
+                and kind == EDGE_IMPORTS
+                and module_path
+                and not local_import_target_found
+            ):
                 index.unresolved_references.append(
                     UnresolvedReference(
                         src_key=src_key,
@@ -601,6 +636,7 @@ def _resolve_scoped(
     module_resolution: ModuleResolution,
     name_to_keys: dict[str, list[str]],
     kind_by_key: dict[str, str],
+    file_by_key: dict[str, str],
     allowed_kinds: frozenset[str],
 ) -> str | None:
     """Scope-aware resolution using import context.
@@ -635,12 +671,12 @@ def _resolve_scoped(
         return None
 
     # Search only within the import's target file.
-    search_name = rest_name if rest_name else head
+    search_name = rest_name if rest_name else resolved_import.imported_name
     candidates = [
         key
         for key in name_to_keys.get(search_name, [])
         if kind_by_key.get(key) in allowed_kinds
-        and key.rsplit("::", 1)[0] == target_file
+        and _file_matches_scope(file_by_key.get(key, ""), target_file)
     ]
     if len(candidates) == 1:
         return candidates[0]
@@ -651,6 +687,12 @@ def _resolve_scoped(
             return resolved_import.dst_key
 
     return None
+
+
+def _file_matches_scope(file_path: str, target: str) -> bool:
+    if target.endswith("/"):
+        return file_path.startswith(target)
+    return file_path == target
 
 
 def _backfill_edge_counts(index: WorkspaceIndex) -> None:

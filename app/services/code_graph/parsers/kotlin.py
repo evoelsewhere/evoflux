@@ -103,7 +103,28 @@ class KotlinParser(TreeSitterParser):
         is_wildcard = any(c.type == "wildcard_import" for c in node.children)
         if is_wildcard:
             return [ImportRef(name="*", module_path=f"{dotted}.*")]
-        return [ImportRef(name=dotted.rsplit(".", 1)[-1], module_path=dotted)]
+        alias_container = next(
+            (child for child in node.children if child.type == "import_alias"), None
+        )
+        alias = (
+            next(
+                (
+                    child
+                    for child in alias_container.children
+                    if child.type == "type_identifier"
+                ),
+                None,
+            )
+            if alias_container is not None
+            else None
+        )
+        return [
+            ImportRef(
+                name=dotted.rsplit(".", 1)[-1],
+                module_path=dotted,
+                local_name=node_text(alias, source) if alias is not None else None,
+            )
+        ]
 
     def decorators(self, node: Node, source: bytes) -> list[str]:
         out: list[str] = []
