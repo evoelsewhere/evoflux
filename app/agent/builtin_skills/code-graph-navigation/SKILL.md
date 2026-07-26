@@ -1,97 +1,108 @@
 ---
 name: code-graph-navigation
-description: "Use when navigating symbols and structural relationships across repositories. Triggers include: code graph, impact analysis, cross-repo, callers, dependency path"
+description: "Triggers include: code graph, caller, impact analysis. Navigate indexed code symbols and structural relationships across one or more repositories. Use for definitions, callers/callees, imports, inheritance, interface conformance, overrides, references, dependency paths, ambiguity, and change-impact analysis; verify important findings against live source. Do not use as the primary method for literal/config search or proof of runtime behavior."
 ---
 
 # Code Graph Navigation
 
-Use the code graph to route investigation quickly, then verify important claims
-against source and live language tooling. The graph is a static, indexed model;
-it is strong evidence about definitions and resolved relationships, but it is
-not proof of runtime behavior.
+Use the graph to narrow the search space, then confirm material claims in live
+source. Treat it as a static index of resolved structure, not proof of runtime
+behavior.
 
 ## When to Use
 
-- Locating definitions, callers, callees, imports, inheritance, type references,
-  decorators, dependency injection, or containment.
-- Estimating change impact before editing a shared symbol.
-- Tracing a dependency path within one repository or across a linked project.
-- Understanding an unfamiliar codebase without opening many whole files.
-- Investigating duplicate names or an ambiguous relationship reported by the graph.
+- Locate definitions, callers, callees, imports, hierarchy, type references,
+  decorators, dependency injection, data access, or containment.
+- Estimate the impact of changing a shared symbol.
+- Trace a dependency path within a repository or across a linked project.
+- Map an unfamiliar codebase without reading many whole files.
+- Investigate duplicate symbols or ambiguous relationships.
 
 ## When NOT to Use
 
-- Searching for string literals, error text, comments, config keys, or concepts;
-  use `grep` for those.
-- Proving dynamic dispatch, reflection, generated code, framework registration,
-  or runtime data flow; use source reads, LSP, tests, or runtime evidence.
-- Continuing to query an unindexed workspace. Fall back to `grep` and normal file
-  navigation so work can proceed while indexing is unavailable.
+- Search literals, error text, comments, config keys, or prose with text search.
+- Prove reflection, dynamic dispatch, generated registration, runtime data flow,
+  or environment-dependent behavior; use source, LSP, tests, or runtime evidence.
+- Wait on an absent or stale index. Continue with normal source navigation and
+  state that graph-based coverage remains unverified.
 
-## Workflow
+## Query Strategy
 
-### 1. Check Scope and Freshness
+### 1. Establish scope only when needed
 
-Call `code_overview` once when the repository or project is unfamiliar. Confirm
-that expected languages and a plausible number of files are indexed. In a linked
-project, note sibling repository labels and whether any repository has zero files.
+Call `code_overview` for broad exploration or an unfamiliar project. Check that
+the expected languages and a plausible number of files are indexed. In a linked
+project, note every repository label and flag repositories with zero files.
 
-If the graph says there is no index, do not stall. Use `grep`/`glob`/`read`, and
-report that graph-based impact analysis remains unverified. If recently edited
-source is missing, treat the index as stale and prefer live source/LSP evidence.
+Skip the overview when the target symbol and repository are already known.
 
-### 2. Locate Symbols Precisely
+### 2. Resolve the symbol
 
-Use `code_search` for identifiers. Start with a qualified name when known; use a
-simple name only to discover candidates. Use `grep` for non-identifiers.
+Call `code_search` with the most specific identifier available. Prefer a
+qualified name and add `kind` when names collide. Keep each candidate's
+repository, qualified name, kind, signature, and `file:line` together.
 
-When several symbols match, keep repository, file, kind, signature, and qualified
-name together. Never choose a candidate from name similarity alone.
+Use text search for non-identifiers. Never select a candidate by name similarity
+alone; read the smallest relevant source range when multiple candidates remain.
 
-### 3. Expand Relationships
+### 3. Ask only for the relationships required
 
-Call `code_graph(name=..., direction="both")` for the selected symbol. Interpret
-the edge kind literally:
+Call `code_graph` with:
 
-- `calls` and `called by`: statically resolved invocations.
-- `imports` and `imported by`: module or symbol imports.
-- `extends`, `implements`, and their inverse forms: type hierarchy.
-- `uses` and `used by`: wired or required dependencies.
-- `references`: signature/type references.
-- `decorated by`: annotations, attributes, or decorators.
-- `contains` and `contained by`: structural ownership.
+- `direction="in"` for callers, importers, references, and change impact.
+- `direction="out"` for callees, imports, dependencies, and ambiguity details.
+- `direction="both"` only when both sides affect the conclusion.
 
-Use `direction="in"` for impact analysis and `direction="out"` for dependency
-analysis. A missing edge means "not resolved by the index", not "cannot happen".
+Start with a modest `limit` for high-fan-out symbols and increase it only when
+truncation hides relevant results. Avoid repeating the same query under minor
+name variations before inspecting the returned candidates.
 
-### 4. Handle Ambiguity Explicitly
+Interpret edge labels literally:
 
-An `ambiguous <kind> '<name>'` line means the index deliberately refused to guess.
-Compare candidate locations with imports, receiver types, namespace/package, and
-the call site. Read the call site and the smallest relevant candidate definitions.
-Do not report the relationship as resolved until source or LSP evidence selects it.
+- Invocation: `calls` / `called by`.
+- Modules: `imports` / `imported by`.
+- Hierarchy: `extends`, `implements`, `overrides`, and their inverse labels.
+- Dependency and data: `uses`, `references`, `reads`, `writes`, `throws`, and
+  their inverse labels.
+- Metadata and ownership: `decorated by`, `contains`, and their inverse labels.
 
-### 5. Trace Across Repositories
+A missing edge means "not resolved by the index," not "cannot happen." An
+`ambiguous <kind> '<name>'` result means the index deliberately refused to pick
+a target. Resolve it from imports, receiver types, namespaces, and the call site.
 
-Repository scope is automatic for linked projects. Preserve repository labels in
-notes and use `code_path` when the question is how one symbol reaches another.
-If no path is found, inspect unresolved imports and manifest/package boundaries;
-do not assume the repositories are independent.
+When graph output says imports are file-level, do not attribute those imports to
+the selected class or function; they belong to its containing file.
 
-### 6. Verify Before Editing
+### 4. Trace paths only for reachability questions
 
-Read the exact source ranges identified by graph results. Use LSP for receiver
-types, aliases, overrides, and dynamic language facts when available. Before a
-shared API edit, inspect inbound relationships and run the repository's focused
-tests after the change.
+Call `code_path` when the question is how one symbol can reach another. Use
+qualified endpoints when possible. Treat the result as a shortest indexed
+dependency path, not as an execution trace.
+
+For linked projects, automatic sibling lookup is a fallback rather than an
+exhaustive all-repository search: local matches can take precedence, and a full
+active-repository result set can hide sibling search results. Preserve repository
+labels and inspect the sibling source directly when same-name collisions matter.
+If no path is found, inspect unresolved imports and manifest/package boundaries
+before concluding the components are independent.
+
+### 5. Verify before editing or concluding
+
+Read the exact definitions and call sites identified by the graph. Use LSP for
+aliases, receiver types, overrides, and live diagnostics when available. Before
+editing a shared API, inspect inbound relationships; after editing, run focused
+tests for the affected behavior.
 
 ## Verification
 
-Before concluding a graph-based investigation, verify all of the following:
+Before reporting the result:
 
-- The workspace or relevant sibling repository was indexed.
-- The chosen symbol was disambiguated by qualified name and location.
-- Both inbound and outbound relationships were checked when impact matters.
-- Ambiguous and missing edges were reported as uncertainty, not absence.
-- Material claims were confirmed from source, LSP, tests, or runtime evidence.
-- Cross-repository labels and paths were preserved in the final explanation.
+- Confirm the relevant repository was indexed and the selected symbol was
+  disambiguated by qualified name and location.
+- Check inbound and outbound relationships when impact depends on both.
+- Report ambiguous, missing, truncated, and possibly stale results as
+  uncertainty rather than absence.
+- Confirm material claims with source and, when runtime behavior matters, with
+  LSP, tests, logs, or execution.
+- Distinguish indexed evidence, source-confirmed evidence, runtime-confirmed
+  evidence, and remaining unknowns in the final explanation.
