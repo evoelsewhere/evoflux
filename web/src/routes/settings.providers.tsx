@@ -27,13 +27,14 @@ import {
   type ProviderUsageLimit,
 } from '@/api/client'
 import {
-  SettingsCallout,
   SettingsGroup,
   SettingsPage,
 } from '@/components/settings/SettingsLayout'
+import { SettingsAsyncBoundary } from '@/components/settings/SettingsLoading'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   queryKeys,
   useDeleteProviderMutation,
@@ -193,6 +194,94 @@ function UsagePanel({ limits }: { limits: ProviderUsageLimit[] }) {
 }
 
 // ─── ProviderCard ────────────────────────────────────────────────────────────
+
+export function ProviderCollapsedCard({
+  provider,
+  connected,
+  configuredButUnreachable,
+  modelCount,
+  onExpand,
+}: {
+  provider: ProviderInfo
+  connected: boolean
+  configuredButUnreachable: boolean
+  modelCount: number
+  onExpand: () => void
+}) {
+  return (
+    <article
+      className={cn(
+        'group relative flex items-stretch overflow-hidden rounded-xl border bg-(--bg-card) shadow-[0_10px_30px_rgba(0,0,0,0.035)] transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-px hover:shadow-[0_14px_36px_rgba(0,0,0,0.055)]',
+        configuredButUnreachable
+          ? 'border-(--color-error)/30 hover:border-(--color-error)/45'
+          : connected
+            ? 'border-(--color-success)/25 hover:border-(--color-success)/40'
+            : 'border-(--color-border) hover:border-(--color-border-strong)',
+      )}
+    >
+      <button
+        type="button"
+        onClick={onExpand}
+        aria-label={`Configure ${provider.label}`}
+        className="flex min-h-16 min-w-0 flex-1 items-center gap-3 px-3 py-3 text-left outline-none transition-colors duration-200 hover:bg-(--bg-key)/35 focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-(--focus-ring)/40 sm:gap-3.5 sm:px-4"
+      >
+        <ProviderBrandIcon provider={provider} size="md" />
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-2">
+            <span className="truncate text-sm font-semibold text-(--color-text)">{provider.label}</span>
+            <span className="shrink-0 rounded-md bg-(--bg-key) px-1.5 py-0.5 font-mono text-[0.6rem] font-medium tracking-wider text-(--color-text-muted) uppercase ring-1 ring-(--color-border)">
+              {providerKindLabel(provider.kind)}
+            </span>
+          </span>
+          <span className="mt-0.5 hidden truncate text-xs text-(--color-text-muted) sm:block">
+            {provider.description}
+          </span>
+        </span>
+        <span className="flex shrink-0 items-center gap-2">
+          {configuredButUnreachable ? (
+            <span
+              aria-label="Connection failed"
+              className="inline-flex items-center gap-1 rounded-md bg-(--color-error-subtle) px-2 py-1 text-[0.65rem] font-medium text-(--color-error)"
+              role="img"
+            >
+              <AlertCircle size={11} aria-hidden="true" />
+              <span aria-hidden="true" className="hidden sm:inline">Failed</span>
+            </span>
+          ) : connected ? (
+            <span
+              aria-label="Connected"
+              className="inline-flex items-center gap-1 rounded-md bg-(--color-success-subtle) px-2 py-1 text-[0.65rem] font-medium text-(--color-success)"
+              role="img"
+            >
+              <CheckCircle2 size={11} aria-hidden="true" />
+              <span aria-hidden="true" className="hidden sm:inline">Connected</span>
+            </span>
+          ) : null}
+          {modelCount > 0 && (
+            <span className="hidden rounded-full bg-(--bg-key) px-2.5 py-1 font-mono text-[0.65rem] text-(--color-text-muted) ring-1 ring-(--color-border) md:inline-flex">
+              {modelCount} models
+            </span>
+          )}
+          <ChevronRight
+            size={15}
+            className="text-(--color-text-muted) transition-transform duration-200 group-hover:translate-x-0.5"
+            aria-hidden="true"
+          />
+        </span>
+      </button>
+      {provider.docs_url && (
+        <button
+          type="button"
+          onClick={() => void openExternalUrl(provider.docs_url)}
+          className="flex min-h-11 w-11 shrink-0 items-center justify-center border-l border-(--color-border-subtle) text-(--color-text-muted) outline-none transition-colors duration-200 hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-(--focus-ring)/40"
+          aria-label={`${provider.label} documentation`}
+        >
+          <ExternalLink size={14} aria-hidden="true" />
+        </button>
+      )}
+    </article>
+  )
+}
 
 function ProviderCard({ provider }: { provider: ProviderInfo }) {
   const [expanded, setExpanded] = useState(false)
@@ -365,72 +454,13 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
   // ── Compact card (collapsed) ────────────────────────────────────────────
   if (!expanded) {
     return (
-      <button
-        type="button"
-        onClick={() => setExpanded(true)}
-        className={cn(
-          'group relative flex w-full items-center gap-3.5 rounded-lg border bg-(--bg-card) px-4 py-3.5 text-left transition-colors',
-          'hover:border-(--color-border-strong)',
-          'focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-(--focus-ring)/40',
-          isConfiguredButUnreachable
-            ? 'border-(--color-error)/30 hover:border-(--color-error)/40'
-            : isConnected
-              ? 'border-(--color-success)/25 hover:border-(--color-success)/35'
-              : 'border-(--color-border)',
-        )}
-      >
-        <ProviderBrandIcon provider={provider} size="md" />
-
-        <div className="min-w-0 flex-1 pl-0.5">
-          <div className="flex items-center gap-2">
-            <span className="truncate text-sm font-semibold text-(--color-text)">{provider.label}</span>
-            <span className="shrink-0 rounded-md bg-(--bg-key) px-1.5 py-0.5 font-mono text-[0.6rem] font-medium uppercase tracking-wider text-(--color-text-muted) ring-1 ring-(--color-border)">
-              {providerKindLabel(provider.kind)}
-            </span>
-          </div>
-          <p className="mt-0.5 line-clamp-1 text-xs text-(--color-text-muted)">{provider.description}</p>
-        </div>
-
-        <div className="flex shrink-0 items-center gap-2.5">
-          {/* Status badge */}
-          {isConfiguredButUnreachable && (
-            <span className="inline-flex items-center gap-1 rounded-md bg-(--color-error-subtle) px-2 py-1 text-[0.65rem] font-medium text-(--color-error)">
-              <AlertCircle size={11} aria-hidden="true" />
-              Failed
-            </span>
-          )}
-          {isConnected && !isConfiguredButUnreachable && (
-            <span className="inline-flex items-center gap-1 rounded-md bg-(--color-success-subtle) px-2 py-1 text-[0.65rem] font-medium text-(--color-success)">
-              <CheckCircle2 size={11} aria-hidden="true" />
-              Connected
-            </span>
-          )}
-
-          {/* Model count */}
-          {models.length > 0 && (
-            <span className="rounded-full bg-(--bg-key) px-2.5 py-1 font-mono text-[0.65rem] text-(--color-text-muted) ring-1 ring-(--color-border)">
-              {models.length} models
-            </span>
-          )}
-
-          {/* Docs link */}
-          {provider.docs_url && (
-            <span
-              role="button"
-              tabIndex={0}
-              onClick={(e) => { e.stopPropagation(); void openExternalUrl(provider.docs_url) }}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); void openExternalUrl(provider.docs_url) } }}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-(--color-text-muted) opacity-0 transition-opacity hover:bg-(--bg-key) hover:text-(--color-text) group-hover:opacity-100"
-              aria-label={`${provider.label} documentation`}
-            >
-              <ExternalLink size={13} aria-hidden="true" />
-            </span>
-          )}
-
-          {/* Expand arrow */}
-          <ChevronRight size={14} className="shrink-0 text-(--color-text-muted) transition-transform duration-(--motion-fast) group-hover:translate-x-0.5 group-hover:text-(--color-text)" aria-hidden="true" />
-        </div>
-      </button>
+      <ProviderCollapsedCard
+        provider={provider}
+        connected={isConnected}
+        configuredButUnreachable={isConfiguredButUnreachable}
+        modelCount={models.length}
+        onExpand={() => setExpanded(true)}
+      />
     )
   }
 
@@ -710,10 +740,17 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
           {provider.kind === 'oauth' && provider.is_configured && (
             <div className="space-y-2">
               {usageQ.isLoading ? (
-                <p className="inline-flex items-center gap-1 text-xs text-(--color-text-muted)">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                  Loading active usage…
-                </p>
+                <div
+                  role="status"
+                  aria-live="polite"
+                  aria-label={`Loading ${provider.label} usage`}
+                  className="space-y-2 rounded-lg border border-(--color-border) bg-(--bg-page) p-3"
+                >
+                  <span className="sr-only">Loading {provider.label} usage</span>
+                  <Skeleton className="h-3 w-28 rounded" />
+                  <Skeleton className="h-1.5 w-full rounded-full" />
+                  <Skeleton className="h-3 w-40 rounded" />
+                </div>
               ) : usageQ.data ? (
                 <UsagePanel limits={usageQ.data.limits} />
               ) : usageQ.isError ? (
@@ -1306,6 +1343,7 @@ export function ProvidersSettingsPage() {
     <SettingsPage
       icon={KeyRound}
       title="Providers"
+      size="wide"
       lede="Connect a model provider so EvoFlux can run agents. API keys and OAuth tokens are stored on this machine only."
       actions={
         connectedProviders.length > 0 ? (
@@ -1315,7 +1353,16 @@ export function ProvidersSettingsPage() {
         ) : undefined
       }
     >
-      {!providersQ.isLoading && providers.length > 0 && (
+      <SettingsAsyncBoundary
+        loading={providersQ.isLoading || providersQ.isFetching}
+        hasData={Boolean(providersQ.data)}
+        error={providersQ.error}
+        variant="cards"
+        loadingLabel="Loading providers"
+        errorTitle="Failed to load providers"
+        onRetry={() => void providersQ.refetch()}
+      >
+      {providers.length > 0 && (
         <div className="flex h-10 items-center gap-2 rounded-lg border border-(--color-border) bg-(--bg-card) px-3 focus-within:border-(--focus-ring) focus-within:ring-3 focus-within:ring-(--focus-ring)/30">
           <Search size={14} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
           <Input
@@ -1331,23 +1378,7 @@ export function ProvidersSettingsPage() {
         </div>
       )}
 
-      {providersQ.isLoading && (
-        <div className="flex items-center gap-2 py-12 text-sm text-(--color-text-muted)">
-          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-          Loading providers…
-        </div>
-      )}
-
-      {providersQ.error && (
-        <SettingsCallout tone="error" icon={AlertCircle}>
-          <p className="font-medium">Failed to load providers</p>
-          <p className="mt-1 text-(--color-text-muted)">
-            {providersQ.error instanceof Error ? providersQ.error.message : String(providersQ.error)}
-          </p>
-        </SettingsCallout>
-      )}
-
-      {!providersQ.isLoading && !providersQ.error && (
+      {providersQ.data && (
         <>
           {filteredConnected.length > 0 && (
             <SettingsGroup title="Connected" bare className="space-y-2">
@@ -1395,6 +1426,7 @@ export function ProvidersSettingsPage() {
           )}
         </>
       )}
+      </SettingsAsyncBoundary>
     </SettingsPage>
   )
 }

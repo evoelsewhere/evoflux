@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { AlertCircle, Trash2, Wrench } from 'lucide-react'
+import { Trash2, Wrench } from 'lucide-react'
 
 import {
   useAgentFileQuery,
@@ -12,10 +12,10 @@ import { ApiValidationError } from '@/api/client'
 import { AgentForm } from '@/components/settings/AgentForm'
 import { EditorHeaderActions } from '@/components/settings/EditorHeaderActions'
 import {
-  SettingsCallout,
   SettingsGroup,
   SettingsPage,
 } from '@/components/settings/SettingsLayout'
+import { SettingsAsyncBoundary } from '@/components/settings/SettingsLoading'
 import { contentEquals } from '@/components/settings/frontmatter'
 import { validateAgentDraft } from '@/components/settings/schema'
 import { Button } from '@/components/ui/button'
@@ -123,13 +123,16 @@ export function AgentEditorPage() {
           />
         }
       >
-        {isLoading && <p className="text-sm text-(--color-text-muted)">Loading…</p>}
-        {isError && (
-          <SettingsCallout tone="error" icon={AlertCircle}>
-            Failed to load: {String(error)}
-          </SettingsCallout>
-        )}
-        {data && (
+        <SettingsAsyncBoundary
+          loading={isLoading}
+          hasData={Boolean(data)}
+          error={isError ? error : undefined}
+          variant="detail"
+          loadingLabel={`Loading agent ${name}`}
+          errorTitle={`Failed to load agent ${name}`}
+          onRetry={() => void refetch()}
+        >
+          {data && (
           <SettingsGroup bare>
             <AgentForm
               initial={data.content}
@@ -141,7 +144,8 @@ export function AgentEditorPage() {
               onModeChange={setMode}
             />
           </SettingsGroup>
-        )}
+          )}
+        </SettingsAsyncBoundary>
         <div className="flex items-center justify-between gap-2 text-xs text-(--color-text-muted)">
           <div className="flex items-center gap-2">
             {dirty && (

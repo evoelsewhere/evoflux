@@ -728,10 +728,40 @@ a svg[aria-hidden="true"],
   background-size: 200% 100%;
   animation: shimmer 2s var(--ease-in-out) infinite;
 }
+
+@keyframes settings-loading-enter {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.settings-loading-enter {
+  animation: settings-loading-enter 180ms var(--ease-out, ease-out) both;
+}
+
+@media (max-width: 767px) {
+  [role='dialog'][aria-labelledby='settings-dialog-title'] button {
+    min-height: 44px;
+  }
+
+  [role='dialog'][aria-labelledby='settings-dialog-title'] input,
+  [role='dialog'][aria-labelledby='settings-dialog-title'] select {
+    min-height: 44px;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .skeleton-shimmer {
     animation: none;
     background: var(--bg-key);
+  }
+
+  .settings-loading-enter {
+    animation: none;
   }
 }
 

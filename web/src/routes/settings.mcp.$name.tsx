@@ -18,6 +18,7 @@ import {
   SettingsPage,
   SettingsRow,
 } from '@/components/settings/SettingsLayout'
+import { SettingsAsyncBoundary } from '@/components/settings/SettingsLoading'
 import {
   draftEquals,
   draftFromServerBody,
@@ -161,14 +162,16 @@ export function McpServerDetailPage() {
           />
         }
       >
-        {serverQ.isLoading && <p className="text-sm text-(--color-text-muted)">Loading server…</p>}
-        {serverQ.isError && (
-          <SettingsCallout tone="error" icon={AlertCircle}>
-            Failed to load: {String(serverQ.error)}
-          </SettingsCallout>
-        )}
-
-        {server && (
+        <SettingsAsyncBoundary
+          loading={serverQ.isLoading}
+          hasData={Boolean(server)}
+          error={serverQ.isError ? serverQ.error : undefined}
+          variant="detail"
+          loadingLabel={`Loading MCP server ${name}`}
+          errorTitle={`Failed to load MCP server ${name}`}
+          onRetry={() => void serverQ.refetch()}
+        >
+          {server && (
           <>
             <StatusGroup server={server} />
 
@@ -255,7 +258,8 @@ export function McpServerDetailPage() {
               enabled={server.enabled}
             />
           </>
-        )}
+          )}
+        </SettingsAsyncBoundary>
       </SettingsPage>
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>

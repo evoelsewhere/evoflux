@@ -408,7 +408,7 @@ function FormFields({
               }
               disabled={disabled}
             >
-              <SelectTrigger className="min-h-11 w-full md:min-h-9">
+              <SelectTrigger aria-label="Role" className="min-h-11 w-full md:min-h-9">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -496,7 +496,7 @@ function FormFields({
               }}
               disabled={disabled}
             >
-              <SelectTrigger className="min-h-11 w-full md:min-h-9">
+              <SelectTrigger aria-label="Thinking level" className="min-h-11 w-full md:min-h-9">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -528,6 +528,7 @@ function FormFields({
               <CapabilityChips label="Granted by tier" values={grantedTools} />
             )}
             <MultiSelect
+              ariaLabel="Tools"
               options={extraToolOptions}
               value={fm.tools ?? []}
               onChange={(v) => updateFromForm({ ...fm, tools: v }, body)}
@@ -544,6 +545,7 @@ function FormFields({
             }
           >
             <MultiSelect
+              ariaLabel="MCP servers"
               options={mcpOptions}
               value={fm.mcp ?? []}
               onChange={(v) => updateFromForm({ ...fm, mcp: v }, body)}
@@ -564,6 +566,7 @@ function FormFields({
               <CapabilityChips label="Built-in skills" values={builtInSkills} />
             )}
             <MultiSelect
+              ariaLabel="Skills"
               options={extraSkillOptions}
               value={fm.skills ?? []}
               onChange={(v) => updateFromForm({ ...fm, skills: v }, body)}
@@ -583,6 +586,7 @@ function FormFields({
       >
         <div className="px-4 py-3.5">
           <Textarea
+            aria-label={hasBuiltInProfile ? 'Extra prompt' : 'System prompt'}
             value={body}
             onChange={(e) => updateFromForm(fm, e.target.value)}
             disabled={disabled}

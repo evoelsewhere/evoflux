@@ -2,7 +2,7 @@
  * SettingsModal — renders settings as a popup modal over the current page.
  * Uses useUIStore for open/close and internal path navigation.
  */
-import { useEffect, useCallback, useMemo } from 'react'
+import { useEffect, useCallback, useMemo, useRef } from 'react'
 import { ChevronRight, X } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 
@@ -81,11 +81,6 @@ function crumbsFor(path: string): Crumb[] {
   return [{ label: 'Settings', to: '' }, { label: leafLabel }]
 }
 
-function pageTitleFor(path: string): string {
-  const crumbs = crumbsFor(path)
-  return crumbs[crumbs.length - 1]?.label ?? 'Settings'
-}
-
 function SettingsContent({ path }: { path: string }) {
   // Extract name param from paths like "agents/lead" or "mcp/my-server"
   const parts = path.split('/')
@@ -120,18 +115,53 @@ export function SettingsModal() {
   const navigateSettings = useUIStore((s) => s.navigateSettings)
   const isMobile = useIsMobile()
   const motionPreset = useMotionPreset()
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
 
-  // Close on Escape
   useEffect(() => {
     if (!settingsOpen) return
+    const previouslyFocused = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null
+    closeButtonRef.current?.focus()
+
     const handler = (e: KeyboardEvent) => {
+      const dialog = dialogRef.current
+      if (!dialog || e.defaultPrevented) return
+      const dialogs = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]'))
+      if (dialogs.at(-1) !== dialog) return
+
       if (e.key === 'Escape') {
         e.preventDefault()
         closeSettings()
+        return
+      }
+
+      if (e.key === 'Tab') {
+        const focusable = Array.from(
+          dialog.querySelectorAll<HTMLElement>(
+            'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+          ),
+        ).filter((element) => !element.hasAttribute('hidden') && element.getAttribute('aria-hidden') !== 'true')
+        const first = focusable[0]
+        const last = focusable.at(-1)
+        if (!first) {
+          e.preventDefault()
+          dialog.focus()
+        } else if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault()
+          last?.focus()
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault()
+          first.focus()
+        }
       }
     }
     window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
+    return () => {
+      window.removeEventListener('keydown', handler)
+      previouslyFocused?.focus()
+    }
   }, [settingsOpen, closeSettings])
 
   // Parse params from path (e.g. "agents/lead" → { name: "lead" }, "agents/coding/lead" → { name: "coding/lead" })
@@ -160,81 +190,87 @@ export function SettingsModal() {
     <AnimatePresence>
       {settingsOpen && (
         <motion.div
+          ref={dialogRef}
           key="settings-modal"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={motionPreset.transition}
-          className="fixed inset-0 z-(--z-modal) flex items-center justify-center bg-(--color-overlay) p-4 md:p-8"
+          className="fixed inset-0 z-(--z-modal) flex items-center justify-center bg-(--color-overlay) p-0 backdrop-blur-[2px] md:p-8"
           role="dialog"
           aria-modal="true"
-          aria-label="Settings"
+          aria-labelledby="settings-dialog-title"
           onClick={closeSettings}
         >
           <motion.div
+            tabIndex={-1}
             initial={{ opacity: 0, scale: 1 - 0.04 * motionPreset.distance, y: 6 * motionPreset.distance }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 1 - 0.03 * motionPreset.distance, y: 4 * motionPreset.distance }}
             transition={motionPreset.spring}
-            className="flex h-full w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-(--color-border) bg-(--bg-page) shadow-2xl md:h-[min(85vh,720px)] md:w-full"
+            className="flex h-[100dvh] w-full flex-col overflow-hidden bg-(--bg-page) shadow-2xl md:h-[min(90dvh,800px)] md:max-w-6xl md:rounded-2xl md:border md:border-(--color-border)"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <header className="flex shrink-0 items-center gap-2 border-b border-(--color-border) px-4 py-3">
+            <header className="flex min-h-14 shrink-0 items-center gap-2 border-b border-(--color-border) bg-(--bg-card)/70 px-3 pt-[env(safe-area-inset-top)] backdrop-blur-xl md:px-4 md:pt-0">
               {isMobile ? (
-                <span className="min-w-0 flex-1 truncate text-sm font-semibold text-(--color-text)">
-                  {pageTitleFor(settingsPath)}
-                </span>
+                <h2 id="settings-dialog-title" className="min-w-0 flex-1 truncate text-sm font-semibold text-(--color-text)">
+                  Settings
+                </h2>
               ) : (
-                <nav
-                  aria-label="Breadcrumb"
-                  className="flex min-w-0 flex-1 items-center gap-0.5 text-xs text-(--color-text-muted)"
-                >
-                  {crumbs.map((crumb, index) => {
-                    const isLast = index === crumbs.length - 1
-                    return (
-                      <span key={`${crumb.label}-${index}`} className="flex min-w-0 items-center gap-0.5">
-                        {index > 0 && (
-                          <ChevronRight size={11} aria-hidden="true" className="shrink-0 opacity-40" />
-                        )}
-                        {isLast || crumb.to === undefined ? (
-                          <span className="min-w-0 truncate px-0.5 font-medium text-(--color-text)" title={crumb.label}>
-                            {crumb.label}
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => navigateSettings(crumb.to ?? '')}
-                            className="shrink-0 truncate rounded px-0.5 transition-colors hover:text-(--color-text)"
-                          >
-                            {crumb.label}
-                          </button>
-                        )}
-                      </span>
-                    )
-                  })}
-                </nav>
+                <>
+                  <h2 id="settings-dialog-title" className="sr-only">Settings</h2>
+                  <nav
+                    aria-label="Breadcrumb"
+                    className="flex min-w-0 flex-1 items-center gap-0.5 text-xs text-(--color-text-muted)"
+                  >
+                    {crumbs.map((crumb, index) => {
+                      const isLast = index === crumbs.length - 1
+                      return (
+                        <span key={`${crumb.label}-${index}`} className="flex min-w-0 items-center gap-0.5">
+                          {index > 0 && (
+                            <ChevronRight size={11} aria-hidden="true" className="shrink-0 opacity-40" />
+                          )}
+                          {isLast || crumb.to === undefined ? (
+                            <span className="min-w-0 truncate px-0.5 font-medium text-(--color-text)" title={crumb.label}>
+                              {crumb.label}
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => navigateSettings(crumb.to ?? '')}
+                              className="shrink-0 truncate rounded px-0.5 transition-colors hover:text-(--color-text)"
+                            >
+                              {crumb.label}
+                            </button>
+                          )}
+                        </span>
+                      )
+                    })}
+                  </nav>
+                </>
               )}
               <button
                 type="button"
+                ref={closeButtonRef}
                 onClick={closeSettings}
                 aria-label="Close settings"
                 title="Close (Esc)"
-                className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+                className="flex size-11 items-center justify-center rounded-lg text-(--color-text-muted) transition-[background-color,color,transform] duration-200 hover:bg-(--bg-key) hover:text-(--color-text) active:scale-[0.96] md:size-9"
               >
                 <X size={16} aria-hidden="true" />
               </button>
             </header>
 
             {/* Body */}
-            <div className="flex min-h-0 flex-1 overflow-hidden">
+            <div className="flex min-h-0 flex-1 gap-2 overflow-hidden md:p-2">
               {!isMobile && (
                 <SettingsSidebar
                   currentPath={fullPath}
                   onNavigate={handleSidebarNavigate}
                 />
               )}
-              <main className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+              <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
                 <SettingsProvider path={settingsPath} params={params} search={settingsSearch}>
                   <SettingsContent path={settingsPath} />
                 </SettingsProvider>
