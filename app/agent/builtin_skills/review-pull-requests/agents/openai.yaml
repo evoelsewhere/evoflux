@@ -1,4 +1,4 @@
 interface:
   display_name: "Review Pull Requests"
-  short_description: "Review PRs and MRs through saved REST credentials"
-  default_prompt: "Use $review-pull-requests to inspect and review the current PR or MR safely."
+  short_description: "Risk-based PR/MR review and lifecycle operations"
+  default_prompt: "Use $review-pull-requests to perform a risk-based end-to-end review of the current PR or MR."

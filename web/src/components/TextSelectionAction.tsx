@@ -60,6 +60,12 @@ export function TextSelectionAction({
   // unchanged (and the mouse released) for SETTLE_MS.
   const settleTimerRef = useRef<number | null>(null)
   const pendingTextRef = useRef('')
+  // Always-current enabled flag so stable callbacks can read it without
+  // being recreated (which would re-register the listeners).
+  const enabledRef = useRef(enabled)
+  useEffect(() => {
+    enabledRef.current = enabled
+  }, [enabled])
 
   const clearSettle = useCallback(() => {
     if (settleTimerRef.current !== null) {
@@ -76,28 +82,33 @@ export function TextSelectionAction({
     setSelectedText('')
   }, [clearSettle])
 
-  const showForSelection = useCallback(
-    (text: string) => {
-      const sel = window.getSelection()
-      if (!sel || sel.rangeCount === 0) return
-      const rect = sel.getRangeAt(0).getBoundingClientRect()
-      // Skip stale rects (selection changed again while the timer ran).
-      if (rect.width === 0 && rect.height === 0) return
-      const toolbarWidth = Math.min(430, window.innerWidth - 16)
-      const placement = rect.top >= 56 ? 'above' : 'below'
-      setPosition({
-        top: placement === 'above' ? rect.top - 8 : rect.bottom + 8,
-        left: Math.max(8, Math.min(rect.left, window.innerWidth - toolbarWidth - 8)),
-        placement,
-      })
-      setSelectedText(text)
-      activeRef.current = true
-    },
-    [],
-  )
+  const showForSelection = useCallback((text: string) => {
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0) return
+    const rect = sel.getRangeAt(0).getBoundingClientRect()
+    // Skip stale rects (selection changed again while the timer ran).
+    if (rect.width === 0 && rect.height === 0) return
+    const toolbarWidth = Math.min(430, window.innerWidth - 16)
+    const placement = rect.top >= 56 ? 'above' : 'below'
+    setPosition({
+      top: placement === 'above' ? rect.top - 8 : rect.bottom + 8,
+      left: Math.max(8, Math.min(rect.left, window.innerWidth - toolbarWidth - 8)),
+      placement,
+    })
+    setSelectedText(text)
+    activeRef.current = true
+  }, [])
+
+  const scheduleSettle = useCallback(() => {
+    clearSettle()
+    settleTimerRef.current = window.setTimeout(() => {
+      settleTimerRef.current = null
+      if (!mouseDownRef.current) showForSelection(pendingTextRef.current)
+    }, SETTLE_MS)
+  }, [clearSettle, showForSelection])
 
   const captureSelection = useCallback(() => {
-    if (!enabled) {
+    if (!enabledRef.current) {
       dismiss()
       return
     }
@@ -126,38 +137,25 @@ export function TextSelectionAction({
       return
     }
 
-    // Mid-drag or still changing: hide any visible toolbar and wait for the
-    // selection to settle instead of chasing every selectionchange event.
+    // Mid-drag: hide any visible toolbar and just remember the latest text —
+    // the mouseup handler will schedule the settle window.
     if (mouseDownRef.current) {
       if (activeRef.current) dismiss()
       pendingTextRef.current = text
       return
     }
 
-    // Selection changed since the last pending value: (re)start the settle
-    // window and hide a toolbar showing stale text so it doesn't linger over
-    // a selection that no longer matches.
+    // Selection changed: hide a toolbar showing stale text and (re)start
+    // the settle window. Same text with no toolbar and no pending timer
+    // rearms the window so the toolbar is never dropped silently.
     if (text !== pendingTextRef.current) {
       pendingTextRef.current = text
       if (activeRef.current) dismiss()
-      clearSettle()
-      settleTimerRef.current = window.setTimeout(() => {
-        settleTimerRef.current = null
-        if (!mouseDownRef.current) showForSelection(pendingTextRef.current)
-      }, SETTLE_MS)
-      return
+      scheduleSettle()
+    } else if (!activeRef.current && settleTimerRef.current === null) {
+      scheduleSettle()
     }
-
-    // Same text seen again without a pending timer — the settle callback may
-    // have been dropped (e.g. the effect re-ran and cleaned the timer up
-    // before it fired). Rearm so the toolbar still appears.
-    if (!activeRef.current && settleTimerRef.current === null) {
-      settleTimerRef.current = window.setTimeout(() => {
-        settleTimerRef.current = null
-        if (!mouseDownRef.current) showForSelection(pendingTextRef.current)
-      }, SETTLE_MS)
-    }
-  }, [containerRef, dismiss, enabled, clearSettle, showForSelection])
+  }, [containerRef, dismiss, scheduleSettle])
 
   // Global selection listener — fires on every selection change and also on
   // mouse / key up so we catch edge cases where selectionchange doesn't fire.

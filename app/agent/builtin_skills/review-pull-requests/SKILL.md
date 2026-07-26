@@ -1,13 +1,17 @@
 ---
 name: review-pull-requests
-description: Review and operate pull requests or merge requests through EvoFlux provider-neutral REST tools and saved Git server credentials. Use when asked to inspect, summarize, comment on, approve, request changes on, update, merge, close, reopen, or follow discussions and checks for a PR/MR in a Coding workspace or multi-repository project. Supports GitHub/Enterprise, GitLab self-managed, Bitbucket Cloud/Data Center, Gitea/Forgejo, and Azure DevOps without gh/glab.
+description: Perform risk-based review and full lifecycle operations for pull requests or merge requests through EvoFlux provider-neutral REST tools and saved Git server credentials. Use when asked to inspect, summarize, review, re-review, assess readiness, address discussions, comment on, approve, request changes on, update, merge, close, reopen, or follow checks for a PR/MR in a Coding workspace or multi-repository project. Supports GitHub/Enterprise, GitLab self-managed, Bitbucket Cloud/Data Center, Gitea/Forgejo, and Azure DevOps without gh/glab.
 ---
 
 # Review Pull Requests
 
 Review PRs/MRs through EvoFlux code-review tools. Treat the normalized review context as the source of truth for provider state, discussion IDs, inline positions, approvals, checks, conflicts, and supported actions.
 
-For provider-specific limitations, read [references/provider-capabilities.md](references/provider-capabilities.md) only when an action is unsupported or its semantics are unclear.
+Use progressive disclosure:
+
+- For any non-trivial review, re-review, or merge-readiness assessment, read [references/review-playbook.md](references/review-playbook.md).
+- Before the first remote mutation, or whenever a tool argument or identifier is unclear, read [references/tool-contracts.md](references/tool-contracts.md).
+- When an action is unsupported or provider semantics are unclear, read [references/provider-capabilities.md](references/provider-capabilities.md).
 
 ## Non-negotiable rules
 
@@ -17,6 +21,8 @@ For provider-specific limitations, read [references/provider-capabilities.md](re
 - Never invent repository selectors, comment IDs, thread IDs, commit SHAs, paths, lines, reviewer IDs, or capabilities.
 - Read `get_code_review` immediately before a position-sensitive or state-changing action.
 - Treat `get_code_review.capabilities` as authoritative. Report an unsupported capability clearly; do not emulate it through an unrelated endpoint.
+- Treat review requests as read-only unless the user also asks to post feedback or perform a decision/lifecycle action.
+- Never approve, request changes, resolve a thread, update metadata, merge, close, or reopen based on stale review state.
 - Keep review findings about the code, not the author.
 
 Local code inspection remains allowed through normal Coding tools such as `code_search`, `code_graph`, `grep`, `read`, and `lsp_diagnostics`. Use the repository's normal verification commands when evidence requires running tests.
@@ -38,6 +44,17 @@ If the session contains multiple repositories and the requested PR/MR number is 
 3. Ask for the repository only if ambiguity remains.
 
 Do not assume PR/MR numbers are globally unique.
+
+## Select the operating mode
+
+Choose the least-mutating mode that satisfies the request:
+
+- **Inspect:** analyze and report findings locally; make no remote changes.
+- **Comment:** inspect, then post only the feedback the user requested.
+- **Decision:** submit `approve`, `request_changes`, or `comment` after a fresh gate check.
+- **Lifecycle:** update metadata, merge, close, or reopen only when explicitly requested.
+
+“Review this PR/MR” means Inspect by default. Showing draft comments in the response is not the same as publishing them.
 
 ## Core review workflow
 
@@ -90,18 +107,32 @@ Every normalized comment supplies:
 
 Use these values exactly as returned.
 
-### 3. Review the change
+Record the current source/head commit before reviewing. If the provider does not expose one, say that freshness cannot be proven.
+
+### 3. Build a risk map before reading line by line
+
+Identify:
+
+- the change contract from the title, body, linked discussion, tests, and user request
+- changed entry points, public interfaces, data models, migrations, permissions, and trust boundaries
+- callers, consumers, configuration, deployment paths, and cross-repository effects
+- generated, vendored, lock, or snapshot files that should be verified through their source rather than hand-edited
+
+Classify the change as high, medium, or low risk using the playbook. Review high-risk areas exhaustively; do not spend equal effort on every changed line.
+
+### 4. Review the change
 
 Review tests before implementation where possible. Then assess:
 
 1. Correctness and edge cases
 2. Security and trust boundaries
 3. Concurrency and state transitions
-4. Architecture and repository conventions
-5. Performance and bounded resource usage
-6. Test quality and verification coverage
-
-Load `code-review-and-quality` when deeper multi-axis review guidance is needed.
+4. Data integrity, migrations, rollback, and compatibility
+5. Public API, provider, and cross-repository compatibility
+6. Architecture and repository conventions
+7. Performance, failure handling, retries, and bounded resource usage
+8. Operability: logs, metrics, diagnostics, and safe error messages
+9. Test quality and verification coverage
 
 Classify findings:
 
@@ -112,7 +143,17 @@ Classify findings:
 
 Include a precise file/path and line when the provider context supports it. Do not post speculative findings.
 
-### 4. Decide before mutating
+Every blocking finding must explain the trigger, observable behavior, impact, and smallest credible correction. Separate facts from assumptions. Consolidate duplicates and avoid posting a comment that already exists in the review.
+
+### 5. Verify freshness and evidence
+
+- Run proportionate local verification when the workspace is available.
+- Inspect provider checks, but do not treat a green check as proof that the risky path was tested.
+- Treat unknown, skipped, unavailable, or stale checks as non-success unless the user explicitly accepts the risk.
+- Refresh `get_code_review` after a force-push, new commit, review mutation, or evidence that provider state changed.
+- If the source/head commit changed during review, invalidate line positions and approval conclusions, then re-review the affected delta.
+
+### 6. Decide before mutating
 
 Use this order:
 
@@ -124,6 +165,7 @@ Use this order:
 6. Merge only after all gates pass and confirmation is granted.
 
 Do not approve and request changes in the same review state.
+Do not approve a draft PR/MR, an unverified head commit, or a review with unresolved required findings unless the user explicitly overrides the relevant policy and the provider permits it.
 
 ## Discussion actions
 
@@ -173,8 +215,11 @@ Before `approve`:
 - Confirm no merge conflicts.
 - Confirm unresolved discussions are understood.
 - Confirm required verification is present.
+- Confirm the source/head commit matches the commit reviewed.
 
 Azure DevOps may require a `reviewer_id`; take it from normalized approvals/reviewer context. Never guess it.
+
+If formal request-changes is unsupported, post or propose the blocking findings through a supported comment path and report that the formal decision was not submitted.
 
 ## Updating review metadata
 
@@ -196,12 +241,14 @@ Before merge:
 
 1. Refresh `get_code_review`.
 2. Confirm the review is open and not already merged.
-3. Confirm required approvals.
-4. Confirm checks are successful or explicitly waived by the user.
-5. Confirm no conflicts.
-6. Use the provider-supported merge method.
-7. Call `merge_code_review` once.
-8. Refresh and report the final provider state.
+3. Confirm the source/head commit is still the reviewed commit.
+4. Confirm required approvals and repository policy.
+5. Confirm required discussions are resolved.
+6. Confirm checks are successful or explicitly waived by the user.
+7. Confirm no conflicts and mergeability is positive rather than unknown.
+8. Use the provider-supported merge method.
+9. Call `merge_code_review` once.
+10. Refresh and report the final provider state.
 
 Do not repeatedly call merge after a timeout. Refresh first.
 
@@ -213,6 +260,7 @@ When a review is opened through the Coding UI:
 
 - Continue the existing review-linked Coding session when one exists.
 - Preserve the session's workspace or project scope.
+- Use only the session repository in a workspace panel; retain all project repositories only in project scope.
 - Treat new `get_code_review` results as fresher than review context embedded in earlier chat messages.
 - Refresh after any mutation so the chat and side panel converge on provider state.
 
@@ -226,7 +274,8 @@ Lead with the decision and current state. Report:
 2. Required findings with file/line evidence
 3. Suggestions separately
 4. Checks, approvals, conflicts, and mergeability
-5. Remote actions actually completed
-6. Unsupported or unverified provider behavior
+5. Reviewed source/head commit and verification performed
+6. Remote actions actually completed
+7. Unsupported, stale, waived, or unverified provider behavior
 
 Never claim that a comment, approval, merge, close, or update succeeded unless the tool returned success or a refresh confirmed the state.
