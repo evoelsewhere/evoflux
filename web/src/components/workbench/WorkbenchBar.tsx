@@ -58,7 +58,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
       transition={motionPreset.spring}
       {...props.dragHandlers}
       className={cn(
-        'workbench-topbar flex h-12 shrink-0 items-center gap-2 overflow-hidden border-b border-(--color-border)/75 bg-(--bg-page) px-3 will-change-transform',
+        'workbench-topbar flex h-12 shrink-0 items-center gap-2 overflow-hidden bg-(--bg-page) px-3 will-change-transform',
         props.isMacOverlay && 'mac-drag-region pt-3',
       )}
     >

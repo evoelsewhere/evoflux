@@ -91,7 +91,7 @@ export function WorkbenchDock({
       )}
       <motion.header
         layout="position"
-        className="flex h-11 shrink-0 items-center gap-1 border-b border-(--color-border) px-2"
+        className="flex h-11 shrink-0 items-center gap-1 px-2"
       >
         <motion.div layout className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
           <AnimatePresence initial={false} mode="popLayout">
