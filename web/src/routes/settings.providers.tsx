@@ -316,11 +316,20 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
   const hasCandidateKey = trimmedKey.length > 0
   const hasVerifiedKey = verifiedKey === trimmedKey && hasCandidateKey
   const hasVerifiedCloud = verifiedCloudSignature === cloudSignature && hasCloudCandidate
+  const daemon = DAEMON_BASE_URL[provider.id]
+  const savedBaseUrl = daemon ? provider.saved_credentials[daemon.var] ?? '' : ''
+  const hasSavedBaseUrlChange = provider.is_saved && daemon !== undefined && trimmedBaseUrl !== savedBaseUrl
   const canSave =
-    ((provider.kind === 'api_key' || provider.kind === 'oauth') && hasVerifiedKey) ||
+    ((provider.kind === 'api_key' || provider.kind === 'oauth') && (hasVerifiedKey || hasSavedBaseUrlChange)) ||
     (provider.kind === 'cloud_creds' && hasVerifiedCloud)
 
-  const daemon = DAEMON_BASE_URL[provider.id]
+  // Secrets are deliberately never returned by the API, but non-secret
+  // settings such as a custom Base URL should be restored when a saved
+  // provider card is opened.
+  useEffect(() => {
+    setBaseUrl((current) => current || savedBaseUrl)
+  }, [provider.id, savedBaseUrl])
+
   const extraForRequest = useMemo<Record<string, string> | undefined>(() => {
     if (!daemon || !trimmedBaseUrl) return undefined
     return { [daemon.var]: trimmedBaseUrl }
@@ -531,7 +540,9 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
                         setApiKey(event.target.value)
                         setVerifiedKey('')
                       }}
-                      placeholder={primaryCredential?.placeholder || (provider.is_configured ? 'Enter a new key to replace current key' : 'Paste your API key')}
+                      placeholder={provider.is_saved
+                        ? 'Key saved securely — type a new key to replace it'
+                        : primaryCredential?.placeholder || 'Paste your API key'}
                       autoComplete="off"
                       className="h-10 font-mono text-xs pr-10"
                     />
@@ -566,7 +577,7 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
                     size="sm"
                     variant="outline"
                     onClick={handleListModels}
-                    disabled={!hasCandidateKey || listing}
+                    disabled={(!hasCandidateKey && !provider.is_saved) || listing}
                   >
                     {listing && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
                     List models
