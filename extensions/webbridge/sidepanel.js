@@ -68,6 +68,28 @@ const issueSettingsDetail = document.getElementById("issueSettingsDetail");
 const retryContextBtn = document.getElementById("retryContextBtn");
 const releaseControlBtn = document.getElementById("releaseControlBtn");
 
+const annotationOverlay = document.getElementById("annotationOverlay");
+const annotationCanvasWrapper = document.getElementById("annotationCanvasWrapper");
+const annotationToolbar = document.getElementById("annotationToolbar");
+const annotationUndoBtn = document.getElementById("annotationUndoBtn");
+const annotationRedoBtn = document.getElementById("annotationRedoBtn");
+const annotationClearBtn = document.getElementById("annotationClearBtn");
+const annotationCancelBtn = document.getElementById("annotationCancelBtn");
+const annotationSkipBtn = document.getElementById("annotationSkipBtn");
+const annotationConfirmBtn = document.getElementById("annotationConfirmBtn");
+const previewOverlay = document.getElementById("previewOverlay");
+const previewImage = document.getElementById("previewImage");
+const previewMeta = document.getElementById("previewMeta");
+const previewBackBtn = document.getElementById("previewBackBtn");
+const previewEditBtn = document.getElementById("previewEditBtn");
+const previewCancelBtn = document.getElementById("previewCancelBtn");
+const previewSendBtn = document.getElementById("previewSendBtn");
+
+let annotationEditor = null;
+let annotatedDataBase64 = null;
+let annotationActive = false;
+let previewActive = false;
+
 let relayBase = DEFAULT_RELAY_BASE;
 let pairingCredential = "";
 let pairingRelayBase = "";
@@ -305,6 +327,12 @@ function setControlsDisabled(disabled) {
   captureRegionBtn.disabled = disabled;
   attachFileBtn.disabled = disabled;
   openInEvoFluxBtn.disabled = disabled || !selectedSessionId;
+  if (annotationActive || previewActive) {
+    captureRegionBtn.disabled = true;
+    attachPageBtn.disabled = true;
+    attachSelectionBtn.disabled = true;
+    attachFileBtn.disabled = true;
+  }
 }
 
 function renderPickedElement() {
@@ -1877,7 +1905,11 @@ chrome.runtime.onMessage.addListener((message) => {
     if (message.capture?.tab_id !== activeTab?.id) return;
     regionCapture = message.capture;
     renderPanelContexts();
-    setComposerStatus("Screen region attached.");
+    if (annotationEditor) {
+      openAnnotation(regionCapture.data_base64);
+    } else {
+      setComposerStatus("Screen region attached.");
+    }
     return;
   }
   if (message?.type === "region_capture_error") {
@@ -1917,3 +1949,132 @@ setInterval(() => {
   if (activity.classList.contains("visible") && toolActivities.size === 0) renderActivity();
 }, 2800);
 setInterval(() => void refreshRunningState(), 2000);
+
+function initAnnotationEditor() {
+  if (!globalThis.WebBridgeAnnotation) return;
+  annotationEditor = new globalThis.WebBridgeAnnotation.AnnotationEditor(annotationOverlay);
+
+  annotationOverlay.addEventListener("annotation:toolchange", (e) => {
+    for (const btn of annotationToolbar.querySelectorAll("[data-tool]")) {
+      btn.classList.toggle("active", btn.dataset.tool === e.detail.tool);
+    }
+  });
+  annotationOverlay.addEventListener("annotation:colorchange", (e) => {
+    for (const btn of annotationToolbar.querySelectorAll("[data-color]")) {
+      btn.classList.toggle("active", btn.dataset.color === e.detail.color);
+    }
+  });
+  annotationOverlay.addEventListener("annotation:strokechange", (e) => {
+    for (const btn of annotationToolbar.querySelectorAll("[data-stroke]")) {
+      btn.classList.toggle("active", btn.dataset.stroke === e.detail.stroke);
+    }
+  });
+  annotationOverlay.addEventListener("annotation:cancel", () => void closeAnnotation(true));
+
+  annotationToolbar.addEventListener("click", (e) => {
+    const toolBtn = e.target.closest("[data-tool]");
+    if (toolBtn) { annotationEditor.setTool(toolBtn.dataset.tool); return; }
+    const colorBtn = e.target.closest("[data-color]");
+    if (colorBtn) { annotationEditor.setColor(colorBtn.dataset.color); return; }
+    const strokeBtn = e.target.closest("[data-stroke]");
+    if (strokeBtn) { annotationEditor.setStroke(strokeBtn.dataset.stroke); return; }
+  });
+
+  annotationUndoBtn.addEventListener("click", () => annotationEditor.undo());
+  annotationRedoBtn.addEventListener("click", () => annotationEditor.redo());
+  annotationClearBtn.addEventListener("click", () => annotationEditor.clearAll());
+  annotationCancelBtn.addEventListener("click", () => void closeAnnotation(true));
+  annotationSkipBtn.addEventListener("click", () => void skipAnnotation());
+  annotationConfirmBtn.addEventListener("click", () => void confirmAnnotation());
+
+  previewBackBtn.addEventListener("click", () => void backToAnnotation());
+  previewEditBtn.addEventListener("click", () => void backToAnnotation());
+  previewCancelBtn.addEventListener("click", () => void closePreview(true));
+  previewSendBtn.addEventListener("click", () => void sendFromPreview());
+}
+
+function openAnnotation(base64Png) {
+  if (!annotationEditor) return;
+  annotationActive = true;
+  annotatedDataBase64 = null;
+  annotationEditor.open(base64Png);
+  setComposerStatus("Annotate the screenshot or skip to send as-is.");
+}
+
+function closeAnnotation(clearCapture) {
+  annotationActive = false;
+  annotatedDataBase64 = null;
+  if (annotationEditor) annotationEditor.close();
+  if (clearCapture && regionCapture?.tab_id === activeTab?.id) {
+    void chrome.runtime.sendMessage({ type: "clear_region_capture" });
+    regionCapture = null;
+    renderPanelContexts();
+    setComposerStatus("Screenshot discarded.");
+  }
+}
+
+function skipAnnotation() {
+  if (!regionCapture) { closeAnnotation(false); return; }
+  annotatedDataBase64 = null;
+  annotationActive = false;
+  if (annotationEditor) annotationEditor.close();
+  openPreview(regionCapture.data_base64, false);
+}
+
+function confirmAnnotation() {
+  if (!annotationEditor) return;
+  const png = annotationEditor.exportPng();
+  if (!png) { setComposerStatus("Could not export annotated image.", "error"); return; }
+  annotatedDataBase64 = png;
+  annotationActive = false;
+  annotationEditor.close();
+  openPreview(png, true);
+}
+
+function openPreview(base64Png, isAnnotated) {
+  previewActive = true;
+  previewImage.src = `data:image/png;base64,${base64Png}`;
+  const bytes = Math.round((base64Png.length * 3) / 4);
+  const sizeLabel = bytes > 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${bytes} B`;
+  const dim = regionCapture?.clip
+    ? `${Math.round(regionCapture.clip.width)}×${Math.round(regionCapture.clip.height)}`
+    : "";
+  previewMeta.textContent = [
+    isAnnotated ? "Annotated" : "Original",
+    dim ? `${dim}px` : "",
+    sizeLabel,
+  ].filter(Boolean).join(" · ");
+  previewOverlay.classList.add("visible");
+}
+
+function closePreview(clearCapture) {
+  previewActive = false;
+  previewOverlay.classList.remove("visible");
+  previewImage.src = "";
+  if (clearCapture) {
+    closeAnnotation(true);
+  }
+}
+
+function backToAnnotation() {
+  previewActive = false;
+  previewOverlay.classList.remove("visible");
+  previewImage.src = "";
+  if (regionCapture?.data_base64) {
+    openAnnotation(regionCapture.data_base64);
+  }
+}
+
+async function sendFromPreview() {
+  previewActive = false;
+  previewOverlay.classList.remove("visible");
+  previewImage.src = "";
+
+  if (annotatedDataBase64 && regionCapture?.tab_id === activeTab?.id) {
+    regionCapture.data_base64 = annotatedDataBase64;
+  }
+  setComposerStatus("Sending screenshot…");
+  await sendMessage();
+}
+
+initAnnotationEditor();
