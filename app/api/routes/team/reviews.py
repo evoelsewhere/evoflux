@@ -10,6 +10,7 @@ from typing import cast
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi.responses import RedirectResponse
 from sqlmodel import col, select
 
 from app.api.deps import DbSession
@@ -34,6 +35,7 @@ from app.models.chat import (
 )
 from app.services.code_review_service import (
     GitServerApiError,
+    ReviewImageRedirect,
     SUPPORTED_PROVIDERS,
     aggregate_reviews,
     add_code_review_comment,
@@ -42,6 +44,7 @@ from app.services.code_review_service import (
     connection_host,
     connection_token,
     default_api_base,
+    fetch_code_review_image,
     inspect_repository,
     get_repository_review_checks,
     get_repository_review_context,
@@ -462,6 +465,36 @@ async def _review_target_connection(
     return target, connection
 
 
+@router.get("/{workspace_id}/media", response_class=Response)
+async def get_review_media(
+    workspace_id: UUID,
+    db: DbSession,
+    url: str = Query(min_length=1, max_length=4096),
+) -> Response:
+    _, connection = await _review_target_connection(db, workspace_id)
+    try:
+        image = await fetch_code_review_image(connection, url)
+    except GitServerApiError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if isinstance(image, ReviewImageRedirect):
+        return RedirectResponse(
+            image.url,
+            status_code=302,
+            headers={
+                "Cache-Control": "private, no-store",
+                "Referrer-Policy": "no-referrer",
+            },
+        )
+    return Response(
+        content=image.content,
+        media_type=image.media_type,
+        headers={
+            "Cache-Control": "private, max-age=300",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 @router.get("/{workspace_id}/{number}")
 async def get_review(
     workspace_id: UUID,
@@ -533,13 +566,9 @@ async def mutate_review(
                 reviewer_id=body.reviewer_id,
             )
         if body.action == "update":
-            return await update_code_review(
-                target, connection, number, body.updates
-            )
+            return await update_code_review(target, connection, number, body.updates)
         if body.action == "checks":
-            return await get_repository_review_checks(
-                target, connection, number
-            )
+            return await get_repository_review_checks(target, connection, number)
         if body.action == "merge":
             return await merge_code_review(
                 target,

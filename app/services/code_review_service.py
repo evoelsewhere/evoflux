@@ -133,6 +133,27 @@ REVIEW_CAPABILITIES: dict[str, dict[str, bool]] = {
 }
 
 _SCP_REMOTE_RE = re.compile(r"^(?:[^@]+@)?(?P<host>[^:]+):(?P<path>.+)$")
+_GITHUB_ATTACHMENT_PATH_RE = re.compile(
+    r"^/user-attachments/assets/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/?$",
+    re.IGNORECASE,
+)
+_GITHUB_ATTACHMENT_REDIRECT_HOSTS = {
+    "objects.githubusercontent.com",
+    "private-user-images.githubusercontent.com",
+    "user-images.githubusercontent.com",
+}
+_GITHUB_RENDERED_IMAGE_HOSTS = {
+    "private-user-images.githubusercontent.com",
+    "user-images.githubusercontent.com",
+}
+_GITHUB_RENDERED_IMAGE_PATH_RE = re.compile(
+    r"^/[0-9]+/[0-9]+-[0-9a-f-]+(?:\.[a-z0-9]+)?$",
+    re.IGNORECASE,
+)
+_GITHUB_ATTACHMENT_S3_HOST_RE = re.compile(
+    r"^github-production-[a-z0-9-]+\.s3(?:\.[a-z0-9-]+)?\.amazonaws\.com$"
+)
+_MAX_REVIEW_IMAGE_BYTES = 25 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,6 +165,17 @@ class RepositoryTarget:
     host: str | None
     repository: str | None
     detected_provider: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewImage:
+    content: bytes
+    media_type: str
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewImageRedirect:
+    url: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -521,6 +553,117 @@ async def _request_json(
         raise GitServerApiError("The Git server returned invalid JSON.") from exc
 
 
+def _validated_review_image_url(
+    connection: GitServerConnection,
+    url: str,
+) -> str:
+    parsed = urlparse(url.strip())
+    server = urlparse(server_domain(connection.provider, connection.base_url))
+    is_attachment = (
+        parsed.scheme == server.scheme
+        and parsed.hostname == server.hostname
+        and bool(_GITHUB_ATTACHMENT_PATH_RE.fullmatch(parsed.path))
+    )
+    is_rendered_image = (
+        parsed.scheme == "https"
+        and parsed.hostname in _GITHUB_RENDERED_IMAGE_HOSTS
+        and bool(_GITHUB_RENDERED_IMAGE_PATH_RE.fullmatch(parsed.path))
+    )
+    if (
+        connection.provider != "github"
+        or parsed.username is not None
+        or parsed.password is not None
+        or (not is_attachment and not is_rendered_image)
+    ):
+        raise GitServerApiError("Unsupported code review image URL.")
+    return urlunparse(parsed._replace(fragment=""))
+
+
+def _validated_review_image_redirect_url(url: str) -> str:
+    parsed = urlparse(url)
+    hostname = parsed.hostname or ""
+    if (
+        parsed.scheme != "https"
+        or parsed.username is not None
+        or parsed.password is not None
+        or (
+            hostname not in _GITHUB_ATTACHMENT_REDIRECT_HOSTS
+            and not _GITHUB_ATTACHMENT_S3_HOST_RE.fullmatch(hostname)
+        )
+    ):
+        raise GitServerApiError("The Git server returned an unsafe image redirect.")
+    return urlunparse(parsed._replace(fragment=""))
+
+
+async def fetch_code_review_image(
+    connection: GitServerConnection,
+    url: str,
+) -> ReviewImage | ReviewImageRedirect:
+    """Fetch a private GitHub review attachment without exposing its token."""
+    token = connection_token(connection)
+    if not token:
+        raise GitServerApiError("No API key is configured for this Git server.")
+    image_url = _validated_review_image_url(connection, url)
+    image_host = urlparse(image_url).hostname
+    server = urlparse(server_domain(connection.provider, connection.base_url))
+    headers: dict[str, str] = {}
+    if image_host == server.hostname:
+        headers.update(_auth_headers(connection, token))
+        headers["Accept"] = "image/*"
+    try:
+        async with httpx.AsyncClient(
+            verify=connection.verify_ssl,
+            timeout=httpx.Timeout(20.0),
+            follow_redirects=False,
+        ) as client:
+            async with client.stream("GET", image_url, headers=headers) as response:
+                if response.is_redirect:
+                    location = response.headers.get("location")
+                    if not location:
+                        raise GitServerApiError(
+                            "The Git server returned an empty image redirect."
+                        )
+                    return ReviewImageRedirect(
+                        url=_validated_review_image_redirect_url(location)
+                    )
+                if response.status_code >= 400:
+                    if response.status_code in {401, 403, 404}:
+                        detail = "The code review image is unavailable through this connection."
+                    else:
+                        detail = f"The Git server returned HTTP {response.status_code}."
+                    raise GitServerApiError(detail)
+                media_type = (
+                    response.headers.get("content-type", "").partition(";")[0].lower()
+                )
+                if not media_type.startswith("image/"):
+                    raise GitServerApiError(
+                        "The code review attachment is not an image."
+                    )
+                content_length = response.headers.get("content-length")
+                if content_length:
+                    try:
+                        if int(content_length) > _MAX_REVIEW_IMAGE_BYTES:
+                            raise GitServerApiError(
+                                "The code review image is too large."
+                            )
+                    except ValueError:
+                        pass
+                chunks: list[bytes] = []
+                size = 0
+                async for chunk in response.aiter_bytes():
+                    size += len(chunk)
+                    if size > _MAX_REVIEW_IMAGE_BYTES:
+                        raise GitServerApiError("The code review image is too large.")
+                    chunks.append(chunk)
+    except httpx.TimeoutException as exc:
+        raise GitServerApiError(
+            "The Git server timed out while loading the image."
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise GitServerApiError(f"Could not load the code review image: {exc}") from exc
+    return ReviewImage(content=b"".join(chunks), media_type=media_type)
+
+
 def _bounded_payload(value: Any, *, depth: int = 0) -> Any:
     """Keep API-backed tool context useful without flooding the model."""
     if depth >= 8:
@@ -608,7 +751,7 @@ def _review_summary(review: Any, changes: Any) -> dict[str, Any]:
     from_ref = _dict(row.get("fromRef"))
     to_ref = _dict(row.get("toRef"))
     author = _person_name(row.get("user") or row.get("author") or row.get("createdBy"))
-    description = row.get("body") or row.get("description")
+    description = row.get("body_html") or row.get("body") or row.get("description")
     if not description:
         description = _dict(row.get("summary")).get("raw")
     reviewers = _people(
@@ -908,7 +1051,8 @@ def _comment_row(
     if not side and thread_context:
         side = "RIGHT" if thread_context.get("rightFileStart") else "LEFT"
     body = (
-        row.get("body")
+        row.get("body_html")
+        or row.get("body")
         or row.get("body_text")
         or row.get("text")
         or content.get("raw")
@@ -1270,7 +1414,12 @@ async def get_repository_review_context(
     provider = connection.provider
     if provider == "github":
         root = f"repos/{quote(repository, safe='/')}"
-        review = await _request_json(connection, token, f"{root}/pulls/{number}")
+        review = await _request_json(
+            connection,
+            token,
+            f"{root}/pulls/{number}",
+            extra_headers={"Accept": "application/vnd.github.full+json"},
+        )
         if include_changes:
             changes = await _request_json(
                 connection,
@@ -1285,12 +1434,14 @@ async def get_repository_review_context(
                     token,
                     f"{root}/issues/{number}/comments",
                     params={"per_page": 100},
+                    extra_headers={"Accept": "application/vnd.github.full+json"},
                 ),
                 _request_json(
                     connection,
                     token,
                     f"{root}/pulls/{number}/comments",
                     params={"per_page": 100},
+                    extra_headers={"Accept": "application/vnd.github.full+json"},
                 ),
                 _request_json(
                     connection,

@@ -34,6 +34,7 @@ import type {
   GitServerProvider,
   RepositoryCodeReviews,
 } from '@/api/types'
+import { getCodeReviewImageUrl } from '@/api/client'
 import {
   Dialog,
   DialogContent,
@@ -67,6 +68,7 @@ import {
 } from '@/queries'
 import { useTeamSessionsQuery } from '@/queries/useSessionsQuery'
 import { formatRelativeDate } from '@/utils/format'
+import { MarkdownBlock } from '@/utils/markdown'
 import { cn } from '@/lib/utils'
 import type { PullRequestsScope } from '@/stores/useUIStore'
 
@@ -437,12 +439,14 @@ function ReviewRow({
 function ReviewCommentCard({
   comment,
   pending,
+  transformImageSrc,
   onReply,
   onToggleResolved,
 }: {
   comment: CodeReviewComment
   pending: boolean
   onReply: (comment: CodeReviewComment, body: string) => Promise<void>
+  transformImageSrc: (src: string) => string
   onToggleResolved: (comment: CodeReviewComment) => Promise<void>
 }) {
   const [reply, setReply] = useState('')
@@ -470,9 +474,13 @@ function ReviewCommentCard({
           </span>
         )}
       </div>
-      <p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-(--color-text-2)">
-        {comment.body}
-      </p>
+      <div className="mt-2 min-w-0 text-(--color-text-2) [&_.oa-prose]:text-xs [&_.oa-prose]:leading-5">
+        <MarkdownBlock
+          content={comment.body}
+          allowHtml
+          transformImageSrc={transformImageSrc}
+        />
+      </div>
       <div className="mt-2 flex items-center gap-2">
         {comment.can_resolve && comment.resolved !== null && (
           <Button
@@ -530,6 +538,10 @@ function ReviewDetails({
     item.number,
   )
   const [comment, setComment] = useState('')
+  const transformImageSrc = useMemo(
+    () => (src: string) => getCodeReviewImageUrl(repository.workspace_id, src),
+    [repository.workspace_id],
+  )
 
   const mutate = async (input: Parameters<typeof action.mutateAsync>[0]) => {
     await action.mutateAsync(input)
@@ -673,9 +685,13 @@ function ReviewDetails({
                 )}
               </div>
               {summary?.description ? (
-                <p className="whitespace-pre-wrap text-xs leading-5 text-(--color-text-2)">
-                  {summary.description}
-                </p>
+                <div className="min-w-0 text-(--color-text-2) [&_.oa-prose]:text-xs [&_.oa-prose]:leading-5">
+                  <MarkdownBlock
+                    content={summary.description}
+                    allowHtml
+                    transformImageSrc={transformImageSrc}
+                  />
+                </div>
               ) : (
                 <p className="text-xs italic text-(--color-text-subtle)">
                   No description provided.
@@ -809,6 +825,7 @@ function ReviewDetails({
                     key={entry.stable_id}
                     comment={entry}
                     pending={action.isPending}
+                    transformImageSrc={transformImageSrc}
                     onReply={(target, body) =>
                       mutate({
                         action: 'reply',

@@ -1,4 +1,5 @@
 import { apiBaseUrl } from '../base-url'
+import { withTokenParam } from '../auth'
 import { parseDetailOrThrow } from './_shared'
 import type {
   CodeReviewsResponse,
@@ -11,6 +12,28 @@ import type {
 export interface CodeReviewScope {
   workspace?: string | null
   projectId?: string | null
+}
+
+export function getCodeReviewImageUrl(
+  workspaceId: string,
+  sourceUrl: string,
+): string {
+  try {
+    const parsed = new URL(sourceUrl)
+    const isAttachment =
+      ['http:', 'https:'].includes(parsed.protocol) &&
+      /^\/user-attachments\/assets\/[0-9a-f-]+\/?$/i.test(parsed.pathname)
+    const isRenderedImage =
+      ['private-user-images.githubusercontent.com', 'user-images.githubusercontent.com'].includes(parsed.hostname) &&
+      /^\/[0-9]+\/[0-9]+-[0-9a-f-]+(?:\.[a-z0-9]+)?$/i.test(parsed.pathname)
+    if (!isAttachment && !isRenderedImage) return sourceUrl
+  } catch {
+    return sourceUrl
+  }
+  const params = new URLSearchParams({ url: sourceUrl })
+  return withTokenParam(
+    `${apiBaseUrl()}/team/reviews/${encodeURIComponent(workspaceId)}/media?${params.toString()}`,
+  )
 }
 
 export async function getCodeReviews(

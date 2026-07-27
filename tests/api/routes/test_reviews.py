@@ -162,8 +162,7 @@ async def test_project_scope_returns_only_project_repositories(tmp_path):
 
     assert response.status_code == 200
     assert {
-        repository["workspace_id"]
-        for repository in response.json()["repositories"]
+        repository["workspace_id"] for repository in response.json()["repositories"]
     } == {str(first.id), str(second.id)}
 
 
@@ -195,9 +194,9 @@ async def test_worktree_scope_resolves_to_source_repository(tmp_path):
     )
 
     assert response.status_code == 200
-    assert [
-        item["workspace_id"] for item in response.json()["repositories"]
-    ] == [str(repository.id)]
+    assert [item["workspace_id"] for item in response.json()["repositories"]] == [
+        str(repository.id)
+    ]
 
 
 @pytest.mark.asyncio
@@ -278,3 +277,62 @@ async def test_review_action_api_uses_saved_connection(monkeypatch, tmp_path):
         "body": "Looks good",
         "idempotency_key": "call-12",
     }
+
+
+@pytest.mark.asyncio
+async def test_review_media_api_proxies_private_image(monkeypatch, tmp_path):
+    from app.api.app import create_app
+    from app.api.routes.team import reviews as routes
+    from app.core import db as db_module
+    from app.models.chat import CodingWorkspace, GitServerConnection
+    from app.services.code_review_service import RepositoryTarget, ReviewImageRedirect
+
+    workspace_path = tmp_path / "repo"
+    workspace_path.mkdir()
+    workspace = CodingWorkspace(path=str(workspace_path), kind="repo", name="repo")
+    connection = GitServerConnection(
+        name="GitHub",
+        provider="github",
+        base_url="https://api.github.com",
+        host="github.com",
+        scope="server",
+        token_env_var="TEST_REVIEW_MEDIA_TOKEN",
+    )
+    async with db_module.async_session_factory() as db:
+        async with db.begin():
+            db.add(workspace)
+            db.add(connection)
+
+    async def fake_inspect(workspace_id, path, name):
+        return RepositoryTarget(
+            workspace_id=workspace_id,
+            workspace=path,
+            name=name,
+            remote_url="git@github.com:acme/repo.git",
+            host="github.com",
+            repository="acme/repo",
+            detected_provider="github",
+        )
+
+    seen = {}
+
+    async def fake_fetch(selected_connection, url):
+        seen.update(connection=selected_connection.name, url=url)
+        return ReviewImageRedirect(
+            url="https://github-production-user-asset-6210df.s3.amazonaws.com/image.png"
+        )
+
+    monkeypatch.setattr(routes, "inspect_repository", fake_inspect)
+    monkeypatch.setattr(routes, "fetch_code_review_image", fake_fetch)
+    image_url = "https://github.com/user-attachments/assets/74005370-eae1-4552-afb1-0a1dfdd56924"
+
+    response = TestClient(create_app(), follow_redirects=False).get(
+        f"/api/team/reviews/{workspace.id}/media",
+        params={"url": image_url},
+    )
+
+    assert response.status_code == 302
+    assert response.headers["location"].endswith("s3.amazonaws.com/image.png")
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.headers["referrer-policy"] == "no-referrer"
+    assert seen == {"connection": "GitHub", "url": image_url}
