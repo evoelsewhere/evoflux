@@ -36,7 +36,7 @@ def isolated_config(tmp_path: Path):
 
 @pytest.fixture(autouse=True)
 def _reset_local_reachable_cache(monkeypatch: pytest.MonkeyPatch):
-    """Clear daemon-reachability cache and avoid live model discovery in tests.
+    """Clear provider caches and avoid live model discovery in tests.
 
     The cache is module-level state; without resetting it a test that
     happens to ping a daemon successfully (or hit a cached failure)
@@ -50,11 +50,13 @@ def _reset_local_reachable_cache(monkeypatch: pytest.MonkeyPatch):
         return ["test-model"]
 
     settings_routes._local_reachable_cache.clear()
+    settings_routes._provider_model_cache.clear()
     monkeypatch.setattr(
         "app.agent.providers.model_discovery.discover_provider_models", _available
     )
     yield
     settings_routes._local_reachable_cache.clear()
+    settings_routes._provider_model_cache.clear()
 
 
 def test_get_sandbox_returns_seed_defaults_when_file_missing(
@@ -151,15 +153,25 @@ def test_list_providers_marks_configured_when_env_var_set(
     assert data["has_any_configured"] is True
 
 
-def test_list_providers_ollama_not_configured_when_daemon_unreachable(
+def test_list_providers_does_not_connect_to_ollama_automatically(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`kind="local"` providers must not show as Connected unless the daemon answers."""
+    """Loading the catalog must not probe or discover models from Ollama."""
+    probed: list[str] = []
+    discovered: list[str] = []
 
-    async def _unreachable(_entry):  # type: ignore[no-untyped-def]
-        return False
+    async def _reachable(entry):  # type: ignore[no-untyped-def]
+        probed.append(entry["id"])
+        return True
 
-    monkeypatch.setattr(settings_routes, "_local_provider_reachable", _unreachable)
+    async def _discover(entry, **_kwargs):  # type: ignore[no-untyped-def]
+        discovered.append(entry["id"])
+        return ["test-model"]
+
+    monkeypatch.setattr(settings_routes, "_local_provider_reachable", _reachable)
+    monkeypatch.setattr(
+        "app.agent.providers.model_discovery.discover_provider_models", _discover
+    )
 
     app = _make_app()
     client = TestClient(app)
@@ -168,25 +180,8 @@ def test_list_providers_ollama_not_configured_when_daemon_unreachable(
     assert response.status_code == 200
     ollama = next(p for p in response.json()["providers"] if p["id"] == "ollama")
     assert ollama["is_configured"] is False
-
-
-def test_list_providers_ollama_configured_when_daemon_reachable(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """When the probe succeeds, Ollama shows as Connected."""
-
-    async def _reachable(_entry):  # type: ignore[no-untyped-def]
-        return True
-
-    monkeypatch.setattr(settings_routes, "_local_provider_reachable", _reachable)
-
-    app = _make_app()
-    client = TestClient(app)
-    response = client.get("/api/settings/providers")
-
-    assert response.status_code == 200
-    ollama = next(p for p in response.json()["providers"] if p["id"] == "ollama")
-    assert ollama["is_configured"] is True
+    assert "ollama" not in probed
+    assert "ollama" not in discovered
 
 
 def test_list_providers_router9_requires_both_env_var_and_daemon(
@@ -1092,6 +1087,47 @@ def test_registry_skips_unconfigured_discovery(monkeypatch: pytest.MonkeyPatch) 
 
     assert response.status_code == 200
     assert call_count == 0
+
+
+def test_manual_ollama_connection_populates_registry_without_reconnecting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only the explicit model-list request may contact local Ollama."""
+    from fastapi import FastAPI
+
+    from app.api.routes import agents as agents_module
+    from app.api.routes.agents import router as agents_router
+
+    settings_routes._provider_model_cache.clear()
+    agents_module._registry_model_cache.clear()
+    calls: list[str] = []
+
+    async def _discover(entry, **_kwargs):  # type: ignore[no-untyped-def]
+        calls.append(entry["id"])
+        return ["llama3.2"]
+
+    monkeypatch.setattr(
+        "app.agent.providers.model_discovery.discover_provider_models", _discover
+    )
+    monkeypatch.setattr(agents_module, "discover_provider_models", _discover)
+    monkeypatch.setattr(
+        settings_routes,
+        "_provider_is_configured",
+        lambda entry: entry["id"] == "ollama",
+    )
+
+    app = FastAPI()
+    app.include_router(router, prefix="/api/settings")
+    app.include_router(agents_router, prefix="/api/agents")
+    client = TestClient(app)
+
+    listed = client.post("/api/settings/providers/ollama/models", json={})
+    registry = client.get("/api/agents/registry")
+
+    assert listed.status_code == 200
+    assert registry.status_code == 200
+    assert calls == ["ollama"]
+    assert "ollama:llama3.2" in {m["id"] for m in registry.json()["models"]}
 
 
 def test_registry_caches_discovery_within_ttl(monkeypatch: pytest.MonkeyPatch) -> None:

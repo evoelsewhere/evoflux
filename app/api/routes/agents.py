@@ -138,8 +138,7 @@ def _effective_config(cfg: AgentConfig, *, mode: str) -> AgentConfig:
     extras = [
         name
         for name in data.tools
-        if data.role == "lead"
-        or not getattr(registry.get(name), "lead_only", False)
+        if data.role == "lead" or not getattr(registry.get(name), "lead_only", False)
     ]
     data.tools = [
         *implicit_tools,
@@ -361,16 +360,22 @@ async def _discover_configured_registry_models() -> list[tuple[str, str]]:
     # Avoid a circular-import-on-startup hazard: this helper is imported
     # from settings.py for the configuration check.
     from app.api.routes.settings import (
+        _cached_provider_models,
         _provider_is_configured,
         _provider_saved_overrides,
     )
     from app.agent.providers.catalog import all_providers
     from app.agent.providers.model_discovery import filter_agent_model_ids
 
-    configured: list[ProviderEntry] = [
-        entry for entry in all_providers() if _provider_is_configured(entry)
-    ]
-    if not configured:
+    configured: list[ProviderEntry] = []
+    cached_manual: list[tuple[str, list[str]]] = []
+    for entry in all_providers():
+        if not entry.get("auto_connect", True):
+            if models := _cached_provider_models(entry):
+                cached_manual.append((entry["id"], models))
+        elif _provider_is_configured(entry):
+            configured.append(entry)
+    if not configured and not cached_manual:
         return []
 
     now = time.monotonic()
@@ -386,10 +391,14 @@ async def _discover_configured_registry_models() -> list[tuple[str, str]]:
         _registry_model_cache[provider_id] = (now, models)
         return provider_id, models
 
-    results = await asyncio.gather(
+    discovered = await asyncio.gather(
         *(_fetch(entry) for entry in configured),
         return_exceptions=True,
     )
+    results: list[tuple[str, list[str]] | BaseException] = [
+        *cached_manual,
+        *discovered,
+    ]
 
     out: list[tuple[str, str]] = []
     for result in results:
