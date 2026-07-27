@@ -15,9 +15,10 @@
  * active pipeline run.
  */
 
-import { useState } from 'react'
+import { useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
+import { motion } from 'framer-motion'
 import {
   Activity,
   ChevronRight,
@@ -27,6 +28,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { ModeSwitchTabs, ModeSwitchRail } from '@/components/ModeSwitchTabs'
+import { ListEnter } from '@/components/motion'
 import {
   SidebarShell,
   SidebarCard,
@@ -59,6 +61,7 @@ import { queryKeys } from '@/queries/keys'
 import { usePlatform } from '@/hooks/use-platform'
 import { useToastStore } from '@/stores/useToastStore'
 import { useUIStore } from '@/stores/useUIStore'
+import { useMotionPreset, useListEnterIndex } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import type { CodingProject } from '@/api/types'
 
@@ -92,6 +95,8 @@ export function AimSidebar({
     useState<CodingProject | null>(null)
   const projects = projectsQuery.data ?? []
   const activeProject = projects.find((project) => project.id === activeProjectId)
+  const switcherProjects = projects.filter((project) => project.id !== activeProject?.id)
+  const projectEnterIndex = useListEnterIndex(switcherProjects.map((p) => p.id))
 
   // One poll lights the running dot for every project (mirrors coding's
   // per-project running indicator without a per-project query).
@@ -224,13 +229,13 @@ export function AimSidebar({
                       <Trash2 size={13} aria-hidden="true" />
                     </button>
                   </div>
-                  <div className="grid grid-cols-2 gap-1" aria-label={`${activeProject.name} sections`}>
+                  <motion.div layout className="grid grid-cols-2 gap-1" aria-label={`${activeProject.name} sections`}>
                     {AIM_FEATURES.map(({ key, label, Icon }) => {
                       const isFeatureActive = activeFeature === key
                       return (
-                        <button
+                        <AimFeatureNavButton
                           key={key}
-                          type="button"
+                          active={isFeatureActive}
                           onClick={() => {
                             saveLastAimProject(activeProject.id)
                             navigate({
@@ -239,12 +244,6 @@ export function AimSidebar({
                             })
                             onMobileClose?.()
                           }}
-                          className={cn(
-                            'flex h-9 min-w-0 items-center gap-2 rounded-md px-2 text-left text-[11px] font-medium transition-colors',
-                            isFeatureActive
-                              ? 'bg-(--bg-key) text-(--color-text) shadow-sm ring-1 ring-(--color-border-strong)'
-                              : 'bg-(--bg-key)/60 text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)',
-                          )}
                           aria-current={isFeatureActive ? 'page' : undefined}
                         >
                           <Icon
@@ -256,10 +255,10 @@ export function AimSidebar({
                           {key === 'pipelines' && runningProjects.has(activeProject.id) && !isFeatureActive && (
                             <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-(--color-accent)" aria-label="Pipeline running" />
                           )}
-                        </button>
+                        </AimFeatureNavButton>
                       )
                     })}
-                  </div>
+                  </motion.div>
                 </section>
               )}
 
@@ -285,13 +284,14 @@ export function AimSidebar({
                   </button>
                 </div>
                 <div className="space-y-0.5">
-                  {projects
-                    .filter((project) => project.id !== activeProject?.id)
-                    .map((project) => {
+                  {switcherProjects.map((project) => {
                       const hasRunning = runningProjects.has(project.id)
+                      const enterIndex = projectEnterIndex(project.id)
                       return (
-                        <div
+                        <ListEnter
                           key={project.id}
+                          index={enterIndex ?? 0}
+                          disabled={enterIndex === undefined}
                           className="group flex h-11 w-full items-center rounded-md transition-colors hover:bg-(--bg-key)"
                         >
                           <button
@@ -337,7 +337,7 @@ export function AimSidebar({
                           >
                             <Trash2 size={12} aria-hidden="true" />
                           </button>
-                        </div>
+                        </ListEnter>
                       )
                     })}
                   {activeProject && projects.length === 1 && (
@@ -455,6 +455,44 @@ function getRulebookId(project: {
   return (
     project.settings?.aim as { rulebook?: { id?: string } } | undefined
   )?.rulebook?.id
+}
+
+function AimFeatureNavButton({
+  active,
+  onClick,
+  children,
+  ...rest
+}: {
+  active: boolean
+  onClick: () => void
+  children: ReactNode
+} & ButtonHTMLAttributes<HTMLButtonElement>) {
+  const preset = useMotionPreset()
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'relative flex h-9 min-w-0 items-center gap-2 rounded-md px-2 text-left text-[11px] font-medium transition-[background-color,color,transform] duration-(--motion-fast) active:scale-[0.985]',
+        'focus-visible:ring-3 focus-visible:ring-(--focus-ring)/40 focus-visible:outline-none',
+        active
+          ? 'text-(--color-text)'
+          : 'bg-(--bg-key)/60 text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)',
+      )}
+      {...rest}
+    >
+      {active && (
+        <motion.span
+          layoutId="aim-feature-active"
+          transition={preset.spring}
+          className="absolute inset-0 -z-10 rounded-md bg-(--bg-key) shadow-sm ring-1 ring-(--color-border-strong)"
+          aria-hidden="true"
+        />
+      )}
+      {children}
+    </button>
+  )
 }
 
 function AimProjectListSkeleton() {

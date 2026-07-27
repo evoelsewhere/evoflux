@@ -573,6 +573,7 @@ export function CodingFileViewerPanel({
   mobile = false,
   desktopOverlay = true,
   desktopOverlayInner = false,
+  initialViewMode = 'file',
 }: {
   workspace: string
   file: WorkspaceFileInfo | null
@@ -590,10 +591,12 @@ export function CodingFileViewerPanel({
   /** Dock into AppShell's body row instead of covering it. */
   desktopOverlay?: boolean
   desktopOverlayInner?: boolean
+  /** Preferred pane when opening (e.g. Changes deep-link → diff). */
+  initialViewMode?: 'file' | 'diff' | 'preview'
 }) {
-  const [viewMode, setViewMode] = useState<'file' | 'diff' | 'preview'>('file')
+  const [viewMode, setViewMode] = useState<'file' | 'diff' | 'preview'>(initialViewMode)
   const [editing, setEditing] = useState(false)
-  
+
   const scopedDiff = useQuery({
     queryKey: [...queryKeys.coding.diff(workspace), file?.path ?? null] as const,
     queryFn: () => getCodingWorkspaceGitDiff(workspace, file ? [file.path] : []),

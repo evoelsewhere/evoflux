@@ -163,7 +163,7 @@ export function SidebarSearchTrigger({
     <button
       type="button"
       onClick={onClick}
-      className="flex h-8 w-full items-center gap-2 rounded-md border border-(--color-border) bg-(--bg-page) px-2.5 text-left text-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
+      className="focus-ring-control flex h-8 w-full items-center gap-2 rounded-md border border-(--color-border) bg-(--bg-page) px-2.5 text-left text-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
       aria-label="Open command palette"
       title="Open command palette (Ctrl+P)"
     >
@@ -200,7 +200,7 @@ export function SidebarFooter({
         <button
           type="button"
           onClick={openSettings}
-          className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+          className="focus-ring-control press-control flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
           aria-label="Settings"
           title="Settings"
         >
@@ -210,7 +210,7 @@ export function SidebarFooter({
           <button
             type="button"
             onClick={onCommandPalette}
-            className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+            className="focus-ring-control press-control flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
             aria-label="Help and shortcuts"
             title="Help and shortcuts (Ctrl+P)"
           >
@@ -229,7 +229,7 @@ export function SidebarFooter({
         <button
           type="button"
           onClick={openSettings}
-          className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+          className="focus-ring-control press-control flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
           aria-label="Settings"
           title="Settings"
         >
@@ -239,7 +239,7 @@ export function SidebarFooter({
           <button
             type="button"
             onClick={onCommandPalette}
-            className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+            className="focus-ring-control press-control flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
             aria-label="Help and shortcuts"
             title="Help and shortcuts (Ctrl+P)"
           >

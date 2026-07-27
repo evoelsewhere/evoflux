@@ -70,7 +70,7 @@ export function Thinking({ content, isStreaming }: ThinkingProps) {
         <ChevronRight
           size={10}
           className={cn(
-            'shrink-0 text-(--color-text-subtle) opacity-0 transition-transform duration-(--motion-fast) group-hover/my-2:opacity-60',
+            'shrink-0 text-(--color-text-subtle) opacity-40 transition-[opacity,transform] duration-(--motion-fast) group-hover/my-2:opacity-60',
             open && 'rotate-90',
           )}
           aria-hidden="true"

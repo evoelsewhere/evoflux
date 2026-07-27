@@ -11,7 +11,8 @@
 
 import { useEffect, useMemo, useRef } from 'react'
 import { motion } from 'framer-motion'
-import { fadeRise, useMotionPreset } from '@/lib/motion'
+import { fadeRise, useListEnterIndex, useMotionPreset } from '@/lib/motion'
+import { ListEnter } from '@/components/motion/ListEnter'
 import {
   ArrowRight,
   CheckCircle2,
@@ -26,6 +27,7 @@ import { isAgentRole, resolveAgentRole } from '@/lib/agent-roles'
 import { cn } from '@/lib/utils'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { AgentChip } from '@/components/ui/agent-chip'
+import { SubagentTaskCard } from '@/components/SubagentTaskCard'
 import type { AgentStream } from '@/stores/useTeamStore'
 import type { ContentBlock } from '@/api/types'
 
@@ -144,7 +146,27 @@ function AgentStatusCard({
 
       {/* Current tool / status text */}
       <div className="min-h-[18px]">
-        {tool ? (
+        {tool?.name === 'team_delegate' ? (
+          <SubagentTaskCard
+            agent={(() => {
+              try {
+                const parsed = tool.args ? JSON.parse(tool.args) as Record<string, unknown> : {}
+                const to =
+                  (typeof parsed.to === 'string' && parsed.to) ||
+                  (typeof parsed.agent === 'string' && parsed.agent) ||
+                  (typeof parsed.member === 'string' && parsed.member) ||
+                  'agent'
+                return to
+              } catch {
+                return 'agent'
+              }
+            })()}
+            title={truncateArg(tool.args) || 'Delegated task'}
+            status={isWorking ? 'running' : 'idle'}
+            interactive={false}
+            className="border-0 bg-transparent p-0"
+          />
+        ) : tool ? (
           <div className="flex items-start gap-1.5 overflow-hidden">
             <span className="mt-px shrink-0 font-mono text-[10px] text-(--color-accent) opacity-70">▶</span>
             <span className="min-w-0 break-all font-mono text-[10px] leading-tight text-(--color-text-muted)">
@@ -214,6 +236,22 @@ function LifecycleRow({ item }: { item: ActivityItem }) {
 }
 
 function CommsRow({ item }: { item: ActivityItem }) {
+  if (item.kind === 'delegation') {
+    const toAgents = Array.isArray(item.meta?.to_agents)
+      ? (item.meta.to_agents as string[])
+      : []
+    const title = typeof item.meta?.title === 'string' ? item.meta.title : item.label
+    return (
+      <div className="px-3 py-1.5">
+        <SubagentTaskCard
+          agent={toAgents[0] ?? item.agent}
+          title={title}
+          status="running"
+          interactive={false}
+        />
+      </div>
+    )
+  }
   if (item.kind !== 'inbox' && item.kind !== 'handoff') {
     return <LifecycleRow item={item} />
   }
@@ -316,6 +354,7 @@ export function MonitorView({
         (i) =>
           i.kind === 'inbox' ||
           i.kind === 'handoff' ||
+          i.kind === 'delegation' ||
           i.kind === 'done' ||
           i.kind === 'spawn' ||
           i.kind === 'dismiss' ||
@@ -331,6 +370,9 @@ export function MonitorView({
 
   const preset = useMotionPreset()
   const sectionEnter = fadeRise(preset, 6)
+  const agentEnterIndex = useListEnterIndex(liveAgents, 12)
+  const feedIds = useMemo(() => feedItems.map((item) => item.id), [feedItems])
+  const feedEnterIndex = useListEnterIndex(feedIds, 12)
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -360,16 +402,26 @@ export function MonitorView({
             </div>
             {/* Horizontally scrollable card row — hides scrollbar for clean look */}
             <div className="flex gap-2 overflow-x-auto px-3 pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              {liveAgents.map((name) => (
-                <AgentStatusCard
-                  key={name}
-                  name={name}
-                  stream={agentStreams[name]}
-                  isLead={name === leadName}
-                  maxTokens={maxTokens}
-                  onFocus={onFocusAgent}
-                />
-              ))}
+              {liveAgents.map((name) => {
+                const idx = agentEnterIndex(name)
+                return (
+                  <ListEnter
+                    key={name}
+                    index={idx ?? 0}
+                    basePx={4}
+                    className="shrink-0"
+                    disabled={idx === undefined}
+                  >
+                    <AgentStatusCard
+                      name={name}
+                      stream={agentStreams[name]}
+                      isLead={name === leadName}
+                      maxTokens={maxTokens}
+                      onFocus={onFocusAgent}
+                    />
+                  </ListEnter>
+                )
+              })}
             </div>
           </>
         )}
@@ -386,9 +438,17 @@ export function MonitorView({
         ) : (
           <ScrollArea className="h-full">
             <div className="divide-y divide-(--color-border)/40 py-1">
-              {feedItems.map((item) => (
-                <CommsRow key={item.id} item={item} />
-              ))}
+              {feedItems.map((item) => {
+                const idx = feedEnterIndex(item.id)
+                if (idx === undefined) {
+                  return <CommsRow key={item.id} item={item} />
+                }
+                return (
+                  <ListEnter key={item.id} index={idx} basePx={4}>
+                    <CommsRow item={item} />
+                  </ListEnter>
+                )
+              })}
               <div ref={bottomRef} />
             </div>
           </ScrollArea>

@@ -16,6 +16,7 @@ import {
   type ToolBlockGroup,
 } from './ToolCallGroup'
 import type { ContentBlock } from '@/api/types'
+import { BlockEnter } from './motion/BlockEnter'
 
 export interface AssistantTurnFooterProps {
   /** Blocks belonging to a single assistant turn (no user blocks inside). */
@@ -181,13 +182,13 @@ export function AssistantTurn({
         const absoluteIdx = blockAbsIdx.get(block.id) ?? startIndex + j
         const isStreaming = isWorking && absoluteIdx >= finalizedCount
         return (
-          <div key={block.id} className="block-reveal">
+          <BlockEnter key={block.id}>
             {renderBlock({
               block,
               isStreaming,
               isLast: absoluteIdx === totalBlocks - 1,
             })}
-          </div>
+          </BlockEnter>
         )
       })}
       {!turnIsStreaming && <AssistantTurnFooter turnBlocks={blocks} size={size} onContinue={canContinue} />}

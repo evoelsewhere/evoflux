@@ -96,7 +96,7 @@ function SidebarRow({
       onClick={go}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'group relative mx-2 flex min-h-11 items-center gap-2.5 rounded-lg px-3 text-left text-sm transition-[background-color,color,transform] duration-200 active:scale-[0.985]',
+        'group relative mx-2 flex min-h-11 items-center gap-2.5 rounded-lg px-3 text-left text-sm transition-[background-color,color,transform] duration-(--motion-fast) active:scale-[0.985]',
         'text-(--color-text-2) hover:bg-(--bg-key)/70 hover:text-(--color-text)',
         'focus-visible:ring-3 focus-visible:ring-(--focus-ring)/40 focus-visible:outline-none',
         active && 'text-(--color-text)',

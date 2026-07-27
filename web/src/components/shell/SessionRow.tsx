@@ -192,7 +192,7 @@ export function SessionRow({
                 onOpenSideChat(session)
               }}
               className={cn(
-                'absolute top-1/2 flex -translate-y-1/2 items-center justify-center rounded-xs p-1 text-(--color-text-subtle) opacity-0 transition-all hover:bg-(--bg-key) hover:text-(--color-text) group-hover:opacity-100 pointer-coarse:opacity-100',
+                'absolute top-1/2 flex -translate-y-1/2 items-center justify-center rounded-xs p-1 text-(--color-text-subtle) opacity-0 transition-[opacity,background-color,color] duration-(--motion-fast) hover:bg-(--bg-key) hover:text-(--color-text) group-hover:opacity-100 pointer-coarse:opacity-100',
                 compact ? 'right-11' : 'right-[3.25rem]',
               )}
               aria-label={`Open side chat for ${session.title || 'Untitled'}`}
@@ -209,7 +209,7 @@ export function SessionRow({
               onEdit(session)
             }}
             className={cn(
-              'absolute top-1/2 flex -translate-y-1/2 items-center justify-center rounded-xs p-1 text-(--color-text-subtle) opacity-0 transition-all hover:bg-(--bg-key) hover:text-(--color-text) group-hover:opacity-100 pointer-coarse:opacity-100',
+              'absolute top-1/2 flex -translate-y-1/2 items-center justify-center rounded-xs p-1 text-(--color-text-subtle) opacity-0 transition-[opacity,background-color,color] duration-(--motion-fast) hover:bg-(--bg-key) hover:text-(--color-text) group-hover:opacity-100 pointer-coarse:opacity-100',
               compact ? 'right-6' : 'right-7',
             )}
             aria-label={`Edit session ${session.title || 'Untitled'}`}
@@ -225,7 +225,7 @@ export function SessionRow({
               onDelete(session)
             }}
             className={cn(
-              'absolute top-1/2 flex -translate-y-1/2 items-center justify-center rounded-xs p-1 text-(--color-text-subtle) opacity-0 transition-all hover:bg-(--color-error-subtle) hover:text-(--color-error) group-hover:opacity-100 pointer-coarse:opacity-100',
+              'absolute top-1/2 flex -translate-y-1/2 items-center justify-center rounded-xs p-1 text-(--color-text-subtle) opacity-0 transition-[opacity,background-color,color] duration-(--motion-fast) hover:bg-(--color-error-subtle) hover:text-(--color-error) group-hover:opacity-100 pointer-coarse:opacity-100',
               compact ? 'right-1' : 'right-1.5',
             )}
             aria-label={`Delete session ${session.title || 'Untitled'}`}

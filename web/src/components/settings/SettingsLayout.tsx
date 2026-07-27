@@ -49,7 +49,7 @@ export function SettingsPageHeader({
         <button
           type="button"
           onClick={() => settingsNavigate('/settings')}
-          className="-ml-1 flex size-11 shrink-0 items-center justify-center rounded-lg text-(--color-text-muted) transition-[background-color,color,transform] duration-200 hover:bg-(--bg-key) hover:text-(--color-text) active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent)"
+          className="-ml-1 flex size-11 shrink-0 items-center justify-center rounded-lg text-(--color-text-muted) transition-[background-color,color,transform] duration-(--motion-fast) hover:bg-(--bg-key) hover:text-(--color-text) active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent)"
           aria-label="Back to settings"
         >
           <ArrowLeft size={18} />
@@ -137,6 +137,8 @@ export function SettingsGroup({
   actions,
   /** Drop the surrounding surface when children bring their own containers. */
   bare = false,
+  /** Stagger direct row children on first paint (CSS `.stagger-children`). */
+  stagger = true,
   className,
   children,
 }: {
@@ -144,6 +146,7 @@ export function SettingsGroup({
   description?: ReactNode
   actions?: ReactNode
   bare?: boolean
+  stagger?: boolean
   className?: string
   children: ReactNode
 }) {
@@ -166,6 +169,7 @@ export function SettingsGroup({
         className={cn(
           !bare &&
             'divide-y divide-(--color-border-subtle) overflow-hidden rounded-xl border border-(--color-border) bg-(--bg-card) shadow-[0_10px_30px_rgba(0,0,0,0.025)]',
+          stagger && 'stagger-children',
           className,
         )}
       >

@@ -126,6 +126,7 @@ class PlanModeService:
             from app.agent.schemas.events import PlanApprovalRequestedEvent
             from app.services import memory_stream_store as stream_store
             from app.services.stream_envelope import StreamEnvelope
+            from app.services.turn_changes import enrich_plan_step
 
             await stream_store.push_event(
                 self.stream_session_id,
@@ -135,7 +136,7 @@ class PlanModeService:
                         session_id=self.session_id,
                         plan=plan,
                         steps=[
-                            {"tool": s.tool_name, "args": s.args, "summary": s.summary}
+                            enrich_plan_step(s.tool_name, s.args, s.summary)
                             for s in steps
                         ],
                     )

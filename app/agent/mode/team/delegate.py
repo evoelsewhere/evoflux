@@ -340,9 +340,11 @@ def _emit_delegation_event(
         envelope = StreamEnvelope.from_parts(
             event="delegation",
             data={
+                "type": "delegation",
                 "from": from_agent,
                 "to": to_agents,
                 "task_ids": task_ids,
+                "title": str(spec.get("goal") or "Delegated task")[:120],
                 "spec": spec,
             },
         )

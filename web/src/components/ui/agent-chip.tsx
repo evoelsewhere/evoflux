@@ -28,7 +28,7 @@ import { cn } from '@/lib/utils'
 import type { AgentRole } from '@/lib/agent-roles'
 
 const chipVariants = cva(
-  'inline-flex items-center gap-2 rounded-md px-3 py-1.5 font-mono text-xs leading-none transition-all',
+  'inline-flex items-center gap-2 rounded-md px-3 py-1.5 font-mono text-xs leading-none transition-[background-color,border-color,color,opacity,transform] duration-(--motion-fast) focus-ring-control press-control hover:bg-(--bg-key)/50',
   {
     variants: {
       role: {

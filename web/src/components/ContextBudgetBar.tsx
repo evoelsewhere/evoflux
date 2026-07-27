@@ -54,9 +54,9 @@ export function ContextBudgetBar({
   const isWarn = pct >= 80
 
   const barColor = isDanger
-    ? 'bg-red-500'
+    ? 'bg-(--color-error)'
     : isWarn
-      ? 'bg-amber-400'
+      ? 'bg-(--color-warning)'
       : 'bg-(--accent-blue)'
 
   const tooltip = isDanger
@@ -93,7 +93,7 @@ export function ContextBudgetBar({
       >
         <div className="relative h-1.5 w-10 overflow-hidden rounded-full bg-(--border-subtle)">
           <div
-            className={cn('absolute inset-y-0 left-0 rounded-full transition-all duration-700', barColor)}
+            className={cn('absolute inset-y-0 left-0 rounded-full transition-[width,background-color] duration-(--motion-glacial)', barColor)}
             style={{ width: `${pct}%` }}
           />
         </div>
@@ -101,9 +101,9 @@ export function ContextBudgetBar({
           className={cn(
             'font-mono text-[10px] tabular-nums',
             isDanger
-              ? 'text-red-400'
+              ? 'text-(--color-error)'
               : isWarn
-                ? 'text-amber-400'
+                ? 'text-(--color-warning)'
                 : 'text-(--color-text-muted)',
           )}
         >
@@ -127,7 +127,7 @@ export function ContextBudgetBar({
       {/* Bar track */}
       <div className="relative h-1.5 w-14 overflow-hidden rounded-full bg-(--border-subtle)">
         <div
-          className={cn('absolute inset-y-0 left-0 rounded-full transition-all duration-700', barColor)}
+          className={cn('absolute inset-y-0 left-0 rounded-full transition-[width,background-color] duration-(--motion-glacial)', barColor)}
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -138,9 +138,9 @@ export function ContextBudgetBar({
           className={cn(
             'font-mono text-[10px] tabular-nums',
             isDanger
-              ? 'text-red-400'
+              ? 'text-(--color-error)'
               : isWarn
-                ? 'text-amber-400'
+                ? 'text-(--color-warning)'
                 : 'text-(--color-text-muted)',
           )}
         >

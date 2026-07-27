@@ -12,7 +12,7 @@ import { Search, CornerDownLeft } from 'lucide-react'
 import { useProximityTracker, useProximityIntensity } from '@/hooks/useProximity'
 import { useModalFocus } from '@/hooks/useModalFocus'
 import { useReducedMotion } from '@/hooks/useReducedMotion'
-import { useMotionPreset } from '@/lib/motion'
+import { reducedMotionTransition, useMotionPreset } from '@/lib/motion'
 import { usePlatform } from '@/hooks/use-platform'
 import { useIsMobile } from '@/hooks/use-mobile'
 
@@ -142,7 +142,7 @@ export function CommandPalette({ commands, onClose }: CommandPaletteProps) {
           initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: -8 * preset.distance }}
           animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 }}
           exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: -8 * preset.distance }}
-          transition={preset.spring}
+          transition={reducedMotionTransition(Boolean(prefersReducedMotion), preset.spring)}
           onClick={(e) => e.stopPropagation()}
           className="flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-(--color-border) bg-(--bg-card) shadow-2xl"
           role="dialog"

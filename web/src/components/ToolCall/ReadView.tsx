@@ -84,7 +84,7 @@ export function ReadView({ args, result, onCollapse }: ReadViewProps) {
             event.stopPropagation()
             void copyBody()
           }}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-(--color-text-muted) transition-all hover:bg-(--bg-card) hover:text-(--color-text-2) focus-visible:outline-2 focus-visible:outline-(--focus-ring) md:h-6 md:w-6"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-(--color-text-muted) transition-[opacity,background-color,color] duration-(--motion-fast) hover:bg-(--bg-card) hover:text-(--color-text-2) focus-visible:outline-2 focus-visible:outline-(--focus-ring) md:h-6 md:w-6"
           aria-label="Copy read result"
           title="Copy read result"
         >
