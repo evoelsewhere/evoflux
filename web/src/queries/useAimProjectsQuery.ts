@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   createAimProject,
+  deleteProject,
   detectAimLayout,
   joinAimProject,
   listAimProjects,
@@ -44,6 +45,21 @@ export function useJoinAimProjectMutation() {
     onSuccess: (joined: CodingProject) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.aimAll() })
       queryClient.setQueryData(queryKeys.projects.detail(joined.id), joined)
+    },
+  })
+}
+
+export function useRemoveAimProjectMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => deleteProject(id),
+    onSuccess: (_result, id) => {
+      queryClient.setQueryData<CodingProject[]>(
+        queryKeys.projects.aimAll(),
+        (projects) => projects?.filter((project) => project.id !== id),
+      )
+      queryClient.removeQueries({ queryKey: queryKeys.projects.detail(id) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.aimAll() })
     },
   })
 }

@@ -26,6 +26,14 @@ export function saveLastAimProject(projectId: string): void {
   }
 }
 
+export function clearLastAimProject(): void {
+  try {
+    localStorage.removeItem(LAST_AIM_PROJECT_KEY)
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
 export function loadLastAimProject(): string | null {
   try {
     return localStorage.getItem(LAST_AIM_PROJECT_KEY)
