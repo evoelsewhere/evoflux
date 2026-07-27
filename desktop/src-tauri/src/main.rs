@@ -141,6 +141,12 @@ const ZOOM_MAX: f64 = 3.0;
 const ZOOM_STEP: f64 = 1.2;
 const ZOOM_DEFAULT: f64 = 1.0;
 
+/// First boot can spend significant time importing native Python modules,
+/// running migrations, and seeding config while Windows Defender scans the
+/// freshly installed sidecar. The handshake is emitted only after all FastAPI
+/// startup work completes, so this budget must cover that cold path.
+const SIDECAR_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(120);
+
 /// Label shown in the tray when no chat/coding session is active.
 const TRAY_SESSION_IDLE: &str = "No active session";
 
@@ -692,7 +698,7 @@ async fn restart_sidecar_and_reload_window(app: &AppHandle) -> Result<()> {
         Sidecar::spawn(app).context("spawn sidecar")?
     };
     let handshake: Handshake = sidecar
-        .read_handshake(Duration::from_secs(30))
+        .read_handshake(SIDECAR_HANDSHAKE_TIMEOUT)
         .await
         .context("read sidecar handshake")?;
     let token = handshake.token.clone();
@@ -1504,7 +1510,7 @@ async fn start_backend_and_window(app: AppHandle) -> Result<()> {
     match Sidecar::spawn(&app) {
         Ok(mut sidecar) => {
             let handshake_result = sidecar
-                .read_handshake(Duration::from_secs(30))
+                .read_handshake(SIDECAR_HANDSHAKE_TIMEOUT)
                 .await
                 .context("read sidecar handshake");
             match handshake_result {
