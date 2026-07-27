@@ -62,6 +62,7 @@ import { queryKeys } from '@/queries/keys'
 import { useAimMetaQuery } from '@/queries/useAimMetaQuery'
 import { resolveAimRoleWorkspaces } from '@/lib/aim-kb'
 import { AimSidePanel } from '@/components/AimSidePanel'
+import { BlockEnter, ListEnter } from '@/components/motion'
 import { setAimKbOpenPath, setAimPipelinePrefill } from '@/lib/aimHandoff'
 import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
@@ -75,6 +76,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
+import { useListEnterIndex } from '@/lib/motion'
 import { formatApprovalQuestion } from '@/utils/approvalQuestion'
 import { MarkdownBlock } from '@/utils/markdown'
 import type {
@@ -569,7 +571,8 @@ export function AimOverviewPanel({ project }: { project: CodingProject }) {
         <div className="min-h-0 flex-1 overflow-auto bg-(--bg-subtle)/30 p-3">
           <div className="mx-auto w-full max-w-[1600px] space-y-3">
             <MonitorGrid>
-              <AttentionCenter
+              <BlockEnter>
+                <AttentionCenter
                 approvals={approvalsQuery.data ?? []}
                 healthChecks={healthProblems}
                 loading={approvalsQuery.isLoading || healthQuery.isLoading}
@@ -579,12 +582,15 @@ export function AimOverviewPanel({ project }: { project: CodingProject }) {
                 onReconcile={() => setReconcileOpen(true)}
                 onReply={(approval, answer) => void replyApproval(approval, answer)}
               />
+              </BlockEnter>
+              <BlockEnter>
               <LiveOperations
                 units={globalActiveUnits}
                 loading={unitsQuery.isLoading}
                 onSelect={(unit) => setSelectedUnitId(unit.id)}
                 onOpenMonitor={goOpenPipelines}
               />
+              </BlockEnter>
             </MonitorGrid>
 
             {unitsQuery.isLoading ? (
@@ -620,10 +626,13 @@ export function AimOverviewPanel({ project }: { project: CodingProject }) {
                   onRun={goRunSuggestion}
                 />
                 <MonitorGrid>
+                  <BlockEnter>
                   <WaveControl
                     units={units}
                     onConfigureCutover={(selectedWave) => void openCutoverChecklist(selectedWave)}
                   />
+                  </BlockEnter>
+                  <BlockEnter>
                   <RecentRunsPanel
                     runs={allRuns}
                     loading={recentRunsQuery.isLoading}
@@ -634,6 +643,7 @@ export function AimOverviewPanel({ project }: { project: CodingProject }) {
                       })
                     }
                   />
+                  </BlockEnter>
                 </MonitorGrid>
 
                 <section className="overflow-hidden rounded-md border border-(--color-border) bg-(--bg-page)">
@@ -726,15 +736,16 @@ export function AimOverviewPanel({ project }: { project: CodingProject }) {
                               {phaseLabels[phase] ?? phase} · {phaseUnits.length}
                             </p>
                             <div className="space-y-1.5">
-                              {phaseUnits.map((unit) => (
+                              {phaseUnits.map((unit, unitIndex) => (
+                                <ListEnter key={unit.id} index={unitIndex}>
                                 <UnitCard
-                                  key={unit.id}
                                   unit={unit}
                                   selected={unit.id === selectedUnitId}
                                   onClick={() =>
                                     setSelectedUnitId(unit.id === selectedUnitId ? null : unit.id)
                                   }
                                 />
+                                </ListEnter>
                               ))}
                             </div>
                           </div>
@@ -1056,12 +1067,12 @@ function SuggestedWorkflowBoard({
                     {actions.length === 0 ? (
                       <p className="px-1 py-5 text-center text-[10px] text-(--color-text-subtle)">None</p>
                     ) : (
-                      actions.map((action) => {
+                      actions.map((action, actionIndex) => {
                         const target = action.unit ?? (action.wave !== null ? `Wave ${action.wave}` : 'Project')
                         const disabled = action.lane === 'active'
                         return (
+                          <ListEnter key={action.id} index={actionIndex}>
                           <button
-                            key={action.id}
                             type="button"
                             onClick={() => onRun(action)}
                             disabled={disabled}
@@ -1096,6 +1107,7 @@ function SuggestedWorkflowBoard({
                               </span>
                             )}
                           </button>
+                          </ListEnter>
                         )
                       })
                     )}
@@ -1417,11 +1429,11 @@ function LiveOperations({
         </p>
       ) : (
         <div className="border-t border-(--color-border)">
-          {units.map((unit) => {
+          {units.map((unit, index) => {
             const lease = claimLeaseStatus(unit.claim!.lease_expires_at)
             return (
+              <ListEnter key={unit.id} index={index}>
               <button
-                key={unit.id}
                 type="button"
                 onClick={() => onSelect(unit)}
                 className="group flex w-full items-center gap-2 border-t border-(--color-border) px-3 py-2 text-left first:border-t-0 hover:bg-(--bg-key)/70"
@@ -1442,6 +1454,7 @@ function LiveOperations({
                 <span className={cn('shrink-0 text-[9px]', lease.tone)}>{lease.label}</span>
                 <ChevronRight size={12} className="shrink-0 text-(--color-text-subtle) group-hover:text-(--color-accent)" />
               </button>
+              </ListEnter>
             )
           })}
         </div>
@@ -1493,9 +1506,9 @@ function RecentRunsPanel({
         </p>
       ) : (
         <div className="border-t border-(--color-border)">
-          {recent.map((run) => (
+          {recent.map((run, index) => (
+            <ListEnter key={run.id} index={index}>
             <button
-              key={run.id}
               type="button"
               onClick={() => onOpenRun(run.id)}
               className="group flex w-full items-center gap-2 border-t border-(--color-border) px-3 py-1.5 text-left first:border-t-0 hover:bg-(--bg-key)/70"
@@ -1514,6 +1527,7 @@ function RecentRunsPanel({
               </span>
               <ChevronRight size={11} className="shrink-0 text-(--color-text-subtle) group-hover:text-(--color-accent)" />
             </button>
+            </ListEnter>
           ))}
         </div>
       )}
@@ -1618,6 +1632,8 @@ function UnitQueue({
   selectedUnitId: string | null
   onSelect: (unit: AimUnitOut) => void
 }) {
+  const unitEnterIndex = useListEnterIndex(units.map((unit) => unit.id))
+
   if (units.length === 0) {
     return (
       <div className="px-3 py-8 text-center text-xs text-(--color-text-subtle)">
@@ -1636,9 +1652,14 @@ function UnitQueue({
       </div>
       {units.map((unit) => {
         const firstBlocker = unit.state_error ?? unit.next_action?.blockers[0]
+        const enterIndex = unitEnterIndex(unit.id)
         return (
-          <button
+          <ListEnter
             key={unit.id}
+            index={enterIndex ?? 0}
+            disabled={enterIndex === undefined}
+          >
+          <button
             type="button"
             onClick={() => onSelect(unit)}
             className={cn(
@@ -1684,6 +1705,7 @@ function UnitQueue({
               )}
             </span>
           </button>
+          </ListEnter>
         )
       })}
     </div>

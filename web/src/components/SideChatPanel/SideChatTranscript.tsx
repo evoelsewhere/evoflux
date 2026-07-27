@@ -15,6 +15,7 @@ import { AssistantTurnFooter } from '../AssistantTurnFooter'
 import { groupConsecutiveToolCalls, ToolCallGroupCard } from '../ToolCallGroup'
 import type { ToolBlockGroup } from '../ToolCallGroup'
 import { LoadingVerb } from '../motion/LoadingVerb'
+import { BlockEnter } from '../motion/BlockEnter'
 import { partitionTurns, type TurnItem } from '@/utils/turns'
 import type { ContentBlock } from '@/api/types'
 
@@ -165,13 +166,13 @@ export function SideChatTranscript({
                       const absIdx = blockAbsIdx.get(block.id) ?? item.startIndex + j
                       const isStreaming = isWorking && absIdx >= blocks.length
                       return (
-                        <div key={block.id} className="block-reveal">
+                        <BlockEnter key={block.id}>
                           <BlockRenderer
                             block={block}
                             isStreaming={isStreaming}
                             sessionId={sessionId}
                           />
-                        </div>
+                        </BlockEnter>
                       )
                     })}
                     {!turnIsStreaming && (

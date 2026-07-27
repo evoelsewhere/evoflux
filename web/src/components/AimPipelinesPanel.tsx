@@ -70,6 +70,7 @@ import { queryKeys } from '@/queries/keys'
 import { useWorkflowsQuery } from '@/queries/useWorkflowsQuery'
 import { resolveAimRolePath } from '@/lib/aim-kb'
 import { AimSidePanel } from '@/components/AimSidePanel'
+import { ListEnter } from '@/components/motion'
 import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
@@ -79,6 +80,7 @@ import { MarkdownBlock } from '@/utils/markdown'
 import { formatApprovalQuestion } from '@/utils/approvalQuestion'
 import { formatRelativeDate } from '@/utils/format'
 import { takeAimPipelinePrefill } from '@/lib/aimHandoff'
+import { useListEnterIndex } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import type {
   AimRunListItem,
@@ -545,6 +547,7 @@ export function AimPipelinesPanel({
     refetchInterval: 5_000,
   })
   const runs = useMemo(() => sessionsQuery.data?.data ?? [], [sessionsQuery.data])
+  const runEnterIndex = useListEnterIndex(runs.map((run) => run.id))
 
   // Join sessions with their workflow executions — one call for the table.
   const runIdsKey = useMemo(() => runs.map((r) => r.id).join(','), [runs])
@@ -912,9 +915,14 @@ export function AimPipelinesPanel({
                 <div role="rowgroup" className="divide-y divide-(--color-border)">
                     {runs.map((run) => {
                       const aimRun = runBySessionId.get(run.id)
+                      const enterIndex = runEnterIndex(run.id)
                       return (
-                        <RunRow
+                        <ListEnter
                           key={run.id}
+                          index={enterIndex ?? 0}
+                          disabled={enterIndex === undefined}
+                        >
+                        <RunRow
                           run={run}
                           execution={executionBySession.get(run.id)}
                           aimRun={aimRun}
@@ -953,6 +961,7 @@ export function AimPipelinesPanel({
                             if (execution) void retryExecution(run, execution)
                           }}
                         />
+                        </ListEnter>
                       )
                     })}
                 </div>

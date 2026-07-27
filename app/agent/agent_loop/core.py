@@ -335,9 +335,14 @@ class Agent(Generic[TContext]):
                 state.metadata.setdefault(key, value)
 
         # Runtime-owned metadata: the loader can only discover tools granted
-        # after hard exclusions, and caller metadata cannot pre-activate one.
+        # after hard exclusions. Callers may pre-activate deferred tools
+        # (e.g. composer Plan mode → exit_plan_mode) via config.metadata.
         state.metadata["deferred_tool_catalog"] = deferred_catalog
-        state.metadata["activated_deferred_tools"] = set()
+        existing_activated = state.metadata.get("activated_deferred_tools")
+        if existing_activated:
+            state.metadata["activated_deferred_tools"] = set(existing_activated)
+        else:
+            state.metadata["activated_deferred_tools"] = set()
 
         # Me seed last_prompt_tokens from checkpointer so SummarizationHook
         # fires on session resume without call-site workaround

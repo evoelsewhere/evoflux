@@ -137,6 +137,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const inputRef = useRef<InputBarHandle>(null)
   const mainColumnRef = useRef<HTMLDivElement>(null)
   const [codingFileViewer, setCodingFileViewer] = useState<WorkspaceFileInfo | null>(null)
+  const [codingFileViewerMode, setCodingFileViewerMode] = useState<'file' | 'diff' | 'preview'>('file')
   const [openWorkspaceDialogKey, setOpenWorkspaceDialogKey] = useState(0)
   const [codingWorkspacePickerPortal, setCodingWorkspacePickerPortal] = useState<HTMLDivElement | null>(null)
   const [showActivity, setShowActivity] = useState(false)
@@ -752,6 +753,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
 
   const handleCodingFileSelect = useCallback((file: WorkspaceFileInfo | null) => {
     setCodingFileViewer(file)
+    setCodingFileViewerMode('file')
   }, [])
 
   // Restore a queued message's text into the composer (fired by the
@@ -1115,6 +1117,20 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
         onQuoteComment={handlePlanQuoteComment}
         showActivity={showActivity}
         onCloseActivity={() => setShowActivity(false)}
+        workspace={workspace}
+        mode={mode}
+        onOpenChangedFile={(path) => {
+          if (mode === 'coding' && workspace) {
+            setCodingFileViewer({
+              path,
+              name: path.split('/').pop() ?? path,
+              size: 0,
+              mtime: 0,
+              mime: 'text/plain',
+            })
+            setCodingFileViewerMode('diff')
+          }
+        }}
       />
       {mode === 'coding' && <div ref={setCodingWorkspacePickerPortal} className="contents" />}
     </>
@@ -1128,13 +1144,18 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
       {workbenchPanel}
       {mode === 'coding' && workspace && !isMobile && codingFileViewer !== null && (
         <CodingFileViewerPanel
+          key={`${codingFileViewer.path}:${codingFileViewerMode}`}
           workspace={codingFileViewer.sourceWorkspace ?? workspace}
           file={codingFileViewer}
           mobile={false}
           desktopOverlay={false}
+          initialViewMode={codingFileViewerMode}
           onAddComment={handleAddFileComment}
           onSendToChat={handleSendToChat}
-          onClose={() => setCodingFileViewer(null)}
+          onClose={() => {
+            setCodingFileViewer(null)
+            setCodingFileViewerMode('file')
+          }}
         />
       )}
     </>

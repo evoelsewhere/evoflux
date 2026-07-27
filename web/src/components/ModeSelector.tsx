@@ -26,7 +26,7 @@ const MODES: ModeDef[] = [
   {
     id: 'plan',
     label: 'Plan mode',
-    description: 'Agent must show a plan and get approval before executing',
+    description: 'Plan then approve — records edits/shell until you Accept',
     shortcut: 3,
   },
   {
@@ -113,7 +113,7 @@ export function ModeSelector({ mode, onModeChange, disabled }: ModeSelectorProps
           aria-label="Permission mode"
           className={cn(
             'absolute bottom-full right-0 z-(--z-modal) mb-2 w-[min(18rem,calc(100vw-1rem))] overflow-hidden p-1',
-            'rounded-[9px] border border-(--color-border) bg-(--color-surface) shadow-(--shadow-popover)',
+            'rounded-lg border border-(--color-border) bg-(--color-surface) shadow-(--shadow-popover)',
           )}
         >
           <div className="px-2 pb-1.5 pt-1 text-xs font-semibold text-(--color-text)">
@@ -127,7 +127,7 @@ export function ModeSelector({ mode, onModeChange, disabled }: ModeSelectorProps
               aria-selected={mode === m.id}
               onClick={() => { onModeChange(m.id); setOpen(false) }}
               className={cn(
-                'grid w-full grid-cols-[14px_minmax(0,1fr)_12px] items-center gap-2 rounded-[6px] px-2 py-1.5 text-left outline-none transition-colors',
+                'grid w-full grid-cols-[14px_minmax(0,1fr)_12px] items-center gap-2 rounded-md px-2 py-1.5 text-left outline-none transition-colors',
                 'hover:bg-(--bg-key) focus-visible:bg-(--bg-key)',
                 mode === m.id && 'bg-(--bg-key)',
               )}

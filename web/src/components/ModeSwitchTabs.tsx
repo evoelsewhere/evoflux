@@ -42,7 +42,7 @@ export function ModeSwitchTabs({
           data-testid="mode-switch-indicator"
           data-active-mode={active}
           aria-hidden="true"
-          className="pointer-events-none absolute bottom-0.5 left-0.5 top-0.5 w-[calc((100%-0.25rem)/3)] rounded-[6px] bg-(--bg-key) shadow-sm"
+          className="pointer-events-none absolute bottom-0.5 left-0.5 top-0.5 w-[calc((100%-0.25rem)/3)] rounded-md bg-(--bg-key) shadow-sm"
           initial={false}
           animate={{ x: `${Math.max(0, activeIndex) * 100}%` }}
           transition={preset.spring}
@@ -59,7 +59,7 @@ export function ModeSwitchTabs({
             title={label}
             aria-current={mode === active ? 'page' : undefined}
             className={cn(
-              'relative z-10 flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-[6px] px-1 text-xs font-medium outline-none transition-[color,transform] duration-(--motion-fast) active:translate-y-px focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--color-accent)/35 @[12.5rem]/modeswitch:px-2',
+              'relative z-10 flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-md px-1 text-xs font-medium outline-none transition-[color,transform] duration-(--motion-fast) active:translate-y-px focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--color-accent)/35 @[12.5rem]/modeswitch:px-2',
               mode === active
                 ? 'text-(--color-text)'
                 : 'text-(--color-text-muted) hover:text-(--color-text)',

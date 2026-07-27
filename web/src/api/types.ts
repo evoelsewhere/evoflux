@@ -19,6 +19,9 @@ export interface PlanStep {
   tool: string
   args: Record<string, unknown>
   summary: string
+  /** Workspace-relative path when the step mutates a file. */
+  path?: string
+  diff_stat?: { additions?: number | null; deletions?: number | null }
 }
 
 export interface PlanApprovalPending {
@@ -27,6 +30,20 @@ export interface PlanApprovalPending {
   /** Agent-authored markdown plan document (may be empty for legacy plans). */
   plan: string
   steps: PlanStep[]
+}
+
+export interface TurnChangedFile {
+  path: string
+  status: 'added' | 'modified' | 'removed' | 'changed'
+  additions?: number | null
+  deletions?: number | null
+}
+
+export interface TurnChangesPending {
+  sessionId: string
+  additions: number
+  deletions: number
+  files: TurnChangedFile[]
 }
 
 export type PlanDecision = 'approved' | 'rejected' | 'revise'

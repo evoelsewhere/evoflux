@@ -8,7 +8,7 @@
 import { AnimatePresence, motion, useMotionValue, useTransform } from 'framer-motion'
 import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react'
 import { useToastStore, type Toast } from '@/stores/useToastStore'
-import { useMotionPreset } from '@/lib/motion'
+import { reducedMotionTransition, useMotionPreset } from '@/lib/motion'
 
 const TONE_STYLES: Record<
   Toast['tone'],
@@ -66,13 +66,28 @@ function ToastItem({ t, dismiss }: ToastItemProps) {
       variants={{
         enter: reduced
           ? { opacity: 0 }
-          : { opacity: 0, y: 12 * preset.distance, scale: 0.96, transition: preset.spring },
+          : {
+              opacity: 0,
+              y: 12 * preset.distance,
+              scale: 0.96,
+              transition: reducedMotionTransition(reduced, preset.spring),
+            },
         visible: reduced
           ? { opacity: 1 }
-          : { opacity: 1, y: 0, scale: 1, transition: preset.spring },
+          : {
+              opacity: 1,
+              y: 0,
+              scale: 1,
+              transition: reducedMotionTransition(reduced, preset.spring),
+            },
         exit: reduced
           ? { opacity: 0 }
-          : { opacity: 0, x: 40 * preset.distance, scale: 0.96, transition: preset.transition },
+          : {
+              opacity: 0,
+              x: 40 * preset.distance,
+              scale: 0.96,
+              transition: reducedMotionTransition(reduced, preset.transition),
+            },
       }}
       initial="enter"
       animate="visible"

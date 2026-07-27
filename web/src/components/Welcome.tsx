@@ -168,7 +168,7 @@ function StepIcon({
   return (
     <div className="flex flex-col items-center gap-1" title={label}>
       <div
-        className={`flex h-7 w-7 items-center justify-center rounded-full transition-all ${
+        className={`flex h-7 w-7 items-center justify-center rounded-full transition-[background-color,color,transform] duration-(--motion-fast) ${
           error
             ? 'bg-(--color-error-subtle) text-(--color-error)'
             : done

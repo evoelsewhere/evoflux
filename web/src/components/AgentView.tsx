@@ -34,6 +34,7 @@ import { mcpAppResourceUri } from '@/utils/mcp-app-artifacts'
 import { resolveAgentRole } from '@/lib/agent-roles'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { LoadingVerb } from './motion/LoadingVerb'
+import { BlockEnter } from './motion/BlockEnter'
 import { SessionChapterRail } from './SessionChapterRail'
 import { TextSelectionAction } from './TextSelectionAction'
 import type { Chapter, ContentBlock } from '@/api/types'
@@ -380,7 +381,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                          const absIdx = blockAbsIdx.get(block.id) ?? item.startIndex + j
                          const isStreaming = isWorking && absIdx >= blocks.length
                          return (
-                           <div key={block.id} className="block-reveal">
+                           <BlockEnter key={block.id}>
                              <BlockRenderer
                                block={block}
                                isStreaming={isStreaming}
@@ -388,7 +389,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                                onRevert={isDirectUserBlock(block) && block.id === latestUserBlockId ? handleRevert : undefined}
                                latestMCPAppBlockIds={latestMCPAppBlockIds}
                              />
-                           </div>
+                           </BlockEnter>
                          )
                        })}
                        {!turnIsStreaming && (

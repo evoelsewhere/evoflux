@@ -52,7 +52,7 @@ export function FileCard({
       <button
         onClick={handleClick}
         disabled={!clickable}
-        className={`surface-raised flex items-center gap-2 rounded-lg border border-(--color-border) bg-(--bg-card) px-3 py-2 text-xs text-(--color-text) transition-all ${
+        className={`surface-raised flex items-center gap-2 rounded-lg border border-(--color-border) bg-(--bg-card) px-3 py-2 text-xs text-(--color-text) transition-[background-color,border-color,box-shadow,opacity] duration-(--motion-fast) ${
           clickable ? 'cursor-pointer hover:border-(--color-accent) hover:bg-(--bg-key)' : ''
         }`}
         title={name}

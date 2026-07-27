@@ -1,4 +1,4 @@
-import type { ContentBlock, AgentUsage, TeamCommandResponse, PlanApprovalPending, PermissionRequestPending, AskUserQuestionPending } from '@/api/types'
+import type { ContentBlock, AgentUsage, TeamCommandResponse, PlanApprovalPending, PermissionRequestPending, AskUserQuestionPending, TurnChangesPending } from '@/api/types'
 
 export interface PendingMessage {
   id: string
@@ -7,7 +7,7 @@ export interface PendingMessage {
   submittedAt?: number
 }
 
-export type ActivityKind = 'spawn' | 'dismiss' | 'inbox' | 'handoff' | 'status' | 'done'
+export type ActivityKind = 'spawn' | 'dismiss' | 'inbox' | 'handoff' | 'status' | 'done' | 'delegation'
 
 export interface ActivityItem {
   id: string
@@ -115,6 +115,9 @@ export interface TeamStoreState {
   setupRequired: SetupRequiredNotice | null
   browserSession: BrowserSessionInfo | null
   planApproval: PlanApprovalPending | null
+  turnChanges: TurnChangesPending | null
+  /** When true and ``turnChanges`` is set, ChangesReviewPanel is visible. */
+  turnChangesOpen: boolean
   permissionRequest: PermissionRequestPending | null
   askUserQuestion: AskUserQuestionPending | null
     _pendingMessages: PendingMessage[]
@@ -151,6 +154,8 @@ export interface TeamStoreActions {
   cycleActiveAgent: (dir: 'next' | 'prev') => void
   toggleSidebar: () => void
   dismissSetupRequired: () => void
+  dismissTurnChanges: () => void
+  showTurnChanges: () => void
   isEmptyIdleSession: () => boolean
   consumeResolvedSessionReady: (sessionId: string, workspace?: string | null) => boolean
   /** Reset local chat state. Retained for stale async-generation guards in tests. */

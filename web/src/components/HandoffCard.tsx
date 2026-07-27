@@ -104,7 +104,7 @@ export function HandoffCard({ artifact, fromAgent, compact = false }: HandoffCar
                 'rounded-md border border-(--color-border)',
                 'bg-(--bg-page) text-(--color-text-muted)',
                 compact ? 'h-4 w-4' : 'h-5 w-5',
-                'transition-all duration-(--motion-fast)',
+                'transition-[background-color,border-color,box-shadow,opacity] duration-(--motion-fast)',
                 'hover:border-(--color-accent) hover:text-(--color-accent)',
                 'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-(--color-accent)',
                 'active:scale-90',

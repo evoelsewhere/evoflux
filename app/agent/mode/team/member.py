@@ -1308,6 +1308,9 @@ class TeamMemberBase(abc.ABC):
             # members keep their own session IDs for history/checkpointing,
             # but WebBridge commands must reuse the lead's tab binding/group.
             "webbridge_session_id": lead_session_id,
+            # Lead stream id — file-change tracking + SSE publish to one place.
+            "stream_session_id": lead_session_id,
+            "session_id": self.session_id,
         }
         if force_compaction:
             run_metadata["force_summarization"] = True
@@ -1343,6 +1346,18 @@ class TeamMemberBase(abc.ABC):
             stream_session_id=lead_session_id,
         )
         plan_token = set_plan_mode_service(plan_service)
+
+        # Composer "Plan mode" unifies permission auto-allow with agent plan
+        # mode: lead starts recording destructive tools until exit_plan_mode.
+        # Pre-activate deferred plan tools so the model can exit without
+        # load_tool (otherwise recorded steps can vanish with no approval UI).
+        if self._team.permission_mode == "plan" and self._role_label == "lead":
+            plan_service.enter()
+            run_metadata["_plan_mode"] = True
+            run_metadata["activated_deferred_tools"] = {
+                "enter_plan_mode",
+                "exit_plan_mode",
+            }
 
         # Scope ask-user service — blocks the ask_user tool until the user
         # answers, publishing to the same lead stream as plan approvals.

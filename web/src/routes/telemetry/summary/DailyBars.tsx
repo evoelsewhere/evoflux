@@ -22,7 +22,7 @@ export function DailyBars({
           return (
             <div key={r.day} className="flex min-w-0 flex-1 flex-col items-center gap-1">
               <div
-                className="flex w-full flex-col-reverse rounded-t-sm bg-(--color-accent) transition-all"
+                className="flex w-full flex-col-reverse rounded-t-sm bg-(--color-accent) transition-[height,opacity] duration-(--motion-base)"
                 style={{ height: `${Math.max(pct, 2)}%` }}
                 title={`${r.day}: ${r.turns} turns${r.errors > 0 ? `, ${r.errors} errors` : ''}`}
               >

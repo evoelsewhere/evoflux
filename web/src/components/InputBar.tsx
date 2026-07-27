@@ -1,6 +1,6 @@
 import { useRef, useState, useCallback, useImperativeHandle, forwardRef, useEffect, useMemo } from 'react'
 import { Activity, ArrowUp, ChevronDown, File, Folder, Globe, Loader2, MessageCircle, Paperclip, Square, SquareCheck, Terminal } from 'lucide-react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { FilePreviewStrip } from './FilePreviewStrip'
 import { findActiveMention, rankFileRefs, type FileRef } from './InputBar.mentions'
 import { MentionOverlay } from './InputBar.overlay'
@@ -10,7 +10,7 @@ import { TodosList } from './TodosList'
 import { cn } from '@/lib/utils'
 import type { AgentCapabilities, TodoItem } from '@/api/types'
 import { useIsMobile } from '@/hooks/use-mobile'
-import { useMotionPreset } from '@/lib/motion'
+import { fadeRise, panelTransition, useMotionPreset } from '@/lib/motion'
 
 // Re-export the public type so callers can import ``FileRef`` from this module
 // alongside the component. (The helper ``findActiveMention`` is imported from
@@ -241,6 +241,8 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   const dragCounterRef = useRef(0)
   const isMobile = useIsMobile()
   const preset = useMotionPreset()
+  const attachmentEnter = fadeRise(preset, 6)
+  const menuEnter = fadeRise(preset, 8)
 
   // Terminal → composer handoff: the AI Terminal's "Send to agent" dispatches
   // this event so selected output lands in the chat draft, without coupling
@@ -978,14 +980,14 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   // Single-row, horizontally scrollable list so many attachments don't push
   // the input off-screen vertically. The strip owns its own scroll-position
   // hint (matches pencil's MultiAttachOverflow `attachmentScrollHint`).
-  const filePreviews = files.length > 0 ? (
+  const filePreviewStrip = (
     <FilePreviewStrip
       files={files}
       blobUrls={blobUrls}
       onRemove={removeFile}
       filesBelow={filesBelow}
     />
-  ) : null
+  )
 
   const actionBtnClass = cn(
     'flex shrink-0 items-center justify-center text-(--color-text-muted) outline-none transition-[background-color,color,transform] hover:bg-(--bg-key) hover:text-(--color-text) active:translate-y-px focus-visible:ring-2 focus-visible:ring-(--color-accent)/30 disabled:cursor-not-allowed disabled:opacity-50',
@@ -1218,66 +1220,85 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   return (
     <div className={floating ? '' : 'bg-(--bg-page) px-4 pb-5 pt-3'}>
       <div className={floating ? 'relative' : 'relative mx-auto max-w-3xl'}>
-        {!minimized && !filesBelow && filePreviews}
+        <AnimatePresence initial={false}>
+          {!minimized && !filesBelow && files.length > 0 && (
+            <motion.div
+              key="composer-attachments-top"
+              initial={attachmentEnter.initial}
+              animate={attachmentEnter.animate}
+              exit={attachmentEnter.exit}
+              transition={attachmentEnter.transition}
+            >
+              {filePreviewStrip}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-        {!minimized && slashMenuOpen && filteredSlashCommands.length > 0 && (
-          <div
-            id={slashMenuId}
-            role="listbox"
-            aria-label="Slash commands"
-            className="absolute bottom-full left-0 right-0 z-(--z-panel) mb-1 max-h-64 overflow-y-auto rounded-lg border border-(--color-border-strong) bg-(--color-surface) shadow-md"
-          >
-            {filteredSlashCommands.map((cmd) => {
-              if (cmd.isSeparator) {
+        <AnimatePresence initial={false}>
+          {!minimized && slashMenuOpen && (
+            <motion.div
+              key="slash-menu"
+              id={slashMenuId}
+              role="listbox"
+              aria-label="Slash commands"
+              initial={menuEnter.initial}
+              animate={menuEnter.animate}
+              exit={menuEnter.exit}
+              transition={menuEnter.transition}
+              className="absolute bottom-full left-0 right-0 z-(--z-panel) mb-1 max-h-64 overflow-y-auto rounded-lg border border-(--color-border-strong) bg-(--color-surface) shadow-md"
+            >
+              {filteredSlashCommands.map((cmd) => {
+                if (cmd.isSeparator) {
+                  return (
+                    <div
+                      key={cmd.id}
+                      className="px-3 pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-(--color-text-muted)"
+                    >
+                      {cmd.label}
+                    </div>
+                  )
+                }
+
+                const idx = selectableSlashCommands.findIndex((item) => item.id === cmd.id)
+                const active = idx === clampedIndex
+                const displayName = cmd.displayName ?? cmd.id
+                const colon = displayName.indexOf(':')
+                const prefix = colon === -1 ? '' : displayName.slice(0, colon + 1)
+                const suffix = colon === -1 ? displayName : displayName.slice(colon + 1)
+
                 return (
-                  <div
+                  <button
                     key={cmd.id}
-                    className="px-3 pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-(--color-text-muted)"
+                    id={`${slashMenuId}-option-${idx}`}
+                    role="option"
+                    aria-selected={active}
+                    ref={(node) => { slashOptionRefs.current[idx] = node }}
+                    onMouseDown={(e) => { e.preventDefault(); executeSlashCommand(cmd) }}
+                    className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
+                      active
+                        ? 'bg-(--bg-key) text-(--color-text)'
+                        : 'text-(--color-text-muted) hover:bg-(--bg-key)'
+                    }`}
                   >
-                    {cmd.label}
-                  </div>
-                )
-              }
-
-              const idx = selectableSlashCommands.findIndex((item) => item.id === cmd.id)
-              const active = idx === clampedIndex
-              const displayName = cmd.displayName ?? cmd.id
-              const colon = displayName.indexOf(':')
-              const prefix = colon === -1 ? '' : displayName.slice(0, colon + 1)
-              const suffix = colon === -1 ? displayName : displayName.slice(colon + 1)
-
-              return (
-                <button
-                  key={cmd.id}
-                  id={`${slashMenuId}-option-${idx}`}
-                  role="option"
-                  aria-selected={active}
-                  ref={(node) => { slashOptionRefs.current[idx] = node }}
-                  onMouseDown={(e) => { e.preventDefault(); executeSlashCommand(cmd) }}
-                  className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
-                    active
-                      ? 'bg-(--bg-key) text-(--color-text)'
-                      : 'text-(--color-text-muted) hover:bg-(--bg-key)'
-                  }`}
-                >
-                  <span className="shrink-0 font-mono text-xs text-(--color-accent)">
-                    /
-                    {prefix && <span className="text-(--color-text-muted)">{prefix}</span>}
-                    <span>{suffix}</span>
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-(--color-text-2)">
-                    {cmd.description}
-                  </span>
-                  {cmd.category && (
-                    <span className="shrink-0 rounded-md bg-(--bg-key) px-1.5 py-0.5 font-mono text-xs text-(--color-text-muted) ring-1 ring-(--color-border)">
-                      {cmd.category}
+                    <span className="shrink-0 font-mono text-xs text-(--color-accent)">
+                      /
+                      {prefix && <span className="text-(--color-text-muted)">{prefix}</span>}
+                      <span>{suffix}</span>
                     </span>
-                  )}
-                </button>
-              )
-            })}
-          </div>
-        )}
+                    <span className="min-w-0 flex-1 truncate text-(--color-text-2)">
+                      {cmd.description}
+                    </span>
+                    {cmd.category && (
+                      <span className="shrink-0 rounded-md bg-(--bg-key) px-1.5 py-0.5 font-mono text-xs text-(--color-text-muted) ring-1 ring-(--color-border)">
+                        {cmd.category}
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {!minimized && snippetMenuOpen && filteredSnippetCommands.length > 0 && (
           <div
@@ -1372,23 +1393,29 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
 
         {!minimized && showTodoProgress && (
           <div className="relative z-(--z-panel) mb-2 flex justify-center">
-            {showTodosPopover && (
-              <div className="absolute bottom-full left-1/2 mb-2 w-[min(40rem,calc(100vw-2rem))] -translate-x-1/2">
+            <AnimatePresence initial={false}>
+              {showTodosPopover && (
                 <motion.div
-                  id="composer-task-list"
+                  key="composer-todos-popover"
+                  className="absolute bottom-full left-1/2 mb-2 w-[min(40rem,calc(100vw-2rem))] -translate-x-1/2"
                   initial={{ opacity: 0, y: 6 * preset.distance, scale: 0.98 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
-                  transition={preset.spring}
-                  className="overflow-hidden rounded-lg border border-(--color-border) bg-(--bg-card)/95 shadow-xl backdrop-blur-xl"
+                  exit={{ opacity: 0, y: 6 * preset.distance, scale: 0.98 }}
+                  transition={panelTransition(preset)}
                 >
-                  <TodosList
-                    todos={todos ?? []}
-                    headerClassName="hidden"
-                    listClassName="max-h-[min(48vh,20rem)] py-2"
-                  />
+                  <div
+                    id="composer-task-list"
+                    className="overflow-hidden rounded-lg border border-(--color-border) bg-(--bg-card)/95 shadow-xl backdrop-blur-xl"
+                  >
+                    <TodosList
+                      todos={todos ?? []}
+                      headerClassName="hidden"
+                      listClassName="max-h-[min(48vh,20rem)] py-2"
+                    />
+                  </div>
                 </motion.div>
-              </div>
-            )}
+              )}
+            </AnimatePresence>
 
             <button
               type="button"
@@ -1556,7 +1583,19 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
           </motion.div>
         </div>
 
-        {!minimized && filesBelow && filePreviews}
+        <AnimatePresence initial={false}>
+          {!minimized && filesBelow && files.length > 0 && (
+            <motion.div
+              key="composer-attachments-bottom"
+              initial={attachmentEnter.initial}
+              animate={attachmentEnter.animate}
+              exit={attachmentEnter.exit}
+              transition={attachmentEnter.transition}
+            >
+              {filePreviewStrip}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {attachmentsEnabled && (
           <input

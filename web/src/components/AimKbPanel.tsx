@@ -34,6 +34,7 @@ import { queryKeys } from '@/queries/keys'
 import { MarkdownBlock } from '@/utils/markdown'
 import { buildTree } from '@/utils/workspaceFileTree'
 import { TreeNodeView } from '@/components/CodingWorkspacePanel'
+import { ListEnter } from '@/components/motion'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -312,10 +313,12 @@ function SearchResults({ query, loading, results, files, onSelect }: { query: st
       {results.map((result, index) => {
         const file = files.find((item) => item.path === result.path)
         return (
-          <button key={`${result.path}:${result.line}:${index}`} type="button" disabled={!file} onClick={() => file && onSelect(file, result.line)} className="w-full rounded-md px-2 py-2 text-left transition-colors hover:bg-(--bg-key) disabled:opacity-50">
+          <ListEnter key={`${result.path}:${result.line}:${index}`} index={index}>
+          <button type="button" disabled={!file} onClick={() => file && onSelect(file, result.line)} className="w-full rounded-md px-2 py-2 text-left transition-colors hover:bg-(--bg-key) disabled:opacity-50">
             <span className="block truncate font-mono text-[10px] font-medium text-(--color-text-2)">{result.path}{result.line > 0 ? `:${result.line}` : ''}</span>
             <span className="mt-1 block line-clamp-2 text-[9px] leading-4 text-(--color-text-subtle)">{result.excerpt}</span>
           </button>
+          </ListEnter>
         )
       })}
     </div>
@@ -556,7 +559,7 @@ function KbHome({ files, onOpen }: { files: WorkspaceFileInfo[]; onOpen: (file: 
       <div className="mx-auto max-w-5xl">
         <div className="flex items-start gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-(--color-border) bg-(--bg-key) text-(--color-accent)"><FolderOpen size={17} /></span><div><h2 className="text-sm font-semibold text-(--color-text)">KB document workspace</h2><p className="mt-1 max-w-2xl text-xs leading-5 text-(--color-text-muted)">Search and edit project knowledge, including the local rulebook. Generated state and run evidence remain protected.</p></div></div>
         <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3">{groups.map(([prefix, label]) => { const count = files.filter((file) => file.path.startsWith(prefix)).length; return <div key={prefix} className="rounded-md border border-(--color-border) px-3 py-2.5"><p className="text-[10px] text-(--color-text-subtle)">{label}</p><p className="mt-1 font-mono text-base font-semibold text-(--color-text)">{count}</p><p className="mt-0.5 truncate font-mono text-[8px] text-(--color-text-subtle)">{prefix}</p></div> })}</div>
-        <section className="mt-6 border-t border-(--color-border) pt-4"><h3 className="text-[10px] font-semibold uppercase text-(--color-text-subtle)">Recently changed</h3><div className="mt-2 grid gap-1 sm:grid-cols-2">{recent.map((file) => <button key={file.path} type="button" onClick={() => onOpen(file)} className="flex items-center gap-2 rounded-md px-2.5 py-2 text-left hover:bg-(--bg-key)"><FileText size={12} className="shrink-0 text-(--color-text-subtle)" /><span className="min-w-0 flex-1 truncate font-mono text-[10px] text-(--color-text-2)">{file.path}</span><span className="text-[8px] text-(--color-text-subtle)">{formatBytes(file.size)}</span></button>)}</div></section>
+        <section className="mt-6 border-t border-(--color-border) pt-4"><h3 className="text-[10px] font-semibold uppercase text-(--color-text-subtle)">Recently changed</h3><div className="mt-2 grid gap-1 sm:grid-cols-2">{recent.map((file, index) => <ListEnter key={file.path} index={index}><button type="button" onClick={() => onOpen(file)} className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left hover:bg-(--bg-key)"><FileText size={12} className="shrink-0 text-(--color-text-subtle)" /><span className="min-w-0 flex-1 truncate font-mono text-[10px] text-(--color-text-2)">{file.path}</span><span className="text-[8px] text-(--color-text-subtle)">{formatBytes(file.size)}</span></button></ListEnter>)}</div></section>
       </div>
     </div>
   )
