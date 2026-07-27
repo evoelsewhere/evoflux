@@ -53,6 +53,7 @@ class ProviderEntry(TypedDict, total=False):
     models_dev_provider_id: str  # provider id used by models.dev when different
     metadata_source_provider: str  # source provider for same-model-id metadata aliases
     model_registry_aliases: dict[str, str]  # target model -> source provider:model
+    auto_connect: bool  # whether catalog/registry loads may contact the provider
 
 
 _CATALOG: list[ProviderEntry] = [
@@ -274,6 +275,7 @@ _CATALOG: list[ProviderEntry] = [
         "kind": "local",
         "env_var": "OLLAMA_API_KEY",
         "docs_url": "https://ollama.com/library",
+        "auto_connect": False,
     },
     {
         "id": "copilot",

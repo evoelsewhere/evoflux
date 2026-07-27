@@ -65,9 +65,14 @@ export function useSaveProviderVisibleModelsMutation() {
 }
 
 export function useProviderModelsMutation() {
+  const client = useQueryClient()
   return useMutation<ProviderModelsResponse, Error, { providerId: string; apiKey?: string; extra?: Record<string, string> }>({
     mutationFn: ({ providerId, apiKey, extra }) =>
       listProviderModels(providerId, { api_key: apiKey, extra }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: queryKeys.settings.providers() })
+      void client.invalidateQueries({ queryKey: queryKeys.agentFiles.registry() })
+    },
   })
 }
 

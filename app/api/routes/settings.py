@@ -78,6 +78,26 @@ _PROVIDER_MODEL_CACHE_TTL_S = 60.0
 _provider_model_cache: dict[str, tuple[float, list[str]]] = {}
 
 
+def _cached_provider_models(entry: "ProviderEntry") -> list[str] | None:
+    """Return reusable discovered models without contacting the provider."""
+    cached = _provider_model_cache.get(entry["id"])
+    if cached is None:
+        return None
+    if entry.get("auto_connect", True):
+        age = time.monotonic() - cached[0]
+        if age >= _PROVIDER_MODEL_CACHE_TTL_S:
+            return None
+    return list(cached[1])
+
+
+def _cache_provider_models(entry: "ProviderEntry", models: list[str]) -> None:
+    """Remember successful discovery, or clear failed manual connections."""
+    if models:
+        _provider_model_cache[entry["id"]] = (time.monotonic(), list(models))
+    elif not entry.get("auto_connect", True):
+        _provider_model_cache.pop(entry["id"], None)
+
+
 @router.get("/sandbox")
 async def get_sandbox_settings() -> SandboxSettingsBody:
     """Return the current sandbox deny-list.
@@ -281,12 +301,13 @@ async def _empty_models() -> list[str]:
 async def _provider_is_reachable(entry: "ProviderEntry") -> bool:
     """Configuration check including a daemon probe for daemon providers.
 
-    For Ollama / 9Router / CLIProxyAPI we *also* require the daemon to
-    respond on its base URL — otherwise the UI would show "Connected"
-    for a daemon that isn't running. Other providers fall back to the
-    static :func:`_provider_is_configured` check.
+    Ollama is never contacted here because it requires an explicit user
+    action. For 9Router / CLIProxyAPI we require the daemon to respond on
+    its base URL; other providers use the static configuration check.
     """
     provider_id = entry["id"]
+    if not entry.get("auto_connect", True):
+        return bool(_cached_provider_models(entry))
     if provider_id in _DAEMON_PROVIDER_IDS:
         # For api_key daemon providers (router9, cliproxy) the static
         # check additionally requires the env var. No env var → don't
@@ -302,16 +323,20 @@ async def list_providers() -> ProvidersListBody:
     """Return the provider catalog enriched with per-provider configuration state.
 
     ``is_configured`` reflects *actual* availability: API keys present,
-    OAuth token files on disk, cloud creds set — and for local daemons
-    (Ollama), an HTTP probe confirming the daemon answers. Static-only
-    catalog inspection would falsely show "Connected" for a daemon that
-    isn't running.
+    OAuth token files on disk, cloud creds set, and reachable local proxy
+    daemons. Ollama remains disconnected until the user explicitly lists
+    its models, so this endpoint never contacts the local Ollama daemon.
     """
     from app.agent.providers.catalog import all_providers
     from app.agent.providers.model_discovery import filter_agent_model_ids
 
     entries = all_providers()
-    saved_states = [_provider_is_configured(entry) for entry in entries]
+    saved_states = [
+        _provider_is_configured(entry)
+        if entry.get("auto_connect", True)
+        else bool(_cached_provider_models(entry))
+        for entry in entries
+    ]
     reachability = await asyncio.gather(
         *(_provider_is_reachable(entry) for entry in entries),
         return_exceptions=False,
@@ -321,22 +346,21 @@ async def list_providers() -> ProvidersListBody:
     now = time.monotonic()
 
     async def _discover_cached(entry: "ProviderEntry") -> list[str]:
-        provider_id = entry["id"]
-        cached = _provider_model_cache.get(provider_id)
-        if cached and now - cached[0] < _PROVIDER_MODEL_CACHE_TTL_S:
-            return cached[1]
+        cached = _cached_provider_models(entry)
+        if cached is not None:
+            return cached
+        if not entry.get("auto_connect", True):
+            return []
         models = await discover_provider_models(
             entry, overrides=_provider_saved_overrides(entry)
         )
         if models:
-            _provider_model_cache[provider_id] = (now, models)
+            _provider_model_cache[entry["id"]] = (now, models)
         return models
 
     discovery_results = await asyncio.gather(
         *(
-            _discover_cached(entry)
-            if is_configured
-            else _empty_models()
+            _discover_cached(entry) if is_configured else _empty_models()
             for entry, is_configured in zip(entries, reachability, strict=True)
         ),
         return_exceptions=False,
@@ -416,6 +440,8 @@ async def list_provider_models(
     discovered = filter_agent_model_ids(
         await discover_provider_models(entry, overrides=overrides)
     )
+    if not entry.get("auto_connect", True):
+        _cache_provider_models(entry, discovered)
     if discovered:
         return ProviderModelsResponse(
             provider=provider_id,
@@ -652,7 +678,9 @@ async def delete_provider(provider_id: str) -> dict[str, bool]:
         token_file = token_files.get(provider_id)
         if token_file and token_file.is_file():
             token_file.unlink()
-            logger.info("oauth_token_deleted provider={} file={}", provider_id, token_file)
+            logger.info(
+                "oauth_token_deleted provider={} file={}", provider_id, token_file
+            )
         return {"deleted": True}
 
     # Local providers: nothing to clear
