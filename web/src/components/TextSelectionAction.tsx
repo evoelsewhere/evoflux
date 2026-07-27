@@ -172,6 +172,13 @@ export function TextSelectionAction({
   useEffect(() => {
     const handleMouseDown = (event: MouseEvent) => {
       if (event.button === 0) {
+        const target = event.target
+        if (
+          target instanceof Element
+          && target.closest('[data-text-selection-toolbar]')
+        ) {
+          return
+        }
         mouseDownRef.current = true
         // Starting a new drag hides a toolbar from a previous selection.
         if (activeRef.current) dismiss()
@@ -231,6 +238,7 @@ export function TextSelectionAction({
 
   return createPortal(
     <div
+      data-text-selection-toolbar
       role="toolbar"
       aria-label="Text selection actions"
       style={{
