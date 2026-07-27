@@ -22,7 +22,7 @@ export async function getAppBackendStatus(): Promise<AppBackendStatus | null> {
   }
 }
 
-function isTauriContext(): boolean {
+export function isTauriContext(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 }
 
