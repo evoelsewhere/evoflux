@@ -48,7 +48,8 @@ nodes:
       target-conventions (the base source stays read-only), then verify the
       target builds/tests. Do NOT change the unit's phase — the pipeline marks
       it converted deterministically after you finish. Record target_paths via
-      aim_units without passing phase before returning.
+      aim_units without passing phase, then commit the target-repo changes
+      before returning.
     timeout_s: 3600
 
   - id: mark_converted
