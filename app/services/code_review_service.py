@@ -215,9 +215,10 @@ def parse_remote_url(remote_url: str) -> tuple[str | None, str | None, str]:
     repository = path.strip("/").removesuffix(".git")
     parts = repository.split("/")
     if (
-        host in {"ssh.dev.azure.com"}
-        or (host and host.endswith("visualstudio.com"))
-    ) and parts[:1] == ["v3"] and len(parts) >= 4:
+        (host in {"ssh.dev.azure.com"} or (host and host.endswith("visualstudio.com")))
+        and parts[:1] == ["v3"]
+        and len(parts) >= 4
+    ):
         repository = f"{parts[1]}/{parts[2]}/_git/{parts[3]}"
         host = "dev.azure.com"
     elif host and host.endswith("visualstudio.com") and "/_git/" in repository:
@@ -539,6 +540,142 @@ def _bounded_payload(value: Any, *, depth: int = 0) -> Any:
     return value
 
 
+def _optional_int(value: Any) -> int | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    return None
+
+
+def _person_name(value: Any) -> str | None:
+    row = _dict(value)
+    nested_user = _dict(row.get("user"))
+    for candidate in (row, nested_user):
+        name = (
+            candidate.get("login")
+            or candidate.get("username")
+            or candidate.get("nickname")
+            or candidate.get("display_name")
+            or candidate.get("displayName")
+            or candidate.get("uniqueName")
+            or candidate.get("name")
+        )
+        if name:
+            return str(name)
+    return None
+
+
+def _people(values: Any) -> list[str]:
+    names: list[str] = []
+    for value in _list(values):
+        name = _person_name(value)
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
+def _change_rows(changes: Any) -> list[dict[str, Any]]:
+    if isinstance(changes, list):
+        return [_dict(value) for value in changes if isinstance(value, dict)]
+    payload = _dict(changes)
+    for key in ("values", "value", "changeEntries"):
+        rows = _list(payload.get(key))
+        if rows:
+            return [_dict(value) for value in rows if isinstance(value, dict)]
+    return []
+
+
+def _sum_change_metric(rows: list[dict[str, Any]], *keys: str) -> int | None:
+    values: list[int] = []
+    for row in rows:
+        for key in keys:
+            number = _optional_int(row.get(key))
+            if number is not None:
+                values.append(number)
+                break
+    return sum(values) if values else None
+
+
+def _review_summary(review: Any, changes: Any) -> dict[str, Any]:
+    row = _dict(review)
+    source = _dict(row.get("source"))
+    destination = _dict(row.get("destination"))
+    head = _dict(row.get("head"))
+    base = _dict(row.get("base"))
+    from_ref = _dict(row.get("fromRef"))
+    to_ref = _dict(row.get("toRef"))
+    author = _person_name(row.get("user") or row.get("author") or row.get("createdBy"))
+    description = row.get("body") or row.get("description")
+    if not description:
+        description = _dict(row.get("summary")).get("raw")
+    reviewers = _people(
+        row.get("requested_reviewers")
+        or row.get("reviewers")
+        or row.get("participants")
+    )
+    assignee_values = row.get("assignees")
+    if not _list(assignee_values) and row.get("assignee"):
+        assignee_values = [row.get("assignee")]
+    change_rows = _change_rows(changes)
+    changed_files = _optional_int(row.get("changed_files") or row.get("changes_count"))
+    if changed_files is None and changes is not None:
+        changed_files = len(change_rows)
+    additions = _optional_int(row.get("additions"))
+    if additions is None:
+        additions = _sum_change_metric(change_rows, "additions", "lines_added")
+    deletions = _optional_int(row.get("deletions"))
+    if deletions is None:
+        deletions = _sum_change_metric(change_rows, "deletions", "lines_removed")
+
+    return {
+        "description": str(description).strip() if description else None,
+        "author": author,
+        "created_at": str(
+            row.get("created_at")
+            or row.get("created_on")
+            or row.get("createdDate")
+            or row.get("creationDate")
+            or ""
+        )
+        or None,
+        "updated_at": str(
+            row.get("updated_at")
+            or row.get("updated_on")
+            or row.get("updatedDate")
+            or row.get("lastUpdatedDate")
+            or ""
+        )
+        or None,
+        "source_branch": _branch_name(
+            head.get("ref")
+            or row.get("source_branch")
+            or _dict(source.get("branch")).get("name")
+            or from_ref.get("displayId")
+            or row.get("sourceRefName")
+        )
+        or None,
+        "target_branch": _branch_name(
+            base.get("ref")
+            or row.get("target_branch")
+            or _dict(destination.get("branch")).get("name")
+            or to_ref.get("displayId")
+            or row.get("targetRefName")
+        )
+        or None,
+        "reviewers": reviewers,
+        "assignees": _people(assignee_values),
+        "commit_count": _optional_int(
+            row.get("commits") or row.get("commits_count") or row.get("commit_count")
+        ),
+        "changed_files": changed_files,
+        "additions": additions,
+        "deletions": deletions,
+    }
+
+
 def _github_items(payload: Any) -> list[ReviewItem]:
     items: list[ReviewItem] = []
     for raw in _list(payload):
@@ -750,9 +887,7 @@ def _comment_row(
     parent = _dict(row.get("parent"))
     raw_id = row.get("id") or row.get("commentId") or row.get("noteable_id")
     parent_id = (
-        row.get("in_reply_to_id")
-        or parent.get("id")
-        or row.get("parentCommentId")
+        row.get("in_reply_to_id") or parent.get("id") or row.get("parentCommentId")
     )
     path = (
         row.get("path")
@@ -876,11 +1011,7 @@ def _normalize_comments(provider: str, payload: Any) -> list[dict[str, Any]]:
                     provider,
                     row,
                     thread_id=_dict(row.get("parent")).get("id") or row.get("id"),
-                    resolved=(
-                        bool(row.get("resolved"))
-                        if "resolved" in row
-                        else None
-                    ),
+                    resolved=(bool(row.get("resolved")) if "resolved" in row else None),
                 )
             )
     elif provider == "bitbucket_server":
@@ -938,9 +1069,7 @@ def _normalize_approvals(provider: str, review: Any) -> list[dict[str, Any]]:
     elif provider in {"bitbucket_cloud", "bitbucket_server"}:
         candidates = _list(row.get("participants") or row.get("reviewers"))
     elif provider == "gitlab":
-        candidates = _list(
-            _dict(row.get("approvals") or row).get("approved_by")
-        )
+        candidates = _list(_dict(row.get("approvals") or row).get("approved_by"))
     else:
         candidates = _list(row.get("reviews"))
     approvals: list[dict[str, Any]] = []
@@ -950,9 +1079,7 @@ def _normalize_approvals(provider: str, review: Any) -> list[dict[str, Any]]:
         vote = int(candidate.get("vote") or 0)
         state = str(candidate.get("state") or candidate.get("status") or "")
         approved = bool(
-            candidate.get("approved")
-            or vote >= 10
-            or state.upper() == "APPROVED"
+            candidate.get("approved") or vote >= 10 or state.upper() == "APPROVED"
         )
         approvals.append(
             {
@@ -1194,9 +1321,7 @@ async def get_repository_review_context(
                 _request_json(connection, token, f"{root}/approvals"),
             )
     elif provider == "bitbucket_cloud":
-        root = (
-            f"repositories/{quote(repository, safe='/')}/pullrequests/{number}"
-        )
+        root = f"repositories/{quote(repository, safe='/')}/pullrequests/{number}"
         review = await _request_json(connection, token, root)
         if include_changes:
             changes = await _request_json(
@@ -1214,9 +1339,7 @@ async def get_repository_review_context(
             )
     elif provider == "bitbucket_server":
         project, repo = _bitbucket_server_coordinates(repository)
-        root = (
-            f"projects/{quote(project)}/repos/{quote(repo)}/pull-requests/{number}"
-        )
+        root = f"projects/{quote(project)}/repos/{quote(repo)}/pull-requests/{number}"
         review = await _request_json(connection, token, root)
         if include_changes:
             changes = await _request_json(
@@ -1316,6 +1439,7 @@ async def get_repository_review_context(
         "provider": provider,
         "repository": repository,
         "number": number,
+        "summary": _review_summary(review_row, changes if include_changes else None),
         "review": _bounded_payload(review_row),
         "changes": _bounded_payload(changes) if include_changes else None,
         "comments": _bounded_payload(normalized_comments),
@@ -1437,10 +1561,7 @@ async def get_repository_review_checks(
                     or "Check"
                 ),
                 "status": str(
-                    row.get("conclusion")
-                    or row.get("state")
-                    or row.get("status")
-                    or ""
+                    row.get("conclusion") or row.get("state") or row.get("status") or ""
                 ).lower(),
                 "url": str(
                     row.get("details_url")
@@ -1534,11 +1655,13 @@ async def add_code_review_comment(
         params={"api-version": "7.1"} if provider == "azure_devops" else None,
         method="POST",
         json_body=payload,
-        extra_headers={"Idempotency-Key": idempotency_key}
-        if idempotency_key
-        else None,
+        extra_headers={"Idempotency-Key": idempotency_key} if idempotency_key else None,
     )
-    return {"action": "comment", "provider": provider, "result": _bounded_payload(result)}
+    return {
+        "action": "comment",
+        "provider": provider,
+        "result": _bounded_payload(result),
+    }
 
 
 async def add_code_review_inline_comment(
@@ -1629,7 +1752,11 @@ async def add_code_review_inline_comment(
         method="POST",
         json_body={key: value for key, value in payload.items() if value is not None},
     )
-    return {"action": "inline_comment", "provider": provider, "result": _bounded_payload(result)}
+    return {
+        "action": "inline_comment",
+        "provider": provider,
+        "result": _bounded_payload(result),
+    }
 
 
 async def reply_code_review_thread(
@@ -1723,7 +1850,9 @@ async def submit_code_review(
 ) -> dict[str, Any]:
     event = event.lower()
     if event not in {"approve", "request_changes", "comment"}:
-        raise GitServerApiError("Review event must be approve, request_changes, or comment.")
+        raise GitServerApiError(
+            "Review event must be approve, request_changes, or comment."
+        )
     if event == "comment":
         return await add_code_review_comment(target, connection, number, body)
     require_capability(connection.provider, f"submit_{event}")
@@ -1862,7 +1991,11 @@ async def update_code_review(
             method="POST",
             json_body={"assignees": updates["assignees"]},
         )
-    return {"action": "update", "provider": provider, "result": _bounded_payload(result)}
+    return {
+        "action": "update",
+        "provider": provider,
+        "result": _bounded_payload(result),
+    }
 
 
 async def merge_code_review(
@@ -1903,9 +2036,9 @@ async def merge_code_review(
             "MergeTitleField": commit_title,
         }
     else:
-        current = _dict(await _request_json(
-            connection, token, root, params={"api-version": "7.1"}
-        ))
+        current = _dict(
+            await _request_json(connection, token, root, params={"api-version": "7.1"})
+        )
         endpoint = root
         http_method = "PATCH"
         params = {"api-version": "7.1"}
@@ -1943,15 +2076,19 @@ async def set_code_review_state(
         raise GitServerApiError("The connection or repository is not configured.")
     provider = connection.provider
     root = _review_root(provider, repository, number)
-    current = _dict(await _request_json(
-        connection,
-        token,
-        root,
-        params={"api-version": "7.1"} if provider == "azure_devops" else None,
-    ))
+    current = _dict(
+        await _request_json(
+            connection,
+            token,
+            root,
+            params={"api-version": "7.1"} if provider == "azure_devops" else None,
+        )
+    )
     state = str(current.get("state") or current.get("status") or "").lower()
     already = (
-        state in {"open", "opened", "active"} if open else state in {"closed", "declined", "abandoned"}
+        state in {"open", "opened", "active"}
+        if open
+        else state in {"closed", "declined", "abandoned"}
     )
     if already:
         return {"action": capability, "provider": provider, "unchanged": True}
@@ -1980,7 +2117,11 @@ async def set_code_review_state(
     result = await _request_json(
         connection, token, endpoint, params=params, method=method, json_body=payload
     )
-    return {"action": capability, "provider": provider, "result": _bounded_payload(result)}
+    return {
+        "action": capability,
+        "provider": provider,
+        "result": _bounded_payload(result),
+    }
 
 
 async def create_repository_review(

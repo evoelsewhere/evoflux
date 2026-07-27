@@ -1013,7 +1013,8 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       : Math.max(todoCount - 1, 0)
   const currentTodoStep = todoCount > 0 ? currentTodoIndex + 1 : 0
   const allTodosFinished = todoCount > 0 && finishedTodoCount === todoCount
-  const showTodosPopover = todosOpen && todoCount > 0
+  const showTodoProgress = todoCount > 0 && (!allTodosFinished || isStreaming)
+  const showTodosPopover = todosOpen && showTodoProgress
 
   // Three states share one DOM tree: minimized, single-line, multi-line.
   // Multi-line is triggered by the slot's flex-basis:100% which wraps the
@@ -1369,7 +1370,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
           </div>
         )}
 
-        {!minimized && todoCount > 0 && (
+        {!minimized && showTodoProgress && (
           <div className="relative z-(--z-panel) mb-2 flex justify-center">
             {showTodosPopover && (
               <div className="absolute bottom-full left-1/2 mb-2 w-[min(40rem,calc(100vw-2rem))] -translate-x-1/2">

@@ -1514,10 +1514,26 @@ export interface CodeReviewCheck {
   url: string
 }
 
+export interface CodeReviewSummary {
+  description: string | null
+  author: string | null
+  created_at: string | null
+  updated_at: string | null
+  source_branch: string | null
+  target_branch: string | null
+  reviewers: string[]
+  assignees: string[]
+  commit_count: number | null
+  changed_files: number | null
+  additions: number | null
+  deletions: number | null
+}
+
 export interface CodeReviewContext {
   provider: GitServerProvider
   repository: string
   number: number
+  summary: CodeReviewSummary
   review: Record<string, unknown>
   changes: unknown
   comments: CodeReviewComment[]

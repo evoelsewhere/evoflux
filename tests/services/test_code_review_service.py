@@ -208,9 +208,7 @@ def test_bitbucket_cloud_supports_bearer_and_basic_tokens():
         username="dev@example.com",
     )
 
-    assert service._auth_headers(bearer, "secret") == {
-        "Authorization": "Bearer secret"
-    }
+    assert service._auth_headers(bearer, "secret") == {"Authorization": "Bearer secret"}
     assert service._auth_headers(basic, "secret") == {
         "Authorization": "Basic ZGV2QGV4YW1wbGUuY29tOnNlY3JldA=="
     }
@@ -333,22 +331,33 @@ async def test_github_review_context_reads_files_and_both_comment_streams(
     ):
         paths.append(path)
         if path.endswith("/files"):
-            return [{"filename": "app.py", "patch": "+fixed"}]
+            return [
+                {
+                    "filename": "app.py",
+                    "patch": "+fixed",
+                    "additions": 4,
+                    "deletions": 2,
+                }
+            ]
         if path.endswith("/reviews"):
             return [{"id": 7, "state": "APPROVED", "user": {"login": "reviewer"}}]
         if path.endswith("/check-runs"):
-            return {
-                "check_runs": [
-                    {"id": 9, "name": "tests", "conclusion": "success"}
-                ]
-            }
+            return {"check_runs": [{"id": 9, "name": "tests", "conclusion": "success"}]}
         if path.endswith("/comments"):
             return [{"id": 3, "body": "Looks good", "user": {"login": "octocat"}}]
         return {
             "number": 42,
             "title": "Ship it",
+            "body": "Adds the release workflow.",
             "state": "open",
-            "head": {"sha": "abc123"},
+            "user": {"login": "author"},
+            "created_at": "2026-07-20T08:00:00Z",
+            "updated_at": "2026-07-21T09:30:00Z",
+            "head": {"sha": "abc123", "ref": "release"},
+            "base": {"ref": "main"},
+            "commits": 3,
+            "requested_reviewers": [{"login": "reviewer"}],
+            "assignees": [{"login": "maintainer"}],
         }
 
     monkeypatch.setattr(service, "_request_json", fake_request)
@@ -373,6 +382,20 @@ async def test_github_review_context_reads_files_and_both_comment_streams(
 
     assert context["review"]["number"] == 42
     assert context["changes"][0]["filename"] == "app.py"
+    assert context["summary"] == {
+        "description": "Adds the release workflow.",
+        "author": "author",
+        "created_at": "2026-07-20T08:00:00Z",
+        "updated_at": "2026-07-21T09:30:00Z",
+        "source_branch": "release",
+        "target_branch": "main",
+        "reviewers": ["reviewer"],
+        "assignees": ["maintainer"],
+        "commit_count": 3,
+        "changed_files": 1,
+        "additions": 4,
+        "deletions": 2,
+    }
     assert len(context["comments"]) == 2
     assert context["comments"][0]["stable_id"].startswith("github:")
     assert context["comments"][0]["author"] == "octocat"
