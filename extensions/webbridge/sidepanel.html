@@ -287,6 +287,114 @@
       .header { padding-inline: 10px; }
       .transcript, .composer, .questions { padding-inline: 10px; }
     }
+    .annotation-overlay-wrapper {
+      display: none; position: fixed; inset: 0; z-index: 40;
+      flex-direction: column; background: var(--bg);
+    }
+    .annotation-overlay-wrapper.visible { display: flex; }
+    .annotation-header {
+      display: flex; align-items: center; gap: 8px;
+      min-height: 48px; padding: 6px 10px;
+      border-bottom: 1px solid var(--border); background: var(--surface);
+    }
+    .annotation-header strong { flex: 1; font-size: 12px; font-weight: 700; }
+    .annotation-toolbar {
+      display: flex; align-items: center; gap: 3px;
+      min-height: 44px; padding: 4px 8px;
+      border-bottom: 1px solid var(--border); background: var(--surface);
+      flex-wrap: wrap;
+    }
+    .annotation-toolbar .tool-btn {
+      display: grid; width: 32px; height: 32px; place-items: center;
+      border: 1px solid transparent; border-radius: 6px;
+      background: transparent; color: var(--muted); font-size: 13px;
+    }
+    .annotation-toolbar .tool-btn:hover:not(:disabled) {
+      border-color: var(--border); background: var(--surface-raised); color: var(--text);
+    }
+    .annotation-toolbar .tool-btn.active {
+      border-color: var(--accent); background: var(--accent-soft); color: var(--accent);
+    }
+    .annotation-toolbar .tool-btn svg {
+      width: 16px; height: 16px; fill: none; stroke: currentColor;
+      stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+    }
+    .annotation-toolbar .sep {
+      width: 1px; height: 24px; margin: 0 4px; background: var(--border);
+    }
+    .annotation-toolbar .color-btn {
+      width: 22px; height: 22px; border: 2px solid transparent;
+      border-radius: 50%; cursor: pointer; padding: 0;
+    }
+    .annotation-toolbar .color-btn.active {
+      border-color: var(--text); box-shadow: 0 0 0 2px var(--bg);
+    }
+    .annotation-toolbar .stroke-btn {
+      display: grid; width: 28px; height: 28px; place-items: center;
+      border: 1px solid transparent; border-radius: 6px;
+      background: transparent; color: var(--muted); cursor: pointer;
+    }
+    .annotation-toolbar .stroke-btn:hover { border-color: var(--border); }
+    .annotation-toolbar .stroke-btn.active {
+      border-color: var(--accent); color: var(--accent);
+    }
+    .annotation-toolbar .stroke-dot {
+      display: block; border-radius: 50%; background: currentColor;
+    }
+    .annotation-canvas-wrapper {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      min-height: 0; overflow: auto; padding: 8px; position: relative;
+    }
+    .annotation-canvas {
+      display: block; border: 1px solid var(--border); border-radius: 4px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.2);
+    }
+    .annotation-overlay {
+      cursor: crosshair;
+    }
+    .annotation-text-input {
+      position: absolute; z-index: 2; border: 1px dashed var(--accent);
+      background: rgba(0,0,0,.5); color: #fff; padding: 2px 4px;
+      font-family: "Segoe UI Variable", sans-serif; font-weight: 700;
+      outline: none; min-width: 60px; border-radius: 3px;
+    }
+    .annotation-footer {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 10px; border-top: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .annotation-footer .spacer { flex: 1; }
+    .annotation-footer .preview-hint {
+      color: var(--muted); font-size: 10px; line-height: 1.3;
+    }
+    .preview-overlay {
+      display: none; position: fixed; inset: 0; z-index: 41;
+      flex-direction: column; background: var(--bg);
+    }
+    .preview-overlay.visible { display: flex; }
+    .preview-header {
+      display: flex; align-items: center; gap: 8px;
+      min-height: 48px; padding: 6px 10px;
+      border-bottom: 1px solid var(--border); background: var(--surface);
+    }
+    .preview-header strong { flex: 1; font-size: 12px; font-weight: 700; }
+    .preview-body {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      min-height: 0; overflow: auto; padding: 12px;
+    }
+    .preview-body img {
+      max-width: 100%; max-height: 100%; border: 1px solid var(--border);
+      border-radius: 6px; box-shadow: 0 4px 20px rgba(0,0,0,.25);
+    }
+    .preview-footer {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px; border-top: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .preview-footer .spacer { flex: 1; }
+    .preview-footer .preview-meta {
+      color: var(--muted); font-size: 10px;
+    }
   </style>
 </head>
 <body>
@@ -426,7 +534,60 @@
       </section>
     </div>
   </aside>
+  <div class="annotation-overlay-wrapper" id="annotationOverlay">
+    <header class="annotation-header">
+      <button class="btn icon subtle" id="annotationCancelBtn" title="Cancel annotation" aria-label="Cancel annotation">←</button>
+      <strong>Annotate screenshot</strong>
+      <button class="btn" id="annotationUndoBtn" title="Undo (Ctrl+Z)" aria-label="Undo">Undo</button>
+      <button class="btn" id="annotationRedoBtn" title="Redo (Ctrl+Shift+Z)" aria-label="Redo">Redo</button>
+    </header>
+    <div class="annotation-toolbar" id="annotationToolbar">
+      <button class="tool-btn active" data-tool="pen" title="Pen"><svg viewBox="0 0 24 24"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
+      <button class="tool-btn" data-tool="arrow" title="Arrow"><svg viewBox="0 0 24 24"><path d="M5 19 19 5M15 5h4v4"/></svg></button>
+      <button class="tool-btn" data-tool="rect" title="Rectangle"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/></svg></button>
+      <button class="tool-btn" data-tool="text" title="Text"><svg viewBox="0 0 24 24"><path d="M6 4h12M12 4v16M8 20h8"/></svg></button>
+      <button class="tool-btn" data-tool="blur" title="Blur / Redact"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 3l18 18"/></svg></button>
+      <span class="sep"></span>
+      <button class="color-btn active" data-color="#ef4444" style="background:#ef4444" title="Red"></button>
+      <button class="color-btn" data-color="#f59e0b" style="background:#f59e0b" title="Yellow"></button>
+      <button class="color-btn" data-color="#22c55e" style="background:#22c55e" title="Green"></button>
+      <button class="color-btn" data-color="#3b82f6" style="background:#3b82f6" title="Blue"></button>
+      <button class="color-btn" data-color="#a855f7" style="background:#a855f7" title="Purple"></button>
+      <button class="color-btn" data-color="#ffffff" style="background:#ffffff" title="White"></button>
+      <button class="color-btn" data-color="#000000" style="background:#000000;border-color:#444" title="Black"></button>
+      <span class="sep"></span>
+      <button class="stroke-btn" data-stroke="thin" title="Thin"><span class="stroke-dot" style="width:6px;height:6px"></span></button>
+      <button class="stroke-btn active" data-stroke="medium" title="Medium"><span class="stroke-dot" style="width:10px;height:10px"></span></button>
+      <button class="stroke-btn" data-stroke="thick" title="Thick"><span class="stroke-dot" style="width:14px;height:14px"></span></button>
+      <span class="sep"></span>
+      <button class="tool-btn" id="annotationClearBtn" title="Clear all annotations"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M5 6v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6"/></svg></button>
+    </div>
+    <div class="annotation-canvas-wrapper" id="annotationCanvasWrapper"></div>
+    <footer class="annotation-footer">
+      <span class="preview-hint">Esc to cancel · Ctrl+Z undo</span>
+      <span class="spacer"></span>
+      <button class="btn" id="annotationSkipBtn">Skip annotation</button>
+      <button class="btn primary" id="annotationConfirmBtn">Preview &amp; Send</button>
+    </footer>
+  </div>
+
+  <div class="preview-overlay" id="previewOverlay">
+    <header class="preview-header">
+      <button class="btn icon subtle" id="previewBackBtn" title="Back to annotation" aria-label="Back to annotation">←</button>
+      <strong>Preview screenshot</strong>
+    </header>
+    <div class="preview-body"><img id="previewImage" alt="Annotated screenshot preview"></div>
+    <footer class="preview-footer">
+      <span class="preview-meta" id="previewMeta"></span>
+      <span class="spacer"></span>
+      <button class="btn" id="previewEditBtn">Edit</button>
+      <button class="btn" id="previewCancelBtn">Discard</button>
+      <button class="btn primary" id="previewSendBtn">Send screenshot</button>
+    </footer>
+  </div>
+
   <script src="markdown.js"></script>
+  <script src="annotation.js"></script>
   <script src="sidepanel.js"></script>
 </body>
 </html>
