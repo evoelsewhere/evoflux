@@ -215,6 +215,147 @@ def test_bitbucket_cloud_supports_bearer_and_basic_tokens():
 
 
 @pytest.mark.asyncio
+async def test_github_review_image_uses_connection_token(monkeypatch):
+    monkeypatch.setenv("GITHUB_IMAGE_TOKEN", "secret")
+    real_async_client = service.httpx.AsyncClient
+    seen = {}
+
+    def handle_request(request):
+        seen["url"] = str(request.url)
+        seen["authorization"] = request.headers.get("authorization")
+        return service.httpx.Response(
+            200,
+            headers={"Content-Type": "image/png"},
+            content=b"\x89PNG\r\n\x1a\nimage",
+        )
+
+    transport = service.httpx.MockTransport(handle_request)
+    monkeypatch.setattr(
+        service.httpx,
+        "AsyncClient",
+        lambda **kwargs: real_async_client(transport=transport, **kwargs),
+    )
+    connection = GitServerConnection(
+        name="GitHub",
+        provider="github",
+        base_url="https://api.github.com",
+        host="github.com",
+        scope="server",
+        token_env_var="GITHUB_IMAGE_TOKEN",
+    )
+    url = "https://github.com/user-attachments/assets/74005370-eae1-4552-afb1-0a1dfdd56924"
+
+    image = await service.fetch_code_review_image(connection, url)
+
+    assert image.media_type == "image/png"
+    assert image.content.startswith(b"\x89PNG")
+    assert seen == {"url": url, "authorization": "Bearer secret"}
+
+
+@pytest.mark.asyncio
+async def test_github_review_image_accepts_signed_asset_redirect(monkeypatch):
+    monkeypatch.setenv("GITHUB_IMAGE_TOKEN", "secret")
+    real_async_client = service.httpx.AsyncClient
+    signed_url = (
+        "https://github-production-user-asset-6210df.s3.amazonaws.com/"
+        "signed/image.png?X-Amz-Signature=value"
+    )
+
+    def handle_request(request):
+        return service.httpx.Response(302, headers={"Location": signed_url})
+
+    transport = service.httpx.MockTransport(handle_request)
+    monkeypatch.setattr(
+        service.httpx,
+        "AsyncClient",
+        lambda **kwargs: real_async_client(transport=transport, **kwargs),
+    )
+    connection = GitServerConnection(
+        name="GitHub",
+        provider="github",
+        base_url="https://api.github.com",
+        host="github.com",
+        scope="server",
+        token_env_var="GITHUB_IMAGE_TOKEN",
+    )
+
+    image = await service.fetch_code_review_image(
+        connection,
+        "https://github.com/user-attachments/assets/74005370-eae1-4552-afb1-0a1dfdd56924",
+    )
+
+    assert image == service.ReviewImageRedirect(url=signed_url)
+
+
+@pytest.mark.asyncio
+async def test_github_rendered_review_image_does_not_forward_token(monkeypatch):
+    monkeypatch.setenv("GITHUB_IMAGE_TOKEN", "secret")
+    real_async_client = service.httpx.AsyncClient
+    seen = {}
+
+    def handle_request(request):
+        seen["authorization"] = request.headers.get("authorization")
+        return service.httpx.Response(
+            200,
+            headers={"Content-Type": "image/png"},
+            content=b"\x89PNG\r\n\x1a\nimage",
+        )
+
+    transport = service.httpx.MockTransport(handle_request)
+    monkeypatch.setattr(
+        service.httpx,
+        "AsyncClient",
+        lambda **kwargs: real_async_client(transport=transport, **kwargs),
+    )
+    connection = GitServerConnection(
+        name="GitHub",
+        provider="github",
+        base_url="https://api.github.com",
+        host="github.com",
+        scope="server",
+        token_env_var="GITHUB_IMAGE_TOKEN",
+    )
+    url = (
+        "https://private-user-images.githubusercontent.com/123747604/"
+        "626907679-74005370-eae1-4552-afb1-0a1dfdd56924.png?jwt=signed"
+    )
+
+    image = await service.fetch_code_review_image(connection, url)
+
+    assert image.media_type == "image/png"
+    assert seen["authorization"] is None
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://example.com/user-attachments/assets/74005370-eae1-4552-afb1-0a1dfdd56924",
+        "https://github.com.evil.test/user-attachments/assets/74005370-eae1-4552-afb1-0a1dfdd56924",
+        "https://github.com/acme/repo/raw/main/image.png",
+    ],
+)
+def test_github_review_image_rejects_untrusted_urls(url):
+    connection = GitServerConnection(
+        name="GitHub",
+        provider="github",
+        base_url="https://api.github.com",
+        host="github.com",
+        scope="server",
+        token_env_var="GITHUB_IMAGE_TOKEN",
+    )
+
+    with pytest.raises(service.GitServerApiError, match="Unsupported"):
+        service._validated_review_image_url(connection, url)
+
+
+def test_github_review_image_rejects_untrusted_redirect():
+    with pytest.raises(service.GitServerApiError, match="unsafe image redirect"):
+        service._validated_review_image_redirect_url(
+            "https://github-production-user-asset.evil.test/image.png"
+        )
+
+
+@pytest.mark.asyncio
 async def test_github_list_is_normalized_and_uses_api_not_cli(
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -319,6 +460,8 @@ async def test_github_review_context_reads_files_and_both_comment_streams(
 ):
     monkeypatch.setenv("GITHUB_CONTEXT_TOKEN", "secret")
     paths: list[str] = []
+    review_headers = {}
+    comment_headers: dict[str, dict[str, str]] = {}
 
     async def fake_request(
         connection,
@@ -328,6 +471,7 @@ async def test_github_review_context_reads_files_and_both_comment_streams(
         params=None,
         method="GET",
         json_body=None,
+        extra_headers=None,
     ):
         paths.append(path)
         if path.endswith("/files"):
@@ -344,11 +488,21 @@ async def test_github_review_context_reads_files_and_both_comment_streams(
         if path.endswith("/check-runs"):
             return {"check_runs": [{"id": 9, "name": "tests", "conclusion": "success"}]}
         if path.endswith("/comments"):
-            return [{"id": 3, "body": "Looks good", "user": {"login": "octocat"}}]
+            comment_headers[path] = extra_headers or {}
+            return [
+                {
+                    "id": 3,
+                    "body": "Looks **good**",
+                    "body_html": "<p>Looks <strong>good</strong></p>",
+                    "user": {"login": "octocat"},
+                }
+            ]
+        review_headers.update(extra_headers or {})
         return {
             "number": 42,
             "title": "Ship it",
             "body": "Adds the release workflow.",
+            "body_html": "<p>Adds the <strong>release</strong> workflow.</p>",
             "state": "open",
             "user": {"login": "author"},
             "created_at": "2026-07-20T08:00:00Z",
@@ -383,7 +537,7 @@ async def test_github_review_context_reads_files_and_both_comment_streams(
     assert context["review"]["number"] == 42
     assert context["changes"][0]["filename"] == "app.py"
     assert context["summary"] == {
-        "description": "Adds the release workflow.",
+        "description": "<p>Adds the <strong>release</strong> workflow.</p>",
         "author": "author",
         "created_at": "2026-07-20T08:00:00Z",
         "updated_at": "2026-07-21T09:30:00Z",
@@ -399,9 +553,19 @@ async def test_github_review_context_reads_files_and_both_comment_streams(
     assert len(context["comments"]) == 2
     assert context["comments"][0]["stable_id"].startswith("github:")
     assert context["comments"][0]["author"] == "octocat"
+    assert context["comments"][0]["body"] == "<p>Looks <strong>good</strong></p>"
     assert context["approvals"][0]["state"] == "approved"
     assert context["checks"]["summary"] == "success"
     assert context["capabilities"]["resolve_thread"] is False
+    assert review_headers == {"Accept": "application/vnd.github.full+json"}
+    assert comment_headers == {
+        "repos/acme/repo/issues/42/comments": {
+            "Accept": "application/vnd.github.full+json"
+        },
+        "repos/acme/repo/pulls/42/comments": {
+            "Accept": "application/vnd.github.full+json"
+        },
+    }
     assert paths == [
         "repos/acme/repo/pulls/42",
         "repos/acme/repo/pulls/42/files",

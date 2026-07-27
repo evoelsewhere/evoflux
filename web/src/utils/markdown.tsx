@@ -12,6 +12,8 @@ import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeHighlight from 'rehype-highlight'
 import rehypeKatex from 'rehype-katex'
+import rehypeRaw from 'rehype-raw'
+import rehypeSanitize from 'rehype-sanitize'
 import 'katex/dist/katex.min.css'
 import { Copy, Check, ImageOff, FileVideo } from 'lucide-react'
 import { resolveApiUrl } from '@/api/client'
@@ -397,11 +399,15 @@ export const MarkdownBlock = memo(function MarkdownBlock({
   sessionId,
   isStreaming,
   onLinkClick,
+  allowHtml,
+  transformImageSrc,
 }: {
   content: string
   sessionId?: string
   isStreaming?: boolean
   onLinkClick?: (href: string) => boolean
+  allowHtml?: boolean
+  transformImageSrc?: (src: string) => string
 }) {
   // Trailing-edge throttle: while streaming, coalesce chunks arriving within
   // one window into a single flush of the latest content at the window
@@ -463,32 +469,50 @@ export const MarkdownBlock = memo(function MarkdownBlock({
           </CodeBlock>
         )
       },
-      a: ({ onClick, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
-        <a
-          {...props}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(event) => {
-            onClick?.(event)
-            if (
-              !event.defaultPrevented &&
-              typeof props.href === 'string' &&
-              onLinkClick?.(props.href)
-            ) {
-              event.preventDefault()
-            }
-          }}
-        />
-      ),
-      img: ({ src, alt, title }: React.ImgHTMLAttributes<HTMLImageElement>) => (
-        <MarkdownImage
-          src={resolveImageSrc(typeof src === 'string' ? src : undefined, sessionId)}
-          alt={alt ?? ''}
-          title={typeof title === 'string' ? title : undefined}
-        />
-      ),
+      a: ({ onClick, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => {
+        if (
+          allowHtml &&
+          typeof props.href === 'string' &&
+          transformImageSrc &&
+          transformImageSrc(props.href) !== props.href
+        ) {
+          return <>{children}</>
+        }
+        return (
+          <a
+            {...props}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(event) => {
+              onClick?.(event)
+              if (
+                !event.defaultPrevented &&
+                typeof props.href === 'string' &&
+                onLinkClick?.(props.href)
+              ) {
+                event.preventDefault()
+              }
+            }}
+          >
+            {children}
+          </a>
+        )
+      },
+      img: ({ src, alt, title }: React.ImgHTMLAttributes<HTMLImageElement>) => {
+        const resolvedSrc = resolveImageSrc(
+          typeof src === 'string' ? src : undefined,
+          sessionId,
+        )
+        return (
+          <MarkdownImage
+            src={resolvedSrc && transformImageSrc ? transformImageSrc(resolvedSrc) : resolvedSrc}
+            alt={alt ?? ''}
+            title={typeof title === 'string' ? title : undefined}
+          />
+        )
+      },
     }),
-    [onLinkClick, sessionId],
+    [allowHtml, onLinkClick, sessionId, transformImageSrc],
   )
 
   // Me: fixNestedFences is pure; memoize so we don't re-walk the whole
@@ -499,7 +523,7 @@ export const MarkdownBlock = memo(function MarkdownBlock({
     <div className="oa-prose text-sm">
       <ReactMarkdown
         remarkPlugins={_REMARK_PLUGINS}
-        rehypePlugins={_REHYPE_PLUGINS}
+        rehypePlugins={allowHtml ? _REHYPE_PLUGINS_WITH_HTML : _REHYPE_PLUGINS}
         components={components}
       >
         {fixedContent}
@@ -522,4 +546,9 @@ const _HIGHLIGHT_SUBSET = [
 const _REHYPE_PLUGINS: React.ComponentProps<typeof ReactMarkdown>['rehypePlugins'] = [
   [rehypeHighlight, { detect: true, subset: _HIGHLIGHT_SUBSET }],
   rehypeKatex,
+]
+const _REHYPE_PLUGINS_WITH_HTML: React.ComponentProps<typeof ReactMarkdown>['rehypePlugins'] = [
+  rehypeRaw,
+  rehypeSanitize,
+  ..._REHYPE_PLUGINS,
 ]
