@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-app-browser-webview-agent-action"
+description = "Enables the app_browser_webview_agent_action command without any pre-configured scope."
+commands.allow = ["app_browser_webview_agent_action"]
+
+[[permission]]
+identifier = "deny-app-browser-webview-agent-action"
+description = "Denies the app_browser_webview_agent_action command without any pre-configured scope."
+commands.deny = ["app_browser_webview_agent_action"]

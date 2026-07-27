@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-app-browser-webview-url"
+description = "Enables the app_browser_webview_url command without any pre-configured scope."
+commands.allow = ["app_browser_webview_url"]
+
+[[permission]]
+identifier = "deny-app-browser-webview-url"
+description = "Denies the app_browser_webview_url command without any pre-configured scope."
+commands.deny = ["app_browser_webview_url"]

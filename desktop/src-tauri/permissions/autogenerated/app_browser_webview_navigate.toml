@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-app-browser-webview-navigate"
+description = "Enables the app_browser_webview_navigate command without any pre-configured scope."
+commands.allow = ["app_browser_webview_navigate"]
+
+[[permission]]
+identifier = "deny-app-browser-webview-navigate"
+description = "Denies the app_browser_webview_navigate command without any pre-configured scope."
+commands.deny = ["app_browser_webview_navigate"]

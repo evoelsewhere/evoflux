@@ -40,6 +40,7 @@ switch_tab — Switch to a tab by index.
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from collections import deque
 from typing import Annotated, Any, Literal
@@ -97,7 +98,9 @@ async def _attach_observability(sid: str, session: Any) -> None:
         # requestId → {method, url} so responses/failures can name their request.
         pending: dict[str, dict[str, str]] = {}
 
-        async def on_console(event: dict[str, Any], session_id: str | None = None) -> None:
+        async def on_console(
+            event: dict[str, Any], session_id: str | None = None
+        ) -> None:
             args = event.get("args", [])
             console_buf.append(
                 {
@@ -107,7 +110,9 @@ async def _attach_observability(sid: str, session: Any) -> None:
                 }
             )
 
-        async def on_exception(event: dict[str, Any], session_id: str | None = None) -> None:
+        async def on_exception(
+            event: dict[str, Any], session_id: str | None = None
+        ) -> None:
             details = event.get("exceptionDetails", {})
             exc = details.get("exception") or {}
             text = exc.get("description") or details.get("text") or "Uncaught exception"
@@ -115,7 +120,9 @@ async def _attach_observability(sid: str, session: Any) -> None:
                 {"ts": time.time(), "level": "error", "text": str(text)[:2000]}
             )
 
-        async def on_request(event: dict[str, Any], session_id: str | None = None) -> None:
+        async def on_request(
+            event: dict[str, Any], session_id: str | None = None
+        ) -> None:
             req = event.get("request", {})
             rid = event.get("requestId", "")
             if len(pending) > _NETWORK_BUFFER:
@@ -125,7 +132,9 @@ async def _attach_observability(sid: str, session: Any) -> None:
                 "url": req.get("url", "?"),
             }
 
-        async def on_response(event: dict[str, Any], session_id: str | None = None) -> None:
+        async def on_response(
+            event: dict[str, Any], session_id: str | None = None
+        ) -> None:
             rid = event.get("requestId", "")
             req = pending.pop(rid, None) or {}
             resp = event.get("response", {})
@@ -139,7 +148,9 @@ async def _attach_observability(sid: str, session: Any) -> None:
                 }
             )
 
-        async def on_failed(event: dict[str, Any], session_id: str | None = None) -> None:
+        async def on_failed(
+            event: dict[str, Any], session_id: str | None = None
+        ) -> None:
             rid = event.get("requestId", "")
             req = pending.pop(rid, None) or {}
             network_buf.append(
@@ -500,7 +511,9 @@ class ConsoleAction(BaseModel):
         default="all",
         description="'error' = errors only, 'warn' = warnings + errors.",
     )
-    limit: int = Field(default=50, ge=1, le=200, description="Max entries, newest last.")
+    limit: int = Field(
+        default=50, ge=1, le=200, description="Max entries, newest last."
+    )
 
 
 class NetworkAction(BaseModel):
@@ -509,7 +522,9 @@ class NetworkAction(BaseModel):
         default="all",
         description="'failed' = only 4xx/5xx responses and network errors.",
     )
-    limit: int = Field(default=50, ge=1, le=200, description="Max entries, newest last.")
+    limit: int = Field(
+        default=50, ge=1, le=200, description="Max entries, newest last."
+    )
 
 
 class ScreenshotAction(BaseModel):
@@ -603,9 +618,9 @@ AnyAction = Annotated[
 # ---------------------------------------------------------------------------
 
 _DESCRIPTION = """\
-Control a headless Chromium browser. Pass one or more actions in a single call;
-they are executed in order. The session persists across calls (auto-started on
-first action); close with ``stop`` when done.
+Control a browser. When the EvoFlux desktop Browser panel is connected, actions
+operate on the exact user-visible tab; otherwise they use a headless Chromium
+fallback. Pass one or more actions in a single call; they execute in order.
 
 Observation (prefer these over screenshots):
 snapshot   — Indexed map of interactive elements + page structure. Use the
@@ -641,7 +656,19 @@ async def browser_use(
     ],
     _state: Annotated[Any, InjectedArg()] = None,
 ) -> str | ToolResult:
-    """Control a headless Chromium browser for web automation."""
+    """Control the connected desktop browser or a headless fallback."""
+    sid = _get_sid(_state)
+    from app.services.direct_browser_bridge import direct_browser_bridge
+
+    if (
+        not direct_browser_bridge.is_connected(sid)
+        and direct_browser_bridge.is_available(sid)
+        and await direct_browser_bridge.request_mount(sid)
+    ):
+        await direct_browser_bridge.wait_connected(sid)
+    if direct_browser_bridge.is_connected(sid):
+        return await _run_direct_browser(actions, sid)
+
     # Handlers return ``str`` for text output or ``ToolResult`` for
     # multimodal output (screenshots). Batches mixing both are folded into
     # one ToolResult so vision models receive the images inline.
@@ -677,6 +704,32 @@ async def browser_use(
             text_acc.append(r)
     _flush()
     return ToolResult(parts=parts)
+
+
+async def _run_direct_browser(actions: list[AnyAction], session_id: str) -> str:
+    """Run a browser-use batch against the user-visible desktop WebView."""
+    from app.services.direct_browser_bridge import direct_browser_bridge
+
+    results: list[str] = []
+    for action in actions:
+        params = action.model_dump(exclude_none=True)
+        params.pop("action", None)
+        try:
+            result = await direct_browser_bridge.request(
+                session_id,
+                action.action,
+                params,
+            )
+            if isinstance(result, str):
+                results.append(result)
+            elif result is None:
+                results.append(f"{action.action} completed")
+            else:
+                results.append(json.dumps(result, ensure_ascii=False, indent=2))
+        except Exception as exc:
+            logger.debug("direct_browser_error action={} error={}", action.action, exc)
+            results.append(f"Error ({action.action}): {exc}")
+    return "\n---\n".join(results) if results else "No actions executed."
 
 
 async def _dispatch(act: Any, state: Any) -> str | ToolResult:
@@ -868,9 +921,7 @@ async def _handle_snapshot(act: SnapshotAction, session: Any, page: Any) -> str:
     The [index] numbers in the output feed ``click``/``fill`` via ``index``;
     they stay valid until the next snapshot or navigation.
     """
-    state_summary = await session.get_browser_state_summary(
-        include_screenshot=False
-    )
+    state_summary = await session.get_browser_state_summary(include_screenshot=False)
     dom_text = state_summary.dom_state.llm_representation()
     header = f"URL: {state_summary.url}\nTitle: {state_summary.title}\n"
     body = _truncate(dom_text, act.max_chars, hint="raise max_chars if needed")

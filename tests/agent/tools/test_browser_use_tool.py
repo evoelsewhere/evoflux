@@ -85,7 +85,9 @@ class _FakeSession:
 
     async def get_browser_state_summary(self, include_screenshot: bool = True):
         dom_state = SimpleNamespace(
-            llm_representation=lambda: "[1]<button>Save</button>\n[2]<input placeholder=Name />"
+            llm_representation=lambda: (
+                "[1]<button>Save</button>\n[2]<input placeholder=Name />"
+            )
         )
         return SimpleNamespace(
             dom_state=dom_state, url="http://localhost:5180/", title="Demo"
@@ -216,7 +218,9 @@ async def test_click_by_stale_index_asks_for_snapshot():
 
 @pytest.mark.asyncio
 async def test_click_requires_index_or_selector():
-    out = await bt._handle_click(bt.ClickAction(action="click"), _FakePage(), _FakeState())
+    out = await bt._handle_click(
+        bt.ClickAction(action="click"), _FakePage(), _FakeState()
+    )
     assert "Provide either" in out
 
 
@@ -274,6 +278,70 @@ async def test_batch_text_only_returns_string(monkeypatch):
     )
     assert isinstance(result, str)
     assert "no console messages" in result
+
+
+@pytest.mark.asyncio
+async def test_browser_use_prefers_connected_direct_browser(monkeypatch):
+    from app.services.direct_browser_bridge import direct_browser_bridge
+
+    seen: list[tuple[str, str, dict]] = []
+    monkeypatch.setattr(direct_browser_bridge, "is_connected", lambda sid: True)
+
+    async def fake_request(session_id, action, params, **_kwargs):
+        seen.append((session_id, action, params))
+        return f"direct:{action}"
+
+    monkeypatch.setattr(direct_browser_bridge, "request", fake_request)
+
+    async def fail_headless(_state):
+        raise AssertionError("headless browser must not start")
+
+    monkeypatch.setattr(bt, "_get_session", fail_headless)
+
+    result = await bt.browser_use.arun(
+        _injected={"_state": _FakeState("desktop-session")},
+        actions=[
+            {"action": "navigate", "url": "https://example.com"},
+            {"action": "snapshot"},
+        ],
+    )
+
+    assert result == "direct:navigate\n---\ndirect:snapshot"
+    assert seen == [
+        ("desktop-session", "navigate", {"url": "https://example.com"}),
+        ("desktop-session", "snapshot", {"max_chars": 15_000}),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_browser_use_mounts_available_desktop_browser(monkeypatch):
+    from app.services.direct_browser_bridge import direct_browser_bridge
+
+    connected = False
+    monkeypatch.setattr(direct_browser_bridge, "is_available", lambda _sid: True)
+    monkeypatch.setattr(direct_browser_bridge, "is_connected", lambda _sid: connected)
+
+    async def request_mount(_sid):
+        return True
+
+    async def wait_connected(_sid):
+        nonlocal connected
+        connected = True
+        return True
+
+    async def request(_sid, action, _params, **_kwargs):
+        return f"direct:{action}"
+
+    monkeypatch.setattr(direct_browser_bridge, "request_mount", request_mount)
+    monkeypatch.setattr(direct_browser_bridge, "wait_connected", wait_connected)
+    monkeypatch.setattr(direct_browser_bridge, "request", request)
+
+    result = await bt.browser_use.arun(
+        _injected={"_state": _FakeState("desktop-session")},
+        actions=[{"action": "snapshot"}],
+    )
+
+    assert result == "direct:snapshot"
 
 
 # ── resize ───────────────────────────────────────────────────────────────────

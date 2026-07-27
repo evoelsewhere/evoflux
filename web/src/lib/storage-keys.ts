@@ -60,6 +60,10 @@ export const STORAGE_KEYS = {
     soundEnabled: 'oa-desktop-notifications-sound-enabled',
   },
 
+  browser: {
+    preferences: 'oa.browser.preferences',
+  },
+
   /** sessionStorage, not localStorage — ephemeral one-shot handoffs. */
   aimHandoff: {
     pipelinePrefill: 'oa-aim-pipeline-prefill',

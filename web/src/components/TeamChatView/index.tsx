@@ -67,6 +67,7 @@ import { type InputBarHandle } from '../InputBar'
 import { FloatingInputBar } from '../FloatingInputBar'
 import { SideChatPanel } from '../SideChatPanel'
 import { BrowserViewer } from '@/components/BrowserViewer'
+import { useDirectBrowserPresence } from '@/components/BrowserViewer/useDirectBrowserPresence'
 import { TerminalPanel } from '@/components/TerminalPanel'
 import { WikiPanel } from '@/components/WikiPanel'
 import { SchedulerPanel } from '@/components/SchedulerPanel'
@@ -176,6 +177,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const isTeamWorking  = useTeamStore((s) => s.isTeamWorking)
   const isContinuing   = useTeamStore((s) => s.isContinuing)
   const sessionIdState = useTeamStore((s) => s.sessionId)
+  useDirectBrowserPresence(sessionIdState)
   const projectIdState = useTeamStore((s) => s.projectId)
   // A project session isn't "in" any one repo — chat-level UI (empty state,
   // composer placeholder) must reflect the project, not the primary repo
@@ -212,6 +214,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const sideChatOpen = workbenchTabs.some((tab) => tab.tool === 'side-chat')
   const toggleWiki = useUIStore((s) => s.toggleWiki)
   const toggleScheduler = useUIStore((s) => s.toggleScheduler)
+  const toggleBrowser = useUIStore((s) => s.toggleBrowser)
   const toggleTerminal = useUIStore((s) => s.toggleTerminal)
 
   useEffect(() => {
@@ -863,6 +866,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
     // Ctrl+M / Ctrl+S — open the wiki / scheduler drawers (state in useUIStore).
     m: toggleWiki,
     s: toggleScheduler,
+    t: toggleBrowser,
     // Ctrl+` — toggle the AI Terminal (conventional terminal shortcut).
     '`': toggleTerminal,
     // Ctrl+I — focus the chat input (dispatched via CustomEvent so future

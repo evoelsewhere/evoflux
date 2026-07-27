@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Maximize2, Minimize2, Plus, X } from 'lucide-react'
 import { useResizableWidth } from '@/hooks/use-resizable-width'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { panelTransition, staggerDelay, useMotionPreset } from '@/lib/motion'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 import { cn } from '@/lib/utils'
@@ -40,13 +41,14 @@ export function WorkbenchDock({
   const showLauncher = useUIStore((state) => state.showWorkbenchLauncher)
   const toggleMaximized = useUIStore((state) => state.toggleWorkbenchMaximized)
   const motionPreset = useMotionPreset()
+  const isMobile = useIsMobile()
   const resizable = useResizableWidth({
     storageKey: STORAGE_KEYS.panels.workbench,
     defaultWidth: 540,
     minWidth: 360,
     maxWidth: 1080,
     edge: 'left',
-    disabled: maximized,
+    disabled: maximized || isMobile,
   })
 
   return (
@@ -61,7 +63,7 @@ export function WorkbenchDock({
         x: 18 * motionPreset.distance,
       }}
       animate={{
-        width: maximized ? '100%' : resizable.width,
+        width: maximized || isMobile ? '100%' : resizable.width,
         opacity: 1,
         x: 0,
       }}
@@ -72,13 +74,16 @@ export function WorkbenchDock({
       }}
       transition={resizable.isResizing ? { duration: 0 } : panelTransition(motionPreset)}
       className={cn(
-        'relative flex h-full min-h-0 min-w-0 shrink-0 flex-col overflow-hidden border-l border-(--color-border) bg-(--bg-page) will-change-[width,transform,opacity]',
-        maximized && 'flex-1',
+        'flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-l border-(--color-border) bg-(--bg-page) will-change-[width,transform,opacity]',
+        isMobile
+          ? 'mobile-safe-top fixed inset-x-0 bottom-0 z-(--z-overlay) h-auto w-full max-w-none'
+          : 'relative shrink-0',
+        maximized && !isMobile && 'flex-1',
         className,
       )}
       aria-label="Workbench tools"
     >
-      {!maximized && (
+      {!maximized && !isMobile && (
         <div
           role="separator"
           aria-orientation="vertical"
