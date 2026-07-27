@@ -14,19 +14,58 @@ function cssVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
 }
 
+function resolveMonacoTokenHex(value: string): string | null {
+  const color = value.trim()
+  const hex = color.replace(/^#/, '')
+  if (/^[0-9a-f]{3}$/i.test(hex)) {
+    return [...hex].map((digit) => digit.repeat(2)).join('').toUpperCase()
+  }
+  if (/^[0-9a-f]{6}$/i.test(hex)) return hex.toUpperCase()
+
+  if (typeof document === 'undefined') return null
+  const context = document.createElement('canvas').getContext('2d')
+  if (!context) return null
+
+  // Invalid assignments leave fillStyle unchanged. Two different sentinels
+  // distinguish that case without relying on a browser-specific color parser.
+  context.fillStyle = '#010203'
+  context.fillStyle = color
+  const first = context.fillStyle
+  context.fillStyle = '#040506'
+  context.fillStyle = color
+  if (context.fillStyle !== first) return null
+
+  context.clearRect(0, 0, 1, 1)
+  context.fillStyle = color
+  context.fillRect(0, 0, 1, 1)
+  const [red, green, blue] = context.getImageData(0, 0, 1, 1).data
+  return [red, green, blue]
+    .map((channel) => channel.toString(16).padStart(2, '0'))
+    .join('')
+    .toUpperCase()
+}
+
+export function toMonacoTokenHex(value: string, fallback: string): string {
+  return resolveMonacoTokenHex(value) ?? resolveMonacoTokenHex(fallback) ?? 'FFFFFF'
+}
+
+function tokenColor(cssVariable: string, fallback: string): string {
+  return toMonacoTokenHex(cssVar(cssVariable), fallback)
+}
+
 function defineDarkTheme(monaco: Monaco) {
   monaco.editor.defineTheme(DARK_THEME, {
     base: 'vs-dark',
     inherit: true,
     rules: [
-      { token: 'comment', foreground: cssVar('--color-syn-comment').replace('#', '') },
-      { token: 'keyword', foreground: cssVar('--color-syn-keyword').replace('#', '') },
-      { token: 'string', foreground: cssVar('--color-syn-string').replace('#', '') },
-      { token: 'number', foreground: cssVar('--color-syn-number').replace('#', '') },
-      { token: 'type', foreground: cssVar('--color-syn-type').replace('#', '') },
-      { token: 'variable', foreground: cssVar('--color-syn-variable').replace('#', '') },
-      { token: 'function', foreground: cssVar('--color-syn-function').replace('#', '') },
-      { token: 'operator', foreground: cssVar('--color-syn-operator').replace('#', '') },
+      { token: 'comment', foreground: tokenColor('--color-syn-comment', '7B828A') },
+      { token: 'keyword', foreground: tokenColor('--color-syn-keyword', 'FF7B72') },
+      { token: 'string', foreground: tokenColor('--color-syn-string', 'A5D6FF') },
+      { token: 'number', foreground: tokenColor('--color-syn-number', '79C0FF') },
+      { token: 'type', foreground: tokenColor('--color-syn-type', '7EE787') },
+      { token: 'variable', foreground: tokenColor('--color-syn-variable', 'FFA657') },
+      { token: 'function', foreground: tokenColor('--color-syn-function', 'D2A8FF') },
+      { token: 'operator', foreground: tokenColor('--color-syn-operator', '8B949E') },
     ],
     colors: {
       'editor.background': cssVar('--bg-card'),
@@ -55,14 +94,14 @@ function defineLightTheme(monaco: Monaco) {
     base: 'vs',
     inherit: true,
     rules: [
-      { token: 'comment', foreground: cssVar('--color-syn-comment').replace('#', '') },
-      { token: 'keyword', foreground: cssVar('--color-syn-keyword').replace('#', '') },
-      { token: 'string', foreground: cssVar('--color-syn-string').replace('#', '') },
-      { token: 'number', foreground: cssVar('--color-syn-number').replace('#', '') },
-      { token: 'type', foreground: cssVar('--color-syn-type').replace('#', '') },
-      { token: 'variable', foreground: cssVar('--color-syn-variable').replace('#', '') },
-      { token: 'function', foreground: cssVar('--color-syn-function').replace('#', '') },
-      { token: 'operator', foreground: cssVar('--color-syn-operator').replace('#', '') },
+      { token: 'comment', foreground: tokenColor('--color-syn-comment', '6B7280') },
+      { token: 'keyword', foreground: tokenColor('--color-syn-keyword', 'CF222E') },
+      { token: 'string', foreground: tokenColor('--color-syn-string', '0A3069') },
+      { token: 'number', foreground: tokenColor('--color-syn-number', '0550AE') },
+      { token: 'type', foreground: tokenColor('--color-syn-type', '116329') },
+      { token: 'variable', foreground: tokenColor('--color-syn-variable', '953800') },
+      { token: 'function', foreground: tokenColor('--color-syn-function', '8250DF') },
+      { token: 'operator', foreground: tokenColor('--color-syn-operator', '737373') },
     ],
     colors: {
       'editor.background': cssVar('--bg-card'),
