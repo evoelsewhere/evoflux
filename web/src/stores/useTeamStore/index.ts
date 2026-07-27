@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
-import { cancelQueuedTeamMessage, postTeamChat, postTeamCommand, teamStream, teamStatus, teamHistory } from '@/api/client'
+import { cancelQueuedTeamMessage, getRegistry, postTeamChat, postTeamCommand, teamStream, teamStatus, teamHistory } from '@/api/client'
+import { queryClient } from '@/lib/query-client'
+import { queryKeys } from '@/queries/keys'
 import { parseTeamBlocks, sumUsageFromMessages } from '@/utils/messages'
 import { createDefaultAgentStream } from './defaults'
 import { applyRevertBoundary, revokeBlobUrlsFromBlocks } from './helpers'
@@ -50,6 +52,14 @@ function fastModeFromMessages(messages: MessageResponse[]): boolean {
 
 function effectiveLeadModel(state: TeamStore, leadName: string | null, requestedModel?: string | null): string | null {
   return requestedModel ?? state.sessionModel ?? (leadName ? state.agentStreams[leadName]?.model : null) ?? null
+}
+
+function availableModelRegistry() {
+  return queryClient.fetchQuery({
+    queryKey: queryKeys.agentFiles.registry(),
+    queryFn: getRegistry,
+    staleTime: Infinity,
+  }).catch(() => null)
 }
 
 function hasVisibleBlocks(stream: AgentStream | undefined): boolean {
@@ -259,6 +269,55 @@ export const useTeamStore = create<TeamStore>()(
     },
 
     sendMessage: async (content: string, files?: File[], options?: { mode?: string; workspace?: string | null; model?: string | null; thinkingLevel?: string | null; fastMode?: boolean; shell?: boolean; webBridgeEnabled?: boolean }) => {
+      let resolvedOptions = options
+      const current = get()
+      if (current.sessionId) {
+        const registry = await availableModelRegistry()
+        if (registry) {
+          const currentModel = effectiveLeadModel(current, current.leadName, options?.model)
+          const currentModelAvailable = Boolean(
+            currentModel && registry.models.some((model) => model.id === currentModel),
+          )
+          const fallbackModel = registry.models[0]?.id ?? null
+
+          if (!fallbackModel) {
+            set((draft) => {
+              draft.error = null
+              draft.setupRequired = {
+                agent: current.leadName ?? 'lead',
+                message: currentModel
+                  ? `The selected model ${currentModel} is no longer available. Configure a model provider to continue.`
+                  : 'No model is currently available. Configure a model provider to continue.',
+                action: { type: 'open_settings', tab: 'providers' },
+              }
+            })
+            return
+          }
+
+          if (!currentModelAvailable) {
+            resolvedOptions = {
+              ...options,
+              model: fallbackModel,
+              thinkingLevel: null,
+              fastMode: false,
+            }
+            set((draft) => {
+              draft.sessionModel = fallbackModel
+              draft.sessionThinkingLevel = null
+              draft.sessionFastMode = false
+              draft.setupRequired = null
+            })
+            useToastStore.getState().push({
+              tone: 'info',
+              title: 'Session model changed',
+              description: currentModel
+                ? `${currentModel} is no longer available. Using ${fallbackModel}.`
+                : `Using ${fallbackModel}.`,
+            })
+          }
+        }
+      }
+
       const { leadName, agentStreams } = get()
       const leadWorking = leadName ? agentStreams[leadName]?.status === 'working' : false
 
@@ -275,21 +334,21 @@ export const useTeamStore = create<TeamStore>()(
             get().sessionId,
             false,
             files,
-            options?.mode ?? 'forge',
-            options?.workspace ?? null,
-            options?.model ?? get().sessionModel,
-            options?.thinkingLevel ?? get().sessionThinkingLevel,
-            options?.shell ?? false,
-            options?.fastMode ?? get().sessionFastMode,
-            options?.webBridgeEnabled,
+            resolvedOptions?.mode ?? 'forge',
+            resolvedOptions?.workspace ?? null,
+            resolvedOptions?.model ?? get().sessionModel,
+            resolvedOptions?.thinkingLevel ?? get().sessionThinkingLevel,
+            resolvedOptions?.shell ?? false,
+            resolvedOptions?.fastMode ?? get().sessionFastMode,
+            resolvedOptions?.webBridgeEnabled,
           )
           if (result.status === 'queued' && !result.message_id) {
             throw new Error('Backend did not return a queued message id')
           }
           set((draft) => {
             draft.sessionId = result.session_id
-            draft.sessionModel = options?.model ?? get().sessionModel
-            draft.sessionThinkingLevel = options?.thinkingLevel ?? get().sessionThinkingLevel
+            draft.sessionModel = resolvedOptions?.model ?? get().sessionModel
+            draft.sessionThinkingLevel = resolvedOptions?.thinkingLevel ?? get().sessionThinkingLevel
             draft._pendingMessages.push({
               id: result.message_id ?? '',
               sessionId: result.session_id,
@@ -329,8 +388,8 @@ export const useTeamStore = create<TeamStore>()(
         })
         if (leadName && draft.agentStreams[leadName]) {
           draft.agentStreams[leadName]._turnStartedAt = submittedAt
-          const effectiveModel = effectiveLeadModel(draft, leadName, options?.model)
-          const effectiveThinkingLevel = options?.thinkingLevel ?? draft.sessionThinkingLevel
+          const effectiveModel = effectiveLeadModel(draft, leadName, resolvedOptions?.model)
+          const effectiveThinkingLevel = resolvedOptions?.thinkingLevel ?? draft.sessionThinkingLevel
           draft.agentStreams[leadName].currentBlocks.push({
             id: `user-${Date.now()}`,
             type: 'user',
@@ -340,8 +399,8 @@ export const useTeamStore = create<TeamStore>()(
             extra: {
               ...(effectiveModel ? { model: effectiveModel } : {}),
               ...(effectiveThinkingLevel ? { thinking_level: effectiveThinkingLevel } : {}),
-              ...((options?.fastMode ?? draft.sessionFastMode) ? { service_tier: 'fast' } : {}),
-              ...(options?.shell ? { kind: 'user_shell', command: content.replace(/^!/, '').trim() } : {}),
+              ...((resolvedOptions?.fastMode ?? draft.sessionFastMode) ? { service_tier: 'fast' } : {}),
+              ...(resolvedOptions?.shell ? { kind: 'user_shell', command: content.replace(/^!/, '').trim() } : {}),
             },
           })
         }
@@ -353,23 +412,23 @@ export const useTeamStore = create<TeamStore>()(
           get().sessionId,
           false,
           files,
-          options?.mode ?? 'forge',
-          options?.workspace ?? null,
-          options?.model ?? get().sessionModel,
-          options?.thinkingLevel ?? get().sessionThinkingLevel,
-          options?.shell ?? false,
-          options?.fastMode ?? get().sessionFastMode,
-          options?.webBridgeEnabled,
+          resolvedOptions?.mode ?? 'forge',
+          resolvedOptions?.workspace ?? null,
+          resolvedOptions?.model ?? get().sessionModel,
+          resolvedOptions?.thinkingLevel ?? get().sessionThinkingLevel,
+          resolvedOptions?.shell ?? false,
+          resolvedOptions?.fastMode ?? get().sessionFastMode,
+          resolvedOptions?.webBridgeEnabled,
         )
         set((draft) => {
           draft.sessionId = result.session_id
-          draft.sessionModel = options?.model ?? get().sessionModel
-          draft.sessionThinkingLevel = options?.thinkingLevel ?? get().sessionThinkingLevel
+          draft.sessionModel = resolvedOptions?.model ?? get().sessionModel
+          draft.sessionThinkingLevel = resolvedOptions?.thinkingLevel ?? get().sessionThinkingLevel
           draft._pendingMessages.forEach((msg) => {
             if (msg.sessionId === null || msg.sessionId === undefined) msg.sessionId = result.session_id
           })
-          if (options?.workspace) {
-            draft._workspace = options.workspace
+          if (resolvedOptions?.workspace) {
+            draft._workspace = resolvedOptions.workspace
           }
         })
         get().connectStream()
@@ -792,20 +851,43 @@ export const useTeamStore = create<TeamStore>()(
             )
           : Promise.resolve(existingLiveNames)
         const historyPromise = teamHistory(sessionId)
-        const [liveNames, history] = await Promise.all([liveNamesPromise, historyPromise])
+        const registryPromise = availableModelRegistry()
+        const [liveNames, history, registry] = await Promise.all([
+          liveNamesPromise,
+          historyPromise,
+          registryPromise,
+        ])
 
         if (get()._sessionGeneration !== gen) return
+
+        const savedModel = history.lead.model?.trim() || null
+        const savedModelAvailable = !savedModel
+          || registry === null
+          || registry.models.some((model) => model.id === savedModel)
+        const modelWasReplaced = Boolean(savedModel && !savedModelAvailable)
+        const sessionModel = modelWasReplaced ? registry?.models[0]?.id ?? null : savedModel
 
         set((draft) => {
           draft.sessionId = sessionId
           draft.projectId = history.lead.project_id ?? null
           draft.sessionTags = history.lead.tags ?? []
-          draft.sessionModel = history.lead.model ?? null
-          draft.sessionThinkingLevel = history.lead.thinking_level ?? null
-          draft.sessionFastMode = fastModeFromMessages(history.lead.messages)
+          draft.sessionModel = sessionModel
+          draft.sessionThinkingLevel = modelWasReplaced
+            ? null
+            : history.lead.thinking_level ?? null
+          draft.sessionFastMode = modelWasReplaced
+            ? false
+            : fastModeFromMessages(history.lead.messages)
           draft.isTeamWorking = history.lead.running === true
           draft.isContinuing = false
           draft.error = null
+          draft.setupRequired = modelWasReplaced && !sessionModel
+            ? {
+                agent: history.lead.agent_name ?? 'lead',
+                message: `The saved model ${savedModel} is no longer available. Configure a model provider to continue.`,
+                action: { type: 'open_settings', tab: 'providers' },
+              }
+            : null
           draft.activeLoop = history.loop_status ?? null
           draft.activeWorkflowExecution = history.workflow_execution
             ? {
@@ -897,6 +979,14 @@ export const useTeamStore = create<TeamStore>()(
           draft._resolvedSessionReadyId = null
           draft.isSessionLoading = false
         })
+
+        if (modelWasReplaced && sessionModel) {
+          useToastStore.getState().push({
+            tone: 'info',
+            title: 'Session model changed',
+            description: `${savedModel} is no longer available. Using ${sessionModel}.`,
+          })
+        }
       } catch (err) {
         if (get()._sessionGeneration !== gen) return
         set((draft) => {
