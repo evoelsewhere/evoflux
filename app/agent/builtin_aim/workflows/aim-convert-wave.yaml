@@ -92,7 +92,8 @@ nodes:
         target repo per its KB mapping and target-conventions (base source is
         read-only), verify the target builds, then update target_paths via
         aim_units WITHOUT changing phase. The deterministic mark_converted
-        node owns the transition after every implementation finishes.
+        node owns the transition after every implementation finishes. Commit
+        that unit's target-repo changes before returning.
       timeout_s: 3600
 
   - id: mark_converted

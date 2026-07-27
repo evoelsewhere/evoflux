@@ -107,6 +107,15 @@ def test_aim_workflows_have_single_entry_node():
         assert definition.entry_nodes() == [definition.nodes[0].id], path
 
 
+def test_aim_conversion_workflows_commit_target_changes():
+    app_dir = Path(__file__).resolve().parents[2] / "app"
+    workflow_dir = app_dir / "agent" / "builtin_aim" / "workflows"
+    for name in ("aim-convert-unit", "aim-convert-wave"):
+        raw = (workflow_dir / f"{name}.yaml").read_text(encoding="utf-8")
+        normalized = " ".join(raw.split())
+        assert "target-repo changes before returning" in normalized, name
+
+
 def test_aim_test_compare_executes_actuals_deterministically():
     app_dir = Path(__file__).resolve().parents[2] / "app"
     path = app_dir / "agent" / "builtin_aim" / "workflows" / "aim-test-compare.yaml"
