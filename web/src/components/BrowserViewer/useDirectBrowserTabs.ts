@@ -1,0 +1,599 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { Webview } from '@tauri-apps/api/webview'
+
+import { apiBaseUrl } from '@/api/base-url'
+import { withTokenParam } from '@/api/auth'
+import { getPlatform } from '@/hooks/use-platform'
+
+export interface DirectBrowserTab {
+  id: string
+  label: string
+  url: string
+}
+
+interface UseDirectBrowserTabsOptions {
+  sessionId: string
+  viewportRef: React.RefObject<HTMLDivElement | null>
+  enabled: boolean
+  visible: boolean
+  zoom: number
+  devtools: boolean
+  onError: (message: string) => void
+}
+
+interface NativeBounds {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+const NEW_TAB_URL = '/browser-new-tab.html'
+const BROWSER_DATA_DIRECTORY = 'browser-profile'
+const BROWSER_DATA_STORE_ID = [
+  0x45, 0x76, 0x6f, 0x46, 0x6c, 0x75, 0x78, 0x42,
+  0x72, 0x6f, 0x77, 0x73, 0x65, 0x72, 0x00, 0x01,
+]
+
+export function useDirectBrowserTabs({
+  sessionId,
+  viewportRef,
+  enabled,
+  visible,
+  zoom,
+  devtools,
+  onError,
+}: UseDirectBrowserTabsOptions) {
+  const platform = getPlatform()
+  const supported = platform.isTauri && platform.os !== 'ios' && platform.os !== 'android'
+  const webviewsRef = useRef(new Map<string, Webview>())
+  const activeIdRef = useRef<string | null>(null)
+  const tabsRef = useRef<DirectBrowserTab[]>([])
+  const agentHandlerRef = useRef<(
+    action: string,
+    params: Record<string, unknown>,
+  ) => Promise<unknown>>(async () => {
+    throw new Error('Browser is not ready')
+  })
+  const counterRef = useRef(0)
+  const boundsRef = useRef<NativeBounds | null>(null)
+  const visibilityRef = useRef(new Map<string, boolean>())
+  const creatingRef = useRef(false)
+  const [tabs, setTabs] = useState<DirectBrowserTab[]>([])
+  const [activeTabId, setActiveTabId] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
+  const [agentConnected, setAgentConnected] = useState(false)
+
+  activeIdRef.current = activeTabId
+
+  const invokeFor = useCallback(async <T,>(
+    command: string,
+    label: string,
+    args: Record<string, unknown> = {},
+  ): Promise<T> => {
+    const { invoke } = await import('@tauri-apps/api/core')
+    return invoke<T>(command, { label, ...args })
+  }, [])
+
+  const waitForPageReady = useCallback(async (label: string) => {
+    let lastError: unknown
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      try {
+        await invokeFor('app_browser_webview_agent_action', label, {
+          action: 'exists',
+          params: { selector: 'html' },
+        })
+        return
+      } catch (error) {
+        lastError = error
+        await new Promise((resolve) => setTimeout(resolve, 100))
+      }
+    }
+    throw lastError instanceof Error
+      ? lastError
+      : new Error('Browser page did not become ready')
+  }, [invokeFor])
+
+  const waitForNavigation = useCallback(async (
+    label: string,
+    requestedUrl: string,
+    previousUrl: string,
+  ): Promise<string> => {
+    const requested = normalizeComparableUrl(requestedUrl)
+    const previous = normalizeComparableUrl(previousUrl)
+    let current = previousUrl
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      try {
+        const status = await invokeFor<{ url?: string; readyState?: string }>(
+          'app_browser_webview_agent_action',
+          label,
+          { action: 'status', params: {} },
+        )
+        current = status.url ?? current
+        const normalized = normalizeComparableUrl(current)
+        const committed = status.readyState === 'interactive' || status.readyState === 'complete'
+        if (
+          committed
+          && (
+            normalized === requested
+            || (normalized !== previous && !isBrowserNewTab(current))
+          )
+        ) {
+          return current
+        }
+      } catch {
+        // Wry drops evaluation callbacks while the target document is loading.
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    throw new Error(`Browser navigation did not commit: ${requestedUrl}`)
+  }, [invokeFor, waitForPageReady])
+
+  const createTab = useCallback(async (initialUrl = NEW_TAB_URL) => {
+    if (!supported || !enabled || creatingRef.current) return
+    const viewport = viewportRef.current
+    if (!viewport) return
+    const rect = viewport.getBoundingClientRect()
+    if (rect.width < 2 || rect.height < 2) return
+
+    creatingRef.current = true
+    setCreating(true)
+    try {
+      const [{ Webview }, { getCurrentWindow }] = await Promise.all([
+        import('@tauri-apps/api/webview'),
+        import('@tauri-apps/api/window'),
+      ])
+      const id = `${Date.now().toString(36)}-${counterRef.current++}`
+      const safeSession = sessionId.replace(/[^a-zA-Z0-9_-]/g, '').slice(-18)
+      const label = `browser-${safeSession}-${id}`
+      const current = webviewsRef.current.get(activeIdRef.current ?? '')
+      await current?.hide().catch(() => {})
+
+      let webview = new Webview(getCurrentWindow(), label, {
+        url: initialUrl,
+        x: Math.round(rect.left),
+        y: Math.round(rect.top),
+        width: Math.max(1, Math.round(rect.width)),
+        height: Math.max(1, Math.round(rect.height)),
+        focus: true,
+        incognito: false,
+        dataDirectory: BROWSER_DATA_DIRECTORY,
+        dataStoreIdentifier: BROWSER_DATA_STORE_ID,
+        devtools,
+        zoomHotkeysEnabled: true,
+      })
+      await new Promise<void>((resolve, reject) => {
+        let settled = false
+        const timeout = window.setTimeout(() => {
+          void Webview.getByLabel(label).then((existing) => {
+            if (settled) return
+            if (existing) {
+              webview = existing
+              finish(resolve)
+            } else {
+              finish(() => reject(new Error('Timed out creating browser WebView')))
+            }
+          })
+        }, 5000)
+        const finish = (callback: () => void) => {
+          if (settled) return
+          settled = true
+          window.clearTimeout(timeout)
+          callback()
+        }
+        void webview.once('tauri://created', () => finish(resolve))
+        void webview.once<string>('tauri://error', (event) => {
+          finish(() => reject(new Error(String(event.payload))))
+        })
+      })
+
+      webviewsRef.current.set(id, webview)
+      visibilityRef.current.set(id, true)
+      const tab = { id, label, url: initialUrl }
+      tabsRef.current = [...tabsRef.current, tab]
+      setTabs(tabsRef.current)
+      activeIdRef.current = id
+      setActiveTabId(id)
+      await webview.setZoom(zoom / 100)
+      await webview.setFocus()
+      await waitForPageReady(label)
+      return tab
+    } catch (error) {
+      onError(error instanceof Error ? error.message : String(error))
+    } finally {
+      creatingRef.current = false
+      setCreating(false)
+    }
+  }, [devtools, enabled, onError, sessionId, supported, viewportRef, waitForPageReady, zoom])
+
+  useEffect(() => {
+    if (!supported || !enabled || tabs.length > 0 || creating) return
+    void createTab()
+  }, [createTab, creating, enabled, supported, tabs.length])
+
+  const selectTab = useCallback(async (id: string) => {
+    if (id === activeIdRef.current) return
+    const previous = webviewsRef.current.get(activeIdRef.current ?? '')
+    const next = webviewsRef.current.get(id)
+    await previous?.hide().catch(() => {})
+    visibilityRef.current.set(activeIdRef.current ?? '', false)
+    setActiveTabId(id)
+    if (visible && next) {
+      await next.show()
+      await next.setFocus()
+      visibilityRef.current.set(id, true)
+    }
+  }, [visible])
+
+  const closeTab = useCallback(async (id: string) => {
+    const closingIndex = tabs.findIndex((tab) => tab.id === id)
+    const webview = webviewsRef.current.get(id)
+    await webview?.close().catch(() => {})
+    webviewsRef.current.delete(id)
+    visibilityRef.current.delete(id)
+
+    const remaining = tabs.filter((tab) => tab.id !== id)
+    tabsRef.current = remaining
+    setTabs(remaining)
+    if (activeIdRef.current === id) {
+      const replacement = remaining[Math.min(closingIndex, remaining.length - 1)]
+      activeIdRef.current = replacement?.id ?? null
+      setActiveTabId(replacement?.id ?? null)
+      if (replacement) {
+        const next = webviewsRef.current.get(replacement.id)
+        if (visible && next) {
+          await next.show()
+          await next.setFocus()
+          visibilityRef.current.set(replacement.id, true)
+        }
+      } else if (enabled) {
+        queueMicrotask(() => void createTab())
+      }
+    }
+  }, [createTab, enabled, tabs, visible])
+
+  const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? null
+
+  const navigate = useCallback(async (url: string) => {
+    if (!activeTab) return
+    try {
+      await invokeFor('app_browser_webview_navigate', activeTab.label, { url })
+      const committedUrl = await waitForNavigation(activeTab.label, url, activeTab.url)
+      tabsRef.current = tabsRef.current.map((tab) => tab.id === activeTab.id ? { ...tab, url: committedUrl } : tab)
+      setTabs(tabsRef.current)
+    } catch (error) {
+      onError(error instanceof Error ? error.message : String(error))
+    }
+  }, [activeTab, invokeFor, onError, waitForNavigation])
+
+  const command = useCallback(async (
+    action: 'back' | 'forward' | 'reload' | 'focus' | 'print' | 'devtools',
+  ) => {
+    if (!activeTab) return
+    try {
+      await invokeFor('app_browser_webview_command', activeTab.label, { action })
+    } catch (error) {
+      onError(error instanceof Error ? error.message : String(error))
+    }
+  }, [activeTab, invokeFor, onError])
+
+  const clearBrowsingData = useCallback(async () => {
+    if (!activeTab) return
+    await invokeFor('app_browser_webview_command', activeTab.label, {
+      action: 'clear_data',
+      value: null,
+      backwards: null,
+    })
+  }, [activeTab, invokeFor])
+
+  const find = useCallback(async (query: string, backwards = false) => {
+    if (!activeTab || !query) return
+    await invokeFor('app_browser_webview_command', activeTab.label, {
+      action: 'find',
+      value: query,
+      backwards,
+    })
+  }, [activeTab, invokeFor])
+
+  const closeAll = useCallback(async () => {
+    for (const webview of webviewsRef.current.values()) {
+      await webview.close().catch(() => {})
+    }
+    webviewsRef.current.clear()
+    visibilityRef.current.clear()
+    tabsRef.current = []
+    activeIdRef.current = null
+    setTabs([])
+    setActiveTabId(null)
+  }, [])
+
+  const executeAgentCommand = useCallback(async (
+    action: string,
+    params: Record<string, unknown>,
+  ): Promise<unknown> => {
+    const getActive = () => tabsRef.current.find(
+      (tab) => tab.id === activeIdRef.current,
+    ) ?? null
+    const ensureActive = async () => {
+      const existing = getActive()
+      if (existing) return existing
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        const created = await createTab()
+        if (created) return created
+        await new Promise((resolve) => setTimeout(resolve, 100))
+        const mounted = getActive()
+        if (mounted) return mounted
+      }
+      return null
+    }
+
+    if (action === 'start') {
+      const tab = await ensureActive()
+      if (!tab) throw new Error('Could not create a desktop browser tab')
+      return `Desktop browser ready: ${tab.url}`
+    }
+    if (action === 'stop') {
+      await closeAll()
+      return 'Desktop browser closed.'
+    }
+    if (action === 'get_tabs') {
+      return tabsRef.current.length
+        ? tabsRef.current.map((tab, index) =>
+            `[${index}]${tab.id === activeIdRef.current ? '*' : ''} ${tab.url}`,
+          ).join('\n')
+        : 'No tabs open.'
+    }
+    if (action === 'new_tab') {
+      const url = typeof params.url === 'string' ? params.url : NEW_TAB_URL
+      const tab = await createTab(url)
+      if (!tab) throw new Error('Could not create a desktop browser tab')
+      return `New tab: ${tab.url}`
+    }
+    if (action === 'close_tab' || action === 'switch_tab') {
+      const index = Number(params.index)
+      const tab = tabsRef.current[index]
+      if (!tab) throw new Error(`Invalid tab index ${params.index}`)
+      if (action === 'close_tab') {
+        await closeTab(tab.id)
+        return `Closed tab ${index}: ${tab.url}`
+      }
+      await selectTab(tab.id)
+      return `Switched to tab ${index}: ${tab.url}`
+    }
+
+    const tab = await ensureActive()
+    if (!tab) throw new Error('Desktop browser is unavailable')
+    if (action === 'navigate') {
+      const url = typeof params.url === 'string' ? params.url : ''
+      if (!url) throw new Error('navigate requires a URL')
+      await invokeFor('app_browser_webview_navigate', tab.label, { url })
+      const committedUrl = await waitForNavigation(tab.label, url, tab.url)
+      tabsRef.current = tabsRef.current.map((item) => item.id === tab.id
+        ? { ...item, url: committedUrl }
+        : item)
+      setTabs(tabsRef.current)
+      return `Navigated to ${url}`
+    }
+    if (action === 'back' || action === 'forward' || action === 'reload') {
+      await invokeFor('app_browser_webview_command', tab.label, { action })
+      return `${action} completed`
+    }
+    if (action === 'wait') {
+      const seconds = Math.max(0, Math.min(30, Number(params.seconds) || 2))
+      const selector = typeof params.selector === 'string' ? params.selector : ''
+      if (!selector) {
+        await new Promise((resolve) => setTimeout(resolve, seconds * 1000))
+        return `Waited ${seconds.toFixed(1)}s`
+      }
+      const deadline = Date.now() + seconds * 1000
+      while (Date.now() < deadline) {
+        const found = await invokeFor<boolean>('app_browser_webview_agent_action', tab.label, {
+          action: 'exists',
+          params: { selector },
+        })
+        if (found) return `Selector "${selector}" found`
+        await new Promise((resolve) => setTimeout(resolve, 100))
+      }
+      throw new Error(`Timeout waiting for selector: ${selector}`)
+    }
+    if (['snapshot', 'click', 'fill', 'select', 'extract', 'scroll'].includes(action)) {
+      return invokeFor('app_browser_webview_agent_action', tab.label, {
+        action,
+        params,
+      })
+    }
+    throw new Error(
+      `${action} is not supported by the direct desktop browser yet`,
+    )
+  }, [closeAll, closeTab, createTab, invokeFor, selectTab, waitForNavigation])
+
+  agentHandlerRef.current = executeAgentCommand
+
+  useEffect(() => {
+    if (!supported || !enabled) return
+    let alive = true
+    let socket: WebSocket | null = null
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+
+    const connect = () => {
+      if (!alive) return
+      socket = new WebSocket(directBrowserBridgeUrl(sessionId))
+      socket.onopen = () => {
+        socket?.send(JSON.stringify({ type: 'ready', version: 1 }))
+        setAgentConnected(true)
+      }
+      socket.onmessage = (event) => {
+        if (typeof event.data !== 'string') return
+        let message: Record<string, unknown>
+        try {
+          message = JSON.parse(event.data) as Record<string, unknown>
+        } catch {
+          return
+        }
+        const id = message.id
+        const action = message.action
+        if (typeof id !== 'string' || typeof action !== 'string') return
+        const params = message.params && typeof message.params === 'object'
+          ? message.params as Record<string, unknown>
+          : {}
+        void agentHandlerRef.current(action, params)
+          .then((result) => {
+            if (socket?.readyState === WebSocket.OPEN) {
+              socket.send(JSON.stringify({ id, ok: true, result }))
+            }
+          })
+          .catch((error) => {
+            if (socket?.readyState === WebSocket.OPEN) {
+              socket.send(JSON.stringify({
+                id,
+                ok: false,
+                error: error instanceof Error ? error.message : String(error),
+              }))
+            }
+          })
+      }
+      socket.onclose = () => {
+        setAgentConnected(false)
+        socket = null
+        if (alive) reconnectTimer = setTimeout(connect, 1000)
+      }
+      socket.onerror = () => socket?.close()
+    }
+
+    connect()
+    return () => {
+      alive = false
+      setAgentConnected(false)
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      socket?.close()
+    }
+  }, [enabled, sessionId, supported])
+
+  useEffect(() => {
+    const webview = webviewsRef.current.get(activeTabId ?? '')
+    if (webview) void webview.setZoom(zoom / 100).catch(() => {})
+  }, [activeTabId, zoom])
+
+  useEffect(() => {
+    if (!supported) return
+    let disposed = false
+    let syncing = false
+    let frame = 0
+
+    const loop = async () => {
+      if (disposed) return
+      const viewport = viewportRef.current
+      if (!syncing && viewport) {
+        syncing = true
+        try {
+          const rect = viewport.getBoundingClientRect()
+          const cssVisible = getComputedStyle(viewport).visibility !== 'hidden'
+          const shouldShow = visible && cssVisible && rect.width >= 2 && rect.height >= 2
+          const bounds = {
+            x: Math.round(rect.left),
+            y: Math.round(rect.top),
+            width: Math.max(1, Math.round(rect.width)),
+            height: Math.max(1, Math.round(rect.height)),
+          }
+          const changed = !sameBounds(boundsRef.current, bounds)
+          if (changed) boundsRef.current = bounds
+
+          for (const [id, webview] of webviewsRef.current) {
+            const isActive = id === activeIdRef.current
+            const show = shouldShow && isActive
+            if (show && changed) {
+              const { LogicalPosition, LogicalSize } = await import('@tauri-apps/api/dpi')
+              await Promise.all([
+                webview.setPosition(new LogicalPosition(bounds.x, bounds.y)),
+                webview.setSize(new LogicalSize(bounds.width, bounds.height)),
+              ])
+            }
+            if (visibilityRef.current.get(id) !== show) {
+              await (show ? webview.show() : webview.hide())
+              visibilityRef.current.set(id, show)
+            }
+          }
+        } catch {
+          // The next animation frame retries bounds/visibility synchronization.
+        } finally {
+          syncing = false
+        }
+      }
+      frame = requestAnimationFrame(() => void loop())
+    }
+
+    frame = requestAnimationFrame(() => void loop())
+    return () => {
+      disposed = true
+      cancelAnimationFrame(frame)
+    }
+  }, [supported, viewportRef, visible])
+
+  useEffect(() => {
+    if (!supported || !activeTab) return
+    const timer = window.setInterval(() => {
+      void invokeFor<string>('app_browser_webview_url', activeTab.label)
+        .then((url) => {
+          setTabs((current) => current.map((tab) => tab.id === activeTab.id && tab.url !== url
+            ? { ...tab, url }
+            : tab))
+        })
+        .catch(() => {})
+    }, 500)
+    return () => window.clearInterval(timer)
+  }, [activeTab, invokeFor, supported])
+
+  useEffect(() => () => {
+    for (const webview of webviewsRef.current.values()) {
+      void webview.close().catch(() => {})
+    }
+    webviewsRef.current.clear()
+  }, [])
+
+  return {
+    supported,
+    tabs,
+    activeTab,
+    activeTabId,
+    creating,
+    agentConnected,
+    createTab,
+    selectTab,
+    closeTab,
+    navigate,
+    command,
+    find,
+    clearBrowsingData,
+    closeAll,
+  }
+}
+
+function directBrowserBridgeUrl(sessionId: string): string {
+  const apiBase = apiBaseUrl()
+  const wsBase = apiBase.startsWith('http')
+    ? apiBase.replace(/^http/, 'ws')
+    : `ws://${window.location.hostname === 'localhost' ? '127.0.0.1' : window.location.hostname}:8000/api`
+  return withTokenParam(
+    `${wsBase}/team/${encodeURIComponent(sessionId)}/browser/agent`,
+  )
+}
+
+function sameBounds(left: NativeBounds | null, right: NativeBounds): boolean {
+  return Boolean(
+    left
+    && left.x === right.x
+    && left.y === right.y
+    && left.width === right.width
+    && left.height === right.height,
+  )
+}
+
+function normalizeComparableUrl(value: string): string {
+  return value.replace(/\/$/, '')
+}
+
+export function isBrowserNewTab(url: string): boolean {
+  return url === NEW_TAB_URL
+    || url.endsWith('/browser-new-tab.html')
+    || url === 'about:blank'
+}

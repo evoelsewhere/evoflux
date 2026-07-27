@@ -25,7 +25,7 @@ use tauri_plugin_dialog::DialogExt;
 #[cfg(test)]
 use tauri_plugin_dialog::MessageDialogResult;
 use tauri_plugin_opener::OpenerExt;
-use tokio::sync::Mutex;
+use tokio::sync::{oneshot, Mutex};
 
 use crate::sidecar::{Handshake, Sidecar};
 
@@ -544,6 +544,248 @@ async fn app_open_browser_devtools(app: AppHandle, cdp_url: String) -> Result<()
     let _ = win.show();
     let _ = win.set_focus();
     Ok(())
+}
+
+fn app_browser_webview(app: &AppHandle, label: &str) -> Result<tauri::Webview, String> {
+    app.get_webview(label)
+        .ok_or_else(|| format!("Browser webview not found: {label}"))
+}
+
+#[tauri::command]
+async fn app_browser_webview_navigate(
+    app: AppHandle,
+    label: String,
+    url: String,
+) -> Result<String, String> {
+    let parsed = url::Url::parse(&url).map_err(|error| format!("Invalid browser URL: {error}"))?;
+    let webview = app_browser_webview(&app, &label)?;
+    webview
+        .navigate(parsed)
+        .map_err(|error| format!("Browser navigation failed: {error}"))?;
+    Ok(url)
+}
+
+#[tauri::command]
+async fn app_browser_webview_command(
+    app: AppHandle,
+    label: String,
+    action: String,
+    value: Option<String>,
+    backwards: Option<bool>,
+) -> Result<(), String> {
+    let webview = app_browser_webview(&app, &label)?;
+    match action.as_str() {
+        "back" => webview.eval("history.back()"),
+        "forward" => webview.eval("history.forward()"),
+        "reload" => webview.reload(),
+        "focus" => webview.set_focus(),
+        "print" => webview.print(),
+        "clear_data" => webview.clear_all_browsing_data(),
+        "find" => {
+            let query = serde_json::to_string(&value.unwrap_or_default())
+                .map_err(|error| format!("Invalid find query: {error}"))?;
+            webview.eval(format!(
+                "window.find({query}, false, {}, true, false, false, false)",
+                backwards.unwrap_or(false)
+            ))
+        }
+        #[cfg(debug_assertions)]
+        "devtools" => {
+            webview.open_devtools();
+            Ok(())
+        }
+        _ => return Err(format!("Unsupported browser command: {action}")),
+    }
+    .map_err(|error| format!("Browser command failed: {error}"))
+}
+
+#[tauri::command]
+async fn app_browser_webview_url(app: AppHandle, label: String) -> Result<String, String> {
+    app_browser_webview(&app, &label)?
+        .url()
+        .map(|url| url.to_string())
+        .map_err(|error| format!("Could not read browser URL: {error}"))
+}
+
+#[tauri::command]
+async fn app_browser_webview_agent_action(
+        app: AppHandle,
+        label: String,
+        action: String,
+        params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+        if !label.starts_with("browser-") {
+                return Err("Agent browser actions require a browser WebView".into());
+        }
+        let script = browser_agent_action_script(&action, &params)?;
+        let wrapped = format!(
+                r#"(() => {{
+                    try {{
+                        return JSON.stringify({{ ok: true, value: ({script})() }});
+                    }} catch (error) {{
+                        return JSON.stringify({{ ok: false, error: String(error?.message ?? error) }});
+                    }}
+                }})()"#
+        );
+
+        let (sender, receiver) = oneshot::channel();
+        let sender = Arc::new(std::sync::Mutex::new(Some(sender)));
+        app_browser_webview(&app, &label)?
+            .eval_with_callback(wrapped, move |result| {
+                if let Ok(mut guard) = sender.lock() {
+                    if let Some(sender) = guard.take() {
+                        let _ = sender.send(result);
+                    }
+                }
+            })
+            .map_err(|error| format!("Could not run browser action: {error}"))?;
+
+        let callback_timeout = if action == "status" || action == "exists" {
+            Duration::from_millis(750)
+        } else {
+            Duration::from_secs(35)
+        };
+        match tokio::time::timeout(callback_timeout, receiver).await {
+            Ok(Ok(raw)) => parse_browser_agent_result(&raw),
+                Ok(Err(_)) => Err("Browser action response channel closed".into()),
+            Err(_) => Err(format!("Browser action timed out: {action}")),
+        }
+}
+
+    fn parse_browser_agent_result(raw: &str) -> Result<serde_json::Value, String> {
+        if raw.len() > 2 * 1024 * 1024 {
+                return Err("Browser action result exceeds 2 MB".into());
+        }
+        let mut value: serde_json::Value = serde_json::from_str(raw)
+                .map_err(|error| format!("Invalid browser action result: {error}"))?;
+        if let Some(encoded) = value.as_str() {
+            value = serde_json::from_str(encoded)
+                .map_err(|error| format!("Invalid encoded browser action result: {error}"))?;
+        }
+        if value.get("ok").and_then(serde_json::Value::as_bool) == Some(true) {
+            Ok(value.get("value").cloned().unwrap_or(serde_json::Value::Null))
+        } else {
+                Err(value
+                        .get("error")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or("Browser action failed")
+                        .to_string())
+                }
+}
+
+fn browser_agent_action_script(
+        action: &str,
+        params: &serde_json::Value,
+) -> Result<String, String> {
+        const SUPPORTED: &[&str] = &[
+                "snapshot", "click", "fill", "select", "extract", "scroll", "exists", "status",
+        ];
+        if !SUPPORTED.contains(&action) {
+                return Err(format!("Unsupported direct browser action: {action}"));
+        }
+        let action_json = serde_json::to_string(action)
+                .map_err(|error| format!("Could not encode browser action: {error}"))?;
+        let params_json = serde_json::to_string(params)
+                .map_err(|error| format!("Could not encode browser parameters: {error}"))?;
+        Ok(format!(
+                r#"() => {{
+                    const action = {action_json};
+                    const params = {params_json};
+                    const visible = (element) => {{
+                        const rect = element.getBoundingClientRect();
+                        const style = getComputedStyle(element);
+                        return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+                    }};
+                    const resolveElement = () => {{
+                        if (Number.isInteger(params.index)) {{
+                            return document.querySelector(`[data-evoflux-agent-index="${{params.index}}"]`);
+                        }}
+                        return typeof params.selector === 'string' ? document.querySelector(params.selector) : null;
+                    }};
+                    const describe = (element) => {{
+                        const tag = element.tagName.toLowerCase();
+                        const label = element.getAttribute('aria-label') || element.getAttribute('placeholder') || '';
+                        const text = String(element.innerText || element.value || element.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 180);
+                        return `${{tag}}${{label ? ` "${{label}}"` : ''}}${{text ? `: ${{text}}` : ''}}`;
+                    }};
+
+                    if (action === 'snapshot') {{
+                        document.querySelectorAll('[data-evoflux-agent-index]').forEach((element) => element.removeAttribute('data-evoflux-agent-index'));
+                        const selector = 'a,button,input,textarea,select,[role="button"],[role="link"],[contenteditable="true"],summary';
+                        const elements = Array.from(document.querySelectorAll(selector)).filter(visible).slice(0, 500);
+                        const lines = elements.map((element, index) => {{
+                            element.setAttribute('data-evoflux-agent-index', String(index));
+                            return `[${{index}}] ${{describe(element)}}`;
+                        }});
+                        const maxChars = Math.max(500, Math.min(100000, Number(params.max_chars) || 15000));
+                        const pageText = String(document.body?.innerText || '').trim().slice(0, Math.floor(maxChars * 0.45));
+                        const output = `URL: ${{location.href}}\nTitle: ${{document.title}}\n\nPage text:\n${{pageText}}\n\nInteractive elements (use [index] with click/fill):\n${{lines.join('\n')}}`;
+                        return output.slice(0, maxChars);
+                    }}
+
+                    if (action === 'click') {{
+                        const element = resolveElement();
+                        if (!element) throw new Error('Element not found; run snapshot again or provide a selector');
+                        element.scrollIntoView({{ block: 'center', inline: 'center' }});
+                        element.focus?.();
+                        element.click();
+                        return `Clicked ${{describe(element)}}`;
+                    }}
+
+                    if (action === 'fill') {{
+                        const element = resolveElement();
+                        if (!element) throw new Error('Input not found; run snapshot again or provide a selector');
+                        const text = String(params.text ?? '');
+                        element.focus?.();
+                        if (element.isContentEditable) {{
+                            element.textContent = params.clear === false ? String(element.textContent || '') + text : text;
+                        }} else if ('value' in element) {{
+                            const next = params.clear === false ? String(element.value || '') + text : text;
+                            const prototype = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+                            const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+                            setter ? setter.call(element, next) : (element.value = next);
+                        }} else {{
+                            throw new Error('Element is not editable');
+                        }}
+                        element.dispatchEvent(new InputEvent('input', {{ bubbles: true, inputType: 'insertText', data: text }}));
+                        element.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                        return `Filled ${{describe(element)}} (${{text.length}} chars)`;
+                    }}
+
+                    if (action === 'select') {{
+                        const element = document.querySelector(String(params.selector || ''));
+                        if (!(element instanceof HTMLSelectElement)) throw new Error('Select element not found');
+                        element.value = String(params.value ?? '');
+                        element.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        element.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                        return `Selected "${{element.value}}"`;
+                    }}
+
+                    if (action === 'extract') {{
+                        const maxChars = Math.max(100, Math.min(100000, Number(params.max_chars) || 15000));
+                        if (!params.selector) return String(document.body?.innerText || '').slice(0, maxChars) || '(empty page)';
+                        const elements = Array.from(document.querySelectorAll(String(params.selector)));
+                        if (!elements.length) throw new Error(`No element found for selector: ${{params.selector}}`);
+                        const values = elements.map((element) => params.attribute ? element.getAttribute(String(params.attribute)) || '' : String(element.innerText || element.textContent || '').trim());
+                        return values.join('\n').slice(0, maxChars) || '(empty)';
+                    }}
+
+                    if (action === 'scroll') {{
+                        const pixels = Number(params.pixels) || 500;
+                        const delta = params.direction === 'up' ? -pixels : pixels;
+                        window.scrollBy({{ top: delta, behavior: 'instant' }});
+                        return `Scrolled ${{params.direction || 'down'}} ${{Math.abs(pixels)}}px`;
+                    }}
+
+                    if (action === 'exists') {{
+                        return Boolean(document.querySelector(String(params.selector || '')));
+                    }}
+
+                    if (action === 'status') {{
+                        return {{ url: location.href, readyState: document.readyState }};
+                    }}
+                }}"#
+        ))
 }
 
 fn show_main_window(app: &AppHandle) {
@@ -1365,10 +1607,10 @@ fn remove_app_backend_server(app: &AppHandle, base_url: &str) -> Result<()> {
 
 fn frontend_webview_url() -> Result<WebviewUrl> {
     if cfg!(debug_assertions) {
+        let dev_url = std::env::var("EVOFLUX_DESKTOP_DEV_URL")
+            .unwrap_or_else(|_| "http://localhost:5173".to_string());
         Ok(WebviewUrl::External(
-            "http://localhost:5173"
-                .parse()
-                .context("parse dev frontend url")?,
+            dev_url.parse().context("parse dev frontend url")?,
         ))
     } else {
         Ok(WebviewUrl::App("index.html".into()))
@@ -1634,6 +1876,10 @@ fn main() {
             app_use_bundled_backend,
             app_new_window,
             app_open_browser_devtools,
+            app_browser_webview_navigate,
+            app_browser_webview_command,
+            app_browser_webview_url,
+            app_browser_webview_agent_action,
             set_tray_session,
             workspace::list_workspace_files,
             workspace::read_workspace_file,

@@ -36,7 +36,7 @@ export const WORKBENCH_TOOLS: Record<
     label: 'Browser',
     description: 'View and interact with the agent browser',
     icon: Globe2,
-    shortcut: '⌘T',
+    shortcut: '⌃T',
   },
   files: {
     label: 'Files',
