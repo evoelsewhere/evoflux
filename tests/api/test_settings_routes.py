@@ -1121,6 +1121,10 @@ def test_manual_ollama_connection_populates_registry_without_reconnecting(
     app.include_router(agents_router, prefix="/api/agents")
     client = TestClient(app)
 
+    initial_registry = client.get("/api/agents/registry")
+    assert initial_registry.status_code == 200
+    assert calls == []
+
     listed = client.post("/api/settings/providers/ollama/models", json={})
     registry = client.get("/api/agents/registry")
 
