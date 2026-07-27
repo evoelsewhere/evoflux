@@ -1121,6 +1121,34 @@ async def test_create_aim_project_route_end_to_end(client, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_remove_aim_project_keeps_folders_on_disk(client, tmp_path):
+    source = _make_local_repo(tmp_path, "remove-source")
+    target = _make_local_repo(tmp_path, "remove-target")
+    kb_path = tmp_path / "remove-kb"
+    create_response = await client.post(
+        "/api/team/projects/aim",
+        json={
+            "name": "remove-me",
+            "source_paths": [str(source)],
+            "target_path": str(target),
+            "kb_path": str(kb_path),
+        },
+    )
+    assert create_response.status_code == 201
+    project_id = create_response.json()["id"]
+
+    delete_response = await client.delete(f"/api/team/projects/{project_id}")
+
+    assert delete_response.status_code == 204
+    list_response = await client.get("/api/team/projects", params={"kind": "aim"})
+    assert list_response.status_code == 200
+    assert all(project["id"] != project_id for project in list_response.json())
+    assert source.is_dir()
+    assert target.is_dir()
+    assert kb_path.is_dir()
+
+
+@pytest.mark.asyncio
 async def test_create_aim_project_rejects_missing_source_path(client, tmp_path):
     resp = await client.post(
         "/api/team/projects/aim",

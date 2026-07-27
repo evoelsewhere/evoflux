@@ -15,6 +15,7 @@
  * active pipeline run.
  */
 
+import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -23,6 +24,7 @@ import {
   FolderKanban,
   Plus,
   Search,
+  Trash2,
 } from 'lucide-react'
 import { ModeSwitchTabs, ModeSwitchRail } from '@/components/ModeSwitchTabs'
 import {
@@ -33,17 +35,32 @@ import {
   SidebarFooter,
 } from '@/components/shell/SidebarShell'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import {
   AIM_FEATURES,
+  clearLastAimProject,
   saveLastAimProject,
   type AimFeature,
 } from '@/lib/aim-sidebar'
 import { listTeamSessions } from '@/api/client'
-import { useAimProjectsQuery } from '@/queries/useAimProjectsQuery'
+import {
+  useAimProjectsQuery,
+  useRemoveAimProjectMutation,
+} from '@/queries/useAimProjectsQuery'
 import { queryKeys } from '@/queries/keys'
 import { usePlatform } from '@/hooks/use-platform'
+import { useToastStore } from '@/stores/useToastStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { cn } from '@/lib/utils'
+import type { CodingProject } from '@/api/types'
 
 interface AimSidebarProps {
   activeProjectId?: string
@@ -70,6 +87,9 @@ export function AimSidebar({
   // useUIStore; AppShell owns the toggle button + Ctrl+B.
   const collapsed = useUIStore((s) => s.sidebarCollapsed)
   const projectsQuery = useAimProjectsQuery()
+  const removeProjectMutation = useRemoveAimProjectMutation()
+  const [removeProjectTarget, setRemoveProjectTarget] =
+    useState<CodingProject | null>(null)
   const projects = projectsQuery.data ?? []
   const activeProject = projects.find((project) => project.id === activeProjectId)
 
@@ -193,6 +213,16 @@ export function AimSidebar({
                         {getRulebookId(activeProject) ?? 'No rulebook linked'}
                       </span>
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => setRemoveProjectTarget(activeProject)}
+                      disabled={removeProjectMutation.isPending}
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-(--color-text-subtle) transition-colors hover:bg-(--color-error-subtle) hover:text-(--color-error) disabled:cursor-not-allowed disabled:opacity-40"
+                      aria-label={`Remove project ${activeProject.name} from AIM`}
+                      title={`Remove ${activeProject.name} from AIM`}
+                    >
+                      <Trash2 size={13} aria-hidden="true" />
+                    </button>
                   </div>
                   <div className="grid grid-cols-2 gap-1" aria-label={`${activeProject.name} sections`}>
                     {AIM_FEATURES.map(({ key, label, Icon }) => {
@@ -260,40 +290,54 @@ export function AimSidebar({
                     .map((project) => {
                       const hasRunning = runningProjects.has(project.id)
                       return (
-                        <button
+                        <div
                           key={project.id}
-                          type="button"
-                          onClick={() => {
-                            saveLastAimProject(project.id)
-                            navigate({
-                              to: '/aim/$projectId/$feature',
-                              params: { projectId: project.id, feature: 'overview' },
-                            })
-                            onMobileClose?.()
-                          }}
-                          className="group flex h-11 w-full items-center gap-2 rounded-md px-1.5 text-left transition-colors hover:bg-(--bg-key)"
-                          title={getRulebookId(project) ? `${project.name} · ${getRulebookId(project)}` : project.name}
+                          className="group flex h-11 w-full items-center rounded-md transition-colors hover:bg-(--bg-key)"
                         >
-                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-(--bg-key) text-(--color-text-muted) transition-colors group-hover:text-(--color-text)">
-                            <FolderKanban size={13} aria-hidden="true" />
-                          </span>
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-xs font-medium text-(--color-text-2) group-hover:text-(--color-text)">
-                              {project.name}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              saveLastAimProject(project.id)
+                              navigate({
+                                to: '/aim/$projectId/$feature',
+                                params: { projectId: project.id, feature: 'overview' },
+                              })
+                              onMobileClose?.()
+                            }}
+                            className="flex h-full min-w-0 flex-1 items-center gap-2 px-1.5 text-left"
+                            title={getRulebookId(project) ? `${project.name} · ${getRulebookId(project)}` : project.name}
+                          >
+                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-(--bg-key) text-(--color-text-muted) transition-colors group-hover:text-(--color-text)">
+                              <FolderKanban size={13} aria-hidden="true" />
                             </span>
-                            <span className="block truncate font-mono text-[9px] text-(--color-text-subtle)">
-                              {getRulebookId(project) ?? 'No rulebook linked'}
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-xs font-medium text-(--color-text-2) group-hover:text-(--color-text)">
+                                {project.name}
+                              </span>
+                              <span className="block truncate font-mono text-[9px] text-(--color-text-subtle)">
+                                {getRulebookId(project) ?? 'No rulebook linked'}
+                              </span>
                             </span>
-                          </span>
-                          {hasRunning ? (
-                            <span className="flex shrink-0 items-center gap-1 text-[9px] font-medium text-(--color-accent)">
-                              <Activity size={9} aria-hidden="true" />
-                              Live
-                            </span>
-                          ) : (
-                            <ChevronRight size={12} className="shrink-0 text-(--color-text-subtle) opacity-0 transition-opacity group-hover:opacity-100" aria-hidden="true" />
-                          )}
-                        </button>
+                            {hasRunning ? (
+                              <span className="flex shrink-0 items-center gap-1 text-[9px] font-medium text-(--color-accent)">
+                                <Activity size={9} aria-hidden="true" />
+                                Live
+                              </span>
+                            ) : (
+                              <ChevronRight size={12} className="shrink-0 text-(--color-text-subtle) opacity-0 transition-opacity group-hover:opacity-100" aria-hidden="true" />
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setRemoveProjectTarget(project)}
+                            disabled={removeProjectMutation.isPending}
+                            className="mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-(--color-text-subtle) transition-colors hover:bg-(--color-error-subtle) hover:text-(--color-error) disabled:cursor-not-allowed disabled:opacity-40"
+                            aria-label={`Remove project ${project.name} from AIM`}
+                            title={`Remove ${project.name} from AIM`}
+                          >
+                            <Trash2 size={12} aria-hidden="true" />
+                          </button>
+                        </div>
                       )
                     })}
                   {activeProject && projects.length === 1 && (
@@ -314,18 +358,94 @@ export function AimSidebar({
       </SidebarCard>
   )
 
+  const removeProjectDialog = (
+    <Dialog
+      open={removeProjectTarget !== null}
+      onOpenChange={(open) => {
+        if (!open) setRemoveProjectTarget(null)
+      }}
+    >
+      <DialogContent showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle>Remove project from AIM?</DialogTitle>
+          <DialogDescription>
+            {removeProjectTarget
+              ? `Remove ${removeProjectTarget.name} from AIM? Source, target, and document folders will remain on disk.`
+              : 'Remove this project from AIM? Its folders will remain on disk.'}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter className="p-3">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setRemoveProjectTarget(null)}
+            disabled={removeProjectMutation.isPending}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={!removeProjectTarget || removeProjectMutation.isPending}
+            onClick={() => {
+              const target = removeProjectTarget
+              if (!target) return
+              const nextProject = projects.find((project) => project.id !== target.id)
+              removeProjectMutation.mutate(target.id, {
+                onSuccess: () => {
+                  if (activeProjectId === target.id) {
+                    if (nextProject) {
+                      saveLastAimProject(nextProject.id)
+                      navigate({
+                        to: '/aim/$projectId/$feature',
+                        params: { projectId: nextProject.id, feature: 'overview' },
+                        replace: true,
+                      })
+                    } else {
+                      clearLastAimProject()
+                      navigate({ to: '/aim', replace: true })
+                    }
+                  }
+                  setRemoveProjectTarget(null)
+                  onMobileClose?.()
+                },
+                onError: (error) => {
+                  useToastStore.getState().push({
+                    tone: 'error',
+                    title: "Couldn't remove project",
+                    description: error instanceof Error ? error.message : String(error),
+                  })
+                },
+              })
+            }}
+          >
+            {removeProjectMutation.isPending ? 'Removing...' : 'Remove from AIM'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+
   if (mobile) {
-    return <div className="h-full w-full overflow-hidden p-1">{content}</div>
+    return (
+      <>
+        <div className="h-full w-full overflow-hidden p-1">{content}</div>
+        {removeProjectDialog}
+      </>
+    )
   }
 
   return (
-    <SidebarShell
-      collapsed={collapsed}
-      rail={rail}
-      resizeLabel="Resize AIM sidebar"
-    >
-      {content}
-    </SidebarShell>
+    <>
+      <SidebarShell
+        collapsed={collapsed}
+        rail={rail}
+        resizeLabel="Resize AIM sidebar"
+      >
+        {content}
+      </SidebarShell>
+      {removeProjectDialog}
+    </>
   )
 }
 
