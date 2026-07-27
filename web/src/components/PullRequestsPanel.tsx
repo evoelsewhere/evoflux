@@ -6,21 +6,28 @@ import {
   CheckCircle2,
   ChevronLeft,
   ExternalLink,
+  FileDiff,
+  GitCommitHorizontal,
   GitMerge,
   GitPullRequest,
   KeyRound,
   Loader2,
   MessageSquare,
+  Minus,
+  Plus,
   RefreshCw,
   Search,
   Settings2,
   Trash2,
+  Users,
   XCircle,
+  type LucideIcon,
 } from 'lucide-react'
 
 import type {
   CodeReviewItem,
   CodeReviewComment,
+  CodeReviewContext,
   GitServerConnection,
   GitServerConnectionInput,
   GitServerConnectionScope,
@@ -98,6 +105,104 @@ function providerLabel(provider: GitServerProvider | null): string {
 
 function providerReviewName(provider: GitServerProvider | null): string {
   return PROVIDERS.find((item) => item.value === provider)?.reviewName ?? 'Review'
+}
+
+type StatusTone = 'success' | 'warning' | 'danger' | 'neutral'
+
+const STATUS_TONE_CLASSES: Record<StatusTone, string> = {
+  success: 'bg-(--color-success-subtle) text-(--color-success)',
+  warning: 'bg-(--color-warning-subtle) text-(--color-warning)',
+  danger: 'bg-(--color-error-subtle) text-(--color-error)',
+  neutral: 'bg-(--bg-key) text-(--color-text-muted)',
+}
+
+function humanizeStatus(value: string): string {
+  return value.replaceAll('_', ' ').replaceAll('-', ' ')
+}
+
+function statusTone(value: string): StatusTone {
+  const normalized = value.toLowerCase()
+  if (
+    ['approved', 'clean', 'completed', 'mergeable', 'passed', 'success', 'succeeded'].some(
+      (candidate) => normalized.includes(candidate),
+    )
+  ) return 'success'
+  if (
+    ['blocked', 'cannot', 'changes requested', 'conflict', 'error', 'fail'].some(
+      (candidate) => normalized.includes(candidate),
+    )
+  ) return 'danger'
+  if (
+    ['pending', 'queued', 'running', 'checking', 'draft', 'unknown', 'unavailable'].some(
+      (candidate) => normalized.includes(candidate),
+    )
+  ) return 'warning'
+  return 'neutral'
+}
+
+function StatusPill({ label, value }: { label?: string; value: string }) {
+  const tone = statusTone(value)
+  return (
+    <span className={cn(
+      'inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium capitalize',
+      STATUS_TONE_CLASSES[tone],
+    )}>
+      {tone === 'success' && <CheckCircle2 size={10} aria-hidden="true" />}
+      {tone === 'danger' && <XCircle size={10} aria-hidden="true" />}
+      {tone === 'warning' && <AlertCircle size={10} aria-hidden="true" />}
+      {label && <span className="text-current/70">{label}</span>}
+      {humanizeStatus(value)}
+    </span>
+  )
+}
+
+function mergeabilityStatus(
+  mergeability: CodeReviewContext['mergeability'],
+): { label: string; tone: StatusTone } {
+  if (mergeability.merged) return { label: 'Merged', tone: 'success' }
+  if (mergeability.conflicts) return { label: 'Conflicts', tone: 'danger' }
+  const value = String(mergeability.mergeable ?? '').toLowerCase()
+  if (['true', 'clean', 'mergeable', 'can_be_merged'].includes(value)) {
+    return { label: 'Mergeable', tone: 'success' }
+  }
+  if (['false', 'dirty', 'cannot_be_merged', 'conflicts'].includes(value)) {
+    return { label: 'Blocked', tone: 'danger' }
+  }
+  return { label: 'Checking', tone: 'warning' }
+}
+
+function SummaryMetric({
+  Icon,
+  value,
+  label,
+  tone,
+}: {
+  Icon: LucideIcon
+  value: number
+  label: string
+  tone?: 'positive' | 'negative'
+}) {
+  return (
+    <div className="flex min-w-0 items-center gap-2 px-3 py-2.5">
+      <Icon
+        size={14}
+        className={cn(
+          'shrink-0 text-(--color-text-subtle)',
+          tone === 'positive' && 'text-(--color-success)',
+          tone === 'negative' && 'text-(--color-error)',
+        )}
+        aria-hidden="true"
+      />
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold tabular-nums text-(--color-text)">
+          {value.toLocaleString()}
+        </span>
+        <span className="block truncate text-[10px] text-(--color-text-muted)">
+          {label}
+        </span>
+      </span>
+    </div>
+  )
 }
 
 function remoteHost(remoteUrl: string | null): string {
@@ -241,12 +346,12 @@ function ReviewRow({
     <div
       data-review-key={reviewKey}
       className={cn(
-        'group flex w-full gap-3 border-t border-(--color-border)/70 px-4 py-3 text-left transition-colors first:border-t-0 hover:bg-(--bg-key)/60',
+        'group flex w-full gap-2.5 border-t border-(--color-border)/70 px-3 py-2.5 text-left transition-colors first:border-t-0 hover:bg-(--bg-key)/60',
         focused && 'bg-(--accent-blue-soft) ring-1 ring-inset ring-(--accent-blue)/35',
       )}
     >
       <Icon
-        size={16}
+        size={15}
         className={
           item.draft
             ? 'mt-0.5 shrink-0 text-(--color-text-subtle)'
@@ -258,7 +363,8 @@ function ReviewRow({
           <button
             type="button"
             onClick={() => onInspect(repository, item)}
-            className="min-w-0 flex-1 text-left text-sm font-medium leading-5 text-(--color-text) hover:text-(--color-accent)"
+            className="min-w-0 flex-1 truncate text-left text-sm font-medium leading-5 text-(--color-text) hover:text-(--color-accent)"
+            title={item.title}
           >
             {item.title}
           </button>
@@ -273,14 +379,24 @@ function ReviewRow({
               <ExternalLink size={12} />
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => void onOpenInChat(repository, item)}
+            disabled={opening}
+            className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-(--color-border) bg-(--bg-card) px-2 text-[11px] font-medium text-(--color-text-muted) shadow-sm transition-colors hover:border-(--color-accent)/45 hover:text-(--color-accent) disabled:opacity-60"
+            title={linked ? 'Continue review chat' : 'Review in chat'}
+          >
+            {opening ? (
+              <Loader2 size={11} className="animate-spin" />
+            ) : (
+              <MessageSquare size={11} />
+            )}
+            {linked ? 'Continue' : 'Review'}
+          </button>
         </span>
-        <span className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[11px] text-(--color-text-muted)">
+        <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-(--color-text-muted)">
           <span>#{item.number}</span>
-          {item.draft && (
-            <span className="rounded-full bg-(--bg-key) px-1.5 py-0.5 font-medium">
-              Draft
-            </span>
-          )}
+          <StatusPill value={item.draft ? 'draft' : item.state || 'open'} />
           {item.author && <span>by {item.author}</span>}
           {item.updated_at && <span>{formatRelativeDate(item.updated_at)}</span>}
           {item.comment_count !== null && (
@@ -290,7 +406,7 @@ function ReviewRow({
             </span>
           )}
         </span>
-        <span className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-(--color-text-subtle)">
+        <span className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-(--color-text-subtle)">
           {item.source_branch && (
             <span className="inline-flex min-w-0 items-center gap-1 font-mono">
               <span className="max-w-36 truncate">{item.source_branch}</span>
@@ -299,18 +415,12 @@ function ReviewRow({
             </span>
           )}
           {item.review_status && (
-            <span className="capitalize">
-              {item.review_status.replaceAll('_', ' ')}
-            </span>
+            <StatusPill label="Review" value={item.review_status} />
           )}
           {item.pipeline_status && (
-            <span className="capitalize">
-              checks {item.pipeline_status.replaceAll('_', ' ')}
-            </span>
+            <StatusPill label="Checks" value={item.pipeline_status} />
           )}
-        </span>
-        <span className="mt-2 flex flex-wrap items-center gap-2">
-          {item.labels.slice(0, 4).map((label) => (
+          {item.labels.slice(0, 2).map((label) => (
             <span
               key={label}
               className="rounded-full border border-(--color-border) px-1.5 py-0.5 text-[10px] text-(--color-text-muted)"
@@ -318,19 +428,6 @@ function ReviewRow({
               {label}
             </span>
           ))}
-          <button
-            type="button"
-            onClick={() => void onOpenInChat(repository, item)}
-            disabled={opening}
-            className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-md border border-(--color-border) bg-(--bg-card) px-2 text-[11px] font-medium text-(--color-text-muted) shadow-sm transition-colors hover:border-(--color-accent)/45 hover:text-(--color-accent) disabled:opacity-60"
-          >
-            {opening ? (
-              <Loader2 size={12} className="animate-spin" />
-            ) : (
-              <MessageSquare size={12} />
-            )}
-            {linked ? 'Continue chat' : 'Review in chat'}
-          </button>
         </span>
       </div>
     </div>
@@ -439,6 +536,19 @@ function ReviewDetails({
     await detail.refetch()
   }
   const capabilities = detail.data?.capabilities ?? {}
+  const summary = detail.data?.summary
+  const mergeability = detail.data
+    ? mergeabilityStatus(detail.data.mergeability)
+    : null
+  const approvedCount = detail.data?.approvals.filter(
+    (approval) => approval.state === 'approved',
+  ).length ?? 0
+  const hasMetrics = Boolean(summary && [
+    summary.commit_count,
+    summary.changed_files,
+    summary.additions,
+    summary.deletions,
+  ].some((value) => value !== null))
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="shrink-0 border-b border-(--color-border) p-3">
@@ -455,10 +565,28 @@ function ReviewDetails({
             <h3 className="text-sm font-semibold text-(--color-text)">
               {item.title}
             </h3>
-            <p className="mt-0.5 truncate text-[11px] text-(--color-text-muted)">
-              {repository.repository ?? repository.name} · #{item.number}
-            </p>
+            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-(--color-text-muted)">
+              <span>{repository.repository ?? repository.name} · #{item.number}</span>
+              <StatusPill value={item.draft ? 'draft' : item.state || 'open'} />
+              {(summary?.author ?? item.author) && (
+                <span>by {summary?.author ?? item.author}</span>
+              )}
+              {(summary?.updated_at ?? item.updated_at) && (
+                <span>{formatRelativeDate(summary?.updated_at ?? item.updated_at)}</span>
+              )}
+            </div>
           </div>
+          {item.web_url && (
+            <button
+              type="button"
+              onClick={() => void openExternalUrl(item.web_url)}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)"
+              aria-label={`Open review #${item.number} in browser`}
+              title="Open in browser"
+            >
+              <ExternalLink size={13} />
+            </button>
+          )}
           <button
             type="button"
             onClick={() => void detail.refetch()}
@@ -472,6 +600,13 @@ function ReviewDetails({
             />
           </button>
         </div>
+        {(summary?.source_branch ?? item.source_branch) && (
+          <div className="mt-2 flex min-w-0 items-center gap-1.5 rounded-md bg-(--bg-key)/70 px-2 py-1.5 font-mono text-[10px] text-(--color-text-muted)">
+            <span className="truncate">{summary?.source_branch ?? item.source_branch}</span>
+            <ArrowRight size={10} className="shrink-0" aria-hidden="true" />
+            <span className="truncate">{summary?.target_branch ?? item.target_branch}</span>
+          </div>
+        )}
         <div className="mt-3 flex flex-wrap gap-2">
           {capabilities.submit_approve && (
             <Button
@@ -526,37 +661,117 @@ function ReviewDetails({
         )}
         {detail.data && (
           <>
-            <section>
-              <h4 className="text-xs font-semibold text-(--color-text)">
-                Approvals & checks
-              </h4>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <div className="rounded-lg border border-(--color-border) bg-(--bg-card) p-3">
-                  <span className="block text-lg font-semibold">
-                    {detail.data.approvals.filter(
-                      (approval) => approval.state === 'approved',
-                    ).length}
+            <section className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <h4 className="text-xs font-semibold text-(--color-text)">
+                  Overview
+                </h4>
+                {summary?.created_at && (
+                  <span className="text-[10px] text-(--color-text-subtle)">
+                    Opened {formatRelativeDate(summary.created_at)}
                   </span>
-                  <span className="text-[11px] text-(--color-text-muted)">
-                    approvals
-                  </span>
+                )}
+              </div>
+              {summary?.description ? (
+                <p className="whitespace-pre-wrap text-xs leading-5 text-(--color-text-2)">
+                  {summary.description}
+                </p>
+              ) : (
+                <p className="text-xs italic text-(--color-text-subtle)">
+                  No description provided.
+                </p>
+              )}
+              {hasMetrics && summary && (
+                <div className="grid grid-cols-2 divide-x divide-y divide-(--color-border) overflow-hidden rounded-md border border-(--color-border) sm:grid-cols-4 sm:divide-y-0">
+                  {summary.commit_count !== null && (
+                    <SummaryMetric Icon={GitCommitHorizontal} value={summary.commit_count} label="commits" />
+                  )}
+                  {summary.changed_files !== null && (
+                    <SummaryMetric Icon={FileDiff} value={summary.changed_files} label="files changed" />
+                  )}
+                  {summary.additions !== null && (
+                    <SummaryMetric Icon={Plus} value={summary.additions} label="additions" tone="positive" />
+                  )}
+                  {summary.deletions !== null && (
+                    <SummaryMetric Icon={Minus} value={summary.deletions} label="deletions" tone="negative" />
+                  )}
                 </div>
-                <div className="rounded-lg border border-(--color-border) bg-(--bg-card) p-3">
-                  <span className="block text-sm font-semibold capitalize">
-                    {detail.data.checks.summary}
-                  </span>
-                  <span className="text-[11px] text-(--color-text-muted)">
+              )}
+              {(summary?.reviewers.length || summary?.assignees.length) ? (
+                <div className="space-y-1.5 text-[11px] text-(--color-text-muted)">
+                  {summary.reviewers.length > 0 && (
+                    <div className="flex items-start gap-2">
+                      <Users size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
+                      <span className="w-16 shrink-0">Reviewers</span>
+                      <span className="text-(--color-text-2)">{summary.reviewers.join(', ')}</span>
+                    </div>
+                  )}
+                  {summary.assignees.length > 0 && (
+                    <div className="flex items-start gap-2">
+                      <Users size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
+                      <span className="w-16 shrink-0">Assignees</span>
+                      <span className="text-(--color-text-2)">{summary.assignees.join(', ')}</span>
+                    </div>
+                  )}
+                </div>
+              ) : null}
+            </section>
+            <section className="border-t border-(--color-border) pt-4">
+              <h4 className="text-xs font-semibold text-(--color-text)">
+                Merge readiness
+              </h4>
+              <div className="mt-2 grid grid-cols-3 divide-x divide-(--color-border) border-y border-(--color-border)">
+                <div className="px-3 py-2.5">
+                  <span className="block text-sm font-semibold text-(--color-text)">{approvedCount}</span>
+                  <span className="text-[10px] text-(--color-text-muted)">approvals</span>
+                </div>
+                <div className="px-3 py-2.5">
+                  <StatusPill value={detail.data.checks.summary} />
+                  <span className="mt-1 block text-[10px] text-(--color-text-muted)">
                     {detail.data.checks.items.length} checks
                   </span>
                 </div>
+                <div className="px-3 py-2.5">
+                  {mergeability && (
+                    <span className={cn(
+                      'inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium',
+                      STATUS_TONE_CLASSES[mergeability.tone],
+                    )}>
+                      {mergeability.label}
+                    </span>
+                  )}
+                  <span className="mt-1 block text-[10px] text-(--color-text-muted)">merge status</span>
+                </div>
               </div>
-              {detail.data.mergeability.conflicts && (
-                <p className="mt-2 rounded-lg bg-(--color-warning-subtle) p-2 text-xs text-(--color-warning)">
-                  This review currently has merge conflicts.
-                </p>
+              {detail.data.checks.items.length > 0 && (
+                <div className="mt-3 divide-y divide-(--color-border) border-y border-(--color-border)">
+                  {detail.data.checks.items.map((check) => (
+                    <div key={check.id || check.name} className="flex items-center gap-2 py-2 text-[11px]">
+                      {statusTone(check.status) === 'success' ? (
+                        <CheckCircle2 size={12} className="shrink-0 text-(--color-success)" aria-hidden="true" />
+                      ) : statusTone(check.status) === 'danger' ? (
+                        <XCircle size={12} className="shrink-0 text-(--color-error)" aria-hidden="true" />
+                      ) : (
+                        <AlertCircle size={12} className="shrink-0 text-(--color-warning)" aria-hidden="true" />
+                      )}
+                      <span className="min-w-0 flex-1 truncate text-(--color-text-2)">{check.name}</span>
+                      <span className="capitalize text-(--color-text-muted)">{humanizeStatus(check.status)}</span>
+                      {check.url && (
+                        <button
+                          type="button"
+                          onClick={() => void openExternalUrl(check.url)}
+                          className="flex h-6 w-6 items-center justify-center rounded text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-text)"
+                          aria-label={`Open ${check.name}`}
+                        >
+                          <ExternalLink size={11} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
               )}
             </section>
-            <section>
+            <section className="border-t border-(--color-border) pt-4">
               <h4 className="text-xs font-semibold text-(--color-text)">
                 Discussion
               </h4>
