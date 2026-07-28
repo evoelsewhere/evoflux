@@ -211,7 +211,7 @@ export function ProviderCollapsedCard({
   return (
     <article
       className={cn(
-        'group relative flex items-stretch overflow-hidden rounded-xl border bg-(--bg-card) shadow-[0_10px_30px_rgba(0,0,0,0.035)] transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-px hover:shadow-[0_14px_36px_rgba(0,0,0,0.055)]',
+        'group relative flex items-stretch overflow-hidden rounded-xl border bg-(--bg-card) shadow-[0_10px_30px_rgba(0,0,0,0.035)] transition-[border-color,box-shadow,transform] duration-(--motion-fast) hover:-translate-y-px hover:shadow-[0_14px_36px_rgba(0,0,0,0.055)]',
         configuredButUnreachable
           ? 'border-(--color-error)/30 hover:border-(--color-error)/45'
           : connected
@@ -223,7 +223,7 @@ export function ProviderCollapsedCard({
         type="button"
         onClick={onExpand}
         aria-label={`Configure ${provider.label}`}
-        className="flex min-h-16 min-w-0 flex-1 items-center gap-3 px-3 py-3 text-left outline-none transition-colors duration-200 hover:bg-(--bg-key)/35 focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-(--focus-ring)/40 sm:gap-3.5 sm:px-4"
+        className="flex min-h-16 min-w-0 flex-1 items-center gap-3 px-3 py-3 text-left outline-none transition-colors duration-(--motion-fast) hover:bg-(--bg-key)/35 focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-(--focus-ring)/40 sm:gap-3.5 sm:px-4"
       >
         <ProviderBrandIcon provider={provider} size="md" />
         <span className="min-w-0 flex-1">
@@ -264,7 +264,7 @@ export function ProviderCollapsedCard({
           )}
           <ChevronRight
             size={15}
-            className="text-(--color-text-muted) transition-transform duration-200 group-hover:translate-x-0.5"
+            className="text-(--color-text-muted) transition-transform duration-(--motion-fast) group-hover:translate-x-0.5"
             aria-hidden="true"
           />
         </span>
@@ -273,7 +273,7 @@ export function ProviderCollapsedCard({
         <button
           type="button"
           onClick={() => void openExternalUrl(provider.docs_url)}
-          className="flex min-h-11 w-11 shrink-0 items-center justify-center border-l border-(--color-border-subtle) text-(--color-text-muted) outline-none transition-colors duration-200 hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-(--focus-ring)/40"
+          className="flex min-h-11 w-11 shrink-0 items-center justify-center border-l border-(--color-border-subtle) text-(--color-text-muted) outline-none transition-colors duration-(--motion-fast) hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-(--focus-ring)/40"
           aria-label={`${provider.label} documentation`}
         >
           <ExternalLink size={14} aria-hidden="true" />
@@ -1210,7 +1210,7 @@ function OAuthLoginDialog({
                     type="button"
                     onClick={() => { void copyDeviceCode() }}
                     className={cn(
-                      'flex h-10 w-10 items-center justify-center rounded-lg border transition-all',
+                      'flex h-10 w-10 items-center justify-center rounded-lg border transition-[background-color,border-color,color] duration-(--motion-fast)',
                       codeCopied
                         ? 'border-(--color-success)/30 bg-(--color-success-subtle) text-(--color-success)'
                         : 'border-(--color-border) bg-(--bg-card) text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)',

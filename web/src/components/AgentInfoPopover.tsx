@@ -315,7 +315,7 @@ export function AgentInfoPopover({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4 * preset.distance, scale: 0.97 }}
             transition={preset.spring}
-            className="absolute bottom-full right-0 z-(--z-modal) mb-2 max-h-[60vh] w-[min(22rem,calc(100vw-1rem))] overflow-y-auto rounded-[9px] border border-(--color-border) bg-(--color-surface) shadow-(--shadow-popover)"
+            className="absolute bottom-full right-0 z-(--z-modal) mb-2 max-h-[60vh] w-[min(22rem,calc(100vw-1rem))] overflow-y-auto rounded-lg border border-(--color-border) bg-(--color-surface) shadow-(--shadow-popover)"
           >
             {isLoading || !leadAgent ? (
               <div className="space-y-2 p-3">

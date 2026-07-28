@@ -21,6 +21,7 @@ import {
   touchesWiki,
 } from './helpers'
 import { isBackgroundCompletion, sendDesktopNotification } from '@/lib/desktop-notifications'
+import type { TurnChangedFile } from '@/api/types'
 import type { ActivityItem, CacheInvalidation, TeamStore } from './types'
 
 type Setter = (fn: (draft: TeamStore) => void) => void
@@ -429,6 +430,28 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
         break
       }
 
+      case 'delegation': {
+        const fromAgent = (d.from as string) || 'lead'
+        const toAgents = Array.isArray(d.to) ? (d.to as string[]) : []
+        const title = typeof d.title === 'string' ? d.title : 'Delegated task'
+        const taskIds = Array.isArray(d.task_ids) ? (d.task_ids as string[]) : []
+        set((draft) => {
+          pushActivity(draft, {
+            kind: 'delegation',
+            agent: fromAgent,
+            label: `Task → ${toAgents.join(', ') || 'agent'}: ${title}`,
+            meta: { from_agent: fromAgent, to_agents: toAgents, task_ids: taskIds, title },
+          })
+          for (const name of toAgents) {
+            ensureAgent(draft, name)
+            if (draft.agentStreams[name]) {
+              draft.agentStreams[name].status = 'working'
+            }
+          }
+        })
+        break
+      }
+
       case 'queued_turn_start': {
         const agent = d.agent as string
         const messageIds = Array.isArray(d.message_ids) ? new Set(d.message_ids as string[]) : null
@@ -730,8 +753,53 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
               tool: s.tool as string,
               args: (s.args as Record<string, unknown>) ?? {},
               summary: s.summary as string,
+              path: typeof s.path === 'string' ? s.path : undefined,
+              diff_stat:
+                s.diff_stat && typeof s.diff_stat === 'object'
+                  ? (s.diff_stat as { additions?: number | null; deletions?: number | null })
+                  : undefined,
             })),
           }
+        })
+        break
+      }
+
+      case 'turn_changes': {
+        const filesRaw = Array.isArray(d.files) ? d.files : []
+        const files: TurnChangedFile[] = []
+        for (const f of filesRaw) {
+          if (!f || typeof f !== 'object') continue
+          const row = f as Record<string, unknown>
+          const path = typeof row.path === 'string' ? row.path : null
+          if (!path) continue
+          const statusRaw = row.status
+          const status: TurnChangedFile['status'] =
+            statusRaw === 'added' ||
+            statusRaw === 'modified' ||
+            statusRaw === 'removed' ||
+            statusRaw === 'changed'
+              ? statusRaw
+              : 'changed'
+          files.push({
+            path,
+            status,
+            additions: typeof row.additions === 'number' ? row.additions : null,
+            deletions: typeof row.deletions === 'number' ? row.deletions : null,
+          })
+        }
+        set((draft) => {
+          if (files.length === 0) {
+            draft.turnChanges = null
+            draft.turnChangesOpen = false
+            return
+          }
+          draft.turnChanges = {
+            sessionId: (d.session_id as string) ?? draft.sessionId ?? '',
+            additions: typeof d.additions === 'number' ? d.additions : 0,
+            deletions: typeof d.deletions === 'number' ? d.deletions : 0,
+            files,
+          }
+          draft.turnChangesOpen = true
         })
         break
       }

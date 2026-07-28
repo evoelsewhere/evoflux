@@ -1056,6 +1056,7 @@ class AgentTeam:
 
             try:
                 await self._emit_completion_notification(session_id)
+                await self._emit_turn_changes(session_id)
                 await stream_store.push_event(
                     session_id,
                     StreamEnvelope.from_event(DoneEvent()),
@@ -1064,6 +1065,27 @@ class AgentTeam:
             except Exception as exc:
                 logger.warning("team_emit_done_failed error={}", exc)
             logger.info("team_turn_done session_id={}", session_id)
+
+    async def _emit_turn_changes(self, session_id: str) -> None:
+        """Flush turn file mutations and push ``turn_changes`` SSE if any."""
+        try:
+            from app.agent.schemas.events import TurnChangesEvent
+            from app.services import turn_changes as turn_changes_svc
+
+            snap = turn_changes_svc.flush_turn(session_id)
+            await stream_store.push_event(
+                session_id,
+                StreamEnvelope.from_event(
+                    TurnChangesEvent(
+                        session_id=session_id,
+                        additions=snap.additions if snap else 0,
+                        deletions=snap.deletions if snap else 0,
+                        files=[f.to_dict() for f in snap.files] if snap else [],
+                    )
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("team_emit_turn_changes_failed error={}", exc)
 
     async def _emit_completion_notification(self, session_id: str) -> None:
         try:
@@ -1634,6 +1656,9 @@ class AgentTeam:
         # exists by the time the client's GET /team/{sid}/stream arrives.
         try:
             await stream_store.init_turn(session_id)
+            from app.services import turn_changes as turn_changes_svc
+
+            turn_changes_svc.begin_turn(session_id)
         except Exception as exc:
             logger.warning("team_init_turn_failed error={}", exc)
 

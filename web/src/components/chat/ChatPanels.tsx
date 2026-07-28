@@ -16,6 +16,7 @@
  */
 import { AnimatePresence } from 'framer-motion'
 import { PlanReviewPanel } from '../PlanReviewPanel'
+import { ChangesReviewPanel } from '../ChangesReviewPanel'
 import { ActivityPanel } from '../ActivityPanel'
 import { CommandPalette, type Command } from '../CommandPalette'
 import { RunInputsDialog, type RunInputsRequest } from '../RunInputsDialog'
@@ -26,6 +27,9 @@ interface ChatTrailingPanelsProps {
   onQuoteComment: (quote: string, comment: string) => void
   showActivity: boolean
   onCloseActivity: () => void
+  workspace?: string | null
+  mode?: 'forge' | 'coding' | 'aim'
+  onOpenChangedFile?: (path: string) => void
 }
 
 // Side panels rendered after <main> inside AppShell's body row.
@@ -33,10 +37,18 @@ export function ChatTrailingPanels({
   onQuoteComment,
   showActivity,
   onCloseActivity,
+  workspace,
+  mode = 'forge',
+  onOpenChangedFile,
 }: ChatTrailingPanelsProps) {
   return (
     <>
       <PlanReviewPanel onQuoteComment={onQuoteComment} />
+      <ChangesReviewPanel
+        workspace={workspace}
+        mode={mode}
+        onOpenFile={onOpenChangedFile}
+      />
       <AnimatePresence>
         {showActivity && (
           <SidePanel

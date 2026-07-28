@@ -250,7 +250,7 @@ export function CodingWorkspacePanel({
           <div className="relative grid grid-cols-4 items-center rounded-lg border border-(--color-border) bg-(--bg-page) p-0.5">
             <motion.div
               aria-hidden="true"
-              className="pointer-events-none absolute bottom-0.5 left-0.5 top-0.5 w-[calc((100%-0.25rem)/4)] rounded-[6px] bg-(--bg-key) shadow-sm"
+              className="pointer-events-none absolute bottom-0.5 left-0.5 top-0.5 w-[calc((100%-0.25rem)/4)] rounded-md bg-(--bg-key) shadow-sm"
               initial={false}
               animate={{ x: `${WORKSPACE_TABS.findIndex((t) => t.key === tab) * 100}%` }}
               transition={preset.spring}
@@ -264,7 +264,7 @@ export function CodingWorkspacePanel({
                   onClick={() => setTab(key)}
                   title={label}
                   className={cn(
-                    'relative z-10 flex min-w-0 items-center justify-center gap-1 rounded-[6px] px-1 py-1.5 text-xs outline-none transition-[color,transform] duration-(--motion-fast) active:translate-y-px focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--color-accent)/35',
+                    'relative z-10 flex min-w-0 items-center justify-center gap-1 rounded-md px-1 py-1.5 text-xs outline-none transition-[color,transform] duration-(--motion-fast) active:translate-y-px focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--color-accent)/35',
                     active ? 'font-medium text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)',
                   )}
                 >

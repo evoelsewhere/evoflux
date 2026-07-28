@@ -95,6 +95,8 @@ function resetSessionState(
   state.activeWorkflowExecution = null
   state.setupRequired = null
   state.planApproval = null
+  state.turnChanges = null
+  state.turnChangesOpen = false
   state.permissionRequest = null
     state._abortController = null
   state._pendingMessages = []
@@ -208,6 +210,8 @@ export const useTeamStore = create<TeamStore>()(
     setupRequired: null,
     browserSession: null,
     planApproval: null,
+    turnChanges: null,
+    turnChangesOpen: false,
     permissionRequest: null,
     askUserQuestion: null,
       _pendingMessages: [],
@@ -1047,6 +1051,18 @@ export const useTeamStore = create<TeamStore>()(
 
     dismissSetupRequired: () => {
       set((draft) => { draft.setupRequired = null })
+    },
+
+    dismissTurnChanges: () => {
+      set((draft) => { draft.turnChangesOpen = false })
+    },
+
+    showTurnChanges: () => {
+      set((draft) => {
+        if (draft.turnChanges && draft.turnChanges.files.length > 0) {
+          draft.turnChangesOpen = true
+        }
+      })
     },
 
     _drainCacheInvalidations: () => {

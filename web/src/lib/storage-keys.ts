@@ -27,6 +27,7 @@ export const STORAGE_KEYS = {
   /** Resizable panel widths (useResizableWidth / SidePanel storageKey props). */
   panels: {
     activity: 'oa.activityPanel.width',
+    changes: 'oa.changesPanel.width',
     terminal: 'oa.terminalPanel.width',
     codingWorkspace: 'oa.codingWorkspacePanel.width',
     codingWorkspacePicker: 'oa.codingWorkspacePicker.width',

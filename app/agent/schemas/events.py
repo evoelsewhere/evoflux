@@ -118,6 +118,21 @@ class DoneEvent(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class TurnChangesEvent(BaseModel):
+    """Files touched during the completed agent turn (Cursor-like Changes).
+
+    Emitted just before or with turn completion so the UI can open a
+    Changes review panel. ``files`` entries use workspace-relative paths.
+    """
+
+    type: Literal["turn_changes"] = "turn_changes"
+    session_id: str
+    additions: int = 0
+    deletions: int = 0
+    files: list[dict[str, Any]] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class RateLimitEvent(BaseModel):
     """Provider is rate-limited; client should retry after ``retry_after`` seconds."""
 
@@ -304,14 +319,15 @@ class PlanApprovalRequestedEvent(BaseModel):
 
     ``plan`` is the agent-authored markdown plan document. Each step in
     ``steps`` has ``tool``, ``args`` (JSON-serialisable dict), and
-    ``summary`` (one-line description for the user).
+    ``summary`` (one-line description for the user). Optional ``path`` and
+    ``diff_stat`` fields are included when the step mutates a known file.
     """
 
     type: Literal["plan_approval_requested"] = "plan_approval_requested"
     request_id: str  # unique ID — included in the reply POST
     session_id: str  # agent session that owns the plan
     plan: str = ""  # markdown plan document authored by the agent
-    steps: list[dict[str, Any]]  # [{tool, args, summary}, ...]
+    steps: list[dict[str, Any]]  # [{tool, args, summary, path?, diff_stat?}, ...]
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

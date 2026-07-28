@@ -3,6 +3,8 @@ import { AnimatePresence, motion } from 'framer-motion'
 import {
   Check,
   ChevronDown,
+  ClipboardList,
+  FileDiff,
   GitPullRequest,
   Menu,
   MessageSquare,
@@ -19,6 +21,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useMotionPreset } from '@/lib/motion'
 import { usePlatform } from '@/hooks/use-platform'
+import { useTeamStore } from '@/stores/useTeamStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { OpenWithMenu } from '@/components/workbench/OpenWithMenu'
 import type { ViewMode } from '@/components/TeamChatView/types'
@@ -46,10 +49,15 @@ interface WorkbenchBarProps {
 export function WorkbenchBar(props: WorkbenchBarProps) {
   const workbenchOpen = useUIStore((state) => state.workbenchOpen)
   const toggleWorkbench = useUIStore((state) => state.toggleWorkbench)
+  const turnChanges = useTeamStore((s) => s.turnChanges)
+  const showTurnChanges = useTeamStore((s) => s.showTurnChanges)
+  const planApproval = useTeamStore((s) => s.planApproval)
   const motionPreset = useMotionPreset()
   const { isTauri, os } = usePlatform()
   const isDesktopShell = isTauri && os !== 'ios' && os !== 'android'
   const showOpenWith = isDesktopShell && !props.isMobile
+  const changesCount = turnChanges?.files.length ?? 0
+  const planPending = Boolean(planApproval)
   const viewModeLabel =
     props.viewMode === 'agent'
       ? 'Agent'
@@ -100,8 +108,8 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
             aria-label="Choose active agent"
             data-no-drag
           >
-            <span className="relative flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-(--color-border) bg-(--bg-page) text-(--color-accent) shadow-[inset_0_1px_0_rgb(255_255_255/0.06)]">
-              <span className="absolute inset-1 rounded-full bg-(--color-accent)/10 blur-[3px]" />
+            <span className="relative flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-(--color-border) bg-(--bg-page) text-(--color-accent)">
+              <span className="absolute inset-0 rounded-lg bg-(--color-accent)/6" aria-hidden="true" />
               <Orbit size={14} strokeWidth={1.8} className="relative z-10" />
               <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-(--bg-card) bg-(--color-success)" />
             </span>
@@ -225,6 +233,37 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
         </DropdownMenu>
 
         <span className="mx-0.5 h-4 w-px bg-(--color-border)" aria-hidden="true" />
+
+        {planPending && (
+          <span
+            className="flex h-7 items-center gap-1.5 rounded-lg border border-(--color-border) bg-(--bg-key) px-2 text-[11px] font-medium text-(--color-text)"
+            title="Plan awaiting approval"
+            aria-label="Plan awaiting approval"
+          >
+            <ClipboardList size={12} className="text-(--color-text-muted)" aria-hidden />
+            Plan
+          </span>
+        )}
+
+        {changesCount > 0 && (
+          <button
+            type="button"
+            onClick={() => {
+              showTurnChanges()
+              if (props.workspace) {
+                useUIStore.getState().openWorkbenchTool('review')
+              }
+            }}
+            className="focus-ring-control flex h-7 items-center gap-1.5 rounded-lg border border-(--color-border) bg-(--bg-key) px-2 font-mono text-[11px] tabular-nums text-(--color-text) transition-colors hover:border-(--color-border-strong)"
+            title="Files changed this turn"
+            aria-label={`Changes +${turnChanges?.additions ?? 0} −${turnChanges?.deletions ?? 0}`}
+          >
+            <FileDiff size={12} className="text-(--color-text-muted)" aria-hidden />
+            <span className="text-(--color-success)">+{turnChanges?.additions ?? 0}</span>
+            <span className="text-(--color-error)">−{turnChanges?.deletions ?? 0}</span>
+            <span className="text-(--color-text-muted)">·{changesCount}</span>
+          </button>
+        )}
 
         <motion.button
           layout

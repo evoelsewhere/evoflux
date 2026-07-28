@@ -46,6 +46,7 @@ from app.agent.schemas.events import (
     ToolEndEvent,
     ToolOutputDeltaEvent,
     ToolStartEvent,
+    TurnChangesEvent,
     UsageEvent,
     WidgetDeltaEvent,
 )
@@ -64,6 +65,7 @@ AnyStreamEvent = Union[
     ToolEndEvent,
     UsageEvent,
     DoneEvent,
+    TurnChangesEvent,
     RateLimitEvent,
     ProviderStatusEvent,
     ErrorEvent,

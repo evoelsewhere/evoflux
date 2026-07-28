@@ -206,7 +206,7 @@ export function AgentPane({
 
   return (
     <div
-      className={`flex h-full flex-col overflow-hidden rounded-[10px] bg-(--bg-card) transition-all duration-(--motion-base) ${paneClass}`}
+      className={`flex h-full flex-col overflow-hidden rounded-lg bg-(--bg-card) transition-[box-shadow,border-color,opacity] duration-(--motion-base) ${paneClass}`}
     >
       {/* Header */}
       <div className="flex items-center gap-2 border-b border-(--color-border-subtle) bg-(--bg-key)/50 px-3 py-2.5">

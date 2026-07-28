@@ -22,7 +22,7 @@ function QueuedMessageContent({ content }: { content: string }) {
           onClick={() => setExpanded((v) => !v)}
           aria-expanded={expanded}
           title={expanded ? 'Collapse' : 'Expand'}
-          className="absolute top-1.5 right-1.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-(--bg-key) text-(--color-text-2) transition-all duration-(--motion-fast) hover:text-(--color-text) active:scale-90 md:h-5 md:w-5"
+          className="absolute top-1.5 right-1.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-(--bg-key) text-(--color-text-2) transition-[opacity,background-color,color,transform] duration-(--motion-fast) hover:text-(--color-text) active:scale-90 md:h-5 md:w-5"
         >
           {expanded ? <ChevronUp size={14} className="md:h-3 md:w-3" /> : <ChevronDown size={14} className="md:h-3 md:w-3" />}
         </button>

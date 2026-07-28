@@ -8,7 +8,7 @@
  * send them as one revise reply. `PlanActionBar` (mounted above the
  * composer) carries the Accept / Revise / Reject actions.
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Bandage,
@@ -50,16 +50,28 @@ const TOOL_ICON_MAP: Record<string, LucideIcon> = {
 
 function StepRow({ step, index }: { step: PlanStep; index: number }) {
   const Icon = TOOL_ICON_MAP[step.tool] ?? Wrench
+  const path = step.path
+  const add = step.diff_stat?.additions
+  const del = step.diff_stat?.deletions
   return (
-    <div className="flex items-start gap-2.5 rounded-lg border border-(--color-border) bg-(--bg-card) p-2.5">
+    <div className="flex items-start gap-2.5 rounded-lg border border-(--color-border-subtle) bg-(--bg-page) p-2.5">
       <Icon size={14} className="mt-0.5 shrink-0 text-(--color-text-muted)" aria-hidden="true" />
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-xs bg-(--bg-key) px-1.5 py-0.5 font-mono text-xs text-(--color-text-muted)">
             {step.tool}
           </span>
           <span className="text-xs font-semibold text-(--color-text-muted)">Step {index + 1}</span>
+          {(add != null || del != null) && (
+            <span className="font-mono text-[10px] tabular-nums text-(--color-text-muted)">
+              {add != null && <span className="text-(--color-success)">+{add}</span>}
+              {del != null && <span className="ml-1 text-(--color-error)">−{del}</span>}
+            </span>
+          )}
         </div>
+        {path && (
+          <p className="mt-1 break-all font-mono text-[11px] text-(--color-accent)">{path}</p>
+        )}
         <p className="mt-1 break-all text-xs text-(--color-text)">{step.summary}</p>
       </div>
     </div>
@@ -272,9 +284,44 @@ export function PlanReviewPanel({
                         transition={preset.transition}
                         className="mt-2 space-y-1.5 overflow-hidden"
                       >
-                        {planApproval.steps.map((step, i) => (
-                          <StepRow key={i} step={step} index={i} />
-                        ))}
+                        {(() => {
+                          const byFile = new Map<string, PlanStep[]>()
+                          const unpathed: PlanStep[] = []
+                          for (const step of planApproval.steps) {
+                            if (step.path) {
+                              const list = byFile.get(step.path) ?? []
+                              list.push(step)
+                              byFile.set(step.path, list)
+                            } else {
+                              unpathed.push(step)
+                            }
+                          }
+                          let stepIndex = 0
+                          const rows: ReactNode[] = []
+                          for (const [path, steps] of byFile) {
+                            rows.push(
+                              <p
+                                key={`file-${path}`}
+                                className="px-0.5 pt-1 font-mono text-[10px] font-semibold uppercase tracking-wide text-(--color-text-subtle)"
+                              >
+                                {path}
+                              </p>,
+                            )
+                            for (const step of steps) {
+                              rows.push(
+                                <StepRow key={`${path}-${stepIndex}`} step={step} index={stepIndex} />,
+                              )
+                              stepIndex += 1
+                            }
+                          }
+                          for (const step of unpathed) {
+                            rows.push(
+                              <StepRow key={`misc-${stepIndex}`} step={step} index={stepIndex} />,
+                            )
+                            stepIndex += 1
+                          }
+                          return rows
+                        })()}
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -319,7 +366,10 @@ export function PlanActionBar({ onRevise }: { onRevise: () => void }) {
       await replyPlanApproval(sessionId, planApproval.requestId, decision)
       useTeamStore.setState({ planApproval: null })
       if (decision === 'approved') {
-        useToastStore.getState().push({ tone: 'success', title: 'Plan approved — executing' })
+        useToastStore.getState().push({
+          tone: 'success',
+          title: 'Plan approved — execute recorded steps in order',
+        })
       }
     } catch (err) {
       setReplyError(err instanceof Error ? err.message : 'Failed to send reply. Please try again.')

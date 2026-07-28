@@ -27,6 +27,7 @@ import { getDiffStats } from './diffUtils'
 import { panelTransition, useMotionPreset } from '@/lib/motion'
 import { useUIStore } from '@/stores/useUIStore'
 import { useTeamStore } from '@/stores/useTeamStore'
+import { SubagentTaskCard } from '@/components/SubagentTaskCard'
 import type { ToolCallState } from './types'
 
 interface ToolCallProps {
@@ -173,8 +174,42 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
   const headerClassName = `min-w-0 truncate font-mono text-(--color-text) ${state === 'running' ? 'animate-pulse text-(--color-marker-orange)' : ''}`
   const elapsedMs = durationMs ?? (!done && startedAt ? now - startedAt : undefined)
 
+  // Cursor-like Task chrome for team_delegate — replace generic tool row.
+  if (name === 'team_delegate') {
+    let agent = 'agent'
+    let taskTitle = 'Delegated task'
+    try {
+      const parsed = args ? (JSON.parse(args) as Record<string, unknown>) : {}
+      agent =
+        (typeof parsed.to === 'string' && parsed.to) ||
+        (typeof parsed.agent === 'string' && parsed.agent) ||
+        (typeof parsed.member === 'string' && parsed.member) ||
+        'agent'
+      taskTitle =
+        (typeof parsed.title === 'string' && parsed.title) ||
+        (typeof parsed.task === 'string' && parsed.task) ||
+        (typeof parsed.goal === 'string' && parsed.goal) ||
+        (typeof parsed.content === 'string' && parsed.content) ||
+        (typeof parsed.prompt === 'string' && parsed.prompt) ||
+        taskTitle
+    } catch {
+      // keep defaults
+    }
+    const setActiveAgent = useTeamStore.getState().setActiveAgent
+    return (
+      <div className="my-2">
+        <SubagentTaskCard
+          agent={agent}
+          title={taskTitle}
+          status={isRunning ? 'running' : state === 'failed' ? 'idle' : 'done'}
+          onFocus={() => setActiveAgent(agent)}
+        />
+      </div>
+    )
+  }
+
   return (
-    <div className="tool-row-enter my-2">
+    <div className="my-2">
       {/* Header row — separate from the details container so collapsed tools stay lightweight. */}
       <button
         type="button"
@@ -244,7 +279,7 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
             transition={panelTransition(preset)}
             className="overflow-hidden"
           >
-            <section className="surface-raised group relative mt-1 overflow-hidden rounded-md border border-(--color-border) bg-(--bg-card)">
+            <section className="group relative mt-1 ml-2 overflow-hidden border-l border-(--color-border) pl-3">
               {usesDiffView ? (
                 <DiffView
                   toolName={name}
@@ -269,7 +304,7 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
                         </span>
                         <button
                           onClick={handleCopyArgs}
-                          className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) opacity-100 transition-all hover:bg-(--bg-key) hover:text-(--color-text-2) focus-visible:outline-2 focus-visible:outline-(--focus-ring) md:h-6 md:w-6 md:opacity-0 md:group-hover:opacity-100"
+                          className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) opacity-100 transition-[opacity,background-color,color] duration-(--motion-fast) hover:bg-(--bg-key) hover:text-(--color-text-2) focus-visible:outline-2 focus-visible:outline-(--focus-ring) md:h-6 md:w-6 md:opacity-0 md:group-hover:opacity-100"
                           aria-label="Copy arguments"
                           title="Copy"
                         >
@@ -335,7 +370,7 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
                         </span>
                         <button
                           onClick={handleCopyResult}
-                          className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) opacity-100 transition-all hover:bg-(--bg-key) hover:text-(--color-text-2) focus-visible:outline-2 focus-visible:outline-(--focus-ring) md:h-6 md:w-6 md:opacity-0 md:group-hover:opacity-100"
+                          className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) opacity-100 transition-[opacity,background-color,color] duration-(--motion-fast) hover:bg-(--bg-key) hover:text-(--color-text-2) focus-visible:outline-2 focus-visible:outline-(--focus-ring) md:h-6 md:w-6 md:opacity-0 md:group-hover:opacity-100"
                           aria-label="Copy result"
                           title="Copy result"
                         >

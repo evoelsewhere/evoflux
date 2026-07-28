@@ -259,7 +259,7 @@ export function SidePanel({
                   whileTap={{ scale: 0.9 }}
                   transition={motionPreset.spring}
                   aria-label={closeLabel}
-                  className="flex h-5 w-5 items-center justify-center rounded-md text-(--color-text-muted) hover:text-(--color-text)"
+                  className="focus-ring-control press-control flex h-5 w-5 items-center justify-center rounded-md text-(--color-text-muted) hover:text-(--color-text)"
                 >
                   <X size={12} aria-hidden="true" />
                 </motion.button>

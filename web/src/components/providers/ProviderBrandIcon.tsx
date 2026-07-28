@@ -108,7 +108,7 @@ export function ProviderBrandIcon({
   return (
     <div
       className={cn(
-        'flex shrink-0 items-center justify-center transition-all',
+        'flex shrink-0 items-center justify-center transition-[background-color,border-color,opacity] duration-(--motion-fast)',
         sizeClasses[size],
         className,
       )}
