@@ -90,6 +90,7 @@ function TextPreview({
   file,
   onAddComment,
   onSendToChat,
+  onAddCodeToChat,
   editing = false,
   onSaved,
   pendingDiff,
@@ -100,6 +101,8 @@ function TextPreview({
   file: WorkspaceFileInfo
   onAddComment?: (path: string, startLine: number, endLine: number) => void
   onSendToChat?: (action: string, code: string, path: string, startLine: number, endLine: number) => void
+  /** Append selected code block to the chat composer. */
+  onAddCodeToChat?: (code: string, path: string, startLine: number, endLine: number) => void
   editing?: boolean
   onSaved?: () => void
   pendingDiff?: { original: string; modified: string } | null
@@ -112,6 +115,7 @@ function TextPreview({
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(!tooLarge)
   const [saving, setSaving] = useState(false)
+  const [editorMounted, setEditorMounted] = useState(false)
   const editorRef = useRef<Parameters<NonNullable<Parameters<typeof Editor>[0]['onMount']>>[0] | null>(null)
 
   const monaco = useMonaco()
@@ -144,7 +148,7 @@ function TextPreview({
 
   // Register custom context menu actions
   useEffect(() => {
-    if (!monaco || !editorRef.current) return
+    if (!monaco || !editorMounted || !editorRef.current) return
     const editor = editorRef.current
     const disposables: { dispose: () => void }[] = []
 
@@ -200,6 +204,19 @@ function TextPreview({
           },
         }),
       )
+      disposables.push(
+        editor.addAction({
+          id: 'evoflux.addToChat',
+          label: 'Add to chat',
+          contextMenuGroupId: 'evoflux',
+          contextMenuOrder: 5,
+          run: (ed) => {
+            const sel = ed.getSelection()
+            const text = sel ? ed.getModel()?.getValueInRange(sel) : ''
+            if (text && sel) onAddCodeToChat?.(text, file.path, sel.startLineNumber, sel.endLineNumber)
+          },
+        }),
+      )
     }
 
     // Ctrl+S to save in edit mode
@@ -216,10 +233,11 @@ function TextPreview({
 
     return () => { disposables.forEach((d) => d.dispose()) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [monaco, editing, onSendToChat, onAddComment, file.path])
+  }, [monaco, editorMounted, editing, onSendToChat, onAddComment, onAddCodeToChat, file.path])
 
   const handleEditorMount = useCallback((editor: Parameters<NonNullable<Parameters<typeof Editor>[0]['onMount']>>[0]) => {
     editorRef.current = editor
+    setEditorMounted(true)
   }, [])
 
   const handleChange = useCallback((value: string | undefined) => {
@@ -567,6 +585,7 @@ export function CodingFileViewerPanel({
   onClose,
   onAddComment,
   onSendToChat,
+  onAddCodeToChat,
   pendingDiff,
   onAcceptDiff,
   onRejectDiff,
@@ -581,6 +600,8 @@ export function CodingFileViewerPanel({
   onAddComment?: (path: string, startLine: number, endLine: number) => void
   /** Editor → Chat: user triggers an action on selected code */
   onSendToChat?: (action: string, code: string, path: string, startLine: number, endLine: number) => void
+  /** Append selected code block to the chat composer. */
+  onAddCodeToChat?: (code: string, path: string, startLine: number, endLine: number) => void
   /** Show inline diff from agent suggestion (original vs modified) */
   pendingDiff?: { original: string; modified: string } | null
   /** Accept the pending diff — apply modified content */
@@ -706,6 +727,7 @@ export function CodingFileViewerPanel({
             file={file}
             onAddComment={onAddComment}
             onSendToChat={onSendToChat}
+            onAddCodeToChat={onAddCodeToChat}
             editing={editing}
             pendingDiff={pendingDiff}
             onAcceptDiff={onAcceptDiff}
