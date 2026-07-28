@@ -327,12 +327,6 @@ function setControlsDisabled(disabled) {
   captureRegionBtn.disabled = disabled;
   attachFileBtn.disabled = disabled;
   openInEvoFluxBtn.disabled = disabled || !selectedSessionId;
-  if (annotationActive || previewActive) {
-    captureRegionBtn.disabled = true;
-    attachPageBtn.disabled = true;
-    attachSelectionBtn.disabled = true;
-    attachFileBtn.disabled = true;
-  }
 }
 
 function renderPickedElement() {
@@ -2027,30 +2021,42 @@ function confirmAnnotation() {
   if (!png) { setComposerStatus("Could not export annotated image.", "error"); return; }
   annotatedDataBase64 = png;
   annotationActive = false;
-  annotationEditor.close();
+  annotationOverlay.classList.remove("visible");
   openPreview(png, true);
 }
 
 function openPreview(base64Png, isAnnotated) {
   previewActive = true;
   previewImage.src = `data:image/png;base64,${base64Png}`;
-  const bytes = Math.round((base64Png.length * 3) / 4);
-  const sizeLabel = bytes > 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${bytes} B`;
-  const dim = regionCapture?.clip
-    ? `${Math.round(regionCapture.clip.width)}×${Math.round(regionCapture.clip.height)}`
-    : "";
-  previewMeta.textContent = [
-    isAnnotated ? "Annotated" : "Original",
-    dim ? `${dim}px` : "",
-    sizeLabel,
-  ].filter(Boolean).join(" · ");
+  const img = new Image();
+  img.onload = () => {
+    const actualW = img.naturalWidth;
+    const actualH = img.naturalHeight;
+    const bytes = Math.round((base64Png.length * 3) / 4);
+    const sizeLabel = bytes > 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${bytes} B`;
+    previewMeta.textContent = [
+      isAnnotated ? "Annotated" : "Original",
+      `${actualW}×${actualH}px`,
+      sizeLabel,
+    ].filter(Boolean).join(" · ");
+  };
+  img.src = `data:image/png;base64,${base64Png}`;
   previewOverlay.classList.add("visible");
+  document.addEventListener("keydown", onPreviewKeyDown);
+}
+
+function onPreviewKeyDown(e) {
+  if (e.key === "Escape") {
+    e.preventDefault();
+    void closePreview(true);
+  }
 }
 
 function closePreview(clearCapture) {
   previewActive = false;
   previewOverlay.classList.remove("visible");
   previewImage.src = "";
+  document.removeEventListener("keydown", onPreviewKeyDown);
   if (clearCapture) {
     closeAnnotation(true);
   }
@@ -2060,18 +2066,41 @@ function backToAnnotation() {
   previewActive = false;
   previewOverlay.classList.remove("visible");
   previewImage.src = "";
-  if (regionCapture?.data_base64) {
-    openAnnotation(regionCapture.data_base64);
+  document.removeEventListener("keydown", onPreviewKeyDown);
+  if (annotationEditor) {
+    annotationActive = true;
+    annotationEditor.reopen();
+    setComposerStatus("Annotate the screenshot or skip to send as-is.");
   }
 }
 
 async function sendFromPreview() {
+  const content = composer.value.trim();
+  if (!content) {
+    previewActive = false;
+    previewOverlay.classList.remove("visible");
+    document.removeEventListener("keydown", onPreviewKeyDown);
+    if (annotationEditor) {
+      annotationActive = true;
+      annotationEditor.reopen();
+    }
+    setComposerStatus("Type a message before sending the screenshot.", "error");
+    composer.focus();
+    return;
+  }
+
   previewActive = false;
   previewOverlay.classList.remove("visible");
   previewImage.src = "";
+  document.removeEventListener("keydown", onPreviewKeyDown);
 
   if (annotatedDataBase64 && regionCapture?.tab_id === activeTab?.id) {
     regionCapture.data_base64 = annotatedDataBase64;
+    await chrome.runtime.sendMessage({
+      type: "update_region_capture",
+      tab_id: activeTab.id,
+      data_base64: annotatedDataBase64,
+    }).catch(() => {});
   }
   setComposerStatus("Sending screenshot…");
   await sendMessage();

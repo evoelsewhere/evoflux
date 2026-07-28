@@ -38,15 +38,23 @@
       document.addEventListener("keydown", this._onKeyDown);
     }
 
+    reopen() {
+      if (!this.baseImage) return;
+      this.container.classList.add("visible");
+      this._setupCanvas();
+      this._render();
+      document.addEventListener("keydown", this._onKeyDown);
+    }
+
     close() {
       this.container.classList.remove("visible");
       this._removeTextInput();
       document.removeEventListener("keydown", this._onKeyDown);
-      if (this.canvas) {
-        this.canvas.removeEventListener("pointerdown", this._onPointerDown);
-        this.canvas.removeEventListener("pointermove", this._onPointerMove);
-        this.canvas.removeEventListener("pointerup", this._onPointerUp);
-        this.canvas.removeEventListener("pointerleave", this._onPointerUp);
+      if (this.overlayCanvas) {
+        this.overlayCanvas.removeEventListener("pointerdown", this._onPointerDown);
+        this.overlayCanvas.removeEventListener("pointermove", this._onPointerMove);
+        this.overlayCanvas.removeEventListener("pointerup", this._onPointerUp);
+        this.overlayCanvas.removeEventListener("pointerleave", this._onPointerUp);
       }
     }
 

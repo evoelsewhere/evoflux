@@ -3670,6 +3670,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  if (msg.type === "update_region_capture") {
+    (async () => {
+      try {
+        const tabId = msg.tab_id;
+        if (tabId == null || !msg.data_base64) throw new Error("tab_id and data_base64 are required.");
+        const storage = regionCaptureStorage();
+        const captures = await readRegionCaptures();
+        if (!captures[tabId]) throw new Error("No region capture exists for this tab.");
+        captures[tabId].data_base64 = msg.data_base64;
+        await storage.set({ [REGION_CAPTURE_STORAGE_KEY]: captures });
+        sendResponse({ ok: true });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
   if (msg.type === "capture_panel_context") {
     (async () => {
       try {
