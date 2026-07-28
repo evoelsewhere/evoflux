@@ -696,6 +696,13 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
     inputRef.current?.focus()
   }, [])
 
+  /** Editor context menu → Chat: append selected code block to composer */
+  const handleAddCodeToChat = useCallback((code: string, path: string, startLine: number, endLine: number) => {
+    const lineRef = startLine === endLine ? `L${startLine}` : `L${startLine}-L${endLine}`
+    inputRef.current?.appendValue(`@${path}#${lineRef}\n\`\`\`\n${code}\n\`\`\`\n`)
+    inputRef.current?.focus()
+  }, [])
+
   const handleSendToSideChat = useCallback((selectedText: string) => {
     setSideChatQuote(selectedText)
     openWorkbenchTool('side-chat')
@@ -1156,6 +1163,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
           initialViewMode={codingFileViewerMode}
           onAddComment={handleAddFileComment}
           onSendToChat={handleSendToChat}
+          onAddCodeToChat={handleAddCodeToChat}
           onClose={() => {
             setCodingFileViewer(null)
             setCodingFileViewerMode('file')
