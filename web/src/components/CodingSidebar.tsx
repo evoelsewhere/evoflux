@@ -1164,7 +1164,7 @@ export function CodingSidebar({
                         type="button"
                         onClick={() => void openProjectSession(project)}
                         disabled={!canCreateSession}
-                        className={`ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-xs border border-(--color-border) text-(--color-text-muted) transition-all hover:bg-(--bg-key) hover:text-(--color-text-2) disabled:cursor-not-allowed disabled:opacity-40 ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                        className={`ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-xs border border-(--color-border) text-(--color-text-muted) transition-[opacity,background-color,color,border-color] duration-(--motion-fast) hover:bg-(--bg-key) hover:text-(--color-text-2) disabled:cursor-not-allowed disabled:opacity-40 ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
                         aria-label={canCreateSession ? `New session in ${project.name}` : `${project.name} has no repositories yet`}
                         title={canCreateSession ? `New session in ${project.name}` : "Add a repository to this project first"}
                       >
@@ -1177,7 +1177,7 @@ export function CodingSidebar({
                           setDeleteProjectTarget(project);
                         }}
                         disabled={deleteProjectMutation.isPending}
-                        className={`ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-xs text-(--color-text-subtle) transition-all hover:bg-(--color-error-subtle) hover:text-(--color-error) disabled:cursor-not-allowed disabled:opacity-40 ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                        className={`ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-xs text-(--color-text-subtle) transition-[opacity,background-color,color,border-color] duration-(--motion-fast) hover:bg-(--color-error-subtle) hover:text-(--color-error) disabled:cursor-not-allowed disabled:opacity-40 ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
                         aria-label={`Delete project ${project.name}`}
                         title={`Delete project ${project.name}`}
                       >
@@ -1379,7 +1379,7 @@ export function CodingSidebar({
                   e.stopPropagation();
                   void selectWorkspace(path, { create: true });
                 }}
-                className={`ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-xs border border-(--color-border) text-(--color-text-muted) transition-all hover:bg-(--bg-key) hover:text-(--color-text-2) ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                className={`ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-xs border border-(--color-border) text-(--color-text-muted) transition-[opacity,background-color,color,border-color] duration-(--motion-fast) hover:bg-(--bg-key) hover:text-(--color-text-2) ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
                 aria-label={`New session in ${workspaceLabel(path)}`}
                 title={`New session in ${workspaceLabel(path)}`}
               >
@@ -1390,7 +1390,7 @@ export function CodingSidebar({
                 onClick={() => {
                   void openWorktreeDialog(path);
                 }}
-                className={`ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-xs border border-(--color-border) text-(--color-text-muted) transition-all hover:bg-(--bg-key) hover:text-(--color-text-2) ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                className={`ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-xs border border-(--color-border) text-(--color-text-muted) transition-[opacity,background-color,color,border-color] duration-(--motion-fast) hover:bg-(--bg-key) hover:text-(--color-text-2) ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
                 aria-label={`Create worktree from ${workspaceLabel(path)}`}
                 title="Create worktree"
               >
@@ -1399,7 +1399,7 @@ export function CodingSidebar({
               <button
                 type="button"
                 onClick={() => setRemoveWorkspaceTarget(path)}
-                className={`ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-xs text-(--color-text-subtle) transition-all hover:bg-(--color-error-subtle) hover:text-(--color-error) ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                className={`ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-xs text-(--color-text-subtle) transition-[opacity,background-color,color,border-color] duration-(--motion-fast) hover:bg-(--color-error-subtle) hover:text-(--color-error) ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
                 aria-label={`Hide repository ${workspaceLabel(path)} from sidebar`}
                 title="Hide repository from sidebar"
               >

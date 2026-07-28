@@ -12,6 +12,7 @@
  * 500→600 via `interactive-weight`, active uses `--bg-key` fill.
  */
 import { motion, AnimatePresence } from 'framer-motion'
+import { useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import type { ComponentType, MouseEventHandler, ReactNode } from 'react'
 
@@ -50,6 +51,8 @@ export function SidebarItem({
   rightSlot,
   className,
 }: SidebarItemProps) {
+  const preset = useMotionPreset()
+
   return (
     <button
       type="button"
@@ -73,6 +76,7 @@ export function SidebarItem({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            transition={preset.transition}
             className="flex-1 truncate text-left whitespace-nowrap"
           >
             {label}

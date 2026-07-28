@@ -214,6 +214,25 @@ def make_tool_executor(
                 result[:1000] if len(result) > 1000 else result,
             )
 
+            # Track file mutations for post-turn Changes review (lead stream id).
+            try:
+                from app.services import turn_changes as turn_changes_svc
+
+                track_sid = str(
+                    s.metadata.get("stream_session_id")
+                    or s.metadata.get("session_id")
+                    or ""
+                )
+                if track_sid and not str(result).startswith("Error:"):
+                    turn_changes_svc.record_tool_change(
+                        track_sid,
+                        tc.function.name,
+                        args,
+                        result=str(result),
+                    )
+            except Exception:  # noqa: BLE001 — never break tool execution
+                pass
+
         except Exception as e:
             result = f"Error: {sanitize_error(str(e))}"
             tool_elapsed = time.monotonic() - tool_start

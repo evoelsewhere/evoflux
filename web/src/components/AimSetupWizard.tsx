@@ -45,7 +45,7 @@ function StepIndicator({ step }: { step: 1 | 2 }) {
         <div
           key={i}
           className={cn(
-            'h-1.5 rounded-full transition-all duration-300',
+            'h-1.5 rounded-full transition-[width,background-color] duration-(--motion-base)',
             i < step
               ? 'w-4 bg-(--color-success)'
               : i === step

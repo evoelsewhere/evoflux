@@ -752,6 +752,21 @@ a svg[aria-hidden="true"],
   animation: settings-loading-enter 180ms var(--ease-out, ease-out) both;
 }
 
+/* ─────────────────────────────────────────────────────────────
+ * Shell micro-interaction recipes (icon buttons / chrome controls)
+ * ───────────────────────────────────────────────────────────── */
+@layer utilities {
+  .focus-ring-control {
+    outline: none;
+  }
+  .focus-ring-control:focus-visible {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus-ring) 35%, transparent);
+  }
+  .press-control:active:not(:disabled) {
+    transform: translateY(1px) scale(0.98);
+  }
+}
+
 @media (max-width: 767px) {
   [role='dialog'][aria-labelledby='settings-dialog-title'] button {
     min-height: 44px;

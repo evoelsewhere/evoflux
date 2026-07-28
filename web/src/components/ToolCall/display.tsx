@@ -602,10 +602,30 @@ export function getToolDisplay(name: string, args: string | undefined): ToolDisp
         formattedArgs: null,
       }
     }
+  }
+
+  // ── team_delegate: Cursor-like Task card chrome ─────────────────────
+  if (name === 'team_delegate') {
+    const to = str(parsed, 'to') || str(parsed, 'agent') || str(parsed, 'member') || 'agent'
+    const title =
+      str(parsed, 'title') ||
+      str(parsed, 'task') ||
+      str(parsed, 'goal') ||
+      trunc(str(parsed, 'content') || str(parsed, 'prompt') || 'Delegated task')
+    const truncated = trunc(to)
     return {
-      header: 'Managing team roster…',
-      headerTitle: 'Managing team roster…',
-      formattedArgs: null,
+      header: (
+        <>
+          Task → <Arg>{truncated}</Arg>
+          {title ? (
+            <>
+              : <span className="text-(--color-text-muted)">{title}</span>
+            </>
+          ) : null}
+        </>
+      ),
+      headerTitle: `Task → ${to}${title ? `: ${title}` : ''}`,
+      formattedArgs: str(parsed, 'content') || str(parsed, 'prompt') || null,
     }
   }
 

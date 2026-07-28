@@ -31,6 +31,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { ListEnter } from '@/components/motion'
+import { useListEnterIndex } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import type { AimTraceabilityIssue, AimTraceabilityUnit, CodingProject } from '@/api/types'
 
@@ -96,6 +98,7 @@ export function AimTraceabilityPanel({ project }: { project: CodingProject }) {
     )
   }, [issueFilter, phase, search, units])
   const selected = units.find((unit) => unit.unit === selectedKey) ?? null
+  const rowEnterIndex = useListEnterIndex(filtered.map((unit) => unit.unit))
   const attention = useMemo(
     () =>
       [
@@ -262,14 +265,21 @@ export function AimTraceabilityPanel({ project }: { project: CodingProject }) {
           </div>
           {filtered.length === 0 ? (
             <p className="px-4 py-10 text-center text-xs text-(--color-text-subtle)">No units match these filters.</p>
-          ) : filtered.map((unit) => (
-            <TraceabilityRow
+          ) : filtered.map((unit) => {
+            const enterIndex = rowEnterIndex(unit.unit)
+            return (
+            <ListEnter
               key={unit.unit}
+              index={enterIndex ?? 0}
+              disabled={enterIndex === undefined}
+            >
+            <TraceabilityRow
               unit={unit}
               selected={unit.unit === selectedKey}
               onClick={() => setSelectedKey(unit.unit)}
             />
-          ))}
+            </ListEnter>
+          )})}
         </section>
 
         <aside className={cn('min-h-0 min-w-0 flex-1 overflow-y-auto border-l border-(--color-border) bg-(--bg-subtle)/25 lg:max-w-[46%]', !selected && 'hidden lg:block')}>

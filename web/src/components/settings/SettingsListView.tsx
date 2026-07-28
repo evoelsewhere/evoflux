@@ -30,7 +30,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useSettingsNavigate } from '@/contexts/SettingsContext'
-import { useMotionPreset } from '@/lib/motion'
+import { fadeRise, staggerDelay, useListEnterIndex, useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -134,6 +134,11 @@ export function SettingsListView({
 
   const total = rows.filter((row) => row.kind !== 'group').length
   const countLabel = total === 1 ? '1 item' : `${total} items`
+  const visibleItemKeys = useMemo(
+    () => filtered.filter((row) => row.kind !== 'group').map((row) => row.key),
+    [filtered],
+  )
+  const enterIndex = useListEnterIndex(visibleItemKeys, 12)
 
   return (
     <SettingsPage
@@ -168,7 +173,7 @@ export function SettingsListView({
         )}
 
         {total > 0 && (
-        <SettingsGroup className="divide-y-0 shadow-[0_12px_36px_rgba(0,0,0,0.035)]">
+        <SettingsGroup className="divide-y-0 shadow-[0_12px_36px_rgba(0,0,0,0.035)]" stagger={false}>
           <div className="flex h-10 items-center gap-2 border-b border-(--color-border-subtle) px-3">
             <Search size={13} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
             <label htmlFor={filterId} className="sr-only">
@@ -194,7 +199,11 @@ export function SettingsListView({
           ) : (
             <ul>
               {filtered.map((row) => (
-                <ListRow key={row.key} row={row} />
+                <ListRow
+                  key={row.key}
+                  row={row}
+                  enterIndex={row.kind === 'group' ? undefined : enterIndex(row.key)}
+                />
               ))}
             </ul>
           )}
@@ -217,9 +226,16 @@ function NewButton({ to, label }: { to: string; label: string }) {
   )
 }
 
-function ListRow({ row }: { row: ListViewRow }) {
+function ListRow({
+  row,
+  enterIndex,
+}: {
+  row: ListViewRow
+  enterIndex?: number
+}) {
   const navigate = useSettingsNavigate()
   const preset = useMotionPreset()
+  const enter = enterIndex !== undefined ? fadeRise(preset, 6) : null
 
   if (row.kind === 'group') {
     return (
@@ -289,22 +305,34 @@ function ListRow({ row }: { row: ListViewRow }) {
     </button>
   )
 
+  const rowClassName = 'not-last:border-b not-last:border-(--color-border-subtle)'
+  const content = row.onToggleSelect ? (
+    <div className="flex items-start">
+      <label className="flex h-11 shrink-0 cursor-pointer items-center pl-4">
+        <Checkbox
+          checked={!!row.selected}
+          onCheckedChange={() => row.onToggleSelect?.()}
+          aria-label={`Select ${row.title}`}
+        />
+      </label>
+      <div className="min-w-0 flex-1">{body}</div>
+    </div>
+  ) : (
+    body
+  )
+
+  if (!enter || enterIndex === undefined) {
+    return <li className={rowClassName}>{content}</li>
+  }
+
   return (
-    <li className="not-last:border-b not-last:border-(--color-border-subtle)">
-      {row.onToggleSelect ? (
-        <div className="flex items-start">
-          <label className="flex h-11 shrink-0 cursor-pointer items-center pl-4">
-            <Checkbox
-              checked={!!row.selected}
-              onCheckedChange={() => row.onToggleSelect?.()}
-              aria-label={`Select ${row.title}`}
-            />
-          </label>
-          <div className="min-w-0 flex-1">{body}</div>
-        </div>
-      ) : (
-        body
-      )}
-    </li>
+    <motion.li
+      className={rowClassName}
+      initial={enter.initial}
+      animate={enter.animate}
+      transition={{ ...enter.transition, delay: staggerDelay(preset, enterIndex) }}
+    >
+      {content}
+    </motion.li>
   )
 }

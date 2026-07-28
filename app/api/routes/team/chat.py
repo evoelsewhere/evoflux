@@ -1147,6 +1147,36 @@ async def get_team_session_detail(
     )
 
 
+class TurnChangedFileOut(BaseModel):
+    path: str
+    status: Literal["added", "modified", "removed", "changed"] = "changed"
+    additions: int | None = None
+    deletions: int | None = None
+
+
+class TurnChangesOut(BaseModel):
+    session_id: str
+    additions: int = 0
+    deletions: int = 0
+    files: list[TurnChangedFileOut] = []
+
+
+@router.get("/sessions/{session_id}/changes", response_model=TurnChangesOut)
+async def get_session_turn_changes(session_id: UUID) -> TurnChangesOut:
+    """Return the latest post-turn file-change snapshot for a lead session."""
+    from app.services import turn_changes as turn_changes_svc
+
+    snap = turn_changes_svc.get_latest(str(session_id))
+    if snap is None:
+        return TurnChangesOut(session_id=str(session_id))
+    return TurnChangesOut(
+        session_id=snap.session_id,
+        additions=snap.additions,
+        deletions=snap.deletions,
+        files=[TurnChangedFileOut(**f.to_dict()) for f in snap.files],
+    )
+
+
 @router.patch("/sessions/{session_id}")
 async def update_team_session(
     session_id: UUID, body: TeamSessionUpdateRequest, db: DbSession
