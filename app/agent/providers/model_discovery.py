@@ -8,29 +8,12 @@ import httpx
 from loguru import logger
 
 from app.agent.providers.catalog import ProviderEntry
+from app.agent.providers.capabilities import get_capabilities
+from app.agent.providers.model_metadata import get_model_features
 from app.agent.providers.openai.compatible import OPENAI_COMPATIBLE_PROVIDER_SPECS
 from app.core.config import settings
 
 TIMEOUT_S = 3.0
-
-_NON_AGENT_MODEL_MARKERS = (
-    "embedding",
-    "embed",
-    "rerank",
-    "moderation",
-    "whisper",
-    "tts",
-    "dall-e",
-    "davinci",
-    "gpt-audio",
-    "gpt-image",
-    "imagen",
-    "image",
-    "lyria",
-    "nano-banana",
-    "sora",
-    "veo",
-)
 
 
 def _secret_value(value: object) -> str:
@@ -58,14 +41,18 @@ def _resolve(overrides: Mapping[str, str] | None, name: str, default: str = "") 
     return setting_val or default
 
 
-def is_agent_model_id(model_id: str) -> bool:
-    """Return True for model IDs that are plausible text-chat agent models."""
-    lowered = model_id.lower()
-    return not any(marker in lowered for marker in _NON_AGENT_MODEL_MARKERS)
+def is_agent_model_id(provider_id: str, model_id: str) -> bool:
+    """Return whether registry metadata permits text/tool agent use."""
+    qualified = f"{provider_id}:{model_id}"
+    capabilities = get_capabilities(qualified)
+    features = get_model_features(qualified)
+    return capabilities.output.text and features.tool_call is not False
 
 
-def filter_agent_model_ids(model_ids: list[str]) -> list[str]:
-    return [model_id for model_id in model_ids if is_agent_model_id(model_id)]
+def filter_agent_model_ids(provider_id: str, model_ids: list[str]) -> list[str]:
+    return [
+        model_id for model_id in model_ids if is_agent_model_id(provider_id, model_id)
+    ]
 
 
 async def _openai_compatible_models(
@@ -348,7 +335,9 @@ async def discover_provider_models(
             case "openai":
                 models = await _openai_compatible_models(
                     provider_id=provider_id,
-                    base_url=_resolve(overrides, "OPENAI_BASE_URL", settings.OPENAI_BASE_URL),
+                    base_url=_resolve(
+                        overrides, "OPENAI_BASE_URL", settings.OPENAI_BASE_URL
+                    ),
                     api_key=_resolve(overrides, "OPENAI_API_KEY"),
                 )
             case _ if provider_id in OPENAI_COMPATIBLE_PROVIDER_SPECS:
@@ -394,7 +383,7 @@ async def discover_provider_models(
                         models = list(plugin.fallback_models)
                 else:
                     models = []
-        return filter_agent_model_ids(models)
+        return filter_agent_model_ids(provider_id, models)
     except Exception as exc:
         logger.info(
             "provider_models_unavailable provider={} error={}", provider_id, exc

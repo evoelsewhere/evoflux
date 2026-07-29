@@ -337,7 +337,11 @@ def _package_feature_inventory(package: zipfile.ZipFile) -> dict[str, Any]:
     }
 
 
-def _layout_findings(presentation) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def _layout_findings(
+    presentation,
+    *,
+    allow_shape_only: bool = False,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     findings: list[dict[str, Any]] = []
     metrics: list[dict[str, Any]] = []
     for slide_number, slide in enumerate(presentation.slides, start=1):
@@ -651,11 +655,12 @@ def _layout_findings(presentation) -> tuple[list[dict[str, Any]], list[dict[str,
     ):
         findings.append(
             _finding(
-                "warning",
+                "warning" if allow_shape_only else "error",
                 "deck:shape-only-composition",
                 1,
                 f"Deck has {len(metrics)} slides but no native charts, tables, "
-                "or non-icon pictures; verify the shape-only treatment is intentional",
+                "or non-icon pictures; add a native visual or explicitly allow the "
+                "shape-only treatment",
             )
         )
     return findings, metrics
@@ -676,6 +681,7 @@ def inspect_pptx(
     source: Path,
     *,
     reference: Path | None = None,
+    allow_shape_only: bool = False,
 ) -> dict[str, Any]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -758,7 +764,10 @@ def inspect_pptx(
             "Embedded audio/video is preserved structurally, but Chromium visual QA "
             "does not verify media playback"
         )
-    layout_findings, layout_metrics = _layout_findings(presentation)
+    layout_findings, layout_metrics = _layout_findings(
+        presentation,
+        allow_shape_only=allow_shape_only,
+    )
     baseline = _baseline_values(reference)
     retained_findings = []
     for finding in layout_findings:
@@ -804,9 +813,18 @@ def main() -> int:
     parser.add_argument("file", type=Path)
     parser.add_argument("--render-dir", type=Path)
     parser.add_argument("--compare-to", type=Path)
+    parser.add_argument(
+        "--allow-shape-only",
+        action="store_true",
+        help="permit decks of five or more slides without charts, tables, or pictures",
+    )
     args = parser.parse_args()
 
-    report = inspect_pptx(args.file, reference=args.compare_to)
+    report = inspect_pptx(
+        args.file,
+        reference=args.compare_to,
+        allow_shape_only=args.allow_shape_only,
+    )
     if args.render_dir:
         report["render"] = _render(args.file, args.render_dir)
         render = report["render"]

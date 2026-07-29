@@ -8,6 +8,53 @@ import pytest
 from app.agent.providers.model_discovery import _bedrock_models
 
 
+def test_model_filter_uses_capabilities_not_name_markers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.agent.providers import model_discovery
+
+    monkeypatch.setattr(
+        model_discovery,
+        "get_capabilities",
+        lambda model_id: SimpleNamespace(
+            output=SimpleNamespace(text=model_id != "custom:explicit-image")
+        ),
+    )
+    monkeypatch.setattr(
+        model_discovery,
+        "get_model_features",
+        lambda _model_id: SimpleNamespace(tool_call=None),
+    )
+
+    result = model_discovery.filter_agent_model_ids(
+        "custom",
+        ["explicit-image", "unknown-image-name", "chat"],
+    )
+
+    assert result == ["unknown-image-name", "chat"]
+
+
+def test_model_filter_rejects_explicit_no_tool_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.agent.providers import model_discovery
+
+    monkeypatch.setattr(
+        model_discovery,
+        "get_capabilities",
+        lambda _model_id: SimpleNamespace(output=SimpleNamespace(text=True)),
+    )
+    monkeypatch.setattr(
+        model_discovery,
+        "get_model_features",
+        lambda model_id: SimpleNamespace(tool_call=model_id != "custom:completion"),
+    )
+
+    assert model_discovery.filter_agent_model_ids(
+        "custom", ["completion", "agent"]
+    ) == ["agent"]
+
+
 class _BedrockClient:
     def list_foundation_models(self, **kwargs):
         assert kwargs == {"byOutputModality": "TEXT"}

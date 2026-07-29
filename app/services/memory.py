@@ -28,11 +28,24 @@ IMPORTS_DIR = "imports"
 WIKI_DIR = "wiki"
 MEMORY_ROOT_FILES: tuple[str, ...] = (SCHEMA_FILE, INDEX_FILE, LOG_FILE)
 MEMORY_SUBDIRS: tuple[str, ...] = (NOTES_DIR, IMPORTS_DIR, WIKI_DIR)
+EXTRACTED_FACTS_MARKER = "evoflux-memory-facts:v1"
 _SEARCH_ROOT_FILES: tuple[str, ...] = (INDEX_FILE, SCHEMA_FILE, LOG_FILE)
 _SEARCH_DIRS: tuple[str, ...] = (WIKI_DIR, NOTES_DIR, IMPORTS_DIR)
-_TOKEN_RE = re.compile(r"[a-z0-9][a-z0-9_./:-]*")
+_TOKEN_RE = re.compile(r"[^\W_]+", re.UNICODE)
 
 DEFAULT_SCHEMA = """# Memory Schema\n\nDream maintains `wiki/*.md` from canonical raw sources.\n\nRules:\n- Keep `notes/` and `imports/` as raw sources; do not rewrite them.\n- Prefer updating existing `wiki/*.md` pages over creating duplicates.\n- Cite stable source refs such as `session:<uuid>`, `message:<uuid>`, `note:<file>#<entry>`, `import:<slug>`, and `wiki:<slug>`.\n- Do not store secrets, credentials, private keys, or temporary noise.\n- Respect explicit “do not remember this” requests.\n"""
+DEFAULT_SCHEMA = f"""# Memory Schema
+
+Dream maintains `wiki/*.md` from canonical raw sources.
+
+Rules:
+- Keep `notes/` and `imports/` as raw sources; do not rewrite them.
+- Do not copy unclassified raw source content into compiled wiki pages.
+- Promote facts only from notes marked `{EXTRACTED_FACTS_MARKER}` by the memory extractor.
+- Cite stable source refs such as `session:<uuid>`, `message:<uuid>`, `note:<file>#<entry>`, `import:<slug>`, and `wiki:<slug>`.
+- Do not store secrets, credentials, private keys, or temporary noise.
+- Respect explicit “do not remember this” requests.
+"""
 DEFAULT_INDEX = """# Memory Index\n\n- `SCHEMA.md` — maintainer rules and conventions.\n- `LOG.md` — chronological Dream activity.\n- `notes/` — raw user/agent notes.\n- `imports/` — raw imported documents.\n- `wiki/` — compiled memory pages.\n"""
 DEFAULT_LOG = (
     """# Memory Log\n\nChronological append-only record of Dream memory activity.\n"""
@@ -80,6 +93,8 @@ _SEARCH_STOPWORDS = {
     "how",
     "in",
     "is",
+    "me",
+    "my",
     "of",
     "s",
     "should",
@@ -88,33 +103,8 @@ _SEARCH_STOPWORDS = {
     "what",
     "which",
     "with",
+    "you",
 }
-_TOPIC_ALIASES = {
-    "do": "support",
-    "does": "support",
-    "help": "support",
-    "helps": "support",
-    "want": "support",
-    "wants": "support",
-    "answer": "response-style",
-    "answers": "response-style",
-    "answering": "response-style",
-    "direct": "response-style",
-    "respond": "response-style",
-    "response": "response-style",
-    "responses": "response-style",
-    "personalization": "personalization",
-    "personalisation": "personalization",
-    "prefer": "preferences",
-    "preferred": "preferences",
-    "preference": "preferences",
-    "preferences": "preferences",
-    "prefers": "preferences",
-}
-_DOMAIN_PREFERENCE_RE = re.compile(
-    r"\b(prefer|prefers|preferred|preference|favorite)\b", re.IGNORECASE
-)
-_USER_MEMORY_QUERY_RE = re.compile(r"\buser\b", re.IGNORECASE)
 _CITATION_RE = re.compile(r"\[([^\]]+:[^\]]+)\]")
 _FACT_SECTIONS = {
     "## Facts": "active",
@@ -276,12 +266,36 @@ def _tokens(text: str) -> list[str]:
     return _TOKEN_RE.findall(text.lower())
 
 
+def _normalize_token(token: str) -> str:
+    """Apply inflection cleanup without mapping words into domain concepts."""
+    normalized = token.casefold()
+    if len(normalized) > 4 and normalized.endswith("ies"):
+        return normalized[:-3] + "y"
+    if len(normalized) > 4 and normalized.endswith("ing"):
+        normalized = normalized[:-3]
+    elif len(normalized) > 3 and normalized.endswith("ed"):
+        normalized = normalized[:-2]
+    elif (
+        len(normalized) > 3
+        and normalized.endswith("s")
+        and not normalized.endswith("ss")
+    ):
+        normalized = normalized[:-1]
+    if len(normalized) > 3 and normalized[-1:] == normalized[-2:-1]:
+        normalized = normalized[:-1]
+    return normalized
+
+
 def _meaningful_query_tokens(query: str) -> set[str]:
     return {
-        _TOPIC_ALIASES.get(token, token)
+        _normalize_token(token)
         for token in _tokens(query)
         if token not in _SEARCH_STOPWORDS
     }
+
+
+def _normalized_tokens(text: str) -> list[str]:
+    return [_normalize_token(token) for token in _tokens(text)]
 
 
 def _frontmatter_metadata(text: str) -> dict[str, object]:
@@ -302,7 +316,9 @@ def _frontmatter_metadata(text: str) -> dict[str, object]:
     raw_topics = data.get("topics")
     if isinstance(raw_topics, list):
         topics = {
-            str(topic).strip().lower() for topic in raw_topics if str(topic).strip()
+            _normalize_token(str(topic).strip())
+            for topic in raw_topics
+            if str(topic).strip()
         }
     return {
         "memory_kind": str(data.get("memory_kind", "")).strip().lower(),
@@ -366,7 +382,7 @@ def _diagnose_file_result(
     text: str,
     base_score: float,
 ) -> dict[str, object]:
-    text_tokens = set(_tokens(f"{rel_path}\n{text}"))
+    text_tokens = set(_normalized_tokens(f"{rel_path}\n{text}"))
     meaningful = _meaningful_query_tokens(query)
     meaningful_text_tokens = _meaningful_query_tokens(f"{rel_path}\n{text}")
     metadata = _frontmatter_metadata(text)
@@ -376,10 +392,7 @@ def _diagnose_file_result(
     meaningful_matched = sorted(meaningful & meaningful_text_tokens)
     meaningful_missing = sorted(meaningful - meaningful_text_tokens)
     topic_overlap = sorted(meaningful & topic_set)
-    is_domain_preference = bool(_DOMAIN_PREFERENCE_RE.search(query)) and bool(
-        meaningful - topic_set
-    )
-    needs_user_evidence = bool(_USER_MEMORY_QUERY_RE.search(query))
+    query_count = len(meaningful)
     return {
         "base_score": base_score,
         "matched_tokens": matched_tokens,
@@ -389,8 +402,11 @@ def _diagnose_file_result(
         "scope": metadata.get("scope", ""),
         "topics": sorted(topic_set),
         "topic_overlap": topic_overlap,
-        "is_domain_preference_query": is_domain_preference,
-        "needs_user_evidence": needs_user_evidence,
+        "query_token_count": query_count,
+        "evidence_token_count": len(meaningful_matched),
+        "query_coverage": (
+            len(meaningful_matched) / query_count if query_count else 0.0
+        ),
     }
 
 
@@ -400,114 +416,60 @@ def _diagnose_fact_result(
     fact: MemoryFact,
     base_score: float,
 ) -> dict[str, object]:
-    text_tokens = set(_tokens(f"{fact.path}\n{fact.text}"))
+    text_tokens = set(_normalized_tokens(f"{fact.path}\n{fact.text}"))
     meaningful = _meaningful_query_tokens(query)
     meaningful_text_tokens = _meaningful_query_tokens(f"{fact.path}\n{fact.text}")
     topics = fact.metadata.get("topics")
     topic_set = topics if isinstance(topics, set) else set()
     topic_overlap = sorted(meaningful & topic_set)
+    meaningful_matched = sorted(meaningful & meaningful_text_tokens)
+    query_count = len(meaningful)
     return {
         "base_score": base_score,
         "matched_tokens": sorted(query_tokens & text_tokens),
         "missing_meaningful_tokens": sorted(meaningful - meaningful_text_tokens),
-        "matched_meaningful_tokens": sorted(meaningful & meaningful_text_tokens),
+        "matched_meaningful_tokens": meaningful_matched,
         "memory_kind": fact.metadata.get("memory_kind", ""),
         "scope": fact.metadata.get("scope", ""),
         "topics": sorted(topic_set),
         "topic_overlap": topic_overlap,
-        "is_domain_preference_query": bool(_DOMAIN_PREFERENCE_RE.search(query))
-        and bool(meaningful - topic_set),
-        "needs_user_evidence": bool(_USER_MEMORY_QUERY_RE.search(query)),
+        "query_token_count": query_count,
+        "evidence_token_count": len(meaningful_matched),
+        "query_coverage": (
+            len(meaningful_matched) / query_count if query_count else 0.0
+        ),
         "fact_section": fact.section,
         "citations": list(fact.citations),
     }
 
 
 def _reranked_file_score(score: float, diagnostics: dict[str, object]) -> float:
-    reranked = score
     topic_overlap = diagnostics.get("topic_overlap")
-    matched_meaningful = diagnostics.get("matched_meaningful_tokens")
-    topics = diagnostics.get("topics")
-    if isinstance(topic_overlap, list) and topic_overlap:
-        reranked *= 1.35
-    if isinstance(matched_meaningful, list) and len(matched_meaningful) >= 2:
-        reranked *= 1.15
-    if diagnostics.get("is_domain_preference_query") and isinstance(topics, list):
-        reranked *= 0.2 if not topic_overlap else 0.6
-    if (
-        diagnostics.get("scope") == "user"
-        and isinstance(topics, list)
-        and "preferences" in topics
-    ):
-        reranked *= 1.25
-    if diagnostics.get("needs_user_evidence") and diagnostics.get("scope") != "user":
-        reranked *= 0.25
-    diagnostics["rerank_multiplier"] = reranked / score if score else 0.0
-    return reranked
+    coverage = diagnostics.get("query_coverage")
+    topic_bonus = 0.1 * len(topic_overlap) if isinstance(topic_overlap, list) else 0.0
+    coverage_bonus = 0.5 * coverage if isinstance(coverage, float) else 0.0
+    multiplier = 1.0 + topic_bonus + coverage_bonus
+    diagnostics["rerank_multiplier"] = multiplier
+    return score * multiplier
 
 
-def should_abstain_file_result(diagnostics: dict[str, object]) -> bool:
-    """Return whether a file hit is too weak for explicit answer retrieval.
-
-    The rule is intentionally general and debuggable: domain-specific
-    preference questions need at least one non-generic meaningful token match
-    against page topics. Candidate hits are still visible when callers request
-    candidate diagnostics from the benchmark harness.
-    """
-    if not diagnostics.get("is_domain_preference_query"):
+def _has_sufficient_evidence(diagnostics: dict[str, object]) -> bool:
+    """Require lexical coverage without classifying semantic query intent."""
+    query_count = diagnostics.get("query_token_count")
+    evidence_count = diagnostics.get("evidence_token_count")
+    coverage = diagnostics.get("query_coverage")
+    if not isinstance(query_count, int) or not isinstance(evidence_count, int):
         return False
-    topics = diagnostics.get("topics")
-    topic_overlap = diagnostics.get("topic_overlap")
-    if not isinstance(topics, list) or not isinstance(topic_overlap, list):
+    if not isinstance(coverage, float) or query_count <= 0:
         return False
-    non_generic_overlap = set(topic_overlap) - {"preferences"}
-    return not non_generic_overlap
-
-
-def _candidate_has_answer_evidence(diagnostics: dict[str, object]) -> bool:
-    """Return whether a hit has enough lexical evidence to answer a query.
-
-    This is a conservative post-retrieval filter, not a benchmark policy.  A
-    page that only matches generic project/topic tokens is still kept when it
-    also matches an asking verb such as `prefer`, `choose`, or `require`; broad
-    pages that miss those answer-bearing tokens are dropped but remain visible
-    in benchmark candidate artifacts when abstention is disabled.
-    """
-    matched = diagnostics.get("matched_meaningful_tokens")
-    missing = diagnostics.get("missing_meaningful_tokens")
-    if not isinstance(matched, list) or not isinstance(missing, list):
-        return True
-    matched_set = {str(token) for token in matched}
-    missing_set = {str(token) for token in missing}
-    if len(matched_set) >= 2 or not missing_set:
-        return True
-    answer_terms = {
-        "answer",
-        "call",
-        "called",
-        "choose",
-        "default",
-        "favorite",
-        "mandatory",
-        "prefer",
-        "preferences",
-        "preferred",
-        "require",
-        "required",
-    }
-    if not diagnostics.get("topics") and not missing_set & answer_terms:
-        return True
-    if missing_set & answer_terms:
-        return False
-    if len(matched_set) == 1 and missing_set:
-        return False
-    return True
+    required_count = 1 if query_count == 1 else 2
+    return evidence_count >= required_count and coverage >= 0.5
 
 
 def _score(query_tokens: set[str], text: str) -> float:
     if not query_tokens:
         return 0.0
-    tokens = _tokens(text)
+    tokens = _normalized_tokens(text)
     if not tokens:
         return 0.0
     counts = {token: tokens.count(token) for token in query_tokens}
@@ -595,10 +557,7 @@ def search_memory_files(
         if score <= 0:
             continue
         diagnostics = _diagnose_file_result(query, query_tokens, rel_path, text, score)
-        if abstain_weak and (
-            should_abstain_file_result(diagnostics)
-            or not _candidate_has_answer_evidence(diagnostics)
-        ):
+        if abstain_weak and not _has_sufficient_evidence(diagnostics):
             continue
         final_score = _reranked_file_score(score, diagnostics) if rerank else score
         results.append(
@@ -645,10 +604,7 @@ def search_memory_facts(
             if score <= 0:
                 continue
             diagnostics = _diagnose_fact_result(query, query_tokens, fact, score)
-            if abstain_weak and (
-                should_abstain_file_result(diagnostics)
-                or not _candidate_has_answer_evidence(diagnostics)
-            ):
+            if abstain_weak and not _has_sufficient_evidence(diagnostics):
                 continue
             final_score = _reranked_file_score(score, diagnostics) if rerank else score
             if fact.section != "active":

@@ -16,6 +16,7 @@ class StdioServerBody(BaseModel):
     command: Annotated[str, Field(min_length=1)]
     args: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
+    capabilities: list[str] = Field(default_factory=list)
     enabled: bool = True
 
     def to_config(self) -> StdioServerConfig:
@@ -23,6 +24,7 @@ class StdioServerBody(BaseModel):
             command=self.command,
             args=self.args,
             env=self.env,
+            capabilities=self.capabilities,
             enabled=self.enabled,
         )
 
@@ -47,6 +49,7 @@ class HttpServerBody(BaseModel):
     url: Annotated[str, Field(min_length=1)]
     headers: dict[str, str] = Field(default_factory=dict)
     oauth: OAuthBody | None = None
+    capabilities: list[str] = Field(default_factory=list)
     enabled: bool = True
 
     def to_config(self) -> HttpServerConfig:
@@ -54,6 +57,7 @@ class HttpServerBody(BaseModel):
             url=self.url,
             headers=self.headers,
             oauth=self.oauth.to_config() if self.oauth else None,
+            capabilities=self.capabilities,
             enabled=self.enabled,
         )
 

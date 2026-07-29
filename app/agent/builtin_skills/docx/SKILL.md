@@ -1,6 +1,6 @@
 ---
 name: docx
-description: "Create, inspect, or edit DOCX files with a design-first OpenXML workflow. Trigger when a Word document is an input or deliverable, including reports, proposals, forms, templates, tracked changes, comments, and layout-sensitive edits."
+description: "Create, inspect, or edit Word documents (.docx), including reports, proposals, forms, templates, tracked changes, and comments, with a design-first OpenXML workflow. Triggers on DOCX, Word document, or Word template."
 ---
 
 # DOCX

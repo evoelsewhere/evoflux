@@ -13,6 +13,7 @@ substantial piece of work is delegated to a sibling module:
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from collections.abc import Sequence
 from pathlib import Path
@@ -40,6 +41,7 @@ from app.agent.schemas.chat import (
     ChatMessage,
     ContentBlock,
     SystemMessage,
+    ToolCall,
     ToolMessage,
     Usage,
 )
@@ -65,6 +67,56 @@ MAX_PROVIDER_RESUME_ATTEMPTS = 5
 PROVIDER_RESUME_BASE_DELAY = 3.0
 
 TContext = TypeVar("TContext", bound=AgentContext)
+
+
+def _partition_tool_call_batch(
+    tool_calls: list[ToolCall],
+    run_tools: dict[str, Tool],
+) -> tuple[list[ToolCall], list[tuple[ToolCall, str]]]:
+    """Apply explicit per-tool batch contracts without inferring tool purpose."""
+    allowed: list[ToolCall] = []
+    blocked: list[tuple[ToolCall, str]] = []
+    counts: dict[str, int] = {}
+    fingerprints: set[tuple[str, str]] = set()
+
+    for tool_call in tool_calls:
+        tool = run_tools.get(tool_call.function.name)
+        if tool is None:
+            allowed.append(tool_call)
+            continue
+
+        arguments = tool_call.function.arguments
+        try:
+            canonical_arguments = json.dumps(
+                json.loads(arguments or "{}"), sort_keys=True, separators=(",", ":")
+            )
+        except (json.JSONDecodeError, TypeError, ValueError):
+            canonical_arguments = arguments or "{}"
+        fingerprint = (tool.name, canonical_arguments)
+
+        if getattr(tool, "deduplicate_in_batch", False) and fingerprint in fingerprints:
+            blocked.append(
+                (tool_call, f"Skipped duplicate '{tool.name}' call in this model turn.")
+            )
+            continue
+
+        count = counts.get(tool.name, 0)
+        max_calls = getattr(tool, "max_calls_per_batch", None)
+        if max_calls is not None and count >= max_calls:
+            blocked.append(
+                (
+                    tool_call,
+                    f"Skipped '{tool.name}' call: maximum "
+                    f"{max_calls} calls per model turn.",
+                )
+            )
+            continue
+
+        fingerprints.add(fingerprint)
+        counts[tool.name] = count + 1
+        allowed.append(tool_call)
+
+    return allowed, blocked
 
 
 class Agent(Generic[TContext]):
@@ -675,28 +727,37 @@ class Agent(Generic[TContext]):
                     )
                 break
 
+            dispatch_calls, blocked_results = _partition_tool_call_batch(
+                tc_list, run_tools
+            )
+
             # Determine dispatch mode: parallel when every tool in this batch
             # declares concurrency_safe=True; serial otherwise to prevent races
             # (e.g. two simultaneous edit() calls on the same file).
             all_safe = all(
                 getattr(run_tools.get(tc.function.name), "concurrency_safe", False)
-                for tc in tc_list
+                for tc in dispatch_calls
             )
 
             logger.debug(
                 "tool_dispatch agent={} count={} mode={} tools=[{}]",
                 self.name,
-                len(tc_list),
+                len(dispatch_calls),
                 "parallel" if all_safe else "serial",
-                ", ".join(tc.function.name for tc in tc_list),
+                ", ".join(tc.function.name for tc in dispatch_calls),
             )
 
-            if all_safe:
+            if not dispatch_calls:
+                results = []
+            elif all_safe:
                 # All tools are concurrency-safe — run in parallel as before.
                 results = await gather_or_cancel(
-                    [self._run_tool(ctx, state, tc, tool_chain) for tc in tc_list],
+                    [
+                        self._run_tool(ctx, state, tc, tool_chain)
+                        for tc in dispatch_calls
+                    ],
                     interrupt_event,
-                    tc_list,
+                    dispatch_calls,
                     self.name,
                 )
             else:
@@ -704,11 +765,15 @@ class Agent(Generic[TContext]):
                 # to guarantee no shared-resource races, while still honouring
                 # interrupt and per-batch timeout.
                 results = await run_serially(
-                    [self._run_tool(ctx, state, tc, tool_chain) for tc in tc_list],
+                    [
+                        self._run_tool(ctx, state, tc, tool_chain)
+                        for tc in dispatch_calls
+                    ],
                     interrupt_event,
-                    tc_list,
+                    dispatch_calls,
                     self.name,
                 )
+            results.extend(blocked_results)
 
             # Retrieve any multimodal parts stashed by ToolResult-returning tools
             multimodal_parts: dict[str, list[ContentBlock]] = state.metadata.pop(

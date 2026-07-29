@@ -11,11 +11,13 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from dataclasses import dataclass
+from difflib import get_close_matches
 from functools import lru_cache
 from html import escape
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from pptx.opc.constants import RELATIONSHIP_TYPE as RT
 from pptx.parts.image import ImagePart
@@ -33,17 +35,27 @@ _HEX_COLOR = re.compile(r"^[0-9a-fA-F]{6}$")
 _ALIASES = {
     "agent": "bot",
     "alert": "triangle-alert",
+    "alert-circle": "circle-alert",
     "analytics": "chart-line",
     "api": "code-xml",
+    "box": "package",
+    "box-select": "panels-top-left",
     "briefcase": "briefcase-business",
     "cards": "panels-top-left",
+    "circle-check": "badge-check",
     "code": "code-xml",
+    "cog": "settings-2",
     "filter": "funnel",
     "globe": "earth",
+    "grid": "panels-top-left",
     "growth": "trending-up",
     "help": "circle-question-mark",
+    "layout-grid": "panels-top-left",
     "money": "circle-dollar-sign",
+    "puzzle-piece": "link-2",
     "question": "circle-question-mark",
+    "settings": "settings-2",
+    "stack": "package",
     "upload": "cloud-upload",
 }
 
@@ -122,12 +134,27 @@ def resolve_icon(name: str) -> str:
     normalized = name.strip().lower().replace("_", "-").replace(" ", "-")
     canonical = _ALIASES.get(normalized, normalized)
     if canonical not in _catalog():
-        suggestions = ", ".join(
-            match.name for match in search_icons(normalized, limit=5)
-        )
+        matches = [match.name for match in search_icons(normalized, limit=5)]
+        if not matches:
+            matches = get_close_matches(normalized, list_icons(), n=5, cutoff=0.45)
+        suggestions = ", ".join(matches)
         suffix = f"; nearest catalog matches: {suggestions}" if suggestions else ""
         raise KeyError(f"Unknown {ICON_FAMILY} icon {name!r}{suffix}")
     return canonical
+
+
+def resolve_icons(names: Iterable[str]) -> dict[str, str]:
+    """Resolve a set of icon names and report every invalid name together."""
+    resolved: dict[str, str] = {}
+    errors: list[str] = []
+    for name in names:
+        try:
+            resolved[name] = resolve_icon(name)
+        except KeyError as exc:
+            errors.append(str(exc.args[0]))
+    if errors:
+        raise KeyError("Icon preflight failed:\n- " + "\n- ".join(errors))
+    return resolved
 
 
 def search_icons(query: str, *, limit: int = 8) -> list[IconMatch]:
@@ -249,13 +276,36 @@ def _main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("query", nargs="?", default="")
     parser.add_argument("--limit", type=int, default=12)
+    parser.add_argument(
+        "--check",
+        nargs="+",
+        metavar="ICON",
+        help="validate one or more icon names before building a deck",
+    )
     parser.add_argument("--svg", metavar="ICON", help="print one recolorable SVG")
     parser.add_argument("--color", default="20303C")
     args = parser.parse_args()
+    if args.check:
+        try:
+            resolved = resolve_icons(args.check)
+        except KeyError as exc:
+            print(exc.args[0], file=sys.stderr)
+            return 2
+        for source, canonical in resolved.items():
+            print(f"{source}\t{canonical}")
+        return 0
     if args.svg:
         print(icon_svg(args.svg, color=args.color).decode("utf-8"))
         return 0
-    for match in search_icons(args.query, limit=args.limit):
+    matches = search_icons(args.query, limit=args.limit)
+    if args.query and not matches:
+        print(
+            f"No {ICON_FAMILY} icons matched {args.query!r}. "
+            "Use --check for exact-name validation.",
+            file=sys.stderr,
+        )
+        return 2
+    for match in matches:
         print(f"{match.name}\t{', '.join(match.tags)}")
     return 0
 

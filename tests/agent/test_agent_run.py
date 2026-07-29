@@ -5,6 +5,7 @@ from typing import AsyncIterator
 from unittest.mock import AsyncMock, MagicMock
 
 from app.agent.agent_loop import Agent
+from app.agent.agent_loop.core import _partition_tool_call_batch
 from app.agent import usage as usage_module
 from app.agent.agent_loop.retry import (
     classify_provider_http_error,
@@ -26,10 +27,12 @@ from app.agent.schemas.chat import (
     ChatCompletionChunkChoice,
     ChatCompletionDelta,
     ChatMessage,
+    FunctionCall,
     FunctionCallDelta,
     HumanMessage,
     SystemMessage,
     ToolCallDelta,
+    ToolCall,
     ToolMessage,
     Usage,
 )
@@ -61,6 +64,31 @@ def retry_args(agent: Agent) -> dict:
 def last_assistant(msgs: list) -> AssistantMessage | None:
     """Return the last AssistantMessage from a run() result."""
     return next((m for m in reversed(msgs) if isinstance(m, AssistantMessage)), None)
+
+
+def test_tool_batch_contract_deduplicates_and_limits_without_name_heuristics():
+    guarded = Tool(
+        lambda value: value,
+        name="custom_lookup",
+        max_calls_per_batch=2,
+        deduplicate_in_batch=True,
+    )
+    calls = [
+        ToolCall(
+            id=f"call_{index}",
+            function=FunctionCall(name="custom_lookup", arguments=arguments),
+        )
+        for index, arguments in enumerate(
+            ['{"value": 1}', '{"value": 2}', '{"value": 1}', '{"value": 3}']
+        )
+    ]
+
+    allowed, blocked = _partition_tool_call_batch(calls, {guarded.name: guarded})
+
+    assert [call.id for call in allowed] == ["call_0", "call_1"]
+    assert [call.id for call, _ in blocked] == ["call_2", "call_3"]
+    assert "duplicate" in blocked[0][1]
+    assert "maximum 2" in blocked[1][1]
 
 
 def make_text_chunk(text: str, usage: Usage | None = None) -> ChatCompletionChunk:

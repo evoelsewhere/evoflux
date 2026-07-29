@@ -72,6 +72,7 @@ def _config_to_body(
             command=cfg.command,
             args=list(cfg.args),
             env=dict(cfg.env),
+            capabilities=list(cfg.capabilities),
             enabled=cfg.enabled,
         )
     oauth = None
@@ -84,6 +85,7 @@ def _config_to_body(
         url=cfg.url,
         headers={key: _MASKED_SECRET for key in cfg.headers},
         oauth=oauth,
+        capabilities=list(cfg.capabilities),
         enabled=cfg.enabled,
     )
 
@@ -103,6 +105,7 @@ def _merge_masked_http_headers(
             for key, value in new.headers.items()
         },
         oauth=new.oauth,
+        capabilities=new.capabilities,
         enabled=new.enabled,
     )
 
@@ -128,6 +131,7 @@ def _merge_masked_oauth(
             if new.oauth.client_secret == _MASKED_SECRET
             else new.oauth.client_secret,
         ).to_config(),
+        capabilities=new.capabilities,
         enabled=new.enabled,
     )
 
@@ -194,6 +198,7 @@ def _store_oauth_secrets(name: str, cfg: HttpServerConfig) -> HttpServerConfig:
         url=cfg.url,
         headers=cfg.headers,
         oauth=OAuthBody(client_id=client_id, client_secret=client_secret).to_config(),
+        capabilities=cfg.capabilities,
         enabled=cfg.enabled,
     )
 
@@ -217,6 +222,7 @@ def _store_stdio_env_secrets(name: str, cfg: StdioServerConfig) -> StdioServerCo
         command=cfg.command,
         args=list(cfg.args),
         env=new_env,
+        capabilities=cfg.capabilities,
         enabled=cfg.enabled,
     )
 

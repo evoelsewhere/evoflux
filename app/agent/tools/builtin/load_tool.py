@@ -82,11 +82,12 @@ async def load_tool(
         newly_activated = [name for name in requested_names if name not in activated]
         activated.update(newly_activated)
         if not newly_activated:
-            return "Requested tools are already available: " + ", ".join(requested_names)
+            return "Requested tools are already available: " + ", ".join(
+                requested_names
+            )
         logger.info("deferred_tools_activated names={}", newly_activated)
-        return (
-            "These tools are now available on your next turn: "
-            + ", ".join(newly_activated)
+        return "These tools are now available on your next turn: " + ", ".join(
+            newly_activated
         )
 
     if not catalog:
@@ -95,22 +96,18 @@ async def load_tool(
     if not query or not query.strip():
         return "Deferred tool names: " + ", ".join(sorted(catalog))
 
-    terms = set(re.findall(r"[a-z0-9_]+", query.casefold()))
+    terms = set(re.findall(r"[a-z0-9]+", query.casefold()))
     ranked: list[tuple[int, str, str]] = []
     for name, summary in catalog.items():
-        haystack = f"{name} {summary}".casefold()
-        score = sum(term in haystack for term in terms)
+        haystack_terms = set(re.findall(r"[a-z0-9]+", f"{name} {summary}".casefold()))
+        score = len(terms & haystack_terms)
         if score:
             ranked.append((score, name, summary))
     ranked.sort(key=lambda item: (-item[0], item[1]))
 
     if not ranked:
-        return (
-            f"No deferred tools matched {query!r}. Try broader capability keywords."
-        )
+        return f"No deferred tools matched {query!r}. Try broader capability keywords."
     lines = ["Matching deferred tools:"]
     lines.extend(f"- {name}: {summary}" for _, name, summary in ranked[:10])
-    lines.append(
-        "Activate matches with load_tool(tool_names=['<exact name>', ...])."
-    )
+    lines.append("Activate matches with load_tool(tool_names=['<exact name>', ...]).")
     return "\n".join(lines)

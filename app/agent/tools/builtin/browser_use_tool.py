@@ -648,6 +648,7 @@ Verify workflow: navigate → wait → console + snapshot → interact → scree
     name="browser_use",
     deferred=True,
     deferred_summary="Drive a headless browser to navigate, inspect, and interact with web pages.",
+    capabilities=("browser",),
 )
 async def browser_use(
     actions: Annotated[

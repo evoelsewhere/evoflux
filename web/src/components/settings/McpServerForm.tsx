@@ -85,6 +85,37 @@ export function McpServerForm({
         </div>
       </SettingsGroup>
 
+      <SettingsGroup title="Capabilities" description="Explicit runtime policy for tools exposed by this server.">
+        <div className="grid gap-4 px-4 py-3.5 md:grid-cols-2">
+          <Field label="Browser automation" hint="Marks every tool from this server as browser-capable.">
+            <EnabledToggle
+              value={value.capabilities.includes('browser')}
+              onChange={(enabled) => set({
+                capabilities: enabled
+                  ? [...value.capabilities.filter((item) => item !== 'webbridge-safe'), 'browser']
+                  : value.capabilities.filter((item) => item !== 'browser'),
+              })}
+              disabled={disabled}
+              enabledLabel="Browser"
+              disabledLabel="No"
+            />
+          </Field>
+          <Field label="WebBridge safe" hint="Allows non-browser tools during a WebBridge session.">
+            <EnabledToggle
+              value={value.capabilities.includes('webbridge-safe')}
+              onChange={(enabled) => set({
+                capabilities: enabled
+                  ? [...value.capabilities.filter((item) => item !== 'browser'), 'webbridge-safe']
+                  : value.capabilities.filter((item) => item !== 'webbridge-safe'),
+              })}
+              disabled={disabled}
+              enabledLabel="Allowed"
+              disabledLabel="Blocked"
+            />
+          </Field>
+        </div>
+      </SettingsGroup>
+
       {value.transport === 'stdio' && (
         <SettingsGroup
           title="Stdio configuration"

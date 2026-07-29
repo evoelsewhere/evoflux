@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pytest
@@ -675,7 +676,7 @@ def test_list_provider_models_returns_discovered_models(
     assert body["models"] == ["model-a", "model-b"]
 
 
-def test_list_provider_models_filters_non_agent_models(
+def test_list_provider_models_filters_explicit_non_agent_capabilities(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def _mixed_models(_entry, **_kwargs):  # type: ignore[no-untyped-def]
@@ -694,6 +695,16 @@ def test_list_provider_models_filters_non_agent_models(
 
     monkeypatch.setattr(
         "app.agent.providers.model_discovery.discover_provider_models", _mixed_models
+    )
+    monkeypatch.setattr(
+        "app.agent.providers.model_discovery.get_capabilities",
+        lambda model_id: SimpleNamespace(
+            output=SimpleNamespace(text=model_id.endswith("gemini-3.5-flash"))
+        ),
+    )
+    monkeypatch.setattr(
+        "app.agent.providers.model_discovery.get_model_features",
+        lambda _model_id: SimpleNamespace(tool_call=None),
     )
 
     app = _make_app()

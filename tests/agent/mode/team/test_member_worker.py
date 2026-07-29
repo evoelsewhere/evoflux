@@ -16,7 +16,6 @@ from app.agent.artifacts import TODOS_FILENAME
 from app.agent.mode.team.mailbox import Message
 from app.agent.mode.team.member import TeamLead, TeamMember
 from app.agent.mode.team.team import AgentTeam
-from app.agent.mode.team.tier_policy import WEBBRIDGE_SESSION_TAG
 from app.agent.schemas.chat import (
     AssistantMessage,
     ChatCompletionChunk,
@@ -25,6 +24,7 @@ from app.agent.schemas.chat import (
     ChatMessage,
     ToolCallDelta,
 )
+from app.webbridge_tags import WEBBRIDGE_SESSION_TAG
 from app.core import db as app_db
 from app.models.chat import ChatSession
 from app.services.chat_service import save_message
@@ -244,6 +244,20 @@ class TestOnDemandActivation:
         from app.agent.tools.registry import Tool
 
         db_factory = _make_mock_db_factory()
+        filesystem_tool = Tool(
+            lambda: None,
+            name="mcp_filesystem_read_file",
+            deferred=True,
+            capabilities=("webbridge-safe",),
+        )
+        filesystem_tool.origin = "mcp"
+        browser_tool = Tool(
+            lambda: None,
+            name="mcp_playwright_navigate",
+            deferred=True,
+            capabilities=("browser",),
+        )
+        browser_tool.origin = "mcp"
         tools = [
             Tool(lambda: None, name="read"),
             Tool(lambda: None, name="write"),
@@ -253,16 +267,8 @@ class TestOnDemandActivation:
             Tool(lambda: None, name="webbridge", deferred=True),
             Tool(lambda: None, name="browser_use", deferred=True),
             Tool(lambda: None, name="web_search", deferred=True),
-            Tool(
-                lambda: None,
-                name="mcp_filesystem_read_file",
-                deferred=True,
-            ),
-            Tool(
-                lambda: None,
-                name="mcp_playwright_navigate",
-                deferred=True,
-            ),
+            filesystem_tool,
+            browser_tool,
         ]
         lead = TeamLead(
             Agent(name="lead", llm_provider=MockTeamProvider(), tools=tools),
@@ -311,6 +317,13 @@ class TestOnDemandActivation:
             Agent(name="lead", llm_provider=MockTeamProvider()),
             db_factory=db_factory,
         )
+        mcp_browser_tool = Tool(
+            lambda: None,
+            name="mcp_chrome-devtools_click",
+            deferred=True,
+            capabilities=("browser",),
+        )
+        mcp_browser_tool.origin = "mcp"
         worker = TeamMember(
             Agent(
                 name="worker",
@@ -322,11 +335,7 @@ class TestOnDemandActivation:
                     load_tool,
                     Tool(lambda: None, name="webbridge", deferred=True),
                     Tool(lambda: None, name="browser_use", deferred=True),
-                    Tool(
-                        lambda: None,
-                        name="mcp_chrome-devtools_click",
-                        deferred=True,
-                    ),
+                    mcp_browser_tool,
                 ],
             ),
             db_factory=db_factory,

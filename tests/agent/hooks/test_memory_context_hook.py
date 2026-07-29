@@ -162,7 +162,7 @@ async def test_product_topic_alone_does_not_inject_for_unanswered_detail(
 async def test_injection_keeps_supported_memory_goal(_memory_dir: Path):
     (_memory_dir / "wiki" / "session-local.md").write_text(
         _memory_page(
-            "- EvoFlux Memory v2 should help through implicit personalization. [session:test]",
+            "- Hoang wants EvoFlux memory to support implicit personalization. [session:test]",
             topics=["memory", "personalization"],
         ),
         encoding="utf-8",

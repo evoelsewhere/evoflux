@@ -145,6 +145,9 @@ class Tool:
         lead_only: bool = False,
         deferred: bool = False,
         deferred_summary: str | None = None,
+        capabilities: tuple[str, ...] = (),
+        max_calls_per_batch: int | None = None,
+        deduplicate_in_batch: bool = False,
     ) -> None:
         self._func = func
         # ``Callable`` is the abstract type; only function objects guarantee
@@ -174,6 +177,13 @@ class Tool:
         # schema until the model explicitly activates them via load_tool.
         self.deferred = deferred
         self.deferred_summary = deferred_summary
+        # Runtime policies consume explicit capabilities, never inferred names.
+        self.capabilities = frozenset(
+            capability.casefold() for capability in capabilities
+        )
+        self.origin = "builtin"
+        self.max_calls_per_batch = max_calls_per_batch
+        self.deduplicate_in_batch = deduplicate_in_batch
 
         self._model, self._definition, self._injected_params = self._build()
         self._description_factory: Callable[[], str] | None = (
@@ -371,6 +381,9 @@ def tool(
     lead_only: bool = False,
     deferred: bool = False,
     deferred_summary: str | None = None,
+    capabilities: tuple[str, ...] = (),
+    max_calls_per_batch: int | None = None,
+    deduplicate_in_batch: bool = False,
 ) -> Callable[[Callable], Tool]: ...
 
 
@@ -385,6 +398,9 @@ def tool(
     lead_only: bool = False,
     deferred: bool = False,
     deferred_summary: str | None = None,
+    capabilities: tuple[str, ...] = (),
+    max_calls_per_batch: int | None = None,
+    deduplicate_in_batch: bool = False,
 ) -> Tool | Callable[[Callable], Tool]:
     """Decorator that converts a function into a :class:`Tool`.
 
@@ -428,6 +444,9 @@ def tool(
             lead_only=lead_only,
             deferred=deferred,
             deferred_summary=deferred_summary,
+            capabilities=capabilities,
+            max_calls_per_batch=max_calls_per_batch,
+            deduplicate_in_batch=deduplicate_in_batch,
         )
 
     return decorator

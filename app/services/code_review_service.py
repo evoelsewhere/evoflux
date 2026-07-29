@@ -264,20 +264,18 @@ def parse_remote_url(remote_url: str) -> tuple[str | None, str | None, str]:
 
 def infer_provider(host: str | None, repository: str | None = None) -> str | None:
     host = (host or "").lower()
-    if host == "github.com" or "github" in host:
+    if host == "github.com":
         return "github"
-    if host == "gitlab.com" or "gitlab" in host:
+    if host == "gitlab.com":
         return "gitlab"
     if host == "bitbucket.org":
         return "bitbucket_cloud"
-    if "bitbucket" in host or (repository or "").lower().startswith("scm/"):
+    if (repository or "").lower().startswith("scm/"):
         return "bitbucket_server"
     if host in {"dev.azure.com", "ssh.dev.azure.com"} or host.endswith(
         "visualstudio.com"
     ):
         return "azure_devops"
-    if "gitea" in host or "forgejo" in host:
-        return "gitea"
     return None
 
 

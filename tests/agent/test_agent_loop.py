@@ -340,16 +340,20 @@ async def test_tool_calls_buffer_id_set_on_second_chunk():
         yield chunk4
 
     mock_provider = MagicMock()
-        # First call: tool chunks + text response. Subsequent: text only.
+    # First call: tool chunks + text response. Subsequent: text only.
     _first_call_done = [False]
+
     def _stream_side_effect(**_kw):
         if not _first_call_done[0]:
             _first_call_done[0] = True
             return _gen()
+
         async def _text_only():
             yield _text_chunk("Done")
             yield _finish_chunk()
+
         return _text_only()
+
     mock_provider.stream.side_effect = _stream_side_effect
 
     agent = Agent(
@@ -434,16 +438,20 @@ async def test_tool_result_creates_tool_message_with_parts():
         yield _finish_chunk()
 
     mock_provider = MagicMock()
-        # First call: tool chunks + text response. Subsequent: text only.
+    # First call: tool chunks + text response. Subsequent: text only.
     _first_call_done = [False]
+
     def _stream_side_effect(**_kw):
         if not _first_call_done[0]:
             _first_call_done[0] = True
             return _gen()
+
         async def _text_only():
             yield _text_chunk("Done")
             yield _finish_chunk()
+
         return _text_only()
+
     mock_provider.stream.side_effect = _stream_side_effect
 
     from app.agent.tools.registry import Tool
@@ -499,16 +507,20 @@ async def test_tool_result_content_derived_from_text_blocks():
         yield _finish_chunk()
 
     mock_provider = MagicMock()
-        # First call: tool chunks + text response. Subsequent: text only.
+    # First call: tool chunks + text response. Subsequent: text only.
     _first_call_done = [False]
+
     def _stream_side_effect(**_kw):
         if not _first_call_done[0]:
             _first_call_done[0] = True
             return _gen()
+
         async def _text_only():
             yield _text_chunk("Done")
             yield _finish_chunk()
+
         return _text_only()
+
     mock_provider.stream.side_effect = _stream_side_effect
 
     from app.agent.tools.registry import Tool
@@ -623,16 +635,20 @@ async def test_complete_tool_call_with_empty_args_is_kept():
         yield _finish_chunk()
 
     mock_provider = MagicMock()
-        # First call: tool chunks + text response. Subsequent: text only.
+    # First call: tool chunks + text response. Subsequent: text only.
     _first_call_done = [False]
+
     def _stream_side_effect(**_kw):
         if not _first_call_done[0]:
             _first_call_done[0] = True
             return _gen()
+
         async def _text_only():
             yield _text_chunk("Done")
             yield _finish_chunk()
+
         return _text_only()
+
     mock_provider.stream.side_effect = _stream_side_effect
 
     from app.agent.tools.registry import Tool
@@ -673,16 +689,20 @@ async def test_plain_string_tool_result_has_no_parts():
         yield _finish_chunk()
 
     mock_provider = MagicMock()
-        # First call: tool chunks + text response. Subsequent: text only.
+    # First call: tool chunks + text response. Subsequent: text only.
     _first_call_done = [False]
+
     def _stream_side_effect(**_kw):
         if not _first_call_done[0]:
             _first_call_done[0] = True
             return _gen()
+
         async def _text_only():
             yield _text_chunk("Done")
             yield _finish_chunk()
+
         return _text_only()
+
     mock_provider.stream.side_effect = _stream_side_effect
 
     from app.agent.tools.registry import Tool
@@ -1022,10 +1042,14 @@ async def test_load_tool_rejects_unknown_and_ungranted_names():
     from app.agent.state import AgentState
 
     state = AgentState(messages=[], tool_names=["load_tool"])  # "browser_use" absent
-    unknown = await load_tool.arun(tool_name="not_a_real_tool", _injected={"_state": state})
+    unknown = await load_tool.arun(
+        tool_name="not_a_real_tool", _injected={"_state": state}
+    )
     assert "not a deferred tool" in unknown
 
-    not_granted = await load_tool.arun(tool_name="browser_use", _injected={"_state": state})
+    not_granted = await load_tool.arun(
+        tool_name="browser_use", _injected={"_state": state}
+    )
     assert "not available in this session" in not_granted
     assert "activated_deferred_tools" not in state.metadata
 
@@ -1045,6 +1069,24 @@ async def test_load_tool_search_uses_only_run_local_catalog():
 
     assert "mcp_docs_search" in result
     assert "browser_use" not in result
+
+
+async def test_load_tool_search_does_not_match_token_substrings():
+    from app.agent.tools.builtin.load_tool import load_tool
+    from app.agent.state import AgentState
+
+    state = AgentState(
+        messages=[], tool_names=["load_tool", "run_tests", "prune_cache"]
+    )
+    state.metadata["deferred_tool_catalog"] = {
+        "run_tests": "Run the focused test suite.",
+        "prune_cache": "Delete stale cache entries.",
+    }
+
+    result = await load_tool.arun(query="run", _injected={"_state": state})
+
+    assert "run_tests" in result
+    assert "prune_cache" not in result
 
 
 async def test_load_tool_batch_activation_is_atomic():

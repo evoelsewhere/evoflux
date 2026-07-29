@@ -99,24 +99,6 @@ class TestBeforeAgentEarlyReturns:
 
         assert hook._task is None
 
-    async def test_greeting_only_does_nothing(self):
-        hook = make_hook()
-        ctx = make_ctx()
-        state = make_state(messages=[HumanMessage(content="Good morning!")])
-
-        await hook.before_agent(ctx, state)
-
-        assert hook._task is None
-
-    async def test_short_message_does_nothing(self):
-        hook = make_hook()
-        ctx = make_ctx()
-        state = make_state(messages=[HumanMessage(content="fix tests")])
-
-        await hook.before_agent(ctx, state)
-
-        assert hook._task is None
-
 
 # ---------------------------------------------------------------------------
 # before_agent — spawns task
@@ -149,6 +131,19 @@ class TestBeforeAgentSpawnsTask:
             assert call_kwargs["provider"] is hook._provider
             assert call_kwargs["db_factory"] is hook._db_factory
             assert call_kwargs["system_prompt"] == "test title prompt"
+
+    async def test_short_or_greeting_turns_are_not_language_classified(self):
+        for message in ("Good morning!", "fix tests", "xin chào"):
+            hook = make_hook()
+            state = make_state(messages=[HumanMessage(content=message)])
+            with patch(
+                "app.services.title_service.generate_and_save_title",
+                new_callable=AsyncMock,
+            ) as mock_gen:
+                await hook.before_agent(make_ctx(), state)
+                assert hook._task is not None
+                await hook._task
+                assert mock_gen.call_args.kwargs["user_message"] == message
 
     async def test_picks_last_human_message(self):
         """Lines 78-80: iterates reversed, picks the last HumanMessage."""

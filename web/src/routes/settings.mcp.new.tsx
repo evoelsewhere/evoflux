@@ -27,6 +27,7 @@ function isPristine(draft: McpServerDraft): boolean {
     draft.name === TEMPLATE.name &&
     draft.transport === TEMPLATE.transport &&
     draft.enabled === TEMPLATE.enabled &&
+    draft.capabilities.length === 0 &&
     draft.command === TEMPLATE.command &&
     draft.argsText === TEMPLATE.argsText &&
     draft.envPairs.length === 0 &&

@@ -70,6 +70,7 @@ class MCPTool(Tool):
         server_name: str,
         mcp_tool: "MCPToolDef",
         session_provider: "_SessionProvider",
+        server_capabilities: list[str] | tuple[str, ...] = (),
     ) -> None:
         self._server_name = server_name
         self._remote_name = mcp_tool.name
@@ -113,6 +114,14 @@ class MCPTool(Tool):
             if len(compact_description) > 160
             else compact_description
         )
+        self.capabilities = _get_capabilities(mcp_tool) | frozenset(
+            capability.strip().casefold()
+            for capability in server_capabilities
+            if capability.strip()
+        )
+        self.origin = "mcp"
+        self.max_calls_per_batch = None
+        self.deduplicate_in_batch = False
 
         self.__name__ = local_name
         self.__doc__ = description
@@ -217,6 +226,21 @@ def _get_ui_meta(mcp_tool: Any) -> dict[str, Any]:
     # Deprecated flat shape used by early MCP Apps drafts.
     resource_uri = meta.get("ui/resourceUri")
     return {"resourceUri": resource_uri} if isinstance(resource_uri, str) else {}
+
+
+def _get_capabilities(mcp_tool: Any) -> frozenset[str]:
+    """Read explicit EvoFlux capability metadata from an MCP tool definition."""
+    meta = getattr(mcp_tool, "meta", None) or getattr(mcp_tool, "_meta", None) or {}
+    if not isinstance(meta, dict):
+        return frozenset()
+    raw = meta.get("evoflux/capabilities")
+    if not isinstance(raw, list):
+        return frozenset()
+    return frozenset(
+        capability.strip().casefold()
+        for capability in raw
+        if isinstance(capability, str) and capability.strip()
+    )
 
 
 async def _get_listing_resource_meta(
