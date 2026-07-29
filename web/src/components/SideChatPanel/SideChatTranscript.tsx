@@ -14,7 +14,7 @@ import { BlockRenderer } from '../BlockRenderer'
 import { AssistantTurnFooter } from '../AssistantTurnFooter'
 import { groupConsecutiveToolCalls, ToolCallGroupCard } from '../ToolCallGroup'
 import type { ToolBlockGroup } from '../ToolCallGroup'
-import { LoadingVerb } from '../motion/LoadingVerb'
+import { ActivityStatus } from '../motion/ActivityStatus'
 import { BlockEnter } from '../motion/BlockEnter'
 import { partitionTurns, type TurnItem } from '@/utils/turns'
 import type { ContentBlock } from '@/api/types'
@@ -183,7 +183,7 @@ export function SideChatTranscript({
               )
             })}
 
-            {/* Loading verb while the agent has been triggered but produced
+            {/* Stable activity state while the agent has been triggered but produced
              * no content yet — covers the POST → first SSE event gap. */}
             {isWorking && currentBlocks.length === 0 && (
               <div>
@@ -191,7 +191,7 @@ export function SideChatTranscript({
                   <img src={EvoFluxLogo} width={14} height={14} className="rounded-xs opacity-70" alt="" aria-hidden="true" />
                   <span className="text-xs font-medium text-(--color-text-muted)">{agentLabel}</span>
                 </div>
-                <LoadingVerb className="py-1 pl-0.5" />
+                <ActivityStatus className="py-1 pl-0.5 text-xs" />
               </div>
             )}
           </div>

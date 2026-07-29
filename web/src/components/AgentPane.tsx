@@ -23,7 +23,7 @@ import { useTeamStore } from '@/stores/useTeamStore'
 import { TierBadge } from './TierBadge'
 import { resolveMemberTier } from '@/utils/tier'
 import type { AgentStream } from '@/stores/useTeamStore'
-import { LoadingVerb } from './motion/LoadingVerb'
+import { ActivityStatus } from './motion/ActivityStatus'
 import { resolveAgentRole } from '@/lib/agent-roles'
 import type { ContentBlock, TodoItem } from '@/api/types'
 
@@ -345,7 +345,7 @@ export function AgentPane({
               </div>
             )}
 
-          {/* Me show loading verb when pending (user sent, agent not woken) or working with no agent content yet.
+          {/* Show a stable activity state while waiting for the first agent block.
             * `[].every()` returns true, so the working branch also requires a non-empty
             * currentBlocks list — otherwise the indicator persists after `done` flushes
             * the buffer if a stale `working` status briefly survives. */}
@@ -355,7 +355,7 @@ export function AgentPane({
               (stream.currentBlocks.length > 0 && stream.currentBlocks.every((b) => b.type === 'user'))
             ))) && (
             <div className="flex items-center gap-2 px-3 pt-3" role="status" aria-label={`${name} is preparing a response`}>
-              <LoadingVerb className="text-xs" />
+              <ActivityStatus className="text-xs" />
             </div>
           )}
 

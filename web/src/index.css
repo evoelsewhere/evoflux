@@ -686,8 +686,26 @@ a svg[aria-hidden="true"],
 }
 
 /* ─────────────────────────────────────────────────────────────
- * Loading verb — animations handled by framer-motion in component
+ * Agent activity — light sweeps across status glyphs without layout shifts
  * ───────────────────────────────────────────────────────────── */
+@keyframes activity-text-sweep {
+  from { background-position: 180% 0; }
+  to   { background-position: -80% 0; }
+}
+.activity-text-shimmer {
+  color: var(--color-text-muted);
+  background-image: linear-gradient(
+    100deg,
+    var(--color-text-subtle) 15%,
+    var(--color-text) 45%,
+    var(--color-text-subtle) 75%
+  );
+  background-size: 240% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: activity-text-sweep 2.2s linear infinite;
+}
 
 /* ─────────────────────────────────────────────────────────────
  * Progressive block reveal — fade-in + slight slide-up
@@ -781,6 +799,12 @@ a svg[aria-hidden="true"],
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .activity-text-shimmer {
+    animation: none;
+    background: none;
+    -webkit-text-fill-color: currentColor;
+  }
+
   .skeleton-shimmer {
     animation: none;
     background: var(--bg-key);

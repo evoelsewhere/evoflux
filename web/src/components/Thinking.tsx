@@ -8,16 +8,14 @@
  * Design language (GitHub Copilot-inspired):
  *   • Collapsed  — a single muted line: "Thinking…" with a subtle chevron.
  *                   No border, no background card — just quiet text.
- *   • Streaming  — content visible at low opacity (≈0.45) so it reads
- *                   like a watermark behind the agent's real output.
- *   • Finalized  — collapsed by default; clicking reveals full content at
- *                   slightly higher opacity (≈0.65) for readability.
+ *   • Streaming  — collapsed status by default; click to inspect the live trace.
+ *   • Finalized  — stays collapsed unless the user explicitly opens it.
  */
 import { ChevronRight } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { ThinkingDots } from '@/components/motion/ThinkingDots'
+import { ActivityStatus } from '@/components/motion/ActivityStatus'
 import { panelTransition, useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import { splitSections } from '@/utils/thinking'
@@ -29,14 +27,8 @@ interface ThinkingProps {
 
 export function Thinking({ content, isStreaming }: ThinkingProps) {
   const preset = useMotionPreset()
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(false)
   const contentRef = useRef<HTMLDivElement>(null)
-
-  // Auto-collapse once streaming finishes.
-  useEffect(() => {
-    if (!isStreaming && open) setOpen(false)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isStreaming])
 
   // Auto-scroll to bottom during streaming.
   useEffect(() => {
@@ -75,8 +67,11 @@ export function Thinking({ content, isStreaming }: ThinkingProps) {
           )}
           aria-hidden="true"
         />
-        <span className="italic">{label}</span>
-        {isStreaming && <ThinkingDots className="text-(--color-text-subtle)" />}
+        {isStreaming ? (
+          <ActivityStatus label={label} className="text-[11px] italic" />
+        ) : (
+          <span className="italic">{label}</span>
+        )}
       </button>
 
       <AnimatePresence initial={false}>

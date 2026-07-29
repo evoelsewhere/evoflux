@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ToolAttachments, ToolCall } from './ToolCall'
+import { ActivityStatus } from './motion/ActivityStatus'
 import type { ContentBlock, MessageAttachment } from '@/api/types'
 
 // ── Grouped block type ────────────────────────────────────────────────────────
@@ -157,9 +158,7 @@ export function ToolCallGroupCard({ group, className }: ToolCallGroupProps) {
         <span className="flex-1 text-xs text-(--color-text-muted)">
           <span className="font-medium text-(--color-text)">{verb}</span>{' '}
           {group.blocks.length} {resource}
-          {!allDone && (
-            <span className="ml-1 text-amber-400">(running…)</span>
-          )}
+          {!allDone && <ActivityStatus label="Running" className="ml-1 text-xs" />}
         </span>
         {expanded ? (
           <ChevronUp className="h-3 w-3 text-(--color-text-muted)" />

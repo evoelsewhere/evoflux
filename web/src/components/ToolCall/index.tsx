@@ -30,6 +30,7 @@ import { useTeamStore } from '@/stores/useTeamStore'
 import { SubagentTaskCard } from '@/components/SubagentTaskCard'
 import { ImageAttachment } from '@/components/ImageAttachment'
 import { FileCard } from '@/components/FileCard'
+import { ActivityStatus } from '@/components/motion/ActivityStatus'
 import { resolveApiUrl } from '@/api/client'
 import type { MessageAttachment } from '@/api/types'
 import type { ToolCallState } from './types'
@@ -128,6 +129,40 @@ function formatDuration(ms: number): string {
   return `${minutes}m ${seconds}s`
 }
 
+function cleanActivityLabel(label: string): string {
+  return label.replace(/[.…]+$/u, '').trim()
+}
+
+function toolActivityLabel(
+  name: string,
+  state: Extract<ToolCallState, 'start' | 'running'>,
+  headerTitle: string | null,
+): string {
+  const target = headerTitle ? cleanActivityLabel(headerTitle) : null
+  if (state === 'start') return target || `Preparing ${formatToolLabel(name)}`
+
+  switch (name) {
+    case 'read': return `Reading ${target || 'file'}`
+    case 'write': return `Writing ${target || 'file'}`
+    case 'edit': return `Editing ${target || 'file'}`
+    case 'patch': return `Applying ${target || 'patch'}`
+    case 'rm': return `Removing ${target || 'file'}`
+    case 'skill': return `Loading ${target || 'skill'}`
+    case 'shell': return target || 'Running command'
+    case 'python': return target || 'Running Python'
+    case 'browser_use':
+    case 'webbridge': return target || 'Using browser'
+    case 'web_search': return target ? `Searching ${target}` : 'Searching web'
+    case 'web_fetch': return target ? `Reading ${target}` : 'Reading page'
+    case 'wiki_search': return target ? `Searching memory for ${target}` : 'Searching memory'
+    case 'grep':
+    case 'code_search': return target || 'Searching code'
+    case 'glob': return target || 'Scanning files'
+    case 'ls': return target || 'Listing files'
+    default: return target || `Running ${formatToolLabel(name)}`
+  }
+}
+
 export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, result, durationMs, startedAt, attachments }: ToolCallProps) {
   // Hooks must be called unconditionally — before any early returns
   const preset = useMotionPreset()
@@ -181,7 +216,7 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
   useEffect(() => {
     const el = liveOutputRef.current
     if (el) el.scrollTop = el.scrollHeight
-  }, [shownLiveOutput])
+  }, [shownLiveOutput, manualExpanded])
 
   const handleCopyArgs = async (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -210,12 +245,14 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
   }
 
   const hasDetails = Boolean(formattedArgs || shownLiveOutput || shownResult || hasReadResult)
-  const expanded = manualExpanded ?? Boolean(shownLiveOutput)
+  const expanded = manualExpanded ?? false
   const displayName = name || 'tool'
   const toolLabel = formatToolLabel(displayName)
   const title = headerTitle ? `${toolLabel}: ${headerTitle}` : toolLabel
-  const headerClassName = `min-w-0 truncate font-mono text-(--color-text) ${state === 'running' ? 'animate-pulse text-(--color-marker-orange)' : ''}`
   const elapsedMs = durationMs ?? (!done && startedAt ? now - startedAt : undefined)
+  const activityLabel = state === 'start' || state === 'running'
+    ? toolActivityLabel(name, state, headerTitle)
+    : null
 
   // Cursor-like Task chrome for team_delegate — replace generic tool row.
   if (name === 'team_delegate') {
@@ -273,25 +310,32 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
       >
         {/* Header content: tool-specific summary or fallback to tool name.
             Mono+600 per pencil dqwZw. */}
-        <span className={headerClassName} title={title}>
-          <span className="font-semibold">{toolLabel}</span>
-          {visibleHeader && (
-            <>
-              <span>: </span>
-              <span title={headerTitle ?? undefined}>{visibleHeader}</span>
-            </>
-          )}
-          {diffStats && (
-            <span className="ml-2 inline-flex items-center gap-1 font-semibold select-none">
-              {diffStats.additions > 0 && (
-                <span className="text-[var(--color-diff-add-text)]">+{diffStats.additions}</span>
-              )}
-              {diffStats.deletions > 0 && (
-                <span className="text-[var(--color-diff-del-text)]">-{diffStats.deletions}</span>
-              )}
-            </span>
-          )}
-        </span>
+        {activityLabel ? (
+          <ActivityStatus
+            label={activityLabel}
+            className="min-w-0 truncate font-mono text-xs"
+          />
+        ) : (
+          <span className="min-w-0 truncate font-mono text-(--color-text)" title={title}>
+            <span className="font-semibold">{toolLabel}</span>
+            {visibleHeader && (
+              <>
+                <span>: </span>
+                <span title={headerTitle ?? undefined}>{visibleHeader}</span>
+              </>
+            )}
+            {diffStats && (
+              <span className="ml-2 inline-flex items-center gap-1 font-semibold select-none">
+                {diffStats.additions > 0 && (
+                  <span className="text-[var(--color-diff-add-text)]">+{diffStats.additions}</span>
+                )}
+                {diffStats.deletions > 0 && (
+                  <span className="text-[var(--color-diff-del-text)]">-{diffStats.deletions}</span>
+                )}
+              </span>
+            )}
+          </span>
+        )}
 
         {elapsedMs !== undefined && (
           <span className="shrink-0 font-mono text-xs text-(--color-text-muted)" title="Duration">
