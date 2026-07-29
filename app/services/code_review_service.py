@@ -165,6 +165,7 @@ class RepositoryTarget:
     host: str | None
     repository: str | None
     detected_provider: str | None
+    inspection_error: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -428,7 +429,100 @@ def connection_token(connection: GitServerConnection) -> str | None:
 async def inspect_repository(
     workspace_id: str, workspace: str, name: str
 ) -> RepositoryTarget:
-    result = await run_git(workspace, "remote", "get-url", "origin", timeout=5.0)
+    workspace_path = Path(workspace).expanduser()
+    if not workspace_path.is_dir():
+        return RepositoryTarget(
+            workspace_id=workspace_id,
+            workspace=workspace,
+            name=name,
+            remote_url=None,
+            host=None,
+            repository=None,
+            detected_provider=None,
+            inspection_error=(
+                "Repository folder is unavailable. Re-add it to Coding mode."
+            ),
+        )
+
+    remotes_result = await run_git(workspace, "remote", timeout=5.0)
+    if not remotes_result.ok:
+        return RepositoryTarget(
+            workspace_id=workspace_id,
+            workspace=workspace,
+            name=name,
+            remote_url=None,
+            host=None,
+            repository=None,
+            detected_provider=None,
+            inspection_error="Repository folder is not a Git repository.",
+        )
+
+    remotes = [
+        remote.strip()
+        for remote in remotes_result.stdout.splitlines()
+        if remote.strip()
+    ]
+    if not remotes:
+        return RepositoryTarget(
+            workspace_id=workspace_id,
+            workspace=workspace,
+            name=name,
+            remote_url=None,
+            host=None,
+            repository=None,
+            detected_provider=None,
+            inspection_error=(
+                "No Git remote is configured. Add a remote, then refresh reviews."
+            ),
+        )
+
+    remote_name: str | None = "origin" if "origin" in remotes else None
+    if remote_name is None:
+        branch_result = await run_git(
+            workspace,
+            "symbolic-ref",
+            "--quiet",
+            "--short",
+            "HEAD",
+            timeout=5.0,
+        )
+        if branch_result.ok and branch_result.stdout.strip():
+            tracking_result = await run_git(
+                workspace,
+                "config",
+                "--get",
+                f"branch.{branch_result.stdout.strip()}.remote",
+                timeout=5.0,
+            )
+            tracking_remote = tracking_result.stdout.strip()
+            if tracking_result.ok and tracking_remote in remotes:
+                remote_name = tracking_remote
+    if remote_name is None and len(remotes) == 1:
+        remote_name = remotes[0]
+    if remote_name is None and "upstream" in remotes:
+        remote_name = "upstream"
+    if remote_name is None:
+        return RepositoryTarget(
+            workspace_id=workspace_id,
+            workspace=workspace,
+            name=name,
+            remote_url=None,
+            host=None,
+            repository=None,
+            detected_provider=None,
+            inspection_error=(
+                "No origin remote is configured and no fallback remote could "
+                "be selected. Set the branch tracking remote, then refresh reviews."
+            ),
+        )
+
+    result = await run_git(
+        workspace,
+        "remote",
+        "get-url",
+        remote_name,
+        timeout=5.0,
+    )
     if not result.ok or not result.stdout.strip():
         return RepositoryTarget(
             workspace_id=workspace_id,
@@ -438,7 +532,12 @@ async def inspect_repository(
             host=None,
             repository=None,
             detected_provider=None,
+            inspection_error=(
+                f"Git remote '{remote_name}' has no usable URL. "
+                "Update the remote, then refresh reviews."
+            ),
         )
+
     host, repository, remote_url = parse_remote_url(result.stdout.strip())
     return RepositoryTarget(
         workspace_id=workspace_id,
@@ -1301,7 +1400,7 @@ async def list_repository_reviews(
             target=target,
             connection_id=str(connection.id),
             provider=connection.provider,
-            error="No origin remote is configured.",
+            error=target.inspection_error or "No Git remote is configured.",
         )
     try:
         if connection.provider == "github":
@@ -1439,7 +1538,9 @@ async def get_repository_review_context(
         raise GitServerApiError("The connection has no API key.")
     repository = target.repository
     if not repository:
-        raise GitServerApiError("No origin remote is configured.")
+        raise GitServerApiError(
+            target.inspection_error or "No Git remote is configured."
+        )
 
     changes: Any = []
     comments: Any = []
@@ -2323,7 +2424,9 @@ async def create_repository_review(
         raise GitServerApiError("The connection has no API key.")
     repository = target.repository
     if not repository:
-        raise GitServerApiError("No origin remote is configured.")
+        raise GitServerApiError(
+            target.inspection_error or "No Git remote is configured."
+        )
 
     provider = connection.provider
     params: dict[str, str | int] | None = None
@@ -2425,12 +2528,19 @@ async def aggregate_reviews(
     connections: list[GitServerConnection],
 ) -> list[RepositoryReviews]:
     async def load(target: RepositoryTarget) -> RepositoryReviews:
+        if target.inspection_error:
+            return RepositoryReviews(
+                target=target,
+                connection_id=None,
+                provider=None,
+                error=target.inspection_error,
+            )
         if not target.remote_url:
             return RepositoryReviews(
                 target=target,
                 connection_id=None,
                 provider=None,
-                error="No origin remote is configured.",
+                error="No Git remote is configured.",
             )
         connection = resolve_connection(target, connections)
         if connection is None:

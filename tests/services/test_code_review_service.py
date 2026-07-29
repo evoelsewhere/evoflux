@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from uuid import uuid4
 
 import pytest
@@ -92,6 +93,81 @@ def test_resolve_connection_prefers_repository_override():
     )
 
     assert service.resolve_connection(target, [shared, override]) is override
+
+
+@pytest.mark.asyncio
+async def test_inspect_repository_reports_unavailable_folder(tmp_path):
+    target = await service.inspect_repository(
+        str(uuid4()),
+        str(tmp_path / "deleted-repository"),
+        "deleted-repository",
+    )
+
+    assert target.remote_url is None
+    assert target.inspection_error == (
+        "Repository folder is unavailable. Re-add it to Coding mode."
+    )
+
+
+@pytest.mark.asyncio
+async def test_inspect_repository_reports_missing_remote(tmp_path):
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    subprocess.run(
+        ["git", "init", str(repository)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    target = await service.inspect_repository(
+        str(uuid4()),
+        str(repository),
+        "repository",
+    )
+
+    assert target.remote_url is None
+    assert target.inspection_error == (
+        "No Git remote is configured. Add a remote, then refresh reviews."
+    )
+
+
+@pytest.mark.asyncio
+async def test_inspect_repository_uses_only_remote_when_origin_is_absent(tmp_path):
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    subprocess.run(
+        ["git", "init", str(repository)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repository),
+            "remote",
+            "add",
+            "github",
+            "git@github.com:acme/repository.git",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    target = await service.inspect_repository(
+        str(uuid4()),
+        str(repository),
+        "repository",
+    )
+
+    assert target.remote_url == "git@github.com:acme/repository.git"
+    assert target.host == "github.com"
+    assert target.repository == "acme/repository"
+    assert target.detected_provider == "github"
+    assert target.inspection_error is None
 
 
 def test_default_public_api_bases_and_server_hosts():

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -16,7 +17,80 @@ from pptx.util import Inches, Pt
 
 EMU_PER_INCH = 914400
 PT_PER_INCH = 72
-LayoutName = Literal["hero", "split", "visual-left", "comparison", "statement"]
+LayoutName = Literal[
+    "hero",
+    "split",
+    "visual-left",
+    "comparison",
+    "statement",
+    "workstreams",
+]
+LayoutProfileName = Literal["editorial", "executive-dense", "operational"]
+
+
+@dataclass(frozen=True)
+class LayoutProfile:
+    """Typography, spacing, and density policy for a family of slides."""
+
+    name: LayoutProfileName
+    title_min_pt: float
+    subheading_min_pt: float
+    body_min_pt: float
+    caption_min_pt: float
+    metadata_min_pt: float
+    icon_min_inches: float
+    minimum_gap_inches: float
+    margin_inches: float
+
+
+LAYOUT_PROFILES: dict[LayoutProfileName, LayoutProfile] = {
+    "editorial": LayoutProfile(
+        name="editorial",
+        title_min_pt=35,
+        subheading_min_pt=24,
+        body_min_pt=16,
+        caption_min_pt=10,
+        metadata_min_pt=9,
+        icon_min_inches=0.28,
+        minimum_gap_inches=0.16,
+        margin_inches=0.72,
+    ),
+    "executive-dense": LayoutProfile(
+        name="executive-dense",
+        title_min_pt=28,
+        subheading_min_pt=14,
+        body_min_pt=10,
+        caption_min_pt=8,
+        metadata_min_pt=7.5,
+        icon_min_inches=0.22,
+        minimum_gap_inches=0.10,
+        margin_inches=0.48,
+    ),
+    "operational": LayoutProfile(
+        name="operational",
+        title_min_pt=24,
+        subheading_min_pt=12,
+        body_min_pt=8,
+        caption_min_pt=7,
+        metadata_min_pt=7,
+        icon_min_inches=0.18,
+        minimum_gap_inches=0.06,
+        margin_inches=0.40,
+    ),
+}
+
+
+def layout_profile(name: LayoutProfileName = "editorial") -> LayoutProfile:
+    return LAYOUT_PROFILES[name]
+
+
+def apply_layout_profile(slide, name: LayoutProfileName) -> None:
+    """Persist the profile in editable slide XML for downstream QA."""
+
+    marker = f"[profile:{name}]"
+    current = str(slide._element.cSld.get("name", "") or "")
+    current = re.sub(r"\s*\[profile:[a-z-]+\]\s*", " ", current).strip()
+    slide._element.cSld.set("name", f"{current} {marker}".strip())
 
 
 @dataclass(frozen=True)
@@ -118,6 +192,7 @@ class SlideLayoutPlan:
     """One deliberate slide silhouette with non-overlapping content regions."""
 
     name: LayoutName
+    profile: LayoutProfileName
     safe_canvas: LayoutRegion
     title: LayoutRegion
     content: dict[str, LayoutRegion]
@@ -137,7 +212,7 @@ class LayoutGuard:
     """Reserve slide geometry and reject unintended overlaps immediately."""
 
     plan: SlideLayoutPlan
-    minimum_gap_inches: float = 0.16
+    minimum_gap_inches: float | None = None
     ledger: QualityLedger | None = None
     _placed: list[LayoutRegion] = field(default_factory=list)
 
@@ -164,7 +239,12 @@ class LayoutGuard:
             region
         ):
             self._reject(f"{name!r} is outside the declared safe canvas")
-        gap = int(Inches(self.minimum_gap_inches))
+        gap_inches = (
+            self.minimum_gap_inches
+            if self.minimum_gap_inches is not None
+            else layout_profile(self.plan.profile).minimum_gap_inches
+        )
+        gap = int(Inches(gap_inches))
         if not allow_overlap:
             collisions = [
                 placed.name
@@ -215,12 +295,12 @@ def layout_plan(
     name: LayoutName,
     *,
     theme: PresentationTheme = PresentationTheme(),
+    profile: LayoutProfileName = "editorial",
 ) -> SlideLayoutPlan:
-    """Return a safe, flat composition for a new 16:9 slide.
+    """Return a safe composition for a new 16:9 slide.
 
-    The regions intentionally describe a small set of strong silhouettes,
-    rather than a card grid. A slide should select one and fit its narrative
-    into the regions before any shapes are created.
+    Editorial slides use broad narrative regions. Dense profiles may use
+    repeated micro-grids when the content itself is structured that way.
     """
     slide_width_emu = int(presentation.slide_width or 0)
     slide_height_emu = int(presentation.slide_height or 0)
@@ -228,7 +308,8 @@ def layout_plan(
         raise LayoutError("Presentation has invalid slide dimensions")
     slide_width = slide_width_emu / EMU_PER_INCH
     slide_height = slide_height_emu / EMU_PER_INCH
-    margin = theme.margin_inches
+    policy = layout_profile(profile)
+    margin = theme.margin_inches if profile == "editorial" else policy.margin_inches
     safe = _region(
         "safe-canvas",
         margin,
@@ -324,6 +405,37 @@ def layout_plan(
                 content_height,
             ),
         }
+    elif name == "workstreams":
+        if profile == "editorial":
+            raise LayoutError(
+                "The workstreams layout requires executive-dense or operational "
+                "profile; editorial typography cannot carry its content safely"
+            )
+        content_top = 1.86 if profile == "executive-dense" else 1.72
+        summary_height = 0.72
+        summary_gap = 0.20
+        columns_height = (
+            slide_height - content_top - summary_height - summary_gap - 0.38
+        )
+        column_gap = 0.12 if profile == "executive-dense" else 0.09
+        column_width = (content_width - 3 * column_gap) / 4
+        content = {
+            f"column-{index + 1}": _region(
+                f"column-{index + 1}",
+                margin + index * (column_width + column_gap),
+                content_top,
+                column_width,
+                columns_height,
+            )
+            for index in range(4)
+        }
+        content["summary"] = _region(
+            "summary",
+            margin,
+            content_top + columns_height + summary_gap,
+            content_width,
+            summary_height,
+        )
     else:
         raise LayoutError(f"Unknown layout: {name}")
 
@@ -337,7 +449,13 @@ def layout_plan(
                     f"Layout {name!r} contains overlapping regions "
                     f"{region.name!r} and {other.name!r}"
                 )
-    return SlideLayoutPlan(name=name, safe_canvas=safe, title=title, content=content)
+    return SlideLayoutPlan(
+        name=name,
+        profile=profile,
+        safe_canvas=safe,
+        title=title,
+        content=content,
+    )
 
 
 def estimate_text_fit(
@@ -345,7 +463,7 @@ def estimate_text_fit(
     *,
     width: int,
     height: int,
-    size: int,
+    size: float,
     margin_inches: float = 0.02,
     max_lines: int | None = None,
 ) -> TextFitReport:
@@ -391,7 +509,7 @@ def set_background(slide, color: str) -> None:
     fill.fore_color.rgb = RGBColor.from_string(color)
 
 
-def _apply_run(run, *, font: str, size: int, color: str, bold: bool) -> None:
+def _apply_run(run, *, font: str, size: float, color: str, bold: bool) -> None:
     run.font.name = font
     run.font.size = Pt(size)
     run.font.color.rgb = RGBColor.from_string(color)
@@ -407,7 +525,7 @@ def add_text(
     width,
     height,
     font: str,
-    size: int,
+    size: float,
     color: str,
     bold: bool = False,
     align=PP_ALIGN.LEFT,
@@ -416,17 +534,25 @@ def add_text(
     role: str = "body",
     max_lines: int | None = None,
     strict: bool = True,
+    profile: LayoutProfileName | None = None,
     guard: LayoutGuard | None = None,
     ledger: QualityLedger | None = None,
 ):
+    active_profile = profile or (
+        guard.plan.profile if guard is not None else "editorial"
+    )
+    policy = layout_profile(active_profile)
     minimum_sizes = {
-        "deck-title": 50,
-        "title": 35,
-        "subheading": 24,
-        "body": 16,
-        "caption": 10,
-        "kicker": 10,
-        "footer": 9,
+        "deck-title": 50 if active_profile == "editorial" else 36,
+        "title": policy.title_min_pt,
+        "subheading": policy.subheading_min_pt,
+        "section-heading": policy.subheading_min_pt,
+        "body": policy.body_min_pt,
+        "label": policy.body_min_pt,
+        "caption": policy.caption_min_pt,
+        "metadata": policy.metadata_min_pt,
+        "kicker": policy.caption_min_pt,
+        "footer": policy.metadata_min_pt,
     }
     active_ledger = ledger or (guard.ledger if guard is not None else None)
 
@@ -435,7 +561,7 @@ def add_text(
             raise error_type(message)
         active_ledger.error(message)
 
-    minimum = minimum_sizes.get(role, 16)
+    minimum = minimum_sizes.get(role, policy.body_min_pt)
     if strict and size < minimum:
         reject(
             f"{role} text uses {size}pt; minimum is {minimum}pt. "
@@ -466,6 +592,7 @@ def add_text(
             role=role,
         )
     shape = slide.shapes.add_textbox(left, top, width, height)
+    shape.name = f"[role:{role}] {text[:48]}".strip()
     frame = shape.text_frame
     frame.clear()
     frame.word_wrap = True
@@ -489,8 +616,17 @@ def add_title(
     *,
     theme: PresentationTheme = PresentationTheme(),
     kicker: str | None = None,
+    profile: LayoutProfileName | None = None,
     guard: LayoutGuard | None = None,
 ):
+    active_profile = profile or (
+        guard.plan.profile if guard is not None else "editorial"
+    )
+    title_size = {
+        "editorial": theme.title_pt,
+        "executive-dense": min(theme.title_pt, 32),
+        "operational": min(theme.title_pt, 28),
+    }[active_profile]
     title_region = guard.plan.title if guard is not None else None
     if kicker:
         add_text(
@@ -506,6 +642,7 @@ def add_title(
             bold=True,
             role="kicker",
             max_lines=1,
+            profile=active_profile,
             ledger=guard.ledger if guard is not None else None,
         )
     return add_text(
@@ -516,11 +653,12 @@ def add_title(
         width=title_region.width if title_region else Inches(11.9),
         height=Inches(0.72),
         font=theme.title_font,
-        size=theme.title_pt,
+        size=title_size,
         color=theme.ink,
         bold=True,
         role="title",
         max_lines=1,
+        profile=active_profile,
         guard=guard,
     )
 

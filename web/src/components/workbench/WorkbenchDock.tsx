@@ -238,9 +238,9 @@ function WorkbenchLauncher(context: WorkbenchContext) {
       animate={{ opacity: 1, scale: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.985, y: -6 * motionPreset.distance }}
       transition={motionPreset.transition}
-      className="absolute inset-0 flex items-center justify-center overflow-y-auto px-6 py-10"
+      className="absolute inset-0 flex items-center justify-center overflow-y-auto px-5 py-8"
     >
-      <motion.div layout className="w-full max-w-xl space-y-2">
+      <motion.div layout className="w-full max-w-lg space-y-1.5">
         {availableTools.map((tool, index) => {
           const meta = WORKBENCH_TOOLS[tool]
           const Icon = meta.icon
@@ -254,22 +254,22 @@ function WorkbenchLauncher(context: WorkbenchContext) {
               transition={{ ...motionPreset.transition, delay: staggerDelay(motionPreset, index) }}
               whileHover={{ x: 3 * motionPreset.distance, scale: 1.006 }}
               whileTap={{ scale: 0.985 }}
-              className="group flex w-full items-center gap-3 rounded-xl border border-transparent bg-(--bg-card) px-4 py-3.5 text-left shadow-sm transition-colors hover:border-(--color-border-strong) hover:bg-(--bg-key)"
+              className="group flex w-full items-center gap-2.5 rounded-lg border border-transparent bg-(--bg-card) px-3 py-2 text-left shadow-sm transition-colors hover:border-(--color-border-strong) hover:bg-(--bg-key)"
             >
               <Icon
-                size={18}
+                size={16}
                 className="shrink-0 text-(--color-text-muted) group-hover:text-(--color-text)"
               />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium text-(--color-text)">
+                <span className="block truncate text-xs font-medium text-(--color-text)">
                   {meta.label}
                 </span>
-                <span className="block truncate text-xs text-(--color-text-subtle)">
+                <span className="block truncate text-[11px] leading-4 text-(--color-text-subtle)">
                   {meta.description}
                 </span>
               </span>
               {meta.shortcut && (
-                <kbd className="shrink-0 rounded-full bg-(--bg-key) px-2 py-1 font-mono text-[10px] text-(--color-text-muted)">
+                <kbd className="shrink-0 rounded-full bg-(--bg-key) px-1.5 py-0.5 font-mono text-[9px] text-(--color-text-muted)">
                   {meta.shortcut}
                 </kbd>
               )}

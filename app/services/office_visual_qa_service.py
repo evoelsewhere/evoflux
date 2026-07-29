@@ -207,6 +207,25 @@ def _paginate_docx(page: Any) -> None:
     )
 
 
+def _expand_xlsx_sheets(page: Any) -> None:
+    """Expose the full worksheet grid before linting and screenshot capture."""
+
+    page.evaluate(
+        """
+        () => {
+          document.querySelectorAll('.sheet').forEach((sheet) => {
+            sheet.style.overflow = 'visible';
+            const wrapper = sheet.querySelector('.grid-wrap');
+            if (wrapper) {
+              wrapper.style.maxHeight = 'none';
+              wrapper.style.overflow = 'visible';
+            }
+          });
+        }
+        """
+    )
+
+
 def _dom_lint(page: Any, suffix: str) -> dict[str, list[str]]:
     result = page.evaluate(
         """
@@ -270,6 +289,23 @@ def _dom_lint(page: Any, suffix: str) -> dict[str, list[str]]:
                   if (leftBackground || rightBackground) continue;
                   const leftText = left.classList.contains('text-shape');
                   const rightText = right.classList.contains('text-shape');
+                  const leftName = String(left.dataset.shapeName || '').toLowerCase();
+                  const rightName = String(right.dataset.shapeName || '').toLowerCase();
+                  const contains = (outer, inner) =>
+                    outer.left <= inner.left + 1 && outer.top <= inner.top + 1 &&
+                    outer.right >= inner.right - 1 && outer.bottom >= inner.bottom - 1;
+                  const namedContainer =
+                    (leftName.includes('[container:') && contains(a, b)) ||
+                    (rightName.includes('[container:') && contains(b, a));
+                  if (namedContainer) continue;
+                  const leftIcon = leftName.startsWith('[icon:');
+                  const rightIcon = rightName.startsWith('[icon:');
+                  const iconBadge = leftIcon !== rightIcon &&
+                    ((leftIcon && right.classList.contains('vector-shape') &&
+                      contains(b, a)) ||
+                     (rightIcon && left.classList.contains('vector-shape') &&
+                      contains(a, b)));
+                  if (iconBadge) continue;
                   const flatContainer = ratio > 0.94 && leftText !== rightText &&
                     ((left.classList.contains('vector-shape') && !leftText) ||
                      (right.classList.contains('vector-shape') && !rightText));
@@ -376,6 +412,8 @@ def render_office_images(source: Path, render_dir: Path) -> dict[str, Any]:
             page.emulate_media(media="screen")
             if suffix == ".docx":
                 _paginate_docx(page)
+            elif suffix == ".xlsx":
+                _expand_xlsx_sheets(page)
             page.locator(selector).first.wait_for(state="visible", timeout=15_000)
             lint = _dom_lint(page, suffix)
             items = page.locator(selector)

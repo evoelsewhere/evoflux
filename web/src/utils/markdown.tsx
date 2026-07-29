@@ -15,11 +15,13 @@ import rehypeKatex from 'rehype-katex'
 import rehypeRaw from 'rehype-raw'
 import rehypeSanitize from 'rehype-sanitize'
 import 'katex/dist/katex.min.css'
+import Editor, { useMonaco } from '@monaco-editor/react'
 import { Copy, Check, ImageOff, FileVideo } from 'lucide-react'
 import { resolveApiUrl } from '@/api/client'
 import { apiUrl } from '@/api/base-url'
 import { withTokenParam } from '@/api/auth'
 import { ImageLightbox } from '@/components/ImageLightbox'
+import { useMonacoTheme } from '@/hooks/useMonacoTheme'
 
 // Me: extensions we render as ``<video>`` instead of ``<img>``. The backend
 // `generate_video` tool writes ``.mp4`` files today, but keep the list
@@ -133,15 +135,40 @@ export function extractText(node: unknown): string {
 // ── CodeBlock ─────────────────────────────────────────────────────────────────
 
 export function CodeBlock({
-  children,
   language,
   rawText,
 }: {
-  children: React.ReactNode
   language?: string
   rawText: string
 }) {
   const [copied, setCopied] = useState(false)
+  const monaco = useMonaco()
+  const theme = useMonacoTheme(monaco)
+  const value = rawText.endsWith('\n') ? rawText.slice(0, -1) : rawText
+  const lineCount = value.split('\n').length
+  const editorHeight = Math.min(Math.max(lineCount * 20 + 20, 60), 360)
+  const normalizedLanguage = language?.toLowerCase() ?? 'plaintext'
+  const editorLanguage = {
+    bash: 'shell',
+    csharp: 'csharp',
+    cs: 'csharp',
+    javascript: 'javascript',
+    js: 'javascript',
+    jsx: 'javascript',
+    markdown: 'markdown',
+    md: 'markdown',
+    py: 'python',
+    python: 'python',
+    sh: 'shell',
+    shell: 'shell',
+    text: 'plaintext',
+    ts: 'typescript',
+    tsx: 'typescript',
+    typescript: 'typescript',
+    yaml: 'yaml',
+    yml: 'yaml',
+    zsh: 'shell',
+  }[normalizedLanguage] ?? normalizedLanguage
 
   const handleCopy = async () => {
     try {
@@ -170,19 +197,48 @@ export function CodeBlock({
 
   return (
     <div className="group relative my-1.5 overflow-hidden rounded-md border border-(--color-border) bg-(--bg-card)">
-      {language ? (
-        <div className="flex items-center justify-between gap-3 border-b border-(--color-border) bg-(--bg-key) py-0.5 pr-1.5 pl-3">
-           <span className="font-mono text-xs font-semibold uppercase tracking-wider text-(--color-text-muted)">
-            {language}
-          </span>
-          {copyButton}
-        </div>
-      ) : (
-        <div className="absolute top-1.5 right-1.5 z-(--z-panel)">{copyButton}</div>
-      )}
-      <pre className="overflow-x-auto px-3 py-2.5 font-mono text-[13px] leading-relaxed text-(--color-text)">
-        <code>{children}</code>
-      </pre>
+      <div className="absolute top-1.5 right-1.5 z-(--z-panel)">{copyButton}</div>
+      <Editor
+        height={editorHeight}
+        theme={theme}
+        language={editorLanguage}
+        value={value}
+        loading={(
+          <pre className="h-full overflow-auto px-3 py-2.5 font-mono text-[13px] leading-5 text-(--color-text)">
+            <code>{value}</code>
+          </pre>
+        )}
+        options={{
+          readOnly: true,
+          domReadOnly: true,
+          ariaLabel: language ? `${language} code block` : 'Code block',
+          automaticLayout: true,
+          contextmenu: true,
+          folding: false,
+          fontSize: 13,
+          glyphMargin: false,
+          hideCursorInOverviewRuler: true,
+          lineDecorationsWidth: 12,
+          lineHeight: 20,
+          lineNumbers: 'off',
+          lineNumbersMinChars: 0,
+          minimap: { enabled: false },
+          overviewRulerBorder: false,
+          overviewRulerLanes: 0,
+          padding: { top: 10, bottom: 10 },
+          renderLineHighlight: 'none',
+          renderValidationDecorations: 'off',
+          scrollBeyondLastLine: false,
+          scrollBeyondLastColumn: 2,
+          scrollbar: {
+            horizontalScrollbarSize: 8,
+            useShadows: false,
+            verticalScrollbarSize: 8,
+          },
+          selectionHighlight: false,
+          wordWrap: 'off',
+        }}
+      />
     </div>
   )
 }
@@ -464,9 +520,7 @@ export const MarkdownBlock = memo(function MarkdownBlock({
         const codeText = extractText(codeEl?.props?.children)
         const language = codeEl?.props?.className?.match(/(?:^|\s)language-([^\s]+)/)?.[1]
         return (
-          <CodeBlock language={language} rawText={codeText}>
-            {codeEl?.props?.children as React.ReactNode}
-          </CodeBlock>
+          <CodeBlock language={language} rawText={codeText} />
         )
       },
       a: ({ onClick, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => {

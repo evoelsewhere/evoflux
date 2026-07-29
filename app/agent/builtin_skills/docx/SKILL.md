@@ -40,19 +40,37 @@ fonts are protected.
    `word/document.xml`, styles, numbering, headers, footers, relationships, and
    comments before changing layout. A template is a contract, not inspiration.
    Prefer tagged content controls and paragraph IDs over text search.
-3. For a new DOCX, define a small design-token map before writing content:
-   page size/margins, fonts, type scale, paragraph rhythm, heading colors,
-   table geometry, header/footer, and accent palette.
-4. Author one reproducible Python builder in a temporary working directory.
+3. For a new DOCX, select a document profile before writing:
+   `standard-business`, `compact-reference`, `narrative-proposal`, or
+   `operational-sop`. Resolve it into page size/margins, fonts, type scale,
+   paragraph rhythm, heading colors, table geometry, header/footer, and accent
+   tokens. Use `apply_theme(..., profile=...)` from `stylekit.py`.
+4. Build a content-completeness contract before pagination. Persist required
+   sections or fields with `declare_content_contract`; QA must fail if a
+   decision, requirement, owner, procedure step, acceptance check, source, or
+   appendix is silently removed merely to shorten the document.
+5. Author one reproducible Python builder in a temporary working directory.
    Use semantic Word styles, real numbering, explicit table widths, typed
    fields, headers/footers, and meaningful image alt text.
-5. Save the output, run structural QA, render it, inspect every page, then fix
+6. Save the output, run structural QA, render it, inspect every page, then fix
    and repeat. Deliver only the final DOCX unless the user asks for sources or
    previews.
 
 ## Design rules
 
 - Match the user's language in the document and filename.
+- Match density to the archetype. A short memo may use generous spacing;
+  a compact reference or SOP should preserve operational detail through a
+  tighter type scale, shorter paragraph rhythm, explicit steps, checklists,
+  metadata blocks, and well-structured tables. Do not inflate headings or
+  create decorative whitespace that pushes useful content into unnecessary
+  pages.
+- Profile defaults:
+  - `standard-business`: 11 pt body and formal memo/report hierarchy;
+  - `compact-reference`: 10.5 pt body with compact labels, lists, and tables;
+  - `narrative-proposal`: 11 pt body with more generous prose rhythm;
+  - `operational-sop`: 10 pt body, compact steps/checks, and high information
+    density without fixed-height rows.
 - Prefer a strong title block, restrained low-saturation palette, clear
   hierarchy, and generous whitespace over decorative clutter.
 - Use a cover only when the archetype benefits from one. Reports and proposals
@@ -65,6 +83,10 @@ fonts are protected.
 - Tables are for repeated row/column data, not for laying out prose. Set
   `tblGrid`, cell widths, margins, alignment, repeating header rows, and allow
   rows to grow.
+- Dense content is not itself a defect. QA should reject clipping, missing
+  sections, fake lists, weak navigation, fixed row heights, broken table
+  geometry, and unstructured walls of text—not a legitimate number of steps,
+  rows, or paragraphs.
 - Keep headings with the following paragraph; enable widow/orphan control; do
   not use fixed row heights that can clip content.
 - Native, editable document content wins over screenshots. Use raster charts

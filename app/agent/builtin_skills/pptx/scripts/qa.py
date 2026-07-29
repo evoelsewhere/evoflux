@@ -9,7 +9,7 @@ import re
 import sys
 import zipfile
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from xml.etree import ElementTree as ET
 
 from pptx import Presentation
@@ -24,6 +24,10 @@ from app.services.office_visual_qa_service import (  # noqa: E402
     compare_rendered_images,
     render_office_images,
 )
+from app.agent.builtin_skills.pptx.scripts.stylekit import (  # noqa: E402
+    LayoutProfileName,
+    layout_profile,
+)
 
 PLACEHOLDER_RE = re.compile(
     r"(\{\{[^{}]+\}\}|<TODO>|<PLACEHOLDER>|lorem ipsum|\bxxxx\b)",
@@ -32,6 +36,10 @@ PLACEHOLDER_RE = re.compile(
 EMU_PER_INCH = 914400
 OVERLAP_RATIO_THRESHOLD = 0.12
 ICON_NAME_RE = re.compile(r"^\[icon:([a-z0-9-]+):([a-z0-9-]+)\]$")
+PROFILE_RE = re.compile(r"\[profile:(editorial|executive-dense|operational)\]")
+ROLE_RE = re.compile(
+    r"\[role:(deck-title|title|subheading|section-heading|body|label|caption|metadata|kicker|footer)\]"
+)
 _AUDIO_EXTENSIONS = {".aac", ".m4a", ".mp3", ".wav", ".wma"}
 _VIDEO_EXTENSIONS = {".avi", ".m4v", ".mov", ".mp4", ".mpeg", ".mpg", ".wmv"}
 
@@ -40,6 +48,21 @@ def _shape_text(shape) -> str:
     if not getattr(shape, "has_text_frame", False):
         return ""
     return shape.text.strip()
+
+
+def _slide_profile(slide) -> LayoutProfileName:
+    """Read the explicit profile marker; unmarked slides remain editorial."""
+
+    name = str(slide._element.cSld.get("name", "") or "").lower()
+    match = PROFILE_RE.search(name)
+    if match is None:
+        return "editorial"
+    return cast(LayoutProfileName, match.group(1))
+
+
+def _shape_role(shape) -> str | None:
+    match = ROLE_RE.search(str(getattr(shape, "name", "") or "").lower())
+    return match.group(1) if match is not None else None
 
 
 def _shape_id(shape) -> int:
@@ -130,11 +153,40 @@ def _intersection_ratio(left, right) -> float:
     return intersection / denominator
 
 
+def _contains_shape(container, child) -> bool:
+    return (
+        container.left <= child.left
+        and container.top <= child.top
+        and container.left + container.width >= child.left + child.width
+        and container.top + container.height >= child.top + child.height
+    )
+
+
 def _is_flat_container_pair(left, right, ratio: float) -> bool:
     if ratio < 0.94:
         return False
     left_text = bool(_shape_text(left))
     right_text = bool(_shape_text(right))
+    left_name = str(getattr(left, "name", "") or "").lower()
+    right_name = str(getattr(right, "name", "") or "").lower()
+    if "[container:" in left_name and _contains_shape(left, right):
+        return True
+    if "[container:" in right_name and _contains_shape(right, left):
+        return True
+    left_icon = _icon_metadata(left) is not None
+    right_icon = _icon_metadata(right) is not None
+    if left_icon != right_icon:
+        icon = left if left_icon else right
+        badge = right if left_icon else left
+        try:
+            if (
+                badge.auto_shape_type is not None
+                and not _shape_text(badge)
+                and _contains_shape(badge, icon)
+            ):
+                return True
+        except (AttributeError, ValueError):
+            pass
     if left_text == right_text:
         return False
     container = right if left_text else left
@@ -167,11 +219,11 @@ def _font_ceiling(shape) -> float | None:
     return max(sizes) if sizes else None
 
 
-def _estimated_capacity(shape) -> int:
+def _estimated_capacity(shape, *, minimum_point_size: float = 9) -> int:
     """Estimate readable character capacity; visual inspection remains final."""
     width_inches = shape.width / 914400
     height_inches = shape.height / 914400
-    point_size = max(_font_floor(shape) or 18.0, 9)
+    point_size = max(_font_floor(shape) or 18.0, minimum_point_size)
     chars_per_line = max(int(width_inches * 72 / (point_size * 0.52)), 1)
     lines = max(int(height_inches * 72 / (point_size * 1.2)), 1)
     return chars_per_line * lines
@@ -192,8 +244,8 @@ def _is_title_shape(shape, slide) -> bool:
     )
 
 
-def _one_line_capacity(shape) -> int:
-    point_size = max(_font_ceiling(shape) or 35.0, 9)
+def _one_line_capacity(shape, *, minimum_point_size: float = 9) -> int:
+    point_size = max(_font_ceiling(shape) or 35.0, minimum_point_size)
     width_inches = shape.width / EMU_PER_INCH
     return max(int(width_inches * 72 / (point_size * 0.54)), 1)
 
@@ -243,7 +295,13 @@ def _package_feature_inventory(package: zipfile.ZipFile) -> dict[str, Any]:
         ),
         "themes": sum(name.startswith("ppt/theme/theme") for name in names),
         "charts": sum(
-            bool(re.fullmatch(r"ppt/charts/chart\d+\.xml", name)) for name in names
+            bool(
+                re.fullmatch(
+                    r"ppt/(?:charts|slides/charts)/chart[^/]*\.xml",
+                    name,
+                )
+            )
+            for name in names
         ),
         "embedded_workbooks": sum(name.startswith("ppt/embeddings/") for name in names),
         "smartart_parts": sum(name.startswith("ppt/diagrams/") for name in names),
@@ -283,6 +341,8 @@ def _layout_findings(presentation) -> tuple[list[dict[str, Any]], list[dict[str,
     findings: list[dict[str, Any]] = []
     metrics: list[dict[str, Any]] = []
     for slide_number, slide in enumerate(presentation.slides, start=1):
+        profile_name = _slide_profile(slide)
+        policy = layout_profile(profile_name)
         all_shapes = list(_walk_shapes(slide.shapes))
         content_shapes = [
             shape
@@ -367,10 +427,25 @@ def _layout_findings(presentation) -> tuple[list[dict[str, Any]], list[dict[str,
 
         for shape in text_shapes:
             text = _shape_text(shape)
-            capacity = max(_estimated_capacity(shape), 1)
+            capacity = max(
+                _estimated_capacity(
+                    shape,
+                    minimum_point_size=policy.metadata_min_pt,
+                ),
+                1,
+            )
             explicit_lines = max(text.count("\n") + 1, 1)
             estimated_lines = max(
-                math.ceil(len(text) / max(_one_line_capacity(shape), 1)),
+                math.ceil(
+                    len(text)
+                    / max(
+                        _one_line_capacity(
+                            shape,
+                            minimum_point_size=policy.metadata_min_pt,
+                        ),
+                        1,
+                    )
+                ),
                 explicit_lines,
             )
             fit_ratio = len(text) / capacity
@@ -397,7 +472,17 @@ def _layout_findings(presentation) -> tuple[list[dict[str, Any]], list[dict[str,
                     )
                 )
             floor = _font_floor(shape)
-            minimum = 35 if is_title else 16
+            role = _shape_role(shape)
+            if is_title or role == "title":
+                minimum = policy.title_min_pt
+            elif role in {"subheading", "section-heading"}:
+                minimum = policy.subheading_min_pt
+            elif role in {"caption", "kicker"}:
+                minimum = policy.caption_min_pt
+            elif role in {"metadata", "footer"}:
+                minimum = policy.metadata_min_pt
+            else:
+                minimum = policy.body_min_pt
             if floor is not None and floor < minimum:
                 findings.append(
                     _finding(
@@ -409,18 +494,26 @@ def _layout_findings(presentation) -> tuple[list[dict[str, Any]], list[dict[str,
                     )
                 )
 
-        rounded_ratio = len(rounded) / max(len(content_shapes), 1)
-        if len(rounded) >= 3:
-            severity = (
-                "error" if len(rounded) >= 4 or rounded_ratio >= 0.5 else "warning"
-            )
+        rounded_warning = {
+            "editorial": 3,
+            "executive-dense": 6,
+            "operational": 9,
+        }[profile_name]
+        rounded_error = {
+            "editorial": 4,
+            "executive-dense": 12,
+            "operational": 18,
+        }[profile_name]
+        if len(rounded) >= rounded_warning:
+            severity = "error" if len(rounded) >= rounded_error else "warning"
             findings.append(
                 _finding(
                     severity,
                     f"slide:{slide_number}:rounded-cards",
                     len(rounded),
-                    f"Slide {slide_number}: {len(rounded)} rounded rectangles create "
-                    "a card-grid/UI look; use a flatter composition",
+                    f"Slide {slide_number}: {len(rounded)} rounded rectangles exceed "
+                    f"the {profile_name} profile's structural-container allowance; "
+                    "use borders, rules, grouping, or fewer corner treatments",
                 )
             )
         icon_families = sorted({metadata[0] for _, metadata in icons})
@@ -437,14 +530,15 @@ def _layout_findings(presentation) -> tuple[list[dict[str, Any]], list[dict[str,
         for shape, metadata in icons:
             family, icon_name = metadata
             minimum_side = min(shape.width, shape.height) / EMU_PER_INCH
-            if minimum_side < 0.28:
+            if minimum_side < policy.icon_min_inches:
                 findings.append(
                     _finding(
                         "warning",
                         f"slide:{slide_number}:small-icon:{_shape_id(shape)}",
-                        0.28 - minimum_side,
+                        policy.icon_min_inches - minimum_side,
                         f"Slide {slide_number}: {family}:{icon_name} is only "
-                        f"{minimum_side:.2f}in; use at least 0.28in",
+                        f"{minimum_side:.2f}in; {profile_name} profile uses at least "
+                        f"{policy.icon_min_inches:.2f}in",
                     )
                 )
             extension = _picture_extension(shape)
@@ -458,22 +552,48 @@ def _layout_findings(presentation) -> tuple[list[dict[str, Any]], list[dict[str,
                         "not a themeable SVG",
                     )
                 )
-        if len(icons) > 6:
-            severity = "error" if len(icons) > 10 else "warning"
+        icon_warning = {
+            "editorial": 6,
+            "executive-dense": 14,
+            "operational": 24,
+        }[profile_name]
+        icon_error = {
+            "editorial": 10,
+            "executive-dense": 24,
+            "operational": 40,
+        }[profile_name]
+        if len(icons) > icon_warning:
+            severity = "error" if len(icons) > icon_error else "warning"
             findings.append(
                 _finding(
                     severity,
                     f"slide:{slide_number}:icon-density",
                     len(icons),
-                    f"Slide {slide_number}: {len(icons)} icons compete for attention; "
-                    "use icons only where they carry meaning",
+                    f"Slide {slide_number}: {len(icons)} icons exceed the "
+                    f"{profile_name} profile allowance; keep only semantic icons",
                 )
             )
-        if len(content_shapes) > 12 or len(text_shapes) > 6:
-            density = max(len(content_shapes) / 12, len(text_shapes) / 6)
+        shape_warning, text_warning, shape_error, text_error = {
+            "editorial": (12, 6, 18, 9),
+            "executive-dense": (48, 28, 80, 48),
+            "operational": (96, 64, 160, 100),
+        }[profile_name]
+        semantic_items = (
+            len(text_shapes)
+            + len(icons)
+            + len(charts)
+            + len(tables)
+            + len(pictures)
+            + len(groups)
+        )
+        if semantic_items > shape_warning or len(text_shapes) > text_warning:
+            density = max(
+                semantic_items / shape_warning,
+                len(text_shapes) / text_warning,
+            )
             severity = (
                 "error"
-                if len(content_shapes) > 18 or len(text_shapes) > 9
+                if semantic_items > shape_error or len(text_shapes) > text_error
                 else "warning"
             )
             findings.append(
@@ -482,15 +602,18 @@ def _layout_findings(presentation) -> tuple[list[dict[str, Any]], list[dict[str,
                     f"slide:{slide_number}:density",
                     density,
                     f"Slide {slide_number}: layout is dense "
-                    f"({len(content_shapes)} items, {len(text_shapes)} text blocks); "
-                    "split the message or choose one stronger composition",
+                    f"({semantic_items} semantic items, "
+                    f"{len(text_shapes)} text blocks); "
+                    f"it exceeds the {profile_name} profile budget",
                 )
             )
 
         metrics.append(
             {
                 "slide": slide_number,
+                "profile": profile_name,
                 "content_shapes": len(content_shapes),
+                "semantic_items": semantic_items,
                 "text_shapes": len(text_shapes),
                 "rounded_shapes": len(rounded),
                 "icon_count": len(icons),
