@@ -1,4 +1,4 @@
-import { FileText, FileType, File as FileIcon, X } from 'lucide-react'
+import { Download, FileText, FileType, File as FileIcon, X } from 'lucide-react'
 import { openExternalUrl } from '@/lib/open-external'
 
 interface FileCardProps {
@@ -10,6 +10,8 @@ interface FileCardProps {
   removable?: boolean
   /** If true, clicking opens the file in a new tab (for persisted files) */
   clickable?: boolean
+  /** Show a dedicated download action for generated workspace files. */
+  onDownload?: () => void
 }
 
 function getFileIcon(mediaType?: string) {
@@ -35,6 +37,7 @@ export function FileCard({
   onRemove,
   removable,
   clickable,
+  onDownload,
 }: FileCardProps) {
   // Truncate long filenames to ~20 chars
   const displayName = name.length > 20 ? `${name.substring(0, 17)}…` : name
@@ -48,11 +51,12 @@ export function FileCard({
   }
 
   return (
-    <div className="group relative inline-block">
+    <div className="group relative inline-flex">
       <button
+        type="button"
         onClick={handleClick}
         disabled={!clickable}
-        className={`surface-raised flex items-center gap-2 rounded-lg border border-(--color-border) bg-(--bg-card) px-3 py-2 text-xs text-(--color-text) transition-[background-color,border-color,box-shadow,opacity] duration-(--motion-fast) ${
+        className={`surface-raised flex items-center gap-2 border border-(--color-border) bg-(--bg-card) px-3 py-2 text-xs text-(--color-text) transition-[background-color,border-color,box-shadow,opacity] duration-(--motion-fast) ${onDownload ? 'rounded-l-lg' : 'rounded-lg'} ${
           clickable ? 'cursor-pointer hover:border-(--color-accent) hover:bg-(--bg-key)' : ''
         }`}
         title={name}
@@ -63,8 +67,21 @@ export function FileCard({
         <span className="flex-shrink-0 font-medium">{displayName}</span>
       </button>
 
+      {onDownload && (
+        <button
+          type="button"
+          onClick={onDownload}
+          className="surface-raised flex items-center justify-center rounded-r-lg border border-l-0 border-(--color-border) bg-(--bg-card) px-2 text-(--color-text-muted) transition-colors duration-(--motion-fast) hover:border-(--color-accent) hover:bg-(--bg-key) hover:text-(--color-text)"
+          aria-label={`Download ${name}`}
+          title="Download"
+        >
+          <Download size={14} />
+        </button>
+      )}
+
       {removable && onRemove && (
         <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation()
             onRemove()

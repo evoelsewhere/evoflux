@@ -381,7 +381,7 @@ async def list_providers() -> ProvidersListBody:
                 env_var=entry.get("env_var", ""),
                 env_vars=list(entry.get("env_vars", [])),
                 fallback_models=filter_agent_model_ids(
-                    list(entry.get("fallback_models", []))
+                    entry["id"], list(entry.get("fallback_models", []))
                 ),
                 oauth_command=entry.get("oauth_command", ""),
                 docs_url=entry.get("docs_url", ""),
@@ -438,7 +438,8 @@ async def list_provider_models(
         entry, body.api_key, body.extra
     )
     discovered = filter_agent_model_ids(
-        await discover_provider_models(entry, overrides=overrides)
+        provider_id,
+        await discover_provider_models(entry, overrides=overrides),
     )
     if not entry.get("auto_connect", True):
         _cache_provider_models(entry, discovered)

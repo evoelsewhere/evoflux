@@ -598,6 +598,7 @@ class MCPManager:
                         server_name=name,
                         mcp_tool=t,
                         session_provider=lambda r=runner: r.session,
+                        server_capabilities=server_cfg.capabilities,
                     )
                     for t in tools_resp.tools
                 ]

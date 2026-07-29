@@ -26,54 +26,54 @@ export type RenderBlock = ContentBlock | ToolBlockGroup
 
 // ── Tool icon & label helpers ────────────────────────────────────────────────
 
-const TOOL_ICON_MAP: Record<string, React.ElementType> = {
-  bash: Terminal,
-  shell: Terminal,
-  run_command: Terminal,
-  read_file: FileText,
-  write_file: FileText,
-  edit_file: FileText,
-  glob: FolderOpen,
-  grep: Search,
-  search: Search,
-  code_graph: Database,
-  browser: Globe,
-  git: GitBranch,
-  python: Code2,
+interface ToolPresentation {
+  icon: React.ElementType
+  verb: string
+  singular: string
+  plural: string
+}
+
+const TOOL_PRESENTATION: Record<string, ToolPresentation> = {
+  bash: { icon: Terminal, verb: 'Ran', singular: 'shell command', plural: 'shell commands' },
+  shell: { icon: Terminal, verb: 'Ran', singular: 'shell command', plural: 'shell commands' },
+  run_command: { icon: Terminal, verb: 'Ran', singular: 'shell command', plural: 'shell commands' },
+  python: { icon: Code2, verb: 'Ran', singular: 'Python call', plural: 'Python calls' },
+  read: { icon: FileText, verb: 'Read', singular: 'file', plural: 'files' },
+  read_file: { icon: FileText, verb: 'Read', singular: 'file', plural: 'files' },
+  write: { icon: FileText, verb: 'Wrote', singular: 'file', plural: 'files' },
+  write_file: { icon: FileText, verb: 'Wrote', singular: 'file', plural: 'files' },
+  edit: { icon: FileText, verb: 'Edited', singular: 'file', plural: 'files' },
+  edit_file: { icon: FileText, verb: 'Edited', singular: 'file', plural: 'files' },
+  patch: { icon: FileText, verb: 'Patched', singular: 'file', plural: 'files' },
+  glob: { icon: FolderOpen, verb: 'Listed', singular: 'directory', plural: 'directories' },
+  ls: { icon: FolderOpen, verb: 'Listed', singular: 'directory', plural: 'directories' },
+  grep: { icon: Search, verb: 'Searched', singular: 'search', plural: 'searches' },
+  code_search: { icon: Search, verb: 'Searched', singular: 'search', plural: 'searches' },
+  code_graph: { icon: Database, verb: 'Queried', singular: 'graph call', plural: 'graph calls' },
+  browser_use: { icon: Globe, verb: 'Browsed', singular: 'browser call', plural: 'browser calls' },
+  webbridge: { icon: Globe, verb: 'Browsed', singular: 'browser call', plural: 'browser calls' },
+  git: { icon: GitBranch, verb: 'Ran', singular: 'Git call', plural: 'Git calls' },
+}
+
+const DEFAULT_PRESENTATION: ToolPresentation = {
+  icon: Terminal,
+  verb: 'Called',
+  singular: 'call',
+  plural: 'calls',
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
 export function getToolIcon(toolName: string): React.ElementType {
-  const lower = toolName.toLowerCase()
-  for (const [key, Icon] of Object.entries(TOOL_ICON_MAP)) {
-    if (lower.includes(key)) return Icon
-  }
-  return Terminal
+  return TOOL_PRESENTATION[toolName]?.icon ?? DEFAULT_PRESENTATION.icon
 }
 
 function getToolVerb(toolName: string): string {
-  const lower = toolName.toLowerCase()
-  if (lower.includes('read') || lower.includes('glob') || lower.includes('ls')) return 'Read'
-  if (lower.includes('write') || lower.includes('edit') || lower.includes('create')) return 'Wrote'
-  if (lower.includes('grep') || lower.includes('search')) return 'Searched'
-  if (lower.includes('bash') || lower.includes('shell') || lower.includes('run')) return 'Ran'
-  if (lower.includes('browser')) return 'Browsed'
-  return 'Called'
+  return TOOL_PRESENTATION[toolName]?.verb ?? DEFAULT_PRESENTATION.verb
 }
 
 function getResourceLabel(toolName: string, count: number): string {
-  const lower = toolName.toLowerCase()
-  if (lower.includes('file')) return count === 1 ? 'file' : 'files'
-  if (lower.includes('bash') || lower.includes('shell') || lower.includes('run')) {
-    return count === 1 ? 'shell command' : 'shell commands'
-  }
-  if (lower.includes('grep') || lower.includes('search')) {
-    return count === 1 ? 'search' : 'searches'
-  }
-  if (lower.includes('glob') || lower.includes('ls')) {
-    return count === 1 ? 'directory' : 'directories'
-  }
-  return count === 1 ? 'call' : 'calls'
+  const presentation = TOOL_PRESENTATION[toolName] ?? DEFAULT_PRESENTATION
+  return count === 1 ? presentation.singular : presentation.plural
 }
 
 // ── Grouping utility ─────────────────────────────────────────────────────────

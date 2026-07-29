@@ -16,6 +16,7 @@ import asyncio
 import json
 import re
 import textwrap
+from difflib import get_close_matches
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -126,23 +127,9 @@ def _parse_frontmatter(text: str) -> tuple[dict, str]:
 def extract_triggers(skill_dir: Path) -> list[str]:
     """Extract trigger keywords from a skill's description.
 
-    Parses the ``description`` field in YAML frontmatter and returns a
-    list of concise keyword triggers suitable for intent-matching.  Two
-    sources are used:
-
-    1. **Explicit trigger items** from ``"Triggers on / Triggers include /
-       Trigger when"`` lists — each comma- or ``or``-separated item
-       becomes one trigger.
-    2. **Action-verb keywords** (``implement``, ``fix``, ``debug``,
-       ``test``, ``review``, ``deploy``, ``refactor``, ``write``,
-       ``create``, ``design``, ``build``, ``optimize``) found via
-       prefix-boundary regex (so ``fix`` matches ``fixing`` but not
-       ``suffix``).
-
-    Long "Use when ..." phrases are intentionally NOT extracted as
-    individual triggers because they are too specific for reliable
-    intent matching — their semantic content is already captured by the
-    action verbs and (where present) explicit trigger lists.
+    Explicit ``Triggers on`` / ``Triggers include`` / ``Trigger when`` phrases
+    in the description define automatic-routing terms. Other description prose
+    is never interpreted as routing metadata.
 
     Returns a de-duplicated list of lowercase keyword strings.
     """
@@ -153,45 +140,21 @@ def extract_triggers(skill_dir: Path) -> list[str]:
         return []
     meta, _ = _parse_frontmatter(text)
     description = meta.get("description", "")
-    if not description:
+    if not isinstance(description, str) or not description:
         return []
 
     triggers: list[str] = []
-
-    # --- 1. "Trigger(s) on / include / when" explicit lists -------------
-    for m in re.finditer(
-        r"Trigger[s]?\s+(?:on|include|for|when)\s*[:\-]?\s*",
+    for match in re.finditer(
+        r"Trigger[s]?\s+(?:on|include|for|when)(?=\s|:|-)\s*[:\-]?\s*",
         description,
         re.IGNORECASE,
     ):
-        rest = description[m.end():].strip()
-        chunk = re.split(r"\.\s|$", rest, maxsplit=1)[0]
-        for item in re.split(r",\s*|\s+or\s+", chunk):
+        rest = description[match.end() :].strip()
+        chunk = re.split(r"\.(?:\s|$)", rest, maxsplit=1)[0]
+        for item in re.split(r",\s*(?:or\s+)?|\s+or\s+", chunk):
             cleaned = item.strip().strip('"').strip("'").strip(",; ")
-            # Skip overly long items (likely sentence fragments, not
-            # keyword triggers) and very short ones.
             if 1 < len(cleaned) <= 50 and cleaned.count(" ") <= 4:
                 triggers.append(cleaned.lower())
-
-    # --- 2. Action-verb keywords (prefix-boundary matched) ---------------
-    _action_verbs = {
-        "implement",
-        "fix",
-        "debug",
-        "test",
-        "review",
-        "deploy",
-        "refactor",
-        "write",
-        "create",
-        "design",
-        "build",
-        "optimize",
-    }
-    desc_lower = description.lower()
-    for verb in _action_verbs:
-        if re.search(r"\b" + verb, desc_lower):
-            triggers.append(verb)
 
     # De-duplicate while preserving order.
     seen: set[str] = set()
@@ -440,13 +403,16 @@ def _loaded_skills_from_messages(state: Any) -> dict[str, str]:
     return loaded
 
 
-@tool(name="skill", description=_skill_tool_description)
+@tool(
+    name="skill",
+    description=_skill_tool_description,
+    max_calls_per_batch=5,
+    deduplicate_in_batch=True,
+)
 async def load_skill(
     skill_name: Annotated[
         str | None,
-        Field(
-            description="Exact skill name to load. Required when action='load'."
-        ),
+        Field(description="Exact skill name to load. Required when action='load'."),
     ] = None,
     action: Annotated[
         Literal["list", "load"],
@@ -481,9 +447,7 @@ async def load_skill(
         skill_dir = Path(skill_info["dir"])
         skill_file = skill_dir / "SKILL.md"
         if skill_file.is_file():
-            text = await asyncio.to_thread(
-                skill_file.read_text, encoding="utf-8"
-            )
+            text = await asyncio.to_thread(skill_file.read_text, encoding="utf-8")
             _, body = _parse_frontmatter(text)
             logger.info(
                 "skill_loaded name={} file={}",
@@ -511,5 +475,10 @@ async def load_skill(
                     loaded_skills[skill_name] = rendered
                 return rendered
 
-    available = list(discover_skills().keys())
-    return f"Skill '{skill_name}' not found. Available: {available}"
+    available = sorted(discover_skills())
+    matches = get_close_matches(skill_name, available, n=3, cutoff=0.5)
+    suggestion = f" Did you mean: {', '.join(matches)}?" if matches else ""
+    return (
+        f"Skill '{skill_name}' not found.{suggestion} "
+        "Call action='list' to inspect the full catalog."
+    )

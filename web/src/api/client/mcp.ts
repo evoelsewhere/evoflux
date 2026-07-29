@@ -10,6 +10,7 @@ export type StdioServerBody = {
   command: string
   args: string[]
   env: Record<string, string>
+  capabilities: string[]
   enabled: boolean
 }
 
@@ -21,6 +22,7 @@ export type HttpServerBody = {
     client_id?: string | null
     client_secret?: string | null
   } | null
+  capabilities: string[]
   enabled: boolean
 }
 

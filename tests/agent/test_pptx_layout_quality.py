@@ -209,9 +209,20 @@ def test_quality_ledger_reports_all_text_issues_after_one_build() -> None:
 def test_curated_icon_search_resolves_semantic_aliases() -> None:
     assert len(pptx_icons.list_icons()) == 47
     assert pptx_icons.resolve_icon("growth") == "trending-up"
+    assert pptx_icons.resolve_icon("alert-circle") == "circle-alert"
+    assert pptx_icons.resolve_icon("layout-grid") == "panels-top-left"
     assert any(
         match.name == "chart-line" for match in pptx_icons.search_icons("analytics")
     )
+
+
+def test_icon_preflight_reports_all_unknown_names() -> None:
+    with pytest.raises(KeyError) as exc_info:
+        pptx_icons.resolve_icons(["rocket", "missing-one", "missing-two"])
+
+    message = str(exc_info.value)
+    assert "missing-one" in message
+    assert "missing-two" in message
 
 
 def test_add_icon_embeds_themeable_svg_and_qa_metadata(tmp_path: Path) -> None:
@@ -500,7 +511,7 @@ def test_image_cover_uses_native_focal_crop_and_alt_text(tmp_path: Path) -> None
     assert properties[0].get("descr") == "Product subject positioned on the right."
 
 
-def test_qa_warns_when_long_deck_is_shape_only(tmp_path: Path) -> None:
+def test_qa_rejects_long_deck_that_is_shape_only_by_default(tmp_path: Path) -> None:
     source = tmp_path / "shape-only.pptx"
     presentation = stylekit.new_wide_presentation()
     for slide_number in range(5):
@@ -510,7 +521,15 @@ def test_qa_warns_when_long_deck_is_shape_only(tmp_path: Path) -> None:
 
     report = pptx_qa.inspect_pptx(source)
 
-    assert any("shape-only treatment" in warning for warning in report["warnings"])
+    assert any("shape-only treatment" in error for error in report["errors"])
+
+    allowed_report = pptx_qa.inspect_pptx(source, allow_shape_only=True)
+    assert not any(
+        "shape-only treatment" in error for error in allowed_report["errors"]
+    )
+    assert any(
+        "shape-only treatment" in warning for warning in allowed_report["warnings"]
+    )
 
 
 def test_structural_qa_rejects_overlapping_text_items(tmp_path: Path) -> None:

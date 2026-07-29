@@ -1,6 +1,6 @@
 ---
 name: writing-and-deliverables
-description: Produces clear, well-structured written deliverables — reports, briefs, summaries, emails, docs, and structured files — fit for their audience and purpose. Use when the task is to write, draft, summarize, rewrite, or assemble a document or artifact. Triggers on "write", "draft", "summarize", "turn this into", or "put together a".
+description: Produces clear, well-structured written deliverables — reports, briefs, summaries, emails, docs, and structured files — fit for their audience and purpose. Triggers on "write a report", "draft an email", "summarize a document", "rewrite this document", or "assemble a brief".
 ---
 
 # Writing & Deliverables

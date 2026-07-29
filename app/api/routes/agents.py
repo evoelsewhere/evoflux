@@ -406,7 +406,10 @@ async def _discover_configured_registry_models() -> list[tuple[str, str]]:
             logger.info("registry_model_discovery_failed error={}", result)
             continue
         provider_id, model_ids = result
-        out.extend((provider_id, model) for model in filter_agent_model_ids(model_ids))
+        out.extend(
+            (provider_id, model)
+            for model in filter_agent_model_ids(provider_id, model_ids)
+        )
     return out
 
 

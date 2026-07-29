@@ -105,6 +105,10 @@ class TestDiscoverSkills:
 
 
 class TestLoadSkill:
+    def test_skill_tool_declares_batch_storm_guard(self):
+        assert load_skill.max_calls_per_batch == 5
+        assert load_skill.deduplicate_in_batch is True
+
     @pytest.mark.asyncio
     async def test_load_skill_by_name(self, tmp_path, monkeypatch):
         d = tmp_path / "analysis"
@@ -242,9 +246,11 @@ class TestLoadSkill:
         d.mkdir()
         (d / "SKILL.md").write_text("---\nname: existing\n---\nBody.")
         monkeypatch.setattr("app.agent.tools.builtin.skill._SKILLS_DIR", tmp_path)
-        result = await load_skill("nonexistent")
+        result = await load_skill("existng")
         assert "not found" in result
         assert "existing" in result
+        assert "action='list'" in result
+        assert len(result) < 200
 
     @pytest.mark.asyncio
     async def test_load_skill_dir_missing(self, tmp_path, monkeypatch):

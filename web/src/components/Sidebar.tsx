@@ -425,11 +425,11 @@ export function Sidebar({
             <SidebarModeSlot />
           </div>
           {onCommandPalette && (
-            <div className="px-1.5 pt-1.5">
+            <div className="px-2.5 pt-2.5">
               <SidebarSearchTrigger onClick={onCommandPalette} />
             </div>
           )}
-          <nav aria-label="Primary" className="space-y-0.5 px-1.5 py-1.5">
+          <nav aria-label="Primary" className="space-y-0.5 px-1.5 pb-1.5 pt-2">
             <SidebarItem
               Icon={Plus}
               label="New Chat"

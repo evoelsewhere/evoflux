@@ -20,21 +20,19 @@ from app.agent.agent_loop import Agent
 from app.agent.mode.team.member import TeamLead
 from app.agent.mode.team.team import AgentTeam
 from app.agent.mode.team.tier_policy import (
-    BROWSER_SIGNAL_REVEALED_TOOLS,
     SIDE_CHAT_ALWAYS_EXCLUDED_TOOLS,
     SIDE_CHAT_SESSION_TAG,
     TIER_DENIED_TOOLS,
     WEBBRIDGE_SESSION_DENIED_WEB_TOOLS,
-    WEBBRIDGE_SESSION_TAG,
     deferred_tools_for_run,
     denied_tools_for_tier,
-    request_has_browser_signal,
     resolve_member_tier,
     side_chat_session_excluded_tools,
     webbridge_session_excluded_tools,
 )
 from app.agent.sandbox import SandboxConfig, set_sandbox
 from app.agent.tools import Tool
+from app.webbridge_tags import WEBBRIDGE_SESSION_TAG
 
 
 # ── denied_tools_for_tier ────────────────────────────────────────────────
@@ -238,26 +236,12 @@ class TestDefaultDeferredTools:
         }
 
 
-class TestBrowserSignalDeferredTools:
+class TestDeferredTools:
     @staticmethod
     def _tool(name: str, *, deferred: bool = False) -> Tool:
         return Tool(lambda: None, name=name, deferred=deferred)
 
-    @pytest.mark.parametrize(
-        "text",
-        [
-            "Open https://example.com and take a screenshot",
-            "Verify the responsive frontend in Chrome",
-            "Inspect the DOM on localhost:5173",
-        ],
-    )
-    def test_clear_browser_requests_are_detected(self, text):
-        assert request_has_browser_signal(text)
-
-    def test_plain_backend_request_does_not_reveal_browser(self):
-        assert not request_has_browser_signal("Refactor the database query and run tests")
-
-    def test_browser_signal_reveals_browser_and_preview_only(self):
+    def test_browser_and_preview_stay_deferred_until_explicitly_loaded(self):
         tools = [
             self._tool("load_tool"),
             self._tool("browser_use", deferred=True),
@@ -266,12 +250,9 @@ class TestBrowserSignalDeferredTools:
             self._tool("lsp_diagnostics", deferred=True),
         ]
 
-        deferred = deferred_tools_for_run(
-            tools, request_text="Check this responsive web app in a browser"
-        )
+        deferred = deferred_tools_for_run(tools)
 
-        assert BROWSER_SIGNAL_REVEALED_TOOLS.isdisjoint(deferred)
-        assert {"webbridge", "lsp_diagnostics"} <= deferred
+        assert {"browser_use", "preview", "webbridge", "lsp_diagnostics"} <= deferred
 
     def test_webbridge_tag_reveals_webbridge_without_headless_browser(self):
         tools = [
@@ -479,33 +460,58 @@ class TestResolveMemberTier:
 
 # ── WebBridge session scoping ────────────────────────────────────────────
 
+
 # Representative lead tool set: workspace/core tools, competing web backends,
 # deferred loaders, injected team tools, and browser/non-browser MCP tools.
+def _policy_tool(
+    name: str,
+    *,
+    capabilities: tuple[str, ...] = (),
+    origin: str = "builtin",
+) -> Tool:
+    tool = Tool(lambda: None, name=name, capabilities=capabilities)
+    tool.origin = origin
+    return tool
+
+
 _LEAD_REGISTRY_TOOLS = [
-    "webbridge",
-    "ask_user",
-    "todo_manage",
-    "note",
-    "date",
-    "browser_use",
-    "web_search",
-    "web_fetch",
-    "image_search",
-    "schedule_task",
-    "skill",
-    "read",
-    "write",
-    "shell",
-    "load_tool",
-    "preview",
-    "mcp_playwright_navigate",
-    "mcp_filesystem_read_file",
-    "team_message",
-    "team_handoff",
-    "team_state",
-    "team_manage",
-    "team_delegate",
-    "team_reject",
+    _policy_tool(
+        name,
+        capabilities=(
+            ("browser",)
+            if name == "mcp_browser_navigate"
+            else ("webbridge-safe",)
+            if name == "mcp_filesystem_read_file"
+            else ()
+        ),
+        origin="mcp" if name.startswith("mcp_") else "builtin",
+    )
+    for name in [
+        "webbridge",
+        "ask_user",
+        "todo_manage",
+        "note",
+        "date",
+        "browser_use",
+        "web_search",
+        "web_fetch",
+        "image_search",
+        "schedule_task",
+        "skill",
+        "read",
+        "write",
+        "shell",
+        "load_tool",
+        "preview",
+        "mcp_browser_navigate",
+        "mcp_filesystem_read_file",
+        "team_message",
+        "team_handoff",
+        "team_state",
+        "team_manage",
+        "team_delegate",
+        "team_reject",
+    ]
 ]
 
 
@@ -534,7 +540,21 @@ class TestWebbridgeSessionExcludedTools:
     def test_mcp_tools_excluded(self):
         # An MCP browser server must not bypass the webbridge-only rule.
         excluded = webbridge_session_excluded_tools(_LEAD_REGISTRY_TOOLS)
-        assert "mcp_playwright_navigate" in excluded
+        assert "mcp_browser_navigate" in excluded
+
+    def test_mcp_name_does_not_imply_browser_capability(self):
+        tool = _policy_tool(
+            "mcp_playwright_navigate",
+            capabilities=("webbridge-safe",),
+            origin="mcp",
+        )
+
+        assert tool.name not in webbridge_session_excluded_tools([tool])
+
+    def test_unclassified_mcp_tool_is_excluded(self):
+        tool = _policy_tool("mcp_custom_action", origin="mcp")
+
+        assert tool.name in webbridge_session_excluded_tools([tool])
 
     def test_all_injected_team_tools_survive(self):
         injected = {
@@ -547,7 +567,9 @@ class TestWebbridgeSessionExcludedTools:
             "team_reject",
         }
 
-        excluded = webbridge_session_excluded_tools({"webbridge", *injected})
+        excluded = webbridge_session_excluded_tools(
+            [Tool(lambda: None, name=name) for name in {"webbridge", *injected}]
+        )
 
         assert injected.isdisjoint(excluded)
 

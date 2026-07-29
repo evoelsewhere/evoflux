@@ -293,6 +293,7 @@ class TestCreateServer:
                             "@modelcontextprotocol/server-filesystem",
                             "/tmp",
                         ],
+                        "capabilities": ["webbridge-safe"],
                     },
                 },
             )
@@ -300,7 +301,10 @@ class TestCreateServer:
             data = response.json()
             assert data["name"] == "filesystem"
             assert data["state"] == "ready"
+            assert data["config"]["capabilities"] == ["webbridge-safe"]
             mock_save.assert_called_once()
+            saved = mock_save.call_args.args[0]
+            assert saved.servers["filesystem"].capabilities == ["webbridge-safe"]
 
     def test_create_server_http_success(self) -> None:
         """POST /api/mcp/servers creates http server, returns 201."""

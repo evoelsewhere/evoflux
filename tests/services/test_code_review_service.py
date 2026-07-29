@@ -51,11 +51,13 @@ def test_parse_remote_url(remote, host, repository):
     ("host", "repository", "provider"),
     [
         ("github.com", "org/repo", "github"),
-        ("gitlab.corp.test", "group/repo", "gitlab"),
+        ("gitlab.com", "group/repo", "gitlab"),
+        ("gitlab.corp.test", "group/repo", None),
         ("bitbucket.org", "workspace/repo", "bitbucket_cloud"),
         ("bitbucket.corp.test", "scm/TEAM/repo", "bitbucket_server"),
         ("dev.azure.com", "org/project/_git/repo", "azure_devops"),
-        ("forgejo.corp.test", "org/repo", "gitea"),
+        ("forgejo.corp.test", "org/repo", None),
+        ("github-mirror.corp.test", "org/repo", None),
         ("git.corp.test", "org/repo", None),
     ],
 )

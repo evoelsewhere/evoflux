@@ -12,12 +12,14 @@ server names to per-server config. Two transport shapes:
           "command": "npx",
           "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
           "env": {"FOO": "bar"},
+          "capabilities": ["webbridge-safe"],
           "enabled": true
         },
         "github": {
           "transport": "http",
           "url": "https://mcp.example.com/v1",
           "headers": {"Authorization": "Bearer ..."},
+          "capabilities": ["browser"],
           "enabled": true
         }
       }
@@ -67,6 +69,7 @@ class StdioServerConfig(BaseModel):
     command: Annotated[str, Field(min_length=1)]
     args: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
+    capabilities: list[str] = Field(default_factory=list)
     enabled: bool = True
 
 
@@ -88,6 +91,7 @@ class HttpServerConfig(BaseModel):
     url: Annotated[str, Field(min_length=1)]
     headers: dict[str, str] = Field(default_factory=dict)
     oauth: OAuthConfig | None = None
+    capabilities: list[str] = Field(default_factory=list)
     enabled: bool = True
 
 

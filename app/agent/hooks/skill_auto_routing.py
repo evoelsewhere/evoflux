@@ -103,19 +103,28 @@ class SkillAutoRoutingHook(BaseAgentHook):
 
     @staticmethod
     def _score_message(message: str, triggers: list[str]) -> float:
-        """Return the fraction of *triggers* found in *message*.
+        """Return the specificity of the strongest trigger found in *message*.
 
-        Triggers are short keywords (single words or short phrases).
-        Matching uses word-boundary prefix search so that ``test``
+        Each trigger is an alternative route into the skill, so adding synonyms
+        must not dilute existing matches. Longer matching phrases outrank broad
+        single terms. Matching uses word-boundary prefix search so that ``test``
         matches "test", "tests", and "testing" but not "contested".
         """
         if not triggers:
             return 0.0
         msg_lower = message.lower()
-        matched = sum(
-            1 for t in triggers if re.search(r"\b" + re.escape(t), msg_lower)
+        matched = [
+            trigger
+            for trigger in triggers
+            if re.search(r"\b" + re.escape(trigger), msg_lower)
+        ]
+        if not matched:
+            return 0.0
+        return float(
+            max(
+                len(re.findall(r"[a-z0-9]+", trigger.casefold())) for trigger in matched
+            )
         )
-        return matched / len(triggers)
 
     # ------------------------------------------------------------------
     # Hook entry point

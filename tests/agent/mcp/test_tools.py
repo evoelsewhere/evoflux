@@ -186,6 +186,37 @@ class TestMCPToolDefinition:
         assert tool.deferred is True
         assert tool.deferred_summary == mcp_tool.description
 
+    def test_mcp_tool_reads_explicit_capabilities_from_metadata(self) -> None:
+        mcp_tool = SimpleNamespace(
+            name="navigate",
+            description="Navigate a connected browser",
+            inputSchema={"type": "object", "properties": {}},
+            meta={"evoflux/capabilities": ["browser", "interactive"]},
+        )
+        tool = MCPTool(
+            server_name="automation",
+            mcp_tool=mcp_tool,  # type: ignore[arg-type]
+            session_provider=lambda: None,
+        )
+
+        assert tool.capabilities == frozenset({"browser", "interactive"})
+        assert tool.origin == "mcp"
+
+    def test_mcp_tool_inherits_server_capabilities(self) -> None:
+        mcp_tool = SimpleNamespace(
+            name="read_file",
+            description="Read a remote file",
+            inputSchema={"type": "object", "properties": {}},
+        )
+        tool = MCPTool(
+            server_name="filesystem",
+            mcp_tool=mcp_tool,  # type: ignore[arg-type]
+            session_provider=lambda: None,
+            server_capabilities=["webbridge-safe"],
+        )
+
+        assert tool.capabilities == frozenset({"webbridge-safe"})
+
     def test_mcp_tool_definition_description(self) -> None:
         """MCPTool.definition includes description."""
         mcp_tool = SimpleNamespace(

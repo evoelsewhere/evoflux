@@ -1,6 +1,6 @@
 ---
 name: pptx
-description: "Create, inspect, or edit PPTX presentations with a narrative-first, design-token, native OpenXML workflow. Trigger whenever a slide deck, presentation, PowerPoint template, speaker notes, charts, or .pptx file is an input or deliverable."
+description: "Create, inspect, or edit PowerPoint presentations (.pptx), including slide decks, templates, speaker notes, and charts, with a narrative-first, design-token, native OpenXML workflow. Triggers on PPTX, PowerPoint, or slide."
 ---
 
 # PPTX
@@ -89,7 +89,10 @@ then compare the before/after package and render every slide.
    them as a batch; collision or text-fit errors require a layout/copy change,
    not an overlap exception.
 7. For functional symbols, use the curated vector catalog in
-   `scripts/icons.py`, not generated raster icons or mixed icon families.
+  `scripts/icons.py`, not generated raster icons or mixed icon families.
+  After choosing names, validate all of them in one pass with
+  `scripts/icons.py` and its `--check <icon>...` option before running the
+  generator.
 8. Route evidence to Office-native objects with `scripts/office_features.py`.
    Quantitative evidence becomes an editable chart, structured comparisons
    become a real table, photos use native crop/focal controls, and navigation
@@ -338,6 +341,11 @@ The layout gate also reports:
 - mixed icon families, raster icons, illegibly small icons, or icon overload;
 - slides with too many independent shapes or text blocks.
 
+Decks of five or more slides must include at least one native chart, table, or
+non-icon picture. Shape-only decks fail QA by default; use
+`--allow-shape-only` only when that treatment is an explicit design decision
+you can explain in the final response.
+
 The report includes `office_feature_summary`, per-slide editable-object counts,
 and a package-wide `powerpoint_features` inventory for masters, layouts,
 themes, charts, embedded workbooks, SmartArt parts, audio/video, notes,
@@ -351,6 +359,13 @@ Search and insert the curated icon catalog:
 
 ```bash
 python "{SKILL_DIR}/scripts/icons.py" "growth analytics"
+```
+
+Validate every selected icon together before building so one run reports all
+unsupported names:
+
+```bash
+python "{SKILL_DIR}/scripts/icons.py" --check trending-up chart-line shield-check
 ```
 
 ```python

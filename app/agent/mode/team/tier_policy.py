@@ -17,7 +17,6 @@ Tier policies
 from __future__ import annotations
 
 from collections.abc import Iterable
-import re
 from typing import TYPE_CHECKING, Literal
 
 from loguru import logger
@@ -83,45 +82,21 @@ def denied_tools_for_tier(
     return denied
 
 
-# ── Deferred-tool visibility ─────────────────────────────────────────────
-
-_BROWSER_SIGNAL_RE = re.compile(
-    r"(?:https?://|\blocalhost(?::\d+)?\b|\b127\.0\.0\.1(?::\d+)?\b|"
-    r"\b(?:browser|chrome|firefox|playwright|selenium|screenshot|viewport|"
-    r"responsive|website|web[ -]?app|front[ -]?end|dom|visual[ -]?regression)\b)",
-    re.IGNORECASE,
-)
-
-BROWSER_SIGNAL_REVEALED_TOOLS: frozenset[str] = frozenset(
-    {"browser_use", "preview"}
-)
-
-
-def request_has_browser_signal(text: str | None) -> bool:
-    """Return whether the latest request clearly needs browser capabilities."""
-    return bool(text and _BROWSER_SIGNAL_RE.search(text))
-
-
 def deferred_tools_for_run(
     tools: Iterable[Tool],
     *,
-    request_text: str | None = None,
     reveal_webbridge: bool = False,
 ) -> frozenset[str]:
     """Resolve metadata-driven deferred names for one team-agent run.
 
-    Browser automation and preview are revealed automatically for a clear
-    browser/UI request. WebBridge is only auto-revealed for its tagged session.
-    Hard exclusions are applied separately and still win after this step.
+    Deferred tools remain hidden until the model activates them through
+    ``load_tool``. WebBridge is auto-revealed only from its explicit session
+    tag. Hard exclusions are applied separately and still win after this step.
     """
     tool_list = tuple(tools)
     if not any(tool.name == "load_tool" for tool in tool_list):
         return frozenset()
-    deferred = {
-        tool.name for tool in tool_list if getattr(tool, "deferred", False)
-    }
-    if request_has_browser_signal(request_text):
-        deferred.difference_update(BROWSER_SIGNAL_REVEALED_TOOLS)
+    deferred = {tool.name for tool in tool_list if getattr(tool, "deferred", False)}
     if reveal_webbridge:
         deferred.discard("webbridge")
     return frozenset(deferred)
@@ -139,22 +114,8 @@ WEBBRIDGE_SESSION_DENIED_WEB_TOOLS: frozenset[str] = frozenset(
     {"browser_use", "web_search", "web_fetch", "image_search"}
 )
 
-#: MCP names are ``mcp_<server>_<tool>``. These markers identify browser
-#: automation servers while leaving filesystem, database, and other workspace
-#: MCP tools available through the normal deferred loader.
-_WEBBRIDGE_MCP_BROWSER_MARKERS: tuple[str, ...] = (
-    "browser",
-    "chrome-devtools",
-    "chrome_devtools",
-    "chromedevtools",
-    "devtools",
-    "playwright",
-    "puppeteer",
-    "selenium",
-)
 
-
-def webbridge_session_excluded_tools(tool_names: Iterable[str]) -> frozenset[str]:
+def webbridge_session_excluded_tools(tools: Iterable[Tool]) -> frozenset[str]:
     """Return the lead's ``excluded_tools`` set for a WebBridge-tagged session.
 
     Workspace, coding, user-interaction, and non-browser MCP tools remain
@@ -163,14 +124,14 @@ def webbridge_session_excluded_tools(tool_names: Iterable[str]) -> frozenset[str
     member, so normal workspace delegation cannot bypass the browser routing.
     """
     denied = set(WEBBRIDGE_SESSION_DENIED_WEB_TOOLS)
-    for name in tool_names:
-        lowered = name.casefold()
-        if lowered.startswith("mcp_") and any(
-            marker in lowered for marker in _WEBBRIDGE_MCP_BROWSER_MARKERS
+    for tool in tools:
+        capabilities = getattr(tool, "capabilities", frozenset())
+        if "browser" in capabilities or (
+            getattr(tool, "origin", "builtin") == "mcp"
+            and "webbridge-safe" not in capabilities
         ):
-            denied.add(name)
+            denied.add(tool.name)
     return frozenset(denied)
-
 
 
 # ── Side Chat session scoping ─────────────────────────────────────────────

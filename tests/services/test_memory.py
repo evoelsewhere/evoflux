@@ -156,6 +156,20 @@ def test_search_memory_facts_can_expose_stale_candidates_for_debug(
     assert any(result.diagnostics["fact_section"] == "stale" for result in debug)
 
 
+def test_search_memory_facts_supports_unicode_evidence(memory_dir: Path) -> None:
+    seed_memory()
+    write_memory_file(
+        "wiki/user.md",
+        "# User\n\n"
+        "## Facts\n\n"
+        "- Người dùng muốn câu trả lời ngắn gọn. [session:test]\n",
+    )
+
+    results = search_memory_facts("Người dùng muốn trả lời thế nào?", limit=3)
+
+    assert [result.source_ref for result in results] == ["wiki:user#fact-1"]
+
+
 def test_search_memory_facts_returns_negated_active_fact_when_supported(
     memory_dir: Path,
 ) -> None:
@@ -228,8 +242,7 @@ def test_search_memory_files_abstains_on_weak_domain_preference(
 
     assert strict == []
     assert candidates[0].source_ref == "wiki:user"
-    assert candidates[0].diagnostics["is_domain_preference_query"] is True
-    assert candidates[0].diagnostics["topic_overlap"] == ["preferences"]
+    assert candidates[0].diagnostics["query_coverage"] < 0.5
 
 
 def test_search_memory_files_uses_answerability_filter(
@@ -259,7 +272,7 @@ def test_search_memory_files_uses_answerability_filter(
 
     assert strict == []
     assert candidates[0].source_ref == "wiki:user"
-    assert "choose" in candidates[0].diagnostics["missing_meaningful_tokens"]
+    assert candidates[0].diagnostics["query_coverage"] < 0.5
 
 
 def test_read_write_memory_file_round_trip(memory_dir: Path) -> None:

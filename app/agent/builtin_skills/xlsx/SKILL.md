@@ -1,6 +1,6 @@
 ---
 name: xlsx
-description: "Create, inspect, analyze, or edit XLSX, XLSM, CSV, and TSV files with formulas, formatting, charts, validation, and visual QA. Trigger whenever a spreadsheet is the primary input or deliverable."
+description: "Create, inspect, analyze, or edit spreadsheet files with formulas, formatting, charts, validation, and visual QA. Triggers on XLSX, XLSM, spreadsheet, workbook, CSV, or TSV."
 ---
 
 # XLSX

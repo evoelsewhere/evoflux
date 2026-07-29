@@ -1449,18 +1449,18 @@ export function CodingSidebar({
       resizeLabel="Resize coding sidebar"
     >
       <SidebarCard
-        className={`shrink-0 px-2 pb-2 ${isMacOverlay ? 'pt-10' : 'pt-2'}`}
+        className={`shrink-0 px-2.5 pb-1 ${isMacOverlay ? 'pt-10' : 'pt-1.5'}`}
       >
         <SidebarModeSlot />
         {onCommandPalette && (
-          <div className="pt-1.5">
+          <div className="pt-2.5">
             <SidebarSearchTrigger onClick={onCommandPalette} />
           </div>
         )}
       </SidebarCard>
 
       {/* Scheduler toggle */}
-      <SidebarCard className="shrink-0 px-2 py-2">
+      <SidebarCard className="shrink-0 px-1.5 py-0.5">
         <SidebarItem
           Icon={CalendarClock}
           label="Scheduler"

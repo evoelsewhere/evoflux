@@ -309,9 +309,7 @@ def _lead_wait_nudge_content(
     """Build the hidden wait-reminder prompt for a lead that answered early."""
     names = ", ".join(pending)
     task_line = (
-        f"\nOutstanding delegation task IDs: {', '.join(task_ids)}."
-        if task_ids
-        else ""
+        f"\nOutstanding delegation task IDs: {', '.join(task_ids)}." if task_ids else ""
     )
     return (
         "[system]: You just responded to the user, but you are still waiting "
@@ -997,8 +995,7 @@ class TeamMemberBase(abc.ABC):
                                 await db.exec(
                                     select(SessionMessage)
                                     .where(
-                                        col(SessionMessage.session_id)
-                                        == session_uuid,
+                                        col(SessionMessage.session_id) == session_uuid,
                                         col(SessionMessage.extra)[
                                             "message_id"
                                         ].as_string()
@@ -1269,19 +1266,10 @@ class TeamMemberBase(abc.ABC):
         # only competing web/browser backends are excluded so web pages are
         # always driven through the user's real browser.
         tier_excluded: frozenset[str] | None = None
-        latest_request_text = next(
-            (
-                message.text_content()
-                for message in reversed(run_messages)
-                if isinstance(message, HumanMessage)
-            ),
-            None,
-        )
         granted_tools = (*self.agent._tools.values(), *injected)
         is_webbridge_session = WEBBRIDGE_SESSION_TAG in self._team.session_tags
         deferred = deferred_tools_for_run(
             granted_tools,
-            request_text=latest_request_text,
             reveal_webbridge=is_webbridge_session,
         )
         if self._role_label == "member":
@@ -1290,9 +1278,7 @@ class TeamMemberBase(abc.ABC):
                 denied_tools_for_tier(member_tier, self.agent._tools.values()) or None
             )
         if is_webbridge_session:
-            webbridge_excluded = webbridge_session_excluded_tools(
-                tool.name for tool in granted_tools
-            )
+            webbridge_excluded = webbridge_session_excluded_tools(granted_tools)
             tier_excluded = frozenset(tier_excluded or ()) | webbridge_excluded
         elif SIDE_CHAT_SESSION_TAG in self._team.session_tags:
             tier_excluded = side_chat_session_excluded_tools(

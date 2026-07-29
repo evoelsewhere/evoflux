@@ -149,7 +149,7 @@ export function AimSidebar({
   const content = (
     <SidebarCard className="h-full">
         {/* Mode switch — shared tab strip, same as forge/coding sidebars */}
-        <div className={`shrink-0 px-2 ${isMacOverlay ? 'pt-10' : 'pt-2'}`}>
+        <div className={`shrink-0 px-1.5 ${isMacOverlay ? 'pt-10' : 'pt-1.5'}`}>
           {mobile ? (
             <ModeSwitchTabs active="aim" onNavigate={onMobileClose} />
           ) : (
@@ -160,7 +160,12 @@ export function AimSidebar({
         {/* Search trigger — opens the command palette (Ctrl+P), same
             placement + markup as the forge/coding sidebars. */}
         {onCommandPalette && (
-          <div className="shrink-0 px-2 pt-2">
+          <div
+            className={cn(
+              'shrink-0',
+              mobile ? 'px-1.5 pt-2' : 'px-2.5 pt-2.5',
+            )}
+          >
             <SidebarSearchTrigger
               onClick={() => {
                 onCommandPalette()
@@ -170,7 +175,7 @@ export function AimSidebar({
           </div>
         )}
 
-        <nav aria-label="AIM navigation" className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 pt-3">
+        <nav aria-label="AIM navigation" className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2 pt-2">
           {projectsQuery.isLoading ? (
             <AimProjectListSkeleton />
           ) : projects.length === 0 ? (
