@@ -9,7 +9,9 @@ import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import 'github-markdown-css/github-markdown.css'
 
 import { codingWorkspaceFileUrl, getCodingWorkspaceGitDiff, writeCodingWorkspaceFile } from '@/api/client'
+import { isTauriAvailable, tauriOpenWorkspaceFile } from '@/api/tauri-workspace'
 import { downloadCodingWorkspaceFile } from '@/lib/coding-workspace-download'
+import { openExternalUrl } from '@/lib/open-external'
 import { cn } from '@/lib/utils'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 import { formatBytes } from '@/utils/format'
@@ -639,6 +641,19 @@ export function CodingFileViewerPanel({
   const canPreview = isHtml || isMarkdown
   const effectiveViewMode = viewMode === 'preview' && !canPreview ? 'file' : viewMode
 
+  const handleOpenFile = async () => {
+    if (!file) return
+    try {
+      if (isTauriAvailable()) {
+        await tauriOpenWorkspaceFile(workspace, file.path)
+        return
+      }
+      await openExternalUrl(codingWorkspaceFileUrl(workspace, file.path))
+    } catch {
+      // Download remains available if the OS/browser rejects opening the file.
+    }
+  }
+
   if (!file) return null
 
   const content = (
@@ -685,6 +700,15 @@ export function CodingFileViewerPanel({
               <GitCompare size={11} /> Diff
             </button>
           </div>
+          <button
+            type="button"
+            onClick={() => void handleOpenFile()}
+            title="Open file"
+            aria-label="Open coding file"
+            className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+          >
+            <ExternalLink size={14} />
+          </button>
           <button type="button" onClick={() => void downloadCodingWorkspaceFile(workspace, file)} title="Download" className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)">
             <Download size={14} />
           </button>

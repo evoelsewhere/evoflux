@@ -945,6 +945,10 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
     window.addEventListener('pointerup', onUp, { once: true })
     window.addEventListener('pointercancel', onUp, { once: true })
   }
+  const resetTreeWidth = () => {
+    setTreeWidth(TREE_WIDTH_DEFAULT)
+    try { localStorage.setItem(TREE_WIDTH_KEY, String(TREE_WIDTH_DEFAULT)) } catch { /* ignore */ }
+  }
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   // Refresh on open so the list is fresh even if query was stale.
@@ -1544,7 +1548,8 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
           <div
             className="relative order-2 w-px shrink-0 cursor-ew-resize bg-(--color-border) transition-colors hover:bg-(--color-accent)/40"
             onPointerDown={startTreeResize}
-            title="Drag to resize file tree"
+            onDoubleClick={resetTreeWidth}
+            title="Drag to resize · double-click to reset"
           />
         )}
 

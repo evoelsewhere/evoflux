@@ -68,6 +68,7 @@ export function TreeNodeView({
   onFileSelect,
   onFileOpen,
   changedPaths,
+  forceOpen = false,
 }: {
   node: TreeNode
   depth: number
@@ -75,6 +76,7 @@ export function TreeNodeView({
   onFileSelect?: (file: WorkspaceFileInfo | null) => void
   onFileOpen?: (file: WorkspaceFileInfo) => void
   changedPaths: Set<string>
+  forceOpen?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const isDir = node.children.size > 0 && !node.file
@@ -130,13 +132,13 @@ export function TreeNodeView({
           )}
           style={{ paddingLeft: 8 + depth * 12 }}
         >
-          <ChevronRight size={12} className={cn('shrink-0 transition-transform', open && 'rotate-90')} />
-          <FolderTypeIcon open={open} size={16} />
+          <ChevronRight size={12} className={cn('shrink-0 transition-transform', (open || forceOpen) && 'rotate-90')} />
+          <FolderTypeIcon open={open || forceOpen} size={16} />
           <span className="min-w-0 flex-1 truncate font-mono">{node.name}</span>
           {hasChangedDescendant && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-(--accent-orange-text)" aria-label="Contains modified files" />}
         </button>
       )}
-      {(open || !node.path) && (
+      {(open || forceOpen || !node.path) && (
           <div>
             {children.map((child) => (
               <TreeNodeView
@@ -147,6 +149,7 @@ export function TreeNodeView({
                 onFileSelect={onFileSelect}
                 onFileOpen={onFileOpen}
                 changedPaths={changedPaths}
+                forceOpen={forceOpen}
               />
             ))}
           </div>
@@ -278,6 +281,11 @@ export function CodingWorkspacePanel({
     window.addEventListener('pointermove', handleMove)
     window.addEventListener('pointerup', handleUp, { once: true })
     window.addEventListener('pointercancel', handleUp, { once: true })
+  }
+
+  const resetTreeWidth = () => {
+    setTreeWidth(CODING_TREE_WIDTH_DEFAULT)
+    try { localStorage.setItem(CODING_TREE_WIDTH_KEY, String(CODING_TREE_WIDTH_DEFAULT)) } catch { /* ignore */ }
   }
 
   const handleFileSelect = (file: WorkspaceFileInfo | null) => {
@@ -475,8 +483,9 @@ export function CodingWorkspacePanel({
                 role="separator"
                 aria-orientation="vertical"
                 aria-label="Resize coding file tree"
-                title="Drag to resize file tree"
+                title="Drag to resize · double-click to reset"
                 onPointerDown={startTreeResize}
+                onDoubleClick={resetTreeWidth}
                 className="relative order-2 w-px shrink-0 cursor-ew-resize bg-(--color-border) transition-colors hover:bg-(--color-accent)/40"
               />
             )}
@@ -582,6 +591,7 @@ export function CodingWorkspacePanel({
                                 onFileSelect={handleFileSelect}
                                 onFileOpen={(file) => void handleOpenFile(file)}
                                 changedPaths={changedPaths}
+                                forceOpen={Boolean(searchQuery.trim())}
                               />
                             ))
                         }

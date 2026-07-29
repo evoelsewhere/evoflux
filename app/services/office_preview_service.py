@@ -590,15 +590,17 @@ def _render_xlsx(source: Path) -> str:
 
 
 def _picture_data_uri(shape: Any) -> str:
-    extension = (shape.image.ext or "png").lower()
+    relation_id = shape._pic.blip_rId
+    related_part = shape.part.related_part(relation_id)
+    extension = (related_part.partname.ext or "png").lower()
     mime = {
         "jpg": "image/jpeg",
         "jpeg": "image/jpeg",
         "gif": "image/gif",
         "webp": "image/webp",
         "svg": "image/svg+xml",
-    }.get(extension, "image/png")
-    encoded = base64.b64encode(shape.image.blob).decode("ascii")
+    }.get(extension, getattr(related_part, "content_type", "image/png"))
+    encoded = base64.b64encode(related_part.blob).decode("ascii")
     return f"data:{mime};base64,{encoded}"
 
 

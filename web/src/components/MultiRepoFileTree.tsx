@@ -146,6 +146,7 @@ export function MultiRepoFileTree({
                     onFileSelect={onFileSelect}
                     onFileOpen={onFileOpen}
                     changedPaths={changedPaths}
+                    forceOpen={Boolean(normalizedQuery)}
                   />
                 )}
               </div>

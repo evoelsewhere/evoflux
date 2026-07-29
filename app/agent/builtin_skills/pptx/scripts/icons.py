@@ -34,6 +34,7 @@ ICON_SOURCE = "https://lucide.dev/"
 _HEX_COLOR = re.compile(r"^[0-9a-fA-F]{6}$")
 
 _ALIASES = {
+    "agent": "bot",
     "alert": "triangle-alert",
     "analytics": "chart-line",
     "api": "code-xml",
@@ -234,8 +235,11 @@ def add_icon(
         filename=f"{canonical}.svg",
     )
     relationship_id = slide.part.relate_to(image_part, RT.IMAGE)
-    picture_element = slide.shapes._add_pic_from_image_part(  # noqa: SLF001
-        image_part,
+    shape_id = slide.shapes._next_shape_id  # noqa: SLF001
+    picture_element = slide.shapes._grpSp.add_pic(  # noqa: SLF001
+        shape_id,
+        f"Icon {shape_id}",
+        f"{canonical}.svg",
         relationship_id,
         left,
         top,
