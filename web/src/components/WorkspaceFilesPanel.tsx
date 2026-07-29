@@ -21,6 +21,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import Editor, { useMonaco } from '@monaco-editor/react'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 import {
   X,
@@ -62,6 +63,7 @@ import { queryKeys } from '@/queries/keys'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useSessionFilesWatcher } from '@/hooks/useSessionFilesWatcher'
 import { usePlatform } from '@/hooks/use-platform'
+import { languageForExt, useMonacoTheme } from '@/hooks/useMonacoTheme'
 import { mediumHapticFeedback } from '@/lib/haptics'
 import { formatBytes } from '@/utils/format'
 import { MarkdownBlock } from '@/utils/markdown'
@@ -133,6 +135,9 @@ const TREE_WIDTH_MIN = 220
 const TREE_WIDTH_DEFAULT = 280
 const TREE_WIDTH_MAX = 380
 const TREE_WIDTH_MAX_RATIO = 0.42
+const PREVIEW_MIN_WIDTH = 520
+const TREE_DIVIDER_WIDTH = 8
+const SPLIT_MIN_WIDTH = PREVIEW_MIN_WIDTH + TREE_WIDTH_DEFAULT + TREE_DIVIDER_WIDTH
 
 function readStoredWidth(key: string, fallback: number, min: number): number {
   try {
@@ -569,6 +574,8 @@ const MAX_TEXT_PREVIEW_BYTES = 512 * 1024  // 512 KB
 
 function TextPreview({ sessionId, file, workspaceRoot }: { sessionId: string; file: WorkspaceFileInfo; workspaceRoot?: string | null }) {
   const tooLarge = file.size > MAX_TEXT_PREVIEW_BYTES
+  const monaco = useMonaco()
+  const theme = useMonacoTheme(monaco)
   // Start in a loading state *unless* the file is too large — the effect is
   // skipped in that case and flipping loading=false there would trigger the
   // set-state-in-effect lint.  Keeping the initial state derived avoids it.
@@ -655,12 +662,40 @@ function TextPreview({ sessionId, file, workspaceRoot }: { sessionId: string; fi
   }
 
   if (isCode) {
-    // Wrap in a markdown code fence so rehype-highlight can apply syntax colouring.
-    // MarkdownBlock's fixNestedFences will handle any backtick sequences inside.
-    const fenced = '```' + ext + '\n' + content + '\n```'
     return (
-      <div className="h-full overflow-auto p-2">
-        <MarkdownBlock content={fenced} />
+      <div className="h-full min-h-0 w-full overflow-hidden bg-(--bg-page)">
+        <Editor
+          height="100%"
+          theme={theme}
+          language={languageForExt(ext)}
+          value={content}
+          loading={(
+            <pre className="h-full overflow-auto p-3 font-mono text-xs leading-5 text-(--color-text)">
+              {content}
+            </pre>
+          )}
+          options={{
+            readOnly: true,
+            domReadOnly: true,
+            ariaLabel: `${file.name} source preview`,
+            automaticLayout: true,
+            contextmenu: true,
+            folding: true,
+            fontSize: 13,
+            glyphMargin: false,
+            lineHeight: 20,
+            lineNumbers: 'on',
+            minimap: { enabled: false },
+            overviewRulerBorder: false,
+            renderLineHighlight: 'none',
+            scrollBeyondLastLine: false,
+            scrollbar: {
+              horizontalScrollbarSize: 10,
+              verticalScrollbarSize: 10,
+            },
+            wordWrap: 'off',
+          }}
+        />
       </div>
     )
   }
@@ -906,6 +941,20 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
   )
   const treePaneRef = useRef<HTMLElement>(null)
   const splitBodyRef = useRef<HTMLDivElement>(null)
+  const [splitBodyWidth, setSplitBodyWidth] = useState<number | null>(null)
+
+  useEffect(() => {
+    const body = splitBodyRef.current
+    if (!body || typeof ResizeObserver === 'undefined') return
+    const updateWidth = (width: number) => setSplitBodyWidth(Math.round(width))
+    updateWidth(body.getBoundingClientRect().width)
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      if (entry) updateWidth(entry.contentRect.width)
+    })
+    observer.observe(body)
+    return () => observer.disconnect()
+  }, [open])
 
   const startTreeResize = (e: React.PointerEvent) => {
     e.preventDefault()
@@ -1184,7 +1233,7 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
 
   const handleSelectFile = (f: WorkspaceFileInfo) => {
     setSelectedPath(f.path)
-    if (isMobile) setMobilePane('preview')
+    setMobilePane('preview')
   }
 
   const handleBackToTree = () => {
@@ -1199,9 +1248,23 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
     })
   }
 
-  // On mobile, tree pane and preview pane are mutually exclusive full-width views.
-  const showTree = isMobile ? mobilePane === 'tree' : desktopTreeVisible
-  const showPreview = !isMobile || mobilePane === 'preview'
+  // Narrow panels use a master-detail layout even at the exact desktop/mobile
+  // breakpoint. This is container-driven because an embedded workbench can be
+  // much narrower than the viewport that contains it.
+  const isSinglePane = isMobile || splitBodyWidth === null || splitBodyWidth < SPLIT_MIN_WIDTH
+  const showTree = isSinglePane ? mobilePane === 'tree' : desktopTreeVisible
+  const showPreview = !isSinglePane || mobilePane === 'preview'
+  const maxTreeWidth = splitBodyWidth === null
+    ? TREE_WIDTH_DEFAULT
+    : Math.max(
+        TREE_WIDTH_MIN,
+        Math.min(
+          TREE_WIDTH_MAX,
+          Math.round(splitBodyWidth * TREE_WIDTH_MAX_RATIO),
+          splitBodyWidth - PREVIEW_MIN_WIDTH - TREE_DIVIDER_WIDTH,
+        ),
+      )
+  const renderedTreeWidth = Math.min(treeWidth, maxTreeWidth)
 
   // Ctrl+F focuses the search input when the tree pane is visible.
   useEffect(() => {
@@ -1235,7 +1298,7 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-3 py-2">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           {/* Mobile back button — only shown in preview pane */}
-          {isMobile && mobilePane === 'preview' && (
+          {isSinglePane && mobilePane === 'preview' && (
             <button
               onClick={handleBackToTree}
               className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
@@ -1247,7 +1310,7 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
           <div className="min-w-0">
             <h2 className="text-sm font-semibold text-(--color-text)">Files</h2>
             <p className="truncate text-xs text-(--color-text-subtle)">
-              {isMobile && mobilePane === 'preview' && selected
+              {isSinglePane && mobilePane === 'preview' && selected
                 ? selected.name
                 : <>{workspaceName}{data?.truncated ? ' · list truncated' : ''}</>
               }
@@ -1305,7 +1368,7 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
           >
             <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} />
           </button>
-          {!isMobile && (
+          {!isSinglePane && (
             <button
               type="button"
               onClick={toggleDesktopTree}
@@ -1460,11 +1523,11 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
             ref={treePaneRef}
             className={cn(
               'relative order-3 flex flex-col overflow-hidden',
-              isMobile ? 'w-full' : 'shrink-0',
+              isSinglePane ? 'w-full' : 'shrink-0',
             )}
-            style={!isMobile
+            style={!isSinglePane
               ? {
-                  width: `min(${treeWidth}px, ${TREE_WIDTH_MAX_RATIO * 100}%)`,
+                  width: renderedTreeWidth,
                   minWidth: TREE_WIDTH_MIN,
                 }
               : undefined}
@@ -1550,7 +1613,7 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
         )}
 
         {/* Tree/preview drag divider — desktop only */}
-        {!isMobile && showTree && showPreview && (
+        {!isSinglePane && showTree && showPreview && (
           <div
             role="separator"
             aria-orientation="vertical"
@@ -1603,7 +1666,11 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
             {' · '}
           </span>
         )}
-        {isMobile ? 'Tap a file to preview' : 'Double-click a file to open it'}
+        {isMobile
+          ? 'Tap a file to preview'
+          : isSinglePane
+            ? 'Select a file to preview'
+            : 'Double-click a file to open it'}
       </div>
 
       {/* Hidden file input for upload button */}
