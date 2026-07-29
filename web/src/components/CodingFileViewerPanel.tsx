@@ -1,12 +1,7 @@
-import { useCallback, useEffect, useRef, useState, type ComponentProps, type CSSProperties } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Check, Copy, Download, ExternalLink, FileText, GitCompare, Loader2, PanelRightClose, PanelRightOpen, Pencil, Save, Undo2, X, Eye } from 'lucide-react'
 import Editor, { DiffEditor, useMonaco } from '@monaco-editor/react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import 'github-markdown-css/github-markdown.css'
 
 import { codingWorkspaceFileUrl, getCodingWorkspaceGitDiff, writeCodingWorkspaceFile } from '@/api/client'
 import { isTauriAvailable, tauriOpenWorkspaceFile } from '@/api/tauri-workspace'
@@ -15,6 +10,7 @@ import { openExternalUrl } from '@/lib/open-external'
 import { cn } from '@/lib/utils'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 import { formatBytes } from '@/utils/format'
+import { MarkdownBlock } from '@/utils/markdown'
 import { useMonacoTheme, languageForExt } from '@/hooks/useMonacoTheme'
 import { queryKeys } from '@/queries'
 import { SidePanel } from './shell/SidePanel'
@@ -505,6 +501,45 @@ function DiffPreview({ diff }: { diff: string }) {
   )
 }
 
+/**
+ * Resolve an image path relative to the Markdown file being previewed.
+ *
+ * Chat Markdown resolves relative media through a session workspace. Coding
+ * workspaces use a different API, so this adapter supplies the same
+ * ``MarkdownBlock`` with the correct authenticated file URL.
+ */
+function codingMarkdownMediaUrl(workspace: string, markdownPath: string, src: string): string {
+  if (
+    /^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(src)
+    || src.startsWith('/')
+  ) {
+    return src
+  }
+
+  const sourcePath = src.split(/[?#]/, 1)[0]
+  if (!sourcePath) return src
+
+  let decodedPath: string
+  try {
+    decodedPath = decodeURIComponent(sourcePath)
+  } catch {
+    return src
+  }
+
+  const resolvedParts = markdownPath.split('/').slice(0, -1)
+  for (const part of decodedPath.split('/')) {
+    if (!part || part === '.') continue
+    if (part === '..') {
+      if (resolvedParts.length === 0) return src
+      resolvedParts.pop()
+      continue
+    }
+    resolvedParts.push(part)
+  }
+
+  return codingWorkspaceFileUrl(workspace, resolvedParts.join('/'))
+}
+
 /* -------------------------------------------------------------------------
  * RichPreview component for HTML and Markdown rendering
  * ------------------------------------------------------------------------- */
@@ -512,6 +547,10 @@ function RichPreview({ workspace, file, isHtml }: { workspace: string; file: Wor
   const [content, setContent] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const transformImageSrc = useCallback(
+    (src: string) => codingMarkdownMediaUrl(workspace, file.path, src),
+    [workspace, file.path],
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -548,30 +587,8 @@ function RichPreview({ workspace, file, isHtml }: { workspace: string; file: Wor
 
   return (
     <div className="h-full min-h-0 overflow-auto bg-(--bg-page)">
-      <div className="markdown-body" style={{ padding: '24px', backgroundColor: 'transparent' }}>
-        <ReactMarkdown 
-          remarkPlugins={[remarkGfm]}
-          components={{
-            code({ inline, className, children, ...props }: ComponentProps<'code'> & { inline?: boolean }) {
-              const match = /language-(\w+)/.exec(className || '')
-              return !inline && match ? (
-                <SyntaxHighlighter
-                  style={vscDarkPlus as { [key: string]: CSSProperties }}
-                  language={match[1]}
-                  PreTag="div"
-                >
-                  {String(children).replace(/\n$/, '')}
-                </SyntaxHighlighter>
-              ) : (
-                <code className={className} {...props}>
-                  {children}
-                </code>
-              )
-            }
-          }}
-        >
-          {content}
-        </ReactMarkdown>
+      <div className="p-6">
+        <MarkdownBlock content={content} transformImageSrc={transformImageSrc} />
       </div>
     </div>
   )

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
+from typing import Literal
 
 from docx.document import Document as DocumentObject
 from docx.enum.section import WD_SECTION
@@ -13,6 +15,102 @@ from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
 from docx.table import _Cell, Table
 from docx.text.paragraph import Paragraph
+
+DocumentProfileName = Literal[
+    "standard-business",
+    "compact-reference",
+    "narrative-proposal",
+    "operational-sop",
+]
+
+
+@dataclass(frozen=True)
+class DocumentProfile:
+    """Exact page, type, rhythm, and table tokens for a document archetype."""
+
+    name: DocumentProfileName
+    body_pt: float
+    body_after_pt: float
+    line_spacing: float
+    title_pt: float
+    h1_pt: float
+    h2_pt: float
+    h3_pt: float
+    margin_inches: float
+    header_footer_inches: float
+    table_cell_vertical_dxa: int
+    table_cell_horizontal_dxa: int
+    table_header_fill: str
+
+
+DOCUMENT_PROFILES: dict[DocumentProfileName, DocumentProfile] = {
+    "standard-business": DocumentProfile(
+        name="standard-business",
+        body_pt=11,
+        body_after_pt=6,
+        line_spacing=1.10,
+        title_pt=26,
+        h1_pt=16,
+        h2_pt=13,
+        h3_pt=11.5,
+        margin_inches=1.0,
+        header_footer_inches=0.49,
+        table_cell_vertical_dxa=80,
+        table_cell_horizontal_dxa=120,
+        table_header_fill="F2F4F7",
+    ),
+    "compact-reference": DocumentProfile(
+        name="compact-reference",
+        body_pt=10.5,
+        body_after_pt=4,
+        line_spacing=1.18,
+        title_pt=24,
+        h1_pt=15,
+        h2_pt=12,
+        h3_pt=10.5,
+        margin_inches=0.78,
+        header_footer_inches=0.42,
+        table_cell_vertical_dxa=70,
+        table_cell_horizontal_dxa=100,
+        table_header_fill="E8EEF5",
+    ),
+    "narrative-proposal": DocumentProfile(
+        name="narrative-proposal",
+        body_pt=11,
+        body_after_pt=8,
+        line_spacing=1.30,
+        title_pt=28,
+        h1_pt=16,
+        h2_pt=13,
+        h3_pt=11.5,
+        margin_inches=1.0,
+        header_footer_inches=0.49,
+        table_cell_vertical_dxa=90,
+        table_cell_horizontal_dxa=120,
+        table_header_fill="F4F6F9",
+    ),
+    "operational-sop": DocumentProfile(
+        name="operational-sop",
+        body_pt=10,
+        body_after_pt=4,
+        line_spacing=1.12,
+        title_pt=23,
+        h1_pt=15,
+        h2_pt=12,
+        h3_pt=10.5,
+        margin_inches=0.70,
+        header_footer_inches=0.38,
+        table_cell_vertical_dxa=60,
+        table_cell_horizontal_dxa=90,
+        table_header_fill="E8EEF5",
+    ),
+}
+
+
+def document_profile(
+    name: DocumentProfileName = "standard-business",
+) -> DocumentProfile:
+    return DOCUMENT_PROFILES[name]
 
 
 @dataclass(frozen=True)
@@ -33,6 +131,43 @@ class DocumentTheme:
     margin_inches: float = 0.85
 
 
+def _replace_metadata_marker(value: str, key: str, payload: str) -> str:
+    pattern = re.compile(rf"(?:^|;\s*){re.escape(key)}:[^;]*")
+    retained = pattern.sub("", value or "").strip(" ;")
+    marker = f"{key}:{payload}"
+    return f"{retained}; {marker}".strip(" ;") if retained else marker
+
+
+def apply_document_profile(
+    document: DocumentObject,
+    name: DocumentProfileName,
+) -> None:
+    """Persist the document archetype without adding visible content."""
+
+    document.core_properties.keywords = _replace_metadata_marker(
+        document.core_properties.keywords or "",
+        "evoflux-profile",
+        name,
+    )
+
+
+def declare_content_contract(
+    document: DocumentObject,
+    required_sections: list[str],
+) -> None:
+    """Persist required sections so QA catches content dropped during layout."""
+
+    cleaned = [section.strip() for section in required_sections if section.strip()]
+    if not cleaned:
+        raise ValueError("required_sections must not be empty")
+    payload = "|".join(dict.fromkeys(cleaned)).replace(";", ",")
+    document.core_properties.keywords = _replace_metadata_marker(
+        document.core_properties.keywords or "",
+        "evoflux-required",
+        payload,
+    )
+
+
 def _set_style_font(style, *, name: str, size: float, color: str, bold: bool) -> None:
     style.font.name = name
     style.font.size = Pt(size)
@@ -42,31 +177,43 @@ def _set_style_font(style, *, name: str, size: float, color: str, bold: bool) ->
 
 
 def apply_theme(
-    document: DocumentObject, theme: DocumentTheme = DocumentTheme()
+    document: DocumentObject,
+    theme: DocumentTheme = DocumentTheme(),
+    *,
+    profile: DocumentProfileName = "standard-business",
 ) -> None:
     """Apply page geometry and a semantic style ladder."""
+    policy = document_profile(profile)
+    apply_document_profile(document, profile)
     for section in document.sections:
-        section.top_margin = Inches(theme.margin_inches)
-        section.bottom_margin = Inches(theme.margin_inches)
-        section.left_margin = Inches(theme.margin_inches)
-        section.right_margin = Inches(theme.margin_inches)
+        section.page_width = Inches(8.5)
+        section.page_height = Inches(11)
+        section.top_margin = Inches(policy.margin_inches)
+        section.bottom_margin = Inches(policy.margin_inches)
+        section.left_margin = Inches(policy.margin_inches)
+        section.right_margin = Inches(policy.margin_inches)
+        section.header_distance = Inches(policy.header_footer_inches)
+        section.footer_distance = Inches(policy.header_footer_inches)
 
     styles = document.styles
     normal = styles["Normal"]
     _set_style_font(
         normal,
         name=theme.body_font,
-        size=theme.body_size_pt,
+        size=policy.body_pt,
         color=theme.ink,
         bold=False,
     )
-    normal.paragraph_format.space_after = Pt(6)
-    normal.paragraph_format.line_spacing = 1.15
+    normal.paragraph_format.space_before = Pt(0)
+    normal.paragraph_format.space_after = Pt(policy.body_after_pt)
+    normal.paragraph_format.line_spacing = policy.line_spacing
+    normal.element.get_or_add_pPr().get_or_add_widowControl()
 
     roles = (
-        ("Title", theme.heading_font, theme.title_size_pt, theme.ink, True, 16, 0),
-        ("Heading 1", theme.heading_font, theme.h1_size_pt, theme.accent, True, 14, 5),
-        ("Heading 2", theme.heading_font, theme.h2_size_pt, theme.ink, True, 10, 3),
+        ("Title", theme.heading_font, policy.title_pt, theme.ink, True, 0, 8),
+        ("Heading 1", theme.heading_font, policy.h1_pt, theme.accent, True, 14, 5),
+        ("Heading 2", theme.heading_font, policy.h2_pt, theme.ink, True, 10, 3),
+        ("Heading 3", theme.body_font, policy.h3_pt, theme.ink, True, 8, 2),
     )
     for name, font, size, color, bold, before, after in roles:
         style = styles[name]
@@ -80,13 +227,33 @@ def apply_theme(
             if border is not None:
                 properties.remove(border)
 
+    for list_style_name in ("List Bullet", "List Number"):
+        list_style = styles[list_style_name]
+        _set_style_font(
+            list_style,
+            name=theme.body_font,
+            size=policy.body_pt,
+            color=theme.ink,
+            bold=False,
+        )
+        list_style.paragraph_format.left_indent = Inches(
+            0.38 if profile in {"compact-reference", "operational-sop"} else 0.5
+        )
+        list_style.paragraph_format.first_line_indent = Inches(
+            -0.19 if profile in {"compact-reference", "operational-sop"} else -0.25
+        )
+        list_style.paragraph_format.space_after = Pt(
+            4 if profile in {"compact-reference", "operational-sop"} else 6
+        )
+        list_style.paragraph_format.line_spacing = policy.line_spacing
+
     if "Caption" not in styles:
         styles.add_style("Caption", WD_STYLE_TYPE.PARAGRAPH)
     caption = styles["Caption"]
     _set_style_font(
         caption,
         name=theme.body_font,
-        size=9,
+        size=max(policy.body_pt - 1.5, 8),
         color=theme.muted,
         bold=False,
     )
@@ -144,8 +311,10 @@ def style_table(
     *,
     widths_dxa: list[int],
     theme: DocumentTheme = DocumentTheme(),
+    profile: DocumentProfileName = "standard-business",
 ) -> None:
     """Set explicit Word geometry and a restrained header treatment."""
+    policy = document_profile(profile)
     if not table.rows or len(widths_dxa) != len(table.columns):
         raise ValueError("widths_dxa must match the table column count")
 
@@ -154,6 +323,12 @@ def style_table(
     table_width = table_properties.first_child_found_in("w:tblW")
     table_width.set(qn("w:w"), str(sum(widths_dxa)))
     table_width.set(qn("w:type"), "dxa")
+    table_indent = table_properties.first_child_found_in("w:tblInd")
+    if table_indent is None:
+        table_indent = OxmlElement("w:tblInd")
+        table_properties.append(table_indent)
+    table_indent.set(qn("w:w"), str(policy.table_cell_horizontal_dxa))
+    table_indent.set(qn("w:type"), "dxa")
     borders = table_properties.first_child_found_in("w:tblBorders")
     if borders is None:
         borders = OxmlElement("w:tblBorders")
@@ -195,10 +370,24 @@ def style_table(
             cell_width = properties.first_child_found_in("w:tcW")
             cell_width.set(qn("w:w"), str(width))
             cell_width.set(qn("w:type"), "dxa")
-            set_cell_margins(cell)
+            set_cell_margins(
+                cell,
+                top=policy.table_cell_vertical_dxa,
+                start=policy.table_cell_horizontal_dxa,
+                bottom=policy.table_cell_vertical_dxa,
+                end=policy.table_cell_horizontal_dxa,
+            )
             cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+            for paragraph in cell.paragraphs:
+                paragraph.paragraph_format.space_before = Pt(0)
+                paragraph.paragraph_format.space_after = Pt(0)
+                paragraph.paragraph_format.line_spacing = policy.line_spacing
+                for run in paragraph.runs:
+                    run.font.name = theme.body_font
+                    run.font.size = Pt(policy.body_pt)
+                    run.font.color.rgb = RGBColor.from_string(theme.ink)
             if row_index == 0:
-                set_cell_shading(cell, theme.table_header)
+                set_cell_shading(cell, policy.table_header_fill)
                 for paragraph in cell.paragraphs:
                     for run in paragraph.runs:
                         run.bold = True

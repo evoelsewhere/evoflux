@@ -35,6 +35,50 @@ export default defineConfig([
           destructuredArrayIgnorePattern: '^_',
         },
       ],
+      // All product surfaces share the chat Markdown pipeline. Keeping direct
+      // parser/plugin imports in one module prevents previews from drifting in
+      // syntax, security policy, highlighting, and theme.
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'react-markdown',
+              message: 'Use MarkdownBlock or LazyMarkdownBlock from src/utils instead.',
+            },
+            {
+              name: 'remark-gfm',
+              message: 'Configure Markdown only in src/utils/markdown.tsx.',
+            },
+            {
+              name: 'remark-math',
+              message: 'Configure Markdown only in src/utils/markdown.tsx.',
+            },
+            {
+              name: 'rehype-highlight',
+              message: 'Configure Markdown only in src/utils/markdown.tsx.',
+            },
+            {
+              name: 'rehype-katex',
+              message: 'Configure Markdown only in src/utils/markdown.tsx.',
+            },
+            {
+              name: 'rehype-raw',
+              message: 'Configure Markdown only in src/utils/markdown.tsx.',
+            },
+            {
+              name: 'rehype-sanitize',
+              message: 'Configure Markdown only in src/utils/markdown.tsx.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['src/utils/markdown.tsx'],
+    rules: {
+      'no-restricted-imports': 'off',
     },
   },
 ])

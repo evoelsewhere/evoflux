@@ -235,29 +235,49 @@ set_accessibility(
   never expose planning notes or generation instructions.
 - Use an assertion as the title when possible ("Renewals drive 70% of growth"),
   not a generic label ("Revenue").
-- Prefer fewer, stronger elements. If text does not fit, shorten it or change
-  the layout before shrinking the type.
+- Select a density profile before writing or laying out the slide:
+  - `editorial`: keynote/storytelling slides with one dominant visual;
+  - `executive-dense`: decision slides with several evidence blocks;
+  - `operational`: plans, matrices, roadmaps, registers, and workstream views
+    containing many atomic actions and metadata fields.
+- Choose the profile from the content and audience, never by forcing all content
+  into the editorial default. A supplied template or reference slide is the
+  visual contract: infer its density, typography, grid, and repeated components.
+- Build a content-completeness ledger before layout. Preserve every required
+  workstream, action, KPI, owner/PIC, target, date, dependency, and status.
+  Do not delete or collapse fields merely to create more whitespace.
+- Prefer fewer, stronger elements only in the editorial profile. Dense profiles
+  should preserve useful information atoms and create hierarchy through a
+  micro-grid, repeated rows, dividers, labels, and compact semantic icons.
 - Build the spatial skeleton before adding copy: reserve the title, content,
   visual, and footer zones; then fill only those zones.
-- A slide is one composition, not a dashboard. Use flat alignment, whitespace,
-  scale, imagery, and typography for hierarchy. Rounded rectangles are not the
-  default container.
-- Use at most two rounded shapes on a slide, and only when the rounded boundary
-  has semantic meaning. Four or more rounded rectangles fail QA.
+- Editorial slides are one composition, not a dashboard. Operational slides may
+  use structured repeated containers, but the container must encode hierarchy;
+  avoid decorative card soup and oversized corner radii.
+- Use rules, alignment, whitespace, grouping, and flat borders before adding a
+  rounded container. Profile-aware QA allows repeated operational panels but
+  still flags excessive corner treatments.
 - Titles and banner copy must remain on one line. If they wrap, shorten the
   assertion or select another silhouette.
 - Never solve overflow by stacking text boxes, placing copy over a chart/image,
-  or reducing body text below 16 pt. Use `[allow-overlap]` in a shape name only
-  for a visually inspected, intentional composition such as a labeled image
-  overlay.
-- Default floors for a new 16:9 deck: 38–44 pt slide titles, 22–28 pt
-  subheads, 17–22 pt body, 11–13 pt notes/footers. Match a supplied template
-  instead when one exists.
+  or shrinking below the selected profile's minimum. Use `[allow-overlap]` in a
+  shape name only for a visually inspected, intentional composition such as a
+  labeled image overlay.
+- Default 16:9 typography:
+  - `editorial`: 38–44 pt title, 22–28 pt subhead, 17–22 pt body;
+  - `executive-dense`: 28–34 pt title, 14–18 pt section, 10–14 pt body,
+    7.5–10 pt metadata;
+  - `operational`: 24–30 pt title, 12–16 pt section, 8–11.5 pt body,
+    7–9.5 pt metadata.
+  Match a supplied template when one exists.
 - Use consistent left/right margins and align shapes to a deliberate grid.
-- Avoid repetitive card dashboards, ornamental pills, and dense UI styling.
-- Use icons as semantic labels, not decoration. Prefer zero to six per slide;
-  more than ten fail QA. Keep one icon family throughout the deck and use at
-  least 0.28 inch so the stroke remains legible.
+- Operational slides should use nested grids: pillar → objective → action row →
+  metadata. Keep row heights, gutters, icon sizes, label positions, and
+  baselines consistent across repeated components.
+- Avoid ornamental pills and decorative UI styling.
+- Use icons as semantic labels, not decoration. Profile-aware QA permits more
+  icons in dense operational slides. Keep one icon family throughout the deck;
+  compact glyphs may be 0.18–0.38 inch when their strokes remain legible.
 - Use the built-in Lucide subset for UI/business symbols. It is a curated ISC
   vector catalog, recolorable before insertion and convertible to PowerPoint
   shapes in modern Office. Use image generation for illustrative imagery, not

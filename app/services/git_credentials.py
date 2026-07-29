@@ -30,7 +30,7 @@ async def resolve_workspace_git_credential(
     db: AsyncSession,
     workspace: str,
 ) -> GitCredential | None:
-    """Return the saved credential matching a workspace's ``origin`` remote.
+    """Return the saved credential matching a workspace's selected Git remote.
 
     Repository-scoped connections take precedence over shared host
     connections, matching the pull-request API. Worktrees inherit the

@@ -8,7 +8,7 @@ import re
 import sys
 import zipfile
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from openpyxl import load_workbook
 from openpyxl.cell.cell import TYPE_FORMULA
@@ -22,6 +22,10 @@ for parent in Path(__file__).resolve().parents:
 from app.services.office_visual_qa_service import (  # noqa: E402
     compare_rendered_images,
     render_office_images,
+)
+from app.agent.builtin_skills.xlsx.scripts.stylekit import (  # noqa: E402
+    WorkbookProfileName,
+    workbook_profile,
 )
 
 PLACEHOLDER_RE = re.compile(
@@ -37,6 +41,30 @@ IMPLICIT_ARRAY_RE = re.compile(
 
 def _render(source: Path, render_dir: Path) -> dict[str, Any]:
     return render_office_images(source, render_dir)
+
+
+def _defined_text(workbook, name: str) -> str | None:
+    defined = workbook.defined_names.get(name)
+    if defined is None:
+        return None
+    value = str(defined.attr_text or "")
+    if len(value) >= 2 and value.startswith('"') and value.endswith('"'):
+        return value[1:-1].replace('""', '"')
+    return value or None
+
+
+def _workbook_profile(workbook) -> WorkbookProfileName:
+    value = _defined_text(workbook, "_EVOFLUX_PROFILE")
+    if value in {"data-table", "financial-model", "dashboard", "operational"}:
+        return cast(WorkbookProfileName, value)
+    return "data-table"
+
+
+def _required_fields(workbook) -> list[str]:
+    value = _defined_text(workbook, "_EVOFLUX_REQUIRED_FIELDS")
+    if not value:
+        return []
+    return [field.strip() for field in value.split("|") if field.strip()]
 
 
 def _chart_formulae(chart) -> list[str]:
@@ -86,8 +114,13 @@ def inspect_xlsx(source: Path) -> dict[str, Any]:
 
     if not workbook.sheetnames:
         errors.append("Workbook contains no worksheets")
+    profile_name = _workbook_profile(workbook)
+    policy = workbook_profile(profile_name)
+    required_fields = _required_fields(workbook)
     formula_count = 0
     chart_count = 0
+    visible_labels: set[str] = set()
+    sheet_metrics: list[dict[str, Any]] = []
     for sheet in workbook.worksheets:
         if (
             len(workbook.worksheets) > 1
@@ -99,15 +132,22 @@ def inspect_xlsx(source: Path) -> dict[str, Any]:
             errors.append("Blank default worksheet 'Sheet' was left in the workbook")
 
         cached_sheet = cached[sheet.title]
+        sheet_formula_count = 0
+        nonempty_cells = 0
         for row in sheet.iter_rows():
             for cell in row:
                 value = cell.value
+                if value is not None:
+                    nonempty_cells += 1
+                if isinstance(value, str) and cell.data_type != TYPE_FORMULA:
+                    visible_labels.add(value.strip().casefold())
                 if isinstance(value, str) and PLACEHOLDER_RE.search(value):
                     errors.append(
                         f"{sheet.title}!{cell.coordinate}: unresolved placeholder"
                     )
                 if cell.data_type == TYPE_FORMULA:
                     formula_count += 1
+                    sheet_formula_count += 1
                     formula = str(value)
                     if FORMULA_ERROR_RE.search(formula):
                         errors.append(
@@ -136,23 +176,106 @@ def inspect_xlsx(source: Path) -> dict[str, Any]:
                 if "#REF!" in formula:
                     errors.append(f"{sheet.title}: chart contains a broken reference")
 
+        oversized_columns = []
         for column in range(1, min(sheet.max_column, 200) + 1):
             letter = get_column_letter(column)
             width = sheet.column_dimensions[letter].width
-            if width is not None and width > 60:
+            if width is not None and width > policy.max_column_width:
                 warnings.append(
-                    f"{sheet.title}!{letter}: unusually wide column ({width:.1f})"
+                    f"{sheet.title}!{letter}: {width:.1f}-character column exceeds "
+                    f"the {profile_name} profile cap of {policy.max_column_width:.1f}"
                 )
+                oversized_columns.append(letter)
+
+        oversized_rows = [
+            row_number
+            for row_number, dimension in sheet.row_dimensions.items()
+            if dimension.height is not None and dimension.height > 60
+        ]
+        if oversized_rows:
+            warnings.append(
+                f"{sheet.title}: {len(oversized_rows)} row(s) exceed 60pt; "
+                "check for accidental deep wrapping or oversized KPI blocks"
+            )
+
+        table_count = len(sheet.tables)
+        validation_count = len(sheet.data_validations.dataValidation)
+        conditional_format_count = len(sheet.conditional_formatting)
+        has_filter = bool(sheet.auto_filter.ref) or table_count > 0
+        if (
+            profile_name in {"data-table", "operational"}
+            and sheet.max_row >= 25
+            and sheet.max_column >= 3
+            and not has_filter
+        ):
+            warnings.append(
+                f"{sheet.title}: {sheet.max_row} rows have no Excel Table or filter"
+            )
+        if (
+            profile_name in {"data-table", "financial-model", "operational"}
+            and sheet.max_row >= 25
+            and sheet.freeze_panes is None
+        ):
+            warnings.append(
+                f"{sheet.title}: long sheet has no frozen navigation headers"
+            )
+        if (
+            profile_name == "operational"
+            and sheet.max_row >= 10
+            and validation_count == 0
+        ):
+            warnings.append(
+                f"{sheet.title}: operational tracker has no editable data validation"
+            )
+        if (
+            profile_name == "operational"
+            and sheet.max_row >= 10
+            and conditional_format_count == 0
+        ):
+            warnings.append(
+                f"{sheet.title}: operational tracker has no reactive conditional "
+                "formatting for status, risk, or variance"
+            )
+
+        sheet_metrics.append(
+            {
+                "sheet": sheet.title,
+                "used_range": f"A1:{get_column_letter(sheet.max_column)}{sheet.max_row}",
+                "nonempty_cells": nonempty_cells,
+                "formulas": sheet_formula_count,
+                "tables": table_count,
+                "charts": len(sheet._charts),
+                "merged_ranges": len(sheet.merged_cells.ranges),
+                "validations": validation_count,
+                "conditional_formats": conditional_format_count,
+                "freeze_panes": (
+                    str(sheet.freeze_panes) if sheet.freeze_panes is not None else None
+                ),
+                "auto_filter": sheet.auto_filter.ref,
+                "oversized_columns": oversized_columns,
+                "oversized_rows": oversized_rows,
+            }
+        )
 
     calculation = workbook.calculation
     if calculation.calcMode not in (None, "auto"):
         warnings.append(
             f"Workbook calculation mode is {calculation.calcMode!r}, not auto"
         )
+    missing_fields = [
+        field for field in required_fields if field.casefold() not in visible_labels
+    ]
+    if missing_fields:
+        errors.append(
+            "Content contract is missing required fields: " + ", ".join(missing_fields)
+        )
     return {
         "errors": errors,
         "warnings": warnings,
         "sheets": workbook.sheetnames,
+        "profile": profile_name,
+        "required_fields": required_fields,
+        "sheet_metrics": sheet_metrics,
         "formulas": formula_count,
         "charts": chart_count,
     }

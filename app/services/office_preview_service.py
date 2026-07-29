@@ -125,16 +125,24 @@ def _render_docx(source: Path) -> str:
         WD_ALIGN_PARAGRAPH.JUSTIFY: "justify",
         WD_ALIGN_PARAGRAPH.DISTRIBUTE: "justify",
     }
+    list_number = 0
 
     def render_paragraph(paragraph: Paragraph) -> str:
+        nonlocal list_number
         style_name = (paragraph.style.name if paragraph.style else "").lower()
         tag = "p"
-        for level in range(1, 4):
-            if style_name.startswith(f"heading {level}"):
-                tag = f"h{level}"
-                break
         if style_name == "title":
             tag = "h1"
+        for level in range(1, 4):
+            if style_name.startswith(f"heading {level}"):
+                tag = f"h{level + 1}"
+                break
+        is_numbered = style_name.startswith("list number")
+        is_bullet = style_name.startswith("list bullet")
+        if is_numbered:
+            list_number += 1
+        elif not is_bullet:
+            list_number = 0
 
         runs: list[str] = []
         for run in paragraph.runs:
@@ -175,13 +183,39 @@ def _render_docx(source: Path) -> str:
         if not content:
             content = "&nbsp;"
         paragraph_styles: list[str] = []
+        style = paragraph.style
+        if style is not None:
+            if style.font.name:
+                paragraph_styles.append(
+                    f"font-family:{_css_font_family(style.font.name)}"
+                )
+            if style.font.size:
+                paragraph_styles.append(f"font-size:{style.font.size.pt:.2f}pt")
+            if style.font.bold:
+                paragraph_styles.append("font-weight:700")
+            if style.font.color and style.font.color.rgb:
+                paragraph_styles.append(f"color:#{style.font.color.rgb}")
         if paragraph.alignment in alignment:
             paragraph_styles.append(f"text-align:{alignment[paragraph.alignment]}")
         formatting = paragraph.paragraph_format
-        if formatting.space_before:
-            paragraph_styles.append(f"margin-top:{formatting.space_before.pt:.2f}pt")
-        if formatting.space_after:
-            paragraph_styles.append(f"margin-bottom:{formatting.space_after.pt:.2f}pt")
+        style_formatting = style.paragraph_format if style is not None else None
+        space_before = formatting.space_before or (
+            style_formatting.space_before if style_formatting is not None else None
+        )
+        space_after = formatting.space_after or (
+            style_formatting.space_after if style_formatting is not None else None
+        )
+        line_spacing = formatting.line_spacing or (
+            style_formatting.line_spacing if style_formatting is not None else None
+        )
+        if space_before:
+            paragraph_styles.append(f"margin-top:{space_before.pt:.2f}pt")
+        if space_after:
+            paragraph_styles.append(f"margin-bottom:{space_after.pt:.2f}pt")
+        if isinstance(line_spacing, (int, float)):
+            paragraph_styles.append(f"line-height:{float(line_spacing):.3f}")
+        elif line_spacing is not None:
+            paragraph_styles.append(f"line-height:{line_spacing.pt:.2f}pt")
         if formatting.left_indent:
             paragraph_styles.append(f"margin-left:{formatting.left_indent.pt:.2f}pt")
         if formatting.right_indent:
@@ -200,6 +234,14 @@ def _render_docx(source: Path) -> str:
             else "false"
         )
         label = html.escape(paragraph.text[:80], quote=True)
+        if is_numbered or is_bullet:
+            marker = f"{list_number}." if is_numbered else "•"
+            return (
+                f'<div class="list-item"{style_attr} '
+                f'data-page-break-before="{page_break}" data-qa-label="{label}">'
+                f'<span class="list-marker">{marker}</span>'
+                f'<span class="list-content">{content}</span></div>'
+            )
         return (
             f'<{tag}{style_attr} data-page-break-before="{page_break}" '
             f'data-qa-label="{label}">{content}</{tag}>'
@@ -247,7 +289,11 @@ def _render_docx(source: Path) -> str:
     .document-header-template,.document-footer-template{display:none}
     h1{font-size:26pt;line-height:1.15;margin:0 0
     18pt}h2{font-size:18pt;margin:20pt 0 8pt}h3{font-size:14pt;margin:16pt 0
-    6pt}p{font-size:11pt;line-height:1.5;margin:0 0 8pt;white-space:pre-wrap}
+    6pt}h4{font-size:12pt;margin:12pt 0 5pt}p{font-size:11pt;line-height:1.5;
+    margin:0 0 8pt;white-space:pre-wrap}.list-item{display:grid;
+    grid-template-columns:1.4em 1fr;column-gap:.25em;align-items:start;
+    margin:0 0 6pt;white-space:pre-wrap}.list-marker{text-align:right;
+    font-weight:600}.list-content{min-width:0}
     table{width:100%;border-collapse:collapse;margin:12pt 0 18pt;table-layout:fixed}
     th,td{border:1px solid #c7c7c7;padding:7px 9px;vertical-align:top;overflow-wrap:anywhere}
     th{background:#f1f3f4;text-align:left}td p,th p{margin:0;font-size:10pt}
@@ -529,7 +575,10 @@ def _render_xlsx(source: Path) -> str:
         )
         objects: list[str] = []
         stage_width = 44 + sum(column_widths)
-        stage_height = 25 + sum(row_heights)
+        # CSS cells have a 25px minimum height.  Compact workbook profiles may
+        # request slightly shorter rows, so use the rendered minimum here or
+        # the final rows can extend beyond the stage and be falsely clipped.
+        stage_height = 27 + sum(max(height, 25) for height in row_heights)
         for chart_index, chart in enumerate(sheet._charts, start=1):
             title = f"Chart {chart_index}"
             try:

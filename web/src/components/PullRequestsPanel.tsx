@@ -1579,15 +1579,17 @@ export function PullRequestsPanel({
                 )}{' '}
                 · {repository.items.length}
               </span>
-              <button
-                type="button"
-                onClick={() => setConfigTarget(repository)}
-                className="flex h-6 w-6 items-center justify-center rounded text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-text)"
-                aria-label={`Configure ${repository.name}`}
-                title="Configure connection"
-              >
-                <Settings2 size={12} />
-              </button>
+              {repository.remote_url && (
+                <button
+                  type="button"
+                  onClick={() => setConfigTarget(repository)}
+                  className="flex h-6 w-6 items-center justify-center rounded text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-text)"
+                  aria-label={`Configure ${repository.name}`}
+                  title="Configure connection"
+                >
+                  <Settings2 size={12} />
+                </button>
+              )}
             </div>
             {repository.error && (
               <div className="flex items-start gap-2 border-t border-(--color-border)/70 px-4 py-3">
@@ -1599,15 +1601,17 @@ export function PullRequestsPanel({
                   <span className="block text-(--color-text-2)">
                     {repository.error}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => setConfigTarget(repository)}
-                    className="mt-1 text-(--color-accent) hover:underline"
-                  >
-                    {repository.connection_id
-                      ? 'Update connection'
-                      : 'Connect repository'}
-                  </button>
+                  {repository.remote_url && (
+                    <button
+                      type="button"
+                      onClick={() => setConfigTarget(repository)}
+                      className="mt-1 text-(--color-accent) hover:underline"
+                    >
+                      {repository.connection_id
+                        ? 'Update connection'
+                        : 'Connect repository'}
+                    </button>
+                  )}
                 </span>
               </div>
             )}

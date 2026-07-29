@@ -46,6 +46,72 @@ def test_layout_plan_produces_safe_non_overlapping_regions() -> None:
     assert not text.intersects(visual)
 
 
+def test_operational_workstream_plan_uses_four_columns_and_summary() -> None:
+    presentation = stylekit.new_wide_presentation()
+
+    plan = stylekit.layout_plan(
+        presentation,
+        "workstreams",
+        profile="operational",
+    )
+
+    columns = [plan.region(f"column-{index}") for index in range(1, 5)]
+    summary = plan.region("summary")
+    assert plan.profile == "operational"
+    assert all(plan.safe_canvas.contains(region) for region in [*columns, summary])
+    assert all(
+        not left.intersects(right)
+        for index, left in enumerate(columns)
+        for right in columns[index + 1 :]
+    )
+    assert all(column.bottom < summary.top for column in columns)
+
+
+def test_operational_profile_allows_compact_editable_content(tmp_path: Path) -> None:
+    source = tmp_path / "operational-density.pptx"
+    presentation = stylekit.new_wide_presentation()
+    slide = _slide(presentation)
+    stylekit.apply_layout_profile(slide, "operational")
+    plan = stylekit.layout_plan(
+        presentation,
+        "workstreams",
+        profile="operational",
+    )
+
+    for column_index in range(4):
+        column = plan.region(f"column-{column_index + 1}")
+        for row_index in range(3):
+            top = column.top + Inches(0.35 + row_index * 0.78)
+            pptx_icons.add_icon(
+                slide,
+                "target",
+                left=column.left,
+                top=top,
+                size=Inches(0.20),
+            )
+            stylekit.add_text(
+                slide,
+                f"Action {column_index + 1}.{row_index + 1}",
+                left=column.left + Inches(0.28),
+                top=top,
+                width=column.width - Inches(0.28),
+                height=Inches(0.26),
+                font="Aptos",
+                size=8,
+                color="20303C",
+                role="body",
+                profile="operational",
+            )
+    presentation.save(source)
+
+    report = pptx_qa.inspect_pptx(source)
+
+    assert report["errors"] == []
+    assert not any("uses 8.0pt" in warning for warning in report["warnings"])
+    assert not any("only 0.20in" in warning for warning in report["warnings"])
+    assert report["layout"]["metrics"][0]["profile"] == "operational"
+
+
 def test_layout_guard_rejects_collisions() -> None:
     presentation = stylekit.new_wide_presentation()
     plan = stylekit.layout_plan(presentation, "hero")
