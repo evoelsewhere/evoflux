@@ -76,17 +76,21 @@ compare the before/after package and render every slide.
 5. Define design tokens: slide ratio, margins/grid, title/body sizes, fonts,
    background, primary/accent colors, chart palette, footer, and image style.
 6. Build one reproducible Python script in a temporary directory. Use
-   `layout_plan`, `LayoutGuard`, and strict `add_text` from
-   `scripts/stylekit.py`; collision or text-fit errors require a layout/copy
-   change, not an overlap exception.
-7. Run structural QA and render every slide. Inspect every slide individually,
+   `layout_plan`, `QualityLedger`, `LayoutGuard`, and strict `add_text` from
+   `scripts/stylekit.py`. Collect all preflight issues in one build and repair
+   them as a batch; collision or text-fit errors require a layout/copy change,
+   not an overlap exception.
+7. For functional symbols, use the curated vector catalog in
+   `scripts/icons.py`, not generated raster icons or mixed icon families.
+8. Run structural QA and render every slide. Inspect every slide individually,
    repair issues, rerender, and deliver only the final PPTX.
 
 Minimal layout-first pattern:
 
 ```python
+ledger = QualityLedger()
 plan = layout_plan(prs, "split", theme=theme)
-guard = LayoutGuard(plan)
+guard = LayoutGuard(plan, ledger=ledger)
 add_title(slide, takeaway, theme=theme, guard=guard)
 
 text_region = plan.region("text")
@@ -113,7 +117,16 @@ add_image_cover(
     height=visual_region.height,
     guard=guard,
 )
+
+# Call once after every slide has been composed. The exception lists all
+# geometry, type-floor, and text-fit issues instead of only the first one.
+ledger.raise_if_errors()
 ```
+
+Do not repair a generator with global regex substitutions. Helper signatures
+must use their declared keyword names (`left`, `top`, `width`, `height`), and a
+signature mismatch must be fixed at the specific call site. Never mass-rewrite
+short parameter names such as `h` because they can also match inside `width`.
 
 ## Narrative and layout rules
 
@@ -143,6 +156,13 @@ add_image_cover(
   instead when one exists.
 - Use consistent left/right margins and align shapes to a deliberate grid.
 - Avoid repetitive card dashboards, ornamental pills, and dense UI styling.
+- Use icons as semantic labels, not decoration. Prefer zero to six per slide;
+  more than ten fail QA. Keep one icon family throughout the deck and use at
+  least 0.28 inch so the stroke remains legible.
+- Use the built-in Lucide subset for UI/business symbols. It is a curated ISC
+  vector catalog, recolorable before insertion and convertible to PowerPoint
+  shapes in modern Office. Use image generation for illustrative imagery, not
+  for icons, logos, arrows, badges, or interface glyphs.
 - Use visual assets when they clarify the idea. Crop deliberately and do not
   stretch images.
 - Use native PowerPoint charts and tables so the result stays editable. Chart
@@ -196,7 +216,28 @@ The layout gate also reports:
 - one-line titles likely to wrap;
 - text or content shapes overlapping by at least 12% of the smaller item;
 - excessive rounded-card/UI composition;
+- mixed icon families, raster icons, illegibly small icons, or icon overload;
 - slides with too many independent shapes or text blocks.
+
+Search and insert the curated icon catalog:
+
+```bash
+python "{SKILL_DIR}/scripts/icons.py" "growth analytics"
+```
+
+```python
+from app.agent.builtin_skills.pptx.scripts.icons import add_icon
+
+add_icon(
+    slide,
+    "trending-up",
+    left=Inches(8.5),
+    top=Inches(2.1),
+    size=Inches(0.7),
+    color=theme.accent,
+    guard=guard,
+)
+```
 
 When `--compare-to` is supplied, unchanged template design debt is baselined;
 new or worsened overlap, overflow, density, and rounded-card issues still fail.

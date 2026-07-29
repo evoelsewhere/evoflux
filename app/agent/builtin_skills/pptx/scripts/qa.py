@@ -29,6 +29,7 @@ PLACEHOLDER_RE = re.compile(
 )
 EMU_PER_INCH = 914400
 OVERLAP_RATIO_THRESHOLD = 0.12
+ICON_NAME_RE = re.compile(r"^\[icon:([a-z0-9-]+):([a-z0-9-]+)\]$")
 
 
 def _shape_text(shape) -> str:
@@ -62,6 +63,21 @@ def _is_rounded_shape(shape) -> bool:
         return False
     name = getattr(auto_shape, "name", str(auto_shape)).upper()
     return "ROUND" in name
+
+
+def _icon_metadata(shape) -> tuple[str, str] | None:
+    match = ICON_NAME_RE.match(str(getattr(shape, "name", "")).lower())
+    if match is None:
+        return None
+    return match.group(1), match.group(2)
+
+
+def _picture_extension(shape) -> str | None:
+    try:
+        relation_id = shape._pic.blip_rId
+        return str(shape.part.related_part(relation_id).partname.ext).lower()
+    except (AttributeError, KeyError, ValueError):
+        return None
 
 
 def _intersection_ratio(left, right) -> float:
@@ -175,6 +191,11 @@ def _layout_findings(presentation) -> tuple[list[dict[str, Any]], list[dict[str,
         ]
         text_shapes = [shape for shape in content_shapes if _shape_text(shape)]
         rounded = [shape for shape in content_shapes if _is_rounded_shape(shape)]
+        icons = [
+            (shape, metadata)
+            for shape in content_shapes
+            if (metadata := _icon_metadata(shape)) is not None
+        ]
         overlaps: list[dict[str, Any]] = []
 
         for index, left in enumerate(content_shapes):
@@ -262,6 +283,52 @@ def _layout_findings(presentation) -> tuple[list[dict[str, Any]], list[dict[str,
                     "a card-grid/UI look; use a flatter composition",
                 )
             )
+        icon_families = sorted({metadata[0] for _, metadata in icons})
+        if len(icon_families) > 1:
+            findings.append(
+                _finding(
+                    "warning",
+                    f"slide:{slide_number}:mixed-icon-families",
+                    len(icon_families),
+                    f"Slide {slide_number}: icon families {', '.join(icon_families)} "
+                    "are mixed; keep one visual language per deck",
+                )
+            )
+        for shape, metadata in icons:
+            family, icon_name = metadata
+            minimum_side = min(shape.width, shape.height) / EMU_PER_INCH
+            if minimum_side < 0.28:
+                findings.append(
+                    _finding(
+                        "warning",
+                        f"slide:{slide_number}:small-icon:{_shape_id(shape)}",
+                        0.28 - minimum_side,
+                        f"Slide {slide_number}: {family}:{icon_name} is only "
+                        f"{minimum_side:.2f}in; use at least 0.28in",
+                    )
+                )
+            extension = _picture_extension(shape)
+            if extension is not None and extension != "svg":
+                findings.append(
+                    _finding(
+                        "warning",
+                        f"slide:{slide_number}:raster-icon:{_shape_id(shape)}",
+                        1,
+                        f"Slide {slide_number}: {family}:{icon_name} is {extension}, "
+                        "not a themeable SVG",
+                    )
+                )
+        if len(icons) > 6:
+            severity = "error" if len(icons) > 10 else "warning"
+            findings.append(
+                _finding(
+                    severity,
+                    f"slide:{slide_number}:icon-density",
+                    len(icons),
+                    f"Slide {slide_number}: {len(icons)} icons compete for attention; "
+                    "use icons only where they carry meaning",
+                )
+            )
         if len(content_shapes) > 12 or len(text_shapes) > 6:
             density = max(len(content_shapes) / 12, len(text_shapes) / 6)
             severity = (
@@ -286,6 +353,8 @@ def _layout_findings(presentation) -> tuple[list[dict[str, Any]], list[dict[str,
                 "content_shapes": len(content_shapes),
                 "text_shapes": len(text_shapes),
                 "rounded_shapes": len(rounded),
+                "icon_count": len(icons),
+                "icon_families": icon_families,
                 "overlaps": overlaps,
             }
         )
