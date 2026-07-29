@@ -25,6 +25,13 @@ from loguru import logger
 _CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 _CREATE_NEW_PROCESS_GROUP = 0x00000200 if sys.platform == "win32" else 0
 _FORCE_KILL = getattr(signal, "SIGKILL", signal.SIGTERM)
+_EVOFLUX_CREDENTIAL_HELPER = (
+    '!f() { test "$1" = get || exit 0; host=""; '
+    'while IFS= read -r line; do case "$line" in host=*) host="${line#host=}";; esac; done; '
+    'case "$host" in "$EVOFLUX_GIT_HOST"|"$EVOFLUX_GIT_HOST":*) ;; *) exit 0;; esac; '
+    'printf "%s\\n" "username=$EVOFLUX_GIT_USERNAME" '
+    '"password=$EVOFLUX_GIT_ACCESS_TOKEN"; }; f'
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +41,16 @@ class GitResult:
     stderr: str
     returncode: int
     timed_out: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class GitCredential:
+    """Ephemeral HTTPS credential passed to Git without exposing it in argv."""
+
+    host: str
+    username: str
+    token: str
+    verify_ssl: bool = True
 
 
 @dataclass
@@ -65,6 +82,8 @@ class GitBranchInfo:
 class GitLogEntry:
     sha: str
     short_sha: str
+    parent_shas: list[str]
+    refs: list[str]
     author: str
     date: str
     message: str
@@ -122,10 +141,20 @@ async def run_git(cwd: str, *args: str, timeout: float = 5.0) -> GitResult:
             check=False,
             cwd=cwd,
         )
+        stdout = (
+            result.stdout.decode(errors="replace")
+            if isinstance(result.stdout, bytes)
+            else str(result.stdout)
+        )
+        stderr = (
+            result.stderr.decode(errors="replace")
+            if isinstance(result.stderr, bytes)
+            else str(result.stderr)
+        )
         return GitResult(
             ok=result.returncode == 0,
-            stdout=result.stdout,
-            stderr=result.stderr,
+            stdout=stdout,
+            stderr=stderr,
             returncode=result.returncode,
         )
     except subprocess.TimeoutExpired:
@@ -136,24 +165,59 @@ async def run_git(cwd: str, *args: str, timeout: float = 5.0) -> GitResult:
         return GitResult(ok=False, stdout="", stderr=str(exc), returncode=-1)
 
 
-async def run_git_long(cwd: str, *args: str, timeout: float = 120.0) -> GitResult:
+async def run_git_long(
+    cwd: str,
+    *args: str,
+    timeout: float = 120.0,
+    credential: GitCredential | None = None,
+) -> GitResult:
     """Run a git command with process-group kill on timeout.
 
     For push/pull/fetch — kills the whole process group so child ssh processes
     don't hang. stdin=DEVNULL so auth prompts fail immediately.
     """
     creationflags = _CREATE_NO_WINDOW | _CREATE_NEW_PROCESS_GROUP
-    try:
-        proc = await asyncio.create_subprocess_exec(
+    command = ["git", *args]
+    process_env = None
+    if credential is not None:
+        command = [
             "git",
+            "-c",
+            "credential.helper=",
+            "-c",
+            f"credential.helper={_EVOFLUX_CREDENTIAL_HELPER}",
             *args,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            stdin=asyncio.subprocess.DEVNULL,
-            cwd=cwd,
-            creationflags=creationflags if sys.platform == "win32" else 0,
-            **({} if sys.platform == "win32" else {"start_new_session": True}),
-        )
+        ]
+        process_env = {
+            **os.environ,
+            "EVOFLUX_GIT_HOST": credential.host,
+            "EVOFLUX_GIT_USERNAME": credential.username,
+            "EVOFLUX_GIT_ACCESS_TOKEN": credential.token,
+            "GIT_TERMINAL_PROMPT": "0",
+        }
+        if not credential.verify_ssl:
+            process_env["GIT_SSL_NO_VERIFY"] = "1"
+    try:
+        if sys.platform == "win32":
+            proc = await asyncio.create_subprocess_exec(
+                *command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                stdin=asyncio.subprocess.DEVNULL,
+                cwd=cwd,
+                env=process_env,
+                creationflags=creationflags,
+            )
+        else:
+            proc = await asyncio.create_subprocess_exec(
+                *command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                stdin=asyncio.subprocess.DEVNULL,
+                cwd=cwd,
+                env=process_env,
+                start_new_session=True,
+            )
         try:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         except asyncio.TimeoutError:
@@ -315,21 +379,23 @@ def parse_branches(stdout: str) -> list[GitBranchInfo]:
 
 
 def parse_log(stdout: str) -> list[GitLogEntry]:
-    """Parse git log with custom format using \\x1f field delimiter, newline entry separator."""
+    """Parse graph-aware git log output separated by unit separators."""
     entries: list[GitLogEntry] = []
     for line in stdout.splitlines():
         line = line.strip()
         if not line:
             continue
         parts = line.split("\x1f")
-        if len(parts) >= 4:
+        if len(parts) >= 6:
             entries.append(
                 GitLogEntry(
                     sha=parts[0],
                     short_sha=parts[0][:8],
-                    author=parts[1],
-                    date=parts[2],
-                    message=parts[3],
+                    parent_shas=parts[1].split(),
+                    refs=[ref.strip() for ref in parts[2].split(",") if ref.strip()],
+                    author=parts[3],
+                    date=parts[4],
+                    message="\x1f".join(parts[5:]),
                 )
             )
     return entries
@@ -431,6 +497,8 @@ def detect_inprogress_operation(cwd: str) -> str | None:
         return "rebase"
     if (git_dir / "CHERRY_PICK_HEAD").exists():
         return "cherry-pick"
+    if (git_dir / "REVERT_HEAD").exists():
+        return "revert"
     return None
 
 
@@ -449,7 +517,9 @@ class _GitLockContext:
         await lock.acquire()
         return lock
 
-    async def __aexit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
+    async def __aexit__(
+        self, exc_type: object, exc_val: object, exc_tb: object
+    ) -> None:
         lock = self._registry._locks[self._resolved]
         lock.release()
 

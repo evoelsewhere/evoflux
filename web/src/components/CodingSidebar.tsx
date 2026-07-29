@@ -52,7 +52,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { ModeSwitchTabs, ModeSwitchRail } from "@/components/ModeSwitchTabs";
+import { ModeSwitchTabs } from "@/components/ModeSwitchTabs";
 import { queryKeys } from "@/queries";
 import {
   useCodingWorkspaceSessionsQuery,
@@ -92,6 +92,8 @@ import {
   SidebarCard,
   SidebarSearchTrigger,
   SidebarFooter,
+  SidebarModeSlot,
+  SidebarModeRailSlot,
 } from "@/components/shell/SidebarShell";
 import { SidebarItem } from "@/components/ui/sidebar-item";
 import { SidePanel } from "@/components/shell/SidePanel";
@@ -1037,7 +1039,7 @@ export function CodingSidebar({
       <SidebarCard
         className={`w-full shrink-0 items-center gap-0.5 px-1 pb-2 ${isMacOverlay ? 'pt-10' : 'pt-2'}`}
       >
-        <ModeSwitchRail active="coding" />
+        <SidebarModeRailSlot />
         {onCommandPalette && (
           <button
             type="button"
@@ -1065,7 +1067,7 @@ export function CodingSidebar({
         />
         <SidebarItem
           Icon={GitPullRequest}
-          label="Pull Requests"
+          label="Source Control"
           collapsed
           onClick={togglePullRequests}
         />
@@ -1446,19 +1448,16 @@ export function CodingSidebar({
       rail={rail}
       resizeLabel="Resize coding sidebar"
     >
-      {/* Mode switch */}
       <SidebarCard
         className={`shrink-0 px-2 pb-2 ${isMacOverlay ? 'pt-10' : 'pt-2'}`}
       >
-        <ModeSwitchTabs active="coding" />
+        <SidebarModeSlot />
+        {onCommandPalette && (
+          <div className="pt-1.5">
+            <SidebarSearchTrigger onClick={onCommandPalette} />
+          </div>
+        )}
       </SidebarCard>
-
-      {/* Search trigger — opens the command palette (Ctrl+P). */}
-      {onCommandPalette && (
-        <SidebarCard className="shrink-0 px-2 py-2">
-          <SidebarSearchTrigger onClick={onCommandPalette} />
-        </SidebarCard>
-      )}
 
       {/* Scheduler toggle */}
       <SidebarCard className="shrink-0 px-2 py-2">
@@ -1470,7 +1469,7 @@ export function CodingSidebar({
         />
         <SidebarItem
           Icon={GitPullRequest}
-          label="Pull Requests"
+          label="Source Control"
           onClick={togglePullRequests}
         />
       </SidebarCard>
@@ -1502,13 +1501,12 @@ export function CodingSidebar({
     >
       <div className="px-3 pt-3">
         <ModeSwitchTabs active="coding" onNavigate={onMobileClose} />
+        {onCommandPalette && (
+          <div className="pt-1.5">
+            <SidebarSearchTrigger onClick={onCommandPalette} />
+          </div>
+        )}
       </div>
-
-      {onCommandPalette && (
-        <div className="px-3 pt-3">
-          <SidebarSearchTrigger onClick={onCommandPalette} />
-        </div>
-      )}
 
       {/* Scheduler toggle — mobile */}
       <div className="px-3 pt-2">
@@ -1520,7 +1518,7 @@ export function CodingSidebar({
         />
         <SidebarItem
           Icon={GitPullRequest}
-          label="Pull Requests"
+          label="Source Control"
           onClick={togglePullRequests}
         />
       </div>
@@ -1964,7 +1962,7 @@ export function CodingSidebar({
                 </div>
               </div>
               {error && (
-                <p className="rounded-md border border-(--color-error)/30 bg-(--color-error-subtle) px-3 py-2 text-xs text-(--color-error)">
+                <p className="rounded-md border border-(--color-error)/35 bg-(--color-error-subtle) px-3 py-2 text-xs text-(--color-error)">
                   {error}
                 </p>
               )}

@@ -39,6 +39,7 @@ import { ChatOverlayPanels, ChatTrailingPanels } from '@/components/chat/ChatPan
 import { WorkspaceFilesPanel } from '@/components/WorkspaceFilesPanel'
 import { CodingFileViewerPanel } from '@/components/CodingFileViewerPanel'
 import { CodingWorkspacePanel } from '@/components/CodingWorkspacePanel'
+import { GitWorkspacePanel } from '@/components/GitWorkspacePanel'
 import { PermissionApprovalModal } from '../PermissionApprovalModal'
 import { AskUserQuestionModal } from '../AskUserQuestionModal'
 import { MonitorView } from '../MonitorView'
@@ -71,7 +72,6 @@ import { useDirectBrowserPresence } from '@/components/BrowserViewer/useDirectBr
 import { TerminalPanel } from '@/components/TerminalPanel'
 import { WikiPanel } from '@/components/WikiPanel'
 import { SchedulerPanel } from '@/components/SchedulerPanel'
-import { PullRequestsPanel } from '@/components/PullRequestsPanel'
 import { WorkbenchBar } from '@/components/workbench/WorkbenchBar'
 import { WorkbenchDock, WorkbenchSurface } from '@/components/workbench/WorkbenchDock'
 import { useSideChat } from '../SideChatPanel/useSideChat'
@@ -217,6 +217,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const toggleScheduler = useUIStore((s) => s.toggleScheduler)
   const toggleBrowser = useUIStore((s) => s.toggleBrowser)
   const toggleTerminal = useUIStore((s) => s.toggleTerminal)
+  const openGitChanges = useUIStore((s) => s.openGitChanges)
 
   useEffect(() => {
     if (!sessionIdState) {
@@ -226,7 +227,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
       if (mode !== 'coding') closeWorkbenchTool('files')
     }
     if (mode === 'coding' && !workspace) {
-      closeWorkbenchTool('review')
       closeWorkbenchTool('files')
     }
   }, [closeWorkbenchTool, mode, sessionIdState, workspace])
@@ -869,6 +869,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
     m: toggleWiki,
     s: toggleScheduler,
     t: toggleBrowser,
+    g: mode === 'coding' && workspace ? openGitChanges : undefined,
     // Ctrl+` — toggle the AI Terminal (conventional terminal shortcut).
     '`': toggleTerminal,
     // Ctrl+I — focus the chat input (dispatched via CustomEvent so future
@@ -891,7 +892,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   }, [cycleActiveAgent])
 
   const closeCodingPanels = useCallback(() => {
-    closeWorkbenchTool('review')
     closeWorkbenchTool('files')
     setCodingFileViewer(null)
   }, [closeWorkbenchTool])
@@ -1010,20 +1010,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
       >
         {mode === 'coding' && workspace && (
           <>
-            <WorkbenchSurface tool="review">
-              <CodingWorkspacePanel
-                workspace={workspace}
-                open
-                initialTab="changed"
-                embedded
-                selectedFilePath={codingFileViewer?.path ?? null}
-                onFileSelect={handleCodingFileSelect}
-                onClose={() => closeWorkbenchTool('review')}
-                sessionId={sessionIdState}
-                projectId={projectIdState}
-                isWorking={isTeamWorking}
-              />
-            </WorkbenchSurface>
             <WorkbenchSurface tool="files">
               <CodingWorkspacePanel
                 workspace={workspace}
@@ -1101,7 +1087,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
         </WorkbenchSurface>
         {mode === 'coding' && (
           <WorkbenchSurface tool="pull-requests">
-            <PullRequestsPanel
+            <GitWorkspacePanel
               open={workbenchTabs.some((tab) => tab.tool === 'pull-requests')}
               scope={pullRequestsScope}
               workspace={workspace}
@@ -1290,7 +1276,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
       }
     >
         {setupRequired && (
-          <div className="mx-3 mt-3 flex flex-col gap-3 rounded-xl border border-(--accent-blue)/35 bg-(--accent-blue-soft) p-3 text-sm text-(--color-text) shadow-sm sm:flex-row sm:items-center sm:justify-between">
+          <div className="mx-3 mt-3 flex flex-col gap-3 rounded-xl border border-(--accent-blue)/40 bg-(--accent-blue-soft) p-3 text-sm text-(--color-text) shadow-sm sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 gap-3">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-(--accent-blue)" aria-hidden="true" />
               <div className="min-w-0">

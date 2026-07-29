@@ -159,17 +159,12 @@ export function parseApiMessages(msgs: MessageResponse[]): ChatMessage[] {
 
     if (msg.role === 'tool' && msg.tool_call_id) {
       const block = pendingToolBlocks.get(msg.tool_call_id)
-      const extra = msg.extra as { duration_ms?: number; mcp_app?: Record<string, unknown> } | null
+      const extra = msg.extra
       if (block) {
         block.toolResult = msg.content || ''
         block.toolDone = true
         if (typeof extra?.duration_ms === 'number') block.durationMs = extra.duration_ms
-        if (extra?.mcp_app) {
-          block.extra = {
-            ...(block.extra ?? {}),
-            mcp_app: extra.mcp_app,
-          }
-        }
+        if (extra) block.extra = { ...(block.extra ?? {}), ...extra }
       }
       continue
     }
@@ -271,17 +266,12 @@ export function parseTeamBlocks(msgs: MessageResponse[]): ContentBlock[] {
 
     if (msg.role === 'tool' && msg.tool_call_id) {
       const block = pendingToolBlocks.get(msg.tool_call_id)
-      const extra = msg.extra as { duration_ms?: number; mcp_app?: Record<string, unknown> } | null
+      const extra = msg.extra
       if (block) {
         block.toolResult = msg.content || ''
         block.toolDone = true
         if (typeof extra?.duration_ms === 'number') block.durationMs = extra.duration_ms
-        if (extra?.mcp_app) {
-          block.extra = {
-            ...(block.extra ?? {}),
-            mcp_app: extra.mcp_app,
-          }
-        }
+        if (extra) block.extra = { ...(block.extra ?? {}), ...extra }
       }
       continue
     }

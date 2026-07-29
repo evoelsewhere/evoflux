@@ -71,7 +71,7 @@ export function AppHeader({
     <header
       {...dragHandlers}
       className={cn(
-        'mobile-safe-header relative z-(--z-drawer) flex h-(--spacing-app-header) shrink-0 items-center rounded-[10px] bg-(--bg-sidebar)/80 shadow-sm backdrop-blur-xl',
+        'mobile-safe-header relative z-(--z-drawer) flex h-(--spacing-app-header) shrink-0 items-center rounded-md bg-(--bg-sidebar)/80 backdrop-blur-xl',
         isMacOverlay && 'pl-(--spacing-mac-traffic-inset) select-none',
         className,
       )}

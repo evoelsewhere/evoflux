@@ -80,7 +80,7 @@ export function Combobox({
     >
       <div
         className={cn(
-          "relative flex items-center rounded-[8px] border border-(--color-border) bg-(--bg-page) transition-colors focus-within:border-(--focus-ring) focus-within:ring-2 focus-within:ring-(--focus-ring)/25 hover:border-(--color-border-strong)",
+          "relative flex items-center rounded-md border border-(--color-border) bg-(--bg-page) transition-colors focus-within:border-(--focus-ring) focus-within:ring-2 focus-within:ring-(--focus-ring)/25 hover:border-(--color-border-strong)",
           size === "sm" ? "h-7" : "h-9",
           disabled && "cursor-not-allowed opacity-60",
           className,
@@ -140,7 +140,7 @@ export function Combobox({
           <ComboboxPrimitive.Popup
             style={rich ? { width: "min(400px, calc(100vw - 16px))" } : undefined}
             className={cn(
-              "flex max-h-72 w-(--anchor-width) min-w-40 flex-col overflow-hidden rounded-[10px] border border-(--color-border-strong) bg-(--bg-page) text-(--color-text) shadow-(--shadow-popover)",
+              "flex max-h-72 w-(--anchor-width) min-w-40 flex-col overflow-hidden rounded-lg border border-(--color-border-strong) bg-(--bg-page) text-(--color-text) shadow-(--shadow-popover)",
               "data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
               popupClassName,
             )}
@@ -173,7 +173,7 @@ export function Combobox({
                   key={item.value}
                   value={item}
                   className={cn(
-                    "relative flex w-full cursor-default items-center gap-2 rounded-[8px] pr-7 pl-2.5 text-sm text-(--color-text) outline-hidden select-none data-highlighted:bg-(--bg-key)",
+                    "relative flex w-full cursor-default items-center gap-2 rounded-sm pr-7 pl-2 text-sm text-(--color-text) outline-hidden select-none data-highlighted:bg-(--bg-key)",
                     rich ? "min-h-11 py-1.5" : "h-8 py-1",
                   )}
                 >

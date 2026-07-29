@@ -369,7 +369,7 @@ export function CrossRepoLinksPanel({ project, className }: CrossRepoLinksPanelP
                 disabled={isBusy}
                 aria-label="Reindex options"
                 className={cn(
-                  'flex h-full items-center border-l border-white/20 px-1 py-1 transition-colors',
+                  'flex h-full items-center border-l border-white/25 px-1 py-1 transition-colors',
                   'bg-(--accent-blue) text-white hover:bg-(--accent-blue)/90 disabled:opacity-50',
                 )}
               >

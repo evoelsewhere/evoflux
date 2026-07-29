@@ -8,6 +8,7 @@ import { Home } from 'lucide-react'
 import { ToastStack } from '@/components/ToastStack'
 import { MacTitleBar } from '@/components/MacTitleBar'
 import { SettingsScreen } from '@/components/SettingsScreen'
+import { PersistentModeNavigation } from '@/components/shell/PersistentModeNavigation'
 import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
 import { useHistorySwipeNavigation } from '@/hooks/use-history-swipe-navigation'
 import { useMobileViewportGuards } from '@/hooks/use-mobile-viewport'
@@ -43,6 +44,7 @@ export function Root() {
   return (
     <QueryClientProvider client={queryClient}>
       <MacTitleBar />
+      <PersistentModeNavigation />
       {settingsOpen ? (
         <Suspense fallback={<RouteLoadingFallback />}>
           <SettingsScreen />

@@ -212,7 +212,7 @@ export function SettingsAsyncBoundary({
     return (
       <div
         role="alert"
-        className="flex items-start gap-3 rounded-xl border border-(--color-error)/25 bg-(--color-error)/8 px-4 py-4 text-sm text-(--color-text)"
+        className="flex items-start gap-3 rounded-xl border border-(--color-error)/30 bg-(--color-error)/8 px-4 py-4 text-sm text-(--color-text)"
       >
         <AlertCircle
           size={17}

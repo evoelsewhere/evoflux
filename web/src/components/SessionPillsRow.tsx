@@ -307,7 +307,7 @@ function AdvancedComposerControl({
             aria-label={`Model settings: ${effectiveModel ? shortModelName(effectiveModel) : 'model'}, ${currentOption.label}`}
             className={cn(
               CONTROL_CLASS,
-              'max-w-[14rem] shrink-0 justify-center gap-1.5',
+              'max-w-28 shrink-0 justify-center gap-1.5 sm:max-w-[14rem]',
               open && 'bg-(--bg-key) text-(--color-text)',
             )}
           />
@@ -320,7 +320,7 @@ function AdvancedComposerControl({
           {effectiveModel ? shortModelName(effectiveModel) : 'Model'}
         </span>
         <span
-          className="shrink-0 rounded px-1 py-px font-medium"
+          className="hidden shrink-0 rounded px-1 py-px font-medium sm:inline"
           style={{
             color: thinkingTone,
             backgroundColor: `color-mix(in srgb, ${thinkingTone} 16%, transparent)`,

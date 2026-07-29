@@ -282,11 +282,26 @@ class TestPushEvent:
             "sid-1",
             StreamEnvelope.from_parts(
                 "tool_end",
-                {"tool_call_id": "tc1", "name": "search", "result": "found it"},
+                {
+                    "tool_call_id": "tc1",
+                    "name": "search",
+                    "result": "found it",
+                    "metadata": {
+                        "attachments": [
+                            {
+                                "category": "image",
+                                "url": "/api/team/sid-1/uploads/image.png",
+                            }
+                        ]
+                    },
+                },
             ),
         )
         assert _turns["sid-1"].tool_calls[0]["done"] is True
         assert _turns["sid-1"].tool_calls[0]["result"] == "found it"
+        assert _turns["sid-1"].tool_calls[0]["metadata"]["attachments"][0][
+            "category"
+        ] == "image"
 
     @pytest.mark.asyncio
     async def test_push_tool_end_fallback_by_name(self):

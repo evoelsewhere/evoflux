@@ -80,7 +80,7 @@ export function AppShell({
   return (
     // h-dvh handles iOS Safari's dynamic toolbar.
     <div
-      className="mobile-safe-shell mobile-viewport flex h-dvh flex-col bg-(--bg-page) md:flex-row md:gap-0.5 md:p-1"
+      className="mobile-safe-shell mobile-viewport flex h-dvh flex-col bg-(--bg-page) md:flex-row md:gap-0.5 md:p-0.5"
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
@@ -123,7 +123,7 @@ export function AppShell({
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.99 }}
                   transition={motionPreset.transition}
-                  className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[10px] bg-(--bg-page) shadow-sm"
+                  className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-md bg-(--bg-page)"
                 >
                   {children}
                 </motion.main>

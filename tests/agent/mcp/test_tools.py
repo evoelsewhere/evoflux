@@ -421,6 +421,39 @@ class TestMCPToolArun:
             await tool.arun(arg1="value1")
 
     @pytest.mark.asyncio
+    async def test_arun_preserves_mcp_images_as_multimodal_parts(self) -> None:
+        image_data = b64encode(b"image bytes").decode()
+        session = AsyncMock()
+        session.call_tool.return_value = SimpleNamespace(
+            isError=False,
+            content=[
+                SimpleNamespace(type="text", text="Rendered chart"),
+                SimpleNamespace(
+                    type="image",
+                    data=image_data,
+                    mimeType="image/png",
+                ),
+            ],
+        )
+        mcp_tool = SimpleNamespace(
+            name="render_chart",
+            description="Render chart",
+            inputSchema={"type": "object"},
+        )
+        tool = MCPTool(
+            server_name="charts",
+            mcp_tool=mcp_tool,
+            session_provider=lambda: session,
+        )  # type: ignore[arg-type]
+
+        result = await tool.arun()
+
+        assert isinstance(result, ToolResult)
+        assert result.parts[0].type == "text"
+        assert result.parts[1].type == "image_data"
+        assert result.parts[1].data == image_data  # type: ignore[union-attr]
+
+    @pytest.mark.asyncio
     async def test_arun_error_result_raises_error(self) -> None:
         """arun() raises ToolExecutionError when result.isError is True."""
         session = AsyncMock()

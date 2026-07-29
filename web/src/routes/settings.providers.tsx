@@ -213,9 +213,9 @@ export function ProviderCollapsedCard({
       className={cn(
         'group relative flex items-stretch overflow-hidden rounded-xl border bg-(--bg-card) shadow-[0_10px_30px_rgba(0,0,0,0.035)] transition-[border-color,box-shadow,transform] duration-(--motion-fast) hover:-translate-y-px hover:shadow-[0_14px_36px_rgba(0,0,0,0.055)]',
         configuredButUnreachable
-          ? 'border-(--color-error)/30 hover:border-(--color-error)/45'
+          ? 'border-(--color-error)/35 hover:border-(--color-error)/40'
           : connected
-            ? 'border-(--color-success)/25 hover:border-(--color-success)/40'
+            ? 'border-(--color-success)/30 hover:border-(--color-success)/50'
             : 'border-(--color-border) hover:border-(--color-border-strong)',
       )}
     >
@@ -479,9 +479,9 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
       <div className={cn(
         'overflow-hidden rounded-lg border bg-(--bg-card)',
         isConfiguredButUnreachable
-          ? 'border-(--color-error)/30'
+          ? 'border-(--color-error)/35'
           : isConnected
-            ? 'border-(--color-success)/25'
+            ? 'border-(--color-success)/30'
             : 'border-(--color-border)',
       )}>
         <div className="space-y-4 p-4">
@@ -1178,9 +1178,9 @@ function OAuthLoginDialog({
           <div className={cn(
             'flex items-center gap-3 rounded-xl p-4 transition-colors',
             isSuccess
-              ? 'border border-(--color-success)/30 bg-(--color-success-subtle)'
+              ? 'border border-(--color-success)/35 bg-(--color-success-subtle)'
               : error
-                ? 'border border-(--color-error)/30 bg-(--color-error)/10'
+                ? 'border border-(--color-error)/35 bg-(--color-error)/10'
                 : 'border border-(--color-border) bg-(--bg-key)',
           )}>
             <div className={cn(
@@ -1201,7 +1201,7 @@ function OAuthLoginDialog({
 
           {/* Device code section */}
           {deviceEvent?.user_code && (
-            <div className="overflow-hidden rounded-xl border border-(--accent-blue)/25 bg-(--accent-blue-soft)">
+            <div className="overflow-hidden rounded-xl border border-(--accent-blue)/30 bg-(--accent-blue-soft)">
               <div className="p-6 text-center">
                 <p className="text-[0.65rem] font-semibold tracking-[0.2em] text-(--color-text-muted) uppercase">Device code</p>
                 <div className="mt-3 flex flex-col items-center justify-center gap-3 sm:flex-row">
@@ -1212,7 +1212,7 @@ function OAuthLoginDialog({
                     className={cn(
                       'flex h-10 w-10 items-center justify-center rounded-lg border transition-[background-color,border-color,color] duration-(--motion-fast)',
                       codeCopied
-                        ? 'border-(--color-success)/30 bg-(--color-success-subtle) text-(--color-success)'
+                        ? 'border-(--color-success)/35 bg-(--color-success-subtle) text-(--color-success)'
                         : 'border-(--color-border) bg-(--bg-card) text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)',
                     )}
                     aria-label="Copy device code"
@@ -1231,7 +1231,7 @@ function OAuthLoginDialog({
                 )}
               </div>
               {provider.id === 'codex' && authMode !== 'browser' && !isSuccess && (
-                <div className="border-t border-(--accent-blue)/20 bg-(--bg-page)/70 p-4 text-left">
+                <div className="border-t border-(--accent-blue)/25 bg-(--bg-page)/70 p-4 text-left">
                   <p className="text-xs font-medium text-(--color-text)">Workspace account?</p>
                   <p className="mt-1 text-xs leading-relaxed text-(--color-text-muted)">
                     If the Codex page says your admin must enable device-code authentication, switch to browser sign-in.

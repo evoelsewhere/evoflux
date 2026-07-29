@@ -244,7 +244,7 @@ function ParseErrorBanner({
   onSwitchToRaw: () => void
 }) {
   return (
-    <div className="flex items-start gap-2 rounded-lg border border-(--color-error)/30 bg-(--color-error-subtle) px-3 py-2 text-xs text-(--color-error)">
+    <div className="flex items-start gap-2 rounded-lg border border-(--color-error)/35 bg-(--color-error-subtle) px-3 py-2 text-xs text-(--color-error)">
       <AlertCircle size={14} className="mt-0.5 shrink-0" />
       <div className="flex-1">
         <p className="font-medium">Parse error</p>

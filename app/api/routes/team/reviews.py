@@ -417,6 +417,7 @@ async def list_reviews(
                         state=item.state,
                         draft=item.draft,
                         author=item.author,
+                        author_avatar_url=item.author_avatar_url,
                         source_branch=item.source_branch,
                         target_branch=item.target_branch,
                         updated_at=item.updated_at,

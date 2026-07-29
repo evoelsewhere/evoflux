@@ -28,6 +28,10 @@ import { panelTransition, useMotionPreset } from '@/lib/motion'
 import { useUIStore } from '@/stores/useUIStore'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { SubagentTaskCard } from '@/components/SubagentTaskCard'
+import { ImageAttachment } from '@/components/ImageAttachment'
+import { FileCard } from '@/components/FileCard'
+import { resolveApiUrl } from '@/api/client'
+import type { MessageAttachment } from '@/api/types'
 import type { ToolCallState } from './types'
 
 interface ToolCallProps {
@@ -38,6 +42,45 @@ interface ToolCallProps {
   result?: string // tool response content
   durationMs?: number
   startedAt?: number
+  attachments?: MessageAttachment[]
+}
+
+export function ToolAttachments({
+  attachments,
+  limit,
+}: {
+  attachments?: MessageAttachment[]
+  limit?: number
+}) {
+  if (!attachments || attachments.length === 0) return null
+  const visible = limit ? attachments.slice(0, limit) : attachments
+  const remaining = attachments.length - visible.length
+
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-2">
+      {visible.map((attachment, index) =>
+        attachment.category === 'image' ? (
+          <ImageAttachment
+            key={`${attachment.url ?? attachment.filename ?? index}`}
+            src={resolveApiUrl(attachment.url) || ''}
+            alt={attachment.original_name || `Tool image ${index + 1}`}
+            compact
+          />
+        ) : (
+          <FileCard
+            key={`${attachment.url ?? attachment.filename ?? index}`}
+            name={attachment.original_name || attachment.filename || `Tool file ${index + 1}`}
+            mediaType={attachment.media_type}
+            url={resolveApiUrl(attachment.url)}
+            clickable={Boolean(attachment.url)}
+          />
+        ),
+      )}
+      {remaining > 0 && (
+        <span className="text-xs text-(--color-text-muted)">+{remaining} more</span>
+      )}
+    </div>
+  )
 }
 
 function isFailedResult(result: string | undefined): boolean {
@@ -85,7 +128,7 @@ function formatDuration(ms: number): string {
   return `${minutes}m ${seconds}s`
 }
 
-export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, result, durationMs, startedAt }: ToolCallProps) {
+export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, result, durationMs, startedAt, attachments }: ToolCallProps) {
   // Hooks must be called unconditionally — before any early returns
   const preset = useMotionPreset()
   const [manualExpanded, setManualExpanded] = useState<boolean | null>(null)
@@ -267,6 +310,8 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
 
       {/* "See Browser" button — visible when browser_use tool is active */}
       {name === 'browser_use' && <SeeBrowserButton />}
+
+      <ToolAttachments attachments={attachments} />
 
       {/* Expandable details — divider then warm paper body per pencil LJOUY */}
       <AnimatePresence initial={false}>

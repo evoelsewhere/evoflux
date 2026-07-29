@@ -1364,10 +1364,36 @@ export interface ChangedFile {
 }
 
 export interface GitChangesResponse {
+  is_git_repo: boolean
   branch: string | null
   ahead: number
   behind: number
   files: ChangedFile[]
+}
+
+export interface GitRepository {
+  is_git_repo: boolean
+  root: string | null
+  branch: string | null
+  detached: boolean
+  upstream: string | null
+  head_sha: string | null
+  head_subject: string | null
+  user_name: string | null
+  user_email: string | null
+}
+
+export interface GitRemote {
+  name: string
+  fetch_url: string
+  push_url: string
+}
+
+export interface GitTag {
+  name: string
+  sha: string
+  subject: string
+  date: string
 }
 
 export interface GitCommitResponse {
@@ -1400,6 +1426,8 @@ export interface GitJobOut {
 export interface GitLogEntry {
   sha: string
   short_sha: string
+  parent_shas: string[]
+  refs: string[]
   author: string
   date: string
   message: string
@@ -1408,6 +1436,7 @@ export interface GitLogEntry {
 export interface GitLogResponse {
   entries: GitLogEntry[]
   has_more: boolean
+  next_skip: number | null
 }
 
 export interface GitLogFile {
@@ -1474,6 +1503,7 @@ export interface CodeReviewItem {
   state: string
   draft: boolean
   author: string | null
+  author_avatar_url: string | null
   source_branch: string
   target_branch: string
   updated_at: string

@@ -38,6 +38,7 @@ export function ChangesReviewPanel({
   const turnChangesOpen = useTeamStore((s) => s.turnChangesOpen)
   const dismissTurnChanges = useTeamStore((s) => s.dismissTurnChanges)
   const openWorkbenchTool = useUIStore((s) => s.openWorkbenchTool)
+  const openGitChanges = useUIStore((s) => s.openGitChanges)
   const isMobile = useIsMobile()
   const [selected, setSelected] = useState<string | null>(null)
 
@@ -95,7 +96,7 @@ export function ChangesReviewPanel({
                     setSelected(file.path)
                     onOpenFile?.(file.path)
                     if (mode === 'coding' && workspace) {
-                      openWorkbenchTool('review')
+                      openGitChanges()
                     } else {
                       openWorkbenchTool('files')
                     }
@@ -129,10 +130,10 @@ export function ChangesReviewPanel({
           <footer className="shrink-0 border-t border-(--color-border) px-3 py-2">
             <button
               type="button"
-              onClick={() => openWorkbenchTool('review')}
+              onClick={openGitChanges}
               className="focus-ring-control w-full rounded-md border border-(--color-border) bg-(--bg-card) px-3 py-2 text-xs font-medium text-(--color-text) transition-colors hover:bg-(--bg-key)"
             >
-              Open Source Control
+              Open Git changes
             </button>
           </footer>
         )}

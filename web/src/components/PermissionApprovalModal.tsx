@@ -49,7 +49,7 @@ export function PermissionApprovalModal() {
           transition={preset.spring}
           className="mx-auto w-full max-w-3xl px-4 pb-2"
         >
-          <div className="rounded-xl border border-(--color-warning)/30 bg-(--bg-page) shadow-sm overflow-hidden">
+          <div className="rounded-xl border border-(--color-warning)/35 bg-(--bg-page) shadow-sm overflow-hidden">
             {/* Top bar */}
             <div className="flex items-center gap-2 border-b border-(--color-border) bg-(--color-warning)/5 px-4 py-2.5">
               <ShieldAlert size={14} className="shrink-0 text-(--color-warning)" aria-hidden="true" />

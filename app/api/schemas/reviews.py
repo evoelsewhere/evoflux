@@ -98,6 +98,7 @@ class ReviewItemOut(BaseModel):
     state: str
     draft: bool
     author: str | None
+    author_avatar_url: str | None
     source_branch: str
     target_branch: str
     updated_at: str

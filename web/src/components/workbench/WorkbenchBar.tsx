@@ -156,7 +156,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.96 }}
             transition={motionPreset.spring}
-            className="flex h-7 shrink-0 items-center gap-1.5 rounded-lg border border-(--color-accent)/25 bg-(--color-accent)/8 px-2 text-[11px] font-medium text-(--color-accent) transition-colors hover:border-(--color-accent)/45 hover:bg-(--color-accent)/12"
+            className="flex h-7 shrink-0 items-center gap-1.5 rounded-lg border border-(--color-accent)/30 bg-(--color-accent)/8 px-2 text-[11px] font-medium text-(--color-accent) transition-colors hover:border-(--color-accent)/40 hover:bg-(--color-accent)/12"
             aria-label={`Open linked review #${props.reviewContext.number}`}
             title="Open linked PR/MR"
             data-no-drag
@@ -251,7 +251,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
             onClick={() => {
               showTurnChanges()
               if (props.workspace) {
-                useUIStore.getState().openWorkbenchTool('review')
+                useUIStore.getState().openGitChanges()
               }
             }}
             className="focus-ring-control flex h-7 items-center gap-1.5 rounded-lg border border-(--color-border) bg-(--bg-key) px-2 font-mono text-[11px] tabular-nums text-(--color-text) transition-colors hover:border-(--color-border-strong)"

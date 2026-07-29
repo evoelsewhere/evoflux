@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ChevronRight, FileText, Folder, GitBranch, Network, RefreshCw, Timer, X } from 'lucide-react'
+import { ChevronRight, FileText, Folder, Network, RefreshCw, Timer, X } from 'lucide-react'
 import { useMotionPreset } from '@/lib/motion'
 import { getCodingWorkspaceGitDiff, listCodingWorkspaceFiles } from '@/api/client'
 import { cn } from '@/lib/utils'
@@ -13,8 +13,6 @@ import { useProjectQuery } from '@/queries/useProjectsQuery'
 import { SidePanel } from './shell/SidePanel'
 import { CodeGraphPanel } from './CodeGraphPanel'
 import { CrossRepoLinksPanel } from './CrossRepoLinksPanel'
-import { SourceControlModal } from './SourceControlModal'
-import { DiffReviewPanel } from './DiffReviewPanel'
 import { MultiRepoFileTree } from './MultiRepoFileTree'
 import { NativeFileTree } from './NativeFileTree'
 import { ProjectCodeGraphPanel } from './ProjectCodeGraphPanel'
@@ -24,18 +22,10 @@ import { isTauriAvailable } from '@/api/tauri-workspace'
 import {
   buildTree,
   collectChangedFiles,
-  type ChangedFileStatus,
   type TreeNode,
 } from '@/utils/workspaceFileTree'
 
-const CHANGED_STATUS_LABELS: Record<ChangedFileStatus, string> = {
-  A: 'Added',
-  M: 'Modified',
-  D: 'Deleted',
-}
-
 const WORKSPACE_TABS = [
-  { key: 'changed' as const, label: 'Source control', Icon: GitBranch },
   { key: 'files' as const, label: 'Files', Icon: Folder },
   { key: 'graph' as const, label: 'Graph', Icon: Network },
   { key: 'progress' as const, label: 'Progress', Icon: Timer },
@@ -145,7 +135,7 @@ export function TreeNodeView({
 export function CodingWorkspacePanel({
   workspace,
   open,
-  initialTab = 'changed',
+  initialTab = 'files',
   onClose,
   mobile = false,
   selectedFilePath = null,
@@ -159,7 +149,7 @@ export function CodingWorkspacePanel({
 }: {
   workspace: string
   open: boolean
-  initialTab?: 'files' | 'changed' | 'graph' | 'progress'
+  initialTab?: 'files' | 'graph' | 'progress'
   onClose: () => void
   mobile?: boolean
   selectedFilePath?: string | null
@@ -173,9 +163,7 @@ export function CodingWorkspacePanel({
   embedded?: boolean
 }) {
   const preset = useMotionPreset()
-  const [tab, setTab] = useState<'files' | 'changed' | 'graph' | 'progress'>(initialTab)
-  const [scOpen, setScOpen] = useState(false)
-  const [scWorkspace, setScWorkspace] = useState('')
+  const [tab, setTab] = useState<'files' | 'graph' | 'progress'>(initialTab)
   const projectQuery = useProjectQuery(projectId)
   const project = projectQuery.data ?? null
   // Drive multi/single-repo mode off the *primed* projectId, not the async
@@ -198,7 +186,6 @@ export function CodingWorkspacePanel({
   })
   const changedFiles = collectChangedFiles(diff.data)
   const changedPaths = new Set(changedFiles.map((file) => file.path))
-  const fileByPath = new Map((files.data?.files ?? []).map((file) => [file.path, file]))
 
   if (!open) return null
 
@@ -247,10 +234,10 @@ export function CodingWorkspacePanel({
           </button>
         </header>
         <div className="border-b border-(--color-border) p-1">
-          <div className="relative grid grid-cols-4 items-center rounded-lg border border-(--color-border) bg-(--bg-page) p-0.5">
+          <div className="relative grid grid-cols-3 items-center rounded-lg border border-(--color-border) bg-(--bg-page) p-0.5">
             <motion.div
               aria-hidden="true"
-              className="pointer-events-none absolute bottom-0.5 left-0.5 top-0.5 w-[calc((100%-0.25rem)/4)] rounded-md bg-(--bg-key) shadow-sm"
+              className="pointer-events-none absolute bottom-0.5 left-0.5 top-0.5 w-[calc((100%-0.25rem)/3)] rounded-md bg-(--bg-key) shadow-sm"
               initial={false}
               animate={{ x: `${WORKSPACE_TABS.findIndex((t) => t.key === tab) * 100}%` }}
               transition={preset.spring}
@@ -269,10 +256,7 @@ export function CodingWorkspacePanel({
                   )}
                 >
                   <Icon size={13} className="shrink-0" aria-hidden="true" />
-                  <span className="truncate">{key === 'changed' ? 'Source' : label}</span>
-                  {key === 'changed' && !isProjectMode && changedPaths.size > 0 && (
-                    <span className="rounded-full bg-(--color-warning)/15 px-1 py-px font-mono text-[10px] text-(--accent-orange-text)">{changedPaths.size}</span>
-                  )}
+                  <span className="truncate">{label}</span>
                 </button>
               )
             })}
@@ -306,60 +290,7 @@ export function CodingWorkspacePanel({
         ) : (
           <>
         <div className={cn('min-h-0 flex-1 overflow-auto', tab === 'files' && 'p-2')}>
-          {tab === 'changed' ? (
-            isProjectMode ? (
-              project ? (
-                <DiffReviewPanel
-                  project={project}
-                  className="p-2"
-                  onOpenRepo={(path) => { setScWorkspace(path); setScOpen(true) }}
-                />
-              ) : (
-                <p className="px-2 py-4 text-xs text-(--color-text-subtle)">Loading project repositories…</p>
-              )
-            ) : diff.isLoading || files.isLoading ? (
-              <p className="px-2 py-4 text-xs text-(--color-text-subtle)">Loading changed files…</p>
-            ) : diff.isError ? (
-              <p className="px-2 py-4 text-xs text-(--color-error)">Failed to load changed files</p>
-            ) : !diff.data?.is_git_repo ? (
-              <p className="px-2 py-4 text-xs text-(--color-text-subtle)">Not a git repository</p>
-            ) : (
-              <div className="p-2">
-                <button
-                  type="button"
-                  onClick={() => { setScWorkspace(workspace); setScOpen(true) }}
-                  className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-md border border-(--color-border) bg-(--bg-key) px-2 py-1.5 text-xs text-(--color-text) hover:bg-(--bg-key)/70"
-                >
-                  <GitBranch size={12} /> Open Source Control
-                </button>
-                {diff.data.truncated && <p className="mb-2 rounded bg-(--color-warning)/10 px-2 py-1 text-xs text-(--color-warning)">Changed list may be incomplete because the diff was truncated.</p>}
-                <div className="space-y-1">
-                  {changedFiles.map((changedFile) => {
-                    const file = fileByPath.get(changedFile.path) ?? { path: changedFile.path, name: changedFile.path.split('/').pop() ?? changedFile.path, size: 0, mtime: 0, mime: 'text/plain' }
-                    const isSelected = selectedFilePath === changedFile.path
-                    return (
-                      <button
-                        key={changedFile.path}
-                        type="button"
-                        onClick={() => onFileSelect?.(isSelected ? null : file)}
-                        className={cn(
-                          'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors',
-                          isSelected ? 'bg-(--bg-key) text-(--color-accent)' : 'text-(--color-text-2) hover:bg-(--bg-key) hover:text-(--color-text)',
-                        )}
-                        title={changedFile.path}
-                      >
-                        <FileText size={12} className="shrink-0 text-(--accent-orange-text)" />
-                        <span className="min-w-0 flex-1 truncate font-mono">{changedFile.path}</span>
-                        <span className="shrink-0 font-mono text-xs text-(--color-diff-add-text)">{changedFile.additions > 0 ? `+${changedFile.additions}` : ''}</span>
-                        <span className="shrink-0 font-mono text-xs text-(--color-diff-del-text)">{changedFile.deletions > 0 ? `-${changedFile.deletions}` : ''}</span>
-                        <span className="shrink-0 font-mono text-xs font-semibold text-(--accent-orange-text)" aria-label={CHANGED_STATUS_LABELS[changedFile.status]}>{changedFile.status}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            )
-          ) : isProjectMode ? (
+          {isProjectMode ? (
             project ? (
               <MultiRepoFileTree project={project} selectedFilePath={selectedFilePath} onFileSelect={onFileSelect} />
             ) : (
@@ -420,13 +351,6 @@ export function CodingWorkspacePanel({
         )}
           </>
         )}
-      <SourceControlModal
-        open={scOpen}
-        onOpenChange={setScOpen}
-        workspace={scWorkspace || workspace}
-        onWorkspaceChange={setScWorkspace}
-        project={project}
-      />
     </SidePanel>
   )
 }

@@ -314,7 +314,7 @@ export function ProjectSetupModal({ open, onOpenChange, onCreated }: ProjectSetu
                   className={cn(
                     'flex w-full items-center gap-2 rounded-md border border-dashed border-(--color-border)',
                     'px-3 py-2.5 text-xs text-(--color-text-muted) transition-colors',
-                    'hover:border-(--color-accent)/40 hover:bg-(--bg-hover) hover:text-(--color-text)',
+                    'hover:border-(--color-accent)/50 hover:bg-(--bg-hover) hover:text-(--color-text)',
                     'disabled:opacity-50',
                   )}
                 >

@@ -236,9 +236,9 @@ export function SettingsRow({
 
 const CALLOUT_TONES = {
   info: 'border-(--color-border) bg-(--bg-key)/60 text-(--color-text-muted)',
-  success: 'border-(--color-success)/25 bg-(--color-success)/8 text-(--color-text)',
-  warning: 'border-(--color-warning)/25 bg-(--color-warning)/8 text-(--color-text)',
-  error: 'border-(--color-error)/25 bg-(--color-error)/8 text-(--color-text)',
+  success: 'border-(--color-success)/30 bg-(--color-success)/8 text-(--color-text)',
+  warning: 'border-(--color-warning)/30 bg-(--color-warning)/8 text-(--color-text)',
+  error: 'border-(--color-error)/30 bg-(--color-error)/8 text-(--color-text)',
 } as const
 
 export function SettingsCallout({

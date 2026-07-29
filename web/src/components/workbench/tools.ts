@@ -2,7 +2,6 @@ import {
   BookOpen,
   CalendarClock,
   Files,
-  GitCompareArrows,
   GitPullRequest,
   Globe2,
   MessageSquarePlus,
@@ -21,12 +20,6 @@ export const WORKBENCH_TOOLS: Record<
   WorkbenchTool,
   { label: string; description: string; icon: LucideIcon; shortcut?: string }
 > = {
-  review: {
-    label: 'Review',
-    description: 'Inspect source changes and prepare pull requests',
-    icon: GitCompareArrows,
-    shortcut: '⌃⇧G',
-  },
   terminal: {
     label: 'Terminal',
     description: 'Run commands in the active workspace',
@@ -63,9 +56,10 @@ export const WORKBENCH_TOOLS: Record<
     shortcut: '⌃S',
   },
   'pull-requests': {
-    label: 'Pull Requests',
-    description: 'Review PRs and MRs across every coding repository',
+    label: 'Source Control',
+    description: 'Changes, commits, branches, sync, and pull requests in one place',
     icon: GitPullRequest,
+    shortcut: '⌃G',
   },
 }
 
@@ -75,9 +69,6 @@ export function isWorkbenchToolEnabled(
   tool: WorkbenchTool,
   context: WorkbenchContext,
 ): boolean {
-  if (tool === 'review') {
-    return context.mode === 'coding' && Boolean(context.workspace)
-  }
   if (tool === 'pull-requests') return context.mode === 'coding'
   if (tool === 'files') return Boolean(context.sessionId || context.workspace)
   if (tool === 'terminal' || tool === 'browser' || tool === 'side-chat') {

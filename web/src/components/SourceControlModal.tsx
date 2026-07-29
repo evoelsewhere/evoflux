@@ -1,13 +1,6 @@
-/**
- * Source Control Modal — IntelliJ-style unified layout.
- *
- * Layout (top → bottom):
- *   1. Toolbar: branch info + push/pull/fetch actions
- *   2. Commit area: message textarea + amend + commit buttons (always visible)
- *   3. Main split: file list (left) + unified diff viewer (right)
- *   4. Bottom rail: collapsible branches / history / stash panels
- */
-import { useState, useEffect, useCallback, useMemo } from 'react'
+/** Local Git workspace with first-class changes, branches, history, and stash views. */
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   GitBranch,
   GitCommit,
@@ -30,10 +23,17 @@ import {
   PanelRightOpen,
   PanelRightClose,
   Copy,
+  FileDiff,
+  KeyRound,
+  RadioTower,
+  Tag,
+  Pencil,
+  UserRound,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { GitActionSurface, type GitAction } from '@/components/git/GitActionMenu'
 import { useToastStore } from '@/stores/useToastStore'
+import { queryKeys } from '@/queries'
 import {
   useGitChangesQuery,
   useGitConflictsQuery,
@@ -62,13 +62,34 @@ import {
   useGitDiscardMutation,
   useGitCommitMutation,
   useGitDiffViewQuery,
+  useGitRepositoryQuery,
+  useGitInitMutation,
+  useGitRemotesQuery,
+  useGitCreateRemoteMutation,
+  useGitUpdateRemoteMutation,
+  useGitDeleteRemoteMutation,
+  useGitTagsQuery,
+  useGitCreateTagMutation,
+  useGitDeleteTagMutation,
+  useGitPushTagsMutation,
+  useGitSetIdentityMutation,
+  useGitRevertMutation,
 } from '@/queries/useGitQuery'
-import type { CodingProject, ChangedFile } from '@/api/types'
+import type { CodingProject, ChangedFile, GitLogEntry } from '@/api/types'
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
 
 function repoLabel(path: string): string {
   return path.split(/[\\/]/).pop() || path
+}
+
+function fileName(path: string): string {
+  return path.split('/').pop() || path
+}
+
+function parentPath(path: string): string {
+  const segments = path.split('/')
+  return segments.length > 1 ? segments.slice(0, -1).join('/') : ''
 }
 
 function formatDate(iso: string): string {
@@ -150,50 +171,56 @@ interface DiffLine {
 
 /* ── Types ───────────────────────────────────────────────────────────────── */
 
-export interface SourceControlModalProps {
+export interface SourceControlPanelProps {
   open: boolean
-  onOpenChange: (open: boolean) => void
   workspace: string
   onWorkspaceChange?: (path: string) => void
   project?: CodingProject | null
   onFileOpenInEditor?: (path: string) => void
+  credentialLabel?: string | null
 }
 
-/* ── Main Modal ──────────────────────────────────────────────────────────── */
+/* ── Main panel ──────────────────────────────────────────────────────────── */
 
-export function SourceControlModal({
+export function SourceControlPanel({
   open,
-  onOpenChange,
   workspace,
   onWorkspaceChange,
   project,
-}: SourceControlModalProps) {
+  credentialLabel,
+}: SourceControlPanelProps) {
+  const queryClient = useQueryClient()
+  const observedRunningJob = useRef(false)
   const [showDiff, setShowDiff] = useState(true)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
 
-  // Bottom panel — single active tab
-  const [activePanel, setActivePanel] = useState<'branches' | 'history' | 'stash' | null>(null)
-  const togglePanel = (p: 'branches' | 'history' | 'stash') => setActivePanel((prev) => (prev === p ? null : p))
+  const [activeView, setActiveView] = useState<'changes' | 'branches' | 'history' | 'stash' | 'remotes' | 'tags'>('changes')
 
   // Core queries
+  const repositoryQuery = useGitRepositoryQuery(workspace, open)
   const changesQuery = useGitChangesQuery(workspace, open)
   const conflictsQuery = useGitConflictsQuery(workspace, open)
   const branchesQuery = useGitBranchesQuery(workspace, open)
-  const logQuery = useGitLogQuery(workspace, 0, undefined, open)
   const stashesQuery = useGitStashesQuery(workspace, open)
+  const remotesQuery = useGitRemotesQuery(workspace, open)
+  const tagsQuery = useGitTagsQuery(workspace, open)
   const jobsQuery = useGitJobsQuery(workspace, open)
 
   const branch = changesQuery.data?.branch
+  const isGitRepo = changesQuery.data?.is_git_repo !== false
   const ahead = changesQuery.data?.ahead ?? 0
   const behind = changesQuery.data?.behind ?? 0
   const files = useMemo(() => changesQuery.data?.files ?? [], [changesQuery.data?.files])
   const stagedFiles = files.filter((f) => f.staged)
   const unstagedFiles = files.filter((f) => !f.staged)
   const localBranches = (branchesQuery.data ?? []).filter((b) => !b.remote)
-  const commits = logQuery.data?.entries ?? []
   const stashes = stashesQuery.data ?? []
+  const remotes = useMemo(() => remotesQuery.data ?? [], [remotesQuery.data])
+  const tags = tagsQuery.data ?? []
+  const repository = repositoryQuery.data
   const runningJob = jobsQuery.data?.status === 'running' ? jobsQuery.data : null
-  const siblingRepos = project?.workspaces.filter((w) => w.path !== workspace) ?? []
+  const finishedJob = jobsQuery.data?.status !== 'running' ? jobsQuery.data : null
+  const projectWorkspaces = project?.workspaces ?? []
 
   // Conflict handling
   const conflicts = conflictsQuery.data
@@ -206,6 +233,29 @@ export function SourceControlModal({
   const pushMutation = useGitPushMutation(workspace)
   const pullMutation = useGitPullMutation(workspace)
 
+  useEffect(() => {
+    const job = jobsQuery.data
+    if (!job) return
+    if (job.status === 'running') {
+      observedRunningJob.current = true
+      return
+    }
+    if (!observedRunningJob.current) return
+    observedRunningJob.current = false
+    void Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.git.changes(workspace) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.git.branches(workspace) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.git.log(workspace, 0) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.git.conflicts(workspace) }),
+    ])
+    if (job.status === 'done') {
+      useToastStore.getState().push({
+        tone: 'success',
+        title: `${job.op.charAt(0).toUpperCase()}${job.op.slice(1)} complete`,
+      })
+    }
+  }, [jobsQuery.data, queryClient, workspace])
+
   // Auto-select first file when dialog opens
   useEffect(() => {
     if (open && !selectedPath && files.length > 0) {
@@ -214,81 +264,150 @@ export function SourceControlModal({
   }, [open, files, selectedPath])
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        showCloseButton={false}
+      <div
         aria-labelledby="sc-title"
-        className="flex !h-[88dvh] !max-h-[88dvh] !w-[88vw] !max-w-[88vw] flex-col gap-0 overflow-hidden !rounded-lg border-(--color-border) p-0"
+        className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-(--bg-page)"
       >
-        {/* ═══ Toolbar ═══════════════════════════════════════════════════════ */}
-        <div className="flex shrink-0 items-center gap-2 border-b border-(--color-border) bg-(--bg-key)/30 px-3 py-1.5">
-          <h2 id="sc-title" className="text-xs font-semibold text-(--color-text)">Source Control</h2>
-          <span className="text-[10px] text-(--color-text-subtle)">{repoLabel(workspace)}</span>
+        {/* Repository status and remote actions */}
+        <div className="flex min-h-11 shrink-0 items-center gap-2 overflow-x-auto border-b border-(--color-border) px-3 py-1.5">
+          <h2 id="sc-title" className="sr-only">Source Control repository actions</h2>
+          {projectWorkspaces.length > 1 ? (
+            <select
+              value={workspace}
+              onChange={(event) => onWorkspaceChange?.(event.target.value)}
+              className="h-7 max-w-40 shrink-0 rounded-md border border-(--color-border) bg-(--bg-card) px-2 text-[11px] font-medium text-(--color-text) outline-none focus:border-(--color-accent)"
+              aria-label="Repository"
+            >
+              {projectWorkspaces.map((item) => (
+                <option key={item.path} value={item.path}>
+                  {item.display_name || item.name || repoLabel(item.path)}
+                </option>
+              ))}
+            </select>
+          ) : null}
           {branch && (
-            <span className="flex items-center gap-1 rounded bg-(--bg-key) px-2 py-0.5 text-[11px] font-medium text-(--color-text-muted)">
-              <GitBranch size={11} /> {branch}
+            <span
+              className="flex max-w-44 shrink-0 items-center gap-1.5 rounded-md bg-(--bg-key) px-2 py-1 text-[11px] font-medium text-(--color-text-muted)"
+              title={repository?.upstream ? `${branch} tracks ${repository.upstream}` : branch}
+            >
+              <GitBranch size={12} />
+              <span className="truncate">{branch}</span>
+              {repository?.upstream && (
+                <span className="truncate text-[9px] text-(--color-text-subtle)">→ {repository.upstream}</span>
+              )}
             </span>
           )}
-          {ahead > 0 && <span className="text-[11px] font-medium text-green-400">↑{ahead}</span>}
-          {behind > 0 && <span className="text-[11px] font-medium text-amber-400">↓{behind}</span>}
+          {(ahead > 0 || behind > 0) && (
+            <span className="flex shrink-0 items-center gap-1.5 text-[10px] font-medium">
+              {ahead > 0 && <span className="text-(--color-success)">↑ {ahead}</span>}
+              {behind > 0 && <span className="text-(--color-warning)">↓ {behind}</span>}
+            </span>
+          )}
           {runningJob && (
-            <span className="flex items-center gap-1 text-[11px] text-(--color-text-muted)">
+            <span className="flex shrink-0 items-center gap-1 text-[11px] text-(--color-text-muted)">
               <Loader2 size={10} className="animate-spin" /> {runningJob.op}…
             </span>
           )}
-          <div className="flex-1" />
-          {siblingRepos.length > 0 && (
-            <div className="flex items-center gap-0.5">
-              {project!.workspaces.map((ws) => (
-                <button
-                  key={ws.path}
-                  type="button"
-                  onClick={() => onWorkspaceChange?.(ws.path)}
-                  title={ws.display_name || ws.name || ws.path}
-                  aria-label={ws.display_name || ws.name || 'Repository'}
-                  className={cn(
-                    'flex h-5 w-5 items-center justify-center rounded text-[9px] font-bold transition-colors',
-                    ws.path === workspace ? 'bg-(--color-accent) text-white' : 'text-(--color-text-muted) hover:bg-(--bg-key)',
-                  )}
-                >
-                  {(ws.display_name || ws.name || repoLabel(ws.path)).charAt(0).toUpperCase()}
-                </button>
-              ))}
-            </div>
+          {credentialLabel && (
+            <span
+              className="flex shrink-0 items-center gap-1 rounded-full bg-(--color-success-subtle) px-2 py-1 text-[10px] font-medium text-(--color-success)"
+              title={`${credentialLabel} will be reused for HTTPS fetch, pull, and push`}
+              aria-label="Saved Git credential ready"
+            >
+              <KeyRound size={10} />
+              Auth
+            </span>
           )}
-          <ToolbarButton icon={<RefreshCw size={13} />} label="Refresh" onClick={() => changesQuery.refetch()} />
-          <div className="mx-0.5 h-4 w-px bg-(--color-border)" />
+          {repository?.is_git_repo && (!repository.user_name || !repository.user_email) && (
+            <span
+              className="flex shrink-0 items-center gap-1 rounded-full bg-(--color-warning-subtle) px-2 py-1 text-[10px] font-medium text-(--color-warning)"
+              title="Configure git user.name and user.email before committing"
+            >
+              <UserRound size={10} />
+              Identity
+            </span>
+          )}
+          <div className="flex-1" />
+          <ToolbarButton icon={<RefreshCw size={12} />} label="Refresh" onClick={() => changesQuery.refetch()} compact />
           <ToolbarButton
-            icon={<CloudDownload size={13} />}
+            icon={<CloudDownload size={12} />}
             label="Fetch"
+            disabled={Boolean(runningJob) || !isGitRepo}
             onClick={() => fetchMutation.mutate(undefined, {
-              onSuccess: () => useToastStore.getState().push({ tone: 'success', title: 'Fetched' }),
-              onError: () => useToastStore.getState().push({ tone: 'error', title: 'Fetch failed' }),
+              onSuccess: () => {
+                observedRunningJob.current = true
+                useToastStore.getState().push({ tone: 'info', title: 'Fetch started' })
+              },
+              onError: (error) => useToastStore.getState().push({ tone: 'error', title: 'Fetch failed', description: error instanceof Error ? error.message : undefined }),
             })}
           />
           <ToolbarButton
-            icon={<CloudUpload size={13} />}
-            label="Push"
-            onClick={() => pushMutation.mutate(undefined, {
-              onSuccess: () => useToastStore.getState().push({ tone: 'success', title: 'Pushed' }),
-              onError: () => useToastStore.getState().push({ tone: 'error', title: 'Push failed' }),
-            })}
-            badge={ahead > 0 ? String(ahead) : undefined}
-          />
-          <ToolbarButton
-            icon={<RefreshCw size={13} />}
+            icon={<RefreshCw size={12} />}
             label="Pull"
+            disabled={Boolean(runningJob) || !isGitRepo}
             onClick={() => pullMutation.mutate(undefined, {
-              onSuccess: () => useToastStore.getState().push({ tone: 'success', title: 'Pulled' }),
-              onError: () => useToastStore.getState().push({ tone: 'error', title: 'Pull failed' }),
+              onSuccess: () => {
+                observedRunningJob.current = true
+                useToastStore.getState().push({ tone: 'info', title: 'Pull started' })
+              },
+              onError: (error) => useToastStore.getState().push({ tone: 'error', title: 'Pull failed', description: error instanceof Error ? error.message : undefined }),
             })}
             badge={behind > 0 ? String(behind) : undefined}
           />
-          <div className="mx-0.5 h-4 w-px bg-(--color-border)" />
-          <button type="button" onClick={() => onOpenChange(false)} className="flex h-6 w-6 items-center justify-center rounded text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)" aria-label="Close">
-            <X size={14} />
-          </button>
+          <ToolbarButton
+            icon={<CloudUpload size={12} />}
+            label="Push"
+            disabled={Boolean(runningJob) || !isGitRepo}
+            onClick={() => pushMutation.mutate(undefined, {
+              onSuccess: () => {
+                observedRunningJob.current = true
+                useToastStore.getState().push({ tone: 'info', title: 'Push started' })
+              },
+              onError: (error) => useToastStore.getState().push({ tone: 'error', title: 'Push failed', description: error instanceof Error ? error.message : undefined }),
+            })}
+            badge={ahead > 0 ? String(ahead) : undefined}
+          />
         </div>
+
+        {/* Primary local Git navigation */}
+        {isGitRepo && (
+          <div className="flex h-9 shrink-0 items-center border-b border-(--color-border) bg-(--bg-key)/20 px-2">
+            <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto" role="tablist" aria-label="Repository views">
+              <GitViewTab icon={<FileDiff size={12} />} label="Changes" count={files.length} active={activeView === 'changes'} onClick={() => setActiveView('changes')} />
+              <GitViewTab icon={<GitBranch size={12} />} label="Branches" count={localBranches.length} active={activeView === 'branches'} onClick={() => setActiveView('branches')} />
+              <GitViewTab icon={<History size={12} />} label="History" active={activeView === 'history'} onClick={() => setActiveView('history')} />
+              <GitViewTab icon={<Archive size={12} />} label="Stashes" count={stashes.length} active={activeView === 'stash'} onClick={() => setActiveView('stash')} />
+              <GitViewTab icon={<RadioTower size={12} />} label="Remotes" count={remotes.length} active={activeView === 'remotes'} onClick={() => setActiveView('remotes')} />
+              <GitViewTab icon={<Tag size={12} />} label="Tags" count={tags.length} active={activeView === 'tags'} onClick={() => setActiveView('tags')} />
+            </div>
+            {activeView === 'changes' && (
+              <button
+                type="button"
+                onClick={() => setShowDiff(!showDiff)}
+                className={cn(
+                  'flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[10px] font-medium transition-colors',
+                  showDiff
+                    ? 'bg-(--bg-key) text-(--color-text)'
+                    : 'text-(--color-text-muted) hover:bg-(--bg-key)',
+                )}
+                title={showDiff ? 'Hide diff' : 'Show diff'}
+                aria-label={showDiff ? 'Hide diff' : 'Show diff'}
+              >
+                {showDiff ? <PanelRightClose size={12} /> : <PanelRightOpen size={12} />}
+              </button>
+            )}
+          </div>
+        )}
+
+        {finishedJob?.status === 'error' && (
+          <div className="flex shrink-0 items-start gap-2 border-b border-(--color-error)/35 bg-(--color-error-subtle) px-3 py-2 text-[11px] text-(--color-error)">
+            <X size={13} className="mt-px shrink-0" />
+            <span className="min-w-0">
+              <strong className="font-semibold capitalize">{finishedJob.op} failed.</strong>{' '}
+              {finishedJob.error || 'Check the remote, branch, and credential configuration.'}
+            </span>
+          </div>
+        )}
 
         {/* ═══ Conflict Banner ═════════════════════════════════════════════ */}
         {hasConflicts && (
@@ -299,40 +418,13 @@ export function SourceControlModal({
           />
         )}
 
-        {/* ═══ Body: Left Rail + Side Panel + Main Content ══════════════ */}
+        {/* Active Git view */}
+        {!isGitRepo ? (
+          <GitInitPanel workspace={workspace} />
+        ) : (
         <div className="flex min-h-0 flex-1 overflow-hidden">
-
-          {/* Left icon rail (Activity Bar) */}
-          <div className="flex w-10 shrink-0 flex-col items-center gap-0.5 border-r border-(--color-border) bg-(--bg-key)/30 py-2">
-            <SideTab icon={<GitBranch size={15} />} label="Branches" count={localBranches.length} active={activePanel === 'branches'} onClick={() => togglePanel('branches')} />
-            <SideTab icon={<History size={15} />} label="History" count={commits.length} active={activePanel === 'history'} onClick={() => togglePanel('history')} />
-            <SideTab icon={<Archive size={15} />} label="Stash" count={stashes.length} active={activePanel === 'stash'} onClick={() => togglePanel('stash')} />
-            <div className="flex-1" />
-            <button
-              type="button"
-              onClick={() => setShowDiff(!showDiff)}
-              className={cn(
-                'flex h-8 w-8 items-center justify-center rounded transition-colors',
-                showDiff ? 'text-(--color-accent)' : 'text-(--color-text-muted) hover:text-(--color-text)',
-              )}
-              title={showDiff ? 'Hide diff' : 'Show diff'}
-              aria-label={showDiff ? 'Hide diff' : 'Show diff'}
-            >
-              {showDiff ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
-            </button>
-          </div>
-
-          {/* Side panel (collapsible) */}
-          {activePanel && (
-            <div className="w-64 shrink-0 overflow-hidden border-r border-(--color-border)">
-              {activePanel === 'branches' && <BranchesPanel workspace={workspace} />}
-              {activePanel === 'history' && <HistoryPanel workspace={workspace} />}
-              {activePanel === 'stash' && <StashPanel workspace={workspace} />}
-            </div>
-          )}
-
-          {/* Main content: File list + Diff */}
-          <div className="flex min-w-0 flex-1 overflow-hidden">
+          {activeView === 'changes' && (
+            <>
             <FileListPanel
               workspace={workspace}
               stagedFiles={stagedFiles}
@@ -342,23 +434,64 @@ export function SourceControlModal({
               onSelect={setSelectedPath}
             />
             {showDiff && <DiffPanel workspace={workspace} path={selectedPath} />}
-          </div>
+            </>
+          )}
+          {activeView === 'branches' && <BranchesPanel workspace={workspace} />}
+          {activeView === 'history' && <HistoryPanel workspace={workspace} />}
+          {activeView === 'stash' && <StashPanel workspace={workspace} />}
+          {activeView === 'remotes' && (
+            <RemotesPanel
+              workspace={workspace}
+              branch={repository?.branch ?? branch}
+              upstream={repository?.upstream ?? null}
+              userName={repository?.user_name ?? null}
+              userEmail={repository?.user_email ?? null}
+            />
+          )}
+          {activeView === 'tags' && <TagsPanel workspace={workspace} />}
         </div>
+        )}
 
-        {/* ═══ Commit Area (bottom) ═══════════════════════════════════════ */}
-        <CommitArea workspace={workspace} stagedCount={stagedFiles.length} />
-      </DialogContent>
-    </Dialog>
+        {isGitRepo && activeView === 'changes' && <CommitArea workspace={workspace} stagedCount={stagedFiles.length} />}
+      </div>
   )
 }
 
 /* ── Toolbar Button ──────────────────────────────────────────────────────── */
 
-function ToolbarButton({ icon, label, onClick, badge }: { icon: React.ReactNode; label: string; onClick: () => void; badge?: string }) {
+function ToolbarButton({ icon, label, onClick, badge, compact = false, disabled = false }: { icon: React.ReactNode; label: string; onClick: () => void; badge?: string; compact?: boolean; disabled?: boolean }) {
   return (
-    <button type="button" onClick={onClick} title={label} aria-label={label} className="relative flex h-6 items-center gap-1 rounded px-1.5 text-[11px] text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)">
+    <button type="button" onClick={onClick} disabled={disabled} title={label} aria-label={label} className="relative flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-(--color-border) bg-(--bg-card) px-2 text-[10px] font-medium text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text) disabled:pointer-events-none disabled:opacity-40">
       {icon}
+      {!compact && label}
       {badge && <span className="absolute -right-1 -top-1 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-(--color-accent) px-0.5 text-[8px] font-bold text-white">{badge}</span>}
+    </button>
+  )
+}
+
+function GitViewTab({ icon, label, count, active, onClick }: {
+  icon: React.ReactNode; label: string; count?: number; active: boolean; onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={cn(
+        'flex h-7 shrink-0 items-center gap-1.5 rounded-md px-1.5 text-[10px] font-medium transition-colors',
+        active
+          ? 'bg-(--bg-key) text-(--color-text) shadow-sm'
+          : 'text-(--color-text-muted) hover:bg-(--bg-key)/70 hover:text-(--color-text)',
+      )}
+    >
+      {icon}
+      {label}
+      {active && count !== undefined && (
+        <span className="rounded-full bg-(--color-accent)/15 px-1.5 py-px font-mono text-[9px] text-(--color-accent)">
+          {count}
+        </span>
+      )}
     </button>
   )
 }
@@ -367,7 +500,7 @@ function ToolbarButton({ icon, label, onClick, badge }: { icon: React.ReactNode;
 
 function ConflictBar({ conflicts, onContinue, onAbort }: { conflicts: { operation: string | null; files: { path: string; status: string }[] }; onContinue: () => void; onAbort: () => void }) {
   return (
-    <div className="flex items-center gap-3 border-b border-red-500/30 bg-red-500/10 px-3 py-1.5">
+    <div className="flex items-center gap-3 border-b border-red-500/35 bg-red-500/10 px-3 py-1.5">
       <span className="text-[11px] font-medium text-red-300">
         {conflicts.operation ? `${conflicts.operation} conflict` : 'Conflicts'} — {conflicts.files.length} file{conflicts.files.length !== 1 ? 's' : ''}
       </span>
@@ -378,7 +511,48 @@ function ConflictBar({ conflicts, onContinue, onAbort }: { conflicts: { operatio
   )
 }
 
-/* ── Commit Area — bottom bar style ─────────────────────────────────────── */
+function GitInitPanel({ workspace }: { workspace: string }) {
+  const [defaultBranch, setDefaultBranch] = useState('main')
+  const initMutation = useGitInitMutation(workspace)
+
+  return (
+    <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+      <div className="w-full max-w-sm rounded-xl border border-(--color-border) bg-(--bg-card) p-5 shadow-sm">
+        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-(--color-accent)/10 text-(--color-accent)">
+          <GitBranch size={18} />
+        </span>
+        <h3 className="mt-4 text-sm font-semibold text-(--color-text)">Initialize repository</h3>
+        <p className="mt-1 text-xs leading-5 text-(--color-text-muted)">
+          Start tracking this workspace with Git. Existing files will not be committed automatically.
+        </p>
+        <label className="mt-4 block text-[10px] font-medium uppercase tracking-wider text-(--color-text-subtle)">
+          Default branch
+        </label>
+        <div className="mt-1.5 flex gap-2">
+          <input
+            value={defaultBranch}
+            onChange={(event) => setDefaultBranch(event.target.value)}
+            className="h-8 min-w-0 flex-1 rounded-md border border-(--color-border) bg-(--bg-base) px-2.5 font-mono text-xs text-(--color-text) outline-none focus:border-(--color-accent)"
+          />
+          <button
+            type="button"
+            disabled={!defaultBranch.trim() || initMutation.isPending}
+            onClick={() => initMutation.mutate(defaultBranch.trim(), {
+              onSuccess: () => useToastStore.getState().push({ tone: 'success', title: 'Git repository initialized' }),
+              onError: (error) => useToastStore.getState().push({ tone: 'error', title: 'Initialization failed', description: error instanceof Error ? error.message : undefined }),
+            })}
+            className="flex h-8 items-center gap-1.5 rounded-md bg-(--color-accent) px-3 text-[11px] font-semibold text-white disabled:opacity-40"
+          >
+            {initMutation.isPending && <Loader2 size={11} className="animate-spin" />}
+            Initialize
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ── Commit composer ────────────────────────────────────────────────────── */
 
 function CommitArea({ workspace, stagedCount }: { workspace: string; stagedCount: number }) {
   const [message, setMessage] = useState('')
@@ -397,43 +571,39 @@ function CommitArea({ workspace, stagedCount }: { workspace: string; stagedCount
   }, [message, amend, commitMutation])
 
   return (
-    <div className="flex shrink-0 items-stretch gap-3 border-t border-(--color-border) bg-(--bg-key)/30 px-3 py-2">
-      {/* Message input */}
-      <textarea
-        value={message}
-        onChange={(e) => setMessage(e.target.value)}
-        onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleCommit() }}
-        placeholder="Commit message…  ⌘+Enter"
-        rows={2}
-        className="min-w-0 flex-1 resize-none rounded border border-(--color-border) bg-(--bg-base) px-2.5 py-1.5 text-xs text-(--color-text) outline-none placeholder:text-(--color-text-subtle) focus:border-(--color-accent)"
-      />
-
-      {/* Right: staged info + amend + commit button */}
-      <div className="flex w-40 shrink-0 flex-col items-end justify-between">
-        <div className="flex items-center gap-2">
+    <div className="shrink-0 border-t border-(--color-border) bg-(--bg-card) p-2">
+      <div className="overflow-hidden rounded-lg border border-(--color-border) bg-(--bg-base) focus-within:border-(--color-accent)">
+        <textarea
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleCommit() }}
+          placeholder={stagedCount > 0 ? 'Describe these changes…' : 'Stage files to create a commit'}
+          rows={2}
+          className="block w-full resize-none bg-transparent px-3 py-2 text-xs leading-5 text-(--color-text) outline-none placeholder:text-(--color-text-subtle)"
+        />
+        <div className="flex items-center gap-2 border-t border-(--color-border) bg-(--bg-key)/25 px-2 py-1.5">
+          <span className={cn(
+            'rounded-full px-2 py-0.5 text-[9px] font-medium',
+            stagedCount > 0 ? 'bg-(--color-accent)/15 text-(--color-accent)' : 'bg-(--bg-key) text-(--color-text-subtle)',
+          )}>
+            {stagedCount} staged
+          </span>
           <label className="flex items-center gap-1 text-[10px] text-(--color-text-muted)">
             <input type="checkbox" checked={amend} onChange={() => setAmend(!amend)} className="h-3 w-3 accent-(--color-accent)" />
             Amend
           </label>
-          <span className={cn(
-            'rounded px-1.5 py-0.5 text-[9px] font-medium',
-            stagedCount > 0 ? 'bg-(--color-accent)/20 text-(--color-accent)' : 'bg-(--bg-key) text-(--color-text-subtle)',
-          )}>
-            {stagedCount} staged
-          </span>
+          <span className="hidden text-[9px] text-(--color-text-subtle) sm:inline">⌘ Enter to commit</span>
+          <div className="flex-1" />
+          <button
+            type="button"
+            onClick={handleCommit}
+            disabled={commitMutation.isPending || (!message.trim() && !amend) || stagedCount === 0}
+            className="flex h-7 items-center gap-1.5 rounded-md bg-(--color-accent) px-3 text-[11px] font-semibold text-white transition-colors hover:bg-(--color-accent)/90 disabled:opacity-40"
+          >
+            {commitMutation.isPending ? <Loader2 size={11} className="animate-spin" /> : <GitCommit size={11} />}
+            Commit
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={handleCommit}
-          disabled={commitMutation.isPending || (!message.trim() && !amend) || stagedCount === 0}
-          className={cn(
-            'flex items-center gap-1.5 rounded px-4 py-1.5 text-[11px] font-medium transition-colors',
-            'bg-(--color-accent) text-white hover:bg-(--color-accent)/90 disabled:opacity-40',
-          )}
-        >
-          {commitMutation.isPending ? <Loader2 size={11} className="animate-spin" /> : <GitCommit size={11} />}
-          Commit
-        </button>
       </div>
     </div>
   )
@@ -454,30 +624,30 @@ function FileListPanel({ workspace, stagedFiles, unstagedFiles, isLoading, selec
   const filteredStaged = filtered.filter((f) => f.staged)
   const filteredUnstaged = filtered.filter((f) => !f.staged)
 
-  if (isLoading) return <div className="flex w-72 shrink-0 items-center justify-center border-r border-(--color-border)"><Loader2 size={14} className="animate-spin text-(--color-text-subtle)" /></div>
+  if (isLoading) return <div className="flex w-[42%] min-w-56 max-w-80 shrink-0 items-center justify-center border-r border-(--color-border)"><Loader2 size={14} className="animate-spin text-(--color-text-subtle)" /></div>
 
   return (
-    <div className="flex w-72 shrink-0 flex-col border-r border-(--color-border)">
-      <div className="flex items-center gap-1.5 border-b border-(--color-border) px-2 py-1">
+    <div className="flex w-[42%] min-w-56 max-w-80 shrink-0 flex-col border-r border-(--color-border) bg-(--bg-card)/30">
+      <div className="flex h-9 items-center gap-2 border-b border-(--color-border) px-2">
         <Search size={12} className="shrink-0 text-(--color-text-subtle)" />
-        <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter files…" className="flex-1 bg-transparent text-[11px] text-(--color-text) outline-none placeholder:text-(--color-text-subtle)" />
+        <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={`Filter ${allFiles.length} changed files…`} className="min-w-0 flex-1 bg-transparent text-[11px] text-(--color-text) outline-none placeholder:text-(--color-text-subtle)" />
         {filter && <button type="button" onClick={() => setFilter('')} className="text-(--color-text-subtle) hover:text-(--color-text)"><X size={10} /></button>}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {filteredStaged.length > 0 && (
           <div>
-            <div className="flex items-center justify-between px-2 py-1">
-              <span className="text-[10px] font-medium uppercase tracking-wide text-(--color-text-subtle)">Staged ({filteredStaged.length})</span>
-              <button type="button" onClick={() => unstageMutation.mutate(filteredStaged.map((f) => f.path))} className="text-[10px] text-(--color-text-muted) hover:text-(--color-text)" title="Unstage all" aria-label="Unstage all"><RotateCcw size={11} /></button>
+            <div className="sticky top-0 z-10 flex h-8 items-center justify-between bg-(--bg-card) px-3">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-(--color-text-subtle)">Staged · {filteredStaged.length}</span>
+              <button type="button" onClick={() => unstageMutation.mutate(filteredStaged.map((f) => f.path))} className="flex items-center gap-1 rounded px-1.5 py-1 text-[9px] text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)" title="Unstage all"><RotateCcw size={10} /> All</button>
             </div>
             {filteredStaged.map((file) => <FileRow key={file.path} file={file} selected={selectedPath === file.path} onSelect={() => onSelect(file.path)} onToggleStage={() => unstageMutation.mutate([file.path])} />)}
           </div>
         )}
         {filteredUnstaged.length > 0 && (
           <div>
-            <div className="flex items-center justify-between px-2 py-1">
-              <span className="text-[10px] font-medium uppercase tracking-wide text-(--color-text-subtle)">Changes ({filteredUnstaged.length})</span>
-              <button type="button" onClick={() => stageMutation.mutate(filteredUnstaged.map((f) => f.path))} className="text-[10px] text-(--color-text-muted) hover:text-(--color-text)" title="Stage all" aria-label="Stage all"><Plus size={11} /></button>
+            <div className="sticky top-0 z-10 flex h-8 items-center justify-between bg-(--bg-card) px-3">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-(--color-text-subtle)">Unstaged · {filteredUnstaged.length}</span>
+              <button type="button" onClick={() => stageMutation.mutate(filteredUnstaged.map((f) => f.path))} className="flex items-center gap-1 rounded px-1.5 py-1 text-[9px] text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)" title="Stage all"><Plus size={10} /> All</button>
             </div>
             {filteredUnstaged.map((file) => <FileRow key={file.path} file={file} selected={selectedPath === file.path} onSelect={() => onSelect(file.path)} onToggleStage={() => stageMutation.mutate([file.path])} onDiscard={file.status !== 'untracked' ? () => discardMutation.mutate([file.path]) : undefined} />)}
           </div>
@@ -492,20 +662,60 @@ function FileRow({ file, selected, onSelect, onToggleStage, onDiscard }: {
   file: ChangedFile; selected: boolean; onSelect: () => void; onToggleStage: () => void; onDiscard?: () => void
 }) {
   const badge = STATUS_BADGE[file.status] ?? { label: '?', cls: 'bg-(--bg-key) text-(--color-text-muted)' }
+  const name = fileName(file.path)
+  const parent = parentPath(file.path)
+  const actions: GitAction[] = [
+    { label: 'View diff', icon: <FileDiff size={12} />, onSelect },
+    {
+      label: file.staged ? 'Unstage file' : 'Stage file',
+      icon: file.staged ? <RotateCcw size={12} /> : <Plus size={12} />,
+      onSelect: onToggleStage,
+    },
+    {
+      label: 'Copy relative path',
+      icon: <Copy size={12} />,
+      onSelect: () => {
+        void navigator.clipboard.writeText(file.path)
+        useToastStore.getState().push({ tone: 'info', title: 'File path copied' })
+      },
+      separatorBefore: true,
+    },
+  ]
+  if (onDiscard) {
+    actions.push({
+      label: 'Discard changes',
+      icon: <RotateCcw size={12} />,
+      onSelect: onDiscard,
+      danger: true,
+      separatorBefore: true,
+    })
+  }
   return (
-    <div
-      className={cn('group flex items-center gap-1 px-2 py-[3px] text-left cursor-pointer', selected ? 'bg-(--color-accent)/10 border-l-2 border-(--color-accent)' : 'border-l-2 border-transparent hover:bg-(--bg-key)')}
+    <GitActionSurface
+      label={file.path}
+      actions={actions}
+      className={cn(
+        'group flex cursor-pointer items-center gap-2 border-l-2 px-2.5 py-1.5 text-left transition-colors',
+        selected
+          ? 'border-(--color-accent) bg-(--color-accent)/10'
+          : 'border-transparent hover:bg-(--bg-key)',
+      )}
       onClick={onSelect}
+      onOpenMenu={onSelect}
     >
-      <button type="button" onClick={(e) => { e.stopPropagation(); onToggleStage() }} className={cn('flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors', file.staged ? 'border-(--color-accent) bg-(--color-accent) text-white' : 'border-(--color-border) hover:border-(--color-accent)')} aria-label={file.staged ? 'Unstage' : 'Stage'}>
+      <button type="button" onClick={(e) => { e.stopPropagation(); onToggleStage() }} className={cn('flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors', file.staged ? 'border-(--color-accent) bg-(--color-accent) text-white' : 'border-(--color-border) bg-(--bg-base) hover:border-(--color-accent)')} aria-label={file.staged ? 'Unstage' : 'Stage'}>
         {file.staged && <Check size={10} />}
       </button>
-      <span className={cn('flex h-4 w-4 shrink-0 items-center justify-center rounded text-[9px] font-bold', badge.cls)}>{badge.label}</span>
-      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-(--color-text)">
-        {file.old_path ? <span title={`${file.old_path} → ${file.path}`}>{file.path.split('/').pop()}<span className="text-(--color-text-subtle)"> ← {file.old_path?.split('/').pop()}</span></span> : file.path}
+      <span className="min-w-0 flex-1">
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate font-mono text-[11px] font-medium text-(--color-text)" title={file.path}>{name}</span>
+          <span className={cn('flex h-4 min-w-4 shrink-0 items-center justify-center rounded px-1 text-[8px] font-bold', badge.cls)}>{badge.label}</span>
+        </span>
+        <span className="block truncate font-mono text-[9px] text-(--color-text-subtle)">
+          {file.old_path ? `${fileName(file.old_path)} → ${parent || '.'}` : parent || '.'}
+        </span>
       </span>
-      {onDiscard && <button type="button" onClick={(e) => { e.stopPropagation(); onDiscard() }} className="hidden shrink-0 rounded p-0.5 text-(--color-text-muted) hover:text-(--color-error) group-hover:flex" title="Discard" aria-label="Discard changes"><RotateCcw size={10} /></button>}
-    </div>
+    </GitActionSurface>
   )
 }
 
@@ -647,11 +857,11 @@ function DiffLine({ oldNum, newNum, type, content }: {
   return (
     <div className={cn('flex', bgCls)}>
       {/* Old line number */}
-      <span className="w-10 shrink-0 select-none border-r border-(--color-border)/30 px-1 text-right text-[9px] text-(--color-text-subtle)/60">
+      <span className="w-10 shrink-0 select-none border-r border-(--color-border)/35 px-1 text-right text-[9px] text-(--color-text-subtle)/60">
         {oldNum ?? ''}
       </span>
       {/* New line number */}
-      <span className="w-10 shrink-0 select-none border-r border-(--color-border)/30 px-1 text-right text-[9px] text-(--color-text-subtle)/60">
+      <span className="w-10 shrink-0 select-none border-r border-(--color-border)/35 px-1 text-right text-[9px] text-(--color-text-subtle)/60">
         {newNum ?? ''}
       </span>
       {/* Sign */}
@@ -661,40 +871,6 @@ function DiffLine({ oldNum, newNum, type, content }: {
       {/* Content */}
       <span className="min-w-0 flex-1 whitespace-pre px-1 text-(--color-text)">{content || ' '}</span>
     </div>
-  )
-}
-
-/* ── Side Tab — VS Code Activity Bar style ─────────────────────────────── */
-
-function SideTab({ icon, label, count, active, onClick }: {
-  icon: React.ReactNode; label: string; count: number; active: boolean; onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={label}
-      aria-label={label}
-      className={cn(
-        'relative flex h-8 w-8 items-center justify-center rounded transition-colors',
-        active
-          ? 'text-(--color-text)'
-          : 'text-(--color-text-muted) hover:text-(--color-text)',
-      )}
-    >
-      {icon}
-      {/* Badge */}
-      {count > 0 && (
-        <span className={cn(
-          'absolute -right-0.5 -top-0.5 flex h-3.5 min-w-[14px] items-center justify-center rounded-full px-0.5 text-[8px] font-bold',
-          active ? 'bg-(--color-accent) text-white' : 'bg-(--bg-key) text-(--color-text-subtle)',
-        )}>
-          {count}
-        </span>
-      )}
-      {/* Active indicator bar on left edge */}
-      {active && <div className="absolute left-0 top-1 bottom-1 w-0.5 rounded-full bg-(--color-accent)" />}
-    </button>
   )
 }
 
@@ -711,6 +887,7 @@ function BranchesPanel({ workspace }: { workspace: string }) {
   const rebaseMutation = useGitRebaseMutation(workspace)
   const branches = branchesQuery.data ?? []
   const localBranches = branches.filter((b) => !b.remote)
+  const remoteBranches = branches.filter((b) => b.remote && !b.name.endsWith('/HEAD'))
   const busy = checkoutMutation.isPending || createBranchMutation.isPending || deleteBranchMutation.isPending || mergeMutation.isPending || rebaseMutation.isPending
 
   if (branchesQuery.isLoading) {
@@ -760,24 +937,77 @@ function BranchesPanel({ workspace }: { workspace: string }) {
             <div className="flex items-center justify-center py-6 text-[11px] text-(--color-text-subtle)">No local branches</div>
           )}
         </div>
+
+        <div className="mt-2 border-t border-(--color-border)">
+          <div className="flex h-8 items-center gap-1.5 px-3">
+            <RadioTower size={11} className="text-(--color-text-subtle)" />
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-(--color-text-subtle)">Remote branches</span>
+            <span className="rounded bg-(--bg-key) px-1.5 py-0.5 text-[9px] text-(--color-text-subtle)">{remoteBranches.length}</span>
+          </div>
+          <div className="divide-y divide-(--color-border)/30">
+            {remoteBranches.map((remoteBranch) => (
+              <BranchRow
+                key={remoteBranch.name}
+                branch={remoteBranch}
+                busy={busy}
+                remote
+                onCheckout={() => checkoutMutation.mutate({ name: remoteBranch.name, track: true })}
+                onMerge={() => mergeMutation.mutate(remoteBranch.name)}
+                onRebase={() => rebaseMutation.mutate(remoteBranch.name)}
+              />
+            ))}
+            {remoteBranches.length === 0 && (
+              <div className="px-3 py-4 text-center text-[11px] text-(--color-text-subtle)">Fetch a remote to discover its branches</div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   )
 }
 
-function BranchRow({ branch, busy, onCheckout, onDelete, onMerge, onRebase }: {
+function BranchRow({ branch, busy, remote = false, onCheckout, onDelete, onMerge, onRebase }: {
   branch: { name: string; current: boolean; ahead: number; behind: number }
-  busy: boolean; onCheckout: () => void; onDelete: () => void; onMerge: () => void; onRebase: () => void
+  busy: boolean; remote?: boolean; onCheckout: () => void; onDelete?: () => void; onMerge?: () => void; onRebase?: () => void
 }) {
-  const [hovered, setHovered] = useState(false)
+  const actions: GitAction[] = []
+  if (!branch.current) {
+    actions.push({
+      label: remote ? 'Checkout and track' : 'Checkout branch',
+      icon: <ArrowRightLeft size={12} />,
+      onSelect: onCheckout,
+      disabled: busy,
+    })
+    if (onMerge) actions.push({ label: 'Merge into current branch', icon: <GitMerge size={12} />, onSelect: onMerge, disabled: busy })
+    if (onRebase) actions.push({ label: 'Rebase current branch onto this', icon: <GitBranch size={12} />, onSelect: onRebase, disabled: busy })
+  }
+  actions.push({
+    label: 'Copy branch name',
+    icon: <Copy size={12} />,
+    onSelect: () => {
+      void navigator.clipboard.writeText(branch.name)
+      useToastStore.getState().push({ tone: 'info', title: 'Branch name copied' })
+    },
+    separatorBefore: !branch.current,
+  })
+  if (onDelete) {
+    actions.push({
+      label: 'Delete local branch',
+      icon: <Trash2 size={12} />,
+      onSelect: onDelete,
+      disabled: busy,
+      danger: true,
+      separatorBefore: true,
+    })
+  }
   return (
-    <div
+    <GitActionSurface
+      label={branch.name}
+      actions={actions}
       className={cn('group flex items-center gap-2 px-3 py-1.5 transition-colors', branch.current ? 'bg-(--color-accent)/5' : 'hover:bg-(--bg-key)')}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
     >
       {/* Branch indicator */}
-      <div className={cn('h-3 w-3 shrink-0 rounded-full border-2', branch.current ? 'border-green-400 bg-green-400/30' : 'border-(--color-text-subtle)/40 bg-transparent')} />
+      <div className={cn('h-3 w-3 shrink-0 rounded-full border-2', branch.current ? 'border-green-400 bg-green-400/30' : 'border-(--color-text-subtle)/50 bg-transparent')} />
 
       {/* Branch name */}
       <span className={cn('min-w-0 flex-1 truncate font-mono text-[11px]', branch.current ? 'text-green-400 font-medium' : 'text-(--color-text)')}>
@@ -797,86 +1027,151 @@ function BranchRow({ branch, busy, onCheckout, onDelete, onMerge, onRebase }: {
         <span className="shrink-0 text-[10px] text-amber-400">↓{branch.behind}</span>
       )}
 
-      {/* Actions */}
-      {!branch.current && (
-        <div className={cn('flex shrink-0 items-center gap-0.5 transition-opacity', hovered ? 'opacity-100' : 'opacity-0')}>
-          <ActionBtn icon={<ArrowRightLeft size={10} />} label="Checkout" onClick={onCheckout} disabled={busy} />
-          <ActionBtn icon={<GitMerge size={10} />} label="Merge" onClick={onMerge} disabled={busy} />
-          <ActionBtn icon={<span className="text-[8px] font-bold">RB</span>} label="Rebase" onClick={onRebase} disabled={busy} />
-          <div className="mx-0.5 h-3 w-px bg-(--color-border)" />
-          <ActionBtn icon={<Trash2 size={10} />} label="Delete" onClick={onDelete} disabled={busy} danger />
-        </div>
-      )}
-    </div>
-  )
-}
-
-function ActionBtn({ icon, label, onClick, disabled, danger }: {
-  icon: React.ReactNode; label: string; onClick: () => void; disabled?: boolean; danger?: boolean
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      title={label}
-      aria-label={label}
-      className={cn(
-        'rounded px-1.5 py-0.5 text-[9px] transition-colors disabled:opacity-30',
-        danger
-          ? 'text-(--color-text-muted) hover:bg-red-500/10 hover:text-red-400'
-          : 'text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)',
-      )}
-    >
-      {icon}
-    </button>
+    </GitActionSurface>
   )
 }
 
 /* ── History Panel — Git Graph / SourceTree style ──────────────────────── */
 
-// Branch lane colors — each lane gets a distinct color
-const LANE_COLORS = [
-  { line: 'bg-blue-500', node: 'border-blue-500 bg-blue-500', dot: 'bg-blue-500' },
-  { line: 'bg-green-500', node: 'border-green-500 bg-green-500', dot: 'bg-green-500' },
-  { line: 'bg-purple-500', node: 'border-purple-500 bg-purple-500', dot: 'bg-purple-500' },
-  { line: 'bg-amber-500', node: 'border-amber-500 bg-amber-500', dot: 'bg-amber-500' },
-  { line: 'bg-pink-500', node: 'border-pink-500 bg-pink-500', dot: 'bg-pink-500' },
-  { line: 'bg-cyan-500', node: 'border-cyan-500 bg-cyan-500', dot: 'bg-cyan-500' },
-]
+const GRAPH_COLORS = ['#3b82f6', '#22c55e', '#a855f7', '#f59e0b', '#ec4899', '#06b6d4', '#f97316', '#14b8a6']
+const HISTORY_BATCH_SIZE = 100
+const HISTORY_ROW_HEIGHT = 48
+const GRAPH_LANE_GAP = 14
+const GRAPH_MAX_VISIBLE_LANES = 10
 
-const GRAPH_W = 52 // width of graph column
-const NODE_X = 20 // x position of main node center
-const NODE_R = 5  // node radius
-const LINE_W = 2  // line width
+interface GraphSegment {
+  from: number
+  to: number
+  color: number
+}
+
+interface CommitGraphLayout {
+  lane: number
+  hasIncoming: boolean
+  passThrough: GraphSegment[]
+  parentLanes: number[]
+  outgoingLanes: number[]
+  maxLanes: number
+}
+
+function buildCommitGraph(entries: GitLogEntry[]): CommitGraphLayout[] {
+  let lanes: string[] = []
+  return entries.map((entry) => {
+    let lane = lanes.indexOf(entry.sha)
+    const hasIncoming = lane >= 0
+    if (lane < 0) {
+      lane = lanes.length
+      lanes = [...lanes, entry.sha]
+    }
+    const incoming = [...lanes]
+    const outgoing = [...incoming]
+    outgoing.splice(lane, 1)
+
+    const parentLanes: number[] = []
+    let insertAt = lane
+    for (const parent of entry.parent_shas) {
+      let parentLane = outgoing.indexOf(parent)
+      if (parentLane < 0) {
+        outgoing.splice(insertAt, 0, parent)
+        parentLane = insertAt
+        insertAt += 1
+      }
+      parentLanes.push(parentLane)
+    }
+
+    const passThrough = incoming.flatMap<GraphSegment>((sha, from) => {
+      if (from === lane) return []
+      const to = outgoing.indexOf(sha)
+      return to < 0 ? [] : [{ from, to, color: from }]
+    })
+    lanes = outgoing
+    return {
+      lane,
+      hasIncoming,
+      passThrough,
+      parentLanes,
+      outgoingLanes: outgoing.map((_, index) => index),
+      maxLanes: Math.max(incoming.length, outgoing.length, 1),
+    }
+  })
+}
+
+function graphLaneX(lane: number, width: number): number {
+  return Math.min(12 + lane * GRAPH_LANE_GAP, width - 10)
+}
+
+function graphColor(lane: number): string {
+  return GRAPH_COLORS[lane % GRAPH_COLORS.length]
+}
+
+function refTone(ref: string): string {
+  if (ref.startsWith('HEAD')) return 'border-(--color-accent)/40 bg-(--color-accent)/12 text-(--color-accent)'
+  if (ref.startsWith('tag: ')) return 'border-green-500/35 bg-green-500/10 text-green-500'
+  if (ref.includes('/')) return 'border-purple-500/30 bg-purple-500/10 text-purple-500'
+  return 'border-amber-500/35 bg-amber-500/10 text-amber-500'
+}
 
 function HistoryPanel({ workspace }: { workspace: string }) {
-  const [page, setPage] = useState(0)
+  const [scope, setScope] = useState<'all' | 'current'>('all')
   const [expandedSha, setExpandedSha] = useState<string | null>(null)
-  const logQuery = useGitLogQuery(workspace, page)
+  const logQuery = useGitLogQuery(workspace, { allBranches: scope === 'all' })
   const logFilesQuery = useGitLogFilesQuery(workspace, expandedSha, !!expandedSha)
   const cherryPickMutation = useGitCherryPickMutation(workspace)
-  const entries = logQuery.data?.entries ?? []
-  const hasMore = logQuery.data?.has_more ?? false
+  const revertMutation = useGitRevertMutation(workspace)
+  const entries = useMemo(
+    () => logQuery.data?.pages.flatMap((page) => page.entries) ?? [],
+    [logQuery.data?.pages],
+  )
+  const graph = useMemo(() => buildCommitGraph(entries), [entries])
+  const graphWidth = useMemo(() => {
+    const lanes = Math.min(
+      GRAPH_MAX_VISIBLE_LANES,
+      Math.max(1, ...graph.map((row) => row.maxLanes)),
+    )
+    return 22 + lanes * GRAPH_LANE_GAP
+  }, [graph])
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      {/* Toolbar */}
-      <div className="flex shrink-0 items-center justify-between border-b border-(--color-border) px-3 py-1.5">
-        <div className="flex items-center gap-1.5">
-          <History size={12} className="text-(--color-text-subtle)" />
-          <span className="text-[11px] font-medium text-(--color-text)">History</span>
+      <div className="flex shrink-0 items-center gap-2 border-b border-(--color-border) px-3 py-2">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          <History size={13} className="shrink-0 text-(--color-text-subtle)" />
+          <span className="truncate text-[11px] font-semibold text-(--color-text)">Commit history</span>
+          {entries.length > 0 && (
+            <span className="shrink-0 rounded-full bg-(--bg-key) px-1.5 py-0.5 text-[9px] text-(--color-text-subtle)">
+              {entries.length}{logQuery.hasNextPage ? '+' : ''}
+            </span>
+          )}
         </div>
-        <div className="flex items-center gap-1">
-          <button type="button" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0} className="rounded px-2 py-0.5 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key) disabled:opacity-40">← Newer</button>
-          <span className="min-w-[30px] text-center text-[10px] text-(--color-text-subtle)">p{page + 1}</span>
-          <button type="button" onClick={() => setPage((p) => p + 1)} disabled={!hasMore} className="rounded px-2 py-0.5 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key) disabled:opacity-40">Older →</button>
+        <div className="flex shrink-0 rounded-md bg-(--bg-key) p-0.5" aria-label="History scope">
+          {(['all', 'current'] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => {
+                setScope(value)
+                setExpandedSha(null)
+              }}
+              className={cn(
+                'rounded px-2 py-1 text-[9px] font-medium transition-colors',
+                scope === value
+                  ? 'bg-(--bg-card) text-(--color-text) shadow-sm'
+                  : 'text-(--color-text-subtle) hover:text-(--color-text)',
+              )}
+            >
+              {value === 'all' ? 'All branches' : 'Current'}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Graph + Commit list */}
       {logQuery.isLoading ? (
         <div className="flex items-center justify-center py-8"><Loader2 size={14} className="animate-spin text-(--color-text-subtle)" /></div>
+      ) : logQuery.isError ? (
+        <div className="flex flex-col items-center justify-center gap-2 py-8 text-[11px] text-(--color-text-subtle)">
+          <span>Unable to load commit history</span>
+          <button type="button" onClick={() => void logQuery.refetch()} className="rounded-md border border-(--color-border) px-2 py-1 text-(--color-text-muted) hover:bg-(--bg-key)">Retry</button>
+        </div>
       ) : entries.length === 0 ? (
         <div className="flex items-center justify-center py-8 text-[11px] text-(--color-text-subtle)">No commits</div>
       ) : (
@@ -885,11 +1180,10 @@ function HistoryPanel({ workspace }: { workspace: string }) {
             <CommitRow
               key={entry.sha}
               entry={entry}
-              idx={idx}
-              isHead={idx === 0 && page === 0}
+              layout={graph[idx]}
+              graphWidth={graphWidth}
+              isHead={entry.refs.some((ref) => ref.startsWith('HEAD'))}
               isExpanded={expandedSha === entry.sha}
-              isLast={idx === entries.length - 1}
-              total={entries.length}
               onToggle={() => setExpandedSha(expandedSha === entry.sha ? null : entry.sha)}
               onCherryPick={() => cherryPickMutation.mutate([entry.sha], {
                 onSuccess: (data) => {
@@ -897,11 +1191,33 @@ function HistoryPanel({ workspace }: { workspace: string }) {
                   else useToastStore.getState().push({ tone: 'error', title: 'Conflicts', description: data.conflicts.join(', ') })
                 },
               })}
+              onRevert={() => revertMutation.mutate(entry.sha, {
+                onSuccess: (data) => {
+                  if (data.success) useToastStore.getState().push({ tone: 'success', title: 'Commit reverted' })
+                  else useToastStore.getState().push({ tone: 'error', title: 'Revert needs resolution', description: data.conflicts.join(', ') })
+                },
+                onError: (error) => useToastStore.getState().push({ tone: 'error', title: 'Unable to revert commit', description: error instanceof Error ? error.message : undefined }),
+              })}
               filesQuery={logFilesQuery}
               isFilesLoading={logFilesQuery.isLoading && expandedSha === entry.sha}
               files={expandedSha === entry.sha ? (logFilesQuery.data ?? []) : []}
             />
           ))}
+          <div className="flex items-center justify-center border-t border-(--color-border)/70 px-3 py-3">
+            {logQuery.hasNextPage ? (
+              <button
+                type="button"
+                onClick={() => void logQuery.fetchNextPage()}
+                disabled={logQuery.isFetchingNextPage}
+                className="inline-flex min-w-40 items-center justify-center gap-1.5 rounded-md border border-(--color-border) bg-(--bg-card) px-3 py-1.5 text-[10px] font-medium text-(--color-text-muted) shadow-sm hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-60"
+              >
+                {logQuery.isFetchingNextPage && <Loader2 size={11} className="animate-spin" />}
+                Load {HISTORY_BATCH_SIZE} older commits
+              </button>
+            ) : (
+              <span className="text-[9px] text-(--color-text-subtle)">Complete history · {entries.length} commits loaded</span>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -911,109 +1227,120 @@ function HistoryPanel({ workspace }: { workspace: string }) {
 /* ── Single Commit Row with Graph ────────────────────────────────────────── */
 
 function CommitRow({
-  entry, idx, isHead, isExpanded, isLast,
-  onToggle, onCherryPick, isFilesLoading, files,
+  entry, layout, graphWidth, isHead, isExpanded,
+  onToggle, onCherryPick, onRevert, isFilesLoading, files,
 }: {
-  entry: { sha: string; short_sha: string; author: string; date: string; message: string }
-  idx: number; isHead: boolean; isExpanded: boolean; isLast: boolean; total: number
-  onToggle: () => void; onCherryPick: () => void
+  entry: GitLogEntry
+  layout: CommitGraphLayout
+  graphWidth: number
+  isHead: boolean
+  isExpanded: boolean
+  onToggle: () => void; onCherryPick: () => void; onRevert: () => void
   filesQuery: ReturnType<typeof useGitLogFilesQuery>
   isFilesLoading: boolean
   files: { path: string; status: string }[]
 }) {
-  const isMerge = entry.message.toLowerCase().startsWith('merge')
-  const color = isMerge ? LANE_COLORS[1] : LANE_COLORS[0]
-  const ROW_H = 36 // row height in px
+  const isMerge = entry.parent_shas.length > 1
+  const nodeX = graphLaneX(layout.lane, graphWidth)
+  const actions: GitAction[] = [
+    {
+      label: isExpanded ? 'Hide changed files' : 'Show changed files',
+      icon: <FileDiff size={12} />,
+      onSelect: onToggle,
+    },
+    {
+      label: 'Copy full commit SHA',
+      icon: <Copy size={12} />,
+      onSelect: () => {
+        void navigator.clipboard.writeText(entry.sha)
+        useToastStore.getState().push({ tone: 'info', title: 'SHA copied' })
+      },
+      separatorBefore: true,
+    },
+    {
+      label: 'Cherry-pick commit',
+      icon: <GitCommit size={12} />,
+      onSelect: onCherryPick,
+    },
+    {
+      label: 'Revert commit',
+      icon: <RotateCcw size={12} />,
+      onSelect: onRevert,
+      separatorBefore: true,
+    },
+  ]
 
   return (
     <div>
       {/* ── Commit Row ── */}
-      <div
+      <GitActionSurface
+        label={`${entry.short_sha} ${entry.message}`}
+        actions={actions}
         className={cn(
           'group flex cursor-pointer transition-colors',
           isExpanded ? 'bg-(--bg-key)' : 'hover:bg-(--bg-key)/50',
         )}
-        style={{ height: ROW_H }}
+        style={{ minHeight: HISTORY_ROW_HEIGHT }}
         onClick={onToggle}
       >
-        {/* ── Graph Column ── */}
-        <div className="relative shrink-0" style={{ width: GRAPH_W }}>
-          {/* Vertical line: top half */}
-          {idx > 0 && (
-            <div
-              className={cn('absolute top-0', color.line)}
-              style={{ left: NODE_X - LINE_W / 2, width: LINE_W, height: ROW_H / 2 }}
-            />
-          )}
-          {/* Vertical line: bottom half */}
-          {!isLast && (
-            <div
-              className={cn('absolute', color.line)}
-              style={{ left: NODE_X - LINE_W / 2, width: LINE_W, top: ROW_H / 2, height: ROW_H / 2 }}
-            />
-          )}
-
-          {/* Merge: horizontal branch connector */}
-          {isMerge && (
-            <>
-              {/* Horizontal line from main to branch */}
-              <div
-                className="absolute bg-green-500"
-                style={{ left: NODE_X + NODE_R + 2, top: ROW_H / 2 - LINE_W / 2, width: 14, height: LINE_W }}
+        <svg
+          className="shrink-0 overflow-visible"
+          width={graphWidth}
+          height={HISTORY_ROW_HEIGHT}
+          viewBox={`0 0 ${graphWidth} ${HISTORY_ROW_HEIGHT}`}
+          aria-hidden="true"
+        >
+          {layout.passThrough.map((segment, index) => {
+            const fromX = graphLaneX(segment.from, graphWidth)
+            const toX = graphLaneX(segment.to, graphWidth)
+            return (
+              <path
+                key={`pass-${segment.from}-${segment.to}-${index}`}
+                d={`M ${fromX} 0 C ${fromX} 14 ${toX} 34 ${toX} ${HISTORY_ROW_HEIGHT}`}
+                fill="none"
+                stroke={graphColor(segment.color)}
+                strokeWidth="2"
               />
-              {/* Vertical branch line */}
-              <div
-                className="absolute bg-green-500"
-                style={{ left: NODE_X + NODE_R + 14 - LINE_W / 2, top: ROW_H / 2 - 10, width: LINE_W, height: 20 }}
-              />
-              {/* Small dot at branch end */}
-              <div
-                className="absolute rounded-full bg-green-500"
-                style={{ left: NODE_X + NODE_R + 14 - 3, top: ROW_H / 2 - 3, width: 6, height: 6 }}
-              />
-            </>
+            )
+          })}
+          {layout.hasIncoming && (
+            <path d={`M ${nodeX} 0 L ${nodeX} 24`} stroke={graphColor(layout.lane)} strokeWidth="2" />
           )}
+          {layout.parentLanes.map((parentLane, index) => {
+            const parentX = graphLaneX(parentLane, graphWidth)
+            return (
+              <path
+                key={`${entry.sha}-parent-${index}`}
+                d={`M ${nodeX} 24 C ${nodeX} 34 ${parentX} 34 ${parentX} ${HISTORY_ROW_HEIGHT}`}
+                fill="none"
+                stroke={graphColor(parentLane)}
+                strokeWidth="2"
+              />
+            )
+          })}
+          <circle
+            cx={nodeX}
+            cy="24"
+            r={isHead ? 6 : isMerge ? 5 : 4}
+            fill={isHead ? 'var(--color-accent)' : 'var(--bg-card)'}
+            stroke={isHead ? 'var(--color-accent)' : graphColor(layout.lane)}
+            strokeWidth={isMerge ? 3 : 2}
+          />
+          {isHead && <circle cx={nodeX} cy="24" r="2" fill="white" />}
+        </svg>
 
-          {/* ── Commit Node ── */}
-          <div
-            className="absolute flex items-center justify-center"
-            style={{ left: NODE_X - NODE_R, top: ROW_H / 2 - NODE_R, width: NODE_R * 2, height: NODE_R * 2 }}
-          >
-            {isHead ? (
-              // HEAD: filled accent node with ring
-              <div className="relative flex items-center justify-center">
-                <div className="h-[14px] w-[14px] rounded-full bg-(--color-accent) shadow-[0_0_0_3px] shadow-(--bg-base)" />
-                <div className="absolute h-[6px] w-[6px] rounded-full bg-white" />
-              </div>
-            ) : isMerge ? (
-              // Merge: larger node with inner dot
-              <div className="relative flex items-center justify-center">
-                <div className={cn('h-[12px] w-[12px] rounded-full border-2', color.node)} />
-                <div className="absolute h-[4px] w-[4px] rounded-full bg-white" />
-              </div>
-            ) : (
-              // Normal: small filled dot
-              <div className={cn('h-[8px] w-[8px] rounded-full', color.dot)} />
-            )}
-          </div>
-        </div>
-
-        {/* ── Commit Info ── */}
-        <div className="min-w-0 flex-1 border-l border-transparent px-2 py-1">
-          <div className="flex items-center gap-1.5">
+        <div className="min-w-0 flex-1 py-1.5 pr-1">
+          <div className="flex min-w-0 items-center gap-1.5">
             <p className="min-w-0 flex-1 truncate text-[11px] font-medium text-(--color-text) leading-tight">
               {entry.message}
             </p>
-            {isHead && (
-              <span className="shrink-0 rounded bg-(--color-accent)/20 px-1.5 py-0.5 text-[8px] font-bold text-(--color-accent) leading-none">HEAD</span>
-            )}
             {isMerge && (
               <span className="shrink-0 rounded bg-green-500/20 px-1.5 py-0.5 text-[8px] font-medium text-green-400 leading-none">merge</span>
             )}
           </div>
-          <div className="mt-0.5 flex items-center gap-1.5 text-[9px] text-(--color-text-subtle)">
+          <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[9px] text-(--color-text-subtle)">
             <span
-              className="cursor-pointer rounded bg-(--bg-key) px-1 py-0.5 font-mono text-[8px] text-(--color-accent) hover:bg-(--color-accent)/20 transition-colors"
+              className="cursor-pointer rounded bg-(--bg-key) px-1 py-0.5 font-mono text-[8px] text-(--color-accent) transition-colors hover:bg-(--color-accent)/20"
               onClick={(e) => {
                 e.stopPropagation()
                 void navigator.clipboard.writeText(entry.sha)
@@ -1025,43 +1352,39 @@ function CommitRow({
             </span>
             <span>{entry.author}</span>
             <span>·</span>
-            <span>{formatDate(entry.date)}</span>
+            <span className="shrink-0">{formatDate(entry.date)}</span>
+            {entry.refs.slice(0, 3).map((ref) => (
+              <span
+                key={ref}
+                className={cn('max-w-32 shrink truncate rounded border px-1 py-0.5 font-mono text-[8px]', refTone(ref))}
+                title={ref}
+              >
+                {ref}
+              </span>
+            ))}
+            {entry.refs.length > 3 && (
+              <span className="shrink-0 text-[8px] text-(--color-text-subtle)">+{entry.refs.length - 3}</span>
+            )}
           </div>
         </div>
 
-        {/* ── Actions (hover) ── */}
-        <div className="flex shrink-0 items-center gap-0.5 pr-2 opacity-0 transition-opacity group-hover:opacity-100">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              void navigator.clipboard.writeText(entry.sha)
-              useToastStore.getState().push({ tone: 'info', title: 'SHA copied' })
-            }}
-            className="rounded p-1 text-[9px] text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)"
-            title="Copy SHA"
-            aria-label="Copy SHA"
-          >
-            <Copy size={10} />
-          </button>
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onCherryPick() }}
-            className="rounded p-1 text-[9px] text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)"
-            title="Cherry-pick"
-            aria-label="Cherry-pick commit"
-          >
-            <GitCommit size={10} />
-          </button>
-        </div>
-      </div>
+      </GitActionSurface>
 
       {/* ── Expanded: files changed ── */}
       {isExpanded && (
         <div className="flex">
-          {/* Spacer for graph column */}
-          <div className="shrink-0" style={{ width: GRAPH_W }} />
-          {/* Files list */}
+          <div className="relative shrink-0" style={{ width: graphWidth }}>
+            {layout.outgoingLanes.map((lane) => (
+              <span
+                key={lane}
+                className="absolute inset-y-0 w-0.5"
+                style={{
+                  left: graphLaneX(lane, graphWidth) - 1,
+                  backgroundColor: graphColor(lane),
+                }}
+              />
+            ))}
+          </div>
           <div className="min-w-0 flex-1 border-t border-(--color-border)/50 bg-(--bg-key)/30 px-3 py-2">
             {isFilesLoading ? (
               <div className="flex items-center gap-1.5 py-1 text-[10px] text-(--color-text-subtle)">
@@ -1141,21 +1464,31 @@ function StashPanel({ workspace }: { workspace: string }) {
 
         {/* Stash list */}
         <div className="divide-y divide-(--color-border)/30">
-          {stashes.map((stash) => (
-            <div key={stash.index} className="group flex items-center gap-2 px-3 py-1.5 hover:bg-(--bg-key)">
+          {stashes.map((stash) => {
+            const actions: GitAction[] = [
+              { label: 'Apply stash', icon: <Play size={12} />, onSelect: () => applyMutation.mutate(stash.index), disabled: busy },
+              { label: 'Pop stash', icon: <ArrowUpFromLine size={12} />, onSelect: () => popMutation.mutate(stash.index), disabled: busy },
+              {
+                label: 'Copy stash SHA',
+                icon: <Copy size={12} />,
+                onSelect: () => {
+                  void navigator.clipboard.writeText(stash.sha)
+                  useToastStore.getState().push({ tone: 'info', title: 'Stash SHA copied' })
+                },
+                separatorBefore: true,
+              },
+              { label: 'Drop stash', icon: <Trash2 size={12} />, onSelect: () => dropMutation.mutate(stash.index), disabled: busy, danger: true, separatorBefore: true },
+            ]
+            return (
+            <GitActionSurface key={stash.index} label={stash.message} actions={actions} className="flex items-center gap-2 px-3 py-1.5 hover:bg-(--bg-key)">
               <Archive size={11} className="shrink-0 text-(--color-text-subtle)" />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[11px] text-(--color-text)">{stash.message}</p>
                 <p className="font-mono text-[9px] text-(--color-text-subtle)">{stash.sha}</p>
               </div>
-              <div className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                <ActionBtn icon={<Play size={10} />} label="Apply stash" onClick={() => applyMutation.mutate(stash.index)} disabled={busy} />
-                <ActionBtn icon={<ArrowUpFromLine size={10} />} label="Pop stash" onClick={() => popMutation.mutate(stash.index)} disabled={busy} />
-                <div className="mx-0.5 h-3 w-px bg-(--color-border)" />
-                <ActionBtn icon={<Trash2 size={10} />} label="Drop stash" onClick={() => dropMutation.mutate(stash.index)} disabled={busy} danger />
-              </div>
-            </div>
-          ))}
+            </GitActionSurface>
+            )
+          })}
           {stashes.length === 0 && (
             <div className="flex flex-col items-center justify-center py-8 text-center">
               <Archive size={20} className="mb-2 text-(--color-text-subtle) opacity-40" />
@@ -1163,6 +1496,410 @@ function StashPanel({ workspace }: { workspace: string }) {
             </div>
           )}
         </div>
+      </div>
+    </div>
+  )
+}
+
+/* ── Remotes Panel ───────────────────────────────────────────────────────── */
+
+function RemotesPanel({
+  workspace,
+  branch,
+  upstream,
+  userName,
+  userEmail,
+}: {
+  workspace: string
+  branch: string | null | undefined
+  upstream: string | null
+  userName: string | null
+  userEmail: string | null
+}) {
+  const remotesQuery = useGitRemotesQuery(workspace)
+  const createMutation = useGitCreateRemoteMutation(workspace)
+  const updateMutation = useGitUpdateRemoteMutation(workspace)
+  const deleteMutation = useGitDeleteRemoteMutation(workspace)
+  const fetchMutation = useGitFetchMutation(workspace)
+  const pullMutation = useGitPullMutation(workspace)
+  const pushMutation = useGitPushMutation(workspace)
+  const identityMutation = useGitSetIdentityMutation(workspace)
+  const remotes = useMemo(() => remotesQuery.data ?? [], [remotesQuery.data])
+  const [showForm, setShowForm] = useState(false)
+  const [editingName, setEditingName] = useState<string | null>(null)
+  const [name, setName] = useState('origin')
+  const [url, setUrl] = useState('')
+  const [selectedRemote, setSelectedRemote] = useState('origin')
+  const [prune, setPrune] = useState(true)
+  const [rebase, setRebase] = useState(false)
+  const [forceWithLease, setForceWithLease] = useState(false)
+  const [showIdentity, setShowIdentity] = useState(false)
+  const [identityName, setIdentityName] = useState(userName ?? '')
+  const [identityEmail, setIdentityEmail] = useState(userEmail ?? '')
+  const busy = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending
+
+  useEffect(() => {
+    if (remotes.length > 0 && !remotes.some((item) => item.name === selectedRemote)) {
+      setSelectedRemote(remotes[0].name) // eslint-disable-line react-hooks/set-state-in-effect -- synchronize remote selection with server data
+    }
+  }, [remotes, selectedRemote])
+
+  useEffect(() => {
+    if (!showIdentity) {
+      setIdentityName(userName ?? '') // eslint-disable-line react-hooks/set-state-in-effect -- synchronize form with repository config
+      setIdentityEmail(userEmail ?? '')
+    }
+  }, [showIdentity, userEmail, userName])
+
+  const resetForm = () => {
+    setShowForm(false)
+    setEditingName(null)
+    setName('origin')
+    setUrl('')
+  }
+
+  const submitRemote = () => {
+    if (!name.trim() || !url.trim()) return
+    const input = { name: editingName ?? name.trim(), url: url.trim() }
+    const options = {
+      onSuccess: () => {
+        useToastStore.getState().push({ tone: 'success', title: editingName ? 'Remote updated' : 'Remote added' })
+        resetForm()
+      },
+      onError: (error: Error) => useToastStore.getState().push({ tone: 'error' as const, title: 'Remote operation failed', description: error.message }),
+    }
+    if (editingName) updateMutation.mutate(input, options)
+    else createMutation.mutate(input, options)
+  }
+
+  const startSync = (
+    kind: 'fetch' | 'pull' | 'push',
+    action: () => void,
+  ) => {
+    action()
+    useToastStore.getState().push({ tone: 'info', title: `${kind.charAt(0).toUpperCase()}${kind.slice(1)} started` })
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="shrink-0 border-b border-(--color-border) bg-(--bg-card)/30 p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold text-(--color-text)">Remote sync</p>
+            <p className="mt-0.5 truncate text-[10px] text-(--color-text-subtle)">
+              {upstream ? `Tracking ${upstream}` : branch ? `${branch} has no upstream yet` : 'Choose a branch before pushing'}
+            </p>
+          </div>
+          <select
+            value={selectedRemote}
+            onChange={(event) => setSelectedRemote(event.target.value)}
+            disabled={remotes.length === 0}
+            className="h-8 min-w-28 rounded-md border border-(--color-border) bg-(--bg-card) px-2 text-[11px] text-(--color-text) outline-none"
+            aria-label="Remote for sync"
+          >
+            {remotes.length === 0 && <option value="origin">No remotes</option>}
+            {remotes.map((remote) => <option key={remote.name} value={remote.name}>{remote.name}</option>)}
+          </select>
+          <button
+            type="button"
+            disabled={remotes.length === 0 || fetchMutation.isPending}
+            onClick={() => startSync('fetch', () => fetchMutation.mutate({ remote: selectedRemote, prune }))}
+            className="flex h-8 items-center gap-1.5 rounded-md border border-(--color-border) bg-(--bg-card) px-2.5 text-[10px] font-medium text-(--color-text-muted) hover:bg-(--bg-key) disabled:opacity-40"
+          >
+            <CloudDownload size={12} /> Fetch
+          </button>
+          <button
+            type="button"
+            disabled={remotes.length === 0 || pullMutation.isPending}
+            onClick={() => startSync('pull', () => pullMutation.mutate({ remote: selectedRemote, rebase }))}
+            className="flex h-8 items-center gap-1.5 rounded-md border border-(--color-border) bg-(--bg-card) px-2.5 text-[10px] font-medium text-(--color-text-muted) hover:bg-(--bg-key) disabled:opacity-40"
+          >
+            <RefreshCw size={12} /> Pull
+          </button>
+          <button
+            type="button"
+            disabled={remotes.length === 0 || !branch || pushMutation.isPending}
+            onClick={() => startSync('push', () => pushMutation.mutate({
+              remote: selectedRemote,
+              branch: branch ?? undefined,
+              setUpstream: !upstream,
+              forceWithLease,
+            }))}
+            className={cn(
+              'flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[10px] font-semibold text-white disabled:opacity-40',
+              forceWithLease ? 'bg-(--color-warning)' : 'bg-(--color-accent)',
+            )}
+          >
+            <CloudUpload size={12} /> {forceWithLease ? 'Force push' : 'Push'}
+          </button>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-3 text-[10px] text-(--color-text-muted)">
+          <label className="flex items-center gap-1.5"><input type="checkbox" checked={prune} onChange={(event) => setPrune(event.target.checked)} className="accent-(--color-accent)" /> Prune stale branches on fetch</label>
+          <label className="flex items-center gap-1.5"><input type="checkbox" checked={rebase} onChange={(event) => setRebase(event.target.checked)} className="accent-(--color-accent)" /> Rebase on pull</label>
+          <label className="flex items-center gap-1.5 text-(--color-warning)"><input type="checkbox" checked={forceWithLease} onChange={(event) => setForceWithLease(event.target.checked)} className="accent-(--color-warning)" /> Force with lease</label>
+          <span className="h-3 w-px bg-(--color-border)" />
+          <span className="flex min-w-0 items-center gap-1.5">
+            <UserRound size={10} />
+            <span className="truncate">{userName && userEmail ? `${userName} <${userEmail}>` : 'Commit identity not configured'}</span>
+          </span>
+          <button type="button" onClick={() => setShowIdentity(!showIdentity)} className="rounded px-1.5 py-0.5 text-(--color-accent) hover:bg-(--bg-key)">Edit identity</button>
+        </div>
+        {showIdentity && (
+          <div className="mt-2 grid grid-cols-2 gap-2 rounded-lg border border-(--color-border) bg-(--bg-card) p-2">
+            <input value={identityName} onChange={(event) => setIdentityName(event.target.value)} placeholder="Git user name" className="h-8 min-w-0 rounded-md border border-(--color-border) bg-(--bg-base) px-2 text-[11px] text-(--color-text) outline-none focus:border-(--color-accent)" />
+            <input value={identityEmail} onChange={(event) => setIdentityEmail(event.target.value)} placeholder="Git email" className="h-8 min-w-0 rounded-md border border-(--color-border) bg-(--bg-base) px-2 text-[11px] text-(--color-text) outline-none focus:border-(--color-accent)" />
+            <div className="col-span-2 flex justify-end gap-1">
+              <button type="button" onClick={() => setShowIdentity(false)} className="h-7 rounded-md px-2 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key)">Cancel</button>
+              <button
+                type="button"
+                disabled={!identityName.trim() || !identityEmail.trim() || identityMutation.isPending}
+                onClick={() => identityMutation.mutate(
+                  { name: identityName.trim(), email: identityEmail.trim() },
+                  {
+                    onSuccess: () => { setShowIdentity(false); useToastStore.getState().push({ tone: 'success', title: 'Git identity saved for this repository' }) },
+                    onError: (error) => useToastStore.getState().push({ tone: 'error', title: 'Unable to save Git identity', description: error instanceof Error ? error.message : undefined }),
+                  },
+                )}
+                className="h-7 rounded-md bg-(--color-accent) px-3 text-[10px] font-semibold text-white disabled:opacity-40"
+              >
+                Save identity
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-(--color-border) px-3">
+        <RadioTower size={12} className="text-(--color-text-subtle)" />
+        <span className="text-[11px] font-semibold text-(--color-text)">Configured remotes</span>
+        <span className="rounded-full bg-(--bg-key) px-1.5 py-0.5 text-[9px] text-(--color-text-subtle)">{remotes.length}</span>
+        <div className="flex-1" />
+        <button
+          type="button"
+          onClick={() => { resetForm(); setShowForm(true) }}
+          className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium text-(--color-accent) hover:bg-(--bg-key)"
+        >
+          <Plus size={11} /> Add remote
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="grid shrink-0 grid-cols-[minmax(80px,0.35fr)_minmax(0,1fr)_auto] gap-2 border-b border-(--color-border) bg-(--bg-key)/20 p-3">
+          <input
+            value={name}
+            disabled={Boolean(editingName)}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="origin"
+            className="h-8 rounded-md border border-(--color-border) bg-(--bg-base) px-2 text-[11px] text-(--color-text) outline-none focus:border-(--color-accent) disabled:opacity-60"
+          />
+          <input
+            value={url}
+            onChange={(event) => setUrl(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Enter') submitRemote(); if (event.key === 'Escape') resetForm() }}
+            placeholder="https://github.com/org/repository.git"
+            className="h-8 min-w-0 rounded-md border border-(--color-border) bg-(--bg-base) px-2 font-mono text-[10px] text-(--color-text) outline-none focus:border-(--color-accent)"
+            autoFocus
+          />
+          <div className="flex gap-1">
+            <button type="button" onClick={resetForm} className="h-8 rounded-md px-2 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key)">Cancel</button>
+            <button type="button" onClick={submitRemote} disabled={busy || !name.trim() || !url.trim()} className="h-8 rounded-md bg-(--color-accent) px-3 text-[10px] font-semibold text-white disabled:opacity-40">{editingName ? 'Save' : 'Add'}</button>
+          </div>
+        </div>
+      )}
+
+      <div className="min-h-0 flex-1 overflow-y-auto divide-y divide-(--color-border)/40">
+        {remotes.map((remote) => {
+          const editRemote = () => {
+            setEditingName(remote.name)
+            setName(remote.name)
+            setUrl(remote.fetch_url)
+            setShowForm(true)
+          }
+          const removeRemote = () => deleteMutation.mutate(remote.name, {
+            onSuccess: () => useToastStore.getState().push({ tone: 'info', title: `${remote.name} removed` }),
+            onError: (error) => useToastStore.getState().push({ tone: 'error', title: 'Unable to remove remote', description: error instanceof Error ? error.message : undefined }),
+          })
+          const actions: GitAction[] = [
+            { label: `Fetch ${remote.name}`, icon: <CloudDownload size={12} />, onSelect: () => startSync('fetch', () => fetchMutation.mutate({ remote: remote.name, prune })) },
+            { label: `Pull from ${remote.name}`, icon: <RefreshCw size={12} />, onSelect: () => startSync('pull', () => pullMutation.mutate({ remote: remote.name, rebase })) },
+            {
+              label: `Push ${branch ?? 'current branch'} to ${remote.name}`,
+              icon: <CloudUpload size={12} />,
+              onSelect: () => startSync('push', () => pushMutation.mutate({
+                remote: remote.name,
+                branch: branch ?? undefined,
+                setUpstream: !upstream,
+                forceWithLease,
+              })),
+              disabled: !branch,
+            },
+            { label: 'Edit remote URL', icon: <Pencil size={12} />, onSelect: editRemote, separatorBefore: true },
+            {
+              label: 'Copy fetch URL',
+              icon: <Copy size={12} />,
+              onSelect: () => {
+                void navigator.clipboard.writeText(remote.fetch_url)
+                useToastStore.getState().push({ tone: 'info', title: 'Remote URL copied' })
+              },
+            },
+            { label: 'Remove remote', icon: <Trash2 size={12} />, onSelect: removeRemote, danger: true, separatorBefore: true },
+          ]
+          return (
+          <GitActionSurface key={remote.name} label={remote.name} actions={actions} className="flex items-center gap-3 px-3 py-2.5 hover:bg-(--bg-key)/50">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-(--bg-key) text-(--color-text-muted)"><RadioTower size={13} /></span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] font-semibold text-(--color-text)">{remote.name}</p>
+              <p className="truncate font-mono text-[9px] text-(--color-text-subtle)" title={remote.fetch_url}>{remote.fetch_url}</p>
+            </div>
+          </GitActionSurface>
+          )
+        })}
+        {remotes.length === 0 && (
+          <div className="flex flex-col items-center justify-center px-6 py-12 text-center">
+            <RadioTower size={22} className="text-(--color-text-subtle)" />
+            <p className="mt-2 text-xs font-medium text-(--color-text)">No remotes configured</p>
+            <p className="mt-1 max-w-xs text-[11px] leading-5 text-(--color-text-muted)">Add a remote to fetch branches, push commits, and connect pull requests.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* ── Tags Panel ──────────────────────────────────────────────────────────── */
+
+function TagsPanel({ workspace }: { workspace: string }) {
+  const tagsQuery = useGitTagsQuery(workspace)
+  const remotesQuery = useGitRemotesQuery(workspace)
+  const createMutation = useGitCreateTagMutation(workspace)
+  const deleteMutation = useGitDeleteTagMutation(workspace)
+  const pushMutation = useGitPushTagsMutation(workspace)
+  const tags = tagsQuery.data ?? []
+  const remotes = useMemo(() => remotesQuery.data ?? [], [remotesQuery.data])
+  const [showCreate, setShowCreate] = useState(false)
+  const [name, setName] = useState('')
+  const [target, setTarget] = useState('HEAD')
+  const [message, setMessage] = useState('')
+  const [remote, setRemote] = useState('origin')
+
+  useEffect(() => {
+    if (remotes.length > 0 && !remotes.some((item) => item.name === remote)) {
+      setRemote(remotes[0].name) // eslint-disable-line react-hooks/set-state-in-effect -- synchronize remote selection with server data
+    }
+  }, [remote, remotes])
+
+  const createTag = () => {
+    if (!name.trim()) return
+    createMutation.mutate(
+      { name: name.trim(), target: target.trim() || 'HEAD', message: message.trim() || undefined },
+      {
+        onSuccess: () => {
+          setName('')
+          setTarget('HEAD')
+          setMessage('')
+          setShowCreate(false)
+          useToastStore.getState().push({ tone: 'success', title: 'Tag created' })
+        },
+        onError: (error) => useToastStore.getState().push({ tone: 'error', title: 'Unable to create tag', description: error instanceof Error ? error.message : undefined }),
+      },
+    )
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-(--color-border) px-3">
+        <Tag size={12} className="text-(--color-text-subtle)" />
+        <span className="text-[11px] font-semibold text-(--color-text)">Repository tags</span>
+        <span className="rounded-full bg-(--bg-key) px-1.5 py-0.5 text-[9px] text-(--color-text-subtle)">{tags.length}</span>
+        <div className="flex-1" />
+        {remotes.length > 0 && (
+          <>
+            <select value={remote} onChange={(event) => setRemote(event.target.value)} className="h-7 rounded-md border border-(--color-border) bg-(--bg-card) px-2 text-[10px] text-(--color-text)">
+              {remotes.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}
+            </select>
+            <button
+              type="button"
+              disabled={pushMutation.isPending}
+              onClick={() => pushMutation.mutate({ remote }, {
+                onSuccess: () => useToastStore.getState().push({ tone: 'info', title: 'Tag push started' }),
+                onError: (error) => useToastStore.getState().push({ tone: 'error', title: 'Unable to push tags', description: error instanceof Error ? error.message : undefined }),
+              })}
+              className="flex h-7 items-center gap-1 rounded-md border border-(--color-border) bg-(--bg-card) px-2 text-[10px] font-medium text-(--color-text-muted) hover:bg-(--bg-key)"
+            >
+              <CloudUpload size={11} /> Push tags
+            </button>
+          </>
+        )}
+        <button type="button" onClick={() => setShowCreate(!showCreate)} className="flex h-7 items-center gap-1 rounded-md px-2 text-[10px] font-medium text-(--color-accent) hover:bg-(--bg-key)"><Plus size={11} /> New tag</button>
+      </div>
+
+      {showCreate && (
+        <div className="grid shrink-0 grid-cols-2 gap-2 border-b border-(--color-border) bg-(--bg-key)/20 p-3">
+          <input value={name} onChange={(event) => setName(event.target.value)} placeholder="v1.0.0" className="h-8 rounded-md border border-(--color-border) bg-(--bg-base) px-2 font-mono text-[11px] text-(--color-text) outline-none focus:border-(--color-accent)" autoFocus />
+          <input value={target} onChange={(event) => setTarget(event.target.value)} placeholder="HEAD or commit SHA" className="h-8 rounded-md border border-(--color-border) bg-(--bg-base) px-2 font-mono text-[11px] text-(--color-text) outline-none focus:border-(--color-accent)" />
+          <input value={message} onChange={(event) => setMessage(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') createTag() }} placeholder="Annotation (optional)" className="col-span-2 h-8 rounded-md border border-(--color-border) bg-(--bg-base) px-2 text-[11px] text-(--color-text) outline-none focus:border-(--color-accent)" />
+          <div className="col-span-2 flex justify-end gap-1">
+            <button type="button" onClick={() => setShowCreate(false)} className="h-7 rounded-md px-2 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key)">Cancel</button>
+            <button type="button" onClick={createTag} disabled={!name.trim() || createMutation.isPending} className="h-7 rounded-md bg-(--color-accent) px-3 text-[10px] font-semibold text-white disabled:opacity-40">Create tag</button>
+          </div>
+        </div>
+      )}
+
+      <div className="min-h-0 flex-1 overflow-y-auto divide-y divide-(--color-border)/40">
+        {tags.map((item) => {
+          const deleteTag = () => deleteMutation.mutate(item.name, {
+            onSuccess: () => useToastStore.getState().push({ tone: 'info', title: `${item.name} deleted locally` }),
+            onError: (error) => useToastStore.getState().push({ tone: 'error', title: 'Unable to delete tag', description: error instanceof Error ? error.message : undefined }),
+          })
+          const actions: GitAction[] = [
+            {
+              label: 'Copy tag name',
+              icon: <Copy size={12} />,
+              onSelect: () => {
+                void navigator.clipboard.writeText(item.name)
+                useToastStore.getState().push({ tone: 'info', title: 'Tag name copied' })
+              },
+            },
+            {
+              label: 'Copy commit SHA',
+              icon: <GitCommit size={12} />,
+              onSelect: () => {
+                void navigator.clipboard.writeText(item.sha)
+                useToastStore.getState().push({ tone: 'info', title: 'Tag SHA copied' })
+              },
+            },
+            {
+              label: `Push tag to ${remote}`,
+              icon: <CloudUpload size={12} />,
+              onSelect: () => pushMutation.mutate(
+                { remote, tag: item.name },
+                {
+                  onSuccess: () => useToastStore.getState().push({ tone: 'info', title: `Pushing ${item.name}` }),
+                  onError: (error) => useToastStore.getState().push({ tone: 'error', title: 'Unable to push tag', description: error instanceof Error ? error.message : undefined }),
+                },
+              ),
+              disabled: remotes.length === 0 || pushMutation.isPending,
+              separatorBefore: true,
+            },
+            { label: 'Delete local tag', icon: <Trash2 size={12} />, onSelect: deleteTag, danger: true, separatorBefore: true },
+          ]
+          return (
+          <GitActionSurface key={item.name} label={item.name} actions={actions} className="flex items-center gap-3 px-3 py-2.5 hover:bg-(--bg-key)/50">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-(--color-accent)/10 text-(--color-accent)"><Tag size={12} /></span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-mono text-[11px] font-semibold text-(--color-text)">{item.name}</p>
+              <p className="truncate text-[9px] text-(--color-text-subtle)">{item.sha} · {item.subject || 'Lightweight tag'}{item.date ? ` · ${formatDate(item.date)}` : ''}</p>
+            </div>
+          </GitActionSurface>
+          )
+        })}
+        {tags.length === 0 && (
+          <div className="flex flex-col items-center justify-center px-6 py-12 text-center">
+            <Tag size={22} className="text-(--color-text-subtle)" />
+            <p className="mt-2 text-xs font-medium text-(--color-text)">No tags yet</p>
+            <p className="mt-1 max-w-xs text-[11px] leading-5 text-(--color-text-muted)">Create lightweight or annotated tags at HEAD, a branch, or a commit.</p>
+          </div>
+        )}
       </div>
     </div>
   )

@@ -185,6 +185,7 @@ class ReviewItem:
     state: str
     draft: bool
     author: str | None
+    author_avatar_url: str | None
     source_branch: str
     target_branch: str
     updated_at: str
@@ -711,6 +712,32 @@ def _person_name(value: Any) -> str | None:
     return None
 
 
+def _person_avatar_url(value: Any) -> str | None:
+    """Extract a safe absolute avatar URL across supported Git providers."""
+    row = _dict(value)
+    nested_user = _dict(row.get("user"))
+    for candidate in (row, nested_user):
+        links = _dict(candidate.get("links") or candidate.get("_links"))
+        avatar_link = _dict(links.get("avatar"))
+        raw_url = (
+            candidate.get("avatar_url")
+            or candidate.get("avatarUrl")
+            or candidate.get("imageUrl")
+            or avatar_link.get("href")
+        )
+        if not raw_url:
+            continue
+        parsed = urlparse(str(raw_url).strip())
+        if (
+            parsed.scheme in {"http", "https"}
+            and parsed.hostname
+            and parsed.username is None
+            and parsed.password is None
+        ):
+            return urlunparse(parsed._replace(fragment=""))
+    return None
+
+
 def _people(values: Any) -> list[str]:
     names: list[str] = []
     for value in _list(values):
@@ -833,6 +860,7 @@ def _github_items(payload: Any) -> list[ReviewItem]:
                 state=str(row.get("state") or "open").lower(),
                 draft=bool(row.get("draft")),
                 author=str(user.get("login") or "") or None,
+                author_avatar_url=_person_avatar_url(user),
                 source_branch=str(head.get("ref") or ""),
                 target_branch=str(base.get("ref") or ""),
                 updated_at=str(row.get("updated_at") or ""),
@@ -861,6 +889,7 @@ def _gitlab_items(payload: Any) -> list[ReviewItem]:
                 state=str(row.get("state") or "opened").lower(),
                 draft=bool(row.get("draft") or row.get("work_in_progress")),
                 author=str(author.get("username") or author.get("name") or "") or None,
+                author_avatar_url=_person_avatar_url(author),
                 source_branch=str(row.get("source_branch") or ""),
                 target_branch=str(row.get("target_branch") or ""),
                 updated_at=str(row.get("updated_at") or ""),
@@ -890,6 +919,7 @@ def _bitbucket_cloud_items(payload: Any) -> list[ReviewItem]:
                 draft=bool(row.get("draft")),
                 author=str(author.get("display_name") or author.get("nickname") or "")
                 or None,
+                author_avatar_url=_person_avatar_url(author),
                 source_branch=str(source.get("name") or ""),
                 target_branch=str(target.get("name") or ""),
                 updated_at=str(row.get("updated_on") or ""),
@@ -919,6 +949,7 @@ def _bitbucket_server_items(payload: Any) -> list[ReviewItem]:
                 draft=bool(row.get("draft")),
                 author=str(author.get("displayName") or author.get("name") or "")
                 or None,
+                author_avatar_url=_person_avatar_url(author),
                 source_branch=_branch_name(source.get("displayId")),
                 target_branch=_branch_name(target.get("displayId")),
                 updated_at=str(updated or ""),
@@ -943,6 +974,7 @@ def _gitea_items(payload: Any) -> list[ReviewItem]:
                 state=str(row.get("state") or "open").lower(),
                 draft=bool(row.get("draft")),
                 author=str(user.get("login") or user.get("full_name") or "") or None,
+                author_avatar_url=_person_avatar_url(user),
                 source_branch=str(head.get("ref") or ""),
                 target_branch=str(base.get("ref") or ""),
                 updated_at=str(row.get("updated_at") or ""),
@@ -974,6 +1006,7 @@ def _azure_items(payload: Any) -> list[ReviewItem]:
                 state=str(row.get("status") or "active").lower(),
                 draft=bool(row.get("isDraft")),
                 author=str(author.get("displayName") or "") or None,
+                author_avatar_url=_person_avatar_url(author),
                 source_branch=_branch_name(row.get("sourceRefName")),
                 target_branch=_branch_name(row.get("targetRefName")),
                 updated_at=str(row.get("closedDate") or row.get("creationDate") or ""),

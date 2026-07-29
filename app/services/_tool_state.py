@@ -30,6 +30,7 @@ def match_tool_end(
     tool_call_id: str | None,
     name: str,
     result: str | None,
+    metadata: dict[str, Any] | None = None,
 ) -> None:
     """Mark the matching tool_call entry as done with result."""
     # Me prefer matching by tool_call_id; fall back to name if missing
@@ -38,10 +39,12 @@ def match_tool_end(
             if tc.get("tool_call_id") == tool_call_id and not tc["done"]:
                 tc["done"] = True
                 tc["result"] = result
+                tc["metadata"] = metadata or {}
                 return
     # Fallback: match last undone entry by name
     for tc in reversed(tool_calls):
         if tc["name"] == name and not tc["done"]:
             tc["done"] = True
             tc["result"] = result
+            tc["metadata"] = metadata or {}
             break

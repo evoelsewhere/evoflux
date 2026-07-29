@@ -1,8 +1,7 @@
 /**
- * ModeSwitchTabs — the Forge | Coding | AIM switcher shared by every
- * sidebar. One source of truth for the tab strip (plus an icon-rail
- * variant for the collapsed sidebar); previously each sidebar hand-rolled
- * its own copy and they drifted (missing active states, dead buttons).
+ * ModeSwitchTabs — the canonical Forge | Coding | AIM control. Desktop uses
+ * one root-owned instance that survives route changes; transient mobile
+ * drawers reuse the same control. ModeSwitchRail is its collapsed variant.
  */
 
 import { useNavigate } from '@tanstack/react-router'
@@ -19,6 +18,17 @@ const TABS: Array<{ mode: AppMode; label: string; Icon: typeof Gauge; to: string
   { mode: 'aim', label: 'AIM', Icon: ArrowRightLeft, to: '/aim' },
 ]
 
+function useAnimatedModeNavigation(onNavigate?: () => void) {
+  const navigate = useNavigate()
+  const preset = useMotionPreset()
+
+  const switchMode = (to: string) => {
+    void navigate({ to }).finally(() => onNavigate?.())
+  }
+
+  return { preset, switchMode }
+}
+
 export function ModeSwitchTabs({
   active,
   onNavigate,
@@ -29,20 +39,23 @@ export function ModeSwitchTabs({
   onNavigate?: () => void
   className?: string
 }) {
-  const navigate = useNavigate()
-  const preset = useMotionPreset()
+  const { preset, switchMode } = useAnimatedModeNavigation(onNavigate)
   const activeIndex = TABS.findIndex((tab) => tab.mode === active)
   return (
     // The strip is a size container: labels only render when there's room
     // for all three (below ~12.5rem the resizable sidebars would otherwise
     // clip the text), collapsing gracefully to icons + tooltips.
     <div className={cn('@container/modeswitch', className)}>
-      <div className="relative grid h-9 grid-cols-3 items-center rounded-lg border border-(--color-border) bg-(--bg-page) p-0.5">
+      <div
+        className="relative grid h-10 grid-cols-3 items-center rounded-xl bg-(--bg-key)/55 p-1 shadow-[inset_0_0_0_1px_var(--color-border)]"
+        role="tablist"
+        aria-label="Application mode"
+      >
         <motion.div
           data-testid="mode-switch-indicator"
           data-active-mode={active}
           aria-hidden="true"
-          className="pointer-events-none absolute bottom-0.5 left-0.5 top-0.5 w-[calc((100%-0.25rem)/3)] rounded-md bg-(--bg-key) shadow-sm"
+          className="pointer-events-none absolute bottom-1 left-1 top-1 w-[calc((100%-0.5rem)/3)] rounded-lg bg-(--bg-card) shadow-[0_1px_4px_rgba(0,0,0,0.08),0_0_0_1px_var(--color-border)]"
           initial={false}
           animate={{ x: `${Math.max(0, activeIndex) * 100}%` }}
           transition={preset.spring}
@@ -52,20 +65,27 @@ export function ModeSwitchTabs({
             key={mode}
             type="button"
             onClick={() => {
-              if (mode === active) return
-              navigate({ to })
-              onNavigate?.()
+              if (mode !== active) switchMode(to)
             }}
             title={label}
             aria-current={mode === active ? 'page' : undefined}
+            aria-selected={mode === active}
+            role="tab"
             className={cn(
-              'relative z-10 flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-md px-1 text-xs font-medium outline-none transition-[color,transform] duration-(--motion-fast) active:translate-y-px focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--color-accent)/35 @[12.5rem]/modeswitch:px-2',
+              'relative z-10 flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-lg px-1 text-xs font-medium outline-none transition-[color,transform] duration-(--motion-fast) active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--color-accent)/35 @[12.5rem]/modeswitch:px-2',
               mode === active
                 ? 'text-(--color-text)'
-                : 'text-(--color-text-muted) hover:text-(--color-text)',
+                : 'text-(--color-text-subtle) hover:text-(--color-text)',
             )}
           >
-            <Icon size={13} className="shrink-0" aria-hidden="true" />
+            <Icon
+              size={13}
+              className={cn(
+                'shrink-0 transition-colors duration-(--motion-fast)',
+                mode === active && 'text-(--color-accent)',
+              )}
+              aria-hidden="true"
+            />
             <span className="hidden whitespace-nowrap @[12.5rem]/modeswitch:inline">{label}</span>
           </button>
         ))}
@@ -82,8 +102,7 @@ export function ModeSwitchRail({
   active: AppMode
   className?: string
 }) {
-  const navigate = useNavigate()
-  const preset = useMotionPreset()
+  const { preset, switchMode } = useAnimatedModeNavigation()
   return (
     <div className={cn('flex flex-col items-center gap-0.5', className)}>
       {TABS.map(({ mode, label, Icon, to }) => (
@@ -91,7 +110,7 @@ export function ModeSwitchRail({
           key={mode}
           type="button"
           onClick={() => {
-            if (mode !== active) navigate({ to })
+            if (mode !== active) switchMode(to)
           }}
           title={label}
           aria-current={mode === active ? 'page' : undefined}

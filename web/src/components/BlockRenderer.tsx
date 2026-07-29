@@ -164,7 +164,7 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell,
            </div>
          )}
 
-          <div className={`relative min-w-0 max-w-full overflow-hidden rounded-2xl border px-4 py-3 text-sm leading-relaxed text-(--color-text) ${shell ? 'border-(--accent-blue)/30 bg-(--bg-key)' : 'border-(--color-border-subtle) bg-(--bg-key)'}`}>
+          <div className={`relative min-w-0 max-w-full overflow-hidden rounded-lg border px-3 py-2.5 text-sm leading-relaxed text-(--color-text) ${shell ? 'border-(--accent-blue)/35 bg-(--bg-key)' : 'border-(--color-border-subtle) bg-(--bg-key)'}`}>
            {/* Expand / collapse button — top-right inside bubble */}
            {needsCollapse && (
              <button
@@ -333,7 +333,11 @@ export const BlockRenderer = memo(function BlockRenderer({ block, isStreaming, s
       return <p className="rounded-md border border-(--color-border) bg-(--bg-muted) px-3 py-2 text-xs text-(--color-text-muted)">{message}</p>
     }
     case 'tool': {
-      const mcpApp = (block.extra as { mcp_app?: unknown } | undefined)?.mcp_app
+      const toolExtra = block.extra as {
+        mcp_app?: unknown
+        attachments?: MessageAttachment[]
+      } | undefined
+      const mcpApp = toolExtra?.mcp_app
       return (
         <div>
           <ToolCall
@@ -344,6 +348,7 @@ export const BlockRenderer = memo(function BlockRenderer({ block, isStreaming, s
             result={block.toolResult}
             durationMs={block.durationMs}
             startedAt={block.startedAt}
+            attachments={toolExtra?.attachments}
           />
           {block.toolDone && Boolean(mcpApp) && latestMCPAppBlockIds?.has(block.id) ? (
             <div className="mt-2">

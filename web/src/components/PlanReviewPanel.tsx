@@ -388,7 +388,7 @@ export function PlanActionBar({ onRevise }: { onRevise: () => void }) {
           exit={{ opacity: 0, y: 6 * preset.distance }}
           className="mx-auto w-full max-w-3xl px-4 pb-2"
         >
-          <div className="overflow-hidden rounded-xl border border-(--color-primary)/30 bg-(--bg-page) shadow-sm">
+          <div className="overflow-hidden rounded-xl border border-(--color-primary)/35 bg-(--bg-page) shadow-sm">
             <div className="flex flex-wrap items-center gap-3 px-4 py-2.5">
               <div className="flex min-w-0 flex-1 items-center gap-2">
                 <ClipboardList size={14} className="shrink-0 text-(--color-primary)" aria-hidden="true" />

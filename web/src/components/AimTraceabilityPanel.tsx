@@ -346,8 +346,8 @@ function AttentionQueue({
             className={cn(
               'flex w-64 shrink-0 items-center gap-2 rounded-md border px-2.5 py-2',
               issue.severity === 'blocker'
-                ? 'border-(--color-error)/30 bg-(--color-error-subtle)/20'
-                : 'border-(--color-warning)/30 bg-(--color-warning-subtle)/20',
+                ? 'border-(--color-error)/35 bg-(--color-error-subtle)/20'
+                : 'border-(--color-warning)/35 bg-(--color-warning-subtle)/20',
             )}
           >
             {issue.severity === 'blocker' ? <CircleX size={12} className="shrink-0 text-(--color-error)" /> : <CircleAlert size={12} className="shrink-0 text-(--color-warning)" />}
@@ -437,14 +437,14 @@ function TraceabilityDetail({
           <h2 className="truncate font-mono text-sm font-semibold text-(--color-text)">{unit.unit}</h2>
           <p className="mt-1 text-[10px] text-(--color-text-subtle)">{unit.kind} · {unit.phase}{unit.wave !== null ? ` · wave ${unit.wave}` : ''}</p>
         </div>
-        <span className={cn('rounded border px-2 py-1 text-[10px] font-medium', unit.gaps.length ? 'border-(--color-warning)/35 bg-(--color-warning-subtle)/25 text-(--color-warning)' : 'border-(--color-success)/30 bg-(--color-success-subtle)/25 text-(--color-success)')}>
+        <span className={cn('rounded border px-2 py-1 text-[10px] font-medium', unit.gaps.length ? 'border-(--color-warning)/40 bg-(--color-warning-subtle)/25 text-(--color-warning)' : 'border-(--color-success)/35 bg-(--color-success-subtle)/25 text-(--color-success)')}>
           {blockers.length > 0 ? `${blockers.length} blocker${blockers.length === 1 ? '' : 's'}` : warnings.length > 0 ? `${warnings.length} warning${warnings.length === 1 ? '' : 's'}` : 'Covered'}
         </span>
       </div>
 
       {unit.indexed_phase !== unit.phase && (
         <DetailSection title="Source-of-truth mismatch" Icon={Database} tone="warning">
-          <div className="rounded-md border border-(--color-warning)/30 bg-(--color-warning-subtle)/20 px-2.5 py-2 text-xs text-(--color-text-2)">
+          <div className="rounded-md border border-(--color-warning)/35 bg-(--color-warning-subtle)/20 px-2.5 py-2 text-xs text-(--color-text-2)">
             KB says <span className="font-mono text-(--color-text)">{unit.phase}</span>; the local index says <span className="font-mono text-(--color-text)">{unit.indexed_phase}</span>. Reindex before trusting index-backed dashboards.
           </div>
         </DetailSection>
@@ -452,7 +452,7 @@ function TraceabilityDetail({
 
       {unit.next_action && (
         <DetailSection title="Recommended next action" Icon={Play}>
-          <div className={cn('rounded-md border px-2.5 py-2.5', unit.next_action.allowed ? 'border-(--color-success)/30 bg-(--color-success-subtle)/15' : 'border-(--color-warning)/30 bg-(--color-warning-subtle)/15')}>
+          <div className={cn('rounded-md border px-2.5 py-2.5', unit.next_action.allowed ? 'border-(--color-success)/35 bg-(--color-success-subtle)/15' : 'border-(--color-warning)/35 bg-(--color-warning-subtle)/15')}>
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-xs font-medium text-(--color-text)">{pipelineLabel(unit.next_action.pipeline)}</p>
@@ -561,7 +561,7 @@ function DiagnosticRow({
   const tone = issue.severity === 'blocker' ? 'error' : issue.severity === 'warning' ? 'warning' : 'info'
   const Icon = issue.severity === 'blocker' ? CircleX : issue.severity === 'warning' ? CircleAlert : CircleCheck
   return (
-    <div className={cn('flex items-start gap-2 rounded-md border px-2.5 py-2', tone === 'error' && 'border-(--color-error)/25 bg-(--color-error-subtle)/20', tone === 'warning' && 'border-(--color-warning)/25 bg-(--color-warning-subtle)/20', tone === 'info' && 'border-(--color-border) bg-(--bg-key)/40')}>
+    <div className={cn('flex items-start gap-2 rounded-md border px-2.5 py-2', tone === 'error' && 'border-(--color-error)/30 bg-(--color-error-subtle)/20', tone === 'warning' && 'border-(--color-warning)/30 bg-(--color-warning-subtle)/20', tone === 'info' && 'border-(--color-border) bg-(--bg-key)/40')}>
       <Icon size={12} className={cn('mt-0.5 shrink-0', tone === 'error' && 'text-(--color-error)', tone === 'warning' && 'text-(--color-warning)', tone === 'info' && 'text-(--color-text-subtle)')} />
       <div className="min-w-0 flex-1">
         <p className="text-[10px] leading-4 text-(--color-text-2)">{issue.message}</p>

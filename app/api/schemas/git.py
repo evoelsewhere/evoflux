@@ -9,6 +9,17 @@ class WorkspaceRequest(BaseModel):
     workspace: str
 
 
+class GitInitRequest(BaseModel):
+    workspace: str
+    default_branch: str = "main"
+
+
+class GitIdentityRequest(BaseModel):
+    workspace: str
+    name: str = Field(min_length=1, max_length=512)
+    email: str = Field(min_length=1, max_length=512)
+
+
 class StageRequest(BaseModel):
     workspace: str
     paths: list[str] | None = None
@@ -37,6 +48,7 @@ class BranchDeleteRequest(BaseModel):
 class CheckoutRequest(BaseModel):
     workspace: str
     name: str
+    track: bool = False
 
 
 class MergeRequest(BaseModel):
@@ -62,6 +74,36 @@ class PullRequest(BaseModel):
 class FetchRequest(BaseModel):
     workspace: str
     remote: str | None = None
+    prune: bool = False
+
+
+class GitRemoteRequest(BaseModel):
+    workspace: str
+    name: str
+    url: str = Field(min_length=1, max_length=4096)
+
+
+class GitRemoteDeleteRequest(BaseModel):
+    workspace: str
+    name: str
+
+
+class GitTagRequest(BaseModel):
+    workspace: str
+    name: str
+    target: str | None = None
+    message: str | None = Field(default=None, max_length=10000)
+
+
+class GitTagDeleteRequest(BaseModel):
+    workspace: str
+    name: str
+
+
+class GitTagsPushRequest(BaseModel):
+    workspace: str
+    remote: str | None = None
+    tag: str | None = None
 
 
 class StashRequest(BaseModel):
@@ -85,6 +127,11 @@ class CherryPickRequest(BaseModel):
     shas: list[str]
 
 
+class RevertRequest(BaseModel):
+    workspace: str
+    sha: str
+
+
 class ChangedFileOut(BaseModel):
     path: str
     status: str
@@ -93,10 +140,36 @@ class ChangedFileOut(BaseModel):
 
 
 class GitChangesOut(BaseModel):
+    is_git_repo: bool = True
     branch: str | None
     ahead: int
     behind: int
     files: list[ChangedFileOut]
+
+
+class GitRepositoryOut(BaseModel):
+    is_git_repo: bool
+    root: str | None = None
+    branch: str | None = None
+    detached: bool = False
+    upstream: str | None = None
+    head_sha: str | None = None
+    head_subject: str | None = None
+    user_name: str | None = None
+    user_email: str | None = None
+
+
+class GitRemoteOut(BaseModel):
+    name: str
+    fetch_url: str
+    push_url: str
+
+
+class GitTagOut(BaseModel):
+    name: str
+    sha: str
+    subject: str
+    date: str
 
 
 class GitCommitOut(BaseModel):
@@ -129,6 +202,8 @@ class GitJobOut(BaseModel):
 class GitLogEntryOut(BaseModel):
     sha: str
     short_sha: str
+    parent_shas: list[str]
+    refs: list[str]
     author: str
     date: str
     message: str
@@ -137,6 +212,7 @@ class GitLogEntryOut(BaseModel):
 class GitLogOut(BaseModel):
     entries: list[GitLogEntryOut]
     has_more: bool
+    next_skip: int | None = None
 
 
 class GitLogFileOut(BaseModel):

@@ -214,6 +214,118 @@ def test_bitbucket_cloud_supports_bearer_and_basic_tokens():
     }
 
 
+@pytest.mark.parametrize(
+    ("parser", "payload", "expected_url"),
+    [
+        (
+            service._github_items,
+            [
+                {
+                    "number": 1,
+                    "user": {
+                        "login": "octocat",
+                        "avatar_url": "https://avatars.githubusercontent.com/u/1?v=4",
+                    },
+                }
+            ],
+            "https://avatars.githubusercontent.com/u/1?v=4",
+        ),
+        (
+            service._gitlab_items,
+            [
+                {
+                    "iid": 1,
+                    "author": {
+                        "username": "gitlab-user",
+                        "avatar_url": "https://gitlab.example.com/uploads/avatar.png",
+                    },
+                }
+            ],
+            "https://gitlab.example.com/uploads/avatar.png",
+        ),
+        (
+            service._bitbucket_cloud_items,
+            {
+                "values": [
+                    {
+                        "id": 1,
+                        "author": {
+                            "display_name": "Bitbucket User",
+                            "links": {
+                                "avatar": {
+                                    "href": "https://avatar-management.example/avatar.png"
+                                }
+                            },
+                        },
+                    }
+                ]
+            },
+            "https://avatar-management.example/avatar.png",
+        ),
+        (
+            service._bitbucket_server_items,
+            {
+                "values": [
+                    {
+                        "id": 1,
+                        "author": {
+                            "user": {
+                                "displayName": "Bitbucket User",
+                                "avatarUrl": "https://bitbucket.example.com/avatar.png",
+                            }
+                        },
+                    }
+                ]
+            },
+            "https://bitbucket.example.com/avatar.png",
+        ),
+        (
+            service._gitea_items,
+            [
+                {
+                    "number": 1,
+                    "user": {
+                        "login": "gitea-user",
+                        "avatar_url": "https://gitea.example.com/avatars/1",
+                    },
+                }
+            ],
+            "https://gitea.example.com/avatars/1",
+        ),
+        (
+            service._azure_items,
+            {
+                "value": [
+                    {
+                        "pullRequestId": 1,
+                        "createdBy": {
+                            "displayName": "Azure User",
+                            "imageUrl": "https://dev.azure.com/acme/_apis/graph/avatars/1",
+                        },
+                    }
+                ]
+            },
+            "https://dev.azure.com/acme/_apis/graph/avatars/1",
+        ),
+    ],
+)
+def test_review_items_keep_provider_avatar_urls(parser, payload, expected_url):
+    items = parser(payload)
+
+    assert len(items) == 1
+    assert items[0].author_avatar_url == expected_url
+
+
+def test_person_avatar_url_rejects_unsafe_urls():
+    assert service._person_avatar_url({"avatar_url": "javascript:alert(1)"}) is None
+    assert (
+        service._person_avatar_url(
+            {"avatar_url": "https://user:secret@example.com/avatar.png"}
+        )
+        is None
+    )
+
+
 @pytest.mark.asyncio
 async def test_github_review_image_uses_connection_token(monkeypatch):
     monkeypatch.setenv("GITHUB_IMAGE_TOKEN", "secret")

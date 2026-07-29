@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -15,6 +16,7 @@ from app.services.agent_service import (
     _default_ext,
     _validate_ext_mime_consistency,
     _validate_magic_bytes,
+    cancel_deferred_user_message,
     categorize,
     dispatch_user_message,
     interrupt_team,
@@ -40,6 +42,7 @@ def _make_team(*, vision: bool = True, document_text: bool = True) -> MagicMock:
 
     team = MagicMock()
     team.lead = lead
+    team.prepare_user_session = AsyncMock()
     team.handle_user_message = AsyncMock()
     return team
 
@@ -443,6 +446,118 @@ async def test_dispatch_reuses_persisted_attachment_metadata():
     assert sid == "existing-123"
     assert count == 1
     assert team.handle_user_message.await_args.kwargs["attachment_metas"] == metas
+
+
+@pytest.mark.asyncio
+async def test_deferred_dispatch_returns_before_message_preparation_finishes():
+    team = _make_team()
+    team.lead.name = "lead"
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def slow_handle(**_kwargs):
+        started.set()
+        await release.wait()
+
+    team.handle_user_message = AsyncMock(side_effect=slow_handle)
+
+    with patch(
+        "app.services.agent_service.stream_store.init_turn", new=AsyncMock()
+    ) as init_turn:
+        sid, count = await dispatch_user_message(
+            team,
+            content="hello",
+            session_id="existing-123",
+            defer=True,
+        )
+        await asyncio.wait_for(started.wait(), timeout=1)
+        from app.services import agent_service
+
+        task = agent_service._background_dispatch_tasks["existing-123"]
+
+    assert sid == "existing-123"
+    assert count == 0
+    init_turn.assert_awaited_once_with("existing-123")
+    team.prepare_user_session.assert_awaited_once_with(
+        content="hello",
+        session_id="existing-123",
+        mode="forge",
+        workspace=None,
+    )
+    team.reserve_user_turn.assert_called_once_with()
+    assert team.handle_user_message.await_args_list[0] is not None
+
+    release.set()
+    await asyncio.wait_for(task, timeout=1)
+    team.handle_user_message.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_deferred_dispatch_surfaces_background_preparation_failure():
+    team = _make_team()
+    team.lead.name = "lead"
+    failed = asyncio.Event()
+
+    async def fail_handle(**_kwargs):
+        failed.set()
+        raise RuntimeError("snapshot failed")
+
+    team.handle_user_message = AsyncMock(side_effect=fail_handle)
+
+    with (
+        patch("app.services.agent_service.stream_store.init_turn", new=AsyncMock()),
+        patch(
+            "app.services.agent_service.stream_store.push_event", new=AsyncMock()
+        ) as push,
+        patch(
+            "app.services.agent_service.stream_store.mark_done", new=AsyncMock()
+        ) as mark_done,
+    ):
+        await dispatch_user_message(
+            team,
+            content="hello",
+            session_id="existing-123",
+            defer=True,
+        )
+        await asyncio.wait_for(failed.wait(), timeout=1)
+        from app.services import agent_service
+
+        task = agent_service._background_dispatch_tasks["existing-123"]
+        await asyncio.wait_for(task, timeout=1)
+
+    team.release_user_turn_reservation.assert_called_once_with()
+    assert push.await_count == 2
+    mark_done.assert_awaited_once_with("existing-123")
+
+
+@pytest.mark.asyncio
+async def test_deferred_dispatch_can_be_cancelled_before_activation():
+    team = _make_team()
+    team.lead.name = "lead"
+    started = asyncio.Event()
+
+    async def wait_forever(**_kwargs):
+        started.set()
+        await asyncio.Event().wait()
+
+    team.handle_user_message = AsyncMock(side_effect=wait_forever)
+
+    with patch("app.services.agent_service.stream_store.init_turn", new=AsyncMock()):
+        await dispatch_user_message(
+            team,
+            content="hello",
+            session_id="existing-123",
+            defer=True,
+        )
+        await asyncio.wait_for(started.wait(), timeout=1)
+        from app.services import agent_service
+
+        task = agent_service._background_dispatch_tasks["existing-123"]
+        assert cancel_deferred_user_message("existing-123") is True
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    team.release_user_turn_reservation.assert_called_once_with()
 
 
 # ── interrupt_team ────────────────────────────────────────────────────────────

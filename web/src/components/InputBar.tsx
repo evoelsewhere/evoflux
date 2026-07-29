@@ -1219,7 +1219,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
 
   return (
     <div className={floating ? '' : 'bg-(--bg-page) px-4 pb-5 pt-3'}>
-      <div className={floating ? 'relative' : 'relative mx-auto max-w-3xl'}>
+      <div className={floating ? 'relative' : 'relative mx-auto max-w-4xl'}>
         <AnimatePresence initial={false}>
           {!minimized && !filesBelow && files.length > 0 && (
             <motion.div
@@ -1245,7 +1245,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
               animate={menuEnter.animate}
               exit={menuEnter.exit}
               transition={menuEnter.transition}
-              className="absolute bottom-full left-0 right-0 z-(--z-panel) mb-1 max-h-64 overflow-y-auto rounded-lg border border-(--color-border-strong) bg-(--color-surface) shadow-md"
+              className="absolute bottom-full left-0 right-0 z-(--z-panel) mb-1 max-h-64 overflow-y-auto rounded-lg bg-(--color-surface) shadow-md"
             >
               {filteredSlashCommands.map((cmd) => {
                 if (cmd.isSeparator) {

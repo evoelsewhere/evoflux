@@ -866,19 +866,19 @@ export function AimPipelinesPanel({
                       {runSummary.total} attempts
                     </span>
                     {runSummary.active > 0 && (
-                      <span className="inline-flex items-center gap-1 rounded border border-(--color-info)/30 bg-(--color-info-subtle)/35 px-1.5 py-0.5 text-(--color-info)">
+                      <span className="inline-flex items-center gap-1 rounded border border-(--color-info)/35 bg-(--color-info-subtle)/35 px-1.5 py-0.5 text-(--color-info)">
                         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />
                         {runSummary.active} active
                       </span>
                     )}
                     {runSummary.completed > 0 && (
-                      <span className="inline-flex items-center gap-1 rounded border border-(--color-success)/25 bg-(--color-success-subtle)/25 px-1.5 py-0.5 text-(--color-success)">
+                      <span className="inline-flex items-center gap-1 rounded border border-(--color-success)/30 bg-(--color-success-subtle)/25 px-1.5 py-0.5 text-(--color-success)">
                         <CircleCheck size={9} />
                         {runSummary.completed} completed
                       </span>
                     )}
                     {runSummary.attention > 0 && (
-                      <span className="inline-flex items-center gap-1 rounded border border-(--color-error)/25 bg-(--color-error-subtle)/40 px-1.5 py-0.5 text-(--color-error)">
+                      <span className="inline-flex items-center gap-1 rounded border border-(--color-error)/30 bg-(--color-error-subtle)/40 px-1.5 py-0.5 text-(--color-error)">
                         <CircleAlert size={9} />
                         {runSummary.attention} attention
                       </span>
@@ -1316,13 +1316,13 @@ function workflowNodeIconTone(kind: string): string {
   switch (kind) {
     case 'gate':
     case 'input':
-      return 'border-(--color-warning,orange)/30 bg-(--color-warning-subtle)/35'
+      return 'border-(--color-warning,orange)/35 bg-(--color-warning-subtle)/35'
     case 'agent':
-      return 'border-(--accent-purple)/30 bg-(--accent-purple-soft)/35'
+      return 'border-(--accent-purple)/35 bg-(--accent-purple-soft)/35'
     case 'tool':
-      return 'border-(--color-info)/30 bg-(--color-info-subtle)/35'
+      return 'border-(--color-info)/35 bg-(--color-info-subtle)/35'
     case 'foreach':
-      return 'border-(--color-success)/30 bg-(--color-success-subtle)/35'
+      return 'border-(--color-success)/35 bg-(--color-success-subtle)/35'
     default:
       return 'border-(--color-border) bg-(--bg-key)'
   }
@@ -1857,7 +1857,7 @@ function WorkflowCanvasPreview({
                 className={cn(
                   'rounded border px-1.5 py-0.5 font-mono',
                   edge.when && edge.when !== '*'
-                    ? 'border-(--color-warning,orange)/40 text-(--color-warning,orange)'
+                    ? 'border-(--color-warning,orange)/50 text-(--color-warning,orange)'
                     : 'border-(--color-border)',
                 )}
               >
@@ -2010,7 +2010,7 @@ function PipelineInfoCard({
               : `Blocked · ${visibleBlockers.length + claimDependencies.length} prerequisite(s)`}
           </p>
           {readiness.selected_count > 1 && (
-            <div className="mt-2 rounded-md border border-current/20 bg-(--bg-page)/70 px-2.5 py-2 text-(--color-text-2)">
+            <div className="mt-2 rounded-md border border-current/25 bg-(--bg-page)/70 px-2.5 py-2 text-(--color-text-2)">
               <p className="font-medium">
                 {readiness.included_dependencies.length > 0
                   ? `${readiness.included_dependencies.length} prerequisite unit(s) are included automatically`
@@ -2027,7 +2027,7 @@ function PipelineInfoCard({
                       className={cn(
                         'rounded border px-1.5 py-0.5 font-mono text-[9px]',
                         unit === readiness.primary_unit
-                          ? 'border-(--color-accent)/40 bg-(--color-accent)/10 text-(--color-text)'
+                          ? 'border-(--color-accent)/50 bg-(--color-accent)/10 text-(--color-text)'
                           : 'border-(--color-border) bg-(--bg-subtle) text-(--color-text-muted)',
                       )}
                     >
@@ -2044,7 +2044,7 @@ function PipelineInfoCard({
               {claimDependencies.map((dependency) => (
                 <div
                   key={dependency.workflow_execution_id}
-                  className="rounded-md border border-(--color-warning,orange)/35 bg-(--bg-page)/70 px-2.5 py-2 text-(--color-text-2)"
+                  className="rounded-md border border-(--color-warning,orange)/40 bg-(--bg-page)/70 px-2.5 py-2 text-(--color-text-2)"
                 >
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <span className="inline-flex items-center gap-1 font-medium text-(--color-warning,orange)">
@@ -2434,7 +2434,7 @@ export function RunMonitorPanel({
                 </div>
               </div>
             ) : workflowQ.isError ? (
-              <div className="flex items-start gap-2 rounded-md border border-(--color-error)/35 bg-(--color-error-subtle,var(--bg-key)) px-3 py-3 text-xs text-(--color-error)">
+              <div className="flex items-start gap-2 rounded-md border border-(--color-error)/40 bg-(--color-error-subtle,var(--bg-key)) px-3 py-3 text-xs text-(--color-error)">
                 <CircleAlert size={14} className="mt-0.5 shrink-0" />
                 <span>The workflow definition is unavailable, so its execution canvas cannot be rendered.</span>
               </div>
@@ -2721,10 +2721,10 @@ function ActivityLogSection({ sessionId, active }: { sessionId: string; active: 
                 key={line.key}
                 className="relative flex gap-3 border-b border-(--color-border)/60 py-2.5 pl-1"
               >
-                <span className="relative z-[1] flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-(--color-accent)/40 bg-(--bg-page) text-(--color-accent)">
+                <span className="relative z-[1] flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-(--color-accent)/50 bg-(--bg-page) text-(--color-accent)">
                   <CornerDownLeft size={10} aria-hidden="true" />
                 </span>
-                <div className="min-w-0 flex-1 border-l-2 border-(--color-accent)/40 pl-2.5">
+                <div className="min-w-0 flex-1 border-l-2 border-(--color-accent)/50 pl-2.5">
                   <p className="mb-0.5 flex items-center gap-1.5 text-[10px]">
                     <span className="font-semibold text-(--color-text-2)">
                       Handoff · {line.agent}
@@ -2989,7 +2989,7 @@ function GateSection({ sessionId }: { sessionId: string }) {
   if (!item) return null
 
   return (
-    <div className="space-y-2 rounded-md border border-(--color-warning,orange)/40 bg-(--bg-key) px-3 py-2">
+    <div className="space-y-2 rounded-md border border-(--color-warning,orange)/50 bg-(--bg-key) px-3 py-2">
       <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-(--color-warning,orange)">
         <CirclePause size={11} />
         Waiting for you
@@ -3111,10 +3111,10 @@ function NodeStatusIcon({ status }: { status: string }) {
 function VerdictChip({ verdict }: { verdict: string }) {
   const tone =
     verdict === 'pass'
-      ? 'border-(--color-success)/25 bg-(--color-success-subtle)/25 text-(--color-success)'
+      ? 'border-(--color-success)/30 bg-(--color-success-subtle)/25 text-(--color-success)'
       : verdict === 'acceptable_diff'
-        ? 'border-(--color-warning)/30 bg-(--color-warning-subtle)/25 text-(--color-warning)'
-        : 'border-(--color-error)/25 bg-(--color-error-subtle)/35 text-(--color-error)'
+        ? 'border-(--color-warning)/35 bg-(--color-warning-subtle)/25 text-(--color-warning)'
+        : 'border-(--color-error)/30 bg-(--color-error-subtle)/35 text-(--color-error)'
   const Icon = verdict === 'pass' || verdict === 'acceptable_diff' ? CircleCheck : CircleX
   return (
     <span
@@ -3209,12 +3209,12 @@ function RunRow({
           <span
             className={cn(
               'flex h-8 w-8 shrink-0 items-center justify-center rounded-md border bg-(--bg-page)',
-              status === 'running' && 'border-(--color-info)/30 bg-(--color-info-subtle)/30 text-(--color-info)',
+              status === 'running' && 'border-(--color-info)/35 bg-(--color-info-subtle)/30 text-(--color-info)',
               status === 'waiting_gate' &&
-                'border-(--color-warning)/35 bg-(--color-warning-subtle)/25 text-(--color-warning)',
-              status === 'failed' && 'border-(--color-error)/30 bg-(--color-error-subtle)/30 text-(--color-error)',
+                'border-(--color-warning)/40 bg-(--color-warning-subtle)/25 text-(--color-warning)',
+              status === 'failed' && 'border-(--color-error)/35 bg-(--color-error-subtle)/30 text-(--color-error)',
               (status === 'completed' || status === 'done') &&
-                'border-(--color-success)/30 bg-(--color-success-subtle)/25 text-(--color-success)',
+                'border-(--color-success)/35 bg-(--color-success-subtle)/25 text-(--color-success)',
               !['running', 'waiting_gate', 'failed', 'completed', 'done'].includes(status) &&
                 'border-(--color-border) text-(--color-text-muted)',
             )}
@@ -3363,18 +3363,18 @@ function RunStatusPill({ status }: { status: RunDisplayStatus }) {
     <span
       className={cn(
         'inline-flex min-w-[82px] items-center justify-center rounded-md border px-1.5 py-1 text-[10px] font-medium',
-        status === 'running' && 'border-(--color-info)/30 bg-(--color-info-subtle)/35',
+        status === 'running' && 'border-(--color-info)/35 bg-(--color-info-subtle)/35',
         status === 'waiting_gate' &&
-          'border-(--color-warning)/30 bg-(--color-warning-subtle)/25',
+          'border-(--color-warning)/35 bg-(--color-warning-subtle)/25',
         status === 'completed' &&
-          'border-(--color-success)/25 bg-(--color-success-subtle)/25',
-        status === 'failed' && 'border-(--color-error)/25 bg-(--color-error-subtle)/35',
+          'border-(--color-success)/30 bg-(--color-success-subtle)/25',
+        status === 'failed' && 'border-(--color-error)/30 bg-(--color-error-subtle)/35',
         status === 'stopped' &&
           'border-(--color-border) bg-(--bg-subtle)/55',
         status === 'done' &&
-          'border-(--color-success)/20 bg-(--color-success-subtle)/20',
+          'border-(--color-success)/25 bg-(--color-success-subtle)/20',
         status === 'interrupted' &&
-          'border-(--color-warning)/25 bg-(--color-warning-subtle)/20',
+          'border-(--color-warning)/30 bg-(--color-warning-subtle)/20',
       )}
     >
       <StatusBadge status={status} />

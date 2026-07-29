@@ -158,7 +158,7 @@ function ActionButton({
       className={cn(
         'flex items-center gap-3 rounded-md border px-4 py-3 text-left transition-colors',
         accent
-          ? 'border-(--color-accent)/30 bg-(--color-accent)/10 hover:bg-(--color-accent)/20'
+          ? 'border-(--color-accent)/35 bg-(--color-accent)/10 hover:bg-(--color-accent)/20'
           : 'border-(--color-border) hover:bg-(--bg-key)',
         disabled && 'opacity-60',
       )}
