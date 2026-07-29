@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import zipfile
+from io import BytesIO
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,7 @@ from pptx.util import Inches
 
 from app.agent.builtin_skills.docx.scripts import accept_changes as docx_accept
 from app.agent.builtin_skills.docx.scripts import template as docx_template
+from app.agent.builtin_skills.pptx.scripts import office_features
 from app.agent.builtin_skills.pptx.scripts import template as pptx_template
 from app.agent.builtin_skills.template_fidelity import package_hashes, patch_package
 from app.agent.builtin_skills.xlsx.scripts import template as xlsx_template
@@ -143,6 +145,150 @@ def test_pptx_template_edit_preserves_master_layout_and_theme(tmp_path: Path) ->
     mismatch = pptx_template.verify(source, tampered, plan)
     assert mismatch["plan_mismatches"] == ["ppt/slides/slide1.xml"]
     assert mismatch["errors"]
+
+
+def test_pptx_template_edits_chart_workbook_without_rebuilding_slide(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "chart-template.pptx"
+    output = tmp_path / "chart-edited.pptx"
+    deck = Presentation()
+    slide = deck.slides.add_slide(deck.slide_layouts[6])
+    office_features.add_native_chart(
+        slide,
+        ["Q1", "Q2"],
+        {"Actual": [10, 12], "Plan": [11, 13]},
+        left=Inches(1),
+        top=Inches(1),
+        width=Inches(7),
+        height=Inches(4),
+        kind="line",
+    )
+    deck.save(source)
+    manifest = pptx_template.inspect(source)
+    chart_shape = next(
+        shape for shape in manifest["slides"][0]["shapes"] if shape["has_chart"]
+    )
+    plan = {
+        "edits": [
+            {
+                "slide": 1,
+                "shape_id": chart_shape["shape_id"],
+                "action": "replace_chart_data",
+                "categories": ["H1", "H2", "H3"],
+                "series": [
+                    {"name": "Actual", "values": [21, 25, 30]},
+                    {"name": "Plan", "values": [22, 24, 28]},
+                ],
+            }
+        ]
+    }
+
+    report = pptx_template.apply(source, output, plan)
+
+    assert report["errors"] == []
+    assert len(report["changed_parts"]) == 2
+    assert any(part.startswith("ppt/charts/chart") for part in report["changed_parts"])
+    assert any(part.startswith("ppt/embeddings/") for part in report["changed_parts"])
+    assert "ppt/slides/slide1.xml" not in report["changed_parts"]
+    edited = Presentation(output)
+    chart = next(shape.chart for shape in edited.slides[0].shapes if shape.has_chart)
+    assert [series.name for series in chart.series] == ["Actual", "Plan"]
+    assert [list(series.values) for series in chart.series] == [
+        [21.0, 25.0, 30.0],
+        [22.0, 24.0, 28.0],
+    ]
+    assert list(chart.plots[0].categories.flattened_labels) == [
+        ("H1",),
+        ("H2",),
+        ("H3",),
+    ]
+    with zipfile.ZipFile(output) as package:
+        workbook_part = next(
+            name
+            for name in package.namelist()
+            if name.startswith("ppt/embeddings/") and name.endswith(".xlsx")
+        )
+        workbook = load_workbook(BytesIO(package.read(workbook_part)))
+    assert workbook.active["A2"].value == "H1"
+    assert workbook.active["C4"].value == 28
+    assert pptx_template.verify(source, output, plan)["errors"] == []
+
+
+def test_pptx_template_fills_placeholder_and_replaces_rich_text_runs(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "rich-template.pptx"
+    output = tmp_path / "rich-edited.pptx"
+    deck = Presentation()
+    slide = deck.slides.add_slide(deck.slide_layouts[5])
+    slide.shapes.title.text = "Template title"
+    body = slide.shapes.add_textbox(
+        Inches(1),
+        Inches(2),
+        Inches(6),
+        Inches(2),
+    )
+    body.text = "Template body"
+    deck.save(source)
+    manifest = pptx_template.inspect(source)
+    shapes = manifest["slides"][0]["shapes"]
+    title_shape = next(shape for shape in shapes if shape["placeholder"])
+    body_shape = next(shape for shape in shapes if shape["text"] == "Template body")
+    plan = {
+        "edits": [
+            {
+                "slide": 1,
+                "shape_id": title_shape["shape_id"],
+                "action": "fill_placeholder",
+                "text": "Filled title",
+            },
+            {
+                "slide": 1,
+                "shape_id": body_shape["shape_id"],
+                "action": "replace_rich_text",
+                "paragraphs": [
+                    {
+                        "bullet": True,
+                        "runs": [
+                            {
+                                "text": "Lead",
+                                "bold": True,
+                                "color": "2F6D68",
+                                "size": 22,
+                            },
+                            {"text": " with supporting evidence."},
+                        ],
+                    },
+                    {
+                        "bullet": True,
+                        "level": 1,
+                        "runs": [{"text": "Editable detail", "italic": True}],
+                    },
+                ],
+            },
+        ]
+    }
+
+    report = pptx_template.apply(source, output, plan)
+
+    assert report["errors"] == []
+    assert report["changed_parts"] == ["ppt/slides/slide1.xml"]
+    edited = Presentation(output)
+    assert edited.slides[0].shapes.title.text == "Filled title"
+    edited_body = next(
+        shape
+        for shape in edited.slides[0].shapes
+        if shape.has_text_frame and shape.text.startswith("Lead")
+    )
+    assert edited_body.text == ("Lead with supporting evidence.\nEditable detail")
+    assert edited_body.text_frame.paragraphs[0].runs[0].font.bold
+    assert edited_body.text_frame.paragraphs[0].runs[0].font.size.pt == 22
+    assert edited_body.text_frame.paragraphs[1].runs[0].font.italic
+    with zipfile.ZipFile(output) as package:
+        slide_xml = package.read("ppt/slides/slide1.xml")
+    assert slide_xml.count(b":buChar") == 2
+    assert pptx_template.verify(source, output, plan)["errors"] == []
 
 
 def test_docx_template_edit_preserves_styles_and_headers(tmp_path: Path) -> None:

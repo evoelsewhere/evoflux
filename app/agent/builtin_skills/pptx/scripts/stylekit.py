@@ -568,9 +568,14 @@ def add_image_cover(
     top,
     width,
     height,
+    focal_x: float = 0.5,
+    focal_y: float = 0.5,
+    alt_text: str | None = None,
     guard: LayoutGuard | None = None,
 ):
-    """Place an image in a frame with center-crop and no distortion."""
+    """Place an image with native crop controls and a configurable focal point."""
+    if not 0 <= focal_x <= 1 or not 0 <= focal_y <= 1:
+        raise ValueError("focal_x and focal_y must be between 0 and 1")
     if guard is not None:
         guard.reserve(
             f"image:{Path(image_path).name}",
@@ -591,13 +596,17 @@ def add_image_cover(
         height=height,
     )
     if image_ratio > frame_ratio:
-        crop = (1 - frame_ratio / image_ratio) / 2
-        picture.crop_left = crop
-        picture.crop_right = crop
+        crop = 1 - frame_ratio / image_ratio
+        picture.crop_left = crop * focal_x
+        picture.crop_right = crop * (1 - focal_x)
     elif image_ratio < frame_ratio:
-        crop = (1 - image_ratio / frame_ratio) / 2
-        picture.crop_top = crop
-        picture.crop_bottom = crop
+        crop = 1 - image_ratio / frame_ratio
+        picture.crop_top = crop * focal_y
+        picture.crop_bottom = crop * (1 - focal_y)
+    if alt_text:
+        properties = picture._element.xpath(".//*[local-name()='cNvPr']")
+        if properties:
+            properties[0].set("descr", alt_text)
     return picture
 
 

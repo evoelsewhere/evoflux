@@ -11,6 +11,7 @@ from pptx.enum.shapes import MSO_SHAPE
 from pptx.util import Inches
 import pytest
 
+from app.agent.builtin_skills.pptx.scripts import office_features
 from app.services import office_preview_service as preview
 
 
@@ -133,6 +134,51 @@ def test_render_pptx_preview_resolves_template_theme_colors(monkeypatch, tmp_pat
     rendered = preview.render_office_preview(source).read_text()
 
     assert "background:#4F81BD" in rendered
+
+
+def test_render_pptx_preview_supports_bullets_columns_groups_and_connectors(
+    monkeypatch,
+    tmp_path,
+):
+    source = tmp_path / "rich-office.pptx"
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+    office_features.add_rich_text(
+        slide,
+        [
+            office_features.RichParagraph(
+                runs=(office_features.RichTextRun("First point"),),
+                bullet=True,
+            ),
+            office_features.RichParagraph(
+                runs=(office_features.RichTextRun("Second point"),),
+                bullet=True,
+            ),
+        ],
+        left=Inches(0.8),
+        top=Inches(0.8),
+        width=Inches(5),
+        height=Inches(2),
+        columns=2,
+    )
+    office_features.add_grouped_process(
+        slide,
+        ["Discover", "Decide", "Deliver"],
+        left=Inches(1),
+        top=Inches(3.3),
+        width=Inches(10),
+        height=Inches(2.4),
+    )
+    presentation.save(source)
+    monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
+
+    rendered = preview.render_office_preview(source).read_text()
+
+    assert 'class="bullet-marker">•</span>' in rendered
+    assert "column-count:2" in rendered
+    assert rendered.count('class="shape connector"') == 2
+    assert "Discover" in rendered
+    assert "Deliver" in rendered
 
 
 def test_render_office_preview_invalidates_when_source_changes(
