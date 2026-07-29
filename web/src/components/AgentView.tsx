@@ -33,7 +33,7 @@ import { isDirectUserBlock, latestDirectUserBlockId } from '@/utils/blocks'
 import { mcpAppResourceUri } from '@/utils/mcp-app-artifacts'
 import { resolveAgentRole } from '@/lib/agent-roles'
 import { useTeamStore } from '@/stores/useTeamStore'
-import { LoadingVerb } from './motion/LoadingVerb'
+import { ActivityStatus } from './motion/ActivityStatus'
 import { BlockEnter } from './motion/BlockEnter'
 import { SessionChapterRail } from './SessionChapterRail'
 import { TextSelectionAction } from './TextSelectionAction'
@@ -404,7 +404,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                  )
                 })}
 
-            {/* Me show loading verb when:
+            {/* Show a stable activity state when:
              *   1. pending — user just sent, agent hasn't woken yet (no agent_status event yet), OR
              *   2. working with no agent content yet (user bubbles don't count).
              * Covers the POST → first SSE event gap so the user always gets immediate feedback.
@@ -430,7 +430,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                     dotClassName="animate-pulse bg-(--color-accent)"
                   />
                 </div>
-                <LoadingVerb className="py-1 pl-0.5" />
+                <ActivityStatus className="py-1 pl-0.5 text-xs" />
               </div>
             )}
 
