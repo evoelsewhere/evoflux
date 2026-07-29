@@ -211,7 +211,9 @@ class TestTeamAgentsRouteExtra:
     def test_agents_workspace_returns_coding_team(
         self, app_without_team, test_team, monkeypatch
     ):
-        async def fake_get_or_start_coding_team(workspace: str, session_id: str, **_kwargs):
+        async def fake_get_or_start_coding_team(
+            workspace: str, session_id: str, **_kwargs
+        ):
             test_team.mode = "coding"
             test_team.workspace = workspace
             return test_team
@@ -232,7 +234,9 @@ class TestTeamAgentsRouteExtra:
     def test_agents_workspace_validation_error_returns_422(
         self, app_without_team, monkeypatch
     ):
-        async def fake_get_or_start_coding_team(workspace: str, session_id: str, **_kwargs):
+        async def fake_get_or_start_coding_team(
+            workspace: str, session_id: str, **_kwargs
+        ):
             raise ValueError("bad workspace")
 
         monkeypatch.setattr(
@@ -350,6 +354,47 @@ class TestTeamAgentsRouteExtra:
         assert test_team.handle_user_message.call_args.kwargs["workspace"] == str(
             workspace.resolve()
         )
+
+    def test_forge_chat_restores_persisted_custom_workspace(
+        self, app_without_team, test_team, monkeypatch, tmp_path
+    ):
+        session_id = uuid.uuid7()
+        workspace = tmp_path / "custom-forge-workspace"
+        workspace.mkdir()
+        asyncio.run(
+            _save_chat_session(
+                ChatSession(
+                    id=session_id,
+                    title="Forge task",
+                    agent_name="lead",
+                    mode="forge",
+                    workspace=str(workspace),
+                )
+            )
+        )
+
+        async def fake_get_or_start_team_for_session(_session_id: str):
+            test_team.workspace = None
+            return test_team
+
+        monkeypatch.setattr(
+            "app.api.routes.team.chat.team_manager.get_or_start_team_for_session",
+            fake_get_or_start_team_for_session,
+        )
+
+        with patch(
+            "app.api.routes.team.chat.agent_service.dispatch_user_message",
+            new=AsyncMock(return_value=(str(session_id), 0)),
+        ) as dispatch:
+            resp = TestClient(app_without_team).post(
+                "/api/team/chat",
+                data={"message": "continue", "session_id": str(session_id)},
+            )
+
+        expected = str(workspace.resolve())
+        assert resp.status_code == 202
+        assert test_team.workspace == expected
+        assert dispatch.await_args.kwargs["workspace"] == expected
 
     def test_workspace_validate_returns_resolved_path(self, app_without_team, tmp_path):
         workspace = tmp_path / "project"

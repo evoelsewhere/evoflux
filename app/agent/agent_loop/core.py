@@ -419,7 +419,7 @@ class Agent(Generic[TContext]):
                 break
             iteration += 1
             iter_start = time.monotonic()
-            logger.info(
+            logger.debug(
                 "agent_iteration agent={} iteration={}/{} messages={}",
                 self.name,
                 iteration,
@@ -490,7 +490,7 @@ class Agent(Generic[TContext]):
             if before_model_only:
                 await model_chain(model_request)
                 await self._sync(checkpointer, ctx, state)
-                logger.info(
+                logger.debug(
                     "agent_iteration_done agent={} iteration={} action=before_model_only",
                     self.name,
                     iteration,
@@ -561,7 +561,7 @@ class Agent(Generic[TContext]):
             provider_fallback = state.metadata.pop("provider_fallback", None)
             stream_elapsed = time.monotonic() - iter_start
 
-            logger.info(
+            logger.debug(
                 "llm_response agent={} iteration={} elapsed={:.2f}s "
                 "content_len={} reasoning_len={} tool_calls={} tokens={}/{}/{}",
                 self.name,
@@ -650,7 +650,7 @@ class Agent(Generic[TContext]):
             _is_sleep = (assistant_msg.content or "").strip() in ("<sleep>", "[sleep]")
 
             if not tc_list:
-                logger.info(
+                logger.debug(
                     "agent_iteration_done agent={} iteration={} action={}",
                     self.name,
                     iteration,
@@ -683,7 +683,7 @@ class Agent(Generic[TContext]):
                 for tc in tc_list
             )
 
-            logger.info(
+            logger.debug(
                 "tool_dispatch agent={} count={} mode={} tools=[{}]",
                 self.name,
                 len(tc_list),
@@ -764,7 +764,7 @@ class Agent(Generic[TContext]):
 
             # Me sleep + tool calls: tools executed, now exit without another LLM call
             if _is_sleep:
-                logger.info(
+                logger.debug(
                     "agent_iteration_done agent={} iteration={} action=sleep_after_tools",
                     self.name,
                     iteration,

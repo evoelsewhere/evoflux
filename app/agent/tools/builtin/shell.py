@@ -351,7 +351,7 @@ async def _shell(
     shell_name = _shell_mod.name(shell_bin)
 
     desc_tag = f" ({description})" if description else ""
-    logger.info(
+    logger.debug(
         "shell_execute_start shell={} command={} cwd={} timeout={} background={}{}",
         shell_name,
         command[:200],
@@ -436,7 +436,7 @@ async def _shell(
             text = raw_bytes.decode("utf-8", errors="replace")
             exit_code = completed.returncode
             total_bytes = len(raw_bytes)
-            logger.info(
+            logger.debug(
                 "shell_execute_complete exit_code={} output_bytes={}{} (thread_fallback)",
                 exit_code,
                 total_bytes,
@@ -560,7 +560,7 @@ async def _shell(
         text = raw_bytes.decode("utf-8", errors="replace")
         exit_code = proc.returncode or 0
 
-        logger.info(
+        logger.debug(
             "shell_execute_complete exit_code={} output_bytes={}{}",
             exit_code,
             total_bytes,

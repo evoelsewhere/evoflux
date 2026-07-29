@@ -403,7 +403,7 @@ class TeamMemberBase(abc.ABC):
         self._mailbox.register(self.name)
 
         self.state = "idle"
-        logger.info(
+        logger.debug(
             "team_member_registered name={} session_id={}", self.name, self.session_id
         )
 
@@ -483,7 +483,7 @@ class TeamMemberBase(abc.ABC):
             self._mailbox.deregister(self.name)
 
         self.state = "idle"
-        logger.info("team_member_stopped name={}", self.name)
+        logger.debug("team_member_stopped name={}", self.name)
 
     def interrupt(self) -> None:
         """Request cancellation of the current activation without deregistering."""
@@ -712,7 +712,7 @@ class TeamMemberBase(abc.ABC):
 
         # state was already set to "working" by _maybe_activate
         await self._team._emit(agent=self.name, event="agent_status", status="working")
-        logger.info(
+        logger.debug(
             "team_member_activated name={} messages={} "
             "continuation={} rate_limit_retry={}",
             self.name,
@@ -849,7 +849,7 @@ class TeamMemberBase(abc.ABC):
                     event="agent_status",
                     status="idle",
                 )
-                logger.info("team_member_idle name={}", self.name)
+                logger.debug("team_member_idle name={}", self.name)
 
             # Did mcp.json / agent.md / SKILL.md change during this turn?
             # Drift → rebuild the agent at the start of the next turn.

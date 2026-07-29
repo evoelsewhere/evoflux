@@ -1,11 +1,10 @@
 /**
- * High-fidelity Office previews.
+ * Sandboxed OpenXML previews.
  *
- * The backend uses the bundled OfficeCLI renderer to produce one consistent,
- * paginated HTML representation for DOCX, XLSX and PPTX. The result is loaded
- * into a script-sandboxed iframe with an in-document CSP, keeping document
- * content isolated from EvoFlux while preserving the renderer's pagination,
- * layout, charts, merged cells and slide geometry.
+ * The backend parses OpenXML with the Python libraries bundled in EvoFlux and
+ * produces a self-contained HTML representation for DOCX, XLSX and PPTX. The
+ * result is loaded into a script-sandboxed iframe with an in-document CSP, so
+ * document content remains isolated from the application.
  */
 
 import { useEffect, useState } from 'react'

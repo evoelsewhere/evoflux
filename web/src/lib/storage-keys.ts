@@ -35,12 +35,18 @@ export const STORAGE_KEYS = {
     plan: 'planPanelWidth',
     workspace: 'workspace-panel-width',
     workspaceTree: 'workspace-tree-width',
+    codingWorkspaceTree: 'oa.codingWorkspace.treeWidth',
     aimDiscussion: 'oa.aimDiscussion.width',
     aimMonitor: 'oa.aimMonitor.width',
     aimReport: 'oa.aimReport.width',
     aimUnitDetail: 'oa.aimUnitDetail.width',
     sideChat: 'oa.sideChatPanel.width',
     workbench: 'oa.workbenchPanel.width',
+  },
+
+  workspaceFiles: {
+    treeVisible: 'oa.workspaceFiles.treeVisible',
+    codingTreeVisible: 'oa.codingWorkspace.treeVisible',
   },
 
   /** Coding workspace list + last-used pointers (utils/workspace.ts). */

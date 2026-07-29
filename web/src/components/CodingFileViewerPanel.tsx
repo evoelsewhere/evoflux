@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ComponentProps, type CSSProperties } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Check, Copy, Download, ExternalLink, FileText, GitCompare, Loader2, Pencil, Save, Undo2, X, Eye } from 'lucide-react'
+import { Check, Copy, Download, ExternalLink, FileText, GitCompare, Loader2, PanelRightClose, PanelRightOpen, Pencil, Save, Undo2, X, Eye } from 'lucide-react'
 import Editor, { DiffEditor, useMonaco } from '@monaco-editor/react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -550,14 +550,13 @@ function RichPreview({ workspace, file, isHtml }: { workspace: string; file: Wor
         <ReactMarkdown 
           remarkPlugins={[remarkGfm]}
           components={{
-            code({ inline, className, children, ...props }: any) {
+            code({ inline, className, children, ...props }: ComponentProps<'code'> & { inline?: boolean }) {
               const match = /language-(\w+)/.exec(className || '')
               return !inline && match ? (
                 <SyntaxHighlighter
-                  style={vscDarkPlus as any}
+                  style={vscDarkPlus as { [key: string]: CSSProperties }}
                   language={match[1]}
                   PreTag="div"
-                  {...props}
                 >
                   {String(children).replace(/\n$/, '')}
                 </SyntaxHighlighter>
@@ -593,6 +592,9 @@ export function CodingFileViewerPanel({
   desktopOverlay = true,
   desktopOverlayInner = false,
   initialViewMode = 'file',
+  embedded = false,
+  fileTreeVisible = false,
+  onToggleFileTree,
 }: {
   workspace: string
   file: WorkspaceFileInfo | null
@@ -614,6 +616,10 @@ export function CodingFileViewerPanel({
   desktopOverlayInner?: boolean
   /** Preferred pane when opening (e.g. Changes deep-link → diff). */
   initialViewMode?: 'file' | 'diff' | 'preview'
+  /** Render inside the Coding Files workbench instead of creating a panel. */
+  embedded?: boolean
+  fileTreeVisible?: boolean
+  onToggleFileTree?: () => void
 }) {
   const [viewMode, setViewMode] = useState<'file' | 'diff' | 'preview'>(initialViewMode)
   const [editing, setEditing] = useState(false)
@@ -631,29 +637,12 @@ export function CodingFileViewerPanel({
   const isHtml = ext === 'html' || ext === 'htm'
   const isMarkdown = ext === 'md' || ext === 'markdown'
   const canPreview = isHtml || isMarkdown
-
-  useEffect(() => {
-    if (viewMode === 'preview' && !canPreview) {
-      setViewMode('file')
-    }
-  }, [file?.path, canPreview, viewMode])
+  const effectiveViewMode = viewMode === 'preview' && !canPreview ? 'file' : viewMode
 
   if (!file) return null
 
-  return (
-    <SidePanel
-      storageKey={STORAGE_KEYS.panels.codingFileViewer}
-      defaultWidth={560}
-      minWidth={420}
-      maxWidth={Math.min(880, Math.max(420, Math.floor((typeof window === 'undefined' ? 880 : window.innerWidth) - 320)))}
-      mobileOverlay
-      desktopOverlay={desktopOverlay}
-      desktopOverlayInner={desktopOverlayInner}
-      mobile={mobile}
-      resizeLabel="Resize file viewer"
-      ariaLabel="File viewer"
-      className="bg-(--bg-card)"
-    >
+  const content = (
+    <>
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-4 py-3">
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-sm font-semibold text-(--color-text)" title={file.path}>{file.path}</h2>
@@ -664,7 +653,7 @@ export function CodingFileViewerPanel({
             <button 
               type="button" 
               onClick={() => { setViewMode('file'); setEditing(false) }} 
-              className={cn('h-8 rounded-xs px-2 text-xs md:h-auto md:py-1', viewMode === 'file' && !editing ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}
+              className={cn('h-8 rounded-xs px-2 text-xs md:h-auto md:py-1', effectiveViewMode === 'file' && !editing ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}
             >
               File
             </button>
@@ -673,7 +662,7 @@ export function CodingFileViewerPanel({
               <button 
                 type="button" 
                 onClick={() => { setViewMode('preview'); setEditing(false) }} 
-                className={cn('flex h-8 items-center gap-1 rounded-xs px-2 text-xs md:h-auto md:py-1', viewMode === 'preview' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}
+                className={cn('flex h-8 items-center gap-1 rounded-xs px-2 text-xs md:h-auto md:py-1', effectiveViewMode === 'preview' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}
               >
                 <Eye size={11} /> Preview
               </button>
@@ -691,7 +680,7 @@ export function CodingFileViewerPanel({
             <button 
               type="button" 
               onClick={() => { setViewMode('diff'); setEditing(false) }} 
-              className={cn('flex h-8 items-center gap-1 rounded-xs px-2 text-xs md:h-auto md:py-1', viewMode === 'diff' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}
+              className={cn('flex h-8 items-center gap-1 rounded-xs px-2 text-xs md:h-auto md:py-1', effectiveViewMode === 'diff' ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-muted) hover:text-(--color-text-2)')}
             >
               <GitCompare size={11} /> Diff
             </button>
@@ -700,13 +689,28 @@ export function CodingFileViewerPanel({
             <Download size={14} />
           </button>
           {(kind === 'text' || kind === 'drawio') && <CopyButton workspace={workspace} file={file} />}
+          {onToggleFileTree && (
+            <button
+              type="button"
+              onClick={onToggleFileTree}
+              className={cn(
+                'rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)',
+                fileTreeVisible && 'bg-(--bg-key) text-(--color-text)',
+              )}
+              aria-label={fileTreeVisible ? 'Hide coding file tree' : 'Show coding file tree'}
+              title={fileTreeVisible ? 'Hide file tree' : 'Show file tree'}
+              aria-pressed={fileTreeVisible}
+            >
+              {fileTreeVisible ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
+            </button>
+          )}
           <button type="button" onClick={onClose} className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)" aria-label="Close file viewer" title="Close">
             <X size={16} />
           </button>
         </div>
       </header>
       <div className="min-h-0 flex-1 overflow-hidden">
-        {viewMode === 'diff' ? (
+        {effectiveViewMode === 'diff' ? (
           <div className="h-full min-h-0 w-full overflow-hidden">
             {scopedDiff.isLoading ? <div className="flex h-full items-center justify-center"><Loader2 size={16} className="animate-spin text-(--color-text-subtle)" /></div>
               : scopedDiff.isError ? <div className="flex h-full items-center justify-center px-4 text-center text-xs text-(--color-error)">Failed to load diff</div>
@@ -714,7 +718,7 @@ export function CodingFileViewerPanel({
                   : !scopedDiff.data.diff ? <div className="flex h-full items-center justify-center px-4 text-center text-xs text-(--color-text-subtle)">No diff for this file</div>
                     : <DiffPreview diff={scopedDiff.data.diff} />}
           </div>
-        ) : viewMode === 'preview' && canPreview ? (
+        ) : effectiveViewMode === 'preview' && canPreview ? (
           <RichPreview workspace={workspace} file={file} isHtml={isHtml} />
         ) : kind === 'image' ? (
           <ImagePreview workspace={workspace} file={file} />
@@ -737,6 +741,32 @@ export function CodingFileViewerPanel({
           <BinaryPreview workspace={workspace} file={file} />
         )}
       </div>
+    </>
+  )
+
+  if (embedded) {
+    return (
+      <section className="flex h-full min-h-0 min-w-0 flex-col bg-(--bg-card)" aria-label="File preview">
+        {content}
+      </section>
+    )
+  }
+
+  return (
+    <SidePanel
+      storageKey={STORAGE_KEYS.panels.codingFileViewer}
+      defaultWidth={560}
+      minWidth={420}
+      maxWidth={Math.min(880, Math.max(420, Math.floor((typeof window === 'undefined' ? 880 : window.innerWidth) - 320)))}
+      mobileOverlay
+      desktopOverlay={desktopOverlay}
+      desktopOverlayInner={desktopOverlayInner}
+      mobile={mobile}
+      resizeLabel="Resize file viewer"
+      ariaLabel="File viewer"
+      className="bg-(--bg-card)"
+    >
+      {content}
     </SidePanel>
   )
 }

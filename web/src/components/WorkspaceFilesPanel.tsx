@@ -5,8 +5,8 @@
  * Layout: docked panel that shrinks the chat column (mirrors
  * ``CodingWorkspacePanel``) — a flex sibling of ``<main>``, not an overlay,
  * so opening it resizes the layout instead of covering it. Fixed-position
- * full-screen only below the ``md`` breakpoint (mobile). Inside, a two-pane
- * split — tree grouped by directory on the left, preview on the right.
+ * full-screen only below the ``md`` breakpoint (mobile). Inside, preview is
+ * the primary surface and the resizable file tree is a collapsible right rail.
  * Images render inline via the ``/media/`` proxy (with lightbox on click).
  * Text/code files render as-is in a plain monospace view. Office documents
  * (.docx/.xlsx/.pptx) render via docx-preview / xlsx / pptx-renderer.
@@ -25,10 +25,6 @@ import { STORAGE_KEYS } from '@/lib/storage-keys'
 import {
   X,
   FileText,
-  FileImage,
-  FileCode,
-  FileSpreadsheet,
-  Presentation as PresentationIcon,
   File as FileIcon,
   Folder,
   RefreshCw,
@@ -48,6 +44,8 @@ import {
   FolderUp,
   MoreHorizontal,
   LocateFixed,
+  PanelRightClose,
+  PanelRightOpen,
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
@@ -71,6 +69,7 @@ import { SidePanel } from './shell/SidePanel'
 import { useUIStore } from '@/stores/useUIStore'
 import { getWorkspacePanelLayout } from '@/lib/workspace-panel-layout'
 import { ImageLightbox } from './ImageLightbox'
+import { FileTypeIcon, FolderTypeIcon } from './FileTypeIcon'
 import { DocxPreview, XlsxPreview, PptxPreview } from './workspace-office-preview'
 import {
   DropdownMenu,
@@ -125,35 +124,29 @@ function kindOf(file: WorkspaceFileInfo): FileKind {
   return 'binary'
 }
 
-function FileTypeIcon({ file, size = 12 }: { file: WorkspaceFileInfo; size?: number }) {
-  const kind = kindOf(file)
-  const cls = 'shrink-0 text-(--color-text-muted)'
-  if (kind === 'image') return <FileImage size={size} className={cls} />
-  if (kind === 'xlsx') return <FileSpreadsheet size={size} className={cls} />
-  if (kind === 'pptx') return <PresentationIcon size={size} className={cls} />
-  if (kind === 'docx') return <FileText size={size} className={cls} />
-  if (kind === 'text') {
-    // Code files get the code icon; plain text/markdown use the document icon.
-    const ext = extOf(file.name)
-    const isCode = ext && !['txt', 'md', 'markdown', 'rst', 'log', 'csv', 'tsv'].includes(ext)
-    return isCode ? <FileCode size={size} className={cls} /> : <FileText size={size} className={cls} />
-  }
-  return <FileIcon size={size} className={cls} />
-}
-
 // ── Resize constants ─────────────────────────────────────────────────────────
 
 const PANEL_WIDTH_KEY = STORAGE_KEYS.panels.workspace
 const TREE_WIDTH_KEY = STORAGE_KEYS.panels.workspaceTree
-// Modest — this panel is docked (shares the row with sidebar + chat), not
-// floating above them, so it shouldn't claim most of the window by default.
-const TREE_WIDTH_MIN = 160
-const TREE_WIDTH_MAX_RATIO = 0.55
+const TREE_VISIBILITY_KEY = STORAGE_KEYS.workspaceFiles.treeVisible
+const TREE_WIDTH_MIN = 220
+const TREE_WIDTH_DEFAULT = 280
+const TREE_WIDTH_MAX = 380
+const TREE_WIDTH_MAX_RATIO = 0.42
 
 function readStoredWidth(key: string, fallback: number, min: number): number {
   try {
     const v = localStorage.getItem(key)
     return v ? Math.max(min, parseInt(v, 10)) : fallback
+  } catch {
+    return fallback
+  }
+}
+
+function readStoredBoolean(key: string, fallback: boolean): boolean {
+  try {
+    const value = localStorage.getItem(key)
+    return value === null ? fallback : value === 'true'
   } catch {
     return fallback
   }
@@ -315,7 +308,7 @@ function TreeNodeView({
             className="flex items-center gap-1.5 rounded px-2 py-1"
             style={{ paddingLeft: 8 + depth * 12 }}
           >
-            <FileTypeIcon file={node.file!} />
+            <FileTypeIcon name={node.file!.name} mime={node.file!.mime} />
             <input
               ref={renameInputRef}
               value={renameValue}
@@ -372,7 +365,7 @@ function TreeNodeView({
           style={{ paddingLeft: 8 + depth * 12 }}
           title={node.file.path}
         >
-          <FileTypeIcon file={node.file} />
+          <FileTypeIcon name={node.file.name} mime={node.file.mime} />
           <span className="min-w-0 flex-1 truncate font-mono">{node.name}</span>
           <span className="shrink-0 text-xs text-(--color-text-subtle)">
             {formatBytes(node.file.size)}
@@ -520,7 +513,7 @@ function TreeNodeView({
           size={12}
           className={cn('shrink-0 transition-transform', effectiveOpen && 'rotate-90')}
         />
-        <Folder size={12} className="shrink-0 text-(--color-accent)" />
+        <FolderTypeIcon open={effectiveOpen} size={16} />
         <span className="min-w-0 flex-1 truncate font-mono">{node.name}</span>
       </button>
       {effectiveOpen &&
@@ -780,7 +773,7 @@ function PreviewArea({
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-4 py-2">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <FileTypeIcon file={file} size={13} />
+            <FileTypeIcon name={file.name} mime={file.mime} size={16} />
             <div className="truncate font-mono text-xs text-(--color-text)">{file.path}</div>
           </div>
           <div className="mt-0.5 text-xs text-(--color-text-subtle)">
@@ -879,6 +872,9 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
   const [searchQuery, setSearchQuery] = useState('')
   // Mobile: which pane is active — 'tree' (file list) or 'preview'
   const [mobilePane, setMobilePane] = useState<'tree' | 'preview'>('tree')
+  const [desktopTreeVisible, setDesktopTreeVisible] = useState(() =>
+    readStoredBoolean(TREE_VISIBILITY_KEY, true),
+  )
 
   // Workspace picker state
   const [isPickerOpen, setIsPickerOpen] = useState(false)
@@ -900,46 +896,54 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
 
   // Outer panel width — docked, resizable from the left edge — is owned by
   // the surrounding <SidePanel> chrome (persisted under PANEL_WIDTH_KEY).
-  // The tree/preview split below is a separate, internal resize with its own
-  // hand-rolled drag; its clamp reads the panel's persisted width back out
-  // of localStorage (SidePanel's useResizableWidth writes it on every
-  // change, so the value is current by the time a tree drag starts).
-  //
-  // Default is modest (not the old 60vw) — this panel now shares the row
-  // with the sidebar and chat instead of floating above them, so a large
-  // default is clamped to the available row. If the minimum docked layout
-  // cannot fit, the panel becomes a non-resizable viewport overlay.
+  // The preview owns the flexible space; the tree is a bounded right rail.
+  // Clamp old saved widths so an earlier wide tree cannot starve the preview.
   const [treeWidth, setTreeWidth] = useState(() =>
-    readStoredWidth(TREE_WIDTH_KEY, 260, TREE_WIDTH_MIN),
+    Math.min(
+      TREE_WIDTH_MAX,
+      readStoredWidth(TREE_WIDTH_KEY, TREE_WIDTH_DEFAULT, TREE_WIDTH_MIN),
+    ),
   )
+  const treePaneRef = useRef<HTMLElement>(null)
+  const splitBodyRef = useRef<HTMLDivElement>(null)
 
   const startTreeResize = (e: React.PointerEvent) => {
     e.preventDefault()
+    e.stopPropagation()
     const startX = e.clientX
-    const startW = treeWidth
-    const panelWidth = isOverlay
-      ? viewportWidth
-      : Math.min(
-          panelLayout.maxWidth,
-          readStoredWidth(PANEL_WIDTH_KEY, panelLayout.defaultWidth, panelLayout.minWidth),
-        )
-    const maxTW = Math.round(panelWidth * TREE_WIDTH_MAX_RATIO)
+    // The rendered rail can be narrower than the persisted width when the
+    // workbench is narrow, so resize from what the user actually sees.
+    const startW = treePaneRef.current?.getBoundingClientRect().width ?? treeWidth
+    const panelWidth = splitBodyRef.current?.getBoundingClientRect().width
+      ?? (isOverlay ? viewportWidth : panelLayout.defaultWidth)
+    const maxTW = Math.max(
+      TREE_WIDTH_MIN,
+      Math.min(TREE_WIDTH_MAX, Math.round(panelWidth * TREE_WIDTH_MAX_RATIO)),
+    )
+    let liveWidth = startW
     const onMove = (ev: PointerEvent) => {
-      const newW = Math.max(TREE_WIDTH_MIN, Math.min(maxTW, startW + ev.clientX - startX))
-      setTreeWidth(newW)
+      liveWidth = Math.max(
+        TREE_WIDTH_MIN,
+        Math.min(maxTW, startW + startX - ev.clientX),
+      )
+      // Keep pointer movement frame-perfect: update only the rail DOM while
+      // dragging, then synchronize React/localStorage once on pointer-up.
+      if (treePaneRef.current) treePaneRef.current.style.width = `${liveWidth}px`
     }
-    const onUp = (ev: PointerEvent) => {
+    const onUp = () => {
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
-      const finalW = Math.max(TREE_WIDTH_MIN, Math.min(maxTW, startW + ev.clientX - startX))
-      try { localStorage.setItem(TREE_WIDTH_KEY, String(finalW)) } catch { /* ignore */ }
+      setTreeWidth(liveWidth)
+      try { localStorage.setItem(TREE_WIDTH_KEY, String(liveWidth)) } catch { /* ignore */ }
     }
     document.body.style.cursor = 'ew-resize'
     document.body.style.userSelect = 'none'
     window.addEventListener('pointermove', onMove)
-    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointerup', onUp, { once: true })
+    window.addEventListener('pointercancel', onUp, { once: true })
   }
   const searchInputRef = useRef<HTMLInputElement>(null)
 
@@ -1177,8 +1181,16 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
     setMobilePane('tree')
   }
 
+  const toggleDesktopTree = () => {
+    setDesktopTreeVisible((visible) => {
+      const next = !visible
+      try { localStorage.setItem(TREE_VISIBILITY_KEY, String(next)) } catch { /* ignore */ }
+      return next
+    })
+  }
+
   // On mobile, tree pane and preview pane are mutually exclusive full-width views.
-  const showTree = !isMobile || mobilePane === 'tree'
+  const showTree = isMobile ? mobilePane === 'tree' : desktopTreeVisible
   const showPreview = !isMobile || mobilePane === 'preview'
 
   // Ctrl+F focuses the search input when the tree pane is visible.
@@ -1210,7 +1222,7 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
       className="bg-(--bg-card)"
     >
       {/* Header */}
-      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-4 py-3">
+      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-3 py-2">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           {/* Mobile back button — only shown in preview pane */}
           {isMobile && mobilePane === 'preview' && (
@@ -1223,11 +1235,11 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
             </button>
           )}
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-(--color-text)">Workspace</h2>
+            <h2 className="text-sm font-semibold text-(--color-text)">Files</h2>
             <p className="truncate text-xs text-(--color-text-subtle)">
               {isMobile && mobilePane === 'preview' && selected
                 ? selected.name
-                : <>Local files for this session{data?.truncated ? ' · list truncated' : ''}</>
+                : <>{workspaceName}{data?.truncated ? ' · list truncated' : ''}</>
               }
             </p>
           </div>
@@ -1283,6 +1295,21 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
           >
             <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} />
           </button>
+          {!isMobile && (
+            <button
+              type="button"
+              onClick={toggleDesktopTree}
+              className={cn(
+                'rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)',
+                showTree && 'bg-(--bg-key) text-(--color-text)',
+              )}
+              title={showTree ? 'Hide file tree' : 'Show file tree'}
+              aria-label={showTree ? 'Hide file tree' : 'Show file tree'}
+              aria-pressed={showTree}
+            >
+              {showTree ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
+            </button>
+          )}
           <button
             onClick={onClose}
             className="rounded p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
@@ -1415,16 +1442,22 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
         </div>
       )}
 
-      {/* Body: tree + preview split (desktop) / master-detail (mobile) */}
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        {/* Tree — full width on mobile tree pane, resizable on desktop */}
+      {/* Body: preview-first split (desktop) / master-detail (mobile) */}
+      <div ref={splitBodyRef} className="flex min-h-0 flex-1 overflow-hidden">
+        {/* Tree — a collapsible right rail on desktop, full-width on mobile. */}
         {showTree && (
           <nav
+            ref={treePaneRef}
             className={cn(
-              'relative flex flex-col overflow-hidden',
+              'relative order-3 flex flex-col overflow-hidden',
               isMobile ? 'w-full' : 'shrink-0',
             )}
-            style={!isMobile ? { width: treeWidth } : undefined}
+            style={!isMobile
+              ? {
+                  width: `min(${treeWidth}px, ${TREE_WIDTH_MAX_RATIO * 100}%)`,
+                  minWidth: TREE_WIDTH_MIN,
+                }
+              : undefined}
             onDragEnter={handleDragEnter}
             onDragLeave={handleDragLeave}
             onDragOver={(e) => e.preventDefault()}
@@ -1509,15 +1542,15 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
         {/* Tree/preview drag divider — desktop only */}
         {!isMobile && showTree && showPreview && (
           <div
-            className="relative w-px shrink-0 cursor-ew-resize bg-(--color-border) transition-colors hover:bg-(--color-accent)/40"
+            className="relative order-2 w-px shrink-0 cursor-ew-resize bg-(--color-border) transition-colors hover:bg-(--color-accent)/40"
             onPointerDown={startTreeResize}
-            title="Drag to resize"
+            title="Drag to resize file tree"
           />
         )}
 
-        {/* Preview — full width on mobile preview pane, flex-1 on desktop */}
+        {/* Preview — always receives the primary flexible surface. */}
         {showPreview && (
-          <div className="min-w-0 flex-1">
+          <div className="order-1 min-w-0 flex-1">
             {selected && sessionId ? (
               <PreviewArea
                 key={selected.path}

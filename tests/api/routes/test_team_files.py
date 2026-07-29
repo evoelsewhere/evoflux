@@ -15,10 +15,14 @@ Requirements validated:
 
 from __future__ import annotations
 
+import asyncio
 import uuid
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
+
+from app.models.chat import ChatSession
 
 pytestmark = pytest.mark.usefixtures("setup_db")
 
@@ -283,3 +287,93 @@ class TestWorkspaceFilesListing:
     # physically removes files added after that point, so the listing
     # and media endpoints simply report what's on disk. The snapshot
     # round-trip is covered by tests/services/test_snapshot_service.py.
+
+
+class TestSessionWorkspaceSelection:
+    def test_update_workspace_syncs_cached_forge_team(
+        self, client, session_id, tmp_path, monkeypatch
+    ):
+        async def save_session() -> None:
+            from app.core.db import async_session_factory
+
+            async with async_session_factory() as db:
+                db.add(
+                    ChatSession(
+                        id=uuid.UUID(session_id),
+                        agent_name="lead",
+                        mode="forge",
+                    )
+                )
+                await db.commit()
+
+        asyncio.run(save_session())
+        workspace = tmp_path / "selected-workspace"
+        live_team = SimpleNamespace(workspace=None)
+
+        from app.api.routes.team import files as team_routes
+        from app.core import db as db_module
+
+        monkeypatch.setattr(
+            team_routes, "async_session_factory", db_module.async_session_factory
+        )
+        monkeypatch.setattr(
+            team_routes.team_manager,
+            "current_team_for_session",
+            lambda sid: live_team if sid == session_id else None,
+        )
+
+        resp = client.put(
+            f"/api/team/{session_id}/workspace",
+            json={"path": str(workspace)},
+        )
+
+        expected = str(workspace.resolve())
+        assert resp.status_code == 200
+        assert resp.json()["workspace_root"] == expected
+        assert live_team.workspace == expected
+
+    def test_reset_workspace_clears_cached_forge_team(
+        self, client, session_id, tmp_path, monkeypatch
+    ):
+        selected = tmp_path / "selected-workspace"
+        selected.mkdir()
+
+        async def save_session() -> None:
+            from app.core.db import async_session_factory
+
+            async with async_session_factory() as db:
+                db.add(
+                    ChatSession(
+                        id=uuid.UUID(session_id),
+                        agent_name="lead",
+                        mode="forge",
+                        workspace=str(selected),
+                    )
+                )
+                await db.commit()
+
+        asyncio.run(save_session())
+        live_team = SimpleNamespace(workspace=str(selected))
+
+        from app.api.routes.team import files as team_routes
+        from app.core import db as db_module
+
+        default_workspace = tmp_path / "default-session-workspace"
+        monkeypatch.setattr(team_routes, "workspace_dir", lambda sid: default_workspace)
+        monkeypatch.setattr(
+            team_routes, "async_session_factory", db_module.async_session_factory
+        )
+        monkeypatch.setattr(
+            team_routes.team_manager,
+            "current_team_for_session",
+            lambda sid: live_team if sid == session_id else None,
+        )
+
+        resp = client.put(
+            f"/api/team/{session_id}/workspace",
+            json={"path": None},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["workspace_root"] == str(default_workspace)
+        assert live_team.workspace is None

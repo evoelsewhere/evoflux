@@ -42,6 +42,28 @@ def test_setup_logging_uses_level(tmp_path):
 
     # First sink is stderr — level should be "DEBUG"
     assert calls[0]["level"] == "DEBUG"
+    # Explicit DEBUG is the only mode that enables verbose persistent logs.
+    assert calls[1]["level"] == "DEBUG"
+
+
+def test_setup_logging_keeps_persistent_log_compact(tmp_path):
+    calls = []
+    with (
+        patch("app.core.logging_config.LOGS_DIR", tmp_path),
+        patch("app.core.logging_config.logger") as mock_logger,
+    ):
+        mock_logger.remove = MagicMock()
+
+        def capture_add(*args, **kwargs):
+            calls.append(kwargs)
+
+        mock_logger.add = capture_add
+        setup_logging("INFO")
+
+    assert calls[1]["level"] == "WARNING"
+    assert calls[1]["rotation"] == "5 MB"
+    assert calls[1]["retention"] == 3
+    assert calls[1]["compression"] == "gz"
 
 
 def test_setup_logging_silences_noisy_loggers(tmp_path):
@@ -53,7 +75,19 @@ def test_setup_logging_silences_noisy_loggers(tmp_path):
         mock_logger.add = MagicMock()
         setup_logging()
 
-    for name in ("httpx", "httpcore", "google.genai", "uvicorn.access"):
+    for name in (
+        "aiosqlite",
+        "asyncio",
+        "google.genai",
+        "httpcore",
+        "httpx",
+        "multipart",
+        "uvicorn",
+        "uvicorn.access",
+        "uvicorn.error",
+        "watchfiles.main",
+        "watchfiles.watcher",
+    ):
         assert logging.getLogger(name).level == logging.WARNING
 
 

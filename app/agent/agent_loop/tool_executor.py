@@ -82,7 +82,7 @@ def make_tool_executor(
 
     async def execute(ctx: RunContext, s: AgentState, tc: ToolCall) -> str:
         tool_start = time.monotonic()
-        logger.info(
+        logger.debug(
             "tool_start agent={} tool={} id={} args={}",
             agent_name,
             tc.function.name,
@@ -214,7 +214,7 @@ def make_tool_executor(
                 result = str(result_raw)
 
             tool_elapsed = time.monotonic() - tool_start
-            logger.info(
+            logger.debug(
                 "tool_done agent={} tool={} elapsed={:.2f}s result_len={}",
                 agent_name,
                 tc.function.name,

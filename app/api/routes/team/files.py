@@ -49,7 +49,6 @@ from app.services import team_manager
 from app.services.office_preview_service import (
     OFFICE_PREVIEW_CSP,
     OfficePreviewError,
-    OfficePreviewUnavailableError,
     OfficePreviewUnsupportedError,
     render_office_preview,
 )
@@ -58,6 +57,7 @@ from app.services.workspace_file_watcher import workspace_file_watcher
 
 class WorkspaceSetRequest(BaseModel):
     path: str | None = None  # None → reset to session default sandbox
+
 
 router = APIRouter()
 
@@ -196,8 +196,6 @@ async def get_workspace_office_preview(
         preview = await asyncio.to_thread(render_office_preview, resolved)
     except OfficePreviewUnsupportedError as exc:
         raise HTTPException(status_code=415, detail=str(exc))
-    except OfficePreviewUnavailableError as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
     except OfficePreviewError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
@@ -284,11 +282,15 @@ async def set_session_workspace(
     if body.path is not None:
         p = Path(body.path).expanduser()
         if not p.is_absolute():
-            raise HTTPException(status_code=400, detail="Workspace path must be absolute.")
+            raise HTTPException(
+                status_code=400, detail="Workspace path must be absolute."
+            )
         try:
             p.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
-            raise HTTPException(status_code=400, detail=f"Cannot create directory: {exc}")
+            raise HTTPException(
+                status_code=400, detail=f"Cannot create directory: {exc}"
+            )
         new_workspace = str(p.resolve())
 
     async with async_session_factory() as db:
@@ -297,6 +299,13 @@ async def set_session_workspace(
             raise HTTPException(status_code=404, detail="Session not found.")
         row.workspace = new_workspace
         await db.commit()
+
+    # Do not cold-boot a team just to update this setting.  If the Forge team
+    # is already cached, however, keep it aligned with the persisted row so
+    # the very next agent/shell turn uses the newly selected folder.
+    team_obj = team_manager.current_team_for_session(session_id)
+    if team_obj is not None:
+        team_obj.workspace = new_workspace
 
     return await asyncio.to_thread(
         _list_workspace_files, await _session_workspace(session_id), session_id
@@ -332,7 +341,9 @@ async def upload_workspace_files(
         try:
             target_dir.relative_to(workspace.resolve())
         except ValueError:
-            raise HTTPException(status_code=400, detail="Subfolder escapes workspace root.")
+            raise HTTPException(
+                status_code=400, detail="Subfolder escapes workspace root."
+            )
         target_dir.mkdir(parents=True, exist_ok=True)
     else:
         target_dir = workspace
@@ -348,14 +359,16 @@ async def upload_workspace_files(
             await asyncio.to_thread(dest.write_bytes, content)
             written.append(raw_name)
         except OSError as exc:
-            raise HTTPException(status_code=500, detail=f"Write failed for {raw_name}: {exc}")
+            raise HTTPException(
+                status_code=500, detail=f"Write failed for {raw_name}: {exc}"
+            )
 
     return await asyncio.to_thread(_list_workspace_files, workspace, session_id)
 
 
 class FileMoveRequest(BaseModel):
     from_path: str  # Relative POSIX path within workspace
-    to_path: str    # Relative POSIX path within workspace
+    to_path: str  # Relative POSIX path within workspace
 
 
 @router.post("/{session_id}/files/move", response_model=WorkspaceFilesResponse)
@@ -377,12 +390,16 @@ async def move_workspace_file(
     src = _safe_resolve(workspace, body.from_path)
     dest_candidate = Path(body.to_path)
     if dest_candidate.is_absolute() or ".." in dest_candidate.parts:
-        raise HTTPException(status_code=400, detail="Destination path must be relative.")
+        raise HTTPException(
+            status_code=400, detail="Destination path must be relative."
+        )
     dest = (workspace / dest_candidate).resolve()
     try:
         dest.relative_to(workspace.resolve())
     except ValueError:
-        raise HTTPException(status_code=400, detail="Destination escapes workspace root.")
+        raise HTTPException(
+            status_code=400, detail="Destination escapes workspace root."
+        )
     if dest == src:
         return await asyncio.to_thread(_list_workspace_files, workspace, session_id)
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -393,7 +410,9 @@ async def move_workspace_file(
     return await asyncio.to_thread(_list_workspace_files, workspace, session_id)
 
 
-@router.delete("/{session_id}/files/{file_path:path}", response_model=WorkspaceFilesResponse)
+@router.delete(
+    "/{session_id}/files/{file_path:path}", response_model=WorkspaceFilesResponse
+)
 async def delete_workspace_file(
     session_id: str,
     file_path: str,
@@ -419,7 +438,10 @@ def _list_workspace_files(root: Path, session_id: str) -> WorkspaceFilesResponse
     workspace_root = str(root.resolve(strict=False))
     if not root.exists() or not root.is_dir():
         return WorkspaceFilesResponse(
-            session_id=session_id, files=[], truncated=False, workspace_root=workspace_root
+            session_id=session_id,
+            files=[],
+            truncated=False,
+            workspace_root=workspace_root,
         )
 
     root_resolved = root.resolve(strict=False)
@@ -557,7 +579,9 @@ async def list_coding_workspace_files(workspace: str) -> CodingWorkspaceFilesRes
         resolved = team_manager.validate_workspace(workspace)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    listing = await asyncio.to_thread(_list_workspace_files, Path(resolved), "workspace")
+    listing = await asyncio.to_thread(
+        _list_workspace_files, Path(resolved), "workspace"
+    )
     return CodingWorkspaceFilesResponse(
         workspace=resolved,
         files=listing.files,

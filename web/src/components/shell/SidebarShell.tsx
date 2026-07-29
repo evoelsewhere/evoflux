@@ -30,11 +30,10 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react'
-import { motion } from 'framer-motion'
 import { HelpCircle, Search, Settings } from 'lucide-react'
 import { usePlatform } from '@/hooks/use-platform'
-import { useMotionPreset } from '@/lib/motion'
-import { useUIStore } from '@/stores/useUIStore'
+import { DURATIONS, useMotionPreset } from '@/lib/motion'
+import { SIDEBAR_WIDTH, useUIStore } from '@/stores/useUIStore'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { HealthDot } from '@/components/HealthDot'
 import { cn } from '@/lib/utils'
@@ -56,9 +55,8 @@ export function SidebarShell({
   children,
 }: SidebarShellProps) {
   const { isMacOverlay } = usePlatform()
-  const preset = useMotionPreset()
+  const motionPreset = useMotionPreset()
   const sidebarWidth = useUIStore((state) => state.sidebarWidth)
-  const isResizing = useUIStore((state) => state.sidebarResizing)
   const setSidebarResizing = useUIStore((state) => state.setSidebarResizing)
   const setSidebarWidth = useUIStore((state) => state.setSidebarWidth)
   const resetSidebarWidth = useUIStore((state) => state.resetSidebarWidth)
@@ -66,12 +64,50 @@ export function SidebarShell({
   const startResize = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     if (collapsed || event.pointerType === 'touch') return
     event.preventDefault()
+    event.stopPropagation()
+
+    const shell = event.currentTarget.closest<HTMLElement>('[data-sidebar-shell]')
+    if (!shell) return
+
+    const navigation = document.querySelector<HTMLElement>(
+      '[data-sidebar-width-follower]',
+    )
+    const shellTransition = shell.style.transition
+    const navigationTransition = navigation?.style.transition ?? ''
     const startX = event.clientX
-    const startWidth = sidebarWidth
+    // Read the rendered width so grabbing the handle also cancels an
+    // in-flight expand animation at its current position.
+    const startWidth = Math.min(
+      SIDEBAR_WIDTH.max,
+      Math.max(SIDEBAR_WIDTH.min, shell.getBoundingClientRect().width),
+    )
+    let liveWidth = startWidth
+
+    const applyLiveWidth = (width: number) => {
+      shell.style.width = `${width}px`
+      shell.style.minWidth = `${width}px`
+      if (navigation) navigation.style.width = `${Math.max(0, width - 8)}px`
+    }
+
+    // CSS owns the collapse/expand transition, but pointer movement must be
+    // direct. Pin the currently rendered size before disabling transitions
+    // so an unfinished expand cannot keep tweening underneath the drag.
+    shell.style.transition = 'none'
+    if (navigation) navigation.style.transition = 'none'
+    applyLiveWidth(startWidth)
     setSidebarResizing(true)
 
     const handleMove = (moveEvent: PointerEvent) => {
-      setSidebarWidth(startWidth + moveEvent.clientX - startX)
+      liveWidth = Math.min(
+        SIDEBAR_WIDTH.max,
+        Math.max(
+          SIDEBAR_WIDTH.min,
+          startWidth + moveEvent.clientX - startX,
+        ),
+      )
+      // Do not route pointer-rate updates through React/Zustand/localStorage.
+      // Direct writes keep both pieces of sidebar chrome under the cursor.
+      applyLiveWidth(liveWidth)
     }
     const handleUp = () => {
       window.removeEventListener('pointermove', handleMove)
@@ -79,7 +115,18 @@ export function SidebarShell({
       window.removeEventListener('pointercancel', handleUp)
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
+      // Commit once while transitions are still disabled. The DOM is already
+      // at this exact width, so restoring transitions on the next frame does
+      // not create a second "catch-up" animation after pointerup.
+      setSidebarWidth(liveWidth)
       setSidebarResizing(false)
+      if (useUIStore.getState().sidebarCollapsed) {
+        applyLiveWidth(isMacOverlay ? 70 : 56)
+      }
+      window.requestAnimationFrame(() => {
+        shell.style.transition = shellTransition
+        if (navigation) navigation.style.transition = navigationTransition
+      })
     }
 
     document.body.style.cursor = 'col-resize'
@@ -87,20 +134,26 @@ export function SidebarShell({
     window.addEventListener('pointermove', handleMove)
     window.addEventListener('pointerup', handleUp, { once: true })
     window.addEventListener('pointercancel', handleUp, { once: true })
-  }, [collapsed, setSidebarResizing, setSidebarWidth, sidebarWidth])
+  }, [collapsed, isMacOverlay, setSidebarResizing, setSidebarWidth])
 
   // On macOS Tauri the rail widens to 70px (matching
   // --spacing-mac-traffic-inset) so the traffic-light buttons land fully
   // inside it instead of spilling into the main content.
   const width = collapsed ? (isMacOverlay ? 70 : 56) : sidebarWidth
+  const transitionDuration = DURATIONS.base * motionPreset.scale
 
   return (
-    <motion.aside
-      initial={false}
-      animate={{ width }}
-      transition={isResizing ? { duration: 0 } : preset.transition}
+    <aside
+      data-sidebar-shell
       className="relative flex h-full shrink-0 flex-col overflow-hidden"
-      style={{ minWidth: width }}
+      style={{
+        width,
+        minWidth: width,
+        transition: [
+          `width ${transitionDuration}ms var(--ease-out)`,
+          `min-width ${transitionDuration}ms var(--ease-out)`,
+        ].join(', '),
+      }}
     >
       {!collapsed && (
         <div
@@ -116,7 +169,7 @@ export function SidebarShell({
       <div className="flex h-full flex-col gap-0.5 overflow-hidden p-0.5">
         {collapsed ? rail : children}
       </div>
-    </motion.aside>
+    </aside>
   )
 }
 

@@ -41,7 +41,7 @@ async def _write_file(
     resolved.parent.mkdir(parents=True, exist_ok=True)
     encoded = content.encode("utf-8")
     resolved.write_bytes(encoded)
-    logger.info("file_written path={} bytes={}", resolved, len(encoded))
+    logger.debug("file_written path={} bytes={}", resolved, len(encoded))
     notify_fs_change(resolved)
     return f"Written {len(encoded)} bytes to {rel}\nResolved path: {resolved}"
 

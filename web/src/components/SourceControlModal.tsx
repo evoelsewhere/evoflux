@@ -369,17 +369,27 @@ export function SourceControlPanel({
           />
         </div>
 
-        {/* Primary local Git navigation */}
+        {/* Primary local Git view selector. This is deliberately a selector,
+            not another tab strip inside the Workbench Changes tab. */}
         {isGitRepo && (
-          <div className="flex h-9 shrink-0 items-center border-b border-(--color-border) bg-(--bg-key)/20 px-2">
-            <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto" role="tablist" aria-label="Repository views">
-              <GitViewTab icon={<FileDiff size={12} />} label="Changes" count={files.length} active={activeView === 'changes'} onClick={() => setActiveView('changes')} />
-              <GitViewTab icon={<GitBranch size={12} />} label="Branches" count={localBranches.length} active={activeView === 'branches'} onClick={() => setActiveView('branches')} />
-              <GitViewTab icon={<History size={12} />} label="History" active={activeView === 'history'} onClick={() => setActiveView('history')} />
-              <GitViewTab icon={<Archive size={12} />} label="Stashes" count={stashes.length} active={activeView === 'stash'} onClick={() => setActiveView('stash')} />
-              <GitViewTab icon={<RadioTower size={12} />} label="Remotes" count={remotes.length} active={activeView === 'remotes'} onClick={() => setActiveView('remotes')} />
-              <GitViewTab icon={<Tag size={12} />} label="Tags" count={tags.length} active={activeView === 'tags'} onClick={() => setActiveView('tags')} />
-            </div>
+          <div className="flex h-10 shrink-0 items-center gap-2 border-b border-(--color-border) bg-(--bg-key)/20 px-2">
+            <label htmlFor="source-control-view" className="text-[10px] font-medium text-(--color-text-muted)">
+              View
+            </label>
+            <select
+              id="source-control-view"
+              value={activeView}
+              onChange={(event) => setActiveView(event.target.value as typeof activeView)}
+              className="h-7 min-w-36 rounded-md border border-(--color-border) bg-(--bg-card) px-2 text-[11px] font-medium text-(--color-text) outline-none focus:border-(--color-accent)"
+            >
+              <option value="changes">Changes ({files.length})</option>
+              <option value="branches">Branches ({localBranches.length})</option>
+              <option value="history">History</option>
+              <option value="stash">Stashes ({stashes.length})</option>
+              <option value="remotes">Remotes ({remotes.length})</option>
+              <option value="tags">Tags ({tags.length})</option>
+            </select>
+            <div className="min-w-0 flex-1" />
             {activeView === 'changes' && (
               <button
                 type="button"
@@ -465,33 +475,6 @@ function ToolbarButton({ icon, label, onClick, badge, compact = false, disabled 
       {icon}
       {!compact && label}
       {badge && <span className="absolute -right-1 -top-1 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-(--color-accent) px-0.5 text-[8px] font-bold text-white">{badge}</span>}
-    </button>
-  )
-}
-
-function GitViewTab({ icon, label, count, active, onClick }: {
-  icon: React.ReactNode; label: string; count?: number; active: boolean; onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={active}
-      onClick={onClick}
-      className={cn(
-        'flex h-7 shrink-0 items-center gap-1.5 rounded-md px-1.5 text-[10px] font-medium transition-colors',
-        active
-          ? 'bg-(--bg-key) text-(--color-text) shadow-sm'
-          : 'text-(--color-text-muted) hover:bg-(--bg-key)/70 hover:text-(--color-text)',
-      )}
-    >
-      {icon}
-      {label}
-      {active && count !== undefined && (
-        <span className="rounded-full bg-(--color-accent)/15 px-1.5 py-px font-mono text-[9px] text-(--color-accent)">
-          {count}
-        </span>
-      )}
     </button>
   )
 }

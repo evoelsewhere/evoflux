@@ -1265,7 +1265,7 @@ def _deserialize_messages(
                 clean.append(tc)
             except (json.JSONDecodeError, ValueError):
                 bad_tool_call_ids.add(tc.id)
-                logger.warning(
+                logger.debug(
                     "deserialize_drop_partial_tool_call tool={} id={} args_prefix={!r}",
                     tc.function.name,
                     tc.id,
@@ -1279,7 +1279,7 @@ def _deserialize_messages(
         for msg in result:
             if isinstance(msg, ToolMessage) and msg.tool_call_id in bad_tool_call_ids:
                 row = _message_row_by_id(db_messages).get(msg.db_id)
-                logger.warning(
+                logger.debug(
                     "deserialize_drop_orphan_tool_message session_id={} message_id={} tool_call_id={}",
                     row.session_id if row else None,
                     msg.db_id,
@@ -1336,7 +1336,7 @@ def _sanitize_tool_message_pairs(
                     result.append(msg)
                 else:
                     row = rows_by_id.get(msg.db_id)
-                    logger.warning(
+                    logger.debug(
                         "deserialize_drop_empty_assistant_message session_id={} message_id={}",
                         row.session_id if row else None,
                         msg.db_id,
@@ -1358,7 +1358,7 @@ def _sanitize_tool_message_pairs(
             else:
                 row = rows_by_id.get(msg.db_id)
                 dropped = not msg.content and idx != last_idx
-                logger.warning(
+                logger.debug(
                     "deserialize_strip_incomplete_assistant_tool_calls session_id={} message_id={} missing_ids=[{}] dropped={}",
                     row.session_id if row else None,
                     msg.db_id,
@@ -1375,7 +1375,7 @@ def _sanitize_tool_message_pairs(
                 expected_tool_ids.remove(msg.tool_call_id)
             else:
                 row = rows_by_id.get(msg.db_id)
-                logger.warning(
+                logger.debug(
                     "deserialize_drop_orphan_tool_message session_id={} message_id={} tool_call_id={}",
                     row.session_id if row else None,
                     msg.db_id,

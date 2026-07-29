@@ -167,6 +167,11 @@ class Settings(BaseSettings):
     EVOFLUX_CACHE_DIR: str = ""
     EVOFLUX_WORKSPACE_DIR: str = ""
 
+    # Optional override for the Chromium executable used by Office visual QA.
+    # Production bundles its own browser; development also searches common
+    # Chrome/Chromium locations when this is empty.
+    EVOFLUX_CHROMIUM_PATH: str = ""
+
     # Refresh model metadata from https://models.dev at runtime. Disable in tests
     # or hermetic deployments; bundled model_registry.json remains the fallback.
     EVOFLUX_MODEL_REGISTRY_REFRESH: bool = True

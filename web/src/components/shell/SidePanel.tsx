@@ -9,7 +9,8 @@
  *   - `useResizableWidth` (persisted width, pointer drag, dbl-click reset),
  *     always resizing from the panel's LEFT edge (`edge: 'left'`)
  *   - the resize-handle separator (aria-label + pointer logic unchanged)
- *   - the framer-motion width animation (0.22s, eased; reduced-motion aware)
+ *   - direct width updates during resize; Framer Motion only animates
+ *     open/close opacity and translation so it cannot "catch up" after drag
  *   - the dual-mode mobile pattern the coding panels copy-pasted:
  *     `fixed bottom-0 right-0 z-(--z-overlay) … md:relative md:z-auto …` — a full-screen
  *     overlay below the md breakpoint, an in-flow flex sibling at md and up
@@ -136,7 +137,6 @@ export function SidePanel({
     disabled: overlay || fillParent,
   })
   const width = widthOverride ?? resizable.width
-  const isResizing = resizable.isResizing
 
   useEffect(() => {
     onWidthChange?.(width)
@@ -157,41 +157,32 @@ export function SidePanel({
     ? { right: desktopOverlayOffset, width }
     : isInner
     ? { width }
-    : undefined
+    : { width }
 
   return (
     <motion.aside
-      layout={isInner || isResizing ? false : 'size'}
       style={panelStyle}
       initial={
         isInner || !animated
           ? false
-          : fade
-            ? { opacity: 0, x: travel }
-            : { width: 0, opacity: 0, x: travel * 0.5 }
+          : { opacity: 0, x: travel }
       }
       animate={
         isInner
           ? undefined
-          : fade
-            ? { opacity: 1, x: 0 }
-            : { width, opacity: 1, x: 0 }
+          : { opacity: 1, x: 0 }
       }
       exit={
         isInner
           ? undefined
-          : fade
-            ? { opacity: 0, x: travel }
-            : { width: 0, opacity: 0, x: travel * 0.5 }
+          : { opacity: 0, x: travel }
       }
       transition={
         isInner || !animated
           ? { duration: 0 }
-          : isResizing
-          ? { duration: 0 }
           : fade
-            ? motionPreset.transition
-            : panelTransition(motionPreset)
+          ? motionPreset.transition
+          : panelTransition(motionPreset)
       }
       className={cn(
         fillParent

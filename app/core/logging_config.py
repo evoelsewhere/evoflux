@@ -3,10 +3,11 @@
 Sinks
 -----
 - **stderr** — human-readable, colourised, respects ``log_level``
-- ``{STATE_DIR}/logs/app/app.log`` — JSON, DEBUG+, rotated at 10 MB, 7-day retention
+- ``{STATE_DIR}/logs/app/app.log`` — compact JSON diagnostics. Production
+  keeps WARNING+ only; explicitly selecting DEBUG restores verbose file logs.
 
 Per-session sinks are created on demand via :func:`add_session_sink` and write
-to ``{STATE_DIR}/logs/sessions/{session_id}/session.log`` (human-readable, DEBUG+).
+to ``{STATE_DIR}/logs/sessions/{session_id}/session.log`` (human-readable, INFO+).
 
 All log paths are under ``LOGS_DIR`` which is ``{EVOFLUX_STATE_DIR}/logs``.
 Configurable via the ``EVOFLUX_STATE_DIR`` env var.
@@ -68,18 +69,40 @@ def setup_logging(log_level: str = "INFO") -> None:
         colorize=True,
     )
 
-    # app.log: JSON, all levels, rotated
+    # Persistent logs are for post-mortem diagnostics, not a duplicate of the
+    # live console. INFO is intentionally not persisted in normal operation:
+    # agent iterations, tool calls, file watchers, and polling paths can emit
+    # thousands of successful events during a single session. DEBUG remains an
+    # explicit opt-in for local troubleshooting.
+    console_level = log_level.upper()
+    persistent_level = "DEBUG" if console_level == "DEBUG" else console_level
+    if persistent_level == "INFO":
+        persistent_level = "WARNING"
+
     logger.add(
         APP_LOG_DIR / "app.log",
-        level="DEBUG",
+        level=persistent_level,
         serialize=True,
-        rotation="10 MB",
-        retention="7 days",
+        rotation="5 MB",
+        retention=3,
+        compression="gz",
         encoding="utf-8",
     )
 
     # Silence noisy third-party stdlib loggers
-    for noisy in ("httpx", "httpcore", "google.genai", "uvicorn.access"):
+    for noisy in (
+        "aiosqlite",
+        "asyncio",
+        "google.genai",
+        "httpcore",
+        "httpx",
+        "multipart",
+        "uvicorn",
+        "uvicorn.access",
+        "uvicorn.error",
+        "watchfiles.main",
+        "watchfiles.watcher",
+    ):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
@@ -99,7 +122,7 @@ def add_session_sink(session_id: str) -> int:
 
     sink_id = logger.add(
         log_dir / "session.log",
-        level="DEBUG",
+        level="INFO",
         format=(
             "{time:YYYY-MM-DD HH:mm:ss.SSS} | "
             "{level:<8} | "
@@ -107,8 +130,9 @@ def add_session_sink(session_id: str) -> int:
             "{message}"
         ),
         filter=_session_filter,
-        rotation="5 MB",
-        retention="3 days",
+        rotation="2 MB",
+        retention=2,
+        compression="gz",
         encoding="utf-8",
     )
     _session_sinks[session_id] = sink_id

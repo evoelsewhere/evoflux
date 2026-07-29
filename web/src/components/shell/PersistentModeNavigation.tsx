@@ -13,10 +13,9 @@
  */
 
 import { useLocation } from '@tanstack/react-router'
-import { motion } from 'framer-motion'
 import { ModeSwitchRail, ModeSwitchTabs, type AppMode } from '@/components/ModeSwitchTabs'
 import { usePlatform } from '@/hooks/use-platform'
-import { useMotionPreset } from '@/lib/motion'
+import { DURATIONS, useMotionPreset } from '@/lib/motion'
 import { useUIStore } from '@/stores/useUIStore'
 
 function modeForPath(pathname: string): AppMode | null {
@@ -30,9 +29,8 @@ function modeForPath(pathname: string): AppMode | null {
 export function PersistentModeNavigation() {
   const location = useLocation()
   const { isMacOverlay } = usePlatform()
-  const preset = useMotionPreset()
+  const motionPreset = useMotionPreset()
   const collapsed = useUIStore((state) => state.sidebarCollapsed)
-  const isResizing = useUIStore((state) => state.sidebarResizing)
   const sidebarWidth = useUIStore((state) => state.sidebarWidth)
   const settingsOpen = useUIStore((state) => state.settingsOpen)
   const active = modeForPath(location.pathname)
@@ -40,13 +38,16 @@ export function PersistentModeNavigation() {
   if (!active || settingsOpen) return null
 
   const shellWidth = collapsed ? (isMacOverlay ? 70 : 56) : sidebarWidth
+  const transitionDuration = DURATIONS.base * motionPreset.scale
 
   return (
-    <motion.div
+    <div
       data-testid="persistent-mode-navigation"
-      initial={false}
-      animate={{ width: Math.max(0, shellWidth - 8) }}
-      transition={isResizing ? { duration: 0 } : preset.transition}
+      data-sidebar-width-follower
+      style={{
+        width: Math.max(0, shellWidth - 8),
+        transition: `width ${transitionDuration}ms var(--ease-out)`,
+      }}
       className="pointer-events-none fixed left-1 top-1 z-(--z-header) hidden md:block"
     >
       {collapsed ? (
@@ -66,6 +67,6 @@ export function PersistentModeNavigation() {
           <ModeSwitchTabs active={active} />
         </div>
       )}
-    </motion.div>
+    </div>
   )
 }

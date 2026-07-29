@@ -15,14 +15,12 @@ import { useCallback, useEffect, useState } from 'react'
 import { List as VirtualList } from 'react-window'
 import {
   ChevronRight,
-  FileText,
-  Folder,
-  FolderOpen,
   Loader2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { tauriListDirectory, type DirEntry } from '@/api/tauri-workspace'
 import { formatBytes } from '@/utils/format'
+import { FileTypeIcon, FolderTypeIcon } from './FileTypeIcon'
 
 // Threshold for enabling virtual scrolling
 const VIRTUAL_SCROLL_THRESHOLD = 100
@@ -42,6 +40,8 @@ interface NativeFileTreeProps {
   selectedPath?: string | null
   /** Callback when a file is selected */
   onFileSelect?: (entry: DirEntry | null) => void
+  /** Callback when a file is double-clicked */
+  onFileOpen?: (entry: DirEntry) => void
   /** Optional className */
   className?: string
 }
@@ -53,12 +53,14 @@ function TreeNodeItem({
   depth,
   selectedPath,
   onFileSelect,
+  onFileOpen,
   onToggle,
 }: {
   node: TreeNode
   depth: number
   selectedPath?: string | null
   onFileSelect?: (entry: DirEntry | null) => void
+  onFileOpen?: (entry: DirEntry) => void
   onToggle: (path: string) => void
 }) {
   const { entry, children, isExpanded } = node
@@ -72,21 +74,14 @@ function TreeNodeItem({
     }
   }, [entry, isSelected, onFileSelect, onToggle])
 
-  const handleExpand = useCallback(
-    (e: React.MouseEvent) => {
-      e.stopPropagation()
-      if (entry.is_dir) {
-        onToggle(entry.path)
-      }
-    },
-    [entry.is_dir, entry.path, onToggle],
-  )
-
   return (
     <div>
       <button
         type="button"
         onClick={handleClick}
+        onDoubleClick={() => {
+          if (!entry.is_dir) onFileOpen?.(entry)
+        }}
         className={cn(
           'flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs transition-colors',
           isSelected
@@ -98,26 +93,18 @@ function TreeNodeItem({
       >
         {entry.is_dir ? (
           <>
-            <button
-              type="button"
-              onClick={handleExpand}
-              className="flex shrink-0 items-center justify-center w-4 h-4"
-            >
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center">
               <ChevronRight
                 size={12}
                 className={cn('transition-transform', isExpanded && 'rotate-90')}
               />
-            </button>
-            {isExpanded ? (
-              <FolderOpen size={12} className="shrink-0 text-(--color-accent)" />
-            ) : (
-              <Folder size={12} className="shrink-0 text-(--color-text-subtle)" />
-            )}
+            </span>
+            <FolderTypeIcon open={isExpanded} size={16} />
           </>
         ) : (
           <>
             <span className="w-4 shrink-0" />
-            <FileText size={12} className="shrink-0 text-(--color-text-subtle)" />
+            <FileTypeIcon name={entry.name} mime={entry.mime} size={16} />
           </>
         )}
         <span className="min-w-0 flex-1 truncate font-mono">{entry.name}</span>
@@ -137,6 +124,7 @@ function TreeNodeItem({
               depth={depth + 1}
               selectedPath={selectedPath}
               onFileSelect={onFileSelect}
+              onFileOpen={onFileOpen}
               onToggle={onToggle}
             />
           ))}
@@ -162,6 +150,7 @@ export function NativeFileTree({
   workspaceRoot,
   selectedPath,
   onFileSelect,
+  onFileOpen,
   className,
 }: NativeFileTreeProps) {
   const [rootEntries, setRootEntries] = useState<DirEntry[] | null>(null)
@@ -294,6 +283,7 @@ export function NativeFileTree({
                 depth={0}
                 selectedPath={selectedPath}
                 onFileSelect={onFileSelect}
+                onFileOpen={onFileOpen}
                 onToggle={handleToggle}
               />
             </div>
@@ -312,6 +302,7 @@ export function NativeFileTree({
           depth={0}
           selectedPath={selectedPath}
           onFileSelect={onFileSelect}
+          onFileOpen={onFileOpen}
           onToggle={handleToggle}
         />
       ))}

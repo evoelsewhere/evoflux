@@ -374,7 +374,7 @@ def validate_agents_dir() -> bool:
     if lead_name is None:
         logger.warning("team_manager_agents_dir_empty path={}", agents_dir)
         return False
-    logger.info(
+    logger.debug(
         "team_manager_agents_dir_validated path={} lead={}", agents_dir, lead_name
     )
     return True

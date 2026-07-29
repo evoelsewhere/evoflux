@@ -21,14 +21,25 @@ export type WorkbenchTool =
   | 'terminal'
   | 'browser'
   | 'files'
+  | 'graph'
+  | 'progress'
   | 'side-chat'
   | 'wiki'
   | 'scheduler'
+  | 'source-control'
   | 'pull-requests'
 
 export interface WorkbenchTab {
-  id: WorkbenchTool
+  id: string
   tool: WorkbenchTool
+  title?: string
+  initialUrl?: string
+}
+
+export interface WorkbenchTabOptions {
+  id?: string
+  initialUrl?: string
+  title?: string
 }
 
 export type PullRequestsScope = 'all' | 'session'
@@ -36,6 +47,7 @@ export type GitWorkspaceView = 'changes' | 'reviews'
 
 interface WorkbenchState {
   workbenchTabs: WorkbenchTab[]
+  activeWorkbenchTabId: string | null
   activeWorkbenchTool: WorkbenchTool | null
   workbenchOpen: boolean
   workbenchMaximized: boolean
@@ -43,32 +55,96 @@ interface WorkbenchState {
   gitWorkspaceView: GitWorkspaceView
 }
 
+const MULTI_INSTANCE_TOOLS = new Set<WorkbenchTool>(['terminal', 'browser'])
+let workbenchTabSequence = 0
+
+function newWorkbenchTab(
+  tool: WorkbenchTool,
+  options: WorkbenchTabOptions = {},
+): WorkbenchTab {
+  workbenchTabSequence += 1
+  return {
+    id: options.id
+      ?? `${tool}-${Date.now().toString(36)}-${workbenchTabSequence.toString(36)}`,
+    tool,
+    initialUrl: options.initialUrl,
+    title: options.title,
+  }
+}
+
+function activateTab(state: WorkbenchState, tab: WorkbenchTab | undefined): void {
+  state.activeWorkbenchTabId = tab?.id ?? null
+  state.activeWorkbenchTool = tab?.tool ?? null
+}
+
+function lastTabForTool(
+  tabs: readonly WorkbenchTab[],
+  tool: WorkbenchTool,
+): WorkbenchTab | undefined {
+  for (let index = tabs.length - 1; index >= 0; index -= 1) {
+    if (tabs[index]?.tool === tool) return tabs[index]
+  }
+  return undefined
+}
+
+function addOrActivateTool(
+  state: WorkbenchState,
+  tool: WorkbenchTool,
+  options: WorkbenchTabOptions = {},
+  forceNew = false,
+): WorkbenchTab {
+  const existing = forceNew && MULTI_INSTANCE_TOOLS.has(tool)
+    ? undefined
+    : lastTabForTool(state.workbenchTabs, tool)
+  const tab = existing ?? newWorkbenchTab(tool, options)
+  if (!existing) state.workbenchTabs.push(tab)
+  activateTab(state, tab)
+  state.workbenchOpen = true
+  return tab
+}
+
 function toggleTool(state: WorkbenchState, tool: WorkbenchTool): void {
-  const index = state.workbenchTabs.findIndex((tab) => tab.tool === tool)
-  if (index === -1) {
-    state.workbenchTabs.push({ id: tool, tool })
-    state.activeWorkbenchTool = tool
-    state.workbenchOpen = true
+  const tab = lastTabForTool(state.workbenchTabs, tool)
+  if (!tab) {
+    addOrActivateTool(state, tool)
     return
   }
-  if (state.activeWorkbenchTool === tool && state.workbenchOpen) {
+  if (state.activeWorkbenchTabId === tab.id && state.workbenchOpen) {
     state.workbenchOpen = false
     state.workbenchMaximized = false
     return
   }
-  state.activeWorkbenchTool = tool
+  activateTab(state, tab)
   state.workbenchOpen = true
 }
 
-function closeTool(state: WorkbenchState, tool: WorkbenchTool): void {
-  const index = state.workbenchTabs.findIndex((tab) => tab.tool === tool)
+function closeTab(state: WorkbenchState, tabId: string): void {
+  const index = state.workbenchTabs.findIndex((tab) => tab.id === tabId)
   if (index === -1) return
+  const wasActive = state.activeWorkbenchTabId === tabId
   state.workbenchTabs.splice(index, 1)
-  if (state.activeWorkbenchTool === tool) {
-    state.activeWorkbenchTool =
-      state.workbenchTabs[Math.min(index, state.workbenchTabs.length - 1)]?.tool
-      ?? state.workbenchTabs.at(-1)?.tool
-      ?? null
+  if (wasActive) {
+    activateTab(
+      state,
+      state.workbenchTabs[Math.min(index, state.workbenchTabs.length - 1)]
+        ?? state.workbenchTabs.at(-1),
+    )
+  }
+  if (state.workbenchTabs.length === 0) state.workbenchMaximized = false
+}
+
+function closeTool(state: WorkbenchState, tool: WorkbenchTool): void {
+  const activeIndex = state.workbenchTabs.findIndex(
+    (tab) => tab.id === state.activeWorkbenchTabId,
+  )
+  const closingActive = state.activeWorkbenchTool === tool
+  state.workbenchTabs = state.workbenchTabs.filter((tab) => tab.tool !== tool)
+  if (closingActive) {
+    activateTab(
+      state,
+      state.workbenchTabs[Math.min(activeIndex, state.workbenchTabs.length - 1)]
+        ?? state.workbenchTabs.at(-1),
+    )
   }
   if (state.workbenchTabs.length === 0) state.workbenchMaximized = false
 }
@@ -134,6 +210,7 @@ function persistSidebarCollapsed(collapsed: boolean): void {
 
 interface UIStore {
   workbenchTabs: WorkbenchTab[]
+  activeWorkbenchTabId: string | null
   activeWorkbenchTool: WorkbenchTool | null
   workbenchOpen: boolean
   workbenchMaximized: boolean
@@ -151,10 +228,18 @@ interface UIStore {
    * TeamChatView once that session is active.
    */
   sideChatRequest: string | null
-  openWorkbenchTool: (tool: WorkbenchTool) => void
+  createWorkbenchTab: (tool: WorkbenchTool, options?: WorkbenchTabOptions) => void
+  restoreWorkbenchTabs: (
+    tool: WorkbenchTool,
+    tabs: WorkbenchTabOptions[],
+  ) => void
+  openWorkbenchTool: (tool: WorkbenchTool, options?: WorkbenchTabOptions) => void
   toggleWorkbenchTool: (tool: WorkbenchTool) => void
+  selectWorkbenchTab: (tabId: string) => void
   selectWorkbenchTool: (tool: WorkbenchTool) => void
+  closeWorkbenchTab: (tabId: string) => void
   closeWorkbenchTool: (tool: WorkbenchTool) => void
+  updateWorkbenchTab: (tabId: string, patch: Pick<WorkbenchTabOptions, 'title'>) => void
   closeActiveWorkbenchTool: () => void
   toggleWorkbench: () => void
   closeWorkbench: () => void
@@ -186,21 +271,36 @@ interface UIStore {
 export const useUIStore = create<UIStore>()(
   immer((set) => ({
     workbenchTabs: [],
+    activeWorkbenchTabId: null,
     activeWorkbenchTool: null,
     workbenchOpen: false,
     workbenchMaximized: false,
     pullRequestsScope: 'session',
     gitWorkspaceView: 'changes',
-    openWorkbenchTool: (tool) => set((state) => {
+    createWorkbenchTab: (tool, options = {}) => set((state) => {
       if (tool === 'pull-requests') {
         state.pullRequestsScope = 'session'
         state.gitWorkspaceView = 'reviews'
+      } else if (tool === 'source-control') {
+        state.gitWorkspaceView = 'changes'
       }
-      if (!state.workbenchTabs.some((tab) => tab.tool === tool)) {
-        state.workbenchTabs.push({ id: tool, tool })
+      addOrActivateTool(state, tool, options, true)
+    }),
+    restoreWorkbenchTabs: (tool, tabs) => set((state) => {
+      for (const options of tabs) {
+        if (!options.id) continue
+        const exists = state.workbenchTabs.some((tab) => tab.id === options.id)
+        if (!exists) state.workbenchTabs.push(newWorkbenchTab(tool, options))
       }
-      state.activeWorkbenchTool = tool
-      state.workbenchOpen = true
+    }),
+    openWorkbenchTool: (tool, options = {}) => set((state) => {
+      if (tool === 'pull-requests') {
+        state.pullRequestsScope = 'session'
+        state.gitWorkspaceView = 'reviews'
+      } else if (tool === 'source-control') {
+        state.gitWorkspaceView = 'changes'
+      }
+      addOrActivateTool(state, tool, options)
     }),
     toggleWorkbenchTool: (tool) => set((state) => {
       if (tool === 'pull-requests') {
@@ -209,25 +309,32 @@ export const useUIStore = create<UIStore>()(
       }
       toggleTool(state, tool)
     }),
+    selectWorkbenchTab: (tabId) => set((state) => {
+      const tab = state.workbenchTabs.find((item) => item.id === tabId)
+      if (!tab) return
+      activateTab(state, tab)
+      state.workbenchOpen = true
+    }),
     selectWorkbenchTool: (tool) => set((state) => {
-      if (state.workbenchTabs.some((tab) => tab.tool === tool)) {
-        state.activeWorkbenchTool = tool
-        state.workbenchOpen = true
-      }
+      const tab = lastTabForTool(state.workbenchTabs, tool)
+      if (!tab) return
+      activateTab(state, tab)
+      state.workbenchOpen = true
+    }),
+    closeWorkbenchTab: (tabId) => set((state) => {
+      closeTab(state, tabId)
     }),
     closeWorkbenchTool: (tool) => set((state) => {
       closeTool(state, tool)
     }),
+    updateWorkbenchTab: (tabId, patch) => set((state) => {
+      const tab = state.workbenchTabs.find((item) => item.id === tabId)
+      if (tab) Object.assign(tab, patch)
+    }),
     closeActiveWorkbenchTool: () => set((state) => {
-      const tool = state.activeWorkbenchTool
-      if (!tool) return
-      const index = state.workbenchTabs.findIndex((tab) => tab.tool === tool)
-      if (index !== -1) state.workbenchTabs.splice(index, 1)
-      state.activeWorkbenchTool =
-        state.workbenchTabs[Math.min(index, state.workbenchTabs.length - 1)]?.tool
-        ?? state.workbenchTabs.at(-1)?.tool
-        ?? null
-      if (state.workbenchTabs.length === 0) state.workbenchMaximized = false
+      if (state.activeWorkbenchTabId) {
+        closeTab(state, state.activeWorkbenchTabId)
+      }
     }),
     toggleWorkbench: () => set((state) => {
       state.workbenchOpen = !state.workbenchOpen
@@ -245,11 +352,11 @@ export const useUIStore = create<UIStore>()(
     }),
     showWorkbenchLauncher: () => set((state) => {
       state.workbenchOpen = true
-      state.activeWorkbenchTool = null
+      activateTab(state, undefined)
       state.workbenchMaximized = false
     }),
     toggleWorkbenchMaximized: () => set((state) => {
-      if (state.activeWorkbenchTool) {
+      if (state.activeWorkbenchTabId) {
         state.workbenchMaximized = !state.workbenchMaximized
       }
     }),
@@ -270,11 +377,7 @@ export const useUIStore = create<UIStore>()(
     openGitChanges: () => set((state) => {
       state.pullRequestsScope = 'session'
       state.gitWorkspaceView = 'changes'
-      if (!state.workbenchTabs.some((tab) => tab.tool === 'pull-requests')) {
-        state.workbenchTabs.push({ id: 'pull-requests', tool: 'pull-requests' })
-      }
-      state.activeWorkbenchTool = 'pull-requests'
-      state.workbenchOpen = true
+      addOrActivateTool(state, 'source-control')
     }),
     setGitWorkspaceView: (view) => set((state) => {
       state.gitWorkspaceView = view
