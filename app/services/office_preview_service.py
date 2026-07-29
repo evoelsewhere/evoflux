@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import html
+import math
 import os
 import threading
 from pathlib import Path
@@ -36,7 +37,7 @@ OFFICE_PREVIEW_CSP = (
     "style-src 'unsafe-inline'"
 )
 
-_CACHE_SCHEMA_VERSION = "python-openxml-html-v3"
+_CACHE_SCHEMA_VERSION = "python-openxml-html-v5"
 _render_lock = threading.Lock()
 
 
@@ -734,6 +735,7 @@ def _shape_text(shape: Any, palette: dict[str, str]) -> str:
         PP_ALIGN.DISTRIBUTE: "justify",
     }
     paragraphs: list[str] = []
+    auto_number = 1
     for paragraph in shape.text_frame.paragraphs:
         runs: list[str] = []
         for run in paragraph.runs:
@@ -759,18 +761,50 @@ def _shape_text(shape: Any, palette: dict[str, str]) -> str:
             paragraph_styles.append(f"text-align:{alignment[paragraph.alignment]}")
         if paragraph.level:
             paragraph_styles.append(f"padding-left:{paragraph.level * 1.1:.2f}em")
+        properties = paragraph._p.pPr
+        marker = ""
+        if properties is not None:
+            bullets = properties.xpath("./*[local-name()='buChar']")
+            auto_numbers = properties.xpath("./*[local-name()='buAutoNum']")
+            if bullets:
+                marker = html.escape(bullets[0].get("char", "•"))
+            elif auto_numbers:
+                start_at = auto_numbers[0].get("startAt")
+                if start_at:
+                    auto_number = int(start_at)
+                marker = f"{auto_number}."
+                auto_number += 1
+        marker_html = f'<span class="bullet-marker">{marker}</span>' if marker else ""
+        if marker:
+            paragraph_styles.extend(
+                ("display:grid", "grid-template-columns:1em 1fr", "column-gap:.2em")
+            )
         style_attr = (
             f' style="{";".join(paragraph_styles)}"' if paragraph_styles else ""
         )
         paragraphs.append(
-            f"<p{style_attr}>{''.join(runs) or html.escape(paragraph.text)}</p>"
+            f'<p{style_attr}>{marker_html}<span class="paragraph-content">'
+            f"{''.join(runs) or html.escape(paragraph.text)}</span></p>"
         )
+    body_properties = shape.text_frame._txBody.bodyPr
+    columns = max(int(body_properties.get("numCol", "1")), 1)
     vertical = {
         MSO_ANCHOR.TOP: "flex-start",
         MSO_ANCHOR.MIDDLE: "center",
         MSO_ANCHOR.BOTTOM: "flex-end",
     }.get(shape.text_frame.vertical_anchor, "center")
-    return f'<div class="text-frame" style="justify-content:{vertical}">{"".join(paragraphs)}</div>'
+    if columns > 1:
+        spacing = int(body_properties.get("spcCol", "0")) / 12700
+        frame_style = (
+            f"column-count:{columns};column-gap:{spacing:.2f}pt;"
+            "display:block;overflow:hidden"
+        )
+    else:
+        frame_style = (
+            f"justify-content:{vertical};display:flex;"
+            "flex-direction:column;overflow:hidden"
+        )
+    return f'<div class="text-frame" style="{frame_style}">{"".join(paragraphs)}</div>'
 
 
 def _shape_identity(shape: Any, layer: str) -> str:
@@ -782,11 +816,126 @@ def _shape_identity(shape: Any, layer: str) -> str:
     )
 
 
+def _connector_svg(
+    shape: Any,
+    *,
+    layer: str,
+    slide_width: int,
+    slide_height: int,
+    palette: dict[str, str],
+) -> str:
+    left = 100 * shape.left / slide_width
+    top = 100 * shape.top / slide_height
+    width = 100 * shape.width / slide_width
+    height = 100 * shape.height / slide_height
+    transform = shape._element.xpath(".//*[local-name()='xfrm']")
+    flip_horizontal = bool(transform and transform[0].get("flipH") == "1")
+    flip_vertical = bool(transform and transform[0].get("flipV") == "1")
+    x1, x2 = (1000, 0) if flip_horizontal else (0, 1000)
+    y1, y2 = (1000, 0) if flip_vertical else (0, 1000)
+    if shape.width == 0:
+        x1 = x2 = 500
+    if shape.height == 0:
+        y1 = y2 = 500
+    try:
+        color = _pptx_color(shape.line.color, palette, "#66717c")
+        line_width = shape.line.width.pt if shape.line.width else 1.2
+    except (AttributeError, TypeError, ValueError):
+        color = "#66717c"
+        line_width = 1.2
+    endings = shape._element.xpath(".//*[local-name()='tailEnd']")
+    has_arrow = bool(endings and endings[0].get("type", "none") not in {"none", ""})
+    marker_id = f"arrow-{getattr(shape, 'shape_id', 0)}"
+    definitions = ""
+    marker_end = ""
+    if has_arrow:
+        definitions = (
+            f'<defs><marker id="{marker_id}" viewBox="0 0 10 10" refX="9" '
+            'refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">'
+            f'<path d="M 0 0 L 10 5 L 0 10 z" fill="{color}"/></marker></defs>'
+        )
+        marker_end = f' marker-end="url(#{marker_id})"'
+    identity = _shape_identity(shape, layer)
+    style = (
+        f"left:{left:.3f}%;top:{top:.3f}%;"
+        f"width:max({width:.3f}%,2px);height:max({height:.3f}%,2px)"
+    )
+    return (
+        f'<svg class="shape connector" {identity} style="{style}" '
+        'viewBox="0 0 1000 1000" preserveAspectRatio="none">'
+        f'{definitions}<line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" '
+        f'stroke="{color}" stroke-width="{line_width * 1.333:.2f}" '
+        f'vector-effect="non-scaling-stroke"{marker_end}/></svg>'
+    )
+
+
+def _shape_gradient_css(shape: Any) -> str | None:
+    try:
+        gradients = shape._element.xpath(
+            "./*[local-name()='spPr']/*[local-name()='gradFill']"
+        )
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if not gradients:
+        return None
+    gradient = gradients[0]
+    stops: list[str] = []
+    for stop in gradient.xpath("./*[local-name()='gsLst']/*[local-name()='gs']"):
+        colors = stop.xpath("./*[local-name()='srgbClr']")
+        if not colors:
+            continue
+        color = colors[0].get("val", "000000")
+        alpha_nodes = colors[0].xpath("./*[local-name()='alpha']")
+        opacity = (
+            int(alpha_nodes[0].get("val", "100000")) / 100000 if alpha_nodes else 1
+        )
+        red, green, blue = (int(color[index : index + 2], 16) for index in (0, 2, 4))
+        position = int(stop.get("pos", "0")) / 1000
+        stops.append(f"rgba({red},{green},{blue},{opacity:.3f}) {position:.1f}%")
+    if len(stops) < 2:
+        return None
+    linear = gradient.xpath("./*[local-name()='lin']")
+    office_angle = int(linear[0].get("ang", "0")) / 60000 if linear else 0
+    return f"linear-gradient({office_angle + 90:.1f}deg,{','.join(stops)})"
+
+
+def _shape_shadow_css(shape: Any) -> str | None:
+    try:
+        shadows = shape._element.xpath(
+            "./*[local-name()='spPr']/*[local-name()='effectLst']"
+            "/*[local-name()='outerShdw']"
+        )
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if not shadows:
+        return None
+    shadow = shadows[0]
+    colors = shadow.xpath("./*[local-name()='srgbClr']")
+    if not colors:
+        return None
+    color = colors[0].get("val", "000000")
+    alpha_nodes = colors[0].xpath("./*[local-name()='alpha']")
+    opacity = int(alpha_nodes[0].get("val", "16000")) / 100000 if alpha_nodes else 0.16
+    red, green, blue = (int(color[index : index + 2], 16) for index in (0, 2, 4))
+    distance_pt = int(shadow.get("dist", "0")) / 12700
+    angle = math.radians(int(shadow.get("dir", "0")) / 60000)
+    offset_x = math.cos(angle) * distance_pt * 96 / 72
+    offset_y = math.sin(angle) * distance_pt * 96 / 72
+    blur = int(shadow.get("blurRad", "0")) / 12700 * 96 / 72
+    return (
+        f"{offset_x:.2f}px {offset_y:.2f}px {blur:.2f}px "
+        f"rgba({red},{green},{blue},{opacity:.3f})"
+    )
+
+
 def _shape_styles(shape: Any, palette: dict[str, str]) -> list[str]:
     styles: list[str] = []
+    gradient = _shape_gradient_css(shape)
+    if gradient:
+        styles.append(f"background:{gradient}")
     try:
         fill = _pptx_color(shape.fill.fore_color, palette)
-        if fill != "transparent":
+        if fill != "transparent" and not gradient:
             styles.append(f"background:{fill}")
     except (AttributeError, TypeError, ValueError):
         pass
@@ -804,13 +953,17 @@ def _shape_styles(shape: Any, palette: dict[str, str]) -> list[str]:
         auto_shape = ""
     if "oval" in auto_shape or "ellipse" in auto_shape:
         styles.append("border-radius:50%")
+    shadow = _shape_shadow_css(shape)
+    if shadow:
+        styles.append(f"box-shadow:{shadow}")
     return styles
 
 
-def _chart_svg(chart: Any) -> str:
-    palette = ("#2563eb", "#0f766e", "#f59e0b", "#dc2626", "#7c3aed")
+def _chart_svg(chart: Any, theme_palette: dict[str, str]) -> str:
+    fallback_palette = ("#2563eb", "#0f766e", "#f59e0b", "#dc2626", "#7c3aed")
     series_values: list[list[float]] = []
-    for series in chart.series:
+    colors: list[str] = []
+    for series_index, series in enumerate(chart.series):
         values = []
         for value in getattr(series, "values", ()):
             try:
@@ -819,25 +972,103 @@ def _chart_svg(chart: Any) -> str:
                 values.append(0.0)
         if values:
             series_values.append(values)
+            color = "transparent"
+            for source in ("fill", "line"):
+                try:
+                    candidate = (
+                        series.format.fill.fore_color
+                        if source == "fill"
+                        else series.format.line.color
+                    )
+                    color = _pptx_color(candidate, theme_palette)
+                except (AttributeError, TypeError, ValueError):
+                    continue
+                if color != "transparent":
+                    break
+            colors.append(
+                color
+                if color != "transparent"
+                else fallback_palette[series_index % len(fallback_palette)]
+            )
     if not series_values:
         return '<div class="chart-empty">Chart data unavailable</div>'
+    chart_type = getattr(getattr(chart, "chart_type", None), "name", "")
+    chart_type = chart_type.upper()
     maximum = max(
         (abs(value) for values in series_values for value in values), default=1
     )
     maximum = maximum or 1
     count = max(len(values) for values in series_values)
+
+    if "DOUGHNUT" in chart_type or "PIE" in chart_type:
+        values = [abs(value) for value in series_values[0]]
+        total = sum(values) or 1
+        start_angle = -math.pi / 2
+        slices: list[str] = []
+        for index, value in enumerate(values):
+            end_angle = start_angle + 2 * math.pi * value / total
+            start_x = 300 + 108 * math.cos(start_angle)
+            start_y = 150 + 108 * math.sin(start_angle)
+            end_x = 300 + 108 * math.cos(end_angle)
+            end_y = 150 + 108 * math.sin(end_angle)
+            large_arc = 1 if end_angle - start_angle > math.pi else 0
+            slices.append(
+                f'<path d="M300 150 L{start_x:.2f} {start_y:.2f} '
+                f'A108 108 0 {large_arc} 1 {end_x:.2f} {end_y:.2f} Z" '
+                f'fill="{fallback_palette[index % len(fallback_palette)]}"/>'
+            )
+            start_angle = end_angle
+        return (
+            '<svg class="chart-svg" viewBox="0 0 600 300">'
+            f"{''.join(slices)}"
+            '<circle cx="300" cy="150" r="65" fill="white"/></svg>'
+        )
+
+    if "LINE" in chart_type:
+        paths: list[str] = []
+        for series_index, values in enumerate(series_values):
+            points = []
+            for value_index, value in enumerate(values):
+                x = 52 + value_index * 520 / max(len(values) - 1, 1)
+                y = 252 - (value / maximum) * 205
+                points.append((x, y))
+            point_text = " ".join(f"{x:.2f},{y:.2f}" for x, y in points)
+            markers = "".join(
+                f'<circle cx="{x:.2f}" cy="{y:.2f}" r="4" fill="{colors[series_index]}"/>'
+                for x, y in points
+            )
+            paths.append(
+                f'<polyline points="{point_text}" fill="none" '
+                f'stroke="{colors[series_index]}" stroke-width="4"/>'
+                f"{markers}"
+            )
+        return (
+            '<svg class="chart-svg" viewBox="0 0 600 300" preserveAspectRatio="none">'
+            '<line x1="45" y1="252" x2="575" y2="252" stroke="#d1d5db"/>'
+            f"{''.join(paths)}</svg>"
+        )
+
     group_width = 520 / max(count, 1)
     bar_width = max(group_width / max(len(series_values), 1) * 0.72, 2)
     bars: list[str] = []
     for series_index, values in enumerate(series_values):
         for value_index, value in enumerate(values):
-            height = abs(value) / maximum * 210
-            x = 52 + value_index * group_width + series_index * bar_width
-            y = 252 - height if value >= 0 else 252
-            bars.append(
-                f'<rect x="{x:.2f}" y="{y:.2f}" width="{bar_width:.2f}" '
-                f'height="{height:.2f}" fill="{palette[series_index % len(palette)]}"/>'
-            )
+            if "BAR" in chart_type:
+                height = max(205 / max(count, 1) * 0.7, 4)
+                y = 34 + value_index * 205 / max(count, 1) + series_index * height
+                bar_length = abs(value) / maximum * 490
+                bars.append(
+                    f'<rect x="52" y="{y:.2f}" width="{bar_length:.2f}" '
+                    f'height="{height:.2f}" fill="{colors[series_index]}"/>'
+                )
+            else:
+                bar_height = abs(value) / maximum * 210
+                x = 52 + value_index * group_width + series_index * bar_width
+                y = 252 - bar_height if value >= 0 else 252
+                bars.append(
+                    f'<rect x="{x:.2f}" y="{y:.2f}" width="{bar_width:.2f}" '
+                    f'height="{bar_height:.2f}" fill="{colors[series_index]}"/>'
+                )
     return (
         '<svg class="chart-svg" viewBox="0 0 600 300" preserveAspectRatio="none">'
         '<line x1="45" y1="252" x2="575" y2="252" stroke="#9ca3af"/>'
@@ -854,16 +1085,57 @@ def _placeholder_key(shape: Any) -> int | None:
         return None
 
 
+def _table_cell_html(cell: Any, palette: dict[str, str]) -> str:
+    styles: list[str] = []
+    try:
+        fill = _pptx_color(cell.fill.fore_color, palette)
+        if fill != "transparent":
+            styles.append(f"background:{fill}")
+    except (AttributeError, TypeError, ValueError):
+        pass
+    paragraph = cell.text_frame.paragraphs[0] if cell.text_frame.paragraphs else None
+    run = paragraph.runs[0] if paragraph and paragraph.runs else None
+    if run is not None:
+        if run.font.color is not None:
+            color = _pptx_color(run.font.color, palette)
+            if color != "transparent":
+                styles.append(f"color:{color}")
+        if run.font.size:
+            styles.append(f"font-size:{run.font.size.pt:.2f}pt")
+        if run.font.name:
+            styles.append(f"font-family:{_css_font_family(run.font.name)}")
+        if run.font.bold:
+            styles.append("font-weight:700")
+    alignment = {
+        2: "center",
+        3: "right",
+        4: "justify",
+    }.get(int(paragraph.alignment or 0) if paragraph else 0)
+    if alignment:
+        styles.append(f"text-align:{alignment}")
+    style_attr = f' style="{";".join(styles)}"' if styles else ""
+    return f"<td{style_attr}>{html.escape(cell.text)}</td>"
+
+
 def _composite_slide_shapes(slide: Any) -> list[tuple[str, Any]]:
+    def append_shape(layer: str, shape: Any) -> None:
+        shape_type = getattr(getattr(shape, "shape_type", None), "name", "")
+        if shape_type == "GROUP":
+            for child in shape.shapes:
+                append_shape(layer, child)
+            return
+        result.append((layer, shape))
+
     layout = slide.slide_layout
     result: list[tuple[str, Any]] = []
     for shape in layout.slide_master.shapes:
         if _placeholder_key(shape) is None:
-            result.append(("master", shape))
+            append_shape("master", shape)
     for shape in layout.shapes:
         if _placeholder_key(shape) is None:
-            result.append(("layout", shape))
-    result.extend(("slide", shape) for shape in slide.shapes)
+            append_shape("layout", shape)
+    for shape in slide.shapes:
+        append_shape("slide", shape)
     return result
 
 
@@ -881,6 +1153,17 @@ def _render_pptx(source: Path) -> str:
         palette = _pptx_theme_palette(slide)
         shapes: list[str] = []
         for layer, shape in _composite_slide_shapes(slide):
+            if shape.shape_type == MSO_SHAPE_TYPE.LINE:
+                shapes.append(
+                    _connector_svg(
+                        shape,
+                        layer=layer,
+                        slide_width=slide_width,
+                        slide_height=slide_height,
+                        palette=palette,
+                    )
+                )
+                continue
             box = _shape_box(
                 shape,
                 slide_width=slide_width,
@@ -898,7 +1181,7 @@ def _render_pptx(source: Path) -> str:
                 table_rows: list[str] = []
                 for row in shape.table.rows:
                     cells = "".join(
-                        f"<td>{html.escape(cell.text)}</td>" for cell in row.cells
+                        _table_cell_html(cell, palette) for cell in row.cells
                     )
                     table_rows.append(f"<tr>{cells}</tr>")
                 shapes.append(
@@ -914,7 +1197,7 @@ def _render_pptx(source: Path) -> str:
                 shapes.append(
                     f'<div class="shape chart" {identity} style="{box}">'
                     f"<strong>{html.escape(chart_title or 'Chart')}</strong>"
-                    f"{_chart_svg(shape.chart)}</div>"
+                    f"{_chart_svg(shape.chart, palette)}</div>"
                 )
                 continue
 
@@ -950,13 +1233,15 @@ def _render_pptx(source: Path) -> str:
     + 8px);top:0;color:#6b7280;font-size:12px}.shape{position:absolute;overflow:hidden}
     .text-shape{padding:4px}.text-frame{width:100%;height:100%;display:flex;
     flex-direction:column;overflow:hidden}
-    .text-shape p{margin:0 0 .2em;line-height:1.12;white-space:pre-wrap;overflow-wrap:anywhere}
+    .text-shape p{margin:0 0 .2em;line-height:1.12;white-space:pre-wrap;
+    overflow-wrap:anywhere;break-inside:avoid}.bullet-marker{text-align:center}
     .picture{object-fit:cover}.table-shape table{width:100%;height:100%;border-collapse:collapse;
     table-layout:fixed}.table-shape td{border:1px solid #b8bdc6;padding:4px;font-size:12px;
     overflow:hidden}.chart{display:flex;flex-direction:column;align-items:center;justify-content:
     center;border:1px solid #ccd1d9;background:#fff;color:#374151;gap:5px}.chart strong{
     font-size:12px}.chart-svg{width:100%;height:calc(100% - 20px)}.chart-empty{
     font-size:11px;color:#6b7280}.vector-shape{pointer-events:none}
+    .connector{overflow:visible;pointer-events:none}
     """
     return _page(title=source.name, body="".join(rendered_slides), css=css)
 

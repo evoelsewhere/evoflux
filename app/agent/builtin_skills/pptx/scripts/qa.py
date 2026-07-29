@@ -10,8 +10,10 @@ import sys
 import zipfile
 from pathlib import Path
 from typing import Any
+from xml.etree import ElementTree as ET
 
 from pptx import Presentation
+from pptx.oxml.ns import qn
 
 for parent in Path(__file__).resolve().parents:
     if (parent / "app" / "services").is_dir():
@@ -30,6 +32,8 @@ PLACEHOLDER_RE = re.compile(
 EMU_PER_INCH = 914400
 OVERLAP_RATIO_THRESHOLD = 0.12
 ICON_NAME_RE = re.compile(r"^\[icon:([a-z0-9-]+):([a-z0-9-]+)\]$")
+_AUDIO_EXTENSIONS = {".aac", ".m4a", ".mp3", ".wav", ".wma"}
+_VIDEO_EXTENSIONS = {".avi", ".m4v", ".mov", ".mp4", ".mpeg", ".mpg", ".wmv"}
 
 
 def _shape_text(shape) -> str:
@@ -56,6 +60,15 @@ def _is_line_or_connector(shape) -> bool:
     return shape_type in {"LINE", "FREEFORM"} or shape.width == 0 or shape.height == 0
 
 
+def _walk_shapes(shapes):
+    """Yield top-level shapes and editable descendants inside native groups."""
+    for shape in shapes:
+        yield shape
+        shape_type = getattr(getattr(shape, "shape_type", None), "name", "")
+        if shape_type == "GROUP":
+            yield from _walk_shapes(shape.shapes)
+
+
 def _is_rounded_shape(shape) -> bool:
     try:
         auto_shape = shape.auto_shape_type
@@ -78,6 +91,27 @@ def _picture_extension(shape) -> str | None:
         return str(shape.part.related_part(relation_id).partname.ext).lower()
     except (AttributeError, KeyError, ValueError):
         return None
+
+
+def _has_accessibility_text(shape) -> bool:
+    try:
+        properties = shape._element.xpath(".//*[local-name()='cNvPr']")
+    except (AttributeError, TypeError, ValueError):
+        return False
+    return bool(
+        properties
+        and (
+            properties[0].get("title", "").strip()
+            or properties[0].get("descr", "").strip()
+        )
+    )
+
+
+def _has_hyperlink(shape) -> bool:
+    try:
+        return bool(shape._element.xpath(".//*[local-name()='hlinkClick']"))
+    except (AttributeError, TypeError, ValueError):
+        return False
 
 
 def _intersection_ratio(left, right) -> float:
@@ -178,10 +212,78 @@ def _finding(
     }
 
 
+def _package_feature_inventory(package: zipfile.ZipFile) -> dict[str, Any]:
+    names = package.namelist()
+    slide_names = [
+        name for name in names if re.fullmatch(r"ppt/slides/slide\d+\.xml", name)
+    ]
+    slide_roots = [ET.fromstring(package.read(name)) for name in slide_names]
+
+    def count_local(local_name: str) -> int:
+        suffix = f"}}{local_name}"
+        return sum(
+            1
+            for root in slide_roots
+            for node in root.iter()
+            if node.tag.endswith(suffix)
+        )
+
+    morph_namespace = "http://schemas.microsoft.com/office/powerpoint/2015/09/main"
+    media_extensions = [
+        Path(name).suffix.lower() for name in names if name.startswith("ppt/media/")
+    ]
+    return {
+        "masters": sum(
+            bool(re.fullmatch(r"ppt/slideMasters/slideMaster\d+\.xml", name))
+            for name in names
+        ),
+        "layouts": sum(
+            bool(re.fullmatch(r"ppt/slideLayouts/slideLayout\d+\.xml", name))
+            for name in names
+        ),
+        "themes": sum(name.startswith("ppt/theme/theme") for name in names),
+        "charts": sum(
+            bool(re.fullmatch(r"ppt/charts/chart\d+\.xml", name)) for name in names
+        ),
+        "embedded_workbooks": sum(name.startswith("ppt/embeddings/") for name in names),
+        "smartart_parts": sum(name.startswith("ppt/diagrams/") for name in names),
+        "audio_files": sum(
+            extension in _AUDIO_EXTENSIONS for extension in media_extensions
+        ),
+        "video_files": sum(
+            extension in _VIDEO_EXTENSIONS for extension in media_extensions
+        ),
+        "notes_slides": sum(
+            name.startswith("ppt/notesSlides/notesSlide") for name in names
+        ),
+        "comments": sum(
+            name.startswith("ppt/comments/") or name.startswith("ppt/commentAuthors")
+            for name in names
+        ),
+        "ole_objects": sum(
+            name.startswith("ppt/embeddings/oleObject") for name in names
+        ),
+        "transitions": count_local("transition"),
+        "morph_transitions": sum(
+            1
+            for root in slide_roots
+            for node in root.iter()
+            if node.tag == f"{{{morph_namespace}}}morph"
+        ),
+        "animation_timelines": count_local("timing"),
+        "placeholders": count_local("ph"),
+        "gradient_fills": count_local("gradFill"),
+        "shadows": count_local("outerShdw"),
+        "hyperlinks": count_local("hlinkClick"),
+        "groups": count_local("grpSp"),
+    }
+
+
 def _layout_findings(presentation) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     findings: list[dict[str, Any]] = []
     metrics: list[dict[str, Any]] = []
     for slide_number, slide in enumerate(presentation.slides, start=1):
+        all_shapes = list(_walk_shapes(slide.shapes))
         content_shapes = [
             shape
             for shape in slide.shapes
@@ -196,6 +298,44 @@ def _layout_findings(presentation) -> tuple[list[dict[str, Any]], list[dict[str,
             for shape in content_shapes
             if (metadata := _icon_metadata(shape)) is not None
         ]
+        charts = [
+            shape for shape in content_shapes if getattr(shape, "has_chart", False)
+        ]
+        tables = [
+            shape for shape in content_shapes if getattr(shape, "has_table", False)
+        ]
+        pictures = [
+            shape
+            for shape in content_shapes
+            if getattr(getattr(shape, "shape_type", None), "name", "") == "PICTURE"
+            and _icon_metadata(shape) is None
+        ]
+        groups = [
+            shape
+            for shape in content_shapes
+            if getattr(getattr(shape, "shape_type", None), "name", "") == "GROUP"
+        ]
+        connectors = [
+            shape
+            for shape in all_shapes
+            if _is_line_or_connector(shape) and not _is_background(shape, presentation)
+        ]
+        accessible_shapes = [
+            shape
+            for shape in all_shapes
+            if _shape_area(shape)
+            and not _is_background(shape, presentation)
+            and _has_accessibility_text(shape)
+        ]
+        hyperlinks = [shape for shape in all_shapes if _has_hyperlink(shape)]
+        has_transition = slide._element.find(qn("p:transition")) is not None
+        try:
+            has_source_notes = bool(
+                slide.has_notes_slide
+                and "[Sources]" in slide.notes_slide.notes_text_frame.text
+            )
+        except (AttributeError, TypeError, ValueError):
+            has_source_notes = False
         overlaps: list[dict[str, Any]] = []
 
         for index, left in enumerate(content_shapes):
@@ -355,8 +495,45 @@ def _layout_findings(presentation) -> tuple[list[dict[str, Any]], list[dict[str,
                 "rounded_shapes": len(rounded),
                 "icon_count": len(icons),
                 "icon_families": icon_families,
+                "office_features": {
+                    "native_charts": len(charts),
+                    "native_tables": len(tables),
+                    "pictures": len(pictures),
+                    "groups": len(groups),
+                    "connectors": len(connectors),
+                    "accessible_shapes": len(accessible_shapes),
+                    "hyperlinks": len(hyperlinks),
+                    "transition": has_transition,
+                    "source_notes": has_source_notes,
+                },
                 "overlaps": overlaps,
             }
+        )
+    feature_totals = {
+        key: sum(int(metric["office_features"][key]) for metric in metrics)
+        for key in (
+            "native_charts",
+            "native_tables",
+            "pictures",
+            "groups",
+            "connectors",
+            "accessible_shapes",
+            "hyperlinks",
+            "transition",
+            "source_notes",
+        )
+    }
+    if len(metrics) >= 5 and not any(
+        feature_totals[key] for key in ("native_charts", "native_tables", "pictures")
+    ):
+        findings.append(
+            _finding(
+                "warning",
+                "deck:shape-only-composition",
+                1,
+                f"Deck has {len(metrics)} slides but no native charts, tables, "
+                "or non-icon pictures; verify the shape-only treatment is intentional",
+            )
         )
     return findings, metrics
 
@@ -379,6 +556,7 @@ def inspect_pptx(
 ) -> dict[str, Any]:
     errors: list[str] = []
     warnings: list[str] = []
+    package_features: dict[str, Any] = {}
     try:
         with zipfile.ZipFile(source) as package:
             bad_entry = package.testzip()
@@ -392,6 +570,7 @@ def inspect_pptx(
             ):
                 if required not in names:
                     errors.append(f"Missing package part: {required}")
+            package_features = _package_feature_inventory(package)
     except (OSError, zipfile.BadZipFile) as exc:
         return {"errors": [f"Invalid PPTX package: {exc}"], "warnings": []}
 
@@ -434,6 +613,8 @@ def inspect_pptx(
                     warnings.append(
                         f"Slide {slide_number}: empty placeholder '{shape.name}'"
                     )
+                else:
+                    visible_shape_count += 1
             elif shape.shape_type is not None:
                 visible_shape_count += 1
 
@@ -449,6 +630,11 @@ def inspect_pptx(
     duplicate_titles = sorted({title for title in titles if titles.count(title) > 1})
     if duplicate_titles:
         warnings.append(f"Repeated slide titles: {', '.join(duplicate_titles[:10])}")
+    if package_features.get("audio_files") or package_features.get("video_files"):
+        warnings.append(
+            "Embedded audio/video is preserved structurally, but Chromium visual QA "
+            "does not verify media playback"
+        )
     layout_findings, layout_metrics = _layout_findings(presentation)
     baseline = _baseline_values(reference)
     retained_findings = []
@@ -465,9 +651,26 @@ def inspect_pptx(
         "slides": len(presentation.slides),
         "slide_width": presentation.slide_width,
         "slide_height": presentation.slide_height,
+        "powerpoint_features": package_features,
         "layout": {
             "findings": retained_findings,
             "metrics": layout_metrics,
+            "office_feature_summary": {
+                key: sum(
+                    int(metric["office_features"][key]) for metric in layout_metrics
+                )
+                for key in (
+                    "native_charts",
+                    "native_tables",
+                    "pictures",
+                    "groups",
+                    "connectors",
+                    "accessible_shapes",
+                    "hyperlinks",
+                    "transition",
+                    "source_notes",
+                )
+            },
             "reference_baseline": str(reference) if reference else None,
         },
     }

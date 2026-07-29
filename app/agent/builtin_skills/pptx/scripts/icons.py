@@ -23,10 +23,7 @@ from pptx.parts.image import ImagePart
 from app.agent.builtin_skills.pptx.scripts.stylekit import LayoutGuard
 
 CATALOG_PATH = (
-    Path(__file__).resolve().parent.parent
-    / "assets"
-    / "icons"
-    / "lucide-1.16.0.json"
+    Path(__file__).resolve().parent.parent / "assets" / "icons" / "lucide-1.16.0.json"
 )
 ICON_FAMILY = "lucide"
 ICON_LICENSE = "ISC"
@@ -125,7 +122,9 @@ def resolve_icon(name: str) -> str:
     normalized = name.strip().lower().replace("_", "-").replace(" ", "-")
     canonical = _ALIASES.get(normalized, normalized)
     if canonical not in _catalog():
-        suggestions = ", ".join(match.name for match in search_icons(normalized, limit=5))
+        suggestions = ", ".join(
+            match.name for match in search_icons(normalized, limit=5)
+        )
         suffix = f"; nearest catalog matches: {suggestions}" if suggestions else ""
         raise KeyError(f"Unknown {ICON_FAMILY} icon {name!r}{suffix}")
     return canonical
@@ -133,11 +132,7 @@ def resolve_icon(name: str) -> str:
 
 def search_icons(query: str, *, limit: int = 8) -> list[IconMatch]:
     """Search canonical names, aliases, and semantic tags."""
-    tokens = {
-        token
-        for token in re.split(r"[^a-z0-9]+", query.lower())
-        if token
-    }
+    tokens = {token for token in re.split(r"[^a-z0-9]+", query.lower()) if token}
     if not tokens:
         return [
             IconMatch(name, ICON_FAMILY, tuple(_TAGS.get(name, "").split()))
@@ -148,9 +143,7 @@ def search_icons(query: str, *, limit: int = 8) -> list[IconMatch]:
     for name in list_icons():
         haystack = {name, *name.split("-"), *_TAGS.get(name, "").split()}
         alias_tokens = {
-            alias
-            for alias, canonical in _ALIASES.items()
-            if canonical == name
+            alias for alias, canonical in _ALIASES.items() if canonical == name
         }
         score = sum(
             6 if token == name else 4 if token in name else 2
@@ -196,7 +189,7 @@ def icon_svg(
         'viewBox="0 0 24 24" fill="none" '
         f'stroke="#{normalized_color.upper()}" stroke-width="{stroke_width:g}" '
         'stroke-linecap="round" stroke-linejoin="round">'
-        f'{"".join(elements)}</svg>'
+        f"{''.join(elements)}</svg>"
     ).encode("utf-8")
 
 

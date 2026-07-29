@@ -18,14 +18,17 @@ interface OfficePreviewProps {
 }
 
 function OfficePreview({ sessionId, file }: OfficePreviewProps) {
-  const [html, setHtml] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [result, setResult] = useState<{
+    key: string
+    html: string | null
+    error: string | null
+  } | null>(null)
   const [retryKey, setRetryKey] = useState(0)
+  const requestKey = `${sessionId}:${file.path}:${file.size}:${file.mtime}:${retryKey}`
+  const currentResult = result?.key === requestKey ? result : null
 
   useEffect(() => {
     const controller = new AbortController()
-    setHtml(null)
-    setError(null)
 
     void fetch(workspaceOfficePreviewUrl(sessionId, file.path), {
       signal: controller.signal,
@@ -41,16 +44,20 @@ function OfficePreview({ sessionId, file }: OfficePreviewProps) {
         }
         throw new Error(detail)
       })
-      .then(setHtml)
+      .then((html) => setResult({ key: requestKey, html, error: null }))
       .catch((reason: unknown) => {
         if (controller.signal.aborted) return
-        setError(reason instanceof Error ? reason.message : String(reason))
+        setResult({
+          key: requestKey,
+          html: null,
+          error: reason instanceof Error ? reason.message : String(reason),
+        })
       })
 
     return () => controller.abort()
-  }, [file.path, file.size, file.mtime, retryKey, sessionId])
+  }, [file.path, requestKey, sessionId])
 
-  if (error) {
+  if (currentResult?.error) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
         <span className="flex h-10 w-10 items-center justify-center rounded-full bg-(--color-error)/10 text-(--color-error)">
@@ -58,7 +65,7 @@ function OfficePreview({ sessionId, file }: OfficePreviewProps) {
         </span>
         <div>
           <p className="text-sm font-medium text-(--color-text)">Preview unavailable</p>
-          <p className="mt-1 max-w-sm text-xs leading-5 text-(--color-text-muted)">{error}</p>
+          <p className="mt-1 max-w-sm text-xs leading-5 text-(--color-text-muted)">{currentResult.error}</p>
         </div>
         <button
           type="button"
@@ -72,7 +79,7 @@ function OfficePreview({ sessionId, file }: OfficePreviewProps) {
     )
   }
 
-  if (!html) {
+  if (!currentResult?.html) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 text-(--color-text-subtle)">
         <Loader2 size={17} className="animate-spin" aria-hidden="true" />
@@ -85,7 +92,7 @@ function OfficePreview({ sessionId, file }: OfficePreviewProps) {
     <iframe
       key={`${file.path}:${file.mtime}`}
       title={`Preview ${file.name}`}
-      srcDoc={html}
+      srcDoc={currentResult.html}
       sandbox="allow-scripts"
       referrerPolicy="no-referrer"
       className="h-full min-h-0 w-full border-0 bg-[#f0f0f0]"

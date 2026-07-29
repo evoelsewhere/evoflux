@@ -51,11 +51,19 @@ The JSON plan is a mutation map. Every edit must target an inspected stable
 }
 ```
 
-`replace_image` is also supported with `file`; the replacement must use the
-same media format. The editor patches only selected slide/media parts and
-rejects changes to masters, layouts, and themes. Use `python-pptx` only when a
-requested structural change cannot be expressed by this editor, and then
-compare the before/after package and render every slide.
+The editor also supports:
+
+- `fill_placeholder` for inspected native placeholders;
+- `replace_rich_text` with paragraphs, runs, bullets, levels, alignment,
+  spacing, font, size, color, bold, italic, and underline;
+- `replace_chart_data` with `categories` and named `series`; this changes the
+  existing chart cache and embedded workbook without rebuilding the slide;
+- `replace_image` with `file`; the replacement must use the same media format.
+
+The editor patches only the selected slide, chart, workbook, or media parts
+and rejects changes to masters, layouts, and themes. Use `python-pptx` only
+when a requested structural change cannot be expressed by this editor, and
+then compare the before/after package and render every slide.
 
 ## Workflow
 
@@ -82,7 +90,11 @@ compare the before/after package and render every slide.
    not an overlap exception.
 7. For functional symbols, use the curated vector catalog in
    `scripts/icons.py`, not generated raster icons or mixed icon families.
-8. Run structural QA and render every slide. Inspect every slide individually,
+8. Route evidence to Office-native objects with `scripts/office_features.py`.
+   Quantitative evidence becomes an editable chart, structured comparisons
+   become a real table, photos use native crop/focal controls, and navigation
+   uses native hyperlinks. Do not rebuild these as collections of rectangles.
+9. Run structural QA and render every slide. Inspect every slide individually,
    repair issues, rerender, and deliver only the final PPTX.
 
 Minimal layout-first pattern:
@@ -127,6 +139,93 @@ Do not repair a generator with global regex substitutions. Helper signatures
 must use their declared keyword names (`left`, `top`, `width`, `height`), and a
 signature mismatch must be fixed at the specific call site. Never mass-rewrite
 short parameter names such as `h` because they can also match inside `width`.
+
+## Office-native feature routing
+
+Use the richest editable PowerPoint primitive that matches the content:
+
+- Trends, comparisons, distributions, and portfolio shares: `add_native_chart`.
+  The chart keeps its embedded workbook, labels, axes, legend, and theme-aware
+  series formatting. Do not draw bars or lines manually.
+- Matrices, schedules, ownership, and status registers: `add_native_table`.
+  Do not simulate a table with one rectangle and text box per cell.
+- Photography, screenshots, and diagrams: `add_image_cover` with `focal_x`,
+  `focal_y`, and `alt_text`; crop natively instead of stretching or baking the
+  image into a slide screenshot.
+- Repeated branded elements: edit the source master/layout/placeholders. Do not
+  duplicate them as slide-level shapes.
+- Rich editorial copy: `add_rich_text` for editable mixed-format runs, native
+  bullets, hierarchy, and one-to-four text columns. Do not split every emphasis
+  change into a separate text box.
+- Simple processes: `add_grouped_process` creates an editable native group
+  with connectors behind nodes. Complex topology: Graphviz or a sourced
+  visual. Do not turn every concept into a card grid.
+- Cross-slide pacing: `set_slide_transition` only when it improves continuity.
+  For intentional object continuity, assign matching `set_morph_identity`
+  values on adjacent slides and use the `morph` transition. Keep transitions
+  restrained; never use animation to hide poor hierarchy.
+- Interactive references: `set_shape_hyperlink`; accessibility:
+  `set_accessibility` on meaningful charts, tables, images, and controls.
+- Native gradients and restrained depth are available through
+  `apply_gradient_fill` and `apply_soft_shadow`. They are accents, not a reason
+  to add extra containers.
+
+SmartArt, embedded video, complex animation timelines, and existing custom
+chart features must be preserved through the template-first OOXML path. If
+they already exist in a supplied deck, edit their data/text in place or leave
+them untouched; never flatten or reconstruct them with basic shapes.
+
+## PowerPoint capability matrix
+
+Choose the route by editability and fidelity, not by whichever API is easiest:
+
+| Capability | Create new | Edit supplied template | QA/preservation |
+| --- | --- | --- | --- |
+| Theme fonts/colors | `theme_from_presentation` or design tokens | inherit theme/master | inventory themes, masters, layouts |
+| Placeholders | use source layout | `fill_placeholder` | report type/index and empty placeholders |
+| Rich text/bullets/columns | `add_rich_text` | `replace_rich_text` | text fit, wrap, density |
+| Charts + workbook | `add_native_chart` | `replace_chart_data` | chart/workbook inventory and series validation |
+| Tables | `add_native_table` | `replace_table_cell` | native-table inventory |
+| Photos/screenshots | `add_image_cover` with focal crop | `replace_image` | crop, clipping, media inventory |
+| Groups/connectors | `add_grouped_process` | preserve/edit targeted child content | group/connector inventory |
+| Hyperlinks/accessibility | native helpers | retain or patch target | hyperlink/alt-text counts |
+| Gradients/shadows | native DrawingML helpers | preserve existing effects | OOXML inventory + Chromium preview |
+| Transitions/Morph | `set_slide_transition`, `set_morph_identity` | preserve existing transition | transition/Morph inventory |
+| SmartArt | start from a suitable template | preserve package parts | SmartArt-part inventory |
+| Audio/video/OLE | insert only from a proven template workflow | preserve relationships/media | inventory; playback requires PowerPoint |
+| Complex animations | author from a suitable template | preserve `p:timing` unchanged | animation-timeline inventory |
+
+“Preserve” is a supported capability: for SmartArt, media, OLE, and complex
+animation, structural fidelity is higher when EvoFlux leaves untargeted
+package parts byte-identical than when it approximates them with shapes.
+
+Example:
+
+```python
+from app.agent.builtin_skills.pptx.scripts.office_features import (
+    add_native_chart,
+    set_accessibility,
+)
+
+chart = add_native_chart(
+    slide,
+    ["Q1", "Q2", "Q3", "Q4"],
+    {"Actual": [12, 18, 24, 31], "Plan": [14, 19, 23, 28]},
+    left=visual_region.left,
+    top=visual_region.top,
+    width=visual_region.width,
+    height=visual_region.height,
+    kind="line",
+    title="Actual growth moves ahead of plan",
+    theme=theme,
+    guard=guard,
+)
+set_accessibility(
+    chart,
+    title="Actual versus plan",
+    description="Line chart comparing quarterly actual and planned growth.",
+)
+```
 
 ## Narrative and layout rules
 
@@ -218,6 +317,15 @@ The layout gate also reports:
 - excessive rounded-card/UI composition;
 - mixed icon families, raster icons, illegibly small icons, or icon overload;
 - slides with too many independent shapes or text blocks.
+
+The report includes `office_feature_summary`, per-slide editable-object counts,
+and a package-wide `powerpoint_features` inventory for masters, layouts,
+themes, charts, embedded workbooks, SmartArt parts, audio/video, notes,
+comments, OLE objects, transitions, Morph, animation timelines, placeholders,
+gradients, shadows, hyperlinks, and groups. Embedded media is structurally
+preserved; Chromium QA explicitly warns that it cannot validate playback. A
+deck of five or more slides with no chart, table, or non-icon picture receives
+a shape-only warning.
 
 Search and insert the curated icon catalog:
 
