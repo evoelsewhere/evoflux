@@ -530,7 +530,7 @@ function TreeNodeView({
             onRename={onRename}
             onDelete={onDelete}
             visiblePaths={visiblePaths}
-            defaultOpen={defaultOpen}
+            defaultOpen={false}
           />
         ))}
     </div>
@@ -964,6 +964,12 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
   const files = useMemo<WorkspaceFileInfo[]>(() => data?.files ?? [], [data])
   const tree = useMemo(() => buildTree(files), [files])
   const visiblePaths = useMemo(() => matchingPaths(files, searchQuery), [files, searchQuery])
+  const visibleFileCount = useMemo(
+    () => visiblePaths
+      ? files.reduce((count, file) => count + (visiblePaths.has(file.path) ? 1 : 0), 0)
+      : files.length,
+    [files, visiblePaths],
+  )
 
   // ── Workspace picker ────────────────────────────────────────────────────────
 
@@ -1546,11 +1552,19 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
         {/* Tree/preview drag divider — desktop only */}
         {!isMobile && showTree && showPreview && (
           <div
-            className="relative order-2 w-px shrink-0 cursor-ew-resize bg-(--color-border) transition-colors hover:bg-(--color-accent)/40"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize workspace file tree"
+            aria-valuemin={TREE_WIDTH_MIN}
+            aria-valuemax={TREE_WIDTH_MAX}
+            aria-valuenow={Math.round(treeWidth)}
+            className="group relative order-2 w-2 shrink-0 cursor-ew-resize"
             onPointerDown={startTreeResize}
             onDoubleClick={resetTreeWidth}
             title="Drag to resize · double-click to reset"
-          />
+          >
+            <span className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-(--color-border) transition-colors group-hover:bg-(--color-accent)/60" />
+          </div>
         )}
 
         {/* Preview — always receives the primary flexible surface. */}
@@ -1583,7 +1597,7 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
         {files.length > 0 && (
           <span>
             {visiblePaths
-              ? `${Array.from(visiblePaths).filter((p) => files.some((f) => f.path === p)).length} of ${files.length} file${files.length === 1 ? '' : 's'}`
+              ? `${visibleFileCount} of ${files.length} file${files.length === 1 ? '' : 's'}`
               : `${files.length} file${files.length === 1 ? '' : 's'}`
             }
             {' · '}

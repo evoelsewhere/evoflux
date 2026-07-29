@@ -65,6 +65,7 @@ export function TreeNodeView({
   node,
   depth,
   selectedPath,
+  selectedSourceWorkspace,
   onFileSelect,
   onFileOpen,
   changedPaths,
@@ -73,6 +74,7 @@ export function TreeNodeView({
   node: TreeNode
   depth: number
   selectedPath?: string | null
+  selectedSourceWorkspace?: string | null
   onFileSelect?: (file: WorkspaceFileInfo | null) => void
   onFileOpen?: (file: WorkspaceFileInfo) => void
   changedPaths: Set<string>
@@ -89,6 +91,7 @@ export function TreeNodeView({
 
   if (!isDir && node.file) {
     const isSelected = node.file.path === selectedPath
+      && (!selectedSourceWorkspace || node.file.sourceWorkspace === selectedSourceWorkspace)
     const isChanged = changedPaths.has(node.file.path)
     return (
       <button
@@ -146,6 +149,7 @@ export function TreeNodeView({
                 node={child}
                 depth={node.path ? depth + 1 : 0}
                 selectedPath={selectedPath}
+                selectedSourceWorkspace={selectedSourceWorkspace}
                 onFileSelect={onFileSelect}
                 onFileOpen={onFileOpen}
                 changedPaths={changedPaths}
@@ -483,11 +487,16 @@ export function CodingWorkspacePanel({
                 role="separator"
                 aria-orientation="vertical"
                 aria-label="Resize coding file tree"
+                aria-valuemin={CODING_TREE_WIDTH_MIN}
+                aria-valuemax={CODING_TREE_WIDTH_MAX}
+                aria-valuenow={Math.round(treeWidth)}
                 title="Drag to resize · double-click to reset"
                 onPointerDown={startTreeResize}
                 onDoubleClick={resetTreeWidth}
-                className="relative order-2 w-px shrink-0 cursor-ew-resize bg-(--color-border) transition-colors hover:bg-(--color-accent)/40"
-              />
+                className="group relative order-2 w-2 shrink-0 cursor-ew-resize"
+              >
+                <span className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-(--color-border) transition-colors group-hover:bg-(--color-accent)/60" />
+              </div>
             )}
 
             {showTree && (
@@ -534,6 +543,7 @@ export function CodingWorkspacePanel({
                       <MultiRepoFileTree
                         project={project}
                         selectedFilePath={selectedFilePath}
+                        selectedSourceWorkspace={selectedFile?.sourceWorkspace}
                         searchQuery={searchQuery}
                         onFileSelect={handleFileSelect}
                         onFileOpen={(file) => void handleOpenFile(file)}
@@ -588,6 +598,7 @@ export function CodingWorkspacePanel({
                                 node={node}
                                 depth={0}
                                 selectedPath={selectedFilePath}
+                                selectedSourceWorkspace={selectedFile?.sourceWorkspace}
                                 onFileSelect={handleFileSelect}
                                 onFileOpen={(file) => void handleOpenFile(file)}
                                 changedPaths={changedPaths}
