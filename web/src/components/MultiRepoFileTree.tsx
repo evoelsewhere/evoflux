@@ -25,6 +25,7 @@ function repoLabel(path: string): string {
 export interface MultiRepoFileTreeProps {
   project: CodingProject
   selectedFilePath?: string | null
+  selectedSourceWorkspace?: string | null
   onFileSelect?: (file: WorkspaceFileInfo | null) => void
   onFileOpen?: (file: WorkspaceFileInfo) => void
   searchQuery?: string
@@ -34,6 +35,7 @@ export interface MultiRepoFileTreeProps {
 export function MultiRepoFileTree({
   project,
   selectedFilePath = null,
+  selectedSourceWorkspace = null,
   onFileSelect,
   onFileOpen,
   searchQuery = '',
@@ -143,6 +145,7 @@ export function MultiRepoFileTree({
                     node={tree}
                     depth={0}
                     selectedPath={selectedFilePath}
+                    selectedSourceWorkspace={selectedSourceWorkspace}
                     onFileSelect={onFileSelect}
                     onFileOpen={onFileOpen}
                     changedPaths={changedPaths}
