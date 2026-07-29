@@ -1,53 +1,154 @@
 from __future__ import annotations
 
-import subprocess
-from pathlib import Path
-
+from docx import Document
+from openpyxl import Workbook
+from openpyxl.chart import BarChart, Reference
+from openpyxl.drawing.image import Image as WorkbookImage
+from PIL import Image
+from pptx import Presentation
+from pptx.enum.dml import MSO_THEME_COLOR
+from pptx.enum.shapes import MSO_SHAPE
+from pptx.util import Inches
 import pytest
 
 from app.services import office_preview_service as preview
 
 
-def test_render_office_preview_uses_cache(monkeypatch, tmp_path):
+def _docx(path):
+    document = Document()
+    document.add_heading("Quarterly review", level=1)
+    document.add_paragraph("Revenue increased.")
+    document.save(path)
+
+
+def _xlsx(path):
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Summary"
+    sheet["A1"] = "Revenue"
+    sheet["B1"] = 120
+    sheet["B2"] = "=B1*2"
+    workbook.save(path)
+
+
+def _pptx(path):
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+    text_box = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(8), Inches(1))
+    text_box.text = "Product launch"
+    text_box.text_frame.paragraphs[0].runs[0].font.name = "Aptos Display"
+    presentation.save(path)
+
+
+def test_render_docx_preview_uses_cache(monkeypatch, tmp_path):
     source = tmp_path / "report.docx"
-    source.write_bytes(b"fake office bytes")
+    _docx(source)
     cache = tmp_path / "cache"
     monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(cache))
-    monkeypatch.setattr(preview, "_officecli_binary", lambda: "/fake/officecli")
-    calls: list[list[str]] = []
-
-    def fake_run(argv, **kwargs):
-        calls.append(argv)
-        output = Path(argv[-1])
-        output.write_text("<html><head></head><body>preview</body></html>")
-        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
-
-    monkeypatch.setattr(preview.subprocess, "run", fake_run)
 
     first = preview.render_office_preview(source)
     second = preview.render_office_preview(source)
 
     assert first == second
-    assert len(calls) == 1
     rendered = first.read_text()
     assert "Content-Security-Policy" in rendered
-    assert "<body>preview</body>" in rendered
+    assert "Quarterly review" in rendered
+    assert "Revenue increased." in rendered
+    assert 'class="document-flow"' in rendered
+    assert "--page-width:" in rendered
 
 
-def test_render_office_preview_invalidates_when_source_changes(monkeypatch, tmp_path):
-    source = tmp_path / "slides.pptx"
-    source.write_bytes(b"first")
+def test_render_xlsx_preview(monkeypatch, tmp_path):
+    source = tmp_path / "workbook.xlsx"
+    _xlsx(source)
     monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
-    monkeypatch.setattr(preview, "_officecli_binary", lambda: "/fake/officecli")
 
-    def fake_run(argv, **kwargs):
-        Path(argv[-1]).write_text("<html><head></head><body>preview</body></html>")
-        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+    rendered = preview.render_office_preview(source).read_text()
 
-    monkeypatch.setattr(preview.subprocess, "run", fake_run)
+    assert "Summary" in rendered
+    assert "Revenue" in rendered
+    assert "=B1*2" in rendered
+    assert "==B1*2" not in rendered
+    assert 'data-cell="A1"' in rendered
+
+
+def test_render_xlsx_preview_includes_charts_and_images(monkeypatch, tmp_path):
+    source = tmp_path / "dashboard.xlsx"
+    image_path = tmp_path / "badge.png"
+    Image.new("RGB", (32, 24), "#2563eb").save(image_path)
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Dashboard"
+    sheet.append(["Month", "Revenue"])
+    sheet.append(["Jan", 120])
+    sheet.append(["Feb", 180])
+    chart = BarChart()
+    chart.title = "Revenue trend"
+    chart.add_data(
+        Reference(sheet, min_col=2, min_row=1, max_row=3), titles_from_data=True
+    )
+    sheet.add_chart(chart, "D2")
+    sheet.add_image(WorkbookImage(image_path), "D18")
+    workbook.save(source)
+    monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
+
+    rendered = preview.render_office_preview(source).read_text()
+
+    assert 'class="workbook-chart-svg"' in rendered
+    assert "<rect " in rendered
+    assert 'class="workbook-image"' in rendered
+    assert "data:image/png;base64," in rendered
+
+
+def test_render_pptx_preview(monkeypatch, tmp_path):
+    source = tmp_path / "slides.pptx"
+    _pptx(source)
+    monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
+
+    rendered = preview.render_office_preview(source).read_text()
+
+    assert "Product launch" in rendered
+    assert 'class="slide"' in rendered
+    assert 'data-source-layer="slide"' in rendered
+    assert "aspect-ratio:" in rendered
+    assert "Arial,sans-serif" in rendered
+
+
+def test_render_pptx_preview_resolves_template_theme_colors(monkeypatch, tmp_path):
+    source = tmp_path / "theme.pptx"
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+    shape = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE,
+        Inches(1),
+        Inches(1),
+        Inches(3),
+        Inches(1),
+    )
+    shape.fill.solid()
+    shape.fill.fore_color.theme_color = MSO_THEME_COLOR.ACCENT_1
+    presentation.save(source)
+    monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
+
+    rendered = preview.render_office_preview(source).read_text()
+
+    assert "background:#4F81BD" in rendered
+
+
+def test_render_office_preview_invalidates_when_source_changes(
+    monkeypatch,
+    tmp_path,
+):
+    source = tmp_path / "workbook.xlsx"
+    _xlsx(source)
+    monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
+
     first = preview.render_office_preview(source)
-    source.write_bytes(b"second version")
+    workbook = Workbook()
+    workbook.active["A1"] = "Changed"
+    workbook.save(source)
     second = preview.render_office_preview(source)
+
     assert first != second
 
 
@@ -58,17 +159,10 @@ def test_render_office_preview_rejects_unsupported_file(tmp_path):
         preview.render_office_preview(source)
 
 
-def test_render_office_preview_surfaces_renderer_error(monkeypatch, tmp_path):
-    source = tmp_path / "workbook.xlsx"
-    source.write_bytes(b"fake")
+def test_render_office_preview_surfaces_parse_error(monkeypatch, tmp_path):
+    source = tmp_path / "broken.pptx"
+    source.write_bytes(b"not an OpenXML package")
     monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
-    monkeypatch.setattr(preview, "_officecli_binary", lambda: "/fake/officecli")
-    monkeypatch.setattr(
-        preview.subprocess,
-        "run",
-        lambda argv, **kwargs: subprocess.CompletedProcess(
-            argv, 2, stdout="", stderr="bad workbook"
-        ),
-    )
-    with pytest.raises(preview.OfficePreviewError, match="bad workbook"):
+
+    with pytest.raises(preview.OfficePreviewError, match="Could not render"):
         preview.render_office_preview(source)

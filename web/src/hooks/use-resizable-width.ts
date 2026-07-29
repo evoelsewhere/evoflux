@@ -27,11 +27,13 @@ export function useResizableWidth({
     const parsed = stored ? Number(stored) : Number.NaN
     return Number.isFinite(parsed) ? clamp(parsed, minWidth, maxWidth) : defaultWidth
   })
-  const [isResizing, setIsResizing] = useState(false)
   const clampedWidth = clamp(width, minWidth, maxWidth)
   // Always-current live width — updated during drag without triggering renders.
   const liveWidthRef = useRef(clampedWidth)
-  liveWidthRef.current = clampedWidth
+
+  useEffect(() => {
+    liveWidthRef.current = clampedWidth
+  }, [clampedWidth])
 
   useEffect(() => {
     if (disabled) return
@@ -51,8 +53,6 @@ export function useResizableWidth({
     const startX = event.clientX
     const startWidth = liveWidthRef.current
 
-    setIsResizing(true)
-
     const handleMove = (e: PointerEvent) => {
       const delta = edge === 'right' ? e.clientX - startX : startX - e.clientX
       const newWidth = clamp(startWidth + delta, minWidth, maxWidth)
@@ -67,7 +67,6 @@ export function useResizableWidth({
       window.removeEventListener('pointercancel', handleUp)
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
-      setIsResizing(false)
       // Sync final width to React state once (localStorage + one re-render).
       setWidth(liveWidthRef.current)
     }
@@ -79,5 +78,5 @@ export function useResizableWidth({
     window.addEventListener('pointercancel', handleUp, { once: true })
   }, [disabled, edge, maxWidth, minWidth])
 
-  return { width: clampedWidth, startResize, resetWidth, isResizing }
+  return { width: clampedWidth, startResize, resetWidth }
 }

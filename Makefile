@@ -6,7 +6,7 @@
 all: test
 
 run: ## Start the API server only (no reload, no frontend; :8000)
-	uv run uvicorn app.server:app
+	uv run uvicorn app.server:app --no-access-log
 
 kill-dev-ports: ## Stop processes listening on dev ports (:8000, :5173)
 	@command -v lsof >/dev/null 2>&1 || { echo "error: 'lsof' not found"; exit 1; }
@@ -31,7 +31,7 @@ kill-dev-ports: ## Stop processes listening on dev ports (:8000, :5173)
 dev: kill-dev-ports ## Start backend (:8000 + reload) and frontend (Vite :5173) together
 	@command -v bun >/dev/null 2>&1 || { echo "error: 'bun' not found — install from https://bun.sh"; exit 1; }
 	@trap 'kill 0' INT TERM EXIT; \
-	(uv run uvicorn app.server:app --reload --reload-dir app 2>&1 | sed 's/^/[api] /') & \
+	(uv run uvicorn app.server:app --reload --reload-dir app --no-access-log 2>&1 | sed 's/^/[api] /') & \
 	(cd web && bun dev 2>&1 | sed 's/^/[web] /') & \
 	wait
 

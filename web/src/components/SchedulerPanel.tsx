@@ -211,7 +211,7 @@ export function ModeWorkspaceFields({
     <div>
       <label className="block text-sm font-medium text-(--color-text)">Routing</label>
       <div
-        role="tablist"
+        role="radiogroup"
         aria-label="Task mode"
         // ``inline-flex`` so two short labels ("Forge" / "Coding") do not
         // sprawl across the full form width.
@@ -223,8 +223,8 @@ export function ModeWorkspaceFields({
             <button
               key={opt.key}
               type="button"
-              role="tab"
-              aria-selected={active}
+              role="radio"
+              aria-checked={active}
               onClick={() => {
                 onChange({
                   mode: opt.key,

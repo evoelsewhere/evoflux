@@ -118,6 +118,8 @@ async def resolve_team_for_session(
     team = agent_service.require_team(team)
 
     if session is not None:
+        if session.mode not in ("coding", "aim"):
+            team.workspace = session.workspace
         team.session_tags = frozenset(session.tags or ())
         team.permission_mode = session.permission_mode
     return session, team

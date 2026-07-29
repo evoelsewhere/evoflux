@@ -345,12 +345,13 @@ async def team_chat(
             session_id = str(uuid7())
         team_obj = await team_manager.get_or_start_team_for_session(session_id)
         team_obj = _require_team(team_obj)
-        # Restore persisted custom workspace so the in-memory team stays in sync
-        # with whatever the user configured via the workspace panel.  Without
-        # this, self._team.workspace stays None after a server restart or when
-        # the workspace is changed between messages.
-        if workspace is None and existing is not None and existing.workspace:
+        # The persisted session is authoritative for Forge workspaces.  A
+        # reloaded/stale client may omit the field (or still carry the
+        # previously selected folder), but the live team must always use the
+        # folder most recently saved through PUT /{session_id}/workspace.
+        if existing is not None:
             workspace = existing.workspace
+        team_obj.workspace = workspace
 
     # Restore persisted session settings so the in-memory team reflects the
     # user's selection even after a server restart or a cold team boot.

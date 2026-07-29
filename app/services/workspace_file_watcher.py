@@ -181,7 +181,7 @@ class WorkspaceFileWatcher:
             Change.modified: "modified",
         }
 
-        logger.info("fs_watcher_started workspace={}", workspace)
+        logger.debug("fs_watcher_started workspace={}", workspace)
 
         try:
             async for changes in awatch(
@@ -246,7 +246,7 @@ class WorkspaceFileWatcher:
         except Exception as exc:  # noqa: BLE001
             logger.error("fs_watcher_error workspace={} err={}", workspace, exc)
         finally:
-            logger.info("fs_watcher_stopped workspace={}", workspace)
+            logger.debug("fs_watcher_stopped workspace={}", workspace)
 
 
 # Singleton instance — shared across the application

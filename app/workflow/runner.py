@@ -693,7 +693,10 @@ class WorkflowRunner:
                 # coding/aim definition but the session lost its
                 # mode/workspace — refuse rather than run on the wrong team.
                 return None
-            return await team_manager.get_or_start_team_for_session(state.session_id)
+            team = await team_manager.get_or_start_team_for_session(state.session_id)
+            if team is not None:
+                team.workspace = session_workspace
+            return team
         except Exception as exc:  # noqa: BLE001
             logger.warning("workflow_team_boot_failed error={}", exc)
             return None
@@ -714,7 +717,13 @@ class WorkflowRunner:
             session = None
         if session is None:
             return state.definition.scope, state.scope_workspace
-        return normalize_mode(session.mode), session.workspace or state.scope_workspace
+        mode = normalize_mode(session.mode)
+        if mode == "forge":
+            # A NULL Forge workspace is an explicit reset to the generated
+            # session sandbox, not a reason to resurrect the workflow's stale
+            # launch-time folder.
+            return mode, session.workspace
+        return mode, session.workspace or state.scope_workspace
 
     async def _aim_session_paths(
         self, state: ExecutionState

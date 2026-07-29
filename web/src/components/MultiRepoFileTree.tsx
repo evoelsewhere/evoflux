@@ -9,13 +9,14 @@
 
 import { useState } from 'react'
 import { useQueries } from '@tanstack/react-query'
-import { ChevronDown, ChevronRight, Folder, Loader2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
 import { getCodingWorkspaceGitDiff, listCodingWorkspaceFiles } from '@/api/client'
 import { queryKeys } from '@/queries/keys'
 import { cn } from '@/lib/utils'
 import { TreeNodeView } from './CodingWorkspacePanel'
 import { buildTree, collectChangedFiles } from '@/utils/workspaceFileTree'
 import type { CodingProject, WorkspaceFileInfo } from '@/api/types'
+import { FolderTypeIcon } from './FileTypeIcon'
 
 function repoLabel(path: string): string {
   return path.split(/[\\/]/).pop() || path
@@ -25,10 +26,19 @@ export interface MultiRepoFileTreeProps {
   project: CodingProject
   selectedFilePath?: string | null
   onFileSelect?: (file: WorkspaceFileInfo | null) => void
+  onFileOpen?: (file: WorkspaceFileInfo) => void
+  searchQuery?: string
   className?: string
 }
 
-export function MultiRepoFileTree({ project, selectedFilePath = null, onFileSelect, className }: MultiRepoFileTreeProps) {
+export function MultiRepoFileTree({
+  project,
+  selectedFilePath = null,
+  onFileSelect,
+  onFileOpen,
+  searchQuery = '',
+  className,
+}: MultiRepoFileTreeProps) {
   const paths = project.workspaces.map((w) => w.path)
   const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(() => new Set())
 
@@ -77,9 +87,13 @@ export function MultiRepoFileTree({ project, selectedFilePath = null, onFileSele
         // (WorkspaceFileInfo.path alone is repo-relative and ambiguous
         // across repos — see WorkspaceFileInfo.sourceWorkspace).
         const taggedFiles = (files.data?.files ?? []).map((f) => ({ ...f, sourceWorkspace: w.path }))
-        const tree = buildTree(taggedFiles)
+        const normalizedQuery = searchQuery.trim().toLowerCase()
+        const visibleFiles = normalizedQuery
+          ? taggedFiles.filter((file) => file.path.toLowerCase().includes(normalizedQuery))
+          : taggedFiles
+        const tree = buildTree(visibleFiles)
         const changedPaths = new Set(collectChangedFiles(diff.data).map((f) => f.path))
-        const isCollapsed = collapsedPaths.has(w.path)
+        const isCollapsed = normalizedQuery ? false : collapsedPaths.has(w.path)
         const name = w.display_name || w.name || repoLabel(w.path)
 
         return (
@@ -95,7 +109,7 @@ export function MultiRepoFileTree({ project, selectedFilePath = null, onFileSele
               ) : (
                 <ChevronDown size={12} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
               )}
-              <Folder size={12} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
+              <FolderTypeIcon open={!isCollapsed} size={16} />
               <span className="flex-1 truncate text-xs font-medium text-(--color-text)">{name}</span>
               {files.isLoading && <Loader2 size={11} className="animate-spin text-(--color-text-muted)" aria-hidden="true" />}
               {files.isError && (
@@ -108,7 +122,9 @@ export function MultiRepoFileTree({ project, selectedFilePath = null, onFileSele
               )}
               {!files.isLoading && !files.isError && (
                 <span className="rounded-full bg-(--bg-key) px-1.5 py-0.5 text-[10px] text-(--color-text-muted)">
-                  {files.data?.files.length ?? 0}
+                  {normalizedQuery
+                    ? `${visibleFiles.length}/${taggedFiles.length}`
+                    : taggedFiles.length}
                 </span>
               )}
             </button>
@@ -118,10 +134,19 @@ export function MultiRepoFileTree({ project, selectedFilePath = null, onFileSele
                   <p className="px-2 py-2 text-xs text-(--color-text-subtle)">Loading files…</p>
                 ) : files.isError ? (
                   <p className="px-2 py-2 text-xs text-(--color-error)">Failed to load files</p>
-                ) : taggedFiles.length === 0 ? (
-                  <p className="px-2 py-2 text-xs text-(--color-text-subtle)">No files</p>
+                ) : visibleFiles.length === 0 ? (
+                  <p className="px-2 py-2 text-xs text-(--color-text-subtle)">
+                    {normalizedQuery ? 'No matching files' : 'No files'}
+                  </p>
                 ) : (
-                  <TreeNodeView node={tree} depth={0} selectedPath={selectedFilePath} onFileSelect={onFileSelect} changedPaths={changedPaths} />
+                  <TreeNodeView
+                    node={tree}
+                    depth={0}
+                    selectedPath={selectedFilePath}
+                    onFileSelect={onFileSelect}
+                    onFileOpen={onFileOpen}
+                    changedPaths={changedPaths}
+                  />
                 )}
               </div>
             )}

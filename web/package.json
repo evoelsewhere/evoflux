@@ -43,6 +43,7 @@
     "immer": "^11.1.4",
     "katex": "^0.16.45",
     "lucide-react": "^1.7.0",
+    "material-icon-theme": "5.37.0",
     "monaco-editor": "^0.55.1",
     "morphdom": "^2.7.8",
     "nuqs": "^2.8.9",

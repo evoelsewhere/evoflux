@@ -56,4 +56,6 @@ if __name__ == "__main__":
         port=settings.API_PORT,
         reload=settings.API_RELOAD,
         loop="asyncio",
+        log_config=None,
+        access_log=False,
     )

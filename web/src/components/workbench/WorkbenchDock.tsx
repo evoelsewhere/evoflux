@@ -6,7 +6,11 @@ import { useIsMobile } from '@/hooks/use-mobile'
 import { panelTransition, staggerDelay, useMotionPreset } from '@/lib/motion'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 import { cn } from '@/lib/utils'
-import { type WorkbenchTool, useUIStore } from '@/stores/useUIStore'
+import {
+  type WorkbenchTab,
+  type WorkbenchTool,
+  useUIStore,
+} from '@/stores/useUIStore'
 import {
   isWorkbenchToolEnabled,
   WORKBENCH_TOOL_ORDER,
@@ -33,10 +37,11 @@ export function WorkbenchDock({
 }: WorkbenchDockProps) {
   const open = useUIStore((state) => state.workbenchOpen)
   const tabs = useUIStore((state) => state.workbenchTabs)
+  const activeTabId = useUIStore((state) => state.activeWorkbenchTabId)
   const activeTool = useUIStore((state) => state.activeWorkbenchTool)
   const maximized = useUIStore((state) => state.workbenchMaximized)
-  const selectTool = useUIStore((state) => state.selectWorkbenchTool)
-  const closeTool = useUIStore((state) => state.closeWorkbenchTool)
+  const selectTab = useUIStore((state) => state.selectWorkbenchTab)
+  const closeTab = useUIStore((state) => state.closeWorkbenchTab)
   const closeWorkbench = useUIStore((state) => state.closeWorkbench)
   const showLauncher = useUIStore((state) => state.showWorkbenchLauncher)
   const toggleMaximized = useUIStore((state) => state.toggleWorkbenchMaximized)
@@ -50,31 +55,36 @@ export function WorkbenchDock({
     edge: 'left',
     disabled: maximized || isMobile,
   })
+  const closeTabAndResources = (tabId: string) => {
+    window.dispatchEvent(new CustomEvent('evoflux:workbench-tab-close', {
+      detail: { tabId },
+    }))
+    closeTab(tabId)
+  }
 
   return (
     <AnimatePresence initial={false}>
       {open && (
     <motion.aside
       key="workbench-dock"
-      layout="size"
       initial={{
-        width: 0,
         opacity: 0,
         x: 18 * motionPreset.distance,
       }}
       animate={{
-        width: maximized || isMobile ? '100%' : resizable.width,
         opacity: 1,
         x: 0,
       }}
       exit={{
-        width: 0,
         opacity: 0,
         x: 12 * motionPreset.distance,
       }}
-      transition={resizable.isResizing ? { duration: 0 } : panelTransition(motionPreset)}
+      transition={panelTransition(motionPreset)}
+      style={{
+        width: maximized || isMobile ? '100%' : resizable.width,
+      }}
       className={cn(
-        'flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-l border-(--color-border) bg-(--bg-page) will-change-[width,transform,opacity]',
+        'flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-l border-(--color-border) bg-(--bg-page) will-change-[transform,opacity]',
         isMobile
           ? 'mobile-safe-top fixed inset-x-0 bottom-0 z-(--z-overlay) h-auto w-full max-w-none'
           : 'relative shrink-0',
@@ -95,18 +105,22 @@ export function WorkbenchDock({
         />
       )}
       <motion.header
-        layout="position"
         className="flex h-11 shrink-0 items-center gap-1 px-2"
       >
-        <motion.div layout className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
-          <AnimatePresence initial={false} mode="popLayout">
+        <motion.div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+          <AnimatePresence initial={false}>
           {tabs.map((tab) => {
             const meta = WORKBENCH_TOOLS[tab.tool]
             const Icon = meta.icon
-            const active = activeTool === tab.tool
+            const active = activeTabId === tab.id
+            const sameToolTabs = tabs.filter((item) => item.tool === tab.tool)
+            const sameToolIndex = sameToolTabs.findIndex((item) => item.id === tab.id)
+            const label = tab.title
+              ?? (sameToolTabs.length > 1
+                ? `${meta.label} ${sameToolIndex + 1}`
+                : meta.label)
             return (
               <motion.div
-                layout
                 key={tab.id}
                 initial={{ opacity: 0, scale: 0.92, x: 8 * motionPreset.distance }}
                 animate={{ opacity: 1, scale: 1, x: 0 }}
@@ -128,17 +142,17 @@ export function WorkbenchDock({
                 )}
                 <button
                   type="button"
-                  onClick={() => selectTool(tab.tool)}
+                  onClick={() => selectTab(tab.id)}
                   className="relative z-10 flex h-full min-w-0 flex-1 items-center gap-1.5 pl-2 pr-1"
                 >
                   <Icon size={14} className="shrink-0" />
-                  <span className="truncate text-xs font-medium">{meta.label}</span>
+                  <span className="truncate text-xs font-medium">{label}</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => closeTool(tab.tool)}
+                  onClick={() => closeTabAndResources(tab.id)}
                   className="mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded text-(--color-text-muted) opacity-0 hover:bg-(--bg-hover) hover:text-(--color-text) group-hover:opacity-100 focus:opacity-100"
-                  aria-label={`Close ${meta.label}`}
+                  aria-label={`Close ${label}`}
                 >
                   <X size={12} />
                 </button>
@@ -147,7 +161,6 @@ export function WorkbenchDock({
           })}
           </AnimatePresence>
           <motion.button
-            layout
             type="button"
             onClick={showLauncher}
             whileHover={{ scale: 1.06 }}
@@ -155,7 +168,7 @@ export function WorkbenchDock({
             transition={motionPreset.spring}
             className={cn(
               'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors',
-              activeTool === null
+              activeTabId === null
                 ? 'bg-(--bg-key) text-(--color-text)'
                 : 'text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)',
             )}
@@ -166,9 +179,8 @@ export function WorkbenchDock({
           </motion.button>
         </motion.div>
 
-        {activeTool && (
+        {activeTabId && (
           <motion.button
-            layout
             type="button"
             onClick={toggleMaximized}
             whileHover={{ scale: 1.05 }}
@@ -182,7 +194,6 @@ export function WorkbenchDock({
           </motion.button>
         )}
         <motion.button
-          layout
           type="button"
           onClick={closeWorkbench}
           whileHover={{ scale: 1.05 }}
@@ -214,7 +225,7 @@ export function WorkbenchDock({
 }
 
 function WorkbenchLauncher(context: WorkbenchContext) {
-  const openTool = useUIStore((state) => state.openWorkbenchTool)
+  const createTab = useUIStore((state) => state.createWorkbenchTab)
   const motionPreset = useMotionPreset()
   const availableTools = WORKBENCH_TOOL_ORDER.filter((tool) =>
     isWorkbenchToolEnabled(tool, context),
@@ -237,7 +248,7 @@ function WorkbenchLauncher(context: WorkbenchContext) {
             <motion.button
               type="button"
               key={tool}
-              onClick={() => openTool(tool)}
+              onClick={() => createTab(tool)}
               initial={{ opacity: 0, y: 8 * motionPreset.distance }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ ...motionPreset.transition, delay: staggerDelay(motionPreset, index) }}
@@ -272,42 +283,43 @@ function WorkbenchLauncher(context: WorkbenchContext) {
 
 interface WorkbenchSurfaceProps {
   tool: WorkbenchTool
-  children: ReactNode
+  children: ReactNode | ((tab: WorkbenchTab, active: boolean) => ReactNode)
 }
 
 export function WorkbenchSurface({ tool, children }: WorkbenchSurfaceProps) {
   const tabs = useUIStore((state) => state.workbenchTabs)
-  const activeTool = useUIStore((state) => state.activeWorkbenchTool)
-  const mounted = tabs.some((tab) => tab.tool === tool)
+  const activeTabId = useUIStore((state) => state.activeWorkbenchTabId)
+  const toolTabs = tabs.filter((tab) => tab.tool === tool)
   const motionPreset = useMotionPreset()
-  if (!mounted) return null
-  const active = activeTool === tool
-
-  return (
-    <motion.section
-      initial={{
-        opacity: active ? 1 : 0,
-        x: active ? 0 : 8 * motionPreset.distance,
-        scale: active ? 1 : 0.995,
-        visibility: active ? 'visible' : 'hidden',
-      }}
-      animate={active
-        ? { opacity: 1, x: 0, scale: 1, visibility: 'visible' }
-        : {
-            opacity: 0,
-            x: 8 * motionPreset.distance,
-            scale: 0.995,
-            transitionEnd: { visibility: 'hidden' },
-          }}
-      transition={motionPreset.transition}
-      className={cn(
-        'absolute inset-0 min-h-0 min-w-0 overflow-hidden',
-        !active && 'pointer-events-none',
-      )}
-      style={{ zIndex: active ? 1 : 0 }}
-      aria-hidden={!active}
-    >
-      {children}
-    </motion.section>
-  )
+  return toolTabs.map((tab) => {
+    const active = activeTabId === tab.id
+    return (
+      <motion.section
+        key={tab.id}
+        initial={{
+          opacity: active ? 1 : 0,
+          x: active ? 0 : 8 * motionPreset.distance,
+          scale: active ? 1 : 0.995,
+          visibility: active ? 'visible' : 'hidden',
+        }}
+        animate={active
+          ? { opacity: 1, x: 0, scale: 1, visibility: 'visible' }
+          : {
+              opacity: 0,
+              x: 8 * motionPreset.distance,
+              scale: 0.995,
+              transitionEnd: { visibility: 'hidden' },
+            }}
+        transition={motionPreset.transition}
+        className={cn(
+          'absolute inset-0 min-h-0 min-w-0 overflow-hidden',
+          !active && 'pointer-events-none',
+        )}
+        style={{ zIndex: active ? 1 : 0 }}
+        aria-hidden={!active}
+      >
+        {typeof children === 'function' ? children(tab, active) : children}
+      </motion.section>
+    )
+  })
 }

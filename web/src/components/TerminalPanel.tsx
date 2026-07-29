@@ -3,10 +3,10 @@
  * WebSockets to `WS /team/{sessionId}/terminal`. The shell runs in the
  * session's mode-aware cwd, so vim/htop/colors/arrow-keys/Ctrl-C all work.
  *
- * Supports multiple terminals per session (tabs) — each tab is its own PTY,
- * restored from the backend on mount. "Send to agent" hands the active tab's
- * selection (or recent scrollback) to the chat composer via the
- * `evoflux:composer-insert` event.
+ * Each mounted panel owns exactly one PTY. Multiple terminals are represented
+ * by independent Workbench tabs, avoiding a second nested tab strip here.
+ * "Send to agent" hands this terminal's selection (or recent scrollback) to
+ * the chat composer via the `evoflux:composer-insert` event.
  */
 import {
   forwardRef,
@@ -14,17 +14,13 @@ import {
   useEffect,
   useImperativeHandle,
   useRef,
-  useState,
 } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
-import { motion } from 'framer-motion'
-import { Plus, Send, X, TerminalSquare } from 'lucide-react'
+import { Send } from 'lucide-react'
 import { apiBaseUrl } from '@/api/base-url'
 import { withTokenParam } from '@/api/auth'
-import { panelTransition, useMotionPreset } from '@/lib/motion'
-import { cn } from '@/lib/utils'
 
 // Conventional dark terminal surface (terminals read as dark regardless of
 // the app's light/dark theme).
@@ -201,168 +197,61 @@ const TerminalInstance = forwardRef<
 
 export function TerminalPanel({
   sessionId,
+  terminalId,
   mode,
-  onClose,
+  active,
 }: {
   sessionId: string | null
+  terminalId: string
   mode: string
-  onClose: () => void
+  active: boolean
 }) {
-  const [tabs, setTabs] = useState<string[]>([])
-  const [activeId, setActiveId] = useState<string>('')
-  const nextIdRef = useRef(2)
-  const instancesRef = useRef<Map<string, TerminalHandle>>(new Map())
+  const instanceRef = useRef<TerminalHandle | null>(null)
 
-  // Restore the session's live terminals on mount so tabs survive a reload;
-  // otherwise open a single default tab.
   useEffect(() => {
-    // No session → nothing to restore; the render guards on sessionId and
-    // shows the empty state, so we don't touch tab state here.
     if (!sessionId) return
-    let alive = true
-    void (async () => {
-      let ids: string[] = []
-      try {
-        const res = await fetch(`${apiBaseUrl()}/team/${sessionId}/terminals`)
-        if (res.ok) {
-          const body = (await res.json()) as { terminals: { id: string }[] }
-          ids = body.terminals.map((t) => t.id)
-        }
-      } catch {
-        /* offline / no backend yet — fall through to a default tab */
-      }
-      if (!alive) return
-      if (ids.length === 0) ids = ['1']
-      setTabs(ids)
-      setActiveId(ids[0])
-      nextIdRef.current = Math.max(1, ...ids.map((n) => Number(n) || 0)) + 1
-    })()
-    return () => {
-      alive = false
-    }
-  }, [sessionId])
-
-  const addTab = () => {
-    const id = String(nextIdRef.current++)
-    setTabs((prev) => [...prev, id])
-    setActiveId(id)
-  }
-
-  const closeTab = (id: string) => {
-    if (sessionId) {
-      void fetch(`${apiBaseUrl()}/team/${sessionId}/terminals/${encodeURIComponent(id)}`, {
+    const closeTerminal = (event: Event) => {
+      const detail = (event as CustomEvent<{ tabId?: string }>).detail
+      if (detail?.tabId !== terminalId) return
+      void fetch(`${apiBaseUrl()}/team/${sessionId}/terminals/${encodeURIComponent(terminalId)}`, {
         method: 'DELETE',
       }).catch(() => {})
     }
-    instancesRef.current.delete(id)
-    setTabs((prev) => {
-      const next = prev.filter((t) => t !== id)
-      setActiveId((cur) => (cur === id ? next[next.length - 1] ?? '' : cur))
-      return next
-    })
-  }
+    window.addEventListener('evoflux:workbench-tab-close', closeTerminal)
+    return () => window.removeEventListener('evoflux:workbench-tab-close', closeTerminal)
+  }, [sessionId, terminalId])
 
-  const sendActiveToAgent = () => instancesRef.current.get(activeId)?.sendToAgent()
-  const preset = useMotionPreset()
-  const slideOffset = 16 * preset.distance
+  const sendToAgent = () => instanceRef.current?.sendToAgent()
 
   return (
-    <motion.div
-      className="flex h-full min-h-0 flex-col overflow-hidden rounded-l-xl bg-[#0d1117]"
-      initial={{ opacity: 0, x: slideOffset }}
-      animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: slideOffset * 0.5 }}
-      transition={panelTransition(preset)}
-    >
-      <div className="flex items-center gap-1 border-b border-(--color-border) bg-(--bg-key) pl-2 pr-1">
-        <TerminalSquare size={13} className="shrink-0 text-(--color-text-subtle)" />
-        <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto py-1">
-          {tabs.map((id, i) => (
-            <div
-              key={id}
-              onClick={() => setActiveId(id)}
-              className={cn(
-                'group flex shrink-0 cursor-pointer items-center gap-1 rounded px-2 py-0.5 text-[11px]',
-                id === activeId
-                  ? 'bg-(--bg-subtle) text-(--color-text)'
-                  : 'text-(--color-text-muted) hover:text-(--color-text)',
-              )}
-            >
-              <span className="font-mono">sh {i + 1}</span>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  closeTab(id)
-                }}
-                aria-label="Close terminal tab"
-                className="rounded opacity-0 hover:bg-(--bg-key) group-hover:opacity-100"
-              >
-                <X size={11} />
-              </button>
-            </div>
-          ))}
-          <button
-            type="button"
-            onClick={addTab}
-            disabled={!sessionId}
-            aria-label="New terminal"
-            title="New terminal"
-            className="shrink-0 rounded p-0.5 text-(--color-text-muted) hover:bg-(--bg-subtle) hover:text-(--color-text) disabled:opacity-40"
-          >
-            <Plus size={13} />
-          </button>
-        </div>
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[#0d1117]">
+      <div className="flex h-9 shrink-0 items-center justify-end gap-2 border-b border-(--color-border) bg-(--bg-key) px-2">
         <span className="shrink-0 font-mono text-[10px] text-(--color-text-subtle)">{mode}</span>
         <button
           type="button"
-          onClick={sendActiveToAgent}
-          disabled={!activeId}
+          onClick={sendToAgent}
+          disabled={!sessionId}
           title="Send selection (or recent output) to the chat composer"
           className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-(--color-text-muted) transition-colors hover:bg-(--bg-subtle) hover:text-(--color-text) disabled:opacity-40"
         >
           <Send size={12} />
           Send to agent
         </button>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close terminal panel"
-          className="shrink-0 rounded p-0.5 text-(--color-text-muted) hover:text-(--color-text)"
-        >
-          <X size={14} />
-        </button>
       </div>
       {sessionId ? (
-        <div className="relative min-h-0 flex-1">
-          {tabs.map((id) => (
-            <div
-              key={id}
-              className="absolute inset-0"
-              style={{ display: id === activeId ? 'block' : 'none' }}
-            >
-              <TerminalInstance
-                ref={(el) => {
-                  if (el) instancesRef.current.set(id, el)
-                  else instancesRef.current.delete(id)
-                }}
-                sessionId={sessionId}
-                terminalId={id}
-                active={id === activeId}
-              />
-            </div>
-          ))}
-          {tabs.length === 0 && (
-            <div className="flex h-full items-center justify-center p-4 text-xs text-(--color-text-subtle)">
-              No terminals — click + to open one.
-            </div>
-          )}
+        <div className="min-h-0 flex-1">
+          <TerminalInstance
+            ref={instanceRef}
+            sessionId={sessionId}
+            terminalId={terminalId}
+            active={active}
+          />
         </div>
       ) : (
         <div className="flex flex-1 items-center justify-center p-4 text-xs text-(--color-text-subtle)">
           Start a session to open a terminal.
         </div>
       )}
-    </motion.div>
+    </div>
   )
 }

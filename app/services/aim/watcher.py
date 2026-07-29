@@ -53,7 +53,7 @@ class AimIndexWatcher:
             if already_watched:
                 return True
             await workspace_file_watcher.add_callback(resolved, self._on_change)
-        logger.info("aim_index_watcher_started project={} kb={}", project_id, resolved)
+        logger.debug("aim_index_watcher_started project={} kb={}", project_id, resolved)
         return True
 
     async def stop(self) -> None:
@@ -90,7 +90,7 @@ class AimIndexWatcher:
             async with self._db_factory() as db:
                 result = await reindex_project(db, project_id, Path(kb_path))
                 await db.commit()
-            logger.info(
+            logger.debug(
                 "aim_index_watcher_reindexed project={} created={} updated={} "
                 "invalid={} runs_created={} links_created={}",
                 project_id,

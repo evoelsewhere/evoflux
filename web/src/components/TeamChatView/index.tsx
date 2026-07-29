@@ -48,6 +48,7 @@ import { useTodosQuery } from '@/queries/useTodosQuery'
 import { useSessionChapters } from '@/hooks/useSessionChapters'
 import { useProvidersQuery, useRegistryQuery, useTriggerDreamMutation } from '@/queries'
 import { getTeamSession, getWebBridgeStatus, replyPlanApproval, resolveTeamSession, setSessionPermissionMode } from '@/api/client'
+import { apiBaseUrl } from '@/api/base-url'
 import { useShallow } from 'zustand/react/shallow'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { useToastStore } from '@/stores/useToastStore'
@@ -208,8 +209,12 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const workbenchMaximized = useUIStore((s) => s.workbenchMaximized)
   const pullRequestsScope = useUIStore((s) => s.pullRequestsScope)
   const openWorkbenchTool = useUIStore((s) => s.openWorkbenchTool)
+  const createWorkbenchTab = useUIStore((s) => s.createWorkbenchTab)
+  const restoreWorkbenchTabs = useUIStore((s) => s.restoreWorkbenchTabs)
   const toggleWorkbenchTool = useUIStore((s) => s.toggleWorkbenchTool)
+  const closeWorkbenchTab = useUIStore((s) => s.closeWorkbenchTab)
   const closeWorkbenchTool = useUIStore((s) => s.closeWorkbenchTool)
+  const updateWorkbenchTab = useUIStore((s) => s.updateWorkbenchTab)
   const wikiOpen = workbenchTabs.some((tab) => tab.tool === 'wiki')
   const browserOpen = workbenchTabs.some((tab) => tab.tool === 'browser')
   const sideChatOpen = workbenchTabs.some((tab) => tab.tool === 'side-chat')
@@ -218,18 +223,62 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const toggleBrowser = useUIStore((s) => s.toggleBrowser)
   const toggleTerminal = useUIStore((s) => s.toggleTerminal)
   const openGitChanges = useUIStore((s) => s.openGitChanges)
+  const previousWorkbenchSessionRef = useRef(sessionIdState)
 
   useEffect(() => {
+    if (previousWorkbenchSessionRef.current !== sessionIdState) {
+      closeWorkbenchTool('terminal')
+      closeWorkbenchTool('browser')
+      closeWorkbenchTool('side-chat')
+      closeWorkbenchTool('progress')
+      previousWorkbenchSessionRef.current = sessionIdState
+    }
     if (!sessionIdState) {
       closeWorkbenchTool('terminal')
       closeWorkbenchTool('browser')
       closeWorkbenchTool('side-chat')
+      closeWorkbenchTool('progress')
       if (mode !== 'coding') closeWorkbenchTool('files')
+    }
+    if (mode !== 'coding') {
+      closeWorkbenchTool('graph')
+      closeWorkbenchTool('progress')
+      closeWorkbenchTool('source-control')
+      closeWorkbenchTool('pull-requests')
     }
     if (mode === 'coding' && !workspace) {
       closeWorkbenchTool('files')
+      closeWorkbenchTool('graph')
+      closeWorkbenchTool('source-control')
     }
   }, [closeWorkbenchTool, mode, sessionIdState, workspace])
+
+  // Terminal processes intentionally survive WebSocket disconnects. Restore
+  // them as top-level Workbench tabs instead of rebuilding a nested tab bar.
+  useEffect(() => {
+    if (!sessionIdState) return
+    let alive = true
+    void fetch(`${apiBaseUrl()}/team/${sessionIdState}/terminals`)
+      .then(async (response) => {
+        if (!response.ok) return []
+        const body = (await response.json()) as { terminals?: { id?: string }[] }
+        return (body.terminals ?? [])
+          .map((terminal) => terminal.id)
+          .filter((id): id is string => Boolean(id))
+      })
+      .then((ids) => {
+        if (alive && ids.length > 0) {
+          restoreWorkbenchTabs(
+            'terminal',
+            ids.map((id) => ({ id })),
+          )
+        }
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [restoreWorkbenchTabs, sessionIdState])
   // Sidebar collapse is shell-level state shared by all three mode sidebars;
   // AppShell renders the toggle button + Ctrl+B, these are the programmatic
   // entry points (workspace CTAs, command palette, mobile hamburger).
@@ -1021,11 +1070,41 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
               <CodingWorkspacePanel
                 workspace={workspace}
                 open
-                initialTab="files"
+                view="files"
+                embedded
+                selectedFilePath={codingFileViewer?.path ?? null}
+                selectedFile={codingFileViewer}
+                onFileSelect={handleCodingFileSelect}
+                initialFileViewMode={codingFileViewerMode}
+                onAddFileComment={handleAddFileComment}
+                onSendFileToChat={handleSendToChat}
+                onClose={() => closeWorkbenchTool('files')}
+                sessionId={sessionIdState}
+                projectId={projectIdState}
+                isWorking={isTeamWorking}
+              />
+            </WorkbenchSurface>
+            <WorkbenchSurface tool="graph">
+              <CodingWorkspacePanel
+                workspace={workspace}
+                open
+                view="graph"
                 embedded
                 selectedFilePath={codingFileViewer?.path ?? null}
                 onFileSelect={handleCodingFileSelect}
-                onClose={() => closeWorkbenchTool('files')}
+                onClose={() => closeWorkbenchTool('graph')}
+                sessionId={sessionIdState}
+                projectId={projectIdState}
+                isWorking={isTeamWorking}
+              />
+            </WorkbenchSurface>
+            <WorkbenchSurface tool="progress">
+              <CodingWorkspacePanel
+                workspace={workspace}
+                open
+                view="progress"
+                embedded
+                onClose={() => closeWorkbenchTool('progress')}
                 sessionId={sessionIdState}
                 projectId={projectIdState}
                 isWorking={isTeamWorking}
@@ -1044,19 +1123,32 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
           </WorkbenchSurface>
         )}
         <WorkbenchSurface tool="terminal">
-          <TerminalPanel
-            sessionId={sessionIdState}
-            mode={mode}
-            onClose={() => closeWorkbenchTool('terminal')}
-          />
+          {(tab, active) => (
+            <TerminalPanel
+              sessionId={sessionIdState}
+              terminalId={tab.id}
+              mode={mode}
+              active={active}
+            />
+          )}
         </WorkbenchSurface>
         <WorkbenchSurface tool="browser">
-          <BrowserViewer
-            sessionId={sessionIdState}
-            open={browserOpen}
-            embedded
-            onClose={() => closeWorkbenchTool('browser')}
-          />
+          {(tab, active) => (
+            <BrowserViewer
+              sessionId={sessionIdState}
+              tabId={tab.id}
+              initialUrl={tab.initialUrl}
+              open={browserOpen}
+              visible={active}
+              embedded
+              onNewTab={(url) => createWorkbenchTab('browser', {
+                initialUrl: url,
+                title: 'New tab',
+              })}
+              onTitleChange={(title) => updateWorkbenchTab(tab.id, { title })}
+              onClose={() => closeWorkbenchTab(tab.id)}
+            />
+          )}
         </WorkbenchSurface>
         {sessionIdState && (
           <WorkbenchSurface tool="side-chat">
@@ -1093,16 +1185,34 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
           />
         </WorkbenchSurface>
         {mode === 'coding' && (
-          <WorkbenchSurface tool="pull-requests">
-            <GitWorkspacePanel
-              open={workbenchTabs.some((tab) => tab.tool === 'pull-requests')}
-              scope={pullRequestsScope}
-              workspace={workspace}
-              projectId={projectIdState}
-              focus={reviewSessionContext}
-              onOpenInChat={handleOpenCodeReviewChat}
-            />
-          </WorkbenchSurface>
+          <>
+            <WorkbenchSurface tool="source-control">
+              {(_tab, active) => (
+                <GitWorkspacePanel
+                  open={active}
+                  view="changes"
+                  scope="session"
+                  workspace={workspace}
+                  projectId={projectIdState}
+                  focus={null}
+                  onOpenInChat={handleOpenCodeReviewChat}
+                />
+              )}
+            </WorkbenchSurface>
+            <WorkbenchSurface tool="pull-requests">
+              {(_tab, active) => (
+                <GitWorkspacePanel
+                  open={active}
+                  view="reviews"
+                  scope={pullRequestsScope}
+                  workspace={workspace}
+                  projectId={projectIdState}
+                  focus={reviewSessionContext}
+                  onOpenInChat={handleOpenCodeReviewChat}
+                />
+              )}
+            </WorkbenchSurface>
+          </>
         )}
     </WorkbenchDock>
   )
@@ -1139,7 +1249,12 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   const fullHeightTrailing = (
     <>
       {workbenchPanel}
-      {mode === 'coding' && workspace && !isMobile && codingFileViewer !== null && (
+      {mode === 'coding'
+        && workspace
+        && !isMobile
+        && codingFileViewer !== null
+        && !(workbenchOpen && activeWorkbenchTool === 'files')
+        && (
         <CodingFileViewerPanel
           key={`${codingFileViewer.path}:${codingFileViewerMode}`}
           workspace={codingFileViewer.sourceWorkspace ?? workspace}

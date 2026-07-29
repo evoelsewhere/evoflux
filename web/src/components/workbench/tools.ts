@@ -2,10 +2,13 @@ import {
   BookOpen,
   CalendarClock,
   Files,
+  GitBranch,
   GitPullRequest,
   Globe2,
   MessageSquarePlus,
+  Network,
   Terminal,
+  Timer,
   type LucideIcon,
 } from 'lucide-react'
 import type { WorkbenchTool } from '@/stores/useUIStore'
@@ -37,6 +40,16 @@ export const WORKBENCH_TOOLS: Record<
     icon: Files,
     shortcut: '⌘P',
   },
+  graph: {
+    label: 'Graph',
+    description: 'Explore code and cross-repository relationships',
+    icon: Network,
+  },
+  progress: {
+    label: 'Progress',
+    description: 'Follow tasks and agent execution over time',
+    icon: Timer,
+  },
   'side-chat': {
     label: 'Side chat',
     description: 'Ask a focused question without interrupting the run',
@@ -55,11 +68,16 @@ export const WORKBENCH_TOOLS: Record<
     icon: CalendarClock,
     shortcut: '⌃S',
   },
-  'pull-requests': {
-    label: 'Source Control',
-    description: 'Changes, commits, branches, sync, and pull requests in one place',
-    icon: GitPullRequest,
+  'source-control': {
+    label: 'Changes',
+    description: 'Review and commit local workspace changes',
+    icon: GitBranch,
     shortcut: '⌃G',
+  },
+  'pull-requests': {
+    label: 'Review',
+    description: 'Review pull requests and merge requests',
+    icon: GitPullRequest,
   },
 }
 
@@ -69,7 +87,11 @@ export function isWorkbenchToolEnabled(
   tool: WorkbenchTool,
   context: WorkbenchContext,
 ): boolean {
-  if (tool === 'pull-requests') return context.mode === 'coding'
+  if (tool === 'source-control' || tool === 'pull-requests') {
+    return context.mode === 'coding'
+  }
+  if (tool === 'graph') return context.mode === 'coding' && Boolean(context.workspace)
+  if (tool === 'progress') return context.mode === 'coding' && Boolean(context.sessionId)
   if (tool === 'files') return Boolean(context.sessionId || context.workspace)
   if (tool === 'terminal' || tool === 'browser' || tool === 'side-chat') {
     return Boolean(context.sessionId)

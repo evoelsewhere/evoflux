@@ -5,7 +5,6 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
-  Bot,
   ExternalLink,
   Globe2,
   Loader2,
@@ -36,7 +35,6 @@ import { DirectBrowserSettingsView } from './DirectBrowserSettingsView'
 import {
   isBrowserNewTab,
   useDirectBrowserTabs,
-  type DirectBrowserTab,
 } from './useDirectBrowserTabs'
 
 const MIN_WIDTH = 420
@@ -46,21 +44,32 @@ const ZOOM_LEVELS = [50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200]
 
 interface DirectBrowserShellProps {
   sessionId: string | null
+  tabId?: string
+  initialUrl?: string
   open: boolean
+  visible?: boolean
   onClose: () => void
+  onNewTab?: (url?: string) => void
+  onTitleChange?: (title: string) => void
   className?: string
   embedded?: boolean
 }
 
 export function DirectBrowserShell({
   sessionId,
+  tabId = 'browser',
+  initialUrl,
   open,
+  visible = true,
   onClose,
+  onNewTab,
+  onTitleChange,
   className,
   embedded = false,
 }: DirectBrowserShellProps) {
   const viewportRef = useRef<HTMLDivElement>(null)
   const urlInputRef = useRef<HTMLInputElement>(null)
+  const onTitleChangeRef = useRef(onTitleChange)
   const urlFocusedRef = useRef(false)
   const resizingRef = useRef(false)
   const [enabled, setEnabled] = useState(true)
@@ -83,16 +92,25 @@ export function DirectBrowserShell({
 
   const browser = useDirectBrowserTabs({
     sessionId: sessionId ?? 'detached',
+    instanceId: tabId,
     viewportRef,
     enabled: Boolean(open && sessionId && enabled),
-    visible: Boolean(open && !settingsOpen),
+    visible: Boolean(open && visible && !settingsOpen),
+    bridgeEnabled: visible,
+    initialUrl,
+    singleTab: true,
     zoom: preferences.defaultZoom,
     devtools: preferences.developerTools,
     onError: reportError,
+    onRequestNewTab: (url) => onNewTab?.(url),
   })
 
   const currentUrl = browser.activeTab?.url ?? ''
-  const active = Boolean(browser.activeTab)
+  const hasPage = Boolean(browser.activeTab)
+
+  useEffect(() => {
+    onTitleChangeRef.current = onTitleChange
+  }, [onTitleChange])
 
   useEffect(() => {
     const input = urlInputRef.current
@@ -102,17 +120,21 @@ export function DirectBrowserShell({
   }, [currentUrl])
 
   useEffect(() => {
-    if (!open) return
+    onTitleChangeRef.current?.(tabTitle(currentUrl))
+  }, [currentUrl])
+
+  useEffect(() => {
+    if (!open || !visible) return
     const handleKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f') {
         event.preventDefault()
-        if (active) setFindOpen(true)
+        if (hasPage) setFindOpen(true)
       } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'l') {
         event.preventDefault()
         urlInputRef.current?.focus()
       } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 't') {
         event.preventDefault()
-        void browser.createTab()
+        onNewTab?.()
       } else if (event.key === 'Escape') {
         if (findOpen) setFindOpen(false)
         else if (menuOpen) setMenuOpen(false)
@@ -122,7 +144,7 @@ export function DirectBrowserShell({
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [active, browser, findOpen, menuOpen, onClose, open, settingsOpen])
+  }, [browser, findOpen, hasPage, menuOpen, onClose, onNewTab, open, settingsOpen, visible])
 
   const updatePreferences = useCallback((next: BrowserPreferences) => {
     setPreferences(next)
@@ -133,12 +155,12 @@ export function DirectBrowserShell({
     event?.preventDefault()
     const input = urlInputRef.current
     const value = input?.value.trim() ?? ''
-    if (!value || !active) return
+    if (!value || !hasPage) return
     const target = normalizeBrowserTarget(value)
     if (input) input.value = target
     urlFocusedRef.current = false
     void browser.navigate(target)
-  }, [active, browser])
+  }, [browser, hasPage])
 
   const handleZoomChange = useCallback((value: number) => {
     updatePreferences({
@@ -221,26 +243,14 @@ export function DirectBrowserShell({
             </div>
           )}
 
-          <DirectTabs
-            tabs={browser.tabs}
-            activeTabId={browser.activeTabId}
-            supported={browser.supported}
-            creating={browser.creating}
-            agentConnected={browser.agentConnected}
-            onSwitch={(id) => void browser.selectTab(id)}
-            onCloseTab={(id) => void browser.closeTab(id)}
-            onNewTab={() => void browser.createTab()}
-            onClosePanel={onClose}
-          />
-
           <div className="flex h-11 shrink-0 items-center gap-1.5 border-b border-(--color-border) bg-(--bg-page) px-2">
-            <ToolbarButton label="Back" disabled={!active} onClick={() => void browser.command('back')}>
+            <ToolbarButton label="Back" disabled={!hasPage} onClick={() => void browser.command('back')}>
               <ArrowLeft />
             </ToolbarButton>
-            <ToolbarButton label="Forward" disabled={!active} onClick={() => void browser.command('forward')}>
+            <ToolbarButton label="Forward" disabled={!hasPage} onClick={() => void browser.command('forward')}>
               <ArrowRight />
             </ToolbarButton>
-            <ToolbarButton label="Reload" disabled={!active} onClick={() => void browser.command('reload')}>
+            <ToolbarButton label="Reload" disabled={!hasPage} onClick={() => void browser.command('reload')}>
               <RefreshCw />
             </ToolbarButton>
 
@@ -291,14 +301,14 @@ export function DirectBrowserShell({
                     }
                   }}
                   placeholder="Search or enter a URL"
-                  disabled={!active}
+                  disabled={!hasPage}
                   className="h-8 w-full rounded-full border border-(--color-border) bg-(--bg-key) pl-8 pr-10 text-xs text-(--color-text) outline-none transition-colors placeholder:text-(--color-text-subtle) hover:border-(--color-border-strong) focus:border-(--color-accent) focus:bg-(--bg-page) focus:ring-2 focus:ring-(--color-accent)/15 disabled:opacity-50"
                   spellCheck={false}
                   aria-label="Address and search bar"
                 />
                 <button
                   type="submit"
-                  disabled={!active}
+                  disabled={!hasPage}
                   className="absolute right-1 top-1/2 flex h-6 w-7 -translate-y-1/2 items-center justify-center rounded-full text-(--color-text-muted) hover:bg-(--bg-page) hover:text-(--color-text) disabled:hidden"
                   aria-label="Go"
                   title="Go"
@@ -327,7 +337,7 @@ export function DirectBrowserShell({
             <div ref={viewportRef} className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-white">
               {settingsOpen ? (
                 <DirectBrowserSettingsView
-                  active={active}
+                  active={hasPage}
                   supported={browser.supported}
                   preferences={preferences}
                   onBack={() => setSettingsOpen(false)}
@@ -361,12 +371,12 @@ export function DirectBrowserShell({
             <AnimatePresence initial={false}>
               {menuOpen && (
                 <DirectBrowserMenuPanel
-                  active={active}
+                  active={hasPage}
                   currentUrl={currentUrl}
                   zoom={preferences.defaultZoom}
                   devToolsEnabled={preferences.developerTools}
                   onClose={() => setMenuOpen(false)}
-                  onNewTab={() => void browser.createTab()}
+                  onNewTab={() => onNewTab?.()}
                   onFind={() => setFindOpen(true)}
                   onOpenExternal={() => currentUrl && void openExternalUrl(currentUrl)}
                   onZoomChange={handleZoomChange}
@@ -374,7 +384,7 @@ export function DirectBrowserShell({
                   onClearData={() => void handleClearData()}
                   onOpenDevTools={() => void browser.command('devtools')}
                   onSettings={() => setSettingsOpen(true)}
-                  onCloseTab={() => browser.activeTab && void browser.closeTab(browser.activeTab.id)}
+                  onCloseTab={onClose}
                 />
               )}
             </AnimatePresence>
@@ -382,109 +392,6 @@ export function DirectBrowserShell({
         </motion.section>
       </>
     </AnimatePresence>
-  )
-}
-
-function DirectTabs({
-  tabs,
-  activeTabId,
-  supported,
-  creating,
-  agentConnected,
-  onSwitch,
-  onCloseTab,
-  onNewTab,
-  onClosePanel,
-}: {
-  tabs: DirectBrowserTab[]
-  activeTabId: string | null
-  supported: boolean
-  creating: boolean
-  agentConnected: boolean
-  onSwitch: (id: string) => void
-  onCloseTab: (id: string) => void
-  onNewTab: () => void
-  onClosePanel: () => void
-}) {
-  return (
-    <div className="flex h-9 shrink-0 items-end border-b border-(--color-border) bg-(--color-surface-2) pl-2 pr-1">
-      <div className="flex min-w-0 flex-1 items-end gap-1 overflow-x-auto">
-        {tabs.map((tab) => {
-          const selected = tab.id === activeTabId
-          const title = tabTitle(tab.url)
-          return (
-            <div
-              key={tab.id}
-              className={cn(
-                'group/tab flex h-8 min-w-28 max-w-52 items-center rounded-t-md border border-b-0 px-2',
-                selected
-                  ? 'border-(--color-border) bg-(--bg-page) text-(--color-text)'
-                  : 'border-transparent text-(--color-text-muted) hover:bg-(--bg-key)',
-              )}
-            >
-              <button
-                type="button"
-                className="flex min-w-0 flex-1 items-center gap-2 text-left text-xs"
-                onClick={() => onSwitch(tab.id)}
-                title={tab.url}
-              >
-                <Globe2 size={12} className="shrink-0" aria-hidden />
-                <span className="truncate">{title}</span>
-              </button>
-              <button
-                type="button"
-                className="ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded text-(--color-text-subtle) opacity-0 hover:bg-(--color-border) hover:text-(--color-text) group-hover/tab:opacity-100 focus:opacity-100"
-                onClick={() => onCloseTab(tab.id)}
-                aria-label={`Close ${title}`}
-                title="Close tab"
-              >
-                <X size={11} aria-hidden />
-              </button>
-            </div>
-          )
-        })}
-        <button
-          type="button"
-          className="mb-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-35"
-          onClick={onNewTab}
-          disabled={!supported || creating}
-          aria-label="New tab"
-          title="New tab"
-        >
-          {creating ? <Loader2 size={13} className="animate-spin" /> : <Plus size={14} />}
-        </button>
-      </div>
-      <span
-        className={cn(
-          'mb-3 mr-1 h-2 w-2 shrink-0 rounded-full',
-          supported && activeTabId ? 'bg-(--color-success)' : 'bg-(--color-text-subtle)',
-        )}
-        title={supported && activeTabId ? 'Native browser ready' : 'Browser unavailable'}
-      />
-      <span
-        className={cn(
-          'mb-1 mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-md',
-          agentConnected
-            ? 'bg-(--color-success-subtle) text-(--color-success)'
-            : 'text-(--color-text-subtle)',
-        )}
-        title={agentConnected ? 'Agent controls this browser' : 'Agent bridge disconnected'}
-        aria-label={agentConnected ? 'Agent browser connected' : 'Agent browser disconnected'}
-      >
-        <Bot size={13} aria-hidden />
-      </span>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-xs"
-        className="mb-1"
-        onClick={onClosePanel}
-        aria-label="Close browser panel"
-        title="Close browser panel"
-      >
-        <X />
-      </Button>
-    </div>
   )
 }
 

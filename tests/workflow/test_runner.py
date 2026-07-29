@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
+from uuid import UUID
 
 import pytest
 from sqlmodel import col, select
@@ -54,6 +56,83 @@ async def _wait_done(runner: WorkflowRunner, session_id: str, timeout: float = 1
             return
         await asyncio.sleep(0.05)
     raise AssertionError("execution did not finish in time")
+
+
+@pytest.mark.asyncio
+async def test_forge_team_boot_uses_persisted_workspace(
+    setup_db, monkeypatch, tmp_path
+):
+    from app.core import db as db_module
+    from app.models.chat import ChatSession
+
+    session_id = "06a58f00-0000-7000-8000-000000000010"
+    session_uuid = UUID(session_id)
+    workspace = tmp_path / "persisted-forge-workspace"
+    workspace.mkdir()
+    async with db_module.async_session_factory() as db:
+        db.add(
+            ChatSession(
+                id=session_uuid,
+                agent_name="lead",
+                mode="forge",
+                workspace=str(workspace),
+            )
+        )
+        await db.commit()
+
+    team = SimpleNamespace(workspace=None, mode="forge")
+    monkeypatch.setattr(
+        "app.services.team_manager.find_team_for_session",
+        lambda _session_id: None,
+    )
+
+    async def get_team(_session_id: str):
+        return team
+
+    monkeypatch.setattr(
+        "app.services.team_manager.get_or_start_team_for_session",
+        get_team,
+    )
+    state = SimpleNamespace(
+        session_id=session_id,
+        definition=SimpleNamespace(scope="forge"),
+        scope_workspace=None,
+    )
+
+    restored = await WorkflowRunner()._ensure_team(state)
+
+    assert restored is team
+    assert team.workspace == str(workspace)
+
+
+@pytest.mark.asyncio
+async def test_forge_workspace_reset_does_not_restore_stale_workflow_scope(setup_db):
+    from app.core import db as db_module
+    from app.models.chat import ChatSession
+
+    session_id = "06a58f00-0000-7000-8000-000000000011"
+    session_uuid = UUID(session_id)
+    async with db_module.async_session_factory() as db:
+        db.add(
+            ChatSession(
+                id=session_uuid,
+                agent_name="lead",
+                mode="forge",
+                workspace=None,
+            )
+        )
+        await db.commit()
+
+    state = SimpleNamespace(
+        session_id=session_id,
+        definition=SimpleNamespace(scope="forge"),
+        scope_workspace="/stale/custom/workspace",
+    )
+
+    mode, workspace = await WorkflowRunner()._session_mode_workspace(state)
+
+    assert mode == "forge"
+    assert workspace is None
 
 
 @pytest.fixture

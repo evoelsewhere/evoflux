@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { GitBranch, GitPullRequest } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { GitBranch } from 'lucide-react'
 
 import type {
   CodeReviewItem,
@@ -12,16 +12,16 @@ import {
 } from '@/queries'
 import { useProjectQuery } from '@/queries/useProjectsQuery'
 import {
+  type GitWorkspaceView,
   type PullRequestsScope,
-  useUIStore,
 } from '@/stores/useUIStore'
-import { cn } from '@/lib/utils'
 import { workspaceLabel } from '@/utils/workspace'
 import { PullRequestsPanel } from './PullRequestsPanel'
 import { SourceControlPanel } from './SourceControlModal'
 
 interface GitWorkspacePanelProps {
   open: boolean
+  view: GitWorkspaceView
   scope: PullRequestsScope
   workspace: string | null
   projectId: string | null
@@ -33,20 +33,18 @@ interface GitWorkspacePanelProps {
 }
 
 /**
- * One coding-mode home for local Git and remote code review. The selected
- * view lives in the shared UI store so entry points from changed files,
- * review sessions, the sidebar, and keyboard shortcuts all land predictably.
+ * Shared content for the top-level Changes and Review Workbench tabs.
+ * `view` is fixed per tab, so this surface no longer renders a nested tablist.
  */
 export function GitWorkspacePanel({
   open,
+  view,
   scope,
   workspace,
   projectId,
   focus,
   onOpenInChat,
 }: GitWorkspacePanelProps) {
-  const view = useUIStore((state) => state.gitWorkspaceView)
-  const setView = useUIStore((state) => state.setGitWorkspaceView)
   const [selectedGitWorkspace, setSelectedGitWorkspace] = useState<string | null>(null)
   const project = useProjectQuery(projectId).data ?? null
   const gitWorkspace =
@@ -66,10 +64,6 @@ export function GitWorkspacePanel({
   const repositories = useCodeReviewsQuery(open, reviewScope)
   const connections = useGitServerConnectionsQuery(open)
 
-  useEffect(() => {
-    if (focus) setView('reviews')
-  }, [focus, setView])
-
   const activeRepository = useMemo(
     () => repositories.data?.repositories.find(
       (repository) => repository.workspace === gitWorkspace,
@@ -86,8 +80,6 @@ export function GitWorkspacePanel({
     ? `${activeConnection.name} credential`
     : null
 
-  const changesDisabled = !workspace
-
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col bg-(--bg-page)">
       <header className="flex h-12 shrink-0 items-center gap-3 border-b border-(--color-border) bg-(--bg-card)/40 px-3">
@@ -103,54 +95,6 @@ export function GitWorkspacePanel({
           </span>
         </span>
 
-        <div
-          className="flex shrink-0 items-center gap-1"
-          role="tablist"
-          aria-label="Source Control workspace view"
-        >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={view === 'changes'}
-            disabled={changesDisabled}
-            onClick={() => setView('changes')}
-            className={cn(
-              'flex h-8 items-center justify-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium transition-colors',
-              view === 'changes'
-                ? 'bg-(--color-accent)/10 text-(--color-accent)'
-                : 'text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)',
-              changesDisabled && 'cursor-not-allowed opacity-40',
-            )}
-          >
-            <GitBranch size={13} />
-            Changes
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={view === 'reviews'}
-            onClick={() => setView('reviews')}
-            className={cn(
-              'flex h-8 items-center justify-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium transition-colors',
-              view === 'reviews'
-                ? 'bg-(--color-accent)/10 text-(--color-accent)'
-                : 'text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)',
-            )}
-          >
-            <GitPullRequest size={13} />
-            Pull requests
-            {(repositories.data?.total ?? 0) > 0 && (
-              <span className={cn(
-                'rounded-full px-1.5 py-px font-mono text-[9px]',
-                view === 'reviews'
-                  ? 'bg-(--color-accent)/15 text-(--color-accent)'
-                  : 'bg-(--bg-key) text-(--color-text-subtle)',
-              )}>
-                {repositories.data?.total}
-              </span>
-            )}
-          </button>
-        </div>
       </header>
 
       <div className="min-h-0 min-w-0 flex-1 overflow-hidden">

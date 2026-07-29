@@ -13,12 +13,17 @@ export interface DirectBrowserTab {
 
 interface UseDirectBrowserTabsOptions {
   sessionId: string
+  instanceId?: string
   viewportRef: React.RefObject<HTMLDivElement | null>
   enabled: boolean
   visible: boolean
+  bridgeEnabled?: boolean
+  initialUrl?: string
+  singleTab?: boolean
   zoom: number
   devtools: boolean
   onError: (message: string) => void
+  onRequestNewTab?: (url: string) => void
 }
 
 interface NativeBounds {
@@ -37,12 +42,17 @@ const BROWSER_DATA_STORE_ID = [
 
 export function useDirectBrowserTabs({
   sessionId,
+  instanceId = 'default',
   viewportRef,
   enabled,
   visible,
+  bridgeEnabled = true,
+  initialUrl = NEW_TAB_URL,
+  singleTab = false,
   zoom,
   devtools,
   onError,
+  onRequestNewTab,
 }: UseDirectBrowserTabsOptions) {
   const platform = getPlatform()
   const supported = platform.isTauri && platform.os !== 'ios' && platform.os !== 'android'
@@ -127,10 +137,11 @@ export function useDirectBrowserTabs({
       await new Promise((resolve) => setTimeout(resolve, 100))
     }
     throw new Error(`Browser navigation did not commit: ${requestedUrl}`)
-  }, [invokeFor, waitForPageReady])
+  }, [invokeFor])
 
   const createTab = useCallback(async (initialUrl = NEW_TAB_URL) => {
     if (!supported || !enabled || creatingRef.current) return
+    if (singleTab && tabsRef.current.length > 0) return tabsRef.current[0]
     const viewport = viewportRef.current
     if (!viewport) return
     const rect = viewport.getBoundingClientRect()
@@ -145,7 +156,8 @@ export function useDirectBrowserTabs({
       ])
       const id = `${Date.now().toString(36)}-${counterRef.current++}`
       const safeSession = sessionId.replace(/[^a-zA-Z0-9_-]/g, '').slice(-18)
-      const label = `browser-${safeSession}-${id}`
+      const safeInstance = instanceId.replace(/[^a-zA-Z0-9_-]/g, '').slice(-18)
+      const label = `browser-${safeSession}-${safeInstance}-${id}`
       const current = webviewsRef.current.get(activeIdRef.current ?? '')
       await current?.hide().catch(() => {})
 
@@ -204,12 +216,12 @@ export function useDirectBrowserTabs({
       creatingRef.current = false
       setCreating(false)
     }
-  }, [devtools, enabled, onError, sessionId, supported, viewportRef, waitForPageReady, zoom])
+  }, [devtools, enabled, instanceId, onError, sessionId, singleTab, supported, viewportRef, waitForPageReady, zoom])
 
   useEffect(() => {
     if (!supported || !enabled || tabs.length > 0 || creating) return
-    void createTab()
-  }, [createTab, creating, enabled, supported, tabs.length])
+    void createTab(initialUrl)
+  }, [createTab, creating, enabled, initialUrl, supported, tabs.length])
 
   const selectTab = useCallback(async (id: string) => {
     if (id === activeIdRef.current) return
@@ -246,11 +258,11 @@ export function useDirectBrowserTabs({
           await next.setFocus()
           visibilityRef.current.set(replacement.id, true)
         }
-      } else if (enabled) {
+      } else if (enabled && !singleTab) {
         queueMicrotask(() => void createTab())
       }
     }
-  }, [createTab, enabled, tabs, visible])
+  }, [createTab, enabled, singleTab, tabs, visible])
 
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? null
 
@@ -345,6 +357,10 @@ export function useDirectBrowserTabs({
     }
     if (action === 'new_tab') {
       const url = typeof params.url === 'string' ? params.url : NEW_TAB_URL
+      if (singleTab && onRequestNewTab) {
+        onRequestNewTab(url)
+        return `New workbench browser tab requested: ${url}`
+      }
       const tab = await createTab(url)
       if (!tab) throw new Error('Could not create a desktop browser tab')
       return `New tab: ${tab.url}`
@@ -405,12 +421,12 @@ export function useDirectBrowserTabs({
     throw new Error(
       `${action} is not supported by the direct desktop browser yet`,
     )
-  }, [closeAll, closeTab, createTab, invokeFor, selectTab, waitForNavigation])
+  }, [closeAll, closeTab, createTab, invokeFor, onRequestNewTab, selectTab, singleTab, waitForNavigation])
 
   agentHandlerRef.current = executeAgentCommand
 
   useEffect(() => {
-    if (!supported || !enabled) return
+    if (!supported || !enabled || !bridgeEnabled) return
     let alive = true
     let socket: WebSocket | null = null
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -467,7 +483,7 @@ export function useDirectBrowserTabs({
       if (reconnectTimer) clearTimeout(reconnectTimer)
       socket?.close()
     }
-  }, [enabled, sessionId, supported])
+  }, [bridgeEnabled, enabled, sessionId, supported])
 
   useEffect(() => {
     const webview = webviewsRef.current.get(activeTabId ?? '')
