@@ -226,6 +226,20 @@ class TestTeamChatRoute:
         test_team.handle_user_message.assert_awaited_once()
         assert test_team.handle_user_message.call_args.kwargs["content"] == "Hello team"
 
+    def test_team_chat_defers_normal_turn_preparation(self, app_with_team, test_team):
+        sid = str(uuid.uuid7())
+        with patch(
+            "app.api.routes.team.chat.agent_service.dispatch_user_message",
+            new=AsyncMock(return_value=(sid, 0)),
+        ) as dispatch:
+            response = TestClient(app_with_team).post(
+                "/api/team/chat", data={"message": "Hello team"}
+            )
+
+        assert response.status_code == 202
+        assert response.json()["session_id"] == sid
+        assert dispatch.await_args.kwargs["defer"] is True
+
     def test_team_chat_rejects_disconnected_webbridge(
         self, app_with_team, test_team, monkeypatch
     ):

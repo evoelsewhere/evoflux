@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   getGitChanges,
   gitStage,
@@ -27,6 +27,18 @@ import {
   gitContinue,
   gitAbort,
   getGitDiffView,
+  getGitRepository,
+  gitInit,
+  gitRemotes,
+  gitCreateRemote,
+  gitUpdateRemote,
+  gitDeleteRemote,
+  gitTags,
+  gitCreateTag,
+  gitDeleteTag,
+  gitPushTags,
+  gitSetIdentity,
+  gitRevert,
 } from '@/api/client'
 import { queryKeys } from './keys'
 
@@ -35,10 +47,20 @@ import { queryKeys } from './keys'
 function useInvalidateGitState(ws: string) {
   const qc = useQueryClient()
   return () => {
+    qc.invalidateQueries({ queryKey: queryKeys.git.repository(ws) })
     qc.invalidateQueries({ queryKey: queryKeys.git.changes(ws) })
     qc.invalidateQueries({ queryKey: queryKeys.coding.diff(ws) })
     qc.invalidateQueries({ queryKey: queryKeys.coding.status(ws) })
   }
+}
+
+export function useGitRepositoryQuery(workspace: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.git.repository(workspace),
+    queryFn: () => getGitRepository(workspace),
+    enabled,
+    staleTime: 10_000,
+  })
 }
 
 // ── Read hooks ──────────────────────────────────────────────────────────────
@@ -61,15 +83,42 @@ export function useGitBranchesQuery(workspace: string, enabled = true) {
   })
 }
 
+export function useGitRemotesQuery(workspace: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.git.remotes(workspace),
+    queryFn: () => gitRemotes(workspace),
+    enabled,
+    staleTime: 10_000,
+  })
+}
+
+export function useGitTagsQuery(workspace: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.git.tags(workspace),
+    queryFn: () => gitTags(workspace),
+    enabled,
+    staleTime: 10_000,
+  })
+}
+
 export function useGitLogQuery(
   workspace: string,
-  page: number,
-  options?: { branch?: string },
+  options?: { branch?: string; allBranches?: boolean },
   enabled = true,
 ) {
-  return useQuery({
-    queryKey: queryKeys.git.log(workspace, page),
-    queryFn: () => gitLog(workspace, { skip: page * 50, limit: 50, branch: options?.branch }),
+  const scope = options?.branch ?? (options?.allBranches ? 'all-branches' : 'current')
+  return useInfiniteQuery({
+    queryKey: queryKeys.git.log(workspace, scope),
+    queryFn: ({ pageParam }) =>
+      gitLog(workspace, {
+        skip: pageParam,
+        limit: 100,
+        branch: options?.branch,
+        allBranches: options?.allBranches,
+      }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) =>
+      lastPage.has_more ? (lastPage.next_skip ?? undefined) : undefined,
     enabled,
     staleTime: 10_000,
   })
@@ -127,6 +176,29 @@ export function useGitDiffViewQuery(workspace: string, path: string | null, enab
 
 // ── Mutations ───────────────────────────────────────────────────────────────
 
+export function useGitInitMutation(workspace: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (defaultBranch: string) => gitInit(workspace, defaultBranch),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.git.repository(workspace) })
+      qc.invalidateQueries({ queryKey: queryKeys.git.changes(workspace) })
+      qc.invalidateQueries({ queryKey: queryKeys.git.branches(workspace) })
+    },
+  })
+}
+
+export function useGitSetIdentityMutation(workspace: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ name, email }: { name: string; email: string }) =>
+      gitSetIdentity(workspace, name, email),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.git.repository(workspace) })
+    },
+  })
+}
+
 export function useGitStageMutation(workspace: string) {
   const invalidateGitState = useInvalidateGitState(workspace)
   return useMutation({
@@ -174,7 +246,10 @@ export function useGitCheckoutMutation(workspace: string) {
   const qc = useQueryClient()
   const invalidateGitState = useInvalidateGitState(workspace)
   return useMutation({
-    mutationFn: (name: string) => gitCheckout(workspace, name),
+    mutationFn: (input: string | { name: string; track?: boolean }) =>
+      typeof input === 'string'
+        ? gitCheckout(workspace, input)
+        : gitCheckout(workspace, input.name, input.track),
     onSuccess: () => {
       invalidateGitState()
       qc.invalidateQueries({ queryKey: queryKeys.git.branches(workspace) })
@@ -219,8 +294,9 @@ export function useGitMergeMutation(workspace: string) {
 export function useGitFetchMutation(workspace: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (remote?: string) => gitFetch(workspace, remote),
+    mutationFn: (options?: { remote?: string; prune?: boolean }) => gitFetch(workspace, options),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.git.jobs(workspace) })
       qc.invalidateQueries({ queryKey: queryKeys.git.changes(workspace) })
       qc.invalidateQueries({ queryKey: queryKeys.git.branches(workspace) })
     },
@@ -231,8 +307,10 @@ export function useGitPullMutation(workspace: string) {
   const qc = useQueryClient()
   const invalidateGitState = useInvalidateGitState(workspace)
   return useMutation({
-    mutationFn: (rebase?: boolean) => gitPull(workspace, rebase),
+    mutationFn: (options?: { remote?: string; branch?: string; rebase?: boolean }) =>
+      gitPull(workspace, options),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.git.jobs(workspace) })
       invalidateGitState()
       qc.invalidateQueries({ queryKey: queryKeys.git.branches(workspace) })
       qc.invalidateQueries({ queryKey: queryKeys.git.log(workspace, 0) })
@@ -243,10 +321,81 @@ export function useGitPullMutation(workspace: string) {
 export function useGitPushMutation(workspace: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (forceWithLease?: boolean) => gitPush(workspace, forceWithLease),
+    mutationFn: (options?: {
+      remote?: string
+      branch?: string
+      setUpstream?: boolean
+      forceWithLease?: boolean
+    }) => gitPush(workspace, options),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.git.jobs(workspace) })
       qc.invalidateQueries({ queryKey: queryKeys.git.changes(workspace) })
       qc.invalidateQueries({ queryKey: queryKeys.git.branches(workspace) })
+    },
+  })
+}
+
+export function useGitCreateRemoteMutation(workspace: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ name, url }: { name: string; url: string }) =>
+      gitCreateRemote(workspace, name, url),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.git.remotes(workspace) })
+      qc.invalidateQueries({ queryKey: queryKeys.git.repository(workspace) })
+    },
+  })
+}
+
+export function useGitUpdateRemoteMutation(workspace: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ name, url }: { name: string; url: string }) =>
+      gitUpdateRemote(workspace, name, url),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.git.remotes(workspace) })
+    },
+  })
+}
+
+export function useGitDeleteRemoteMutation(workspace: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (name: string) => gitDeleteRemote(workspace, name),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.git.remotes(workspace) })
+      qc.invalidateQueries({ queryKey: queryKeys.git.repository(workspace) })
+    },
+  })
+}
+
+export function useGitCreateTagMutation(workspace: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ name, target, message }: { name: string; target?: string; message?: string }) =>
+      gitCreateTag(workspace, name, { target, message }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.git.tags(workspace) })
+    },
+  })
+}
+
+export function useGitDeleteTagMutation(workspace: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (name: string) => gitDeleteTag(workspace, name),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.git.tags(workspace) })
+    },
+  })
+}
+
+export function useGitPushTagsMutation(workspace: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (options?: { remote?: string; tag?: string }) => gitPushTags(workspace, options),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.git.jobs(workspace) })
     },
   })
 }
@@ -318,6 +467,19 @@ export function useGitCherryPickMutation(workspace: string) {
   const invalidateGitState = useInvalidateGitState(workspace)
   return useMutation({
     mutationFn: (shas: string[]) => gitCherryPick(workspace, shas),
+    onSuccess: () => {
+      invalidateGitState()
+      qc.invalidateQueries({ queryKey: queryKeys.git.log(workspace, 0) })
+      qc.invalidateQueries({ queryKey: queryKeys.git.conflicts(workspace) })
+    },
+  })
+}
+
+export function useGitRevertMutation(workspace: string) {
+  const qc = useQueryClient()
+  const invalidateGitState = useInvalidateGitState(workspace)
+  return useMutation({
+    mutationFn: (sha: string) => gitRevert(workspace, sha),
     onSuccess: () => {
       invalidateGitState()
       qc.invalidateQueries({ queryKey: queryKeys.git.log(workspace, 0) })

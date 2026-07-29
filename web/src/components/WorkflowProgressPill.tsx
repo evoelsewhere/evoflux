@@ -31,7 +31,7 @@ export function WorkflowProgressPill({
       className={cn(
         'inline-flex max-w-72 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs',
         failed
-          ? 'border-(--color-error)/40 bg-(--color-error-subtle,var(--bg-key)) text-(--color-error)'
+          ? 'border-(--color-error)/50 bg-(--color-error-subtle,var(--bg-key)) text-(--color-error)'
           : 'border-(--color-border) bg-(--bg-key) text-(--color-text-2)',
       )}
       title={failed ? (execution.error ?? 'failed') : label}

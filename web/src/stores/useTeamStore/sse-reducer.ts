@@ -268,7 +268,12 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
               toolCallId,
               result,
               durationMs,
-              mcpApp ? { mcp_app: mcpApp } : undefined,
+              metadata
+                ? {
+                    ...metadata,
+                    ...(mcpApp ? { mcp_app: mcpApp } : {}),
+                  }
+                : undefined,
             )
           })
         }

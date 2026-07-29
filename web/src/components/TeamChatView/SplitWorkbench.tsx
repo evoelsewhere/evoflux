@@ -148,7 +148,7 @@ function AgentRailItem({
         selected && 'border-(--color-accent)/55 bg-(--bg-key)/60 shadow-sm',
         compared && 'border-(--color-info)/55 bg-(--color-info)/5',
         !selected && !compared && 'border-(--color-border-subtle) hover:border-(--color-border)',
-        stream.status === 'error' && 'border-(--color-error)/45',
+        stream.status === 'error' && 'border-(--color-error)/40',
       )}
     >
       <button
@@ -224,7 +224,7 @@ function AgentRailItem({
         className={cn(
           'absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-md border border-transparent text-(--color-text-subtle) opacity-55 transition-[opacity,background-color,color,border-color] group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-(--color-accent)',
           canCompare && 'hover:border-(--color-border) hover:bg-(--bg-key) hover:text-(--color-text)',
-          compared && 'border-(--color-info)/30 bg-(--color-info)/10 text-(--color-info) opacity-100',
+          compared && 'border-(--color-info)/35 bg-(--color-info)/10 text-(--color-info) opacity-100',
           !canCompare && 'cursor-default',
         )}
       >

@@ -714,6 +714,9 @@ class Agent(Generic[TContext]):
             multimodal_parts: dict[str, list[ContentBlock]] = state.metadata.pop(
                 "_multimodal_tool_parts", {}
             )
+            tool_attachments: dict[str, list[dict[str, str]]] = state.metadata.pop(
+                "_tool_attachments", {}
+            )
             mcp_apps: dict[str, dict[str, Any]] = state.metadata.pop("_mcp_apps", {})
 
             cancelled = interrupt_event is not None and interrupt_event.is_set()
@@ -729,6 +732,10 @@ class Agent(Generic[TContext]):
                 )
                 if tc.id in tool_durations:
                     tool_msg.extra = {"duration_ms": tool_durations[tc.id]}
+                if tc.id in tool_attachments:
+                    if tool_msg.extra is None:
+                        tool_msg.extra = {}
+                    tool_msg.extra["attachments"] = tool_attachments[tc.id]
                 # Attach multimodal parts if the tool returned a ToolResult
                 if tc.id in multimodal_parts:
                     tool_msg.parts = multimodal_parts[tc.id]

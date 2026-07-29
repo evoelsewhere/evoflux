@@ -301,12 +301,12 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
     <div ref={scrollRef} className="flex-1 overflow-y-auto">
-      <div className={`mx-auto max-w-3xl px-4 py-6 ${chapterByMessageId.size > 0 ? 'lg:pl-16' : ''}`}>
+      <div className={`mx-auto max-w-4xl px-3 py-4 ${chapterByMessageId.size > 0 ? 'lg:pl-14' : ''}`}>
         {isEmpty && (
            emptyState ?? <ChatWelcome />
          )}
 
-         <div className="space-y-6">
+         <div className="space-y-4">
               {hiddenTurnCount > 0 && (
                 <div className="flex justify-center py-2">
                   <button

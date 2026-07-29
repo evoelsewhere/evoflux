@@ -11,8 +11,10 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
+from app.api.deps import DbSession
 from app.api.schemas.git import (
     BranchCreateRequest,
+    BranchDeleteRequest,
     ChangedFileOut,
     CheckoutRequest,
     CherryPickRequest,
@@ -23,22 +25,34 @@ from app.api.schemas.git import (
     GitChangesOut,
     GitCommitOut,
     GitConflictsOut,
+    GitIdentityRequest,
+    GitInitRequest,
     GitJobOut,
     GitLogFileOut,
     GitLogEntryOut,
     GitLogOut,
     GitMergeOut,
+    GitRemoteDeleteRequest,
+    GitRemoteOut,
+    GitRemoteRequest,
+    GitRepositoryOut,
     GitStashOut,
+    GitTagDeleteRequest,
+    GitTagOut,
+    GitTagRequest,
+    GitTagsPushRequest,
     MergeRequest,
     PullRequest,
     PushRequest,
     RebaseRequest,
+    RevertRequest,
     StageRequest,
     StashApplyRequest,
     StashRequest,
     WorkspaceRequest,
 )
 from app.services import team_manager
+from app.services.git_credentials import resolve_workspace_git_credential
 from app.services.git_ops import (
     GitResult,
     _SHA_RE,
@@ -92,6 +106,83 @@ def _changed_files_to_out(files):
     ]
 
 
+# --- Repository --------------------------------------------------------------
+
+
+@router.get("/repository")
+async def get_repository(workspace: str) -> GitRepositoryOut:
+    cwd = await _validate(workspace)
+    if not is_git_repo(cwd):
+        return GitRepositoryOut(is_git_repo=False)
+
+    async def read(*args: str) -> str | None:
+        result = await run_git(cwd, *args, timeout=5.0)
+        value = result.stdout.strip()
+        return value if result.ok and value else None
+
+    root = await read("rev-parse", "--show-toplevel")
+    branch = await read("symbolic-ref", "--quiet", "--short", "HEAD")
+    upstream = await read(
+        "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"
+    )
+    head_sha = await read("rev-parse", "--short=12", "HEAD")
+    head_subject = await read("log", "-1", "--format=%s")
+    user_name = await read("config", "--get", "user.name")
+    user_email = await read("config", "--get", "user.email")
+    return GitRepositoryOut(
+        is_git_repo=True,
+        root=root,
+        branch=branch,
+        detached=branch is None and head_sha is not None,
+        upstream=upstream,
+        head_sha=head_sha,
+        head_subject=head_subject,
+        user_name=user_name,
+        user_email=user_email,
+    )
+
+
+@router.post("/repository/init")
+async def init_repository(body: GitInitRequest) -> GitRepositoryOut:
+    cwd = await _validate(body.workspace)
+    if is_git_repo(cwd):
+        raise HTTPException(status_code=409, detail="Git is already initialized")
+    if not validate_ref_name(body.default_branch):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid default branch: {body.default_branch}",
+        )
+    async with git_locks.acquire(cwd):
+        result = await run_git(cwd, "init", "-b", body.default_branch, timeout=30.0)
+    _check(result)
+    return await get_repository(cwd)
+
+
+@router.post("/repository/identity")
+async def set_repository_identity(body: GitIdentityRequest) -> GitRepositoryOut:
+    cwd = await _validate(body.workspace)
+    _require_repo(cwd)
+    name = body.name.strip()
+    email = body.email.strip()
+    if (
+        not name
+        or not email
+        or any(ord(char) < 32 for char in name)
+        or any(ord(char) < 32 for char in email)
+    ):
+        raise HTTPException(status_code=422, detail="Invalid Git identity")
+    async with git_locks.acquire(cwd):
+        name_result = await run_git(
+            cwd, "config", "--local", "user.name", name, timeout=5.0
+        )
+        _check(name_result)
+        email_result = await run_git(
+            cwd, "config", "--local", "user.email", email, timeout=5.0
+        )
+    _check(email_result)
+    return await get_repository(cwd)
+
+
 # --- Local Changes -----------------------------------------------------------
 
 
@@ -99,12 +190,19 @@ def _changed_files_to_out(files):
 async def get_changes(workspace: str) -> GitChangesOut:
     cwd = await _validate(workspace)
     if not is_git_repo(cwd):
-        return GitChangesOut(branch=None, ahead=0, behind=0, files=[])
+        return GitChangesOut(
+            is_git_repo=False,
+            branch=None,
+            ahead=0,
+            behind=0,
+            files=[],
+        )
     result = await run_git(cwd, "status", "--porcelain=v2", "--branch", timeout=10.0)
     if not result.ok:
         return GitChangesOut(branch=None, ahead=0, behind=0, files=[])
     parsed = parse_porcelain_v2_files(result.stdout)
     return GitChangesOut(
+        is_git_repo=True,
         branch=parsed.branch,
         ahead=parsed.ahead,
         behind=parsed.behind,
@@ -174,9 +272,7 @@ async def discard_changes(body: StageRequest) -> dict:
             result = await run_git(cwd, "restore", "--", ".", timeout=30.0)
             if not result.ok:
                 _check(result)
-            clean_result = await run_git(
-                cwd, "clean", "-f", "--", ".", timeout=30.0
-            )
+            clean_result = await run_git(cwd, "clean", "-f", "--", ".", timeout=30.0)
             if not clean_result.ok:
                 _check(clean_result)
     return {"ok": True}
@@ -319,7 +415,10 @@ async def get_diff_view(workspace: str, path: str) -> dict:
         # Show entire file as additions
         try:
             resolved = Path(cwd, path).resolve()
-            if not str(resolved).startswith(str(Path(cwd).resolve()) + os.sep) and resolved != Path(cwd).resolve():
+            if (
+                not str(resolved).startswith(str(Path(cwd).resolve()) + os.sep)
+                and resolved != Path(cwd).resolve()
+            ):
                 raise HTTPException(status_code=422, detail="Path outside workspace")
             content = resolved.read_text(errors="replace")
             diff_lines = [
@@ -343,7 +442,6 @@ async def get_diff_view(workspace: str, path: str) -> dict:
     return {"diff": result.stdout if result.ok else ""}
 
 
-
 @router.post("/branches/checkout")
 async def checkout_branch(body: CheckoutRequest) -> dict:
     cwd = await _validate(body.workspace)
@@ -351,22 +449,138 @@ async def checkout_branch(body: CheckoutRequest) -> dict:
     if not validate_ref_name(body.name):
         raise HTTPException(status_code=422, detail=f"Invalid ref name: {body.name}")
     async with git_locks.acquire(cwd):
-        result = await run_git(cwd, "switch", "--", body.name, timeout=30.0)
+        args = ["switch"]
+        if body.track:
+            args.append("--track")
+        args.extend(["--", body.name])
+        result = await run_git(cwd, *args, timeout=30.0)
     _check(result)
     return {"ok": True}
 
 
 @router.delete("/branches")
-async def delete_branch(workspace: str, name: str, force: bool = False) -> dict:
-    cwd = await _validate(workspace)
+async def delete_branch(body: BranchDeleteRequest) -> dict:
+    cwd = await _validate(body.workspace)
     _require_repo(cwd)
-    if not validate_ref_name(name):
-        raise HTTPException(status_code=422, detail=f"Invalid ref name: {name}")
-    args = ["branch", "-D" if force else "-d", "--", name]
+    if not validate_ref_name(body.name):
+        raise HTTPException(status_code=422, detail=f"Invalid ref name: {body.name}")
+    args = ["branch", "-D" if body.force else "-d", "--", body.name]
     async with git_locks.acquire(cwd):
         result = await run_git(cwd, *args, timeout=10.0)
     _check(result)
     return {"ok": True}
+
+
+# --- Tags --------------------------------------------------------------------
+
+
+@router.get("/tags")
+async def list_tags(workspace: str, limit: int = 200) -> list[GitTagOut]:
+    cwd = await _validate(workspace)
+    if not is_git_repo(cwd):
+        return []
+    capped = min(max(limit, 1), 500)
+    result = await run_git(
+        cwd,
+        "for-each-ref",
+        "--sort=-creatordate",
+        f"--count={capped}",
+        "--format=%(refname:short)\x1f%(objectname)\x1f%(subject)\x1f%(creatordate:iso8601)",
+        "refs/tags",
+        timeout=10.0,
+    )
+    if not result.ok:
+        return []
+    tags: list[GitTagOut] = []
+    for line in result.stdout.splitlines():
+        parts = line.split("\x1f")
+        if len(parts) >= 4:
+            tags.append(
+                GitTagOut(
+                    name=parts[0],
+                    sha=parts[1][:12],
+                    subject=parts[2],
+                    date=parts[3],
+                )
+            )
+    return tags
+
+
+@router.post("/tags")
+async def create_tag(body: GitTagRequest) -> dict:
+    cwd = await _validate(body.workspace)
+    _require_repo(cwd)
+    valid_name = await run_git(
+        cwd, "check-ref-format", f"refs/tags/{body.name}", timeout=5.0
+    )
+    if not valid_name.ok:
+        raise HTTPException(status_code=422, detail=f"Invalid tag name: {body.name}")
+    target = body.target or "HEAD"
+    verified = await run_git(
+        cwd, "rev-parse", "--verify", "--end-of-options", f"{target}^{{commit}}"
+    )
+    _check(verified)
+    sha = verified.stdout.strip()
+    args = ["tag"]
+    if body.message:
+        args.extend(["-a", body.name, "-m", body.message, sha])
+    else:
+        args.extend([body.name, sha])
+    async with git_locks.acquire(cwd):
+        result = await run_git(cwd, *args, timeout=10.0)
+    _check(result)
+    return {"ok": True}
+
+
+@router.delete("/tags")
+async def delete_tag(body: GitTagDeleteRequest) -> dict:
+    cwd = await _validate(body.workspace)
+    _require_repo(cwd)
+    valid_name = await run_git(
+        cwd, "check-ref-format", f"refs/tags/{body.name}", timeout=5.0
+    )
+    if not valid_name.ok:
+        raise HTTPException(status_code=422, detail=f"Invalid tag name: {body.name}")
+    async with git_locks.acquire(cwd):
+        result = await run_git(cwd, "tag", "--delete", body.name, timeout=10.0)
+    _check(result)
+    return {"ok": True}
+
+
+@router.post("/tags/push")
+async def push_tags(body: GitTagsPushRequest, db: DbSession) -> GitJobOut:
+    cwd = await _validate(body.workspace)
+    _require_repo(cwd)
+    credential = await resolve_workspace_git_credential(db, cwd)
+    args = ["push"]
+    if body.remote:
+        args.append(body.remote)
+    if body.tag:
+        valid_name = await run_git(
+            cwd, "check-ref-format", f"refs/tags/{body.tag}", timeout=5.0
+        )
+        if not valid_name.ok:
+            raise HTTPException(status_code=422, detail=f"Invalid tag name: {body.tag}")
+        args.append(f"refs/tags/{body.tag}")
+    else:
+        args.append("--tags")
+
+    async def _do():
+        return await run_git_long(
+            cwd,
+            *args,
+            timeout=120.0,
+            credential=credential,
+        )
+
+    job, _ = await git_jobs.start(workspace=cwd, op="push tags", coro=_do())
+    return GitJobOut(
+        workspace=cwd,
+        op=job.op,
+        status=job.status,
+        message=job.message,
+        error=job.error,
+    )
 
 
 # --- Merge -------------------------------------------------------------------
@@ -407,15 +621,23 @@ async def merge(body: MergeRequest) -> GitMergeOut:
 
 
 @router.post("/fetch")
-async def fetch(body: FetchRequest) -> GitJobOut:
+async def fetch(body: FetchRequest, db: DbSession) -> GitJobOut:
     cwd = await _validate(body.workspace)
     _require_repo(cwd)
+    credential = await resolve_workspace_git_credential(db, cwd)
     args = ["fetch"]
+    if body.prune:
+        args.append("--prune")
     if body.remote:
         args.append(body.remote)
 
     async def _do():
-        return await run_git_long(cwd, *args, timeout=120.0)
+        return await run_git_long(
+            cwd,
+            *args,
+            timeout=120.0,
+            credential=credential,
+        )
 
     job, started = await git_jobs.start(workspace=cwd, op="fetch", coro=_do())
     return GitJobOut(
@@ -428,9 +650,10 @@ async def fetch(body: FetchRequest) -> GitJobOut:
 
 
 @router.post("/pull")
-async def pull(body: PullRequest) -> GitJobOut:
+async def pull(body: PullRequest, db: DbSession) -> GitJobOut:
     cwd = await _validate(body.workspace)
     _require_repo(cwd)
+    credential = await resolve_workspace_git_credential(db, cwd)
     args = ["pull"]
     if body.rebase:
         args.append("--rebase")
@@ -440,7 +663,12 @@ async def pull(body: PullRequest) -> GitJobOut:
         args.append(body.branch)
 
     async def _do():
-        return await run_git_long(cwd, *args, timeout=120.0)
+        return await run_git_long(
+            cwd,
+            *args,
+            timeout=120.0,
+            credential=credential,
+        )
 
     job, started = await git_jobs.start(workspace=cwd, op="pull", coro=_do())
     return GitJobOut(
@@ -453,9 +681,10 @@ async def pull(body: PullRequest) -> GitJobOut:
 
 
 @router.post("/push")
-async def push(body: PushRequest) -> GitJobOut:
+async def push(body: PushRequest, db: DbSession) -> GitJobOut:
     cwd = await _validate(body.workspace)
     _require_repo(cwd)
+    credential = await resolve_workspace_git_credential(db, cwd)
     args = ["push"]
     if body.force_with_lease:
         args.append("--force-with-lease")
@@ -467,7 +696,12 @@ async def push(body: PushRequest) -> GitJobOut:
         args.append(body.branch)
 
     async def _do():
-        return await run_git_long(cwd, *args, timeout=120.0)
+        return await run_git_long(
+            cwd,
+            *args,
+            timeout=120.0,
+            credential=credential,
+        )
 
     job, started = await git_jobs.start(workspace=cwd, op="push", coro=_do())
     return GitJobOut(
@@ -494,6 +728,90 @@ async def get_jobs(workspace: str) -> GitJobOut | None:
     )
 
 
+# --- Remotes ----------------------------------------------------------------
+
+
+@router.get("/remotes")
+async def list_remotes(workspace: str) -> list[GitRemoteOut]:
+    cwd = await _validate(workspace)
+    if not is_git_repo(cwd):
+        return []
+    names_result = await run_git(cwd, "remote", timeout=5.0)
+    if not names_result.ok:
+        return []
+    remotes: list[GitRemoteOut] = []
+    for name in names_result.stdout.splitlines():
+        name = name.strip()
+        if not name:
+            continue
+        fetch_result = await run_git(cwd, "remote", "get-url", name, timeout=5.0)
+        push_result = await run_git(
+            cwd, "remote", "get-url", "--push", name, timeout=5.0
+        )
+        if fetch_result.ok:
+            fetch_url = fetch_result.stdout.strip()
+            remotes.append(
+                GitRemoteOut(
+                    name=name,
+                    fetch_url=fetch_url,
+                    push_url=push_result.stdout.strip()
+                    if push_result.ok
+                    else fetch_url,
+                )
+            )
+    return remotes
+
+
+async def _validate_remote_name(cwd: str, name: str) -> None:
+    result = await run_git(
+        cwd, "check-ref-format", f"refs/remotes/{name}/probe", timeout=5.0
+    )
+    if not result.ok or name == "HEAD":
+        raise HTTPException(status_code=422, detail=f"Invalid remote name: {name}")
+
+
+def _validate_remote_url(url: str) -> str:
+    value = url.strip()
+    if not value or value.startswith("-") or any(ord(char) < 32 for char in value):
+        raise HTTPException(status_code=422, detail="Invalid remote URL")
+    return value
+
+
+@router.post("/remotes")
+async def create_remote(body: GitRemoteRequest) -> dict:
+    cwd = await _validate(body.workspace)
+    _require_repo(cwd)
+    await _validate_remote_name(cwd, body.name)
+    url = _validate_remote_url(body.url)
+    async with git_locks.acquire(cwd):
+        result = await run_git(cwd, "remote", "add", body.name, url, timeout=10.0)
+    _check(result)
+    return {"ok": True}
+
+
+@router.put("/remotes")
+async def update_remote(body: GitRemoteRequest) -> dict:
+    cwd = await _validate(body.workspace)
+    _require_repo(cwd)
+    await _validate_remote_name(cwd, body.name)
+    url = _validate_remote_url(body.url)
+    async with git_locks.acquire(cwd):
+        result = await run_git(cwd, "remote", "set-url", body.name, url, timeout=10.0)
+    _check(result)
+    return {"ok": True}
+
+
+@router.delete("/remotes")
+async def delete_remote(body: GitRemoteDeleteRequest) -> dict:
+    cwd = await _validate(body.workspace)
+    _require_repo(cwd)
+    await _validate_remote_name(cwd, body.name)
+    async with git_locks.acquire(cwd):
+        result = await run_git(cwd, "remote", "remove", body.name, timeout=10.0)
+    _check(result)
+    return {"ok": True}
+
+
 # --- Log ---------------------------------------------------------------------
 
 
@@ -501,38 +819,46 @@ async def get_jobs(workspace: str) -> GitJobOut | None:
 async def get_log(
     workspace: str,
     branch: str | None = None,
+    all_branches: bool = False,
     skip: int = 0,
-    limit: int = 50,
+    limit: int = 100,
     path: str | None = None,
 ) -> GitLogOut:
     cwd = await _validate(workspace)
     if not is_git_repo(cwd):
         return GitLogOut(entries=[], has_more=False)
-    capped = min(max(limit, 1), 501)
+    page_size = min(max(limit, 1), 500)
+    offset = max(skip, 0)
     args = [
         "log",
-        f"--skip={skip}",
-        f"--max-count={capped}",
-        "--format=%H\x1f%an\x1f%ai\x1f%s",
+        "--topo-order",
+        "--decorate=short",
+        f"--skip={offset}",
+        f"--max-count={page_size + 1}",
+        "--format=%H\x1f%P\x1f%D\x1f%an\x1f%ai\x1f%s",
         "--date=iso",
     ]
     if branch:
         if not validate_ref_name(branch):
             raise HTTPException(status_code=422, detail=f"Invalid ref name: {branch}")
         args.append(branch)
+    elif all_branches:
+        args.extend(["--branches", "--tags"])
     if path:
         args.extend(["--", path])
     result = await run_git(cwd, *args, timeout=15.0)
     if not result.ok:
         return GitLogOut(entries=[], has_more=False)
     entries = parse_log(result.stdout)
-    has_more = len(entries) > min(limit, 500)
-    entries = entries[: min(limit, 500)]
+    has_more = len(entries) > page_size
+    entries = entries[:page_size]
     return GitLogOut(
         entries=[
             GitLogEntryOut(
                 sha=e.sha,
                 short_sha=e.short_sha,
+                parent_shas=e.parent_shas,
+                refs=e.refs,
                 author=e.author,
                 date=e.date,
                 message=e.message,
@@ -540,6 +866,7 @@ async def get_log(
             for e in entries
         ],
         has_more=has_more,
+        next_skip=offset + len(entries) if has_more else None,
     )
 
 
@@ -550,7 +877,9 @@ async def get_log_files(workspace: str, sha: str) -> list[GitLogFileOut]:
         return []
     if not _SHA_RE.match(sha):
         raise HTTPException(status_code=422, detail=f"Invalid SHA: {sha}")
-    result = await run_git(cwd, "show", "--name-status", "--format=", "--", sha, timeout=10.0)
+    result = await run_git(
+        cwd, "show", "--name-status", "--format=", "--", sha, timeout=10.0
+    )
     if not result.ok:
         return []
     files = parse_log_files(result.stdout)
@@ -565,7 +894,9 @@ async def list_stashes(workspace: str) -> list[GitStashOut]:
     cwd = await _validate(workspace)
     if not is_git_repo(cwd):
         return []
-    result = await run_git(cwd, "stash", "list", "--format=%H\x1f%gD\x1f%s", timeout=5.0)
+    result = await run_git(
+        cwd, "stash", "list", "--format=%H\x1f%gD\x1f%s", timeout=5.0
+    )
     if not result.ok:
         return []
     entries = parse_stash_list(result.stdout)
@@ -646,12 +977,12 @@ async def pop_stash(body: StashApplyRequest) -> GitMergeOut:
 
 
 @router.delete("/stash")
-async def drop_stash(workspace: str, index: int = 0) -> dict:
-    cwd = await _validate(workspace)
+async def drop_stash(body: StashApplyRequest) -> dict:
+    cwd = await _validate(body.workspace)
     _require_repo(cwd)
     async with git_locks.acquire(cwd):
         result = await run_git(
-            cwd, "stash", "drop", f"stash@{{{index}}}", timeout=10.0
+            cwd, "stash", "drop", f"stash@{{{body.index}}}", timeout=10.0
         )
     _check(result)
     return {"ok": True}
@@ -723,6 +1054,38 @@ async def cherry_pick(body: CherryPickRequest) -> GitMergeOut:
     )
 
 
+# --- Revert ------------------------------------------------------------------
+
+
+@router.post("/revert")
+async def revert_commit(body: RevertRequest) -> GitMergeOut:
+    cwd = await _validate(body.workspace)
+    _require_repo(cwd)
+    if not _SHA_RE.match(body.sha):
+        raise HTTPException(status_code=422, detail=f"Invalid SHA: {body.sha}")
+    async with git_locks.acquire(cwd):
+        result = await run_git(cwd, "revert", "--no-edit", "--", body.sha, timeout=60.0)
+        op = detect_inprogress_operation(cwd)
+        conflicted_files: list[str] = []
+        if op:
+            status = await run_git(cwd, "status", "--porcelain=v2", timeout=10.0)
+            if status.ok:
+                parsed = parse_porcelain_v2_files(status.stdout)
+                conflicted_files = [
+                    file.path
+                    for file in parsed.files
+                    if file.status
+                    in ("both modified", "both added", "both deleted", "unmerged")
+                ]
+    return GitMergeOut(
+        success=result.ok and op is None,
+        conflicts=conflicted_files,
+        message=result.stdout.strip()[:500]
+        if result.ok
+        else result.stderr.strip()[:500],
+    )
+
+
 # --- Conflict resolution -----------------------------------------------------
 
 
@@ -764,6 +1127,8 @@ async def continue_operation(body: WorkspaceRequest) -> dict:
             result = await run_git(cwd, "rebase", "--continue", timeout=120.0)
         elif op == "cherry-pick":
             result = await run_git(cwd, "cherry-pick", "--continue", timeout=60.0)
+        elif op == "revert":
+            result = await run_git(cwd, "revert", "--continue", timeout=60.0)
         else:
             raise HTTPException(status_code=422, detail=f"Unknown operation: {op}")
     _check(result)
@@ -784,6 +1149,8 @@ async def abort_operation(body: WorkspaceRequest) -> dict:
             result = await run_git(cwd, "rebase", "--abort", timeout=30.0)
         elif op == "cherry-pick":
             result = await run_git(cwd, "cherry-pick", "--abort", timeout=30.0)
+        elif op == "revert":
+            result = await run_git(cwd, "revert", "--abort", timeout=30.0)
         else:
             raise HTTPException(status_code=422, detail=f"Unknown operation: {op}")
     _check(result)

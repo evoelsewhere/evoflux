@@ -979,7 +979,7 @@ function SuggestedWorkflowBoard({
 
   if (error && !plan) {
     return (
-      <section className="flex items-center justify-between gap-3 rounded-md border border-(--color-error)/35 bg-(--color-error-subtle,var(--bg-page)) px-3 py-3">
+      <section className="flex items-center justify-between gap-3 rounded-md border border-(--color-error)/40 bg-(--color-error-subtle,var(--bg-page)) px-3 py-3">
         <p className="text-xs text-(--color-error)">{error}</p>
         <Button size="sm" variant="outline" onClick={onRetry}>
           <RefreshCw size={11} />
@@ -1025,7 +1025,7 @@ function SuggestedWorkflowBoard({
             </p>
           </div>
           {plan.stale && (
-            <span className="rounded border border-(--color-warning,orange)/35 bg-(--color-warning,orange)/10 px-1.5 py-0.5 text-[9px] text-(--color-warning,orange)">
+            <span className="rounded border border-(--color-warning,orange)/40 bg-(--color-warning,orange)/10 px-1.5 py-0.5 text-[9px] text-(--color-warning,orange)">
               live state changed
             </span>
           )}

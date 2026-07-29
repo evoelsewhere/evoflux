@@ -74,8 +74,9 @@ async def _git(
 ) -> tuple[int, bytes, bytes]:
     """Run ``git`` and return ``(exit_code, stdout, stderr)``.
 
-    Never raises — all failures are surfaced as a non-zero exit code so the
-    caller can decide whether to warn or recover.
+    Process failures are surfaced as a non-zero exit code so the caller can
+    decide whether to warn or recover. Cancellation remains cancellation and
+    terminates the child process so a stopped deferred turn cannot later wake.
     """
     merged_env = os.environ.copy()
     if env:
@@ -91,7 +92,16 @@ async def _git(
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            out, err = await proc.communicate(stdin)
+            try:
+                out, err = await proc.communicate(stdin)
+            except asyncio.CancelledError:
+                if proc.returncode is None:
+                    try:
+                        proc.terminate()
+                    except ProcessLookupError:
+                        pass
+                    await proc.wait()
+                raise
             return proc.returncode or 0, out, err
         except NotImplementedError:
             # Windows SelectorEventLoop does not support asyncio subprocess
@@ -111,7 +121,7 @@ async def _git(
                 return completed.returncode, completed.stdout, completed.stderr
 
             return await asyncio.to_thread(_run_sync)
-    except (OSError, asyncio.CancelledError) as exc:
+    except OSError as exc:
         logger.warning("snapshot_git_spawn_failed args={} error={}", args, repr(exc))
         return 1, b"", b""
 

@@ -218,6 +218,7 @@ export function useSideChat(mainSessionId: string | null): UseSideChatReturn {
                       d.tool_call_id as string | undefined,
                       d.result as string | undefined,
                       durationMs,
+                      metadata,
                     ),
                   )
                   break

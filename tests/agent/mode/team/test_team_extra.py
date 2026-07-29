@@ -301,8 +301,8 @@ class TestHandleUserMessageInitTurn:
 
         init_turn_called = []
 
-        async def fake_init_turn(sid):
-            init_turn_called.append(sid)
+        async def fake_init_turn(sid, *, keep_subscribers=False):
+            init_turn_called.append((sid, keep_subscribers))
 
         with (
             patch("app.services.memory_stream_store.push_event", new=AsyncMock()),
@@ -311,7 +311,7 @@ class TestHandleUserMessageInitTurn:
             await team.handle_user_message("test", session_id="lead-sid")
 
         assert len(init_turn_called) == 1
-        assert init_turn_called[0] == "lead-sid"
+        assert init_turn_called[0] == ("lead-sid", True)
 
     @pytest.mark.asyncio
     async def test_handle_user_message_init_turn_failure_swallowed(self):
@@ -319,7 +319,7 @@ class TestHandleUserMessageInitTurn:
         team.mailbox.register("lead")
         team.mailbox.register("worker")
 
-        async def fake_init_turn(sid):
+        async def fake_init_turn(sid, *, keep_subscribers=False):
             raise ConnectionError("stream down")
 
         with (

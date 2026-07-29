@@ -14,6 +14,9 @@ import type {
   GitLogFile,
   GitStash,
   GitConflictsResponse,
+  GitRemote,
+  GitRepository,
+  GitTag,
 } from '../types'
 
 function wsParam(workspace: string): URLSearchParams {
@@ -24,6 +27,37 @@ export async function getGitChanges(workspace: string): Promise<GitChangesRespon
   const params = wsParam(workspace)
   const res = await fetch(`${apiBaseUrl()}/team/workspace/git/changes?${params}`)
   if (!res.ok) await parseDetailOrThrow(res, 'getGitChanges')
+  return res.json()
+}
+
+export async function getGitRepository(workspace: string): Promise<GitRepository> {
+  const params = wsParam(workspace)
+  const res = await fetch(`${apiBaseUrl()}/team/workspace/git/repository?${params}`)
+  if (!res.ok) await parseDetailOrThrow(res, 'getGitRepository')
+  return res.json()
+}
+
+export async function gitInit(workspace: string, defaultBranch = 'main'): Promise<GitRepository> {
+  const res = await fetch(`${apiBaseUrl()}/team/workspace/git/repository/init`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ workspace, default_branch: defaultBranch }),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'gitInit')
+  return res.json()
+}
+
+export async function gitSetIdentity(
+  workspace: string,
+  name: string,
+  email: string,
+): Promise<GitRepository> {
+  const res = await fetch(`${apiBaseUrl()}/team/workspace/git/repository/identity`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ workspace, name, email }),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'gitSetIdentity')
   return res.json()
 }
 
@@ -71,11 +105,11 @@ export async function gitBranches(workspace: string): Promise<GitBranch[]> {
   return res.json()
 }
 
-export async function gitCheckout(workspace: string, name: string): Promise<void> {
+export async function gitCheckout(workspace: string, name: string, track = false): Promise<void> {
   const res = await fetch(`${apiBaseUrl()}/team/workspace/git/branches/checkout`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ workspace, name }),
+    body: JSON.stringify({ workspace, name, track }),
   })
   if (!res.ok) await parseDetailOrThrow(res, 'gitCheckout')
 }
@@ -108,31 +142,51 @@ export async function gitMerge(workspace: string, branch: string): Promise<GitMe
   return res.json()
 }
 
-export async function gitFetch(workspace: string, remote?: string): Promise<GitJobOut> {
+export async function gitFetch(
+  workspace: string,
+  options?: { remote?: string; prune?: boolean },
+): Promise<GitJobOut> {
   const res = await fetch(`${apiBaseUrl()}/team/workspace/git/fetch`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ workspace, remote }),
+    body: JSON.stringify({ workspace, remote: options?.remote, prune: options?.prune }),
   })
   if (!res.ok) await parseDetailOrThrow(res, 'gitFetch')
   return res.json()
 }
 
-export async function gitPull(workspace: string, rebase?: boolean): Promise<GitJobOut> {
+export async function gitPull(
+  workspace: string,
+  options?: { remote?: string; branch?: string; rebase?: boolean },
+): Promise<GitJobOut> {
   const res = await fetch(`${apiBaseUrl()}/team/workspace/git/pull`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ workspace, rebase }),
+    body: JSON.stringify({ workspace, ...options }),
   })
   if (!res.ok) await parseDetailOrThrow(res, 'gitPull')
   return res.json()
 }
 
-export async function gitPush(workspace: string, forceWithLease?: boolean): Promise<GitJobOut> {
+export async function gitPush(
+  workspace: string,
+  options?: {
+    remote?: string
+    branch?: string
+    setUpstream?: boolean
+    forceWithLease?: boolean
+  },
+): Promise<GitJobOut> {
   const res = await fetch(`${apiBaseUrl()}/team/workspace/git/push`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ workspace, force_with_lease: forceWithLease }),
+    body: JSON.stringify({
+      workspace,
+      remote: options?.remote,
+      branch: options?.branch,
+      set_upstream: options?.setUpstream,
+      force_with_lease: options?.forceWithLease,
+    }),
   })
   if (!res.ok) await parseDetailOrThrow(res, 'gitPush')
   return res.json()
@@ -145,14 +199,91 @@ export async function gitJobs(workspace: string): Promise<GitJobOut | null> {
   return res.json()
 }
 
+export async function gitRemotes(workspace: string): Promise<GitRemote[]> {
+  const params = wsParam(workspace)
+  const res = await fetch(`${apiBaseUrl()}/team/workspace/git/remotes?${params}`)
+  if (!res.ok) await parseDetailOrThrow(res, 'gitRemotes')
+  return res.json()
+}
+
+export async function gitCreateRemote(workspace: string, name: string, url: string): Promise<void> {
+  const res = await fetch(`${apiBaseUrl()}/team/workspace/git/remotes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ workspace, name, url }),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'gitCreateRemote')
+}
+
+export async function gitUpdateRemote(workspace: string, name: string, url: string): Promise<void> {
+  const res = await fetch(`${apiBaseUrl()}/team/workspace/git/remotes`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ workspace, name, url }),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'gitUpdateRemote')
+}
+
+export async function gitDeleteRemote(workspace: string, name: string): Promise<void> {
+  const res = await fetch(`${apiBaseUrl()}/team/workspace/git/remotes`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ workspace, name }),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'gitDeleteRemote')
+}
+
+export async function gitTags(workspace: string): Promise<GitTag[]> {
+  const params = wsParam(workspace)
+  const res = await fetch(`${apiBaseUrl()}/team/workspace/git/tags?${params}`)
+  if (!res.ok) await parseDetailOrThrow(res, 'gitTags')
+  return res.json()
+}
+
+export async function gitCreateTag(
+  workspace: string,
+  name: string,
+  options?: { target?: string; message?: string },
+): Promise<void> {
+  const res = await fetch(`${apiBaseUrl()}/team/workspace/git/tags`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ workspace, name, ...options }),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'gitCreateTag')
+}
+
+export async function gitDeleteTag(workspace: string, name: string): Promise<void> {
+  const res = await fetch(`${apiBaseUrl()}/team/workspace/git/tags`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ workspace, name }),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'gitDeleteTag')
+}
+
+export async function gitPushTags(
+  workspace: string,
+  options?: { remote?: string; tag?: string },
+): Promise<GitJobOut> {
+  const res = await fetch(`${apiBaseUrl()}/team/workspace/git/tags/push`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ workspace, ...options }),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'gitPushTags')
+  return res.json()
+}
+
 export async function gitLog(
   workspace: string,
-  options?: { skip?: number; limit?: number; branch?: string },
+  options?: { skip?: number; limit?: number; branch?: string; allBranches?: boolean },
 ): Promise<GitLogResponse> {
   const params = wsParam(workspace)
   if (options?.skip != null) params.set('skip', String(options.skip))
   if (options?.limit != null) params.set('limit', String(options.limit))
   if (options?.branch) params.set('branch', options.branch)
+  if (options?.allBranches) params.set('all_branches', 'true')
   const res = await fetch(`${apiBaseUrl()}/team/workspace/git/log?${params}`)
   if (!res.ok) await parseDetailOrThrow(res, 'gitLog')
   return res.json()
@@ -227,6 +358,16 @@ export async function gitCherryPick(workspace: string, shas: string[]): Promise<
     body: JSON.stringify({ workspace, shas }),
   })
   if (!res.ok) await parseDetailOrThrow(res, 'gitCherryPick')
+  return res.json()
+}
+
+export async function gitRevert(workspace: string, sha: string): Promise<GitMergeResponse> {
+  const res = await fetch(`${apiBaseUrl()}/team/workspace/git/revert`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ workspace, sha }),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'gitRevert')
   return res.json()
 }
 

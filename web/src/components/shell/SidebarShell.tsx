@@ -27,7 +27,6 @@
 
 import {
   useCallback,
-  useState,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react'
@@ -59,16 +58,17 @@ export function SidebarShell({
   const { isMacOverlay } = usePlatform()
   const preset = useMotionPreset()
   const sidebarWidth = useUIStore((state) => state.sidebarWidth)
+  const isResizing = useUIStore((state) => state.sidebarResizing)
+  const setSidebarResizing = useUIStore((state) => state.setSidebarResizing)
   const setSidebarWidth = useUIStore((state) => state.setSidebarWidth)
   const resetSidebarWidth = useUIStore((state) => state.resetSidebarWidth)
-  const [isResizing, setIsResizing] = useState(false)
 
   const startResize = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     if (collapsed || event.pointerType === 'touch') return
     event.preventDefault()
     const startX = event.clientX
     const startWidth = sidebarWidth
-    setIsResizing(true)
+    setSidebarResizing(true)
 
     const handleMove = (moveEvent: PointerEvent) => {
       setSidebarWidth(startWidth + moveEvent.clientX - startX)
@@ -76,16 +76,18 @@ export function SidebarShell({
     const handleUp = () => {
       window.removeEventListener('pointermove', handleMove)
       window.removeEventListener('pointerup', handleUp)
+      window.removeEventListener('pointercancel', handleUp)
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
-      setIsResizing(false)
+      setSidebarResizing(false)
     }
 
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
     window.addEventListener('pointermove', handleMove)
     window.addEventListener('pointerup', handleUp, { once: true })
-  }, [collapsed, setSidebarWidth, sidebarWidth])
+    window.addEventListener('pointercancel', handleUp, { once: true })
+  }, [collapsed, setSidebarResizing, setSidebarWidth, sidebarWidth])
 
   // On macOS Tauri the rail widens to 70px (matching
   // --spacing-mac-traffic-inset) so the traffic-light buttons land fully
@@ -111,7 +113,7 @@ export function SidebarShell({
           onDoubleClick={resetSidebarWidth}
         />
       )}
-      <div className="flex h-full flex-col gap-1 overflow-hidden p-1">
+      <div className="flex h-full flex-col gap-0.5 overflow-hidden p-0.5">
         {collapsed ? rail : children}
       </div>
     </motion.aside>
@@ -133,7 +135,7 @@ export function SidebarCard({
   return (
     <div
       className={cn(
-        'flex min-h-0 flex-col overflow-hidden rounded-[10px] bg-(--bg-sidebar)/80 shadow-sm backdrop-blur-xl',
+        'flex min-h-0 flex-col overflow-hidden rounded-md bg-(--bg-sidebar)/80 backdrop-blur-xl',
         className,
       )}
     >
@@ -151,6 +153,23 @@ export function SidebarShellDivider({ className }: { className?: string }) {
 }
 
 /**
+ * Space occupied by the root-owned desktop mode navigation. Route sidebars
+ * render this inert slot instead of mounting their own copy of the switcher.
+ */
+export function SidebarModeSlot({ className }: { className?: string }) {
+  return <div aria-hidden="true" className={cn('h-10 shrink-0', className)} />
+}
+
+/** Collapsed-rail counterpart of SidebarModeSlot (3 × 32px + two gaps). */
+export function SidebarModeRailSlot({ className }: { className?: string }) {
+  return (
+    <div aria-hidden="true" className={cn('shrink-0', className)}>
+      <div className="h-[6.25rem]" />
+    </div>
+  )
+}
+
+/**
  * Fake search input that opens the command palette (Ctrl+P). Canonical
  * background is `bg-(--bg-page)` (the forge/aim variant).
  */
@@ -163,13 +182,13 @@ export function SidebarSearchTrigger({
     <button
       type="button"
       onClick={onClick}
-      className="focus-ring-control flex h-8 w-full items-center gap-2 rounded-md border border-(--color-border) bg-(--bg-page) px-2.5 text-left text-xs text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
+      className="focus-ring-control group flex h-9 w-full items-center gap-2 rounded-xl border border-transparent bg-(--bg-key)/40 px-2.5 text-left text-xs text-(--color-text-muted) shadow-[inset_0_0_0_1px_var(--color-border)] transition-[background-color,color,box-shadow] duration-(--motion-fast) hover:bg-(--bg-key)/70 hover:text-(--color-text-2) hover:shadow-[inset_0_0_0_1px_var(--color-border-strong)]"
       aria-label="Open command palette"
       title="Open command palette (Ctrl+P)"
     >
-      <Search size={13} aria-hidden="true" />
+      <Search size={13} className="text-(--color-text-subtle) transition-colors group-hover:text-(--color-text-muted)" aria-hidden="true" />
       <span className="flex-1">Search…</span>
-      <kbd className="font-mono text-xs text-(--color-text-subtle)">^P</kbd>
+      <kbd className="rounded-md bg-(--bg-card)/75 px-1.5 py-0.5 font-mono text-[10px] leading-none text-(--color-text-subtle) shadow-[inset_0_0_0_1px_var(--color-border)]">^P</kbd>
     </button>
   )
 }
@@ -224,7 +243,7 @@ export function SidebarFooter({
   }
 
   return (
-    <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-2 pb-safe">
+    <div className="flex shrink-0 items-center justify-between gap-2 px-2 py-1.5 pb-safe">
       <div className="flex items-center gap-1">
         <button
           type="button"

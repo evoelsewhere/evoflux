@@ -121,9 +121,9 @@ function AgentStatusCard({
         interactive && 'cursor-pointer hover:border-(--color-border-strong) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)',
         !interactive && 'cursor-default',
         isError
-          ? 'border-(--color-error)/30 bg-(--color-error)/5'
+          ? 'border-(--color-error)/35 bg-(--color-error)/5'
           : isWorking
-          ? 'border-(--color-accent)/25 bg-(--bg-card)'
+          ? 'border-(--color-accent)/30 bg-(--bg-card)'
           : 'border-(--color-border) bg-(--bg-card)',
       )}
       aria-label={`Focus agent ${name}`}
@@ -272,7 +272,7 @@ function CommsRow({ item }: { item: ActivityItem }) {
     <div
       className={cn(
         'grid items-baseline gap-x-2 px-4 py-2.5 hover:bg-(--bg-key)',
-        isHandoff && 'border-l-2 border-(--color-accent)/30',
+        isHandoff && 'border-l-2 border-(--color-accent)/35',
       )}
       style={{ gridTemplateColumns: 'auto auto auto 1fr auto' }}
     >

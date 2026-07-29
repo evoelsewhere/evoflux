@@ -98,7 +98,7 @@ export function ModeSelector({ mode, onModeChange, disabled }: ModeSelectorProps
         )}
       >
         <Shield size={12} aria-hidden="true" className="shrink-0" />
-        <span className="truncate">{current.label}</span>
+        <span className="hidden truncate sm:inline">{current.label}</span>
         <ChevronDown
           size={10}
           aria-hidden="true"

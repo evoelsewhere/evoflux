@@ -386,6 +386,20 @@ class AgentTeam:
         """Return whether a user turn is active or the lead is already running."""
         return self._has_active_turn or self.lead.state == "working"
 
+    def reserve_user_turn(self) -> None:
+        """Reserve the ingress slot before deferred turn preparation starts.
+
+        The HTTP chat route may return as soon as preparation has been scheduled.
+        Raising the flag synchronously keeps a second quick send on the queued
+        path instead of letting it race the still-pending snapshot/persist work.
+        """
+        self._has_active_turn = True
+
+    def release_user_turn_reservation(self) -> None:
+        """Release a deferred ingress reservation that failed before activation."""
+        if self.lead.state != "working":
+            self._has_active_turn = False
+
     def set_inline_busy(self, busy: bool) -> None:
         """Workflow-runner accessor (plan v5 §6.1): while the runner executes
         inline nodes (tool/gate/switch/...) there is no team turn, but user
@@ -1370,6 +1384,46 @@ class AgentTeam:
     # User message entry point
     # ------------------------------------------------------------------
 
+    async def prepare_user_session(
+        self,
+        *,
+        content: str,
+        session_id: str,
+        mode: str | None = None,
+        workspace: str | None = None,
+    ) -> None:
+        """Ensure a user session exists before deferred ingress is acknowledged.
+
+        This is intentionally the lightweight, durable prefix of
+        :meth:`handle_user_message`. Creating the ChatSession before HTTP 202
+        means an immediate second send can safely persist as a queued child row
+        while snapshot/persistence for the first message continues in the
+        background.
+        """
+        if mode is not None:
+            self.mode = mode
+        if workspace is not None:
+            self.workspace = workspace
+
+        is_new_session = self.lead.session_id != session_id
+        if not is_new_session:
+            return
+
+        self.lead.session_id = session_id
+        await self.lead._ensure_db_session(
+            title=content[:100] if content else None,
+            mode=self.mode,
+            workspace=self.workspace,
+        )
+
+        # Reset blueprint counters so a fresh chat starts at #1 for each
+        # blueprint. Reconciliation against existing DB rows is lazy.
+        for bp in self.blueprints.values():
+            bp.counter_reconciled_for = None
+
+        await self._restore_or_drop_members_for_lead(session_id)
+        await self.refresh_delegations(dispatch=False)
+
     async def handle_user_message(
         self,
         content: str,
@@ -1400,40 +1454,12 @@ class AgentTeam:
         """
         # Update the lead's active session
 
-        if mode is not None:
-            self.mode = mode
-        if workspace is not None:
-            self.workspace = workspace
-
-        is_new_session = self.lead.session_id != session_id
-        if is_new_session:
-            self.lead.session_id = session_id
-            await self.lead._ensure_db_session(
-                title=content[:100] if content else None,
-                mode=self.mode,
-                workspace=self.workspace,
-            )
-
-            # Reset blueprint counters so a fresh chat starts at #1 for each
-            # blueprint.  (Reconciliation against existing DB rows is done
-            # lazily on the first spawn for the new lead session.)
-            for bp in self.blueprints.values():
-                bp.counter_reconciled_for = None
-
-            # Restore previously-spawned-and-not-dismissed instances by
-            # rehydrating their session ids from DB.  Any instance that was
-            # alive (registered) when we entered this branch keeps its
-            # mailbox registration; we only update its DB session pointer
-            # so its view of history matches whatever child rows exist
-            # for the current lead session.
-            #
-            # This preserves the existing "restart restores members"
-            # behaviour for instances that had been spawned earlier in the
-            # process — but only for those that actually had child rows
-            # under THIS lead session.  Anything else is dropped from the
-            # roster (the lead can re-spawn at will).
-            await self._restore_or_drop_members_for_lead(session_id)
-            await self.refresh_delegations(dispatch=False)
+        await self.prepare_user_session(
+            content=content,
+            session_id=session_id,
+            mode=mode,
+            workspace=workspace,
+        )
 
         if interrupt:
             self._loop_states.pop(session_id, None)
@@ -1574,6 +1600,9 @@ class AgentTeam:
             # SQLite write transaction open while it does.
             workspace_path = session_workspace_dir(str(lead_uuid), self.workspace)
             snapshot_hash = await snapshot_service.track(str(lead_uuid), workspace_path)
+            current_task = asyncio.current_task()
+            if current_task is not None and current_task.cancelling():
+                raise asyncio.CancelledError
             async with db_factory() as db:
                 # Heal any tool_calls left orphaned by a previous crash /
                 # restart *before* persisting the new user message so the
@@ -1655,7 +1684,10 @@ class AgentTeam:
         # delivering the message to the lead. This guarantees the state key
         # exists by the time the client's GET /team/{sid}/stream arrives.
         try:
-            await stream_store.init_turn(session_id)
+            # Deferred HTTP dispatch initialises the turn before returning 202.
+            # Preserve any subscriber that connected while snapshot/persistence
+            # was still running instead of terminating that fresh SSE stream.
+            await stream_store.init_turn(session_id, keep_subscribers=True)
             from app.services import turn_changes as turn_changes_svc
 
             turn_changes_svc.begin_turn(session_id)

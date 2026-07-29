@@ -16,7 +16,7 @@ import {
   RefreshCw,
   Search,
 } from "lucide-react";
-import { ModeSwitchTabs, ModeSwitchRail } from "@/components/ModeSwitchTabs";
+import { ModeSwitchTabs } from "@/components/ModeSwitchTabs";
 import { isToday, isYesterday } from "date-fns";
 import {
   useTeamSessionsQuery,
@@ -35,6 +35,8 @@ import {
   SidebarShellDivider,
   SidebarSearchTrigger,
   SidebarFooter,
+  SidebarModeSlot,
+  SidebarModeRailSlot,
 } from "@/components/shell/SidebarShell";
 import { SessionRow } from "@/components/shell/SessionRow";
 import {
@@ -346,8 +348,7 @@ export function Sidebar({
   const rail = (
     <SidebarCard className="h-full">
       <div className="shrink-0 flex flex-col items-center px-1 py-2">
-        <ModeSwitchRail
-          active={mode}
+        <SidebarModeRailSlot
           className={`pb-1 ${isMacOverlay ? 'pt-10' : ''}`}
         />
         <nav
@@ -420,15 +421,15 @@ export function Sidebar({
       <SidebarCard className="h-full">
         {/* ─── Top section: search + nav ─── */}
         <div className="shrink-0">
-          <div className={`px-2 ${isMacOverlay ? 'pt-10' : 'pt-2'}`}>
-            <ModeSwitchTabs active={mode} />
+          <div className={`px-1.5 ${isMacOverlay ? 'pt-10' : 'pt-1.5'}`}>
+            <SidebarModeSlot />
           </div>
           {onCommandPalette && (
-            <div className="px-2 pt-2">
+            <div className="px-1.5 pt-1.5">
               <SidebarSearchTrigger onClick={onCommandPalette} />
             </div>
           )}
-          <nav aria-label="Primary" className="space-y-0.5 px-2 py-2">
+          <nav aria-label="Primary" className="space-y-0.5 px-1.5 py-1.5">
             <SidebarItem
               Icon={Plus}
               label="New Chat"
@@ -455,7 +456,7 @@ export function Sidebar({
             exit={{ opacity: 0 }}
             className="flex min-h-0 flex-1 flex-col overflow-hidden"
           >
-            <div className="flex items-center justify-between px-3 pb-1 pt-2.5">
+            <div className="flex items-center justify-between px-2.5 pb-1 pt-2">
               <span className="text-xs font-medium text-(--color-text-subtle)">
                 Recent
               </span>
@@ -470,7 +471,7 @@ export function Sidebar({
             </div>
             <div
               ref={sessionListRef}
-              className="relative flex-1 overflow-y-auto px-2 pb-2"
+              className="relative flex-1 overflow-y-auto px-1.5 pb-1.5"
               onTouchStart={handleSessionListTouchStart}
               onTouchMove={handleSessionListTouchMove}
               onTouchEnd={handleSessionListTouchEnd}
@@ -502,18 +503,18 @@ export function Sidebar({
     >
       {/* Search trigger */}
       {onCommandPalette && (
-        <div className="px-3 pt-3">
+        <div className="px-2.5 pt-2">
           <SidebarSearchTrigger onClick={onCommandPalette} />
         </div>
       )}
 
       {/* Mode switch */}
-      <div className="px-3 pt-2">
+      <div className="px-2.5 pt-1.5">
         <ModeSwitchTabs active={mode} onNavigate={onMobileClose} />
       </div>
 
       {/* Nav */}
-      <nav aria-label="Primary" className="space-y-0.5 px-2 pb-2 pt-2">
+      <nav aria-label="Primary" className="space-y-0.5 px-1.5 pb-1.5 pt-1.5">
         <SidebarItem
           Icon={Plus}
           label="New Chat"
@@ -537,7 +538,7 @@ export function Sidebar({
           exit={{ opacity: 0 }}
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
         >
-          <div className="flex items-center justify-between px-3 pb-1 pt-2">
+          <div className="flex items-center justify-between px-2.5 pb-1 pt-1.5">
             <span className="font-mono text-xs font-semibold uppercase tracking-[0.14em] text-(--color-text-muted)">
               Recent
             </span>
@@ -552,7 +553,7 @@ export function Sidebar({
           </div>
           <div
             ref={sessionListRef}
-            className="relative flex-1 overflow-y-auto px-2 pb-2"
+            className="relative flex-1 overflow-y-auto px-1.5 pb-1.5"
             onTouchStart={handleSessionListTouchStart}
             onTouchMove={handleSessionListTouchMove}
             onTouchEnd={handleSessionListTouchEnd}

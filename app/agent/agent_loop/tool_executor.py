@@ -23,6 +23,7 @@ from loguru import logger
 
 from app.agent.errors import ToolArgumentError, ToolNotFoundError
 from app.agent.schemas.chat import ContentBlock, TextBlock, ToolResult
+from app.agent.tool_media import materialize_tool_attachments
 
 if TYPE_CHECKING:
     from app.agent.schemas.chat import ToolCall
@@ -188,6 +189,19 @@ def make_tool_executor(
                     "_multimodal_tool_parts", {}
                 )
                 pending[tc.id] = result_raw.parts
+
+                session_id = str(s.metadata.get("session_id") or "")
+                if session_id:
+                    attachments = await materialize_tool_attachments(
+                        result_raw.parts,
+                        session_id=session_id,
+                        tool_name=tc.function.name,
+                    )
+                    if attachments:
+                        pending_attachments: dict[str, list[dict[str, str]]] = (
+                            s.metadata.setdefault("_tool_attachments", {})
+                        )
+                        pending_attachments[tc.id] = attachments
 
                 if result_raw.mcp_app:
                     mcp_apps: dict[str, dict[str, Any]] = s.metadata.setdefault(

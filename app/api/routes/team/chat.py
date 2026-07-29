@@ -469,7 +469,9 @@ async def team_chat(
                         _,
                         queued_attachment_metas,
                     ) = await agent_service.validate_and_persist_attachments(
-                        team_obj, mention_attachments, session_id,
+                        team_obj,
+                        mention_attachments,
+                        session_id,
                         model_override=model,
                     )
                 except AttachmentError as exc:
@@ -534,6 +536,12 @@ async def team_chat(
                 thinking_level=thinking_level,
                 thinking_level_provided=thinking_level_provided,
                 service_tier=fast_mode_service_tier,
+                # A normal user turn can acknowledge immediately after
+                # validation/stream initialisation. Snapshot, persistence and
+                # agent activation continue in-order in the background.
+                # Loop controls stay synchronous because they mutate a live
+                # turn rather than starting a new one.
+                defer=loop_command is None,
             )
         except AttachmentError as exc:
             raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
@@ -1230,9 +1238,7 @@ async def set_session_permission_mode(
     # starting a team here just to set an attribute wastes a full cold boot.
     team_obj = team_manager.current_team_for_session(sid)
     if team_obj is None and session_mode in ("coding", "aim") and session_workspace:
-        team_obj = team_manager.current_coding_team_for_session(
-            session_workspace, sid
-        )
+        team_obj = team_manager.current_coding_team_for_session(session_workspace, sid)
     if team_obj is not None:
         team_obj.permission_mode = body.mode
 
@@ -1287,7 +1293,10 @@ async def team_history(
     # (and, via the global team lock + sync file IO, every other request)
     # for the whole cold-start. A team that isn't running can't have an
     # active loop, so a cache miss is simply "no loop".
-    if history.lead_session.mode in ("coding", "aim") and history.lead_session.workspace:
+    if (
+        history.lead_session.mode in ("coding", "aim")
+        and history.lead_session.workspace
+    ):
         loop_team = team_manager.current_coding_team_for_session(
             history.lead_session.workspace, str(history.lead_session.id)
         )

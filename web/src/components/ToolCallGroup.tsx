@@ -11,8 +11,8 @@ import {
   FolderOpen, GitBranch, Database, ChevronDown, ChevronUp,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { ToolCall } from './ToolCall'
-import type { ContentBlock } from '@/api/types'
+import { ToolAttachments, ToolCall } from './ToolCall'
+import type { ContentBlock, MessageAttachment } from '@/api/types'
 
 // ── Grouped block type ────────────────────────────────────────────────────────
 
@@ -136,6 +136,11 @@ export function ToolCallGroupCard({ group, className }: ToolCallGroupProps) {
   const verb = getToolVerb(group.toolName)
   const resource = getResourceLabel(group.toolName, group.blocks.length)
   const allDone = group.blocks.every((b) => b.toolDone)
+  const groupedAttachments = group.blocks.flatMap(
+    (block) =>
+      (block.extra as { attachments?: MessageAttachment[] } | undefined)
+        ?.attachments ?? [],
+  )
 
   return (
     <div className={cn('rounded-md border overflow-hidden', className)}>
@@ -163,6 +168,12 @@ export function ToolCallGroupCard({ group, className }: ToolCallGroupProps) {
         )}
       </button>
 
+      {!expanded && groupedAttachments.length > 0 && (
+        <div className="px-3 pb-2">
+          <ToolAttachments attachments={groupedAttachments} limit={4} />
+        </div>
+      )}
+
       {expanded && (
         <div className="divide-y">
           {group.blocks.map((block) => (
@@ -175,6 +186,10 @@ export function ToolCallGroupCard({ group, className }: ToolCallGroupProps) {
                 result={block.toolResult}
                 durationMs={block.durationMs}
                 startedAt={block.startedAt}
+                attachments={
+                  (block.extra as { attachments?: MessageAttachment[] } | undefined)
+                    ?.attachments
+                }
               />
             </div>
           ))}

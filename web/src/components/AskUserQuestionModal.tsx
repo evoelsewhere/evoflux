@@ -63,7 +63,7 @@ export function AskUserQuestionModal() {
         transition={preset.spring}
         className="mx-auto w-full max-w-3xl px-4 pb-2"
       >
-        <div className="rounded-xl border border-(--color-primary)/30 bg-(--bg-page) shadow-sm overflow-hidden">
+        <div className="rounded-xl border border-(--color-primary)/35 bg-(--bg-page) shadow-sm overflow-hidden">
           {/* Top bar */}
           <div className="flex items-center gap-2 border-b border-(--color-border) bg-(--color-primary)/5 px-4 py-2.5">
             <HelpCircle size={14} className="shrink-0 text-(--color-primary)" aria-hidden="true" />

@@ -168,7 +168,7 @@ export function SideChatPanel({
         {error && (
           <div
             role="alert"
-            className="flex items-start gap-2 border-t border-(--color-error)/30 bg-(--color-error-subtle) px-3 py-2 text-xs text-(--color-error)"
+            className="flex items-start gap-2 border-t border-(--color-error)/35 bg-(--color-error-subtle) px-3 py-2 text-xs text-(--color-error)"
           >
             <AlertCircle size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
             <span className="min-w-0 break-words">{error}</span>

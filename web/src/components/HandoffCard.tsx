@@ -79,7 +79,7 @@ export function HandoffCard({ artifact, fromAgent, compact = false }: HandoffCar
           'relative rounded-lg rounded-bl-sm',
           isPartial
             ? 'border border-dashed border-(--color-warning)/50 bg-(--color-surface)'
-            : 'border border-(--color-accent)/30 bg-(--color-surface)',
+            : 'border border-(--color-accent)/35 bg-(--color-surface)',
           'leading-relaxed text-(--color-text) shadow-sm',
         ].join(' ')}
       >

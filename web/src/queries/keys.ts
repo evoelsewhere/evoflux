@@ -125,10 +125,16 @@ export const queryKeys = {
         ? ['git', 'reviews', scope] as const
         : ['git', 'reviews'] as const,
     connections: () => ['git', 'review-connections'] as const,
+    repository: (ws: string) => ['git', ws, 'repository'] as const,
     changes: (ws: string) => ['git', ws, 'changes'] as const,
     branches: (ws: string) => ['git', ws, 'branches'] as const,
-    log: (ws: string, page: number) => ['git', ws, 'log', page] as const,
-    logFiles: (ws: string, sha: string) => ['git', ws, 'log', sha, 'files'] as const,
+    remotes: (ws: string) => ['git', ws, 'remotes'] as const,
+    tags: (ws: string) => ['git', ws, 'tags'] as const,
+    log: (ws: string, scope?: string | number) =>
+      typeof scope === 'string'
+        ? ['git', ws, 'log', scope] as const
+        : ['git', ws, 'log'] as const,
+    logFiles: (ws: string, sha: string) => ['git', ws, 'log-files', sha] as const,
     stashes: (ws: string) => ['git', ws, 'stashes'] as const,
     jobs: (ws: string) => ['git', ws, 'jobs'] as const,
     conflicts: (ws: string) => ['git', ws, 'conflicts'] as const,

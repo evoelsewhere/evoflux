@@ -27,7 +27,7 @@ import {
   Search,
   Trash2,
 } from 'lucide-react'
-import { ModeSwitchTabs, ModeSwitchRail } from '@/components/ModeSwitchTabs'
+import { ModeSwitchTabs } from '@/components/ModeSwitchTabs'
 import { ListEnter } from '@/components/motion'
 import {
   SidebarShell,
@@ -35,6 +35,8 @@ import {
   SidebarShellDivider,
   SidebarSearchTrigger,
   SidebarFooter,
+  SidebarModeSlot,
+  SidebarModeRailSlot,
 } from '@/components/shell/SidebarShell'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
@@ -117,7 +119,7 @@ export function AimSidebar({
       <SidebarCard
         className={`w-full shrink-0 items-center gap-0.5 px-1 pb-2 ${isMacOverlay ? 'pt-10' : 'pt-2'}`}
       >
-        <ModeSwitchRail active="aim" />
+        <SidebarModeRailSlot />
         {onCommandPalette && (
           <button
             type="button"
@@ -148,7 +150,11 @@ export function AimSidebar({
     <SidebarCard className="h-full">
         {/* Mode switch — shared tab strip, same as forge/coding sidebars */}
         <div className={`shrink-0 px-2 ${isMacOverlay ? 'pt-10' : 'pt-2'}`}>
-          <ModeSwitchTabs active="aim" onNavigate={onMobileClose} />
+          {mobile ? (
+            <ModeSwitchTabs active="aim" onNavigate={onMobileClose} />
+          ) : (
+            <SidebarModeSlot />
+          )}
         </div>
 
         {/* Search trigger — opens the command palette (Ctrl+P), same

@@ -338,7 +338,7 @@ export function AppBackendDialog({ open, onOpenChange }: AppBackendDialogProps) 
           </p>
 
           {error ? (
-            <div className="rounded-md border border-(--color-error)/40 bg-(--color-error)/10 px-3 py-2 text-xs text-(--color-error)" role="alert">
+            <div className="rounded-md border border-(--color-error)/50 bg-(--color-error)/10 px-3 py-2 text-xs text-(--color-error)" role="alert">
               {error}
             </div>
           ) : null}

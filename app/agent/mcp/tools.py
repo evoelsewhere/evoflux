@@ -19,7 +19,7 @@ from loguru import logger
 from pydantic import AnyUrl, BaseModel
 
 from app.agent.errors import ToolExecutionError
-from app.agent.schemas.chat import TextBlock, ToolResult
+from app.agent.schemas.chat import ContentBlock, ImageDataBlock, TextBlock, ToolResult
 from app.agent.tools.registry import Tool
 
 if TYPE_CHECKING:
@@ -154,6 +154,8 @@ class MCPTool(Tool):
             )
 
         text_summary = _extract_text(result.content)
+        content_parts = _extract_content_parts(result.content)
+        has_image = any(isinstance(part, ImageDataBlock) for part in content_parts)
 
         mcp_app_meta = _get_ui_meta(self._mcp_tool)
         resource_uri = mcp_app_meta.get("resourceUri")
@@ -169,7 +171,7 @@ class MCPTool(Tool):
                             session, resource_uri
                         )
                     return ToolResult(
-                        parts=[TextBlock(text=text_summary)],
+                        parts=content_parts,
                         mcp_app={
                             "server": self._server_name,
                             "tool": self._remote_name,
@@ -192,6 +194,8 @@ class MCPTool(Tool):
                     exc,
                 )
 
+        if has_image:
+            return ToolResult(parts=content_parts)
         return text_summary
 
 
@@ -300,6 +304,51 @@ def _extract_text(content: Any) -> str:
         else:
             parts.append(str(block))
     return "\n".join(parts)
+
+
+def _extract_content_parts(content: Any) -> list[ContentBlock]:
+    """Convert MCP text/image blocks to the agent's multimodal part schema."""
+    if not isinstance(content, list):
+        return [TextBlock(text=str(content))] if content else []
+
+    parts: list[ContentBlock] = []
+    for block in content:
+        block_type = getattr(block, "type", None)
+        if block_type == "text":
+            text = getattr(block, "text", "") or ""
+            if text:
+                parts.append(TextBlock(text=text))
+            continue
+
+        if block_type == "image":
+            data = getattr(block, "data", None)
+            if isinstance(data, str) and data:
+                parts.append(
+                    ImageDataBlock(
+                        data=data,
+                        media_type=getattr(block, "mimeType", None) or "image/png",
+                    )
+                )
+            continue
+
+        if block_type == "resource":
+            resource = getattr(block, "resource", None)
+            blob = getattr(resource, "blob", None)
+            media_type = getattr(resource, "mimeType", None)
+            if (
+                isinstance(blob, str)
+                and blob
+                and isinstance(media_type, str)
+                and media_type.startswith(("image/", "application/pdf"))
+            ):
+                parts.append(ImageDataBlock(data=blob, media_type=media_type))
+                continue
+            uri = getattr(resource, "uri", "?")
+            parts.append(TextBlock(text=f"[resource: {uri}]"))
+            continue
+
+        parts.append(TextBlock(text=str(block)))
+    return parts
 
 
 # ── Type alias for the session-resolution callback ──────────────────────────

@@ -215,6 +215,7 @@ async def push_event(session_id: str, envelope: StreamEnvelope) -> None:
                 data.get("tool_call_id"),
                 data.get("name", ""),
                 data.get("result"),
+                data.get("metadata"),
             )
 
         elif event_type == "usage":
@@ -553,6 +554,7 @@ async def attach(session_id: str) -> AsyncGenerator[dict[str, str], None]:
                             tool_call_id=tc.get("tool_call_id"),
                             name=tc["name"],
                             result=tc.get("result"),
+                            metadata=tc.get("metadata") or {},
                         )
                     ).to_wire()
 

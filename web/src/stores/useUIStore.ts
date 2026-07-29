@@ -18,7 +18,6 @@ import { STORAGE_KEYS } from '@/lib/storage-keys'
 const SIDEBAR_COLLAPSED_KEY = STORAGE_KEYS.sidebar.collapsed
 
 export type WorkbenchTool =
-  | 'review'
   | 'terminal'
   | 'browser'
   | 'files'
@@ -33,6 +32,7 @@ export interface WorkbenchTab {
 }
 
 export type PullRequestsScope = 'all' | 'session'
+export type GitWorkspaceView = 'changes' | 'reviews'
 
 interface WorkbenchState {
   workbenchTabs: WorkbenchTab[]
@@ -40,6 +40,7 @@ interface WorkbenchState {
   workbenchOpen: boolean
   workbenchMaximized: boolean
   pullRequestsScope: PullRequestsScope
+  gitWorkspaceView: GitWorkspaceView
 }
 
 function toggleTool(state: WorkbenchState, tool: WorkbenchTool): void {
@@ -137,7 +138,9 @@ interface UIStore {
   workbenchOpen: boolean
   workbenchMaximized: boolean
   pullRequestsScope: PullRequestsScope
+  gitWorkspaceView: GitWorkspaceView
   sidebarCollapsed: boolean
+  sidebarResizing: boolean
   sidebarWidth: number
   settingsOpen: boolean
   settingsPath: string
@@ -160,6 +163,8 @@ interface UIStore {
   toggleWiki: () => void
   toggleScheduler: () => void
   togglePullRequests: () => void
+  openGitChanges: () => void
+  setGitWorkspaceView: (view: GitWorkspaceView) => void
   toggleBrowser: () => void
   toggleTerminal: () => void
   closeWiki: () => void
@@ -168,6 +173,7 @@ interface UIStore {
   closeTerminal: () => void
   toggleSidebarCollapsed: () => void
   setSidebarCollapsed: (collapsed: boolean) => void
+  setSidebarResizing: (resizing: boolean) => void
   setSidebarWidth: (width: number) => void
   resetSidebarWidth: () => void
   openSettings: (path?: string, search?: Record<string, string>) => void
@@ -184,8 +190,12 @@ export const useUIStore = create<UIStore>()(
     workbenchOpen: false,
     workbenchMaximized: false,
     pullRequestsScope: 'session',
+    gitWorkspaceView: 'changes',
     openWorkbenchTool: (tool) => set((state) => {
-      if (tool === 'pull-requests') state.pullRequestsScope = 'session'
+      if (tool === 'pull-requests') {
+        state.pullRequestsScope = 'session'
+        state.gitWorkspaceView = 'reviews'
+      }
       if (!state.workbenchTabs.some((tab) => tab.tool === tool)) {
         state.workbenchTabs.push({ id: tool, tool })
       }
@@ -193,12 +203,14 @@ export const useUIStore = create<UIStore>()(
       state.workbenchOpen = true
     }),
     toggleWorkbenchTool: (tool) => set((state) => {
-      if (tool === 'pull-requests') state.pullRequestsScope = 'session'
+      if (tool === 'pull-requests') {
+        state.pullRequestsScope = 'session'
+        state.gitWorkspaceView = 'reviews'
+      }
       toggleTool(state, tool)
     }),
     selectWorkbenchTool: (tool) => set((state) => {
       if (state.workbenchTabs.some((tab) => tab.tool === tool)) {
-        if (tool === 'pull-requests') state.pullRequestsScope = 'session'
         state.activeWorkbenchTool = tool
         state.workbenchOpen = true
       }
@@ -251,8 +263,21 @@ export const useUIStore = create<UIStore>()(
         && state.activeWorkbenchTool === 'pull-requests'
         && state.workbenchOpen
       state.pullRequestsScope = 'all'
+      state.gitWorkspaceView = 'reviews'
       if (switchScopeOnly) return
       toggleTool(state, 'pull-requests')
+    }),
+    openGitChanges: () => set((state) => {
+      state.pullRequestsScope = 'session'
+      state.gitWorkspaceView = 'changes'
+      if (!state.workbenchTabs.some((tab) => tab.tool === 'pull-requests')) {
+        state.workbenchTabs.push({ id: 'pull-requests', tool: 'pull-requests' })
+      }
+      state.activeWorkbenchTool = 'pull-requests'
+      state.workbenchOpen = true
+    }),
+    setGitWorkspaceView: (view) => set((state) => {
+      state.gitWorkspaceView = view
     }),
     toggleBrowser: () => set((state) => { toggleTool(state, 'browser') }),
     toggleTerminal: () => set((state) => { toggleTool(state, 'terminal') }),
@@ -261,6 +286,7 @@ export const useUIStore = create<UIStore>()(
     closeBrowser: () => set((state) => { closeTool(state, 'browser') }),
     closeTerminal: () => set((state) => { closeTool(state, 'terminal') }),
     sidebarCollapsed: loadSidebarCollapsed(),
+    sidebarResizing: false,
     sidebarWidth: loadSidebarWidth(),
     toggleSidebarCollapsed: () => set((state) => {
       state.sidebarCollapsed = !state.sidebarCollapsed
@@ -269,6 +295,9 @@ export const useUIStore = create<UIStore>()(
     setSidebarCollapsed: (collapsed) => set((state) => {
       state.sidebarCollapsed = collapsed
       persistSidebarCollapsed(collapsed)
+    }),
+    setSidebarResizing: (resizing) => set((state) => {
+      state.sidebarResizing = resizing
     }),
     setSidebarWidth: (width) => set((state) => {
       const nextWidth = clampSidebarWidth(width)

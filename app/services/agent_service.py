@@ -35,6 +35,18 @@ def _uploads_dir(session_id: str) -> Path:
     return session_uploads_dir(session_id)
 
 
+_background_dispatch_tasks: dict[str, asyncio.Task[None]] = {}
+
+
+def cancel_deferred_user_message(session_id: str) -> bool:
+    """Cancel pre-activation work for *session_id*, if it is still running."""
+    task = _background_dispatch_tasks.get(session_id)
+    if task is None or task.done():
+        return False
+    task.cancel()
+    return True
+
+
 if TYPE_CHECKING:
     from app.agent.mode.team.team import AgentTeam
 
@@ -455,6 +467,7 @@ async def dispatch_user_message(
     service_tier: str | None = None,
     persist_message: bool = True,
     existing_message_id: uuid.UUID | None = None,
+    defer: bool = False,
 ) -> tuple[str, int]:
     """Send a user message through the team.
 
@@ -464,6 +477,10 @@ async def dispatch_user_message(
     2. Validate attachments against the lead's capabilities + size caps.
     3. Persist attachments to the app-managed session uploads directory.
     4. Initialise stream store and deliver to the team.
+
+    When ``defer=True``, the lightweight session row and stream state are
+    created before returning, while snapshot/persistence/activation continue
+    in a tracked background task. Other callers retain synchronous delivery.
 
     Returns ``(session_id, n_attachments)``.
 
@@ -484,22 +501,83 @@ async def dispatch_user_message(
     else:
         metas = []
 
-    await team.handle_user_message(
-        content=content,
-        session_id=sid,
-        interrupt=False,
-        attachment_metas=metas if metas else None,
-        message_extra=message_extra,
-        mode=mode,
-        workspace=workspace,
-        model=model,
-        model_provided=model_provided or model is not None,
-        thinking_level=thinking_level,
-        thinking_level_provided=thinking_level_provided or thinking_level is not None,
-        service_tier=service_tier,
-        persist_message=persist_message,
-        existing_message_id=existing_message_id,
-    )
+    async def _deliver() -> None:
+        await team.handle_user_message(
+            content=content,
+            session_id=sid,
+            interrupt=False,
+            attachment_metas=metas if metas else None,
+            message_extra=message_extra,
+            mode=mode,
+            workspace=workspace,
+            model=model,
+            model_provided=model_provided or model is not None,
+            thinking_level=thinking_level,
+            thinking_level_provided=(
+                thinking_level_provided or thinking_level is not None
+            ),
+            service_tier=service_tier,
+            persist_message=persist_message,
+            existing_message_id=existing_message_id,
+        )
+
+    if defer:
+        # Materialise the lightweight ChatSession prefix before returning 202.
+        # Without this, an immediate follow-up could choose the queued path
+        # while its parent session row was still being created in the
+        # background.
+        await team.prepare_user_session(
+            content=content,
+            session_id=sid,
+            mode=mode,
+            workspace=workspace,
+        )
+        # Create the replayable stream state before the HTTP route returns.
+        # The background handler will reset it with keep_subscribers=True once
+        # snapshot/persistence is complete, so a fast client cannot miss the
+        # first provider chunk or have its new SSE connection terminated.
+        await stream_store.init_turn(sid)
+        team.reserve_user_turn()
+
+        async def _run_deferred_dispatch() -> None:
+            try:
+                await _deliver()
+            except asyncio.CancelledError:
+                team.release_user_turn_reservation()
+                raise
+            except Exception as exc:
+                team.release_user_turn_reservation()
+                logger.opt(exception=True).error(
+                    "agent_service_deferred_failed session_id={} type={} error={}",
+                    sid,
+                    type(exc).__name__,
+                    exc,
+                )
+                await stream_store.push_event(
+                    sid,
+                    StreamEnvelope.from_event(
+                        ErrorEvent(message=f"Failed to prepare message: {exc}")
+                    ),
+                )
+                await stream_store.push_event(
+                    sid, StreamEnvelope.from_event(DoneEvent())
+                )
+                await stream_store.mark_done(sid)
+
+        task = asyncio.create_task(
+            _run_deferred_dispatch(),
+            name=f"user_message_ingress:{sid}",
+        )
+        _background_dispatch_tasks[sid] = task
+
+        def _forget(completed: asyncio.Task[None]) -> None:
+            if _background_dispatch_tasks.get(sid) is completed:
+                _background_dispatch_tasks.pop(sid, None)
+
+        task.add_done_callback(_forget)
+    else:
+        await _deliver()
+
     logger.info(
         "agent_service_dispatched session_id={} attachments={}",
         sid,
@@ -565,6 +643,8 @@ async def interrupt_team(team: "AgentTeam", session_id: str | None) -> list[str]
 
     names: list[str] = []
     effective_session_id = session_id or getattr(team.lead, "session_id", None)
+    if effective_session_id:
+        cancel_deferred_user_message(effective_session_id)
 
     live_members = getattr(team, "members", {})
     if isinstance(live_members, dict):

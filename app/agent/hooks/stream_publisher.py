@@ -296,6 +296,9 @@ class StreamPublisherHook(BaseAgentHook):
         mcp_app = state.metadata.get("_mcp_apps", {}).get(tool_call.id)
         if mcp_app:
             event_metadata["mcp_app"] = mcp_app
+        attachments = state.metadata.get("_tool_attachments", {}).get(tool_call.id)
+        if attachments:
+            event_metadata["attachments"] = attachments
         end_tc_id = self._resolver.resolve_end(tool_call.id)
         await self._push(
             ToolEndEvent(

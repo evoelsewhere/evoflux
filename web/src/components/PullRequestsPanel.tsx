@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ExternalLink,
   FileDiff,
+  GitBranch,
   GitCommitHorizontal,
   GitMerge,
   GitPullRequest,
@@ -21,6 +22,7 @@ import {
   Trash2,
   Users,
   XCircle,
+  Copy,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -44,6 +46,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from '@/components/ui/avatar'
 import { Input } from '@/components/ui/input'
 import {
   NativeSelect,
@@ -70,6 +77,7 @@ import { useTeamSessionsQuery } from '@/queries/useSessionsQuery'
 import { formatRelativeDate } from '@/utils/format'
 import { MarkdownBlock } from '@/utils/markdown'
 import { cn } from '@/lib/utils'
+import { GitActionSurface, type GitAction } from '@/components/git/GitActionMenu'
 import type { PullRequestsScope } from '@/stores/useUIStore'
 
 type ReviewFilter = 'all' | 'ready' | 'draft'
@@ -154,6 +162,52 @@ function StatusPill({ label, value }: { label?: string; value: string }) {
       {tone === 'warning' && <AlertCircle size={10} aria-hidden="true" />}
       {label && <span className="text-current/70">{label}</span>}
       {humanizeStatus(value)}
+    </span>
+  )
+}
+
+function authorInitials(author: string | null): string {
+  if (!author) return '?'
+  const parts = author.trim().split(/[\s._-]+/).filter(Boolean)
+  if (parts.length === 0) return '?'
+  return parts.slice(0, 2).map((part) => part[0]).join('').toUpperCase()
+}
+
+function ReviewAuthor({
+  author,
+  avatarUrl,
+  compact = false,
+}: {
+  author: string | null
+  avatarUrl: string | null
+  compact?: boolean
+}) {
+  return (
+    <span
+      className="inline-flex min-w-0 items-center gap-1.5"
+      title={author ?? 'Unknown author'}
+    >
+      <Avatar
+        size="sm"
+        className={cn(
+          'ring-1 ring-(--color-border)',
+          compact ? 'size-4' : 'size-5',
+        )}
+      >
+        {avatarUrl && (
+          <AvatarImage
+            src={avatarUrl}
+            alt=""
+            referrerPolicy="no-referrer"
+          />
+        )}
+        <AvatarFallback
+          className={compact ? 'text-[8px] font-semibold' : 'text-[9px] font-semibold'}
+        >
+          {authorInitials(author)}
+        </AvatarFallback>
+      </Avatar>
+      <span className="max-w-32 truncate">{author ?? 'Unknown author'}</span>
     </span>
   )
 }
@@ -344,9 +398,47 @@ function ReviewRow({
 }) {
   const Icon = provider === 'gitlab' ? GitMerge : GitPullRequest
   const reviewKey = codeReviewSessionKey(repository.workspace_id, item.number)
+  const actions: GitAction[] = [
+    {
+      label: 'Open review details',
+      icon: <FileDiff size={12} />,
+      onSelect: () => onInspect(repository, item),
+    },
+    {
+      label: linked ? 'Continue review in chat' : 'Review in chat',
+      icon: <MessageSquare size={12} />,
+      onSelect: () => void onOpenInChat(repository, item),
+      disabled: opening,
+    },
+  ]
+  if (item.web_url) {
+    actions.push(
+      {
+        label: 'Open in browser',
+        icon: <ExternalLink size={12} />,
+        onSelect: () => void openExternalUrl(item.web_url!),
+        separatorBefore: true,
+      },
+      {
+        label: 'Copy review URL',
+        icon: <Copy size={12} />,
+        onSelect: () => void navigator.clipboard.writeText(item.web_url!),
+      },
+    )
+  }
+  if (item.source_branch) {
+    actions.push({
+      label: 'Copy source branch',
+      icon: <GitBranch size={12} />,
+      onSelect: () => void navigator.clipboard.writeText(item.source_branch),
+      separatorBefore: true,
+    })
+  }
   return (
-    <div
-      data-review-key={reviewKey}
+    <GitActionSurface
+      label={`#${item.number} ${item.title}`}
+      actions={actions}
+      dataReviewKey={reviewKey}
       className={cn(
         'group flex w-full gap-2.5 border-t border-(--color-border)/70 px-3 py-2.5 text-left transition-colors first:border-t-0 hover:bg-(--bg-key)/60',
         focused && 'bg-(--accent-blue-soft) ring-1 ring-inset ring-(--accent-blue)/35',
@@ -385,7 +477,7 @@ function ReviewRow({
             type="button"
             onClick={() => void onOpenInChat(repository, item)}
             disabled={opening}
-            className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-(--color-border) bg-(--bg-card) px-2 text-[11px] font-medium text-(--color-text-muted) shadow-sm transition-colors hover:border-(--color-accent)/45 hover:text-(--color-accent) disabled:opacity-60"
+            className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-(--color-border) bg-(--bg-card) px-2 text-[11px] font-medium text-(--color-text-muted) shadow-sm transition-colors hover:border-(--color-accent)/40 hover:text-(--color-accent) disabled:opacity-60"
             title={linked ? 'Continue review chat' : 'Review in chat'}
           >
             {opening ? (
@@ -399,7 +491,13 @@ function ReviewRow({
         <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-(--color-text-muted)">
           <span>#{item.number}</span>
           <StatusPill value={item.draft ? 'draft' : item.state || 'open'} />
-          {item.author && <span>by {item.author}</span>}
+          {(item.author || item.author_avatar_url) && (
+            <ReviewAuthor
+              author={item.author}
+              avatarUrl={item.author_avatar_url}
+              compact
+            />
+          )}
           {item.updated_at && <span>{formatRelativeDate(item.updated_at)}</span>}
           {item.comment_count !== null && (
             <span className="inline-flex items-center gap-1">
@@ -432,7 +530,7 @@ function ReviewRow({
           ))}
         </span>
       </div>
-    </div>
+    </GitActionSurface>
   )
 }
 
@@ -580,8 +678,11 @@ function ReviewDetails({
             <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-(--color-text-muted)">
               <span>{repository.repository ?? repository.name} · #{item.number}</span>
               <StatusPill value={item.draft ? 'draft' : item.state || 'open'} />
-              {(summary?.author ?? item.author) && (
-                <span>by {summary?.author ?? item.author}</span>
+              {(summary?.author ?? item.author ?? item.author_avatar_url) && (
+                <ReviewAuthor
+                  author={summary?.author ?? item.author}
+                  avatarUrl={item.author_avatar_url}
+                />
               )}
               {(summary?.updated_at ?? item.updated_at) && (
                 <span>{formatRelativeDate(summary?.updated_at ?? item.updated_at)}</span>
@@ -954,8 +1055,8 @@ function ConnectionDialog({
           </DialogTitle>
           <DialogDescription>
             {target
-              ? `API access for ${target.repository ?? target.name}. The key is stored separately from repository metadata.`
-              : 'Configure API access for this Git server.'}
+              ? `One saved credential for pull requests and HTTPS Git sync in ${target.repository ?? target.name}. It is stored separately from repository metadata.`
+              : 'Configure pull-request API access and HTTPS Git sync for this server.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -1044,7 +1145,7 @@ function ConnectionDialog({
                 htmlFor="git-server-access-token"
                 className="text-xs font-medium text-(--color-text-muted)"
               >
-                API key / access token
+                Git access token
               </label>
               <Button
                 type="button"
@@ -1075,8 +1176,8 @@ function ConnectionDialog({
               autoComplete="off"
             />
             <span className="text-[11px] text-(--color-text-subtle)">
-              Generate token opens the provider page in your browser. Paste the
-              token here after creating it.
+              Used for review APIs and for HTTPS fetch, pull, and push. SSH
+              remotes continue to use your SSH agent.
             </span>
           </div>
           <div className="flex items-center justify-between rounded-lg border border-(--color-border) px-3 py-2">
@@ -1148,7 +1249,8 @@ function ConnectionsDialog({
         <DialogHeader>
           <DialogTitle>Git server connections</DialogTitle>
           <DialogDescription>
-            Shared keys apply by Git hostname. Repository-scoped keys take
+            Shared credentials apply by Git hostname and power both remote
+            reviews and HTTPS Git sync. Repository-scoped credentials take
             precedence.
           </DialogDescription>
         </DialogHeader>
@@ -1347,48 +1449,43 @@ export function PullRequestsPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-(--bg-page)">
-      <header className="shrink-0 border-b border-(--color-border) px-4 pb-3 pt-2">
+      <header className="shrink-0 border-b border-(--color-border) px-3 py-2">
         <div className="flex items-center gap-2">
-          <GitPullRequest size={16} className="text-(--color-text-muted)" />
-          <div className="min-w-0 flex-1">
-            <h2 className="text-sm font-semibold text-(--color-text)">
-              Pull Requests
-            </h2>
-            <p className="text-[11px] text-(--color-text-muted)">
-              {reviews.isLoading
-                ? 'Loading registered repositories…'
-                : `${visibleCount} open across ${visibleRepositories.length} repositories · ${
-                    scope === 'all'
-                      ? 'all Coding repositories'
-                      : projectId
-                        ? 'current project'
-                        : 'current workspace'
-                  }`}
-            </p>
-          </div>
+          <p className="min-w-0 flex-1 truncate text-[11px] text-(--color-text-muted)">
+            {reviews.isLoading
+              ? 'Loading registered repositories…'
+              : `${visibleCount} open · ${visibleRepositories.length} repositories · ${
+                  scope === 'all'
+                    ? 'all Coding repositories'
+                    : projectId
+                      ? 'current project'
+                      : 'current workspace'
+                }`}
+          </p>
           <button
             type="button"
             onClick={() => setManageOpen(true)}
-            className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)"
+            className="flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-(--color-border) bg-(--bg-card) px-2 text-[10px] font-medium text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)"
             aria-label="Manage Git server connections"
             title="Manage connections"
           >
-            <KeyRound size={14} />
+            <KeyRound size={12} />
+            Connections
           </button>
           <button
             type="button"
             onClick={() => void reviews.refetch()}
             disabled={reviews.isFetching}
-            className="flex h-8 w-8 items-center justify-center rounded-md text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-50"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-(--color-border) bg-(--bg-card) text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text) disabled:opacity-50"
             aria-label="Refresh pull requests"
           >
             <RefreshCw
-              size={14}
+              size={12}
               className={reviews.isFetching ? 'animate-spin' : ''}
             />
           </button>
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+        <div className="mt-2 flex flex-wrap items-center gap-2">
           <SegmentedControl
             options={FILTERS}
             value={filter}
@@ -1437,7 +1534,7 @@ export function PullRequestsPanel({
           </div>
         )}
         {reviews.isError && (
-          <div className="m-4 rounded-xl border border-(--color-error)/30 bg-(--color-error-subtle) p-4 text-sm text-(--color-error)">
+          <div className="m-4 rounded-xl border border-(--color-error)/35 bg-(--color-error-subtle) p-4 text-sm text-(--color-error)">
             {reviews.error instanceof Error
               ? reviews.error.message
               : 'Unable to load pull requests.'}
