@@ -53,9 +53,7 @@ class PhpParser(TreeSitterParser):
                     kind=NODE_NAMESPACE,
                     name=_php_namespace_name(name_node, source),
                     is_class=False,
-                    prefix=(
-                        "" if node.child_by_field_name("body") is None else None
-                    ),
+                    prefix=("" if node.child_by_field_name("body") is None else None),
                 )
         elif ntype == "class_declaration":
             name = self._field_name(node, source)

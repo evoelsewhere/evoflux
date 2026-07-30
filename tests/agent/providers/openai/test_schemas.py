@@ -165,7 +165,10 @@ class TestOpenAIUsage:
                 "completion_tokens": 5,
                 "total_tokens": 15,
                 "prompt_tokens_details": {"cached_tokens": 3, "audio_tokens": None},
-                "completion_tokens_details": {"reasoning_tokens": 2, "audio_tokens": None},
+                "completion_tokens_details": {
+                    "reasoning_tokens": 2,
+                    "audio_tokens": None,
+                },
             },
         }
         chunk = OpenAIStreamChunk.model_validate(data)

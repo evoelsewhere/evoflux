@@ -259,9 +259,7 @@ async def stream_and_assemble(
                     ):
                         last_idx = max(tool_calls_buffer)
                         last_buf = tool_calls_buffer[last_idx]
-                        new_args = (
-                            tc.function.arguments if tc.function else ""
-                        )
+                        new_args = tc.function.arguments if tc.function else ""
                         if new_args and new_args != last_buf["function"]["arguments"]:
                             last_buf["function"]["arguments"] += new_args
                         continue

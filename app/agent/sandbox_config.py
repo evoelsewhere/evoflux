@@ -12,6 +12,7 @@ File shape (YAML)::
       - "**/.env"
       - "**/.env.*"
       - "**/secrets/**"
+    worktree_location: repository
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from loguru import logger
@@ -45,6 +47,83 @@ class SandboxFileConfig(BaseModel):
         default_factory=lambda: list(DEFAULT_DENIED_PATTERNS),
         description="Glob patterns seeded from DEFAULT_DENIED_PATTERNS when not specified.",
     )
+    worktree_location: Literal["repository", "user_data"] = Field(
+        default="repository",
+        description=(
+            "Store managed worktrees under the repository's .evoflux directory "
+            "or the per-user EvoFlux data directory."
+        ),
+    )
+
+
+def repository_worktree_root(source: Path) -> Path:
+    """Return the repository-local managed worktree root."""
+    return source.expanduser().resolve() / ".evoflux" / "worktrees"
+
+
+def user_data_worktree_root(source: Path) -> Path:
+    """Return the legacy per-user managed worktree root for *source*."""
+    import hashlib
+
+    resolved = source.expanduser().resolve()
+    key = hashlib.sha1(str(resolved).encode("utf-8")).hexdigest()[:10]
+    return (
+        Path(settings.EVOFLUX_DATA_DIR) / "worktrees" / f"{resolved.name}-{key}"
+    ).resolve()
+
+
+def managed_worktree_roots(source: Path) -> tuple[Path, Path]:
+    """Return all recognized roots, including the legacy user-data root."""
+    return repository_worktree_root(source), user_data_worktree_root(source)
+
+
+def selected_worktree_root(source: Path, *, create: bool = True) -> Path:
+    """Resolve the configured root and optionally create it."""
+    cfg = load_config()
+    root = (
+        repository_worktree_root(source)
+        if cfg.worktree_location == "repository"
+        else user_data_worktree_root(source)
+    )
+    if create:
+        if cfg.worktree_location == "repository":
+            ensure_repository_worktrees_ignored(source)
+        root.mkdir(parents=True, exist_ok=True)
+    return root.resolve()
+
+
+def ensure_repository_worktrees_ignored(source: Path) -> None:
+    """Locally ignore ``.evoflux/worktrees`` without editing project files."""
+    source = source.expanduser().resolve()
+    marker = source / ".git"
+    if marker.is_dir():
+        git_dir = marker
+    elif marker.is_file():
+        first_line = marker.read_text(encoding="utf-8").strip()
+        prefix = "gitdir:"
+        if not first_line.lower().startswith(prefix):
+            return
+        raw_git_dir = Path(first_line[len(prefix) :].strip())
+        git_dir = (
+            raw_git_dir if raw_git_dir.is_absolute() else (source / raw_git_dir)
+        ).resolve()
+        common_file = git_dir / "commondir"
+        if common_file.exists():
+            raw_common = Path(common_file.read_text(encoding="utf-8").strip())
+            git_dir = (
+                raw_common if raw_common.is_absolute() else git_dir / raw_common
+            ).resolve()
+    else:
+        return
+
+    exclude = git_dir / "info" / "exclude"
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    pattern = "/.evoflux/worktrees/"
+    existing = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
+    if pattern in {line.strip() for line in existing.splitlines()}:
+        return
+    separator = "" if not existing or existing.endswith("\n") else "\n"
+    _atomic_write_text(exclude, f"{existing}{separator}{pattern}\n")
 
 
 def config_path() -> Path:
@@ -88,12 +167,27 @@ def save_config(cfg: SandboxFileConfig, path: Path | None = None) -> Path:
     text = yaml.safe_dump(payload, sort_keys=False, default_flow_style=False)
 
     # Atomic write: tmp file in same dir, then rename.
+    _atomic_write_text(resolved, text)
+
+    logger.info(
+        "sandbox_config_saved path={} patterns={} worktree_location={}",
+        resolved,
+        len(cfg.denied_patterns),
+        cfg.worktree_location,
+    )
+    return resolved
+
+
+def _atomic_write_text(resolved: Path, text: str) -> None:
+    """Write UTF-8 text through a sibling temp file and atomic replace."""
     fd, tmp_name = tempfile.mkstemp(
-        prefix=".sandbox.yaml.", suffix=".tmp", dir=resolved.parent
+        prefix=f".{resolved.name}.", suffix=".tmp", dir=resolved.parent
     )
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
         os.replace(tmp_name, resolved)
     except Exception:
         try:
@@ -101,10 +195,3 @@ def save_config(cfg: SandboxFileConfig, path: Path | None = None) -> Path:
         except OSError:
             pass
         raise
-
-    logger.info(
-        "sandbox_config_saved path={} patterns={}",
-        resolved,
-        len(cfg.denied_patterns),
-    )
-    return resolved

@@ -138,6 +138,7 @@ def ensure_builtin_agent_blueprints(agents_dir: Path, *, mode: str) -> list[str]
     existing ``.md`` files are never overwritten.
     """
     from app.agent.builtin_prompts import BUILTIN_AGENT_BLUEPRINTS
+
     agents_dir.mkdir(parents=True, exist_ok=True)
     model = _lead_model_for_dir(agents_dir) or PROVIDER_MODEL_TOKEN
     written: list[str] = []
@@ -210,6 +211,7 @@ def ensure_builtin_lead_blueprint(agents_dir: Path, *, mode: str) -> str | None:
         CODING_EVOFLUX_DESCRIPTION,
         FORGE_EVOFLUX_DESCRIPTION,
     )
+
     agents_dir.mkdir(parents=True, exist_ok=True)
     if _dir_has_lead(agents_dir):
         return None
@@ -308,9 +310,12 @@ def _default_tool_registry() -> dict[str, Tool]:
     )
     from app.agent.tools.builtin.worktree import worktree_start, worktree_finish
     from app.agent.tools.builtin.lsp import (
+        code_definition,
+        code_references,
         lsp_diagnostics,
         lsp_definition,
         lsp_references,
+        static_diagnostics,
     )
     from app.agent.tools.builtin.visualize import visualize_read_me, show_widget
     from app.agent.tools.builtin.preview import preview_tool
@@ -383,6 +388,9 @@ def _default_tool_registry() -> dict[str, Tool]:
         "lsp_diagnostics": lsp_diagnostics,
         "lsp_definition": lsp_definition,
         "lsp_references": lsp_references,
+        "static_diagnostics": static_diagnostics,
+        "code_definition": code_definition,
+        "code_references": code_references,
         "mark_chapter": mark_chapter,
         "visualize_read_me": visualize_read_me,
         "show_widget": show_widget,

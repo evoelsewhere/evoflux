@@ -7,7 +7,10 @@ import { readSSE } from '../sse'
 import type { SSECallbacks } from '../sse'
 import { parseDetailOrThrow } from './_shared'
 
-export type SandboxSettings = { denied_patterns: string[] }
+export type SandboxSettings = {
+  denied_patterns: string[]
+  worktree_location: 'repository' | 'user_data'
+}
 
 export async function getSandboxSettings(): Promise<SandboxSettings> {
   const res = await fetch(`${apiBaseUrl()}/settings/sandbox`)

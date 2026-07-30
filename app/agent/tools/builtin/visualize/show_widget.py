@@ -34,7 +34,9 @@ async def show_widget(
     ],
     widget_code: Annotated[
         str,
-        Field(description="HTML content to render. No <!DOCTYPE>, <html>, <head>, or <body> tags."),
+        Field(
+            description="HTML content to render. No <!DOCTYPE>, <html>, <head>, or <body> tags."
+        ),
     ],
     i_have_seen_read_me: Annotated[
         bool,
@@ -82,7 +84,7 @@ async def show_widget(
     agent = ""
     tool_call_id = ""
     session_id = ""
-    
+
     if _injected:
         agent = _injected.get("agent_name", "")
         tool_call_id = _injected.get("tool_call_id", "")
@@ -97,8 +99,11 @@ async def show_widget(
         # Split widget_code into chunks for streaming simulation
         # In production, this would be called as tokens arrive from LLM
         chunk_size = 500
-        chunks = [widget_code[i:i + chunk_size] for i in range(0, len(widget_code), chunk_size)]
-        
+        chunks = [
+            widget_code[i : i + chunk_size]
+            for i in range(0, len(widget_code), chunk_size)
+        ]
+
         for i, chunk in enumerate(chunks):
             is_final = i == len(chunks) - 1
             event = WidgetDeltaEvent(
@@ -109,7 +114,7 @@ async def show_widget(
                 metadata={"title": title, "sequence": i},
             )
             await stream_store.push_event(session_id, StreamEnvelope.from_event(event))
-            
+
             # Small delay to simulate streaming
             if not is_final:
                 await asyncio.sleep(0.05)

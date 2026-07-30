@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import fnmatch
 import hashlib
+import io
 import json
 import zipfile
 from collections.abc import Mapping, Sequence
@@ -20,9 +21,24 @@ def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _content_hash(data: bytes) -> str:
+    """Hash ZIP payloads by contents, ignoring nondeterministic ZIP metadata."""
+    buffer = io.BytesIO(data)
+    if not zipfile.is_zipfile(buffer):
+        return sha256(data)
+    digest = hashlib.sha256()
+    with zipfile.ZipFile(buffer) as package:
+        for name in sorted(package.namelist()):
+            digest.update(name.encode("utf-8"))
+            digest.update(b"\0")
+            digest.update(_content_hash(package.read(name)).encode("ascii"))
+            digest.update(b"\0")
+    return digest.hexdigest()
+
+
 def package_hashes(path: Path) -> dict[str, str]:
     with zipfile.ZipFile(path) as package:
-        return {name: sha256(package.read(name)) for name in package.namelist()}
+        return {name: _content_hash(package.read(name)) for name in package.namelist()}
 
 
 def patch_package(

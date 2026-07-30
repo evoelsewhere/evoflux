@@ -1,12 +1,25 @@
+import { lazy } from 'react'
 import { createRootRoute, createRoute, createRouter, Outlet } from '@tanstack/react-router'
 import { Root, NotFound } from './routes/__root'
 import { restoreLastRouteBeforeRouterMount } from '@/lib/mode-route'
-import { TeamLayout, CodingLayout } from './routes/forge'
-import { AimLayout } from './routes/aim'
-import { TelemetryPage } from './routes/telemetry'
-import { SchedulerPage } from './routes/scheduler'
 
 restoreLastRouteBeforeRouterMount()
+
+const TeamLayout = lazy(() =>
+  import('./routes/forge').then((module) => ({ default: module.TeamLayout })),
+)
+const CodingLayout = lazy(() =>
+  import('./routes/forge').then((module) => ({ default: module.CodingLayout })),
+)
+const AimLayout = lazy(() =>
+  import('./routes/aim').then((module) => ({ default: module.AimLayout })),
+)
+const TelemetryPage = lazy(() =>
+  import('./routes/telemetry').then((module) => ({ default: module.TelemetryPage })),
+)
+const SchedulerPage = lazy(() =>
+  import('./routes/scheduler').then((module) => ({ default: module.SchedulerPage })),
+)
 
 const rootRoute = createRootRoute({
   component: Root,

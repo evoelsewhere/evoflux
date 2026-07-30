@@ -20,7 +20,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.agent.errors import ToolArgumentError
+from app.agent.errors import ToolArgumentError, ToolExecutionError
 from app.agent.sandbox import SandboxConfig, set_sandbox
 from app.agent.tools.builtin.shell import (
     _PYTHON_ENV_LEAK_KEYS,
@@ -308,17 +308,16 @@ async def test_shell_emits_foreground_output_delta(sandbox_workspace, monkeypatc
 @_posix_only
 @pytest.mark.asyncio
 async def test_shell_workdir_absolute(sandbox_workspace, tmp_path):
-    """workdir= resolves to the given directory, outside the sandbox workspace."""
+    """An absolute workdir outside the granted roots is rejected."""
     target = tmp_path / "custom_dir"
     target.mkdir()
     (target / "marker.txt").write_text("found me")
 
-    result = await shell_tool.arun(
-        command="cat marker.txt",
-        workdir=str(target),
-    )
-    assert "[Succeeded]" in result
-    assert "found me" in result
+    with pytest.raises(ToolExecutionError, match="outside the allowed sandbox roots"):
+        await shell_tool.arun(
+            command="cat marker.txt",
+            workdir=str(target),
+        )
 
 
 @_posix_only

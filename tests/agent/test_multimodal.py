@@ -249,7 +249,9 @@ def test_deleted_and_expired_browser_artifacts_are_not_rehydrated(tmp_path):
     expired = {
         **base,
         "webbridge_artifact": {
-            "expires_at": (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+            "expires_at": (
+                datetime.now(timezone.utc) - timedelta(seconds=1)
+            ).isoformat()
         },
     }
     parts = build_parts_from_metas("question", [deleted, expired])

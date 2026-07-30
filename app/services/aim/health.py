@@ -36,7 +36,10 @@ def _declared_rulebook_assets(manifest: RulebookManifest) -> dict[str, str]:
         assets["ui_patterns"] = manifest.ui_patterns
     if manifest.parser_strategy != "none":
         assets.update(
-            {f"extractor:{index}": path for index, path in enumerate(manifest.extractors)}
+            {
+                f"extractor:{index}": path
+                for index, path in enumerate(manifest.extractors)
+            }
         )
     return assets
 

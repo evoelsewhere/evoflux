@@ -855,8 +855,8 @@ async def _handle_click(act: ClickAction, page: Any, state: Any) -> str:
     element, label, error = await _resolve_element(
         page, state, selector=act.selector, index=act.index
     )
-    if error:
-        return error
+    if error or element is None:
+        return error or "Could not resolve the target element."
     await element.click()
     session = _sessions.get(_get_sid(state))
     if session:
@@ -868,8 +868,8 @@ async def _handle_fill(act: FillAction, page: Any, state: Any) -> str:
     element, label, error = await _resolve_element(
         page, state, selector=act.selector, index=act.index
     )
-    if error:
-        return error
+    if error or element is None:
+        return error or "Could not resolve the target element."
     await element.fill(act.text, clear=act.clear)
     session = _sessions.get(_get_sid(state))
     if session:

@@ -127,9 +127,8 @@ def test_relative_path_resolves_against_workspace(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     (workspace / "secrets").mkdir()
 
-    # `secrets/key.pem` inside the workspace would resolve under workspace
-    # — but the workspace is exempt from denial, so this should NOT match.
-    assert sandbox.check_command("cat secrets/key.pem") is None
+    # Sensitive patterns remain enforced even inside the workspace.
+    assert sandbox.check_command("cat secrets/key.pem") is not None
 
     # An absolute path to a non-workspace `secrets/` SHOULD match.
     other = tmp_path / "other_proj" / "secrets" / "key.pem"
@@ -160,14 +159,13 @@ def test_no_path_tokens_means_no_match(tmp_path: Path) -> None:
     assert sandbox.check_command("") is None
 
 
-def test_workspace_paths_are_exempt(tmp_path: Path) -> None:
-    """Workspace remains reachable even when a pattern would otherwise match."""
+def test_workspace_paths_still_honor_sensitive_patterns(tmp_path: Path) -> None:
     sandbox = _make(tmp_path, denied_patterns=["**/.env"])
     workspace = tmp_path / "ws"
     (workspace / ".env").touch()
 
-    assert sandbox.check_command(f"cat {workspace}/.env") is None
-    assert sandbox.check_command("cat .env") is None  # relative to workspace
+    assert sandbox.check_command(f"cat {workspace}/.env") is not None
+    assert sandbox.check_command("cat .env") is not None
 
 
 def test_unbalanced_quotes_do_not_raise(tmp_path: Path) -> None:
@@ -178,9 +176,11 @@ def test_unbalanced_quotes_do_not_raise(tmp_path: Path) -> None:
     assert sandbox.check_command("cat 'unclosed") is None
 
 
-def test_no_patterns_means_no_match(tmp_path: Path) -> None:
+def test_no_patterns_still_blocks_external_paths(tmp_path: Path) -> None:
     sandbox = _make(tmp_path)
-    assert sandbox.check_command("cat /etc/passwd") is None
+    hit = sandbox.check_command("cat /etc/passwd")
+    assert hit is not None
+    assert hit[1] == "outside allowed sandbox roots"
 
 
 def test_state_logs_are_exempt_from_denied_roots(tmp_path: Path) -> None:

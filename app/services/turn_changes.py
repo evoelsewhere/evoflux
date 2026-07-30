@@ -239,7 +239,9 @@ def record_tool_change(
         # Fallback: single path if caller provided one.
         path = _path_from_args(tool_name, args)
         if path:
-            _upsert(session_id, path, "modified", additions=additions, deletions=deletions)
+            _upsert(
+                session_id, path, "modified", additions=additions, deletions=deletions
+            )
         return
 
     path = _path_from_args(tool_name, args)

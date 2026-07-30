@@ -97,12 +97,16 @@ def test_liquibase_import_is_external_even_without_declared_dependency():
     the Java package "liquibase.*" — the bundled well-known-library backstop
     must catch this even when the manifest-derived signal can't."""
     assert is_likely_external(
-        "liquibase.change.ChangeMetadata", file_path="Foo.java", declared_dependencies=[]
+        "liquibase.change.ChangeMetadata",
+        file_path="Foo.java",
+        declared_dependencies=[],
     )
 
 
 def test_jdk_imports_always_external():
-    assert is_likely_external("java.util.List", file_path="Foo.java", declared_dependencies=[])
+    assert is_likely_external(
+        "java.util.List", file_path="Foo.java", declared_dependencies=[]
+    )
     assert is_likely_external(
         "javax.persistence.Entity", file_path="Foo.java", declared_dependencies=[]
     )
@@ -119,7 +123,9 @@ def test_declared_dependency_filters_import():
 def test_go_standard_library_always_external():
     assert is_likely_external("fmt", file_path="main.go", declared_dependencies=[])
     assert is_likely_external("net/http", file_path="main.go", declared_dependencies=[])
-    assert is_likely_external("encoding/json", file_path="main.go", declared_dependencies=[])
+    assert is_likely_external(
+        "encoding/json", file_path="main.go", declared_dependencies=[]
+    )
 
 
 def test_go_module_path_not_external():
@@ -130,7 +136,9 @@ def test_go_module_path_not_external():
 
 def test_python_stdlib_always_external():
     assert is_likely_external("os", file_path="main.py", declared_dependencies=[])
-    assert is_likely_external("collections.abc", file_path="main.py", declared_dependencies=[])
+    assert is_likely_external(
+        "collections.abc", file_path="main.py", declared_dependencies=[]
+    )
 
 
 def test_python_sibling_package_not_external():
@@ -160,5 +168,7 @@ def test_real_cross_repo_java_reference_not_filtered():
     """A plausible sibling-repo Java reference must NOT be caught by any
     rule — false positives here would silently hide a real cross-repo link."""
     assert not is_likely_external(
-        "com.acme.other.Helper", file_path="Foo.java", declared_dependencies=["org.liquibase"]
+        "com.acme.other.Helper",
+        file_path="Foo.java",
+        declared_dependencies=["org.liquibase"],
     )

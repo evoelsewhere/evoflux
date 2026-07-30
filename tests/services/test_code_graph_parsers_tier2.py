@@ -336,9 +336,7 @@ def test_cpp_cross_file_indexing(tmp_path: Path):
     (tmp_path / "animal.hpp").write_bytes(
         b"class Animal { public: virtual void run() = 0; };\n"
     )
-    (tmp_path / "main.cpp").write_bytes(
-        b"void test() { Animal* a; a->run(); }\n"
-    )
+    (tmp_path / "main.cpp").write_bytes(b"void test() { Animal* a; a->run(); }\n")
     idx = index_workspace(tmp_path)
     call_edges = [e for e in idx.edges if e.kind == "calls" and e.dst_key is not None]
     resolved_targets = {e.dst_key for e in call_edges}
@@ -350,9 +348,7 @@ def test_cpp_cross_file_indexing(tmp_path: Path):
 def test_swift_cross_file_indexing(tmp_path: Path):
     from app.services.code_graph.indexer import index_workspace
 
-    (tmp_path / "animal.swift").write_bytes(
-        b"class Animal { func run() {} }\n"
-    )
+    (tmp_path / "animal.swift").write_bytes(b"class Animal { func run() {} }\n")
     (tmp_path / "main.swift").write_bytes(
         b"func test() { let a = Animal(); a.run() }\n"
     )

@@ -49,15 +49,12 @@ def test_inherits_and_implements_become_cross_repo_candidates(tmp_path: Path) ->
     _write(
         tmp_path,
         "ConceptResource.java",
-        "public class ConceptResource extends BaseResource implements Handler {\n"
-        "}\n",
+        "public class ConceptResource extends BaseResource implements Handler {\n}\n",
     )
 
     idx = index_workspace(tmp_path)
 
-    kinds_and_names = {
-        (u.kind, u.raw_reference) for u in idx.unresolved_references
-    }
+    kinds_and_names = {(u.kind, u.raw_reference) for u in idx.unresolved_references}
     assert ("inherits", "BaseResource") in kinds_and_names
     assert ("implements", "Handler") in kinds_and_names
 

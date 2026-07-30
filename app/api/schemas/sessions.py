@@ -46,9 +46,7 @@ class TeamSessionResolveRequest(BaseModel):
             WEBBRIDGE_BROWSER_ORIGIN_TAG.partition(":")[0] + ":",
             "webbridge_pairing:",
         )
-        if any(
-            tag.startswith(prefix) for tag in value for prefix in reserved_prefixes
-        ):
+        if any(tag.startswith(prefix) for tag in value for prefix in reserved_prefixes):
             raise ValueError("WebBridge provenance and pairing tags are server-managed")
         return value
 

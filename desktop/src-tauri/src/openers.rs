@@ -261,9 +261,7 @@ fn expand_probe_path(path: &str) -> PathBuf {
 
 /// Resolve a binary on PATH.
 fn binary_on_path(bin: &str) -> Option<PathBuf> {
-    let Some(paths) = std::env::var_os("PATH") else {
-        return None;
-    };
+    let paths = std::env::var_os("PATH")?;
     #[cfg(target_os = "windows")]
     const EXTS: &[&str] = &[".exe", ".com", ".cmd", ".bat", ""];
     #[cfg(not(target_os = "windows"))]

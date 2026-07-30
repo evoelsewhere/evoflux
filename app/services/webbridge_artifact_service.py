@@ -55,7 +55,9 @@ def resolve_attachment_path(
             try:
                 resolved.relative_to(local_root)
             except ValueError as exc:
-                raise ValueError("Attachment path escapes application storage.") from exc
+                raise ValueError(
+                    "Attachment path escapes application storage."
+                ) from exc
         if resolved.exists():
             return resolved
     fallback = (local_root / filename).resolve(strict=False)

@@ -949,9 +949,7 @@ async def list_sessions_with_tag(
             .order_by(col(ChatSession.created_at).desc())
         )
     ).all()
-    return [session for session in rows if tag in (session.tags or ())][
-        :bounded_limit
-    ]
+    return [session for session in rows if tag in (session.tags or ())][:bounded_limit]
 
 
 async def get_latest_top_level_session(

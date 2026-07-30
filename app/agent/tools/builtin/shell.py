@@ -47,12 +47,13 @@ import uuid
 from collections import deque
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from loguru import logger
 from pydantic import Field
 
 from app.agent.artifacts import shell_output_dir
+from app.agent.process_sandbox import sandboxed_process_argv
 from app.agent.sandbox import get_sandbox
 from app.agent.tools.builtin import shell_runtime as _shell_mod
 from app.agent.tools.registry import InjectedArg, Tool
@@ -79,7 +80,7 @@ _FORCE_KILL = getattr(signal, "SIGKILL", signal.SIGTERM)
 class _BgProcess:
     """Tracks a single background subprocess and its ring-buffer output."""
 
-    __slots__ = ("proc", "command", "output", "_reader_task")
+    __slots__ = ("proc", "command", "output", "_activity", "_reader_task")
 
     def __init__(
         self,
@@ -89,6 +90,7 @@ class _BgProcess:
         self.proc = proc
         self.command = command
         self.output: deque[str] = deque(maxlen=_BG_OUTPUT_MAX_LINES)
+        self._activity = asyncio.Event()
         self._reader_task = asyncio.create_task(self._drain())
 
     async def _drain(self) -> None:
@@ -101,8 +103,11 @@ class _BgProcess:
                     break
                 decoded = line.decode("utf-8", errors="replace").rstrip("\n")
                 self.output.append(decoded)
+                self._activity.set()
         except Exception:
             pass
+        finally:
+            self._activity.set()
 
     @property
     def pid(self) -> int:
@@ -241,13 +246,11 @@ def _resolve_workdir(workdir: str | None) -> Path:
     workspace root — keeping the agent confined to its session workspace.
     Absolute paths are passed through unchanged.
     """
-    workspace = get_sandbox().workspace_root
+    sandbox = get_sandbox()
+    workspace = sandbox.workspace_root
     if workdir is None:
         return workspace
-    p = Path(workdir)
-    if p.is_absolute():
-        return p
-    return (workspace / p).resolve()
+    return sandbox.validate_path(workdir)
 
 
 async def _emit_tool_output(
@@ -291,7 +294,7 @@ async def _shell(
                 "Working directory for the command. "
                 "Omit (or null) to run in the session workspace root. "
                 "Relative paths (e.g. 'subdir') resolve inside the session workspace. "
-                "Use an absolute path to run outside the workspace. "
+                "Absolute paths require an explicitly allowed project root. "
                 "Use this instead of 'cd' commands."
             )
         ),
@@ -372,11 +375,17 @@ async def _shell(
         # is launched from a GUI/launchd context where PATH is minimal.
         # See ``shell_runtime.build_argv`` for details.
         argv = _shell_mod.build_argv(shell_bin, command)
+        exec_bin, exec_argv = sandboxed_process_argv(
+            shell_bin,
+            argv,
+            sandbox=sandbox,
+            cwd=cwd,
+        )
         # On Windows: CREATE_NO_WINDOW prevents a console window from flashing
         # (important when running as a Tauri GUI sidecar with no attached
         # console).  start_new_session is POSIX-only; on Windows we rely on
         # CREATE_NO_WINDOW + CREATE_NEW_PROCESS_GROUP via creationflags.
-        _extra: dict[str, object] = {}
+        _extra: dict[str, Any] = {}
         if sys.platform == "win32":
             _extra["creationflags"] = (
                 subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
@@ -386,8 +395,8 @@ async def _shell(
 
         try:
             proc = await asyncio.create_subprocess_exec(
-                shell_bin,
-                *argv,
+                exec_bin,
+                *exec_argv,
                 stdin=asyncio.subprocess.DEVNULL,  # no TTY — interactive prompts must not hang
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
@@ -414,7 +423,7 @@ async def _shell(
 
             def _run_sync() -> subprocess.CompletedProcess[bytes]:
                 return subprocess.run(  # noqa: S603
-                    [shell_bin, *argv],
+                    [exec_bin, *exec_argv],
                     stdin=subprocess.DEVNULL,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
@@ -465,6 +474,11 @@ async def _shell(
             # Wait up to 3s to capture initial output and detect instant crashes
             warmup_secs = min(max(3, timeout_seconds or 3), 5)
             await asyncio.sleep(warmup_secs)
+            if not bg.output and bg.alive:
+                try:
+                    await asyncio.wait_for(bg._activity.wait(), timeout=0.25)
+                except TimeoutError:
+                    pass
 
             if not bg.alive:
                 del _bg_processes[bg.pid]

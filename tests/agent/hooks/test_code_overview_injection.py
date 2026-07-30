@@ -35,7 +35,9 @@ class TestCodeOverviewHook:
         state = _make_state([HumanMessage(content="Hello")])
         ctx = _make_ctx()
 
-        with patch.object(hook, "_fetch_overview", new_callable=AsyncMock) as mock_fetch:
+        with patch.object(
+            hook, "_fetch_overview", new_callable=AsyncMock
+        ) as mock_fetch:
             mock_fetch.return_value = _OVERVIEW_TEXT
             await hook.before_agent(ctx, state)
 
@@ -70,7 +72,9 @@ class TestCodeOverviewHook:
         )
         ctx = _make_ctx()
 
-        with patch.object(hook, "_fetch_overview", new_callable=AsyncMock) as mock_fetch:
+        with patch.object(
+            hook, "_fetch_overview", new_callable=AsyncMock
+        ) as mock_fetch:
             mock_fetch.return_value = _OVERVIEW_TEXT
             await hook.before_agent(ctx, state)
 
@@ -84,7 +88,9 @@ class TestCodeOverviewHook:
         state = _make_state([])
         ctx = _make_ctx()
 
-        with patch.object(hook, "_fetch_overview", new_callable=AsyncMock) as mock_fetch:
+        with patch.object(
+            hook, "_fetch_overview", new_callable=AsyncMock
+        ) as mock_fetch:
             mock_fetch.return_value = _OVERVIEW_TEXT
             await hook.before_agent(ctx, state)
 
@@ -97,7 +103,9 @@ class TestCodeOverviewHook:
         state = _make_state([HumanMessage(content="Hi")])
         ctx = _make_ctx()
 
-        with patch.object(hook, "_fetch_overview", new_callable=AsyncMock) as mock_fetch:
+        with patch.object(
+            hook, "_fetch_overview", new_callable=AsyncMock
+        ) as mock_fetch:
             mock_fetch.return_value = None
             await hook.before_agent(ctx, state)
 
@@ -116,7 +124,9 @@ class TestCodeOverviewHook:
         )
         ctx = _make_ctx()
 
-        with patch.object(hook, "_fetch_overview", new_callable=AsyncMock) as mock_fetch:
+        with patch.object(
+            hook, "_fetch_overview", new_callable=AsyncMock
+        ) as mock_fetch:
             mock_fetch.return_value = _OVERVIEW_TEXT
             await hook.before_agent(ctx, state)
 

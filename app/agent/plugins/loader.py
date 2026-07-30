@@ -23,6 +23,7 @@ swallowed so a single broken plugin never takes down the agent.
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import inspect
 import json
 import sys
@@ -48,8 +49,32 @@ from app.agent.state import AgentState, RunContext, ToolCallHandler
 # matching dispatch line in the adapter.
 EVENT_TOOL_BEFORE = "tool.before"
 EVENT_TOOL_AFTER = "tool.after"
+EVENT_AGENT_START = "agent.start"
+EVENT_AGENT_STOP = "agent.stop"
+EVENT_MODEL_BEFORE = "model.before"
+EVENT_MODEL_AFTER = "model.after"
+EVENT_COMPLETION_STOP = "completion.stop"
+EVENT_COMPACT_BEFORE = "compact.before"
+EVENT_COMPACT_AFTER = "compact.after"
+EVENT_SUBAGENT_START = "subagent.start"
+EVENT_SUBAGENT_STOP = "subagent.stop"
 
-KNOWN_EVENTS = frozenset({EVENT_TOOL_BEFORE, EVENT_TOOL_AFTER})
+KNOWN_EVENTS = frozenset(
+    {
+        EVENT_TOOL_BEFORE,
+        EVENT_TOOL_AFTER,
+        EVENT_AGENT_START,
+        EVENT_AGENT_STOP,
+        EVENT_MODEL_BEFORE,
+        EVENT_MODEL_AFTER,
+        EVENT_COMPLETION_STOP,
+        EVENT_COMPACT_BEFORE,
+        EVENT_COMPACT_AFTER,
+        EVENT_SUBAGENT_START,
+        EVENT_SUBAGENT_STOP,
+    }
+)
+_TRUST_FILENAME = ".trusted-hooks.json"
 
 
 class PluginLoadError(RuntimeError):
@@ -76,10 +101,92 @@ class _FunctionalPluginAdapter(BaseAgentHook):
         plugin_id: str,
         handlers: dict[str, Callable[..., Awaitable[None]]],
         applies_to_fn: Callable[[str, str], bool] | None = None,
+        role: str = "agent",
     ) -> None:
         self._plugin_id = plugin_id
         self._handlers = handlers
         self._applies_to_fn = applies_to_fn
+        self._role = role
+
+    async def _notify(
+        self,
+        event: str,
+        ctx: RunContext,
+        state: AgentState,
+        output: dict[str, Any] | None = None,
+    ) -> None:
+        handler = self._handlers.get(event)
+        if handler is None:
+            return
+        payload = {
+            "session_id": ctx.session_id,
+            "run_id": ctx.run_id,
+            "agent_name": ctx.agent_name,
+            "role": self._role,
+            "event": event,
+        }
+        await handler(payload, output if output is not None else {})
+
+    async def before_agent(self, ctx: RunContext, state: AgentState) -> None:
+        try:
+            await self._notify(EVENT_AGENT_START, ctx, state)
+            if self._role == "member":
+                await self._notify(EVENT_SUBAGENT_START, ctx, state)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "plugin_agent_start_failed plugin={} error={}", self._plugin_id, exc
+            )
+
+    async def after_agent(self, ctx, state, response) -> None:
+        try:
+            if self._role == "member":
+                await self._notify(EVENT_SUBAGENT_STOP, ctx, state)
+            await self._notify(EVENT_AGENT_STOP, ctx, state)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "plugin_agent_stop_failed plugin={} error={}", self._plugin_id, exc
+            )
+
+    async def before_model(self, ctx, state, request):
+        try:
+            if state.metadata.pop("_compact_pending", False):
+                await self._notify(EVENT_COMPACT_BEFORE, ctx, state)
+            output = {"system_prompt": request.system_prompt}
+            await self._notify(EVENT_MODEL_BEFORE, ctx, state, output)
+            if output["system_prompt"] != request.system_prompt:
+                return request.override(system_prompt=str(output["system_prompt"]))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "plugin_model_before_failed plugin={} error={}", self._plugin_id, exc
+            )
+        return None
+
+    async def after_model(self, ctx, state, response) -> None:
+        try:
+            await self._notify(
+                EVENT_MODEL_AFTER,
+                ctx,
+                state,
+                {"content": response.content or ""},
+            )
+            if state.metadata.pop("_compact_completed", False):
+                await self._notify(EVENT_COMPACT_AFTER, ctx, state)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "plugin_model_after_failed plugin={} error={}", self._plugin_id, exc
+            )
+
+    async def before_completion(self, ctx, state, response) -> str | None:
+        handler = self._handlers.get(EVENT_COMPLETION_STOP)
+        if handler is None:
+            return None
+        output: dict[str, Any] = {"block_reason": None}
+        try:
+            await self._notify(EVENT_COMPLETION_STOP, ctx, state, output)
+        except Exception as exc:  # noqa: BLE001
+            return f"Trusted completion hook failed: {exc}"
+        reason = output.get("block_reason")
+        return str(reason) if reason else None
 
     def applies_to(self, agent_name: str, role: str) -> bool:
         if self._applies_to_fn is None:
@@ -212,7 +319,7 @@ def _import_plugin_file(path: Path) -> Any:
     return module
 
 
-async def _adapt_module(module: Any) -> BaseAgentHook | None:
+async def _adapt_module(module: Any, *, role: str = "agent") -> BaseAgentHook | None:
     """Convert one imported module into a single BaseAgentHook instance.
 
     Functional contract wins if both ``plugin`` and ``Plugin`` are
@@ -262,6 +369,7 @@ async def _adapt_module(module: Any) -> BaseAgentHook | None:
             plugin_id=plugin_id,
             handlers=handlers,
             applies_to_fn=applies_to_fn,
+            role=role,
         )
 
     # ── Class-based contract ───────────────────────────────────────────
@@ -304,6 +412,7 @@ async def load_plugin_hooks(
     *,
     agent_name: str,
     role: str,
+    require_trust: bool = False,
 ) -> list[BaseAgentHook]:
     """Discover and instantiate plugin hooks for one agent.
 
@@ -322,9 +431,16 @@ async def load_plugin_hooks(
     hooks: list[BaseAgentHook] = []
 
     for f in files:
+        if require_trust and not _is_trusted_plugin(f):
+            logger.warning(
+                "plugin_untrusted_skipped file={} digest={}",
+                f,
+                plugin_digest(f),
+            )
+            continue
         try:
             module = _import_plugin_file(f)
-            hook = await _adapt_module(module)
+            hook = await _adapt_module(module, role=role)
         except PluginLoadError as exc:
             logger.warning("plugin_load_failed file={} error={}", f, exc)
             continue
@@ -351,3 +467,19 @@ async def load_plugin_hooks(
         hooks.append(hook)
 
     return hooks
+
+
+def plugin_digest(path: Path) -> str:
+    """Return the SHA-256 digest used by the hook trust registry."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _is_trusted_plugin(path: Path) -> bool:
+    trust_path = path.parent / _TRUST_FILENAME
+    try:
+        payload = json.loads(trust_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return False
+    if not isinstance(payload, dict):
+        return False
+    return payload.get(path.name) == plugin_digest(path)

@@ -16,8 +16,12 @@ def test_record_and_flush_turn_changes() -> None:
     sid = "sess-test-1"
     clear_session(sid)
     begin_turn(sid)
-    record_tool_change(sid, "write", {"file_path": "web/src/a.tsx", "content": "a\nb\n"})
-    record_tool_change(sid, "edit", {"path": "web/src/b.tsx", "old_string": "x", "new_string": "x\ny"})
+    record_tool_change(
+        sid, "write", {"file_path": "web/src/a.tsx", "content": "a\nb\n"}
+    )
+    record_tool_change(
+        sid, "edit", {"path": "web/src/b.tsx", "old_string": "x", "new_string": "x\ny"}
+    )
     record_tool_change(sid, "rm", {"file_path": "old.txt"})
     snap = flush_turn(sid)
     assert snap is not None

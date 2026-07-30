@@ -1,8 +1,8 @@
-"""Sandbox configuration and path-validation utilities for computer tools.
+"""Workspace-allowlisted sandbox configuration for computer tools.
 
-The sandbox uses a **denylist** model: agent filesystem operations may touch
-any path on disk *except* paths that resolve under one of the denied roots.
-By default the denied roots are:
+Agent filesystem operations are confined to the active workspace, explicitly
+granted project roots, read-only roots, and session artifact locations.
+Sensitive deny patterns are applied even inside allowed roots.
 
 - ``EVOFLUX_DATA_DIR``    — EvoFlux's SQLite DB and other internal data.
 - ``EVOFLUX_STATE_DIR``   — logs, telemetry, OTEL rollups
@@ -12,9 +12,8 @@ User uploads live *inside* the per-session workspace
 (``{workspace}/<sid>/uploads/``) and are therefore reachable by the
 agent's fs tools as the relative path ``uploads/<filename>``.
 
-All relative paths resolve under ``workspace_root`` (the implicit "current
-directory" for the agent).  Absolute paths anywhere on the filesystem are
-accepted as long as they don't fall under a denied root.
+All relative paths resolve under ``workspace_root``. Absolute paths must land
+inside one of the explicit allowed roots.
 
 Symlink rejection
 -----------------
@@ -49,7 +48,7 @@ from app.core.config import settings
 # ── Module-level defaults (no env-var overrides) ──────────────────────────
 DEFAULT_MAX_EXECUTION_SECONDS = 120
 DEFAULT_MAX_OUTPUT_BYTES = 131072
-DEFAULT_ALLOW_NETWORK = True
+DEFAULT_ALLOW_NETWORK = False
 
 # ── Context-aware Sandbox ───────────────────────────────────────────────
 
@@ -72,10 +71,10 @@ def set_sandbox(sandbox: "SandboxConfig") -> contextvars.Token:
 
 
 class SandboxConfig:
-    """Denylist-based sandbox for the agent's filesystem tools.
+    """Workspace-allowlisted sandbox for the agent's filesystem tools.
 
     All relative paths resolve under ``workspace_root``.
-    Absolute paths are accepted as-is, subject to the denylist check.
+    Absolute paths must resolve inside an explicitly allowed root.
     """
 
     def __init__(
@@ -98,6 +97,10 @@ class SandboxConfig:
         # still work — but are rejected by write-path tools (write/edit/
         # patch/rm). See validate_path's is_write param.
         read_only_paths: list[str] | None = None,
+        # Optional member-task write lease. When non-empty, every direct
+        # filesystem mutation must stay under one of these workspace-relative
+        # or absolute paths.
+        write_allowed_paths: list[str] | None = None,
         # Kept for backward compatibility — ignored.
         memory: str | None = None,
     ):
@@ -109,8 +112,20 @@ class SandboxConfig:
         self.workspace_root: Path = Path(workspace).resolve()
         self.session_id = session_id
         self.extra_workspace_paths: list[str] = list(extra_workspace_paths or [])
+        self.allowed_workspace_roots: list[Path] = [
+            self.workspace_root,
+            *(Path(p).resolve() for p in self.extra_workspace_paths),
+        ]
         self.read_only_paths: list[Path] = [
             Path(p).resolve() for p in (read_only_paths or [])
+        ]
+        self.write_allowed_paths: list[Path] = [
+            (
+                Path(path).resolve()
+                if Path(path).is_absolute()
+                else (self.workspace_root / path).resolve()
+            )
+            for path in (write_allowed_paths or [])
         ]
         self.workspace_root.mkdir(parents=True, exist_ok=True)
 
@@ -150,19 +165,28 @@ class SandboxConfig:
 
     def _is_denied(self, resolved: Path) -> Path | str | None:
         """Return the denied root or glob pattern that matched, or None."""
-        if _path_is_under(resolved, self.workspace_root):
-            return None
-        allowed = _allowed_internal_roots(self.session_id)
-        if any(_path_is_under(resolved, root) for root in allowed):
-            return None
-        for denied in self.denied_roots:
-            if _path_is_under(resolved, denied):
-                return denied
+        root_exempt = [
+            *self.allowed_workspace_roots,
+            *self.read_only_paths,
+            *_allowed_internal_roots(self.session_id),
+        ]
+        if not any(_path_is_under(resolved, root) for root in root_exempt):
+            for denied in self.denied_roots:
+                if _path_is_under(resolved, denied):
+                    return denied
         resolved_str = str(resolved)
         for pattern in self.denied_patterns:
             if fnmatch.fnmatchcase(resolved_str, pattern):
                 return pattern
         return None
+
+    def _is_allowed(self, resolved: Path) -> bool:
+        roots = [
+            *self.allowed_workspace_roots,
+            *self.read_only_paths,
+            *_allowed_internal_roots(self.session_id),
+        ]
+        return any(_path_is_under(resolved, root) for root in roots)
 
     def _is_read_only(self, resolved: Path) -> Path | None:
         for ro_root in self.read_only_paths:
@@ -237,7 +261,26 @@ class SandboxConfig:
                 f"Path '{resolved}' is inside a denied sandbox root: {denied}"
             )
 
+        if not self._is_allowed(resolved):
+            logger.warning("sandbox_path_outside_allowlist path={}", resolved)
+            raise PermissionError(
+                f"Path '{resolved}' is outside the allowed sandbox roots. "
+                "Add it as an explicit project/read-only root before access."
+            )
+
         if is_write:
+            if self.write_allowed_paths and not any(
+                _path_is_under(resolved, root) for root in self.write_allowed_paths
+            ):
+                logger.warning(
+                    "sandbox_write_outside_claim path={} claims={}",
+                    resolved,
+                    self.write_allowed_paths,
+                )
+                raise PermissionError(
+                    f"Path '{resolved}' is outside this agent's active write claims: "
+                    + ", ".join(str(path) for path in self.write_allowed_paths)
+                )
             read_only_root = self._is_read_only(resolved)
             if read_only_root is not None:
                 logger.warning(
@@ -282,6 +325,12 @@ class SandboxConfig:
                 resolved = candidate.resolve()
             except OSError:
                 continue
+            # The first shell token is the executable, not a workspace
+            # operand. Native process containment still constrains what it
+            # can access; allowing it here also lets callers report a missing
+            # executable cleanly instead of misclassifying it as file access.
+            if index == 0:
+                continue
             denied = self._is_denied(resolved)
             if denied is not None:
                 logger.warning(
@@ -291,11 +340,14 @@ class SandboxConfig:
                     denied,
                 )
                 return resolved, str(denied)
-            if (
-                self.read_only_paths
-                and index > 0
-                and tokens[index - 1] in (">", ">>")
-            ):
+            if not self._is_allowed(resolved):
+                logger.warning(
+                    "sandbox_command_outside_allowlist token={} resolved={}",
+                    tok,
+                    resolved,
+                )
+                return resolved, "outside allowed sandbox roots"
+            if self.read_only_paths and index > 0 and tokens[index - 1] in (">", ">>"):
                 read_only_root = self._is_read_only(resolved)
                 if read_only_root is not None:
                     logger.warning(

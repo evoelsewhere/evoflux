@@ -73,6 +73,12 @@ async def create_tasks(
     deadline_at: datetime | None,
 ) -> list[DelegationTask]:
     """Create one independently trackable task per recipient."""
+    await _validate_path_claims(
+        db,
+        lead_session_id=lead_session_id,
+        recipients=recipients,
+        spec=spec,
+    )
     dependency_ids = [parse_task_id(task_id) for task_id in dependencies]
     dependency_rows: list[DelegationTask] = []
     if dependency_ids:
@@ -122,6 +128,50 @@ async def create_tasks(
         tasks.append(task)
     await db.flush()
     return tasks
+
+
+async def _validate_path_claims(
+    db: AsyncSession,
+    *,
+    lead_session_id: UUID,
+    recipients: list[str],
+    spec: dict,
+) -> None:
+    new_paths = [
+        str(path)
+        for path in spec.get("target_paths", [])
+        if isinstance(path, str) and path
+    ]
+    if not new_paths or spec.get("exclusive_paths", True) is not True:
+        return
+    open_tasks = await load_open_tasks(db, lead_session_id)
+    conflicts: list[str] = []
+    for row in open_tasks:
+        if row.recipient in recipients:
+            continue
+        if row.spec.get("exclusive_paths", True) is not True:
+            continue
+        existing = [
+            str(path)
+            for path in row.spec.get("target_paths", [])
+            if isinstance(path, str) and path
+        ]
+        for requested in new_paths:
+            for claimed in existing:
+                if _paths_overlap(requested, claimed):
+                    conflicts.append(
+                        f"{requested!r} overlaps {claimed!r} claimed by "
+                        f"{row.recipient} (task {row.id})"
+                    )
+    if conflicts:
+        raise ValueError("Conflicting delegation path claims: " + "; ".join(conflicts))
+
+
+def _paths_overlap(left: str, right: str) -> bool:
+    left_parts = tuple(part for part in left.strip("/").split("/") if part)
+    right_parts = tuple(part for part in right.strip("/").split("/") if part)
+    shorter = min(len(left_parts), len(right_parts))
+    return left_parts[:shorter] == right_parts[:shorter]
 
 
 async def get_task(

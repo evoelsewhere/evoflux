@@ -75,7 +75,9 @@ async def _create_project(repo_a: Path, repo_b: Path):
 
 
 async def _reindex(client, workspace: Path) -> None:
-    res = await client.post("/api/code-graph/reindex", params={"workspace": str(workspace)})
+    res = await client.post(
+        "/api/code-graph/reindex", params={"workspace": str(workspace)}
+    )
     assert res.status_code == 202
     await _wait_until_indexed(client, workspace)
 

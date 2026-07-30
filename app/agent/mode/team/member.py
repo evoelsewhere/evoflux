@@ -22,14 +22,14 @@ import abc
 import asyncio
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
-from uuid import uuid7
+from typing import TYPE_CHECKING, Literal, cast
 
 from loguru import logger
-
 from sqlmodel import col, select
 
 from app.agent.agent_loop import Agent
+from app.uuid7 import uuid7
+from app.agent.execution_policy import resolve_execution_policy
 from app.agent.checkpointer import SQLiteCheckpointer
 from app.agent.drift import detect_drift, stamp_agent_files
 from app.agent.hooks.base import BaseAgentHook
@@ -41,6 +41,7 @@ from app.agent.hooks.wiki_injection import default_wiki_injection_hook
 from app.agent.hooks.workspace_instructions import WorkspaceInstructionsHook
 from app.agent.hooks.multi_repo_context import MultiRepoContextHook
 from app.agent.hooks.post_edit_diagnostics import PostEditDiagnosticsHook
+from app.agent.verification import CompletionVerificationHook
 from app.agent.hooks.otel import OpenTelemetryHook
 from app.agent.hooks.stream_publisher import StreamPublisherHook
 from app.agent.hooks.summarization import build_team_summarization_hook
@@ -64,6 +65,7 @@ from app.agent.plugins.role import reset_role, set_role
 from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
 from app.core.paths import session_workspace_dir
 from app.agent.permission import (
+    Mode,
     PermissionService,
     reset_permission_service,
     set_permission_service,
@@ -83,6 +85,8 @@ from app.agent.schemas.chat import HumanMessage
 from app.agent.mode.team.mailbox import Message
 from app.core.db import DbFactory, resolve_db_factory
 from app.models.chat import ChatSession, SessionMessage
+from app.models.team import DelegationTask
+from app.agent.providers.model_metadata import get_model_thinking_levels
 from app.services.chat_service import get_messages_for_llm, save_message
 
 MAX_OPEN_TASK_NUDGES = 3
@@ -1067,6 +1071,22 @@ class TeamMemberBase(abc.ABC):
             except Exception:
                 history = []
             session_row = await db.get(ChatSession, session_uuid)
+            active_task_specs: list[dict] = []
+            if self._role_label == "member":
+                try:
+                    lead_session_uuid = uuid.UUID(self._team.lead.session_id)
+                    active_tasks = (
+                        await db.exec(
+                            select(DelegationTask).where(
+                                DelegationTask.lead_session_id == lead_session_uuid,
+                                DelegationTask.recipient == self.name,
+                                DelegationTask.status == "pending",
+                            )
+                        )
+                    ).all()
+                    active_task_specs = [dict(task.spec) for task in active_tasks]
+                except (TypeError, ValueError):
+                    active_task_specs = []
 
         run_messages = history
         runtime_provider: LLMProviderBase | None = None
@@ -1096,25 +1116,47 @@ class TeamMemberBase(abc.ABC):
                 if isinstance(value, str) and value:
                     last_service_tier = value
 
+        claimed_paths = sorted(
+            {
+                str(path)
+                for spec in active_task_specs
+                for path in spec.get("target_paths", [])
+                if isinstance(path, str) and path
+            }
+        )
+        active_priority = next(
+            (
+                str(spec["priority"])
+                for spec in reversed(active_task_specs)
+                if spec.get("priority")
+            ),
+            None,
+        )
+        active_complexity = next(
+            (
+                str(spec["complexity"])
+                for spec in reversed(active_task_specs)
+                if spec.get("complexity")
+            ),
+            None,
+        )
+
         # Prefer the per-message requested model when available; fall back to the
         # session model stored on ChatSession, then the lead agent default.
-        effective_model = (
-            last_user_model
-            or session_model
-            or (
-                self.agent.model_id
-                if session_thinking_level or last_service_tier
-                else None
-            )
+        effective_model = last_user_model or session_model or self.agent.model_id
+        execution_policy = resolve_execution_policy(
+            complexity=active_complexity,
+            priority=active_priority,
+            target_paths=claimed_paths,
+            explicit_thinking_level=(
+                session_thinking_level if self._role_label == "lead" else None
+            ),
+            supported_thinking_levels=get_model_thinking_levels(effective_model),
         )
-        if (
-            self._role_label == "lead"
-            and effective_model
-            and self._team._provider_factory is not None
-        ):
+        if effective_model and self._team._provider_factory is not None:
             model_kwargs: dict[str, object] = {}
-            if session_thinking_level:
-                model_kwargs["thinking_level"] = session_thinking_level
+            if execution_policy.thinking_level:
+                model_kwargs["thinking_level"] = execution_policy.thinking_level
             if last_service_tier and effective_model.startswith("codex:"):
                 model_kwargs["service_tier"] = last_service_tier
             runtime_provider = self._team._provider_factory(
@@ -1184,12 +1226,17 @@ class TeamMemberBase(abc.ABC):
                         extra_workspace_paths=self._team.extra_workspace_paths,
                     )
                 )
-            else:
-                hooks.append(WorkspaceInstructionsHook(self._team.workspace))
+            hooks.append(
+                WorkspaceInstructionsHook(
+                    self._team.workspace,
+                    self._team.extra_workspace_paths or None,
+                )
+            )
             # Surface ruff issues introduced by an edit in the same tool
             # round — the prompt-only "run lsp_diagnostics after edits"
             # guidance has no enforcement otherwise.
             hooks.append(PostEditDiagnosticsHook())
+            hooks.append(CompletionVerificationHook())
 
         # Title generation — lead only (members don't need session titles).
         # Always enabled; uses the same runtime provider as the chat turn so
@@ -1297,6 +1344,8 @@ class TeamMemberBase(abc.ABC):
             # Lead stream id — file-change tracking + SSE publish to one place.
             "stream_session_id": lead_session_id,
             "session_id": self.session_id,
+            "execution_complexity": execution_policy.complexity,
+            "verification_rigor": execution_policy.verification_rigor,
         }
         if force_compaction:
             run_metadata["force_summarization"] = True
@@ -1312,6 +1361,9 @@ class TeamMemberBase(abc.ABC):
             session_id=lead_session_id,
             extra_workspace_paths=self._team.extra_workspace_paths or None,
             read_only_paths=self._team.read_only_paths or None,
+            write_allowed_paths=(
+                claimed_paths if self._role_label == "member" else None
+            ),
         )
         token = set_sandbox(session_sandbox)
 
@@ -1321,7 +1373,7 @@ class TeamMemberBase(abc.ABC):
         # reply endpoint can resolve requests from its own request context.
         permission_service = PermissionService(
             session_id=self.session_id,
-            mode=self._team.permission_mode,  # type: ignore[arg-type]
+            mode=cast(Mode, self._team.permission_mode),
             stream_session_id=lead_session_id,
         )
         perm_token = set_permission_service(permission_service)

@@ -15,12 +15,12 @@ text blocks.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from app.agent.tools.registry import Tool
+from app.agent.tools.registry import InjectedArg, Tool
 
 if TYPE_CHECKING:
     from app.agent.mode.team.mailbox import TeamMailbox
@@ -54,6 +54,10 @@ class Verification(BaseModel):
             "(e.g. 'file exists, 45 lines', 'all 12 tests pass')."
         ),
     )
+    command_ids: list[str] = Field(default_factory=list)
+    exit_codes: list[int] = Field(default_factory=list)
+    revision: str | None = None
+    artifact_hash: str | None = None
 
 
 class HandoffArtifact(BaseModel):
@@ -281,6 +285,7 @@ def make_team_handoff_tool(
                 ),
             ),
         ] = None,
+        _state: Annotated[Any, InjectedArg()] = None,
     ) -> str:
         """Deliver a structured work artifact to teammates."""
         from app.agent.mode.team.mailbox import Message
@@ -340,9 +345,39 @@ def make_team_handoff_tool(
                 except (TypeError, ValueError) as exc:
                     return f"Error: {exc}"
 
-        # Build verification if provided
+        contract = (
+            _state.metadata.get("completion_contract") if _state is not None else None
+        )
+        machine_verified = isinstance(contract, dict) and contract.get("passed") is True
+
+        # Build verification from machine evidence when available. Self-reported
+        # fields remain useful for non-coding/research handoffs only.
         verification: Verification | None = None
-        if verified is not None:
+        if machine_verified:
+            records = [
+                item for item in contract.get("evidence", []) if isinstance(item, dict)
+            ]
+            verification = Verification(
+                verified=True,
+                method="completion_contract",
+                result=f"{len(records)} deterministic check(s) passed.",
+                command_ids=[
+                    str(item["command_id"])
+                    for item in records
+                    if item.get("command_id")
+                ],
+                exit_codes=[
+                    int(item["exit_code"])
+                    for item in records
+                    if isinstance(item.get("exit_code"), int)
+                ],
+                revision=next(
+                    (str(item["revision"]) for item in records if item.get("revision")),
+                    None,
+                ),
+                artifact_hash=str(contract.get("artifact_hash") or "") or None,
+            )
+        elif verified is not None:
             verification = Verification(
                 verified=verified,
                 method=verification_method
@@ -366,11 +401,21 @@ def make_team_handoff_tool(
                     "(at least 20 characters)."
                 )
             # Members delivering final work that mutated state MUST verify
-            if role == "member" and verified is None:
+            if role == "member" and verification is None:
                 quality_issues.append(
                     "Final deliverables require a verification record. "
                     "Set verified=True/False with verification_method describing "
                     "how you checked your work (or why you didn't)."
+                )
+            changed_files = (
+                _state.metadata.get("_verification_changed_files")
+                if _state is not None
+                else None
+            )
+            if role == "member" and changed_files and not machine_verified:
+                quality_issues.append(
+                    "Changed-file deliverables require a passing machine-generated "
+                    "CompletionContract; self-reported verification is not sufficient."
                 )
             if quality_issues:
                 return (

@@ -448,9 +448,7 @@ class TestResolveTeamSession:
         assert {k: v for k, v in repos[0].items() if k != "workspace_id"} == {
             "path": str(repo),
             "name": "repo",
-            "worktrees": [
-                {"path": str(worktree), "name": "task-a", "managed": True}
-            ],
+            "worktrees": [{"path": str(worktree), "name": "task-a", "managed": True}],
             "project_id": None,
         }
 
@@ -569,7 +567,11 @@ class TestResolveTeamSession:
             project_id = project.id
         async with _db.async_session_factory() as db:
             async with db.begin():
-                db.add(CodingWorkspace(path=str(standalone), kind="repo", name="standalone"))
+                db.add(
+                    CodingWorkspace(
+                        path=str(standalone), kind="repo", name="standalone"
+                    )
+                )
 
         client = TestClient(app_with_team)
         tree = client.get("/api/team/workspace/tree")
@@ -908,11 +910,17 @@ class TestTeamHistoryWithData:
         ).json()
         second_messages = [
             *second["lead"]["messages"],
-            *(message for member in second["members"] for message in member["messages"]),
+            *(
+                message
+                for member in second["members"]
+                for message in member["messages"]
+            ),
         ]
         assert len(second_messages) == 20
         assert second["has_more"] is False
-        contents = {message["content"] for message in [*first_messages, *second_messages]}
+        contents = {
+            message["content"] for message in [*first_messages, *second_messages]
+        }
         assert contents == {f"message-{index}" for index in range(120)}
 
     @pytest.mark.asyncio
@@ -946,7 +954,11 @@ class TestTeamHistoryWithData:
             *first["lead"]["messages"],
             *(message for member in first["members"] for message in member["messages"]),
             *second["lead"]["messages"],
-            *(message for member in second["members"] for message in member["messages"]),
+            *(
+                message
+                for member in second["members"]
+                for message in member["messages"]
+            ),
         ]
         assert len(messages) == 120
         assert {message["content"] for message in messages} == {

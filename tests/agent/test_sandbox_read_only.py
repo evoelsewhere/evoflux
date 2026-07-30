@@ -62,13 +62,31 @@ def test_write_to_nested_file_under_read_only_path_is_rejected(tmp_path):
         sandbox.validate_path(str(nested / "file.cbl"), is_write=True)
 
 
-def test_no_read_only_paths_configured_allows_all_writes(tmp_path):
+def test_no_read_only_paths_configured_rejects_external_writes(tmp_path):
     other = tmp_path / "other-repo"
     other.mkdir()
-    sandbox = SandboxConfig(workspace=str(tmp_path / "ws"), denied_roots=[], denied_patterns=[])
+    sandbox = SandboxConfig(
+        workspace=str(tmp_path / "ws"), denied_roots=[], denied_patterns=[]
+    )
 
-    result = sandbox.validate_path(str(other / "file.txt"), is_write=True)
-    assert result == (other / "file.txt").resolve()
+    with pytest.raises(PermissionError, match="outside the allowed sandbox roots"):
+        sandbox.validate_path(str(other / "file.txt"), is_write=True)
+
+
+def test_write_claim_restricts_member_to_declared_subtree(tmp_path):
+    sandbox = SandboxConfig(
+        workspace=str(tmp_path / "ws"),
+        denied_roots=[],
+        denied_patterns=[],
+        write_allowed_paths=["app/agent"],
+    )
+
+    assert (
+        sandbox.validate_path("app/agent/core.py", is_write=True)
+        == (tmp_path / "ws" / "app" / "agent" / "core.py").resolve()
+    )
+    with pytest.raises(PermissionError, match="active write claims"):
+        sandbox.validate_path("web/src/app.tsx", is_write=True)
 
 
 # ---------------------------------------------------------------------------

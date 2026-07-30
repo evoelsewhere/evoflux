@@ -54,7 +54,9 @@ class _ScriptExtractParser(TreeSitterParser):
             self._extract_scripts(root)
         ):
             script_bytes = source[content_node.start_byte : content_node.end_byte]
-            delegated = self._parser_for_script(script_node, content_node, source).parse(
+            delegated = self._parser_for_script(
+                script_node, content_node, source
+            ).parse(
                 file_path=file_path,
                 source=script_bytes,
             )
@@ -88,9 +90,7 @@ class _ScriptExtractParser(TreeSitterParser):
                             else None
                         ),
                         line=(
-                            edge.line + line_offset
-                            if edge.line is not None
-                            else None
+                            edge.line + line_offset if edge.line is not None else None
                         ),
                     )
                 )

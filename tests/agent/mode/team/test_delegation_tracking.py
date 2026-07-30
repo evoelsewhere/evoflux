@@ -267,7 +267,9 @@ class TestLeadWaitNudge:
 
     async def test_noop_for_member_role(self):
         team = await _make_team(rows=[_row("assistant", "Some answer.", None)])
-        team.register_delegation("worker", ["lead"])  # contrived, but role gate must win
+        team.register_delegation(
+            "worker", ["lead"]
+        )  # contrived, but role gate must win
         await team.members["worker"]._maybe_inject_delegation_wait_nudge()
         assert team.mailbox.inbox_empty("worker")
 
@@ -306,9 +308,7 @@ class TestLeadWaitNudge:
         team = await _make_team(
             rows=[_row("assistant", "Here's the final answer.", None)]
         )
-        first, second = team.register_delegation(
-            "lead", ["executor#1", "executor#1"]
-        )
+        first, second = team.register_delegation("lead", ["executor#1", "executor#1"])
 
         await team.lead._maybe_inject_delegation_wait_nudge()
         first_nudge = team.mailbox.receive_nowait("lead")
@@ -329,7 +329,9 @@ class TestLeadWaitNudge:
 
         for _ in range(MAX_LEAD_WAIT_NUDGES):
             await team.lead._maybe_inject_delegation_wait_nudge()
-            team.mailbox.receive_nowait("lead")  # drain so inbox_empty reflects new sends
+            team.mailbox.receive_nowait(
+                "lead"
+            )  # drain so inbox_empty reflects new sends
 
         await team.lead._maybe_inject_delegation_wait_nudge()
         assert team.mailbox.inbox_empty("lead")

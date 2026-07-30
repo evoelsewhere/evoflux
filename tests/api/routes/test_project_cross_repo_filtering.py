@@ -54,7 +54,9 @@ async def _create_project(*repos: Path):
 
 
 async def _reindex(client, workspace: Path) -> None:
-    res = await client.post("/api/code-graph/reindex", params={"workspace": str(workspace)})
+    res = await client.post(
+        "/api/code-graph/reindex", params={"workspace": str(workspace)}
+    )
     assert res.status_code == 202
     await _wait_until_indexed(client, workspace)
 
@@ -102,12 +104,13 @@ async def test_liquibase_style_import_marked_external(client, tmp_path: Path):
     core = tmp_path / "openmrs-core"
     (core / "api/src/main/java/liquibase/ext/change/core").mkdir(parents=True)
     (core / "pom.xml").write_text(
-        "<project xmlns=\"http://maven.apache.org/POM/4.0.0\">"
+        '<project xmlns="http://maven.apache.org/POM/4.0.0">'
         "<groupId>org.openmrs</groupId><artifactId>openmrs-api</artifactId>"
         "</project>"
     )
     (
-        core / "api/src/main/java/liquibase/ext/change/core/InsertWithUuidDataChange.java"
+        core
+        / "api/src/main/java/liquibase/ext/change/core/InsertWithUuidDataChange.java"
     ).write_text(
         "package liquibase.ext.change.core;\n\n"
         "import liquibase.change.ChangeMetadata;\n\n"
@@ -119,7 +122,7 @@ async def test_liquibase_style_import_marked_external(client, tmp_path: Path):
     other = tmp_path / "openmrs-module-webservices"
     other.mkdir()
     (other / "pom.xml").write_text(
-        "<project xmlns=\"http://maven.apache.org/POM/4.0.0\">"
+        '<project xmlns="http://maven.apache.org/POM/4.0.0">'
         "<groupId>org.openmrs.module</groupId><artifactId>webservices.rest</artifactId>"
         "</project>"
     )
@@ -156,7 +159,7 @@ async def test_real_cross_repo_reference_still_resolves_alongside_noise(
     repo_a = tmp_path / "app-a"
     (repo_a / "src").mkdir(parents=True)
     (repo_a / "pom.xml").write_text(
-        "<project xmlns=\"http://maven.apache.org/POM/4.0.0\">"
+        '<project xmlns="http://maven.apache.org/POM/4.0.0">'
         "<groupId>com.acme</groupId><artifactId>app</artifactId>"
         "<dependencies><dependency><groupId>org.liquibase</groupId>"
         "<artifactId>liquibase-core</artifactId></dependency></dependencies>"
@@ -203,13 +206,13 @@ async def test_reject_dismisses_and_survives_reindex(client, tmp_path: Path):
     repo_a = tmp_path / "reject-app"
     repo_a.mkdir()
     (repo_a / "Main.java").write_text(
-        "package com.acme.app;\n\n"
-        "import com.acme.mystery.Thing;\n\n"
-        "class Main {\n}\n"
+        "package com.acme.app;\n\nimport com.acme.mystery.Thing;\n\nclass Main {\n}\n"
     )
     repo_b = tmp_path / "reject-other"
     repo_b.mkdir()
-    (repo_b / "Placeholder.java").write_text("package com.acme.other;\n\nclass Placeholder {}\n")
+    (repo_b / "Placeholder.java").write_text(
+        "package com.acme.other;\n\nclass Placeholder {}\n"
+    )
 
     project_id = await _create_project(repo_a, repo_b)
     await _reindex(client, repo_a)

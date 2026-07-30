@@ -504,6 +504,7 @@ class SummarizationHook(BaseAgentHook):
             ctx.agent_name,
             state.usage.last_prompt_tokens,
         )
+        state.metadata["_compact_pending"] = True
         self._pending_summary = (ctx, state)
 
         # The actual summariser LLM call runs from wrap_model_call(), after
@@ -712,6 +713,7 @@ class SummarizationHook(BaseAgentHook):
         # persists the mutated state.messages.
 
         self._messages_at_last_summary = len(state.messages)
+        state.metadata["_compact_completed"] = True
 
         kept = len(eligible) - len(to_summarise)
         span.set_attribute("summarization.summary_length", len(summary_text))

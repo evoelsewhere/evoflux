@@ -609,9 +609,7 @@ State what changed, which checks ran with which result, and what remains risky o
 
 def EVOFLUX_description_for_mode(mode: str) -> str:
     """Return the built-in lead description for a team mode."""
-    return (
-        CODING_EVOFLUX_DESCRIPTION if mode == "coding" else FORGE_EVOFLUX_DESCRIPTION
-    )
+    return CODING_EVOFLUX_DESCRIPTION if mode == "coding" else FORGE_EVOFLUX_DESCRIPTION
 
 
 def EVOFLUX_prompt_for_mode(mode: str) -> str:

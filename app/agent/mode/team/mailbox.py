@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from uuid import uuid7
 from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field
+
+from app.uuid7 import uuid7
 
 
 class Message(BaseModel):

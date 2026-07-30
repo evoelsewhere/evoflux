@@ -168,18 +168,18 @@ def test_typescript_type_literal_signatures_are_not_methods():
 
 
 def test_typescript_namespace_qualifies_declarations():
-        source = b"""namespace Validation {
+    source = b"""namespace Validation {
     export interface Rule {}
     export class Validator { run() {} }
 }
 """
-        result = TypeScriptParser().parse(file_path="validation.ts", source=source)
-        qualified = {node.name: node.qualified_name for node in result.nodes}
+    result = TypeScriptParser().parse(file_path="validation.ts", source=source)
+    qualified = {node.name: node.qualified_name for node in result.nodes}
 
-        assert qualified["Validation"] == "Validation"
-        assert qualified["Rule"] == "Validation.Rule"
-        assert qualified["Validator"] == "Validation.Validator"
-        assert qualified["run"] == "Validation.Validator.run"
+    assert qualified["Validation"] == "Validation"
+    assert qualified["Rule"] == "Validation.Rule"
+    assert qualified["Validator"] == "Validation.Validator"
+    assert qualified["run"] == "Validation.Validator.run"
 
 
 # ── Registry ──────────────────────────────────────────────────────────────────
@@ -847,7 +847,9 @@ async def test_code_path_resolves_pure_sibling_repo_path(tmp_path):
     repo_a = tmp_path / "repo-a"
     active_repo.mkdir()
     repo_a.mkdir()
-    (active_repo / "unrelated.py").write_text("def unrelated():\n    pass\n", encoding="utf-8")
+    (active_repo / "unrelated.py").write_text(
+        "def unrelated():\n    pass\n", encoding="utf-8"
+    )
     (repo_a / "main.py").write_text(
         "def foo():\n    return bar()\n\ndef bar():\n    return 1\n", encoding="utf-8"
     )
@@ -901,12 +903,13 @@ async def test_code_path_tries_other_candidates_before_same_symbol(tmp_path):
     repo_a = tmp_path / "repo-a"
     active_repo.mkdir()
     repo_a.mkdir()
-    (active_repo / "unrelated.py").write_text("def unrelated():\n    pass\n", encoding="utf-8")
+    (active_repo / "unrelated.py").write_text(
+        "def unrelated():\n    pass\n", encoding="utf-8"
+    )
     # "Helper" is a substring of "HelperImpl" — the sibling fallback's
     # lexical search can match a query for one against both.
     (repo_a / "helper.py").write_text(
-        "class Helper:\n    pass\n\n"
-        "class HelperImpl(Helper):\n    pass\n",
+        "class Helper:\n    pass\n\nclass HelperImpl(Helper):\n    pass\n",
         encoding="utf-8",
     )
 
@@ -1066,5 +1069,3 @@ async def test_incremental_reindex_removes_deleted_file(setup_db, tmp_path: Path
             n.name == "foo"
             for n in await search_nodes(db, workspace_id=workspace_id, query="foo")
         )
-
-

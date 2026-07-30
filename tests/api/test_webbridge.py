@@ -1829,8 +1829,8 @@ async def test_side_panel_transcript_composer_and_handoff_are_pairing_scoped(
                         "attachments": [
                             {
                                 "filename": "panel.png",
-                                    "path": str(attachment_root / "panel.png"),
-                                    "workspace_path": str(attachment_root / "panel.png"),
+                                "path": str(attachment_root / "panel.png"),
+                                "workspace_path": str(attachment_root / "panel.png"),
                                 "original_name": "panel.png",
                                 "media_type": "image/png",
                                 "category": "image",
@@ -2117,9 +2117,7 @@ async def test_side_panel_markdown_media_requires_visible_reference(
         headers={"Authorization": f"Bearer {owner['credential']}"},
     )
     assert unreferenced.status_code == 404
-    denied = client.get(
-        url, headers={"Authorization": f"Bearer {other['credential']}"}
-    )
+    denied = client.get(url, headers={"Authorization": f"Bearer {other['credential']}"})
     assert denied.status_code == 403
 
 
@@ -2205,9 +2203,7 @@ async def test_browser_artifact_lifecycle_is_pairing_owned_and_expires(
         for message in history["messages"]
         if message["content"] == "Expired capture"
     )
-    expired_url = (
-        f"{_PREFIX}/sessions/{session.id}/messages/{expired.id}/attachments/0"
-    )
+    expired_url = f"{_PREFIX}/sessions/{session.id}/messages/{expired.id}/attachments/0"
     expired_response = client.get(expired_url, headers=headers)
     assert expired_response.status_code == 410
     assert not (root / "expired.png").exists()

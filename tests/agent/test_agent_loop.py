@@ -910,6 +910,87 @@ async def test_tool_metadata_drives_deferral_without_a_static_catalog():
     assert "future_specialized_tool" in second_names
 
 
+async def test_load_tool_refreshes_mcp_granted_during_same_run(tmp_path, monkeypatch):
+    """An MCP wired after the run starts is searchable and activatable without
+    waiting for a new user turn."""
+    from app.agent.mcp import mcp_manager
+    from app.agent.tools.builtin.load_tool import load_tool
+    from app.agent.tools.registry import Tool
+
+    mcp_search = Tool(
+        lambda: "docs result",
+        name="mcp_docs_search",
+        deferred=True,
+        deferred_summary="Search the connected documentation server.",
+    )
+    mcp_search.origin = "mcp"
+
+    source = tmp_path / "lead.md"
+    source.write_text(
+        "---\nname: lead\nrole: lead\nmcp:\n  - docs\n---\n\nUse connected tools.",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        mcp_manager,
+        "get_tools_for_server",
+        lambda name: [mcp_search] if name == "docs" else None,
+    )
+
+    calls: list[dict] = []
+
+    async def _search_iteration():
+        yield _tool_chunk(
+            0,
+            "call_search",
+            "load_tool",
+            '{"query": "documentation search"}',
+        )
+        yield _finish_chunk()
+
+    async def _activate_iteration():
+        yield _tool_chunk(
+            0,
+            "call_activate",
+            "load_tool",
+            '{"tool_name": "mcp_docs_search"}',
+        )
+        yield _finish_chunk()
+
+    async def _finish_iteration():
+        yield _text_chunk("done", finish="stop")
+
+    def _stream_side_effect(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            return _search_iteration()
+        if len(calls) == 2:
+            return _activate_iteration()
+        return _finish_iteration()
+
+    mock_provider = MagicMock()
+    mock_provider.stream.side_effect = _stream_side_effect
+    agent = Agent(
+        llm_provider=mock_provider,
+        name="lead",
+        tools=[load_tool],
+    )
+    agent.source_path = source
+
+    await agent.run([HumanMessage(content="Use the docs MCP")])
+
+    assert len(calls) == 3
+    search_results = [
+        message.content
+        for message in calls[1]["messages"]
+        if isinstance(message, ToolMessage)
+    ]
+    assert any("mcp_docs_search" in result for result in search_results)
+    first_names = {tool["function"]["name"] for tool in calls[0]["tools"]}
+    final_names = {tool["function"]["name"] for tool in calls[2]["tools"]}
+    assert "mcp_docs_search" not in first_names
+    assert "mcp_docs_search" in final_names
+
+
 async def test_deferred_metadata_stays_visible_without_loader_tool():
     """A standalone Agent cannot strand a deferred tool when no activation
     tool was granted to that agent."""

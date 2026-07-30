@@ -12,7 +12,9 @@ from app.services.aim.rulebook import (
 )
 
 
-def _write_rulebook(kb_root: Path, *, rulebook_id: str = "sample", version: str = "0.1"):
+def _write_rulebook(
+    kb_root: Path, *, rulebook_id: str = "sample", version: str = "0.1"
+):
     directory = kb_root / "rulebook"
     directory.mkdir(parents=True)
     (directory / "rulebook.yaml").write_text(
@@ -65,8 +67,7 @@ def test_rulebook_manifest_validates_stack_extensions(tmp_path: Path):
     _write_rulebook(tmp_path)
     path = tmp_path / "rulebook/rulebook.yaml"
     path.write_text(
-        "id: sample\nversion: '0.1'\n"
-        "source:\n  stack: legacy\n  file_extensions: [c]\n"
+        "id: sample\nversion: '0.1'\nsource:\n  stack: legacy\n  file_extensions: [c]\n"
     )
 
     with pytest.raises(ValueError, match="must start with"):

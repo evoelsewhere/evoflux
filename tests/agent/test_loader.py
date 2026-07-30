@@ -225,8 +225,14 @@ def test_tier_tools_lead_only_and_tier_filters():
     lead_coding = set(tier_tools(registry, mode="coding", role="lead"))
 
     # User-interaction / session-structure tools are lead-only
-    for name in ("ask_user", "enter_plan_mode", "exit_plan_mode",
-                 "mark_chapter", "worktree_start", "worktree_finish"):
+    for name in (
+        "ask_user",
+        "enter_plan_mode",
+        "exit_plan_mode",
+        "mark_chapter",
+        "worktree_start",
+        "worktree_finish",
+    ):
         assert name in lead_normal
         assert name not in member_normal
 
@@ -848,9 +854,9 @@ def test_builtin_member_profiles_are_curated_to_default_agents():
         "debate",
         "architect",
     }
-    assert "review-pull-requests" in BUILTIN_MEMBER_PROFILES["coding"]["debate"][
-        "skills"
-    ]
+    assert (
+        "review-pull-requests" in BUILTIN_MEMBER_PROFILES["coding"]["debate"]["skills"]
+    )
     for profile in BUILTIN_MEMBER_PROFILES["coding"].values():
         assert "code-graph-navigation" in profile["skills"]
         assert "## Navigation strategy" not in profile["prompt"]
@@ -981,9 +987,7 @@ def test_builtin_member_legacy_seed_prompt_is_not_appended(tmp_path):
     )
     factory, _ = _make_provider_factory()
     agent = rebuild_agent_from_disk(f, provider_factory=factory)
-    assert (
-        agent.system_prompt == BUILTIN_MEMBER_PROFILES["forge"]["executor"]["prompt"]
-    )
+    assert agent.system_prompt == BUILTIN_MEMBER_PROFILES["forge"]["executor"]["prompt"]
 
 
 def test_load_team_from_dir_degrades_when_lead_provider_missing_key(tmp_path):

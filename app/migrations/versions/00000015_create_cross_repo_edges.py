@@ -62,9 +62,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     with op.batch_alter_table("code_cross_repo_edges", schema=None) as batch_op:
-        batch_op.create_index(
-            "ix_cre_project_status", ["project_id", "status"]
-        )
+        batch_op.create_index("ix_cre_project_status", ["project_id", "status"])
         batch_op.create_index(
             "ix_cre_project_src_ws", ["project_id", "src_workspace_id"]
         )

@@ -392,9 +392,7 @@ class CodingProject(SQLModel, table=True):
     """A named project grouping multiple CodingWorkspace repositories."""
 
     __tablename__: str = "coding_projects"  # type: ignore[reportIncompatibleVariableOverride]
-    __table_args__ = (
-        sa.Index("ix_coding_projects_created_at", "created_at"),
-    )
+    __table_args__ = (sa.Index("ix_coding_projects_created_at", "created_at"),)
 
     id: UUID = Field(default_factory=uuid7, primary_key=True)
     name: str = Field(sa_column=Column(sa.String(255), nullable=False))
@@ -491,7 +489,9 @@ class SessionChapter(SQLModel, table=True):
         ),
     )
     title: str = Field(max_length=255)
-    summary: str | None = Field(default=None, sa_column=Column(sa.Text(), nullable=True))
+    summary: str | None = Field(
+        default=None, sa_column=Column(sa.Text(), nullable=True)
+    )
     message_id: UUID | None = Field(
         default=None,
         sa_column=Column(

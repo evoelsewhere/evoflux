@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Set
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
@@ -63,7 +64,7 @@ def _plan_summary(tool_name: str, args: dict) -> str:
 def make_tool_executor(
     run_tools: dict[str, Tool],
     agent_name: str,
-    deferred_names: frozenset[str] = frozenset(),
+    deferred_names: Set[str] = frozenset(),
 ) -> ToolCallHandler:
     """Return the innermost tool executor coroutine for one ``Agent.run``.
 
@@ -149,6 +150,34 @@ def make_tool_executor(
                 )
                 return result
             # ─────────────────────────────────────────────────────────────
+
+            # Approved plan execution is bound to the exact recorded call
+            # sequence. A model cannot silently alter arguments after approval.
+            if (
+                not s.metadata.get("_plan_mode")
+                and tc.function.name in _PLAN_INTERCEPTED
+            ):
+                from app.agent.plan import get_plan_mode_service
+
+                authorization = get_plan_mode_service().authorize_approved_call(
+                    tc.function.name, args
+                )
+                if authorization is not None:
+                    allowed, detail = authorization
+                    if not allowed:
+                        logger.warning(
+                            "approved_plan_call_blocked agent={} tool={} detail={}",
+                            agent_name,
+                            tc.function.name,
+                            detail,
+                        )
+                        return f"[Blocked — approved plan mismatch] {detail}"
+                    logger.info(
+                        "approved_plan_call_matched agent={} tool={} detail={}",
+                        agent_name,
+                        tc.function.name,
+                        detail,
+                    )
 
             # Surface team routing context as first-class injected args so
             # tools (e.g. schedule_task) don't have to fish through

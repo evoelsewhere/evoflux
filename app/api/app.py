@@ -247,6 +247,10 @@ async def lifespan(app: FastAPI):
         name="optional-service-startup",
     )
     app.state.optional_startup_task = optional_startup_task
+    # Give the optional task one scheduling turn. This starts cheap services
+    # immediately while preserving the non-blocking startup boundary for any
+    # service that performs real I/O.
+    await asyncio.sleep(0)
 
     logger.info(
         "critical_startup_ready total_ms={}",
@@ -277,9 +281,11 @@ async def lifespan(app: FastAPI):
     # process groups — they would outlive the sidecar without this.
     from app.agent.tools.builtin.browser_use_tool import close_all_sessions
     from app.agent.tools.builtin.preview import stop_all_servers
+    from app.agent.lsp_manager import close_language_servers
 
     await close_all_sessions()
     await stop_all_servers()
+    await close_language_servers()
 
     await stream_store.close()
     await stop_otel_retention()

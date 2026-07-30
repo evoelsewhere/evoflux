@@ -100,9 +100,7 @@ class CodeGraphWatcher:
                 return bool(self._watched_workspaces)
 
             self._watched_workspaces.extend(new_paths)
-            await workspace_file_watcher.add_callback_many(
-                new_paths, self._on_change
-            )
+            await workspace_file_watcher.add_callback_many(new_paths, self._on_change)
             logger.info(
                 "code_graph_watcher_started workspaces={} new={}",
                 len(self._watched_workspaces),

@@ -140,25 +140,54 @@ def evaluate(tool: str, pattern: str, *rulesets: Ruleset) -> Rule:
 _SAFE_TOOLS: frozenset[str] = frozenset(
     {
         # read-only filesystem & search
-        "read", "glob", "grep", "ls",
+        "read",
+        "glob",
+        "grep",
+        "ls",
         # code intelligence / diagnostics
-        "lsp_diagnostics", "lsp_definition", "lsp_references",
-        "code_search", "code_graph", "code_overview", "code_path",
+        "lsp_diagnostics",
+        "lsp_definition",
+        "lsp_references",
+        "static_diagnostics",
+        "code_definition",
+        "code_references",
+        "code_search",
+        "code_graph",
+        "code_overview",
+        "code_path",
         # read-only web / info retrieval
-        "date", "web_search", "web_fetch", "image_search",
-        "memory_search", "wiki_search",
-        "list_code_reviews", "get_code_review", "get_code_review_checks",
+        "date",
+        "web_search",
+        "web_fetch",
+        "image_search",
+        "memory_search",
+        "wiki_search",
+        "list_code_reviews",
+        "get_code_review",
+        "get_code_review_checks",
         # session bookkeeping / UI-only output
-        "note", "mark_chapter", "show_widget", "read_me", "todo_manage",
+        "note",
+        "mark_chapter",
+        "show_widget",
+        "read_me",
+        "todo_manage",
         # user interaction & plan flow (already block on the user)
-        "ask_user", "enter_plan_mode", "exit_plan_mode",
+        "ask_user",
+        "enter_plan_mode",
+        "exit_plan_mode",
         # team coordination (no system side effects)
-        "team_message", "team_handoff", "team_state", "team_delegate",
-        "team_reject", "team_manage",
+        "team_message",
+        "team_handoff",
+        "team_state",
+        "team_delegate",
+        "team_reject",
+        "team_manage",
         # background-task introspection (start stays gated)
-        "shell_bg_status", "shell_bg_wait",
+        "shell_bg_status",
+        "shell_bg_wait",
         # instruction/schema loading only; real execution stays permission-gated
-        "skill", "load_tool",
+        "skill",
+        "load_tool",
     }
 )
 
@@ -489,9 +518,21 @@ def get_services_for_stream(session_id: str) -> list[PermissionService]:
 # Number of leading command tokens that form the approval prefix, mirroring
 # opencode's BashArity: `git push` approves `git push *`, not all of git.
 _COMMAND_ARITY: dict[str, int] = {
-    "git": 2, "npm": 2, "pnpm": 2, "yarn": 2, "bun": 2, "uv": 2,
-    "docker": 2, "kubectl": 2, "cargo": 2, "go": 2, "pip": 2, "brew": 2,
-    "make": 1, "python": 1, "node": 1,
+    "git": 2,
+    "npm": 2,
+    "pnpm": 2,
+    "yarn": 2,
+    "bun": 2,
+    "uv": 2,
+    "docker": 2,
+    "kubectl": 2,
+    "cargo": 2,
+    "go": 2,
+    "pip": 2,
+    "brew": 2,
+    "make": 1,
+    "python": 1,
+    "node": 1,
 }
 
 

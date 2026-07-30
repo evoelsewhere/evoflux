@@ -222,9 +222,7 @@ _RUBY_MODIFIER_KEYWORDS = frozenset(
     }
 )
 
-_RUBY_ATTRIBUTE_MACROS = frozenset(
-    {"attr_reader", "attr_writer", "attr_accessor"}
-)
+_RUBY_ATTRIBUTE_MACROS = frozenset({"attr_reader", "attr_writer", "attr_accessor"})
 
 
 def _ruby_static_attribute_name(node: Node, source: bytes) -> str | None:

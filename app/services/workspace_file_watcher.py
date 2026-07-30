@@ -47,9 +47,7 @@ class WorkspaceFileWatcher:
     # Queue-based subscription (SSE endpoints)
     # ------------------------------------------------------------------
 
-    async def subscribe(
-        self, workspace: str
-    ) -> asyncio.Queue[list[FsChangeEvent]]:
+    async def subscribe(self, workspace: str) -> asyncio.Queue[list[FsChangeEvent]]:
         """Add a queue subscriber for a workspace. Starts the watcher if needed."""
         queue: asyncio.Queue[list[FsChangeEvent]] = asyncio.Queue(maxsize=64)
         async with self._lock:
@@ -73,17 +71,13 @@ class WorkspaceFileWatcher:
     # Callback-based subscription (code-graph, plugins)
     # ------------------------------------------------------------------
 
-    async def add_callback(
-        self, workspace: str, callback: FsChangeCallback
-    ) -> None:
+    async def add_callback(self, workspace: str, callback: FsChangeCallback) -> None:
         """Register an async callback for change events. Starts the watcher if needed."""
         async with self._lock:
             self._callbacks[workspace].append(callback)
             self._ensure_task(workspace)
 
-    async def remove_callback(
-        self, workspace: str, callback: FsChangeCallback
-    ) -> None:
+    async def remove_callback(self, workspace: str, callback: FsChangeCallback) -> None:
         """Unregister a callback. Stops the watcher if no subscribers remain."""
         async with self._lock:
             cbs = self._callbacks.get(workspace, [])
@@ -197,10 +191,12 @@ class WorkspaceFileWatcher:
                     rel = raw_path[prefix_len:].replace("\\", "/")
                     if not rel:
                         continue
-                    events.append({
-                        "type": change_map.get(change_type, "modified"),
-                        "path": rel,
-                    })
+                    events.append(
+                        {
+                            "type": change_map.get(change_type, "modified"),
+                            "path": rel,
+                        }
+                    )
 
                 if not events:
                     continue

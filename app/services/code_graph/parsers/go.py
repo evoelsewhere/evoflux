@@ -84,9 +84,7 @@ class GoParser(TreeSitterParser):
             if name_node is not None:
                 receiver_type = self._receiver_type(node, source)
                 prefix = (
-                    f"{self._package_prefix}{receiver_type}."
-                    if receiver_type
-                    else None
+                    f"{self._package_prefix}{receiver_type}." if receiver_type else None
                 )
                 return Definition(
                     kind=NODE_METHOD,

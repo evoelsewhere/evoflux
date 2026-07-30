@@ -291,8 +291,7 @@ async def test_read_allows_log_paths(sandbox_workspace):
         log_path.write_text("log content", encoding="utf-8")
 
         assert (
-            await read_file.arun(path=str(log_path.resolve()))
-            == "00001| log content"
+            await read_file.arun(path=str(log_path.resolve())) == "00001| log content"
         )
     finally:
         _sandbox_ctx.reset(token)
@@ -636,7 +635,9 @@ def no_rg(monkeypatch):
 
     real_which = _shutil.which
     monkeypatch.setattr(
-        _shutil, "which", lambda name, *a, **kw: None if name == "rg" else real_which(name, *a, **kw)
+        _shutil,
+        "which",
+        lambda name, *a, **kw: None if name == "rg" else real_which(name, *a, **kw),
     )
 
 
@@ -675,7 +676,9 @@ class TestGrepFlags:
         result = await grep_files.arun(
             pattern="hit", directory=".", include="caps.txt", context=1, max_results=2
         )
-        match_lines = [l for l in result.split("\n") if ":" in l and ": hit" in l]
+        match_lines = [
+            line for line in result.split("\n") if ":" in line and ": hit" in line
+        ]
         assert len(match_lines) == 2
 
 
@@ -694,7 +697,9 @@ def _install_fake_rg(tmp_path, monkeypatch, body: str):
     monkeypatch.setattr(
         _shutil,
         "which",
-        lambda name, *a, **kw: str(script) if name == "rg" else real_which(name, *a, **kw),
+        lambda name, *a, **kw: (
+            str(script) if name == "rg" else real_which(name, *a, **kw)
+        ),
     )
     return script
 
@@ -725,7 +730,9 @@ class TestGrepRipgrep:
         result = await grep_files.arun(pattern="anything", directory=".", max_results=2)
         assert result.count("hello.py:") == 2
 
-    async def test_rg_error_falls_back_to_python(self, workspace, tmp_path, monkeypatch):
+    async def test_rg_error_falls_back_to_python(
+        self, workspace, tmp_path, monkeypatch
+    ):
         _install_fake_rg(tmp_path, monkeypatch, "import sys\nsys.exit(2)\n")
         result = await grep_files.arun(pattern="def hello", directory=".")
         # Fallback scan still finds the real file content.

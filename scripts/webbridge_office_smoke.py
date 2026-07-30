@@ -33,7 +33,12 @@ CASES: dict[str, SmokeCase] = {
         snapshot_kinds=["text", "control"],
         read_target={"kind": "active_text", "scope": "selection"},
         write_target={"kind": "active_text", "scope": "selection"},
-        change={"kind": "text", "mode": "replace", "at": "caret", "text": "EvoFlux semantic smoke"},
+        change={
+            "kind": "text",
+            "mode": "replace",
+            "at": "caret",
+            "text": "EvoFlux semantic smoke",
+        },
     ),
     "google-sheets": SmokeCase(
         name="Google Sheets range matrix",
@@ -42,10 +47,12 @@ CASES: dict[str, SmokeCase] = {
         write_target={"kind": "range", "sheet": None, "address": "B2:C2"},
         change={
             "kind": "matrix",
-            "rows": [[
-                {"kind": "value", "value": "EvoFlux"},
-                {"kind": "formula", "formula": "=LEN(B2)"},
-            ]],
+            "rows": [
+                [
+                    {"kind": "value", "value": "EvoFlux"},
+                    {"kind": "formula", "formula": "=LEN(B2)"},
+                ]
+            ],
         },
     ),
     "excel-online": SmokeCase(
@@ -55,18 +62,35 @@ CASES: dict[str, SmokeCase] = {
         write_target={"kind": "range", "sheet": None, "address": "B2:C2"},
         change={
             "kind": "matrix",
-            "rows": [[
-                {"kind": "value", "value": "EvoFlux"},
-                {"kind": "formula", "formula": "=LEN(B2)"},
-            ]],
+            "rows": [
+                [
+                    {"kind": "value", "value": "EvoFlux"},
+                    {"kind": "formula", "formula": "=LEN(B2)"},
+                ]
+            ],
         },
     ),
     "powerpoint-online": SmokeCase(
         name="PowerPoint Online title replace",
         snapshot_kinds=["slide", "text", "control"],
-        read_target={"kind": "slide_object", "slide_index": 2, "role": "title", "ordinal": 0},
-        write_target={"kind": "slide_object", "slide_index": 2, "role": "title", "ordinal": 0},
-        change={"kind": "text", "mode": "replace", "at": "caret", "text": "EvoFlux semantic smoke"},
+        read_target={
+            "kind": "slide_object",
+            "slide_index": 2,
+            "role": "title",
+            "ordinal": 0,
+        },
+        write_target={
+            "kind": "slide_object",
+            "slide_index": 2,
+            "role": "title",
+            "ordinal": 0,
+        },
+        change={
+            "kind": "text",
+            "mode": "replace",
+            "at": "caret",
+            "text": "EvoFlux semantic smoke",
+        },
     ),
 }
 
@@ -82,14 +106,18 @@ async def exchange(ws: Any, action: str, params: dict[str, Any]) -> dict[str, An
 
 async def run(args: argparse.Namespace) -> int:
     case = CASES[args.case]
-    token = os.environ.get("EVOFLUX_DESKTOP_TOKEN") or os.environ.get("EVOFLUX_ACCESS_KEY")
+    token = os.environ.get("EVOFLUX_DESKTOP_TOKEN") or os.environ.get(
+        "EVOFLUX_ACCESS_KEY"
+    )
     url = f"{args.base.rstrip('/')}/api/team/webbridge/agent/{args.session_id}"
     if token:
         from urllib.parse import quote
 
         url += f"?_token={quote(token, safe='')}"
     print(f"Case: {case.name}")
-    print("Prerequisite: focus the intended editor/range/object in the paired browser tab.")
+    print(
+        "Prerequisite: focus the intended editor/range/object in the paired browser tab."
+    )
     async with websockets.connect(url, max_size=1_000_000) as ws:
         snapshot = await exchange(
             ws,
@@ -109,7 +137,11 @@ async def run(args: argparse.Namespace) -> int:
         write = await exchange(
             ws,
             "semantic_write",
-            {"target": case.write_target, "change": case.change, "verify": "normalized"},
+            {
+                "target": case.write_target,
+                "change": case.change,
+                "verify": "normalized",
+            },
         )
         print(json.dumps({"write": write}, indent=2))
         read_after = await exchange(ws, "semantic_read", {"target": case.read_target})
@@ -123,9 +155,17 @@ def parser() -> argparse.ArgumentParser:
         description="Run an opt-in authenticated semantic smoke against a paired productivity web app."
     )
     result.add_argument("case", choices=sorted(CASES))
-    result.add_argument("session_id", help="Existing WebBridge-enabled session bound to the editor tab")
-    result.add_argument("--base", default="ws://127.0.0.1:8000", help="EvoFlux WebSocket base URL")
-    result.add_argument("--read-only", action="store_true", help="Probe snapshot/read only; never ask to write")
+    result.add_argument(
+        "session_id", help="Existing WebBridge-enabled session bound to the editor tab"
+    )
+    result.add_argument(
+        "--base", default="ws://127.0.0.1:8000", help="EvoFlux WebSocket base URL"
+    )
+    result.add_argument(
+        "--read-only",
+        action="store_true",
+        help="Probe snapshot/read only; never ask to write",
+    )
     return result
 
 

@@ -53,6 +53,13 @@ async def load_tool(
     if _state is None:
         return "Cannot search or activate tools: no run context available."
 
+    refresh_catalog = _state.metadata.get("_refresh_deferred_tool_catalog")
+    if callable(refresh_catalog):
+        try:
+            refresh_catalog()
+        except Exception as exc:  # noqa: BLE001 - discovery must degrade safely
+            logger.warning("deferred_tool_catalog_refresh_failed error={}", exc)
+
     raw_catalog = _state.metadata.get("deferred_tool_catalog") or {}
     catalog = {
         str(name): str(summary)

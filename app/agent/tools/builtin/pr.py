@@ -44,9 +44,7 @@ async def _api_context(workspace: Path):
         rows = await list_visible_coding_workspaces(db)
         active = next((row for row in rows if row.path == cwd), None)
         if active is None:
-            raise GitServerApiError(
-                "This workspace is not registered in Coding mode."
-            )
+            raise GitServerApiError("This workspace is not registered in Coding mode.")
         repository_row = active
         if active.kind == "worktree" and active.source_path:
             repository_row = next(
@@ -109,9 +107,7 @@ async def _create_pull_request(
     if rc != 0:
         return f"[Error] {workspace_path} is not a git repository."
 
-    rc, current_branch = await _run(
-        ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd
-    )
+    rc, current_branch = await _run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd)
     if rc != 0:
         return f"[Error] Could not determine current branch: {current_branch}"
     source_branch = branch_name or current_branch
@@ -121,8 +117,7 @@ async def _create_pull_request(
         (
             item
             for item in reviews.items
-            if item.source_branch == source_branch
-            and item.target_branch == base_branch
+            if item.source_branch == source_branch and item.target_branch == base_branch
         ),
         None,
     )

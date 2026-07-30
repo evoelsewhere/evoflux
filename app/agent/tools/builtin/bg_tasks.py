@@ -147,7 +147,7 @@ async def _shell_bg_start(
     shell_bin = _shell_mod.acceptable()
     argv = _shell_mod.build_argv(shell_bin, command)
 
-    _extra: dict[str, object] = {}
+    _extra: dict[str, Any] = {}
     if sys.platform == "win32":
         _extra["creationflags"] = (
             subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP

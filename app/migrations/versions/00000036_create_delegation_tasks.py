@@ -30,7 +30,9 @@ def upgrade() -> None:
         ),
         sa.Column("delegator", sa.String(length=100), nullable=False),
         sa.Column("recipient", sa.String(length=100), nullable=False),
-        sa.Column("status", sa.String(length=20), nullable=False, server_default="pending"),
+        sa.Column(
+            "status", sa.String(length=20), nullable=False, server_default="pending"
+        ),
         sa.Column("spec", sa.JSON(), nullable=False, server_default="{}"),
         sa.Column("dependencies", sa.JSON(), nullable=False, server_default="[]"),
         sa.Column("attempt", sa.Integer(), nullable=False, server_default="1"),

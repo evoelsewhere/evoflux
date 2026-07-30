@@ -8,6 +8,7 @@ from loguru import logger
 from pydantic import Field
 
 from app.agent.sandbox import get_sandbox
+from app.agent.tools.builtin.filesystem._atomic import atomic_write_bytes
 from app.agent.tools.builtin.filesystem._config_watch import notify_fs_change
 from app.agent.tools.registry import Tool
 
@@ -38,9 +39,8 @@ async def _write_file(
     if not overwrite and resolved.exists():
         raise FileExistsError(f"File already exists: {rel}")
 
-    resolved.parent.mkdir(parents=True, exist_ok=True)
     encoded = content.encode("utf-8")
-    resolved.write_bytes(encoded)
+    atomic_write_bytes(resolved, encoded)
     logger.debug("file_written path={} bytes={}", resolved, len(encoded))
     notify_fs_change(resolved)
     return f"Written {len(encoded)} bytes to {rel}\nResolved path: {resolved}"

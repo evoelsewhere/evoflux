@@ -126,10 +126,11 @@ def resolve_rulebook_path(kb_root: Path, declared_path: str) -> Path:
     return resolved
 
 
-def _assert_rulebook_identity(
-    project: AimManifest, rulebook: RulebookManifest
-) -> None:
-    if rulebook.id != project.rulebook.id or rulebook.version != project.rulebook.version:
+def _assert_rulebook_identity(project: AimManifest, rulebook: RulebookManifest) -> None:
+    if (
+        rulebook.id != project.rulebook.id
+        or rulebook.version != project.rulebook.version
+    ):
         raise ValueError(
             "AIM rulebook identity mismatch: "
             f"aim.yaml pins {project.rulebook.id}@{project.rulebook.version}, "
@@ -161,9 +162,7 @@ def validate_unit_kind(kb_root: Path, kind: str) -> None:
 
 
 def project_rulebook_id(project_name: str) -> str:
-    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", project_name.strip().lower()).strip(
-        ".-_"
-    )
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", project_name.strip().lower()).strip(".-_")
     return f"{slug}-rulebook" if slug else "project-rulebook"
 
 

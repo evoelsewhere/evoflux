@@ -79,6 +79,42 @@ async def test_approved_clears_plan_mode_and_steps(service: PlanModeService):
     assert decision == "approved"
     assert service.active is False
     assert service.step_count == 0
+    assert service.approved_step_count == 1
+    assert service.approved_manifest_hash is not None
+
+
+async def test_approved_calls_must_match_and_execute_in_order(
+    service: PlanModeService,
+):
+    service.enter()
+    service.record_step("edit", {"path": "a.py", "old_string": "a"}, "edit a.py")
+    service.record_step("shell", {"command": "pytest"}, "run tests")
+    task = asyncio.create_task(service.request_approval("# Plan"))
+    req_id = await _pending_id(service)
+    service.reply(req_id, "approved")
+    await task
+
+    mismatch = service.authorize_approved_call(
+        "edit", {"path": "b.py", "old_string": "a"}
+    )
+    assert mismatch is not None
+    assert mismatch[0] is False
+    assert service.approved_step_count == 2
+
+    first = service.authorize_approved_call("edit", {"old_string": "a", "path": "a.py"})
+    assert first is not None
+    assert first[0] is True
+    assert service.approved_step_count == 1
+
+    second = service.authorize_approved_call("shell", {"command": "pytest"})
+    assert second is not None
+    assert second[0] is True
+    assert service.approved_step_count == 0
+
+    extra = service.authorize_approved_call("shell", {"command": "rm -rf build"})
+    assert extra is not None
+    assert extra[0] is False
+    assert "exhausted" in extra[1]
 
 
 async def test_reply_unknown_request_returns_false(service: PlanModeService):
@@ -120,7 +156,8 @@ async def test_tool_approved_message_and_metadata(service: PlanModeService):
     msg = await task
 
     assert "Plan approved" in msg
-    assert "1 step(s)" in msg
+    assert "1 exact step(s)" in msg
+    assert "manifest" in msg
     assert state.metadata["_plan_mode"] is False
 
 

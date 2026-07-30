@@ -204,16 +204,16 @@ end
 
 
 def test_ruby_compact_namespace_preserves_owner_and_superclass():
-        source = b"""class Admin::Account < Core::Record
+    source = b"""class Admin::Account < Core::Record
     def self.build; end
 end
 """
-        result = RubyParser().parse(file_path="account.rb", source=source)
-        qualified = {node.name: node.qualified_name for node in result.nodes}
+    result = RubyParser().parse(file_path="account.rb", source=source)
+    qualified = {node.name: node.qualified_name for node in result.nodes}
 
-        assert qualified["Account"] == "Admin.Account"
-        assert qualified["build"] == "Admin.Account.build"
-        assert _edge_names(result.edges, EDGE_INHERITS) == ["Core.Record"]
+    assert qualified["Account"] == "Admin.Account"
+    assert qualified["build"] == "Admin.Account.build"
+    assert _edge_names(result.edges, EDGE_INHERITS) == ["Core.Record"]
 
 
 # ── Scala ────────────────────────────────────────────────────────────────────
@@ -619,9 +619,7 @@ end.
     assert "TObject" in _edge_names(result.edges, EDGE_INHERITS)
     assert "IRunner" in _edge_names(result.edges, EDGE_IMPLEMENTS)
     assert {"Helper", "Work"}.issubset(_edge_names(result.edges, EDGE_CALLS))
-    assert {"TInput", "TResult"}.issubset(
-        _edge_names(result.edges, EDGE_REFERENCES)
-    )
+    assert {"TInput", "TResult"}.issubset(_edge_names(result.edges, EDGE_REFERENCES))
 
 
 # ── Web components ───────────────────────────────────────────────────────────
@@ -757,9 +755,7 @@ def test_liquid_variable_tags_emit_definitions():
 {% decrement remaining %}
 """
     result = LiquidParser().parse(file_path="card.liquid", source=source)
-    variables = {
-        node.name for node in result.nodes if node.kind == NODE_VARIABLE
-    }
+    variables = {node.name for node in result.nodes if node.kind == NODE_VARIABLE}
 
     assert variables == {"title", "body", "counter", "remaining"}
 

@@ -89,6 +89,7 @@ async def _bulk_insert_chunked(
         if start + batch_size < len(rows):
             await asyncio.sleep(0)
 
+
 # Single-threaded executor for CPU-heavy indexing work (tree-sitter parsing,
 # file hashing). Serializes all code-graph computation to one thread so it
 # cannot saturate all cores or spike RAM when multiple workspaces or
@@ -179,9 +180,7 @@ async def reindex_workspace(
 
     parser_strategy = await parser_strategy_for_workspace(db, workspace_id)
     extra_parsers = await structural_parsers_for_workspace(db, workspace_id)
-    builtin_languages = (
-        [] if parser_strategy in {"structural", "none"} else languages
-    )
+    builtin_languages = [] if parser_strategy in {"structural", "none"} else languages
     registry = build_registry(builtin_languages, extra_parsers=extra_parsers)
     if incremental:
         return await _reindex_incremental(
@@ -1187,8 +1186,17 @@ async def get_overview(
 # Edge kinds that represent a "usage" of the target symbol.
 _REFERENCE_EDGE_KINDS = frozenset(
     {
-        "calls", "references", "imports", "inherits", "implements",
-        "decorated_by", "uses", "overrides", "reads", "writes", "throws",
+        "calls",
+        "references",
+        "imports",
+        "inherits",
+        "implements",
+        "decorated_by",
+        "uses",
+        "overrides",
+        "reads",
+        "writes",
+        "throws",
     }
 )
 

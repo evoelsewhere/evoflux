@@ -18,7 +18,7 @@ from copy import deepcopy
 from functools import lru_cache
 from importlib.resources import files
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import yaml
@@ -314,7 +314,7 @@ def _thinking_from_model(model: dict[str, Any]) -> dict[str, list[str]] | None:
             and values
             and all(isinstance(v, str) for v in values)
         ):
-            return {"levels": list(dict.fromkeys(values))}
+            return {"levels": list(dict.fromkeys(cast(list[str], values)))}
     if any(
         isinstance(option, dict) and option.get("type") == "toggle"
         for option in options

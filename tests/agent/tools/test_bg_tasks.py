@@ -23,7 +23,9 @@ async def test_shell_bg_start_and_status():
     )
 
     # Start a long-running background command
-    result = await shell_bg_start.arun(command="python -c \"import time; time.sleep(30)\"")
+    result = await shell_bg_start.arun(
+        command='python -c "import time; time.sleep(30)"'
+    )
     assert "task_id" in result
     assert "bg_" in result
 
@@ -47,7 +49,11 @@ async def test_shell_bg_start_and_status():
 @pytest.mark.asyncio
 async def test_shell_bg_wait_completion():
     """shell_bg_wait blocks until command exits and returns output."""
-    from app.agent.tools.builtin.bg_tasks import _registry, shell_bg_start, shell_bg_wait
+    from app.agent.tools.builtin.bg_tasks import (
+        _registry,
+        shell_bg_start,
+        shell_bg_wait,
+    )
 
     result = await shell_bg_start.arun(command="echo hello_bg")
     task_id = _extract_task_id(result)
@@ -72,9 +78,15 @@ async def test_shell_bg_status_unknown():
 @pytest.mark.asyncio
 async def test_shell_bg_wait_timeout():
     """shell_bg_wait returns a timeout notice without killing the process."""
-    from app.agent.tools.builtin.bg_tasks import _registry, shell_bg_start, shell_bg_wait
+    from app.agent.tools.builtin.bg_tasks import (
+        _registry,
+        shell_bg_start,
+        shell_bg_wait,
+    )
 
-    result = await shell_bg_start.arun(command="python -c \"import time; time.sleep(30)\"")
+    result = await shell_bg_start.arun(
+        command='python -c "import time; time.sleep(30)"'
+    )
     task_id = _extract_task_id(result)
     assert task_id is not None
 

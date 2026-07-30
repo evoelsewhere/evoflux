@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+import pytest_asyncio
 
 from app.services import team_manager
 
@@ -34,9 +35,9 @@ def _make_team(name: str = "lead") -> MagicMock:
     return team
 
 
-@pytest.fixture(autouse=True)
+@pytest_asyncio.fixture(autouse=True)
 async def reset_team_manager():
-    """Ensure team_manager._team is None before and after each test."""
+    """Ensure every cached team is cleared before and after each test."""
     await team_manager.stop()
     yield
     await team_manager.stop()
@@ -59,9 +60,7 @@ async def test_get_or_start_team_returns_none_when_no_agents(tmp_path, monkeypat
 async def test_get_or_start_team_loads_and_starts_team(monkeypatch):
     fake_team = _make_team()
 
-    monkeypatch.setattr(
-        "app.services.team_manager.load_team_from_dir", lambda _: fake_team
-    )
+    monkeypatch.setattr(team_manager, "load_team_from_dir", lambda _: fake_team)
 
     result = await team_manager.get_or_start_team()
 
@@ -74,9 +73,7 @@ async def test_get_or_start_team_loads_and_starts_team(monkeypatch):
 async def test_get_or_start_team_is_idempotent(monkeypatch):
     """Second call returns the same cached team and does not re-load."""
     fake_team = _make_team()
-    monkeypatch.setattr(
-        "app.services.team_manager.load_team_from_dir", lambda _: fake_team
-    )
+    monkeypatch.setattr(team_manager, "load_team_from_dir", lambda _: fake_team)
 
     first = await team_manager.get_or_start_team()
     second = await team_manager.get_or_start_team()
@@ -89,9 +86,7 @@ async def test_get_or_start_team_is_idempotent(monkeypatch):
 @pytest.mark.asyncio
 async def test_get_or_start_team_for_session_is_idempotent(monkeypatch):
     fake_team = _make_team()
-    monkeypatch.setattr(
-        "app.services.team_manager.load_team_from_dir", lambda _: fake_team
-    )
+    monkeypatch.setattr(team_manager, "load_team_from_dir", lambda _: fake_team)
 
     first = await team_manager.get_or_start_team_for_session("session-a")
     second = await team_manager.get_or_start_team_for_session("session-a")
@@ -123,9 +118,7 @@ async def test_get_or_start_team_for_session_isolated_by_session(monkeypatch):
     first_team = _make_team("lead-a")
     second_team = _make_team("lead-b")
     teams = iter([first_team, second_team])
-    monkeypatch.setattr(
-        "app.services.team_manager.load_team_from_dir", lambda _: next(teams)
-    )
+    monkeypatch.setattr(team_manager, "load_team_from_dir", lambda _: next(teams))
 
     first = await team_manager.get_or_start_team_for_session("session-a")
     second = await team_manager.get_or_start_team_for_session("session-b")
@@ -144,9 +137,7 @@ async def test_get_or_start_team_evicts_after_idle(monkeypatch):
     new_team = _make_team("new-lead")
 
     teams = iter([fake_team, new_team])
-    monkeypatch.setattr(
-        "app.services.team_manager.load_team_from_dir", lambda _: next(teams)
-    )
+    monkeypatch.setattr(team_manager, "load_team_from_dir", lambda _: next(teams))
     # Force an aggressive eviction window so the test runs instantly.
     monkeypatch.setattr(team_manager, "_DEFAULT_TEAM_IDLE_SECONDS", 0)
 
@@ -165,9 +156,7 @@ async def test_get_or_start_team_skips_eviction_when_working(monkeypatch):
     fake_team = _make_team()
     fake_team.lead.state = "working"
 
-    monkeypatch.setattr(
-        "app.services.team_manager.load_team_from_dir", lambda _: fake_team
-    )
+    monkeypatch.setattr(team_manager, "load_team_from_dir", lambda _: fake_team)
     monkeypatch.setattr(team_manager, "_DEFAULT_TEAM_IDLE_SECONDS", 0)
 
     first = await team_manager.get_or_start_team()
@@ -184,9 +173,7 @@ async def test_validate_agents_dir_false_when_empty(tmp_path, monkeypatch):
     from app.core.config import settings
 
     monkeypatch.setattr(settings, "AGENTS_DIR", str(tmp_path / "empty"))
-    monkeypatch.setattr(
-        "app.services.team_manager.validate_agent_config_dir", lambda _: None
-    )
+    monkeypatch.setattr(team_manager, "validate_agent_config_dir", lambda _: None)
 
     assert team_manager.validate_agents_dir() is False
     # Does not cache a team.
@@ -197,8 +184,7 @@ async def test_validate_agents_dir_false_when_empty(tmp_path, monkeypatch):
 async def test_validate_agents_dir_true_when_loadable(monkeypatch):
     fake_team = _make_team()
     monkeypatch.setattr(
-        "app.services.team_manager.validate_agent_config_dir",
-        lambda _: fake_team.lead.name,
+        team_manager, "validate_agent_config_dir", lambda _: fake_team.lead.name
     )
 
     assert team_manager.validate_agents_dir() is True
@@ -208,9 +194,7 @@ async def test_validate_agents_dir_true_when_loadable(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_validate_agents_dir_does_not_build_runtime_team(
-    tmp_path, monkeypatch
-):
+async def test_validate_agents_dir_does_not_build_runtime_team(tmp_path, monkeypatch):
     from app.core.config import settings
 
     agents = tmp_path / "agents"
@@ -234,7 +218,7 @@ async def test_validate_agents_dir_raises_on_parse_error(monkeypatch):
     def fail(_):
         raise ValueError("malformed agent.md")
 
-    monkeypatch.setattr("app.services.team_manager.validate_agent_config_dir", fail)
+    monkeypatch.setattr(team_manager, "validate_agent_config_dir", fail)
 
     with pytest.raises(ValueError, match="malformed agent.md"):
         team_manager.validate_agents_dir()
@@ -246,9 +230,7 @@ async def test_validate_agents_dir_raises_on_parse_error(monkeypatch):
 @pytest.mark.asyncio
 async def test_stop_clears_team(monkeypatch):
     fake_team = _make_team()
-    monkeypatch.setattr(
-        "app.services.team_manager.load_team_from_dir", lambda _: fake_team
-    )
+    monkeypatch.setattr(team_manager, "load_team_from_dir", lambda _: fake_team)
 
     await team_manager.get_or_start_team()
     assert team_manager.current_team() is not None
@@ -274,8 +256,7 @@ async def test_stop_clears_coding_teams_without_normal_team(tmp_path, monkeypatc
     monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(tmp_path / "config"))
     fake_team = _make_team("coding-lead")
     monkeypatch.setattr(
-        "app.services.team_manager.load_team_from_dir",
-        lambda *args, **kwargs: fake_team,
+        team_manager, "load_team_from_dir", lambda *args, **kwargs: fake_team
     )
 
     await team_manager.get_or_start_coding_team(str(workspace), "session-a")
@@ -291,9 +272,7 @@ async def test_stop_swallows_exception_from_team_stop(monkeypatch):
     fake_team = _make_team()
     fake_team.stop = AsyncMock(side_effect=RuntimeError("teardown failed"))
 
-    monkeypatch.setattr(
-        "app.services.team_manager.load_team_from_dir", lambda _: fake_team
-    )
+    monkeypatch.setattr(team_manager, "load_team_from_dir", lambda _: fake_team)
     await team_manager.get_or_start_team()
 
     # Should not raise even though team.stop() blows up
@@ -311,7 +290,7 @@ async def test_reload_raises_when_no_agents_found(tmp_path, monkeypatch):
     from app.core.config import settings
 
     monkeypatch.setattr(settings, "AGENTS_DIR", str(tmp_path / "empty"))
-    monkeypatch.setattr("app.services.team_manager.load_team_from_dir", lambda _: None)
+    monkeypatch.setattr(team_manager, "load_team_from_dir", lambda _: None)
 
     with pytest.raises(ValueError, match="No agents found"):
         await team_manager.reload()
@@ -329,7 +308,7 @@ async def test_reload_swaps_in_new_team(monkeypatch):
         call_count += 1
         return old_team if call_count == 1 else new_team
 
-    monkeypatch.setattr("app.services.team_manager.load_team_from_dir", fake_load)
+    monkeypatch.setattr(team_manager, "load_team_from_dir", fake_load)
 
     await team_manager.get_or_start_team()
     assert team_manager.current_team() is old_team
@@ -356,7 +335,7 @@ async def test_reload_keeps_new_team_even_when_old_stop_raises(monkeypatch):
         call_count += 1
         return old_team if call_count == 1 else new_team
 
-    monkeypatch.setattr("app.services.team_manager.load_team_from_dir", fake_load)
+    monkeypatch.setattr(team_manager, "load_team_from_dir", fake_load)
 
     await team_manager.get_or_start_team()
 
@@ -381,7 +360,7 @@ async def test_reload_leaves_old_team_on_validation_failure(monkeypatch):
             return old_team
         raise ValueError("bad config file")
 
-    monkeypatch.setattr("app.services.team_manager.load_team_from_dir", fake_load)
+    monkeypatch.setattr(team_manager, "load_team_from_dir", fake_load)
 
     await team_manager.get_or_start_team()
 
@@ -412,7 +391,7 @@ async def test_get_or_start_coding_team_uses_agents_dir_coding_agents(
         seen.update(kwargs)
         return fake_team
 
-    monkeypatch.setattr("app.services.team_manager.load_team_from_dir", fake_load)
+    monkeypatch.setattr(team_manager, "load_team_from_dir", fake_load)
 
     result = await team_manager.get_or_start_coding_team(str(workspace), "session-a")
 
@@ -447,7 +426,7 @@ async def test_get_or_start_aim_team_uses_agents_dir_aim_agents(tmp_path, monkey
         seen.update(kwargs)
         return fake_team
 
-    monkeypatch.setattr("app.services.team_manager.load_team_from_dir", fake_load)
+    monkeypatch.setattr(team_manager, "load_team_from_dir", fake_load)
 
     result = await team_manager.get_or_start_coding_team(
         str(workspace),
@@ -485,8 +464,7 @@ async def test_get_or_start_aim_team_and_coding_team_share_cache_by_key(
     aim_team = _make_team("aim-lead")
     teams = iter([coding_team, aim_team])
     monkeypatch.setattr(
-        "app.services.team_manager.load_team_from_dir",
-        lambda *args, **kwargs: next(teams),
+        team_manager, "load_team_from_dir", lambda *args, **kwargs: next(teams)
     )
 
     got_coding = await team_manager.get_or_start_coding_team(
@@ -516,8 +494,7 @@ async def test_get_or_start_coding_team_isolated_by_session(tmp_path, monkeypatc
     second_team = _make_team("coding-b")
     teams = iter([first_team, second_team])
     monkeypatch.setattr(
-        "app.services.team_manager.load_team_from_dir",
-        lambda *args, **kwargs: next(teams),
+        team_manager, "load_team_from_dir", lambda *args, **kwargs: next(teams)
     )
 
     first = await team_manager.get_or_start_coding_team(str(workspace), "session-a")

@@ -410,7 +410,9 @@ class TerminalManager:
         try:
             session.backend.write(data)
         except Exception as exc:  # OSError on POSIX, WinptyError on Windows
-            logger.debug("terminal_write_failed session_id={} error={}", session_id, exc)
+            logger.debug(
+                "terminal_write_failed session_id={} error={}", session_id, exc
+            )
 
     def resize(
         self,
@@ -427,7 +429,9 @@ class TerminalManager:
         try:
             session.backend.resize(rows, cols)
         except Exception as exc:  # OSError on POSIX, WinptyError on Windows
-            logger.debug("terminal_resize_failed session_id={} error={}", session_id, exc)
+            logger.debug(
+                "terminal_resize_failed session_id={} error={}", session_id, exc
+            )
 
     async def run_command(
         self,
@@ -455,7 +459,9 @@ class TerminalManager:
         queue = self.subscribe(session_id, terminal_id=terminal_id)
         try:
             self.write(
-                session_id, command.rstrip("\n").encode("utf-8") + b"\n", terminal_id=terminal_id
+                session_id,
+                command.rstrip("\n").encode("utf-8") + b"\n",
+                terminal_id=terminal_id,
             )
             loop = asyncio.get_running_loop()
             deadline = loop.time() + timeout_s
@@ -490,7 +496,11 @@ class TerminalManager:
         return queue
 
     def unsubscribe(
-        self, session_id: str, queue: asyncio.Queue, *, terminal_id: str = DEFAULT_TERMINAL_ID
+        self,
+        session_id: str,
+        queue: asyncio.Queue,
+        *,
+        terminal_id: str = DEFAULT_TERMINAL_ID,
     ) -> None:
         session = self._sessions.get(_key(session_id, terminal_id))
         if session is None:

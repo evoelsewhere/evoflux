@@ -45,7 +45,9 @@ class MultiRepoContextHook(BaseAgentHook):
     - Per-repo AGENTS.md instructions if present
     """
 
-    def __init__(self, primary_workspace: str, extra_workspace_paths: list[str]) -> None:
+    def __init__(
+        self, primary_workspace: str, extra_workspace_paths: list[str]
+    ) -> None:
         self._primary = Path(primary_workspace).resolve() if primary_workspace else None
         self._extras = [Path(p).resolve() for p in extra_workspace_paths]
 

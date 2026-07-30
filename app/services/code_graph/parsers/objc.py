@@ -166,9 +166,7 @@ class ObjCParser(TreeSitterParser):
                 if child.type != "protocol_reference_list":
                     continue
                 out.extend(
-                    SuperType(
-                        name=node_text(protocol, source), edge_kind=EDGE_INHERITS
-                    )
+                    SuperType(name=node_text(protocol, source), edge_kind=EDGE_INHERITS)
                     for protocol in child.named_children
                     if protocol.type == "identifier"
                 )
@@ -329,9 +327,7 @@ def _property_name(node: Node, source: bytes) -> str | None:
     return _declarator_name(declarator, source) if declarator is not None else None
 
 
-def _property_accessors(
-    node: Node, name: str, source: bytes
-) -> tuple[str, str | None]:
+def _property_accessors(node: Node, name: str, source: bytes) -> tuple[str, str | None]:
     getter = name
     setter: str | None = f"set{name[:1].upper()}{name[1:]}"
     for child in node.children:

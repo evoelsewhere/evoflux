@@ -338,7 +338,8 @@ class WebBridgeManager:
         if action == "screenshot" and not pol.sharing.allow_screenshot:
             return "Browser screenshots are disabled by WebBridge sharing policy."
         if (
-            action in {
+            action
+            in {
                 "extract",
                 "extract_elements",
                 "snapshot",
@@ -348,7 +349,9 @@ class WebBridgeManager:
             }
             and not pol.sharing.allow_readable_page
         ):
-            return "Reading browser page content is disabled by WebBridge sharing policy."
+            return (
+                "Reading browser page content is disabled by WebBridge sharing policy."
+            )
         if pol.allowed_domains:
             if not host:
                 return (

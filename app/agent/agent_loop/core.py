@@ -13,12 +13,12 @@ substantial piece of work is delegated to a sibling module:
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import time
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Generic, TypeVar
-from uuid import uuid7 as _uuid7
 
 import httpx
 from loguru import logger
@@ -40,11 +40,13 @@ from app.agent.schemas.chat import (
     AssistantMessage,
     ChatMessage,
     ContentBlock,
+    HumanMessage,
     SystemMessage,
     ToolCall,
     ToolMessage,
     Usage,
 )
+from app.uuid7 import uuid7 as _uuid7
 from app.agent.state import (
     AgentState,
     ModelRequest,
@@ -117,6 +119,37 @@ def _partition_tool_call_batch(
         allowed.append(tool_call)
 
     return allowed, blocked
+
+
+def _build_tool_call_waves(
+    tool_calls: list[ToolCall],
+    run_tools: dict[str, Tool],
+) -> list[tuple[bool, list[ToolCall]]]:
+    """Build ordered dispatch waves without moving calls across barriers.
+
+    Consecutive tools that explicitly declare ``concurrency_safe`` may run in
+    parallel. Every other tool becomes a serial barrier, so later calls cannot
+    observe state before that mutation has completed.
+    """
+    waves: list[tuple[bool, list[ToolCall]]] = []
+    parallel_wave: list[ToolCall] = []
+
+    def flush_parallel_wave() -> None:
+        if parallel_wave:
+            waves.append((True, parallel_wave.copy()))
+            parallel_wave.clear()
+
+    for tool_call in tool_calls:
+        tool = run_tools.get(tool_call.function.name)
+        if tool is not None and getattr(tool, "concurrency_safe", False):
+            parallel_wave.append(tool_call)
+            continue
+
+        flush_parallel_wave()
+        waves.append((False, [tool_call]))
+
+    flush_parallel_wave()
+    return waves
 
 
 class Agent(Generic[TContext]):
@@ -221,6 +254,7 @@ class Agent(Generic[TContext]):
                 settings.plugin_dirs(),
                 agent_name=self.name,
                 role=role,
+                require_trust=True,
             )
         except Exception as exc:  # noqa: BLE001 — defensive, never break agent
             logger.warning(
@@ -316,7 +350,7 @@ class Agent(Generic[TContext]):
             if "load_tool" in run_tools
             else set()
         )
-        deferred_names = frozenset(requested_deferred & run_tools.keys())
+        deferred_names = requested_deferred & run_tools.keys()
 
         def _deferred_summary(run_tool: Tool) -> str:
             summary = getattr(run_tool, "deferred_summary", None)
@@ -395,6 +429,76 @@ class Agent(Generic[TContext]):
             state.metadata["activated_deferred_tools"] = set(existing_activated)
         else:
             state.metadata["activated_deferred_tools"] = set()
+
+        def _refresh_deferred_tool_catalog() -> None:
+            """Merge newly-ready, newly-granted MCP tools into this live run.
+
+            An agent can register an MCP server and wire it into its own
+            frontmatter during a tool round. Rebuilding only on the next user
+            turn leaves the current run's ``load_tool`` catalog stale. Refresh
+            just before ``load_tool`` searches, while preserving per-agent MCP
+            grants and all caller-provided hard exclusions.
+            """
+            if role == "member" or excluded_tools:
+                return
+
+            configured_servers = list(self.mcp_servers)
+            if self.source_path is not None:
+                try:
+                    from app.agent.config import parse_agent_md
+
+                    live_config = parse_agent_md(self.source_path)
+                    if live_config.role == "member":
+                        return
+                    configured_servers = live_config.mcp
+                except Exception as exc:  # noqa: BLE001 - keep last valid grant
+                    logger.warning(
+                        "dynamic_mcp_grant_refresh_failed agent={} error={}",
+                        self.name,
+                        exc,
+                    )
+            if not configured_servers:
+                return
+
+            from app.agent.mcp import mcp_manager
+
+            changed = False
+            for server_name in dict.fromkeys(configured_servers):
+                server_tools = mcp_manager.get_tools_for_server(server_name)
+                if not server_tools:
+                    continue
+                for run_tool in server_tools:
+                    if not getattr(run_tool, "deferred", False):
+                        continue
+                    if excluded_tools and run_tool.name in excluded_tools:
+                        continue
+                    if run_tools.get(run_tool.name) is not run_tool:
+                        run_tools[run_tool.name] = run_tool
+                        changed = True
+                    if run_tool.name not in deferred_names:
+                        deferred_names.add(run_tool.name)
+                        changed = True
+                    summary = _deferred_summary(run_tool)
+                    if deferred_catalog.get(run_tool.name) != summary:
+                        deferred_catalog[run_tool.name] = summary
+                        changed = True
+
+            if changed:
+                state.tool_names = sorted(run_tools)
+                logger.info(
+                    "dynamic_mcp_tools_refreshed agent={} servers={} tools={}",
+                    self.name,
+                    configured_servers,
+                    sorted(
+                        name
+                        for name in deferred_names
+                        if getattr(run_tools.get(name), "origin", None) == "mcp"
+                    ),
+                )
+
+        state.metadata["_refresh_deferred_tool_catalog"] = (
+            _refresh_deferred_tool_catalog
+        )
 
         # Me seed last_prompt_tokens from checkpointer so SummarizationHook
         # fires on session resume without call-site workaround
@@ -702,6 +806,32 @@ class Agent(Generic[TContext]):
             _is_sleep = (assistant_msg.content or "").strip() in ("<sleep>", "[sleep]")
 
             if not tc_list:
+                completion_feedback: list[str] = []
+                for hook in combined_hooks:
+                    result = hook.before_completion(ctx, state, assistant_msg)
+                    feedback = await result if inspect.isawaitable(result) else result
+                    if isinstance(feedback, str) and feedback.strip():
+                        completion_feedback.append(feedback)
+                if completion_feedback:
+                    gate_feedback = (
+                        "[Completion blocked by verification gate]\n\n"
+                        + "\n\n".join(completion_feedback)
+                        + "\n\nFix the failures, rerun the required checks, and only "
+                        "then provide the final response."
+                    )
+                    messages.append(
+                        HumanMessage(
+                            content=gate_feedback,
+                            extra={"system_generated": True},
+                        )
+                    )
+                    logger.warning(
+                        "agent_completion_blocked agent={} iteration={} gates={}",
+                        self.name,
+                        iteration,
+                        len(completion_feedback),
+                    )
+                    continue
                 logger.debug(
                     "agent_iteration_done agent={} iteration={} action={}",
                     self.name,
@@ -730,50 +860,63 @@ class Agent(Generic[TContext]):
             dispatch_calls, blocked_results = _partition_tool_call_batch(
                 tc_list, run_tools
             )
-
-            # Determine dispatch mode: parallel when every tool in this batch
-            # declares concurrency_safe=True; serial otherwise to prevent races
-            # (e.g. two simultaneous edit() calls on the same file).
-            all_safe = all(
-                getattr(run_tools.get(tc.function.name), "concurrency_safe", False)
-                for tc in dispatch_calls
-            )
+            dispatch_waves = _build_tool_call_waves(dispatch_calls, run_tools)
 
             logger.debug(
-                "tool_dispatch agent={} count={} mode={} tools=[{}]",
+                "tool_dispatch agent={} count={} waves={} tools=[{}]",
                 self.name,
                 len(dispatch_calls),
-                "parallel" if all_safe else "serial",
+                len(dispatch_waves),
                 ", ".join(tc.function.name for tc in dispatch_calls),
             )
 
-            if not dispatch_calls:
-                results = []
-            elif all_safe:
-                # All tools are concurrency-safe — run in parallel as before.
-                results = await gather_or_cancel(
-                    [
-                        self._run_tool(ctx, state, tc, tool_chain)
-                        for tc in dispatch_calls
-                    ],
-                    interrupt_event,
-                    dispatch_calls,
-                    self.name,
+            result_by_call_id: dict[str, tuple[ToolCall, str] | BaseException] = {
+                tool_call.id: (tool_call, message)
+                for tool_call, message in blocked_results
+            }
+            for wave_index, (is_parallel, wave_calls) in enumerate(dispatch_waves):
+                coroutines = [
+                    self._run_tool(ctx, state, tool_call, tool_chain)
+                    for tool_call in wave_calls
+                ]
+                if is_parallel:
+                    wave_results = await gather_or_cancel(
+                        coroutines,
+                        interrupt_event,
+                        wave_calls,
+                        self.name,
+                    )
+                else:
+                    wave_results = await run_serially(
+                        coroutines,
+                        interrupt_event,
+                        wave_calls,
+                        self.name,
+                    )
+                result_by_call_id.update(
+                    zip(
+                        (tool_call.id for tool_call in wave_calls),
+                        wave_results,
+                        strict=True,
+                    )
                 )
-            else:
-                # At least one tool is not concurrency-safe — run all serially
-                # to guarantee no shared-resource races, while still honouring
-                # interrupt and per-batch timeout.
-                results = await run_serially(
-                    [
-                        self._run_tool(ctx, state, tc, tool_chain)
-                        for tc in dispatch_calls
-                    ],
-                    interrupt_event,
-                    dispatch_calls,
-                    self.name,
-                )
-            results.extend(blocked_results)
+
+                if interrupt_event is not None and interrupt_event.is_set():
+                    for _, remaining_calls in dispatch_waves[wave_index + 1 :]:
+                        for tool_call in remaining_calls:
+                            result_by_call_id[tool_call.id] = (
+                                tool_call,
+                                "Cancelled by user.",
+                            )
+                    break
+
+            # Model-visible ToolMessages must stay in the exact call order,
+            # including calls rejected by batch contracts.
+            results = [
+                result_by_call_id[tool_call.id]
+                for tool_call in tc_list
+                if tool_call.id in result_by_call_id
+            ]
 
             # Retrieve any multimodal parts stashed by ToolResult-returning tools
             multimodal_parts: dict[str, list[ContentBlock]] = state.metadata.pop(

@@ -14,6 +14,7 @@ import { SettingsGroup, SettingsPage } from '@/components/settings/SettingsLayou
 import { SettingsAsyncBoundary } from '@/components/settings/SettingsLoading'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { SegmentedControl } from '@/components/ui/segmented-control'
 import {
   Popover,
   PopoverContent,
@@ -32,24 +33,48 @@ export function SandboxSettingsPage() {
   const [draft, setDraft] = useState<{
     source: readonly string[]
     patterns: string[]
-  }>({ source: [], patterns: [] })
+    sourceWorktreeLocation: 'repository' | 'user_data'
+    worktreeLocation: 'repository' | 'user_data'
+  }>({
+    source: [],
+    patterns: [],
+    sourceWorktreeLocation: 'repository',
+    worktreeLocation: 'repository',
+  })
 
   const serverPatterns = data?.denied_patterns
-  if (serverPatterns && serverPatterns !== draft.source) {
-    setDraft({ source: serverPatterns, patterns: serverPatterns })
+  if (
+    serverPatterns
+    && (
+      serverPatterns !== draft.source
+      || data.worktree_location !== draft.sourceWorktreeLocation
+    )
+  ) {
+    setDraft({
+      source: serverPatterns,
+      patterns: serverPatterns,
+      sourceWorktreeLocation: data.worktree_location,
+      worktreeLocation: data.worktree_location,
+    })
   }
   const patterns = draft.patterns
   const setPatterns = (next: string[] | ((prev: string[]) => string[])) =>
     setDraft((d) => ({
-      source: d.source,
+      ...d,
       patterns: typeof next === 'function' ? next(d.patterns) : next,
     }))
 
   const dirty = useMemo(() => {
     const a = draft.source
     if (a.length !== patterns.length) return true
-    return a.some((p, i) => p !== patterns[i])
-  }, [draft.source, patterns])
+    if (a.some((p, i) => p !== patterns[i])) return true
+    return draft.sourceWorktreeLocation !== draft.worktreeLocation
+  }, [
+    draft.source,
+    draft.sourceWorktreeLocation,
+    draft.worktreeLocation,
+    patterns,
+  ])
 
   const updateAt = (idx: number, value: string) =>
     setPatterns((prev) => prev.map((p, i) => (i === idx ? value : p)))
@@ -62,7 +87,10 @@ export function SandboxSettingsPage() {
   const handleSave = async () => {
     const cleaned = patterns.map((p) => p.trim()).filter(Boolean)
     try {
-      await updateMut.mutateAsync({ denied_patterns: cleaned })
+      await updateMut.mutateAsync({
+        denied_patterns: cleaned,
+        worktree_location: draft.worktreeLocation,
+      })
       setPatterns(cleaned)
       push({
         tone: 'success',
@@ -84,11 +112,12 @@ export function SandboxSettingsPage() {
       title="Sandbox"
       lede={
         <>
-          Glob patterns are matched against the resolved absolute path. Use{' '}
+          Agents can access only the active workspace, explicitly attached repositories,
+          read-only roots, and session artifacts. Sensitive glob patterns are enforced
+          inside those roots too. Use{' '}
           <code className="rounded bg-(--bg-key) px-1 py-0.5 font-mono text-xs">**</code> for any depth
           and <code className="rounded bg-(--bg-key) px-1 py-0.5 font-mono text-xs">*</code> for one
-          segment. The agent workspace and shared memory stay reachable even when a pattern would
-          match them. <SandboxHelpPopover />
+          segment. <SandboxHelpPopover />
         </>
       }
       actions={
@@ -119,13 +148,50 @@ export function SandboxSettingsPage() {
         errorTitle="Failed to load sandbox settings"
         onRetry={() => void refetch()}
       >
+      {data && (
+        <SettingsGroup
+          title="Managed worktrees"
+          description="Choose where EvoFlux creates isolated Git worktrees. Existing worktrees in either location remain recognized and removable."
+        >
+          <div className="space-y-3 px-3 py-3">
+            <SegmentedControl
+              options={[
+                { value: 'repository', label: 'Inside repository' },
+                { value: 'user_data', label: 'User data directory' },
+              ]}
+              value={draft.worktreeLocation}
+              onChange={(worktreeLocation) =>
+                setDraft((current) => ({ ...current, worktreeLocation }))
+              }
+              layoutId="sandbox-worktree-location"
+              ariaLabel="Managed worktree location"
+            />
+            <p className="text-xs leading-relaxed text-(--color-text-muted)">
+              {draft.worktreeLocation === 'repository' ? (
+                <>
+                  New worktrees are stored at{' '}
+                  <code className="font-mono">&lt;repository&gt;/.evoflux/worktrees</code>.
+                  EvoFlux adds this directory to the repository-local Git exclude file,
+                  without modifying <code className="font-mono">.gitignore</code>.
+                </>
+              ) : (
+                <>
+                  New worktrees are stored under the EvoFlux data directory in your user
+                  profile. This keeps repository folders smaller but makes worktrees less
+                  discoverable beside their source.
+                </>
+              )}
+            </p>
+          </div>
+        </SettingsGroup>
+      )}
+
       {data && patterns.length === 0 && (
         <SettingsGroup title="Denied patterns" bare>
           <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-(--color-border) p-10 text-center">
             <p className="text-sm font-medium text-(--color-text)">Nothing is blocked yet</p>
             <p className="max-w-sm text-xs leading-relaxed text-(--color-text-muted)">
-              Agents can reach the whole filesystem apart from the built-in database, state and cache
-              denial. Add a pattern to block files like{' '}
+              Workspace allowlists remain active. Add a pattern to additionally block files like{' '}
               <code className="font-mono">.env</code> or folders like{' '}
               <code className="font-mono">secrets/</code>.
             </p>
@@ -240,7 +306,8 @@ function SandboxHelpPopover() {
         </ul>
 
         <p className="border-t border-(--color-border) pt-2 text-xs leading-snug text-(--color-text-muted)">
-          Built-in database, state and cache paths are always denied.
+          Built-in database, state and cache paths are always denied. Patterns also
+          apply inside active workspaces.
         </p>
       </PopoverContent>
     </Popover>

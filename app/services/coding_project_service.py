@@ -225,9 +225,7 @@ async def get_project_workspaces(
     return [(link, ws) for link, ws in rows]
 
 
-async def get_project_workspace_paths(
-    db: AsyncSession, project_id: UUID
-) -> list[str]:
+async def get_project_workspace_paths(db: AsyncSession, project_id: UUID) -> list[str]:
     pairs = await get_project_workspaces(db, project_id)
     return [ws.path for _, ws in pairs]
 

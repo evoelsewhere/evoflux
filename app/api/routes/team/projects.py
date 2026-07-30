@@ -1326,6 +1326,7 @@ async def _aim_suggestion_plan(
         f"{row.module}/{row.name}" for row in unit_rows if row.id in claimed_ids
     )
     kb_root = Path(kb_path)
+
     def build_plan():  # noqa: ANN202 - local worker tuple
         plan = build_suggestion_plan(kb_root, claimed_units=claimed_units)
         if generate:

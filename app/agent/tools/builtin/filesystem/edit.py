@@ -15,6 +15,7 @@ from loguru import logger
 from pydantic import Field
 
 from app.agent.sandbox import get_sandbox
+from app.agent.tools.builtin.filesystem._atomic import atomic_write_bytes
 from app.agent.tools.builtin.filesystem._config_watch import notify_fs_change
 from app.agent.tools.registry import Tool
 
@@ -113,8 +114,13 @@ def _levenshtein(a: str, b: str) -> int:
 
 
 def replace_content_with_meta(
-    content: str, old_string: str, new_string: str, replace_all: bool = False
-) -> tuple[str, int | None]:
+    content: str,
+    old_string: str,
+    new_string: str,
+    replace_all: bool = False,
+    *,
+    fuzzy_match: bool = True,
+) -> tuple[str, int]:
     """Apply old_string → new_string using a cascade of fuzzy matchers.
 
     Raises ValueError if no match found or multiple matches (when replace_all=False).
@@ -244,15 +250,18 @@ def replace_content_with_meta(
 
     not_found = True
     ambiguous_search: str | None = None
-    for matcher in [
-        _exact,
-        _line_trimmed,
-        _block_anchor,
-        _whitespace_normalized,
-        _indentation_flexible,
-        _trimmed_boundary,
-        _multi_occurrence,
-    ]:
+    matchers = [_exact, _multi_occurrence]
+    if fuzzy_match:
+        matchers = [
+            _exact,
+            _line_trimmed,
+            _block_anchor,
+            _whitespace_normalized,
+            _indentation_flexible,
+            _trimmed_boundary,
+            _multi_occurrence,
+        ]
+    for matcher in matchers:
         for search in matcher(content, old_string):
             idx = content.find(search)
             if idx == -1:
@@ -350,11 +359,20 @@ async def _edit_file(
             description="Replace all occurrences of old_string (default false — replace only the unique match)."
         ),
     ] = False,
+    fuzzy_match: Annotated[
+        bool,
+        Field(
+            description=(
+                "Opt in to whitespace/indentation-tolerant matching. Exact matching "
+                "is the safe default; use this only after reviewing the closest-match hint."
+            )
+        ),
+    ] = False,
 ) -> str:
     """Edit a file by replacing an exact string with new content.
 
     Safer than write_file for targeted changes — only the matched region changes.
-    Uses fuzzy matching to handle minor whitespace/indentation variations.
+    Uses exact matching by default. Fuzzy matching is an explicit opt-in.
     Fails if the match is ambiguous (multiple occurrences) unless replace_all=true.
     """
     sandbox = get_sandbox()
@@ -373,11 +391,15 @@ async def _edit_file(
 
     content = resolved.read_text(encoding="utf-8")
     new_content, start_line = replace_content_with_meta(
-        content, old_string, new_string, replace_all
+        content,
+        old_string,
+        new_string,
+        replace_all,
+        fuzzy_match=fuzzy_match,
     )
 
     encoded = new_content.encode("utf-8")
-    resolved.write_bytes(encoded)
+    atomic_write_bytes(resolved, encoded)
     logger.info("file_edited path={} bytes={}", resolved, len(encoded))
     notify_fs_change(resolved)
     meta = json.dumps(

@@ -291,9 +291,7 @@ def test_python_import_alias_resolves_calls(tmp_path: Path):
 
     (tmp_path / "lib.py").write_text("class Original:\n    pass\n", encoding="utf-8")
     (tmp_path / "main.py").write_text(
-        "from lib import Original as Alias\n\n"
-        "def build():\n"
-        "    return Alias()\n",
+        "from lib import Original as Alias\n\ndef build():\n    return Alias()\n",
         encoding="utf-8",
     )
 
@@ -308,9 +306,7 @@ def test_ts_import_alias_resolves_calls(tmp_path: Path):
     from app.services.code_graph.indexer import index_workspace
     from app.services.code_graph.types import EDGE_CALLS
 
-    (tmp_path / "lib.ts").write_text(
-        "export class Original {}\n", encoding="utf-8"
-    )
+    (tmp_path / "lib.ts").write_text("export class Original {}\n", encoding="utf-8")
     (tmp_path / "main.ts").write_text(
         "import { Original as Alias } from './lib';\n"
         "export function build() { return new Alias(); }\n",
@@ -329,9 +325,7 @@ def test_incremental_import_scope_uses_definition_file_metadata(tmp_path: Path):
     from app.services.code_graph.types import EDGE_CALLS, NODE_CLASS, NODE_FILE
 
     (tmp_path / "main.py").write_text(
-        "import lib as alias\n\n"
-        "def build():\n"
-        "    return alias.Original()\n",
+        "import lib as alias\n\ndef build():\n    return alias.Original()\n",
         encoding="utf-8",
     )
     existing_defs = [

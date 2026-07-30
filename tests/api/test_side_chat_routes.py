@@ -139,9 +139,7 @@ async def test_get_side_chat_context_excludes_hidden(session):
     main = await create_chat_session(session, title="Main Session")
 
     await save_message(session, main.id, HumanMessage(content="Visible"))
-    await save_message(
-        session, main.id, HumanMessage(content="Hidden"), is_hidden=True
-    )
+    await save_message(session, main.id, HumanMessage(content="Hidden"), is_hidden=True)
     await save_message(session, main.id, HumanMessage(content="Also visible"))
     await session.commit()
 
@@ -159,9 +157,7 @@ async def test_side_chat_messages_isolated_from_main(session):
 
     # Add messages to both sessions
     await save_message(session, main.id, HumanMessage(content="Main message"))
-    await save_message(
-        session, side_chat.id, HumanMessage(content="Side chat message")
-    )
+    await save_message(session, side_chat.id, HumanMessage(content="Side chat message"))
     await session.commit()
 
     # Main session should only have its own messages
