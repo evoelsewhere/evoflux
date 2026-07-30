@@ -560,18 +560,33 @@ html[data-mobile-shell] .text-\[10px\] {
 }
 
 /* ─────────────────────────────────────────────────────────────
- * Icon scaling — lift Lucide SVG icons to match the 17.6 px rem
- * base.  The element selector (specificity 0,0,2) wins over HTML
- * width/height attributes but loses to any Tailwind utility class
- * (specificity 0,1,0), so explicitly-sized SVGs (progress arcs,
- * status rings, etc.) are unaffected.
+ * Icon system
+ *
+ * Lucide's default 2px stroke reads rigid at EvoFlux's compact control
+ * sizes. Only icons that still carry that default are optically softened;
+ * deliberate weights (strong checkmarks, diagrams, status marks) keep their
+ * explicit strokeWidth. Rounded caps/joins and geometric precision also make
+ * the system feel consistent across native scale factors.
+ *
+ * Icon dimensions remain component-owned. This is important because a former
+ * em-based rule overrode Lucide's explicit width/height attributes and shrank
+ * 14–16px toolbar icons to roughly 11px.
  * ───────────────────────────────────────────────────────────── */
-button svg[aria-hidden="true"],
-a svg[aria-hidden="true"],
-[role="menuitem"] svg[aria-hidden="true"],
-[role="option"] svg[aria-hidden="true"] {
-  width: 0.9em;
-  height: 0.9em;
+svg.lucide[stroke-width="2"] {
+  stroke-width: 1.65;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  shape-rendering: geometricPrecision;
+}
+
+button svg.lucide,
+a svg.lucide,
+[role="menuitem"] svg.lucide,
+[role="option"] svg.lucide {
+  transition:
+    color var(--motion-fast) ease,
+    opacity var(--motion-fast) ease,
+    transform var(--motion-fast) ease;
 }
 
 .mobile-safe-header {

@@ -7,10 +7,7 @@ import {
   FileDiff,
   GitPullRequest,
   Menu,
-  MessageSquare,
-  Monitor,
   Orbit,
-  PanelRight,
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -24,6 +21,12 @@ import { usePlatform } from '@/hooks/use-platform'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { OpenWithMenu } from '@/components/workbench/OpenWithMenu'
+import {
+  FocusViewIcon,
+  MonitorViewIcon,
+  SidePanelIcon,
+  SplitViewIcon,
+} from '@/components/ui/layout-icons'
 import type { ViewMode } from '@/components/TeamChatView/types'
 import type { CodeReviewSessionContext } from '@/lib/code-review-session'
 
@@ -66,10 +69,10 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
         : 'Monitor'
   const ViewModeIcon =
     props.viewMode === 'agent'
-      ? MessageSquare
+      ? FocusViewIcon
       : props.viewMode === 'split'
-        ? PanelRight
-        : Monitor
+        ? SplitViewIcon
+        : MonitorViewIcon
 
   return (
     <motion.header
@@ -209,7 +212,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
               Conversation layout
             </div>
             <DropdownMenuItem onClick={() => props.onViewModeChange('agent')}>
-              <MessageSquare size={15} />
+              <FocusViewIcon size={15} />
               <span>Agent</span>
               {props.viewMode === 'agent' && <Check size={13} className="ml-auto text-(--color-accent)" />}
             </DropdownMenuItem>
@@ -217,7 +220,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
               disabled={props.isMobile}
               onClick={() => props.onViewModeChange('split')}
             >
-              <PanelRight size={15} />
+              <SplitViewIcon size={15} />
               <span>Split</span>
               {props.viewMode === 'split' && <Check size={13} className="ml-auto text-(--color-accent)" />}
             </DropdownMenuItem>
@@ -225,7 +228,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
               disabled={props.isMobile}
               onClick={() => props.onViewModeChange('monitor')}
             >
-              <Monitor size={15} />
+              <MonitorViewIcon size={15} />
               <span>Monitor</span>
               {props.viewMode === 'monitor' && <Check size={13} className="ml-auto text-(--color-accent)" />}
             </DropdownMenuItem>
@@ -293,7 +296,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
             animate={{ scaleX: workbenchOpen ? 1 : 0.92 }}
             transition={motionPreset.spring}
           >
-            <PanelRight size={15} />
+            <SidePanelIcon size={15} />
           </motion.span>
         </motion.button>
       </motion.div>

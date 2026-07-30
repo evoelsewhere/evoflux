@@ -16,7 +16,7 @@
  */
 
 import { AnimatePresence, motion } from 'framer-motion'
-import { Globe2, Loader2, MessageSquarePlus, Pencil, Trash2 } from 'lucide-react'
+import { Globe2, Loader2, MessageCirclePlus, Pencil, Trash2 } from 'lucide-react'
 import { LongPressButton } from '@/components/ui/long-press-button'
 import { formatRelativeDate } from '@/utils/format'
 import { useMotionPreset, fadeRise, staggerDelay } from '@/lib/motion'
@@ -198,7 +198,7 @@ export function SessionRow({
               aria-label={`Open side chat for ${session.title || 'Untitled'}`}
               title="Open side chat"
             >
-              <MessageSquarePlus size={compact ? 11 : 12} />
+              <MessageCirclePlus size={compact ? 11 : 12} />
             </button>
           )}
 
