@@ -52,7 +52,7 @@ async def _noop_context():
 async def _run_lifespan() -> FastAPI:
     app = FastAPI()
     async with app_module.lifespan(app):
-        pass
+        await app.state.optional_startup_task
     return app
 
 

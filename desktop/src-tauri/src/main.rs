@@ -13,7 +13,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{
     menu::{AboutMetadataBuilder, Menu, MenuItem, PredefinedMenuItem, SubmenuBuilder},
     tray::TrayIconBuilder,
@@ -36,6 +36,9 @@ struct AppState {
     backend_base_url: Arc<Mutex<Option<String>>>,
     backend_mode: Arc<Mutex<BackendMode>>,
     window_backend_base_urls: Arc<Mutex<HashMap<String, String>>>,
+    backend_startup: Arc<Mutex<BackendStartupStatus>>,
+    backend_start_lock: Arc<Mutex<()>>,
+    startup_started: Instant,
     force_reloading: Arc<AtomicBool>,
     quitting: Arc<AtomicBool>,
     tray_status: Arc<Mutex<Option<MenuItem<Wry>>>>,
@@ -88,6 +91,32 @@ struct AppBackendStatus {
     external: bool,
     supports_bundled: bool,
     servers: Vec<SavedAppServer>,
+    startup: BackendStartupStatus,
+}
+
+#[derive(Clone, Serialize)]
+struct BackendStartupStatus {
+    phase: String,
+    message: String,
+    attempt: u32,
+    max_attempts: u32,
+    elapsed_ms: u64,
+    error: Option<String>,
+    fatal: bool,
+}
+
+impl Default for BackendStartupStatus {
+    fn default() -> Self {
+        Self {
+            phase: "preparing".to_string(),
+            message: "Preparing the local engine…".to_string(),
+            attempt: 0,
+            max_attempts: SIDECAR_START_ATTEMPTS,
+            elapsed_ms: 0,
+            error: None,
+            fatal: false,
+        }
+    }
 }
 
 impl Default for AppBackendConfig {
@@ -141,11 +170,12 @@ const ZOOM_MAX: f64 = 3.0;
 const ZOOM_STEP: f64 = 1.2;
 const ZOOM_DEFAULT: f64 = 1.0;
 
-/// First boot can spend significant time importing native Python modules,
-/// running migrations, and seeding config while Windows Defender scans the
-/// freshly installed sidecar. The handshake is emitted only after all FastAPI
-/// startup work completes, so this budget must cover that cold path.
-const SIDECAR_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(120);
+/// The first attempt gets the largest cold-start budget. Retries benefit from
+/// OS/Defender caches and use shorter budgets so startup cannot hang forever.
+const SIDECAR_FIRST_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(90);
+const SIDECAR_RETRY_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(45);
+const SIDECAR_START_ATTEMPTS: u32 = 3;
+const SIDECAR_RETRY_BASE_DELAY: Duration = Duration::from_millis(750);
 
 /// Label shown in the tray when no chat/coding session is active.
 const TRAY_SESSION_IDLE: &str = "No active session";
@@ -195,6 +225,9 @@ struct BackendReady {
 #[derive(Clone, Serialize)]
 struct BackendError {
     message: String,
+    fatal: bool,
+    attempt: u32,
+    max_attempts: u32,
 }
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
@@ -308,11 +341,16 @@ async fn backend_health(state: tauri::State<'_, AppState>) -> Result<bool, Strin
 }
 
 #[tauri::command]
-async fn backend_logs_path(state: tauri::State<'_, AppState>) -> Result<String, String> {
+async fn backend_logs_path(
+    app: AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
     let guard = state.sidecar.lock().await;
     match guard.as_ref() {
         Some(s) => Ok(s.log_path().to_string_lossy().into_owned()),
-        None => Err("backend not started".into()),
+        None => Sidecar::log_path_for(&app)
+            .map(|path| path.to_string_lossy().into_owned())
+            .map_err(|error| format!("{error:#}")),
     }
 }
 
@@ -360,6 +398,7 @@ async fn app_backend_status_for_window(
     } else {
         state.desktop_token.lock().await.clone()
     };
+    let startup = state.backend_startup.lock().await.clone();
     Ok(AppBackendStatus {
         base_url,
         token,
@@ -368,6 +407,7 @@ async fn app_backend_status_for_window(
         external: mode == BackendMode::External,
         supports_bundled: true,
         servers,
+        startup,
     })
 }
 
@@ -859,23 +899,25 @@ fn open_config_dir(app: &AppHandle) {
 }
 
 fn reveal_backend_log(app: &AppHandle) {
-    let state: tauri::State<'_, AppState> = app.state();
-    let sidecar = state.sidecar.clone();
-    let app_for_open = app.clone();
-    tauri::async_runtime::spawn(async move {
-        let path = sidecar
-            .lock()
-            .await
-            .as_ref()
-            .map(|s| s.log_path().to_path_buf());
-        let Some(path) = path else {
-            log::warn!("backend log path unavailable; sidecar not started");
-            return;
-        };
-        if let Err(e) = app_for_open.opener().reveal_item_in_dir(&path) {
-            log::warn!("failed to reveal backend log {}: {e}", path.display());
-        }
-    });
+    let Ok(path) = Sidecar::log_path_for(app) else {
+        log::warn!("backend log path unavailable");
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if !path.exists() {
+        let _ = std::fs::write(&path, "EvoFlux backend has not written a log yet.\n");
+    }
+    if let Err(e) = app.opener().reveal_item_in_dir(&path) {
+        log::warn!("failed to reveal backend log {}: {e}", path.display());
+    }
+}
+
+#[tauri::command]
+fn app_reveal_backend_log(app: AppHandle) -> Result<(), String> {
+    reveal_backend_log(&app);
+    Ok(())
 }
 
 fn persist_active_window_state(app: &AppHandle) {
@@ -913,14 +955,24 @@ fn force_reload_app(app: &AppHandle) {
         if let Err(e) = result {
             log::error!("failed to force reload backend: {e:#}");
             update_tray_status(&handle, "Status: Error");
-            handle
-                .emit(
-                    "backend-error",
-                    BackendError {
+            let already_published = handle
+                .state::<AppState>()
+                .backend_startup
+                .lock()
+                .await
+                .phase
+                == "error";
+            if !already_published {
+                publish_backend_error(
+                    &handle,
+                    &BackendStartFailure {
                         message: format!("{e:#}"),
+                        fatal: false,
+                        attempt: SIDECAR_START_ATTEMPTS,
                     },
                 )
-                .ok();
+                .await;
+            }
         }
 
         let state: tauri::State<'_, AppState> = handle.state();
@@ -928,36 +980,34 @@ fn force_reload_app(app: &AppHandle) {
     });
 }
 
+#[tauri::command]
+fn app_retry_backend(app: AppHandle) -> Result<(), String> {
+    force_reload_app(&app);
+    Ok(())
+}
+
 async fn restart_sidecar_and_reload_window(app: &AppHandle) -> Result<()> {
     let state: tauri::State<'_, AppState> = app.state();
     let existing_token = state.desktop_token.lock().await.clone();
 
     shutdown_sidecar_now(app).await;
-
-    let mut sidecar = if let Some(token) = existing_token.as_deref() {
-        Sidecar::spawn_with_desktop_token(app, Some(token)).context("spawn sidecar")?
-    } else {
-        Sidecar::spawn(app).context("spawn sidecar")?
+    let ready = match start_bundled_backend_with_retry(app, existing_token.as_deref()).await {
+        Ok(ready) => ready,
+        Err(failure) => {
+            publish_backend_error(app, &failure).await;
+            return Err(anyhow!(failure.message));
+        }
     };
-    let handshake: Handshake = sidecar
-        .read_handshake(SIDECAR_HANDSHAKE_TIMEOUT)
-        .await
-        .context("read sidecar handshake")?;
-    let token = handshake.token.clone();
+    let token = ready.handshake.token.clone();
 
     log::info!(
         "sidecar handshake: port={} pid={} version={}",
-        handshake.port,
-        handshake.pid,
-        handshake.version
+        ready.handshake.port,
+        ready.handshake.pid,
+        ready.handshake.version
     );
 
-    let base = format!("http://127.0.0.1:{}", handshake.port);
-    wait_for_health(&base, 60, Duration::from_millis(250))
-        .await
-        .context("wait_for_health")?;
-
-    let init_script = frontend_init_script(Some(&token), &base);
+    let init_script = frontend_init_script(Some(&token), &ready.base_url);
     let existing_windows: Vec<tauri::WebviewWindow> = app.webview_windows().into_values().collect();
     let external_windows = state.window_backend_base_urls.lock().await.clone();
     for window in existing_windows {
@@ -983,15 +1033,24 @@ async fn restart_sidecar_and_reload_window(app: &AppHandle) -> Result<()> {
         .backend_base_url
         .lock()
         .await
-        .replace(format!("http://127.0.0.1:{}", handshake.port));
+        .replace(ready.base_url.clone());
     *state.backend_mode.lock().await = BackendMode::Bundled;
-    let _ = state.sidecar.lock().await.replace(sidecar);
+    let _ = state.sidecar.lock().await.replace(ready.sidecar);
+    set_backend_startup(
+        app,
+        "ready",
+        "Local engine ready",
+        ready.attempt,
+        None,
+        false,
+    )
+    .await;
     app.emit(
         "backend-ready",
         BackendReady {
-            port: handshake.port,
-            version: handshake.version,
-            base_url: format!("http://127.0.0.1:{}", handshake.port),
+            port: ready.handshake.port,
+            version: ready.handshake.version,
+            base_url: ready.base_url,
             token: Some(token),
             sidecar_running: true,
         },
@@ -1448,6 +1507,248 @@ async fn wait_for_health(base: &str, attempts: u32, delay: Duration) -> Result<(
     ))
 }
 
+struct ReadySidecar {
+    sidecar: Sidecar,
+    handshake: Handshake,
+    base_url: String,
+    attempt: u32,
+}
+
+struct BackendStartFailure {
+    message: String,
+    fatal: bool,
+    attempt: u32,
+}
+
+async fn set_backend_startup(
+    app: &AppHandle,
+    phase: &str,
+    message: impl Into<String>,
+    attempt: u32,
+    error: Option<String>,
+    fatal: bool,
+) {
+    let state: tauri::State<'_, AppState> = app.state();
+    let status = BackendStartupStatus {
+        phase: phase.to_string(),
+        message: message.into(),
+        attempt,
+        max_attempts: SIDECAR_START_ATTEMPTS,
+        elapsed_ms: state.startup_started.elapsed().as_millis() as u64,
+        error,
+        fatal,
+    };
+    *state.backend_startup.lock().await = status.clone();
+    app.emit("backend-progress", status).ok();
+}
+
+fn backend_error_is_fatal(message: &str) -> bool {
+    let normalized = message.to_ascii_lowercase();
+    [
+        "can't locate revision",
+        "cannot locate revision",
+        "database schema revision",
+        "alembic.ini not found",
+        "sidecar bundle missing",
+        "no python binary found",
+        "locate python binary",
+    ]
+    .iter()
+    .any(|needle| normalized.contains(needle))
+}
+
+async fn publish_backend_error(app: &AppHandle, failure: &BackendStartFailure) {
+    set_backend_startup(
+        app,
+        "error",
+        if failure.fatal {
+            "The local engine needs attention."
+        } else {
+            "The local engine could not start."
+        },
+        failure.attempt,
+        Some(failure.message.clone()),
+        failure.fatal,
+    )
+    .await;
+    update_tray_status(app, "Status: Error");
+    app.emit(
+        "backend-error",
+        BackendError {
+            message: failure.message.clone(),
+            fatal: failure.fatal,
+            attempt: failure.attempt,
+            max_attempts: SIDECAR_START_ATTEMPTS,
+        },
+    )
+    .ok();
+}
+
+async fn start_bundled_backend_with_retry(
+    app: &AppHandle,
+    desktop_token: Option<&str>,
+) -> std::result::Result<ReadySidecar, BackendStartFailure> {
+    let state: tauri::State<'_, AppState> = app.state();
+    let _start_guard = state.backend_start_lock.lock().await;
+    let operation_started = Instant::now();
+    let mut last_failure = BackendStartFailure {
+        message: "The local engine did not start.".to_string(),
+        fatal: false,
+        attempt: 0,
+    };
+
+    for attempt in 1..=SIDECAR_START_ATTEMPTS {
+        set_backend_startup(
+            app,
+            "launching",
+            format!("Launching the local engine… ({attempt}/{SIDECAR_START_ATTEMPTS})"),
+            attempt,
+            None,
+            false,
+        )
+        .await;
+        let attempt_started = Instant::now();
+        let spawn_result = if let Some(token) = desktop_token {
+            Sidecar::spawn_with_desktop_token(app, Some(token))
+        } else {
+            Sidecar::spawn(app)
+        };
+        let mut sidecar = match spawn_result {
+            Ok(sidecar) => sidecar,
+            Err(error) => {
+                let message = format!("Sidecar unavailable: {error:#}");
+                last_failure = BackendStartFailure {
+                    fatal: backend_error_is_fatal(&message),
+                    message,
+                    attempt,
+                };
+                if last_failure.fatal {
+                    break;
+                }
+                if attempt < SIDECAR_START_ATTEMPTS {
+                    set_backend_startup(
+                        app,
+                        "retrying",
+                        "Could not launch the engine. Retrying…",
+                        attempt,
+                        Some(last_failure.message.clone()),
+                        false,
+                    )
+                    .await;
+                    tokio::time::sleep(SIDECAR_RETRY_BASE_DELAY * attempt).await;
+                }
+                continue;
+            }
+        };
+
+        set_backend_startup(
+            app,
+            "starting",
+            "Loading Python and preparing the database…",
+            attempt,
+            None,
+            false,
+        )
+        .await;
+        let handshake_timeout = if attempt == 1 {
+            SIDECAR_FIRST_HANDSHAKE_TIMEOUT
+        } else {
+            SIDECAR_RETRY_HANDSHAKE_TIMEOUT
+        };
+        let handshake = match sidecar.read_handshake(handshake_timeout).await {
+            Ok(handshake) => handshake,
+            Err(error) => {
+                let tail = sidecar.log_tail(16 * 1024).await;
+                let message = if tail.trim().is_empty() {
+                    format!("Sidecar handshake failed: {error:#}")
+                } else {
+                    format!("Sidecar handshake failed: {error:#}\n\n{tail}")
+                };
+                last_failure = BackendStartFailure {
+                    fatal: backend_error_is_fatal(&message),
+                    message,
+                    attempt,
+                };
+                sidecar.shutdown().await;
+                log::warn!(
+                    "desktop_startup_timing stage=handshake_failed attempt={} duration_ms={} fatal={}",
+                    attempt,
+                    attempt_started.elapsed().as_millis(),
+                    last_failure.fatal
+                );
+                if last_failure.fatal {
+                    break;
+                }
+                if attempt < SIDECAR_START_ATTEMPTS {
+                    set_backend_startup(
+                        app,
+                        "retrying",
+                        "The engine stopped during startup. Retrying…",
+                        attempt,
+                        Some(last_failure.message.clone()),
+                        false,
+                    )
+                    .await;
+                    tokio::time::sleep(SIDECAR_RETRY_BASE_DELAY * attempt).await;
+                }
+                continue;
+            }
+        };
+
+        let base_url = format!("http://127.0.0.1:{}", handshake.port);
+        set_backend_startup(
+            app,
+            "health",
+            "Checking the local engine…",
+            attempt,
+            None,
+            false,
+        )
+        .await;
+        if let Err(error) = wait_for_health(&base_url, 60, Duration::from_millis(250)).await {
+            let tail = sidecar.log_tail(16 * 1024).await;
+            let message = format!("Sidecar health check failed: {error:#}\n\n{tail}");
+            last_failure = BackendStartFailure {
+                fatal: backend_error_is_fatal(&message),
+                message,
+                attempt,
+            };
+            sidecar.shutdown().await;
+            if last_failure.fatal {
+                break;
+            }
+            if attempt < SIDECAR_START_ATTEMPTS {
+                set_backend_startup(
+                    app,
+                    "retrying",
+                    "The engine did not answer. Retrying…",
+                    attempt,
+                    Some(last_failure.message.clone()),
+                    false,
+                )
+                .await;
+                tokio::time::sleep(SIDECAR_RETRY_BASE_DELAY * attempt).await;
+            }
+            continue;
+        }
+
+        log::info!(
+            "desktop_startup_timing stage=sidecar_ready attempt={} attempt_ms={} total_ms={}",
+            attempt,
+            attempt_started.elapsed().as_millis(),
+            operation_started.elapsed().as_millis()
+        );
+        return Ok(ReadySidecar {
+            sidecar,
+            handshake,
+            base_url,
+            attempt,
+        });
+    }
+
+    Err(last_failure)
+}
+
 fn normalize_external_base_url(base_url: &str) -> Result<String> {
     let mut trimmed = base_url.trim().trim_end_matches('/');
     if let Some(stripped) = trimmed.strip_suffix("/api") {
@@ -1712,6 +2013,15 @@ async fn start_backend_and_window(app: AppHandle) -> Result<()> {
         .ok()
         .and_then(|config| config.active_base_url)
     {
+        set_backend_startup(
+            &app,
+            "external",
+            "Checking the configured backend…",
+            0,
+            None,
+            false,
+        )
+        .await;
         match normalize_external_base_url(&active_base_url) {
             Ok(base) => match wait_for_health(&base, 8, Duration::from_millis(250)).await {
                 Ok(()) => {
@@ -1726,6 +2036,8 @@ async fn start_backend_and_window(app: AppHandle) -> Result<()> {
                             .context("inject external backend config")?;
                     }
                     update_tray_status(&app, "Status: Running");
+                    set_backend_startup(&app, "ready", "Configured backend ready", 0, None, false)
+                        .await;
                     app.emit(
                         "backend-ready",
                         BackendReady {
@@ -1749,86 +2061,66 @@ async fn start_backend_and_window(app: AppHandle) -> Result<()> {
         }
     }
 
-    match Sidecar::spawn(&app) {
-        Ok(mut sidecar) => {
-            let handshake_result = sidecar
-                .read_handshake(SIDECAR_HANDSHAKE_TIMEOUT)
-                .await
-                .context("read sidecar handshake");
-            match handshake_result {
-                Ok(handshake) => {
-                    log::info!(
-                        "sidecar handshake: port={} pid={} version={}",
-                        handshake.port,
-                        handshake.pid,
-                        handshake.version
-                    );
-
-                    let base = format!("http://127.0.0.1:{}", handshake.port);
-                    if let Err(e) = wait_for_health(&base, 60, Duration::from_millis(250)).await {
-                        log::warn!("desktop: sidecar health check failed at startup: {e:#}");
-                        update_tray_status(&app, "Status: Error");
-                        app.emit(
-                            "backend-error",
-                            BackendError {
-                                message: format!("Sidecar health check failed: {e:#}"),
-                            },
-                        )
-                        .ok();
-                    } else {
-                        let token = handshake.token.clone();
-                        let init_script = frontend_init_script(Some(&token), &base);
-
-                        let _ = state.sidecar.lock().await.replace(sidecar);
-                        let _ = state.desktop_token.lock().await.replace(handshake.token);
-                        let _ = state.backend_base_url.lock().await.replace(base.clone());
-                        *state.backend_mode.lock().await = BackendMode::Bundled;
-
-                        if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
-                            window
-                                .eval(&init_script)
-                                .context("inject bundled backend config")?;
-                        }
-                        update_tray_status(&app, "Status: Running");
-
-                        app.emit(
-                            "backend-ready",
-                            BackendReady {
-                                port: handshake.port,
-                                version: handshake.version,
-                                base_url: base,
-                                token: Some(token),
-                                sidecar_running: true,
-                            },
-                        )
-                        .ok();
-                    }
-                }
-                Err(e) => {
-                    log::warn!("desktop: sidecar handshake failed at startup: {e:#}");
-                    update_tray_status(&app, "Status: Error");
-                    app.emit(
-                        "backend-error",
-                        BackendError {
-                            message: format!("Sidecar handshake failed: {e:#}"),
-                        },
-                    )
-                    .ok();
-                }
-            }
+    let ready = match start_bundled_backend_with_retry(&app, None).await {
+        Ok(ready) => ready,
+        Err(failure) => {
+            log::warn!(
+                "desktop: bundled backend failed at startup: {}",
+                failure.message
+            );
+            publish_backend_error(&app, &failure).await;
+            return Ok(());
         }
-        Err(e) => {
-            log::warn!("desktop: sidecar unavailable at startup: {e:#}");
-            update_tray_status(&app, "Status: Error");
-            app.emit(
-                "backend-error",
-                BackendError {
-                    message: format!("Sidecar unavailable: {e:#}"),
-                },
-            )
-            .ok();
-        }
+    };
+    log::info!(
+        "sidecar handshake: port={} pid={} version={}",
+        ready.handshake.port,
+        ready.handshake.pid,
+        ready.handshake.version
+    );
+    let token = ready.handshake.token.clone();
+    let init_script = frontend_init_script(Some(&token), &ready.base_url);
+
+    let _ = state.sidecar.lock().await.replace(ready.sidecar);
+    let _ = state
+        .desktop_token
+        .lock()
+        .await
+        .replace(ready.handshake.token);
+    let _ = state
+        .backend_base_url
+        .lock()
+        .await
+        .replace(ready.base_url.clone());
+    *state.backend_mode.lock().await = BackendMode::Bundled;
+
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+        window
+            .eval(&init_script)
+            .context("inject bundled backend config")?;
     }
+    update_tray_status(&app, "Status: Running");
+    set_backend_startup(
+        &app,
+        "ready",
+        "Local engine ready",
+        ready.attempt,
+        None,
+        false,
+    )
+    .await;
+
+    app.emit(
+        "backend-ready",
+        BackendReady {
+            port: ready.handshake.port,
+            version: ready.handshake.version,
+            base_url: ready.base_url,
+            token: Some(token),
+            sidecar_running: true,
+        },
+    )
+    .ok();
 
     Ok(())
 }
@@ -1840,6 +2132,9 @@ fn main() {
         backend_base_url: Arc::new(Mutex::new(None)),
         backend_mode: Arc::new(Mutex::new(BackendMode::Bundled)),
         window_backend_base_urls: Arc::new(Mutex::new(HashMap::new())),
+        backend_startup: Arc::new(Mutex::new(BackendStartupStatus::default())),
+        backend_start_lock: Arc::new(Mutex::new(())),
+        startup_started: Instant::now(),
         force_reloading: Arc::new(AtomicBool::new(false)),
         quitting: Arc::new(AtomicBool::new(false)),
         tray_status: Arc::new(Mutex::new(None)),
@@ -1870,6 +2165,8 @@ fn main() {
             backend_health,
             backend_logs_path,
             app_backend_status,
+            app_retry_backend,
+            app_reveal_backend_log,
             app_remove_backend_server,
             app_save_backend_server,
             app_use_external_backend,
@@ -1898,15 +2195,15 @@ fn main() {
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = start_backend_and_window(handle.clone()).await {
                     log::error!("failed to start backend: {e:#}");
-                    update_tray_status(&handle, "Status: Error");
-                    handle
-                        .emit(
-                            "backend-error",
-                            BackendError {
-                                message: format!("{e:#}"),
-                            },
-                        )
-                        .ok();
+                    publish_backend_error(
+                        &handle,
+                        &BackendStartFailure {
+                            message: format!("{e:#}"),
+                            fatal: backend_error_is_fatal(&format!("{e:#}")),
+                            attempt: 0,
+                        },
+                    )
+                    .await;
                 }
             });
             Ok(())
@@ -2150,5 +2447,22 @@ mod tests {
         // misleading — the formatter still prints a valid "downloading"
         // string and never panics.
         assert!(label.starts_with("Status: Downloading"));
+    }
+
+    #[test]
+    fn migration_revision_errors_are_fatal() {
+        assert!(backend_error_is_fatal(
+            "Can't locate revision identified by '00000037'"
+        ));
+        assert!(backend_error_is_fatal(
+            "Database schema revision '42' is newer than this build"
+        ));
+    }
+
+    #[test]
+    fn cold_start_timeout_is_retriable() {
+        assert!(!backend_error_is_fatal(
+            "timed out waiting for handshake while Defender scanned files"
+        ));
     }
 }

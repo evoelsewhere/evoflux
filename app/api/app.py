@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+from time import perf_counter
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,6 +36,10 @@ from app.core.middlewares import RequestSizeLimitMiddleware, SecurityHeadersMidd
 from app.core.otel import setup_otel, shutdown_otel
 from app.core.otel_retention import start_otel_retention, stop_otel_retention
 from app.core.runtime_settings import load_runtime_settings
+from app.core.schema_version import (
+    ensure_database_revision_is_supported,
+    inspect_database_schema,
+)
 from app.core.wiki_seed import seed_wiki
 from app.core.workspace_init import ensure_workspace_initialized
 from app.scheduler.scheduler import task_scheduler
@@ -44,12 +49,122 @@ from app.services.dream_scheduler import DreamScheduler
 from app.core.version import VERSION
 
 
+def _log_startup_timing(
+    phase: str, phase_started: float, process_started: float
+) -> None:
+    now = perf_counter()
+    logger.info(
+        "startup_timing phase={} duration_ms={} total_ms={}",
+        phase,
+        round((now - phase_started) * 1000),
+        round((now - process_started) * 1000),
+    )
+
+
+async def _start_optional_services(app: FastAPI, process_started: float) -> None:
+    """Start non-critical services after the HTTP server becomes available."""
+
+    # Let Uvicorn finish lifespan startup, flip ``server.started``, and let the
+    # desktop handshake escape before any synchronous config/file scanning.
+    await asyncio.sleep(0.1)
+
+    phase_started = perf_counter()
+    try:
+        start_otel_retention()
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "optional_service_start_failed service=otel_retention error={}", exc
+        )
+    _log_startup_timing("otel_retention", phase_started, process_started)
+
+    phase_started = perf_counter()
+    try:
+        try:
+            mcp_config = load_mcp_config()
+        except ValueError as exc:
+            logger.error("mcp_config_invalid err={}", exc)
+            mcp_config = None
+        if mcp_config is not None and mcp_config.servers:
+            await mcp_manager.start()
+        elif mcp_config is not None:
+            logger.info("mcp_no_servers_configured")
+    except Exception as exc:  # noqa: BLE001
+        logger.error("optional_service_start_failed service=mcp error={}", exc)
+    _log_startup_timing("mcp", phase_started, process_started)
+
+    phase_started = perf_counter()
+    try:
+        if not team_manager.validate_agents_dir():
+            logger.warning("agents_dir_empty_or_missing path={}", settings.AGENTS_DIR)
+    except ValueError as exc:
+        # Invalid agent files should not make the local HTTP API disappear.
+        # Agent endpoints will surface the same configuration error when used.
+        logger.error("agents_dir_invalid path={} error={}", settings.AGENTS_DIR, exc)
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "optional_service_start_failed service=agents_validation error={}", exc
+        )
+    _log_startup_timing("agents_validation", phase_started, process_started)
+
+    phase_started = perf_counter()
+    try:
+        if await task_scheduler.has_enabled_tasks():
+            await task_scheduler.start()
+        else:
+            logger.info("scheduler_no_enabled_tasks")
+    except Exception as exc:  # noqa: BLE001
+        logger.error("optional_service_start_failed service=scheduler error={}", exc)
+    _log_startup_timing("scheduler", phase_started, process_started)
+
+    phase_started = perf_counter()
+    runtime_settings = app.state.runtime_settings
+    try:
+        if runtime_settings.dream.enabled:
+            await app.state.dream_scheduler.start()
+        else:
+            logger.info("dream_scheduler_disabled enabled=false")
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "optional_service_start_failed service=dream_scheduler error={}", exc
+        )
+    _log_startup_timing("dream_scheduler", phase_started, process_started)
+
+    phase_started = perf_counter()
+    try:
+        if runtime_settings.code_graph.watch_enabled:
+            await app.state.code_graph_watcher.start()
+        else:
+            logger.info("code_graph_watcher_disabled enabled=false")
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "optional_service_start_failed service=code_graph_watcher error={}", exc
+        )
+    _log_startup_timing("code_graph_watcher", phase_started, process_started)
+
+    phase_started = perf_counter()
+    try:
+        await app.state.aim_index_watcher.start()
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "optional_service_start_failed service=aim_index_watcher error={}", exc
+        )
+    _log_startup_timing("aim_index_watcher", phase_started, process_started)
+    app.state.optional_services_ready = True
+    logger.info(
+        "optional_services_ready total_ms={}",
+        round((perf_counter() - process_started) * 1000),
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup / shutdown lifecycle."""
+    process_started = perf_counter()
     logger.info("server_starting version={}", VERSION)
 
+    phase_started = perf_counter()
     ensure_workspace_initialized()
+    _log_startup_timing("workspace_init", phase_started, process_started)
 
     # ── Workflow runner ↔ team turn-boundary hooks (plan v5 §6.1) ─────────
     # Registered here rather than imported by team.py to avoid a circular
@@ -67,7 +182,9 @@ async def lifespan(app: FastAPI):
     # before the restart is unanswerable and must not show as live.
     from app.workflow.runner import reconcile_orphaned_executions
 
+    phase_started = perf_counter()
     await reconcile_orphaned_executions()
+    _log_startup_timing("workflow_reconcile", phase_started, process_started)
 
     # ── Auto-migrate DB in production ───────────────────────────────
     if settings.APP_ENV == "production":
@@ -76,70 +193,45 @@ async def lifespan(app: FastAPI):
         # the sync call onto a worker thread so its private loop is isolated.
         from app.core.db import run_migrations
 
-        await asyncio.to_thread(run_migrations)
+        phase_started = perf_counter()
+        schema_status = await asyncio.to_thread(inspect_database_schema)
+        ensure_database_revision_is_supported(schema_status)
+        if schema_status.at_head:
+            logger.info("auto_migrate_skipped reason=already_at_head")
+        else:
+            await asyncio.to_thread(run_migrations)
+        _log_startup_timing("migrations", phase_started, process_started)
 
     # ── Seed wiki directory on first boot ──────────────────────────────
+    phase_started = perf_counter()
     seed_wiki()
+    _log_startup_timing("wiki_seed", phase_started, process_started)
 
+    phase_started = perf_counter()
     setup_otel(service_name="EvoFlux")
-    start_otel_retention()
+    _log_startup_timing("otel", phase_started, process_started)
 
-    try:
-        mcp_config = load_mcp_config()
-    except ValueError as exc:
-        logger.error("mcp_config_invalid err={}", exc)
-    else:
-        if mcp_config.servers:
-            # Start MCP runners best-effort without blocking API startup. Agents already
-            # tolerate not-yet-ready MCP servers and pick up tools on their next refresh.
-            await mcp_manager.start()
-        else:
-            logger.info("mcp_no_servers_configured")
-
-    # Parse-only validation at boot: surfaces malformed agent ``.md`` files
-    # immediately instead of waiting for the first request to fail.  The
-    # team itself is built lazily on the first chat / scheduler fire — see
-    # ``app.services.team_manager.get_or_start_team``.
-    try:
-        if not team_manager.validate_agents_dir():
-            logger.warning("agents_dir_empty_or_missing path={}", settings.AGENTS_DIR)
-    except ValueError as exc:
-        logger.error("agents_dir_invalid path={} error={}", settings.AGENTS_DIR, exc)
-        raise
-
-    if await task_scheduler.has_enabled_tasks():
-        await task_scheduler.start()
-    else:
-        logger.info("scheduler_no_enabled_tasks")
-
-    # Start dream scheduler (only if settings.yaml has dream.enabled: true)
+    # Construct optional services now so routes can reference them immediately,
+    # but start their I/O-heavy work in the background after lifespan yields.
     runtime_settings = load_runtime_settings()
     from app.core.db import async_session_factory
 
     dream_scheduler = DreamScheduler(db_factory=async_session_factory)
-    if runtime_settings.dream.enabled:
-        await dream_scheduler.start()
-    else:
-        logger.info("dream_scheduler_disabled enabled=false")
     app.state.dream_scheduler = dream_scheduler
+    app.state.runtime_settings = runtime_settings
 
-    # Start the code-graph file watcher (only if code_graph.watch_enabled: true)
     from app.services.code_graph.watcher import CodeGraphWatcher, set_global_watcher
 
     code_graph_watcher = CodeGraphWatcher(db_factory=async_session_factory)
     set_global_watcher(code_graph_watcher)
-    if runtime_settings.code_graph.watch_enabled:
-        await code_graph_watcher.start()
-    else:
-        logger.info("code_graph_watcher_disabled enabled=false")
     app.state.code_graph_watcher = code_graph_watcher
 
     from app.services.aim.watcher import AimIndexWatcher, set_global_aim_watcher
 
     aim_index_watcher = AimIndexWatcher(db_factory=async_session_factory)
     set_global_aim_watcher(aim_index_watcher)
-    await aim_index_watcher.start()
     app.state.aim_index_watcher = aim_index_watcher
+    app.state.optional_services_ready = False
 
     # Start WebBridge extension cleanup task
     from app.services.webbridge_service import webbridge_manager
@@ -150,9 +242,22 @@ async def lifespan(app: FastAPI):
 
     webbridge_artifact_cleanup_task = asyncio.create_task(run_artifact_cleanup_loop())
     app.state.webbridge_artifact_cleanup_task = webbridge_artifact_cleanup_task
+    optional_startup_task = asyncio.create_task(
+        _start_optional_services(app, process_started),
+        name="optional-service-startup",
+    )
+    app.state.optional_startup_task = optional_startup_task
+
+    logger.info(
+        "critical_startup_ready total_ms={}",
+        round((perf_counter() - process_started) * 1000),
+    )
 
     yield
 
+    if not optional_startup_task.done():
+        optional_startup_task.cancel()
+    await asyncio.gather(optional_startup_task, return_exceptions=True)
     await aim_index_watcher.stop()
     await code_graph_watcher.stop()
     webbridge_cleanup_task = getattr(app.state, "webbridge_cleanup_task", None)

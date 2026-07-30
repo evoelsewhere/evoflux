@@ -3,6 +3,16 @@ export interface SavedAppServer {
   name?: string | null
 }
 
+export interface BackendStartupStatus {
+  phase: 'preparing' | 'external' | 'launching' | 'starting' | 'health' | 'retrying' | 'ready' | 'error'
+  message: string
+  attempt: number
+  max_attempts: number
+  elapsed_ms: number
+  error?: string | null
+  fatal: boolean
+}
+
 export interface AppBackendStatus {
   base_url: string
   token?: string | null
@@ -11,6 +21,7 @@ export interface AppBackendStatus {
   external: boolean
   supports_bundled: boolean
   servers: SavedAppServer[]
+  startup?: BackendStartupStatus
 }
 
 export async function getAppBackendStatus(): Promise<AppBackendStatus | null> {
@@ -63,4 +74,16 @@ export async function switchToBundledAppBackend(): Promise<void> {
   if (!isTauriContext()) throw new Error('The builtin sidecar is only available in the EvoFlux desktop app.')
   const { invoke } = await import('@tauri-apps/api/core')
   await invoke('app_use_bundled_backend')
+}
+
+export async function retryAppBackend(): Promise<void> {
+  if (!isTauriContext()) throw new Error('Retry is only available in the EvoFlux desktop app.')
+  const { invoke } = await import('@tauri-apps/api/core')
+  await invoke('app_retry_backend')
+}
+
+export async function revealAppBackendLog(): Promise<void> {
+  if (!isTauriContext()) return
+  const { invoke } = await import('@tauri-apps/api/core')
+  await invoke('app_reveal_backend_log')
 }
