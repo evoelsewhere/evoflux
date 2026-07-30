@@ -28,7 +28,7 @@
  */
 
 import type { ReactNode, Ref, TouchEventHandler } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { PanelLeft } from 'lucide-react'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useMotionPreset } from '@/lib/motion'
@@ -108,27 +108,27 @@ export function AppShell({
 
       {/* Right column — optional header + the body row. */}
       <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div
+          className={
+            mainHidden
+              ? 'hidden'
+              : 'flex min-h-0 min-w-0 flex-1 flex-col'
+          }
+        >
           {header}
           <div className="flex min-h-0 flex-1 overflow-hidden">
             {mobileSidebar}
-            <AnimatePresence initial={false} mode="popLayout">
-              {!mainHidden && (
-                <motion.main
-                  key="app-main-canvas"
-                  layout="size"
-                  id={mainId}
-                  ref={mainRef}
-                  initial={{ opacity: 0, scale: 0.995 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.99 }}
-                  transition={motionPreset.transition}
-                  className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-md bg-(--bg-page)"
-                >
-                  {children}
-                </motion.main>
-              )}
-            </AnimatePresence>
+            <motion.main
+              key="app-main-canvas"
+              id={mainId}
+              ref={mainRef}
+              initial={{ opacity: 0, scale: 0.995 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={motionPreset.transition}
+              className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-md bg-(--bg-page)"
+            >
+              {children}
+            </motion.main>
             {trailing}
           </div>
           {overlay}

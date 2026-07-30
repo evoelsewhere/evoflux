@@ -1127,7 +1127,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
             <TerminalPanel
               sessionId={sessionIdState}
               terminalId={tab.id}
-              mode={mode}
               active={active}
             />
           )}
@@ -1252,6 +1251,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
       {mode === 'coding'
         && workspace
         && !isMobile
+        && !workbenchMaximized
         && codingFileViewer !== null
         && !(workbenchOpen && activeWorkbenchTool === 'files')
         && (

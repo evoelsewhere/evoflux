@@ -166,6 +166,7 @@
     --bg-key:            #30343A;
     --bg-muted:          #30343A;
     --bg-send:           #D4D6D8;
+    --terminal-bg:       #171A1F;
     --color-surface:     #282B2F;
     --color-surface-2:   #30343A;
     --color-bg-elevated: #2C3035;
@@ -337,6 +338,7 @@
     --bg-key:            #F1F2F3;
     --bg-muted:          #F1F2F3;
     --bg-send:           #111114;
+    --terminal-bg:       #F8FAFC;
     --color-surface:     #FFFFFF;
     --color-surface-2:   #F1F2F3;
     --color-bg-elevated: #FFFFFF;
@@ -507,6 +509,19 @@
        explicit shared primitives instead of inflating every spacing utility. */
     font-size: 16px;
   }
+}
+
+/* Give the PTY the same quiet inset as the Codex terminal. FitAddon reads the
+   xterm element's padding, so rows and columns still match the visible area. */
+.xterm.evoflux-terminal {
+  background: var(--terminal-bg);
+  box-sizing: border-box;
+  height: 100%;
+  padding: 10px 14px;
+}
+
+.xterm.evoflux-terminal .xterm-viewport {
+  background-color: var(--terminal-bg) !important;
 }
 
 /* ─────────────────────────────────────────────────────────────
