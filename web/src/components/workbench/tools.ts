@@ -5,7 +5,7 @@ import {
   GitBranch,
   GitPullRequest,
   Globe2,
-  MessageSquarePlus,
+  MessageCirclePlus,
   Network,
   Terminal,
   Timer,
@@ -53,7 +53,7 @@ export const WORKBENCH_TOOLS: Record<
   'side-chat': {
     label: 'Side chat',
     description: 'Ask a focused question without interrupting the run',
-    icon: MessageSquarePlus,
+    icon: MessageCirclePlus,
     shortcut: '⌥⌘S',
   },
   wiki: {

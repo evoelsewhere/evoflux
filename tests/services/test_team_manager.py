@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -37,7 +38,9 @@ def _make_team(name: str = "lead") -> MagicMock:
 
 @pytest_asyncio.fixture(autouse=True)
 async def reset_team_manager():
-    """Ensure every cached team is cleared before and after each test."""
+    """Give each lifecycle test one coherent manager module generation."""
+    global team_manager
+    team_manager = importlib.reload(team_manager)
     await team_manager.stop()
     yield
     await team_manager.stop()

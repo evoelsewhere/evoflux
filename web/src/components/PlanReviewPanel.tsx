@@ -17,7 +17,7 @@ import {
   Code,
   FilePen,
   ListChecks,
-  MessageSquarePlus,
+  MessageCirclePlus,
   PencilLine,
   Settings,
   Terminal,
@@ -158,7 +158,7 @@ function SelectionCommentPopover({
             !comment.trim() && 'pointer-events-none opacity-50',
           )}
         >
-          <MessageSquarePlus size={12} aria-hidden="true" />
+          <MessageCirclePlus size={12} aria-hidden="true" />
           Add to chat
         </button>
       </div>

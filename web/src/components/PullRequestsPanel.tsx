@@ -13,7 +13,7 @@ import {
   GitPullRequest,
   KeyRound,
   Loader2,
-  MessageSquare,
+  MessageCircle,
   Minus,
   Plus,
   RefreshCw,
@@ -406,7 +406,7 @@ function ReviewRow({
     },
     {
       label: linked ? 'Continue review in chat' : 'Review in chat',
-      icon: <MessageSquare size={12} />,
+      icon: <MessageCircle size={12} />,
       onSelect: () => void onOpenInChat(repository, item),
       disabled: opening,
     },
@@ -483,7 +483,7 @@ function ReviewRow({
             {opening ? (
               <Loader2 size={11} className="animate-spin" />
             ) : (
-              <MessageSquare size={11} />
+              <MessageCircle size={11} />
             )}
             {linked ? 'Continue' : 'Review'}
           </button>
@@ -501,7 +501,7 @@ function ReviewRow({
           {item.updated_at && <span>{formatRelativeDate(item.updated_at)}</span>}
           {item.comment_count !== null && (
             <span className="inline-flex items-center gap-1">
-              <MessageSquare size={10} />
+              <MessageCircle size={10} />
               {item.comment_count}
             </span>
           )}
@@ -753,7 +753,7 @@ function ReviewDetails({
             variant="outline"
             onClick={() => void onOpenInChat(repository, item)}
           >
-            <MessageSquare size={13} />
+            <MessageCircle size={13} />
             Review in chat
           </Button>
         </div>

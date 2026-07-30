@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useRef, useCallback, useState } from 'react'
-import { Loader2, MessageSquare } from 'lucide-react'
+import { Loader2, MessageCircle } from 'lucide-react'
 import morphdom from 'morphdom'
 import { cn } from '@/lib/utils'
 import { useTeamStore } from '@/stores/useTeamStore'
@@ -277,7 +277,7 @@ export function WidgetRenderer({
           )}
           {onSendPrompt && (
             <div className="flex items-center gap-1 text-xs text-(--color-text-muted)">
-              <MessageSquare size={12} />
+              <MessageCircle size={12} />
               <span>Interactive</span>
             </div>
           )}
