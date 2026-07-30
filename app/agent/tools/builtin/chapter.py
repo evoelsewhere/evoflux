@@ -83,11 +83,11 @@ mark_chapter = Tool(
     _mark_chapter,
     name="mark_chapter",
     lead_only=True,
-    deferred=True,
-    deferred_summary="Create a named chapter divider in a long-running chat session.",
     description=(
         "Mark the start of a new chapter in the session with a short title. "
         "Adds a divider to the session table of contents so users can jump "
-        "between topics. Call when work shifts to a meaningfully different phase."
+        "between topics. Call before the first search or exploration step of a "
+        "substantial new request, and when work shifts to a meaningfully different "
+        "phase. Do not call it for every individual tool invocation."
     ),
 )
