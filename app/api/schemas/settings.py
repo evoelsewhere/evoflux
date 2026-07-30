@@ -11,6 +11,7 @@ class SandboxSettingsBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     denied_patterns: list[str] = Field(default_factory=list)
+    worktree_location: Literal["repository", "user_data"] = "repository"
 
 
 # ── Providers (Settings → Providers tab) ────────────────────────────────────

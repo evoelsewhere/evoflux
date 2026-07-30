@@ -36,8 +36,12 @@ def test_terminals_list_and_delete(client):
 def test_terminal_ws_echo_roundtrip(client):
     sid = "ws-term-1"
     try:
-        with client.websocket_connect(f"/api/team/{sid}/terminal?cols=80&rows=24") as ws:
-            ws.send_text(json.dumps({"type": "input", "data": "echo WS_MARKER_$((2*3))\n"}))
+        with client.websocket_connect(
+            f"/api/team/{sid}/terminal?cols=80&rows=24"
+        ) as ws:
+            ws.send_text(
+                json.dumps({"type": "input", "data": "echo WS_MARKER_$((2*3))\n"})
+            )
             got = b""
             for _ in range(80):
                 message = ws.receive()

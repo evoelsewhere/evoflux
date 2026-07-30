@@ -42,7 +42,9 @@ def test_resolve_attachment_path_rejects_external_canonical_path(monkeypatch, tm
 
 
 @pytest.mark.asyncio
-async def test_cleanup_expired_artifacts_sweeps_unvisited_history(monkeypatch, tmp_path):
+async def test_cleanup_expired_artifacts_sweeps_unvisited_history(
+    monkeypatch, tmp_path
+):
     from app.core import db as db_module
     from app.core.config import settings
 

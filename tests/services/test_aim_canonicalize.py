@@ -16,7 +16,9 @@ def _profile(**overrides) -> CanonicalProfile:
 
 def test_mask_rule_replaces_pattern():
     profile = _profile(
-        mask=[{"pattern": r'"timestamp":\s*"[^"]*"', "replace": '"timestamp":"<masked>"'}]
+        mask=[
+            {"pattern": r'"timestamp":\s*"[^"]*"', "replace": '"timestamp":"<masked>"'}
+        ]
     )
     text = '{"timestamp": "2026-07-16T10:00:00Z", "value": 1}'
     result = canonicalize_text(text, profile)

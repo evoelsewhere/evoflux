@@ -37,12 +37,8 @@ def upgrade() -> None:
                 server_default="main",
             )
         )
-        batch_op.add_column(
-            sa.Column("source_session_id", sa.Uuid(), nullable=True)
-        )
-        batch_op.create_index(
-            "ix_chat_sessions_source_session", ["source_session_id"]
-        )
+        batch_op.add_column(sa.Column("source_session_id", sa.Uuid(), nullable=True))
+        batch_op.create_index("ix_chat_sessions_source_session", ["source_session_id"])
         batch_op.create_foreign_key(
             "fk_chat_sessions_source_session_id",
             "chat_sessions",

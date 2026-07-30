@@ -284,9 +284,11 @@ export function ProviderCollapsedCard({
 }
 
 function ProviderCard({ provider }: { provider: ProviderInfo }) {
+  const daemon = DAEMON_BASE_URL[provider.id]
+  const savedBaseUrl = daemon ? provider.saved_credentials[daemon.var] ?? '' : ''
   const [expanded, setExpanded] = useState(false)
   const [apiKey, setApiKey] = useState('')
-  const [baseUrl, setBaseUrl] = useState('')
+  const [baseUrl, setBaseUrl] = useState(savedBaseUrl)
   const [cloudValues, setCloudValues] = useState<Record<string, string>>({})
   const [verifiedKey, setVerifiedKey] = useState('')
   const [verifiedCloudSignature, setVerifiedCloudSignature] = useState('')
@@ -316,19 +318,10 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
   const hasCandidateKey = trimmedKey.length > 0
   const hasVerifiedKey = verifiedKey === trimmedKey && hasCandidateKey
   const hasVerifiedCloud = verifiedCloudSignature === cloudSignature && hasCloudCandidate
-  const daemon = DAEMON_BASE_URL[provider.id]
-  const savedBaseUrl = daemon ? provider.saved_credentials[daemon.var] ?? '' : ''
   const hasSavedBaseUrlChange = provider.is_saved && daemon !== undefined && trimmedBaseUrl !== savedBaseUrl
   const canSave =
     ((provider.kind === 'api_key' || provider.kind === 'oauth') && (hasVerifiedKey || hasSavedBaseUrlChange)) ||
     (provider.kind === 'cloud_creds' && hasVerifiedCloud)
-
-  // Secrets are deliberately never returned by the API, but non-secret
-  // settings such as a custom Base URL should be restored when a saved
-  // provider card is opened.
-  useEffect(() => {
-    setBaseUrl((current) => current || savedBaseUrl)
-  }, [provider.id, savedBaseUrl])
 
   const extraForRequest = useMemo<Record<string, string> | undefined>(() => {
     if (!daemon || !trimmedBaseUrl) return undefined

@@ -61,7 +61,9 @@ async def _create_project(repo_a: Path, repo_b: Path):
         return project.id
 
 
-async def _wait_until_settled(client: AsyncClient, project_id, *, attempts: int = 300) -> list[dict]:
+async def _wait_until_settled(
+    client: AsyncClient, project_id, *, attempts: int = 300
+) -> list[dict]:
     """Poll project code-graph status until no repo is indexing, then wait
     for any auto-chained resolve job to finish too."""
     for _ in range(attempts):
@@ -91,7 +93,9 @@ async def test_reindex_requires_existing_project(client):
 
 
 @pytest.mark.asyncio
-async def test_single_call_indexes_every_repo_and_autoresolves(client, java_project_repos):
+async def test_single_call_indexes_every_repo_and_autoresolves(
+    client, java_project_repos
+):
     repo_a, repo_b = java_project_repos
     project_id = await _create_project(repo_a, repo_b)
 
@@ -118,7 +122,9 @@ async def test_single_call_indexes_every_repo_and_autoresolves(client, java_proj
 
 
 @pytest.mark.asyncio
-async def test_already_running_repo_is_joined_not_duplicated(client, java_project_repos):
+async def test_already_running_repo_is_joined_not_duplicated(
+    client, java_project_repos
+):
     repo_a, repo_b = java_project_repos
     project_id = await _create_project(repo_a, repo_b)
 

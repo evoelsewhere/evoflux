@@ -11,6 +11,7 @@ from loguru import logger
 from pydantic import Field
 
 from app.agent.sandbox import get_sandbox
+from app.agent.tools.builtin.filesystem._atomic import atomic_write_bytes
 from app.agent.tools.builtin.filesystem._config_watch import notify_fs_change
 from app.agent.tools.registry import Tool
 
@@ -172,6 +173,10 @@ async def _patch_file(
         )
 
         if patch.kind == "add":
+            if resolved.exists():
+                raise FileExistsError(
+                    f"File already exists: {sandbox.display_path(resolved)}"
+                )
             planned.append(
                 (
                     patch,
@@ -201,6 +206,10 @@ async def _patch_file(
                 f"Path is a directory: {sandbox.display_path(resolved)}"
             )
         content = resolved.read_text(encoding="utf-8")
+        if target is not None and target.exists() and target != resolved:
+            raise FileExistsError(
+                f"Move target already exists: {sandbox.display_path(target)}"
+            )
         new_content, hunks = _apply_chunks_with_meta(content, patch.chunks, patch.path)
         planned.append(
             (
@@ -212,23 +221,45 @@ async def _patch_file(
             )
         )
 
-    changed: list[Path] = []
-    for patch, resolved, target, data, _meta in planned:
-        if patch.kind == "delete":
-            resolved.unlink()
-            changed.append(resolved)
-        elif patch.kind == "add":
-            resolved.parent.mkdir(parents=True, exist_ok=True)
-            resolved.write_bytes(data or b"")
-            changed.append(resolved)
+    affected = {
+        path
+        for _patch, resolved, target, _data, _meta in planned
+        for path in (resolved, target)
+        if path is not None
+    }
+    originals: dict[Path, tuple[bytes | None, int | None]] = {}
+    for path in affected:
+        if path.exists():
+            originals[path] = (path.read_bytes(), path.stat().st_mode)
         else:
-            write_path = target or resolved
-            write_path.parent.mkdir(parents=True, exist_ok=True)
-            write_path.write_bytes(data or b"")
-            changed.append(write_path)
-            if target is not None:
+            originals[path] = (None, None)
+
+    changed: list[Path] = []
+    try:
+        for patch, resolved, target, data, _meta in planned:
+            if patch.kind == "delete":
                 resolved.unlink()
                 changed.append(resolved)
+            elif patch.kind == "add":
+                atomic_write_bytes(resolved, data or b"")
+                changed.append(resolved)
+            else:
+                write_path = target or resolved
+                atomic_write_bytes(write_path, data or b"")
+                changed.append(write_path)
+                if target is not None:
+                    resolved.unlink()
+                    changed.append(resolved)
+    except Exception:
+        logger.exception("patch_apply_failed_rolling_back files={}", len(affected))
+        for path, (original, mode) in originals.items():
+            if original is None:
+                path.unlink(missing_ok=True)
+                continue
+            atomic_write_bytes(path, original)
+            if mode is not None:
+                path.chmod(mode)
+        raise
 
     for path in changed:
         notify_fs_change(path)

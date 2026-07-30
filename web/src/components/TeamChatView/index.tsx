@@ -25,7 +25,7 @@
  * (one primitive per ``useTeamStore`` call) to avoid the infinite loop
  * that returning a freshly-built object on every render would trigger.
  */
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { AgentView } from '../AgentView'
@@ -36,13 +36,8 @@ import { useProjectQuery } from '@/queries/useProjectsQuery'
 import { CodingSidebar } from '../CodingSidebar'
 import { Sidebar } from '../Sidebar'
 import { ChatOverlayPanels, ChatTrailingPanels } from '@/components/chat/ChatPanels'
-import { WorkspaceFilesPanel } from '@/components/WorkspaceFilesPanel'
-import { CodingFileViewerPanel } from '@/components/CodingFileViewerPanel'
-import { CodingWorkspacePanel } from '@/components/CodingWorkspacePanel'
-import { GitWorkspacePanel } from '@/components/GitWorkspacePanel'
 import { PermissionApprovalModal } from '../PermissionApprovalModal'
 import { AskUserQuestionModal } from '../AskUserQuestionModal'
-import { MonitorView } from '../MonitorView'
 import { WebBridgeStatusDialog } from '@/components/shell/WebBridgeStatusDialog'
 import { useTodosQuery } from '@/queries/useTodosQuery'
 import { useSessionChapters } from '@/hooks/useSessionChapters'
@@ -67,12 +62,7 @@ import type { AgentStream } from '@/stores/useTeamStore'
 import { PlanActionBar } from '../PlanReviewPanel'
 import { type InputBarHandle } from '../InputBar'
 import { FloatingInputBar } from '../FloatingInputBar'
-import { SideChatPanel } from '../SideChatPanel'
-import { BrowserViewer } from '@/components/BrowserViewer'
 import { useDirectBrowserPresence } from '@/components/BrowserViewer/useDirectBrowserPresence'
-import { TerminalPanel } from '@/components/TerminalPanel'
-import { WikiPanel } from '@/components/WikiPanel'
-import { SchedulerPanel } from '@/components/SchedulerPanel'
 import { WorkbenchBar } from '@/components/workbench/WorkbenchBar'
 import { WorkbenchDock, WorkbenchSurface } from '@/components/workbench/WorkbenchDock'
 import { useSideChat } from '../SideChatPanel/useSideChat'
@@ -82,7 +72,6 @@ import type {
   RepositoryCodeReviews,
   WorkspaceFileInfo,
 } from '@/api/types'
-import { SplitWorkbench } from './SplitWorkbench'
 import { useTeamCommands } from './useTeamCommands'
 import { useTeamSse } from './useTeamSse'
 import { useSlashCommandRegistry } from './useSlashCommandRegistry'
@@ -96,6 +85,67 @@ import {
   codeReviewSessionTags,
   parseCodeReviewSessionTags,
 } from '@/lib/code-review-session'
+
+const WorkspaceFilesPanel = lazy(() =>
+  import('@/components/WorkspaceFilesPanel').then((module) => ({
+    default: module.WorkspaceFilesPanel,
+  })),
+)
+const CodingFileViewerPanel = lazy(() =>
+  import('@/components/CodingFileViewerPanel').then((module) => ({
+    default: module.CodingFileViewerPanel,
+  })),
+)
+const CodingWorkspacePanel = lazy(() =>
+  import('@/components/CodingWorkspacePanel').then((module) => ({
+    default: module.CodingWorkspacePanel,
+  })),
+)
+const GitWorkspacePanel = lazy(() =>
+  import('@/components/GitWorkspacePanel').then((module) => ({
+    default: module.GitWorkspacePanel,
+  })),
+)
+const MonitorView = lazy(() =>
+  import('../MonitorView').then((module) => ({ default: module.MonitorView })),
+)
+const SideChatPanel = lazy(() =>
+  import('../SideChatPanel').then((module) => ({ default: module.SideChatPanel })),
+)
+const BrowserViewer = lazy(() =>
+  import('@/components/BrowserViewer').then((module) => ({
+    default: module.BrowserViewer,
+  })),
+)
+const TerminalPanel = lazy(() =>
+  import('@/components/TerminalPanel').then((module) => ({
+    default: module.TerminalPanel,
+  })),
+)
+const WikiPanel = lazy(() =>
+  import('@/components/WikiPanel').then((module) => ({ default: module.WikiPanel })),
+)
+const SchedulerPanel = lazy(() =>
+  import('@/components/SchedulerPanel').then((module) => ({
+    default: module.SchedulerPanel,
+  })),
+)
+const SplitWorkbench = lazy(() =>
+  import('./SplitWorkbench').then((module) => ({
+    default: module.SplitWorkbench,
+  })),
+)
+
+function PanelLoadingFallback() {
+  return (
+    <div
+      className="flex h-full min-h-32 items-center justify-center text-xs text-(--color-text-muted)"
+      role="status"
+    >
+      Loading panel…
+    </div>
+  )
+}
 
 interface TeamChatViewProps {
   sessionId?: string
@@ -1068,6 +1118,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
         sessionId={sessionIdState}
         workspace={workspace}
       >
+      <Suspense fallback={<PanelLoadingFallback />}>
         {mode === 'coding' && workspace && (
           <>
             <WorkbenchSurface tool="files">
@@ -1217,6 +1268,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
             </WorkbenchSurface>
           </>
         )}
+      </Suspense>
     </WorkbenchDock>
   )
 
@@ -1259,21 +1311,23 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
         && codingFileViewer !== null
         && !(workbenchOpen && activeWorkbenchTool === 'files')
         && (
-        <CodingFileViewerPanel
-          key={`${codingFileViewer.path}:${codingFileViewerMode}`}
-          workspace={codingFileViewer.sourceWorkspace ?? workspace}
-          file={codingFileViewer}
-          mobile={false}
-          desktopOverlay={false}
-          initialViewMode={codingFileViewerMode}
-          onAddComment={handleAddFileComment}
-          onSendToChat={handleSendToChat}
-          onAddCodeToChat={handleAddCodeToChat}
-          onClose={() => {
-            setCodingFileViewer(null)
-            setCodingFileViewerMode('file')
-          }}
-        />
+        <Suspense fallback={<PanelLoadingFallback />}>
+          <CodingFileViewerPanel
+            key={`${codingFileViewer.path}:${codingFileViewerMode}`}
+            workspace={codingFileViewer.sourceWorkspace ?? workspace}
+            file={codingFileViewer}
+            mobile={false}
+            desktopOverlay={false}
+            initialViewMode={codingFileViewerMode}
+            onAddComment={handleAddFileComment}
+            onSendToChat={handleSendToChat}
+            onAddCodeToChat={handleAddCodeToChat}
+            onClose={() => {
+              setCodingFileViewer(null)
+              setCodingFileViewerMode('file')
+            }}
+          />
+        </Suspense>
       )}
     </>
   )
@@ -1445,27 +1499,31 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
         )}
         {/* Content area */}
         {effectiveViewMode === 'monitor' ? (
-          <MonitorView
-            agentNames={agentNames}
-            leadName={leadName}
-            agentStreams={gridAgentStreams ?? EMPTY_AGENT_STREAMS}
-            onFocusAgent={(name) => {
-              setActiveAgent(name)
-              setViewMode(splitAgentNames.length > 1 ? 'split' : 'agent')
-            }}
-          />
+          <Suspense fallback={<PanelLoadingFallback />}>
+            <MonitorView
+              agentNames={agentNames}
+              leadName={leadName}
+              agentStreams={gridAgentStreams ?? EMPTY_AGENT_STREAMS}
+              onFocusAgent={(name) => {
+                setActiveAgent(name)
+                setViewMode(splitAgentNames.length > 1 ? 'split' : 'agent')
+              }}
+            />
+          </Suspense>
         ) : effectiveViewMode === 'split' && splitAgentNames.length > 0 ? (
           <div className="min-h-0 flex-1 p-3">
-            <SplitWorkbench
-              agentNames={splitAgentNames}
-              leadName={leadName}
-              activeAgent={activeAgent}
-              agentStreams={gridAgentStreams ?? EMPTY_AGENT_STREAMS}
-              todos={todos}
-              isContinuing={isContinuing}
-              onContinue={continueTeam}
-              onSelectAgent={setActiveAgent}
-            />
+            <Suspense fallback={<PanelLoadingFallback />}>
+              <SplitWorkbench
+                agentNames={splitAgentNames}
+                leadName={leadName}
+                activeAgent={activeAgent}
+                agentStreams={gridAgentStreams ?? EMPTY_AGENT_STREAMS}
+                todos={todos}
+                isContinuing={isContinuing}
+                onContinue={continueTeam}
+                onSelectAgent={setActiveAgent}
+              />
+            </Suspense>
           </div>
         ) : isCodingSessionLoading ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">

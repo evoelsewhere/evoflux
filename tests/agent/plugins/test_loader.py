@@ -12,11 +12,16 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from textwrap import dedent
+from types import SimpleNamespace
 
 import pytest
 
 from app.agent.hooks.base import BaseAgentHook
-from app.agent.plugins.loader import _FunctionalPluginAdapter, load_plugin_hooks
+from app.agent.plugins.loader import (
+    _FunctionalPluginAdapter,
+    load_plugin_hooks,
+    plugin_digest,
+)
 from app.agent.schemas.chat import FunctionCall, ToolCall
 from app.agent.state import AgentState, RunContext
 
@@ -381,3 +386,57 @@ async def test_multiple_dirs_loaded_in_order(tmp_path: Path) -> None:
     hooks = await load_plugin_hooks([a, b], agent_name="x", role="lead")
     origins = [getattr(h, "origin", None) for h in hooks]
     assert origins == ["a", "b"]
+
+
+@pytest.mark.asyncio
+async def test_runtime_trust_registry_is_bound_to_plugin_hash(tmp_path: Path) -> None:
+    _write(
+        tmp_path,
+        "trusted.py",
+        """
+        from app.agent.hooks.base import BaseAgentHook
+
+        class Plugin(BaseAgentHook):
+            pass
+        """,
+    )
+    plugin_path = tmp_path / "trusted.py"
+
+    assert (
+        await load_plugin_hooks(
+            [tmp_path], agent_name="a", role="lead", require_trust=True
+        )
+        == []
+    )
+
+    (tmp_path / ".trusted-hooks.json").write_text(
+        json.dumps({"trusted.py": plugin_digest(plugin_path)}),
+        encoding="utf-8",
+    )
+    trusted = await load_plugin_hooks(
+        [tmp_path], agent_name="a", role="lead", require_trust=True
+    )
+    assert len(trusted) == 1
+
+    plugin_path.write_text(plugin_path.read_text() + "\n# changed\n")
+    assert (
+        await load_plugin_hooks(
+            [tmp_path], agent_name="a", role="lead", require_trust=True
+        )
+        == []
+    )
+
+
+@pytest.mark.asyncio
+async def test_completion_stop_hook_can_block_completion() -> None:
+    async def stop(_input, output):
+        output["block_reason"] = "tests are still failing"
+
+    adapter = _FunctionalPluginAdapter(
+        plugin_id="lifecycle",
+        handlers={"completion.stop": stop},
+    )
+
+    reason = await adapter.before_completion(_ctx(), _state(), SimpleNamespace())
+
+    assert reason == "tests are still failing"

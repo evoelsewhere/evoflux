@@ -96,9 +96,7 @@ async def _resolve_name_anywhere(
 
     # Fall back to sibling repos
     pairs = await proj_svc.get_project_workspaces(db, project_id)
-    sibling_paths = [
-        ws.path for _, ws in pairs if str(ws.id) != str(workspace_id)
-    ]
+    sibling_paths = [ws.path for _, ws in pairs if str(ws.id) != str(workspace_id)]
     if not sibling_paths:
         return matches
 
@@ -141,6 +139,7 @@ async def _find_cross_repo_references(
         conditions.append(col(CrossRepoEdge.src_node_id) == node_id)
     else:  # both
         from sqlmodel import or_
+
         conditions.append(
             or_(
                 col(CrossRepoEdge.dst_node_id) == node_id,
@@ -148,9 +147,7 @@ async def _find_cross_repo_references(
             )
         )
 
-    refs = (
-        await db.exec(select(CrossRepoEdge).where(*conditions))
-    ).all()
+    refs = (await db.exec(select(CrossRepoEdge).where(*conditions))).all()
     return refs
 
 
@@ -274,7 +271,9 @@ async def _code_graph(
     ],
     direction: Annotated[
         Literal["in", "out", "both"],
-        Field(description="Which relationships to show: 'in' (callers), 'out' (calls), 'both'."),
+        Field(
+            description="Which relationships to show: 'in' (callers), 'out' (calls), 'both'."
+        ),
     ] = "both",
     limit: Annotated[
         int, Field(description="Maximum relationships to return (max 100).")
@@ -316,7 +315,9 @@ async def _code_graph(
         repo_labels = {}
         if project_id:
             pairs = await proj_svc.get_project_workspaces(db, project_id)
-            repo_labels = {ws.id: (ws.name or Path(ws.path).name) for _link, ws in pairs}
+            repo_labels = {
+                ws.id: (ws.name or Path(ws.path).name) for _link, ws in pairs
+            }
 
         sections = []
         for match_ws_id, node in matches:
@@ -331,7 +332,9 @@ async def _code_graph(
                 # class/method textually contains the import statement — a
                 # class-level lookup would otherwise never show what its
                 # file imports. Merge the file's outbound imports in.
-                if node.kind != "file" and not any(k == "imports" for k, _ in out_edges):
+                if node.kind != "file" and not any(
+                    k == "imports" for k, _ in out_edges
+                ):
                     file_node = await svc.find_file_node(
                         db, workspace_id=match_ws_id, file_path=node.file_path
                     )
@@ -557,11 +560,15 @@ async def _code_overview(
             )
         ).all()
         if lang_stats:
-            lang_str = ", ".join(f"{lang}: {count}" for lang, count in lang_stats if lang)
+            lang_str = ", ".join(
+                f"{lang}: {count}" for lang, count in lang_stats if lang
+            )
             sections.append(f"  Languages: {lang_str}")
 
         # Top symbols
-        ranked = await svc.get_ranked_symbols(db, workspace_id=workspace_id, budget=capped)
+        ranked = await svc.get_ranked_symbols(
+            db, workspace_id=workspace_id, budget=capped
+        )
         if ranked:
             sections.append(f"\nTop {len(ranked)} most-referenced symbols:")
             for i, (node, count) in enumerate(ranked, start=1):

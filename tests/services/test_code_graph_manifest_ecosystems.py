@@ -519,8 +519,12 @@ def test_csharp_company_namespace_not_external():
 
 
 def test_dart_sdk_scheme_always_external():
-    assert is_likely_external("dart:async", file_path="main.dart", declared_dependencies=[])
-    assert is_likely_external("dart:core", file_path="main.dart", declared_dependencies=[])
+    assert is_likely_external(
+        "dart:async", file_path="main.dart", declared_dependencies=[]
+    )
+    assert is_likely_external(
+        "dart:core", file_path="main.dart", declared_dependencies=[]
+    )
 
 
 def test_dart_flutter_package_always_external():
@@ -539,7 +543,9 @@ def test_dart_own_package_not_external():
 
 
 def test_swift_apple_frameworks_always_external():
-    assert is_likely_external("Foundation", file_path="Foo.swift", declared_dependencies=[])
+    assert is_likely_external(
+        "Foundation", file_path="Foo.swift", declared_dependencies=[]
+    )
     assert is_likely_external("UIKit", file_path="Foo.swift", declared_dependencies=[])
 
 
@@ -563,7 +569,9 @@ def test_objc_own_header_not_external():
 
 def test_php_well_known_framework_namespace_always_external():
     assert is_likely_external(
-        "Illuminate\\Support\\Facades\\DB", file_path="Foo.php", declared_dependencies=[]
+        "Illuminate\\Support\\Facades\\DB",
+        file_path="Foo.php",
+        declared_dependencies=[],
     )
 
 

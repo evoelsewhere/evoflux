@@ -31,6 +31,7 @@ def __getattr__(name: str) -> Any:  # noqa: ANN401 - public lazy re-export
     globals()[name] = value
     return value
 
+
 __all__ = [
     "MCPConfig",
     "MCPServerConfig",

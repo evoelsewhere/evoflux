@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+import json
 
 import pytest
 
@@ -99,6 +100,43 @@ async def test_workspace_instructions_hook_truncates_oversized_agents_md(tmp_pat
     assert "[AGENTS.md truncated" in seen["prompt"]
     # The injected block stays bounded near the cap (content + short notice).
     assert len(seen["prompt"]) < MAX_AGENTS_MD_BYTES + 500
+
+
+@pytest.mark.asyncio
+async def test_nested_override_preflights_mutation_once(tmp_path):
+    (tmp_path / "AGENTS.md").write_text("root rule", encoding="utf-8")
+    nested = tmp_path / "app" / "feature"
+    nested.mkdir(parents=True)
+    (tmp_path / "app" / "AGENTS.md").write_text("app rule", encoding="utf-8")
+    (nested / "AGENTS.md").write_text("stale standard rule", encoding="utf-8")
+    (nested / "AGENTS.override.md").write_text(
+        "feature override rule", encoding="utf-8"
+    )
+    hook = WorkspaceInstructionsHook(str(tmp_path))
+    state = SimpleNamespace(metadata={})
+    tool_call = SimpleNamespace(
+        function=SimpleNamespace(
+            name="edit",
+            arguments=json.dumps({"path": "app/feature/module.py"}),
+        )
+    )
+    calls = 0
+
+    async def handler(_ctx, _state, _tool_call):
+        nonlocal calls
+        calls += 1
+        return "edited"
+
+    first = await hook.wrap_tool_call(None, state, tool_call, handler)
+    assert first.startswith("[Instruction preflight")
+    assert "app rule" in first
+    assert "feature override rule" in first
+    assert "stale standard rule" not in first
+    assert calls == 0
+
+    second = await hook.wrap_tool_call(None, state, tool_call, handler)
+    assert second == "edited"
+    assert calls == 1
 
 
 @pytest.mark.asyncio

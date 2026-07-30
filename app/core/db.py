@@ -121,6 +121,7 @@ async def sqlite_write_guard() -> AsyncGenerator[None, None]:
     async with _get_sqlite_write_lock():
         yield
 
+
 # Type alias for a session factory callable.
 # async_sessionmaker[AsyncSession] satisfies this; so do @asynccontextmanager
 # helpers used in tests — both are callable async context managers.

@@ -560,7 +560,9 @@ class TestFailureMessages:
         assert "lines 1, 3, 5" in msg
 
     def test_not_found_includes_closest_match_hint(self):
-        content = "def compute_total(items):\n    total = sum(items)\n    return total\n"
+        content = (
+            "def compute_total(items):\n    total = sum(items)\n    return total\n"
+        )
         # Close but wrong: different variable name.
         with pytest.raises(ValueError) as exc:
             replace_content(
@@ -606,7 +608,9 @@ async def test_edit_file_result_includes_post_edit_snippet(sandbox):
 async def test_edit_file_snippet_capped_for_large_replacements(sandbox):
     _, tmp_path = sandbox
     target = tmp_path / "big.py"
-    target.write_text("start\n" + "\n".join(f"x{i} = {i}" for i in range(60)) + "\nend\n")
+    target.write_text(
+        "start\n" + "\n".join(f"x{i} = {i}" for i in range(60)) + "\nend\n"
+    )
     big_new = "\n".join(f"y{i} = {i}" for i in range(60))
 
     result = await _edit_file(
@@ -615,6 +619,8 @@ async def test_edit_file_snippet_capped_for_large_replacements(sandbox):
         new_string=big_new,
     )
 
-    snippet_lines = [l for l in result.split("\n") if l[:5].isdigit() and "| " in l]
+    snippet_lines = [
+        line for line in result.split("\n") if line[:5].isdigit() and "| " in line
+    ]
     assert 0 < len(snippet_lines) <= 24
     assert result.rstrip().endswith("…")

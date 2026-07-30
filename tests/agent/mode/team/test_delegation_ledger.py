@@ -66,6 +66,74 @@ async def test_two_tasks_for_same_recipient_remain_independent():
 
 
 @pytest.mark.asyncio
+async def test_exclusive_path_claims_reject_parallel_overlap():
+    async with db_module.async_session_factory() as db:
+        lead = await _session(db)
+        await create_tasks(
+            db,
+            lead_session_id=lead.id,
+            delegator="lead",
+            recipients=["coder#1"],
+            spec={
+                "goal": "first",
+                "target_paths": ["app/agent"],
+                "exclusive_paths": True,
+            },
+            dependencies=[],
+            deadline_at=None,
+        )
+
+        with pytest.raises(ValueError, match="Conflicting delegation path claims"):
+            await create_tasks(
+                db,
+                lead_session_id=lead.id,
+                delegator="lead",
+                recipients=["coder#2"],
+                spec={
+                    "goal": "second",
+                    "target_paths": ["app/agent/core.py"],
+                    "exclusive_paths": True,
+                },
+                dependencies=[],
+                deadline_at=None,
+            )
+
+
+@pytest.mark.asyncio
+async def test_nonexclusive_path_claims_allow_parallel_overlap():
+    async with db_module.async_session_factory() as db:
+        lead = await _session(db)
+        await create_tasks(
+            db,
+            lead_session_id=lead.id,
+            delegator="lead",
+            recipients=["reviewer#1"],
+            spec={
+                "goal": "review",
+                "target_paths": ["app/agent"],
+                "exclusive_paths": False,
+            },
+            dependencies=[],
+            deadline_at=None,
+        )
+
+        tasks = await create_tasks(
+            db,
+            lead_session_id=lead.id,
+            delegator="lead",
+            recipients=["coder#1"],
+            spec={
+                "goal": "edit",
+                "target_paths": ["app/agent/core.py"],
+                "exclusive_paths": True,
+            },
+            dependencies=[],
+            deadline_at=None,
+        )
+        assert len(tasks) == 1
+
+
+@pytest.mark.asyncio
 async def test_conflicting_duplicate_completion_is_rejected():
     async with db_module.async_session_factory() as db:
         lead = await _session(db)

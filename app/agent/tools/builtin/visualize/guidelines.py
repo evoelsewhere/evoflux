@@ -11,7 +11,14 @@ from typing import Literal
 # Available modules
 Module = Literal["interactive", "chart", "mockup", "art", "diagram", "gallery"]
 
-AVAILABLE_MODULES: list[str] = ["interactive", "chart", "mockup", "art", "diagram", "gallery"]
+AVAILABLE_MODULES: list[str] = [
+    "interactive",
+    "chart",
+    "mockup",
+    "art",
+    "diagram",
+    "gallery",
+]
 
 # ── Core Design System ──────────────────────────────────────────────────────
 
@@ -653,16 +660,16 @@ MODULE_SECTIONS: dict[str, list[str]] = {
 
 def get_guidelines(modules: list[str]) -> str:
     """Return combined design guidelines for requested modules.
-    
+
     Args:
         modules: List of module names (interactive, chart, mockup, art, diagram)
-        
+
     Returns:
         Combined guidelines text with core + module-specific sections
     """
     content = CORE_GUIDELINES
     seen: set[str] = set()
-    
+
     for mod in modules:
         if mod not in MODULE_SECTIONS:
             continue
@@ -670,7 +677,7 @@ def get_guidelines(modules: list[str]) -> str:
             if section not in seen:
                 seen.add(section)
                 content += "\n\n" + section
-    
+
     return content
 
 

@@ -84,7 +84,7 @@ interface InputBarProps {
   /**
    * When true, the component renders only the inner rounded pill (no
    * top border, no background row chrome). A parent wrapper is expected
-   * to provide positioning, shadow, and backdrop. Used by
+   * to provide positioning, and backdrop. Used by
    * `FloatingInputBar` for the draggable variant.
    */
   floating?: boolean
@@ -1108,10 +1108,10 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       aria-label="Send message"
       title={isMobile ? 'Send message' : 'Send (Enter) · New line (Shift+Enter) · Commands (/)'}
       className={cn(
-        'flex shrink-0 items-center justify-center outline-none transition-[background-color,color,opacity,transform,box-shadow] active:scale-95 focus-visible:ring-2 focus-visible:ring-(--color-accent)/40',
+        'flex shrink-0 items-center justify-center outline-none transition-[background-color,color,opacity,transform] active:scale-95 focus-visible:ring-2 focus-visible:ring-(--color-accent)/40',
         isMobile ? 'h-9 w-9 rounded-full' : 'h-7 w-7 rounded-[7px]',
         canSend
-          ? 'bg-(--bg-send) text-(--color-text-on-accent) shadow-sm hover:opacity-90'
+          ? 'bg-(--bg-send) text-(--color-text-on-accent) hover:opacity-90'
           : 'cursor-not-allowed bg-(--bg-key) text-(--color-text-muted) opacity-40',
       )}
     >
@@ -1245,7 +1245,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
               animate={menuEnter.animate}
               exit={menuEnter.exit}
               transition={menuEnter.transition}
-              className="absolute bottom-full left-0 right-0 z-(--z-panel) mb-1 max-h-64 overflow-y-auto rounded-lg bg-(--color-surface) shadow-md"
+              className="absolute bottom-full left-0 right-0 z-(--z-panel) mb-1 max-h-64 overflow-y-auto rounded-lg bg-(--color-surface)"
             >
               {filteredSlashCommands.map((cmd) => {
                 if (cmd.isSeparator) {
@@ -1305,7 +1305,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
             id={snippetMenuId}
             role="listbox"
             aria-label="Snippets"
-            className="absolute bottom-full left-0 right-0 z-(--z-panel) mb-1 max-h-64 overflow-y-auto rounded-lg border border-(--color-border-strong) bg-(--color-surface) shadow-md"
+            className="absolute bottom-full left-0 right-0 z-(--z-panel) mb-1 max-h-64 overflow-y-auto rounded-lg border border-(--color-border-strong) bg-(--color-surface)"
           >
             {filteredSnippetCommands.map((cmd, idx) => {
               const active = idx === clampedSnippetIndex
@@ -1345,7 +1345,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
             id={mentionMenuId}
             role="listbox"
             aria-label="Reference workspace file"
-            className="absolute bottom-full left-0 right-0 z-(--z-panel) mb-1 max-h-64 overflow-y-auto rounded-lg border border-(--color-border-strong) bg-(--color-surface) shadow-md"
+            className="absolute bottom-full left-0 right-0 z-(--z-panel) mb-1 max-h-64 overflow-y-auto rounded-lg border border-(--color-border-strong) bg-(--color-surface)"
           >
             {filteredMentions.map((ref, idx) => {
               const isDir = ref.type === 'directory'
@@ -1405,7 +1405,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                 >
                   <div
                     id="composer-task-list"
-                    className="overflow-hidden rounded-lg border border-(--color-border) bg-(--bg-card)/95 shadow-xl backdrop-blur-xl"
+                    className="overflow-hidden rounded-lg border border-(--color-border) bg-(--bg-card)/95 backdrop-blur-xl"
                   >
                     <TodosList
                       todos={todos ?? []}
@@ -1424,7 +1424,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
               aria-controls="composer-task-list"
               className={cn(
                 'flex h-9 items-center gap-2 rounded-full border border-(--color-border) bg-(--bg-card) px-3.5',
-                'text-sm text-(--color-text-muted) shadow-md outline-none transition-[background-color,border-color,color]',
+                'text-sm text-(--color-text-muted) outline-none transition-[background-color,border-color,color]',
                 'hover:border-(--color-border-strong) hover:bg-(--bg-key) hover:text-(--color-text)',
                 'focus-visible:ring-2 focus-visible:ring-(--color-accent)/30',
               )}
@@ -1468,17 +1468,17 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
             onDragOver={handleDragOver}
             onDrop={handleDrop}
             className={cn(
-              'relative block border bg-(--color-surface) transition-[background-color,border-color,box-shadow] duration-(--motion-base)',
+              'relative block border bg-(--color-surface) transition-[background-color,border-color] duration-(--motion-base)',
               minimized
                 ? cn(
                     'w-fit border-(--color-border) hover:bg-(--bg-key)',
-                    isMobile ? 'rounded-2xl' : 'rounded-[10px]',
+                    isMobile ? 'rounded-2xl' : 'rounded-[20px]',
                   )
                 : cn(
                     'w-full border-(--color-border) focus-within:border-(--color-border-strong)',
                     isMobile
                       ? 'rounded-xl'
-                      : 'rounded-[10px] shadow-[0_6px_20px_rgb(0_0_0/0.08)]',
+                      : 'rounded-[20px]',
                   ),
             )}
           >

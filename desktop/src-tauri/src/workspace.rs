@@ -454,11 +454,13 @@ pub struct FileChangeEvent {
 
 /// Shared state for the file watcher.
 struct WatcherState {
-    watcher: RecommendedWatcher,
+    _watcher: RecommendedWatcher,
 }
 
+type WatcherRegistry = Arc<Mutex<Vec<(String, WatcherState)>>>;
+
 /// Active watchers keyed by workspace root path.
-static WATCHERS: once_cell::sync::Lazy<Arc<Mutex<Vec<(String, WatcherState)>>>> =
+static WATCHERS: once_cell::sync::Lazy<WatcherRegistry> =
     once_cell::sync::Lazy::new(|| Arc::new(Mutex::new(Vec::new())));
 
 /// Start watching a workspace directory for file changes.
@@ -570,7 +572,7 @@ pub fn start_file_watcher(app: AppHandle, root: String) -> Result<(), String> {
                             }
 
                             // Get relative path
-                            let rel = if let Some(relative) = path.strip_prefix(&root_clone).ok() {
+                            let rel = if let Ok(relative) = path.strip_prefix(&root_clone) {
                                 relative.to_string_lossy().replace('\\', "/")
                             } else {
                                 continue;
@@ -595,7 +597,7 @@ pub fn start_file_watcher(app: AppHandle, root: String) -> Result<(), String> {
     // Store the watcher
     {
         let mut watchers = WATCHERS.lock().map_err(|e| format!("Lock error: {e}"))?;
-        watchers.push((root_str, WatcherState { watcher }));
+        watchers.push((root_str, WatcherState { _watcher: watcher }));
     }
 
     Ok(())

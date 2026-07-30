@@ -245,9 +245,7 @@ class TreeSitterParser:
             return
 
         definition = self.classify(node, source, inside_class=inside_class)
-        synthetic = self.synthetic_definitions(
-            node, source, inside_class=inside_class
-        )
+        synthetic = self.synthetic_definitions(node, source, inside_class=inside_class)
         if definition is not None:
             line_start = node.start_point[0] + 1
             local_id, qualified = self._emit_definition(

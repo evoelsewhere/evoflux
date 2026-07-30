@@ -100,9 +100,7 @@ def _load_configurations(workspace: Path) -> tuple[list[dict[str, Any]], str | N
             raise ValueError(f"Invalid launch config at {path}: {e}") from e
         configs = data.get("configurations")
         if not isinstance(configs, list):
-            raise ValueError(
-                f"{path} must contain a top-level 'configurations' array."
-            )
+            raise ValueError(f"{path} must contain a top-level 'configurations' array.")
         return configs, str(path)
     return [], None
 
@@ -130,7 +128,9 @@ def _find_configuration(
         matches = [c for c in configs if c.get("name") == name]
         if not matches:
             names = ", ".join(str(c.get("name")) for c in configs)
-            raise ValueError(f"No configuration named '{name}' in {source}. Available: {names}")
+            raise ValueError(
+                f"No configuration named '{name}' in {source}. Available: {names}"
+            )
         cfg = matches[0]
 
     for field_name in ("name", "runtimeExecutable", "port"):
@@ -208,7 +208,10 @@ async def _start(name: str | None, workspace: Path) -> str:
             f"Note: logs are unavailable for reused servers."
         )
 
-    argv = [str(cfg["runtimeExecutable"]), *[str(a) for a in cfg.get("runtimeArgs", [])]]
+    argv = [
+        str(cfg["runtimeExecutable"]),
+        *[str(a) for a in cfg.get("runtimeArgs", [])],
+    ]
     command = " ".join(argv)
     cwd = workspace / str(cfg["cwd"]) if cfg.get("cwd") else workspace
     if not cwd.is_dir():
@@ -233,7 +236,7 @@ async def _start(name: str | None, workspace: Path) -> str:
     import subprocess
     import sys as _sys
 
-    _extra: dict[str, object] = {}
+    _extra: dict[str, Any] = {}
     if _sys.platform == "win32":
         _extra["creationflags"] = (
             subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
@@ -312,9 +315,7 @@ def _status(workspace: Path) -> str:
     for s in rows:
         state = "running" if s.running else f"exited ({s._bg.proc.returncode})"
         origin = "reused external" if s.reused else f"pid {s.pid}"
-        lines.append(
-            f"{s.name}: {state} — http://localhost:{s.port} ({origin})"
-        )
+        lines.append(f"{s.name}: {state} — http://localhost:{s.port} ({origin})")
     return "\n".join(lines)
 
 

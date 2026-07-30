@@ -9,4 +9,4 @@ if sys.version_info < (3, 14):
     if not hasattr(uuid, "uuid7"):
         from uuid_extensions import uuid7 as _uuid7_backport
 
-        uuid.uuid7 = _uuid7_backport
+        setattr(uuid, "uuid7", _uuid7_backport)

@@ -17,7 +17,11 @@ async def test_validate_answers_enforces_strict_choices_and_arity():
     svc = AskUserService("sess-1")
     task = asyncio.create_task(
         svc.ask(
-            [QuestionSpec(question="Cut over?", options=["cutover", "hold"], strict=True)]
+            [
+                QuestionSpec(
+                    question="Cut over?", options=["cutover", "hold"], strict=True
+                )
+            ]
         )
     )
     await asyncio.sleep(0)  # let ask() register the pending request

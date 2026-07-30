@@ -88,9 +88,12 @@ async def _exit_plan_mode(
         _state.metadata["_plan_mode"] = decision == "revise"
 
     if decision == "approved":
+        manifest = svc.approved_manifest_hash or "(empty plan)"
         msg = (
-            f"Plan approved by user. {n} step(s) are ready to execute. "
-            "Proceed with executing each recorded step in order now."
+            f"Plan approved by user. {n} exact step(s) are ready to execute "
+            f"(manifest {manifest}). Execute each recorded call in order with "
+            "the exact approved arguments; altered or additional destructive "
+            "calls will be blocked."
         )
     elif decision == "revise":
         msg = (

@@ -52,9 +52,7 @@ class PascalParser(TreeSitterParser):
         if ntype == "unit":
             name = self._unit_name(node, source)
             if name:
-                return Definition(
-                    kind=NODE_MODULE, name=name, is_class=True, prefix=""
-                )
+                return Definition(kind=NODE_MODULE, name=name, is_class=True, prefix="")
         elif ntype == "declClass":
             name = self._type_name(node, source)
             if name:
@@ -126,7 +124,9 @@ class PascalParser(TreeSitterParser):
     def supertypes(self, node: Node, source: bytes) -> list[SuperType]:
         if node.type not in ("declClass", "declType"):
             return []
-        container = node.child_by_field_name("type") if node.type == "declType" else node
+        container = (
+            node.child_by_field_name("type") if node.type == "declType" else node
+        )
         if container is None or container.type != "declClass":
             return []
         parents = [
@@ -138,8 +138,7 @@ class PascalParser(TreeSitterParser):
         if parents:
             if _pascal_decl_kind(node) == NODE_INTERFACE:
                 return [
-                    SuperType(name=name, edge_kind=EDGE_INHERITS)
-                    for name in parents
+                    SuperType(name=name, edge_kind=EDGE_INHERITS) for name in parents
                 ]
             return [
                 SuperType(

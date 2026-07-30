@@ -58,7 +58,9 @@ class DirectBrowserBridge:
         finally:
             if self._presence.get(session_id) is connection:
                 self._presence.pop(session_id, None)
-            logger.info("direct_browser_presence_disconnected session_id={}", session_id)
+            logger.info(
+                "direct_browser_presence_disconnected session_id={}", session_id
+            )
 
     async def request_mount(self, session_id: str) -> bool:
         presence = self._presence.get(session_id)

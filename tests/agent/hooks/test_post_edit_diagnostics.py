@@ -38,6 +38,16 @@ def _tool_call(tool: str, path: str) -> ToolCall:
     )
 
 
+def _patch_tool_call(patch_text: str) -> ToolCall:
+    return ToolCall(
+        id="tc-patch",
+        function=FunctionCall(
+            name="patch",
+            arguments=json.dumps({"patch_text": patch_text}),
+        ),
+    )
+
+
 def _handler_writing(target, content: str, result: str = "Edit applied successfully"):
     async def handler(ctx, state, tool_call):
         target.write_text(content, encoding="utf-8")
@@ -114,6 +124,37 @@ async def test_new_file_write_reports_its_issues(sandbox):
     )
 
     assert "[auto-diagnostics]" in result
+    assert "F401" in result
+
+
+@pytest.mark.asyncio
+async def test_multi_file_patch_reports_new_python_issues(sandbox):
+    _, tmp_path = sandbox
+    first = tmp_path / "first.py"
+    second = tmp_path / "second.py"
+    first.write_text("x = 1\n", encoding="utf-8")
+    hook = PostEditDiagnosticsHook()
+    call = _patch_tool_call(
+        """*** Begin Patch
+*** Update File: first.py
+@@
+-x = 1
++print(missing_name)
+*** Add File: second.py
++import os
+*** End Patch"""
+    )
+
+    async def handler(ctx, state, tool_call):
+        first.write_text("print(missing_name)\n", encoding="utf-8")
+        second.write_text("import os\n", encoding="utf-8")
+        return "Patch applied successfully"
+
+    result = await hook.wrap_tool_call(None, None, call, handler)
+
+    assert "first.py" in result
+    assert "F821" in result
+    assert "second.py" in result
     assert "F401" in result
 
 

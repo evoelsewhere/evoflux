@@ -292,9 +292,7 @@ async def _reattach_stale_src(
         ).all()
         for row in file_rows:
             candidates = [
-                n
-                for n in file_nodes
-                if n.line_start <= row.src_line <= n.line_end
+                n for n in file_nodes if n.line_start <= row.src_line <= n.line_end
             ]
             if candidates:
                 tightest_enclosing = min(

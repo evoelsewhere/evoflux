@@ -10,6 +10,7 @@ from app.agent.sandbox_config import (
     DEFAULT_DENIED_PATTERNS,
     SandboxFileConfig,
     load_config,
+    selected_worktree_root,
     save_config,
 )
 
@@ -23,10 +24,69 @@ def test_load_missing_file_returns_seed_defaults(tmp_path: Path) -> None:
 
 def test_save_then_load_roundtrip(tmp_path: Path) -> None:
     target = tmp_path / "sandbox.yaml"
-    save_config(SandboxFileConfig(denied_patterns=["**/foo", "bar/*"]), target)
+    save_config(
+        SandboxFileConfig(
+            denied_patterns=["**/foo", "bar/*"],
+            worktree_location="user_data",
+        ),
+        target,
+    )
 
     cfg = load_config(target)
     assert cfg.denied_patterns == ["**/foo", "bar/*"]
+    assert cfg.worktree_location == "user_data"
+
+
+def test_worktree_location_defaults_to_repository() -> None:
+    assert SandboxFileConfig().worktree_location == "repository"
+
+
+def test_repository_worktree_root_is_local_and_git_ignored(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    (repo / ".git" / "info").mkdir(parents=True)
+    config = tmp_path / "sandbox.yaml"
+    save_config(SandboxFileConfig(worktree_location="repository"), config)
+    monkeypatch.setattr(
+        "app.agent.sandbox_config.config_path",
+        lambda: config,
+    )
+
+    root = selected_worktree_root(repo)
+
+    assert root == (repo / ".evoflux" / "worktrees").resolve()
+    assert root.is_dir()
+    exclude = (repo / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+    assert exclude.splitlines().count("/.evoflux/worktrees/") == 1
+
+    # Repeated resolution is idempotent and does not duplicate the rule.
+    selected_worktree_root(repo)
+    exclude = (repo / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+    assert exclude.splitlines().count("/.evoflux/worktrees/") == 1
+
+
+def test_user_data_worktree_root_remains_available(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    config = tmp_path / "sandbox.yaml"
+    data_dir = tmp_path / "data"
+    save_config(SandboxFileConfig(worktree_location="user_data"), config)
+    monkeypatch.setattr(
+        "app.agent.sandbox_config.config_path",
+        lambda: config,
+    )
+    monkeypatch.setattr(
+        "app.agent.sandbox_config.settings.EVOFLUX_DATA_DIR",
+        str(data_dir),
+    )
+
+    root = selected_worktree_root(repo)
+
+    assert root.parent == (data_dir / "worktrees").resolve()
+    assert root.is_dir()
 
 
 def test_load_drops_blank_patterns(tmp_path: Path) -> None:

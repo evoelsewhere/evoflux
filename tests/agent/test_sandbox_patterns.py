@@ -2,7 +2,8 @@
 
 Patterns are matched with :func:`fnmatch.fnmatchcase` against the
 resolved absolute path string, so ``**/.env`` blocks ``.env`` files
-anywhere on disk.  Workspace and memory roots remain exempt.
+anywhere, including granted roots. Paths outside granted roots are denied
+independently of pattern matching.
 """
 
 from __future__ import annotations
@@ -39,8 +40,8 @@ def test_pattern_does_not_block_non_matching_path(tmp_path: Path) -> None:
     target.touch()
 
     sandbox = _make(tmp_path, ["**/secrets/**"])
-    # Should not raise
-    assert sandbox.validate_path(str(target)) == target.resolve()
+    with pytest.raises(PermissionError, match="outside the allowed sandbox roots"):
+        sandbox.validate_path(str(target))
 
 
 def test_dotfile_glob_blocks_env_anywhere(tmp_path: Path) -> None:
@@ -54,21 +55,21 @@ def test_dotfile_glob_blocks_env_anywhere(tmp_path: Path) -> None:
         sandbox.validate_path(str(env_file))
 
 
-def test_pattern_does_not_block_workspace_paths(tmp_path: Path) -> None:
-    """Workspace remains exempt even if a pattern would otherwise match it."""
+def test_pattern_still_blocks_workspace_paths(tmp_path: Path) -> None:
+    """Sensitive patterns remain enforced inside otherwise granted roots."""
     workspace = tmp_path / "ws"
     workspace.mkdir()
     inside = workspace / ".env"
     inside.touch()
 
-    # Pattern matches ``.env`` anywhere — but workspace exemption wins.
     sandbox = _make(tmp_path, ["**/.env"])
-    # Should not raise
-    sandbox.validate_path(str(inside))
+    with pytest.raises(PermissionError, match="denied sandbox root"):
+        sandbox.validate_path(str(inside))
 
 
 def test_empty_patterns_means_no_extra_denials(tmp_path: Path) -> None:
-    target = tmp_path / "anything.txt"
+    target = tmp_path / "ws" / "anything.txt"
+    target.parent.mkdir()
     target.touch()
     sandbox = _make(tmp_path, [])
     assert sandbox.validate_path(str(target)) == target.resolve()

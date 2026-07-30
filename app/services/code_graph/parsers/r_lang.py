@@ -16,9 +16,7 @@ from app.services.code_graph.types import NODE_FUNCTION
 if TYPE_CHECKING:
     from tree_sitter import Node
 
-_LOADER_CALLS = frozenset(
-    {"library", "require", "loadNamespace", "requireNamespace"}
-)
+_LOADER_CALLS = frozenset({"library", "require", "loadNamespace", "requireNamespace"})
 
 
 class RParser(TreeSitterParser):
@@ -75,9 +73,7 @@ class RParser(TreeSitterParser):
                     path = self._first_call_string(node, source)
                     if path:
                         return [
-                            ImportRef(
-                                name=_source_ref_name(path), module_path=path
-                            )
+                            ImportRef(name=_source_ref_name(path), module_path=path)
                         ]
             return []
         if node.type == "namespace_operator":

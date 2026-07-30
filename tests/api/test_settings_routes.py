@@ -66,14 +66,20 @@ def test_get_sandbox_returns_seed_defaults_when_file_missing(
     client = TestClient(_make_app())
     response = client.get("/api/settings/sandbox")
     assert response.status_code == 200
-    assert response.json() == {"denied_patterns": list(DEFAULT_DENIED_PATTERNS)}
+    assert response.json() == {
+        "denied_patterns": list(DEFAULT_DENIED_PATTERNS),
+        "worktree_location": "repository",
+    }
     # GET must not write the file.
     assert not isolated_config.exists()
 
 
 def test_put_sandbox_persists_patterns(isolated_config: Path) -> None:
     client = TestClient(_make_app())
-    body = {"denied_patterns": ["**/.env", "**/secrets/**"]}
+    body = {
+        "denied_patterns": ["**/.env", "**/secrets/**"],
+        "worktree_location": "user_data",
+    }
     response = client.put("/api/settings/sandbox", json=body)
     assert response.status_code == 200
     assert response.json() == body
@@ -91,7 +97,10 @@ def test_put_sandbox_strips_blank_patterns(isolated_config: Path) -> None:
         json={"denied_patterns": ["**/.env", "", "   ", "bar/*"]},
     )
     assert response.status_code == 200
-    assert response.json() == {"denied_patterns": ["**/.env", "bar/*"]}
+    assert response.json() == {
+        "denied_patterns": ["**/.env", "bar/*"],
+        "worktree_location": "repository",
+    }
 
 
 def test_put_sandbox_rejects_unknown_field(isolated_config: Path) -> None:

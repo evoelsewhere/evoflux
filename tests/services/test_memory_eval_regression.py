@@ -23,6 +23,7 @@ from app.services.memory import (
     seed_memory,
     write_memory_file,
 )
+
 _memory_bench = pytest.importorskip(
     "manual.memory_bench",
     reason="manual/memory_bench.py (the Honest Memory v2 eval harness) isn't "

@@ -109,15 +109,26 @@ async def get_sandbox_settings() -> SandboxSettingsBody:
         cfg = load_config()
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return SandboxSettingsBody(denied_patterns=list(cfg.denied_patterns))
+    return SandboxSettingsBody(
+        denied_patterns=list(cfg.denied_patterns),
+        worktree_location=cfg.worktree_location,
+    )
 
 
 @router.put("/sandbox")
 async def update_sandbox_settings(body: SandboxSettingsBody) -> SandboxSettingsBody:
     """Replace the sandbox deny-list with the supplied glob patterns."""
     cleaned = [p.strip() for p in body.denied_patterns if p.strip()]
-    save_config(SandboxFileConfig(denied_patterns=cleaned))
-    return SandboxSettingsBody(denied_patterns=cleaned)
+    save_config(
+        SandboxFileConfig(
+            denied_patterns=cleaned,
+            worktree_location=body.worktree_location,
+        )
+    )
+    return SandboxSettingsBody(
+        denied_patterns=cleaned,
+        worktree_location=body.worktree_location,
+    )
 
 
 # ── Providers (Settings → Providers tab) ────────────────────────────────────

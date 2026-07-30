@@ -39,7 +39,14 @@ _POSIX_FALLBACKS: tuple[str, ...] = ("zsh", "bash", "sh")
 # bash (Git Bash) gives full POSIX compatibility; pwsh (PS7) supports &&
 # as a pipeline chain operator; powershell (PS5.1) is a reasonable fallback;
 # cmd.exe is the last resort.
-_WINDOWS_SHELLS: tuple[str, ...] = ("bash", "pwsh", "pwsh.exe", "powershell", "powershell.exe", "cmd.exe")
+_WINDOWS_SHELLS: tuple[str, ...] = (
+    "bash",
+    "pwsh",
+    "pwsh.exe",
+    "powershell",
+    "powershell.exe",
+    "cmd.exe",
+)
 
 
 # ── Internal helpers ─────────────────────────────────────────────────────────

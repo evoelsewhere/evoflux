@@ -38,7 +38,11 @@ router = APIRouter()
 @router.get("/{session_id}/terminals")
 async def list_terminals(session_id: str) -> dict:
     """Live terminal ids for a session — lets the tab bar survive a reload."""
-    return {"terminals": [{"id": tid} for tid in terminal_manager.list_terminals(session_id)]}
+    return {
+        "terminals": [
+            {"id": tid} for tid in terminal_manager.list_terminals(session_id)
+        ]
+    }
 
 
 @router.delete("/{session_id}/terminals/{terminal_id}", status_code=204)
@@ -66,7 +70,9 @@ async def _resolve_cwd_and_env(session_id: str) -> tuple[str, dict[str, str]]:
                 mode = normalize_mode(row.mode)
                 workspace = row.workspace
     except Exception as exc:  # noqa: BLE001 — never block opening a terminal
-        logger.debug("terminal_session_lookup_failed session_id={} error={}", session_id, exc)
+        logger.debug(
+            "terminal_session_lookup_failed session_id={} error={}", session_id, exc
+        )
 
     cwd = str(session_workspace_dir(session_id, workspace))
     return cwd, {"EVOFLUX_MODE": mode}

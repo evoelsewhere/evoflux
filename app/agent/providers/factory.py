@@ -309,9 +309,7 @@ def build_provider(
             # everything else goes through the OpenAI-compatible v1 surface.
             # ``anthropic_api`` in model_kwargs overrides the name heuristic
             # for Claude deployments not named after the model.
-            use_anthropic = bool(
-                kwargs.get("anthropic_api", "claude" in model.lower())
-            )
+            use_anthropic = bool(kwargs.get("anthropic_api", "claude" in model.lower()))
             foundry_cls = FoundryClaudeProvider if use_anthropic else FoundryProvider
             return _with_provider_name(
                 foundry_cls(

@@ -22,10 +22,10 @@ import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated, Literal
-from uuid import UUID, uuid7
+from uuid import UUID
 
 from pydantic import BeforeValidator, Field
-from sqlmodel import select
+from sqlmodel import col, select
 
 from app.agent.sandbox import get_sandbox
 from app.agent.tools.registry import InjectedArg, Tool
@@ -50,6 +50,7 @@ from app.services.aim.readiness import (
     evaluate_transition,
     resolve_mapping_path,
 )
+from app.uuid7 import uuid7
 from app.services.aim.reindex import upsert_unit
 
 
@@ -560,7 +561,10 @@ async def _aim_units(
                 revision=next_revision,
                 last_transition_id=transition_id,
             )
-            frontmatter, _ = kb_store.read_unit(kb_root, module, name)
+            updated_unit = kb_store.read_unit(kb_root, module, name)
+            if updated_unit is None:
+                raise RuntimeError(f"AIM unit disappeared after update: {unit}")
+            frontmatter, _ = updated_unit
             if transition_id is not None:
                 kb_store.sync_project_phase_from_units(kb_root)
             if project_id is not None:
@@ -1048,7 +1052,7 @@ async def _aim_claim(
                 await db.exec(
                     select(AimClaim).where(
                         AimClaim.project_id == project_id,
-                        AimClaim.unit_id.in_([row.id for row in matched_units]),
+                        col(AimClaim.unit_id).in_([row.id for row in matched_units]),
                     )
                 )
             ).all()

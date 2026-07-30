@@ -1,7 +1,9 @@
 from datetime import datetime, timezone
-from uuid import UUID, uuid7
+from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
+
+from app.uuid7 import uuid7
 
 
 class AgentStats(BaseModel):

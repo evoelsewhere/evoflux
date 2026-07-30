@@ -1,14 +1,10 @@
-"""LSP-style code intelligence tools.
+"""Static analysis, code-graph lookup, and real LSP code intelligence tools.
 
-Three tools that complement the structural code graph with live analysis:
+The contracts are deliberately distinct:
 
-- ``lsp_diagnostics``  — run static analysis (ruff / tsc) and return
-  errors/warnings for a file or directory.
-- ``lsp_definition``   — find the definition of a symbol with optional
-  file:line context for disambiguation when the same name exists in
-  multiple modules.
-- ``lsp_references``   — find every location that references a symbol,
-  with optional file context.
+- ``static_diagnostics`` — one-shot Ruff/tsc checks.
+- ``code_definition`` / ``code_references`` — persisted code graph.
+- ``lsp_*`` — a persistent JSON-RPC language server using didOpen/didChange.
 
 These sit alongside the code-graph tools: use code-graph for topology
 (call chains, class hierarchies) and lsp_* for live correctness checks
@@ -23,10 +19,12 @@ import shutil
 import subprocess
 from pathlib import Path
 from typing import Annotated, Any
+from urllib.parse import unquote, urlparse
 
 from pydantic import Field
 
 from app.agent.sandbox import get_sandbox
+from app.agent.lsp_manager import LanguageServerUnavailable, get_language_server
 from app.agent.tools.registry import InjectedArg, Tool
 
 
@@ -37,11 +35,7 @@ _MAX_DIAG = 100  # cap diagnostics returned to agent
 
 def _resolve_path(path: str) -> Path:
     """Resolve *path* relative to the sandbox workspace root."""
-    sandbox = get_sandbox()
-    p = Path(path)
-    if p.is_absolute():
-        return p.resolve()
-    return (sandbox.workspace_root / p).resolve()
+    return get_sandbox().validate_path(path)
 
 
 def _detect_language(path: Path) -> str | None:
@@ -464,11 +458,127 @@ async def _lsp_references(
     return head + "\n" + "\n".join(rows)
 
 
+# ── Real language-server tools ───────────────────────────────────────────────
+
+
+async def _real_lsp_diagnostics(
+    path: Annotated[
+        str,
+        Field(description="Workspace-relative source file to diagnose."),
+    ],
+    include_warnings: Annotated[
+        bool,
+        Field(description="Include warnings and informational diagnostics."),
+    ] = True,
+) -> str:
+    """Return live diagnostics published by a persistent language server."""
+    target = _resolve_path(path)
+    if not target.is_file():
+        return f"[Error] LSP diagnostics requires an existing source file: {target}"
+    try:
+        client = await get_language_server(get_sandbox().workspace_root, target)
+        diagnostics = await client.diagnostics(target)
+    except LanguageServerUnavailable as exc:
+        return f"[Unavailable] {exc} Use static_diagnostics as a fallback."
+    if not include_warnings:
+        diagnostics = [item for item in diagnostics if item.get("severity") == 1]
+    if not diagnostics:
+        return f"[OK] Language server reports no issues in {path}"
+    lines = [f"{len(diagnostics)} live LSP diagnostic(s):"]
+    severity_names = {1: "error", 2: "warning", 3: "info", 4: "hint"}
+    for item in diagnostics[:_MAX_DIAG]:
+        start = (item.get("range") or {}).get("start") or {}
+        severity_value = item.get("severity")
+        severity = (
+            severity_names.get(severity_value, "diagnostic")
+            if isinstance(severity_value, int)
+            else "diagnostic"
+        )
+        code = item.get("code")
+        code_text = f" {code}" if code is not None else ""
+        lines.append(
+            f"  {path}:{int(start.get('line', 0)) + 1}:"
+            f"{int(start.get('character', 0)) + 1}  {severity}{code_text}  "
+            f"{item.get('message', '')}"
+        )
+    return "\n".join(lines)
+
+
+async def _real_lsp_definition(
+    path: Annotated[str, Field(description="Source file containing the symbol.")],
+    line: Annotated[int, Field(description="1-based symbol line number.", ge=1)],
+    column: Annotated[int, Field(description="1-based symbol column number.", ge=1)],
+) -> str:
+    """Resolve a symbol position through textDocument/definition."""
+    target = _resolve_path(path)
+    if not target.is_file():
+        return f"[Error] Source file does not exist: {target}"
+    try:
+        client = await get_language_server(get_sandbox().workspace_root, target)
+        locations = await client.definition(target, line, column)
+    except LanguageServerUnavailable as exc:
+        return f"[Unavailable] {exc} Use code_definition as a fallback."
+    return _format_lsp_locations(locations, "definition")
+
+
+async def _real_lsp_references(
+    path: Annotated[str, Field(description="Source file containing the symbol.")],
+    line: Annotated[int, Field(description="1-based symbol line number.", ge=1)],
+    column: Annotated[int, Field(description="1-based symbol column number.", ge=1)],
+    include_declaration: Annotated[
+        bool,
+        Field(description="Include the symbol declaration in results."),
+    ] = True,
+    limit: Annotated[
+        int,
+        Field(description="Maximum locations to return.", ge=1, le=100),
+    ] = 50,
+) -> str:
+    """Resolve symbol usages through textDocument/references."""
+    target = _resolve_path(path)
+    if not target.is_file():
+        return f"[Error] Source file does not exist: {target}"
+    try:
+        client = await get_language_server(get_sandbox().workspace_root, target)
+        locations = await client.references(
+            target,
+            line,
+            column,
+            include_declaration=include_declaration,
+        )
+    except LanguageServerUnavailable as exc:
+        return f"[Unavailable] {exc} Use code_references as a fallback."
+    return _format_lsp_locations(locations[:limit], "reference")
+
+
+def _format_lsp_locations(locations: list[dict[str, Any]], kind: str) -> str:
+    if not locations:
+        return f"No {kind} locations returned by the language server."
+    sandbox = get_sandbox()
+    rows = [f"{len(locations)} LSP {kind} location(s):"]
+    for item in locations:
+        uri = item.get("uri") or item.get("targetUri") or ""
+        parsed = urlparse(str(uri))
+        path = Path(unquote(parsed.path)) if parsed.scheme == "file" else Path(str(uri))
+        location_range = (
+            item.get("targetSelectionRange")
+            or item.get("targetRange")
+            or item.get("range")
+            or {}
+        )
+        start = location_range.get("start") or {}
+        rows.append(
+            f"  {sandbox.display_path(path)}:{int(start.get('line', 0)) + 1}:"
+            f"{int(start.get('character', 0)) + 1}"
+        )
+    return "\n".join(rows)
+
+
 # ── Tool objects ──────────────────────────────────────────────────────────────
 
-lsp_diagnostics = Tool(
+static_diagnostics = Tool(
     _lsp_diagnostics,
-    name="lsp_diagnostics",
+    name="static_diagnostics",
     description=(
         "Run static analysis (ruff for Python, tsc for TypeScript) on a file "
         "or directory and return errors and warnings with file:line locations."
@@ -479,9 +589,9 @@ lsp_diagnostics = Tool(
     deferred_summary="Run static diagnostics for a file or directory.",
 )
 
-lsp_definition = Tool(
+code_definition = Tool(
     _lsp_definition,
-    name="lsp_definition",
+    name="code_definition",
     description=(
         "Find the definition of a symbol (function, class, variable) in the "
         "code graph. Accepts an optional file+line to disambiguate when the "
@@ -493,9 +603,9 @@ lsp_definition = Tool(
     deferred_summary="Find the definition of a code symbol.",
 )
 
-lsp_references = Tool(
+code_references = Tool(
     _lsp_references,
-    name="lsp_references",
+    name="code_references",
     description=(
         "Find every location in the codebase that references a symbol — callers, "
         "importers, subclasses, decorators. Backed by the code knowledge graph."
@@ -504,4 +614,43 @@ lsp_references = Tool(
     read_only=True,
     deferred=True,
     deferred_summary="Find references to a code symbol across the workspace.",
+)
+
+lsp_diagnostics = Tool(
+    _real_lsp_diagnostics,
+    name="lsp_diagnostics",
+    description=(
+        "Return live publishDiagnostics results from a persistent language server. "
+        "Requires a supported local language-server binary."
+    ),
+    concurrency_safe=True,
+    read_only=True,
+    deferred=True,
+    deferred_summary="Get live diagnostics from a language server.",
+)
+
+lsp_definition = Tool(
+    _real_lsp_definition,
+    name="lsp_definition",
+    description=(
+        "Go to definition at an exact source file, line, and column through "
+        "the Language Server Protocol."
+    ),
+    concurrency_safe=True,
+    read_only=True,
+    deferred=True,
+    deferred_summary="Resolve a source position with a language server.",
+)
+
+lsp_references = Tool(
+    _real_lsp_references,
+    name="lsp_references",
+    description=(
+        "Find references at an exact source position through the Language "
+        "Server Protocol."
+    ),
+    concurrency_safe=True,
+    read_only=True,
+    deferred=True,
+    deferred_summary="Find live references with a language server.",
 )

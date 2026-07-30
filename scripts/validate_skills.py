@@ -15,7 +15,6 @@ Usage:
     python scripts/validate_skills.py
 """
 
-import os
 import re
 import sys
 from pathlib import Path
@@ -196,7 +195,9 @@ def print_report(results: list[SkillResult]) -> None:
     print(SEPARATOR)
     print("  SUMMARY")
     print(SEPARATOR)
-    print(f"  {'Skill':<40} {'Chars':>6} {'Use':>4} {'NOT':>4} {'Vfy':>4} {'Status':>8}")
+    print(
+        f"  {'Skill':<40} {'Chars':>6} {'Use':>4} {'NOT':>4} {'Vfy':>4} {'Status':>8}"
+    )
     print(THIN_SEP)
     for r in sorted(results, key=lambda x: x.name):
         status = "PASS" if r.passed else "FAIL"

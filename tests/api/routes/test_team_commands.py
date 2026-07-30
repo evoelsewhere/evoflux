@@ -217,7 +217,9 @@ class TestPostTeamCommands:
         await coding_team.start()
         called: dict[str, object] = {}
 
-        async def fake_get_or_start_coding_team(requested_workspace, session_id, **_kwargs):
+        async def fake_get_or_start_coding_team(
+            requested_workspace, session_id, **_kwargs
+        ):
             called["workspace"] = requested_workspace
             called["session_id"] = session_id
             return coding_team
@@ -277,7 +279,9 @@ class TestPostTeamCommands:
 
         aim_team = AgentTeam(
             lead=TeamLead(
-                Agent(name="aim-lead", llm_provider=MockProvider(), system_prompt="Lead"),
+                Agent(
+                    name="aim-lead", llm_provider=MockProvider(), system_prompt="Lead"
+                ),
                 db_factory=_db.async_session_factory,
             ),
             members={},
@@ -287,7 +291,9 @@ class TestPostTeamCommands:
         await aim_team.start()
         called: dict[str, object] = {}
 
-        async def fake_get_or_start_coding_team(requested_workspace, session_id, **kwargs):
+        async def fake_get_or_start_coding_team(
+            requested_workspace, session_id, **kwargs
+        ):
             called["workspace"] = requested_workspace
             called["mode"] = kwargs.get("mode")
             return aim_team

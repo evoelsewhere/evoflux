@@ -74,9 +74,8 @@ def flatten_tool_content_for_provider(
 
     result: list[Any] = []
     for msg in messages:
-        if (
-            getattr(msg, "role", None) == "tool"
-            and isinstance(getattr(msg, "content", None), list)
+        if getattr(msg, "role", None) == "tool" and isinstance(
+            getattr(msg, "content", None), list
         ):
             # Single text part: extract text directly (fast path)
             if len(msg.content) == 1:

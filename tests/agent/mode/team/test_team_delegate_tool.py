@@ -34,6 +34,9 @@ class TestTaskSpecSchema:
         assert spec.context is None
         assert spec.priority == "normal"
         assert spec.depends_on == []
+        assert spec.target_paths == []
+        assert spec.exclusive_paths is True
+        assert spec.complexity == "auto"
 
     def test_full_spec(self):
         """All fields populated."""
@@ -108,6 +111,8 @@ class TestTeamDelegateTool:
             context="Current endpoint at app/api/routes/sessions.py returns all rows",
             priority="high",
             depends_on=["task_2"],
+            target_paths=["app/api/routes/sessions.py"],
+            complexity="multi_step",
         )
         assert "Task delegated" in result
         msg = mb.receive_nowait("executor#1")
@@ -116,6 +121,34 @@ class TestTeamDelegateTool:
         assert "No breaking changes" in msg.content
         assert "cursor-based pagination" in msg.content
         assert "Depends on:" in msg.content
+        assert "Target paths (exclusive):" in msg.content
+        assert "**Complexity:** multi_step" in msg.content
+
+    async def test_exclusive_paths_reject_multiple_recipients(self):
+        mb = _make_mailbox("explorer#1", "executor#1", "lead")
+        tool = make_team_delegate_tool(mb, agent_name="lead")
+
+        result = await tool(
+            to=["explorer#1", "executor#1"],
+            goal="Edit the same module",
+            expected_output="Implemented",
+            target_paths=["app/shared.py"],
+        )
+
+        assert "exclusive target_paths" in result
+
+    async def test_target_path_traversal_is_rejected(self):
+        mb = _make_mailbox("executor#1", "lead")
+        tool = make_team_delegate_tool(mb, agent_name="lead")
+
+        result = await tool(
+            to=["executor#1"],
+            goal="Unsafe",
+            expected_output="No",
+            target_paths=["../outside"],
+        )
+
+        assert "traversal-free" in result
 
     async def test_empty_goal_rejected(self):
         """Empty goal returns error."""

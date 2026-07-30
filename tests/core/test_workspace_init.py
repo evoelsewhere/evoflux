@@ -335,9 +335,7 @@ def _fake_checkout(tmp_path: Path) -> Path:
     return fake_module
 
 
-def test_local_seed_dir_prefers_repo_checkout(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_local_seed_dir_prefers_repo_checkout(monkeypatch, tmp_path: Path) -> None:
     import app as app_pkg
     import app.cli.seed as seed_mod
 

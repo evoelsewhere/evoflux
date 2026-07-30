@@ -4,10 +4,11 @@ Two tools that let the agent work in an isolated git worktree:
 
 - ``worktree_start``  — create a new worktree + branch, switch the agent's
   workspace to it for the rest of the current turn.
-- ``worktree_finish`` — show what changed, clean up the worktree.  The agent
-  may then merge or discard the changes with ``shell``.
+- ``worktree_finish`` — review changes without deleting them, or preserve
+  them in a snapshot commit before cleaning up.
 
-The worktree is created under ``{EVOFLUX_DATA_DIR}/worktrees/`` and
+By default the worktree is created under ``<repository>/.evoflux/worktrees/``
+(configurable in Settings → Sandbox) and
 registered in the ``coding_workspaces`` table (``kind="worktree"``,
 ``managed=True``).  Only works when the current workspace is a git repo.
 
@@ -22,7 +23,6 @@ removes it.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import re
 import subprocess
 from pathlib import Path
@@ -32,8 +32,11 @@ from loguru import logger
 from pydantic import Field
 
 from app.agent.sandbox import SandboxConfig, get_sandbox, set_sandbox
+from app.agent.sandbox_config import (
+    managed_worktree_roots,
+    selected_worktree_root,
+)
 from app.agent.tools.registry import InjectedArg, Tool
-from app.core.config import settings
 
 _BRANCH_PREFIX = "EvoFlux"
 _WORKTREE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
@@ -67,10 +70,7 @@ async def _git(workspace: Path, *args: str) -> tuple[int, str, str]:
 
 def _worktree_root(source: Path) -> Path:
     """Directory under which EvoFlux-managed worktrees for *source* live."""
-    key = hashlib.sha1(str(source).encode()).hexdigest()[:10]
-    root = Path(settings.EVOFLUX_DATA_DIR) / "worktrees" / f"{source.name}-{key}"
-    root.mkdir(parents=True, exist_ok=True)
-    return root.resolve()
+    return selected_worktree_root(source)
 
 
 def _slugify(value: str) -> str:
@@ -100,6 +100,53 @@ def _unique_worktree(source: Path, name: str) -> tuple[Path, str]:
     raise RuntimeError("Could not find a unique worktree name after 20 attempts.")
 
 
+def _sandbox_snapshot(sandbox: SandboxConfig) -> dict[str, Any]:
+    """Serialize active grants so a worktree switch cannot weaken them."""
+    return {
+        "workspace": str(sandbox.workspace_root),
+        "session_id": sandbox.session_id,
+        "denied_roots": [str(path) for path in sandbox.denied_roots],
+        "denied_patterns": list(sandbox.denied_patterns),
+        "max_execution_seconds": sandbox.max_execution_seconds,
+        "max_output_bytes": sandbox.max_output_bytes,
+        "allow_network": sandbox.allow_network,
+        "extra_workspace_paths": list(sandbox.extra_workspace_paths),
+        "read_only_paths": [str(path) for path in sandbox.read_only_paths],
+        "write_allowed_paths": [str(path) for path in sandbox.write_allowed_paths],
+    }
+
+
+def _sandbox_from_snapshot(
+    snapshot: dict[str, Any],
+    *,
+    workspace: Path,
+    translate_claims_from: Path | None = None,
+) -> SandboxConfig:
+    """Restore grants, optionally translating source-repo write claims."""
+    claims: list[str] = []
+    for raw_path in snapshot.get("write_allowed_paths") or []:
+        claim = Path(str(raw_path)).resolve()
+        if translate_claims_from is not None:
+            try:
+                claim = workspace / claim.relative_to(translate_claims_from)
+            except ValueError:
+                pass
+        claims.append(str(claim))
+
+    return SandboxConfig(
+        workspace=str(workspace),
+        session_id=snapshot.get("session_id"),
+        denied_roots=[Path(str(path)) for path in snapshot.get("denied_roots") or []],
+        denied_patterns=list(snapshot.get("denied_patterns") or []),
+        max_execution_seconds=snapshot.get("max_execution_seconds"),
+        max_output_bytes=snapshot.get("max_output_bytes"),
+        allow_network=snapshot.get("allow_network"),
+        extra_workspace_paths=list(snapshot.get("extra_workspace_paths") or []),
+        read_only_paths=list(snapshot.get("read_only_paths") or []),
+        write_allowed_paths=claims,
+    )
+
+
 # ── Tool implementations ──────────────────────────────────────────────────────
 
 
@@ -118,9 +165,10 @@ async def _worktree_start(
 ) -> str:
     """Create an isolated git worktree and switch the agent's workspace to it.
 
-    Creates a new worktree at ``{data_dir}/worktrees/`` with a fresh branch
-    named ``EvoFlux/<name>``.  All file and shell tools for the **rest of this
-    turn** will operate inside the worktree, leaving the original branch clean.
+    Creates a new managed worktree at the location configured in Settings →
+    Sandbox (repository-local by default) with a fresh branch named
+    ``EvoFlux/<name>``. All file and shell tools for the **rest of this turn**
+    operate inside the worktree, leaving the original branch clean.
 
     After finishing the work in the worktree, call ``worktree_finish`` to see
     the diff and clean up.  You can then merge/cherry-pick using ``shell``.
@@ -184,8 +232,14 @@ async def _worktree_start(
         logger.warning("worktree_db_register_failed error={}", exc)
 
     # ── Switch sandbox to the worktree for the rest of this turn ─────────────
-    session_id = _state.metadata.get("session_id") if _state else None
-    set_sandbox(SandboxConfig(workspace=worktree_dir, session_id=session_id))
+    previous_sandbox = _sandbox_snapshot(sandbox)
+    set_sandbox(
+        _sandbox_from_snapshot(
+            previous_sandbox,
+            workspace=worktree_dir,
+            translate_claims_from=source,
+        )
+    )
 
     # ── Persist in metadata (available to worktree_finish this turn) ─────────
     if _state is not None:
@@ -193,6 +247,7 @@ async def _worktree_start(
         _state.metadata["_worktree_source"] = str(source)
         _state.metadata["_worktree_branch"] = branch
         _state.metadata["_worktree_head_branch"] = head_branch
+        _state.metadata["_worktree_previous_sandbox"] = previous_sandbox
         _state.metadata["team_workspace"] = str(worktree_dir)
 
     logger.info(
@@ -218,19 +273,32 @@ async def _worktree_finish(
         str,
         Field(
             description=(
-                "'diff' — show what changed and remove the worktree (default). "
-                "'discard' — silently remove the worktree without showing diff."
+                "'review' — show changes and keep the worktree (default). "
+                "'preserve' — snapshot all changes, remove the worktree, and keep "
+                "its branch for merge/cherry-pick. 'discard' — permanently remove "
+                "the worktree and branch; dirty worktrees require confirm_discard."
             )
         ),
-    ] = "diff",
+    ] = "review",
+    confirm_discard: Annotated[
+        bool,
+        Field(
+            description=(
+                "Required when action='discard' and the worktree has uncommitted "
+                "or untracked changes. Confirms permanent deletion."
+            )
+        ),
+    ] = False,
     _state: Annotated[Any, InjectedArg()] = None,
 ) -> str:
-    """Show the diff, clean up the worktree, and restore the original workspace.
+    """Review or safely preserve a worktree and restore the original workspace.
 
-    After reviewing the diff you can apply the changes to the main branch using
-    ``shell`` (e.g. ``git cherry-pick``, ``git merge``, or ``git rebase``).
-    The worktree branch (``EvoFlux/<name>``) is deleted along with the directory.
+    The default action is non-destructive. ``preserve`` commits every tracked,
+    untracked, and deleted path to the managed branch before removing the
+    directory. The branch is deliberately retained for later merge/cherry-pick.
     """
+    if action not in {"review", "preserve", "discard"}:
+        return "[Error] action must be one of: review, preserve, discard."
     # ── Read stored state ─────────────────────────────────────────────────────
     metadata = _state.metadata if _state is not None else {}
     worktree_path = metadata.get("_worktree_path")
@@ -241,50 +309,130 @@ async def _worktree_finish(
     if not worktree_path or not source_path:
         # Fallback: check if current sandbox is inside a known worktree
         sandbox = get_sandbox()
-        data_root = (Path(settings.EVOFLUX_DATA_DIR) / "worktrees").resolve()
         current = sandbox.workspace_root.resolve()
-        if data_root in current.parents:
-            worktree_path = str(current)
-            # Try to infer source via git
-            rc, common, _ = await _git(
-                current, "rev-parse", "--path-format=absolute", "--git-common-dir"
-            )
-            if rc == 0:
-                common_p = Path(common.strip()).resolve()
-                source_path = str(
-                    common_p.parent if common_p.name == ".git" else common_p
-                )
-        else:
+        rc, common, _ = await _git(
+            current, "rev-parse", "--path-format=absolute", "--git-common-dir"
+        )
+        inferred_source: Path | None = None
+        if rc == 0:
+            common_p = Path(common.strip()).resolve()
+            inferred_source = common_p.parent if common_p.name == ".git" else common_p
+        recognized = inferred_source is not None and any(
+            root in current.parents for root in managed_worktree_roots(inferred_source)
+        )
+        if not recognized:
             return (
                 "[Error] No active worktree found in the current turn. "
                 "Call worktree_start first."
             )
+        worktree_path = str(current)
+        source_path = str(inferred_source)
 
-    source = Path(source_path)
-    worktree = Path(worktree_path)
+    source = Path(str(source_path))
+    worktree = Path(str(worktree_path))
+    if not worktree.exists():
+        return f"[Error] Worktree directory no longer exists: {worktree}"
+    if not branch:
+        rc_branch, branch_out, _ = await _git(
+            worktree, "rev-parse", "--abbrev-ref", "HEAD"
+        )
+        branch = branch_out.strip() if rc_branch == 0 else None
+
+    rc_status, status_out, status_err = await _git(
+        worktree, "status", "--short", "--untracked-files=all"
+    )
+    if rc_status != 0:
+        return (
+            "[Error] Could not inspect worktree status; nothing was removed: "
+            f"{status_err.strip()}"
+        )
+    dirty = bool(status_out.strip())
 
     # ── Get diff summary ──────────────────────────────────────────────────────
-    diff_summary = ""
-    if action != "discard":
+    diff_summary = "(no committed changes)"
+    if branch:
         rc, diff_stat, _ = await _git(
             source, "diff", f"{head_branch}...{branch}", "--stat"
         )
         if rc == 0 and diff_stat.strip():
             diff_summary = diff_stat.strip()
-        elif rc == 0:
-            diff_summary = "(no changes)"
-        else:
-            # Fallback: diff against HEAD
-            rc2, diff2, _ = await _git(worktree, "diff", "HEAD", "--stat")
-            diff_summary = diff2.strip() if rc2 == 0 else "(could not compute diff)"
+    if dirty:
+        rc_dirty, dirty_stat, _ = await _git(worktree, "diff", "HEAD", "--stat")
+        rc_untracked, untracked, _ = await _git(
+            worktree, "ls-files", "--others", "--exclude-standard"
+        )
+        dirty_parts = []
+        if rc_dirty == 0 and dirty_stat.strip():
+            dirty_parts.append(dirty_stat.strip())
+        if rc_untracked == 0 and untracked.strip():
+            dirty_parts.append(
+                "Untracked files:\n"
+                + "\n".join(f"  {path}" for path in untracked.splitlines())
+            )
+        if dirty_parts:
+            diff_summary = "\n".join([diff_summary, *dirty_parts])
 
-    # ── Remove worktree ───────────────────────────────────────────────────────
-    rc, _, err = await _git(source, "worktree", "remove", "--force", str(worktree))
+    if action == "review":
+        return "\n".join(
+            [
+                "[Worktree review — retained]",
+                f"branch    : {branch}",
+                f"directory : {worktree}",
+                f"dirty     : {'yes' if dirty else 'no'}",
+                "",
+                diff_summary,
+                "",
+                "Nothing was removed. Use action='preserve' to snapshot and clean up,",
+                "or action='discard' with confirm_discard=true to permanently delete changes.",
+            ]
+        )
+
+    if action == "discard" and dirty and not confirm_discard:
+        return (
+            "[Error] Refusing to discard a dirty worktree. Review the changes or "
+            "call again with action='discard' and confirm_discard=true."
+        )
+
+    snapshot_commit = ""
+    if action == "preserve" and dirty:
+        rc_add, _, add_err = await _git(worktree, "add", "--all")
+        if rc_add != 0:
+            return (
+                "[Error] Could not stage the worktree snapshot; nothing was removed: "
+                f"{add_err.strip()}"
+            )
+        rc_commit, commit_out, commit_err = await _git(
+            worktree,
+            "-c",
+            "user.name=EvoFlux",
+            "-c",
+            "user.email=evoflux@localhost",
+            "commit",
+            "--no-verify",
+            "-m",
+            "chore(evoflux): preserve worktree snapshot",
+        )
+        if rc_commit != 0:
+            return (
+                "[Error] Could not create the worktree snapshot; the worktree and "
+                f"staged changes were retained: {commit_err.strip() or commit_out.strip()}"
+            )
+        rc_rev, rev_out, _ = await _git(worktree, "rev-parse", "HEAD")
+        snapshot_commit = rev_out.strip() if rc_rev == 0 else ""
+
+    remove_args = ["worktree", "remove"]
+    if action == "discard":
+        remove_args.append("--force")
+    remove_args.append(str(worktree))
+    rc, _, err = await _git(source, *remove_args)
     if rc != 0:
-        logger.warning("worktree_remove_failed path={} err={}", worktree, err.strip())
+        return (
+            "[Error] Could not remove the worktree; branch and files were retained: "
+            f"{err.strip()}"
+        )
 
-    # ── Delete branch (EvoFlux-managed only) ─────────────────────────────────
-    if branch and branch.startswith(f"{_BRANCH_PREFIX}/"):
+    # A preserved branch is the recovery artifact and must remain mergeable.
+    if action == "discard" and branch and branch.startswith(f"{_BRANCH_PREFIX}/"):
         await _git(source, "branch", "-D", branch)
 
     # ── Update DB ─────────────────────────────────────────────────────────────
@@ -299,8 +447,12 @@ async def _worktree_finish(
         logger.warning("worktree_db_delete_failed error={}", exc)
 
     # ── Restore sandbox ───────────────────────────────────────────────────────
-    session_id = metadata.get("session_id")
-    set_sandbox(SandboxConfig(workspace=source, session_id=session_id))
+    previous_sandbox = metadata.get("_worktree_previous_sandbox")
+    if isinstance(previous_sandbox, dict):
+        set_sandbox(_sandbox_from_snapshot(previous_sandbox, workspace=source))
+    else:
+        session_id = metadata.get("session_id")
+        set_sandbox(SandboxConfig(workspace=str(source), session_id=session_id))
 
     # ── Restore metadata ──────────────────────────────────────────────────────
     if _state is not None:
@@ -310,35 +462,37 @@ async def _worktree_finish(
             "_worktree_source",
             "_worktree_branch",
             "_worktree_head_branch",
+            "_worktree_previous_sandbox",
         ):
             _state.metadata.pop(key, None)
 
-    logger.info("worktree_finished branch={} source={}", branch, source)
+    logger.info(
+        "worktree_finished branch={} source={} action={} snapshot={}",
+        branch,
+        source,
+        action,
+        snapshot_commit,
+    )
 
     if action == "discard":
         return (
             f"[Worktree removed]\n"
-            f"Branch {branch} deleted. Workspace restored to {source}."
+            f"Branch {branch} deleted after explicit discard. "
+            f"Workspace restored to {source}."
         )
 
     lines = [
-        "[Worktree finished]",
-        f"branch    : {branch}  (deleted)",
+        "[Worktree preserved]",
+        f"branch    : {branch}  (retained)",
+        f"snapshot  : {snapshot_commit or '(existing commits; no dirty files)'}",
         f"workspace : restored to {source}",
         "",
+        diff_summary,
+        "",
+        "To apply these changes, merge the retained branch or cherry-pick its commits:",
+        f"  git merge {branch}",
+        f"  git diff {head_branch}..{branch}",
     ]
-    if diff_summary and diff_summary != "(no changes)":
-        lines += [
-            f"Changes made in {branch}:",
-            diff_summary,
-            "",
-            "To apply these changes to your main branch, use shell with:",
-            "  git cherry-pick <commit>  — pick specific commits",
-            f"  git merge {branch}        — merge the branch (already deleted; use reflog if needed)",
-            f"  git diff {head_branch}..{branch} — view full diff (use reflog for deleted branch)",
-        ]
-    else:
-        lines.append("No changes were made in the worktree.")
 
     return "\n".join(lines)
 
@@ -362,9 +516,9 @@ worktree_finish = Tool(
     name="worktree_finish",
     lead_only=True,
     deferred=True,
-    deferred_summary="Finish and remove a worktree, showing or discarding its changes.",
+    deferred_summary="Review or snapshot a worktree before safe cleanup.",
     description=(
-        "Show the diff from the worktree, remove it, and restore the original workspace. "
-        "Use action='discard' to skip the diff."
+        "Review changes without cleanup, or preserve every change in a snapshot "
+        "commit before removing the worktree. Destructive discard requires confirmation."
     ),
 )

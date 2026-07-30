@@ -162,7 +162,10 @@ async def test_command_that_exits_reports_failure_with_output(workspace):
             {
                 "name": "broken",
                 "runtimeExecutable": sys.executable,
-                "runtimeArgs": ["-c", "print('boom: missing module'); raise SystemExit(3)"],
+                "runtimeArgs": [
+                    "-c",
+                    "print('boom: missing module'); raise SystemExit(3)",
+                ],
                 "port": port,
             }
         ],

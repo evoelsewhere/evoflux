@@ -649,86 +649,86 @@ async fn app_browser_webview_url(app: AppHandle, label: String) -> Result<String
 
 #[tauri::command]
 async fn app_browser_webview_agent_action(
-        app: AppHandle,
-        label: String,
-        action: String,
-        params: serde_json::Value,
+    app: AppHandle,
+    label: String,
+    action: String,
+    params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-        if !label.starts_with("browser-") {
-                return Err("Agent browser actions require a browser WebView".into());
-        }
-        let script = browser_agent_action_script(&action, &params)?;
-        let wrapped = format!(
-                r#"(() => {{
+    if !label.starts_with("browser-") {
+        return Err("Agent browser actions require a browser WebView".into());
+    }
+    let script = browser_agent_action_script(&action, &params)?;
+    let wrapped = format!(
+        r#"(() => {{
                     try {{
                         return JSON.stringify({{ ok: true, value: ({script})() }});
                     }} catch (error) {{
                         return JSON.stringify({{ ok: false, error: String(error?.message ?? error) }});
                     }}
                 }})()"#
-        );
+    );
 
-        let (sender, receiver) = oneshot::channel();
-        let sender = Arc::new(std::sync::Mutex::new(Some(sender)));
-        app_browser_webview(&app, &label)?
-            .eval_with_callback(wrapped, move |result| {
-                if let Ok(mut guard) = sender.lock() {
-                    if let Some(sender) = guard.take() {
-                        let _ = sender.send(result);
-                    }
+    let (sender, receiver) = oneshot::channel();
+    let sender = Arc::new(std::sync::Mutex::new(Some(sender)));
+    app_browser_webview(&app, &label)?
+        .eval_with_callback(wrapped, move |result| {
+            if let Ok(mut guard) = sender.lock() {
+                if let Some(sender) = guard.take() {
+                    let _ = sender.send(result);
                 }
-            })
-            .map_err(|error| format!("Could not run browser action: {error}"))?;
+            }
+        })
+        .map_err(|error| format!("Could not run browser action: {error}"))?;
 
-        let callback_timeout = if action == "status" || action == "exists" {
-            Duration::from_millis(750)
-        } else {
-            Duration::from_secs(35)
-        };
-        match tokio::time::timeout(callback_timeout, receiver).await {
-            Ok(Ok(raw)) => parse_browser_agent_result(&raw),
-                Ok(Err(_)) => Err("Browser action response channel closed".into()),
-            Err(_) => Err(format!("Browser action timed out: {action}")),
-        }
+    let callback_timeout = if action == "status" || action == "exists" {
+        Duration::from_millis(750)
+    } else {
+        Duration::from_secs(35)
+    };
+    match tokio::time::timeout(callback_timeout, receiver).await {
+        Ok(Ok(raw)) => parse_browser_agent_result(&raw),
+        Ok(Err(_)) => Err("Browser action response channel closed".into()),
+        Err(_) => Err(format!("Browser action timed out: {action}")),
+    }
 }
 
-    fn parse_browser_agent_result(raw: &str) -> Result<serde_json::Value, String> {
-        if raw.len() > 2 * 1024 * 1024 {
-                return Err("Browser action result exceeds 2 MB".into());
-        }
-        let mut value: serde_json::Value = serde_json::from_str(raw)
-                .map_err(|error| format!("Invalid browser action result: {error}"))?;
-        if let Some(encoded) = value.as_str() {
-            value = serde_json::from_str(encoded)
-                .map_err(|error| format!("Invalid encoded browser action result: {error}"))?;
-        }
-        if value.get("ok").and_then(serde_json::Value::as_bool) == Some(true) {
-            Ok(value.get("value").cloned().unwrap_or(serde_json::Value::Null))
-        } else {
-                Err(value
-                        .get("error")
-                        .and_then(serde_json::Value::as_str)
-                        .unwrap_or("Browser action failed")
-                        .to_string())
-                }
+fn parse_browser_agent_result(raw: &str) -> Result<serde_json::Value, String> {
+    if raw.len() > 2 * 1024 * 1024 {
+        return Err("Browser action result exceeds 2 MB".into());
+    }
+    let mut value: serde_json::Value = serde_json::from_str(raw)
+        .map_err(|error| format!("Invalid browser action result: {error}"))?;
+    if let Some(encoded) = value.as_str() {
+        value = serde_json::from_str(encoded)
+            .map_err(|error| format!("Invalid encoded browser action result: {error}"))?;
+    }
+    if value.get("ok").and_then(serde_json::Value::as_bool) == Some(true) {
+        Ok(value
+            .get("value")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null))
+    } else {
+        Err(value
+            .get("error")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("Browser action failed")
+            .to_string())
+    }
 }
 
-fn browser_agent_action_script(
-        action: &str,
-        params: &serde_json::Value,
-) -> Result<String, String> {
-        const SUPPORTED: &[&str] = &[
-                "snapshot", "click", "fill", "select", "extract", "scroll", "exists", "status",
-        ];
-        if !SUPPORTED.contains(&action) {
-                return Err(format!("Unsupported direct browser action: {action}"));
-        }
-        let action_json = serde_json::to_string(action)
-                .map_err(|error| format!("Could not encode browser action: {error}"))?;
-        let params_json = serde_json::to_string(params)
-                .map_err(|error| format!("Could not encode browser parameters: {error}"))?;
-        Ok(format!(
-                r#"() => {{
+fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Result<String, String> {
+    const SUPPORTED: &[&str] = &[
+        "snapshot", "click", "fill", "select", "extract", "scroll", "exists", "status",
+    ];
+    if !SUPPORTED.contains(&action) {
+        return Err(format!("Unsupported direct browser action: {action}"));
+    }
+    let action_json = serde_json::to_string(action)
+        .map_err(|error| format!("Could not encode browser action: {error}"))?;
+    let params_json = serde_json::to_string(params)
+        .map_err(|error| format!("Could not encode browser parameters: {error}"))?;
+    Ok(format!(
+        r#"() => {{
                     const action = {action_json};
                     const params = {params_json};
                     const visible = (element) => {{
@@ -825,7 +825,7 @@ fn browser_agent_action_script(
                         return {{ url: location.href, readyState: document.readyState }};
                     }}
                 }}"#
-        ))
+    ))
 }
 
 fn show_main_window(app: &AppHandle) {
@@ -2331,8 +2331,10 @@ mod tests {
 
     #[test]
     fn saved_backend_config_can_mark_external_backend_active() {
-        let mut config = AppBackendConfig::default();
-        config.active_base_url = Some("http://192.168.1.10:4082".to_string());
+        let config = AppBackendConfig {
+            active_base_url: Some("http://192.168.1.10:4082".to_string()),
+            ..AppBackendConfig::default()
+        };
 
         let serialized = serde_json::to_string(&config).expect("serialize config");
         let parsed: AppBackendConfig = serde_json::from_str(&serialized).expect("parse config");

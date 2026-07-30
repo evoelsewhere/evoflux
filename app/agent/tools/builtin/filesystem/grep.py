@@ -66,6 +66,7 @@ async def _rg_scan(
     case_insensitive: bool,
     context: int,
     sandbox,
+    gitignore_rules: list[tuple[str, bool]],
 ) -> list[str] | None:
     """Search with ripgrep. Returns None when rg errors so callers can fall back."""
     cmd = [
@@ -136,6 +137,13 @@ async def _rg_scan(
                 if len(parts) < 3:
                     continue
                 rel, lineno, content = parts
+                rel_path = Path(rel)
+                if any(part in _SKIPPED_DIR_NAMES for part in rel_path.parts):
+                    continue
+                if is_gitignored(
+                    rel_path.as_posix(), is_dir=False, rules=gitignore_rules
+                ):
+                    continue
                 display = sandbox.display_path(root / rel)
                 hits.append(_format_line(display, lineno, content, match=is_match))
                 if is_match:
@@ -159,7 +167,9 @@ async def _rg_scan(
     # unreadable root, ...). On error with nothing found, let the Python
     # engine try — its `re` dialect accepts more patterns.
     if proc.returncode not in (0, 1, None) and not hits:
-        logger.info("grep_rg_error rc={} — falling back to python scan", proc.returncode)
+        logger.info(
+            "grep_rg_error rc={} — falling back to python scan", proc.returncode
+        )
         return None
     while hits and hits[-1] == "--":
         hits.pop()
@@ -296,13 +306,21 @@ async def _grep_files(
     context = max(0, min(int(context), _MAX_CONTEXT))
 
     matches: list[str] | None = None
+    gitignore_rules = load_gitignore_rules(resolved)
     rg = shutil.which("rg")
     if rg:
         matches = await _rg_scan(
-            rg, pattern, resolved, include, max_results, case_insensitive, context, sandbox
+            rg,
+            pattern,
+            resolved,
+            include,
+            max_results,
+            case_insensitive,
+            context,
+            sandbox,
+            gitignore_rules,
         )
     if matches is None:
-        gitignore_rules = load_gitignore_rules(resolved)
         # Me run scan with timeout to prevent ReDoS from locking the thread pool
         try:
             matches = await asyncio.wait_for(

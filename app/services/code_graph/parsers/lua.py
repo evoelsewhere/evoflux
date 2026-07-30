@@ -292,9 +292,7 @@ _LUAU_BUILTIN_TYPES = frozenset(
 )
 
 
-def _collect_luau_function_type_ids(
-    node: Node, source: bytes, out: list[str]
-) -> None:
+def _collect_luau_function_type_ids(node: Node, source: bytes, out: list[str]) -> None:
     params = node.child_by_field_name("parameters")
     if params is not None:
         for param in params.named_children:
@@ -335,12 +333,16 @@ def _collect_luau_type_ids(
         for index, child in enumerate(node.children):
             if not child.is_named:
                 continue
-            next_child = node.children[index + 1] if index + 1 < len(node.children) else None
-            if child.type == "identifier" and next_child is not None and next_child.type == ":":
-                continue
-            _collect_luau_type_ids(
-                child, source, out, excluded=excluded
+            next_child = (
+                node.children[index + 1] if index + 1 < len(node.children) else None
             )
+            if (
+                child.type == "identifier"
+                and next_child is not None
+                and next_child.type == ":"
+            ):
+                continue
+            _collect_luau_type_ids(child, source, out, excluded=excluded)
         return
     for child in node.named_children:
         _collect_luau_type_ids(child, source, out, excluded=excluded)

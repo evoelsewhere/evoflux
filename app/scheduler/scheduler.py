@@ -8,8 +8,9 @@ and then dispatches the configured prompt to the agent team.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Coroutine
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid5, NAMESPACE_URL
 
 from loguru import logger
@@ -117,17 +118,23 @@ class TaskScheduler:
         self._db = db_factory
         # task_id → running asyncio.Task
         self._tasks: dict[UUID, asyncio.Task[None]] = {}
+        self._fire_tasks: set[asyncio.Task[None]] = set()
+        self._stopping = False
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
     async def start(self) -> None:
         """Load all enabled tasks from DB and start their timer loops."""
+        self._stopping = False
         tasks = await self._enabled_tasks()
 
         now = datetime.now(_utc)
         for task in tasks:
             if task.next_fire_at is not None and task.next_fire_at <= now:
-                asyncio.create_task(self._fire_overdue_and_restart(task))
+                self._spawn_fire(
+                    self._fire_overdue_and_restart(task),
+                    name=f"scheduler-overdue:{task.name}",
+                )
                 continue
 
             # One-shot "at" tasks whose fire time is in the past and haven't
@@ -138,7 +145,9 @@ class TaskScheduler:
                 and task.run_count == 0
                 and task.at_datetime <= now
             ):
-                asyncio.create_task(self._fire_task(task))
+                self._spawn_fire(
+                    self._fire_task(task), name=f"scheduler-fire:{task.name}"
+                )
             else:
                 self._start_timer(task)
 
@@ -151,7 +160,12 @@ class TaskScheduler:
         async with self._db() as session:
             fresh = await session.get(ScheduledTask, task.id)
 
-        if fresh is not None and fresh.enabled and fresh.schedule_type != "at":
+        if (
+            not self._stopping
+            and fresh is not None
+            and fresh.enabled
+            and fresh.schedule_type != "at"
+        ):
             self._start_timer(fresh)
 
     async def has_enabled_tasks(self) -> bool:
@@ -166,12 +180,16 @@ class TaskScheduler:
             return list(result.all())
 
     async def stop(self) -> None:
-        """Cancel all running timer tasks."""
+        """Stop timers and wait for already-dispatched firings to persist."""
+        self._stopping = True
         for t in list(self._tasks.values()):
             t.cancel()
         if self._tasks:
             await asyncio.gather(*self._tasks.values(), return_exceptions=True)
         self._tasks.clear()
+        if self._fire_tasks:
+            await asyncio.gather(*tuple(self._fire_tasks), return_exceptions=True)
+        self._fire_tasks.clear()
         logger.info("scheduler_stopped")
 
     # ── Public API ────────────────────────────────────────────────────────────
@@ -385,7 +403,7 @@ class TaskScheduler:
         if was_disabled:
             self._start_timer(task)
 
-        asyncio.create_task(self._fire_task(task))
+        self._spawn_fire(self._fire_task(task), name=f"scheduler-trigger:{task.name}")
 
     async def list_tasks(self, session_id: str | None = None) -> list[ScheduledTask]:
         async with self._db() as session:
@@ -406,9 +424,20 @@ class TaskScheduler:
 
     def _start_timer(self, task: ScheduledTask) -> None:
         """Spawn an asyncio task for *task*'s timer loop."""
+        if self._stopping:
+            return
         self._cancel_timer(task.id)
         t = asyncio.create_task(self._timer_loop(task), name=f"scheduler:{task.name}")
         self._tasks[task.id] = t
+
+    def _spawn_fire(
+        self, coroutine: Coroutine[Any, Any, None], *, name: str
+    ) -> asyncio.Task[None]:
+        """Track non-timer firings so shutdown cannot leave rows ``running``."""
+        task = asyncio.create_task(coroutine, name=name)
+        self._fire_tasks.add(task)
+        task.add_done_callback(self._fire_tasks.discard)
+        return task
 
     def _cancel_timer(self, task_id: UUID) -> None:
         existing = self._tasks.pop(task_id, None)

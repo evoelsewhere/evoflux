@@ -299,9 +299,10 @@ class TestPushEvent:
         )
         assert _turns["sid-1"].tool_calls[0]["done"] is True
         assert _turns["sid-1"].tool_calls[0]["result"] == "found it"
-        assert _turns["sid-1"].tool_calls[0]["metadata"]["attachments"][0][
-            "category"
-        ] == "image"
+        assert (
+            _turns["sid-1"].tool_calls[0]["metadata"]["attachments"][0]["category"]
+            == "image"
+        )
 
     @pytest.mark.asyncio
     async def test_push_tool_end_fallback_by_name(self):

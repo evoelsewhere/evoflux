@@ -173,6 +173,27 @@ def _set_formula(reference: ET.Element | None, formula: str) -> None:
     node.text = formula
 
 
+def _preserve_workbook_core_properties(original: bytes, updated: bytes) -> bytes:
+    """Keep embedded-workbook metadata stable across deterministic edits.
+
+    openpyxl rewrites ``dcterms:modified`` on every save, making the same
+    declared mutation differ solely because it ran at another wall-clock time.
+    """
+    with zipfile.ZipFile(BytesIO(original)) as source:
+        core_properties = source.read("docProps/core.xml")
+    output = BytesIO()
+    with zipfile.ZipFile(BytesIO(updated)) as incoming:
+        with zipfile.ZipFile(output, "w") as outgoing:
+            for item in incoming.infolist():
+                payload = (
+                    core_properties
+                    if item.filename == "docProps/core.xml"
+                    else incoming.read(item.filename)
+                )
+                outgoing.writestr(item, payload)
+    return output.getvalue()
+
+
 def _replace_chart_data(
     package: zipfile.ZipFile,
     slide_part: str,
@@ -192,7 +213,8 @@ def _replace_chart_data(
             )
 
     chart_part, workbook_part = _chart_parts(package, slide_part, shape)
-    workbook = load_workbook(BytesIO(package.read(workbook_part)))
+    original_workbook = package.read(workbook_part)
+    workbook = load_workbook(BytesIO(original_workbook))
     worksheet = workbook.active
     for row in worksheet.iter_rows():
         for cell in row:
@@ -206,6 +228,9 @@ def _replace_chart_data(
             worksheet.cell(row_index, column_index, float(value))
     workbook_buffer = BytesIO()
     workbook.save(workbook_buffer)
+    workbook_payload = _preserve_workbook_core_properties(
+        original_workbook, workbook_buffer.getvalue()
+    )
 
     chart_root = ET.fromstring(package.read(chart_part))
     chart_series = chart_root.findall(".//c:ser", NS)
@@ -263,7 +288,7 @@ def _replace_chart_data(
             encoding="utf-8",
             xml_declaration=True,
         ),
-        workbook_part: workbook_buffer.getvalue(),
+        workbook_part: workbook_payload,
     }
 
 

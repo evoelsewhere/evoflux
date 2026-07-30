@@ -17,7 +17,9 @@ import app.services.terminal_service as ts
 from app.services.terminal_service import TerminalManager, _key
 
 
-async def _drain_until(queue: asyncio.Queue, needle: bytes, *, timeout: float = 3.0) -> bytes:
+async def _drain_until(
+    queue: asyncio.Queue, needle: bytes, *, timeout: float = 3.0
+) -> bytes:
     got = b""
     try:
         while needle not in got:
@@ -174,8 +176,12 @@ def test_module_imports_on_win32_and_attach_raises_clear_error_without_pywinpty(
     """With sys.platform=win32 and no winpty installed, the module must still
     import; attach() then raises an actionable RuntimeError."""
     try:
-        with patch.object(sys, "platform", "win32"), patch.dict(
-            sys.modules, {"winpty": None}  # import of winpty → ImportError
+        with (
+            patch.object(sys, "platform", "win32"),
+            patch.dict(
+                sys.modules,
+                {"winpty": None},  # import of winpty → ImportError
+            ),
         ):
             reloaded = importlib.reload(ts)
             manager = reloaded.TerminalManager()
@@ -206,7 +212,9 @@ class _FakeConPtyProc:
         self.spawn_calls.append((argv, cwd, env))
 
     def read(self, blocking=False):
-        assert blocking is True, "the pump must use a blocking read (3.x default is non-blocking)"
+        assert blocking is True, (
+            "the pump must use a blocking read (3.x default is non-blocking)"
+        )
         # Block (like the real blocking read) until the test releases us,
         # then report the child as gone.
         self.read_gate.wait()
@@ -231,12 +239,16 @@ class _FakeConPtyProc:
 def fake_winpty(monkeypatch):
     """Patch in a fake winpty module and pretend to be on Windows."""
     _FakeConPtyProc.instances.clear()
-    monkeypatch.setitem(sys.modules, "winpty", types.SimpleNamespace(PTY=_FakeConPtyProc))
+    monkeypatch.setitem(
+        sys.modules, "winpty", types.SimpleNamespace(PTY=_FakeConPtyProc)
+    )
     monkeypatch.setattr(sys, "platform", "win32")
     return _FakeConPtyProc
 
 
-async def test_spawn_windows_uses_comspec_and_conpty(fake_winpty, monkeypatch, tmp_path):
+async def test_spawn_windows_uses_comspec_and_conpty(
+    fake_winpty, monkeypatch, tmp_path
+):
     monkeypatch.setenv("COMSPEC", r"C:\Windows\System32\cmd.exe")
 
     manager = TerminalManager()

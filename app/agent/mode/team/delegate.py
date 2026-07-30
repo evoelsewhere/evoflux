@@ -82,6 +82,21 @@ class TaskSpec(BaseModel):
         default_factory=list,
         description="Runtime-injected final results from prerequisite tasks.",
     )
+    target_paths: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Workspace-relative files or directories this task may modify. "
+            "Exclusive claims prevent overlapping parallel assignments."
+        ),
+    )
+    exclusive_paths: bool = Field(
+        default=True,
+        description="Whether target_paths are exclusive while the task is open.",
+    )
+    complexity: Literal["auto", "trivial", "simple", "multi_step", "complex"] = Field(
+        default="auto",
+        description="Task complexity used for adaptive reasoning and verification.",
+    )
 
 
 # ── Tool description ─────────────────────────────────────────────────────────
@@ -128,6 +143,12 @@ def format_delegation_message(
         formatted_lines.append(f"**Context:** {spec.context}")
     if spec.depends_on:
         formatted_lines.append(f"**Depends on:** {', '.join(spec.depends_on)}")
+    if spec.target_paths:
+        mode = "exclusive" if spec.exclusive_paths else "shared"
+        formatted_lines.append(
+            f"**Target paths ({mode}):** {', '.join(spec.target_paths)}"
+        )
+    formatted_lines.append(f"**Complexity:** {spec.complexity}")
     if spec.deadline_at:
         formatted_lines.append(f"**Deadline:** {spec.deadline_at.isoformat()}")
     if spec.dependency_results:
@@ -224,6 +245,33 @@ def make_team_delegate_tool(
                 )
             ),
         ] = None,
+        target_paths: Annotated[
+            list[str],
+            Field(
+                description=(
+                    "Workspace-relative files/directories the task may modify. "
+                    "Use precise paths so parallel members cannot collide."
+                )
+            ),
+        ] = [],  # noqa: B006
+        exclusive_paths: Annotated[
+            bool,
+            Field(
+                description=(
+                    "Reserve target_paths exclusively until final handoff. "
+                    "Default true."
+                )
+            ),
+        ] = True,
+        complexity: Annotated[
+            Literal["auto", "trivial", "simple", "multi_step", "complex"],
+            Field(
+                description=(
+                    "Expected task complexity. 'auto' derives it from priority "
+                    "and target-path breadth."
+                )
+            ),
+        ] = "auto",
     ) -> str:
         """Delegate a structured task with explicit acceptance criteria."""
         from app.agent.mode.team.mailbox import Message
@@ -256,6 +304,16 @@ def make_team_delegate_tool(
                 return "Error: deadline_at must include a timezone offset."
             if deadline_at <= datetime.now(timezone.utc):
                 return "Error: deadline_at must be in the future."
+        try:
+            normalized_targets = _normalize_target_paths(target_paths)
+        except ValueError as exc:
+            return f"Error: {exc}"
+        if exclusive_paths and normalized_targets and len(resolved) > 1:
+            return (
+                "Error: exclusive target_paths cannot be assigned to multiple "
+                "recipients in one delegation. Split the paths into separate tasks "
+                "or set exclusive_paths=false."
+            )
 
         # Build task spec
         spec = TaskSpec(
@@ -266,6 +324,9 @@ def make_team_delegate_tool(
             priority=priority,
             depends_on=list(depends_on),
             deadline_at=deadline_at,
+            target_paths=normalized_targets,
+            exclusive_paths=exclusive_paths,
+            complexity=complexity,
         )
         spec_json = spec.model_dump(mode="json", exclude_none=True)
 
@@ -310,6 +371,23 @@ def make_team_delegate_tool(
         return f"Task delegated to {', '.join(resolved)}.{suffix}"
 
     return Tool(team_delegate, name="team_delegate", description=_DELEGATE_DESCRIPTION)
+
+
+def _normalize_target_paths(paths: list[str]) -> list[str]:
+    from pathlib import PurePosixPath
+
+    normalized: list[str] = []
+    for raw in paths:
+        value = raw.strip().replace("\\", "/")
+        path = PurePosixPath(value)
+        if not value or path.is_absolute() or ".." in path.parts:
+            raise ValueError(
+                f"target path must be non-empty, workspace-relative, and traversal-free: {raw!r}"
+            )
+        clean = path.as_posix().rstrip("/")
+        if clean not in normalized:
+            normalized.append(clean)
+    return normalized
 
 
 # ── SSE event emission ───────────────────────────────────────────────────────

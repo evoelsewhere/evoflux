@@ -21,8 +21,7 @@ from app.agent.tools.builtin.visualize.guidelines import (
     description=lambda: (
         "Load design guidelines for creating interactive HTML widgets. "
         "Call this once before your first show_widget call to understand "
-        "the design system. Available modules: "
-        + ", ".join(AVAILABLE_MODULES)
+        "the design system. Available modules: " + ", ".join(AVAILABLE_MODULES)
     ),
     concurrency_safe=True,
     read_only=True,
@@ -55,11 +54,11 @@ async def visualize_read_me(
     """
     # Filter to valid modules only
     valid_modules = [m for m in modules if m in AVAILABLE_MODULES]
-    
+
     if not valid_modules:
         return (
             f"Invalid modules. Available options: {', '.join(AVAILABLE_MODULES)}\n\n"
             f"Requested: {', '.join(modules)}"
         )
-    
+
     return get_guidelines(valid_modules)

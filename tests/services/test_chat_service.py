@@ -740,9 +740,7 @@ async def test_get_messages_for_llm_drops_assistant_left_empty_after_strip(sessi
         AssistantMessage(
             content="",
             tool_calls=[
-                ToolCall(
-                    id="c1", function=FunctionCall(name="search", arguments="{}")
-                )
+                ToolCall(id="c1", function=FunctionCall(name="search", arguments="{}"))
             ],
         ),
     )
@@ -765,9 +763,7 @@ async def test_get_messages_for_llm_keeps_stripped_assistant_with_content(sessio
         AssistantMessage(
             content="Let me search for that.",
             tool_calls=[
-                ToolCall(
-                    id="c1", function=FunctionCall(name="search", arguments="{}")
-                )
+                ToolCall(id="c1", function=FunctionCall(name="search", arguments="{}"))
             ],
         ),
     )

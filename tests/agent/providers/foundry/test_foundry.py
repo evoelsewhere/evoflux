@@ -49,8 +49,7 @@ class TestFoundryProviderInheritance:
 class TestFoundryBaseUrl:
     def test_bare_resource_name(self):
         assert (
-            foundry_base_url("myres")
-            == "https://myres.services.ai.azure.com/openai/v1"
+            foundry_base_url("myres") == "https://myres.services.ai.azure.com/openai/v1"
         )
 
     def test_bare_hostname_is_not_suffixed(self):

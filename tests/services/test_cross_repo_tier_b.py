@@ -57,7 +57,9 @@ async def _seed_node(db, *, workspace_id, name, qualified_name, kind="class"):
     return node
 
 
-async def _seed_unresolved_edge(db, *, project_id, src_workspace_id, raw_reference, dst_name_hint=None):
+async def _seed_unresolved_edge(
+    db, *, project_id, src_workspace_id, raw_reference, dst_name_hint=None
+):
     from app.models.code_graph import CrossRepoEdge
 
     edge = CrossRepoEdge(
@@ -102,7 +104,9 @@ async def test_tier_b_auto_resolves_single_exact_match(setup_db, tmp_path: Path)
         target_id = target.id
         edge_id = edge.id
 
-    _index_fts(repo_b_id, [(str(target_id), "AuthClient", "com.example.auth.AuthClient")])
+    _index_fts(
+        repo_b_id, [(str(target_id), "AuthClient", "com.example.auth.AuthClient")]
+    )
 
     async with db_module.async_session_factory() as db:
         stats = await resolve_project_tier_b(db, project_id=project_id)
@@ -263,7 +267,9 @@ async def test_tier_b_rotates_through_capped_rows_across_runs(
                 dst_name_hint=f"Target{i}",
             )
             edge_ids.append(edge.id)
-            fts_rows.append((str(target.id), f"Target{i}", f"com.example.gen.Target{i}"))
+            fts_rows.append(
+                (str(target.id), f"Target{i}", f"com.example.gen.Target{i}")
+            )
         await db.commit()
     _index_fts(repo_b_id, fts_rows)
 

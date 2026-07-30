@@ -65,9 +65,7 @@ def upgrade() -> None:
         ),
     )
     with op.batch_alter_table("aim_units", schema=None) as batch_op:
-        batch_op.create_index(
-            "ix_aim_units_project_phase", ["project_id", "phase"]
-        )
+        batch_op.create_index("ix_aim_units_project_phase", ["project_id", "phase"])
         batch_op.create_index("ix_aim_units_project_wave", ["project_id", "wave"])
 
     op.create_table(
@@ -85,9 +83,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     with op.batch_alter_table("aim_runs", schema=None) as batch_op:
-        batch_op.create_index(
-            "ix_aim_runs_unit_created", ["unit_id", "created_at"]
-        )
+        batch_op.create_index("ix_aim_runs_unit_created", ["unit_id", "created_at"])
         batch_op.create_index("ix_aim_runs_unit_kind", ["unit_id", "kind"])
 
     op.create_table(
@@ -105,9 +101,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     with op.batch_alter_table("aim_links", schema=None) as batch_op:
-        batch_op.create_index(
-            "ix_aim_links_project_from", ["project_id", "from_ref"]
-        )
+        batch_op.create_index("ix_aim_links_project_from", ["project_id", "from_ref"])
         batch_op.create_index("ix_aim_links_project_to", ["project_id", "to_ref"])
 
 

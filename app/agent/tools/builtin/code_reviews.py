@@ -73,8 +73,7 @@ async def _session_targets(
                 for link in (
                     await db.exec(
                         select(CodingProjectWorkspace).where(
-                            CodingProjectWorkspace.project_id
-                            == project_link.project_id
+                            CodingProjectWorkspace.project_id == project_link.project_id
                         )
                     )
                 ).all()
@@ -129,7 +128,9 @@ def _select_target(
         if len(matches) == 1:
             return matches[0]
         if not matches:
-            raise ValueError(f"Repository '{repository}' is not in this Coding session.")
+            raise ValueError(
+                f"Repository '{repository}' is not in this Coding session."
+            )
         raise ValueError(f"Repository selector '{repository}' is ambiguous.")
     if len(targets) == 1:
         return targets[0]
@@ -283,9 +284,7 @@ async def _reply_code_review_thread(
 ) -> str:
     """Reply to a normalized review thread ID returned by get_code_review."""
     target, connection = await _review_resources(_state, repository)
-    result = await service_reply_thread(
-        target, connection, number, thread_id, body
-    )
+    result = await service_reply_thread(target, connection, number, thread_id, body)
     return json.dumps(result, indent=2)
 
 

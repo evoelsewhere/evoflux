@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import hashlib
+import json
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -31,6 +33,10 @@ class PlanStep:
     args: dict[str, Any]
     summary: str  # one-line human-readable description shown in the approval UI
 
+    @property
+    def call_hash(self) -> str:
+        return _call_hash(self.tool_name, self.args)
+
 
 @dataclass
 class PlanApprovalRequest:
@@ -40,14 +46,20 @@ class PlanApprovalRequest:
     session_id: str
     plan: str
     steps: list[PlanStep]
+    manifest_hash: str
     _future: asyncio.Future | None = field(default=None, compare=False, repr=False)
 
     @classmethod
     def create(
         cls, session_id: str, plan: str, steps: list[PlanStep]
     ) -> "PlanApprovalRequest":
+        manifest_hash = _manifest_hash(plan, steps)
         req = cls(
-            id=str(uuid.uuid4()), session_id=session_id, plan=plan, steps=list(steps)
+            id=str(uuid.uuid4()),
+            session_id=session_id,
+            plan=plan,
+            steps=list(steps),
+            manifest_hash=manifest_hash,
         )
         req._future = asyncio.get_running_loop().create_future()
         return req
@@ -56,6 +68,26 @@ class PlanApprovalRequest:
 # Global registry keyed by session_id — allows the HTTP reply endpoint to
 # locate the right service without sharing a context var.
 _active_services: dict[str, "PlanModeService"] = {}
+
+
+def _canonical_json(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def _call_hash(tool_name: str, args: dict[str, Any]) -> str:
+    payload = _canonical_json({"tool": tool_name, "args": args})
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _manifest_hash(plan: str, steps: list[PlanStep]) -> str:
+    payload = {
+        "plan": plan,
+        "steps": [
+            {"tool": step.tool_name, "args": step.args, "summary": step.summary}
+            for step in steps
+        ],
+    }
+    return hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
 
 
 class PlanModeService:
@@ -82,6 +114,9 @@ class PlanModeService:
         self._active = False
         self._steps: list[PlanStep] = []
         self._pending: dict[str, PlanApprovalRequest] = {}
+        self._approved_steps: list[PlanStep] = []
+        self._approved_manifest_hash: str | None = None
+        self._approval_enforced = False
 
     @property
     def active(self) -> bool:
@@ -91,10 +126,21 @@ class PlanModeService:
     def step_count(self) -> int:
         return len(self._steps)
 
+    @property
+    def approved_step_count(self) -> int:
+        return len(self._approved_steps)
+
+    @property
+    def approved_manifest_hash(self) -> str | None:
+        return self._approved_manifest_hash
+
     def enter(self) -> None:
         """Start recording steps.  Clears any previous steps."""
         self._active = True
         self._steps = []
+        self._approved_steps = []
+        self._approved_manifest_hash = None
+        self._approval_enforced = False
 
     def record_step(self, tool_name: str, args: dict[str, Any], summary: str) -> str:
         """Record a step and return a status string for the agent."""
@@ -139,6 +185,7 @@ class PlanModeService:
                             enrich_plan_step(s.tool_name, s.args, s.summary)
                             for s in steps
                         ],
+                        metadata={"manifest_hash": req.manifest_hash},
                     )
                 ),
             )
@@ -163,10 +210,52 @@ class PlanModeService:
             # Stay in plan mode: keep recorded steps so the agent can add
             # to them and re-submit a revised plan.
             self._active = True
+        elif decision == "approved":
+            self._active = False
+            self._steps = []
+            self._approved_steps = steps
+            self._approved_manifest_hash = req.manifest_hash
+            self._approval_enforced = bool(steps)
         else:
             self._active = False
             self._steps = []
+            self._approved_steps = []
+            self._approved_manifest_hash = None
+            self._approval_enforced = False
         return (decision, feedback)
+
+    def authorize_approved_call(
+        self, tool_name: str, args: dict[str, Any]
+    ) -> tuple[bool, str] | None:
+        """Consume the next exact approved call.
+
+        Returns ``None`` when no approved execution contract is active. Once a
+        contract is active, every destructive call must match the next recorded
+        step byte-for-byte after canonical JSON normalization.
+        """
+        if not self._approval_enforced:
+            return None
+        if not self._approved_steps:
+            return (
+                False,
+                "The approved plan is exhausted. Enter plan mode again before "
+                "performing another destructive operation.",
+            )
+        expected = self._approved_steps[0]
+        actual_hash = _call_hash(tool_name, args)
+        if tool_name != expected.tool_name or actual_hash != expected.call_hash:
+            return (
+                False,
+                "Call does not match the next approved plan step. "
+                f"Expected {expected.tool_name} — {expected.summary} "
+                f"(manifest {self._approved_manifest_hash}).",
+            )
+        self._approved_steps.pop(0)
+        return True, (
+            "Approved plan call matched"
+            if self._approved_steps
+            else "Approved plan completed"
+        )
 
     async def _push_replied(self, request_id: str, decision: str) -> None:
         """Best-effort ``plan_approval_replied`` so every client closes."""

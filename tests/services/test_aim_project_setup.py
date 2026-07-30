@@ -140,9 +140,7 @@ async def test_create_aim_project_preserves_prepared_local_rulebook(db, tmp_path
     kb_path = tmp_path / "prepared-kb"
     (kb_path / "rulebook").mkdir(parents=True)
     (kb_path / "rulebook" / "rulebook.yaml").write_text(
-        "id: engagement-policy\n"
-        "version: '3.2'\n"
-        "compare_default_profile: strict\n",
+        "id: engagement-policy\nversion: '3.2'\ncompare_default_profile: strict\n",
         encoding="utf-8",
     )
 

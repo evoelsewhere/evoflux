@@ -78,9 +78,7 @@ async def parser_strategy_for_workspace(
         if not kb_path:
             continue
         try:
-            strategies.append(
-                validate_rulebook_identity(Path(kb_path)).parser_strategy
-            )
+            strategies.append(validate_rulebook_identity(Path(kb_path)).parser_strategy)
         except (FileNotFoundError, ValueError):
             continue
     if not strategies:

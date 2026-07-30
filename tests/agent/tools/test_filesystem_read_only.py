@@ -9,7 +9,12 @@ from __future__ import annotations
 import pytest
 
 from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
-from app.agent.tools.builtin.filesystem import edit_file, patch_file, remove_path, write_file
+from app.agent.tools.builtin.filesystem import (
+    edit_file,
+    patch_file,
+    remove_path,
+    write_file,
+)
 from app.agent.tools.builtin.filesystem.read import read_file
 
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import os
 import re
 import subprocess
@@ -12,7 +11,13 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from app.core.config import settings
+from app.agent.sandbox_config import (
+    managed_worktree_roots,
+    selected_worktree_root,
+)
+
+# Compatibility alias for callers/tests that patch the historical settings path.
+from app.core.config import settings as settings  # noqa: F401
 import app.core.db as db_module
 from app.services.coding_workspace_service import (
     mark_coding_workspace_deleted,
@@ -114,11 +119,7 @@ def _validate_branch(
 
 
 def _worktree_root(source: Path, *, create: bool = True) -> Path:
-    key = hashlib.sha1(str(source).encode("utf-8")).hexdigest()[:10]
-    root = Path(settings.EVOFLUX_DATA_DIR) / "worktrees" / f"{source.name}-{key}"
-    if create:
-        root.mkdir(parents=True, exist_ok=True)
-    return root.resolve()
+    return selected_worktree_root(source, create=create)
 
 
 def _candidate(source: Path, name: str, branch: str | None) -> WorktreeInfo:
@@ -177,10 +178,6 @@ def _list_worktree_entries(source: Path) -> list[dict[str, str]]:
     return _parse_worktree_list(result.stdout)
 
 
-def _managed_root(source: Path, *, create: bool = True) -> Path:
-    return _worktree_root(source, create=create)
-
-
 def _canonical(path: str | Path) -> str:
     return os.path.realpath(Path(path).expanduser().resolve())
 
@@ -196,9 +193,6 @@ def _entry_for_directory(source: Path, directory: Path) -> dict[str, str] | None
 
 def find_managed_worktree_source(directory: Path) -> str | None:
     resolved = directory.expanduser().resolve()
-    data_root = (Path(settings.EVOFLUX_DATA_DIR) / "worktrees").resolve()
-    if data_root not in resolved.parents:
-        return None
     result = _run_git(resolved, "rev-parse", "--show-toplevel")
     if result.returncode != 0 or Path(result.stdout.strip()).resolve() != resolved:
         return None
@@ -211,8 +205,7 @@ def find_managed_worktree_source(directory: Path) -> str | None:
     source = common_path.parent if common_path.name == ".git" else common_path
     if source == resolved:
         return None
-    expected_root = _worktree_root(source, create=False)
-    if expected_root not in resolved.parents:
+    if not any(root in resolved.parents for root in managed_worktree_roots(source)):
         return None
     return str(source)
 
@@ -227,7 +220,7 @@ async def list_coding_workspace_worktrees(source_workspace: str) -> list[Worktre
     await asyncio.to_thread(_require_git_repo, source)
 
     source_real = os.path.realpath(source)
-    managed_root = _managed_root(source)
+    managed_roots = managed_worktree_roots(source)
     infos: list[WorktreeInfo] = []
     for entry in await asyncio.to_thread(_list_worktree_entries, source):
         directory = entry.get("directory")
@@ -239,7 +232,7 @@ async def list_coding_workspace_worktrees(source_workspace: str) -> list[Worktre
                 name=resolved.name,
                 directory=str(resolved),
                 branch=entry.get("branch"),
-                managed=managed_root in resolved.parents,
+                managed=any(root in resolved.parents for root in managed_roots),
             )
         )
     return infos
@@ -256,8 +249,8 @@ async def remove_coding_workspace_worktree(
 
     await asyncio.to_thread(_require_git_repo, source)
     directory = Path(body.directory).expanduser().resolve()
-    root = _managed_root(source)
-    if root not in directory.parents:
+    roots = managed_worktree_roots(source)
+    if not any(root in directory.parents for root in roots):
         raise HTTPException(
             status_code=403,
             detail="Only EvoFlux-managed worktrees can be removed.",

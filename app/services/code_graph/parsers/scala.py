@@ -30,9 +30,7 @@ class ScalaParser(TreeSitterParser):
     grammar: ClassVar[str] = "scala"
 
     def root_prefix(self, root: Node, source: bytes) -> str:
-        packages = [
-            child for child in root.children if child.type == "package_clause"
-        ]
+        packages = [child for child in root.children if child.type == "package_clause"]
         if len(packages) != 1:
             return ""
         package = packages[0]
@@ -52,9 +50,7 @@ class ScalaParser(TreeSitterParser):
                     kind=NODE_NAMESPACE,
                     name=name,
                     is_class=False,
-                    prefix=(
-                        "" if node.child_by_field_name("body") is None else None
-                    ),
+                    prefix=("" if node.child_by_field_name("body") is None else None),
                 )
         elif ntype == "trait_definition":
             name = self._name(node, source)

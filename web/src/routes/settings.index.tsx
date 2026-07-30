@@ -158,7 +158,7 @@ export function SettingsHubPage() {
           to: '/settings/sandbox',
           icon: Shield,
           title: 'Sandbox',
-          description: 'Files and folders agents cannot reach',
+          description: 'Agent filesystem, process and worktree isolation',
           count: sandboxCount,
           countLabel: sandboxCount === 1 ? 'pattern' : 'patterns',
         },

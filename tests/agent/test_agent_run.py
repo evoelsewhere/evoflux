@@ -5,7 +5,10 @@ from typing import AsyncIterator
 from unittest.mock import AsyncMock, MagicMock
 
 from app.agent.agent_loop import Agent
-from app.agent.agent_loop.core import _partition_tool_call_batch
+from app.agent.agent_loop.core import (
+    _build_tool_call_waves,
+    _partition_tool_call_batch,
+)
 from app.agent import usage as usage_module
 from app.agent.agent_loop.retry import (
     classify_provider_http_error,
@@ -89,6 +92,32 @@ def test_tool_batch_contract_deduplicates_and_limits_without_name_heuristics():
     assert [call.id for call, _ in blocked] == ["call_2", "call_3"]
     assert "duplicate" in blocked[0][1]
     assert "maximum 2" in blocked[1][1]
+
+
+def test_tool_batch_builds_parallel_waves_around_serial_barriers():
+    safe = Tool(lambda: None, name="safe", concurrency_safe=True)
+    unsafe = Tool(lambda: None, name="unsafe", concurrency_safe=False)
+    calls = [
+        ToolCall(
+            id=f"call_{index}",
+            function=FunctionCall(name=name, arguments="{}"),
+        )
+        for index, name in enumerate(["safe", "safe", "unsafe", "safe", "unknown"])
+    ]
+
+    waves = _build_tool_call_waves(
+        calls,
+        {safe.name: safe, unsafe.name: unsafe},
+    )
+
+    assert [
+        (is_parallel, [call.id for call in wave]) for is_parallel, wave in waves
+    ] == [
+        (True, ["call_0", "call_1"]),
+        (False, ["call_2"]),
+        (True, ["call_3"]),
+        (False, ["call_4"]),
+    ]
 
 
 def make_text_chunk(text: str, usage: Usage | None = None) -> ChatCompletionChunk:

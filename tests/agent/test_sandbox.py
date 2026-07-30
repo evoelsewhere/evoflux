@@ -1,9 +1,6 @@
 """Tests for app/agent/sandbox.py — SandboxConfig path validation.
 
-The sandbox uses a **denylist** model: paths are allowed unless they resolve
-under one of the denied roots (``EVOFLUX_DATA_DIR``, ``EVOFLUX_STATE_DIR``,
-``EVOFLUX_CACHE_DIR``).  Workspace and memory roots are always allowed —
-even if they happen to live under a denied root.
+The sandbox uses a workspace allowlist plus sensitive-path deny rules.
 
 Symlinks are allowed unless their target lands inside a denied root.
 Tilde paths are always rejected.
@@ -59,13 +56,27 @@ def test_absolute_path_inside_workspace_allowed(tmp_path):
     assert result == target.resolve()
 
 
-def test_absolute_path_outside_workspace_allowed(tmp_path):
-    """Under denylist semantics, paths outside workspace are allowed."""
+def test_absolute_path_outside_workspace_rejected(tmp_path):
     sandbox = _make_sandbox(tmp_path)
     outside = tmp_path.parent / "outside_file"
     outside.touch()
-    result = sandbox.validate_path(str(outside))
-    assert result == outside.resolve()
+    with pytest.raises(PermissionError, match="outside the allowed sandbox roots"):
+        sandbox.validate_path(str(outside))
+
+
+def test_explicit_extra_workspace_path_allowed(tmp_path):
+    extra = tmp_path / "other-repo"
+    extra.mkdir()
+    sandbox = SandboxConfig(
+        workspace=str(tmp_path / "ws"),
+        extra_workspace_paths=[str(extra)],
+        denied_roots=[],
+        denied_patterns=[],
+    )
+
+    assert (
+        sandbox.validate_path(str(extra / "file.txt")) == (extra / "file.txt").resolve()
+    )
 
 
 def test_metadata_path_is_session_scoped_when_session_id_present(tmp_path):
@@ -170,10 +181,12 @@ def test_tilde_prefix_rejected(tmp_path):
 
 def test_symlink_to_allowed_path_is_ok(tmp_path):
     """Symlinks whose target is allowed are themselves allowed."""
-    real = tmp_path / "real"
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    real = workspace / "real"
     real.mkdir()
     (real / "file.txt").touch()
-    link = tmp_path / "link"
+    link = workspace / "link"
     link.symlink_to(real)
 
     sandbox = _make_sandbox(tmp_path)
@@ -208,7 +221,6 @@ def test_display_path_workspace_relative(tmp_path):
 
 
 def test_display_path_outside_roots_returns_absolute(tmp_path):
-    """Paths outside workspace render as absolute strings."""
     sandbox = _make_sandbox(tmp_path)
     outside = tmp_path / "outside.txt"
     outside.touch()

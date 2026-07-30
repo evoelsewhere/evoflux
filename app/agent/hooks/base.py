@@ -92,6 +92,16 @@ class BaseAgentHook(ABC):
     ) -> None:
         """Called after each full LLM response is assembled."""
 
+    async def before_completion(
+        self, ctx: "RunContext", state: "AgentState", response: AssistantMessage
+    ) -> str | None:
+        """Validate a tool-free response before the loop accepts completion.
+
+        Return a feedback string to block completion and start another model
+        iteration. Return ``None`` to accept the response.
+        """
+        return None
+
     async def on_rate_limit(
         self,
         ctx: "RunContext",

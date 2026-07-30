@@ -124,17 +124,26 @@ class JavaParser(TreeSitterParser):
         if node.type != "field_declaration":
             return None
         modifiers = next((c for c in node.children if c.type == "modifiers"), None)
-        mod_types = {m.type for m in modifiers.children} if modifiers is not None else set()
+        mod_types = (
+            {m.type for m in modifiers.children} if modifiers is not None else set()
+        )
         if not _INJECTION_ANNOTATIONS.intersection(self.decorators(node, source)):
             if "final" not in mod_types:
                 return None
             declarator = next(
                 (c for c in node.children if c.type == "variable_declarator"), None
             )
-            if declarator is None or declarator.child_by_field_name("value") is not None:
+            if (
+                declarator is None
+                or declarator.child_by_field_name("value") is not None
+            ):
                 return None
         for child in node.children:
-            if child.type in {"type_identifier", "generic_type", "scoped_type_identifier"}:
+            if child.type in {
+                "type_identifier",
+                "generic_type",
+                "scoped_type_identifier",
+            }:
                 name = _simple_type_name(child, source)
                 return name if name and name not in _JAVA_BUILTIN_TYPES else None
         return None

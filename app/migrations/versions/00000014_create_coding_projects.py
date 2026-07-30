@@ -23,17 +23,13 @@ def upgrade() -> None:
         sa.Column("name", sa.String(length=255), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column("settings", sa.JSON(), nullable=False, server_default="{}"),
-        sa.Column(
-            "hidden", sa.Boolean(), nullable=False, server_default=sa.false()
-        ),
+        sa.Column("hidden", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(
-        "ix_coding_projects_created_at", "coding_projects", ["created_at"]
-    )
+    op.create_index("ix_coding_projects_created_at", "coding_projects", ["created_at"])
 
     op.create_table(
         "coding_project_workspaces",
@@ -66,9 +62,7 @@ def upgrade() -> None:
     )
 
     with op.batch_alter_table("chat_sessions", schema=None) as batch_op:
-        batch_op.add_column(
-            sa.Column("project_id", sa.Uuid(), nullable=True)
-        )
+        batch_op.add_column(sa.Column("project_id", sa.Uuid(), nullable=True))
         batch_op.create_index("ix_chat_sessions_project_id", ["project_id"])
         batch_op.create_foreign_key(
             "fk_chat_sessions_project_id",
@@ -85,12 +79,8 @@ def downgrade() -> None:
         batch_op.drop_index("ix_chat_sessions_project_id")
         batch_op.drop_column("project_id")
 
-    op.drop_index(
-        "ix_coding_project_workspaces_workspace", "coding_project_workspaces"
-    )
-    op.drop_index(
-        "ix_coding_project_workspaces_project", "coding_project_workspaces"
-    )
+    op.drop_index("ix_coding_project_workspaces_workspace", "coding_project_workspaces")
+    op.drop_index("ix_coding_project_workspaces_project", "coding_project_workspaces")
     op.drop_table("coding_project_workspaces")
     op.drop_index("ix_coding_projects_created_at", "coding_projects")
     op.drop_table("coding_projects")

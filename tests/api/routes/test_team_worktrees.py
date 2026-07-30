@@ -29,6 +29,15 @@ def _git(cwd, *args: str) -> None:
     )
 
 
+def _run_git_status(cwd: Path) -> str:
+    return subprocess.run(
+        ["git", "-C", str(cwd), "status", "--short"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
 def _repo(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -62,11 +71,13 @@ def test_create_worktree_returns_directory_and_branch(
     assert body["name"] == "feature-login"
     assert body["branch"] == "EvoFlux/feature-login"
     assert body["source_workspace"] == str(repo.resolve())
-    root = f"repo-{hashlib.sha1(str(repo.resolve()).encode('utf-8')).hexdigest()[:10]}"
-    assert body["directory"].startswith(str(data_dir / "worktrees" / root))
-    assert (
-        tmp_path / "data" / "worktrees" / root / "feature-login" / "README.md"
-    ).read_text(encoding="utf-8") == "hello\n"
+    expected = repo / ".evoflux" / "worktrees" / "feature-login"
+    assert body["directory"] == str(expected.resolve())
+    assert (expected / "README.md").read_text(encoding="utf-8") == "hello\n"
+    assert _run_git_status(repo) == ""
+    assert "/.evoflux/worktrees/" in (repo / ".git" / "info" / "exclude").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_find_managed_worktree_source_detects_EVOFLUX_worktree(
@@ -87,6 +98,27 @@ def test_find_managed_worktree_source_detects_EVOFLUX_worktree(
     assert find_managed_worktree_source(Path(created["directory"])) == str(
         repo.resolve()
     )
+
+
+def test_find_managed_worktree_source_recognizes_legacy_user_data_root(
+    app_without_team, tmp_path, monkeypatch
+):
+    repo = _repo(tmp_path)
+    data_dir = tmp_path / "data"
+    monkeypatch.setattr(
+        "app.agent.sandbox_config.settings.EVOFLUX_DATA_DIR",
+        str(data_dir),
+    )
+    root = (
+        data_dir
+        / "worktrees"
+        / f"repo-{hashlib.sha1(str(repo.resolve()).encode('utf-8')).hexdigest()[:10]}"
+    )
+    legacy = root / "legacy-task"
+    legacy.parent.mkdir(parents=True)
+    _git(repo, "worktree", "add", "-b", "EvoFlux/legacy-task", str(legacy))
+
+    assert find_managed_worktree_source(legacy) == str(repo.resolve())
 
 
 def test_list_worktrees_excludes_primary(app_without_team, tmp_path, monkeypatch):
@@ -374,6 +406,7 @@ def test_find_managed_worktree_source_does_not_create_root(
 
     assert find_managed_worktree_source(unmanaged) is None
     assert not root.exists()
+    assert not (repo / ".evoflux" / "worktrees").exists()
 
 
 def test_find_managed_worktree_source_rejects_external_worktree(
@@ -433,3 +466,4 @@ def test_resolve_validates_model_before_creating_worktree(
 
     assert resp.status_code == 422
     assert not (data_dir / "worktrees").exists()
+    assert not (repo / ".evoflux" / "worktrees").exists()

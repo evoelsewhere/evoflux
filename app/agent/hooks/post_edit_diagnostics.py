@@ -1,21 +1,16 @@
-"""PostEditDiagnosticsHook — auto-lint a file right after the agent edits it.
+"""PostEditDiagnosticsHook — auto-lint Python files after mutations.
 
-Closes the edit→verify feedback loop: around a successful ``edit``/``write``
-on a Python file, run ``ruff check`` on just that file before and after the
+Closes the edit→verify feedback loop: around successful ``edit``/``write``/
+``patch`` calls, run ``ruff check`` on changed Python files before and after the
 mutation and append **newly introduced** diagnostics to the tool result. The
 model sees errors it just caused in the same round instead of discovering
 them later (or never) via a manual ``lsp_diagnostics`` call — while
 pre-existing issues in the file stay out of the way, so the agent is not
 lured into out-of-scope fixes.
 
-Scope is deliberately narrow:
-
-- Python only — single-file ruff is ~tens of milliseconds. TypeScript is
-  excluded because ``tsc`` has no fast single-file mode (whole-project
-  typecheck per edit would add seconds of latency).
-- ``edit`` and ``write`` only — ``patch`` can touch many files; its envelope
-  parsing is not worth duplicating here.
-- Best-effort — any failure (no ruff, timeout, parse error) leaves the tool
+Scope remains latency-bounded: single-file Ruff checks run concurrently and
+TypeScript stays in the completion contract because ``tsc`` has no fast
+single-file mode. Any failure (no Ruff, timeout, parse error) leaves the tool
   result untouched. This hook must never break tool execution.
 """
 
@@ -23,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import shutil
 import subprocess
 from collections import Counter
@@ -37,7 +33,7 @@ if TYPE_CHECKING:
     from app.agent.schemas.chat import ToolCall
     from app.agent.state import AgentState, RunContext
 
-_LINT_TOOLS = frozenset({"edit", "write"})
+_LINT_TOOLS = frozenset({"edit", "write", "patch"})
 _PY_SUFFIXES = (".py", ".pyi")
 _RUFF_TIMEOUT_S = 15.0
 _MAX_ISSUES_SHOWN = 10
@@ -66,56 +62,96 @@ class PostEditDiagnosticsHook(BaseAgentHook):
         tool_call: "ToolCall",
         handler,
     ) -> str:
-        path: Path | None = None
-        before: list[dict] | None = None
+        target_specs: list[tuple[Path, Path]] = []
+        before_by_target: dict[Path, list[dict] | None] = {}
         try:
             if tool_call.function.name in _LINT_TOOLS:
-                path = self._target_path(tool_call)
-                if path is not None and str(path).endswith(_PY_SUFFIXES):
-                    before = await self._run_ruff(path)
-                else:
-                    path = None
+                target_specs = self._target_specs(tool_call)
+                before_results = await asyncio.gather(
+                    *(self._run_ruff(before) for before, _after in target_specs)
+                )
+                before_by_target = {
+                    after: diagnostics
+                    for (_before, after), diagnostics in zip(
+                        target_specs, before_results, strict=True
+                    )
+                }
         except Exception as exc:  # noqa: BLE001 — never break tool execution
             logger.debug("post_edit_diagnostics_pre_skipped error={}", exc)
-            path = None
+            target_specs = []
 
         result = await handler(ctx, state, tool_call)
 
         try:
-            if path is None or not isinstance(result, str):
+            if not target_specs or not isinstance(result, str):
                 return result
             # tool_executor stringifies tool failures as "Error: ..." — a
             # failed edit wrote nothing, so there is nothing to lint.
             if result.startswith("Error"):
                 return result
-            after = await self._run_ruff(path)
-            # before is None = ruff unavailable or the pre-scan failed; skip
-            # rather than misattribute pre-existing issues to this edit.
-            if after is None or before is None:
-                return result
-            introduced = self._new_issues(before, after)
-            if introduced:
-                result += f"\n\n[auto-diagnostics] {self._format(path, introduced)}"
+            after_results = await asyncio.gather(
+                *(self._run_ruff(after) for _before, after in target_specs)
+            )
+            reports: list[str] = []
+            for (_before, path), after in zip(target_specs, after_results, strict=True):
+                before = before_by_target.get(path)
+                # None means Ruff was unavailable or a scan failed; skip rather
+                # than attributing pre-existing issues to this mutation.
+                if after is None or before is None:
+                    continue
+                introduced = self._new_issues(before, after)
+                if introduced:
+                    reports.append(self._format(path, introduced))
+            if reports:
+                result += "\n\n[auto-diagnostics] " + "\n".join(reports)
         except Exception as exc:  # noqa: BLE001 — never break tool execution
             logger.debug("post_edit_diagnostics_skipped error={}", exc)
         return result
 
     @staticmethod
-    def _target_path(tool_call: "ToolCall") -> Path | None:
-        """Extract the edited file's path from the tool-call arguments."""
+    def _target_specs(tool_call: "ToolCall") -> list[tuple[Path, Path]]:
+        """Return ``(pre-edit path, post-edit path)`` Python targets."""
         try:
             args = json.loads(tool_call.function.arguments or "{}")
         except (TypeError, ValueError):
-            return None
-        raw = args.get("path")
-        if not raw or not isinstance(raw, str):
-            return None
+            return []
         from app.agent.sandbox import get_sandbox
 
+        raw_specs: list[tuple[str, str]] = []
+        if tool_call.function.name in {"edit", "write"}:
+            raw = args.get("path")
+            if isinstance(raw, str):
+                raw_specs.append((raw, raw))
+        elif tool_call.function.name == "patch":
+            patch_text = args.get("patch_text")
+            if not isinstance(patch_text, str):
+                return []
+            current: str | None = None
+            for line in patch_text.splitlines():
+                match = re.match(r"\*\*\* (Add|Update) File: (.+)", line)
+                if match:
+                    current = match.group(2).strip()
+                    raw_specs.append((current, current))
+                    continue
+                move = re.match(r"\*\*\* Move to: (.+)", line)
+                if move and current and raw_specs:
+                    raw_specs[-1] = (current, move.group(1).strip())
+
+        sandbox = get_sandbox()
+        targets: list[tuple[Path, Path]] = []
         try:
-            return get_sandbox().validate_path(raw)
+            for before_raw, after_raw in raw_specs:
+                if not after_raw.endswith(_PY_SUFFIXES):
+                    continue
+                targets.append(
+                    (
+                        sandbox.validate_path(before_raw),
+                        sandbox.validate_path(after_raw),
+                    )
+                )
         except Exception:  # noqa: BLE001 — sandbox rejection = nothing to lint
-            return None
+            return []
+        return targets
 
     @staticmethod
     def _new_issues(before: list[dict], after: list[dict]) -> list[dict]:
@@ -142,11 +178,19 @@ class PostEditDiagnosticsHook(BaseAgentHook):
         """Run ``ruff check`` on one file; return parsed issues or None on failure."""
         if self._ruff_cmd is False:
             self._ruff_cmd = _ruff_command()
-        if self._ruff_cmd is None:
+        ruff_cmd = self._ruff_cmd
+        if not isinstance(ruff_cmd, list):
             return None
         if not path.exists():
             return []  # new file about to be created — nothing pre-existing
-        cmd = [*self._ruff_cmd, "check", str(path), "--output-format", "json", "--quiet"]
+        cmd = [
+            *ruff_cmd,
+            "check",
+            str(path),
+            "--output-format",
+            "json",
+            "--quiet",
+        ]
 
         def _sync() -> str | None:
             try:

@@ -99,7 +99,7 @@ class TestDoneDetectionMixedStates:
             "mode": "coding",
             "workspace": str(Path("/repo/EvoFlux")),
         }
-        assert pushed[1].event == "done"
+        assert [event.event for event in pushed[1:]] == ["turn_changes", "done"]
 
     @pytest.mark.asyncio
     async def test_completion_notification_falls_back_to_session_id_without_title(self):
@@ -125,7 +125,7 @@ class TestDoneDetectionMixedStates:
         assert notification.event == "desktop_notification"
         assert notification.data["title"] == "Session completed"
         assert notification.data["body"] == "Session 018f0000"
-        assert pushed[1].event == "done"
+        assert [event.event for event in pushed[1:]] == ["turn_changes", "done"]
 
     @pytest.mark.asyncio
     async def test_done_emits_when_lead_idle_member_error(self):
@@ -147,7 +147,11 @@ class TestDoneDetectionMixedStates:
                 await team._try_emit_done()
 
         # Should have emitted done
-        assert [event.event for event in pushed] == ["desktop_notification", "done"]
+        assert [event.event for event in pushed] == [
+            "desktop_notification",
+            "turn_changes",
+            "done",
+        ]
 
     @pytest.mark.asyncio
     async def test_done_emits_when_lead_error_member_idle(self):
@@ -169,7 +173,11 @@ class TestDoneDetectionMixedStates:
                 await team._try_emit_done()
 
         # Should have emitted done
-        assert [event.event for event in pushed] == ["desktop_notification", "done"]
+        assert [event.event for event in pushed] == [
+            "desktop_notification",
+            "turn_changes",
+            "done",
+        ]
 
     @pytest.mark.asyncio
     async def test_done_not_emits_when_lead_working_member_error(self):
@@ -235,7 +243,11 @@ class TestDoneDetectionMixedStates:
                 await team._try_emit_done()
 
         # First call should emit done plus the desktop completion notification
-        assert [event.event for event in pushed] == ["desktop_notification", "done"]
+        assert [event.event for event in pushed] == [
+            "desktop_notification",
+            "turn_changes",
+            "done",
+        ]
         assert team._has_active_turn is False
 
         # Second call should be no-op
@@ -291,7 +303,11 @@ class TestDoneDetectionMixedStates:
                 await team._try_emit_done()
 
         # Should have emitted done (both are done, even if error)
-        assert [event.event for event in pushed] == ["desktop_notification", "done"]
+        assert [event.event for event in pushed] == [
+            "desktop_notification",
+            "turn_changes",
+            "done",
+        ]
 
     @pytest.mark.asyncio
     async def test_done_emits_when_both_idle(self):
@@ -313,7 +329,11 @@ class TestDoneDetectionMixedStates:
                 await team._try_emit_done()
 
         # Should have emitted done
-        assert [event.event for event in pushed] == ["desktop_notification", "done"]
+        assert [event.event for event in pushed] == [
+            "desktop_notification",
+            "turn_changes",
+            "done",
+        ]
 
     @pytest.mark.asyncio
     async def test_done_swallows_error(self):

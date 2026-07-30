@@ -77,6 +77,7 @@ def __getattr__(name: str) -> Any:  # noqa: ANN401 - compatibility re-export
     globals()[name] = value
     return value
 
+
 __all__ = [
     "build_parser",
     "main",

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import logging
 from unittest.mock import AsyncMock, patch
 from uuid import UUID
 
@@ -218,18 +217,21 @@ class TestAfterAgent:
 
         assert (tmp_path / "no-session").is_dir()
 
-    async def test_oserror_on_write_logs_warning_no_raise(self, tmp_path, caplog):
+    async def test_oserror_on_write_logs_warning_no_raise(self, tmp_path):
         hook = TelemetryHook(base_dir=tmp_path)
         ctx = make_ctx(session_id="s_err", run_id="r_err")
         state = make_state(messages=[HumanMessage(content="hi")])
         hook._last_system_prompt = "sys"
 
-        with patch("pathlib.Path.write_text", side_effect=OSError("disk full")):
-            with caplog.at_level(logging.WARNING):
-                # Me must not raise
-                await hook.after_agent(ctx, state, AssistantMessage(content="ok"))
+        with (
+            patch("pathlib.Path.write_text", side_effect=OSError("disk full")),
+            patch("app.agent.hooks.telemetry.logger.warning") as warning,
+        ):
+            # Me must not raise
+            await hook.after_agent(ctx, state, AssistantMessage(content="ok"))
 
-        assert any("telemetry_write_failed" in r.message for r in caplog.records)
+        warning.assert_called_once()
+        assert "telemetry_write_failed" in warning.call_args.args[0]
 
     async def test_custom_base_dir_constructor(self, tmp_path):
         custom_dir = tmp_path / "custom_telemetry"
