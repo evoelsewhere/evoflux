@@ -2,7 +2,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { Suspense, useEffect } from 'react'
 // Temporarily disabled for clean recordings — re-enable when done.
 // import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
-import { Link, Outlet, useLocation, useNavigate } from '@tanstack/react-router'
+import { Link, Outlet, useLocation } from '@tanstack/react-router'
 import { queryClient } from '@/lib/query-client'
 import { Home } from 'lucide-react'
 import { ToastStack } from '@/components/ToastStack'
@@ -15,6 +15,7 @@ import { useMobileViewportGuards } from '@/hooks/use-mobile-viewport'
 import { useDesktopCommands } from '@/lib/desktop-commands'
 import { useUIStore } from '@/stores/useUIStore'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
+import { saveModeRoute } from '@/lib/mode-route'
 
 export function Root() {
   useMobileViewportGuards()
@@ -23,22 +24,13 @@ export function Root() {
   // Theme application is handled by `initTheme()` in main.tsx and the
   // inline pre-paint script in index.html. Do not force `.dark` here —
   // it would override the user's preference.
-  const navigate = useNavigate()
   const location = useLocation()
   const settingsOpen = useUIStore((state) => state.settingsOpen)
 
   useEffect(() => {
-    if (window.location.pathname === '/' && window.location.search === '') {
-      const savedRoute = localStorage.getItem(STORAGE_KEYS.lastRoute)
-      if (savedRoute && savedRoute !== '/') {
-        navigate({ to: savedRoute, replace: true })
-      }
-    }
-  }, [navigate])
-
-  useEffect(() => {
     const fullPath = window.location.pathname + window.location.search + window.location.hash
     localStorage.setItem(STORAGE_KEYS.lastRoute, fullPath)
+    saveModeRoute(window.location.pathname, fullPath)
   }, [location])
 
   return (

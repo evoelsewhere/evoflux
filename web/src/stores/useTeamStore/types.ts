@@ -147,7 +147,11 @@ export interface TeamStoreActions {
     workspace?: string | null,
     mode?: 'coding' | 'aim' | null,
   ) => Promise<void>
-  loadSession: (sessionId: string, workspace?: string | null) => Promise<void>
+  loadSession: (
+    sessionId: string,
+    workspace?: string | null,
+    mode?: 'coding' | 'aim' | null,
+  ) => Promise<void>
   beginResolvedSession: (sessionId: string | null, options?: { mode?: string; workspace?: string | null; model?: string | null; thinkingLevel?: string | null; fastMode?: boolean; skipInitialRestore?: boolean }) => void
   loadOlderMessages: () => Promise<void>
   setActiveAgent: (name: string) => void

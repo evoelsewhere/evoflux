@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
-import { cancelQueuedTeamMessage, getRegistry, postTeamChat, postTeamCommand, teamStream, teamStatus, teamHistory } from '@/api/client'
+import { cancelQueuedTeamMessage, getRegistry, listTeamAgents, postTeamChat, postTeamCommand, teamStream, teamHistory } from '@/api/client'
 import { queryClient } from '@/lib/query-client'
 import { queryKeys } from '@/queries/keys'
 import { parseTeamBlocks, sumUsageFromMessages } from '@/utils/messages'
@@ -61,6 +61,20 @@ function availableModelRegistry() {
     staleTime: Infinity,
   }).catch(() => null)
 }
+
+function availableTeamAgents(
+  workspace?: string | null,
+  mode?: 'coding' | 'aim' | null,
+) {
+  return queryClient.fetchQuery({
+    queryKey: queryKeys.teamAgents(workspace, mode),
+    queryFn: () => listTeamAgents(workspace, mode),
+    staleTime: 30_000,
+  })
+}
+
+const sessionLoadPromises = new Map<string, Promise<void>>()
+let latestTeamRosterRequest = 0
 
 function hasVisibleBlocks(stream: AgentStream | undefined): boolean {
   if (!stream) return false
@@ -803,13 +817,16 @@ export const useTeamStore = create<TeamStore>()(
       workspace?: string | null,
       mode?: 'coding' | 'aim' | null,
     ) => {
+      const requestId = ++latestTeamRosterRequest
       try {
-        const status = await teamStatus(workspace, mode)
-        if (status) {
-          const allAgents = [status.lead, ...status.members]
+        const roster = await availableTeamAgents(workspace, mode)
+        if (requestId !== latestTeamRosterRequest) return
+        const lead = roster.agents.find((agent) => agent.is_lead) ?? roster.agents[0]
+        if (lead) {
+          const allAgents = roster.agents
           const liveNames = allAgents.map((a) => a.name)
           set((draft) => {
-            draft.leadName = status.lead.name
+            draft.leadName = lead.name
             draft.liveAgentNames = liveNames
             const historicalNames = draft.agentNames.filter((name) => !liveNames.includes(name))
             draft.agentNames = [...liveNames, ...historicalNames]
@@ -817,14 +834,11 @@ export const useTeamStore = create<TeamStore>()(
               if (!draft.agentStreams[agent.name]) {
                 draft.agentStreams[agent.name] = createDefaultAgentStream()
               }
-              if (agent.state === 'working') {
-                draft.agentStreams[agent.name]._turnStartedAt ??= Date.now()
-              }
               draft.agentStreams[agent.name].model = agent.model
             })
             historicalNames.forEach((name) => {
               const stream = draft.agentStreams[name]
-              if (stream && name !== status.lead.name && stream.status !== 'error') {
+              if (stream && name !== lead.name && stream.status !== 'error') {
                 stream.status = 'offline'
               }
             })
@@ -834,171 +848,191 @@ export const useTeamStore = create<TeamStore>()(
           })
         }
       } catch (err) {
+        if (requestId !== latestTeamRosterRequest) return
         set((draft) => {
           draft.error = err instanceof Error ? err.message : 'Failed to load team status'
         })
       }
     },
 
-    loadSession: async (sessionId: string, workspace?: string | null) => {
+    loadSession: (
+      sessionId: string,
+      workspace?: string | null,
+      mode?: 'coding' | 'aim' | null,
+    ) => {
       const gen = get()._sessionGeneration
-      set((draft) => {
-        draft.isTeamWorking = false
-        draft.isContinuing = false
-        draft.isSessionLoading = true
-      })
-      try {
-        const existingLiveNames = get().liveAgentNames
-        const liveNamesPromise = existingLiveNames === null
-          ? teamStatus(workspace).then((status) =>
-              status ? [status.lead, ...status.members].map((agent) => agent.name) : null,
-            )
-          : Promise.resolve(existingLiveNames)
-        const historyPromise = teamHistory(sessionId)
-        const registryPromise = availableModelRegistry()
-        const [liveNames, history, registry] = await Promise.all([
-          liveNamesPromise,
-          historyPromise,
-          registryPromise,
-        ])
+      const loadKey = `${gen}\u0000${sessionId}\u0000${workspace ?? ''}\u0000${mode ?? ''}`
+      const existingLoad = sessionLoadPromises.get(loadKey)
+      if (existingLoad) return existingLoad
 
-        if (get()._sessionGeneration !== gen) return
-
-        const savedModel = history.lead.model?.trim() || null
-        const savedModelAvailable = !savedModel
-          || registry === null
-          || registry.models.some((model) => model.id === savedModel)
-        const modelWasReplaced = Boolean(savedModel && !savedModelAvailable)
-        const sessionModel = modelWasReplaced ? registry?.models[0]?.id ?? null : savedModel
-
+      const loadPromise = (async () => {
         set((draft) => {
-          draft.sessionId = sessionId
-          draft.projectId = history.lead.project_id ?? null
-          draft.sessionTags = history.lead.tags ?? []
-          draft.sessionModel = sessionModel
-          draft.sessionThinkingLevel = modelWasReplaced
-            ? null
-            : history.lead.thinking_level ?? null
-          draft.sessionFastMode = modelWasReplaced
-            ? false
-            : fastModeFromMessages(history.lead.messages)
-          draft.isTeamWorking = history.lead.running === true
+          draft.isTeamWorking = false
           draft.isContinuing = false
-          draft.error = null
-          draft.setupRequired = modelWasReplaced && !sessionModel
-            ? {
-                agent: history.lead.agent_name ?? 'lead',
-                message: `The saved model ${savedModel} is no longer available. Configure a model provider to continue.`,
-                action: { type: 'open_settings', tab: 'providers' },
-              }
-            : null
-          draft.activeLoop = history.loop_status ?? null
-          draft.activeWorkflowExecution = history.workflow_execution
-            ? {
-                executionId: String(history.workflow_execution.execution_id),
-                definitionName: history.workflow_execution.definition_name,
-                status: history.workflow_execution.status,
-                nodeId: history.workflow_execution.node_id,
-                nodeIndex: history.workflow_execution.node_index,
-                totalNodes: history.workflow_execution.total_nodes,
-                error: null,
-              }
-            : null
-
-          Object.values(draft.agentStreams).forEach((stream) => {
-            stream.revertedCount = 0
-            stream.revertedMessages = []
-          })
-
-          const memberNames = history.members.map((m) => m.name)
-          const leadName = history.lead.agent_name ?? liveNames?.[0] ?? draft.leadName
-          draft.leadName = leadName
-          if (liveNames !== null) draft.liveAgentNames = liveNames
-
-          const allNames = leadName ? [leadName, ...memberNames] : memberNames
-          draft.agentNames = allNames
-          const leadRevertTime = revertBoundaryTime(history.lead)
-
-          if (leadName) {
-            if (!draft.agentStreams[leadName]) {
-              draft.agentStreams[leadName] = createDefaultAgentStream()
-            }
-            revokeBlobUrlsFromBlocks(draft.agentStreams[leadName].currentBlocks)
-            const leadStream = draft.agentStreams[leadName]
-            leadStream.blocks = parseTeamBlocks(history.lead.messages)
-            leadStream._revertedSuffix = []
-            applyRevertBoundary(leadStream, leadRevertTime)
-            leadStream.currentBlocks = []
-            leadStream.currentText = ''
-            leadStream.currentThinking = ''
-            leadStream.status = history.lead.running === true ? 'working' : 'idle'
-            leadStream._turnStartedAt = history.lead.running === true ? Date.now() : null
-            const leadVisibleMsgs = messagesBeforeRevert(history.lead)
-            const leadUsage = sumUsageFromMessages(leadVisibleMsgs)
-            leadStream.usage = leadUsage
-            leadStream._completionBase = leadUsage.completionTokens
-          }
-
-          const queued = queuedMessagesFromHistory(sessionId, history.lead.messages)
-          const queuedIds = new Set(queued.map((msg) => msg.id))
-          draft._pendingMessages = [
-            ...draft._pendingMessages.filter((msg) => msg.sessionId !== sessionId || queuedIds.has(msg.id)),
-            ...queued.filter((msg) => !draft._pendingMessages.some((existing) => existing.id === msg.id)),
-          ]
-
-          history.members.forEach((member) => {
-            const existingStatus = draft.agentStreams[member.name]?.status
-            const isLiveMember = liveNames === null || liveNames.includes(member.name)
-            if (!draft.agentStreams[member.name]) {
-              draft.agentStreams[member.name] = createDefaultAgentStream()
-            }
-            revokeBlobUrlsFromBlocks(draft.agentStreams[member.name].currentBlocks)
-            const memberStream = draft.agentStreams[member.name]
-            memberStream.blocks = parseTeamBlocks(member.messages)
-            memberStream._revertedSuffix = []
-            applyRevertBoundary(memberStream, leadRevertTime)
-            memberStream.currentBlocks = []
-            memberStream.currentText = ''
-            memberStream.currentThinking = ''
-            memberStream.status =
-              !isLiveMember
-                ? 'offline'
-                : existingStatus === 'offline' || existingStatus === 'error' ? existingStatus : 'idle'
-            memberStream._turnStartedAt = null
-            const memberVisibleMsgs = messagesBeforeTime(member.messages, leadRevertTime)
-            const memberUsage = sumUsageFromMessages(memberVisibleMsgs)
-            memberStream.usage = memberUsage
-            memberStream._completionBase = memberUsage.completionTokens
-          })
-
-          if (!draft.activeAgent || !allNames.includes(draft.activeAgent)) {
-            draft.activeAgent = leadName ?? allNames[0] ?? null
-          }
-
-          draft.hasMore = history.has_more
-          draft.nextCursor = history.next_cursor
-          draft._leadRevertTime = revertBoundaryTime(history.lead)
-          draft._workspace = workspace ?? null
-          draft._loadingOlder = false
-          draft._resolvedSessionReadyId = null
-          draft.isSessionLoading = false
+          draft.isSessionLoading = true
         })
+        try {
+          const existingLiveNames = get().liveAgentNames
+          const liveNamesPromise = existingLiveNames === null
+            ? availableTeamAgents(workspace, mode).then((roster) =>
+                roster.agents.map((agent) => agent.name),
+              )
+            : Promise.resolve(existingLiveNames)
+          const historyPromise = teamHistory(sessionId)
+          const registryPromise = availableModelRegistry()
+          const [liveNames, history, registry] = await Promise.all([
+            liveNamesPromise,
+            historyPromise,
+            registryPromise,
+          ])
 
-        if (modelWasReplaced && sessionModel) {
-          useToastStore.getState().push({
-            tone: 'info',
-            title: 'Session model changed',
-            description: `${savedModel} is no longer available. Using ${sessionModel}.`,
+          if (get()._sessionGeneration !== gen) return
+
+          const savedModel = history.lead.model?.trim() || null
+          const savedModelAvailable = !savedModel
+            || registry === null
+            || registry.models.some((model) => model.id === savedModel)
+          const modelWasReplaced = Boolean(savedModel && !savedModelAvailable)
+          const sessionModel = modelWasReplaced ? registry?.models[0]?.id ?? null : savedModel
+
+          set((draft) => {
+            draft.sessionId = sessionId
+            draft.projectId = history.lead.project_id ?? null
+            draft.sessionTags = history.lead.tags ?? []
+            draft.sessionModel = sessionModel
+            draft.sessionThinkingLevel = modelWasReplaced
+              ? null
+              : history.lead.thinking_level ?? null
+            draft.sessionFastMode = modelWasReplaced
+              ? false
+              : fastModeFromMessages(history.lead.messages)
+            draft.isTeamWorking = history.lead.running === true
+            draft.isContinuing = false
+            draft.error = null
+            draft.setupRequired = modelWasReplaced && !sessionModel
+              ? {
+                  agent: history.lead.agent_name ?? 'lead',
+                  message: `The saved model ${savedModel} is no longer available. Configure a model provider to continue.`,
+                  action: { type: 'open_settings', tab: 'providers' },
+                }
+              : null
+            draft.activeLoop = history.loop_status ?? null
+            draft.activeWorkflowExecution = history.workflow_execution
+              ? {
+                  executionId: String(history.workflow_execution.execution_id),
+                  definitionName: history.workflow_execution.definition_name,
+                  status: history.workflow_execution.status,
+                  nodeId: history.workflow_execution.node_id,
+                  nodeIndex: history.workflow_execution.node_index,
+                  totalNodes: history.workflow_execution.total_nodes,
+                  error: null,
+                }
+              : null
+
+            Object.values(draft.agentStreams).forEach((stream) => {
+              stream.revertedCount = 0
+              stream.revertedMessages = []
+            })
+
+            const memberNames = history.members.map((m) => m.name)
+            const leadName = history.lead.agent_name ?? liveNames?.[0] ?? draft.leadName
+            draft.leadName = leadName
+            if (liveNames !== null) draft.liveAgentNames = liveNames
+
+            const allNames = leadName ? [leadName, ...memberNames] : memberNames
+            draft.agentNames = allNames
+            const leadRevertTime = revertBoundaryTime(history.lead)
+
+            if (leadName) {
+              if (!draft.agentStreams[leadName]) {
+                draft.agentStreams[leadName] = createDefaultAgentStream()
+              }
+              revokeBlobUrlsFromBlocks(draft.agentStreams[leadName].currentBlocks)
+              const leadStream = draft.agentStreams[leadName]
+              leadStream.blocks = parseTeamBlocks(history.lead.messages)
+              leadStream._revertedSuffix = []
+              applyRevertBoundary(leadStream, leadRevertTime)
+              leadStream.currentBlocks = []
+              leadStream.currentText = ''
+              leadStream.currentThinking = ''
+              leadStream.status = history.lead.running === true ? 'working' : 'idle'
+              leadStream._turnStartedAt = history.lead.running === true ? Date.now() : null
+              const leadVisibleMsgs = messagesBeforeRevert(history.lead)
+              const leadUsage = sumUsageFromMessages(leadVisibleMsgs)
+              leadStream.usage = leadUsage
+              leadStream._completionBase = leadUsage.completionTokens
+            }
+
+            const queued = queuedMessagesFromHistory(sessionId, history.lead.messages)
+            const queuedIds = new Set(queued.map((msg) => msg.id))
+            draft._pendingMessages = [
+              ...draft._pendingMessages.filter((msg) => msg.sessionId !== sessionId || queuedIds.has(msg.id)),
+              ...queued.filter((msg) => !draft._pendingMessages.some((existing) => existing.id === msg.id)),
+            ]
+
+            history.members.forEach((member) => {
+              const existingStatus = draft.agentStreams[member.name]?.status
+              const isLiveMember = liveNames === null || liveNames.includes(member.name)
+              if (!draft.agentStreams[member.name]) {
+                draft.agentStreams[member.name] = createDefaultAgentStream()
+              }
+              revokeBlobUrlsFromBlocks(draft.agentStreams[member.name].currentBlocks)
+              const memberStream = draft.agentStreams[member.name]
+              memberStream.blocks = parseTeamBlocks(member.messages)
+              memberStream._revertedSuffix = []
+              applyRevertBoundary(memberStream, leadRevertTime)
+              memberStream.currentBlocks = []
+              memberStream.currentText = ''
+              memberStream.currentThinking = ''
+              memberStream.status =
+                !isLiveMember
+                  ? 'offline'
+                  : existingStatus === 'offline' || existingStatus === 'error' ? existingStatus : 'idle'
+              memberStream._turnStartedAt = null
+              const memberVisibleMsgs = messagesBeforeTime(member.messages, leadRevertTime)
+              const memberUsage = sumUsageFromMessages(memberVisibleMsgs)
+              memberStream.usage = memberUsage
+              memberStream._completionBase = memberUsage.completionTokens
+            })
+
+            if (!draft.activeAgent || !allNames.includes(draft.activeAgent)) {
+              draft.activeAgent = leadName ?? allNames[0] ?? null
+            }
+
+            draft.hasMore = history.has_more
+            draft.nextCursor = history.next_cursor
+            draft._leadRevertTime = revertBoundaryTime(history.lead)
+            draft._workspace = workspace ?? null
+            draft._loadingOlder = false
+            draft._resolvedSessionReadyId = null
+            draft.isSessionLoading = false
+          })
+
+          if (modelWasReplaced && sessionModel) {
+            useToastStore.getState().push({
+              tone: 'info',
+              title: 'Session model changed',
+              description: `${savedModel} is no longer available. Using ${sessionModel}.`,
+            })
+          }
+        } catch (err) {
+          if (get()._sessionGeneration !== gen) return
+          set((draft) => {
+            draft.error = err instanceof Error ? err.message : 'Failed to load session'
+            draft.isContinuing = false
+            draft.isSessionLoading = false
           })
         }
-      } catch (err) {
-        if (get()._sessionGeneration !== gen) return
-        set((draft) => {
-          draft.error = err instanceof Error ? err.message : 'Failed to load session'
-          draft.isContinuing = false
-          draft.isSessionLoading = false
-        })
+      })()
+
+      sessionLoadPromises.set(loadKey, loadPromise)
+      const clearLoad = () => {
+        if (sessionLoadPromises.get(loadKey) === loadPromise) {
+          sessionLoadPromises.delete(loadKey)
+        }
       }
+      void loadPromise.then(clearLoad, clearLoad)
+      return loadPromise
     },
 
     loadOlderMessages: async () => {

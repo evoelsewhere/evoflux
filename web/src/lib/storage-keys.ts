@@ -16,6 +16,11 @@ export const STORAGE_KEYS = {
   lastRoute: 'oa-last-route',
   lastAimProject: 'oa-last-aim-project',
   pinnedSessions: 'oa.pinnedSessions',
+  modeRoutes: {
+    forge: 'oa-last-route-forge',
+    coding: 'oa-last-route-coding',
+    aim: 'oa-last-route-aim',
+  },
 
   sidebar: {
     width: 'oa.sidebar.width',

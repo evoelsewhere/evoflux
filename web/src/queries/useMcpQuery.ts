@@ -12,10 +12,11 @@ import {
 } from '@/api/client'
 import { queryKeys } from './keys'
 
-export function useMcpServersQuery() {
+export function useMcpServersQuery(enabled = true) {
   return useQuery({
     queryKey: queryKeys.mcp.list(),
     queryFn: listMcpServers,
+    enabled,
     staleTime: 10_000,
   })
 }

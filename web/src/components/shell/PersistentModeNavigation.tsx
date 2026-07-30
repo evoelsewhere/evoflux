@@ -16,15 +16,8 @@ import { useLocation } from '@tanstack/react-router'
 import { ModeSwitchRail, ModeSwitchTabs, type AppMode } from '@/components/ModeSwitchTabs'
 import { usePlatform } from '@/hooks/use-platform'
 import { DURATIONS, useMotionPreset } from '@/lib/motion'
+import { appModeForPath } from '@/lib/mode-route'
 import { useUIStore } from '@/stores/useUIStore'
-
-function modeForPath(pathname: string): AppMode | null {
-  if (pathname === '/aim' || pathname.startsWith('/aim/')) return 'aim'
-  if (pathname === '/coding' || pathname.startsWith('/coding/')) return 'coding'
-  if (pathname === '/telemetry' || pathname.startsWith('/telemetry/')) return null
-  if (pathname === '/scheduler' || pathname.startsWith('/scheduler/')) return null
-  return 'forge'
-}
 
 export function PersistentModeNavigation() {
   const location = useLocation()
@@ -33,7 +26,7 @@ export function PersistentModeNavigation() {
   const collapsed = useUIStore((state) => state.sidebarCollapsed)
   const sidebarWidth = useUIStore((state) => state.sidebarWidth)
   const settingsOpen = useUIStore((state) => state.settingsOpen)
-  const active = modeForPath(location.pathname)
+  const active: AppMode | null = appModeForPath(location.pathname)
 
   if (!active || settingsOpen) return null
 

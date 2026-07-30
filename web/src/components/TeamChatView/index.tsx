@@ -46,7 +46,7 @@ import { MonitorView } from '../MonitorView'
 import { WebBridgeStatusDialog } from '@/components/shell/WebBridgeStatusDialog'
 import { useTodosQuery } from '@/queries/useTodosQuery'
 import { useSessionChapters } from '@/hooks/useSessionChapters'
-import { useProvidersQuery, useRegistryQuery, useTriggerDreamMutation } from '@/queries'
+import { useRegistryQuery, useTriggerDreamMutation } from '@/queries'
 import { getTeamSession, getWebBridgeStatus, replyPlanApproval, resolveTeamSession, setSessionPermissionMode } from '@/api/client'
 import { apiBaseUrl } from '@/api/base-url'
 import { useShallow } from 'zustand/react/shallow'
@@ -337,11 +337,6 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
       setWebBridgeEnabled(persistedWebBridgeEnabled)
     }
   }, [activeSessionId, persistedWebBridgeEnabled])
-  const providersQ = useProvidersQuery()
-  const hasConfiguredModelProvider = providersQ.data?.providers.some(
-    (provider) => provider.kind !== 'local' && provider.is_configured,
-  ) ?? true
-
   // Lead capabilities — used to drive composer affordances (slash menu).
   // aim sessions are workspace-bound like coding (primary workspace = the
   // target repo) — the backend requires a workspace on every aim message.
@@ -366,6 +361,11 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   // Also used as fallback when the team hasn't started yet (leadCapabilities
   // is undefined) but we know which model will be used.
   const registryQ = useRegistryQuery()
+  // The registry is the authoritative usable-model view and is already needed
+  // for capabilities. Avoid a separate providers request on every chat mount
+  // just to decide whether the setup banner should be visible.
+  const hasConfiguredModelProvider =
+    registryQ.isLoading || (registryQ.data?.models.length ?? 0) > 0
   const effectiveCapabilities: AgentCapabilitiesType | undefined = useMemo(() => {
     const modelToLookup = sessionModel || (leadCapabilities ? null : leadAgent?.model)
     if (!modelToLookup || !registryQ.data) return leadCapabilities
@@ -834,7 +834,11 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
   useEffect(() => {
     if (!sessionIdState) return
     let cancelled = false
-    getTeamSession(sessionIdState)
+    queryClient.fetchQuery({
+      queryKey: queryKeys.team.sessions.detail(sessionIdState),
+      queryFn: () => getTeamSession(sessionIdState),
+      staleTime: 30_000,
+    })
       .then((session) => {
         if (!cancelled && session.permission_mode) {
           setPermissionMode(session.permission_mode as import('@/api/types').PermissionMode)
@@ -842,7 +846,7 @@ export function TeamChatView({ sessionId, mode = 'forge', workspace = null, codi
       })
       .catch(() => {/* non-fatal */})
     return () => { cancelled = true }
-  }, [sessionIdState])
+  }, [queryClient, sessionIdState])
 
   // Push the active session/workspace label to the desktop tray. The
   // command is a no-op outside Tauri so this is safe to fire from the
