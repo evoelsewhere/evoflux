@@ -1,4 +1,13 @@
-import { AppWindow, ChevronDown, Code2, FolderOpen, Loader2, SquareTerminal } from 'lucide-react'
+import {
+  AppWindow,
+  ChevronDown,
+  Code2,
+  FolderOpen,
+  Loader2,
+  MousePointer2,
+  RefreshCw,
+  SquareTerminal,
+} from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,14 +23,96 @@ interface OpenWithMenuProps {
   workspace: string | null
 }
 
-function openerIcon(kind: WorkspaceOpener['kind']) {
-  switch (kind) {
-    case 'editor':
-      return Code2
+function OpenerIcon({ opener }: { opener: WorkspaceOpener }) {
+  const tile = 'flex size-5 shrink-0 items-center justify-center rounded-[5px] shadow-sm'
+
+  switch (opener.id) {
+    case 'vscode':
+      return (
+        <span className={`${tile} bg-[#1684D5] text-white`}>
+          <Code2 size={12} strokeWidth={2.4} />
+        </span>
+      )
+    case 'vscode-insiders':
+      return (
+        <span className={`${tile} bg-[#1F9E89] text-white`}>
+          <Code2 size={12} strokeWidth={2.4} />
+        </span>
+      )
+    case 'cursor':
+      return (
+        <span className={`${tile} bg-[#171717] text-white dark:bg-white dark:text-[#171717]`}>
+          <MousePointer2 size={11} fill="currentColor" />
+        </span>
+      )
+    case 'zed':
+      return (
+        <span className={`${tile} bg-[#111827] text-[10px] font-bold text-white`}>
+          Z
+        </span>
+      )
+    case 'sublime':
+      return (
+        <span className={`${tile} bg-[#FF9800] text-[10px] font-bold text-white`}>
+          S
+        </span>
+      )
+    case 'finder':
+      return (
+        <span className={`${tile} bg-[#4A9CF5] text-white`}>
+          <FolderOpen size={12} />
+        </span>
+      )
+    case 'explorer':
+    case 'file-manager':
+      return (
+        <span className={`${tile} bg-[#F7C843] text-[#2563A5]`}>
+          <FolderOpen size={12} fill="currentColor" fillOpacity={0.22} />
+        </span>
+      )
+    case 'windows-terminal':
+    case 'powershell':
+    case 'pwsh':
+      return (
+        <span className={`${tile} bg-[#2563A5] text-white`}>
+          <SquareTerminal size={12} />
+        </span>
+      )
+    case 'cmd':
+      return (
+        <span className={`${tile} bg-[#222831] text-white`}>
+          <SquareTerminal size={12} />
+        </span>
+      )
     case 'terminal':
-      return SquareTerminal
+    case 'iterm':
+      return (
+        <span className={`${tile} bg-[#3F444B] text-white`}>
+          <SquareTerminal size={12} />
+        </span>
+      )
+  }
+
+  const Fallback = opener.kind === 'editor'
+    ? Code2
+    : opener.kind === 'terminal'
+      ? SquareTerminal
+      : FolderOpen
+  return (
+    <span className={`${tile} border border-(--color-border) bg-(--bg-key) text-(--color-text-muted)`}>
+      <Fallback size={12} />
+    </span>
+  )
+}
+
+function openerDescription(opener: WorkspaceOpener): string {
+  switch (opener.kind) {
+    case 'editor':
+      return 'Editor'
+    case 'terminal':
+      return 'Terminal'
     case 'file_manager':
-      return FolderOpen
+      return 'File manager'
   }
 }
 
@@ -63,7 +154,7 @@ export function OpenWithMenu({ workspace }: OpenWithMenuProps) {
           className="text-(--color-text-subtle) transition-transform group-data-[popup-open]:rotate-180"
         />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-52">
+      <DropdownMenuContent align="end" className="w-60">
         <div className="px-1.5 py-1 text-xs font-medium text-(--color-text-muted)">
           Open workspace in
         </div>
@@ -73,17 +164,31 @@ export function OpenWithMenu({ workspace }: OpenWithMenuProps) {
             <span>Detecting apps…</span>
           </DropdownMenuItem>
         )}
-        {!openersQuery.isLoading && openers.length === 0 && (
+        {openersQuery.isError && openers.length === 0 && (
+          <DropdownMenuItem onClick={() => void openersQuery.refetch()}>
+            <RefreshCw size={14} />
+            <span>Retry app detection</span>
+          </DropdownMenuItem>
+        )}
+        {!openersQuery.isLoading && !openersQuery.isError && openers.length === 0 && (
           <DropdownMenuItem disabled>
             <span>No supported apps found</span>
           </DropdownMenuItem>
         )}
         {openers.map((opener) => {
-          const Icon = openerIcon(opener.kind)
           return (
-            <DropdownMenuItem key={opener.id} onClick={() => void openWith(opener)}>
-              <Icon size={15} />
-              <span className="truncate">{opener.name}</span>
+            <DropdownMenuItem
+              key={opener.id}
+              onClick={() => void openWith(opener)}
+              className="gap-2.5 py-1.5"
+            >
+              <OpenerIcon opener={opener} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">{opener.name}</span>
+                <span className="block text-[10px] leading-3 text-(--color-text-subtle)">
+                  {openerDescription(opener)}
+                </span>
+              </span>
             </DropdownMenuItem>
           )
         })}

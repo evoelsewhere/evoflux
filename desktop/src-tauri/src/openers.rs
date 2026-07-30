@@ -106,15 +106,54 @@ const CATALOG: &[CatalogEntry] = &[
         id: "vscode",
         name: "VS Code",
         kind: OpenerKind::Editor,
-        probe_paths: &[],
+        probe_paths: &[
+            r"%LOCALAPPDATA%\Programs\Microsoft VS Code\Code.exe",
+            r"%ProgramFiles%\Microsoft VS Code\Code.exe",
+            r"%ProgramFiles(x86)%\Microsoft VS Code\Code.exe",
+        ],
         probe_bins: &["code"],
+    },
+    CatalogEntry {
+        id: "vscode-insiders",
+        name: "VS Code Insiders",
+        kind: OpenerKind::Editor,
+        probe_paths: &[
+            r"%LOCALAPPDATA%\Programs\Microsoft VS Code Insiders\Code - Insiders.exe",
+            r"%ProgramFiles%\Microsoft VS Code Insiders\Code - Insiders.exe",
+            r"%ProgramFiles(x86)%\Microsoft VS Code Insiders\Code - Insiders.exe",
+        ],
+        probe_bins: &["code-insiders"],
     },
     CatalogEntry {
         id: "cursor",
         name: "Cursor",
         kind: OpenerKind::Editor,
-        probe_paths: &[],
+        probe_paths: &[
+            r"%LOCALAPPDATA%\Programs\cursor\Cursor.exe",
+            r"%LOCALAPPDATA%\Programs\Cursor\Cursor.exe",
+            r"%ProgramFiles%\Cursor\Cursor.exe",
+        ],
         probe_bins: &["cursor"],
+    },
+    CatalogEntry {
+        id: "zed",
+        name: "Zed",
+        kind: OpenerKind::Editor,
+        probe_paths: &[
+            r"%LOCALAPPDATA%\Programs\Zed\Zed.exe",
+            r"%ProgramFiles%\Zed\Zed.exe",
+        ],
+        probe_bins: &["zed"],
+    },
+    CatalogEntry {
+        id: "sublime",
+        name: "Sublime Text",
+        kind: OpenerKind::Editor,
+        probe_paths: &[
+            r"%ProgramFiles%\Sublime Text\sublime_text.exe",
+            r"%ProgramFiles(x86)%\Sublime Text\sublime_text.exe",
+        ],
+        probe_bins: &["subl"],
     },
     CatalogEntry {
         id: "explorer",
@@ -125,11 +164,29 @@ const CATALOG: &[CatalogEntry] = &[
         probe_bins: &[],
     },
     CatalogEntry {
-        id: "powershell",
-        name: "PowerShell",
+        id: "windows-terminal",
+        name: "Windows Terminal",
         kind: OpenerKind::Terminal,
+        probe_paths: &[r"%LOCALAPPDATA%\Microsoft\WindowsApps\wt.exe"],
+        probe_bins: &["wt"],
+    },
+    CatalogEntry {
+        id: "pwsh",
+        name: "PowerShell 7",
+        kind: OpenerKind::Terminal,
+        probe_paths: &[
+            r"%ProgramFiles%\PowerShell\7\pwsh.exe",
+            r"%LOCALAPPDATA%\Microsoft\WindowsApps\pwsh.exe",
+        ],
+        probe_bins: &["pwsh"],
+    },
+    CatalogEntry {
+        id: "powershell",
+        name: "Windows PowerShell",
+        kind: OpenerKind::Terminal,
+        // Included with every supported Windows release.
         probe_paths: &[],
-        probe_bins: &["powershell"],
+        probe_bins: &[],
     },
     CatalogEntry {
         id: "cmd",
@@ -181,8 +238,19 @@ const CATALOG: &[CatalogEntry] = &[
     },
 ];
 
-/// Expand a leading `~/` to the user's home directory.
-fn expand_home(path: &str) -> PathBuf {
+/// Expand a leading `~/` or a Windows `%ENV_VAR%` prefix.
+fn expand_probe_path(path: &str) -> PathBuf {
+    #[cfg(target_os = "windows")]
+    if let Some(rest) = path.strip_prefix('%') {
+        if let Some(end) = rest.find('%') {
+            let variable = &rest[..end];
+            let suffix = rest[end + 1..].trim_start_matches(|c| c == '\\' || c == '/');
+            if let Some(base) = std::env::var_os(variable) {
+                return Path::new(&base).join(suffix);
+            }
+        }
+    }
+
     if let Some(rest) = path.strip_prefix("~/") {
         if let Some(home) = std::env::var_os("HOME") {
             return Path::new(&home).join(rest);
@@ -191,13 +259,13 @@ fn expand_home(path: &str) -> PathBuf {
     PathBuf::from(path)
 }
 
-/// Check whether a binary is resolvable on PATH.
-fn binary_on_path(bin: &str) -> bool {
+/// Resolve a binary on PATH.
+fn binary_on_path(bin: &str) -> Option<PathBuf> {
     let Some(paths) = std::env::var_os("PATH") else {
-        return false;
+        return None;
     };
     #[cfg(target_os = "windows")]
-    const EXTS: &[&str] = &[".exe", ".cmd", ".bat", ""];
+    const EXTS: &[&str] = &[".exe", ".com", ".cmd", ".bat", ""];
     #[cfg(not(target_os = "windows"))]
     const EXTS: &[&str] = &[""];
 
@@ -205,11 +273,22 @@ fn binary_on_path(bin: &str) -> bool {
         for ext in EXTS {
             let candidate = dir.join(format!("{bin}{ext}"));
             if candidate.is_file() {
-                return true;
+                return Some(candidate);
             }
         }
     }
-    false
+    None
+}
+
+/// Resolve the concrete executable for entries that launch a binary.
+#[cfg(target_os = "windows")]
+fn entry_executable(entry: &CatalogEntry) -> Option<PathBuf> {
+    entry
+        .probe_paths
+        .iter()
+        .map(|path| expand_probe_path(path))
+        .find(|path| path.is_file())
+        .or_else(|| entry.probe_bins.iter().find_map(|bin| binary_on_path(bin)))
 }
 
 /// Does this catalog entry exist on the current machine?
@@ -218,22 +297,35 @@ fn entry_available(entry: &CatalogEntry) -> bool {
     if entry.probe_paths.is_empty() && entry.probe_bins.is_empty() {
         return true;
     }
-    entry.probe_paths.iter().any(|p| expand_home(p).exists())
-        || entry.probe_bins.iter().any(|b| binary_on_path(b))
+    entry
+        .probe_paths
+        .iter()
+        .any(|path| expand_probe_path(path).exists())
+        || entry
+            .probe_bins
+            .iter()
+            .any(|bin| binary_on_path(bin).is_some())
 }
 
 /// List the desktop apps available to open the workspace root.
 #[tauri::command]
-pub fn list_workspace_openers() -> Vec<WorkspaceOpener> {
-    CATALOG
-        .iter()
-        .filter(|e| entry_available(e))
-        .map(|e| WorkspaceOpener {
-            id: e.id.to_string(),
-            name: e.name.to_string(),
-            kind: e.kind.clone(),
-        })
-        .collect()
+pub async fn list_workspace_openers() -> Result<Vec<WorkspaceOpener>, String> {
+    // Windows GUI processes can have long or network-backed PATH entries.
+    // Keep filesystem probing off Tauri's IPC/UI thread so the menu can render
+    // its loading state instead of freezing the entire WebView.
+    tauri::async_runtime::spawn_blocking(|| {
+        CATALOG
+            .iter()
+            .filter(|entry| entry_available(entry))
+            .map(|entry| WorkspaceOpener {
+                id: entry.id.to_string(),
+                name: entry.name.to_string(),
+                kind: entry.kind.clone(),
+            })
+            .collect()
+    })
+    .await
+    .map_err(|error| format!("Could not detect desktop applications: {error}"))
 }
 
 /// Launch an opener from the curated catalog with the workspace root.
@@ -260,8 +352,7 @@ pub fn open_workspace_with(root: String, opener_id: String) -> Result<(), String
         return Err(format!("{} is not available on this machine", entry.name));
     }
 
-    launch(entry, &resolved, &root_str)
-        .map_err(|e| format!("Failed to open {}: {e}", entry.name))
+    launch(entry, &resolved, &root_str).map_err(|e| format!("Failed to open {}: {e}", entry.name))
 }
 
 #[cfg(target_os = "macos")]
@@ -280,32 +371,49 @@ fn launch(entry: &CatalogEntry, _root: &Path, root_str: &str) -> std::io::Result
 fn launch(entry: &CatalogEntry, _root: &Path, root_str: &str) -> std::io::Result<()> {
     match entry.id {
         "explorer" => {
-            Command::new("explorer").arg(root_str).spawn()?;
+            Command::new("explorer.exe").arg(root_str).spawn()?;
         }
         "cmd" => {
-            Command::new("cmd")
-                .args(["/c", "start", "cmd"])
+            Command::new("cmd.exe")
+                .arg("/K")
                 .current_dir(root_str)
                 .spawn()?;
         }
         "powershell" => {
-            Command::new("powershell")
-                .args(["-NoExit", "-Command", "Set-Location", root_str])
+            Command::new("powershell.exe")
+                .args(["-NoExit", "-Command", "Set-Location", "-LiteralPath"])
+                .arg(root_str)
+                .spawn()?;
+        }
+        "windows-terminal" => {
+            let executable = entry_executable(entry).ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "Windows Terminal executable was not found",
+                )
+            })?;
+            Command::new(executable).arg("-d").arg(root_str).spawn()?;
+        }
+        "pwsh" => {
+            let executable = entry_executable(entry).ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "PowerShell 7 executable was not found",
+                )
+            })?;
+            Command::new(executable)
+                .args(["-NoExit", "-Command", "Set-Location", "-LiteralPath"])
+                .arg(root_str)
                 .spawn()?;
         }
         _ => {
-            // Editors: resolve from PATH (`code`, `cursor`, ...).
-            let bin = entry
-                .probe_bins
-                .iter()
-                .find(|b| binary_on_path(b))
-                .ok_or_else(|| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::NotFound,
-                        format!("no launcher binary for {}", entry.name),
-                    )
-                })?;
-            Command::new(bin).arg(root_str).spawn()?;
+            let executable = entry_executable(entry).ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("no launcher executable for {}", entry.name),
+                )
+            })?;
+            Command::new(executable).arg(root_str).spawn()?;
         }
     }
     Ok(())
@@ -322,12 +430,9 @@ fn launch(entry: &CatalogEntry, root: &Path, root_str: &str) -> std::io::Result<
             let bin = entry
                 .probe_bins
                 .iter()
-                .find(|b| binary_on_path(b))
+                .find_map(|bin| binary_on_path(bin))
                 .ok_or_else(|| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::NotFound,
-                        "no terminal emulator found",
-                    )
+                    std::io::Error::new(std::io::ErrorKind::NotFound, "no terminal emulator found")
                 })?;
             Command::new(bin).current_dir(root).spawn()?;
         }
@@ -335,7 +440,7 @@ fn launch(entry: &CatalogEntry, root: &Path, root_str: &str) -> std::io::Result<
             let bin = entry
                 .probe_bins
                 .iter()
-                .find(|b| binary_on_path(b))
+                .find_map(|bin| binary_on_path(bin))
                 .ok_or_else(|| {
                     std::io::Error::new(
                         std::io::ErrorKind::NotFound,
