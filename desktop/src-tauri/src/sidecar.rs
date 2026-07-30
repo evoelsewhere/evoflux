@@ -58,7 +58,7 @@ impl Sidecar {
 
         let log_dir = app.path().app_log_dir().context("resolve app log dir")?;
         std::fs::create_dir_all(&log_dir).context("create app log dir")?;
-        let log_path = log_dir.join("backend.log");
+        let log_path = Self::log_path_for(app)?;
 
         let parent_pid = std::process::id();
 
@@ -306,6 +306,38 @@ impl Sidecar {
 
     pub fn log_path(&self) -> &Path {
         &self.log_path
+    }
+
+    pub fn log_path_for(app: &AppHandle) -> Result<PathBuf> {
+        Ok(app
+            .path()
+            .app_log_dir()
+            .context("resolve app log dir")?
+            .join("backend.log"))
+    }
+
+    pub async fn log_tail(&self, max_bytes: usize) -> String {
+        use std::io::SeekFrom;
+        use tokio::io::{AsyncReadExt, AsyncSeekExt};
+
+        let Ok(mut file) = tokio::fs::File::open(&self.log_path).await else {
+            return String::new();
+        };
+        let Ok(metadata) = file.metadata().await else {
+            return String::new();
+        };
+        let read_len = usize::try_from(metadata.len())
+            .unwrap_or(usize::MAX)
+            .min(max_bytes);
+        let start = metadata.len().saturating_sub(read_len as u64);
+        if file.seek(SeekFrom::Start(start)).await.is_err() {
+            return String::new();
+        }
+        let mut bytes = vec![0; read_len];
+        if file.read_exact(&mut bytes).await.is_err() {
+            return String::new();
+        }
+        String::from_utf8_lossy(&bytes).into_owned()
     }
 
     pub async fn shutdown(&mut self) {

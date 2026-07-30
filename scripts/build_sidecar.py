@@ -51,6 +51,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 # Patterns to strip from site-packages to shrink the bundle. Anything
@@ -302,6 +303,107 @@ def strip_bundle(site_packages: Path) -> int:
                 except OSError:
                     pass
     return removed
+
+
+def zip_pure_python_packages(site_packages: Path) -> tuple[int, int]:
+    """Collapse safe pure-Python packages into one zipimport archive.
+
+    Defender's cold-path cost is dominated by opening thousands of small
+    files. Only regular packages containing Python source/stubs are moved;
+    namespace packages, application code, native extensions, and packages
+    with runtime data remain on disk. A .pth file makes the archive available
+    through the same ``site.addsitedir`` bootstrap used by the desktop shell.
+    """
+
+    archive_path = site_packages / "evoflux-purelib.zip"
+    candidates: list[Path] = []
+    file_count = 0
+    for child in sorted(site_packages.iterdir()):
+        if (
+            not child.is_dir()
+            or child.name == "app"
+            or child.name.endswith((".dist-info", ".data"))
+            or not (child / "__init__.py").is_file()
+        ):
+            continue
+        files = [path for path in child.rglob("*") if path.is_file()]
+        if not files:
+            continue
+        if any(path.suffix not in {".py", ".pyi"} for path in files):
+            continue
+        candidates.append(child)
+        file_count += len(files)
+
+    if not candidates:
+        return 0, 0
+
+    with zipfile.ZipFile(
+        archive_path,
+        mode="w",
+        compression=zipfile.ZIP_DEFLATED,
+        compresslevel=6,
+    ) as archive:
+        for package in candidates:
+            for path in package.rglob("*"):
+                if path.is_file():
+                    archive.write(path, path.relative_to(site_packages))
+
+    for package in candidates:
+        shutil.rmtree(package)
+    (site_packages / "evoflux-purelib.pth").write_text(
+        f"{archive_path.name}\n",
+        encoding="utf-8",
+    )
+    return len(candidates), file_count
+
+
+def validate_migration_bundle(python_bin: Path, site_packages: Path) -> None:
+    """Validate the bundled head marker and an upgrade from the prior revision."""
+
+    migration_root = site_packages.parent / "_migration_smoke"
+    env = {
+        **os.environ,
+        "APP_ENV": "production",
+        "EVOFLUX_DATA_DIR": str(migration_root / "data"),
+        "EVOFLUX_CONFIG_DIR": str(migration_root / "config"),
+        "EVOFLUX_STATE_DIR": str(migration_root / "state"),
+        "EVOFLUX_CACHE_DIR": str(migration_root / "cache"),
+        "EVOFLUX_WIKI_DIR": str(migration_root / "wiki"),
+        "EVOFLUX_WORKSPACE_DIR": str(migration_root / "workspace"),
+    }
+    script = """
+import site, sys
+from pathlib import Path
+site.addsitedir(sys.argv[1])
+from alembic import command
+from alembic.config import Config
+from alembic.script import ScriptDirectory
+from app.core.schema_version import SCHEMA_HEAD
+import app
+
+ini = Path(app.__file__).resolve().parent / "alembic.ini"
+cfg = Config(str(ini))
+scripts = ScriptDirectory.from_config(cfg)
+heads = scripts.get_heads()
+if heads != [SCHEMA_HEAD]:
+    raise SystemExit(
+        f"schema marker mismatch: SCHEMA_HEAD={SCHEMA_HEAD!r}, alembic_heads={heads!r}"
+    )
+head = scripts.get_revision(SCHEMA_HEAD)
+previous = head.down_revision
+if not isinstance(previous, str):
+    raise SystemExit(f"expected a linear migration before {SCHEMA_HEAD}, got {previous!r}")
+command.upgrade(cfg, previous)
+command.upgrade(cfg, "head")
+print(f"migration smoke: {previous} -> {SCHEMA_HEAD} ok")
+"""
+    try:
+        run(
+            [str(python_bin), "-c", script, str(site_packages)],
+            env=env,
+        )
+    finally:
+        shutil.rmtree(migration_root, ignore_errors=True)
 
 
 def smoke_test(python_bin: Path, site_packages: Path) -> None:
@@ -585,6 +687,14 @@ def main() -> int:
             "Runtime will search for a system Chrome/Chromium instead."
         ),
     )
+    ap.add_argument(
+        "--no-zip-purelib",
+        action="store_true",
+        help=(
+            "Keep pure-Python packages as loose files. By default Windows "
+            "bundles safe packages into one zip to reduce Defender cold-start I/O."
+        ),
+    )
     args = ap.parse_args()
 
     root = Path(args.root).resolve()
@@ -622,9 +732,16 @@ def main() -> int:
     # ── 4. Strip caches/tests/etc. ──────────────────────────────────────
     saved = strip_bundle(site_packages)
     print(f"stripped: {human_bytes(saved)}")
+    if IS_WINDOWS and not args.no_zip_purelib:
+        packages_zipped, files_zipped = zip_pure_python_packages(site_packages)
+        print(
+            "zipimport: "
+            f"packed {packages_zipped} pure-Python packages / {files_zipped} files"
+        )
 
     # ── 5. Smoke test ───────────────────────────────────────────────────
     if not args.no_smoke:
+        validate_migration_bundle(python_bin, site_packages)
         smoke_test(python_bin, site_packages)
 
     # ── 6. Report ────────────────────────────────────────────────────────

@@ -13,6 +13,7 @@ set -euo pipefail
 #
 # Usage:
 #   ./scripts/build_msi.sh [--skip-sidecar] [--skip-frontend] [--dev]
+#                          [--allow-unsigned]
 #
 # Note: This script is designed for Unix-like environments (WSL, Git Bash, macOS
 # cross-compilation). For native Windows builds, consider using PowerShell or
@@ -28,6 +29,7 @@ SIDECAR_BUNDLE="$DESKTOP_DIR/sidecar-bundle"
 SKIP_SIDECAR=false
 SKIP_FRONTEND=false
 DEV_MODE=false
+ALLOW_UNSIGNED=false
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -41,6 +43,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --dev)
       DEV_MODE=true
+      shift
+      ;;
+    --allow-unsigned)
+      ALLOW_UNSIGNED=true
       shift
       ;;
     *)
@@ -78,6 +84,14 @@ fi
 echo "Prerequisites OK."
 echo ""
 
+WINDOWS_CERT_THUMBPRINT="${EVOFLUX_WINDOWS_CERTIFICATE_THUMBPRINT:-}"
+WINDOWS_TIMESTAMP_URL="${EVOFLUX_WINDOWS_TIMESTAMP_URL:-http://timestamp.digicert.com}"
+if [ "$DEV_MODE" = false ] && [ -z "$WINDOWS_CERT_THUMBPRINT" ] && [ "$ALLOW_UNSIGNED" = false ]; then
+  echo "Error: production Windows builds must be Authenticode-signed."
+  echo "Set EVOFLUX_WINDOWS_CERTIFICATE_THUMBPRINT, or pass --allow-unsigned for a local build."
+  exit 1
+fi
+
 # Step 1: Build web frontend
 if [ "$SKIP_FRONTEND" = false ]; then
   echo "Step 1/3: Building web frontend..."
@@ -113,7 +127,13 @@ if [ "$DEV_MODE" = true ]; then
   cargo tauri build -c tauri.dev-bundled.conf.json --bundles msi
 else
   echo "Building PRODUCTION MSI..."
-  cargo tauri build --bundles msi
+  if [ -n "$WINDOWS_CERT_THUMBPRINT" ]; then
+    SIGNING_CONFIG="{\"bundle\":{\"windows\":{\"certificateThumbprint\":\"$WINDOWS_CERT_THUMBPRINT\",\"digestAlgorithm\":\"sha256\",\"timestampUrl\":\"$WINDOWS_TIMESTAMP_URL\",\"allowDowngrades\":false}}}"
+    cargo tauri build --bundles msi --config "$SIGNING_CONFIG"
+  else
+    echo "WARNING: producing an unsigned local build."
+    cargo tauri build --bundles msi
+  fi
 fi
 
 echo ""

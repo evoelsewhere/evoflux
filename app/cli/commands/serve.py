@@ -57,6 +57,7 @@ import secrets
 import signal
 import sys
 import threading
+import time
 from typing import Any
 
 
@@ -217,10 +218,18 @@ def _configure_desktop_token(generate_token: bool) -> str | None:
 
 
 def cmd_serve(args: argparse.Namespace) -> None:
+    command_started = time.perf_counter()
     # Lazy imports so ``EvoFlux --help`` stays fast.
     import uvicorn
 
     from app.core.version import VERSION
+
+    print(
+        "startup_timing phase=serve_imports "
+        f"duration_ms={round((time.perf_counter() - command_started) * 1000)}",
+        file=sys.stderr,
+        flush=True,
+    )
 
     # Token must be in env *before* the app is imported so the middleware
     # picks it up at construction time.
@@ -264,6 +273,12 @@ def cmd_serve(args: argparse.Namespace) -> None:
                     await serve_task
                     return
                 await asyncio.sleep(0.05)
+            print(
+                "startup_timing phase=server_ready "
+                f"total_ms={round((time.perf_counter() - command_started) * 1000)}",
+                file=sys.stderr,
+                flush=True,
+            )
             _emit_handshake(
                 port=_server_port(server, args.port), token=token, version=VERSION
             )

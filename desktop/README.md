@@ -40,9 +40,12 @@ The Tauri shell:
 4. Otherwise locates the bundled Python runtime in `Contents/Resources/python/` (macOS),
    `resources\python\` (Windows), or `usr/lib/EvoFlux/python/` (Linux).
 5. Spawns the sidecar with `--handshake --generate-token --parent-pid <our pid>`.
-6. Reads stdout until the handshake line; extracts `{port, token}`.
+6. Reads stdout until the handshake line; extracts `{port, token}`. Failed
+   cold starts are stopped and retried with bounded backoff.
 7. Polls `http://127.0.0.1:<port>/api/health/live` until it returns 200.
-8. Updates the already-open WebView with `window.__OAD_TOKEN__ = "..."` and the backend URL.
+8. Streams startup phases to the splash screen, then updates the already-open
+   WebView with `window.__OAD_TOKEN__ = "..."` and the backend URL. Startup
+   errors remain on the splash with Retry and View Backend Log actions.
 9. Opens secondary WebViews against the same sidecar/token (`Cmd/Ctrl+N`).
 10. On app quit: SIGTERM the sidecar; force-kill after 5s.
 
@@ -66,5 +69,18 @@ cd desktop && make dev
 
 ## Packaging
 
-See [`../documents/docs/desktop.md`](../documents/docs/desktop.md) for the
-full release pipeline (matrix builds, signing, notarization).
+Windows production builds must be Authenticode-signed:
+
+```powershell
+$env:EVOFLUX_WINDOWS_CERTIFICATE_THUMBPRINT = "YOUR_CERT_THUMBPRINT"
+.\scripts\build_msi.ps1
+```
+
+For a local-only unsigned artifact, pass `-AllowUnsigned` explicitly. Release
+MSIs reject downgrades so a newer database is never opened by an older
+migration bundle. The sidecar build also validates the Alembic head marker and
+an upgrade from the previous revision before packaging.
+
+On Windows, safe pure-Python packages are stored in one zipimport archive to
+reduce the number of small files Defender scans during a cold start. Pass
+`--no-zip-purelib` to `scripts/build_sidecar.py` only when debugging packaging.

@@ -15,6 +15,13 @@
 .PARAMETER Dev
     Build in development mode.
 
+.PARAMETER CertificateThumbprint
+    Authenticode certificate thumbprint. Defaults to
+    EVOFLUX_WINDOWS_CERTIFICATE_THUMBPRINT.
+
+.PARAMETER AllowUnsigned
+    Explicitly allow an unsigned production build for local testing.
+
 .EXAMPLE
     .\scripts\build_msi.ps1
     .\scripts\build_msi.ps1 -SkipSidecar -SkipFrontend
@@ -24,7 +31,10 @@
 param(
     [switch]$SkipSidecar,
     [switch]$SkipFrontend,
-    [switch]$Dev
+    [switch]$Dev,
+    [string]$CertificateThumbprint = $env:EVOFLUX_WINDOWS_CERTIFICATE_THUMBPRINT,
+    [string]$TimestampUrl = "http://timestamp.digicert.com",
+    [switch]$AllowUnsigned
 )
 
 $ErrorActionPreference = "Stop"
@@ -87,6 +97,30 @@ try {
 Write-Host "Prerequisites OK." -ForegroundColor Green
 Write-Host ""
 
+if ($CertificateThumbprint) {
+    $CertificateThumbprint = ($CertificateThumbprint -replace "\s", "").ToUpperInvariant()
+} else {
+    $CertificateThumbprint = ""
+}
+if (-not $Dev -and -not $CertificateThumbprint -and -not $AllowUnsigned) {
+    throw @"
+Production Windows builds must be Authenticode-signed.
+Set EVOFLUX_WINDOWS_CERTIFICATE_THUMBPRINT (or -CertificateThumbprint), or
+pass -AllowUnsigned explicitly for a local non-release build.
+"@
+}
+if ($CertificateThumbprint) {
+    $certificate = Get-ChildItem Cert:\CurrentUser\My, Cert:\LocalMachine\My |
+        Where-Object Thumbprint -eq $CertificateThumbprint |
+        Select-Object -First 1
+    if (-not $certificate) {
+        throw "Signing certificate '$CertificateThumbprint' was not found in the Windows certificate stores."
+    }
+    Write-Host "Authenticode signing enabled: $CertificateThumbprint" -ForegroundColor Green
+} elseif ($AllowUnsigned) {
+    Write-Host "WARNING: producing an unsigned local build." -ForegroundColor Yellow
+}
+
 # Step 1: Build web frontend
 if (-not $SkipFrontend) {
     Write-Host "Step 1/3: Building web frontend..." -ForegroundColor Yellow
@@ -122,7 +156,21 @@ if ($Dev) {
     cargo tauri build -c tauri.dev-bundled.conf.json --bundles msi
 } else {
     Write-Host "Building PRODUCTION MSI..." -ForegroundColor Cyan
-    cargo tauri build --bundles msi
+    if ($CertificateThumbprint) {
+        $configOverride = @{
+            bundle = @{
+                windows = @{
+                    certificateThumbprint = $CertificateThumbprint
+                    digestAlgorithm = "sha256"
+                    timestampUrl = $TimestampUrl
+                    allowDowngrades = $false
+                }
+            }
+        } | ConvertTo-Json -Depth 5 -Compress
+        cargo tauri build --bundles msi --config $configOverride
+    } else {
+        cargo tauri build --bundles msi
+    }
 }
 
 Write-Host ""
@@ -147,4 +195,21 @@ if (Test-Path $nsisDir) {
     Write-Host ""
     Write-Host "Generated NSIS installer files:" -ForegroundColor Cyan
     Get-ChildItem $nsisDir | Format-Table Name, Length, LastWriteTime
+}
+
+if ($CertificateThumbprint) {
+    $signedArtifacts = @()
+    if (Test-Path $msiDir) {
+        $signedArtifacts += Get-ChildItem $msiDir -Filter *.msi
+    }
+    if (-not $signedArtifacts) {
+        throw "No Windows installer artifact was found for signature verification."
+    }
+    foreach ($artifact in $signedArtifacts) {
+        $signature = Get-AuthenticodeSignature $artifact.FullName
+        if ($signature.Status -ne "Valid") {
+            throw "Invalid Authenticode signature on '$($artifact.FullName)': $($signature.Status)"
+        }
+    }
+    Write-Host "Authenticode signatures verified." -ForegroundColor Green
 }
