@@ -40,11 +40,13 @@ export function useTeamSse({
 
   useEffect(() => {
     if (hasCodingWorkspace)
-      loadTeamStatus(agentWorkspace, mode === 'aim' ? 'aim' : 'coding')
+      void loadTeamStatus(agentWorkspace, mode === 'aim' ? 'aim' : 'coding')
     if (isCodingSessionLoading) return
     if (!sessionId) return
     const store = useTeamStore.getState()
     if (store.sessionId === sessionId && store.isConnected) return
+    const isSameSession =
+      store.sessionId === sessionId && store._workspace === agentWorkspace
 
     // Reset (not just re-point) on every genuine switch — a bare
     // `setState({ sessionId })` left `isConnected`/`agentStreams` holding
@@ -52,13 +54,15 @@ export function useTeamSse({
     // `sessionId && !isConnected`) never got a chance to render: the old
     // session's stale messages kept showing with no loading feedback while
     // `loadSession` fetched the new one in the background.
-    beginResolvedSession(sessionId, { mode, workspace: agentWorkspace })
+    if (!isSameSession) {
+      beginResolvedSession(sessionId, { mode, workspace: agentWorkspace })
 
-    // Clear the composer when switching sessions. The InputBar holds its
-    // draft text and pending files in local state, so without an explicit
-    // reset session A's typed-but-unsent message bleeds into session B.
-    inputRef.current?.setValue('')
-    inputRef.current?.setFiles([])
+      // Clear the composer when switching sessions. The InputBar holds its
+      // draft text and pending files in local state, so without an explicit
+      // reset session A's typed-but-unsent message bleeds into session B.
+      inputRef.current?.setValue('')
+      inputRef.current?.setFiles([])
+    }
 
     // Order matters: load prior-turn history FIRST, then open the SSE.
     //
@@ -75,7 +79,11 @@ export function useTeamSse({
     let cancelled = false
     ;(async () => {
       if (!consumeResolvedSessionReady(sessionId, agentWorkspace)) {
-        await loadSession(sessionId, agentWorkspace)
+        await loadSession(
+          sessionId,
+          agentWorkspace,
+          mode === 'aim' ? 'aim' : mode === 'coding' ? 'coding' : null,
+        )
       }
       if (cancelled) return
       const controller = connectStream()
@@ -100,7 +108,11 @@ export function useTeamSse({
 
       useTeamStore.setState({ _unloading: false })
       if (state.isTeamWorking) {
-        void loadSession(sessionId, agentWorkspace).then(() => {
+        void loadSession(
+          sessionId,
+          agentWorkspace,
+          mode === 'aim' ? 'aim' : mode === 'coding' ? 'coding' : null,
+        ).then(() => {
           const current = useTeamStore.getState()
           if (current.sessionId !== sessionId || current._workspace !== agentWorkspace) return
           abortRef.current = connectStream()
@@ -121,7 +133,7 @@ export function useTeamSse({
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, agentWorkspace])
+  }, [sessionId, agentWorkspace, mode])
 
   return abortRef
 }

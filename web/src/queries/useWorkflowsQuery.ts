@@ -5,6 +5,6 @@ export function useWorkflowsQuery(workspace?: string | null) {
   return useQuery({
     queryKey: ['workflows', 'list', workspace ?? null],
     queryFn: () => listWorkflows(workspace),
-    staleTime: 15_000,
+    staleTime: 60_000,
   })
 }

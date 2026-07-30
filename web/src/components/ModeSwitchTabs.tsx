@@ -4,10 +4,11 @@
  * drawers reuse the same control. ModeSwitchRail is its collapsed variant.
  */
 
-import { useNavigate } from '@tanstack/react-router'
+import { useNavigate, useRouter } from '@tanstack/react-router'
 import { motion } from 'framer-motion'
 import { ArrowRightLeft, Code2, Gauge } from 'lucide-react'
 import { useMotionPreset } from '@/lib/motion'
+import { loadModeRoute } from '@/lib/mode-route'
 import { cn } from '@/lib/utils'
 
 export type AppMode = 'forge' | 'coding' | 'aim'
@@ -20,13 +21,29 @@ const TABS: Array<{ mode: AppMode; label: string; Icon: typeof Gauge; to: string
 
 function useAnimatedModeNavigation(onNavigate?: () => void) {
   const navigate = useNavigate()
+  const router = useRouter()
   const preset = useMotionPreset()
 
-  const switchMode = (to: string) => {
-    void navigate({ to }).finally(() => onNavigate?.())
+  const routeForMode = (mode: AppMode, fallback: string) =>
+    loadModeRoute(mode) ?? fallback
+
+  const preloadMode = (mode: AppMode, fallback: string) => {
+    const to = routeForMode(mode, fallback)
+    void router.preloadRoute({ to }).catch(() => {
+      // Navigation itself remains available if an intent preload is cancelled
+      // or a saved dynamic route no longer exists.
+    })
   }
 
-  return { preset, switchMode }
+  const switchMode = (mode: AppMode, fallback: string) => {
+    const to = routeForMode(mode, fallback)
+    void navigate({ to }).then(
+      () => onNavigate?.(),
+      () => onNavigate?.(),
+    )
+  }
+
+  return { preset, preloadMode, switchMode }
 }
 
 export function ModeSwitchTabs({
@@ -39,7 +56,7 @@ export function ModeSwitchTabs({
   onNavigate?: () => void
   className?: string
 }) {
-  const { preset, switchMode } = useAnimatedModeNavigation(onNavigate)
+  const { preset, preloadMode, switchMode } = useAnimatedModeNavigation(onNavigate)
   const activeIndex = TABS.findIndex((tab) => tab.mode === active)
   return (
     // The strip is a size container: labels only render when there's room
@@ -64,8 +81,14 @@ export function ModeSwitchTabs({
           <button
             key={mode}
             type="button"
+            onPointerEnter={() => {
+              if (mode !== active) preloadMode(mode, to)
+            }}
+            onFocus={() => {
+              if (mode !== active) preloadMode(mode, to)
+            }}
             onClick={() => {
-              if (mode !== active) switchMode(to)
+              if (mode !== active) switchMode(mode, to)
             }}
             title={label}
             aria-current={mode === active ? 'page' : undefined}
@@ -102,15 +125,21 @@ export function ModeSwitchRail({
   active: AppMode
   className?: string
 }) {
-  const { preset, switchMode } = useAnimatedModeNavigation()
+  const { preset, preloadMode, switchMode } = useAnimatedModeNavigation()
   return (
     <div className={cn('flex flex-col items-center gap-0.5', className)}>
       {TABS.map(({ mode, label, Icon, to }) => (
         <button
           key={mode}
           type="button"
+          onPointerEnter={() => {
+            if (mode !== active) preloadMode(mode, to)
+          }}
+          onFocus={() => {
+            if (mode !== active) preloadMode(mode, to)
+          }}
           onClick={() => {
-            if (mode !== active) switchMode(to)
+            if (mode !== active) switchMode(mode, to)
           }}
           title={label}
           aria-current={mode === active ? 'page' : undefined}

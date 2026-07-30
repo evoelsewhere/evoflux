@@ -1,9 +1,12 @@
 import { createRootRoute, createRoute, createRouter, Outlet } from '@tanstack/react-router'
 import { Root, NotFound } from './routes/__root'
+import { restoreLastRouteBeforeRouterMount } from '@/lib/mode-route'
 import { TeamLayout, CodingLayout } from './routes/forge'
 import { AimLayout } from './routes/aim'
 import { TelemetryPage } from './routes/telemetry'
 import { SchedulerPage } from './routes/scheduler'
+
+restoreLastRouteBeforeRouterMount()
 
 const rootRoute = createRootRoute({
   component: Root,

@@ -17,7 +17,7 @@ export function useAimProjectsQuery() {
   return useQuery({
     queryKey: queryKeys.projects.aimAll(),
     queryFn: listAimProjects,
-    staleTime: 10_000,
+    staleTime: 60_000,
   })
 }
 

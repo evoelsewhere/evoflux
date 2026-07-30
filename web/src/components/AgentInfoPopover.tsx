@@ -232,16 +232,8 @@ export function AgentInfoPopover({
   const containerRef = useRef<HTMLDivElement>(null)
   const preset = useMotionPreset()
 
-  const { data, isLoading, refetch } = useTeamAgentsQuery(workspace, open, mode)
-  const mcpServersQuery = useMcpServersQuery()
-
-  useEffect(() => {
-    if (open) {
-      refetch()
-      mcpServersQuery.refetch()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
+  const { data, isLoading } = useTeamAgentsQuery(workspace, open, mode)
+  const mcpServersQuery = useMcpServersQuery(open)
 
   useEffect(() => {
     if (!open) return

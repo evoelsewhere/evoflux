@@ -16,7 +16,7 @@ export function useCodingOverviewQuery() {
   return useQuery({
     queryKey: queryKeys.codingOverview(),
     queryFn: getCodingWorkspaceTree,
-    staleTime: 10_000,
+    staleTime: 60_000,
   })
 }
 
@@ -25,7 +25,7 @@ export function useProjectQuery(id: string | null | undefined) {
     queryKey: queryKeys.projects.detail(id ?? ''),
     queryFn: () => getProject(id!),
     enabled: !!id,
-    staleTime: 10_000,
+    staleTime: 60_000,
   })
 }
 
