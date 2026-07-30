@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { Maximize2, Minimize2, Plus, X } from 'lucide-react'
 import { useResizableWidth } from '@/hooks/use-resizable-width'
 import { useIsMobile } from '@/hooks/use-mobile'
-import { panelTransition, staggerDelay, useMotionPreset } from '@/lib/motion'
+import { staggerDelay, useMotionPreset } from '@/lib/motion'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 import { cn } from '@/lib/utils'
 import {
@@ -62,29 +62,25 @@ export function WorkbenchDock({
     closeTab(tabId)
   }
 
+  // Closing must release the flex column immediately. An exit animation keeps
+  // the measured-width aside mounted and makes the conversation resize late.
+  if (!open) return null
+
   return (
-    <AnimatePresence initial={false}>
-      {open && (
     <motion.aside
       key="workbench-dock"
       initial={{
         opacity: 0,
-        x: 18 * motionPreset.distance,
       }}
       animate={{
         opacity: 1,
-        x: 0,
       }}
-      exit={{
-        opacity: 0,
-        x: 12 * motionPreset.distance,
-      }}
-      transition={panelTransition(motionPreset)}
+      transition={motionPreset.transition}
       style={{
         width: maximized || isMobile ? '100%' : resizable.width,
       }}
       className={cn(
-        'flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-l border-(--color-border) bg-(--bg-page) will-change-[transform,opacity]',
+        'flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-l border-(--color-border-strong) bg-(--bg-page)',
         isMobile
           ? 'mobile-safe-top fixed inset-x-0 bottom-0 z-(--z-overlay) h-auto w-full max-w-none'
           : 'relative shrink-0',
@@ -151,7 +147,10 @@ export function WorkbenchDock({
                 <button
                   type="button"
                   onClick={() => closeTabAndResources(tab.id)}
-                  className="mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded text-(--color-text-muted) opacity-0 hover:bg-(--bg-hover) hover:text-(--color-text) group-hover:opacity-100 focus:opacity-100"
+                  className={cn(
+                    'relative z-10 mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded text-(--color-text-muted) transition-[opacity,background-color,color] hover:bg-(--bg-hover) hover:text-(--color-text) focus-visible:opacity-100 group-hover:opacity-100',
+                    active ? 'opacity-100' : 'opacity-0',
+                  )}
                   aria-label={`Close ${label}`}
                 >
                   <X size={12} />
@@ -206,7 +205,7 @@ export function WorkbenchDock({
           <X size={15} />
         </motion.button>
       </motion.header>
-      <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
+      <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden border-t border-(--color-border)">
         <AnimatePresence initial={false}>
           {activeTool === null && (
             <WorkbenchLauncher
@@ -219,8 +218,6 @@ export function WorkbenchDock({
         {children}
       </div>
     </motion.aside>
-      )}
-    </AnimatePresence>
   )
 }
 
@@ -298,16 +295,12 @@ export function WorkbenchSurface({ tool, children }: WorkbenchSurfaceProps) {
         key={tab.id}
         initial={{
           opacity: active ? 1 : 0,
-          x: active ? 0 : 8 * motionPreset.distance,
-          scale: active ? 1 : 0.995,
           visibility: active ? 'visible' : 'hidden',
         }}
         animate={active
-          ? { opacity: 1, x: 0, scale: 1, visibility: 'visible' }
+          ? { opacity: 1, visibility: 'visible' }
           : {
               opacity: 0,
-              x: 8 * motionPreset.distance,
-              scale: 0.995,
               transitionEnd: { visibility: 'hidden' },
             }}
         transition={motionPreset.transition}

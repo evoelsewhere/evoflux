@@ -15,29 +15,70 @@ import {
   useImperativeHandle,
   useRef,
 } from 'react'
-import { Terminal } from '@xterm/xterm'
+import { Terminal, type ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { Send } from 'lucide-react'
 import { apiBaseUrl } from '@/api/base-url'
 import { withTokenParam } from '@/api/auth'
 
-// Conventional dark terminal surface (terminals read as dark regardless of
-// the app's light/dark theme).
-const TERMINAL_THEME = {
-  background: '#0d1117',
-  foreground: '#d1d5db',
-  cursor: '#d1d5db',
-  selectionBackground: '#264f78',
-  black: '#0d1117',
-  red: '#f87171',
-  green: '#4ade80',
-  yellow: '#fbbf24',
-  blue: '#60a5fa',
-  magenta: '#c084fc',
-  cyan: '#22d3ee',
-  white: '#d1d5db',
-  brightBlack: '#6b7280',
+const DARK_ANSI_THEME: ITheme = {
+  black: '#1B1D1F',
+  red: '#F87171',
+  green: '#4ADE80',
+  yellow: '#FBBF24',
+  blue: '#60A5FA',
+  magenta: '#C084FC',
+  cyan: '#22D3EE',
+  white: '#E5E7EA',
+  brightBlack: '#8B949E',
+  brightRed: '#FCA5A5',
+  brightGreen: '#86EFAC',
+  brightYellow: '#FDE68A',
+  brightBlue: '#93C5FD',
+  brightMagenta: '#D8B4FE',
+  brightCyan: '#67E8F9',
+  brightWhite: '#FFFFFF',
+}
+
+const LIGHT_ANSI_THEME: ITheme = {
+  black: '#000000',
+  red: '#CF222E',
+  green: '#116329',
+  yellow: '#953800',
+  blue: '#0550AE',
+  magenta: '#8250DF',
+  cyan: '#0E7490',
+  white: '#D0D7DE',
+  brightBlack: '#6E7781',
+  brightRed: '#A40E26',
+  brightGreen: '#1A7F37',
+  brightYellow: '#9A6700',
+  brightBlue: '#0969DA',
+  brightMagenta: '#8250DF',
+  brightCyan: '#1B7C83',
+  brightWhite: '#FFFFFF',
+}
+
+function terminalTheme(): ITheme {
+  const root = document.documentElement
+  const styles = getComputedStyle(root)
+  const cssColor = (name: string, fallback: string) =>
+    styles.getPropertyValue(name).trim() || fallback
+  const dark = root.classList.contains('dark')
+
+  return {
+    ...(dark ? DARK_ANSI_THEME : LIGHT_ANSI_THEME),
+    background: cssColor('--terminal-bg', dark ? '#171A1F' : '#F8FAFC'),
+    foreground: dark ? '#D6DEE8' : '#334155',
+    cursor: dark ? '#60A5FA' : '#2563EB',
+    cursorAccent: cssColor('--terminal-bg', dark ? '#171A1F' : '#F8FAFC'),
+    selectionBackground: dark ? '#1E4F78' : '#BFDBFE',
+    selectionInactiveBackground: dark ? '#29394A' : '#DBEAFE',
+    scrollbarSliderBackground: dark ? '#53596066' : '#C9CDD166',
+    scrollbarSliderHoverBackground: dark ? '#6B728099' : '#9CA3AF99',
+    scrollbarSliderActiveBackground: dark ? '#8B949EB3' : '#6B7280B3',
+  }
 }
 
 function wsBaseUrl(): string {
@@ -111,13 +152,15 @@ const TerminalInstance = forwardRef<
     const term = new Terminal({
       fontFamily: '"JetBrains Mono Variable", ui-monospace, monospace',
       fontSize: 13,
-      theme: TERMINAL_THEME,
+      lineHeight: 1.25,
+      theme: terminalTheme(),
       cursorBlink: true,
       scrollback: 5000,
     })
     const fitAddon = new FitAddon()
     term.loadAddon(fitAddon)
     term.open(containerRef.current)
+    term.element?.classList.add('evoflux-terminal')
     termRef.current = term
     fitRef.current = fitAddon
     try {
@@ -170,11 +213,19 @@ const TerminalInstance = forwardRef<
 
     const resizeObserver = new ResizeObserver(() => refit())
     resizeObserver.observe(containerRef.current)
+    const themeObserver = new MutationObserver(() => {
+      term.options.theme = terminalTheme()
+    })
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class'],
+    })
 
     return () => {
       alive = false
       if (reconnectTimer) clearTimeout(reconnectTimer)
       resizeObserver.disconnect()
+      themeObserver.disconnect()
       dataDisposable.dispose()
       wsRef.current?.close()
       term.dispose()
@@ -192,18 +243,16 @@ const TerminalInstance = forwardRef<
     }
   }, [active, refit])
 
-  return <div ref={containerRef} className="h-full w-full overflow-hidden p-1" />
+  return <div ref={containerRef} className="h-full w-full overflow-hidden" />
 })
 
 export function TerminalPanel({
   sessionId,
   terminalId,
-  mode,
   active,
 }: {
   sessionId: string | null
   terminalId: string
-  mode: string
   active: boolean
 }) {
   const instanceRef = useRef<TerminalHandle | null>(null)
@@ -224,20 +273,18 @@ export function TerminalPanel({
   const sendToAgent = () => instanceRef.current?.sendToAgent()
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[#0d1117]">
-      <div className="flex h-9 shrink-0 items-center justify-end gap-2 border-b border-(--color-border) bg-(--bg-key) px-2">
-        <span className="shrink-0 font-mono text-[10px] text-(--color-text-subtle)">{mode}</span>
+    <div className="group relative flex h-full min-h-0 flex-col overflow-hidden bg-(--terminal-bg)">
+      {sessionId && (
         <button
           type="button"
           onClick={sendToAgent}
-          disabled={!sessionId}
           title="Send selection (or recent output) to the chat composer"
-          className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-(--color-text-muted) transition-colors hover:bg-(--bg-subtle) hover:text-(--color-text) disabled:opacity-40"
+          aria-label="Send terminal output to agent"
+          className="absolute right-2 top-2 z-(--z-panel) flex h-7 w-7 items-center justify-center rounded-md border border-(--color-border) bg-(--bg-page)/90 text-(--color-text-muted) opacity-0 shadow-sm backdrop-blur-sm transition-[opacity,background-color,color] hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:opacity-100 group-hover:opacity-100"
         >
-          <Send size={12} />
-          Send to agent
+          <Send size={13} />
         </button>
-      </div>
+      )}
       {sessionId ? (
         <div className="min-h-0 flex-1">
           <TerminalInstance
