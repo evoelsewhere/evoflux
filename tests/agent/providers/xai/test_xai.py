@@ -202,7 +202,7 @@ class TestXAICapabilities:
     """
 
     def test_grok_4_listed_with_vision(self):
-        caps = get_capabilities("xai:grok-4")
+        caps = get_capabilities("xai:grok-4.3")
         assert caps.input.vision is True
 
     def test_unlisted_grok_defaults_no_vision(self):

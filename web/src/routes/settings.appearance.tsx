@@ -26,11 +26,11 @@ const ACCENT_OPTIONS: ReadonlyArray<{ value: AccentColor; label: string }> = [
 ]
 
 const FONT_OPTIONS: ReadonlyArray<{ value: FontFamily; label: string; description: string; family: string }> = [
-  { value: 'inter', label: 'Inter', description: 'Balanced default for dense product UI', family: "'Inter Variable', sans-serif" },
+  { value: 'inter', label: 'Inter', description: 'Clear and balanced for product UI', family: "'Inter Variable', sans-serif" },
   { value: 'system', label: 'System UI', description: 'Native to your operating system', family: "-apple-system, 'Segoe UI', system-ui, sans-serif" },
-  { value: 'mono', label: 'Monospace', description: 'JetBrains Mono across the full interface', family: "'JetBrains Mono Variable', monospace" },
-  { value: 'geist', label: 'Geist', description: 'ChatGPT-inspired', family: "'Geist Variable', sans-serif" },
-  { value: 'anthropic-sans', label: 'Anthropic Sans', description: 'Claude-inspired', family: "'Anthropic Sans', 'Source Sans 3 Variable', sans-serif" },
+  { value: 'geist', label: 'Geist', description: 'Compact with strong visual rhythm', family: "'Geist Variable', sans-serif" },
+  { value: 'anthropic-sans', label: 'Anthropic Sans', description: 'Warm and comfortable for reading', family: "'Anthropic Sans', 'Source Sans 3 Variable', sans-serif" },
+  { value: 'mono', label: 'JetBrains Mono', description: 'Monospaced across the interface', family: "'JetBrains Mono Variable', monospace" },
 ]
 
 const MOTION_OPTIONS: ReadonlyArray<{ value: MotionIntensity; label: string; description: string }> = [
@@ -68,10 +68,10 @@ export function AppearanceSettingsPage() {
   const motionOption = MOTION_OPTIONS[motionIndex] ?? MOTION_OPTIONS[2]
 
   return (
-    <SettingsPage
-      icon={Palette}
-      title="Appearance"
-      lede="Theme, type and motion. Every change applies immediately across the app and is remembered on this machine."
+      <SettingsPage
+        icon={Palette}
+        title="Appearance"
+      lede="Tune contrast, typography and motion. Changes apply immediately and stay on this machine."
     >
       <SettingsGroup title="Theme">
         <SettingsRow
@@ -81,7 +81,7 @@ export function AppearanceSettingsPage() {
         />
         <SettingsRow
           label="Accent"
-          description="Used for selection, focus and active states."
+          description="Used for actions, selection, focus and active states."
           stacked
           control={
             <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Accent color">
@@ -174,11 +174,11 @@ export function AppearanceSettingsPage() {
           stacked
           control={
             <DiscreteSlider
-              label="Interface scale"
+              label="Interface size"
               valueLabel={`${Math.round(settings.fontScale * 100)}%`}
               index={scaleIndex}
-              marks={FONT_SCALES.map((scale) => `${Math.round(scale * 100)}`)}
-              hint="Scales every size in the app, including this page."
+              marks={FONT_SCALES.map((scale) => `${Math.round(scale * 100)}%`)}
+              hint="100% is the balanced default. Choose a smaller size for density or a larger size for longer reading sessions."
               onChange={(nextIndex) => {
                 const next = FONT_SCALES[nextIndex] as FontScale | undefined
                 if (next != null) update({ fontScale: next })

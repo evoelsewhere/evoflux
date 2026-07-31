@@ -1267,7 +1267,7 @@ fn install_desktop_menus(app: &tauri::App) -> Result<()> {
         true,
         Some("Ctrl+P"),
     )?;
-    let view_wiki = MenuItem::with_id(app, MENU_WIKI, "Wiki", true, Some("Ctrl+M"))?;
+    let view_wiki = MenuItem::with_id(app, MENU_WIKI, "Memory", true, Some("Ctrl+M"))?;
     let view_scheduler =
         MenuItem::with_id(app, MENU_SCHEDULER, "Scheduled Tasks", true, Some("Ctrl+S"))?;
     let view_settings = MenuItem::with_id(app, MENU_SETTINGS, "Settings", true, None::<&str>)?;

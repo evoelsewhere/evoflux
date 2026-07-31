@@ -62,13 +62,9 @@ class ProviderModelsResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     provider: str
-    # Just agent-usable text-chat model IDs. We deliberately don't ship per-model capability
-    # flags here: the prefix-based resolver is too coarse for a
-    # per-model UI badge ("text-embedding-3-small" would show vision
-    # because `openai:` is vision-true), and a curated registry would be
-    # stale by the time the user upgraded the app. If capability ever
-    # needs to surface on this endpoint, build it from a runtime-fetched
-    # registry — see ``documents/techdebts/model-capabilities-registry.md``.
+    # Agent-usable model IDs. Discovery also publishes provider-owned model
+    # metadata into the shared resolver consumed by ``/agents/registry``;
+    # this settings response remains compact for the checkbox list.
     models: list[str] = Field(default_factory=list)
     # ``provider`` = list returned by the live provider API.
     # ``fallback`` = curated list from the catalog (provider has no

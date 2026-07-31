@@ -36,13 +36,13 @@ def test_chat_completions_only_ignores_explicit_responses_api() -> None:
     assert provider._use_responses is False
 
 
-def test_factory_builds_generic_compatible_provider_for_openrouter() -> None:
+def test_factory_builds_openrouter_provider() -> None:
     from app.agent.providers.factory import build_provider
 
     with patch(
-        "app.agent.providers.factory.ChatCompletionsOnlyProvider",
+        "app.agent.providers.factory.OpenRouterProvider",
         return_value=MagicMock(),
-    ) as mock_compatible:
+    ) as mock_openrouter:
         with patch("app.core.config.settings") as mock_settings:
             mock_settings.OPENROUTER_API_KEY = SecretStr("or-key")
             build_provider(
@@ -50,8 +50,8 @@ def test_factory_builds_generic_compatible_provider_for_openrouter() -> None:
                 model_kwargs={"thinking_level": "high"},
             )
 
-    mock_compatible.assert_called_once()
-    call_kwargs = mock_compatible.call_args.kwargs
+    mock_openrouter.assert_called_once()
+    call_kwargs = mock_openrouter.call_args.kwargs
     assert call_kwargs["model"] == "qwen/qwen3.6-plus:free"
     assert call_kwargs["base_url"] == "https://openrouter.ai/api/v1"
     assert call_kwargs["model_kwargs"] == {"thinking_level": "high"}

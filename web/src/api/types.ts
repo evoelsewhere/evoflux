@@ -1253,6 +1253,11 @@ export interface ModelCatalogEntry {
   context_length: number | null
   /** Non-empty only for models that support extended thinking. Used to show/hide ThinkingPill. */
   thinking_levels: string[]
+  thinking_control?: string | null
+  thinking_default_level?: string | null
+  thinking_default_enabled?: boolean | null
+  thinking_source?: string | null
+  interfaces?: string[]
 }
 
 export interface RegistryResponse {

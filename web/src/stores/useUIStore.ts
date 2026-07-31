@@ -18,6 +18,7 @@ import { STORAGE_KEYS } from '@/lib/storage-keys'
 const SIDEBAR_COLLAPSED_KEY = STORAGE_KEYS.sidebar.collapsed
 
 export type WorkbenchTool =
+  | 'overview'
   | 'terminal'
   | 'browser'
   | 'files'

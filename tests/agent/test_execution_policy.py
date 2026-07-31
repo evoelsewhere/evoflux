@@ -21,6 +21,7 @@ def test_auto_complexity_scales_with_path_breadth():
     )
 
     assert policy.complexity == "complex"
+    assert policy.thinking_level == ""
 
 
 def test_explicit_level_is_clamped_to_nearest_supported_level():
@@ -32,3 +33,22 @@ def test_explicit_level_is_clamped_to_nearest_supported_level():
     )
 
     assert policy.thinking_level == "medium"
+
+
+def test_explicit_ultra_is_preserved_when_the_model_supports_it():
+    policy = resolve_execution_policy(
+        complexity="simple",
+        priority="normal",
+        explicit_thinking_level="ultra",
+        supported_thinking_levels=(
+            "none",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "ultra",
+        ),
+    )
+
+    assert policy.thinking_level == "ultra"

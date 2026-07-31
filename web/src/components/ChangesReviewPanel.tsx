@@ -1,9 +1,9 @@
 /**
  * ChangesReviewPanel — Cursor-like post-turn file changes list.
  *
- * Opens when the store receives a ``turn_changes`` SSE event. Lists files
- * mutated during the turn with +/− counts; selecting a file focuses the
- * coding file viewer / source-control review surface when available.
+ * Opens on explicit review actions after a ``turn_changes`` SSE event. Lists
+ * files mutated during the turn with +/− counts; selecting a file focuses
+ * the coding file viewer / source-control review surface when available.
  */
 import { useMemo, useState } from 'react'
 import { FileDiff, FileMinus2, FilePlus2, FilePenLine, X } from 'lucide-react'

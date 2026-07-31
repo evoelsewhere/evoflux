@@ -38,6 +38,7 @@ interface SplitWorkbenchProps {
   isContinuing?: boolean
   onContinue?: () => void
   onSelectAgent: (name: string) => void
+  showTurnChanges?: boolean
 }
 
 type RailFilter = 'all' | 'working' | 'issues'
@@ -251,6 +252,7 @@ export function SplitWorkbench({
   isContinuing = false,
   onContinue,
   onSelectAgent,
+  showTurnChanges = false,
 }: SplitWorkbenchProps) {
   const preset = useMotionPreset()
   const [compareName, setCompareName] = useState<string | null>(null)
@@ -330,6 +332,7 @@ export function SplitWorkbench({
           isContinuing={isContinuing && name === leadName}
           onContinue={name === leadName ? onContinue : undefined}
           collapsible={false}
+          showTurnChanges={showTurnChanges}
         />
       </motion.div>
     )

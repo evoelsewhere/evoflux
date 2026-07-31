@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from app.agent.providers.model_metadata import (
+    clear_runtime_model_metadata,
     get_model_cost,
     get_model_features,
     get_model_limits,
     get_model_metadata,
     get_model_thinking_levels,
+    set_runtime_model_metadata,
 )
 from app.agent.providers.model_registry import _thinking_from_model
 
@@ -18,9 +20,9 @@ def test_get_model_limits_returns_known_limits() -> None:
 
 
 def test_get_model_limits_returns_codex_registry_limits() -> None:
-    limits = get_model_limits("codex:gpt-5.2-codex")
+    limits = get_model_limits("codex:gpt-5.6-sol")
 
-    assert limits.context_length == 400000
+    assert limits.context_length == 1050000
     assert limits.max_completion_tokens == 128000
 
 
@@ -58,6 +60,29 @@ def test_get_model_thinking_levels_returns_known_levels() -> None:
         "medium",
         "high",
     )
+
+
+def test_runtime_thinking_levels_override_static_metadata() -> None:
+    try:
+        set_runtime_model_metadata(
+            "codex:gpt-5.6-sol",
+            {
+                "thinking": {
+                    "levels": ["low", "medium", "high", "xhigh", "max", "ultra"]
+                }
+            },
+        )
+
+        assert get_model_thinking_levels("codex:gpt-5.6-sol") == (
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "ultra",
+        )
+    finally:
+        clear_runtime_model_metadata()
 
 
 def test_get_model_thinking_levels_unknown_model_returns_empty_tuple() -> None:
@@ -104,13 +129,21 @@ def test_thinking_from_model_maps_effort_values_verbatim() -> None:
         ]
     }
 
-    assert _thinking_from_model(model) == {"levels": ["low", "medium", "high"]}
+    assert _thinking_from_model(model) == {
+        "levels": ["low", "medium", "high"],
+        "control": "effort",
+        "source": "models_dev",
+    }
 
 
 def test_thinking_from_model_maps_toggle_to_none_only() -> None:
     model = {"reasoning_options": [{"type": "toggle"}]}
 
-    assert _thinking_from_model(model) == {"levels": ["none"]}
+    assert _thinking_from_model(model) == {
+        "levels": ["none"],
+        "control": "toggle",
+        "source": "models_dev",
+    }
 
 
 def test_thinking_from_model_prefers_effort_over_other_options() -> None:
@@ -122,7 +155,11 @@ def test_thinking_from_model_prefers_effort_over_other_options() -> None:
         ]
     }
 
-    assert _thinking_from_model(model) == {"levels": ["low", "high"]}
+    assert _thinking_from_model(model) == {
+        "levels": ["low", "high"],
+        "control": "effort",
+        "source": "models_dev",
+    }
 
 
 def test_thinking_from_model_skips_budget_tokens_only() -> None:
@@ -136,7 +173,11 @@ def test_thinking_from_model_skips_budget_tokens_only() -> None:
 def test_thinking_from_model_empty_list_is_authoritative_none() -> None:
     """An explicit ``[]`` asserts "no reasoning controls" and must override
     stale curated levels on merge."""
-    assert _thinking_from_model({"reasoning_options": []}) == {"levels": []}
+    assert _thinking_from_model({"reasoning_options": []}) == {
+        "levels": [],
+        "control": "none",
+        "source": "models_dev",
+    }
 
 
 def test_thinking_from_model_missing_or_null_preserves_curated() -> None:
@@ -154,5 +195,7 @@ def test_thinking_from_model_tolerates_malformed_options() -> None:
         is None
     )
     assert _thinking_from_model({"reasoning_options": [None, {"type": "toggle"}]}) == {
-        "levels": ["none"]
+        "levels": ["none"],
+        "control": "toggle",
+        "source": "models_dev",
     }

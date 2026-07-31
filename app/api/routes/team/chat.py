@@ -80,6 +80,35 @@ if TYPE_CHECKING:
 router = APIRouter()
 
 
+async def _validate_thinking_level_for_model(
+    model_id: str | None, thinking_level: str | None
+) -> None:
+    """Reject a reasoning effort that the resolved model does not advertise.
+
+    Every non-default value, including ``none``, is checked against the
+    model/provider/adapter intersection. Some APIs default to reasoning and
+    have no explicit off switch, so treating ``none`` as universally safe
+    silently changes nothing or produces an invalid request.
+    """
+    if not thinking_level or not model_id:
+        return
+
+    from app.agent.providers.model_discovery import ensure_runtime_model_metadata
+    from app.agent.providers.model_metadata import get_model_thinking_levels
+
+    await ensure_runtime_model_metadata(model_id)
+    supported = get_model_thinking_levels(model_id)
+    if thinking_level in supported:
+        return
+
+    detail = f"Model '{model_id}' does not support thinking level '{thinking_level}'."
+    if supported:
+        detail += f" Supported levels: {', '.join(supported)}."
+    else:
+        detail += " This model has no configurable thinking levels."
+    raise HTTPException(status_code=422, detail=detail)
+
+
 def discover_skills():  # noqa: ANN201 - compatibility wrapper
     from app.agent.tools.builtin.skill import discover_skills as discover
 
@@ -363,6 +392,14 @@ async def team_chat(
         model
         or (existing.model if existing is not None else None)
         or team_obj.lead.agent.model_id
+    )
+    effective_thinking_level = (
+        thinking_level
+        if thinking_level_provided
+        else (existing.thinking_level if existing is not None else None)
+    )
+    await _validate_thinking_level_for_model(
+        effective_request_model, effective_thinking_level
     )
     fast_mode_service_tier = (
         "fast"
@@ -891,6 +928,7 @@ async def resolve_team_session(
     thinking_level = body.thinking_level.strip() if body.thinking_level else None
     if model and not await is_registered_model_id(model):
         raise HTTPException(status_code=422, detail="Choose a model from the registry.")
+    await _validate_thinking_level_for_model(model, thinking_level)
 
     workspace = body.workspace
     project_id = body.project_id

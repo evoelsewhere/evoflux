@@ -22,6 +22,7 @@ import { SettingsHubPage } from '@/routes/settings.index'
 import { McpServerDetailPage } from '@/routes/settings.mcp.$name'
 import { NewMcpServerPage } from '@/routes/settings.mcp.new'
 import { McpListPage } from '@/routes/settings.mcp'
+import { MemorySettingsPage } from '@/routes/settings.memory'
 import { NotificationSettingsPage } from '@/routes/settings.notifications'
 import { ProvidersSettingsPage } from '@/routes/settings.providers'
 import { SandboxSettingsPage } from '@/routes/settings.sandbox'
@@ -39,6 +40,7 @@ const LIST_SECTIONS: Readonly<Record<string, string>> = {
 const LEAF_SECTIONS: Readonly<Record<string, string>> = {
   providers: 'Providers',
   connection: 'Connection',
+  memory: 'Memory',
   sandbox: 'Sandbox',
   dream: 'Dream',
   notifications: 'Notifications',
@@ -89,6 +91,7 @@ function SettingsContent({ path }: { path: string }) {
   if (section === 'mcp' && sub === 'new') return <NewMcpServerPage />
   if (section === 'mcp' && sub) return <McpServerDetailPage />
   if (section === 'mcp') return <McpListPage />
+  if (section === 'memory') return <MemorySettingsPage />
   if (section === 'connection') return <BackendConnectionPage />
   if (section === 'providers') return <ProvidersSettingsPage />
   if (section === 'sandbox') return <SandboxSettingsPage />
@@ -160,7 +163,7 @@ export function SettingsScreen() {
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <header
           {...dragHandlers}
-          className="mobile-safe-header flex min-h-12 shrink-0 items-center gap-2 border-b border-(--color-border-subtle) px-3 md:px-5"
+          className="mobile-safe-header flex min-h-12 shrink-0 items-center gap-2 border-b border-(--color-border-subtle) bg-(--bg-sidebar)/65 px-3 md:px-5"
         >
           {isMobile && (
             <button

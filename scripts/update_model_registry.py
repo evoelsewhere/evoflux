@@ -9,7 +9,6 @@ import httpx
 
 from app.agent.providers.model_registry import (
     MODELS_DEV_URL,
-    _deep_merge,
     _normalize_models_dev,
     apply_model_registry_aliases,
 )
@@ -37,12 +36,20 @@ def _fetch_models_dev(url: str) -> Any:
     return response.json()
 
 
-def _merge_registry(
-    existing: dict[str, dict[str, Any]], fetched: dict[str, dict[str, Any]]
-) -> dict[str, dict[str, Any]]:
-    registry = dict(existing)
-    for key, value in fetched.items():
-        registry[key] = _deep_merge(registry.get(key, {}), value)
+def _supported_provider_ids() -> set[str]:
+    from app.agent.providers.catalog import builtin_providers
+
+    return {entry["id"].lower() for entry in builtin_providers()}
+
+
+def _build_registry(fetched: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Build a fresh snapshot; never carry stale rows from the old file."""
+    supported = _supported_provider_ids()
+    registry = {
+        key: value
+        for key, value in fetched.items()
+        if key.partition(":")[0] in supported
+    }
     return dict(
         sorted(
             apply_model_registry_aliases(
@@ -72,7 +79,7 @@ def main() -> int:
 
     existing = _read_existing(args.output)
     fetched = _normalize_models_dev(_fetch_models_dev(args.url), include_plugins=False)
-    registry = _merge_registry(existing, fetched)
+    registry = _build_registry(fetched)
     rendered = json.dumps(registry, separators=(",", ":"), sort_keys=True) + "\n"
 
     if args.check:

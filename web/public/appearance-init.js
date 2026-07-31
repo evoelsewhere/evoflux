@@ -19,7 +19,7 @@
       : (FONTS.indexOf(parsed.fontFamily) !== -1 ? parsed.fontFamily : 'inter');
     root.setAttribute('data-font', font);
 
-    var SCALES = [0.85, 0.9, 0.95, 1, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3];
+    var SCALES = [0.9, 0.95, 1, 1.05, 1.1, 1.15, 1.2];
     var scale = typeof parsed.fontScale === 'number' ? parsed.fontScale : 1;
     if (SCALES.indexOf(scale) === -1) {
       var best = 1;
@@ -34,7 +34,7 @@
       scale = best;
     }
     if (scale !== 1) {
-      root.style.setProperty('font-size', (18 * scale) + 'px');
+      root.style.setProperty('font-size', (16 * scale) + 'px');
     }
 
     var MOTIONS = ['reduced', 'subtle', 'standard', 'expressive', 'cinematic'];

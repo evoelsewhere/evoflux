@@ -1,18 +1,17 @@
 """Model capability resolution.
 
-Looks up input/output capabilities for a fully-qualified
-``provider:model`` string against the curated model registry.
+Resolves input/output capabilities for a fully-qualified ``provider:model``
+from provider-live sparse metadata plus the static fallback registry.
 
-Lookup rule (intentionally trivial):
+Lookup order:
 
-1. **Exact match** in the model registry → return those flags merged
-   onto the all-false defaults.
-2. **Anything else** → return the all-false / text-out-only defaults.
+1. Provider-live fields, when its catalog reports them.
+2. Exact-match static metadata for fields the provider omits.
+3. All-false / text-out-only safe defaults for unknown fields.
 
 There are **no prefix fallbacks and no name-substring heuristics**. A
-model that isn't listed is treated as text-in / text-out. The YAML is
-therefore the authoritative document — read it to know what each
-flagship model can do.
+model that isn't listed and has no live profile is treated as text-in /
+text-out.
 
 Why this is fine:
 
@@ -20,13 +19,12 @@ Why this is fine:
   read tool's image handler (``app/agent/tools/builtin/filesystem/read.py``)
   ask :func:`get_capabilities` before allowing image input. An
   un-curated model just refuses images, which is the safe default.
-- The YAML ships *inside* the ``app`` package
+- The fallback JSON ships *inside* the ``app`` package
   (see ``pyproject.toml`` ``[tool.hatch.build.targets.wheel] packages``).
   ``uv tool upgrade EvoFlux`` / ``pip install -U`` / Tauri
   auto-update all replace the package directory atomically, so users
   get the latest registry whenever they upgrade.
-- Long-term direction: a runtime-fetched registry — see
-  ``documents/techdebts/model-capabilities-registry.md``.
+- Live fields are sparse and overlay only the exact facts a provider reports.
 
 Usage::
 
@@ -116,9 +114,7 @@ class ModelCapabilities:
 
 _DEFAULT = ModelCapabilities()
 
-# Providers whose models generally support vision — used as a fallback
-# when a model isn't explicitly listed in the registry.
-_VISION_PROVIDERS = frozenset({"copilot", "openai", "codex", "googlegenai", "foundry"})
+_runtime_capabilities: dict[str, dict[str, Any]] = {}
 
 
 # ── YAML loader ──────────────────────────────────────────────────────────────
@@ -185,6 +181,59 @@ def _merge_caps(spec: dict[str, Any]) -> ModelCapabilities:
     )
 
 
+def _deep_merge_caps(
+    base: dict[str, Any], override: dict[str, Any]
+) -> dict[str, Any]:
+    result = {
+        key: dict(value) if isinstance(value, dict) else value
+        for key, value in base.items()
+    }
+    for key, value in override.items():
+        current = result.get(key)
+        if isinstance(current, dict) and isinstance(value, dict):
+            result[key] = {**current, **value}
+        else:
+            result[key] = value
+    return result
+
+
+def replace_runtime_provider_capabilities(
+    provider_id: str, models: dict[str, dict[str, Any]]
+) -> None:
+    """Atomically publish capabilities reported by a live provider catalog.
+
+    Runtime rows are sparse: a provider may authoritatively report input
+    modalities while leaving output modalities to the bundled registry.
+    Unknown fields therefore stay unknown instead of becoming optimistic
+    provider-wide defaults.
+    """
+    provider = provider_id.strip().lower()
+    if not provider or ":" in provider:
+        raise ValueError("runtime capability provider ID must be unqualified")
+
+    replacement: dict[str, dict[str, Any]] = {}
+    for model_id, capabilities in models.items():
+        if not capabilities:
+            continue
+        if not isinstance(capabilities, dict):
+            raise TypeError("runtime capabilities must be a mapping")
+        _merge_caps(capabilities)
+        replacement[f"{provider}:{model_id.strip().lower()}"] = {
+            key: dict(value) if isinstance(value, dict) else value
+            for key, value in capabilities.items()
+        }
+
+    prefix = f"{provider}:"
+    for key in [key for key in _runtime_capabilities if key.startswith(prefix)]:
+        _runtime_capabilities.pop(key, None)
+    _runtime_capabilities.update(replacement)
+
+
+def clear_runtime_model_capabilities() -> None:
+    """Clear provider-discovered capability overlays (primarily for tests)."""
+    _runtime_capabilities.clear()
+
+
 @lru_cache(maxsize=1)
 def _registry() -> dict[str, ModelCapabilities]:
     """Cached access to the parsed registry.
@@ -213,13 +262,9 @@ def get_capabilities(model_id: str | None) -> ModelCapabilities:
     """
     if not model_id:
         return _DEFAULT
-    result = _registry().get(model_id.lower(), _DEFAULT)
-    # Fallback: if not in registry but provider is known to support vision,
-    # enable vision so image attachments aren't silently rejected.
-    if result is _DEFAULT and ":" in model_id:
-        provider = model_id.split(":")[0].lower()
-        if provider in _VISION_PROVIDERS:
-            result = ModelCapabilities(
-                input=ModelInputCapabilities(vision=True),
-            )
-    return result
+    normalized = model_id.lower()
+    base = _registry().get(normalized, _DEFAULT)
+    runtime = _runtime_capabilities.get(normalized)
+    if runtime is None:
+        return base
+    return _merge_caps(_deep_merge_caps(base.to_dict(), runtime))

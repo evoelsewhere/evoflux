@@ -51,7 +51,9 @@ interface WorkbenchBarProps {
 
 export function WorkbenchBar(props: WorkbenchBarProps) {
   const workbenchOpen = useUIStore((state) => state.workbenchOpen)
+  const activeWorkbenchTool = useUIStore((state) => state.activeWorkbenchTool)
   const toggleWorkbench = useUIStore((state) => state.toggleWorkbench)
+  const openWorkbenchTool = useUIStore((state) => state.openWorkbenchTool)
   const turnChanges = useTeamStore((s) => s.turnChanges)
   const showTurnChanges = useTeamStore((s) => s.showTurnChanges)
   const planApproval = useTeamStore((s) => s.planApproval)
@@ -73,6 +75,13 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
       : props.viewMode === 'split'
         ? SplitViewIcon
         : MonitorViewIcon
+  const handleWorkbenchToggle = () => {
+    if (!workbenchOpen && props.workspace && activeWorkbenchTool === null) {
+      openWorkbenchTool('overview')
+      return
+    }
+    toggleWorkbench()
+  }
 
   return (
     <motion.header
@@ -271,7 +280,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
         <motion.button
           layout
           type="button"
-          onClick={toggleWorkbench}
+          onClick={handleWorkbenchToggle}
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.9 }}
           transition={motionPreset.spring}

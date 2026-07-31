@@ -54,7 +54,8 @@ export function SidebarShell({
   resizeLabel = 'Resize sidebar',
   children,
 }: SidebarShellProps) {
-  const { isMacOverlay } = usePlatform()
+  const { isMacOverlay, isTauri, os } = usePlatform()
+  const isDesktopShell = isTauri && os !== 'ios' && os !== 'android'
   const motionPreset = useMotionPreset()
   const sidebarWidth = useUIStore((state) => state.sidebarWidth)
   const setSidebarResizing = useUIStore((state) => state.setSidebarResizing)
@@ -145,6 +146,7 @@ export function SidebarShell({
   return (
     <aside
       data-sidebar-shell
+      data-desktop-sidebar-glass={isDesktopShell ? 'true' : undefined}
       className="relative flex h-full shrink-0 flex-col overflow-hidden"
       style={{
         width,
@@ -187,6 +189,7 @@ export function SidebarCard({
 }) {
   return (
     <div
+      data-sidebar-card
       className={cn(
         'flex min-h-0 flex-col overflow-hidden rounded-md bg-(--bg-sidebar)/80 backdrop-blur-xl',
         className,

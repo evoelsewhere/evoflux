@@ -17,6 +17,7 @@ from app.agent.providers.copilot.copilot import (
     _CopilotCompletionsHandler,
     _endpoint_for_model,
 )
+from app.agent.providers.model_metadata import replace_runtime_provider_metadata
 from app.agent.schemas.chat import (
     AssistantMessage,
     FunctionCall,
@@ -42,6 +43,37 @@ def _usage_from_openai(u):
 
 _COMPLETIONS_URL = f"{COPILOT_API_BASE}/chat/completions"
 _RESPONSES_URL = f"{COPILOT_API_BASE}/responses"
+
+
+@pytest.fixture(autouse=True)
+def _copilot_live_model_contract():
+    """Mirror the per-model fields returned by Copilot's live /models API."""
+    replace_runtime_provider_metadata(
+        "copilot",
+        {
+            "gpt-5-mini": {
+                "interfaces": ["chat/completions"],
+                "thinking": {"levels": ["low", "medium", "high"]},
+            },
+            "gpt-5.1": {
+                "interfaces": ["chat/completions"],
+                "thinking": {"levels": ["low", "medium", "high"]},
+            },
+            "gpt-5.2": {
+                "interfaces": ["chat/completions"],
+                "thinking": {"levels": ["low", "medium", "high"]},
+            },
+            "gpt-5.4-mini": {
+                "interfaces": ["responses"],
+                "thinking": {"levels": ["low", "medium", "high"]},
+            },
+            "gpt-5.4": {"interfaces": ["responses"]},
+            "gpt-5.2-codex": {"interfaces": ["responses"]},
+            "gpt-5.3-codex": {"interfaces": ["responses"]},
+        },
+    )
+    yield
+    replace_runtime_provider_metadata("copilot", {})
 
 
 # ---------------------------------------------------------------------------

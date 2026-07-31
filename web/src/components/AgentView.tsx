@@ -34,7 +34,8 @@ import { ActivityStatus } from './motion/ActivityStatus'
 import { BlockEnter } from './motion/BlockEnter'
 import { SessionChapterRail } from './SessionChapterRail'
 import { TextSelectionAction } from './TextSelectionAction'
-import type { Chapter, ContentBlock } from '@/api/types'
+import { TurnChangesCard } from './TurnChangesCard'
+import type { Chapter, ContentBlock, TurnChangesPending } from '@/api/types'
 
 const SCROLL_THRESHOLD = 40
 const USER_SCROLL_DETACH_DELTA = 4
@@ -67,9 +68,11 @@ interface AgentViewProps {
   onRequestSelectionDetails?: (selectedText: string) => void
   /** Open a side-chat thread grounded in selected transcript text. */
   onSendToSideChat?: (selectedText: string) => void
+  /** Latest completed turn changes, shown only by Coding mode for the lead. */
+  turnChanges?: TurnChangesPending | null
 }
 
-export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError, isContinuing = false, onContinue, emptyState, chapters, onAddSelectionToChat, onRequestSelectionDetails, onSendToSideChat }: AgentViewProps) {
+export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError, isContinuing = false, onContinue, emptyState, chapters, onAddSelectionToChat, onRequestSelectionDetails, onSendToSideChat, turnChanges }: AgentViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const pinnedRef = useRef(true)
@@ -410,6 +413,13 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                            size="roomy"
                            onContinue={canContinue}
                          />
+                       )}
+                       {!isWorking
+                         && globalTurnIndex === turnItems.length - 1
+                         && turnChanges
+                         && turnChanges.files.length > 0
+                         && turnChanges.sessionId === sessionId && (
+                         <TurnChangesCard changes={turnChanges} />
                        )}
                      </div>
                    </div>

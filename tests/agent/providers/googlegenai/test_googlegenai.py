@@ -455,28 +455,26 @@ def test_base_not_implemented():
 
 
 def test_build_generation_config_thinking_model():
-    """Thinking models get ThinkingConfig injected."""
+    """Pre-Gemini-3 models must not receive the newer thinkingLevel field."""
     prov = GoogleGenAIProvider(api_key="key", model="gemini-2.0-flash-thinking")
-    config = prov._build_generation_config(thinking_level="high")
-    assert config.thinking_config is not None
-    assert config.thinking_config.include_thoughts is True
-    assert config.thinking_config.thinking_level == "high"
+    with pytest.raises(ValueError, match="no configurable thinking"):
+        prov._build_generation_config(thinking_level="high")
 
 
 def test_build_generation_config_non_thinking_model():
-    """No thinking_level → ThinkingConfig with no level set (model default)."""
+    """Non-thinking models omit ThinkingConfig."""
     prov = GoogleGenAIProvider(api_key="key", model="gemini-1.5-flash")
     config = prov._build_generation_config()
-    assert config.thinking_config is not None
-    assert config.thinking_config.include_thoughts is True
-    assert config.thinking_config.thinking_level is None
+    assert config.thinking_config is None
 
 
 def test_build_generation_config_thinking_level_none():
-    """thinking_level='none' disables ThinkingConfig entirely."""
-    prov = GoogleGenAIProvider(api_key="key", model="gemini-2.0-flash")
+    """Gemini 2.5 Flash uses the documented zero-token budget to disable."""
+    prov = GoogleGenAIProvider(api_key="key", model="gemini-2.5-flash")
     config = prov._build_generation_config(thinking_level="none")
-    assert config.thinking_config is None
+    assert config.thinking_config is not None
+    assert config.thinking_config.include_thoughts is False
+    assert config.thinking_config.thinking_budget == 0
 
 
 # ---------------------------------------------------------------------------
@@ -770,10 +768,10 @@ async def test_stream_logs_error_body_on_4xx(google_provider):
 
 
 def test_build_generation_config_gemma_disables_thinking():
-    """Gemma models always omit ThinkingConfig regardless of thinking_level."""
+    """Gemma rejects a persisted control that its profile does not expose."""
     prov = GoogleGenAIProvider(api_key="key", model="gemma-4-31b-it")
-    config = prov._build_generation_config(thinking_level="high")
-    assert config.thinking_config is None
+    with pytest.raises(ValueError, match="no configurable thinking"):
+        prov._build_generation_config(thinking_level="high")
 
 
 # ---------------------------------------------------------------------------

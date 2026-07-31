@@ -25,6 +25,7 @@ import { resolveMemberTier } from '@/utils/tier'
 import type { AgentStream } from '@/stores/useTeamStore'
 import { ActivityStatus } from './motion/ActivityStatus'
 import { resolveAgentRole } from '@/lib/agent-roles'
+import { TurnChangesCard } from './TurnChangesCard'
 import type { ContentBlock, TodoItem } from '@/api/types'
 
 const SCROLL_THRESHOLD = 40
@@ -46,6 +47,7 @@ interface AgentPaneProps {
   onMoveLeft?: () => void
   onMoveRight?: () => void
   collapsible?: boolean
+  showTurnChanges?: boolean
 }
 
 function isDirectUserBlock(block: ContentBlock): boolean {
@@ -55,7 +57,7 @@ function isDirectUserBlock(block: ContentBlock): boolean {
 export function AgentPane({
   name, stream, isLead, todos, isContinuing = false, onContinue,
   canMoveLeft, canMoveRight, onMoveLeft, onMoveRight,
-  collapsible = true,
+  collapsible = true, showTurnChanges = false,
 }: AgentPaneProps) {
   const [paneCollapsed, setPaneCollapsed] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -64,6 +66,7 @@ export function AgentPane({
   const prevScrollHeightRef = useRef<number | null>(null)
   const pendingRestoreRef = useRef(false)
   const sessionId = useTeamStore((s) => s.sessionId) ?? undefined
+  const turnChanges = useTeamStore((s) => s.turnChanges)
   const handleRevert = useCallback(() => {
     void useTeamStore.getState().undoTeam()
   }, [])
@@ -367,6 +370,15 @@ export function AgentPane({
                            />
                          )}
                        />
+                       {showTurnChanges
+                         && isLead
+                         && !isWorking
+                         && hiddenTurnCount + k === turnItems.length - 1
+                         && turnChanges
+                         && turnChanges.files.length > 0
+                         && turnChanges.sessionId === sessionId && (
+                         <TurnChangesCard changes={turnChanges} compact />
+                       )}
                      </div>
                    )
                   })}

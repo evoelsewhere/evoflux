@@ -87,6 +87,11 @@ class ModelCatalogEntry(BaseModel):
     # Non-empty only for models that support extended thinking (e.g. Claude Opus 4).
     # The frontend uses this to decide whether to show the thinking-level pill.
     thinking_levels: list[str] = []
+    thinking_control: str | None = None
+    thinking_default_level: str | None = None
+    thinking_default_enabled: bool | None = None
+    thinking_source: str | None = None
+    interfaces: list[str] = []
 
 
 class RegistryResponse(BaseModel):

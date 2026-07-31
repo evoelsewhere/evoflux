@@ -80,17 +80,26 @@ export function useTeamCommands({
   const switchableAgentNames = agentNames.filter((name) => name !== leadName)
   const commands: Command[] = [
     { id: 'new-chat', group: 'Team', label: 'New Team Chat', description: 'Start a fresh team conversation', shortcut: 'Ctrl+N', action: handleNewSession },
-    { id: 'dream-run', group: 'Team', label: 'Run Dream', description: 'Synthesise unprocessed sessions into wiki topics', action: handleDreamRun },
+    { id: 'dream-run', group: 'Team', label: 'Run Dream', description: 'Synthesise unprocessed sessions into Memory', action: handleDreamRun },
     {
       id: 'toggle-view', group: 'View',
       label: viewMode === 'agent' ? 'Switch to Split View' : 'Switch to Agent View',
       description: 'Cycle: Agent → Split', shortcut: 'Ctrl+V', action: cycleViewMode,
     },
     { id: 'workspace-files',  group: 'View',       label: mode === 'coding' ? 'Open Changed & Files' : 'Toggle Workspace Files', description: mode === 'coding' ? 'Browse changed files and workspace files' : 'Browse files the agent has produced', shortcut: 'Ctrl+F', action: handleWorkspaceFiles },
+    ...(mode === 'coding'
+      ? [{
+          id: 'workspace-overview',
+          group: 'View',
+          label: 'Open Workspace Overview',
+          description: 'See Git, session, tools, and recent changes',
+          action: () => useUIStore.getState().openWorkbenchTool('overview'),
+        }]
+      : []),
     mode === 'coding'
       ? { id: 'collapse-sidebar', group: 'View', label: 'Toggle Coding Sidebar', description: 'Collapse or expand workspaces and sessions', shortcut: 'Ctrl+B', action: handleCodingSidebarToggle }
       : { id: 'collapse-sidebar', group: 'View', label: 'Toggle Sidebar', description: '', shortcut: 'Ctrl+B', action: () => useUIStore.getState().toggleSidebarCollapsed() },
-    { id: 'wiki',             group: 'View',       label: 'Wiki',              description: 'Browse and edit the agent wiki', shortcut: 'Ctrl+M', action: () => dispatchCtrlKey('m') },
+    { id: 'wiki',             group: 'View',       label: 'Memory',            description: 'Browse curated knowledge and pending notes', shortcut: 'Ctrl+M', action: () => dispatchCtrlKey('m') },
     { id: 'scheduled-tasks',  group: 'View',       label: 'Scheduled Tasks',   description: 'Manage cron and scheduled agent tasks', shortcut: 'Ctrl+S', action: () => dispatchCtrlKey('s') },
     ...switchableAgentNames.map((name) => ({
       id: `switch-${name}`, group: 'Agents',

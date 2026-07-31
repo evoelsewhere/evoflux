@@ -72,14 +72,6 @@ interface Props {
   onModeChange: (next: 'form' | 'raw') => void
 }
 
-const THINKING_LEVELS: Array<{ value: string; label: string }> = [
-  { value: 'none', label: 'none' },
-  { value: '__none__', label: '(default)' },
-  { value: 'low', label: 'low' },
-  { value: 'medium', label: 'medium' },
-  { value: 'high', label: 'high' },
-]
-
 export function AgentForm({
   initial,
   agentPath,
@@ -126,6 +118,11 @@ export function AgentForm({
   const registry = useRegistryQuery()
   const mcpServers = useMcpServersQuery()
   const agentFiles = useAgentFilesQuery()
+  const selectedModel = registry.data?.models.find((entry) => entry.id === fm.model)
+  const thinkingOptions = [
+    { value: '__none__', label: '(default)' },
+    ...(selectedModel?.thinking_levels ?? []).map((value) => ({ value, label: value })),
+  ]
 
   // Hide ``mcp_<server>_<tool>`` entries from the Tools picker — they are
   // granted en bloc via the MCP server picker below, so showing them in
@@ -210,6 +207,7 @@ export function AgentForm({
           skillOptions={skillOptions}
           mcpOptions={mcpOptions}
           modelOptions={modelOptions}
+          thinkingOptions={thinkingOptions}
           agentPath={agentPath}
           effectiveTools={agentSummary?.tools}
           effectiveSkills={agentSummary?.skills}
@@ -274,6 +272,7 @@ function FormFields({
   skillOptions,
   mcpOptions,
   modelOptions,
+  thinkingOptions,
   agentPath,
   effectiveTools,
   effectiveSkills,
@@ -288,6 +287,7 @@ function FormFields({
   skillOptions: MultiSelectOption[]
   mcpOptions: MultiSelectOption[]
   modelOptions: { id: string; provider: string; model: string; vision: boolean }[]
+  thinkingOptions: Array<{ value: string; label: string }>
   agentPath?: string
   effectiveTools?: string[]
   effectiveSkills?: string[]
@@ -484,7 +484,14 @@ function FormFields({
             />
           </Field>
 
-          <Field label="Thinking level" hint="How much hidden reasoning the model may use.">
+          <Field
+            label="Thinking level"
+            hint={
+              thinkingOptions.length > 1
+                ? 'Only controls advertised for this model and provider are shown.'
+                : 'This provider exposes no configurable reasoning control for the selected model.'
+            }
+          >
             <Select
               value={fm.thinking_level ? fm.thinking_level : '__none__'}
               onValueChange={(v) => {
@@ -494,13 +501,13 @@ function FormFields({
                   body,
                 )
               }}
-              disabled={disabled}
+              disabled={disabled || thinkingOptions.length === 1}
             >
               <SelectTrigger aria-label="Thinking level" className="min-h-11 w-full md:min-h-9">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {THINKING_LEVELS.map((lvl) => (
+                {thinkingOptions.map((lvl) => (
                   <SelectItem key={lvl.value} value={lvl.value}>
                     {lvl.label}
                   </SelectItem>

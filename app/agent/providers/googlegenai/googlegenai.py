@@ -275,13 +275,40 @@ class GeminiProviderBase(LLMProviderBase):
 
     def _build_generation_config(self, **kwargs: Any) -> GenerationConfig:
         thinking_level = kwargs.get("thinking_level")
-        # "none" disables thinking entirely; omit ThinkingConfig so the model
-        # uses its default (no active reasoning budget).
-        thinking_config = (
-            None
-            if thinking_level == "none" or "gemma" in self.model.lower()
-            else ThinkingConfig(include_thoughts=True, thinking_level=thinking_level)
-        )
+        model = self.model.lower()
+        thinking_config: ThinkingConfig | None = None
+        if "gemma" not in model and (
+            model.startswith("gemini-2.5") or model.startswith("gemini-3")
+        ):
+            if thinking_level == "none":
+                if model.startswith("gemini-2.5-flash"):
+                    # Gemini 2.5 Flash/Lite supports the documented zero-token
+                    # budget. Omitting ThinkingConfig would keep dynamic
+                    # thinking enabled rather than turning it off.
+                    thinking_config = ThinkingConfig(
+                        include_thoughts=False,
+                        thinking_budget=0,
+                    )
+                else:
+                    raise ValueError(
+                        f"Model '{self.model}' does not support disabling thinking."
+                    )
+            elif thinking_level:
+                if not model.startswith("gemini-3"):
+                    raise ValueError(
+                        "Gemini 2.5 generateContent uses thinkingBudget, not "
+                        "thinkingLevel. Select Default or None where available."
+                    )
+                thinking_config = ThinkingConfig(
+                    include_thoughts=True,
+                    thinking_level=thinking_level,
+                )
+            else:
+                thinking_config = ThinkingConfig(include_thoughts=True)
+        elif thinking_level:
+            raise ValueError(
+                f"Model '{self.model}' exposes no configurable thinking control."
+            )
         return GenerationConfig(
             temperature=kwargs.get("temperature"),
             top_p=kwargs.get("top_p"),

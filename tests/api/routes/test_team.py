@@ -681,3 +681,31 @@ class TestTeamChatFormValidation:
 
         with pytest.raises(ValidationError, match="mode must be"):
             ChatForm(message="hi", mode="bogus")
+
+    @pytest.mark.asyncio
+    async def test_thinking_level_is_validated_against_the_selected_model(self):
+        from fastapi import HTTPException
+
+        from app.agent.providers.model_metadata import (
+            clear_runtime_model_metadata,
+            set_runtime_model_metadata,
+        )
+        from app.api.routes.team.chat import _validate_thinking_level_for_model
+
+        set_runtime_model_metadata(
+            "codex:gpt-5.6-sol",
+            {"thinking": {"levels": ["low", "medium", "high", "ultra"]}},
+        )
+        set_runtime_model_metadata(
+            "codex:gpt-5.6-luna",
+            {"thinking": {"levels": ["low", "medium", "high", "xhigh", "max"]}},
+        )
+        try:
+            await _validate_thinking_level_for_model("codex:gpt-5.6-sol", "ultra")
+
+            with pytest.raises(HTTPException, match="does not support"):
+                await _validate_thinking_level_for_model("codex:gpt-5.6-luna", "ultra")
+            with pytest.raises(HTTPException, match="does not support"):
+                await _validate_thinking_level_for_model("codex:gpt-5.6-luna", "none")
+        finally:
+            clear_runtime_model_metadata()

@@ -361,9 +361,8 @@ class TestGetCapabilities:
     def test_unknown_model_returns_default(self):
         from app.agent.providers.capabilities import get_capabilities
 
-        # openai is a vision-capable provider, so unknowns get vision fallback.
         caps = get_capabilities("openai:gpt-unknown-future-model")
-        assert caps.input.vision is True
+        assert caps.input.vision is False
         assert caps.input.document_text is True
 
     def test_unknown_provider_returns_default(self):

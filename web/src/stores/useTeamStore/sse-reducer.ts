@@ -807,7 +807,9 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
             deletions: typeof d.deletions === 'number' ? d.deletions : 0,
             files,
           }
-          draft.turnChangesOpen = true
+          // Coding mode renders the completed-turn summary inline. Keep the
+          // larger review panel closed until the user explicitly opens it.
+          draft.turnChangesOpen = false
         })
         break
       }
