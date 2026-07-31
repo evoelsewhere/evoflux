@@ -5,7 +5,7 @@
  * Owns the built-in command list (including durable goal controls), the
  * user-defined commands / snippets / runnable workflows queries and their
  * flattening into ``SlashCommand[]`` / ``SnippetCommand[]``, and every
- * submit-time interceptors: built-ins, ``/goal*``, ``/loop*``, ``/workflow`` (with the
+ * submit-time interceptors: built-ins, ``/goal*``, ``/workflow`` (with the
  * RunInputsDialog request state) and server-side expansion of
  * user-defined commands.
  */
@@ -18,7 +18,6 @@ import { useWorkflowsQuery } from '@/queries/useWorkflowsQuery'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { useToastStore } from '@/stores/useToastStore'
 import { parseGoalCommand } from '@/lib/parseGoalCommand'
-import { parseLoopCommand } from '@/lib/parseLoopCommand'
 import { mapWorkflowArgs, parseWorkflowCommand } from '@/lib/parseWorkflowCommand'
 import type { RunInputsRequest } from '../RunInputsDialog'
 import type { InputBarHandle, SlashCommand, SnippetCommand } from '../InputBar'
@@ -107,15 +106,6 @@ export function useSlashCommandRegistry({
     { id: 'goal:pause', label: 'goal:pause', displayName: 'goal:pause', description: 'Pause the active goal' },
     { id: 'goal:resume', label: 'goal:resume', displayName: 'goal:resume', description: 'Resume the paused goal' },
     { id: 'goal:stop', label: 'goal:stop', displayName: 'goal:stop', description: 'Remove the session goal' },
-    ...(mode === 'coding'
-      ? [
-          { id: 'loop', label: 'loop <prompt>', displayName: 'loop', insertText: 'loop', description: 'Start a coding loop', keepInputOpen: true },
-          { id: 'loop:set', label: 'loop:set <limit>', displayName: 'loop:set', insertText: 'loop:set', description: 'Set coding loop budget: 5, 10, 20, or 50', keepInputOpen: true },
-          { id: 'loop:pause', label: 'loop:pause', displayName: 'loop:pause', description: 'Pause the active coding loop' },
-          { id: 'loop:resume', label: 'loop:resume', displayName: 'loop:resume', description: 'Resume the paused coding loop' },
-          { id: 'loop:stop', label: 'loop:stop', displayName: 'loop:stop', description: 'Stop the active coding loop' },
-        ]
-      : []),
     {
       id: 'skill',
       label: 'skill:',
@@ -190,17 +180,6 @@ export function useSlashCommandRegistry({
     }
   }, [agentWorkspace, pushToast])
 
-  const runLoopCommand = useCallback(async (command: string, prompt?: string) => {
-    const current = useTeamStore.getState()
-    await current.sendLoopCommand(command, prompt, {
-      mode,
-      workspace,
-      model: current.sessionId ? selectedModel || null : null,
-      thinkingLevel: current.sessionId ? selectedThinkingLevel || null : null,
-      fastMode: current.sessionFastMode,
-    })
-  }, [mode, workspace, selectedModel, selectedThinkingLevel])
-
   const runGoalCommand = useCallback(async (command: string, objective?: string) => {
     const current = useTeamStore.getState()
     await current.sendGoalCommand(command, objective, {
@@ -254,14 +233,6 @@ export function useSlashCommandRegistry({
       case 'goal:stop':
         void runGoalCommand(`/${id}`)
         break
-      case 'loop:pause':
-      case 'loop:resume':
-      case 'loop:stop':
-        void runLoopCommand(`/${id}`).then(() => {
-          const verb = id.slice('loop:'.length)
-          pushToast({ tone: 'success', title: verb === 'stop' ? 'Loop stopped' : `Loop ${verb}d` })
-        })
-        break
       case 'init':
         // Prompt body lives on the backend so it can be tweaked without a
         // web rebuild and stays the single source of truth.
@@ -284,7 +255,7 @@ export function useSlashCommandRegistry({
         // Handled by the parent (TeamChatView) via onSlashCommand callback
         break
     }
-  }, [handleNewSession, runGoalCommand, runLoopCommand, mode, agentWorkspace, pushToast, inputRef])
+  }, [handleNewSession, runGoalCommand, mode, agentWorkspace, pushToast, inputRef])
 
   const tryHandleBuiltinGoalCommand = useCallback(async (content: string): Promise<boolean> => {
     const parsed = parseGoalCommand(content)
@@ -321,43 +292,6 @@ export function useSlashCommandRegistry({
         return true
     }
   }, [pushToast, runGoalCommand])
-
-  const tryHandleBuiltinLoopCommand = useCallback(async (content: string): Promise<boolean> => {
-    const parsed = parseLoopCommand(content)
-    switch (parsed.kind) {
-      case 'none':
-        return false
-      case 'unknown_subcommand':
-        return false
-      case 'start_missing_prompt':
-        pushToast({
-          tone: 'error',
-          title: '/loop needs a prompt',
-          description: 'Type the prompt after /loop, e.g. "/loop just say hi".',
-        })
-        return true
-      case 'set_invalid_limit':
-        pushToast({
-          tone: 'error',
-          title: '/loop:set needs a valid limit',
-          description: 'Use one of: 5, 10, 20, or 50.',
-        })
-        return true
-      case 'start':
-        await runLoopCommand(content, parsed.prompt)
-        return true
-      case 'set':
-        await runLoopCommand(`/loop:set ${parsed.limit}`)
-        pushToast({ tone: 'success', title: `Loop budget set to ${parsed.limit}` })
-        return true
-      case 'pause':
-      case 'resume':
-      case 'stop':
-        await runLoopCommand(`/loop:${parsed.kind}`)
-        pushToast({ tone: 'success', title: parsed.kind === 'stop' ? 'Loop stopped' : `Loop ${parsed.kind}d` })
-        return true
-    }
-  }, [pushToast, runLoopCommand])
 
   const startWorkflowRun = useCallback(
     async (name: string, values: Record<string, unknown>) => {
@@ -422,7 +356,6 @@ export function useSlashCommandRegistry({
     async (content: string): Promise<string> => {
       if (!content.startsWith('/')) return content
       if (content === '/goal' || content.startsWith('/goal:') || content.startsWith('/goal ')) return content
-      if (content.startsWith('/loop:') || content.startsWith('/loop ')) return content
       // The command name may include slashes (nested folders), so we
       // greedily match the longest known prefix instead of splitting on
       // the first space. Tokens are separated by whitespace.
@@ -462,7 +395,6 @@ export function useSlashCommandRegistry({
     handleSlashCommand,
     handleSnippetCommand,
     tryHandleBuiltinGoalCommand,
-    tryHandleBuiltinLoopCommand,
     tryHandleWorkflowCommand,
     expandUserCommand,
     startWorkflowRun,

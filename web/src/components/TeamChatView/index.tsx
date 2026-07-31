@@ -1024,7 +1024,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     handleSlashCommand,
     handleSnippetCommand,
     tryHandleBuiltinGoalCommand,
-    tryHandleBuiltinLoopCommand,
     tryHandleWorkflowCommand,
     expandUserCommand,
     startWorkflowRun,
@@ -1476,9 +1475,16 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
         return true
       }
     }
+    if (/^\/loop(?:\s|:|$)/.test(content.trim())) {
+      pushToast({
+        tone: 'error',
+        title: '/loop has been removed',
+        description: 'Use /goal <objective> to start durable autonomous work.',
+      })
+      return true
+    }
     if (await tryHandleBuiltinGoalCommand(content)) return true
     if (await tryHandleWorkflowCommand(content)) return true
-    if (mode === 'coding' && (await tryHandleBuiltinLoopCommand(content))) return true
     const shell = content.startsWith('!')
     const command = shell ? content.slice(1).trim() : content
     const expanded = shell ? `!${command}` : await expandUserCommand(content)
@@ -1501,7 +1507,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     selectedThinkingLevel,
     sendMessage,
     tryHandleBuiltinGoalCommand,
-    tryHandleBuiltinLoopCommand,
     tryHandleWorkflowCommand,
     webBridgeEnabled,
     workspace,

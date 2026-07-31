@@ -456,12 +456,12 @@ class TestTeamChatRoute:
         test_team._activate_queued_user_messages.assert_not_awaited()
 
     @pytest.mark.parametrize(
-        "command", ["/loop:set 5", "/loop:pause", "/loop:resume", "/loop:stop"]
+        "command", ["/loop old objective", "/loop:set 5", "/loop:pause"]
     )
-    def test_team_chat_loop_control_bypasses_queue_while_turn_active(
+    def test_team_chat_rejects_removed_loop_namespace(
         self, app_with_team, test_team, command
     ):
-        """Loop subcommands must take effect immediately while a turn runs."""
+        """Old commands must not leak through as ordinary user prompts."""
         session_id = str(uuid.uuid7())
         test_team.mode = "coding"
         test_team._has_active_turn = True
@@ -482,10 +482,11 @@ class TestTeamChatRoute:
         finally:
             test_team._has_active_turn = False
 
-        assert response.status_code == 202
-        assert response.json()["status"] == "accepted"
-        test_team.handle_user_message.assert_awaited_once()
-        assert test_team.handle_user_message.call_args.kwargs["content"] == command
+        assert response.status_code == 410
+        assert response.json()["detail"] == (
+            "/loop has been removed. Use /goal <objective> instead."
+        )
+        test_team.handle_user_message.assert_not_awaited()
 
     @pytest.mark.parametrize(
         "command",

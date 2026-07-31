@@ -829,17 +829,9 @@ export interface TeamHistoryResponse {
     session_id: string
     messages: MessageResponse[]
   }>
-  loop_status?: {
-    prompt: string | null
-    limit: number
-    remaining: number
-    used: number
-    paused: boolean
-  } | null
   /** Durable autonomous objective attached to this session. */
   goal?: GoalResponse | null
-  // Live workflow snapshot from the runner — same live-state semantics as
-  // loop_status (gone after restart).
+  // Live workflow snapshot from the runner (gone after restart).
   workflow_execution?: {
     execution_id: string
     definition_name: string
