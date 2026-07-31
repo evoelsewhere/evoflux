@@ -183,7 +183,7 @@ export function AssistantTurn({
         const absoluteIdx = blockAbsIdx.get(block.id) ?? startIndex + j
         const isStreaming = isWorking && absoluteIdx >= finalizedCount
         return (
-          <BlockEnter key={block.id}>
+          <BlockEnter key={block.id} disabled={isStreaming && block.type === 'text'}>
             {renderBlock({
               block,
               isStreaming,

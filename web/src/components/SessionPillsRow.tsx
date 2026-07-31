@@ -99,7 +99,7 @@ function ModelOptions({
   const enterIndex = useListEnterIndex(visibleModels.map((model) => model.id))
 
   return (
-    <div className="flex min-h-0 flex-col gap-2">
+    <div className="flex min-h-0 flex-col gap-1.5">
       <label className="relative block">
         <Search
           aria-hidden="true"
@@ -110,10 +110,10 @@ function ModelOptions({
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search models…"
-          className="h-8 w-full rounded-md border border-(--color-border) bg-(--bg-input) pr-2 pl-8 text-xs text-(--color-text) outline-none transition-colors placeholder:text-(--color-text-subtle) focus:border-(--color-border-strong) focus-visible:ring-2 focus-visible:ring-(--color-accent)/20"
+          className="h-7 w-full rounded-md border border-(--color-border) bg-(--bg-input) pr-2 pl-8 text-[11px] text-(--color-text) outline-none transition-colors placeholder:text-(--color-text-subtle) focus:border-(--color-border-strong) focus-visible:ring-2 focus-visible:ring-(--color-accent)/20"
         />
       </label>
-      <div className="max-h-48 overflow-y-auto overscroll-contain" role="listbox" aria-label="Models">
+      <div className="max-h-36 overflow-y-auto overscroll-contain" role="listbox" aria-label="Models">
         {visibleModels.length === 0 ? (
           <p className="px-2 py-6 text-center text-xs text-(--color-text-muted)">No models found</p>
         ) : (
@@ -130,7 +130,7 @@ function ModelOptions({
                   aria-selected={selected}
                   onClick={() => onSelect(model.id)}
                   className={cn(
-                    'relative flex h-9 w-full items-center gap-2.5 rounded-md px-2 text-left text-xs outline-none transition-colors',
+                    'relative flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[11px] outline-none transition-colors',
                     'hover:bg-(--bg-key) focus-visible:bg-(--bg-key)',
                     selected ? 'bg-(--bg-key) text-(--color-text)' : 'text-(--color-text-2)',
                   )}
@@ -259,6 +259,7 @@ function ThinkingEffortControl({
       marks={options.map((option) => option.mark)}
       color={thinkingColor(current?.value ?? null)}
       onChange={onSelectIndex}
+      compact
     />
   )
 }
@@ -338,17 +339,17 @@ function AdvancedComposerControl({
       <PopoverContent
         side="top"
         align="end"
-        className="w-[min(20rem,calc(100vw-1rem))] gap-0 overflow-hidden rounded-lg border-(--color-border) bg-(--color-surface) p-0 shadow-xl"
+        className="w-[min(18rem,calc(100vw-1rem))] gap-0 overflow-hidden rounded-lg border-(--color-border) bg-(--color-surface)/96 p-0 shadow-xl backdrop-blur-xl"
       >
-        <div className="border-b border-(--color-border-subtle) px-3 py-2.5">
+        <div className="border-b border-(--color-border-subtle) px-2.5 py-2">
           <div className="flex items-center gap-2">
-            {effectiveModel ? <ProviderBrandIcon providerId={effectiveModel} size="sm" /> : null}
+            {effectiveModel ? <ProviderBrandIcon providerId={effectiveModel} size="xs" /> : null}
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-(--color-text)">
+              <p className="truncate text-xs font-semibold text-(--color-text)">
                 {effectiveModel ? shortModelName(effectiveModel) : 'Choose a model'}
               </p>
               {effectiveModel && (
-                <p className="mt-0.5 truncate font-mono text-[10px] text-(--color-text-subtle)">
+                <p className="truncate font-mono text-[9px] text-(--color-text-subtle)">
                   {effectiveModel}
                 </p>
               )}
@@ -356,7 +357,7 @@ function AdvancedComposerControl({
           </div>
         </div>
 
-        <div className="px-3 py-2.5">
+        <div className="px-2.5 py-2">
           <ModelOptions
             selectedModel={effectiveModel}
             onSelect={(modelId) => {
@@ -370,7 +371,7 @@ function AdvancedComposerControl({
           />
         </div>
 
-        <div className="border-t border-(--color-border-subtle) px-3 py-3">
+        <div className="border-t border-(--color-border-subtle) px-2.5 py-2">
           <ThinkingEffortControl
             options={thinkingOptions}
             currentIndex={currentIndex}
@@ -379,9 +380,9 @@ function AdvancedComposerControl({
           />
         </div>
 
-        <div className="border-t border-(--color-border-subtle) px-3 py-2.5">
-          <div className="mb-1.5 flex items-center justify-between gap-2">
-            <span className="text-xs font-medium text-(--color-text-2)">Speed</span>
+        <div className="border-t border-(--color-border-subtle) px-2.5 py-2">
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className="text-[11px] font-medium text-(--color-text-2)">Speed</span>
             {!fastAvailable && (
               <span className="text-[10px] text-(--color-text-subtle)">Fast unavailable</span>
             )}
@@ -389,7 +390,7 @@ function AdvancedComposerControl({
           <SegmentedControl
             layoutId="composer-speed"
             ariaLabel="Response speed"
-            className="h-8 w-full [&>button]:flex-1"
+            className="h-7 w-full [&>button]:flex-1 [&>button]:py-0 [&>button]:text-[11px]"
             options={[
               { value: 'standard', label: 'Standard' },
               {

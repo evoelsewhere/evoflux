@@ -6,7 +6,7 @@
  * across all views.
  */
 
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
@@ -22,6 +22,8 @@ import { apiUrl } from '@/api/base-url'
 import { withTokenParam } from '@/api/auth'
 import { ImageLightbox } from '@/components/ImageLightbox'
 import { useMonacoTheme } from '@/hooks/useMonacoTheme'
+import { useStreamingReveal } from '@/hooks/useStreamingReveal'
+import { cn } from '@/lib/utils'
 
 // Me: extensions we render as ``<video>`` instead of ``<img>``. The backend
 // `generate_video` tool writes ``.mp4`` files today, but keep the list
@@ -430,15 +432,6 @@ function MarkdownImage({
 
 // ── MarkdownBlock ─────────────────────────────────────────────────────────────
 
-// While a block is actively streaming, SSE can deliver a new chunk every few
-// ms; re-parsing the *entire* accumulated markdown (fixNestedFences +
-// ReactMarkdown's remark/rehype pipeline) on every single chunk makes total
-// parse work grow quadratically with response length. Coalescing updates to
-// this cadence bounds the number of full re-parses to roughly
-// (stream duration / interval) regardless of chunk frequency, at the cost of
-// up to one interval of visible lag — imperceptible at this rate.
-const _STREAMING_RENDER_THROTTLE_MS = 80
-
 /** Shared prose markdown renderer — handles nested fences with math and syntax highlighting.
  *
  * When ``sessionId`` is provided, bare image paths in ``![alt](path)`` are
@@ -446,9 +439,9 @@ const _STREAMING_RENDER_THROTTLE_MS = 80
  * wrote into the workspace (e.g. ``![chart](chart.png)``).  All rendered
  * images open a full-screen lightbox on click.
  *
- * Pass ``isStreaming`` for the actively-growing tail block so re-parses are
- * throttled (see ``_STREAMING_RENDER_THROTTLE_MS``); finalized content
- * always renders the latest value immediately.
+ * Pass ``isStreaming`` for the actively-growing tail block. Provider bursts
+ * are revealed over short visual frames so text advances continuously while
+ * finalized content still flushes immediately.
  */
 export const MarkdownBlock = memo(function MarkdownBlock({
   content,
@@ -465,43 +458,7 @@ export const MarkdownBlock = memo(function MarkdownBlock({
   allowHtml?: boolean
   transformImageSrc?: (src: string) => string
 }) {
-  // Trailing-edge throttle: while streaming, coalesce chunks arriving within
-  // one window into a single flush of the latest content at the window
-  // boundary. Not streaming (static blocks, or the instant streaming ends)
-  // always flushes immediately — no lag on finalized content.
-  const [displayedContent, setDisplayedContent] = useState(content)
-  const lastFlushRef = useRef(0)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  useEffect(() => {
-    if (!isStreaming) {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current)
-        timerRef.current = null
-      }
-      setDisplayedContent(content) // eslint-disable-line react-hooks/set-state-in-effect
-      lastFlushRef.current = Date.now()
-      return
-    }
-    const now = Date.now()
-    const elapsed = now - lastFlushRef.current
-    if (elapsed >= _STREAMING_RENDER_THROTTLE_MS) {
-      setDisplayedContent(content)
-      lastFlushRef.current = now
-      return
-    }
-    timerRef.current = setTimeout(() => {
-      timerRef.current = null
-      setDisplayedContent(content)
-      lastFlushRef.current = Date.now()
-    }, _STREAMING_RENDER_THROTTLE_MS - elapsed)
-    return () => {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current)
-        timerRef.current = null
-      }
-    }
-  }, [content, isStreaming])
+  const displayedContent = useStreamingReveal(content, Boolean(isStreaming))
   // Me: the ``components`` map MUST be referentially stable across renders.
   // If we rebuild it inline every render, ReactMarkdown treats each call
   // as a new custom-component type and unmounts+remounts every ``<img>`` /
@@ -572,9 +529,8 @@ export const MarkdownBlock = memo(function MarkdownBlock({
   // Me: fixNestedFences is pure; memoize so we don't re-walk the whole
   // string on scroll-triggered parent re-renders either.
   const fixedContent = useMemo(() => fixNestedFences(displayedContent), [displayedContent])
-
-  return (
-    <div className="oa-prose text-sm">
+  const markdownTree = useMemo(
+    () => (
       <ReactMarkdown
         remarkPlugins={_REMARK_PLUGINS}
         rehypePlugins={allowHtml ? _REHYPE_PLUGINS_WITH_HTML : _REHYPE_PLUGINS}
@@ -582,6 +538,16 @@ export const MarkdownBlock = memo(function MarkdownBlock({
       >
         {fixedContent}
       </ReactMarkdown>
+    ),
+    [allowHtml, components, fixedContent],
+  )
+
+  return (
+    <div
+      className={cn('oa-prose text-sm', isStreaming && 'oa-streaming-prose')}
+      aria-busy={isStreaming || undefined}
+    >
+      {markdownTree}
     </div>
   )
 })

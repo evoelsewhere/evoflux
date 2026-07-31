@@ -1427,15 +1427,16 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         {!minimized && showTodoProgress && (
           <div className="relative z-(--z-panel) mb-2 flex justify-center">
             {showTodosPopover && (
-              <div className="absolute bottom-full left-1/2 mb-2 w-[min(40rem,calc(100vw-2rem))] -translate-x-1/2">
+              <div className="absolute bottom-full left-1/2 mb-2 w-[min(30rem,calc(100vw-3rem))] -translate-x-1/2">
                   <div
                     id="composer-task-list"
-                    className="overflow-hidden rounded-lg border border-(--color-border) bg-(--bg-card)/95 backdrop-blur-xl"
+                    className="overflow-hidden rounded-lg border border-(--color-border)/70 bg-(--bg-card)/78 shadow-lg shadow-black/10 backdrop-blur-2xl"
                   >
                     <TodosList
                       todos={todos ?? []}
+                      compact
                       headerClassName="hidden"
-                      listClassName="max-h-[min(48vh,20rem)] py-2"
+                      listClassName="max-h-[min(30vh,12rem)] py-1 opacity-85"
                     />
                   </div>
               </div>

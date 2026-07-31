@@ -6,7 +6,7 @@
  * Markdown-heavy conversations. Users can add one secondary agent for a
  * resizable two-pane comparison.
  */
-import { useMemo, useState } from 'react'
+import { startTransition, useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   Activity,
@@ -261,16 +261,40 @@ export function SplitWorkbench({
     () => agentNames.filter((name) => agentStreams[name]?.status !== 'offline'),
     [agentNames, agentStreams],
   )
-  if (visibleNames.length === 0) return null
 
   const focusedName =
     (activeAgent && visibleNames.includes(activeAgent) ? activeAgent : null) ??
     (leadName && visibleNames.includes(leadName) ? leadName : null) ??
-    visibleNames[0]
+    visibleNames[0] ??
+    ''
   const effectiveCompareName =
     compareName && compareName !== focusedName && visibleNames.includes(compareName)
       ? compareName
       : null
+  const paneRenderKey = effectiveCompareName
+    ? `${focusedName}:${effectiveCompareName}`
+    : focusedName
+  const [readyPaneKey, setReadyPaneKey] = useState<string | null>(null)
+  const paneReady = readyPaneKey === paneRenderKey
+
+  // Commit the inexpensive Split shell and team rail first. Transcript
+  // Markdown mounts one paint later in a transition, preventing the layout
+  // click itself from being held hostage by a large response parse.
+  useEffect(() => {
+    if (!paneRenderKey) return
+    let secondFrame: number | null = null
+    const firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => {
+        startTransition(() => setReadyPaneKey(paneRenderKey))
+      })
+    })
+    return () => {
+      cancelAnimationFrame(firstFrame)
+      if (secondFrame !== null) cancelAnimationFrame(secondFrame)
+    }
+  }, [paneRenderKey])
+
+  if (visibleNames.length === 0) return null
 
   const filteredNames = visibleNames.filter((name) => {
     const status = agentStreams[name]?.status
@@ -350,30 +374,43 @@ export function SplitWorkbench({
         </div>
 
         <div className="min-h-0 flex-1">
-          <AnimatePresence initial={false} mode="popLayout">
-            {effectiveCompareName ? (
-              <motion.div
-                key={`compare:${focusedName}:${effectiveCompareName}`}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={preset.transition}
-                className="h-full"
-              >
-                <Group orientation="horizontal" style={{ height: '100%' }}>
-                  <Panel minSize={25} defaultSize={50} className="overflow-hidden">
-                    {renderPane(focusedName)}
-                  </Panel>
-                  <CompareResizeHandle />
-                  <Panel minSize={25} defaultSize={50} className="overflow-hidden">
-                    {renderPane(effectiveCompareName)}
-                  </Panel>
-                </Group>
-              </motion.div>
-            ) : (
-              renderPane(focusedName)
-            )}
-          </AnimatePresence>
+          {paneReady ? (
+            <AnimatePresence initial={false} mode="popLayout">
+              {effectiveCompareName ? (
+                <motion.div
+                  key={`compare:${focusedName}:${effectiveCompareName}`}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={preset.transition}
+                  className="h-full"
+                >
+                  <Group orientation="horizontal" style={{ height: '100%' }}>
+                    <Panel minSize={25} defaultSize={50} className="overflow-hidden">
+                      {renderPane(focusedName)}
+                    </Panel>
+                    <CompareResizeHandle />
+                    <Panel minSize={25} defaultSize={50} className="overflow-hidden">
+                      {renderPane(effectiveCompareName)}
+                    </Panel>
+                  </Group>
+                </motion.div>
+              ) : (
+                renderPane(focusedName)
+              )}
+            </AnimatePresence>
+          ) : (
+            <div
+              className="flex h-full items-center justify-center rounded-lg border border-(--color-border-subtle) bg-(--bg-card)/35"
+              role="status"
+              aria-label="Preparing conversation"
+            >
+              <div className="flex items-center gap-2 text-xs text-(--color-text-muted)">
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border border-(--color-border-strong) border-t-(--color-accent)" />
+                Preparing conversation…
+              </div>
+            </div>
+          )}
         </div>
       </section>
 

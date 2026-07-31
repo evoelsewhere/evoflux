@@ -27,6 +27,7 @@ interface DiscreteSliderProps {
   /** Optional caption under the tick labels. */
   hint?: string
   className?: string
+  compact?: boolean
 }
 
 export function DiscreteSlider({
@@ -38,6 +39,7 @@ export function DiscreteSlider({
   color = 'var(--color-accent)',
   hint,
   className,
+  compact = false,
 }: DiscreteSliderProps) {
   const preset = useMotionPreset()
   const railRef = useRef<HTMLDivElement>(null)
@@ -60,7 +62,8 @@ export function DiscreteSlider({
     return () => observer.disconnect()
   }, [])
 
-  const travel = Math.max(0, railWidth - THUMB_WIDTH)
+  const thumbWidth = compact ? 18 : THUMB_WIDTH
+  const travel = Math.max(0, railWidth - thumbWidth)
   const thumbX = travel * progress
 
   const handleInput = useCallback(
@@ -91,11 +94,18 @@ export function DiscreteSlider({
   return (
     <div className={cn('select-none', className)}>
       <div className="flex items-baseline justify-between gap-3">
-        <span className="text-sm font-medium text-(--color-text)">{label}</span>
-        <span className="font-mono text-xs tabular-nums text-(--color-text-muted)">{valueLabel}</span>
+        <span className={cn('font-medium text-(--color-text)', compact ? 'text-xs' : 'text-sm')}>
+          {label}
+        </span>
+        <span className={cn(
+          'font-mono tabular-nums text-(--color-text-muted)',
+          compact ? 'text-[10px]' : 'text-xs',
+        )}>
+          {valueLabel}
+        </span>
       </div>
 
-      <div className="relative mt-3 h-11">
+      <div className={cn('relative', compact ? 'mt-2 h-8' : 'mt-3 h-11')}>
         {/* Value bubble tracks the thumb while the control is active. */}
         <motion.div
           aria-hidden="true"
@@ -113,7 +123,10 @@ export function DiscreteSlider({
 
         <div
           ref={railRef}
-          className="absolute inset-x-0 top-1/2 h-2.5 -translate-y-1/2 overflow-hidden rounded-full bg-(--bg-key) ring-1 ring-inset ring-(--color-border)"
+          className={cn(
+            'absolute inset-x-0 top-1/2 -translate-y-1/2 overflow-hidden rounded-full bg-(--bg-key) ring-1 ring-inset ring-(--color-border)',
+            compact ? 'h-2' : 'h-2.5',
+          )}
         >
           <motion.div
             className="absolute inset-y-0 left-0 w-full rounded-full"
@@ -143,9 +156,12 @@ export function DiscreteSlider({
 
         <motion.div
           aria-hidden="true"
-          className="pointer-events-none absolute top-1/2 left-0 flex h-6 items-center justify-center rounded-full border border-(--color-border-strong) bg-(--color-surface) shadow-[0_1px_3px_rgb(0_0_0/0.25)]"
+          className={cn(
+            'pointer-events-none absolute top-1/2 left-0 flex items-center justify-center rounded-full border border-(--color-border-strong) bg-(--color-surface) shadow-[0_1px_3px_rgb(0_0_0/0.25)]',
+            compact ? 'h-5' : 'h-6',
+          )}
           style={{
-            width: THUMB_WIDTH,
+            width: thumbWidth,
             y: '-50%',
             // Keyboard focus has to be visible on the painted thumb, since the
             // real input is transparent and cannot show its own ring.
@@ -178,7 +194,7 @@ export function DiscreteSlider({
         />
       </div>
 
-      <div className="mt-1 flex justify-between gap-1">
+      <div className={cn('flex justify-between gap-1', compact ? 'mt-0.5' : 'mt-1')}>
         {marks.map((mark, markIndex) => (
           <button
             key={mark}
@@ -187,7 +203,8 @@ export function DiscreteSlider({
             aria-hidden="true"
             onClick={() => onChange(markIndex)}
             className={cn(
-              'min-w-0 flex-1 truncate rounded px-0.5 text-center font-mono text-[10px] transition-colors',
+              'min-w-0 flex-1 truncate rounded px-0.5 text-center font-mono transition-colors',
+              compact ? 'text-[9px]' : 'text-[10px]',
               markIndex === index
                 ? 'font-semibold text-(--color-text)'
                 : 'text-(--color-text-subtle) hover:text-(--color-text-muted)',

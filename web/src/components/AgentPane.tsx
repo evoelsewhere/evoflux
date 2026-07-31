@@ -29,7 +29,9 @@ import type { ContentBlock, TodoItem } from '@/api/types'
 
 const SCROLL_THRESHOLD = 40
 const USER_SCROLL_DETACH_DELTA = 4
-const INITIAL_RENDERED_TURNS = 80
+// Split focuses on the current work. Mount a smaller initial history window
+// so entering the layout does not parse dozens of old Markdown turns at once.
+const INITIAL_RENDERED_TURNS = 32
 const TURN_RENDER_STEP = 80
 
 interface AgentPaneProps {
@@ -57,6 +59,7 @@ export function AgentPane({
 }: AgentPaneProps) {
   const [paneCollapsed, setPaneCollapsed] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
   const [renderedTurnCount, setRenderedTurnCount] = useState(INITIAL_RENDERED_TURNS)
   const prevScrollHeightRef = useRef<number | null>(null)
   const pendingRestoreRef = useRef(false)
@@ -77,6 +80,7 @@ export function AgentPane({
 
   const pinnedRef = useRef(true)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
+  const showScrollBtnRef = useRef(false)
 
   const isAtBottom = useCallback(() => {
     const el = scrollRef.current
@@ -84,17 +88,23 @@ export function AgentPane({
     return el.scrollHeight - el.scrollTop - el.clientHeight <= SCROLL_THRESHOLD
   }, [])
 
+  const setScrollButtonVisible = useCallback((visible: boolean) => {
+    if (showScrollBtnRef.current === visible) return
+    showScrollBtnRef.current = visible
+    setShowScrollBtn(visible)
+  }, [])
+
   const scrollToBottom = useCallback((smooth = false) => {
     const el = scrollRef.current
     if (!el) return
     pinnedRef.current = true
-    setShowScrollBtn(false)
+    setScrollButtonVisible(false)
     if (smooth) {
       el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
     } else {
       el.scrollTop = el.scrollHeight
     }
-  }, [])
+  }, [setScrollButtonVisible])
 
   // Me detect user scroll intent before stream updates can snap the pane back
   // to the bottom. Scroll catches scrollbar/keyboard movement; wheel/touchmove
@@ -104,18 +114,16 @@ export function AgentPane({
     if (!el) return
     let lastScrollTop = el.scrollTop
     let lastTouchY: number | null = null
+    let scrollFrame: number | null = null
     const updatePinnedFromPosition = () => {
+      scrollFrame = null
       const atBottom = isAtBottom()
       pinnedRef.current = atBottom
-      // Me: only flip state when the boolean actually changes. Calling
-      // setState with the current value on every wheel tick still
-      // schedules a re-render, which can cascade through MarkdownBlock /
-      // ReactMarkdown and re-mount inline media elements mid-playback.
-      setShowScrollBtn((prev) => (prev === !atBottom ? prev : !atBottom))
+      setScrollButtonVisible(!atBottom)
     }
     const detachFromBottom = () => {
       pinnedRef.current = false
-      setShowScrollBtn(true)
+      setScrollButtonVisible(true)
     }
     const onScroll = () => {
       const nextScrollTop = el.scrollTop
@@ -123,7 +131,9 @@ export function AgentPane({
         detachFromBottom()
       }
       lastScrollTop = nextScrollTop
-      requestAnimationFrame(updatePinnedFromPosition)
+      if (scrollFrame === null) {
+        scrollFrame = requestAnimationFrame(updatePinnedFromPosition)
+      }
     }
     const onWheel = (e: WheelEvent) => {
       if (e.deltaY < -USER_SCROLL_DETACH_DELTA) detachFromBottom()
@@ -143,13 +153,14 @@ export function AgentPane({
     el.addEventListener('touchend', onTouchEnd, { passive: true })
     el.addEventListener('touchcancel', onTouchEnd, { passive: true })
     return () => {
+      if (scrollFrame !== null) cancelAnimationFrame(scrollFrame)
       el.removeEventListener('scroll', onScroll)
       el.removeEventListener('wheel', onWheel)
       el.removeEventListener('touchmove', onTouchMove)
       el.removeEventListener('touchend', onTouchEnd)
       el.removeEventListener('touchcancel', onTouchEnd)
     }
-  }, [isAtBottom])
+  }, [isAtBottom, setScrollButtonVisible])
 
   const allBlocks = useMemo(
     () => mergeBlocks(stream.blocks, stream.currentBlocks),
@@ -180,21 +191,33 @@ export function AgentPane({
     prevScrollHeightRef.current = null
   }, [renderedTurnCount])
 
-  // Me single scroll effect — block count or last block text changed
-  const lastBlockContent = allBlocks[allBlocks.length - 1]?.content ?? ''
-  useEffect(() => {
-    if (pinnedRef.current) scrollToBottom()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allBlocks.length, lastBlockContent])
-
   const isEmpty = allBlocks.length === 0
+
+  // Follow rendered height so streamed Markdown and the viewport advance in
+  // one visual frame instead of scroll jumping for every raw provider chunk.
+  useEffect(() => {
+    const content = contentRef.current
+    if (!content || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => {
+      const el = scrollRef.current
+      if (el && pinnedRef.current) el.scrollTop = el.scrollHeight
+    })
+    observer.observe(content)
+    return () => observer.disconnect()
+  }, [isEmpty])
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (el && pinnedRef.current) el.scrollTop = el.scrollHeight
+  }, [allBlocks.length])
 
   useEffect(() => {
     if (!isEmpty) return
     pinnedRef.current = true
-    setShowScrollBtn(false)
     if (scrollRef.current) scrollRef.current.scrollTop = 0
-  }, [isEmpty])
+    const frame = requestAnimationFrame(() => setScrollButtonVisible(false))
+    return () => cancelAnimationFrame(frame)
+  }, [isEmpty, setScrollButtonVisible])
 
   const paneClass = isError
     ? 'ring-1 ring-inset ring-(--color-error)/40 shadow-sm'
@@ -282,7 +305,7 @@ export function AgentPane({
 
       {/* Body */}
       <div className={collapsible && paneCollapsed ? 'hidden' : 'relative flex min-h-0 flex-1 flex-col'}>
-      <div ref={scrollRef} className="flex-1 overflow-y-auto" style={{ minHeight: 0 }}>
+      <div ref={scrollRef} className="flex-1 overflow-y-auto overscroll-contain" style={{ minHeight: 0 }}>
         {isEmpty && !isWorking && (isError || isOffline) && (
             <div className="flex h-full select-none flex-col items-center justify-center py-8">
               <p className="text-xs text-(--color-text-subtle)">{isError ? stream.lastError || 'Error' : 'Offline'}</p>
@@ -290,7 +313,7 @@ export function AgentPane({
           )}
 
          {allBlocks.length > 0 && (
-            <div className="space-y-3 px-3 py-3">
+            <div ref={contentRef} className="space-y-3 px-3 py-3">
                {hiddenTurnCount > 0 && (
                  <div className="flex justify-center pb-1">
                    <button
@@ -307,39 +330,44 @@ export function AgentPane({
                {visibleTurnItems.map((item, k) => {
                    if (item.kind === 'user') {
                      return (
-                       <BlockRenderer
-                         key={item.block.id}
-                         block={item.block}
-                         isStreaming={false}
-                         compact
-                         sessionId={sessionId}
-                         onRevert={item.block.id === latestUserBlockId ? handleRevert : undefined}
-                         latestMCPAppBlockIds={latestMCPAppBlockIds}
-                       />
+                       <div key={item.block.id} className="oa-transcript-turn">
+                         <BlockRenderer
+                           block={item.block}
+                           isStreaming={false}
+                           compact
+                           sessionId={sessionId}
+                           onRevert={item.block.id === latestUserBlockId ? handleRevert : undefined}
+                           latestMCPAppBlockIds={latestMCPAppBlockIds}
+                         />
+                       </div>
                      )
                    }
                    // Me only the trailing turn (no user block after) can be "live"
-                    const isTrailingTurn = hiddenTurnCount + k === turnItems.length - 1
+                   const isTrailingTurn = hiddenTurnCount + k === turnItems.length - 1
                    return (
-                     <AssistantTurn
+                     <div
                        key={`turn-${item.startIndex}-${item.blocks[0]?.id ?? k}`}
-                       blocks={item.blocks}
-                       startIndex={item.startIndex}
-                       finalizedCount={stream.blocks.length}
-                       isWorking={isWorking}
-                       isTrailingTurn={isTrailingTurn}
-                       totalBlocks={allBlocks.length}
-                       onContinue={onContinue}
-                       renderBlock={({ block, isStreaming }) => (
-                         <BlockRenderer
-                           block={block}
-                           isStreaming={isStreaming}
-                           compact
-                           sessionId={sessionId}
-                           latestMCPAppBlockIds={latestMCPAppBlockIds}
-                         />
-                       )}
-                     />
+                       className={isWorking && isTrailingTurn ? undefined : 'oa-transcript-turn'}
+                     >
+                       <AssistantTurn
+                         blocks={item.blocks}
+                         startIndex={item.startIndex}
+                         finalizedCount={stream.blocks.length}
+                         isWorking={isWorking}
+                         isTrailingTurn={isTrailingTurn}
+                         totalBlocks={allBlocks.length}
+                         onContinue={onContinue}
+                         renderBlock={({ block, isStreaming }) => (
+                           <BlockRenderer
+                             block={block}
+                             isStreaming={isStreaming}
+                             compact
+                             sessionId={sessionId}
+                             latestMCPAppBlockIds={latestMCPAppBlockIds}
+                           />
+                         )}
+                       />
+                     </div>
                    )
                   })}
               </div>
