@@ -6,11 +6,13 @@ from uuid import uuid7
 import pytest
 
 from app.agent.mode.team.delegation_ledger import (
+    complete_reviewed_task,
     complete_task,
     create_tasks,
     expire_overdue_tasks,
     release_ready_tasks,
     reopen_task,
+    submit_task_for_review,
 )
 from app.core import db as db_module
 from app.models.chat import ChatSession, _utcnow
@@ -131,6 +133,104 @@ async def test_nonexclusive_path_claims_allow_parallel_overlap():
             deadline_at=None,
         )
         assert len(tasks) == 1
+
+
+@pytest.mark.asyncio
+async def test_isolated_tasks_allow_parallel_overlapping_paths():
+    async with db_module.async_session_factory() as db:
+        lead = await _session(db)
+        spec = {
+            "goal": "parallel edit",
+            "target_paths": ["app/shared.py"],
+            "exclusive_paths": True,
+            "resolved_isolation": "worktree",
+        }
+        first = await create_tasks(
+            db,
+            lead_session_id=lead.id,
+            delegator="lead",
+            recipients=["coder#1"],
+            spec=spec,
+            dependencies=[],
+            deadline_at=None,
+        )
+        second = await create_tasks(
+            db,
+            lead_session_id=lead.id,
+            delegator="lead",
+            recipients=["coder#2"],
+            spec=spec,
+            dependencies=[],
+            deadline_at=None,
+        )
+
+        assert first[0].status == "pending"
+        assert second[0].status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_review_does_not_release_dependency_until_merge():
+    async with db_module.async_session_factory() as db:
+        lead = await _session(db)
+        first = (
+            await create_tasks(
+                db,
+                lead_session_id=lead.id,
+                delegator="lead",
+                recipients=["coder#1"],
+                spec={
+                    "goal": "first",
+                    "resolved_isolation": "worktree",
+                    "worktree_allocation": {"state": "review"},
+                },
+                dependencies=[],
+                deadline_at=None,
+            )
+        )[0]
+        second = (
+            await create_tasks(
+                db,
+                lead_session_id=lead.id,
+                delegator="lead",
+                recipients=["coder#2"],
+                spec={"goal": "second"},
+                dependencies=[str(first.id)],
+                deadline_at=None,
+            )
+        )[0]
+        await submit_task_for_review(
+            db,
+            lead_session_id=lead.id,
+            task_id=str(first.id),
+            delegator="lead",
+            recipient="coder#1",
+            result={"summary": "ready"},
+            spec=first.spec,
+        )
+
+        ready, failed = await release_ready_tasks(
+            db,
+            lead_session_id=lead.id,
+            live_recipients={"coder#2"},
+        )
+        assert ready == []
+        assert failed == []
+        assert second.status == "blocked"
+
+        await complete_reviewed_task(
+            db,
+            lead_session_id=lead.id,
+            task_id=str(first.id),
+            spec=first.spec,
+        )
+        ready, failed = await release_ready_tasks(
+            db,
+            lead_session_id=lead.id,
+            live_recipients={"coder#2"},
+        )
+
+        assert [row.id for row in ready] == [second.id]
+        assert failed == []
 
 
 @pytest.mark.asyncio

@@ -368,8 +368,9 @@ export function AgentPane({
       {showScrollBtn && (
         <button
           onClick={() => scrollToBottom(true)}
-          className="absolute bottom-2 left-1/2 z-(--z-panel) -translate-x-1/2 rounded-full border border-(--color-border) bg-(--bg-card) p-1 text-(--color-text-muted) transition-colors hover:text-(--color-text-2)"
-          aria-label="Scroll to bottom"
+          className="absolute right-2 bottom-2 z-(--z-panel) flex size-8 items-center justify-center rounded-full border border-(--color-border) bg-(--bg-card)/95 text-(--color-text-muted) shadow-md backdrop-blur transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
+          aria-label="Back to latest message"
+          title="Back to latest message"
         >
           <ChevronDown size={16} />
         </button>

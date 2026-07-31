@@ -3,224 +3,348 @@
 
   # EvoFlux
 
-  **A complete, self-hosted agent harness — not a chatbot wrapper around an LLM.**
+  ### A harness-first desktop workspace for agents that do real work.
 
-  Multi-agent teams, a real code knowledge graph, persistent wiki memory, any LLM you choose, and a native desktop app — all running on your machine.
+  **Lead-and-specialists. Orchestrated. Parallel. Verified.**
 
-  [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-  [![Python 3.12+](https://img.shields.io/badge/python-3.12+-3776AB?logo=python&logoColor=white)](pyproject.toml)
+  Forge for cowork, Coding for software engineering, and AIM for legacy modernization —
+  powered by one local-first agent harness and any model you choose.
+
+  [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-2563EB.svg)](LICENSE)
+  [![Desktop only](https://img.shields.io/badge/Product-Desktop%20only-1764FF)](desktop/)
+  [![Python 3.12+](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)](pyproject.toml)
   [![React 19](https://img.shields.io/badge/React-19-149ECA?logo=react&logoColor=white)](web/package.json)
-  [![Tauri v2](https://img.shields.io/badge/Desktop-Tauri%20v2-FFC131?logo=tauri&logoColor=white)](desktop/)
-  [![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white)](app/)
-  [![BYOM](https://img.shields.io/badge/BYOM-12%20providers-6E56CF)](#bring-your-own-model)
+  [![Tauri v2](https://img.shields.io/badge/Tauri-v2-FFC131?logo=tauri&logoColor=white)](desktop/)
+  [![BYOM](https://img.shields.io/badge/Models-12%20providers-7C3AED)](#bring-your-own-model)
 
-  [Quick Start](#quick-start) · [The Harness](#evoflux-as-an-agent-harness) · [Three Modes](#one-app-three-modes-forge-coding-and-aim) · [Architecture](#architecture) · [WebBridge](#browser-agent-bridge-webbridge) · [Comparison](#how-evoflux-compares)
-
+  [Three modes](#three-specialized-modes) ·
+  [Quick start](#quick-start) ·
+  [Working model](#agent-working-model) ·
+  [Architecture](#architecture) ·
+  [Capabilities](#core-capabilities) ·
+  [AIM](#aim-modernization-factory) ·
+  [WebBridge](#webbridge)
 </div>
 
-> **Note — from 30 June 2026 onwards:** All fixes, optimizations, and new features shipped to EvoFlux are developed and delivered using **EvoFlux Coding mode**. The agents build, review, and ship themselves.
+<br />
+
+<p align="center">
+  <img src="documents/images/generated/harness-and-modes.jpg" width="820" alt="One EvoFlux harness connects any LLM to Forge, Coding, and AIM" />
+</p>
+
+> [!NOTE]
+> Since **30 June 2026**, fixes, optimizations, and new EvoFlux features have been developed and delivered using **EvoFlux Coding mode**. The agents build, review, and ship themselves.
 
 ---
 
-## What is EvoFlux?
+## Three specialized modes
 
-A **harness**, in the vocabulary the AI-agent field settled on through 2025–2026, is everything that sits between a language model and the real world: the code, configuration, and execution logic that decides what the model can see, what it's allowed to touch, how it recovers from its own mistakes, and whether anyone can tell what it actually did. The model generates text; the harness is what turns that text into safe, useful, repeatable action. It's also the reason the same underlying model performs differently in different products — harness quality has been shown to move a coding agent from the bottom of a benchmark leaderboard to the top five without touching the model at all.
+One desktop app. One harness. Three different kinds of work.
 
-EvoFlux is a harness built to that standard, shipped as software you run yourself: a FastAPI backend orchestrating role-based multi-agent teams that spawn members on demand from a shared mailbox rather than run them as always-on background loops, a tree-sitter-powered code knowledge graph, a memory engine that consolidates conversations into a long-term wiki, and a React 19 UI wrapped in a real Tauri desktop shell — Apache-2.0, with any LLM provider a config away.
-
-## EvoFlux as an agent harness
-
-Every capability below maps to a subsystem that ships today, not a roadmap slide.
-
-![The five layers of the EvoFlux agent harness — tool orchestration, guardrails, context and memory, verification loops, and observability — sitting between any LLM provider and your local machine](documents/images/harness-anatomy.png)
-
-## One app, three modes: Forge, Coding, and AIM
-
-Most agent products assume every conversation is about a codebase. EvoFlux doesn't: it splits into three modes at the top level, each with its own workspace model and its own agent roster.
-
-| | **Forge** | **Coding** |
-|---|---|---|
-| Workspace | A fresh, disposable sandbox created per session — no project required | Your actual repo (or a multi-repo project) on disk, opened by path |
-| Built for | One-off tasks: research, writing, prototyping a script, running a command, working with a document | Sustained work in a codebase you keep coming back to |
-| Default team | `lead` + `consultant` + `executor` + `explorer` + `debate` | `lead` + `architect` + `coder` + `explorer` + `debate` |
-| Extra tooling | — | Git (diff, commit, branch, merge, rebase, worktrees), the code knowledge graph, multi-repo project focus, a live file tree |
-| Session lifetime | Ephemeral — gone when the session ends | Persistent — reopen the same workspace weeks later |
-
-Both modes share the same lead-and-mailbox core, the same streaming UI, the same permission model. Ask Forge to "explain this codebase" or "fix a bug" and it will — the distinction isn't what kind of task, it's whether the work needs a permanent, git-aware workspace or a scratch space that disappears when you're done.
-
-The third mode, **AIM (AI Innovation Modernization)**, is a different shape again: a factory for migrating a legacy codebase to a new stack — COBOL to Java 21, VB6 to .NET, Java 8 to 17+ — and proving the result behaves identically to what it replaces. Its workspace is three repos instead of one (a read-only legacy **base source**, a pre-scaffolded **target source**, and a **KB repo** that doubles as the client deliverable and the team's git-based collaboration plane), its roster is seven migration-specialized agents instead of a general-purpose one, and its UI is flow-first rather than chat-first — the main surface is a project's unit inventory and pipeline runs, with chat as an optional drawer, not the primary surface. More in [Feature deep-dive](#aim-legacy-migration-mode) below.
-
-![AIM framework overview — a base source, a pre-scaffolded target source, and a KB repo feed six gated pipelines (assess, understand, convert, test-compare, cutover), each run by a specialized agent, with a deterministic aim_compare equivalence check certifying pass, fail, or acceptable-diff at test-compare](documents/images/aim-framework-overview.svg)
-
----
-
-## Architecture
-
-![EvoFlux system architecture — desktop app and browser client surfaces connect over HTTP and Server-Sent Events to a FastAPI backend housing the team manager, code graph, dream engine, permissions, scheduler, and MCP client, all persisting to SQLite or PostgreSQL, a markdown wiki, and any of twelve LLM providers](documents/images/system-architecture.png)
-
-### How a multi-agent turn actually runs
-
-There's no single "do everything" prompt. The lead decides when a task benefits from parallel work and spawns member instances that run concurrently, each dropping results into a shared mailbox the lead reads back from — the same event stream powers the UI's live Split and Monitor views.
-
-![Sequence diagram of a multi-agent turn: the user messages the lead agent, the lead streams its plan to the UI over SSE and spawns explorer and coder members through the mailbox, the two members work in parallel and report findings and a diff back to the mailbox, and the lead synthesizes a final response streamed back to the user](documents/images/multi-agent-sequence.png)
-
----
-
-## Feature deep-dive
-
-### Multi-agent teams
-Agents are defined as plain Markdown files with YAML frontmatter (`name`, `role`, `model`, `temperature`, `thinking_level`) — human-readable, diffable, and versionable. A team has exactly one lead and any number of members; members aren't background loops, they're activated on demand when a message lands in their mailbox and go back to idle when done, so running three copies of the same blueprint in parallel (`executor#1`, `executor#2`, `executor#3`) is three mailbox activations, not three always-on processes.
-
-### Code knowledge graph
-25 tree-sitter-backed parsers cover Python, TypeScript/TSX, JavaScript, Go, Rust, Java, C#, C, C++, Swift, Kotlin, PHP, Ruby, Scala, Dart, Objective-C, Lua, Luau, R, Pascal, Svelte, Vue, Astro, and Liquid. Indexing extracts symbols (functions, classes, methods, fields) and typed edges (`calls`, `inherits`, `implements`, `imports`, `references`), only linking a reference when it resolves unambiguously. Agents query the graph through seven tools — `code_overview`, `code_search`, `code_symbol`, `code_references`, `code_neighbors`, `code_map`, `code_path` — that return symbol references instead of file bodies, so navigating a codebase costs a fraction of the tokens reading it would. Full reindexes run as batched, event-loop-friendly writes so the UI stays responsive while a large repo indexes in the background.
-
-#### Cross-repo, multi-project graphs
-A `CodingProject` can span several repositories, and every code graph tool accepts `scope="project"` to search, inspect, or path-find across all of them transparently — no separate cross-repo tool required. Resolving a reference that crosses a repo boundary runs through three tiers, cheapest first, entirely on-device:
-
-![Cross-repo resolution pipeline: three repos feed unresolved references through Tier 0 reattach of stale links, Tier A static manifest and Java fully-qualified-name matching, and Tier B FTS5 lexical search, none of which call an LLM](documents/images/code-graph-cross-repo.png)
-
-The project view in the UI renders the result two ways: a force-directed **spatial graph** clustering symbols by repo with cross-repo edges drawn between them, and a **matrix** heatmap of resolved/unresolved/rejected reference counts per repo pair — both live-updating as a reindex + resolution pass runs.
-
-#### Calling the graph without burning your context
-Because these tools are designed to be cheap, it's easy to accidentally call the expensive variant of a query that has a cheap equivalent. In practice, on a real multi-repo Java codebase, the difference between the deliberate call order below and the naive one is roughly an order of magnitude in tokens:
-
-![Optimal token-efficient call order for the code graph tools: code_overview, then code_search, then code_symbol which already includes a caller count, escalating to code_references, code_neighbors, or code_path only when the answer isn't already available, totaling about 1300 tokens for a full investigation](documents/images/code-graph-call-order.png)
-
-| Anti-pattern | Tokens wasted | Use instead |
-|---|---|---|
-| `code_symbol("Patient")` on a widely-used class | ~2,000 | `code_search("Patient", limit=1)` — ~125 tokens |
-| `code_neighbors("ConceptServiceImpl")` with no `edge_kind` | ~2,000 | add `edge_kind="calls"` — ~75 tokens |
-| `code_references("Patient", limit=30)` | ~1,250 | `limit=3` — ~750 tokens |
-| `code_map(budget=50)` | ~2,000 | `code_map(budget=10)` — ~400 tokens |
-| Calling `code_symbol` before `code_search` | a wasted round-trip, or a miss | always search first |
-
-| Question | Cheaper tool | More expensive tool | Savings |
+| | **Forge** | **Coding** | **AIM** |
 |---|---|---|---|
-| Does this symbol exist, and where? | `code_search` (~125 tok) | `code_symbol` on a popular hit (~2,000 tok) | ~16x |
-| Who calls symbol X — just a count? | `code_symbol` → its built-in "called by (N)" (~100 tok) | `code_references(limit=3)` (~750 tok) | ~7.5x |
-| What methods does class X have? | `code_search("X.", kind="method", limit=10)` (~500 tok) | `code_neighbors("X")` unfiltered (~2,000 tok) | ~4x |
-| What does X call? | `code_neighbors("X.method", edge_kind="calls")` (~75 tok) | the same call without `edge_kind` (~300 tok) | ~4x |
+| Product role | Cowork | Software engineering workspace | AI modernization factory |
+| Workspace | Temporary sandbox | Persistent repo or multi-repo project | Legacy base + target + KB repos |
+| Best for | Research, documents, data, browser work, quick scripts | Build, test, refactor, review, git operations | Assess, understand, design, convert, compare, cut over |
+| Default specialists | Executor, Explorer, Consultant, Debate | Coder, Explorer, Architect, Debate | Archaeology, Architecture, Conversion, Testing, Appraisal, Triage |
+| Verification | Artifact and tool-result review | Tests, diffs, code graph, git | Human gates + deterministic equivalence |
 
-### Memory and the Dream engine
-A scheduled (or manually triggered) "Dream" agent reads unprocessed sessions and notes and consolidates them into a structured wiki — `topics/`, `entities/`, `notes/`, `imports/`, with an `INDEX.md` table of contents and an append-only `LOG.md` activity trail. Every page carries YAML frontmatter (sources, confidence, related pages) so memory stays inspectable and editable — not an opaque vector blob you have to trust blindly.
+### Forge · cowork without a repository
 
-### Bring your own model
-Twelve provider integrations ship in the box — Anthropic, OpenAI, Google Gemini, AWS Bedrock, Ollama, DeepSeek, xAI, Vertex AI, GitHub Copilot, and more — behind one streaming abstraction. Pick a different model per agent: a fast, cheap model for the executor, a stronger reasoning model for the architect or lead.
+Forge is the fast execution sandbox. Start with a request instead of a project: research a topic, draft a document, build a slide deck, analyze data, work with files, automate a browser task, or prototype a script.
 
-### Skills and MCP
-50 built-in skills cover research, security review, TDD, debugging, CI/CD, documentation, browser testing, legacy-migration methodology, and more, invocable by name. For anything not built in, EvoFlux is an MCP client — point it at any stdio, HTTP, or SSE MCP server and its tools become available to every agent, gated by the same permission rules as native tools.
+### Coding · persistent engineering
 
-### Permissions and sandboxing
-Tool calls are gated by wildcard `(tool, pattern) → allow | deny | ask` rules with last-match-wins evaluation. The filesystem sandbox is a denylist, not an allowlist: EvoFlux's own data, state, and cache directories are blocked, symlinks into denied roots are rejected, and shell commands are tokenized and scanned for denied paths.
+Coding opens your real repository — or several repositories as one project — and keeps that workspace available across sessions. Agents can navigate the structural code graph, inspect the file tree, edit and test code, review diffs, and use the complete git surface.
 
-### Git and source control
-A full git surface — diff review, commit, branch create/delete/checkout, merge, rebase, cherry-pick, stash, and worktree management — exposed both as agent tools and as a source-control panel in the UI, with conflicts surfaced as structured, resolvable diffs.
+### AIM · controlled modernization
 
-### Session UX
-Long sessions get chapters (agent-markable dividers with a live table of contents), revert/undo with a movable boundary, and automatic context compaction. Split view tiles up to four agent panes with resize and reorder; Monitor view gives a mission-control strip of every agent's status plus a unified activity feed.
+AIM turns legacy migration into a governed production line. A flow-first interface manages the application inventory, knowledge base, traceability, pipelines, human approvals, test comparison, and cutover readiness.
 
-### AIM: legacy migration mode
-The third mode turns a legacy-to-modern migration into a factory. A project's workspace is a read-only **base source** (the legacy estate), a pre-scaffolded **target source**, and a **KB repo** that's the system of record for both — unit inventory, phase, business rules, and rulebook all resolve KB-first, so a project can override or extend the shared defaults without touching EvoFlux's own code. Seven specialized agents (`aim-lead`, `aim-archaeologist`, `aim-target-architect`, `aim-converter`, `aim-appraiser`, `aim-test-engineer`, `aim-triage-analyst`) carry each migration unit through six pipelines — deterministic, human-gated graphs of agent/tool/approval steps, not open-ended chat: `aim-assess` (inventory + wave plan), `aim-understand` (one unit → KB doc + candidate business rules), `aim-convert-unit` / `aim-convert-wave` (implement into the target base, unit-by-unit or as a batch), `aim-test-compare` (certify or triage), and `aim-cutover-check` (phase flip). Equivalence is deterministic, not vibes: `aim_compare` canonicalizes actual and golden-master output per a stack-specific rulebook — encoding, sort order, date/number formatting, the "harmless" differences that hide real defects — and records a pass/fail/acceptable-diff verdict with a full diff report, closing a gap most published reference implementations in this space (including Microsoft's own open-source one) leave unsolved. Rulebook packs (`cobol-java21`, `vb6-dotnet`, `java8-java21` ship built in) bundle the conversion mappings, canonicalizer profiles, and agent-blueprint overlays for one source→target stack pair; a project's KB repo can carry its own to override or extend any of them.
-
-### Browser Agent Bridge (WebBridge)
-Most "browser tool" integrations are one-way: the agent drives a browser, done. WebBridge (`extensions/webbridge`) is EvoFlux's Chrome/Edge extension for the other, harder half — a **Browser Interaction Fabric** where control flows both ways over the same persistent connection, and the browser being driven is your **real one**, with your actual logins and cookies, not a disposable headless instance:
-
-![WebBridge overview — an agent and the EvoFlux backend (WS relay, domain policy, pairing, session mailbox) connect over a persistent relay to the WebBridge extension in the user's real Chrome/Edge browser; control flows agent to browser over CDP while context, selections, and handoff flow browser to agent across four layers: P0 secure transport, P1 browser-to-agent context, P2 Side Panel and live handoff, and P3 Teach Mode and text watches](documents/images/webbridge-interaction-fabric.svg)
-
-Agent-driven control reuses the same element-based and coordinate-level command set as EvoFlux's headless browser tool (snapshot, click, fill, extract, screenshot, wait, crawl) over the Chrome DevTools Protocol, so a workflow written against one transfers to the other. What WebBridge adds on top is the human-owned direction of that fabric, delivered in four layers:
-
-| Layer | What it adds | Key pieces |
-|---|---|---|
-| **Secure transport** | A persistent WebSocket relay the extension registers on, gated by a scoped pairing credential exchanged for a single-use, 30-second connection ticket (never a bare token in a URL); every command is checked against a per-domain allow/block policy and written to an audit log | `background.js`, `app/api/routes/team/webbridge.py`, `webbridge_service.py` |
-| **Browser → agent context** | Explicit "Ask EvoFlux about selection / link / page" context-menu actions, gated by a per-domain sharing policy (`ask`/`allow`/`block`); origin/query/fragment stripping and untrusted-data tagging before anything reaches the transcript | `popup.js`, `webbridge_pairing_service.py` |
-| **Side Panel & live handoff** | A persistent panel next to the page: streamed transcript over SSE, in-flight `AskUser` answers, a sanitized single-element picker, and a **Take control / Resume agent** lease that pauses agent commands on a tab while a human logs in or completes a manual step | `sidepanel.js`/`sidepanel.html`, `markdown.js`, `element_picker.js` |
-| **Teach Mode & watches** | Records a semantic click/fill/select/navigate sequence — never raw keystrokes, secret-looking fields redacted at the source — into a human-reviewed, replayable draft; a lightweight text watch polls a page for a phrase and only surfaces a badge until a user confirms sending it | `teach_recorder.js`, Teach-draft Alembic migrations |
-
-Every pairing, ticket, tab-binding, and Teach draft is a persisted, Alembic-migrated row, not in-memory state — a pairing (and its bindings) survives a backend restart, and revoking it closes the live relay connection and invalidates outstanding tickets immediately. See [`extensions/webbridge/README.md`](extensions/webbridge/README.md) for install, pairing, and `settings.yaml` domain/sharing guardrail configuration.
-
-### Beyond coding
-A headless-Chromium browser-automation tool (navigate, click, fill, extract, screenshot, live CDP screencasting) ships built in — no external Playwright server to run — for disposable, agent-only browsing that's separate from the real-browser WebBridge above. Document intake handles PDF, DOCX, and HTML via `markitdown`. Observability is OpenTelemetry and Prometheus, aggregated through DuckDB into UI-friendly summaries. A cron scheduler fires prompts at agents on a schedule, reusing the exact same chat pipeline a human message would use.
-
----
-
-## How EvoFlux compares
-
-The AI coding agent market moved fast through 2025–2026: in a Feb 2026 survey of 906 engineers, Claude Code was named the most-loved AI coding tool by 46% of respondents versus 19% for Cursor; Devin dropped from $500/mo to $20/mo, later broadening into a $0–200+/mo tiered lineup, and absorbed Windsurf into "Devin Desktop" in June 2026; and OpenAI's Codex now spans CLI, cloud, and IDE surfaces on one Rust-based harness. Almost all of them share two traits: you're on their model roadmap, on their terms, and they assume a project already exists.
-
-| | **EvoFlux** | Claude Code | Cursor | Devin / Devin Desktop | OpenAI Codex | OpenHands |
-|---|---|---|---|---|---|---|
-| Interface | Desktop app, web UI, REST API | CLI, IDE extensions, desktop app, web | IDE (VS Code fork) | Cloud web + Devin Desktop (IDE) + CLI | CLI, cloud, IDE ext. | Web UI, CLI, headless/API |
-| Deployment | Self-hosted, on your machine | Local + optional Anthropic-hosted cloud | Local IDE + cloud agents (VMs) | Cloud-hosted (SaaS/VPC) + local via Desktop | Local + cloud sandbox | Self-hosted (OSS) or OpenHands Cloud |
-| Open source | Yes, Apache-2.0 | No | No | No | CLI only, Apache-2.0 | Yes, MIT |
-| Bring your own model | Yes, 12 providers | Partial, unofficial proxy setups only | Partial — BYOK for Chat only, not Agent | Partial — choice of OpenAI/Claude/Gemini | No, OpenAI only | Yes, any model |
-| Non-project mode | Yes — Forge mode, no repo required | Partial — ad hoc via CLI piping, no dedicated mode | No | No (narrow data-analysis exception) | No | Yes |
-| Multi-agent | Lead + on-demand members, typed mailbox | Subagents + background/parallel agent teams | Agents Window + async subagent fleets + worktrees | Parent-spawned sub-Devins + fleet management | Up to 6 subagents | Sub-agent delegation for parallel subtasks |
-| Code understanding | Structural code graph, 25 parsers, cross-repo resolution | Codebase search; optional opt-in LSP plugin | Embedding-based semantic search, not LSP | "Ask Devin" codebase Q&A | Repo-aware agent loop | Agent-Computer Interface |
-| Persistent memory | Wiki + Dream consolidation, inspectable markdown | `CLAUDE.md` + auto-saved memory | Per-project Memories + Rules, no cross-project | Org-wide knowledge base + DeepWiki docs | `AGENTS.md` (hierarchical) + session memories | Context condenser + `AGENTS.md`/skills |
-| Sandboxing | Denylist filesystem sandbox + wildcard permissions | Permission rules + OS-level sandbox, optional VM | OS-level sandbox + auto-review classifier | Per-session isolated VM/container; VPC option | Seatbelt/Bubblewrap/ACLs by OS; cloud microVM | Docker container |
-| Real-browser bridge | Yes — [WebBridge](#browser-agent-bridge-webbridge) drives your logged-in Chrome/Edge both ways (agent control + browser-to-agent context/handoff) | No | No | No | No | No |
-| Pricing | Free — pay only your own model API costs | ~$17–20/mo (Pro), up to $100–200/mo (Max) or metered API | $0–200+/mo (Hobby to Ultra tiers) | $0–200+/mo per seat, plus usage-based fees | ~$20/mo (ChatGPT Plus) | Free self-hosted; Cloud has free + paid tiers |
-
-*(Competitor figures reflect publicly reported information as of mid-2026, verified via official docs and pricing pages where possible, and may have changed since.)*
-
-**Where EvoFlux leans in:** it isn't chasing a coding benchmark leaderboard — it's a general-purpose, self-hosted harness where coding is one deep mode alongside research, browser automation, scheduled automation, and long-term memory, with no vendor lock-in on the model layer, a real native app, a mode built for work that doesn't have a project yet, and a mode purpose-built for legacy-system migration with deterministic equivalence testing that none of the tools above attempt. Every other tool above still assumes you'll use its vendor's model as the default path — EvoFlux treats the model as a swappable component.
-
-**Where the commercial players lead:** purpose-built coding models (Cursor's Composer, OpenAI's GPT-5.5), heavily-funded cloud sandbox infrastructure for multi-hour unattended runs, and mature editor-native tooling inherited from full IDE forks (Cursor and Devin Desktop are both built on VS Code).
+<table>
+  <tr>
+    <td width="33%" align="center"><strong>Forge</strong></td>
+    <td width="33%" align="center"><strong>Coding</strong></td>
+    <td width="33%" align="center"><strong>AIM</strong></td>
+  </tr>
+  <tr>
+    <td><a href="documents/images/showcase/forge-mode.jpg"><img src="documents/images/showcase/forge-mode.jpg" width="360" alt="Forge creating and visually QA-ing a PowerPoint" /></a></td>
+    <td><a href="documents/images/showcase/coding-mode.jpg"><img src="documents/images/showcase/coding-mode.jpg" width="360" alt="Coding working across a multi-repository project" /></a></td>
+    <td><a href="documents/images/showcase/aim-mode.jpg"><img src="documents/images/showcase/aim-mode.jpg" width="360" alt="AIM migration overview and dependency-aware work queue" /></a></td>
+  </tr>
+  <tr>
+    <td><sub>PowerPoint build → render → visual QA → correction</sub></td>
+    <td><sub>Repository context, tool history, implementation, verification</sub></td>
+    <td><sub>Migration health, gates, workflow, waves, and unit queue</sub></td>
+  </tr>
+</table>
 
 ---
 
 ## Quick Start
 
-### Desktop app (recommended)
-Download the latest release for your platform (macOS `.dmg`, Windows `.msi`, Linux `.deb`/AppImage) — the app bundles its own Python runtime, so there's nothing else to install.
+### Install the desktop app
 
-### CLI / server, one-liner (macOS / Linux)
-```sh
-curl -LsSf https://raw.githubusercontent.com/khuonghung/evoflux/main/install.sh | sh
-evoflux   # first run walks you through provider setup
-```
+Download the [latest release](https://github.com/khuonghung/evoflux/releases/latest) for macOS (`.dmg`), Windows (`.msi`), or Linux (`.deb` / AppImage). The packaged app includes its Python sidecar.
 
-### From source
+On first launch:
+
+1. Connect an LLM provider.
+2. Start a Forge session, open a repository for Coding, or configure an AIM project.
+3. Choose the model, reasoning level, skills, tools, and permissions for each agent.
+
+### Run the desktop app from source
+
+Requirements: Python 3.12+, [uv](https://docs.astral.sh/uv/), [Bun](https://bun.sh/), Rust, and the Tauri prerequisites for your operating system.
+
 ```sh
 git clone https://github.com/khuonghung/evoflux.git
 cd evoflux
-uv sync                        # Python deps (requires uv)
-cd web && bun install && cd .. # frontend deps (requires bun)
 
-make dev                       # backend :8000 (reload) + frontend :5173, together
+uv sync
+cd web && bun install && cd ..
+
+# Terminal 1 — local API sidecar + React development server
+make dev
+
+# Terminal 2 — Tauri desktop shell
+make -C desktop dev
 ```
 
-Then open `http://localhost:5173`, connect your first LLM provider (any of the 12 supported), and start chatting in Forge mode — open a folder to switch to Coding, or set up a base/target/KB project to switch to AIM.
+`localhost:5173` is the internal frontend development server used by Tauri during development. EvoFlux is shipped and positioned as a **desktop product**, not a standalone web app.
+
+---
+
+## Agent working model
+
+EvoFlux operates under a **lead-and-specialists** model. Each request is analyzed by the Lead Agent to determine scope and complexity.
+
+- A simple task stays with the Lead.
+- A complex task is broken into well-defined subtasks with explicit goals, outputs, and constraints.
+- Specialists activate on demand, work in parallel, and exchange results through a shared mailbox.
+- The Lead evaluates handoffs and evidence, requests rework when needed, and synthesizes the final response.
+
+<p align="center">
+  <img src="documents/images/generated/agent-working-model.jpg" width="780" alt="Six-stage EvoFlux lead-and-specialists working model" />
+</p>
+
+### Configurable per agent
+
+| Configuration | Why it matters |
+|---|---|
+| **LLM model** | Use a fast model for routine execution and a stronger reasoning model for architecture or review |
+| **Temperature and thinking level** | Tune determinism, exploration, latency, and depth by role |
+| **Skills and tools** | Give each specialist the methods and actions required for its job |
+| **Permissions and access scope** | Limit what an agent can read, write, execute, or approve |
+
+The result is higher parallel capacity, less context noise, the right model for each job, verified delivery, and an execution history that can be inspected instead of trusted blindly.
+
+---
+
+## Architecture
+
+EvoFlux is desktop-only:
+
+`Tauri Desktop → React UI → local FastAPI sidecar → local state / model providers`
+
+The production app launches a local sidecar through an ephemeral port and token handshake. The React interface, agent runtime, code graph, memory engine, scheduler, permissions, and MCP client all run on the user's machine.
+
+<p align="center">
+  <img src="documents/images/generated/system-architecture.jpg" width="780" alt="EvoFlux desktop-only local-first system architecture" />
+</p>
+
+### What makes it a harness
+
+A language model generates reasoning. The harness turns that reasoning into controlled action:
+
+| Layer | Responsibility |
+|---|---|
+| **1. Tool orchestration** | Shell, filesystem, git, browser automation, MCP, and agent-to-agent actions |
+| **2. Guardrails** | Permissions, policies, approvals, filesystem sandboxing, command checks |
+| **3. Context and memory** | Workspace state, sessions, code graph, chapters, compaction, knowledge wiki |
+| **4. Verification loops** | Test, compare, review, debate, reject, rework, and evidence |
+| **5. Observability** | Streaming events, telemetry, logs, metrics, diagnostics, and audit history |
+
+The model is replaceable. The harness — context, action, policy, verification, and state — is the product.
+
+---
+
+## Core capabilities
+
+### Multi-agent teams
+
+Agents are Markdown files with YAML frontmatter (`name`, `role`, `model`, `temperature`, `thinking_level`), making teams readable, diffable, and versionable. A team has one Lead and any number of on-demand members. Multiple instances of the same blueprint can work in parallel without becoming always-on background processes.
+
+### Structural code knowledge graph
+
+Twenty-five tree-sitter parsers cover Python, TypeScript/TSX, JavaScript, Go, Rust, Java, C#, C, C++, Swift, Kotlin, PHP, Ruby, Scala, Dart, Objective-C, Lua, Luau, R, Pascal, Svelte, Vue, Astro, and Liquid.
+
+Indexing extracts symbols and typed edges — `calls`, `inherits`, `implements`, `imports`, and `references` — and links a reference only when it resolves unambiguously. Agents query symbols instead of repeatedly loading whole files.
+
+#### Cross-repository resolution
+
+A `CodingProject` can contain several repositories. Every graph tool accepts `scope="project"`, while three deterministic resolver tiers reconnect cross-repo references without an LLM call:
+
+1. Reattach a previously resolved edge.
+2. Match static manifests, identities, and Java fully qualified names.
+3. Search sibling FTS5 indexes for remaining lexical candidates.
+
+<p align="center">
+  <img src="documents/images/generated/code-graph-cross-repo.jpg" width="760" alt="Deterministic three-tier cross-repository code graph resolution" />
+</p>
+
+<details>
+  <summary><strong>Token-efficient code graph investigation</strong></summary>
+  <br />
+  <p align="center">
+    <img src="documents/images/generated/code-graph-call-order.jpg" width="700" alt="Cheap-first code graph investigation order" />
+  </p>
+
+  Start with `code_overview`, locate with `code_search`, and inspect with `code_symbol`. Escalate to `code_references`, `code_neighbors`, or `code_path` only when the answer is still missing.
+
+  | Question | Preferred call | Typical saving |
+  |---|---|---:|
+  | Does this symbol exist, and where? | `code_search` before `code_symbol` | ~16× |
+  | How many callers does X have? | Built-in count from `code_symbol` | ~7.5× |
+  | What does X call? | `code_neighbors(..., edge_kind="calls")` | ~4× |
+  | How are A and B connected? | `code_path("A", "B")` | Focused structural route |
+</details>
+
+### Memory and Dream
+
+The scheduled or manually triggered **Dream** agent consolidates sessions and notes into an inspectable Markdown wiki: `topics/`, `entities/`, `notes/`, and `imports/`, with `INDEX.md`, an append-only `LOG.md`, source citations, confidence, and related-page metadata.
+
+### Bring your own model
+
+Twelve provider integrations ship behind one streaming abstraction, including Anthropic, OpenAI, Google Gemini, AWS Bedrock, Ollama, DeepSeek, xAI, Vertex AI, and GitHub Copilot. Models can be selected independently for each agent.
+
+### Skills and MCP
+
+Fifty built-in skills cover research, security review, TDD, debugging, CI/CD, documentation, browser testing, and migration methodology. EvoFlux is also an MCP client for stdio, HTTP, and SSE servers; connected tools inherit the same permission rules as native tools.
+
+### Permissions and sandboxing
+
+Wildcard `(tool, pattern) → allow | deny | ask` rules use last-match-wins evaluation. The denylist filesystem sandbox protects EvoFlux state and cache directories, rejects symlinks into blocked roots, and tokenizes shell commands for denied-path checks.
+
+### Git and session UX
+
+Coding mode exposes diff review, commits, branches, merge, rebase, cherry-pick, stash, and worktrees to agents and the source-control UI. Long sessions support chapters, a live table of contents, revert/undo boundaries, context compaction, four-pane Split view, and a unified Monitor view.
+
+---
+
+## AIM modernization factory
+
+AIM operates across three repositories:
+
+- **Base source:** the legacy estate, mounted read-only.
+- **Target source:** a pre-scaffolded destination architecture.
+- **Knowledge-base repo:** the system of record for inventory, understanding, business rules, mappings, evidence, and collaboration.
+
+Seven specialist roles — Lead, Archaeologist, Target Architect, Converter, Appraiser, Test Engineer, and Triage Analyst — move each migration unit through controlled pipelines.
+
+<p align="center">
+  <img src="documents/images/generated/aim-modernization-factory.jpg" width="790" alt="AIM governed modernization factory with deterministic comparison verdicts" />
+</p>
+
+| Pipeline | Purpose |
+|---|---|
+| `aim-assess` | Inventory the estate and plan migration waves |
+| `aim-understand` | Produce KB documentation and candidate business rules |
+| `aim-convert-unit` / `aim-convert-wave` | Implement one unit or a batch into the target |
+| `aim-test-compare` | Compare golden-master and target behavior |
+| `aim-cutover-check` | Verify readiness and advance the unit phase |
+
+`aim_compare` canonicalizes output using a stack-specific rulebook — encoding, ordering, date and number formats, and other differences that can hide defects — then records `pass`, `fail`, or `acceptable-diff` with a complete report.
+
+Built-in rulebook packs include `cobol-java21`, `vb6-dotnet`, and `java8-java21`; a project's KB repository can override or extend them.
+
+---
+
+## WebBridge
+
+WebBridge is an external browser companion for the EvoFlux desktop app — not a web version of EvoFlux.
+
+It connects an agent to the user's real Chrome or Edge session through a persistent, policy-checked relay. Control flows from the desktop agent to the browser over CDP; selections, page context, and human handoff flow back to the desktop session.
+
+<p align="center">
+  <img src="documents/images/generated/webbridge.jpg" width="790" alt="WebBridge connecting EvoFlux Desktop to the user's real browser" />
+</p>
+
+| Capability | What it does |
+|---|---|
+| **Secure connection** | Pairs the browser extension with scoped credentials, uses one-time session tickets, enforces domain policies, and maintains a complete audit trail. |
+| **Safe context sharing** | Lets users intentionally share a selection, link, or page while sanitizing metadata, preserving provenance, and treating browser content as untrusted input. |
+| **Live collaboration** | Streams the agent session into the browser side panel, supports questions and element selection, and allows seamless control handoff between the user and agent. |
+| **Teach and monitor** | Records meaningful browser actions without capturing raw keystrokes, redacts sensitive fields, creates reviewable workflows, and requires confirmation before monitored results are shared. |
+
+Pairings, tickets, tab bindings, and Teach drafts are persisted through Alembic migrations. Revoking a pairing closes the live relay and invalidates outstanding tickets. See [`extensions/webbridge/README.md`](extensions/webbridge/README.md) for installation and policy configuration.
+
+### Beyond the real-browser bridge
+
+EvoFlux also includes disposable headless Chromium automation, PDF/DOCX/HTML intake through `markitdown`, cron-driven agent prompts, OpenTelemetry, Prometheus, and DuckDB-backed observability summaries.
+
+---
+
+## How EvoFlux compares
+
+<details>
+  <summary><strong>Compare deployment, models, memory, code intelligence, and browser integration</strong></summary>
+  <br />
+
+  | | **EvoFlux** | Claude Code | Cursor | Devin | OpenAI Codex | OpenHands |
+  |---|---|---|---|---|---|---|
+  | Interface | **Desktop app** | CLI, IDE, desktop, web | VS Code fork | Cloud + desktop + CLI | CLI, cloud, IDE | Web, CLI, API |
+  | Deployment | **Local, self-hosted** | Local + optional cloud | Local IDE + cloud agents | Cloud/VPC + local desktop | Local + cloud sandbox | Self-hosted or cloud |
+  | Open source | **Apache-2.0** | No | No | No | CLI only | MIT |
+  | Bring your own model | **12 providers** | Partial proxy setups | Partial BYOK | Provider choice | OpenAI only | Any model |
+  | Non-project cowork | **Forge** | Ad hoc | No | Limited | No | Yes |
+  | Multi-agent | Lead + on-demand specialists + mailbox | Subagents and teams | Agent fleets + worktrees | Sub-Devins | Up to six subagents | Parallel delegation |
+  | Code understanding | Structural graph, 25 parsers, cross-repo | Search + optional LSP | Embedding search | Codebase Q&A | Repo-aware loop | Agent-computer interface |
+  | Persistent memory | Inspectable wiki + Dream | Markdown + auto-memory | Project Memories | Org knowledge base | `AGENTS.md` + session memory | Condenser + skills |
+  | Real-browser bridge | **WebBridge, two-way** | No | No | No | No | No |
+  | Pricing | Free; pay model costs | Subscription or API | Subscription | Subscription + usage | ChatGPT or API | Free self-hosted / paid cloud |
+
+  EvoFlux leans into local ownership, model choice, inspectable memory, general cowork, structural code intelligence, and deterministic modernization. Commercial products lead in vendor-specific coding models, cloud infrastructure for long unattended runs, and editor-native maturity.
+
+  <sub>Competitor information reflects publicly reported product capabilities and pricing around mid-2026 and may change.</sub>
+</details>
 
 ---
 
 ## Tech stack
 
-| | |
+| Layer | Technology |
 |---|---|
-| Backend | Python 3.12+, FastAPI, SQLModel, Alembic, SQLite (WAL) or PostgreSQL/MySQL |
-| Streaming | Server-Sent Events (`sse-starlette`) end-to-end, one unified feed per session |
-| Code intelligence | `tree-sitter` + `tree-sitter-language-pack`, SQLite FTS5 |
-| Agent runtime | Async mailbox-based orchestration, 12 LLM provider integrations |
+| Desktop | Tauri v2, Rust, bundled Python sidecar |
+| Frontend | React 19, TypeScript 5.9, Vite 7, Tailwind CSS v4, Zustand, TanStack Query and Router |
+| Backend | Python 3.12+, FastAPI, SQLModel, Alembic |
+| Streaming | Server-Sent Events through `sse-starlette`; one feed per session |
+| Data | SQLite WAL or PostgreSQL/MySQL; Markdown knowledge wiki |
+| Code intelligence | `tree-sitter`, `tree-sitter-language-pack`, SQLite FTS5 |
 | Observability | OpenTelemetry, Prometheus, DuckDB-backed aggregation |
-| Frontend | React 19, TypeScript 5.9, Vite 7, Tailwind CSS v4, Zustand, TanStack Query & Router |
-| Desktop | Tauri v2 (Rust) — macOS, Windows, Linux |
 
 ## Project layout
 
-```
-app/        FastAPI backend — agent runtime, code graph, dream/wiki, scheduler, MCP client
-web/        React 19 + Vite frontend
-desktop/    Tauri v2 desktop shell + Python sidecar bundling
-seed/       Default agent blueprints (Forge, Coding, and AIM rosters), skills, and config
-tests/      Backend test suite (pytest)
-documents/  Design notes, internal analyses, and README image assets
+```text
+app/        Local FastAPI sidecar — agents, code graph, memory, scheduler, MCP
+web/        React interface embedded by the Tauri desktop app
+desktop/    Tauri v2 shell and Python sidecar packaging
+seed/       Forge, Coding, and AIM blueprints, skills, rulebooks, and config
+tests/      Backend and frontend tests
+documents/  Design notes, analyses, and README media
 ```
 
 ## Contributing
 
-Issues and PRs are welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup and conventions, [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) for community guidelines, and [`SECURITY.md`](SECURITY.md) to report vulnerabilities privately.
+Issues and pull requests are welcome. Keep changes focused and include the smallest relevant test run. Please report vulnerabilities privately through GitHub Security Advisories.
 
 ## License
 
-Apache License 2.0 — see [`LICENSE`](LICENSE).
+EvoFlux is released under the [Apache License 2.0](LICENSE).
+
+<div align="center">
+  <br />
+  <strong>Your models. Your machine. One desktop harness.</strong>
+  <br /><br />
+  <a href="#quick-start">Start with EvoFlux ↑</a>
+</div>

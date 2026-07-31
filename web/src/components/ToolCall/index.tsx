@@ -258,6 +258,8 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
   if (name === 'team_delegate') {
     let agent = 'agent'
     let taskTitle = 'Delegated task'
+    let isolation: 'shared' | 'worktree' | undefined
+    let repoCount: number | undefined
     try {
       const parsed = args ? (JSON.parse(args) as Record<string, unknown>) : {}
       agent =
@@ -272,6 +274,11 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
         (typeof parsed.content === 'string' && parsed.content) ||
         (typeof parsed.prompt === 'string' && parsed.prompt) ||
         taskTitle
+      isolation =
+        parsed.isolation === 'worktree' || parsed.isolation === 'shared'
+          ? parsed.isolation
+          : undefined
+      repoCount = Array.isArray(parsed.target_repos) ? parsed.target_repos.length : undefined
     } catch {
       // keep defaults
     }
@@ -282,6 +289,8 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
           agent={agent}
           title={taskTitle}
           status={isRunning ? 'running' : state === 'failed' ? 'idle' : 'done'}
+          isolation={isolation}
+          repoCount={repoCount}
           onFocus={() => setActiveAgent(agent)}
         />
       </div>

@@ -116,6 +116,13 @@ class HandoffArtifact(BaseModel):
             "Omit only for pure research/analysis with no verifiable side-effects."
         ),
     )
+    workspace_result: dict | None = Field(
+        default=None,
+        description=(
+            "Runtime-generated commit/diff metadata for an isolated delegation. "
+            "Members do not populate this field."
+        ),
+    )
 
 
 # ── Tool descriptions ───────────────────────────────────────────────────────
@@ -175,6 +182,12 @@ def format_handoff_message(
             if artifact.verification.result:
                 verification_line += f" — {artifact.verification.result}"
         lines.append(verification_line)
+    if artifact.workspace_result:
+        repositories = artifact.workspace_result.get("repositories", [])
+        lines.append(
+            f"Workspace review: {len(repositories)} repository "
+            f"worktree{'s' if len(repositories) != 1 else ''} awaiting lead review"
+        )
     return "\n".join(lines)
 
 
@@ -449,7 +462,9 @@ def make_team_handoff_tool(
                     recipient=agent_name,
                     artifact=artifact_json,
                 )
-            except (TypeError, ValueError) as exc:
+                artifact = HandoffArtifact.model_validate(artifact_json)
+                formatted = format_handoff_message(agent_name, artifact)
+            except (TypeError, ValueError, RuntimeError) as exc:
                 return f"Error: {exc}"
 
         # Emit only after the durable state transition succeeds.

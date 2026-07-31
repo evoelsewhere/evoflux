@@ -140,11 +140,7 @@ export function SideChatTranscript({
               }
               const isTrailingTurn = k === turnItems.length - 1
               const turnIsStreaming = isWorking && isTrailingTurn
-              // Don't collapse the live streaming turn — keep per-tool cards
-              // visible so the panel shows real-time activity.
-              const groupedBlocks = turnIsStreaming
-                ? item.blocks
-                : groupConsecutiveToolCalls(item.blocks)
+              const groupedBlocks = groupConsecutiveToolCalls(item.blocks)
               const blockAbsIdx = new Map(item.blocks.map((b, j) => [b.id, item.startIndex + j]))
               return (
                 <div key={`turn-${item.startIndex}-${item.blocks[0]?.id ?? k}`}>
@@ -159,6 +155,7 @@ export function SideChatTranscript({
                           <ToolCallGroupCard
                             key={`group-${item.startIndex}-${j}`}
                             group={renderItem as ToolBlockGroup}
+                            isStreaming={turnIsStreaming}
                           />
                         )
                       }
@@ -201,8 +198,9 @@ export function SideChatTranscript({
       {showScrollBtn && !isEmpty && (
         <button
           onClick={() => scrollToBottom(true)}
-          className="absolute bottom-3 left-1/2 z-(--z-panel) -translate-x-1/2 rounded-full border border-(--color-border) bg-(--bg-card) p-1 text-(--color-text-muted) transition-colors hover:text-(--color-text-2)"
-          aria-label="Scroll to bottom"
+          className="absolute right-3 bottom-3 z-(--z-panel) flex size-8 items-center justify-center rounded-full border border-(--color-border) bg-(--bg-card)/95 text-(--color-text-muted) shadow-md backdrop-blur transition-colors hover:bg-(--bg-key) hover:text-(--color-text-2)"
+          aria-label="Back to latest message"
+          title="Back to latest message"
         >
           <ChevronDown size={16} />
         </button>

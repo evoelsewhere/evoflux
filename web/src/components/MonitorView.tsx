@@ -241,12 +241,24 @@ function CommsRow({ item }: { item: ActivityItem }) {
       ? (item.meta.to_agents as string[])
       : []
     const title = typeof item.meta?.title === 'string' ? item.meta.title : item.label
+    const spec = item.meta?.spec && typeof item.meta.spec === 'object'
+      ? (item.meta.spec as Record<string, unknown>)
+      : undefined
+    const resolvedIsolation = spec?.resolved_isolation === 'worktree'
+      || spec?.isolation === 'worktree'
+      ? 'worktree'
+      : spec?.resolved_isolation === 'shared' || spec?.isolation === 'shared'
+        ? 'shared'
+        : undefined
+    const repoCount = Array.isArray(spec?.target_repos) ? spec.target_repos.length : undefined
     return (
       <div className="px-3 py-1.5">
         <SubagentTaskCard
           agent={toAgents[0] ?? item.agent}
           title={title}
           status="running"
+          isolation={resolvedIsolation}
+          repoCount={repoCount}
           interactive={false}
         />
       </div>

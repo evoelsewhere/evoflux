@@ -93,6 +93,28 @@ class TaskSpec(BaseModel):
         default=True,
         description="Whether target_paths are exclusive while the task is open.",
     )
+    isolation: Literal["auto", "shared", "worktree"] = Field(
+        default="auto",
+        description=(
+            "Lead-selected workspace isolation. Auto uses a worktree for mutable "
+            "coding/AIM tasks and shared workspace for read-only coordination."
+        ),
+    )
+    resolved_isolation: Literal["shared", "worktree"] = Field(
+        default="shared",
+        description="Runtime-resolved isolation policy.",
+    )
+    target_repos: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Project repository names or exact absolute paths that receive a "
+            "task worktree. Multiple entries create one atomic worktree set."
+        ),
+    )
+    worktree_allocation: dict | None = Field(
+        default=None,
+        description="Runtime-owned durable worktree allocation metadata.",
+    )
     complexity: Literal["auto", "trivial", "simple", "multi_step", "complex"] = Field(
         default="auto",
         description="Task complexity used for adaptive reasoning and verification.",
@@ -148,6 +170,26 @@ def format_delegation_message(
         formatted_lines.append(
             f"**Target paths ({mode}):** {', '.join(spec.target_paths)}"
         )
+    formatted_lines.append(
+        f"**Isolation:** {spec.resolved_isolation} (requested: {spec.isolation})"
+    )
+    if spec.target_repos:
+        formatted_lines.append(
+            f"**Target repositories:** {', '.join(spec.target_repos)}"
+        )
+    allocation = spec.worktree_allocation
+    if isinstance(allocation, dict):
+        repositories = [
+            item
+            for item in allocation.get("repositories", [])
+            if isinstance(item, dict)
+        ]
+        if repositories:
+            formatted_lines.append("**Assigned worktrees:**")
+            formatted_lines.extend(
+                f"  • {item.get('source')}: {item.get('workspace')}"
+                for item in repositories
+            )
     formatted_lines.append(f"**Complexity:** {spec.complexity}")
     if spec.deadline_at:
         formatted_lines.append(f"**Deadline:** {spec.deadline_at.isoformat()}")
@@ -263,6 +305,25 @@ def make_team_delegate_tool(
                 )
             ),
         ] = True,
+        isolation: Annotated[
+            Literal["auto", "shared", "worktree"],
+            Field(
+                description=(
+                    "Workspace policy chosen by the lead. 'worktree' gives each "
+                    "recipient an isolated branch/worktree, 'shared' uses path "
+                    "claims, and 'auto' isolates mutable coding tasks."
+                )
+            ),
+        ] = "auto",
+        target_repos: Annotated[
+            list[str],
+            Field(
+                description=(
+                    "Repository names or exact absolute project-repository paths "
+                    "to include. Two or more create a multi-repo worktree set."
+                )
+            ),
+        ] = [],  # noqa: B006
         complexity: Annotated[
             Literal["auto", "trivial", "simple", "multi_step", "complex"],
             Field(
@@ -308,11 +369,27 @@ def make_team_delegate_tool(
             normalized_targets = _normalize_target_paths(target_paths)
         except ValueError as exc:
             return f"Error: {exc}"
-        if exclusive_paths and normalized_targets and len(resolved) > 1:
+        try:
+            from app.services.delegation_worktree_service import resolve_isolation
+
+            resolved_isolation = resolve_isolation(
+                requested=isolation,
+                team_mode=team.mode if team is not None else "forge",
+                target_paths=normalized_targets,
+                target_repos=list(target_repos),
+            )
+        except ValueError as exc:
+            return f"Error: {exc}"
+        if (
+            resolved_isolation == "shared"
+            and exclusive_paths
+            and normalized_targets
+            and len(resolved) > 1
+        ):
             return (
                 "Error: exclusive target_paths cannot be assigned to multiple "
                 "recipients in one delegation. Split the paths into separate tasks "
-                "or set exclusive_paths=false."
+                "or use worktree isolation."
             )
 
         # Build task spec
@@ -326,6 +403,9 @@ def make_team_delegate_tool(
             deadline_at=deadline_at,
             target_paths=normalized_targets,
             exclusive_paths=exclusive_paths,
+            isolation=isolation,
+            resolved_isolation=resolved_isolation,
+            target_repos=list(target_repos),
             complexity=complexity,
         )
         spec_json = spec.model_dump(mode="json", exclude_none=True)
@@ -341,8 +421,17 @@ def make_team_delegate_tool(
                 )
             except (TypeError, ValueError) as exc:
                 return f"Error: {exc}"
-            await team.dispatch_delegation_tasks(tasks)
             task_ids = [str(task.id) for task in tasks]
+            try:
+                await team.dispatch_delegation_tasks(tasks)
+            except (OSError, RuntimeError, ValueError) as exc:
+                _emit_delegation_event(team, agent_name, resolved, task_ids, spec_json)
+                return (
+                    f"Error: delegation workspace allocation/dispatch failed: {exc}. "
+                    f"Durable Task IDs: {', '.join(task_ids)}. "
+                    "Inspect these tasks to retry, merge, or explicitly discard "
+                    "any allocated worktrees."
+                )
             blocked = [str(task.id) for task in tasks if task.status == "blocked"]
         else:
             task_ids = []

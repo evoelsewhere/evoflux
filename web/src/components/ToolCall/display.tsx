@@ -629,6 +629,19 @@ export function getToolDisplay(name: string, args: string | undefined): ToolDisp
     }
   }
 
+  if (name === 'team_worktree') {
+    const action = str(parsed, 'action') || 'review'
+    const taskId = str(parsed, 'task_id')
+    const label = action === 'finalize'
+      ? 'Finalizing integration branches'
+      : `${action[0]?.toUpperCase() ?? ''}${action.slice(1)} worktree${taskId ? ` ${trunc(taskId, 18)}` : ''}`
+    return {
+      header: label,
+      headerTitle: label,
+      formattedArgs: null,
+    }
+  }
+
   // ── browser_use: show action summary ────────────────────────────────
   if (name === 'browser_use') {
     const actions = parsed.actions as Array<Record<string, unknown>> | undefined

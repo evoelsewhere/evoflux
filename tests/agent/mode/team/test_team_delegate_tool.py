@@ -36,6 +36,9 @@ class TestTaskSpecSchema:
         assert spec.depends_on == []
         assert spec.target_paths == []
         assert spec.exclusive_paths is True
+        assert spec.isolation == "auto"
+        assert spec.resolved_isolation == "shared"
+        assert spec.target_repos == []
         assert spec.complexity == "auto"
 
     def test_full_spec(self):

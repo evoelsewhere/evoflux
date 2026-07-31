@@ -66,6 +66,8 @@ export const FloatingInputBar = forwardRef<InputBarHandle, FloatingInputBarProps
       appendValue: (text: string) => innerRef.current?.appendValue(text),
       insertText: (text: string) => innerRef.current?.insertText(text),
       setFiles: (files: File[]) => innerRef.current?.setFiles(files),
+      setQuoteContext: (text: string | null) =>
+        innerRef.current?.setQuoteContext(text),
     }), [])
 
     // ── Mobile: sticky bottom sheet with keyboard-inset awareness ────────

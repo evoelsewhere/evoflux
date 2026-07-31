@@ -41,7 +41,7 @@ class DelegationTask(SQLModel, table=True):
     )
     delegator: str = Field(sa_column=Column(sa.String(100), nullable=False))
     recipient: str = Field(sa_column=Column(sa.String(100), nullable=False))
-    # blocked | pending | completed | cancelled | failed
+    # blocked | pending | review | completed | cancelled | failed
     status: str = Field(
         default="pending",
         sa_column=Column(sa.String(20), nullable=False, server_default="pending"),

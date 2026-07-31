@@ -137,6 +137,7 @@ LEAD_COMMUNICATION_RULES = """\
 - Coordination with members must go through `team_delegate` (structured task assignments with goal + expected output + constraints), `team_message` (quick questions, instructions, status queries), or `team_handoff` (structured deliverables). Use `team_state` to share persistent key-value data (URLs, config, discoveries) across the team. Do not respond to the user until all assigned members have reported back.
 - **Waiting on a member? Respond with exactly `<sleep>`** — just the token, no tool calls and no plain text. After delegating you may send one brief "work is underway" note (see workflow step 3), but every wake after that where you're still waiting on outstanding delegations and have nothing new to verify or synthesise — no partial answer, no "here's what I have so far," no guessed conclusion — must be exactly `<sleep>`. Answering on your own before a member reports back defeats the delegation and shows the user an answer the team hasn't actually produced yet; your next real response after their handoff arrives is the answer.
 - **Structured delegation.** When assigning substantial work to a member, use `team_delegate` — it gives the member an explicit contract (goal, expected_output, constraints, context) and returns a durable delegation Task ID. Use that UUID for `depends_on` and preserve it through handoff/rejection; it is separate from any todo `task_id`. Use `team_message` only for quick follow-ups, clarifications, or coordination that doesn't need a full task spec.
+- **Choose workspace isolation.** For code-changing work, set `isolation='worktree'` (or use `auto`) and name every affected repository in `target_repos`; use `shared` only for read-only work or small non-overlapping edits. The runtime gives each recipient its own branch/worktree set. After a final handoff, inspect it with `team_worktree(action='review', task_id=...)`, then explicitly `merge`, `discard`, or `team_reject`. Dependencies do not start until isolated work is merged. When all accepted tasks are merged, call `team_worktree(action='finalize')` to fast-forward clean source repositories.
 - **Structured handoffs.** When a member delivers substantial work output, expect it via `team_handoff` with structured fields (summary, findings, evidence, confidence, next_actions). Use these fields to synthesise your response rather than re-parsing prose. If a handoff has `status: "partial"`, wait for the `"final"` handoff before synthesising.
 - Member capabilities come from their blueprint/root configuration at spawn time. If a member lacks a required capability, use an appropriately configured blueprint or update durable settings rather than mutating a live member.
 - Always format your responses in **Markdown**. No emoji."""
@@ -193,6 +194,7 @@ MEMBER_COMMUNICATION_RULES = """\
 - NEVER send social messages ("hi", "got it", "working on it", "standing by") — `<sleep>` instead.
 - **Missing a capability?** If the task needs something you can't do with your current tools, describe **what you're trying to do** in plain language to the lead via `team_message` (e.g. "I need to write files to disk", "I need to run shell commands", "I need shadcn component examples"). Do **not** guess tool/skill/MCP names — you may not know what's actually available. The lead picks the exact capability and grants it; you'll see it on your next turn.
 - **Verify before you claim.** Read each tool result before reporting. If a tool returned an error, NEVER say the operation succeeded. When you write a file or mutate state, confirm with a cheap follow-up (e.g. `ls` the directory, `read` the file) before telling anyone it's done. **Record your verification** in `team_handoff` by setting `verified=True`, `verification_method`, and `verification_result` so the lead can trust your work without re-checking.
+- **Work only in the assigned workspace.** For isolated delegations the runtime has already rebound your sandbox and repository map to your private worktree set. Do not create, merge, delete, or switch Git worktrees/branches yourself. Commit/snapshot and integration are runtime/lead responsibilities.
 - **Do thorough work — not minimum viable.** The lead WILL verify your claims and reject sloppy handoffs. Specifically:
   - For research: use 3+ independent sources minimum, cross-check claims, cite everything. One Google search is never enough.
   - For code: read existing code first, match style, run the relevant linter/tests yourself before handing off. "It should work" without running it = rejection.
@@ -1153,6 +1155,16 @@ class TeamMemberBase(abc.ABC):
             ),
             supported_thinking_levels=get_model_thinking_levels(effective_model),
         )
+        from app.services.delegation_worktree_service import sandbox_binding
+
+        task_workspace = sandbox_binding(
+            primary_workspace=str(
+                session_workspace_dir(self._team.lead.session_id, self._team.workspace)
+            ),
+            extra_workspace_paths=self._team.extra_workspace_paths,
+            read_only_paths=self._team.read_only_paths,
+            active_specs=active_task_specs,
+        )
         if effective_model and self._team._provider_factory is not None:
             model_kwargs: dict[str, object] = {}
             if execution_policy.thinking_level:
@@ -1219,17 +1231,17 @@ class TeamMemberBase(abc.ABC):
                     )
                 )
         if self._team.mode in ("coding", "aim"):
-            if self._team.extra_workspace_paths:
+            if task_workspace.extra_workspace_paths:
                 hooks.append(
                     MultiRepoContextHook(
-                        primary_workspace=self._team.workspace or "",
-                        extra_workspace_paths=self._team.extra_workspace_paths,
+                        primary_workspace=task_workspace.workspace,
+                        extra_workspace_paths=task_workspace.extra_workspace_paths,
                     )
                 )
             hooks.append(
                 WorkspaceInstructionsHook(
-                    self._team.workspace,
-                    self._team.extra_workspace_paths or None,
+                    task_workspace.workspace,
+                    task_workspace.extra_workspace_paths or None,
                 )
             )
             # Surface ruff issues introduced by an edit in the same tool
@@ -1350,19 +1362,20 @@ class TeamMemberBase(abc.ABC):
         if force_compaction:
             run_metadata["force_summarization"] = True
             run_metadata["stop_after_before_model"] = True
-        if self._team.workspace:
-            run_metadata["team_workspace"] = self._team.workspace
+        if task_workspace.workspace:
+            run_metadata["team_workspace"] = task_workspace.workspace
         config = RunConfig(session_id=self.session_id, metadata=run_metadata)
 
         # Coding/AIM modes use the exact project workspace for every team member.
-        workspace = str(session_workspace_dir(lead_session_id, self._team.workspace))
         session_sandbox = SandboxConfig(
-            workspace=workspace,
+            workspace=task_workspace.workspace,
             session_id=lead_session_id,
-            extra_workspace_paths=self._team.extra_workspace_paths or None,
-            read_only_paths=self._team.read_only_paths or None,
+            extra_workspace_paths=task_workspace.extra_workspace_paths or None,
+            read_only_paths=task_workspace.read_only_paths or None,
             write_allowed_paths=(
-                claimed_paths if self._role_label == "member" else None
+                task_workspace.write_allowed_paths
+                if self._role_label == "member"
+                else None
             ),
         )
         token = set_sandbox(session_sandbox)

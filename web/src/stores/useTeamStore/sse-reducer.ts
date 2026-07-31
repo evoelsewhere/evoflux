@@ -440,12 +440,15 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
         const toAgents = Array.isArray(d.to) ? (d.to as string[]) : []
         const title = typeof d.title === 'string' ? d.title : 'Delegated task'
         const taskIds = Array.isArray(d.task_ids) ? (d.task_ids as string[]) : []
+        const spec = d.spec && typeof d.spec === 'object'
+          ? (d.spec as Record<string, unknown>)
+          : undefined
         set((draft) => {
           pushActivity(draft, {
             kind: 'delegation',
             agent: fromAgent,
             label: `Task → ${toAgents.join(', ') || 'agent'}: ${title}`,
-            meta: { from_agent: fromAgent, to_agents: toAgents, task_ids: taskIds, title },
+            meta: { from_agent: fromAgent, to_agents: toAgents, task_ids: taskIds, title, spec },
           })
           for (const name of toAgents) {
             ensureAgent(draft, name)

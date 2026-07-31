@@ -10,6 +10,8 @@ export interface SubagentTaskCardProps {
   agent: string
   title: string
   status?: 'running' | 'done' | 'idle'
+  isolation?: 'shared' | 'worktree'
+  repoCount?: number
   onFocus?: () => void
   /** When false, render a non-interactive div (avoids nested buttons). */
   interactive?: boolean
@@ -20,6 +22,8 @@ export function SubagentTaskCard({
   agent,
   title,
   status = 'running',
+  isolation,
+  repoCount,
   onFocus,
   interactive = true,
   className,
@@ -42,8 +46,15 @@ export function SubagentTaskCard({
         </p>
         <p className="mt-0.5 line-clamp-2 text-xs text-(--color-text-muted)">{title}</p>
       </div>
-      <span className="shrink-0 rounded-xs bg-(--bg-key) px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-(--color-text-subtle)">
-        {status}
+      <span className="flex shrink-0 items-center gap-1">
+        {isolation === 'worktree' && (
+          <span className="rounded-xs bg-(--bg-key) px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-(--color-text-subtle)">
+            worktree{repoCount && repoCount > 1 ? ` ×${repoCount}` : ''}
+          </span>
+        )}
+        <span className="rounded-xs bg-(--bg-key) px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-(--color-text-subtle)">
+          {status}
+        </span>
       </span>
     </>
   )
