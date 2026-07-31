@@ -1,6 +1,6 @@
 /**
  * /workflow <name> [arg1 arg2 …] — FE-intercepted (plan v5 §9.1, F17):
- * unlike /loop, the raw slash text is NEVER sent as a chat message; the FE
+ * the raw slash text is NEVER sent as a chat message; the FE
  * maps positional args onto declared inputs and calls the run endpoint.
  */
 

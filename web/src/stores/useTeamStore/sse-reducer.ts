@@ -509,7 +509,7 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
         set((draft) => {
           if (status === 'completed' || status === 'failed' || status === 'stopped') {
             // Keep the terminal state visible briefly is a UI concern; the
-            // store simply clears on terminal, mirroring loop_status.
+            // store clears successful terminal executions immediately.
             draft.activeWorkflowExecution =
               status === 'failed'
                 ? {
@@ -533,20 +533,6 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
               error: null,
             }
           }
-        })
-        break
-      }
-
-      case 'loop_status': {
-        const limit = Number(d.limit) || 0
-        const remaining = Number(d.remaining) || 0
-        const prompt = typeof d.prompt === 'string' && d.prompt ? d.prompt : null
-        const used = Number(d.used) || Math.max(limit - remaining, 0)
-        const paused = Boolean(d.paused)
-        set((draft) => {
-          draft.activeLoop = prompt || limit > 0
-            ? { prompt, limit, remaining, used, paused }
-            : null
         })
         break
       }

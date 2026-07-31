@@ -72,6 +72,7 @@ from app.services.chat_service import (
     save_queued_user_message,
     update_session_title,
 )
+from app.services.commands import parse_slash_invocation
 
 if TYPE_CHECKING:
     from app.agent.agent_loop import Agent
@@ -286,9 +287,7 @@ async def team_chat(
     from app.agent.mode.team.team import (
         ContinuePreconditionError,
         is_goal_command,
-        is_loop_command,
         parse_goal_command,
-        parse_loop_command,
     )
 
     message = body.message
@@ -420,19 +419,12 @@ async def team_chat(
         return {"status": "interrupted", "session_id": session_id}
 
     assert message is not None
-    loop_command = None
-    if is_loop_command(message):
-        if mode != "coding":
-            raise HTTPException(
-                status_code=422,
-                detail="/loop commands are only available in coding mode.",
-            )
-        loop_command = parse_loop_command(message)
-        if loop_command is None:
-            raise HTTPException(
-                status_code=422,
-                detail="Invalid /loop command. Use /loop <prompt>, /loop:set 5|10|20|50, /loop:pause, /loop:resume, or /loop:stop.",
-            )
+    slash_invocation = parse_slash_invocation(message)
+    if slash_invocation is not None and slash_invocation.command == "loop":
+        raise HTTPException(
+            status_code=410,
+            detail="/loop has been removed. Use /goal <objective> instead.",
+        )
     goal_command = None
     if is_goal_command(message):
         goal_command = parse_goal_command(message)
@@ -507,7 +499,6 @@ async def team_chat(
         if (
             session_uuid is not None
             and team_obj.has_active_user_turn()
-            and loop_command is None
             and goal_command is None
         ):
             # Explicit uploads still 409 — they need the live capability check
@@ -597,9 +588,9 @@ async def team_chat(
                 # A normal user turn can acknowledge immediately after
                 # validation/stream initialisation. Snapshot, persistence and
                 # agent activation continue in-order in the background.
-                # Goal/loop controls stay synchronous because they mutate
-                # durable or live turn state rather than queueing a prompt.
-                defer=loop_command is None and goal_command is None,
+                # Goal controls stay synchronous because they mutate durable
+                # state rather than queueing a prompt.
+                defer=goal_command is None,
             )
         except AttachmentError as exc:
             raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
@@ -1395,24 +1386,6 @@ async def team_history(
         raise HTTPException(status_code=404, detail="Lead session not found.")
     goal_row = await goal_service.get_goal(db, history.lead_session.id)
     goal_response = _goal_response(goal_row) if goal_row is not None else None
-    # Loop status is an in-memory lookup on a live team. Only *peek* at the
-    # team cache here — booting a team just to read history blocked this GET
-    # (and, via the global team lock + sync file IO, every other request)
-    # for the whole cold-start. A team that isn't running can't have an
-    # active loop, so a cache miss is simply "no loop".
-    if (
-        history.lead_session.mode in ("coding", "aim")
-        and history.lead_session.workspace
-    ):
-        loop_team = team_manager.current_coding_team_for_session(
-            history.lead_session.workspace, str(history.lead_session.id)
-        )
-    else:
-        loop_team = (
-            team_manager.current_team_for_session(str(history.lead_session.id))
-            or team_manager.current_team()
-        )
-
     lead_resp = SessionResponse.model_validate(history.lead_session).model_copy(
         update={
             "running": str(history.lead_session.id)
@@ -1457,9 +1430,6 @@ async def team_history(
     return TeamHistoryResponse(
         lead=lead_detail,
         members=member_histories,
-        loop_status=loop_team.loop_status(str(history.lead_session.id))
-        if loop_team
-        else None,
         goal=goal_response,
         workflow_execution=workflow_execution,
         has_more=history.has_more,
